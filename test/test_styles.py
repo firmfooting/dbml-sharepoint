@@ -178,9 +178,14 @@ def test_overdue_date_decodes_a_calculated_date() -> None:
 
 @pytest.mark.parametrize("spec, fragment", [
     ({"style": "nope"}, "unknown style"),
+    # The shape before the word: a list is not a style spelled wrongly, and
+    # `str()` on one reported it as the unknown style "['severity']".
+    ({"style": ["severity"]}, "'style' must be a string"),
     ({"style": "severity"}, "requires a non-empty 'map'"),
     ({"style": "severity", "map": {}}, "requires a non-empty 'map'"),
     ({"style": "severity", "map": {"A": "shiny"}}, "unknown token"),
+    ({"style": "severity", "map": {"A": ["good"]}}, "must be a token name"),
+    ({"style": "pill", "map": {"A": ["good"]}}, "must be a token name"),
     ({"style": "data-bar"}, "positive integer 'max'"),
     ({"style": "data-bar", "max": 0}, "positive integer 'max'"),
     ({"style": "data-bar", "max": 25, "color_by": {"map": {"A": "good"}}},
@@ -222,6 +227,32 @@ def test_theme_overrides_tokens() -> None:
 def test_theme_rejects_unknown_tokens() -> None:
     with pytest.raises(ValueError):
         parse_theme({"shiny": {"classes": ["x"]}}, "style_theme")
+
+
+def test_theme_icon_must_be_a_string_or_null() -> None:
+    """`str()` on anything else emitted the icon name "['Emoji2']", quotes
+    included, into the iconName expression: SharePoint accepts the formatter
+    and renders no icon, so nothing in the build or the deploy can see it.
+
+    An absent `icon` and a declared null are different declarations here and
+    both are kept: absence takes the token's own icon, and null is a token
+    that deliberately shows none.
+    """
+    with pytest.raises(ValueError, match="must be a string or null"):
+        parse_theme({"good": {"classes": ["x"], "icon": ["Emoji2"]}}, "style_theme")
+    assert parse_theme({"good": {"classes": ["x"]}}, "style_theme")["good"].icon == (
+        TOKENS["good"].icon
+    )
+    assert parse_theme(
+        {"good": {"classes": ["x"], "icon": None}}, "style_theme",
+    )["good"].icon is None
+
+
+def test_theme_token_names_must_be_strings() -> None:
+    """A YAML mapping key may be any scalar, so `1:` reported as an unknown
+    token where the fault is the shape."""
+    with pytest.raises(ValueError, match="token name must be a string"):
+        parse_theme({1: {"classes": ["x"]}}, "style_theme")
 
 
 @pytest.mark.parametrize("spec, typo", [

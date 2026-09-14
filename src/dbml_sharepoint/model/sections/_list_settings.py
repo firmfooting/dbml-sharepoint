@@ -9,6 +9,7 @@ apply to every list the mapping deploys.
 from typing import Any
 
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.mapping_types import ITEM_SECURITY_SCOPES, ItemSecurity, Versioning
 from dbml_sharepoint.model.reading import optional_bool, strict_bool
 from dbml_sharepoint.model.sections.context import SectionContext
@@ -100,12 +101,12 @@ def _check_versioning_values(block: Any, context: str) -> None:
     _reject_unknown_keys(block, _VERSIONING_KEYS, context)
     for key in ("enable_versioning", "enable_minor_versions"):
         if key in block and not isinstance(block[key], bool):
-            raise ValueError(
+            raise MappingShapeError(
                 f"{context}.{key}: expected true or false, got {block[key]!r}",
             )
     limit = block.get("major_version_limit")
     if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int)):
-        raise ValueError(
+        raise MappingShapeError(
             f"{context}.major_version_limit: expected an integer, got {limit!r}",
         )
 
@@ -123,8 +124,14 @@ def _check_item_security_values(block: Any, context: str) -> None:
         if key not in block:
             continue
         value = block[key]
+        # The shape before the word, as `scope` and `totals` do: a list is
+        # unhashable, and `read: 2` is a type rather than a scope declined.
+        if not isinstance(value, str):
+            raise MappingShapeError(
+                f"{context}.{key}: expected a string, got {value!r}",
+            )
         if value not in ITEM_SECURITY_SCOPES:
-            raise ValueError(
+            raise MappingValueError(
                 f"{context}.{key}: expected one of "
                 f"{', '.join(sorted(ITEM_SECURITY_SCOPES))}, got {value!r}",
             )

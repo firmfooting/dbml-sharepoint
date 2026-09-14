@@ -1,4 +1,5 @@
 # test/test_mapping_loader.py
+import ast
 from collections import Counter
 from collections.abc import Iterator, Mapping
 from dataclasses import fields, replace
@@ -6,12 +7,22 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from _packs import blocks, entities, entity, with_tail, write_mapping
-from _paths import FIXTURES
+from _paths import FIXTURES, PACKAGE
 
-from dbml_sharepoint.model import mapping_types
+from dbml_sharepoint.model import errors, mapping_types
+from dbml_sharepoint.model.errors import (
+    MappingError,
+    MappingReferenceError,
+    MappingShapeError,
+    MappingSourceError,
+    MappingValueError,
+    UnknownMappingKeyError,
+)
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
+    DEMO_FILE_CONTENT,
     FormVisibility,
     ItemSecurity,
     ListPermissionPolicy,
@@ -1518,6 +1529,110 @@ def test_a_family_cannot_read_a_section_it_did_not_declare() -> None:
         sc.block("entities")
     with pytest.raises(LookupError, match="not a section this family declared"):
         sc.required("entities")
+
+
+def test_a_mapping_with_no_prefix_names_the_refusal(tmp_path: Path) -> None:
+    """The two most ordinary ways a mapping is wrong are a missing `prefix:`
+    and a missing `entities:`, and both used to leave the hierarchy as a bare
+    KeyError. `MappingShapeError` advertises an absent required key as one of
+    its cases, so a caller catching `MappingError` has to see these two."""
+    path = write_mapping(tmp_path, entities("Project"), prefix=None)
+    with pytest.raises(MappingShapeError, match="missing required key 'prefix'"):
+        load_mapping(path)
+
+
+def test_a_mapping_with_no_entities_names_the_refusal(tmp_path: Path) -> None:
+    """The other half. `entities:` present and empty is a different refusal,
+    pinned above; this is the key absent altogether."""
+    path = write_mapping(tmp_path, "prefix_owner: Someone\n")
+    with pytest.raises(MappingShapeError, match="missing required key 'entities'"):
+        load_mapping(path)
+
+
+def test_a_required_key_inside_a_block_is_refused_by_its_path(tmp_path: Path) -> None:
+    """`require_int` and `require_str` subscripted the block, so an absent key
+    raised a KeyError naming the key and not the block that wanted it. The
+    context string was already being computed for the wrong-type message."""
+    path = write_mapping(tmp_path, "entities:\n  Project:\n    kind: List\n")
+    with pytest.raises(MappingShapeError, match=r"entities\.Project\.base_template is required"):
+        load_mapping(path)
+
+
+@pytest.mark.parametrize(
+    ("declared", "expected"),
+    [
+        ("scope: [recursive]", MappingShapeError),
+        ("scope: sideways", MappingValueError),
+        ("totals: { Title: [sum] }", MappingShapeError),
+        ("totals: { Title: median }", MappingValueError),
+    ],
+)
+def test_a_closed_vocabulary_separates_the_wrong_type_from_the_wrong_word(
+    tmp_path: Path, declared: str, expected: type[MappingError],
+) -> None:
+    """One condition tested the type and the vocabulary together and raised
+    the value error for both, so a list where a word belongs was reported as
+    a word this loader will not accept. The two are different fixes and the
+    hierarchy exists to say which."""
+    path = write_mapping(tmp_path, with_tail(
+        entities("Project"),
+        "views:\n  Project:\n    - title: V\n      fields: [Title]\n      " + declared + "\n",
+    ))
+    with pytest.raises(expected):
+        load_mapping(path)
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        (
+            "form_visibility:\n  Project:\n    reconcile: [exact]\n    columns: {}\n",
+            MappingShapeError,
+        ),
+        (
+            "form_visibility:\n  Project:\n    reconcile: strict\n    columns: {}\n",
+            MappingValueError,
+        ),
+        (
+            (
+                "views:\n  Project:\n    - title: V\n      fields: [Title]\n"
+                "      sort:\n        - field: Title\n          direction: [asc]\n"
+            ),
+            MappingShapeError,
+        ),
+        (
+            (
+                "views:\n  Project:\n    - title: V\n      fields: [Title]\n"
+                "      sort:\n        - field: Title\n          direction: up\n"
+            ),
+            MappingValueError,
+        ),
+        (
+            (
+                "list_permissions:\n  default:\n    break_inheritance: true\n"
+                "    reconcile: [exact]\n    assignments: []\n"
+            ),
+            MappingShapeError,
+        ),
+        (
+            (
+                "list_permissions:\n  default:\n    break_inheritance: true\n"
+                "    reconcile: best-effort\n    assignments: []\n"
+            ),
+            MappingValueError,
+        ),
+    ],
+)
+def test_the_three_other_vocabulary_readers_split_the_same_way(
+    tmp_path: Path, body: str, expected: type[MappingError],
+) -> None:
+    """`form_visibility.reconcile`, a view's sort direction and
+    `list_permissions.default.reconcile` each coerced with `str()` and then
+    tested the vocabulary, so a list reached the operator as the word
+    ``"['exact']"``. `_reporting._derived_text` is the shape this follows."""
+    path = write_mapping(tmp_path, with_tail(entities("Project"), body))
+    with pytest.raises(expected):
+        load_mapping(path)
 
 
 def test_identity_runs_before_permissions() -> None:
@@ -3052,3 +3167,753 @@ def test_pointed_sections_stay_optional_without_the_pointer(tmp_path: Path) -> N
     assert bundle.mapping.reporting.users_table is False
     assert bundle.mapping.derived_columns == {}
     assert bundle.mapping.demo_items == {}
+
+
+#: One mapping per named loader error, each triggering the code path the class
+#: is named for (#170). The message is asserted VERBATIM: the CLI prints it
+#: instead of a traceback, so the sentence a SharePoint admin reads is the
+#: thing the rename had to leave alone.
+_NAMED_ERROR_CASES = [
+    pytest.param(
+        MappingShapeError,
+        _views_yaml("""
+            views:
+              Project:
+                - fields: [Title]
+        """),
+        "views.Project[0]: view 'title' is required",
+        id="shape",
+    ),
+    pytest.param(
+        UnknownMappingKeyError,
+        blocks(entities("Risk"), """
+            form_visibilty:
+              Risk:
+                columns: {}
+        """),
+        "unknown mapping section(s) ['form_visibilty']. Unknown keys used to be "
+        "ignored, so a misspelled section silently deployed nothing.",
+        id="unknown-key",
+    ),
+    pytest.param(
+        MappingValueError,
+        entities(entity("Policy", kind="DocLibrary", base_template=101)),
+        "entities.Policy.kind must be one of DocumentLibrary, HubOnlyList, List; "
+        "got 'DocLibrary'",
+        id="value",
+    ),
+    pytest.param(
+        MappingReferenceError,
+        blocks(entities("Risk"), "reporting_source: nope.yaml"),
+        "reporting_source: cannot read 'nope.yaml' at {path}",
+        id="reference",
+    ),
+]
+
+
+@pytest.mark.parametrize(("error", "body", "message"), _NAMED_ERROR_CASES)
+def test_a_named_loader_error_is_raised_by_the_path_it_names(
+    tmp_path: Path, error: type[MappingError], body: str, message: str,
+) -> None:
+    """Three assertions at once, because they only mean anything together.
+
+    `pytest.raises(MappingError)` proves the base class catches every kind, so
+    a caller needs one name rather than four. `type(...) is error` proves the
+    subclass is the one this path raises rather than a sibling the same base
+    happens to catch. The message equality proves the taxonomy changed the
+    class and nothing else.
+    """
+    write_mapping(tmp_path, body)
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is error
+    assert str(err.value) == message.format(path=(tmp_path / "nope.yaml").resolve())
+
+
+def test_every_named_loader_error_is_still_a_value_error() -> None:
+    """`cli._CONFIG_ERRORS` lists `ValueError` and nothing narrower, and most
+    of this module's refusal tests match through
+    `pytest.raises(ValueError, ...)`. A subclass that stopped being one would
+    reach the operator as a traceback with no change visible anywhere else."""
+    named = sorted(
+        name for name, value in vars(errors).items()
+        if isinstance(value, type) and issubclass(value, MappingError)
+    )
+    assert len(named) >= 5, f"only {named} found in model.errors, so this pins nothing"
+    assert all(issubclass(getattr(errors, name), ValueError) for name in named)
+
+
+def test_a_plain_value_error_catch_still_sees_the_loader_refusal(tmp_path: Path) -> None:
+    """The structural check above reads classes rather than call sites, so one
+    live path proves the catch an existing caller already writes keeps working."""
+    write_mapping(tmp_path, entities(entity("Policy", kind="DocLibrary", base_template=101)))
+    with pytest.raises(ValueError, match=r"entities\.Policy\.kind"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+#: The modules the gate below reaches that still build a bare `ValueError`,
+#: by design: `parser.py` reads the DBML schema, `release.py` reads
+#: release.yaml, and `analysis/typemap.py` refuses a schema column's type.
+#: None of those documents is a mapping, so a `MappingError` would name the
+#: wrong file. Named here so the gate reports everything else.
+_NOT_MAPPING_READERS = frozenset({
+    "model/parser.py", "model/release.py", "analysis/typemap.py",
+})
+
+
+def _first_party_imports(tree: ast.AST) -> set[str]:
+    """Every `dbml_sharepoint.*` name one module imports, module or member."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            names.add(node.module)
+            names.update(f"{node.module}.{alias.name}" for alias in node.names)
+    return {name for name in names if name.startswith("dbml_sharepoint")}
+
+
+def _module_path(module: str) -> Path | None:
+    """The file a dotted name refers to, or None when it names a member."""
+    relative = module.removeprefix("dbml_sharepoint.").replace(".", "/")
+    for candidate in (PACKAGE / f"{relative}.py", PACKAGE / relative / "__init__.py"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _loader_modules() -> dict[str, Path]:
+    """Every module a mapping load can run, by transitive import.
+
+    The set is computed rather than listed because the blind spot this
+    closes was exactly a hand-drawn boundary: the gate scanned `model/`,
+    `_formatting.read` delegates its whole job to `analysis/styles.py`, and
+    that module's refusals sat outside the hierarchy unseen. A boundary
+    drawn by directory misses the next delegation too.
+    """
+    found: dict[str, Path] = {
+        path.relative_to(PACKAGE).as_posix(): path
+        for path in (PACKAGE / "model").rglob("*.py")
+    }
+    queue = ["dbml_sharepoint.model.mapping_loader"]
+    seen: set[str] = set()
+    while queue:
+        module = queue.pop()
+        if module in seen:
+            continue
+        seen.add(module)
+        path = _module_path(module)
+        if path is None:
+            continue
+        found[path.relative_to(PACKAGE).as_posix()] = path
+        queue.extend(_first_party_imports(ast.parse(path.read_text(encoding="utf-8"))))
+    return found
+
+
+def test_no_mapping_reader_builds_a_bare_value_error() -> None:
+    """A STATIC check, and it says so: it reads construction sites rather
+    than running them.
+
+    The named hierarchy is only worth having while every refusal is inside
+    it. A module left building a `ValueError` directly is invisible to a
+    caller switching on the class, because the base catches nothing it
+    throws.
+
+    Two things are wider here than the obvious version of this test, and
+    both were places a refusal had already escaped. It scans every module
+    the loader can reach rather than the `model/` directory, because
+    `_formatting.read` hands a declared style spec to `analysis/styles.py`
+    and the validation happens there. And it scans `ValueError(...)`
+    wherever it is built rather than `raise ValueError(...)`, because that
+    module's `_fail` RETURNED one for its caller to raise, which a
+    raise-site scan reads as no refusal at all.
+    """
+    offenders = [
+        f"{name}:{node.lineno}"
+        for name, path in sorted(_loader_modules().items())
+        if name not in _NOT_MAPPING_READERS
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "ValueError"
+    ]
+    assert not offenders, (
+        "bare `ValueError(...)` on a module the mapping loader runs, which "
+        f"model/errors.py replaced: {offenders}"
+    )
+
+
+def test_the_loader_module_gate_reaches_past_the_model_directory() -> None:
+    """The gate above is only as good as the set it scans, and that set is
+    computed. A resolver that quietly returned `model/` alone would leave
+    every delegated parser unwatched while still reporting green."""
+    scanned = _loader_modules()
+    assert "analysis/styles.py" in scanned, sorted(scanned)
+    assert "model/sections/_formatting.py" in scanned, sorted(scanned)
+    assert set(scanned) >= _NOT_MAPPING_READERS, sorted(scanned)
+
+
+def test_a_mapping_that_does_not_parse_is_a_named_refusal(tmp_path: Path) -> None:
+    """`yaml.YAMLError` is not a `MappingError`, so the single most ordinary
+    way a mapping is wrong escaped the hierarchy the layer advertises.
+
+    The parser's own text is passed through rather than summarised: the line
+    and column are the only part of a YAML error an author can act on, and a
+    message that dropped them would name the file and nothing else.
+    """
+    path = write_mapping(tmp_path, "entities: [\n")
+    with pytest.raises(MappingError) as err:
+        load_mapping(path)
+    assert type(err.value) is MappingSourceError
+    assert isinstance(err.value.__cause__, yaml.YAMLError)
+    assert "line 3" in str(err.value), str(err.value)
+    assert "column 1" in str(err.value), str(err.value)
+
+
+def test_a_mapping_that_is_not_there_is_a_named_refusal(tmp_path: Path) -> None:
+    """The root document has no declaration pointing at it, so it is the
+    source that failed rather than a reference that did not resolve."""
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "absent.yaml")
+    assert type(err.value) is MappingSourceError
+    assert isinstance(err.value.__cause__, OSError)
+    assert "No such file" in str(err.value), str(err.value)
+
+
+def test_a_source_file_that_is_not_there_names_the_declaration(tmp_path: Path) -> None:
+    """A file BESIDE the mapping is what `MappingReferenceError` documents,
+    and the message has to name the declaration rather than only the path:
+    `enum_sources` may hold a dozen entries and the operator needs the one."""
+    path = write_mapping(tmp_path, blocks(entities("Risk"), """
+        enum_sources:
+          topic: config/topics.yaml
+    """))
+    with pytest.raises(MappingError) as err:
+        load_mapping(path)
+    assert type(err.value) is MappingReferenceError
+    assert isinstance(err.value.__cause__, OSError)
+    assert "enum_sources['topic']" in str(err.value), str(err.value)
+
+
+def test_a_retention_source_that_is_not_there_names_the_declaration(tmp_path: Path) -> None:
+    path = write_mapping(
+        tmp_path, blocks(entities("Risk"), "retention_policies_source: nope.yaml"),
+    )
+    with pytest.raises(MappingError) as err:
+        load_mapping(path)
+    assert type(err.value) is MappingReferenceError
+    assert "retention_policies_source" in str(err.value), str(err.value)
+
+
+#: The files a mapping can name that are read as YAML, and the declaration
+#: naming each. Every one goes through `read_yaml_document`, so a corrupt
+#: file has to be the same named refusal wherever it sits.
+_NAMED_YAML_SOURCES = [
+    pytest.param("enum_sources:\n  topic: side.yaml", id="enum-source"),
+    pytest.param("retention_policies_source: side.yaml", id="retention-source"),
+    pytest.param("reporting_source: side.yaml", id="section-pointer"),
+]
+
+
+@pytest.mark.parametrize("declaration", _NAMED_YAML_SOURCES)
+def test_a_source_file_that_does_not_parse_is_a_named_refusal(
+    tmp_path: Path, declaration: str,
+) -> None:
+    """The pointer resolved and the file opened, so nothing the mapping says
+    is wrong; the document simply is not YAML."""
+    (tmp_path / "side.yaml").write_text("policies: [\n", encoding="utf-8")
+    path = write_mapping(tmp_path, blocks(entities("Risk"), declaration))
+    with pytest.raises(MappingError) as err:
+        load_mapping(path)
+    assert type(err.value) is MappingSourceError
+    assert isinstance(err.value.__cause__, yaml.YAMLError)
+    assert "side.yaml" in str(err.value), str(err.value)
+
+
+#: One mapping per delegated style refusal. `_formatting.read` does none of
+#: this validation itself: it hands the declared block to
+#: `analysis/styles.py`, which is why these escaped a gate scanning `model/`.
+_DELEGATED_STYLE_CASES = [
+    pytest.param(
+        MappingShapeError, "style_theme: []",
+        "style_theme: expected a mapping of token overrides",
+        id="theme-wrong-shape",
+    ),
+    pytest.param(
+        MappingValueError, "style_theme:\n  shiny: { classes: [x] }",
+        "style_theme: unknown token 'shiny' (known: "
+        "['blocked', 'good', 'low', 'muted', 'neutral', 'severe', 'warning'])",
+        id="theme-unknown-token",
+    ),
+    pytest.param(
+        MappingShapeError,
+        "column_formatting:\n  Risk:\n    Status: { style: severity }",
+        "column_formatting.Risk.Status: this style requires a non-empty "
+        "'map' of value -> token",
+        id="spec-missing-map",
+    ),
+    pytest.param(
+        MappingValueError,
+        "column_formatting:\n  Risk:\n    Status: { style: sparkle }",
+        "column_formatting.Risk.Status: unknown style 'sparkle' (known: "
+        "['severity', 'pill', 'data-bar', 'trend', 'overdue-date'])",
+        id="spec-unknown-style",
+    ),
+    pytest.param(
+        MappingValueError,
+        "column_formatting:\n  Risk:\n    Status: "
+        "{ style: severity, map: { Open: sparkle } }",
+        "column_formatting.Risk.Status: unknown token 'sparkle' (known: "
+        "['blocked', 'good', 'low', 'muted', 'neutral', 'severe', 'warning'])",
+        id="spec-unknown-token",
+    ),
+    # Each of the four below is the wrong YAML type at a key one above gets
+    # a word wrong at, so each is a shape error rather than a value error.
+    pytest.param(
+        MappingShapeError,
+        "column_formatting:\n  Risk:\n    Status: { style: [severity] }",
+        "column_formatting.Risk.Status: 'style' must be a string, got ['severity']",
+        id="spec-style-wrong-type",
+    ),
+    pytest.param(
+        MappingShapeError,
+        "column_formatting:\n  Risk:\n    Status: "
+        "{ style: severity, map: { Open: [good] } }",
+        "column_formatting.Risk.Status: map['Open'] must be a token name, "
+        "got ['good']",
+        id="spec-token-wrong-type",
+    ),
+    pytest.param(
+        MappingShapeError, "style_theme:\n  1: { classes: x }",
+        "style_theme: token name must be a string, got 1",
+        id="theme-token-name-wrong-type",
+    ),
+    pytest.param(
+        MappingShapeError, "style_theme:\n  good: { classes: x, icon: [Emoji2] }",
+        "style_theme: good: 'icon' must be a string or null, got ['Emoji2']",
+        id="theme-icon-wrong-type",
+    ),
+]
+
+
+@pytest.mark.parametrize(("error", "declaration", "message"), _DELEGATED_STYLE_CASES)
+def test_a_delegated_style_refusal_is_in_the_hierarchy(
+    tmp_path: Path, error: type[MappingError], declaration: str, message: str,
+) -> None:
+    """A style spec is mapping content, so refusing one is a mapping refusal
+    wherever the code that refuses it happens to live. The message is
+    asserted verbatim for the reason every other named-error case is: the
+    class changed and the sentence the operator reads did not."""
+    path = write_mapping(tmp_path, blocks(entities("Risk"), declaration))
+    with pytest.raises(MappingError) as err:
+        load_mapping(path)
+    assert type(err.value) is error
+    assert str(err.value) == message
+
+
+#: The membership tests that hashed a value before checking its type (#578).
+#: Every one raised `TypeError` on a list or mapping, which `CONFIG_ERRORS`
+#: deliberately does not catch, so the operator got a traceback rather than a
+#: sentence. All were unexercised on this path, which is why nothing failed.
+_UNHASHABLE_VALUE_CASES = [
+    pytest.param(
+        entities(entity("Risk", kind="[List]")),
+        "entities.Risk.kind must be a string, got ['List']",
+        id="entity-kind",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            list_permissions:
+              default:
+                break_inheritance: true
+                assignments:
+                  - principal: { kind: [group], name: Owners }
+                    level: Contribute
+        """),
+        "list_permissions.default.assignments[0].principal: principal kind "
+        "must be a string, got ['group']",
+        id="principal-kind",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "item_security:\n  default:\n    read: [all]"),
+        "item_security.default.read: expected a string, got ['all']",
+        id="item-security-scope",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            derived_columns:
+              Risk:
+                - kind: [expr]
+                  name: Age
+                  type: number
+                  m: "1"
+        """),
+        "derived_columns.Risk[0]: kind must be a string, got ['expr']",
+        id="derived-kind",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            derived_columns:
+              Risk:
+                - kind: lookup
+                  from: Owner
+                  key: OwnerId
+                  pick: { OwnerName: Title }
+                  types: { OwnerName: [text] }
+        """),
+        "derived_columns.Risk[0].types.OwnerName must be a string, got ['text']",
+        id="derived-pick-type",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "message"), _UNHASHABLE_VALUE_CASES)
+def test_a_value_of_the_wrong_type_is_refused_before_it_is_hashed(
+    tmp_path: Path, body: str, message: str,
+) -> None:
+    """isinstance before `in`, which `_views.py` already does for `scope`.
+
+    A list or mapping is unhashable, so the membership test raised
+    `TypeError` before the refusal written for this could run. A shape error
+    and not a value error: a list where a word belongs is the wrong YAML
+    type, not a word this loader declines.
+    """
+    write_mapping(tmp_path, body)
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == message
+
+
+def test_an_item_security_scope_splits_the_type_from_the_word(tmp_path: Path) -> None:
+    """`read: 2` and `read: mine` were one refusal, which made the wrong type
+    and the wrong word indistinguishable to a caller switching on the class.
+
+    The same split `scope`, `totals`, `reconcile` and a sort direction
+    already carry: a non-string is a shape, and a string outside the closed
+    set is a value.
+    """
+    write_mapping(tmp_path, blocks(entities("Risk"), "item_security:\n  default:\n    read: 2"))
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == "item_security.default.read: expected a string, got 2"
+
+    write_mapping(
+        tmp_path, blocks(entities("Risk"), "item_security:\n  default:\n    read: mine"),
+        name="word.yaml",
+    )
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "word.yaml")
+    assert type(err.value) is MappingValueError
+    assert str(err.value) == "item_security.default.read: expected one of all, own, got 'mine'"
+
+
+#: A required key inside a LIST entry, which `_reject_unknown_keys` passes
+#: (it refuses only keys nobody reads) and a direct subscript then answered
+#: with a bare `KeyError`. `MappingError` does not catch that, so the
+#: hierarchy's advertised absent-key case was false wherever the block was an
+#: entry rather than a section.
+_REQUIRED_INNER_KEYS = [
+    pytest.param(
+        "cross_site_reference_columns:\n  - {}",
+        "cross_site_reference_columns[0].entity is required",
+        id="cross-site",
+    ),
+    pytest.param(
+        "polymorphic_patterns:\n  - { field: OwnerId, discriminator: OwnerType }",
+        "polymorphic_patterns[0].list is required",
+        id="polymorphic",
+    ),
+    pytest.param(
+        "watched_lists:\n  - { entity: Risk }",
+        "watched_lists[0].column is required",
+        id="watched",
+    ),
+    pytest.param(
+        "views:\n  Risk:\n    - title: All\n      fields: [Title]\n"
+        "      sort:\n        - { direction: desc }",
+        "views.Risk[0].sort[0].field is required",
+        id="view-sort",
+    ),
+    pytest.param(
+        "permission_levels:\n  - { description: nothing }",
+        "permission_levels[0].name is required",
+        id="permission-level",
+    ),
+    pytest.param(
+        "groups:\n  - { description: nothing }",
+        "groups[0].name is required",
+        id="group",
+    ),
+]
+
+
+@pytest.mark.parametrize(("declaration", "message"), _REQUIRED_INNER_KEYS)
+def test_a_required_key_inside_a_list_entry_is_a_named_refusal(
+    tmp_path: Path, declaration: str, message: str,
+) -> None:
+    """The reader names the key PATH, not the key: `permission_levels` may
+    hold a dozen entries and `'name'` alone does not say which one."""
+    write_mapping(tmp_path, blocks(entities("Risk"), declaration))
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == message
+
+
+def test_a_form_body_field_that_is_not_a_name_survives_the_retirement_fold(
+    tmp_path: Path,
+) -> None:
+    """A form body is arbitrary authored JSON and the fold says so: only
+    `sections[].fields` is touched and every other key is left as written.
+
+    So an entry there may be any JSON value, and the retired-column test
+    hashed it. The nested entry is not a column name, cannot be the retired
+    one, and is carried through untouched.
+    """
+    (tmp_path / "body.json").write_text(
+        '{"sections": [{"displayname": "Detail", '
+        '"fields": ["Old", {"nested": true}]}]}',
+        encoding="utf-8",
+    )
+    write_mapping(tmp_path, blocks(entities("Risk"), """
+        retired_columns:
+          Risk: [Old]
+        form_formatting:
+          Risk:
+            body: body.json
+    """))
+    bundle = load_mapping(tmp_path / "m.yaml")
+    body = bundle.mapping.form_formatting["Risk"].body
+    assert body is not None
+    assert body["sections"][0]["fields"] == [{"nested": True}]
+
+
+#: One declaration per reader that answers an ABSENT key with a default of
+#: its own. A key written with nothing after it holds `null`, which is a
+#: declaration and not an absence, so each of these has to be refused rather
+#: than answered with the loader's choice. Three of them regressed in this
+#: layer: `str(raw.get(key, default))` put `'None'` through the vocabulary
+#: check that followed, and `optional_str` returns the same `None` for a
+#: declared null as for a key nobody wrote, which selected the default.
+_EXPLICIT_NULL_CASES = [
+    pytest.param(
+        _views_yaml("""
+            views:
+              Project:
+                - title: All
+                  fields: [Title]
+                  sort:
+                    - { field: Title, direction: null }
+        """),
+        "views.Project[0].sort[0].direction must be a string, got None",
+        id="view-sort-direction",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            form_visibility:
+              Risk:
+                reconcile: null
+                columns: {}
+        """),
+        "form_visibility.Risk.reconcile must be a string, got None",
+        id="form-visibility-reconcile",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            column_validation:
+              Risk:
+                reconcile: null
+                columns: {}
+        """),
+        "column_validation.Risk.reconcile must be a string, got None",
+        id="column-validation-reconcile",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            list_permissions:
+              default:
+                break_inheritance: true
+                reconcile: null
+        """),
+        "list_permissions.default.reconcile must be a string, got None",
+        id="list-permissions-reconcile",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            groups:
+              - { name: Team, owner_group: null }
+        """),
+        "groups[0].owner_group must be a string, got None",
+        id="group-owner-group",
+    ),
+    pytest.param(
+        blocks(
+            entities(entity("Docs", kind="DocumentLibrary", base_template=101)),
+            """
+            demo_items:
+              Docs:
+                - key: a
+                  values: { Title: A }
+                  file: { name: a.txt, content: null }
+            """,
+        ),
+        "demo_items.Docs[0].file.content must be a string, got None",
+        id="demo-file-content",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "message"), _EXPLICIT_NULL_CASES)
+def test_an_explicit_null_is_refused_where_a_default_would_be_chosen(
+    tmp_path: Path, body: str, message: str,
+) -> None:
+    """A shape error rather than a value error, by the rule the rest of this
+    layer follows: `None` is not a word outside the vocabulary, it is the
+    wrong YAML type for a key that takes a string.
+
+    The absence of this test is why the regression landed. Every one of these
+    mappings loaded clean, and a sort direction the author left blank came
+    out as `asc` rather than as a question.
+    """
+    write_mapping(tmp_path, body)
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == message
+
+
+def test_an_optional_string_still_refuses_the_wrong_shape(tmp_path: Path) -> None:
+    """`optional_str` keeps its own job where None is the field's real value.
+
+    The three vocabulary readers moved to `strict_str`, and they were what
+    exercised this refusal, so the typo the docstring is written around is
+    what pins it now: `display_column: [Title]` reached a set-membership test
+    deep in validation and raised `TypeError: unhashable type: 'list'`.
+    """
+    write_mapping(tmp_path, entities(entity("Risk", display_column="[Title]")))
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == "entities.Risk.display_column must be a string, got ['Title']"
+
+
+def test_an_explicit_null_in_a_retention_policy_is_refused(tmp_path: Path) -> None:
+    """The same reader in a file the mapping points at. 'creation' is one
+    retention clock of several, so a blank `trigger:` must not pick it."""
+    (tmp_path / "r.yaml").write_text(
+        "policies:\n  keep:\n    trigger: null\nlist_defaults: {}\n", encoding="utf-8",
+    )
+    write_mapping(
+        tmp_path, blocks(entities("Risk"), "retention_policies_source: r.yaml"),
+    )
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == "policies.keep.trigger must be a string, got None"
+
+
+def test_an_absent_key_still_takes_the_default_the_null_case_refuses(
+    tmp_path: Path,
+) -> None:
+    """The refusals above are only right while absence still means the
+    default. A reader that refused both would satisfy every case in that
+    table and break every mapping that simply leaves the key out, which is
+    most of them.
+    """
+    (tmp_path / "r.yaml").write_text(
+        "policies:\n  keep:\n    retain_years: 7\nlist_defaults: {}\n", encoding="utf-8",
+    )
+    write_mapping(tmp_path, blocks(
+        entities("Project", entity("Docs", kind="DocumentLibrary", base_template=101)),
+        """
+        retention_policies_source: r.yaml
+        views:
+          Project:
+            - title: All
+              fields: [Title]
+              sort:
+                - { field: Title }
+        form_visibility:
+          Project:
+            columns: {}
+        list_permissions:
+          default:
+            break_inheritance: true
+        groups:
+          - { name: Team }
+        demo_items:
+          Docs:
+            - key: a
+              values: { Title: A }
+              file: { name: a.txt }
+        """,
+    ))
+    bundle = load_mapping(tmp_path / "m.yaml")
+    mapping = bundle.mapping
+    assert mapping.views["Project"][0].sort[0].direction == "asc"
+    assert mapping.form_visibility["Project"].reconcile == "exact"
+    permissions = mapping.permissions
+    assert permissions is not None
+    default_policy = permissions.default_policy
+    assert default_policy is not None
+    assert default_policy.reconcile_mode == "configured"
+    assert permissions.groups[0].owner_group.endswith("Site Owners")
+    demo_file = mapping.demo_items["Docs"][0].file
+    assert demo_file is not None
+    assert demo_file.content == DEMO_FILE_CONTENT
+    assert bundle.retention_policies["keep"].trigger == "creation"
+
+
+#: A mapping whose bytes are not UTF-8. Decoding happens inside
+#: `yaml.safe_load`, past the `OSError` and `yaml.YAMLError` handlers, and
+#: `UnicodeDecodeError` is itself a `ValueError`, so it reached a caller
+#: looking exactly like a refusal this loader had composed.
+_NOT_UTF8_MAPPING = (
+    b'prefix: "APP_"\nentities:\n  Risk: { kind: List, base_template: 100,'
+    b" site_role: default, display_column: \xff }\n"
+)
+
+
+def test_a_mapping_that_is_not_utf8_is_a_named_refusal(tmp_path: Path) -> None:
+    """The class a document that does not parse gets, for the same reason:
+    nothing inside it has been seen, so no block, key or value can be named
+    yet."""
+    path = tmp_path / "m.yaml"
+    path.write_bytes(_NOT_UTF8_MAPPING)
+    with pytest.raises(MappingError) as err:
+        load_mapping(path)
+    assert type(err.value) is MappingSourceError
+    assert isinstance(err.value.__cause__, UnicodeDecodeError)
+    assert "is not valid UTF-8" in str(err.value), str(err.value)
+    assert "position 103" in str(err.value), str(err.value)
+
+
+def test_a_source_file_that_is_not_utf8_is_a_named_refusal(tmp_path: Path) -> None:
+    """A YAML file the mapping names and a JSON formatter beside it decode in
+    two different readers, and both had the hole."""
+    (tmp_path / "side.yaml").write_bytes(b"topic:\n  - \xff\n")
+    write_mapping(tmp_path, blocks(entities("Risk"), """
+        enum_sources:
+          topic: side.yaml
+    """))
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingSourceError
+    assert isinstance(err.value.__cause__, UnicodeDecodeError)
+    assert "side.yaml: is not valid UTF-8" in str(err.value), str(err.value)
+
+    (tmp_path / "f.json").write_bytes(b'{"elmType": "\xff"}')
+    write_mapping(tmp_path, blocks(entities("Risk"), """
+        column_formatting:
+          Risk:
+            Status: f.json
+    """), name="json.yaml")
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "json.yaml")
+    assert type(err.value) is MappingSourceError
+    assert isinstance(err.value.__cause__, UnicodeDecodeError)
+    assert str(err.value).startswith(
+        "column_formatting.Risk.Status: 'f.json' is not valid UTF-8:",
+    ), str(err.value)

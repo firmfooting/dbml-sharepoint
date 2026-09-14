@@ -12,8 +12,9 @@ against the schema.
 from typing import Any
 
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model.errors import MappingShapeError
 from dbml_sharepoint.model.mapping_types import DEMO_FILE_CONTENT, DemoFile, DemoItem
-from dbml_sharepoint.model.reading import optional_str, require_str
+from dbml_sharepoint.model.reading import optional_str, require_str, strict_str
 from dbml_sharepoint.model.sections.context import SectionContext
 
 
@@ -35,16 +36,16 @@ def _parse_demo_item(raw_item: Any, context: str) -> DemoItem:
     """Structural parse of one demo row (title marker, value grammar and
     column semantics are validated against the schema in the validator)."""
     if not isinstance(raw_item, dict):
-        raise ValueError(
+        raise MappingShapeError(
             f"{context}: demo item must be a mapping, got {type(raw_item).__name__}",
         )
     _reject_unknown_keys(raw_item, {"key", "values", "file"}, context)
     key = raw_item.get("key")
     if not key or not isinstance(key, str):
-        raise ValueError(f"{context}: demo item 'key' is required (a string)")
+        raise MappingShapeError(f"{context}: demo item 'key' is required (a string)")
     values = raw_item.get("values")
     if not isinstance(values, dict) or not values:
-        raise ValueError(
+        raise MappingShapeError(
             f"{context}: demo item 'values' must be a non-empty mapping of "
             f"column name to value",
         )
@@ -61,13 +62,16 @@ def _parse_demo_file(raw_file: Any, context: str) -> DemoFile | None:
     if raw_file is None:
         return None
     if not isinstance(raw_file, dict):
-        raise ValueError(f"{context}: must be a mapping with 'name', got {type(raw_file).__name__}")
+        raise MappingShapeError(
+            f"{context}: must be a mapping with 'name', got {type(raw_file).__name__}",
+        )
     _reject_unknown_keys(raw_file, {"name", "folder", "content"}, context)
     if "name" not in raw_file:
-        raise ValueError(f"{context}: 'name' is required, the file name to upload")
-    content = optional_str(raw_file, "content", context)
+        raise MappingShapeError(f"{context}: 'name' is required, the file name to upload")
     return DemoFile(
         name=require_str(raw_file, "name", context),
         folder=optional_str(raw_file, "folder", context),
-        content=DEMO_FILE_CONTENT if content is None else content,
+        # `strict_str`: the fallback is a body of text, so `content:` with
+        # nothing after it must not silently upload the sample paragraph.
+        content=strict_str(raw_file, "content", context, default=DEMO_FILE_CONTENT),
     )

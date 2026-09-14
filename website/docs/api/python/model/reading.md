@@ -15,10 +15,37 @@ exists to refuse: `bool("false")` is True and a bare string iterates
 character by character, and a value read leniently deploys the wrong thing
 while the build reports success.
 
+### `read_yaml_document`
+
+```python
+def read_yaml_document(path: pathlib.Path, named_by: str | None = None) -> Any
+```
+
+Parse one YAML file, naming every way reading it can fail.
+
+`yaml.YAMLError` and the `OSError` from opening the file are neither of
+them a `MappingError`, so a caller switching on the base class used to
+miss the two most ordinary failures there are: a mapping with a typo
+that stops it parsing, and a source file that is not where the mapping
+says. The original is kept as `__cause__`, and the parser's own text is
+passed through because it carries the line and column, which is the part
+an author can act on.
+
+Decoding is the third way, and it is the one that hides: the bytes turn
+into text inside `yaml.safe_load`, so a file that is not UTF-8 raises
+`UnicodeDecodeError` past both of the other handlers. It is a
+`ValueError` subclass, so it reached a caller catching `ValueError`
+looking exactly like a refusal this module composed.
+
+`named_by` is the declaration that pointed at this file, when one did.
+An unreadable file is then the reference that did not resolve, which is
+what `MappingReferenceError` documents; a path the caller supplied has
+no declaration to blame, so it is the document itself that failed.
+
 ### `load_yaml`
 
 ```python
-def load_yaml(path: pathlib.Path) -> dict[str, typing.Any]
+def load_yaml(path: pathlib.Path, named_by: str | None = None) -> dict[str, typing.Any]
 ```
 
 Load a YAML file; require a top-level mapping (dict).
@@ -77,6 +104,26 @@ raises `TypeError: unhashable type: 'list'`, a traceback instead of the
 ordinary "this column does not exist" error the author needed. Refuse the
 shape here, where the context string can name the key.
 
+### `strict_str`
+
+```python
+def strict_str(raw: collections.abc.Mapping[str, typing.Any], key: str, context: str, *, default: str) -> str
+```
+
+Read a string that falls back to a default, refusing a declared null.
+
+The one difference from `optional_str` is `raw.get(key, default)` rather
+than `raw.get(key)`, and it is the difference between two declarations
+this loader must not confuse. An absent key takes the default. A key
+written as `direction:` with nothing after it holds None, which is not a
+string, so it is refused rather than answered with a value the author did
+not write. `strict_bool` separates the same pair the same way.
+
+Use it wherever the fallback is a CHOICE the loader would otherwise make
+silently. Where the fallback is the empty value of the same kind (`""`
+for free text, `()` for a list of names), absence and null mean the same
+thing and `optional_str` is the reader.
+
 ### `require_int`
 
 ```python
@@ -90,9 +137,9 @@ boolean straight through and `int(True)` is 1. Both fields read this way
 are ones where 1 is a legal-looking value, so nothing downstream can tell
 the difference.
 
-Subscripted, not `.get()`: an absent required key stays the KeyError it
-has always been. Reporting that with a location is the error-model work
-in #170, and doing it here would change an unrelated message.
+An absent key is a `MappingShapeError` naming the key path, not the bare
+KeyError this subscripted before #170: the hierarchy claims an absent
+required key, so a caller catching `MappingError` has to get one.
 
 ### `optional_int`
 
@@ -115,7 +162,7 @@ def require_str(raw: collections.abc.Mapping[str, typing.Any], key: str, context
 
 Read a required string. The mirror of `optional_str`.
 
-Subscripted for the same reason as `require_int`.
+Refuses an absent key the same way `require_int` does.
 
 ### `optional_str_list`
 

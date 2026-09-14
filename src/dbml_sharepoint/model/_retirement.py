@@ -13,6 +13,7 @@ from dataclasses import replace
 from typing import Any, cast
 
 from dbml_sharepoint.model._keys import _reject_unknown_keys
+from dbml_sharepoint.model.errors import MappingShapeError
 from dbml_sharepoint.model.mapping_types import (
     RETIRED_SUFFIX,
     EntitySection,
@@ -38,14 +39,14 @@ def _parse_retired_columns(raw: Any, context: str) -> dict[str, RetiredColumn]:
         bare: dict[str, RetiredColumn] = {}
         for item in raw:
             if not isinstance(item, str):
-                raise ValueError(
+                raise MappingShapeError(
                     f"{context}: bare-list entries must be column names, "
                     f"got {type(item).__name__}",
                 )
             bare[item] = RetiredColumn(column=item)
         return bare
     if not isinstance(raw, dict):
-        raise ValueError(
+        raise MappingShapeError(
             f"{context}: expected a mapping of column name to retirement "
             f"details, or a bare list of column names, got "
             f"{type(raw).__name__}",
@@ -54,7 +55,7 @@ def _parse_retired_columns(raw: Any, context: str) -> dict[str, RetiredColumn]:
     for col, spec in raw.items():
         col_ctx = f"{context}.{col}"
         if not isinstance(spec, dict):
-            raise ValueError(
+            raise MappingShapeError(
                 f"{col_ctx}: expected a mapping with 'retired' and optional "
                 f"superseded_by / reason / hide_existing, got "
                 f"{type(spec).__name__}",
@@ -62,10 +63,10 @@ def _parse_retired_columns(raw: Any, context: str) -> dict[str, RetiredColumn]:
         _reject_unknown_keys(spec, _RETIREMENT_KEYS, col_ctx)
         retired = spec.get("retired")
         if retired is None:
-            raise ValueError(f"{col_ctx}: 'retired' (an ISO date) is required")
+            raise MappingShapeError(f"{col_ctx}: 'retired' (an ISO date) is required")
         hide = spec.get("hide_existing", False)
         if not isinstance(hide, bool):
-            raise ValueError(
+            raise MappingShapeError(
                 f"{col_ctx}.hide_existing must be a boolean, got {hide!r}",
             )
         superseded = spec.get("superseded_by")
@@ -166,11 +167,13 @@ def _strip_retired_from_form(
             return cast("list[Any]", section["fields"])
         return None
 
+    # isinstance first: a formatter body is arbitrary authored JSON, so a
+    # `fields` entry may be a list or mapping, which is unhashable.
     named = [
         name
         for section in sections
         for name in (_fields_of(section) or [])
-        if name in retired
+        if isinstance(name, str) and name in retired
     ]
     if not named:
         return form
@@ -185,7 +188,9 @@ def _strip_retired_from_form(
     ]
     stripped = [
         (
-            {**section, "fields": [n for n in fields if n not in retired]}
+            {**section, "fields": [
+                n for n in fields if not (isinstance(n, str) and n in retired)
+            ]}
             if (fields := _fields_of(section)) is not None
             and isinstance(section, dict)
             else section

@@ -10,25 +10,30 @@ and the column exist is the validator's question.
 from typing import Any
 
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model.errors import MappingShapeError
 from dbml_sharepoint.model.mapping_types import CrossSiteRef, PolymorphicPattern, WatchedList
+from dbml_sharepoint.model.reading import require_str
 from dbml_sharepoint.model.sections.context import SectionContext
 
 
 def read(sc: SectionContext) -> dict[str, Any]:
     cross_site = []
     for i, item in enumerate(sc.block("cross_site_reference_columns") or []):
-        _reject_unknown_keys(item, {"entity", "column"}, f"cross_site_reference_columns[{i}]")
-        cross_site.append(CrossSiteRef(entity=item["entity"], column=item["column"]))
+        where = f"cross_site_reference_columns[{i}]"
+        _reject_unknown_keys(item, {"entity", "column"}, where)
+        cross_site.append(CrossSiteRef(
+            entity=require_str(item, "entity", where),
+            column=require_str(item, "column", where),
+        ))
 
     polymorphic = []
     for i, item in enumerate(sc.block("polymorphic_patterns") or []):
-        _reject_unknown_keys(
-            item, {"list", "field", "discriminator"}, f"polymorphic_patterns[{i}]",
-        )
+        where = f"polymorphic_patterns[{i}]"
+        _reject_unknown_keys(item, {"list", "field", "discriminator"}, where)
         polymorphic.append(PolymorphicPattern(
-            list=item["list"],
-            field=item["field"],
-            discriminator=item["discriminator"],
+            list=require_str(item, "list", where),
+            field=require_str(item, "field", where),
+            discriminator=require_str(item, "discriminator", where),
         ))
 
     lookup_projections: dict[str, dict[str, list[str]]] = {}
@@ -42,7 +47,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
             if not isinstance(targets, list) or not all(
                 isinstance(t, str) for t in targets
             ):
-                raise ValueError(
+                raise MappingShapeError(
                     f"lookup_projections.{entity}.{column} must be a list of "
                     f"strings, got {targets!r}",
                 )
@@ -51,8 +56,12 @@ def read(sc: SectionContext) -> dict[str, Any]:
 
     watched = []
     for i, item in enumerate(sc.block("watched_lists") or []):
-        _reject_unknown_keys(item, {"entity", "column"}, f"watched_lists[{i}]")
-        watched.append(WatchedList(entity=item["entity"], column=item["column"]))
+        where = f"watched_lists[{i}]"
+        _reject_unknown_keys(item, {"entity", "column"}, where)
+        watched.append(WatchedList(
+            entity=require_str(item, "entity", where),
+            column=require_str(item, "column", where),
+        ))
 
     calculated_formulas = {
         entity: {

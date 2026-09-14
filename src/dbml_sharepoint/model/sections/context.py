@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from dbml_sharepoint.model.errors import MappingShapeError
+
 
 @dataclass(frozen=True)
 class SectionContext:
@@ -20,9 +22,8 @@ class SectionContext:
 
     `blocks` holds those of the family's declared keys that the document
     actually carries, already taken from the file the family's pointer names
-    when the mapping used one. An absent key is absent here too, so
-    `required` keeps raising the KeyError an absent `prefix:` has always
-    raised.
+    when the mapping used one. An absent key is absent here too, and
+    `required` refuses it.
 
     `loaded` is what earlier families produced, keyed by field name. It
     exists for the one dependency that crosses families: permissions expand
@@ -41,8 +42,17 @@ class SectionContext:
         return self.blocks.get(key, default)
 
     def required(self, key: str) -> Any:
-        """The block under `key`, raising KeyError when the mapping omits it."""
+        """The block under `key`, refusing a mapping that omits it.
+
+        A `MappingShapeError` and not the bare `KeyError` this raised before
+        #170: the class advertises "a required key absent" as one of its
+        cases, and an absent `prefix:` or `entities:` is the most ordinary way
+        a mapping is wrong, so a caller catching `MappingError` has to see it.
+        The sentence is the one the CLI already printed for the KeyError.
+        """
         self._declared(key)
+        if key not in self.blocks:
+            raise MappingShapeError(f"missing required key {key!r}")
         return self.blocks[key]
 
     def _declared(self, key: str) -> None:

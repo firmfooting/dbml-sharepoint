@@ -1,6 +1,6 @@
 ---
 title: condition_rendering
-sidebar_position: 21
+sidebar_position: 22
 ---
 
 # `dbml_sharepoint.analysis.condition_rendering`

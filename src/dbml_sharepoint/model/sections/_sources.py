@@ -10,8 +10,14 @@ from pathlib import Path
 from typing import Any
 
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model.errors import MappingReferenceError
 from dbml_sharepoint.model.mapping_types import RetentionPolicy
-from dbml_sharepoint.model.reading import load_yaml, optional_int, optional_str
+from dbml_sharepoint.model.reading import (
+    load_yaml,
+    optional_int,
+    optional_str,
+    strict_str,
+)
 from dbml_sharepoint.model.sections.context import SectionContext
 
 _RETENTION_POLICY_KEYS = frozenset(
@@ -58,10 +64,10 @@ def _load_enum_choices(
         fragment = fragment or "choices"
         path = (base_dir / path_part).resolve()
         resolved[name] = path
-        source = load_yaml(path)
+        source = load_yaml(path, f"enum_sources[{name!r}]")
         values = source.get(fragment)
         if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
-            raise ValueError(
+            raise MappingReferenceError(
                 f"{path}: {fragment!r} must be a list of strings "
                 f"(enum_sources[{name!r}])",
             )
@@ -77,7 +83,7 @@ def _load_retention(path: Path) -> tuple[dict[str, RetentionPolicy], dict[str, s
     dataclass -- see `_keys._reject_unknown_keys` for why a fail-open level
     here would make a typo'd file byte-identical to one with the key deleted.
     """
-    raw = load_yaml(path)
+    raw = load_yaml(path, "retention_policies_source")
     raw_policies = _require_mapping(raw.get("policies"), "policies", allow_absent=False)
     policies: dict[str, RetentionPolicy] = {}
     for name, raw_spec in raw_policies.items():
@@ -90,7 +96,9 @@ def _load_retention(path: Path) -> tuple[dict[str, RetentionPolicy], dict[str, s
             sp_label=optional_str(spec, "sp_label", context) or "",
             retain_years=optional_int(spec, "retain_years", context),
             retain_days=optional_int(spec, "retain_days", context),
-            trigger=optional_str(spec, "trigger", context) or "creation",
+            # `strict_str` because "creation" is one retention clock of
+            # several, so `trigger:` with nothing after it must not pick it.
+            trigger=strict_str(spec, "trigger", context, default="creation"),
         )
     list_defaults = dict(_require_mapping(raw.get("list_defaults"), "list_defaults"))
     return policies, list_defaults

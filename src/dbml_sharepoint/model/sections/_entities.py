@@ -4,6 +4,7 @@
 from typing import Any, cast
 
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.mapping_types import ENTITY_KINDS, EntityKind, EntityMapping
 from dbml_sharepoint.model.reading import (
     optional_bool,
@@ -56,8 +57,12 @@ def _parse_entity_kind(raw_kind: Any, context: str) -> EntityKind:
     """The one admission gate for entity kinds: a typo'd kind must fail the
     build here, not flow into schema_json and silently miss downstream
     comparisons like kind == "DocumentLibrary"."""
+    # isinstance first: a list or mapping is unhashable, so the membership
+    # test below raises the TypeError the CLI deliberately does not catch.
+    if raw_kind is not None and not isinstance(raw_kind, str):
+        raise MappingShapeError(f"{context}.kind must be a string, got {raw_kind!r}")
     if raw_kind not in ENTITY_KINDS:
-        raise ValueError(
+        raise MappingValueError(
             f"{context}.kind must be one of "
             f"{', '.join(sorted(ENTITY_KINDS))}; got {raw_kind!r}",
         )

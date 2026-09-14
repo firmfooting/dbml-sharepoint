@@ -51,6 +51,7 @@ MODULES: list[tuple[str, str]] = [
     ("model.reading", "typed reads shared by the section families"),
     ("model.release", "load release.yaml provenance"),
     ("model.env_file", "parse dbml-sharepoint.env build defaults"),
+    ("model.errors", "the named refusals a mapping reader raises"),
     ("model.conditions", "the shared condition grammar's types and parser"),
     ("analysis.findings", "what a finding is: code, severity, section, location"),
     ("analysis.validator", "fail-closed build-time rules"),

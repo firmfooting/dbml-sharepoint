@@ -11,6 +11,7 @@ one.
 from typing import Any, cast
 
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.mapping_types import (
     PRINCIPAL_KIND_LIST,
     PRINCIPAL_KINDS,
@@ -24,7 +25,14 @@ from dbml_sharepoint.model.mapping_types import (
     SiteGroup,
 )
 from dbml_sharepoint.model.prefix import expand_prefix, previous_object_names
-from dbml_sharepoint.model.reading import optional_bool, optional_str_list, strict_bool
+from dbml_sharepoint.model.reading import (
+    optional_bool,
+    optional_str,
+    optional_str_list,
+    require_str,
+    strict_bool,
+    strict_str,
+)
 from dbml_sharepoint.model.sections.context import SectionContext
 
 _GROUP_KEYS = frozenset({
@@ -63,12 +71,20 @@ def read(sc: SectionContext) -> dict[str, Any]:
 
     levels = [
         CustomPermissionLevel(
-            name=expand_prefix(lvl["name"], prefix, f"permission_levels[{i}].name"),
-            description=lvl.get("description", ""),
-            base_permissions=list(lvl.get("base_permissions", [])),
+            name=expand_prefix(
+                require_str(lvl, "name", f"permission_levels[{i}]"),
+                prefix, f"permission_levels[{i}].name",
+            ),
+            description=optional_str(lvl, "description", f"permission_levels[{i}]") or "",
+            # A bare string iterates character by character, and `null` was a
+            # TypeError from `list(None)` that `CONFIG_ERRORS` does not catch.
+            base_permissions=list(
+                optional_str_list(lvl, "base_permissions", f"permission_levels[{i}]"),
+            ),
             renamed_from=optional_str_list(lvl, "renamed_from", f"permission_levels[{i}]"),
             previous_names=previous_object_names(
-                lvl["name"], optional_str_list(lvl, "renamed_from", f"permission_levels[{i}]"),
+                require_str(lvl, "name", f"permission_levels[{i}]"),
+                optional_str_list(lvl, "renamed_from", f"permission_levels[{i}]"),
                 prefix, previous_prefixes, f"permission_levels[{i}].renamed_from",
             ),
         )
@@ -77,10 +93,15 @@ def read(sc: SectionContext) -> dict[str, Any]:
 
     groups = [
         SiteGroup(
-            name=expand_prefix(grp["name"], prefix, f"groups[{i}].name"),
-            description=grp.get("description", ""),
+            name=expand_prefix(
+                require_str(grp, "name", f"groups[{i}]"), prefix, f"groups[{i}].name",
+            ),
+            description=optional_str(grp, "description", f"groups[{i}]") or "",
+            # `owner_group:` with nothing after it reached `expand_prefix` as
+            # None and raised TypeError, which the CLI does not catch.
             owner_group=expand_prefix(
-                grp.get("owner_group", "Site Owners"), prefix, f"groups[{i}].owner_group",
+                strict_str(grp, "owner_group", f"groups[{i}]", default="Site Owners"),
+                prefix, f"groups[{i}].owner_group",
             ),
             allow_members_edit_membership=optional_bool(
                 grp, "allow_members_edit_membership", f"groups[{i}]",
@@ -105,7 +126,8 @@ def read(sc: SectionContext) -> dict[str, Any]:
             ),
             renamed_from=optional_str_list(grp, "renamed_from", f"groups[{i}]"),
             previous_names=previous_object_names(
-                grp["name"], optional_str_list(grp, "renamed_from", f"groups[{i}]"),
+                require_str(grp, "name", f"groups[{i}]"),
+                optional_str_list(grp, "renamed_from", f"groups[{i}]"),
                 prefix, previous_prefixes, f"groups[{i}].renamed_from",
             ),
         )
@@ -150,14 +172,18 @@ def _parse_principal(raw_principal: Any, context: str, prefix: str = "") -> Prin
     by a message still naming four.
     """
     if not isinstance(raw_principal, dict):
-        raise ValueError(
+        raise MappingShapeError(
             f"{context}: principal must be a mapping, "
             f"got {type(raw_principal).__name__}",
         )
     _reject_unknown_keys(raw_principal, {"kind", "name"}, context)
     kind = raw_principal.get("kind")
+    # isinstance first: a list or mapping is unhashable, so the membership
+    # test below raises the TypeError the CLI deliberately does not catch.
+    if kind is not None and not isinstance(kind, str):
+        raise MappingShapeError(f"{context}: principal kind must be a string, got {kind!r}")
     if kind not in PRINCIPAL_KINDS:
-        raise ValueError(
+        raise MappingValueError(
             f"{context}: principal kind must be one of "
             f"{PRINCIPAL_KIND_LIST}; got {kind!r}",
         )
@@ -165,7 +191,7 @@ def _parse_principal(raw_principal: Any, context: str, prefix: str = "") -> Prin
     if isinstance(name, str):
         name = expand_prefix(name, prefix, f"{context}.name")
     if kind == "group" and not name:
-        raise ValueError(f"{context}: principal kind=group requires a 'name'")
+        raise MappingShapeError(f"{context}: principal kind=group requires a 'name'")
     return Principal(
         kind=cast("PrincipalKind", kind),
         name=name if kind == "group" else None,
@@ -186,14 +212,20 @@ def _parse_policy(
     # guard then tests the coerced value, breaking inheritance the author
     # asked to keep.
     break_inheritance = strict_bool(raw_policy, "break_inheritance", context)
-    reconcile_mode = cast("ReconcileMode", str(raw_policy.get("reconcile", "configured")))
+    # The shape before the word, as the other two vocabulary readers do, and
+    # `strict_str` so `reconcile:` with nothing after it is refused rather
+    # than read as the mode that leaves an existing ACL alone.
+    reconcile_mode = cast(
+        "ReconcileMode",
+        strict_str(raw_policy, "reconcile", context, default="configured"),
+    )
     if reconcile_mode not in {"configured", "exact"}:
-        raise ValueError(
+        raise MappingValueError(
             f"{context}.reconcile must be 'configured' or 'exact', "
             f"got {reconcile_mode!r}",
         )
     if reconcile_mode == "exact" and not break_inheritance:
-        raise ValueError(
+        raise MappingShapeError(
             f"{context}: reconcile 'exact' requires break_inheritance: true; "
             "an inherited ACL cannot be reconciled as a list-scoped allowlist",
         )
@@ -207,7 +239,7 @@ def _parse_policy(
         if isinstance(level, str):
             level = expand_prefix(level, prefix, f"{context}.assignments[{i}].level")
         if not level:
-            raise ValueError(f"{context}.assignments[{i}]: 'level' is required")
+            raise MappingShapeError(f"{context}.assignments[{i}]: 'level' is required")
         assignments.append(RoleAssignment(principal=principal, level=level))
     return ListPermissionPolicy(
         break_inheritance=break_inheritance,

@@ -1,6 +1,6 @@
 ---
 title: styles
-sidebar_position: 20
+sidebar_position: 21
 ---
 
 # `dbml_sharepoint.analysis.styles`

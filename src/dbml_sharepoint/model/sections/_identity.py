@@ -2,12 +2,13 @@
 """`prefix`, `prefix_owner` and `previous_prefixes`.
 
 The namespace every deployed object is named under. `prefix` is required
-and stays the KeyError an absent key has always raised; the owner is
-provenance, stamped into the manifest.
+and its absence is a `MappingShapeError`; the owner is provenance, stamped
+into the manifest.
 """
 
 from typing import Any
 
+from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.sections.context import SectionContext
 
 
@@ -25,15 +26,15 @@ def _parse_previous_prefixes(declared: Any, current: Any) -> tuple[str, ...]:
     if declared is None:
         return ()
     if not isinstance(declared, list) or not all(isinstance(p, str) for p in declared):
-        raise ValueError("previous_prefixes must be a list of strings")
+        raise MappingShapeError("previous_prefixes must be a list of strings")
     seen: set[str] = set()
     for previous in declared:
         if previous == current:
-            raise ValueError(
+            raise MappingValueError(
                 f"previous_prefixes names the current prefix {previous!r}; a prefix "
                 f"that is still in use is not a previous one",
             )
         if previous in seen:
-            raise ValueError(f"previous_prefixes names {previous!r} twice")
+            raise MappingValueError(f"previous_prefixes names {previous!r} twice")
         seen.add(previous)
     return tuple(declared)

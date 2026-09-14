@@ -7,6 +7,8 @@ without importing each other.
 
 from typing import Any
 
+from dbml_sharepoint.model.errors import MappingShapeError, UnknownMappingKeyError
+
 
 def _require_mapping(
     block: Any, context: str, *, allow_absent: bool = True,
@@ -56,12 +58,12 @@ def _require_mapping(
     """
     if block is None:
         if not allow_absent:
-            raise ValueError(
+            raise MappingShapeError(
                 f"{context}: required, but the key is present with no value",
             )
         return {}
     if not isinstance(block, dict):
-        raise ValueError(
+        raise MappingShapeError(
             f"{context}: expected a mapping of names, got {type(block).__name__}",
         )
     return block
@@ -77,12 +79,12 @@ def _reject_unknown_keys(block: Any, allowed: frozenset[str] | set[str], context
     a list on inherited permissions, all reporting zero findings.
     """
     if not isinstance(block, dict):
-        raise ValueError(
+        raise MappingShapeError(
             f"{context}: expected a mapping, got {type(block).__name__}",
         )
     unknown = set(block) - set(allowed)
     if unknown:
-        raise ValueError(
+        raise UnknownMappingKeyError(
             f"{context}: unknown key(s) {sorted(unknown)} "
             f"(known: {sorted(allowed)})",
         )
