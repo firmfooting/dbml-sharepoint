@@ -99,7 +99,13 @@
       finding('scratch_list', 'NOT-ASSESSABLE', `Could not enumerate lists (HTTP ${listing.status} ${listing.reason}); nothing was verified.`);
       return { findings, verdict: 'NOT-VERIFIED', aborted: 'lists-unreadable' };
     }
-    const lists = (listing.d && listing.d.results) || [];
+    const continuation = listing.d && listing.d.__next;
+    if (!listing.d || !Array.isArray(listing.d.results)
+      || (continuation !== undefined && continuation !== null && continuation !== '')) {
+      finding('scratch_list', 'NOT-ASSESSABLE', 'List enumeration was malformed or incomplete (__next must be absent, null or empty); nothing was verified.');
+      return { findings, verdict: 'NOT-VERIFIED', aborted: 'lists-unreadable' };
+    }
+    const lists = listing.d.results;
     const wanted = T.list_title.toLowerCase();
     const found = lists.find((l) => String(l.Title || '').toLowerCase() === wanted) || null;
     let hidden = null;

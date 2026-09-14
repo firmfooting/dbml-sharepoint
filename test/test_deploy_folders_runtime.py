@@ -146,7 +146,11 @@ _HARNESS = textwrap.dedent(r"""
 
 def _render_phase() -> str:
     number = phase_number("folders")
-    return script_env().get_template("deploy/_folders.js.j2").render(phase={
+    shapes = script_env().get_template("deploy/_shape_probes.js.j2").render()
+    start = shapes.index("  function validatedNextPage(")
+    end = shapes.index("\n  }\n", start) + len("\n  }\n")
+    # Run the real pagination guard rather than a permissive mock of it.
+    return shapes[start:end] + script_env().get_template("deploy/_folders.js.j2").render(phase={
         "number": number, "name": "declared folders", "group_number": number.split(".")[0],
         "group_name": "STRUCTURE", "first_in_group": False,
     })

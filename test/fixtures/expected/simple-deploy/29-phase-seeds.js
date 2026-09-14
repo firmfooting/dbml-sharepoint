@@ -44,9 +44,10 @@
     if (!existJson.d || !Array.isArray(existJson.d.results)) {
       throw new Error(`Singleton seed target '${seed.title}' returned an invalid response`);
     }
+    const next = validatedNextPage(existJson.d, `Singleton seed target '${seed.title}'`);
     return {
       rows: existJson.d.results,
-      hasMore: Boolean(existJson.d.__next),
+      hasMore: Boolean(next),
     };
   }
 

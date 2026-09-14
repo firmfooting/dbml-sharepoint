@@ -109,6 +109,8 @@ _HARNESS = textwrap.dedent(r"""
         payload = { d: { results: uploaded && !STATE.vanishAfterUpload
           ? [{ Id: 9, FileLeafRef: STATE.name, FileDirRef: STATE.root + '/' + STATE.folder }]
           : [] } };
+        const override = uploaded ? 'afterFileProbe' : 'beforeFileProbe';
+        if (Object.hasOwn(STATE, override)) payload = STATE[override];
       } else if (method === 'POST' && /\/items\(9\)$/.test(u)) {
         if (STATE.refuseMerge) {
           status = 500;
@@ -204,6 +206,71 @@ def test_a_refused_upload_is_reported_and_nothing_is_set() -> None:
     assert error["key"] == "d1" and "upload refused" in error["error"]
     assert _posts(calls, "/items(9)") == []
     assert summary["created"] == []
+
+
+_INVALID_FILE_IDENTITIES: list[dict[str, Any]] = [
+    {"Id": None}, {"Id": 0}, {"Id": "9"}, {"Id": 1.5},
+    {"FileDirRef": None},
+    {"FileDirRef": "relative/path"},
+]
+
+
+@pytest.mark.parametrize("payload", [
+    None, {}, {"d": {}}, {"d": {"results": {}}},
+    {"d": {"results": [], "__next": False}},
+    {"d": {"results": [], "__next": 5}},
+    {"d": {"results": [None]}},
+    *[
+        {"d": {"results": [{
+            "Id": 9, "FileLeafRef": _NAME, "FileDirRef": f"{_ROOT}/{_FOLDER}",
+            **bad,
+        }]}}
+        for bad in _INVALID_FILE_IDENTITIES
+    ],
+])
+@pytest.mark.parametrize("after_upload", [False, True])
+def test_a_malformed_file_probe_never_seeds_or_merges(
+    payload: Any, after_upload: bool,
+) -> None:
+    key = "afterFileProbe" if after_upload else "beforeFileProbe"
+    summary, calls = _seed(**{key: payload})
+    assert "invalid response" in summary["errors"][0]["error"]
+    assert summary["created"] == [] and summary["skipped"] == []
+    assert _posts(calls, "/items(9)") == []
+    assert len(_posts(calls, "Files/add(")) == int(after_upload)
+
+
+@pytest.mark.parametrize("count,next_link", [(50, None), (0, "next-page"), (1, "next-page")])
+def test_an_incomplete_file_probe_cannot_establish_absence_or_identity(
+    count: int, next_link: str | None,
+) -> None:
+    rows = [
+        {"Id": n + 1, "FileLeafRef": _NAME, "FileDirRef": f"{_ROOT}/other-{n}"}
+        for n in range(count)
+    ]
+    summary, calls = _seed(beforeFileProbe={"d": {"results": rows, "__next": next_link}})
+    assert "incomplete collection" in summary["errors"][0]["error"]
+    assert _posts(calls, "Files/add(") == []
+    assert summary["created"] == [] and summary["skipped"] == []
+
+
+def test_duplicate_file_matches_are_refused() -> None:
+    rows = [
+        {"Id": n, "FileLeafRef": _NAME, "FileDirRef": f"{_ROOT}/{_FOLDER}"}
+        for n in [9, 10]
+    ]
+    summary, calls = _seed(beforeFileProbe={"d": {"results": rows}})
+    assert "ambiguous matches" in summary["errors"][0]["error"]
+    assert _posts(calls, "Files/add(") == []
+    assert summary["created"] == [] and summary["skipped"] == []
+
+
+def test_a_same_named_file_in_another_folder_does_not_skip_the_upload() -> None:
+    row = {"Id": 10, "FileLeafRef": _NAME, "FileDirRef": f"{_ROOT}/other"}
+    summary, calls = _seed(beforeFileProbe={"d": {"results": [row]}})
+    assert summary["errors"] == [] and summary["skipped"] == []
+    assert len(_posts(calls, "Files/add(")) == 1
+    assert summary["created"][0]["id"] == 9
 
 
 def test_a_file_that_does_not_read_back_after_upload_is_reported() -> None:

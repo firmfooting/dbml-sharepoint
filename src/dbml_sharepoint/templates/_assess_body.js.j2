@@ -111,10 +111,11 @@
     // case-insensitively and without a getbytitle 404 (a first deploy has every
     // declared list absent, and the browser paints each 404 red). Null means
     // "enumeration refused"; callers fall back to per-list probing.
+    const malformedNextPage = (page) => page.__next != null && typeof page.__next !== 'string';
     const assessListTitleSet = async () => {
       const pageSize = 5000;
       const r = await probeGet(`web/lists?$select=Title&$top=${pageSize}`);
-      if (!r.ok || !Array.isArray(r.d.results)
+      if (!r.ok || malformedNextPage(r.d) || !Array.isArray(r.d.results)
         || r.d.results.some((row) => !row || typeof row.Title !== 'string')) return null;
       const results = r.d.results;
       if (results.length >= pageSize || (typeof r.d.__next === 'string' && r.d.__next !== '')) return null;
@@ -541,9 +542,10 @@
     // rather than the folder endpoint: that one answers Exists false for a
     // file and for nothing alike. Absence is read from the enumeration
     // above, so a first deploy paints nothing red.
+    const FOLDER_PAGE_SIZE = 2;
     const folderShapePath = (title, name) => {
       const filter = encodeURIComponent(`FileLeafRef eq '${String(name).replace(/'/g, "''")}'`);
-      return `web/lists/getbytitle('${odataName(title)}')/items?$select=Id,FileSystemObjectType,FileLeafRef&$filter=${filter}&$top=2`;
+      return `web/lists/getbytitle('${odataName(title)}')/items?$select=Id,FileSystemObjectType,FileLeafRef&$filter=${filter}&$top=${FOLDER_PAGE_SIZE}`;
     };
     // Every declared folder of every declared library in one request, where
     // this was one request per folder. Handed back per library in declaration
@@ -575,11 +577,14 @@
       for (let at = 0; at < folders.length; at += 1) {
         const rows = shapes[at] || { ok: false, error: 'the batched read did not queue this folder' };
         if (!rows.ok) { unreadable = rows.status ? `HTTP ${rows.status}` : rows.error; break; }
-        if (!Array.isArray(rows.d.results) || rows.d.results.some((row) =>
+        if (malformedNextPage(rows.d) || !Array.isArray(rows.d.results) || rows.d.results.some((row) =>
           !row || ![0, 1].includes(row.FileSystemObjectType))) {
           unreadable = 'missing or malformed folder collection'; break;
         }
         if (rows.d.results.some((row) => row.FileSystemObjectType === 0)) files.push(folders[at]);
+        else if (rows.d.results.length >= FOLDER_PAGE_SIZE || rows.d.__next) {
+          unreadable = 'incomplete folder collection'; break;
+        }
       }
       if (unreadable !== null) {
         // NOT-ASSESSABLE rather than WARN. The question is whether a file
@@ -619,7 +624,7 @@
       const live = columnShapes.get(title)
         || { ok: false, error: 'the batched read did not queue this list' };
       // A malformed collection cannot establish that declared columns are absent.
-      if (live.ok && (!Array.isArray(live.d.results)
+      if (live.ok && (malformedNextPage(live.d) || !Array.isArray(live.d.results)
         || live.d.results.some((row) => !row || typeof row.InternalName !== 'string'))) {
         return { ok: false, error: 'missing or malformed column collection' };
       }
@@ -852,11 +857,13 @@
     };
     await renameFinding('permission level', 'rename_level', TARGETS.level_renames || [], async () => {
       const r = await probeGet('web/roledefinitions?$select=Name,Description&$top=5000');
-      return r.ok && r.d && Array.isArray(r.d.results) ? r.d.results : null;
+      return r.ok && !malformedNextPage(r.d) && !r.d.__next && Array.isArray(r.d.results)
+        && r.d.results.length < 5000 ? r.d.results : null;
     }, (row) => row.Name);
     await renameFinding('site group', 'rename_group', TARGETS.group_renames || [], async () => {
       const r = await probeGet('web/sitegroups?$select=Title,Description&$top=5000');
-      return r.ok && r.d && Array.isArray(r.d.results) ? r.d.results : null;
+      return r.ok && !malformedNextPage(r.d) && !r.d.__next && Array.isArray(r.d.results)
+        && r.d.results.length < 5000 ? r.d.results : null;
     }, (row) => row.Title);
 
     // Property-surface probes against the first EXISTING declared list, else

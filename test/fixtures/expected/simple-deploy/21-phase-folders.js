@@ -74,15 +74,27 @@
     const j = await r.json();
     return j && j.d && j.d.Exists ? j.d : null;
   }
+  const FOLDER_PAGE_SIZE = 2;
   async function folderItemShape(listTitle, name) {
     const filter = encodeURIComponent(`FileLeafRef eq '${String(name).replace(/'/g, "''")}'`);
-    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/items?$select=Id,FileSystemObjectType,FileLeafRef&$filter=${filter}&$top=2`), {
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/items?$select=Id,FileSystemObjectType,FileLeafRef&$filter=${filter}&$top=${FOLDER_PAGE_SIZE}`), {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
     if (!r.ok) throw new Error(`folder item probe failed: HTTP ${r.status} ${spError(await r.text())}`);
     const j = await r.json();
-    const rows = (j && j.d && j.d.results) || [];
-    return rows.length ? rows[0] : null;
+    const page = j && j.d;
+    if (!page || !Array.isArray(page.results) || page.results.some((row) =>
+      !row || ![0, FOLDER_OBJECT_TYPE].includes(row.FileSystemObjectType))) {
+      throw new Error('folder item probe failed: missing or malformed folder collection');
+    }
+    const next = validatedNextPage(page, 'folder item probe');
+    // Assessment uses the same collection rule; row order cannot change a collision.
+    const file = page.results.find((row) => row.FileSystemObjectType === 0);
+    if (file) return file;
+    if (page.results.length >= FOLDER_PAGE_SIZE || next) {
+      throw new Error('folder item probe failed: incomplete folder collection');
+    }
+    return page.results.length ? page.results[0] : null;
   }
   for (const list of SCHEMA.lists.filter((l) => l.is_library && l.folders.length)) {
     let rootUrl = null;
@@ -107,11 +119,14 @@
     for (const name of list.folders) {
       const label = `${list.title}/${name}`;
       try {
+        const item = await folderItemShape(list.title, name);
+        if (item && item.FileSystemObjectType !== FOLDER_OBJECT_TYPE) {
+          throw new Error(`'${name}' is a file where a folder was declared (FileSystemObjectType ${item.FileSystemObjectType}); nothing was written`);
+        }
         if (await readFolder(`${rootUrl}/${name}`)) {
           // Present already: verify it is a folder and leave its contents alone.
-          const item = await folderItemShape(list.title, name);
-          if (item && item.FileSystemObjectType !== FOLDER_OBJECT_TYPE) {
-            throw new Error(`'${name}' is a file where a folder was declared (FileSystemObjectType ${item.FileSystemObjectType}); nothing was written`);
+          if (!item) {
+            throw new Error(`'${name}' exists but its folder item did not read back; nothing was written`);
           }
           summary.foldersVerified.push(label);
         } else {

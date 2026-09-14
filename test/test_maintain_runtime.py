@@ -201,10 +201,16 @@ _HARNESS = textwrap.dedent(r"""
         return reply(200, { d: fieldView(f) });
       }
       if (u.includes('/fields?')) {
+        if (FLAGS.pageFields && !u.includes('field_page=2')) {
+          return reply(200, { d: { results: [], __next: String(url) + '&field_page=2' } });
+        }
         const live = state.fields.filter((f) => !f.deleted).map(fieldView);
-        return reply(200, { d: { results: live } });
+        return reply(200, { d: { results: live, __next: FLAGS.fieldNext } });
       }
       if (u.includes('/items?')) {
+        if (FLAGS.pageItems && !u.includes('item_page=2')) {
+          return reply(200, { d: { results: [], __next: String(url) + '&item_page=2' } });
+        }
         if (FLAGS.itemsStatus) {
           return reply(FLAGS.itemsStatus, { error: { message: { value: 'items refused' } } });
         }
@@ -218,7 +224,7 @@ _HARNESS = textwrap.dedent(r"""
         // $top is HONOURED: the final check asks for one row, and a mock
         // answering every row would let a script reading results[1] pass.
         const top = Number((/\$top=(\d+)/.exec(u) || [])[1]) || state.items.length;
-        return reply(200, { d: { results: state.items.slice(0, top) } });
+        return reply(200, { d: { results: state.items.slice(0, top), __next: FLAGS.itemNext } });
       }
       const recycled = /\/items\((\d+)\)\/recycle\(\)/.exec(u);
       if (recycled && method === 'POST') {
@@ -1478,3 +1484,58 @@ def test_a_refused_item_recycle_stops_before_the_list_is_deleted() -> None:
     assert summary["deleted"] is None
     assert _deletes(calls) == []
     assert "recycle of item 1 failed" in summary["errors"][0]["error"]
+
+
+@pytest.mark.parametrize("continuation", [False, 0, True, 1, [], {}])
+def test_malformed_field_continuation_stops_before_maintenance(
+    continuation: Any,
+) -> None:
+    js = generate_protection_js(
+        site_url=SITE, list_title=LIST_SLUG, list_path=LIST_PATH,
+        generated_at=GENERATED_AT,
+    )
+    script = _wrap(js, _config(), ["unlock"], {"fieldNext": continuation})
+    script = script.rstrip().removesuffix(";") + (
+        ".catch((err) => { console.log('__ERROR__' + err.message);"
+        "console.log('__CALLS__' + JSON.stringify(calls)); });"
+    )
+    output = _run(script)
+    assert "malformed OData __next" in output
+    calls_line = next(line for line in output.splitlines() if line.startswith("__CALLS__"))
+    assert _writes(_tag(calls_line, "__CALLS__")) == []
+
+
+@pytest.mark.parametrize("continuation", [False, 0, True, 1, [], {}])
+def test_malformed_value_continuation_requires_non_empty_confirmation(
+    continuation: Any,
+) -> None:
+    summary, calls, prompts, _tables = _columns(
+        _config(), ["ColumnTwo", "ColumnTwo", ""], {"itemNext": continuation},
+    )
+    assert any("could not be read" in p and "DELETE NON-EMPTY" in p for p in prompts)
+    assert any("malformed OData __next" in p for p in prompts)
+    assert _writes(calls) == []
+    assert summary["skipped"] == [{"column": "ColumnTwo", "reason": "not-confirmed"}]
+
+
+@pytest.mark.parametrize("continuation", [None, ""])
+def test_valid_maintenance_terminators_allow_empty_column_deletion(continuation: Any) -> None:
+    summary, calls, prompts, _tables = _columns(
+        _config(), ["ColumnTwo", "ColumnTwo", ""],
+        {"fieldNext": continuation, "itemNext": continuation},
+    )
+    assert summary["deleted"] == ["ColumnTwo"]
+    assert len(_deletes(calls)) == 1
+    assert not any("DELETE NON-EMPTY" in p for p in prompts)
+
+
+
+def test_later_maintenance_pages_find_columns_and_their_values() -> None:
+    summary, calls, prompts, tables = _columns(
+        _config(items=[{"Id": 1, "ColumnTwo": 42}]),
+        ["ColumnTwo", "ColumnTwo", ""], {"pageFields": True, "pageItems": True},
+    )
+    assert any("holds values" in p and "DELETE NON-EMPTY" in p for p in prompts)
+    assert any(table == [{"item": 1, "value": 42}] for table in tables)
+    assert _writes(calls) == []
+    assert summary["skipped"] == [{"column": "ColumnTwo", "reason": "not-confirmed"}]

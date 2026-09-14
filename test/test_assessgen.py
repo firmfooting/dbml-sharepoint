@@ -27,6 +27,7 @@ from dbml_sharepoint.model.conditions import Leaf
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
+    CustomPermissionLevel,
     EntitySection,
     ListPermissionPolicy,
     MappingBundle,
@@ -1379,7 +1380,9 @@ def test_a_column_read_that_did_not_answer_reports_no_pending_constraints(
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 @pytest.mark.parametrize("payload", [{}, {"results": None}, {"results": {}},
-                                     {"results": [None]}, {"results": [{}]}])
+                                     {"results": [None]}, {"results": [{}]},
+                                     *[{"results": [], "__next": value}
+                                       for value in [False, True, 0, 1, [], {}]]])
 def test_malformed_column_collections_do_not_pass_unique_checks(payload: Any) -> None:
     harness = _fields_harness([]).replace(
         "const answer = { results: projected };",
@@ -1394,7 +1397,9 @@ def test_malformed_column_collections_do_not_pass_unique_checks(payload: Any) ->
 @pytest.mark.parametrize("payload", [{}, {"results": None}, {"results": {}},
                                      {"results": [None]}, {"results": [{}]},
                                      {"results": [], "__next": "next-page"},
-                                     {"results": [{"Title": "Other"}] * 5000}])
+                                     {"results": [{"Title": "Other"}] * 5000},
+                                     *[{"results": [], "__next": value}
+                                       for value in [False, True, 0, 1, [], {}]]])
 def test_malformed_list_collections_do_not_establish_absence(payload: Any) -> None:
     harness = _fields_harness([
         {"InternalName": "Reference", "Title": "Reference", "EnforceUniqueValues": False},
@@ -1411,7 +1416,9 @@ def test_malformed_list_collections_do_not_establish_absence(payload: Any) -> No
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 @pytest.mark.parametrize("payload", [{}, {"results": None}, {"results": {}},
-                                     {"results": [None]}, {"results": [{}]}])
+                                     {"results": [None]}, {"results": [{}]},
+                                     *[{"results": [], "__next": value}
+                                       for value in [False, True, 0, 1, [], {}]]])
 def test_malformed_folder_collections_do_not_establish_absence(payload: Any) -> None:
     harness = _folder_harness(None)
     marker = "    return { d: { results: [] } };"
@@ -1422,14 +1429,69 @@ def test_malformed_folder_collections_do_not_establish_absence(payload: Any) -> 
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_folder_assessment_checks_every_returned_match() -> None:
+@pytest.mark.parametrize("types", [[1, 0], [0, 1]])
+def test_folder_assessment_checks_every_returned_match(types: list[int]) -> None:
+    rows = [{"FileSystemObjectType": value} for value in types]
     harness = _folder_harness(None).replace(
         "    return { d: { results: [] } };",
-        "    return { d: { results: [{FileSystemObjectType: 1},"
-        " {FileSystemObjectType: 0}] } };", 1,
+        f"    return {{ d: {{ results: {json.dumps(rows)} }} }};", 1,
     )
     summary = _run_assess(_library_markers(), harness=harness, js=_library_assess_js())
     assert _levels(summary)["folder_shape:APP_Task"] == "BLOCKED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("payload", [
+    {"results": [{"FileSystemObjectType": 1}] * 2},
+    {"results": [], "__next": "next-page"},
+])
+def test_incomplete_folder_collections_do_not_pass(payload: Any) -> None:
+    harness = _folder_harness(None).replace(
+        "    return { d: { results: [] } };",
+        f"    return {{ d: {json.dumps(payload)} }};", 1,
+    )
+    summary = _run_assess(_library_markers(), harness=harness, js=_library_assess_js())
+    assert _levels(summary)["folder_shape:APP_Task"] == "NOT-ASSESSABLE"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("next_page", [None, ""])
+def test_column_collection_accepts_valid_pagination_terminators(next_page: Any) -> None:
+    harness = _fields_harness([]).replace(
+        "const answer = { results: projected };",
+        f"const answer = {{ results: projected, __next: {json.dumps(next_page)} }};",
+    )
+    summary = _run_unique_assess(harness=harness)
+    assert _levels(summary)["pending_unique:APP_Asset"] == "PASS"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("next_page", [False, True, 0, 1, [], {}, "next-page", None, ""])
+def test_principal_rename_checks_require_complete_enumerations(next_page: Any) -> None:
+    schema, _ = _unique_pack()
+    bundle = make_bundle(entities=["Asset"], permissions=PermissionsConfig(
+        default_policy=None, overrides={},
+        levels=[CustomPermissionLevel(
+            name="Submit", description="Add", base_permissions=["AddListItems"],
+            previous_names=("Old Submit",),
+        )],
+        groups=[SiteGroup(
+            name="Handlers", description="Handlers", owner_group="Site Owners",
+            allow_members_edit_membership=False, allow_request_to_join_leave=False,
+            auto_accept_request_to_join_leave=False, only_allow_members_view_membership=False,
+            previous_names=("Old Handlers",),
+        )],
+    ))
+    marker = "  if (path.toLowerCase().endsWith('/regionalsettings/timezone')) {"
+    harness = _ASSESS_HARNESS.replace(marker, (
+        "  if (path.endsWith('/roledefinitions') || path.endsWith('/sitegroups')) {\n"
+        f"    return respond(200, {{ d: {{ results: [], __next: {json.dumps(next_page)} }} }});\n"
+        "  }\n" + marker
+    ))
+    summary = _run_unique_assess(harness=harness, pack=(schema, bundle))
+    expected = "PASS" if next_page is None or next_page == "" else "NOT-ASSESSABLE"
+    assert _levels(summary)["rename_level:Submit"] == expected
+    assert _levels(summary)["rename_group:Handlers"] == expected
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

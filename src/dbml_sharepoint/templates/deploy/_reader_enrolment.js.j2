@@ -328,6 +328,7 @@
                 `the role-assignment enumeration for '${grp.name}' returned an invalid response`,
               );
             }
+            const next = validatedNextPage(asgJson.d, `Role-assignment enumeration for '${grp.name}'`);
             for (const row of asgJson.d.results) {
               if (Number(row.PrincipalId) !== Number(groupId)) continue;
               // Same tolerance, and same reason, as countWebAssignmentsUsing
@@ -354,7 +355,7 @@
                 heldBindings.set(String(b.Id), typeof b.Name === 'string' ? b.Name : '');
               }
             }
-            asgUrl = asgJson.d.__next || null;
+            asgUrl = next;
           }
         }
 
@@ -544,8 +545,9 @@
             if (!membersJson.d || !Array.isArray(membersJson.d.results)) {
               throw new Error(`membership probe for '${grp.name}' returned an invalid response`);
             }
+            const next = validatedNextPage(membersJson.d, `Membership probe for '${grp.name}'`);
             found.push(...membersJson.d.results);
-            membersUrl = membersJson.d.__next || null;
+            membersUrl = next;
           }
           return found;
         };

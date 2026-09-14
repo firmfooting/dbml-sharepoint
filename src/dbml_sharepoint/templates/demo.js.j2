@@ -52,7 +52,16 @@
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
     if (!r.ok) throw new Error(`existence probe on '${listTitle}' failed (HTTP ${r.status})`);
-    const rows = (await r.json()).d.results || [];
+    const j = await r.json();
+    const d = j && j.d;
+    const rows = d && d.results;
+    if (!Array.isArray(rows) || (d.__next != null && typeof d.__next !== 'string')
+      || rows.some((row) => !row || !Number.isInteger(row.Id) || row.Id <= 0)) {
+      throw new Error(`existence probe on '${listTitle}' returned an invalid response`);
+    }
+    if (!rows.length && typeof d.__next === 'string' && d.__next !== '') {
+      throw new Error(`existence probe on '${listTitle}' returned an incomplete collection`);
+    }
     return rows.length > 0 ? rows[0].Id : null;
   }
 
@@ -182,14 +191,28 @@
     return rootFolders.get(listTitle);
   }
   async function findFile(listTitle, folderUrl, name) {
+    const pageSize = 50;
     const filter = encodeURIComponent(`FileLeafRef eq '${String(name).replace(/'/g, "''")}'`);
-    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/items?$select=Id,FileLeafRef,FileDirRef&$filter=${filter}&$top=50`), {
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/items?$select=Id,FileLeafRef,FileDirRef&$filter=${filter}&$top=${pageSize}`), {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
     if (!r.ok) throw new Error(`existence probe on '${listTitle}' failed (HTTP ${r.status})`);
-    const rows = (await r.json()).d.results || [];
+    const j = await r.json();
+    const d = j && j.d;
+    const rows = d && d.results;
+    const invalid = `file existence probe on '${listTitle}' returned an invalid response`;
+    if (!Array.isArray(rows) || (d.__next != null && typeof d.__next !== 'string')
+      || rows.some((row) => !row || !Number.isInteger(row.Id) || row.Id <= 0
+        || typeof row.FileDirRef !== 'string'
+        || !row.FileDirRef.startsWith('/'))) throw new Error(invalid);
     // The name filter alone would match the same name in another folder.
-    return rows.find((row) => row.FileDirRef === folderUrl) || null;
+    const matches = rows.filter((row) => row.FileDirRef === folderUrl);
+    if (matches.length > 1) throw new Error(`file existence probe on '${listTitle}' returned ambiguous matches`);
+    // A capped or paged collection cannot establish absence or uniqueness.
+    if (rows.length >= pageSize || (typeof d.__next === 'string' && d.__next !== '')) {
+      throw new Error(`file existence probe on '${listTitle}' returned an incomplete collection`);
+    }
+    return matches[0] || null;
   }
   // A rich Note does not return the bytes it was given. MEASURED 2026-09-13,
   // `text.item-value.rich-note-roundtrip` and `text.item-value.rich-note-colon`

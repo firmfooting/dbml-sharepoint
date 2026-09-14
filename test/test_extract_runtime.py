@@ -71,7 +71,11 @@ _HARNESS = textwrap.dedent(r"""
         }
         return reply(200, { d: CONFIG.list });
       }
-      if (u.includes('/fields?')) return results(CONFIG.fields);
+      if (u.includes('/fields?')) {
+        const d = { results: CONFIG.fields, ...CONFIG.fieldPage };
+        return reply(200, { d });
+      }
+      if (u.includes('__fields_page=2')) return results(CONFIG.laterFields);
       if (u.includes('/views?')) return results([]);
       if (u.includes('/contenttypes?')) return results([]);
       return reply(400, { error: { message: { value: `unmocked ${u}` } } });
@@ -163,3 +167,41 @@ def test_a_list_that_reads_cleanly_still_extracts() -> None:
     assert "__THREW__" not in out, out
     assert result["lists"][0]["title"] == LIST_TITLE
     assert result["lists"][0]["fields"] == ['<Field Name="Title" Type="Text" />']
+
+
+@pytest.mark.parametrize("continuation", [False, 0, True, 1, [], {}])
+def test_malformed_continuation_aborts_extraction(
+    continuation: Any, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config()
+    config["fieldPage"] = {"__next": continuation}
+    monkeypatch.setattr(__name__ + "._config", lambda: config)
+    result, output = _run_script([LIST_PATH])
+    assert result["aborted"] == "list-read-failed"
+    assert "malformed OData __next" in output
+    assert "lists" not in result
+
+
+@pytest.mark.parametrize("page", [{}, {"__next": None}, {"__next": ""}])
+def test_valid_continuation_terminators_preserve_extraction(
+    page: dict[str, Any], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config()
+    config["fieldPage"] = page
+    monkeypatch.setattr(__name__ + "._config", lambda: config)
+    result, output = _run_script([LIST_PATH])
+    assert "__THREW__" not in output
+    assert result["lists"][0]["fields"] == ['<Field Name="Title" Type="Text" />']
+
+
+def test_extraction_includes_fields_from_later_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = _config()
+    config["fieldPage"] = {"__next": SITE + "/_api/__fields_page=2"}
+    schema = '<Field Name="Later" Type="Text" />'
+    config["laterFields"] = [{"InternalName": "Later", "SchemaXml": schema}]
+    monkeypatch.setattr(__name__ + "._config", lambda: config)
+    result, output = _run_script([LIST_PATH])
+    assert "__THREW__" not in output
+    assert result["lists"][0]["fields"] == [
+        '<Field Name="Title" Type="Text" />', schema,
+    ]

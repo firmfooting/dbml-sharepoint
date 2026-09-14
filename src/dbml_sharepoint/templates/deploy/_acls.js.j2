@@ -78,10 +78,11 @@
           throw new Error(`item/folder permission-scope enumeration failed: HTTP ${itemsResp.status} ${text}`);
         }
         const itemsJson = await itemsResp.json();
+        const next = validatedNextPage(itemsJson.d, `Item/folder permission-scope enumeration for '${listTitle}'`);
         for (const item of ((itemsJson.d && itemsJson.d.results) || [])) {
           if (item.HasUniqueRoleAssignments) uniqueScopeIds.push(item.Id);
         }
-        itemsUrl = (itemsJson.d && itemsJson.d.__next) || null;
+        itemsUrl = next;
       }
       return uniqueScopeIds;
     }
@@ -250,8 +251,9 @@
             });
             if (!pageResp.ok) { ok = false; break; }
             const pageJson = await pageResp.json();
+            const next = validatedNextPage(pageJson.d, `Role assignment enumeration for '${la.list}'`);
             collected.push(...((pageJson.d && pageJson.d.results) || []));
-            pageUrl = (pageJson.d && pageJson.d.__next) || null;
+            pageUrl = next;
           }
           if (ok) existingAssignments = collected;
         }
@@ -342,8 +344,9 @@
                 throw new Error(`role assignment enumeration failed: HTTP ${allResp.status} ${text}`);
               }
               const allJson = await allResp.json();
+              const next = validatedNextPage(allJson.d, `Role assignment enumeration for '${la.list}'`);
               allAssignments.push(...((allJson.d && allJson.d.results) || []));
-              assignmentsUrl = (allJson.d && allJson.d.__next) || null;
+              assignmentsUrl = next;
             }
           }
           // The snapshot above may have been taken before the adds; either

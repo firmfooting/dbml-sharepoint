@@ -242,6 +242,8 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
     };
     const BROWSER_OFFSET = 0;
     const LISTS = [];
+    const LIST_NEXT = undefined;
+    const EXPECT_NO_WRITES = false;
     const HIDDEN_READBACK = true;
     const ACCEPT_ALL = false;
     const LAG_DAYS = 0;
@@ -323,7 +325,7 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
           Information: { Bias: 0, StandardBias: 0, DaylightBias: 0 } } });
       }
       if (path.endsWith('/web/lists') && method === 'GET') {
-        return respond(200, { d: { results: LISTS } });
+        return respond(200, { d: { results: LISTS, __next: LIST_NEXT } });
       }
       if (path.endsWith('/web/lists') && method === 'POST') {
         LISTS.push({ Title: body.Title, Hidden: true, Description: body.Description });
@@ -379,6 +381,12 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
       return respond(404, { error: { message: { value: `unmocked ${method} ${u}` } } });
     };
     globalThis.__calls = calls;
+    globalThis.__assertNoWrites = () => {
+      const writes = calls.filter((c) => c.method !== 'GET' && !c.url.includes('contextinfo'));
+      if (EXPECT_NO_WRITES && writes.length) {
+        throw new Error('unexpected write with an incomplete list inventory');
+      }
+    };
 """)
 
 
@@ -394,7 +402,8 @@ def _run_verify(js: str | None = None, **knobs: str) -> dict[str, Any]:
     script = js if js is not None else _clock_verify_js()
     assert script.count("})();") == 1, "the IIFE terminator is no longer unique"
     wrapped = script.replace(
-        "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+        "})();", "}))().then(r => { globalThis.__assertNoWrites(); "
+        "console.log('__RESULT__' + JSON.stringify(r)); })",
     ).replace("(async () => {", "((async () => {", 1)
     output = run_node(harness + "\n" + wrapped)
     line = next((ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None)
@@ -477,3 +486,21 @@ if __name__ == "__main__":  # pragma: no cover
     _target = EXPECTED / "simple-verify.js"
     write_golden(_target, _simple_verify_js())
     print(f"wrote {_target}")  # noqa: T201
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("continuation", ["false", "0", "true", "1", "[]", "{}", "'next-page'"])
+def test_an_unestablished_list_inventory_stops_verify_before_any_write(
+    continuation: str,
+) -> None:
+    summary = _run_verify(LIST_NEXT=continuation, EXPECT_NO_WRITES="true")
+    assert summary["verdict"] == "NOT-VERIFIED"
+    assert summary["aborted"] == "lists-unreadable"
+    assert _levels(summary)["scratch_list"] == "NOT-ASSESSABLE"
+    assert "malformed or incomplete" in summary["findings"][-1]["detail"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("continuation", ["undefined", "null", "''"])
+def test_valid_list_inventory_terminators_preserve_verify(continuation: str) -> None:
+    assert _run_verify(LIST_NEXT=continuation)["verdict"] == "VERIFIED"
