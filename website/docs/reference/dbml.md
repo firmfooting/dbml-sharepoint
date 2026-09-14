@@ -305,9 +305,15 @@ to be the broken ones, are in the
 
 Nothing against the 12-join view ceiling or the list view threshold. A
 multi-value Choice is enum-typed with no `ref`, so it is not join-bearing.
-Verified in-repo by a test rather than assumed. Multi-value **Lookup** and
-**Person** are a different feature with a different cost, are not
-implemented, and `person[]` is still an unknown type.
+Verified in-repo by a test rather than assumed.
+
+A multi-value **Lookup** (`int[]` carrying a `ref`) is a different feature
+with a different cost: it is join-bearing and costs exactly one join, the
+same as a single-value lookup, measured 2026-09-04 and pinned by
+`test/test_joins.py`. See [relationships and
+lookups](../concepts/relationships.md#multi-value-lookups).
+Multi-value **Person** is not implemented and `person[]` is still an unknown
+type.
 
 ## References (lookups)
 
@@ -315,9 +321,9 @@ implemented, and `person[]` is still an unknown type.
 Ref: Action.RiskId > Risk.Id
 ```
 
-Refs become same-site Lookup columns. Self-references and reference
-cycles are handled by deferring those columns to a dedicated phase after
-all lists exist. A lookup's target list must live in the same site.
+Refs become same-site Lookup columns. Self-references, and the lookups on
+one side of a reference cycle, are deferred to a dedicated phase after all
+lists exist. A lookup's target list must live in the same site.
 Microsoft's [lookup column
 guidance](https://support.microsoft.com/en-us/sharepoint/lists/data-and-lists/create-list-relationships-by-using-lookup-columns)
 says so, and [SharePoint limits you must
@@ -325,10 +331,21 @@ know](../concepts/sharepoint-limits.md) records how far that is sourced.
 Cross-site relationships use the mapping's `cross_site_reference_columns`
 pattern (a Choice + URL pair) instead.
 
+The cardinality symbol is not read. `>`, `<`, `-` and `<>` all deploy the
+same lookup on the declaring list, no junction list is created for `<>`, and
+nothing warns. The symbols do not decide arity either: a lookup is
+single-value unless the declaring column's type carries `[]`, which is the
+only thing that makes it a `LookupMulti`. Delete behaviour, relationship
+enforcement and a cross-web target are not settable at all.
+
 Every Ref also spends part of the per-view join budget and the target
 list's index budget. See [SharePoint limits you must
 know](../concepts/sharepoint-limits.md) before a schema accumulates more
 refs and person columns than a single view can render.
+
+[Relationships and lookups](../concepts/relationships.md) is the full
+account: the per-symbol table, what the deploy actually writes, how the
+display column is chosen, and the knobs that do not exist.
 
 ## Indexes
 

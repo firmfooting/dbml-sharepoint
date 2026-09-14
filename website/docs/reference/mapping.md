@@ -1440,11 +1440,13 @@ touched, and neither is any column of an entity with no block at all.
 error; `column_validation` currently includes them, so a calculated column
 picks up a `: cleared` line in the manifest.
 
-One thing `exact` does **not** reach: a **deferred lookup**, a circular or
-self-referencing lookup created in Phase 2 rather than Phase 1. A
-declaration on one deploys correctly, but it is absent from the manifest's
-Form visibility section, so the manifest under-reports what will be written.
-Check the declaration itself for those columns rather than the manifest.
+`exact` reaches a **deferred lookup** as well, the circular or
+self-referencing lookup created in Phase 2 rather than Phase 1. The deploy
+computes its form visibility and its validation with the same calls it uses
+for a Phase 1 column, and the manifest lists both. It did not always: the
+manifest's sections iterated the Phase 1 fields alone, so a declaration on a
+deferred lookup deployed while the review artefact reported "(none
+declared)".
 
 ## Migrating from `hidden_on_forms` / `hidden_on_display`
 

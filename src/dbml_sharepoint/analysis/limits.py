@@ -470,3 +470,21 @@ INDEX_CHANGE_CEILING = 20_000
 # run measures one pair (a child subweb, or the web `OTHER_WEB_URL` names). So a
 # refusal bounds the rule at the closest two webs can be, and an acceptance relaxes it
 # no further than the topology that was measured.
+
+# ------------------------------------------- lookup write-time enforcement
+
+# NOT A CEILING AND NOT A CONSTANT, guarding nothing: it is here because
+# `website/docs/concepts/relationships.md` publishes the question.
+#
+# NOT DOCUMENTED: whether an item write whose Lookup id names no row in the
+# target list is refused, stored, or stored empty. Searched Microsoft Learn
+# and Microsoft Support 2026-09-14. The `Field` element gives
+# `RelationshipDeleteBehavior`, its `None` default and the `Indexed` and `Mult`
+# conditions on its other two values, `FieldLookup.RelationshipDeleteBehavior`
+# and `RelationshipDeleteBehaviorType` are bare definitions, and the Support
+# page cited above describes the column pane. All of it is the DELETE side.
+#
+# PARKED until `field.lookup.absent-target-id-write` and `-readback` run on
+# `test/manual/projected-lookup-probe.js`, behind
+# `field.lookup.control-present-target-id-write-accepted` and
+# `field.lookup.control-absent-target-id-names-no-row`.
