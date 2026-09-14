@@ -1,6 +1,6 @@
 ---
 title: cli
-sidebar_position: 47
+sidebar_position: 49
 ---
 
 # `dbml_sharepoint.cli`
@@ -37,100 +37,6 @@ Interactively copy a solution template into a new project.
 The same wizard a bare `dbml-sharepoint` runs, named so it can be asked
 for explicitly and so it appears in `--help`.
 
-### `NO_SAFE_DEFAULT`
-
-```python
-NO_SAFE_DEFAULT = frozenset({'site_url'})
-```
-
-### `validate_site_url`
-
-```python
-def validate_site_url(site_url: str) -> str
-```
-
-Reject a malformed or non-https ``--site-url``, and return it cleaned.
-
-The URL is interpolated into the generated deploy.js.txt (as ``SITE_URL`` and in
-the site-match preflight comparison), so it must be a well-formed absolute
-``https://`` URL with a host. Catches typos (``http://``, a bare path, a
-missing host) before the operator pastes into a privileged console. Shared
-by the core CLI and any extension project CLIs that compose it. Raises
-``typer.BadParameter`` (exit 2) on failure.
-
-RETURNS the URL with any query or fragment removed, rather than refusing
-it. SharePoint's own **Copy link** puts `?web=1` on the clipboard, so the
-most common paste carried one, and nothing downstream stripped it: the
-reporting pack bakes this value into the Power Query `SiteRoot` and the
-SQLCMD `SiteUrl`, producing endpoints like
-`https://tenant/sites/X?web=1/_api/web`. Every consumer reads the value
-`execute_build` holds after this call, so cleaning it once here reaches
-all of them.
-
-Normalising rather than refusing follows the precedent already on this
-branch -- `_SITE_ROOT_M` trims a pasted LIST url back to the site root
-rather than making the operator edit it. But a silent rewrite of what
-somebody typed is its own defect, so the caller is expected to compare
-and say so; see `_site_url_notice`.
-
-### `validate_time_zone`
-
-```python
-def validate_time_zone(time_zone: str) -> str
-```
-
-Refuse a ``--time-zone`` the IANA database does not declare.
-
-The reporting pack derives the site's daylight-saving transitions from
-the name, so a name the database does not declare has nothing to derive
-from, and a name that is merely close (`Melbourne`, `australia/melbourne`)
-is refused with the spelling it probably meant rather than guessed at.
-Shared by `build`, `report` and the wizard, so the three cannot come to
-disagree about what a usable zone is. Raises ``typer.BadParameter``
-(exit 2) on failure, the same contract as `validate_site_url`.
-
-Returned unchanged when it passes: nothing about a zone name needs
-cleaning, and a silent rewrite of what somebody typed is the defect
-`_site_url_notice` exists to report.
-
-### `EnterpriseReaderDeclined`
-
-```python
-@dataclass(frozen=True)
-class EnterpriseReaderDeclined:
-```
-
-Sentinel: the operator was asked and chose nobody.
-
-`execute_build`'s `enterprise_reader` parameter carries three states, not
-two -- unset (no flag, no wizard answer, ``None``), this sentinel
-(explicitly nobody), and a UPN (``str``). Only the unset state is a
-default a future ``dbml-sharepoint.env`` may fill; this one must survive
-untouched, because it is what the wizard sends for a deliberate blank
-answer at `_ask_enterprise_reader`. A bare `object()` would work at
-runtime but repr as an unreadable address; this dataclass gives it a
-name instead.
-
-### `ENTERPRISE_READER_DECLINED`
-
-```python
-ENTERPRISE_READER_DECLINED = ENTERPRISE_READER_DECLINED
-```
-
-### `validate_enterprise_reader`
-
-```python
-def validate_enterprise_reader(address: str) -> None
-```
-
-Refuse anything that is not a plain UPN.
-
-The `|` check is the one doing real work. A claims login name --
-`i:0#.f|membership|svc@example.org` -- contains an `@` and would pass a
-naive check, then hand `web/ensureuser` a principal other than the user
-it appears to name. Refusing the character outright is cheaper than
-parsing claims, and no legitimate UPN contains one.
-
 ### `build`
 
 ```python
@@ -145,53 +51,6 @@ the defaults are a convenience for a person at a terminal, and
 CLIs compose. Those callers know exactly which files they mean, and a
 path that silently came from the working directory would be a surprise
 in a library call.
-
-### `UnwiredEnvSettingError`
-
-An `ENV_SETTINGS` entry whose `parameter` `_resolve_env_settings`
-does not know how to apply.
-
-Not a build-time failure a consumer's file can cause -- this fires only
-when a contributor adds a registry entry without also teaching
-`_resolve_env_settings` how to use it, so it is a programming error, not
-an `EnvFileError`. It is still raised rather than logged and swallowed:
-a contributor who adds the second entry gets a loud failure the moment a
-build actually exercises the key, rather than a build that succeeds
-while quietly discarding what the file asked for.
-
-### `execute_build`
-
-```python
-def execute_build(*, schema: pathlib.Path, mapping: pathlib.Path, release: pathlib.Path, site_url: str, site_role: str, out: pathlib.Path = Path('build'), dry_run: bool = False, seed: bool = False, time_zone: str | None = None, extension: str | None = None, enterprise_reader: str | dbml_sharepoint.cli.EnterpriseReaderDeclined | None = None, env_file: pathlib.Path | None = None, deployment_log_list: str | None = None, deployment_log_change_list: str | None = None, deployment_log_site: str | None = None, change_log_list: str | None = None, no_sidecars: bool = False) -> None
-```
-
-The `build` pipeline, callable without going through typer.
-
-Extracted so the wizard can run exactly the same build the documented
-flags run, rather than growing a second implementation that drifts. The
-wizard is a different front end onto this, not a different builder.
-
-Still raises `typer.Exit` on refusal: the exit codes are the documented
-contract (2 for misuse, 1 for a refused build), and re-mapping them to
-an exception of its own here would give the wizard a second vocabulary
-for the same failures. The wizard catches it.
-
-`enterprise_reader` carries three states: ``None`` (unset -- no flag was
-given), `EnterpriseReaderDeclined` (the operator was asked and said
-nobody), or a UPN. `env_file`, when given, is a `dbml-sharepoint.env`
-ALREADY resolved to a path by the caller (`build` resolves the default
-location the same way it resolves `--schema`, `--mapping` and
-`--release`; this function does no discovery of its own). When the file
-supplies a value for a setting that is still unset, that value is used;
-an explicit `enterprise_reader` -- a flag or the declined sentinel --
-always wins over the file, because both mean the operator already
-decided.
-
-`time_zone` is the site's IANA zone, a fact about the site the way
-`site_url` is, and it is REQUIRED: ``None`` here is only "no flag was
-given", and a build refuses once the env file has also had its say and
-still named none. It defaults to ``None`` rather than being a required
-keyword so the file can supply it, the same shape as `enterprise_reader`.
 
 ### `validate`
 
@@ -365,19 +224,6 @@ This is a SCAFFOLDING tool, not a lossless round-trip. What the read
 carries is recovered; everything else is itemised in the
 EXTRACTION-NOTES.md written beside the output. Read that file before
 editing the schema, and again before deploying anything.
-
-### `execute_extraction`
-
-```python
-def execute_extraction(source: pathlib.Path, *, out: pathlib.Path | None = None, entity: str | None = None, prefix: str = 'EX_', project: str | None = None, force: bool = False) -> None
-```
-
-One extraction, from a download to a written project directory.
-
-Shared by the `extract` command and the interactive flow, for the same
-reason `execute_build` is shared with the template wizard: the wizard
-must not be able to produce anything the documented flags could not.
-Refusals leave through `typer.Exit`, which both callers understand.
 
 ### `version`
 

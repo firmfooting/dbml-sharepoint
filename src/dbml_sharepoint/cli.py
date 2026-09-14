@@ -3,32 +3,21 @@
 import datetime as dt
 from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import dataclass
 from difflib import get_close_matches
 from pathlib import Path
 from textwrap import wrap
-from typing import Any, Final, NoReturn
-from urllib.parse import urlparse, urlunparse
 
 import typer
-import yaml
-from pyparsing.exceptions import ParseBaseException
 
 from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
-from dbml_sharepoint.analysis.findings import Finding
-from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
-from dbml_sharepoint.analysis.ordering import site_tables_in_order
-from dbml_sharepoint.analysis.permissions import lists_granting_group
 from dbml_sharepoint.analysis.sidecars import (
     CENTRAL_LOG_SITE_DEFAULT,
     CHANGE_LOG_TITLE,
     EXTERNAL_CHANGE_LOG_DEFAULT,
     EXTERNAL_LOG_DEFAULT,
-    run_log_title,
 )
-from dbml_sharepoint.analysis.timezones import is_known_zone, unknown_zone_message
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.bundle import (
     REPORT_DICTIONARY,
@@ -36,9 +25,6 @@ from dbml_sharepoint.bundle import (
     REPORT_POWERQUERY_DIR,
     REPORT_SQL_DIR,
     REPORT_VIEWS_SQL,
-    SeedRequiresDemoItemsError,
-    clear_generated,
-    emit_bundle,
     write_artifact,
 )
 from dbml_sharepoint.catalogue import (
@@ -46,28 +32,13 @@ from dbml_sharepoint.catalogue import (
     RELEASE_RELPATH,
     SCHEMA_RELPATH,
 )
-from dbml_sharepoint.extension import (
-    BaseExtension,
-    SiteContext,
-    UnknownExtensionError,
-    resolve_extension,
-)
 from dbml_sharepoint.extract.emit import DEFAULT_PREFIX
 from dbml_sharepoint.extract.folder import (
     README_FILENAME,
     folder_for,
-    folder_for_download,
     seed,
 )
 from dbml_sharepoint.extract.list_url import ListUrlError, parse_list_url
-from dbml_sharepoint.extract.run import (
-    NOTES_RELPATH,
-    check_identifier,
-    entity_name_for,
-    extraction_from,
-)
-from dbml_sharepoint.extract.run import write as write_extraction
-from dbml_sharepoint.extract.sources import load_source
 from dbml_sharepoint.extract.wizard import run_extract_wizard
 from dbml_sharepoint.generators.extractgen import EXTRACT_SCRIPT, download_name
 from dbml_sharepoint.generators.identifygen import (
@@ -75,35 +46,28 @@ from dbml_sharepoint.generators.identifygen import (
     IDENTIFY_SCRIPT,
     generate_identify_js,
 )
-from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.maintaingen import (
     COLUMNS_SCRIPT,
     PROTECTION_SCRIPT,
     generate_columns_js,
     generate_protection_js,
 )
-from dbml_sharepoint.generators.manifestgen import generate_manifest
 from dbml_sharepoint.generators.reportgen import render_reporting
 from dbml_sharepoint.model.env_file import (
-    CHANGE_LOG_LIST_PARAMETER,
-    DEPLOYMENT_CHANGE_LOG_LIST_PARAMETER,
-    DEPLOYMENT_LOG_LIST_PARAMETER,
-    DEPLOYMENT_LOG_SITE_PARAMETER,
-    ENTERPRISE_READER_PARAMETER,
     ENV_FILENAME,
     ENV_SETTINGS,
-    NO_ENV_FILE,
     TIME_ZONE_KEY,
-    TIME_ZONE_PARAMETER,
-    EnvFileError,
-    EnvProvenance,
-    EnvValue,
-    read_env_file,
 )
-from dbml_sharepoint.model.mapping_loader import load_mapping
-from dbml_sharepoint.model.mapping_types import MappingBundle
-from dbml_sharepoint.model.parser import Schema, parse_dbml
-from dbml_sharepoint.model.release import Release, load_release
+from dbml_sharepoint.pipeline import execute_build, execute_extraction
+from dbml_sharepoint.project import (
+    load_config,
+    project_input,
+    require_known_site_role,
+    resolve_env_file,
+    resolve_extension_or_refuse,
+    validate_site_url,
+    validate_time_zone,
+)
 from dbml_sharepoint.wizard import run_wizard, stdin_is_interactive
 
 app = typer.Typer(
@@ -153,25 +117,6 @@ def new() -> None:
     """
     raise typer.Exit(code=run_wizard())
 
-# Empty schema view used to render a findings-only manifest when validation
-# fails: build_schema_json cannot run safely on an invalid schema.
-_EMPTY_SCHEMA_JSON: dict[str, Any] = {
-    "lists": [],
-    "phase2_lookups": [],
-    "indexed_columns": [],
-    "views": [],
-    "form_formatting": [],
-    "permission_levels": [],
-    "groups": [],
-    "list_assignments": [],
-    "requires_manage_permissions": False,
-    "seed_items": [],
-}
-
-
-# A bad config file fails as one of these. Deliberately not `Exception`:
-# an unexpected error is a bug in the tool and must keep its traceback.
-_CONFIG_ERRORS = (ValueError, KeyError, OSError, yaml.YAMLError, ParseBaseException)
 
 # Includes the pre-normalisation names for the same reason `bundle`'s
 # _LEGACY_ARTIFACTS does: `report` clears its previous output so a query
@@ -224,89 +169,6 @@ def _clear_report_output(out: Path) -> None:
         (out / filename).unlink(missing_ok=True)
 
 
-def _echo_warnings(findings: list[Finding]) -> None:
-    """Say what the build warned about, on the terminal, or say nothing.
-
-    A build that raised warnings used to print one cheerful success line and
-    leave them in the manifest. The manifest is not optional reading and the
-    docs say so, but the terminal was teaching the opposite: success means
-    there is nothing to look at. The one time it matters, the habit is
-    already formed -- and `unique without not_null` is precisely the finding
-    discovered in production, by a duplicate.
-
-    Printed in full rather than counted. Warnings are few by construction,
-    and a build that raises dozens is itself the signal.
-
-    Silence when clean is deliberate. A "0 warnings" line on every build is
-    noise that makes the non-zero case LESS visible, which is the opposite
-    of the point; `test_a_clean_build_says_nothing_about_warnings` pins it.
-
-    stderr, matching the error path: this is diagnostic output, and a
-    pipeline capturing stdout wants the bundle message, not this.
-    """
-    warnings = [f for f in findings if f.severity == "warning"]
-    if not warnings:
-        return
-    plural = "" if len(warnings) == 1 else "s"
-    typer.echo(f"{len(warnings)} validation warning{plural}:", err=True)
-    for f in warnings:
-        typer.echo(f"  [WARNING] {f.detail}", err=True)
-
-
-def _project_input(
-    explicit: Path | None, relpath: Path, flag: str, *, from_the_project: bool = True,
-) -> Path:
-    """The path the operator gave, or the family standard's, or a refusal.
-
-    `catalogue` declares where a project keeps its three inputs and
-    `test_template_standard` enforces it across every shipped family,
-    so inside a scaffolded project these paths are an already-proven fact
-    rather than a guess. Making the operator retype them on every rebuild --
-    the most repeated action in the tool, since the intended workflow is
-    edit-mapping, rebuild, re-paste -- was asking for something we already
-    had.
-
-    An explicit flag always wins. A default that cannot be overridden is a
-    trap, and pointing `--schema` at a scratch copy while the rest of the
-    project stays put is an ordinary thing to want.
-
-    Defaulting from a LAYOUT is safe in a way that defaulting a site URL
-    would not be: being wrong here means a file that is not there, and this
-    refuses. Being wrong about a target means a bundle armed for someone
-    else's tenant, with only the wrong-site guard between that and a
-    mispaste -- so `--site-url` stays required and is not treated the same
-    way.
-
-    The refusal names the standard path, because for anyone outside a
-    project that message is the entire feature. "Missing option '--schema'"
-    is true and teaches nothing.
-
-    `from_the_project=False` withdraws the default for an input whose
-    provenance is only implied by the others -- `build` passes it for
-    `--release` when the schema or mapping was named explicitly. A release
-    is not self-describing: nothing ties a release.yaml to the schema it
-    documents, so borrowing one across projects produces confident, wrong
-    provenance rather than an obviously missing one. The paths themselves
-    need no such guard; they name the file they load.
-    """
-    if explicit is not None:
-        return explicit
-    if relpath.is_file() and from_the_project:
-        return relpath
-    if not from_the_project:
-        raise typer.BadParameter(
-            f"{flag} was not given. It defaults to {relpath} only when the "
-            f"other inputs also come from this project, and they do not -- so "
-            f"defaulting it would stamp this project's release onto somebody "
-            f"else's schema. Pass {flag} explicitly.",
-        )
-    raise typer.BadParameter(
-        f"{flag} was not given, and there is no {relpath} in the current "
-        f"directory. Run this from a project directory (`dbml-sharepoint new` "
-        f"creates one), or pass {flag} explicitly.",
-    )
-
-
 def _env_file_help() -> str:
     """The `--env-file` option's help text, with the key names discoverable
     from `build --help` alone.
@@ -326,281 +188,6 @@ def _env_file_help() -> str:
         "in the current directory, when present. A flag given on the command "
         f"line always wins over a value the file supplies. Accepted keys: {keys}"
     )
-
-
-def _resolve_env_file(env_file: Path | None) -> Path | None:
-    """The env file `build` should read, or None when there is nothing to.
-
-    An explicit --env-file must exist, so a typo cannot silently build
-    without the settings the operator asked for. At the default location an
-    absent file is ordinary and not an error, but something present that is
-    not a readable file is refused rather than treated as absent.
-    """
-    if env_file is not None:
-        if not env_file.is_file():
-            raise typer.BadParameter(f"--env-file {env_file} does not exist.")
-        return env_file
-    default = Path(ENV_FILENAME)
-    if not default.exists():
-        return None
-    if not default.is_file():
-        raise typer.BadParameter(
-            f"{ENV_FILENAME} exists but is not a file. Remove it, or pass "
-            "--env-file with the path to a real one.",
-        )
-    return default
-
-
-def _require_known_site_role(bundle: MappingBundle, site_role: str) -> None:
-    """Refuse a role the mapping does not declare.
-
-    The vocabulary is data-driven -- the valid roles are whatever the
-    entities declare, never a hardcoded list -- because a misspelled role
-    would otherwise be silently filtered to an empty entity set and exit 0,
-    reporting success for a build that would provision nothing.
-
-    Shared by `build`, `report` and `validate` rather than spelled three
-    times: three commands disagreeing about which roles exist is exactly
-    the kind of drift that makes a `--dry-run` pass and the real build
-    refuse.
-    """
-    known_roles = {e.site_role for e in bundle.mapping.entities.values()}
-    if site_role in known_roles:
-        return
-    typer.echo(
-        f"Invalid --site-role {site_role!r}; the mapping declares: "
-        f"{', '.join(sorted(known_roles)) or '(none)'}.",
-        err=True,
-    )
-    raise typer.Exit(code=2)
-
-
-def _config_error(what: str, path: Path | None, exc: Exception) -> NoReturn:
-    detail = f"missing required key {exc}" if isinstance(exc, KeyError) else str(exc)
-    # `path=None` when `exc` already names the path, as every `EnvFileError`
-    # does; prepending it again printed "[ERROR] env file X: X: line 3: ...".
-    where = f" {path}" if path is not None else ""
-    typer.echo(f"[ERROR] {what}{where}: {detail}", err=True)
-    # 1, not 2. The documented contract reserves 2 for the usage errors
-    # typer raises BEFORE the pipeline runs (a missing option, an unknown
-    # --site-role), and gives 1 to "the build refused", which explicitly
-    # includes an unreadable or invalid input file. A bad config is a
-    # refused build, not a misuse of the command line, and a CI gate keying
-    # on the documented table would have mis-classified it.
-    raise typer.Exit(code=1) from exc
-
-
-def _load_config(
-    schema: Path, mapping: Path, release: Path | None,
-) -> tuple[Schema, MappingBundle, Release | None]:
-    """Load the three config files, reporting a bad one as a message.
-
-    Any of these can fail on a typo in a file the operator edited by hand,
-    and an unhandled exception rendered ~20 lines of loader internals above
-    the single sentence saying what is wrong. The person who hits it is a
-    SharePoint admin editing YAML: not one frame of that stack is
-    actionable, and the semantic (post-load) errors beside it are already
-    clean one-liners, so the contrast made a config typo look like a crash
-    in the tool rather than a mistake in the file.
-
-    This CLI has no verbosity flag, so the traceback is not tucked behind
-    one. Inventing `--traceback` here would advertise an option the rest of
-    the interface does not have.
-    """
-    try:
-        parsed_schema = parse_dbml(schema)
-    except _CONFIG_ERRORS as exc:
-        _config_error("schema", schema, exc)
-    try:
-        bundle = load_mapping(mapping)
-    except _CONFIG_ERRORS as exc:
-        _config_error("mapping", mapping, exc)
-    try:
-        release_obj = load_release(release) if release is not None else None
-    except _CONFIG_ERRORS as exc:
-        _config_error("release", release, exc)
-    return parsed_schema, bundle, release_obj
-
-
-def _resolve_extension(
-    extension: str | None, bundle: MappingBundle, mapping: Path,
-) -> BaseExtension:
-    """Resolve the extension name, reporting an unknown one as a message.
-
-    `resolve_extension` raises `ValueError`, which `_CONFIG_ERRORS` already
-    covers, but every call sat one line outside `_load_config`'s boundary,
-    so a typo in `--extension` or in a mapping's `extension:` key reached
-    the operator as a rich traceback rather than as the refusal the CLI
-    prints for any other bad input. The wrapper lives here rather than
-    inside `_load_config` because that helper is about reading the three
-    config files, and an extension name is not one of them.
-    """
-    try:
-        return resolve_extension(extension or bundle.mapping.extension)
-    except UnknownExtensionError as exc:
-        # Only the unknown name. A broken plugin, whose entry-point load or
-        # constructor raises, keeps its traceback rather than being reported
-        # as a typo in the operator's own mapping.
-        # No `--extension` means the name came from the mapping, so name that file.
-        _config_error("extension", None if extension else mapping, exc)
-
-
-#: Inputs a wizard must not offer a default for. Being wrong about a target
-#: means a bundle armed for someone else's tenant, with only the wrong-site
-#: guard between that and a mispaste, which is why `--site-url` is required.
-NO_SAFE_DEFAULT: Final = frozenset({"site_url"})
-
-
-def validate_site_url(site_url: str) -> str:
-    """Reject a malformed or non-https ``--site-url``, and return it cleaned.
-
-    The URL is interpolated into the generated deploy.js.txt (as ``SITE_URL`` and in
-    the site-match preflight comparison), so it must be a well-formed absolute
-    ``https://`` URL with a host. Catches typos (``http://``, a bare path, a
-    missing host) before the operator pastes into a privileged console. Shared
-    by the core CLI and any extension project CLIs that compose it. Raises
-    ``typer.BadParameter`` (exit 2) on failure.
-
-    RETURNS the URL with any query or fragment removed, rather than refusing
-    it. SharePoint's own **Copy link** puts `?web=1` on the clipboard, so the
-    most common paste carried one, and nothing downstream stripped it: the
-    reporting pack bakes this value into the Power Query `SiteRoot` and the
-    SQLCMD `SiteUrl`, producing endpoints like
-    `https://tenant/sites/X?web=1/_api/web`. Every consumer reads the value
-    `execute_build` holds after this call, so cleaning it once here reaches
-    all of them.
-
-    Normalising rather than refusing follows the precedent already on this
-    branch -- `_SITE_ROOT_M` trims a pasted LIST url back to the site root
-    rather than making the operator edit it. But a silent rewrite of what
-    somebody typed is its own defect, so the caller is expected to compare
-    and say so; see `_site_url_notice`.
-    """
-    parsed = urlparse(site_url)
-    if parsed.scheme != "https" or not parsed.netloc:
-        raise typer.BadParameter(
-            f"--site-url must be an absolute https:// URL with a host "
-            f"(got {site_url!r}).",
-        )
-    if not parsed.query and not parsed.fragment:
-        return site_url
-    return urlunparse(parsed._replace(query="", fragment=""))
-
-
-def _site_url_notice(given: str, used: str) -> str:
-    """What to tell the operator when the site URL was cleaned, or "".
-
-    A rewrite nobody is told about is indistinguishable from a rewrite that
-    went wrong. Returned rather than printed so the CLI and the wizard can
-    each render it in their own voice.
-    """
-    if given == used:
-        return ""
-    return (
-        f"Ignoring the query or fragment on the site URL: building against "
-        f"{used} rather than {given}."
-    )
-
-
-#: Where an operator finds the site's zone, and how to spell it. Shared by
-#: the two refusals below so they send people to the same place.
-_HOW_TO_FIND_THE_ZONE = (
-    "The site's zone is under Site settings > Regional settings > Time zone, "
-    "which names a city; pass that city's IANA name, such as "
-    "Australia/Melbourne or Europe/London. Python lists every name with "
-    "`python -c \"import zoneinfo; print(sorted(zoneinfo.available_timezones()))\"`."
-)
-
-
-def validate_time_zone(time_zone: str) -> str:
-    """Refuse a ``--time-zone`` the IANA database does not declare.
-
-    The reporting pack derives the site's daylight-saving transitions from
-    the name, so a name the database does not declare has nothing to derive
-    from, and a name that is merely close (`Melbourne`, `australia/melbourne`)
-    is refused with the spelling it probably meant rather than guessed at.
-    Shared by `build`, `report` and the wizard, so the three cannot come to
-    disagree about what a usable zone is. Raises ``typer.BadParameter``
-    (exit 2) on failure, the same contract as `validate_site_url`.
-
-    Returned unchanged when it passes: nothing about a zone name needs
-    cleaning, and a silent rewrite of what somebody typed is the defect
-    `_site_url_notice` exists to report.
-    """
-    if is_known_zone(time_zone):
-        return time_zone
-    raise typer.BadParameter(
-        f"--time-zone: {unknown_zone_message(time_zone)} {_HOW_TO_FIND_THE_ZONE}",
-    )
-
-
-def _missing_time_zone() -> typer.BadParameter:
-    """The refusal for a build that named no zone anywhere.
-
-    Not a typer-level required option, because `dbml-sharepoint.env` may
-    supply it (`DBMLSP_TIME_ZONE`), so "required" here means "required
-    after the file has been read". A build that reached this far has been
-    told nothing about the site's zone, and the pack cannot convert a
-    timestamp by a zone it was never given.
-    """
-    return typer.BadParameter(
-        f"--time-zone is required: the reporting pack converts every "
-        f"timestamp by the site's time zone, and a zone is a fact about the "
-        f"site rather than the mapping, so the build has to be told. Pass "
-        f"--time-zone, or set {TIME_ZONE_KEY} in {ENV_FILENAME}. "
-        f"{_HOW_TO_FIND_THE_ZONE}",
-    )
-
-
-@dataclass(frozen=True)
-class EnterpriseReaderDeclined:
-    """Sentinel: the operator was asked and chose nobody.
-
-    `execute_build`'s `enterprise_reader` parameter carries three states, not
-    two -- unset (no flag, no wizard answer, ``None``), this sentinel
-    (explicitly nobody), and a UPN (``str``). Only the unset state is a
-    default a future ``dbml-sharepoint.env`` may fill; this one must survive
-    untouched, because it is what the wizard sends for a deliberate blank
-    answer at `_ask_enterprise_reader`. A bare `object()` would work at
-    runtime but repr as an unreadable address; this dataclass gives it a
-    name instead.
-    """
-
-    def __repr__(self) -> str:
-        return "ENTERPRISE_READER_DECLINED"
-
-
-#: The one instance every caller shares -- see `EnterpriseReaderDeclined`.
-ENTERPRISE_READER_DECLINED: Final = EnterpriseReaderDeclined()
-
-
-def validate_enterprise_reader(address: str) -> None:
-    """Refuse anything that is not a plain UPN.
-
-    The `|` check is the one doing real work. A claims login name --
-    `i:0#.f|membership|svc@example.org` -- contains an `@` and would pass a
-    naive check, then hand `web/ensureuser` a principal other than the user
-    it appears to name. Refusing the character outright is cheaper than
-    parsing claims, and no legitimate UPN contains one.
-    """
-    if address != address.strip() or not address:
-        raise typer.BadParameter(
-            "--enterprise-reader must not be empty or padded with whitespace.",
-        )
-    if address.count("@") != 1:
-        raise typer.BadParameter(
-            f"--enterprise-reader must be a single UPN with one '@' "
-            f"(got {address!r}).",
-        )
-    if any(c.isspace() for c in address) or "|" in address:
-        raise typer.BadParameter(
-            f"--enterprise-reader must be a plain UPN with no whitespace and "
-            f"no '|' (got {address!r}). A claims login name is not accepted.",
-        )
-    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in address):
-        raise typer.BadParameter(
-            "--enterprise-reader must not contain control characters.",
-        )
 
 
 def _env_keys_epilog() -> str:
@@ -752,7 +339,7 @@ def build(
     # afford `schema is None and mapping is None` because being wrong there
     # only loses a stamp, while the same rule here would outlaw pointing
     # `--schema` at a scratch copy with the rest of the project left in
-    # place, which `_project_input` documents as an ordinary thing to want
+    # place, which `project_input` documents as an ordinary thing to want
     # and `test_an_explicit_path_beats_the_project_default` pins.
     #
     # One foreign input plus one from the project is the case this lets
@@ -761,9 +348,9 @@ def build(
     # both-foreign is unambiguous, and is exactly what was measured.
     from_the_project = schema is None or mapping is None
     execute_build(
-        schema=_project_input(schema, SCHEMA_RELPATH, "--schema"),
-        mapping=_project_input(mapping, MAPPING_RELPATH, "--mapping"),
-        release=_project_input(
+        schema=project_input(schema, SCHEMA_RELPATH, "--schema"),
+        mapping=project_input(mapping, MAPPING_RELPATH, "--mapping"),
+        release=project_input(
             release, RELEASE_RELPATH, "--release", from_the_project=from_the_project,
         ),
         site_url=site_url,
@@ -774,552 +361,13 @@ def build(
         seed=seed,
         extension=extension,
         enterprise_reader=enterprise_reader,
-        env_file=_resolve_env_file(env_file),
+        env_file=resolve_env_file(env_file),
         deployment_log_list=deployment_log_list,
         deployment_log_change_list=deployment_log_change_list,
         deployment_log_site=deployment_log_site,
         change_log_list=change_log_list,
         no_sidecars=no_sidecars,
     )
-
-
-def _relative_env_path(env_file: Path) -> str:
-    """Render for the provenance record and the printed report: relative to
-    the current directory, never absolute, so a build run on Windows and one
-    run on Linux describe the same file the same way. `_resolve_env_file`
-    already decided WHICH file this is; this only decides how to spell it.
-
-    Falls back to the path as given when there is no relative form at all --
-    an explicit `--env-file` on a different Windows drive than the current
-    directory -- rather than letting a display nicety crash the build.
-    """
-    cwd = Path.cwd()
-    absolute = env_file if env_file.is_absolute() else cwd / env_file
-    try:
-        return absolute.relative_to(cwd, walk_up=True).as_posix()
-    except ValueError:
-        return env_file.as_posix()
-
-
-class UnwiredEnvSettingError(RuntimeError):
-    """An `ENV_SETTINGS` entry whose `parameter` `_resolve_env_settings`
-    does not know how to apply.
-
-    Not a build-time failure a consumer's file can cause -- this fires only
-    when a contributor adds a registry entry without also teaching
-    `_resolve_env_settings` how to use it, so it is a programming error, not
-    an `EnvFileError`. It is still raised rather than logged and swallowed:
-    a contributor who adds the second entry gets a loud failure the moment a
-    build actually exercises the key, rather than a build that succeeds
-    while quietly discarding what the file asked for.
-    """
-
-
-def _validate_list_title(value: str, flag: str) -> None:
-    """Refuse a list title that cannot survive the emitted script.
-
-    The empty string is NOT validated here: `--deployment-log-list ''` is a
-    deliberate disable, checked by the caller before this runs, and a padded
-    or control-bearing variant of it still lands here and is refused.
-
-    Titles are interpolated into `getbytitle('...')` URLs through
-    `odataName`, which escapes quotes but cannot escape a newline; and a
-    title padded with spaces would silently name a different list than the
-    operator sees in the UI.
-    """
-    if not value or value != value.strip():
-        raise typer.BadParameter(f"{flag} must not be empty, padded, or whitespace.")
-    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in value):
-        raise typer.BadParameter(f"{flag} must not contain control characters.")
-    if len(value) > MAX_DISPLAY_TITLE:
-        raise typer.BadParameter(
-            f"{flag} must be at most {MAX_DISPLAY_TITLE} characters.",
-        )
-
-
-def _validate_site_name(value: str, flag: str) -> None:
-    """Refuse a central-logging SITE name that cannot address a web.
-
-    A site name is not a list title: it is the last segment of
-    `/sites/<name>`, interpolated by `crossWebApi`, so the display-title
-    length limit is the wrong rule and a space is fatal rather than merely
-    confusing. What matters is that the segment stays one segment -- a
-    leading or trailing slash would produce `/sites//name` or a trailing
-    empty segment, and an embedded slash would silently address a different
-    web than the operator named.
-
-    The empty string is NOT validated here: `--deployment-log-site ''` is the
-    documented disable, checked by the caller before this runs.
-    """
-    if not value or value != value.strip():
-        raise typer.BadParameter(f"{flag} must not be empty, padded, or whitespace.")
-    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in value):
-        raise typer.BadParameter(f"{flag} must not contain control characters.")
-    if any(c.isspace() for c in value):
-        raise typer.BadParameter(
-            f"{flag} names a site's URL segment, which contains no spaces "
-            f"(got {value!r}). Use the name as it appears in /sites/<name>.",
-        )
-    if value.startswith("/") or value.endswith("/"):
-        raise typer.BadParameter(
-            f"{flag} must be the site's name alone, with no leading or "
-            f"trailing '/' (got {value!r}).",
-        )
-
-
-def _resolve_env_settings(
-    env_file: Path | None,
-    enterprise_reader: str | EnterpriseReaderDeclined | None,
-    deployment_log_list: str | None,
-    deployment_log_change_list: str | None,
-    deployment_log_site: str | None,
-    change_log_list: str | None,
-    time_zone: str | None,
-) -> tuple[
-    str | EnterpriseReaderDeclined | None,
-    str | None, str | None, str | None, str | None, str | None,
-    EnvProvenance,
-]:
-    """Apply a resolved dbml-sharepoint.env file, honouring anything already
-    supplied explicitly. Builds the `EnvProvenance` in the same pass that
-    decides what is used, so the record can never drift from the decision it
-    describes -- there is exactly one place this precedence is applied.
-
-    Precedence: an explicit value -- a flag, or the wizard's declined
-    sentinel -- always wins over the file; the file wins over the built-in
-    default of nothing supplied at all.
-
-    `env_file` is a path already resolved by the caller (`_resolve_env_file`
-    for `build`); this function does no discovery of its own, only parsing.
-
-    The four list-name settings resolve to ``None`` ONLY when neither a flag
-    nor the file supplied anything (so the template can distinguish "the
-    operator turned the external log off" from "nothing was said"): the
-    build's own flags carry defaults, so in practice a plain build always
-    names its defaults here. The time zone has no default at all: ``None``
-    after this is a build that must refuse, see `_missing_time_zone`.
-    """
-    if env_file is None:
-        return (
-            enterprise_reader, deployment_log_list, deployment_log_change_list,
-            deployment_log_site, change_log_list, time_zone, NO_ENV_FILE,
-        )
-
-    try:
-        file_settings, digest = read_env_file(env_file)
-    except EnvFileError as exc:
-        # `path=None`: the exception message already names `env_file` (every
-        # `EnvFileError` does, see `_refuse` in `model/env_file.py`), so
-        # passing it again here just printed it twice.
-        _config_error("env file", None, exc)
-
-    # Declared as a STR-typed mapping for the four list-name settings and
-    # the zone, and a separate variable for the reader, because the reader
-    # carries the declined sentinel and the others do not. One precedence
-    # loop, one shapes-problem avoided.
-    resolved: dict[str, str | None] = {
-        DEPLOYMENT_LOG_LIST_PARAMETER: deployment_log_list,
-        DEPLOYMENT_CHANGE_LOG_LIST_PARAMETER: deployment_log_change_list,
-        DEPLOYMENT_LOG_SITE_PARAMETER: deployment_log_site,
-        CHANGE_LOG_LIST_PARAMETER: change_log_list,
-        TIME_ZONE_PARAMETER: time_zone,
-    }
-    resolved_reader = enterprise_reader
-    values: list[EnvValue] = []
-    for setting in ENV_SETTINGS:
-        file_value = file_settings.get(setting.key)
-        if file_value is None:
-            continue
-        if setting.parameter != ENTERPRISE_READER_PARAMETER and setting.parameter not in resolved:
-            raise UnwiredEnvSettingError(
-                f"{setting.key} sets execute_build's {setting.parameter!r} "
-                "parameter, which _resolve_env_settings does not know how "
-                "to apply. Wire it in here before adding it to ENV_SETTINGS.",
-            )
-        # ONE precedence rule for every setting: a flag given at all --
-        # including '' = off -- beats the file; the file beats nothing-said.
-        # `override` records the value that won so the transcript can name
-        # the losing candidate.
-        current = (
-            resolved_reader if setting.parameter == ENTERPRISE_READER_PARAMETER
-            else resolved[setting.parameter]
-        )
-        if current is None:
-            if setting.parameter == ENTERPRISE_READER_PARAMETER:
-                resolved_reader = file_value
-            else:
-                resolved[setting.parameter] = file_value
-            values.append(EnvValue(setting=setting, value=file_value, used=True, override=None))
-        else:
-            override = current if isinstance(current, str) else repr(current)
-            values.append(EnvValue(
-                setting=setting, value=file_value,
-                used=False, override=override,
-            ))
-
-    provenance = EnvProvenance(
-        path=_relative_env_path(env_file), digest=digest, values=tuple(values),
-    )
-    return (
-        resolved_reader,
-        resolved[DEPLOYMENT_LOG_LIST_PARAMETER],
-        resolved[DEPLOYMENT_CHANGE_LOG_LIST_PARAMETER],
-        resolved[DEPLOYMENT_LOG_SITE_PARAMETER],
-        resolved[CHANGE_LOG_LIST_PARAMETER],
-        resolved[TIME_ZONE_PARAMETER],
-        provenance,
-    )
-
-
-def _echo_env_provenance(provenance: EnvProvenance) -> None:
-    """Say what was read, and what won. An absent line here is
-    indistinguishable from a feature that did not run, so the no-file case
-    is stated explicitly rather than left silent."""
-    if provenance.path is None:
-        typer.echo("No dbml-sharepoint.env file was read.")
-        return
-    typer.echo(f"Read {provenance.path} (sha256 {provenance.digest}).")
-    for value in provenance.values:
-        if value.used:
-            typer.echo(f"  {value.setting.key} = {value.value} (from the file)")
-        else:
-            typer.echo(
-                f"  {value.setting.key} = {value.value} (from the file; overridden, "
-                f"using {value.override})",
-            )
-
-
-def execute_build(
-    *,
-    schema: Path,
-    mapping: Path,
-    release: Path,
-    site_url: str,
-    site_role: str,
-    out: Path = Path("./build"),
-    dry_run: bool = False,
-    seed: bool = False,
-    time_zone: str | None = None,
-    extension: str | None = None,
-    enterprise_reader: str | EnterpriseReaderDeclined | None = None,
-    env_file: Path | None = None,
-    deployment_log_list: str | None = None,
-    deployment_log_change_list: str | None = None,
-    deployment_log_site: str | None = None,
-    change_log_list: str | None = None,
-    no_sidecars: bool = False,
-) -> None:
-    """The `build` pipeline, callable without going through typer.
-
-    Extracted so the wizard can run exactly the same build the documented
-    flags run, rather than growing a second implementation that drifts. The
-    wizard is a different front end onto this, not a different builder.
-
-    Still raises `typer.Exit` on refusal: the exit codes are the documented
-    contract (2 for misuse, 1 for a refused build), and re-mapping them to
-    an exception of its own here would give the wizard a second vocabulary
-    for the same failures. The wizard catches it.
-
-    `enterprise_reader` carries three states: ``None`` (unset -- no flag was
-    given), `EnterpriseReaderDeclined` (the operator was asked and said
-    nobody), or a UPN. `env_file`, when given, is a `dbml-sharepoint.env`
-    ALREADY resolved to a path by the caller (`build` resolves the default
-    location the same way it resolves `--schema`, `--mapping` and
-    `--release`; this function does no discovery of its own). When the file
-    supplies a value for a setting that is still unset, that value is used;
-    an explicit `enterprise_reader` -- a flag or the declined sentinel --
-    always wins over the file, because both mean the operator already
-    decided.
-
-    `time_zone` is the site's IANA zone, a fact about the site the way
-    `site_url` is, and it is REQUIRED: ``None`` here is only "no flag was
-    given", and a build refuses once the env file has also had its say and
-    still named none. It defaults to ``None`` rather than being a required
-    keyword so the file can supply it, the same shape as `enterprise_reader`.
-    """
-    # Reassigned, not merely checked: everything below -- SiteContext, the
-    # manifest, and the reporting pack's `SiteRoot` and SQLCMD `SiteUrl` --
-    # reads this variable, so cleaning it here is what keeps a pasted
-    # `?web=1` out of every generated endpoint.
-    cleaned_site_url = validate_site_url(site_url)
-    if notice := _site_url_notice(site_url, cleaned_site_url):
-        typer.echo(notice, err=True)
-    site_url = cleaned_site_url
-    parsed_schema, bundle, release_obj = _load_config(schema, mapping, release)
-    if release_obj is None:  # unreachable: --release is a required option
-        raise typer.BadParameter("--release is required for `build`.")
-    ext = _resolve_extension(extension, bundle, mapping)
-
-    if ext.requires_project_cli:
-        typer.echo(
-            f"Extension {ext.name!r} requires its project-specific CLI; "
-            "the generic `dbml-sharepoint build` command cannot supply its "
-            "required project inputs. Use the extension's project CLI instead.",
-            err=True,
-        )
-        raise typer.Exit(code=2)
-
-    _require_known_site_role(bundle, site_role)
-
-    (
-        enterprise_reader, resolved_external, resolved_external_change,
-        resolved_site, resolved_change, resolved_zone, env_provenance,
-    ) = _resolve_env_settings(
-        env_file, enterprise_reader, deployment_log_list,
-        deployment_log_change_list, deployment_log_site, change_log_list,
-        time_zone,
-    )
-    _echo_env_provenance(env_provenance)
-    # The zone is validated on the resolved value, wherever it came from, so
-    # the file gets the same refusal a flag does rather than a pack built
-    # for a zone the database has never heard of.
-    if resolved_zone is None:
-        raise _missing_time_zone()
-    time_zone = validate_time_zone(resolved_zone)
-    # Post-resolution defaults, and the three states the external log name
-    # carries. Nothing said anywhere -- no flag, no file -- means the
-    # built-in sidecar names, applied AFTER precedence so a file naming
-    # another list is a plain "used", never an override of a default the
-    # operator never gave. The defaults themselves carry no provenance:
-    # nothing was decided, so nothing is reported.
-    #
-    # The empty string is the DOCUMENTED DISABLE for the external log (flag
-    # or file) and must survive as a state of its own: collapsing it to
-    # None here would let the default below put the probe straight back.
-    # A padded variant is not the disable and is refused by the title
-    # validation, so nothing invisible can turn the feature off.
-    if resolved_external is not None and resolved_external != "":
-        _validate_list_title(resolved_external, "--deployment-log-list")
-    if resolved_external_change is not None and resolved_external_change != "":
-        _validate_list_title(resolved_external_change, "--deployment-changes")
-    if resolved_site is not None and resolved_site != "":
-        _validate_site_name(resolved_site, "--deployment-log-site")
-    if resolved_change is not None:
-        _validate_list_title(resolved_change, "--change-log-list")
-    external_log = (
-        EXTERNAL_LOG_DEFAULT
-        if resolved_external is None
-        else resolved_external  # '' stays '' (off); a title stays itself
-    )
-    external_change_log = (
-        EXTERNAL_CHANGE_LOG_DEFAULT
-        if resolved_external_change is None
-        else resolved_external_change  # '' stays '' (off); a title stays itself
-    )
-    external_site = (
-        CENTRAL_LOG_SITE_DEFAULT
-        if resolved_site is None
-        else resolved_site
-    )
-    change_log = resolved_change if resolved_change is not None else CHANGE_LOG_TITLE
-    # The site and the deployments list are one feature: '' on either is the
-    # documented disable for the external stamps AND for the change list
-    # beside them, since a change list with no deployments list to decide
-    # LOG_MODE has nowhere to be central about. '' on the change list alone
-    # does NOT disable the pair the other way: an org that wants stamps
-    # without the central change feed sets only this one to ''.
-    if external_site == "" or external_log == "":
-        external_site = ""
-        external_log = ""
-        external_change_log = ""
-
-    # Each title is validated on its own above, so nothing there catches the
-    # two naming the SAME list: both probes would succeed against it, stamp
-    # rows and change rows would land side by side on one list, and whatever
-    # broke downstream (a column the wrong row shape does not carry, a close
-    # query matching rows it should not) would blame that symptom rather
-    # than the two flags that caused it.
-    if external_log and external_change_log and external_log == external_change_log:
-        raise typer.BadParameter(
-            "--deployment-log-list and --deployment-changes must not name "
-            f"the same list ({external_log!r}); each central list wants its "
-            "own title.",
-        )
-
-    # `isinstance`, not `is not None`: the declined sentinel means nobody is
-    # enrolled and must skip validation and the group check just as `None` does.
-    if isinstance(enterprise_reader, str):
-        validate_enterprise_reader(enterprise_reader)
-        perms = bundle.mapping.permissions
-        targets = [
-            g for g in (perms.groups if perms else [])
-            if g.enroll_enterprise_reader
-        ]
-        if not targets:
-            # Fail closed rather than emitting a bundle that quietly enrols
-            # nobody. The operator would not find out until a report came
-            # back short, weeks later. `MULTIPLE_ENTERPRISE_READER_GROUPS`
-            # (a validator rule) already refuses more than one such group,
-            # so there is nothing to re-check on that side here.
-            raise typer.BadParameter(
-                "--enterprise-reader was given but the mapping declares no "
-                "group with enroll_enterprise_reader: true.",
-            )
-
-        # Declaring the group is not the same as granting it anything HERE.
-        # `ENTERPRISE_READER_GROUP_NOT_GRANTED` unions every policy block and
-        # so is satisfied by a grant in any site role, while a default policy
-        # scoped to another role is excluded per list by
-        # `permissions_for_entity`. `--site-role branch --enterprise-reader`
-        # against a default scoped to `hq` therefore emitted a bundle whose
-        # `list_assignments` was empty: the account is enrolled permanently,
-        # the run reports success, and it can read none of this site's lists.
-        #
-        # Refused here rather than in the validator, which has no site role
-        # and could only refuse the mapping outright -- the same mapping is
-        # correct for the role that does grant the group. Resolved through
-        # `lists_granting_group`, which asks `permissions_for_entity` per list
-        # exactly as jsgen does when it binds the live role assignments, so
-        # this refuses on what the deploy would do rather than on the
-        # mapping's shape.
-        deployed_here = site_tables_in_order(
-            parsed_schema, bundle.mapping.entities, site_role,
-        )
-        granted_anywhere_here = any(
-            lists_granting_group(bundle.mapping, g.name, deployed_here)[0]
-            for g in targets
-        )
-        if not granted_anywhere_here:
-            names = ", ".join(repr(g.name) for g in targets)
-            raise typer.BadParameter(
-                f"--enterprise-reader names an account to enrol into "
-                f"{names}, which is granted no permission level on any list "
-                f"site role {site_role!r} deploys. The enrolment is permanent "
-                f"once the deploy reaches its end and the run would report "
-                f"success, so the account would hold access to nothing here "
-                f"and nothing on the site would say so. Grant the group in "
-                f"this role's list_permissions, build the site role whose "
-                f"policy does grant it, or build without "
-                f"--enterprise-reader.",
-            )
-
-    # Everything above this line is a pure read that can refuse: a malformed
-    # URL, an unreadable input file, an extension needing its own CLI, a role
-    # the mapping does not declare. None of them has made anything in `out`
-    # stale, and `--out` is routinely the directory holding the bundle the
-    # operator is part-way through pasting -- so a refusal that learnt nothing
-    # must not destroy it. `report` has always drawn the line here; `build`
-    # used to clear as its first statement and disagreed.
-    #
-    # From here the build is committed to writing, so every later refusal DOES
-    # clear. That is what the guarantee is actually for: a `deploy.js.txt`
-    # describing a schema this run rejected is the stale script an operator
-    # could paste.
-    clear_generated(out, reporting=True)
-
-    findings = validate_all(parsed_schema, bundle, ext)
-    errors = [f for f in findings if f.severity == "error"]
-
-    site_context = SiteContext(
-        site_url=site_url,
-        site_role=site_role,
-        release=release_obj,
-        output_dir=out,
-        extension_args={},
-    )
-
-    # Only render the schema view when the schema is valid: build_schema_json
-    # calls map_column(), which raises on unsupported/legacy types that
-    # validate() already flags. On error we still emit a manifest documenting
-    # the findings (using an empty schema view), then abort below.
-    schema_json = (
-        _EMPTY_SCHEMA_JSON
-        if errors
-        else build_schema_json(
-            parsed_schema,
-            bundle,
-            site_role,
-            site_url=site_url,
-            release=release_obj,
-            extension=ext,
-            site_context=site_context,
-        )
-    )
-
-    generated_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
-    source_mtime = dt.datetime.fromtimestamp(
-        schema.stat().st_mtime, dt.UTC,
-    ).isoformat(timespec="seconds")
-
-    # Narrowed here rather than by reassigning the parameter above, which
-    # would erase the unset/declined distinction before anything consumes it.
-    resolved_enterprise_reader = (
-        enterprise_reader if isinstance(enterprise_reader, str) else None
-    )
-
-    manifest_md = generate_manifest(
-        schema_json=schema_json,
-        findings=findings,
-        bundle=bundle,
-        release=release_obj,
-        site_url=site_url,
-        site_role=site_role,
-        source_dbml=schema.name,
-        source_mtime=source_mtime,
-        generated_at=generated_at,
-        manifest_extras=ext.manifest_extras(bundle, parsed_schema),
-        # The manifest is read BEFORE the paste, so this is where the
-        # permanent-membership warning has to be. Rendered even on the
-        # error path below: a build that refuses still writes a manifest,
-        # and the operator reading it should see what the flag would have
-        # done once the errors are fixed.
-        enterprise_reader=resolved_enterprise_reader,
-        env_provenance=env_provenance,
-        sidecar_run_log_title=None if no_sidecars else run_log_title(),
-        sidecar_change_log_title=None if no_sidecars else change_log,
-        deployment_log_list=external_log or "",
-        deployment_log_change_list=external_change_log or "",
-        deployment_log_site=external_site or "",
-    )
-    write_artifact(out / "deploy-manifest.md", manifest_md)
-
-    if errors:
-        typer.echo(f"Validation produced {len(errors)} error(s); aborting JS generation.", err=True)
-        for f in errors:
-            typer.echo(f"  [ERROR] {f.detail}", err=True)
-        # Warnings too, before the exit. A build that refuses has ALSO found
-        # everything else wrong with the mapping, and printing only the
-        # errors hides that until the errors are fixed -- so the operator
-        # fixes, rebuilds, and meets a second list they could have seen the
-        # first time. This is the one path where suppressing them costs an
-        # extra round trip rather than nothing.
-        _echo_warnings(findings)
-        raise typer.Exit(code=1)
-
-    if dry_run:
-        typer.echo(f"Dry run complete. Manifest written to {out / 'deploy-manifest.md'}.")
-        _echo_warnings(findings)
-        return
-
-    try:
-        message = emit_bundle(
-            out,
-            schema=parsed_schema,
-            mapping_bundle=bundle,
-            release=release_obj,
-            site_url=site_url,
-            site_role=site_role,
-            schema_name=schema.name,
-            mapping_name=mapping.name,
-            source_mtime=source_mtime,
-            generated_at=generated_at,
-            seed=seed,
-            time_zone=time_zone,
-            extension=ext,
-            site_context=site_context,
-            enterprise_reader=resolved_enterprise_reader,
-            env_provenance=env_provenance,
-            deployment_log_list=external_log or "",
-            deployment_log_change_list=external_change_log or "",
-            deployment_log_site=external_site or "",
-            change_log_list=None if no_sidecars else change_log,
-            no_sidecars=no_sidecars,
-        )
-    except SeedRequiresDemoItemsError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=2) from exc
-    typer.echo(message)
-    _echo_warnings(findings)
 
 
 @app.command()
@@ -1372,11 +420,11 @@ def validate(
     a typo's discovery earlier. Pinned by
     `test_validate_checks_every_role_not_just_the_selected_one`.
     """
-    schema = _project_input(schema, SCHEMA_RELPATH, "--schema")
-    mapping = _project_input(mapping, MAPPING_RELPATH, "--mapping")
-    parsed_schema, bundle, _ = _load_config(schema, mapping, None)
-    ext = _resolve_extension(extension, bundle, mapping)
-    _require_known_site_role(bundle, site_role)
+    schema = project_input(schema, SCHEMA_RELPATH, "--schema")
+    mapping = project_input(mapping, MAPPING_RELPATH, "--mapping")
+    parsed_schema, bundle, _ = load_config(schema, mapping, None)
+    ext = resolve_extension_or_refuse(extension, bundle, mapping)
+    require_known_site_role(bundle, site_role)
 
     findings = validate_all(parsed_schema, bundle, ext)
     for f in findings:
@@ -1495,9 +543,9 @@ def report(
     # below, so it has to be read BEFORE the paths are resolved.
     from_the_project = schema is None and mapping is None
 
-    schema = _project_input(schema, SCHEMA_RELPATH, "--schema")
-    mapping = _project_input(mapping, MAPPING_RELPATH, "--mapping")
-    # Not through `_project_input`: this option is genuinely optional and its
+    schema = project_input(schema, SCHEMA_RELPATH, "--schema")
+    mapping = project_input(mapping, MAPPING_RELPATH, "--mapping")
+    # Not through `project_input`: this option is genuinely optional and its
     # absence is a supported mode (an unstamped dictionary), so a missing
     # release.yaml must not refuse the way a missing schema does. Picking it
     # up when it IS there means running `report` inside a project stamps the
@@ -1513,9 +561,9 @@ def report(
     # came from the same place.
     if release is None and from_the_project and RELEASE_RELPATH.is_file():
         release = RELEASE_RELPATH
-    parsed_schema, bundle, release_obj = _load_config(schema, mapping, release)
+    parsed_schema, bundle, release_obj = load_config(schema, mapping, release)
 
-    _require_known_site_role(bundle, site_role)
+    require_known_site_role(bundle, site_role)
 
     generated_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
 
@@ -1525,7 +573,7 @@ def report(
     # mistake, and they signal one by raising: an unmapped column type, a
     # composite DBML index. Unhandled, that printed a traceback for a typo
     # in a file the operator hand-edited, which is exactly what
-    # `_config_error` exists to prevent on the loading side. Rendering up
+    # `config_error` exists to prevent on the loading side. Rendering up
     # front also keeps a failure from leaving a half-written report set
     # behind, where the stale files outlive the error on the terminal.
     # `render_reporting` is the same composition `build` ships, so the two
@@ -1626,7 +674,6 @@ def extract_script(
         f"The script downloads {download}. Save it into {seeded.folder}, then "
         f"run: dbml-sharepoint extract {seeded.folder / download}",
     )
-
 
 
 _LIST_URL_HELP = (
@@ -1838,111 +885,6 @@ def extract(
     execute_extraction(
         source, out=out, entity=entity, prefix=prefix, project=project, force=force,
     )
-
-
-def execute_extraction(
-    source: Path,
-    *,
-    out: Path | None = None,
-    entity: str | None = None,
-    prefix: str = DEFAULT_PREFIX,
-    project: str | None = None,
-    force: bool = False,
-) -> None:
-    """One extraction, from a download to a written project directory.
-
-    Shared by the `extract` command and the interactive flow, for the same
-    reason `execute_build` is shared with the template wizard: the wizard
-    must not be able to produce anything the documented flags could not.
-    Refusals leave through `typer.Exit`, which both callers understand.
-    """
-    try:
-        loaded = load_source(source)
-    except _CONFIG_ERRORS as exc:
-        _config_error("extraction source", source, exc)
-
-    if entity is not None and len(loaded.lists) > 1:
-        raise typer.BadParameter(
-            f"--entity names one table, but the source describes "
-            f"{len(loaded.lists)} lists. Extract them one at a time, or drop "
-            "the flag and let each be named from its list title.",
-        )
-    try:
-        entity_names = {
-            source_list.title: (
-                check_identifier(entity, "--entity")
-                if entity is not None
-                else entity_name_for(source_list.title)
-            )
-            for source_list in loaded.lists
-        }
-        extraction = extraction_from(loaded, entity_names=entity_names)
-    except _CONFIG_ERRORS as exc:
-        _config_error("extraction source", source, exc)
-
-    if project is not None:
-        check_identifier(project, "--project")
-    # The FIRST list's title. A download this tool generates carries exactly
-    # one, and a hand-assembled one carrying several has no single folder it
-    # could be named after; `--out` is the answer there.
-    root = out if out is not None else folder_for_download(
-        source, loaded.lists[0].title,
-    )
-    _refuse_existing_project(root, force=force)
-
-    generated_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
-    written = write_extraction(
-        extraction,
-        root,
-        generated_at=generated_at,
-        prefix=prefix,
-        project=project or "",
-    )
-
-    columns = sum(len(e.columns) for e in extraction.entities)
-    # A run from inside the list's own folder derives `.` as its root, and
-    # "into ." names nothing. Resolve that one case.
-    destination = written.root if written.root.name else written.root.resolve()
-    typer.echo(
-        f"Extracted {len(extraction.entities)} list(s), {columns} column(s) and "
-        f"{len(extraction.enums)} enum(s) from {loaded.kind} into {destination}",
-    )
-    typer.echo(f"  {written.schema}\n  {written.mapping}\n  {written.release}")
-    for path in written.preserved:
-        typer.echo(f"  {path}")
-    typer.echo(
-        f"\n{len(extraction.unrecovered)} thing(s) could not be recovered. "
-        f"Read {written.notes} before you edit or deploy anything.",
-    )
-
-
-def _refuse_existing_project(out: Path, *, force: bool) -> None:
-    """Refuse to write over a project that is already there.
-
-    Applied to the derived default directory as well as to an explicit
-    `--out`: one folder per list makes a second run of the same extraction
-    land on the first one's output, which is where a hand-edited schema
-    would be lost. An extraction produces a DRAFT, so
-    overwriting real work with one is the worst outcome this command has;
-    it is refused by name rather than guarded by a prompt, because the
-    command must behave the same in a pipe.
-    """
-    if force:
-        return
-    present = [
-        out / relpath
-        for relpath in (SCHEMA_RELPATH, MAPPING_RELPATH, RELEASE_RELPATH, NOTES_RELPATH)
-        if (out / relpath).exists()
-    ]
-    if not present:
-        return
-    typer.echo(
-        "[ERROR] refusing to overwrite an existing project. These already "
-        "exist:\n" + "\n".join(f"  {path}" for path in present)
-        + "\nPass --out with an empty directory, or --force to overwrite them.",
-        err=True,
-    )
-    raise typer.Exit(code=1)
 
 
 @app.command()

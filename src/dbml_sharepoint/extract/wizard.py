@@ -3,10 +3,10 @@
 
 `dbml-sharepoint extract` with no argument runs this. It is a front end
 onto the two documented commands rather than a second implementation of
-them: the URL goes through `list_url.parse_list_url` and the CLI's own
-`validate_site_url`, the script and the readme through `folder.seed`, and
-the download through `cli.execute_extraction`. Anything produced here, the
-flags could have produced.
+them: the URL goes through `list_url.parse_list_url` and the shared
+`project.validate_site_url`, the script and the readme through
+`folder.seed`, and the download through `pipeline.execute_extraction`.
+Anything produced here, the flags could have produced.
 
 What it adds is the wait. The script has to be pasted into a browser and
 the download saved by hand between the two commands, and somebody who has
@@ -37,6 +37,8 @@ from dbml_sharepoint.extract.emit import DEFAULT_PREFIX
 from dbml_sharepoint.extract.folder import README_FILENAME, Seeded, seed
 from dbml_sharepoint.extract.list_url import ListUrl, ListUrlError, parse_list_url
 from dbml_sharepoint.generators.extractgen import download_name
+from dbml_sharepoint.pipeline import execute_extraction
+from dbml_sharepoint.project import validate_site_url
 
 
 def ask_list_url(console: Console) -> ListUrl:
@@ -55,10 +57,6 @@ def ask_list_url(console: Console) -> ListUrl:
     that a tightening of `validate_site_url` re-asks rather than crashing
     out of the wizard, which is why it is not dead code.
     """
-    # Deferred for a cycle: `cli` imports this module at its top, so this
-    # direction stays lazy until `validate_site_url` leaves the CLI -- #171.
-    from dbml_sharepoint.cli import validate_site_url  # noqa: PLC0415
-
     console.print(
         "[dim]  Open the list in SharePoint and copy the address bar, for "
         "example\n  https://contoso.sharepoint.com/sites/Risk/Lists/"
@@ -145,9 +143,6 @@ def _run(
     project: str | None,
     force: bool,
 ) -> int:
-    # Deferred for the same cycle as `validate_site_url` above -- #171.
-    from dbml_sharepoint.cli import execute_extraction  # noqa: PLC0415
-
     console.print(
         Panel(
             "Recover a draft schema and mapping from a SharePoint list that "

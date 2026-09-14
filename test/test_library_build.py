@@ -15,7 +15,7 @@ from _node import NODE
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.phases import phase_number
-from dbml_sharepoint.cli import execute_build
+from dbml_sharepoint.pipeline import execute_build
 
 LIBRARY = FIXTURES / "library"
 
