@@ -2,7 +2,7 @@
 
 *Theme: governance, risk & compliance.*
 
-One document library, `LC_Document`, holds vendor-issued Excel SAQs
+One document library, **Legislative Compliance**, holds vendor-issued Excel SAQs
 and the REG workbooks people consult while answering it. There is no separate
 topic list. Library columns track assignment and handoffs; responses,
 compliance ratings, risk, controls, gaps and evidence remain in Excel for
@@ -81,7 +81,8 @@ successive vendor periods for one topic and both review routes.
 ## Adopting version 2
 
 This is a breaking replacement for version 1's `LC_Topic` list and `LC_SAQ`
-library. It creates `LC_Document`; it does not convert, delete or migrate
+library. It creates **Legislative Compliance** at `LegislativeCompliance`;
+it does not convert, delete or migrate
 those existing containers. Keep them until files, ownership and history
 have been reconciled with the new library. See [deployment](30-deploy/deploy.md).
 

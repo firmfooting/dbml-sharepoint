@@ -2,7 +2,7 @@
 
 ## What this is
 
-`LC_Document` contains assessment workbooks (SAQs) and regulatory references
+**Legislative Compliance** contains assessment workbooks (SAQs) and regulatory references
 (REGs). Complete the assessment inside Excel. The file's properties track
 who is doing it and where it is in the process. Do not copy answers, controls,
 compliance ratings, risk or gaps into library properties.

@@ -9,7 +9,8 @@ paste the deploy script, then verify the resulting library.
 
 ## Before you build
 
-- [ ] Confirm that the new `LC_Document` library name is available.
+- [ ] Confirm that **Legislative Compliance** and URL name
+      `LegislativeCompliance` are available.
 - [ ] Customise the DBML `division` enum and `entities.Document.folders` in the
       mapping together. Update every `demo_items.Document` entry's `file.folder`
       and `values.Division` to the same divisions before building with `--seed`.
@@ -48,7 +49,8 @@ logging sidecars are not wanted.
 
 ## Verification checklist
 
-- [ ] `LC_Document` exists as a document library with the declared folders.
+- [ ] **Legislative Compliance** exists at `LegislativeCompliance` as a
+      document library with the declared folders.
       No Topic list is declared by this version.
 - [ ] All nine views in the family README exist. **Pending** is the default.
       Every view finds files across the division folders.
@@ -106,7 +108,8 @@ the synthetic demonstration files before filing production assessments.
 
 ## Moving from version 1
 
-Version 2 is a new `LC_Document` library, not an in-place conversion of
+Version 2 uses a new **Legislative Compliance** library, not an in-place
+conversion of
 `LC_Topic` and `LC_SAQ`. The deploy does not remove old containers or copy
 production data. Do not use rollback for this migration.
 
