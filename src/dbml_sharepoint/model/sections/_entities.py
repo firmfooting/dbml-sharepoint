@@ -1,8 +1,11 @@
 # src/dbml_sharepoint/model/sections/_entities.py
 """`entities`, the one required section: which lists a mapping deploys."""
 
+import re
 from typing import Any, cast
 
+from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
+from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.mapping_types import ENTITY_KINDS, EntityKind, EntityMapping
@@ -18,7 +21,7 @@ from dbml_sharepoint.model.sections.context import SectionContext
 _ENTITY_KEYS = frozenset({
     "kind", "base_template", "site_role", "singleton", "display_column",
     "accept_unindexable_display_column", "hide_from_all_items", "renamed_from",
-    "folders",
+    "folders", "title", "internal_name",
 })
 
 
@@ -30,6 +33,8 @@ def read(sc: SectionContext) -> dict[str, Any]:
         _reject_unknown_keys(spec, _ENTITY_KEYS, f"entities.{name}")
         entities[name] = EntityMapping(
             name=name,
+            title=require_str(spec, "title", f"entities.{name}") if "title" in spec else None,
+            internal_name=_internal_name(spec, name),
             kind=_parse_entity_kind(spec.get("kind"), f"entities.{name}"),
             base_template=require_int(spec, "base_template", f"entities.{name}"),
             site_role=require_str(spec, "site_role", f"entities.{name}"),
@@ -50,6 +55,38 @@ def read(sc: SectionContext) -> dict[str, Any]:
             # name is one SharePoint accepts, are the validator's.
             folders=optional_str_list(spec, "folders", f"entities.{name}"),
         )
+    titles: set[tuple[str, str]] = set()
+    roots: set[tuple[str, str]] = set()
+    for entity in entities.values():
+        title = entity.title or str(sc.loaded.get("prefix", "")) + entity.name
+        if (not title.strip() or title != title.strip() or title in {".", ".."}
+                or any(c in title for c in "/\\") or re.search(r"[\x00-\x1f]", title)):
+            raise MappingValueError(f"entities.{entity.name}.title is not a safe list title")
+        if len(title) > MAX_DISPLAY_TITLE:
+            raise MappingValueError(
+                f"entities.{entity.name}.title must be at most {MAX_DISPLAY_TITLE} characters",
+            )
+        if entity.internal_name and (entity.renamed_from or sc.loaded.get("previous_prefixes")):
+            raise MappingValueError(
+                f"entities.{entity.name}: internal_name cannot be combined with "
+                "renamed_from or previous_prefixes; "
+                "omit internal_name to retain an existing library root during retitling",
+            )
+        key = (entity.site_role, title.casefold())
+        if key in titles:
+            raise MappingValueError(f"entities: duplicate deployed title {title!r}")
+        titles.add(key)
+        # Simple title-derived roots are used by the shipped library fixtures.
+        root = entity.internal_name or (
+            title if entity.is_library and re.fullmatch(r"[A-Za-z0-9_]+", title) else None
+        )
+        if root:
+            key = (entity.site_role, root.casefold())
+            if key in roots:
+                raise MappingValueError(
+                    f"entities: duplicate library root {root!r}",
+                )
+            roots.add(key)
     return {"entities": entities}
 
 
@@ -76,3 +113,16 @@ def _parse_entity_kind(raw_kind: Any, context: str) -> EntityKind:
             f"{', '.join(sorted(ENTITY_KINDS))}; got {raw_kind!r}",
         )
     return cast("EntityKind", raw_kind)
+
+
+def _internal_name(spec: dict[str, Any], name: str) -> str | None:
+    value = optional_str(spec, "internal_name", f"entities.{name}")
+    if value is not None:
+        reason = invalid_file_name_reason(value)
+        if spec.get("kind") != "DocumentLibrary":
+            reason = "internal_name is only supported on a document library"
+        elif value in {".", ".."} or any(c < " " or c == "\x7f" for c in value):
+            reason = "use a decoded folder name without traversal or control characters"
+        if reason:
+            raise MappingValueError(f"entities.{name}.internal_name: {reason}")
+    return value

@@ -99,6 +99,7 @@ def _sp_type_cell(
     enum_members: dict[str, list[str]],
     formula: str | None,
     prefix: str,
+    target_title: str | None = None,
 ) -> str:
     """Human-readable SharePoint type description for one column.
 
@@ -164,14 +165,14 @@ def _sp_type_cell(
         case "User":
             return "Person"
         case "Lookup":
-            return f"Lookup -> {prefix}{sp.target_list}"
+            return f"Lookup -> {target_title or (prefix + str(sp.target_list))}"
         case "LookupMulti":
             # Says what the cell holds and what to split on, like the
             # MultiChoice arm, and says IDS because that is what the export
             # lands: this column takes no $expand, so no title comes back
             # with it.
             return (
-                f"Lookup (multiple) -> {prefix}{sp.target_list} (a set of "
+                f"Lookup (multiple) -> {target_title or (prefix + str(sp.target_list))} (a set of "
                 f"item ids; the Power Query export joins them into one text "
                 f'cell separated by "{MULTI_VALUE_JOIN}")'
             )
@@ -278,6 +279,7 @@ def column_rows_for_table(
             column=name,
             type=_sp_type_cell(
                 sp, enum_members, formulas.get(col.name), bundle.mapping.prefix,
+                bundle.mapping.list_title(sp.target_list) if sp.target_list else None,
             ),
             required="yes" if sp.required else "-",
             unique="yes" if sp.unique else "-",
@@ -425,13 +427,12 @@ def dictionary_rows(
     enum_names = {e.name for e in schema.enums}
     enum_members = {e.name: e.members for e in schema.enums}
     cross_site_keys = bundle.mapping.cross_site_keys()
-    prefix = bundle.mapping.prefix
     rows: list[tuple[str, DictionaryRow]] = []
     for table in tables_for_role(schema, bundle, site_role):
         for row in column_rows_for_table(
             table, bundle, enum_names, enum_members, cross_site_keys,
         ):
-            rows.append((prefix + table.name, row))
+            rows.append((bundle.mapping.list_title(table.name), row))
     if bundle.mapping.reporting.users_table:
         rows += [(USERS_KEY_LIST, row) for row in users_dictionary_rows()]
     return rows

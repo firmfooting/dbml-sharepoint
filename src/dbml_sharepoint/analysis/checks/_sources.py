@@ -26,13 +26,11 @@ def check(vc: ValidationContext) -> list[Finding]:
     if bundle.retention_policies:
         # Every retention list_default key must be a known entity.
         # Keys carry the APP_ prefix; DBML table names are unprefixed.
-        prefix = bundle.mapping.prefix
+        entity_by_title = {
+            bundle.mapping.list_title(name): name for name in bundle.mapping.entities
+        }
         for entity_name in bundle.retention_list_defaults:
-            bare = (
-                entity_name.removeprefix(prefix)
-                if prefix and entity_name.startswith(prefix)
-                else entity_name
-            )
+            bare = entity_by_title.get(entity_name, entity_name)
             if bare not in table_names:
                 findings.append(Finding(
                     FindingCode.UNKNOWN_ENTITY,

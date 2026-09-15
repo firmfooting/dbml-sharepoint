@@ -123,6 +123,7 @@
   "index_change_ceiling": 20000,
   "level_renames": [],
   "library_folders": [],
+  "library_roots": [],
   "list_display_titles": [
     [
       "APP_Project",
@@ -1084,6 +1085,35 @@
           `'${title}' could not be read (${why}), so its ownership marker was not checked.`);
         finding(2, sizeKey(title), 'NOT-ASSESSABLE',
           `'${title}' could not be read (${why}), so its size against the list view threshold was not assessed.`);
+      }
+    }
+
+    for (const [title, internalName] of (TARGETS.library_roots || [])) {
+      const key = `library_root:${title}`;
+      const shape = listShapes.get(title);
+      const expected = decodeURIComponent(WEB).replace(/\/$/, '') + '/' + internalName;
+      if ((knownTitles && !knownTitles.has(title.toLowerCase())) ||
+          (shape && !shape.ok && shape.status === 404)) {
+        const occupants = await Promise.all(['Folder', 'File'].map(kind =>
+          probeGet(`web/Get${kind}ByServerRelativeUrl('${odataName(expected)}')?$select=Exists,ServerRelativeUrl`)));
+        if (occupants.some(row => row.ok && row.d.Exists === true)) {
+          finding(2, key, 'BLOCKED', `LIBRARY_ROOT_OCCUPIED: '${expected}' already exists under another title or object.`);
+        } else if (occupants.every(row => (!row.ok && row.status === 404) ||
+            (row.ok && row.d.Exists === false))) {
+          finding(2, key, 'PASS', `'${title}' and its declared root '${expected}' are absent.`);
+        } else {
+          finding(2, key, 'NOT-ASSESSABLE', `Could not establish availability of '${expected}'.`);
+        }
+        continue;
+      }
+      const root = await probeGet(`web/lists/getbytitle('${odataName(title)}')/RootFolder?$select=ServerRelativeUrl`);
+      const actual = root.ok && root.d.ServerRelativeUrl;
+      if (!shape || !shape.ok || typeof actual !== 'string' || !actual.startsWith('/')) {
+        finding(2, key, 'NOT-ASSESSABLE', `Could not verify the immutable root of '${title}'.`);
+      } else if (shape.d.BaseTemplate !== 101 || actual !== expected) {
+        finding(2, key, 'BLOCKED', `LIBRARY_INTERNAL_NAME_MISMATCH: '${title}' requires '${expected}', read ${JSON.stringify(actual)} (template ${shape.d.BaseTemplate}).`);
+      } else {
+        finding(2, key, 'PASS', `'${title}' has the declared immutable root '${expected}'.`);
       }
     }
 

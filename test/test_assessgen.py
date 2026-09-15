@@ -2913,3 +2913,58 @@ def test_a_null_item_count_is_not_read_as_an_empty_list() -> None:
     assert not [
         f for f in _item_count_findings(summary) if f["level"] == "INFO"
     ], summary["findings"]
+
+
+@pytest.mark.parametrize("root,expected", [
+    ("/sites/test/APP_Task", "PASS"), ("/sites/test/Wrong", "BLOCKED"),
+    (None, "NOT-ASSESSABLE"),
+])
+def test_assessment_checks_immutable_library_root(root: str | None, expected: str) -> None:
+    schema, bundle = _library_pack()
+    bundle.mapping.entities["Task"] = replace(
+        bundle.mapping.entities["Task"], internal_name="APP_Task",
+    )
+    js = generate_assess_js(
+        schema=schema, bundle=bundle, release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test", site_role="default",
+        source_dbml="simple.dbml", generated_at="2026-09-15T00:00:00Z",
+    )
+    harness = _folder_harness(1)
+    if root != "/sites/test/APP_Task":
+        harness = harness.replace(
+            'ServerRelativeUrl: "/sites/test/APP_Task"',
+            'ServerRelativeUrl: ' + json.dumps(root),
+        )
+    summary = _run_assess(_library_markers(), harness=harness, js=js)
+    finding = next(f for f in summary["findings"] if f["key"] == "library_root:APP_Task")
+    assert finding["level"] == expected
+    if expected == "BLOCKED":
+        assert summary["verdict"] == "BLOCKED"
+
+
+@pytest.mark.parametrize("folder,file,expected", [
+    (False, False, "PASS"), (True, False, "BLOCKED"),
+    (False, True, "BLOCKED"), (None, False, "NOT-ASSESSABLE"),
+])
+def test_absent_library_requires_an_available_root(
+    folder: bool | None, file: bool, expected: str,
+) -> None:
+    schema, bundle = _library_pack()
+    bundle.mapping.entities["Task"] = replace(
+        bundle.mapping.entities["Task"], internal_name="FreshRoot",
+    )
+    js = generate_assess_js(
+        schema=schema, bundle=bundle, release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test", site_role="default",
+        source_dbml="simple.dbml", generated_at="2026-09-15T00:00:00Z",
+    )
+    harness = _ASSESS_HARNESS.replace("const body = (url) => {", "const body = (url) => {"
+        "\n  if (url.includes('GetFolderByServerRelativeUrl')) return { d: { Exists: " +
+        json.dumps(folder) + " } };" +
+        "\n  if (url.includes('GetFileByServerRelativeUrl')) return { d: { Exists: " +
+        json.dumps(file) + " } };")
+    summary = _run_assess({}, harness=harness, js=js)
+    finding = next(f for f in summary["findings"] if f["key"] == "library_root:APP_Task")
+    assert finding["level"] == expected
+    if expected == "BLOCKED":
+        assert summary["verdict"] == "BLOCKED"

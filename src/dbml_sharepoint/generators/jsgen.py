@@ -543,7 +543,7 @@ def build_schema_json(
     role_tables = site_tables_in_order(schema, bundle.mapping.entities, site_role)
     for table_name in role_tables:
         entity = bundle.mapping.entities[table_name]
-        list_title = bundle.mapping.prefix + table_name
+        list_title = bundle.mapping.list_title(table_name)
         versioning = bundle.mapping.versioning_for(table_name)
         item_security = bundle.mapping.item_security_for(table_name)
         table = by_name[table_name]
@@ -617,7 +617,7 @@ def build_schema_json(
 
             if (table.name, col.name) in deferred_set:
                 prefix = bundle.mapping.prefix
-                target = (prefix + col.ref.target_table) if col.ref else ""
+                target = (bundle.mapping.list_title(col.ref.target_table)) if col.ref else ""
                 phase2.append({
                     "list": list_title,
                     "target_list": target,
@@ -772,6 +772,7 @@ def build_schema_json(
             "title": list_title,
             "kind": entity.kind,
             "base_template": entity.base_template,
+            **({"internal_name": entity.internal_name} if entity.internal_name else {}),
             # The folder phase and the ACL settle loop key on these rather
             # than on the kind string, so a third kind cannot be mistaken for
             # a library by a string test in JavaScript.
@@ -954,7 +955,11 @@ def build_schema_json(
             views_out.append({
                 "list": list_title,
                 "title": view.title,
-                "view_fields": list(view.fields),
+                # Learn SPBuiltInFieldId.DocIcon: retain SharePoint's native document icon.
+                "view_fields": (
+                    (["DocIcon"] if entity.is_library and "DocIcon" not in view.fields else [])
+                    + list(view.fields)
+                ),
                 "caml_query": _view_caml_query(view, column_types, entity.kind),
                 # SP.View.Scope, or null when no scope is declared, which
                 # leaves the live property alone.
@@ -1064,7 +1069,7 @@ def build_schema_json(
             policy = bundle.mapping.permissions_for_entity(table_name)
             if policy is None:
                 continue
-            list_title = prefix + table_name
+            list_title = bundle.mapping.list_title(table_name)
             assignments_out: list[dict[str, Any]] = []
             for assignment in policy.assignments:
                 p = assignment.principal
@@ -1235,7 +1240,10 @@ def _field_body(
             # compare against, and the reconciler cannot narrow a property it
             # was never told about.
             body["AllowMultipleValues"] = sp.kind == "LookupMulti"
-            target = list_title_prefix + (sp.target_list or "")
+            target_entity = (entities or {}).get(sp.target_list or "")
+            target = (target_entity.title if target_entity else None) or (
+                list_title_prefix + (sp.target_list or "")
+            )
             out: dict[str, Any] = {
                 "title": sp.name,
                 "body": body,

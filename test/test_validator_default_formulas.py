@@ -149,8 +149,8 @@ def test_every_measured_function_is_accepted() -> None:
     assert _own(_formula_findings({"Score": formula})) == []
 
 
-def test_the_shipped_financial_year_pair_is_accepted() -> None:
-    """The customisation legal-compliance-register's README offers.
+def test_the_measured_financial_year_pair_is_accepted() -> None:
+    """The former assessment-period defaults remain valid formula examples.
 
     MEASURED 2026-09-13, `field.default-formula.shipped-financial-year-fills`
     and `...quarter-fills` in default-formula-functions-probe.js: both

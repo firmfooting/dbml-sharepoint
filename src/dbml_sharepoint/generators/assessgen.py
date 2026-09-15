@@ -84,7 +84,6 @@ def assess_targets(
     for the same reason: the emitted script quotes both numbers to the
     operator and reads them from `analysis.limits` rather than spelling them.
     """
-    prefix = bundle.mapping.prefix
     m = bundle.mapping
     by_name = {table.name: table for table in schema.tables}
     cross_site_keys = m.cross_site_keys()
@@ -114,6 +113,7 @@ def assess_targets(
     # [[library title, [folder, ...]], ...] for every library that declares
     # folders: the assessment checks nothing stands where a folder will go.
     library_folders: list[list[Any]] = []
+    library_roots: list[list[str]] = []
     # [[list title, [internal name, ...]], ...] in DECLARATION order, for
     # every list holding at least one column declared unique. Pairs for the
     # same reason `markers` is.
@@ -121,18 +121,20 @@ def assess_targets(
     enum_names = {enum.name for enum in schema.enums}
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):
         entity = bundle.mapping.entities[table_name]
-        titles.append(prefix + table_name)
+        titles.append(bundle.mapping.list_title(table_name))
         if entity.is_library and entity.folders:
-            library_folders.append([prefix + table_name, list(entity.folders)])
+            library_folders.append([bundle.mapping.list_title(table_name), list(entity.folders)])
+        if entity.internal_name:
+            library_roots.append([bundle.mapping.list_title(table_name), entity.internal_name])
         previous = bundle.mapping.previous_titles(table_name)
         if previous:
             renames.append([
-                prefix + table_name,
+                bundle.mapping.list_title(table_name),
                 [[title, marker_for(family, name)] for title, name in previous],
             ])
         templates.add(int(entity.base_template))
         table_names.append(table_name)
-        markers.append((prefix + table_name, marker_for(family, table_name)))
+        markers.append((bundle.mapping.list_title(table_name), marker_for(family, table_name)))
         table = by_name.get(table_name)
         if table is not None:
             # Declared columns only. A lookup PROJECTION is renamed by the
@@ -151,13 +153,13 @@ def assess_targets(
                 if m.display_name_for(table_name, column) != column
             ]
             if declared:
-                display_titles.append([prefix + table_name, declared])
+                display_titles.append([bundle.mapping.list_title(table_name), declared])
             unique = _declared_unique_columns(
                 table, enum_names,
                 {c for (e, c) in cross_site_keys if e == table_name},
             )
             if unique:
-                unique_columns.append([prefix + table_name, unique])
+                unique_columns.append([bundle.mapping.list_title(table_name), unique])
     m = bundle.mapping
     perms = m.permissions
     # [[current name, [[previous name, previous marker], ...]], ...] for
@@ -202,6 +204,7 @@ def assess_targets(
         "group_renames": group_renames,
         "base_templates": sorted(templates),
         "library_folders": library_folders,
+        "library_roots": library_roots,
         # The two list-size ceilings the item-count probe reports against,
         # carried in the payload so the template spells neither number and
         # cannot disagree with `analysis.limits`.
@@ -255,6 +258,12 @@ def derive_requirements(
             f"Existing list '{title}' is under the {LIST_VIEW_THRESHOLD:,}-item "
             f"list view threshold",
             "WARN",
+        ))
+    for title, root in t["library_roots"]:
+        reqs.append(Requirement(
+            f"library_root:{title}",
+            f"Existing library '{title}' has the declared immutable URL name '{root}'",
+            "BLOCKED",
         ))
     for title, folders in t["library_folders"]:
         # A file standing where a folder is declared stops the folder phase,

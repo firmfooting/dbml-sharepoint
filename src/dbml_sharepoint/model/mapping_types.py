@@ -118,6 +118,8 @@ class EntityMapping:
     # standing where a folder was declared; a redeploy verifies and skips.
     # Library only: the validator refuses the key on a list.
     folders: tuple[str, ...] = ()
+    title: str | None = None
+    internal_name: str | None = None
 
     @property
     def is_library(self) -> bool:
@@ -895,6 +897,11 @@ class Mapping:
                 return None
         return self.permissions.default_policy
 
+    def list_title(self, entity_name: str) -> str:
+        """Return the explicit list title, or the prefixed entity name."""
+        entity = self.entities.get(entity_name)
+        return entity.title if entity and entity.title else self.prefix + entity_name
+
     def previous_titles(self, entity_name: str) -> list[tuple[str, str]]:
         """Every title this list may be found under on a site that has not
         migrated, each paired with the entity name whose marker it must carry.
@@ -904,7 +911,7 @@ class Mapping:
         title is never a candidate, and nothing is listed twice.
         """
         entity = self.entities[entity_name]
-        current = self.prefix + entity_name
+        current = self.list_title(entity_name)
         seen: set[str] = set()
         out: list[tuple[str, str]] = []
         prefixes = [self.prefix, *self.previous_prefixes]

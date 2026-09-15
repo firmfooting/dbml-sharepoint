@@ -136,21 +136,13 @@ class TemplateChoice:
     #: like its siblings. Sourced from `_TemplateFacts`, which has already
     #: loaded the mapping, so this costs no second read.
     entity_roles: tuple[tuple[str, str], ...]
+    entity_titles: tuple[tuple[str, str], ...] = ()
 
     def list_titles(self, site_role: str) -> tuple[str, ...]:
         """The SharePoint list titles this template creates for one site role.
 
-        A method rather than a property because it iterates. The rule it
-        obeys is plain concatenation, which is what every generator that
-        names a list does -- `jsgen`, `assessgen`, `demogen`, `manifestgen`
-        and `reportgen` each build the title as `prefix + entity_name` -- so
-        this reports the build's behaviour rather than predicting it.
-
-        Named by MODULE, not by line. An earlier version of this docstring
-        cited five `file:line` pairs and four of them had drifted within one
-        stack of rebases, pointing at a blank line, a docstring and a list
-        initialiser. A citation that rots is worse than none: it reads as
-        precision and sends the next person to the wrong place.
+        Explicit entity titles take precedence over the selected prefix,
+        matching Mapping.list_title used by the generators.
 
         FILTERED BY SITE ROLE, because the build is. Every generator goes
         through `ordering.site_tables_in_order`, which keeps only entities
@@ -168,7 +160,7 @@ class TemplateChoice:
         gain the operator can see.
         """
         return tuple(
-            self.prefix + name
+            dict(self.entity_titles).get(name, self.prefix + name)
             for name, role in self.entity_roles
             if role == site_role
         )
@@ -1191,6 +1183,7 @@ class _TemplateFacts:
     #: `execute_build` refuses `--enterprise-reader` outright against a
     #: mapping declaring no `enroll_enterprise_reader` group. Same reason.
     reader_group: bool
+    entity_titles: tuple[tuple[str, str], ...] = ()
 
 
 def _read_facts(solution: Solution) -> _TemplateFacts:
@@ -1211,6 +1204,9 @@ def _read_facts(solution: Solution) -> _TemplateFacts:
     permissions = bundle.mapping.permissions
     return _TemplateFacts(
         roles=frozenset(e.site_role for e in bundle.mapping.entities.values()),
+        entity_titles=tuple(
+            (name, e.title) for name, e in bundle.mapping.entities.items() if e.title
+        ),
         entity_roles=tuple(
             (name, e.site_role) for name, e in bundle.mapping.entities.items()
         ),
@@ -1480,7 +1476,7 @@ def _run(console: Console) -> int:
     # Carries the entity/site-role pairs `_read_facts` loaded above, which is
     # what lets `list_titles` report the lists this site role actually
     # creates.
-    choice = TemplateChoice(solution, prefix, facts.entity_roles)
+    choice = TemplateChoice(solution, prefix, facts.entity_roles, facts.entity_titles)
 
     console.rule("Site")
     site_url = _ask_site_url(console)

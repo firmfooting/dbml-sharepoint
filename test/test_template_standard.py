@@ -195,20 +195,11 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Gaps and remediation": "Act",
         "Ownership and cycle": "Govern",
     },
-    # The topic register collapses Assess: a topic is not rated, it is
-    # owned. The SAQ carries Identify -> Act -> Govern -> Govern, the last
-    # two being the executive's confirmation and the licence holder's
-    # recording, two acts by two roles. Nothing on either is auto-stamped,
-    # so no System section.
-    ("legal-compliance-register", "Topic"): {
-        "The topic": "Identify",
-        "Who owns it": "Act",
-        "Reporting and standing": "Govern",
-    },
-    ("legal-compliance-register", "SAQ"): {
-        "The SAQ": "Identify",
-        "Complete it": "Act",
-        "Confirm it": "Govern",
+    # Workbook content stays in Excel; these sections track the handoffs.
+    ("legal-compliance-register", "Document"): {
+        "The document": "Identify",
+        "Assign and complete": "Act",
+        "Optional executive review": "Govern",
         "Record in the portal": "Govern",
     },
     # Two consecutive Act sections, which §1.2 permits and this register
@@ -1214,12 +1205,9 @@ def _is_icon(node: dict[str, Any]) -> bool:
 
 
 def _is_title_line(node: dict[str, Any], kind: str) -> bool:
-    """The live line names the row: `[$Title]` on a list, `[$FileLeafRef]` on
-    a document library, where Title is null after upload and the file name
-    is what a reader recognises (reviewed capture
-    `library.doc-lib.header-fileleafref`, 2026-09-03)."""
+    """Use ordinary item fields; the 2026-09-13 header probe found file tokens empty."""
     text = _text(node)
-    identity = "[$FileLeafRef]" if kind == "DocumentLibrary" else "[$Title]"
+    identity = "[$TopicName]" if kind == "DocumentLibrary" else "[$Title]"
     return (
         text.startswith("=")
         and identity in text
@@ -1841,7 +1829,12 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     generator builds All Items for a library too, leading with the file name,
     and the validator counts it, so a survey that skipped one would be
     measuring a view the deploy creates and the validator judges. The worst
-    is unchanged at 9."""
+    is unchanged at 9.
+
+    RE-MEASURED 2026-09-14 across 36 templates / 69 entities: replacing
+    Topic and SAQ with Document removes one entity in band 5. Document
+    remains at 5 (three assigned people plus Author and Editor). The
+    distribution is 2 -> 10, 3 -> 30, 4 -> 20, 5 -> 5, 8 -> 2, 9 -> 2."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
@@ -1872,8 +1865,8 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     # LIST keeps the roster at 34 while the distribution above moves under it,
     # and the docstring's entity total was wrong for exactly that reason
     # before this pin existed.
-    assert counted == 70, (
-        f"{counted} entities were surveyed, not the 70 the distribution above "
+    assert counted == 69, (
+        f"{counted} entities were surveyed, not the 69 the distribution above "
         f"was measured over. An entity appeared or disappeared inside a "
         f"template that is still on the roster. Re-measure the distribution "
         f"and the worst count before trusting either."
@@ -2481,3 +2474,178 @@ def test_no_shipped_level_description_exceeds_the_role_definition_ceiling() -> N
     assert families_with_levels, "no family declares a level, the sweep visited nothing"
     assert levels_checked, "no levels discovered, the sweep visited nothing"
     assert not offenders, "level descriptions over budget:\n" + "\n".join(offenders)
+
+
+# The file library's two handoff routes must agree with its recording view.
+def _legal_assessment(**changes: Any) -> dict[str, Any]:
+    return {
+        "ItemType": "SAQ", "TopicName": "VIC - Privacy",
+        "Division": "Clinical services",
+        "Status": "Complete", "CompletedDate": "today-1",
+        "ReviewRequirement": "Not required", **changes,
+    }
+
+
+def _legal_rule_accepts(row: dict[str, Any]) -> bool | None:
+    from dbml_sharepoint.analysis.save_rules import effective_list_validation
+
+    loaded = _load("legal-compliance-register")
+    types = loaded.column_types("Document")
+    rule = effective_list_validation(loaded.mapping, "Document", types)
+    assert rule is not None
+    return _evaluate(normalise(rule.when), row, types)
+
+
+@pytest.mark.parametrize(("changes", "accepted"), [
+    ({}, True),
+    ({"ExternalRecorded": "today"}, True),
+    ({"ReviewRequirement": "Required"}, True),
+    ({"ReviewRequirement": "Required", "ExternalRecorded": "today"}, False),
+    ({"ReviewRequirement": "Required", "ReviewedDate": "today", "ExternalRecorded": "today"}, True),
+    ({"CompletedDate": None}, False),
+    ({"Status": None}, False),
+    ({"ReviewRequirement": None}, False),
+    ({"ReviewRequirement": None, "ReviewedDate": "today", "ExternalRecorded": "today"}, False),
+    ({"Status": "In progress", "ExternalRecorded": "today"}, False),
+    ({"Status": "In progress", "ReviewedDate": "today"}, False),
+    ({"CompletedDate": "today+1"}, False),
+    ({"ReviewedDate": "today+1"}, False),
+    ({"ExternalRecorded": "today+1"}, False),
+    ({"TopicName": None}, False),
+    ({"Division": None}, False),
+])
+def test_legal_assessment_handoffs(changes: dict[str, Any], accepted: bool) -> None:
+    assert _legal_rule_accepts(_legal_assessment(**changes)) is accepted
+
+
+def test_legal_reference_and_cancelled_files_need_no_assessment_dates() -> None:
+    assert _legal_rule_accepts({"ItemType": "REG"}) is True
+    assert _legal_rule_accepts({"ItemType": "SAQ", "Status": "No longer required"}) is True
+    assert _legal_rule_accepts({"ItemType": "SAQ", "Status": "Required"}) is True
+
+
+def test_legal_blank_workflow_fields_are_allowed_only_outside_active_handoffs() -> None:
+    assert _legal_rule_accepts({"ItemType": "SAQ"}) is False
+    assert _legal_rule_accepts({
+        "ItemType": "REG", "Status": None, "ReviewRequirement": None,
+    }) is True
+    assert _legal_rule_accepts(_legal_assessment(
+        Status="In progress", CompletedDate=None, ReviewRequirement=None,
+    )) is True
+
+
+@pytest.mark.parametrize("status", ["Required", "In progress"])
+def test_legal_reopened_assessment_must_clear_completion_date(status: str) -> None:
+    assert _legal_rule_accepts(_legal_assessment(Status=status)) is False
+    assert _legal_rule_accepts(_legal_assessment(Status=status, CompletedDate=None)) is True
+
+
+@pytest.mark.parametrize("reviewed", [None, "today-1"])
+def test_legal_cancelled_assessment_can_retain_completion_history(reviewed: str | None) -> None:
+    assert _legal_rule_accepts(_legal_assessment(
+        Status="No longer required", ReviewedDate=reviewed,
+    )) is True
+    assert _legal_rule_accepts(_legal_assessment(
+        Status="No longer required", ReviewedDate=reviewed, CompletedDate=None,
+    )) is (reviewed is None)
+
+
+def test_legal_date_order_remains_a_governance_check() -> None:
+    assert _legal_rule_accepts(_legal_assessment(
+        CompletedDate="today", ReviewedDate="today-1", ExternalRecorded="today-2",
+        ReviewRequirement="Required",
+    )) is True
+
+
+@pytest.mark.parametrize(("changes", "ready", "awaiting_review"), [
+    ({}, True, False),
+    ({"ReviewRequirement": "Required"}, False, True),
+    ({"ReviewRequirement": "Required", "ReviewedDate": "today"}, True, False),
+    ({"ExternalRecorded": "today"}, False, False),
+    ({"Status": "In progress", "CompletedDate": None}, False, False),
+    ({"Status": "No longer required"}, False, False),
+    ({"ItemType": "REG"}, False, False),
+])
+def test_legal_recording_worklists_follow_the_review_choice(
+    changes: dict[str, Any], ready: bool, awaiting_review: bool,
+) -> None:
+    loaded = _load("legal-compliance-register")
+    views = {v.title: v for v in loaded.mapping.views["Document"]}
+    expectations = (("To record in the portal", ready), ("Awaiting review", awaiting_review))
+    for name, expected in expectations:
+        where = views[name].where
+        assert where is not None
+        assert _evaluate(
+            normalise(where), _legal_assessment(**changes), loaded.column_types("Document"),
+        ) is expected
+
+
+def test_legal_regs_never_enter_assessment_worklists() -> None:
+    loaded = _load("legal-compliance-register")
+    for view in loaded.mapping.views["Document"]:
+        if view.title in {"Platform owner", "Folder View"}:
+            continue
+        assert view.where is not None
+        assert _evaluate(
+            normalise(view.where), _legal_assessment(ItemType="REG"),
+            loaded.column_types("Document"),
+        ) is (view.title == "Reference regulations")
+
+
+def test_legal_library_keeps_content_in_excel_and_issuance_independent() -> None:
+    loaded = _load("legal-compliance-register")
+    assert list(loaded.mapping.entities) == ["Document"]
+    assert loaded.mapping.entities["Document"].kind == "DocumentLibrary"
+    assert all(c.ref is None for t in loaded.schema.tables for c in t.columns)
+    assert not loaded.mapping.default_formulas
+    assert not loaded.mapping.derived_columns
+    columns = {c.name: c for t in loaded.schema.tables for c in t.columns}
+    assert columns["Status"].default is None
+    assert columns["ReviewRequirement"].default is None
+    types = loaded.column_types("Document")
+    assert {"IssuedYear", "IssuedQuarter"} <= types.keys()
+    assert not {"PlatformOwner", "AssessmentRef", "DueDate"} & types.keys()
+    assert not {"Compliance", "RiskLevel", "Controls", "ActionUrl", "IdentifiedGaps"} & types.keys()
+    year_rule = loaded.mapping.column_validation["Document"].columns["IssuedYear"]
+    assert _evaluate(normalise(year_rule.when), {"IssuedYear": 2016}, types) is True
+    assert _evaluate(normalise(year_rule.when), {"IssuedYear": 26}, types) is False
+    workflow = ("Status", "CompletedDate", "ReviewRequirement", "ReviewedDate", "ExternalRecorded")
+    for field in workflow:
+        rule = loaded.mapping.form_visibility["Document"].columns[field]
+        assert rule.when is not None
+        assert _evaluate(normalise(rule.when), {"ItemType": "REG"}, types) is False
+        assert _evaluate(normalise(rule.when), {"ItemType": "SAQ"}, types) is True
+
+
+def test_legal_demo_assessments_satisfy_save_rules() -> None:
+    loaded = _load("legal-compliance-register")
+    for item in loaded.mapping.demo_items["Document"]:
+        assert _legal_rule_accepts(item.values) is True, item.key
+
+
+
+def test_legal_platform_owner_workspace_keeps_unclassified_uploads_visible() -> None:
+    loaded = _load("legal-compliance-register")
+    view = next(v for v in loaded.mapping.views["Document"] if v.title == "Platform owner")
+    assert view.scope == "recursive"
+    assert view.where is None
+    assert view.group_by is None
+    assert [(sort.field, sort.direction) for sort in view.sort] == [("Modified", "desc")]
+    assert {
+        "FileLeafRef", "ItemType", "TopicName", "PortalTopicId", "Division",
+        "ExecutiveResponsible", "BusinessOwner", "ExternalRecorded",
+    } <= set(view.fields)
+
+
+@pytest.mark.parametrize("review", ["Not required", "Required"])
+def test_cancelled_assessments_retain_recording_prerequisites(review: str) -> None:
+    row = _legal_assessment(
+        Status="No longer required", ExternalRecorded="today",
+        ReviewRequirement=review, ReviewedDate="today-1" if review == "Required" else None,
+    )
+    assert _legal_rule_accepts(row) is True
+    assert _legal_rule_accepts({**row, "CompletedDate": None}) is False
+    assert _legal_rule_accepts({**row, "ReviewRequirement": None}) is False
+    assert _legal_rule_accepts({**row, "ExternalRecorded": "today+1"}) is False
+    if review == "Required":
+        assert _legal_rule_accepts({**row, "ReviewedDate": None}) is False

@@ -26,7 +26,8 @@ prefix_owner: "Team name"
 extension: null            # or an extension name (entry-point resolved)
 ```
 
-Every deployed list is named `<prefix><EntityName>`. `prefix_owner`
+By default, each deployed list is named `<prefix><EntityName>`. An entity
+`title` overrides that name without changing the security-group prefix. `prefix_owner`
 documents who claims the prefix. It is provenance: the reporting pack
 prints it beside the prefix in its model metadata, and the deploy does not
 read it. A `prefix_registry` key once sat beside it and was removed because
@@ -68,6 +69,8 @@ entities:
 | --- | --- |
 | `kind` | `List`, `HubOnlyList` or `DocumentLibrary` (see [Document libraries](#document-libraries) below) |
 | `base_template` | SP base template id, paired with the kind: `100` (the generic list) for `List` and `HubOnlyList`, `101` for `DocumentLibrary`. The create call sends the number and never the kind, so a mismatch is refused, and so is any other number |
+| `title` | Optional explicit display title, at most 255 characters, independent of the prefix and DBML entity name |
+| `internal_name` | Optional, library only; the URL name used at creation. Use a decoded folder name following the shared file/folder naming rules. Spaces, hyphens and Unicode are supported; `#` and `%` remain excluded by the current path transport. Cannot be combined with `renamed_from` or `previous_prefixes`. Deploy verifies the root URL and refuses mismatches; it does not move an existing library |
 | `folders` | Optional, library only; the root-level folders the deploy creates and verifies, by name. Each name is held to Microsoft's file and folder name rules |
 | `site_role` | Free label; `build --site-role X` deploys the entities labelled `X` |
 | `singleton` | Optional; a one-row configuration list (enables extension seed rows) |
@@ -219,7 +222,9 @@ tenant, and the deploy relies on nothing about a library that was not:
 - A view may declare `scope: recursive` to show every file at any depth,
   which is what lets a filtered view find a file whichever folder it was
   filed in (`library-nesting-probe.js`, 2026-09-08). The generated
-  `All Items` on a library is recursive and leads with the file name.
+  `All Items` on a library is recursive. Library views retain the native
+  `DocIcon` column beside the declared columns. Use `scope: default` for
+  folder navigation.
 - The reporting pack carries `FileLeafRef` and `FileRef` for a library
   beside its declared columns, under no switch, because without them one
   row cannot be told from its neighbour. They reach the report as

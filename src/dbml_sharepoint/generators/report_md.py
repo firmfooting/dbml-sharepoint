@@ -29,6 +29,7 @@ from dbml_sharepoint.analysis.reporting.dictionary import (
     metadata_rows,
     users_dictionary_rows,
 )
+from dbml_sharepoint.analysis.reporting.names import query_name
 from dbml_sharepoint.analysis.reporting.plan import build_plans, tables_for_role
 from dbml_sharepoint.analysis.timezones import WINDOW_END, WINDOW_START, zone_table
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
@@ -174,7 +175,7 @@ def generate_reporting_md(
         setup_step,
         ("2. For each `.pq` file: **Get Data -> Blank Query -> Advanced "
          "Editor**, paste the file contents, and rename the query to the "
-         "list name (the first line of the file)."),
+         "filename without its .pq extension. Keep any encoded characters or digest suffix."),
         ("3. When prompted to authenticate, choose **Organizational account** "
          "and sign in with an account that can read the lists."),
         "",
@@ -234,13 +235,13 @@ def generate_reporting_md(
                 target_title,
             )
             lines.append(
-                f"| {plan.list_title} | {fk_key_column(fk_col)} "
-                f"| {target_title} | {target_entity} Key |",
+                f"| {_md_cell(query_name(plan.list_title))} | {fk_key_column(fk_col)} "
+                f"| {_md_cell(query_name(target_title))} | {target_entity} Key |",
             )
         if plan.users_table:
             for name in plan.person_columns:
                 lines.append(
-                    f"| {plan.list_title} | {person_key_column(name)} "
+                    f"| {_md_cell(query_name(plan.list_title))} | {person_key_column(name)} "
                     f"| {USERS_KEY_LIST} | User{REPORT_KEY_SUFFIX} |",
                 )
     lines += [
@@ -297,9 +298,9 @@ def generate_reporting_md(
          "display-form link for the row), so any report visual can link "
          "straight back to the source item. The Power Query reads each "
          "list's own folder at refresh, so a list renamed in place still "
-         "links correctly; the SQL views have no site to read and build the "
-         "path from the declared title, which is a dead link for such a "
-         "list. `data-dictionary.md` documents every list and column plus "
+         "links correctly. SQL uses a declared immutable library root and "
+         "otherwise leaves the link null. `data-dictionary.md` documents "
+         "every list and column plus "
          "the deployment metadata behind this generation."),
         "",
         (f"The Power Query carries **{ITEM_URL_RESOLVED_COLUMN}** beside it, "
@@ -315,6 +316,13 @@ def generate_reporting_md(
          "and columns read from a related list, computed in the query and "
          "backed by no SharePoint field. `data-dictionary.md` marks each "
          "one, and the SQL views do not carry them."),
+        "",
+        ("SQL ItemURL is null unless the library declares an immutable internal_name. "
+        "Power Query resolves the current root from SharePoint and flags fallback links."),
+        "",
+        ("Report filenames encode filesystem-unsafe characters with percent escapes. "
+        "Long names use a digest suffix. Cross-query references use the same names. "
+         "SQL view names must remain distinct from metadata views and within 128 characters."),
         "",
         ":::warning Load each query under the name of its file",
         ("A query that reads another list names it, so `GOV_Risk.pq` must "
@@ -455,7 +463,7 @@ def generate_data_dictionary(
 
     for table in tables:
         entity = mapping.entities[table.name]
-        list_title = prefix + table.name
+        list_title = bundle.mapping.list_title(table.name)
         heading = (
             f"## {list_title}: entity `{table.name}` "
             f"({entity.kind}, template {entity.base_template}"
@@ -550,7 +558,7 @@ def generate_data_dictionary(
         "| Column | Construction | Purpose |",
         "|---|---|---|",
         ("| ItemURL | The list's own folder, read at refresh, + item id "
-         "(the SQL views use the declared list path instead) | Direct link "
+         "(SQL needs a declared immutable library root; otherwise the link is null) | Direct link "
          "from any report row back to the SharePoint item (display form) |"),
         (f"| {ITEM_URL_RESOLVED_COLUMN} | Whether that folder read succeeded "
          "| False means every ItemURL in the table was built from the "

@@ -16,6 +16,7 @@ no site and falls back to a ``SiteUrl`` text parameter.
 """
 
 from datetime import datetime
+from urllib.parse import quote
 
 from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN
 from dbml_sharepoint.analysis.report_columns import (
@@ -35,6 +36,7 @@ from dbml_sharepoint.analysis.reporting.dictionary import (
     dictionary_rows,
     metadata_rows,
 )
+from dbml_sharepoint.analysis.reporting.names import query_name
 from dbml_sharepoint.analysis.reporting.plan import (
     TOLERANT_DATE_TYPES,
     ListPlan,
@@ -52,7 +54,7 @@ from dbml_sharepoint.model.release import Release
 
 def _m_string(text: str) -> str:
     """An M string literal: double quotes are escaped by doubling."""
-    return '"' + text.replace('"', '""') + '"'
+    return '"' + text.replace('#(', '#(#)(').replace('"', '""') + '"'
 
 
 def _row_key_m(list_title: str, id_expression: str) -> str:
@@ -477,8 +479,9 @@ def _item_url_base_m(plan: ListPlan) -> list[str]:
     branch that ran rides beside the URL, so a report can suppress the link
     rather than ship a 404.
     """
+    escaped_title = quote(plan.list_title.replace("'", "''"), safe="")
     endpoint = (
-        f"/_api/web/lists/getbytitle('{plan.list_title}')"
+        f"/_api/web/lists/getbytitle('{escaped_title}')"
         "/RootFolder?$select=ServerRelativeUrl"
     )
     return [
@@ -489,7 +492,7 @@ def _item_url_base_m(plan: ListPlan) -> list[str]:
         "                base =",
         "                    SiteOrigin",
         "                        & OData.Feed(",
-        f'                            SiteRoot & "{endpoint}",',
+        f"                            SiteRoot & {_m_string(endpoint)},",
         "                            null,",
         '                            [Implementation = "2.0"]',
         "                        )[ServerRelativeUrl]",
@@ -498,7 +501,7 @@ def _item_url_base_m(plan: ListPlan) -> list[str]:
         "        otherwise",
         "            [",
         "                resolved = false,",
-        f'                base = SiteRoot & "{plan.item_url_path}"',
+        f"                base = SiteRoot & {_m_string(plan.item_url_path)}",
         "            ],",
     ]
 
@@ -560,7 +563,7 @@ def _query_ref(name: str) -> str:
     name, so a derived join works only where each `.pq` was loaded under the
     name its file has; guide.md says so beside the instruction to paste them.
     """
-    return f'#"{name}"'
+    return '#' + _m_string(query_name(name))
 
 
 def _derived_site_bindings(plan: ListPlan) -> tuple[list[str], dict[str, str]]:
@@ -804,7 +807,10 @@ def _render_m(plan: ListPlan, *, site_url: str | None = None) -> str:
         *(_AS_DATE_M if dates else []),
         *(_site_zone_m(plan.zone) if plan.zone is not None else []),
         "    Source = OData.Feed(",
-        f"        SiteRoot & \"/_api/web/lists/getbytitle('{plan.list_title}')/items\"",
+        "        SiteRoot & " + _m_string(
+            "/_api/web/lists/getbytitle('"
+            + quote(plan.list_title.replace("'", "''"), safe="") + "')/items",
+        ),
         f'            & "{query_string}"',
     ]
     if plan.expands:
@@ -1129,9 +1135,16 @@ def generate_powerquery(
     query then carries its transitions and the site-date helpers. See
     `build_plans` for why it is optional here.
     """
+    plans = build_plans(schema, bundle, site_role, time_zone=time_zone)
+    reserved = {"_datadictionary", "_modelinfo", "_useraddedcolumns"}
+    if bundle.mapping.reporting.users_table:
+        reserved.add(USERS_KEY_LIST.casefold())
+    for plan in plans:
+        if query_name(plan.list_title).casefold() in reserved:
+            raise ValueError(f"Reporting query name {plan.list_title!r} is reserved")
     queries = {
-        f"{plan.list_title}.pq": _render_m(plan, site_url=site_url)
-        for plan in build_plans(schema, bundle, site_role, time_zone=time_zone)
+        f"{query_name(plan.list_title)}.pq": _render_m(plan, site_url=site_url)
+        for plan in plans
     }
     if bundle.mapping.reporting.users_table:
         queries[f"{USERS_KEY_LIST}.pq"] = _render_users_m(site_url=site_url)
@@ -1323,7 +1336,10 @@ def _render_user_added_columns_m(
         "    Audit = (listTitle as text, expected as list) as table =>",
         "        let",
         "            Fields = OData.Feed(",
-        "                SiteRoot & \"/_api/web/lists/getbytitle('\" & listTitle & \"')/fields\"",
+        (
+            "                SiteRoot & \"/_api/web/lists/getbytitle('\""
+            " & Uri.EscapeDataString(Text.Replace(listTitle, \"'\", \"''\")) & \"')/fields\""
+        ),
         # The two formula properties ride along on a call this query already
         # makes on every refresh, turning the drift audit into a refresh-time
         # check that the DEPLOYED form contract still matches the dictionary

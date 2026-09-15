@@ -592,6 +592,10 @@ def test_the_baked_sql_site_url_does_not_double_the_slash() -> None:
     starts with `/`. Unlike the M queries there is no normalisation step to
     absorb a second one, so the ItemURL link would 404 on every row."""
     schema, bundle = _simple()
+    bundle = as_library(bundle, "Task")
+    bundle.mapping.entities["Task"] = replace(
+        bundle.mapping.entities["Task"], internal_name="APP_Task",
+    )
     sql = generate_sql_views(schema, bundle, "default", site_url=_BAKED + "/")
     setvar = next(
         line for line in sql.splitlines() if line.startswith(":setvar SiteUrl ")
@@ -693,7 +697,8 @@ def test_sql_views_add_itemurl_helper_column() -> None:
     sql = generate_sql_views(schema, bundle, "default")
     assert ":setvar SiteUrl" in sql
     assert "AS [ItemURL]" in sql
-    assert "/Lists/APP_Task/DispForm.aspx?ID=" in sql
+    assert "CAST(NULL AS NVARCHAR(2048)) AS [ItemURL]" in sql
+    assert "/Lists/APP_Task/DispForm.aspx?ID=" not in sql
 
 
 def test_data_dictionary_documents_every_list_and_column() -> None:
@@ -2939,3 +2944,124 @@ def test_no_shipped_query_selects_a_column_the_expand_refuses(family: str) -> No
                     f"refuses with HTTP 400, failing the whole query"
                 )
     assert checked or family, family
+
+
+def test_explicit_titles_escape_m_odata_and_sql_delimiters(tmp_path: Path) -> None:
+    schema, bundle = pack(tmp_path, dbml="""
+        Table Parent {
+          Id int [pk]
+        }
+        Table Child {
+          Id int [pk]
+          ParentId int [ref: > Parent.Id]
+        }
+    """, mapping='''
+        entities:
+          Parent:
+            kind: List
+            base_template: 100
+            site_role: default
+            title: Owner's "Review" ]
+          Child:
+            kind: List
+            base_template: 100
+            site_role: default
+            title: Child's "Review" ]
+    ''')
+    title = "Owner's \"Review\" ]"
+    queries = generate_powerquery(schema, bundle, "default")
+    query = queries[title.replace('"', "%22") + ".pq"]
+    escaped = "Owner%27%27s%20%22Review%22%20%5D"
+    assert f"getbytitle('{escaped}')/RootFolder" in query
+    assert f"getbytitle('{escaped}')/items" in query
+    assert "base = SiteRoot & \"/Lists/Owner's \"\"Review\"\" ]/DispForm.aspx?ID=\"" in query
+    audit = generate_dictionary_powerquery(schema, bundle, "default")
+    assert any('Text.Replace(listTitle, "\'", "\'\'")' in text for text in audit.values())
+    sql = generate_sql_views(schema, bundle, "default")
+    assert '[vw_Owner\'s "Review" ]]]' in sql
+    assert '[vw_Child\'s "Review" ]]_Enriched]' in sql
+    assert 'FROM [$(LandingSchema)].[Owner\'s "Review" ]]]' in sql
+    assert 'LEFT JOIN [$(ReportSchema)].[vw_Owner\'s "Review" ]]]' in sql
+    assert "CAST(NULL AS NVARCHAR(2048)) AS [ItemURL]" in sql
+
+
+@pytest.mark.parametrize("title", ["_DataDictionary", "_ModelInfo", "_UserAddedColumns", "_Users"])
+def test_reporting_refuses_generated_query_name_collisions(title: str) -> None:
+    schema, bundle = _simple()
+    bundle.mapping.entities["Task"] = replace(bundle.mapping.entities["Task"], title=title)
+    bundle.mapping.reporting = replace(bundle.mapping.reporting, users_table=True)
+    with pytest.raises(ValueError, match="reserved"):
+        generate_powerquery(schema, bundle, "default")
+
+
+@pytest.mark.parametrize("title", ['A:B?*<>|"', "CON", "CON .x", "LPT1", "é" * 255, "A" * 255])
+def test_report_query_paths_are_portable(tmp_path: Path, title: str) -> None:
+    import ntpath
+
+    schema, bundle = _simple()
+    bundle.mapping.entities["Task"] = replace(bundle.mapping.entities["Task"], title=title)
+    queries = generate_powerquery(schema, bundle, "default")
+    assert len(queries) == 3
+    for filename, content in queries.items():
+        assert not any(c in filename for c in '<>:"/\\|?*')
+        assert not ntpath.isreserved(filename)
+        assert len(filename.encode("utf-8")) <= 184
+        (tmp_path / filename).write_text(content, newline="\n")
+    assert len(list(tmp_path.glob("*.pq"))) == 3
+
+
+def test_sql_uses_only_a_declared_immutable_root() -> None:
+    schema, bundle = _simple()
+    bundle = as_library(bundle, "Task")
+    bundle.mapping.entities["Task"] = replace(
+        bundle.mapping.entities["Task"], title="Display title", internal_name="StableRoot",
+    )
+    sql = generate_sql_views(schema, bundle, "default")
+    assert "/StableRoot/Forms/DispForm.aspx?ID=" in sql
+    assert "/Display title/Forms/" not in sql
+
+
+
+def test_report_endpoints_encode_url_metacharacters() -> None:
+    schema, bundle = _simple()
+    bundle.mapping.entities["Task"] = replace(
+        bundle.mapping.entities["Task"], title="Review #1? a&b%20",
+    )
+    queries = generate_powerquery(schema, bundle, "default")
+    query = queries["Review #1%3F a&b%2520.pq"]
+    endpoint = "getbytitle('Review%20%231%3F%20a%26b%2520')"
+    assert endpoint + "/items" in query
+    assert endpoint + "/RootFolder" in query
+
+
+@pytest.mark.parametrize("title,reason", [
+    ("APP_DataDictionary", "collides"), ("A" * 126, "exceeds 128"),
+    ("List$(SiteUrl)", "SQLCMD"),
+])
+def test_sql_reporting_refuses_unusable_view_names(title: str, reason: str) -> None:
+    schema, bundle = _simple()
+    bundle.mapping.entities["Task"] = replace(bundle.mapping.entities["Task"], title=title)
+    with pytest.raises(ValueError, match=reason):
+        generate_sql_views(schema, bundle, "default")
+
+
+@pytest.mark.parametrize("title", ['Project: "Review"', "Project" * 40])
+def test_relationship_guide_uses_emitted_query_names(title: str) -> None:
+    schema, bundle = _simple()
+    bundle.mapping.entities["Project"] = replace(bundle.mapping.entities["Project"], title=title)
+    queries = generate_powerquery(schema, bundle, "default")
+    filename = next(name for name, text in queries.items() if text.startswith("// " + title + ":"))
+    guide = generate_reporting_md(schema, bundle, "default")
+    assert f"| {filename.removesuffix('.pq')} | Project Key |" in guide
+    assert "filename without its .pq extension" in guide
+    assert "list name (the first line of the file)" not in guide
+
+
+def test_sqlcmd_syntax_in_library_root_is_refused() -> None:
+    schema, bundle = _simple()
+    bundle = as_library(bundle, "Task")
+    bundle.mapping.entities["Task"] = replace(
+        bundle.mapping.entities["Task"], internal_name="Docs$(OtherVariable)",
+    )
+    with pytest.raises(ValueError, match="SQLCMD"):
+        generate_sql_views(schema, bundle, "default")

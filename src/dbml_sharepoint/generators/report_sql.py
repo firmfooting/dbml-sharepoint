@@ -71,29 +71,34 @@ GO
 
 
 def _render_sql_view(plan: ListPlan) -> str:
+    title = plan.list_title.replace("]", "]]")
+    item_path = plan.item_url_path.replace("'", "''")
     col_lines = [
         f"    CAST(t.[{name}] AS {sql_type}) AS [{name}]"
         for name, sql_type in plan.sql_columns
     ]
     col_lines.append(
-        f"    CONCAT('$(SiteUrl){plan.item_url_path}', CAST(t.[Id] AS INT)) "
-        "AS [ItemURL]",
+        f"    CONCAT('$(SiteUrl){item_path}', CAST(t.[Id] AS INT)) "
+        "AS [ItemURL]"
+        if plan.item_url_authoritative else "    CAST(NULL AS NVARCHAR(2048)) AS [ItemURL]",
     )
     cols = ",\n".join(col_lines)
     return (
-        f"CREATE OR ALTER VIEW [$(ReportSchema)].[vw_{plan.list_title}] AS\n"
+        f"CREATE OR ALTER VIEW [$(ReportSchema)].[vw_{title}] AS\n"
         f"SELECT\n{cols}\n"
-        f"FROM [$(LandingSchema)].[{plan.list_title}] AS t;\n"
+        f"FROM [$(LandingSchema)].[{title}] AS t;\n"
         "GO\n"
     )
 
 
 def _render_sql_enriched(plan: ListPlan) -> str:
+    title = plan.list_title.replace("]", "]]")
     select_lines = ["    t.*"]
     join_lines = []
     for i, (fk_col, target_title, display, projections) in enumerate(
         plan.joins, start=1,
     ):
+        target_title = target_title.replace("]", "]]")
         alias = f"j{i}"
         base = fk_col.removesuffix("Id")
         select_lines.append(f"    {alias}.[{display}] AS [{base}{display}]")
@@ -113,9 +118,9 @@ def _render_sql_enriched(plan: ListPlan) -> str:
             f"    ON t.[{fk_col}] = {alias}.[Id]",
         )
     return (
-        f"CREATE OR ALTER VIEW [$(ReportSchema)].[vw_{plan.list_title}_Enriched] AS\n"
+        f"CREATE OR ALTER VIEW [$(ReportSchema)].[vw_{title}_Enriched] AS\n"
         "SELECT\n" + ",\n".join(select_lines) + "\n"
-        f"FROM [$(ReportSchema)].[vw_{plan.list_title}] AS t\n"
+        f"FROM [$(ReportSchema)].[vw_{title}] AS t\n"
         + "\n".join(join_lines) + ";\n"
         "GO\n"
     )
@@ -135,6 +140,24 @@ def generate_sql_views(
     with; the plans are built with it so the two describe the same columns.
     """
     plans = build_plans(schema, bundle, site_role, time_zone=time_zone)
+    occupied = {
+        f"vw_{bundle.mapping.prefix}{name}".casefold()
+        for name in ("DataDictionary", "ModelInfo", "UserAddedColumns")
+    }
+    for plan in plans:
+        if "$(" in plan.list_title or "$(" in plan.item_url_path:
+            raise ValueError(
+                "SQL reporting titles and item URL paths cannot contain SQLCMD variable syntax",
+            )
+        names = [f"vw_{plan.list_title}"]
+        if plan.joins:
+            names.append(f"vw_{plan.list_title}_Enriched")
+        for name in names:
+            if len(name) > 128:
+                raise ValueError(f"SQL reporting identifier {name!r} exceeds 128 characters")
+            if name.casefold() in occupied:
+                raise ValueError(f"SQL reporting identifier {name!r} collides with another view")
+            occupied.add(name.casefold())
     parts = [_sql_header(site_url)]
     parts += [_render_sql_view(plan) for plan in plans]
     parts += [_render_sql_enriched(plan) for plan in plans if plan.joins]

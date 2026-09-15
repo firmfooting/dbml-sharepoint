@@ -135,7 +135,7 @@ def test_a_library_all_items_leads_with_the_file_name_and_flattens_folders(
     all_items = next(
         v for v in schema_json["views"] if v["list"] == "APP_Doc" and v["title"] == "All Items"
     )
-    assert all_items["view_fields"][:3] == ["ID", "FileLeafRef", "Title"]
+    assert all_items["view_fields"][:4] == ["DocIcon", "ID", "FileLeafRef", "Title"]
     assert "Division" in all_items["view_fields"]
     assert all_items["scope"] == 1
     as_list = _library_schema_json(tmp_path / "list", "List", 100)

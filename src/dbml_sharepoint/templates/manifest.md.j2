@@ -266,6 +266,9 @@ ownership evidence.
    contain a line break since the round trip was measured, and an unindented
    continuation would end the list and orphan the bullets below it. #}
    - Description: {{ l.description | indent(5, false, true) }}
+{% if l.internal_name is defined %}
+   - Immutable library URL name: `{{ l.internal_name }}`
+{% endif %}
    - Exact ownership marker: {{ l.expected_marker }}
 {% if l.renamed_from %}
    - Renamed in place from {% for r in l.renamed_from %}**{{ r.title }}** (marker: {{ r.expected_marker }}){% if not loop.last %}, or {% endif %}{% endfor %}, when exactly one exists carrying its marker and this title is absent
@@ -304,7 +307,7 @@ _(none; no document library declares folders)_
 | List | Column | Target |
 |------|--------|--------|
 {% for p in phase2 %}
-| {{ p.list }} | {{ p.field.title }} | {{ p.target_list }} |
+| {{ p.list | markdown_cell }} | {{ p.field.title | markdown_cell }} | {{ p.target_list | markdown_cell }} |
 {% endfor %}
 {% else %}
 _(none; all lookups resolved in phase 1)_
@@ -380,7 +383,7 @@ deletable column the schema no longer declares.
 | List | Column | Display title | Retired | Superseded by | Reason |
 |------|--------|---------------|---------|---------------|--------|
 {% for r in retired_columns %}
-| {{ r.list }} | {{ r.column }} | {{ r.display }} | {{ r.retired }} | {{ r.superseded_by }} | {{ r.reason }} |
+| {{ r.list | markdown_cell }} | {{ r.column | markdown_cell }} | {{ r.display | markdown_cell }} | {{ r.retired | markdown_cell }} | {{ r.superseded_by | markdown_cell }} | {{ r.reason | markdown_cell }} |
 {% endfor %}
 
 {% endif %}
@@ -476,7 +479,7 @@ _(none declared)_
 | Name | Permissions |
 |------|-------------|
 {% for lvl in schema_json.permission_levels %}
-| {{ lvl.name }} | High={{ lvl.base_permissions.high }}, Low={{ lvl.base_permissions.low }} |
+| {{ lvl.name | markdown_cell }} | High={{ lvl.base_permissions.high | markdown_cell }}, Low={{ lvl.base_permissions.low | markdown_cell }} |
 {% endfor %}
 {% else %}
 _(none declared)_
@@ -501,7 +504,7 @@ _(none declared)_
 | Name | Required owner | Must be empty at deploy | Enrolled by this deploy | Description |
 |------|----------------|-------------------------|-------------------------|-------------|
 {% for grp in schema_json.groups %}
-| {{ grp.name }} | {{ grp.owner_group }} | {{ "yes" if grp.require_empty_at_deploy else "no" }} | {% if grp.enroll_operator_during_deploy and grp.enroll_enterprise_reader %}you (the operator), removed automatically at the end of the run; and {{ reader_cell }}{% elif grp.enroll_operator_during_deploy %}you (the operator), removed automatically at the end of the run{% elif grp.enroll_enterprise_reader %}{{ reader_cell }}{% else %}nobody{% endif %} | {{ grp.description }} |
+| {{ grp.name | markdown_cell }} | {{ grp.owner_group | markdown_cell }} | {{ "yes" if grp.require_empty_at_deploy else "no" | markdown_cell }} | {% if grp.enroll_operator_during_deploy and grp.enroll_enterprise_reader %}you (the operator), removed automatically at the end of the run; and {{ reader_cell | markdown_cell }}{% elif grp.enroll_operator_during_deploy %}you (the operator), removed automatically at the end of the run{% elif grp.enroll_enterprise_reader %}{{ reader_cell | markdown_cell }}{% else %}nobody{% endif %} | {{ grp.description | markdown_cell }} |
 {% endfor %}
 {% else %}
 _(none declared)_
@@ -526,7 +529,7 @@ the deployer never removes membership automatically.
 |------|-----------|-------|
 {% for la in schema_json.list_assignments %}
 {% for a in la.assignments %}
-| {{ la.list }} | {% if a.principal.kind == 'group' %}{{ a.principal.name }} (group){% elif a.principal.kind == 'associated_owner_group' %}Site Owners (associated owner){% elif a.principal.kind == 'associated_member_group' %}Site Members (associated member){% else %}Site Visitors (associated visitor){% endif %} | {{ a.level }} |
+| {{ la.list | markdown_cell }} | {% if a.principal.kind == 'group' %}{{ a.principal.name | markdown_cell }} (group){% elif a.principal.kind == 'associated_owner_group' %}Site Owners (associated owner){% elif a.principal.kind == 'associated_member_group' %}Site Members (associated member){% else %}Site Visitors (associated visitor){% endif %} | {{ a.level | markdown_cell }} |
 {% endfor %}
 {% endfor %}
 {% else %}
@@ -548,7 +551,7 @@ the complete allowlist reconciliation and its descendant-scope checks.
 | Field | Value |
 |-------|-------|
 {% for key, value in seed.fields.items() %}
-| `{{ key }}` | {{ value }} |
+| `{{ key | markdown_cell }}` | {{ value | markdown_cell }} |
 {% endfor %}
 
 {% endfor %}
@@ -586,7 +589,7 @@ evidence that a Microsoft Purview or SharePoint retention label is active.
 | List | Desired policy |
 |------|----------------|
 {% for entity, policy in retention.items() %}
-| {{ entity }} | {{ policy }} |
+| {{ entity | markdown_cell }} | {{ policy | markdown_cell }} |
 {% endfor %}
 
 > **Conditional live-data gate:** this mapping is not proof that the named

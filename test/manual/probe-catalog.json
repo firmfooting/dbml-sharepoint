@@ -10388,6 +10388,157 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "library-sharing-probe.js",
+      "surface": "library",
+      "harness": "shared-v2",
+      "authority": "read-only",
+      "writes": [],
+      "cleanup": {
+        "policy": "none"
+      },
+      "prerequisites": [
+        "Disposable library with unique library and division-folder ACLs",
+        "Administrator-confirmed division group IDs and accounts belonging only to their own division group",
+        "No nested privileged memberships or direct grants outside the prepared division",
+        "Successful complete actor-group and associated Owners-group reads before sharing observations",
+        "Manual edit/share/recipient-open observations before and after each attempt"
+      ],
+      "scenarios": [
+        {
+          "id": "permission-responses",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "access.effective-perms.control-current-identity",
+              "depends_on": []
+            },
+            {
+              "id": "access.effective-perms.control-ordinary-actor",
+              "depends_on": [
+                "access.effective-perms.control-current-identity"
+              ]
+            },
+            {
+              "id": "library.access.permission-snapshot",
+              "depends_on": [
+                "access.effective-perms.control-current-identity"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "access.effective-perms.control-current-identity"
+          ]
+        },
+        {
+          "id": "division-sharing-behaviour",
+          "surface": "library",
+          "pattern": "identity-pair",
+          "findings": [
+            {
+              "id": "library.access.control-own-file-edit",
+              "depends_on": [
+                "access.effective-perms.control-current-identity",
+                "access.effective-perms.control-ordinary-actor"
+              ]
+            },
+            {
+              "id": "library.access.control-recipient-denied",
+              "depends_on": [
+                "access.effective-perms.control-current-identity",
+                "access.effective-perms.control-ordinary-actor"
+              ]
+            },
+            {
+              "id": "library.access.division-isolation",
+              "depends_on": [
+                "access.effective-perms.control-current-identity",
+                "access.effective-perms.control-ordinary-actor",
+                "library.access.control-own-file-edit"
+              ]
+            },
+            {
+              "id": "library.access.folder-resharing",
+              "depends_on": [
+                "access.effective-perms.control-current-identity",
+                "access.effective-perms.control-ordinary-actor",
+                "library.access.control-own-file-edit",
+                "library.access.control-recipient-denied"
+              ]
+            },
+            {
+              "id": "library.access.file-resharing",
+              "depends_on": [
+                "access.effective-perms.control-current-identity",
+                "access.effective-perms.control-ordinary-actor",
+                "library.access.control-own-file-edit",
+                "library.access.control-recipient-denied"
+              ]
+            }
+          ],
+          "controls": [
+            "access.effective-perms.control-current-identity",
+            "access.effective-perms.control-ordinary-actor",
+            "library.access.control-own-file-edit",
+            "library.access.control-recipient-denied"
+          ],
+          "states": [
+            {
+              "role": "administrator-before",
+              "page": "Library, folder and file permissions pages",
+              "assertions": [
+                "all target paths exist",
+                "library and division folders have intended unique group grants",
+                "test files inherit their division folder",
+                "default site groups have no library or division grant"
+              ]
+            },
+            {
+              "role": "division-editor-before",
+              "page": "Own division test file and other division direct paths",
+              "assertions": [
+                "own file edits save and reopen",
+                "other division folder and file cannot be opened",
+                "account is not a site collection administrator"
+              ]
+            },
+            {
+              "role": "recipient-before",
+              "page": "Direct path to each sharing target",
+              "assertions": [
+                "recipient cannot open the folder or file immediately before each attempt"
+              ]
+            },
+            {
+              "role": "division-editor-sharing",
+              "page": "Folder and file Share dialogs",
+              "assertions": [
+                "record Specific people and organisation-link outcome when offered",
+                "distinguish granted, denied and owner-approval-required outcomes",
+                "test folder and file separately with baseline restored"
+              ]
+            },
+            {
+              "role": "recipient-after",
+              "page": "Resulting link in a separate recipient browser session",
+              "assertions": [
+                "record whether the recipient can open the shared folder or file"
+              ]
+            },
+            {
+              "role": "administrator-after",
+              "page": "Library, folder and file permissions pages",
+              "assertions": [
+                "record grants and unique scopes added by each sharing attempt",
+                "site sharing settings remain unchanged"
+              ]
+            }
+          ]
+        }
+      ]
     }
   ]
 }
