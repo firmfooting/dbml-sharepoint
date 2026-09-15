@@ -4,6 +4,7 @@
 import re
 from typing import Any, cast
 
+from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.mapping_types import ENTITY_KINDS, EntityKind, EntityMapping
@@ -60,6 +61,15 @@ def read(sc: SectionContext) -> dict[str, Any]:
         if (not title.strip() or title != title.strip() or title in {".", ".."}
                 or any(c in title for c in "/\\") or re.search(r"[\x00-\x1f]", title)):
             raise MappingValueError(f"entities.{entity.name}.title is not a safe list title")
+        if len(title) > MAX_DISPLAY_TITLE:
+            raise MappingValueError(
+                f"entities.{entity.name}.title must be at most {MAX_DISPLAY_TITLE} characters",
+            )
+        if entity.internal_name and entity.renamed_from:
+            raise MappingValueError(
+                f"entities.{entity.name}: internal_name cannot be combined with renamed_from; "
+                "omit internal_name to retain an existing library root during retitling",
+            )
         key = (entity.site_role, title.casefold())
         if key in titles:
             raise MappingValueError(f"entities: duplicate deployed title {title!r}")

@@ -52,7 +52,7 @@ from dbml_sharepoint.model.release import Release
 
 def _m_string(text: str) -> str:
     """An M string literal: double quotes are escaped by doubling."""
-    return '"' + text.replace('"', '""') + '"'
+    return '"' + text.replace('#(', '#(#)(').replace('"', '""') + '"'
 
 
 def _row_key_m(list_title: str, id_expression: str) -> str:
@@ -477,8 +477,9 @@ def _item_url_base_m(plan: ListPlan) -> list[str]:
     branch that ran rides beside the URL, so a report can suppress the link
     rather than ship a 404.
     """
+    escaped_title = plan.list_title.replace("'", "''")
     endpoint = (
-        f"/_api/web/lists/getbytitle('{plan.list_title}')"
+        f"/_api/web/lists/getbytitle('{escaped_title}')"
         "/RootFolder?$select=ServerRelativeUrl"
     )
     return [
@@ -489,7 +490,7 @@ def _item_url_base_m(plan: ListPlan) -> list[str]:
         "                base =",
         "                    SiteOrigin",
         "                        & OData.Feed(",
-        f'                            SiteRoot & "{endpoint}",',
+        f"                            SiteRoot & {_m_string(endpoint)},",
         "                            null,",
         '                            [Implementation = "2.0"]',
         "                        )[ServerRelativeUrl]",
@@ -498,7 +499,7 @@ def _item_url_base_m(plan: ListPlan) -> list[str]:
         "        otherwise",
         "            [",
         "                resolved = false,",
-        f'                base = SiteRoot & "{plan.item_url_path}"',
+        f"                base = SiteRoot & {_m_string(plan.item_url_path)}",
         "            ],",
     ]
 
@@ -804,7 +805,9 @@ def _render_m(plan: ListPlan, *, site_url: str | None = None) -> str:
         *(_AS_DATE_M if dates else []),
         *(_site_zone_m(plan.zone) if plan.zone is not None else []),
         "    Source = OData.Feed(",
-        f"        SiteRoot & \"/_api/web/lists/getbytitle('{plan.list_title}')/items\"",
+        "        SiteRoot & " + _m_string(
+            "/_api/web/lists/getbytitle('" + plan.list_title.replace("'", "''") + "')/items",
+        ),
         f'            & "{query_string}"',
     ]
     if plan.expands:
@@ -1323,7 +1326,10 @@ def _render_user_added_columns_m(
         "    Audit = (listTitle as text, expected as list) as table =>",
         "        let",
         "            Fields = OData.Feed(",
-        "                SiteRoot & \"/_api/web/lists/getbytitle('\" & listTitle & \"')/fields\"",
+        (
+            "                SiteRoot & \"/_api/web/lists/getbytitle('\""
+            " & Text.Replace(listTitle, \"'\", \"''\") & \"')/fields\""
+        ),
         # The two formula properties ride along on a call this query already
         # makes on every refresh, turning the drift audit into a refresh-time
         # check that the DEPLOYED form contract still matches the dictionary

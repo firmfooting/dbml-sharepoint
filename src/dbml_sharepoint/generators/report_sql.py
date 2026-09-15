@@ -71,29 +71,33 @@ GO
 
 
 def _render_sql_view(plan: ListPlan) -> str:
+    title = plan.list_title.replace("]", "]]")
+    item_path = plan.item_url_path.replace("'", "''")
     col_lines = [
         f"    CAST(t.[{name}] AS {sql_type}) AS [{name}]"
         for name, sql_type in plan.sql_columns
     ]
     col_lines.append(
-        f"    CONCAT('$(SiteUrl){plan.item_url_path}', CAST(t.[Id] AS INT)) "
+        f"    CONCAT('$(SiteUrl){item_path}', CAST(t.[Id] AS INT)) "
         "AS [ItemURL]",
     )
     cols = ",\n".join(col_lines)
     return (
-        f"CREATE OR ALTER VIEW [$(ReportSchema)].[vw_{plan.list_title}] AS\n"
+        f"CREATE OR ALTER VIEW [$(ReportSchema)].[vw_{title}] AS\n"
         f"SELECT\n{cols}\n"
-        f"FROM [$(LandingSchema)].[{plan.list_title}] AS t;\n"
+        f"FROM [$(LandingSchema)].[{title}] AS t;\n"
         "GO\n"
     )
 
 
 def _render_sql_enriched(plan: ListPlan) -> str:
+    title = plan.list_title.replace("]", "]]")
     select_lines = ["    t.*"]
     join_lines = []
     for i, (fk_col, target_title, display, projections) in enumerate(
         plan.joins, start=1,
     ):
+        target_title = target_title.replace("]", "]]")
         alias = f"j{i}"
         base = fk_col.removesuffix("Id")
         select_lines.append(f"    {alias}.[{display}] AS [{base}{display}]")
@@ -113,9 +117,9 @@ def _render_sql_enriched(plan: ListPlan) -> str:
             f"    ON t.[{fk_col}] = {alias}.[Id]",
         )
     return (
-        f"CREATE OR ALTER VIEW [$(ReportSchema)].[vw_{plan.list_title}_Enriched] AS\n"
+        f"CREATE OR ALTER VIEW [$(ReportSchema)].[vw_{title}_Enriched] AS\n"
         "SELECT\n" + ",\n".join(select_lines) + "\n"
-        f"FROM [$(ReportSchema)].[vw_{plan.list_title}] AS t\n"
+        f"FROM [$(ReportSchema)].[vw_{title}] AS t\n"
         + "\n".join(join_lines) + ";\n"
         "GO\n"
     )

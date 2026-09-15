@@ -2939,3 +2939,42 @@ def test_no_shipped_query_selects_a_column_the_expand_refuses(family: str) -> No
                     f"refuses with HTTP 400, failing the whole query"
                 )
     assert checked or family, family
+
+
+def test_explicit_titles_escape_m_odata_and_sql_delimiters(tmp_path: Path) -> None:
+    schema, bundle = pack(tmp_path, dbml="""
+        Table Parent {
+          Id int [pk]
+        }
+        Table Child {
+          Id int [pk]
+          ParentId int [ref: > Parent.Id]
+        }
+    """, mapping='''
+        entities:
+          Parent:
+            kind: List
+            base_template: 100
+            site_role: default
+            title: Owner's "Review" ]
+          Child:
+            kind: List
+            base_template: 100
+            site_role: default
+            title: Child's "Review" ]
+    ''')
+    title = "Owner's \"Review\" ]"
+    queries = generate_powerquery(schema, bundle, "default")
+    query = queries[title + ".pq"]
+    escaped = "Owner''s \"\"Review\"\" ]"
+    assert f"getbytitle('{escaped}')/RootFolder" in query
+    assert f"getbytitle('{escaped}')/items" in query
+    assert "base = SiteRoot & \"/Lists/Owner's \"\"Review\"\" ]/DispForm.aspx?ID=\"" in query
+    audit = generate_dictionary_powerquery(schema, bundle, "default")
+    assert any('Text.Replace(listTitle, "\'", "\'\'")' in text for text in audit.values())
+    sql = generate_sql_views(schema, bundle, "default")
+    assert '[vw_Owner\'s "Review" ]]]' in sql
+    assert '[vw_Child\'s "Review" ]]_Enriched]' in sql
+    assert 'FROM [$(LandingSchema)].[Owner\'s "Review" ]]]' in sql
+    assert 'LEFT JOIN [$(ReportSchema)].[vw_Owner\'s "Review" ]]]' in sql
+    assert "CONCAT('$(SiteUrl)/Lists/Owner''s \"Review\" ]/DispForm.aspx?ID='" in sql
