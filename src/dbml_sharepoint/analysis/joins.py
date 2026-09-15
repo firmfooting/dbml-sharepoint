@@ -214,6 +214,7 @@ def all_items_rendered(
     return (
         rendered_columns(table, set(cross_site_cols), set(projected_cols))
         | {"Title"} | system_columns_for(kind)
+        | ({"DocIcon"} if kind == "DocumentLibrary" else set())
     )
 
 

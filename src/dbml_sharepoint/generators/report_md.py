@@ -455,7 +455,7 @@ def generate_data_dictionary(
 
     for table in tables:
         entity = mapping.entities[table.name]
-        list_title = prefix + table.name
+        list_title = bundle.mapping.list_title(table.name)
         heading = (
             f"## {list_title}: entity `{table.name}` "
             f"({entity.kind}, template {entity.base_template}"

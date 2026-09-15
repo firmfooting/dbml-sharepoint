@@ -709,7 +709,7 @@ def test_the_shared_column_set_matches_what_the_query_declares(
     queries = generate_powerquery(schema, bundle, "default")
     checked = 0
     for table in schema.tables:
-        query = queries.get(f"{bundle.mapping.prefix}{table.name}.pq")
+        query = queries.get(f"{bundle.mapping.list_title(table.name)}.pq")
         if query is None:
             continue
         _, _, rest = query.partition("Declared = Table.SelectColumns(")

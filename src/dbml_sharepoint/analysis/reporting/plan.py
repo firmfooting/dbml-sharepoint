@@ -241,7 +241,7 @@ def _item_url_path(bundle: MappingBundle, entity_name: str, list_title: str) -> 
     """
     entity = bundle.mapping.entities.get(entity_name)
     if entity is not None and entity.is_library:
-        return f"/{list_title}/Forms/DispForm.aspx?ID="
+        return f"/{entity.internal_name or list_title}/Forms/DispForm.aspx?ID="
     return f"/Lists/{list_title}/DispForm.aspx?ID="
 
 
@@ -487,7 +487,7 @@ def _resolve_derived(
             other = by_entity[target]
             plan.derived.append(DerivedStep(
                 kind="lookup",
-                source_query=prefix + target,
+                source_query=bundle.mapping.list_title(target),
                 source_entity=target,
                 own_key=fk_key_column(f"{via}Id"),
                 other_key=f"{target}{REPORT_KEY_SUFFIX}",
@@ -557,7 +557,7 @@ def _derived_step(
     if entry.kind == "lookup":
         return DerivedStep(
             kind="lookup",
-            source_query=prefix + entry.from_entity,
+            source_query=target.list_title,
             source_entity=entry.from_entity,
             own_key=own_key,
             other_key=other_key,
@@ -576,7 +576,7 @@ def _derived_step(
         kind="count",
         name=entry.name,
         m_type=DERIVED_TYPES[entry.type],
-        source_query=prefix + entry.from_entity,
+        source_query=target.list_title,
         source_entity=entry.from_entity,
         own_key=own_key,
         other_key=other_key,
@@ -624,8 +624,8 @@ def build_plans(
     for table in tables:
         plan = ListPlan(
             entity=table.name,
-            list_title=prefix + table.name,
-            item_url_path=_item_url_path(bundle, table.name, prefix + table.name),
+            list_title=bundle.mapping.list_title(table.name),
+            item_url_path=_item_url_path(bundle, table.name, bundle.mapping.list_title(table.name)),
             item_url_suffix=_item_url_suffix(bundle, table.name),
             users_table=bundle.mapping.reporting.users_table,
             zone=zone,
@@ -737,7 +737,7 @@ def build_plans(
                         plan.m_types.append((out, m_type))
                     if target in emitted:
                         plan.joins.append(
-                            (f"{sp.name}Id", prefix + target, display, projected),
+                            (f"{sp.name}Id", bundle.mapping.list_title(target), display, projected),
                         )
                 case "MultiChoice":
                     # MEASURED 2026-08-10 on a live tenant: the item value

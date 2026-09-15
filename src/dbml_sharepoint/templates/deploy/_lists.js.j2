@@ -51,7 +51,14 @@
           EnableMinorVersions: list.enable_minor_versions,
           MajorVersionLimit: list.major_version_limit,
         };
-        const created = await postJson(apiUrl('web/lists'), body, digest);
+        // Learn: determine-sharepoint-rest-service-endpoint-uris, ListCollection.Add.
+        const created = list.internal_name
+          ? await postJson(apiUrl('web/lists/add'), { parameters: {
+              __metadata: { type: 'SP.ListCreationInformation' },
+              Title: list.title, Url: list.internal_name,
+              TemplateType: list.base_template, Description: list.description || '',
+            } }, digest)
+          : await postJson(apiUrl('web/lists'), body, digest);
         if (!created.d || typeof created.d.Id !== 'string') {
           throw new Error(`List '${list.title}' create returned an invalid response`);
         }

@@ -81,6 +81,8 @@ class EntityMapping:
     hide_from_all_items: tuple[str, ...] = ()
     renamed_from: tuple[str, ...] = ()
     folders: tuple[str, ...] = ()
+    title: str | None = None
+    internal_name: str | None = None
 ```
 
 SP physical mapping for one entity (kind, base template, site role).
@@ -676,6 +678,14 @@ The item-level trimming this entity's list is provisioned with.
 The per-entity override merged onto the default, key by key, the same
 way `versioning_for` merges: an override naming only `read` keeps the
 default's `write`.
+
+#### `Mapping.list_title`
+
+```python
+def list_title(self, entity_name: str) -> str
+```
+
+Return the explicit list title, or the prefixed entity name.
 
 #### `Mapping.permissions_for_entity`
 

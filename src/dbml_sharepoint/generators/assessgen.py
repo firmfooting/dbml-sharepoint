@@ -84,7 +84,6 @@ def assess_targets(
     for the same reason: the emitted script quotes both numbers to the
     operator and reads them from `analysis.limits` rather than spelling them.
     """
-    prefix = bundle.mapping.prefix
     m = bundle.mapping
     by_name = {table.name: table for table in schema.tables}
     cross_site_keys = m.cross_site_keys()
@@ -121,18 +120,18 @@ def assess_targets(
     enum_names = {enum.name for enum in schema.enums}
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):
         entity = bundle.mapping.entities[table_name]
-        titles.append(prefix + table_name)
+        titles.append(bundle.mapping.list_title(table_name))
         if entity.is_library and entity.folders:
-            library_folders.append([prefix + table_name, list(entity.folders)])
+            library_folders.append([bundle.mapping.list_title(table_name), list(entity.folders)])
         previous = bundle.mapping.previous_titles(table_name)
         if previous:
             renames.append([
-                prefix + table_name,
+                bundle.mapping.list_title(table_name),
                 [[title, marker_for(family, name)] for title, name in previous],
             ])
         templates.add(int(entity.base_template))
         table_names.append(table_name)
-        markers.append((prefix + table_name, marker_for(family, table_name)))
+        markers.append((bundle.mapping.list_title(table_name), marker_for(family, table_name)))
         table = by_name.get(table_name)
         if table is not None:
             # Declared columns only. A lookup PROJECTION is renamed by the
@@ -151,13 +150,13 @@ def assess_targets(
                 if m.display_name_for(table_name, column) != column
             ]
             if declared:
-                display_titles.append([prefix + table_name, declared])
+                display_titles.append([bundle.mapping.list_title(table_name), declared])
             unique = _declared_unique_columns(
                 table, enum_names,
                 {c for (e, c) in cross_site_keys if e == table_name},
             )
             if unique:
-                unique_columns.append([prefix + table_name, unique])
+                unique_columns.append([bundle.mapping.list_title(table_name), unique])
     m = bundle.mapping
     perms = m.permissions
     # [[current name, [[previous name, previous marker], ...]], ...] for

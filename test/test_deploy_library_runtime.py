@@ -924,3 +924,53 @@ def test_a_declared_title_column_is_still_preflighted_on_a_library(
         or "fields?" in call["url"]
         for call in calls
     ), "a declared Title column was never read during the run"
+
+
+@pytest.mark.parametrize("root", ["LegislativeCompliance", "WrongRoot", None])
+@pytest.mark.parametrize("existing", [True, False])
+def test_declared_library_url_is_created_and_verified(
+    tmp_path: Path, root: str | None, existing: bool,
+) -> None:
+    mapping = _RECURSIVE_VIEW.replace(
+        "base_template: 101,", "base_template: 101, internal_name: LegislativeCompliance,",
+    )
+    harness = _library_harness()
+    harness = f"globalThis.__libraryCreated = {json.dumps(existing)};\n" + harness
+    harness = harness.replace(
+        "if (ABSENT_LIST_TITLES.includes(probeTitle)) {",
+        "if (!globalThis.__libraryCreated || ABSENT_LIST_TITLES.includes(probeTitle)) {",
+    )
+    root_shape = {"ServerRelativeUrl": f"/sites/test/{root}"} if root else {}
+    harness = harness.replace(
+        "Title: 'adopted', BaseTemplate: 101,",
+        f"RootFolder: {json.dumps(root_shape)}, Title: 'adopted', BaseTemplate: 101,",
+    )
+    anchor = "  const u = String(url);\n"
+    creation = r"""
+      if (u.endsWith('/web/lists/add')) {
+        calls.push({url: u, method: opts.method, body: opts.body, phase: mockPhase});
+        globalThis.__libraryCreated = true;
+        const payload = { d: { Id: '22222222-2222-2222-2222-222222222222' } };
+        return { ok: true, status: 201, json: async () => payload,
+          text: async () => JSON.stringify(payload) };
+      }
+"""
+    assert anchor in harness
+    harness = harness.replace(anchor, anchor + creation, 1)
+    summary, calls, _ = _run(harness, _library_deploy_js(tmp_path, mapping))
+    creates = [c for c in calls if c["url"].endswith('/web/lists/add')]
+    assert len(creates) == (0 if existing else 1)
+    if creates:
+        assert json.loads(creates[0]["body"])["parameters"] == {
+            "__metadata": {"type": "SP.ListCreationInformation"},
+            "Title": "APP_Escalation", "Url": "LegislativeCompliance", "TemplateType": 101,
+            "Description": next(row["description"] for row in _schema_lists(
+                _library_deploy_js(tmp_path, mapping),
+            )),
+        }
+    if root == "LegislativeCompliance":
+        assert summary["errors"] == [], summary["errors"]
+        assert any("RootFolder/ServerRelativeUrl" in c["url"] for c in calls)
+    else:
+        assert "LIBRARY_INTERNAL_NAME_MISMATCH" in str(summary["errors"])
+        assert not any(c["method"] == "POST" and "/fields" in c["url"] for c in calls)

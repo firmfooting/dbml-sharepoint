@@ -94,7 +94,7 @@ def generate_manifest(
     deployed_titles = {lst["title"] for lst in schema_json["lists"]}
 
     def _deployed(entity: str) -> bool:
-        return f"{bundle.mapping.prefix}{entity}" in deployed_titles
+        return bundle.mapping.list_title(entity) in deployed_titles
 
     # Which of THIS build's lists the reader group is not granted on. The
     # manifest used to say it could read every one of them, unconditionally,
@@ -117,12 +117,12 @@ def generate_manifest(
         for name in _reader_groups
     ]
     reader_granted_lists = sorted({
-        f"{bundle.mapping.prefix}{entity}"
+        bundle.mapping.list_title(entity)
         for granted, _ in _reader_split
         for entity in granted
     })
     reader_excluded_lists = sorted({
-        f"{bundle.mapping.prefix}{entity}"
+        bundle.mapping.list_title(entity)
         for _, excluded in _reader_split
         for entity in excluded
     })
@@ -186,12 +186,12 @@ def generate_manifest(
     # exact wiped rules with no mode shown anywhere in the artefact.
     reconcile_modes = {
         "form_visibility": {
-            f"{bundle.mapping.prefix}{entity}": section.reconcile
+            bundle.mapping.list_title(entity): section.reconcile
             for entity, section in bundle.mapping.form_visibility.items()
             if _deployed(entity)
         },
         "column_validation": {
-            f"{bundle.mapping.prefix}{entity}": section.reconcile
+            bundle.mapping.list_title(entity): section.reconcile
             for entity, section in bundle.mapping.column_validation.items()
             if _deployed(entity)
         },
@@ -230,11 +230,12 @@ def generate_manifest(
         for row in schema_json["form_formatting"]
     ]
 
+    entity_by_title = {bundle.mapping.list_title(name): name for name in bundle.mapping.entities}
+
     # Reviewer-facing filter/sort/group summary from the declared DSL (the
     # schema_json rows carry generated CAML, which is not review material).
     def _view_summary(list_title: str, view_title: str) -> str:
-        prefix = bundle.mapping.prefix
-        entity = list_title.removeprefix(prefix)
+        entity = entity_by_title.get(list_title, list_title)
         for declared in bundle.mapping.views.get(entity, []):
             if declared.title != view_title:
                 continue
@@ -262,7 +263,7 @@ def generate_manifest(
         """The field sets a view's column list was expanded from. The
         manifest prints the RESOLVED fields, so without this the operator
         cannot see the indirection that produced them."""
-        entity = list_title.removeprefix(bundle.mapping.prefix)
+        entity = entity_by_title.get(list_title, list_title)
         for declared in bundle.mapping.views.get(entity, []):
             if declared.title == view_title:
                 return ", ".join(declared.expanded_sets)
@@ -280,7 +281,7 @@ def generate_manifest(
     # the manifest is where the operator sees what was rewritten and why.
     retired_columns = [
         {
-            "list": bundle.mapping.prefix + entity,
+            "list": bundle.mapping.list_title(entity),
             "column": column,
             "display": bundle.mapping.display_name_for(entity, column),
             "retired": spec.retired or "-",
@@ -295,7 +296,7 @@ def generate_manifest(
     # with the prefix so the manifest names the physical SP list.
     polymorphic = [
         {
-            "list": bundle.mapping.prefix + p.list,
+            "list": bundle.mapping.list_title(p.list),
             "field": p.field,
             "discriminator": p.discriminator,
         }
@@ -310,7 +311,7 @@ def generate_manifest(
     retention = {
         key: policy
         for key, policy in bundle.retention_list_defaults.items()
-        if (entity := key.removeprefix(bundle.mapping.prefix)) not in bundle.mapping.entities
+        if (entity := entity_by_title.get(key, key)) not in bundle.mapping.entities
         or _deployed(entity)
     }
     extras = manifest_extras if manifest_extras is not None else ManifestExtras()

@@ -188,7 +188,7 @@ def generate_demo_js(
                 for name, value in item.values.items()
             )
             demo_plan.append({
-                "list": bundle.mapping.prefix + table_name,
+                "list": bundle.mapping.list_title(table_name),
                 "key": item.key,
                 # A None plan is an omitted field, which is how an empty
                 # multi-value column stays unset.

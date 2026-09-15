@@ -1,6 +1,7 @@
 # src/dbml_sharepoint/model/sections/_entities.py
 """`entities`, the one required section: which lists a mapping deploys."""
 
+import re
 from typing import Any, cast
 
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
@@ -18,7 +19,7 @@ from dbml_sharepoint.model.sections.context import SectionContext
 _ENTITY_KEYS = frozenset({
     "kind", "base_template", "site_role", "singleton", "display_column",
     "accept_unindexable_display_column", "hide_from_all_items", "renamed_from",
-    "folders",
+    "folders", "title", "internal_name",
 })
 
 
@@ -30,6 +31,8 @@ def read(sc: SectionContext) -> dict[str, Any]:
         _reject_unknown_keys(spec, _ENTITY_KEYS, f"entities.{name}")
         entities[name] = EntityMapping(
             name=name,
+            title=require_str(spec, "title", f"entities.{name}") if "title" in spec else None,
+            internal_name=_internal_name(spec, name),
             kind=_parse_entity_kind(spec.get("kind"), f"entities.{name}"),
             base_template=require_int(spec, "base_template", f"entities.{name}"),
             site_role=require_str(spec, "site_role", f"entities.{name}"),
@@ -50,6 +53,24 @@ def read(sc: SectionContext) -> dict[str, Any]:
             # name is one SharePoint accepts, are the validator's.
             folders=optional_str_list(spec, "folders", f"entities.{name}"),
         )
+    titles: set[tuple[str, str]] = set()
+    roots: set[tuple[str, str]] = set()
+    for entity in entities.values():
+        title = entity.title or str(sc.loaded.get("prefix", "")) + entity.name
+        if (not title.strip() or title != title.strip() or title in {".", ".."}
+                or any(c in title for c in "/\\") or re.search(r"[\x00-\x1f]", title)):
+            raise MappingValueError(f"entities.{entity.name}.title is not a safe list title")
+        key = (entity.site_role, title.casefold())
+        if key in titles:
+            raise MappingValueError(f"entities: duplicate deployed title {title!r}")
+        titles.add(key)
+        if entity.internal_name:
+            key = (entity.site_role, entity.internal_name.casefold())
+            if key in roots:
+                raise MappingValueError(
+                    f"entities: duplicate internal_name {entity.internal_name!r}",
+                )
+            roots.add(key)
     return {"entities": entities}
 
 
@@ -76,3 +97,16 @@ def _parse_entity_kind(raw_kind: Any, context: str) -> EntityKind:
             f"{', '.join(sorted(ENTITY_KINDS))}; got {raw_kind!r}",
         )
     return cast("EntityKind", raw_kind)
+
+
+def _internal_name(spec: dict[str, Any], name: str) -> str | None:
+    value = optional_str(spec, "internal_name", f"entities.{name}")
+    if value is not None and (
+        spec.get("kind") != "DocumentLibrary"
+        or re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,127}", value) is None
+    ):
+        raise MappingValueError(
+            f"entities.{name}.internal_name requires a document library and a "
+            "1-128 character name starting with a letter, using letters, digits or underscores",
+        )
+    return value

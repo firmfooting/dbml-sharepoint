@@ -40,3 +40,9 @@ IMMUTABLE_LOOKUP_PROPERTIES = ('LookupList', 'LookupField')
 IMMUTABLE_LIST_PROPERTIES = ('BaseTemplate',)
 ```
 
+### `IMMUTABLE_LIBRARY_PROPERTIES`
+
+```python
+IMMUTABLE_LIBRARY_PROPERTIES = ('RootFolder',)
+```
+

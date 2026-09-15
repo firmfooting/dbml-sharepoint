@@ -378,6 +378,15 @@
         checked: true,
       });
     }
+    if (list.internal_name) {
+      const expectedRoot = decodeURIComponent(new URL(SITE_URL).pathname).replace(/\/$/, '') + '/' + list.internal_name;
+      const root = actual.RootFolder?.ServerRelativeUrl;
+      if (root !== expectedRoot) mismatches.push({
+        property: 'RootFolder.ServerRelativeUrl', declared: expectedRoot, actual: root,
+        message: `LIBRARY_INTERNAL_NAME_MISMATCH: '${list.title}' must use '${expectedRoot}', read ${JSON.stringify(root)}. Existing library URLs are not moved by deploy.`,
+        checked: typeof root === 'string',
+      });
+    }
     return mismatches;
   }
 

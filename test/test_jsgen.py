@@ -371,7 +371,7 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
     docs = next(t for t in schema.tables if t.name == "Docs")
     docs_entity = bundle.mapping.entities["Docs"]
     assert set(generated_docs) == (
-        rendered_columns(docs, set()) | {"Title"} | system_columns_for("DocumentLibrary")
+        rendered_columns(docs, set()) | {"Title", "DocIcon"} | system_columns_for("DocumentLibrary")
     ) - all_items_hidden(docs_entity)
     assert "FileLeafRef" in generated_docs and "FileLeafRef" not in generated
     assert (

@@ -31,7 +31,7 @@ def generate_rollback_js(
         # items are files, and the operator should read that word.
         is_library = bundle.mapping.entities[name].is_library
         target_lists.append({
-            "title": bundle.mapping.prefix + name,
+            "title": bundle.mapping.list_title(name),
             "expected_marker": marker_for(family, name),
             "is_library": is_library,
         })
