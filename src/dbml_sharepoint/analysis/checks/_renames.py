@@ -15,11 +15,23 @@ from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Se
 
 def check(vc: ValidationContext) -> list[Finding]:
     mapping = vc.bundle.mapping
-    findings = _findings(
-        "entity",
-        [(name, e.renamed_from) for name, e in mapping.entities.items()],
-        lambda name: Location(Section.ENTITIES, entity=name, sub="renamed_from"),
-    )
+    findings: list[Finding] = []
+    for role in dict.fromkeys(e.site_role for e in mapping.entities.values()):
+        entities = {name: e for name, e in mapping.entities.items() if e.site_role == role}
+        by_title = {mapping.list_title(name): name for name in entities}
+        declared = []
+        for name, entity in entities.items():
+            previous = [mapping.prefix + old for old in entity.renamed_from]
+            previous += [
+                prefix + old for prefix in mapping.previous_prefixes
+                for old in (name, *entity.renamed_from)
+                if prefix + old != mapping.list_title(name)
+            ]
+            declared.append((mapping.list_title(name), tuple(previous)))
+        def location(title: str, names: dict[str, str] = by_title) -> Location:
+            return Location(Section.ENTITIES, entity=names[title], sub="renamed_from")
+
+        findings += _findings("entity", declared, location)
     perms = mapping.permissions
     if perms is not None:
         findings += _findings(

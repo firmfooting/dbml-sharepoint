@@ -136,6 +136,7 @@ class ListPlan:
     # from the DECLARED title. The fallback when the list's own folder cannot
     # be read, and what the SQL views use, having no site to read.
     item_url_path: str = ""
+    item_url_authoritative: bool = False
     # What follows the list's own RootFolder to reach the same form. The
     # refresh-time branch: see `_item_url_suffix`.
     item_url_suffix: str = ""
@@ -626,6 +627,7 @@ def build_plans(
             entity=table.name,
             list_title=bundle.mapping.list_title(table.name),
             item_url_path=_item_url_path(bundle, table.name, bundle.mapping.list_title(table.name)),
+            item_url_authoritative=bool(bundle.mapping.entities[table.name].internal_name),
             item_url_suffix=_item_url_suffix(bundle, table.name),
             users_table=bundle.mapping.reporting.users_table,
             zone=zone,

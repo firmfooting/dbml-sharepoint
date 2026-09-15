@@ -94,7 +94,8 @@ def generate_manifest(
     deployed_titles = {lst["title"] for lst in schema_json["lists"]}
 
     def _deployed(entity: str) -> bool:
-        return bundle.mapping.list_title(entity) in deployed_titles
+        return (bundle.mapping.entities[entity].site_role == site_role
+                and bundle.mapping.list_title(entity) in deployed_titles)
 
     # Which of THIS build's lists the reader group is not granted on. The
     # manifest used to say it could read every one of them, unconditionally,
@@ -230,7 +231,10 @@ def generate_manifest(
         for row in schema_json["form_formatting"]
     ]
 
-    entity_by_title = {bundle.mapping.list_title(name): name for name in bundle.mapping.entities}
+    entity_by_title = {
+        bundle.mapping.list_title(name): name
+        for name in bundle.mapping.entities if _deployed(name)
+    }
 
     # Reviewer-facing filter/sort/group summary from the declared DSL (the
     # schema_json rows carry generated CAML, which is not review material).
@@ -308,11 +312,13 @@ def generate_manifest(
     # Resolve both. A key matching no declared entity at all is KEPT. That
     # is a typo the operator needs to see, not a role leak to hide, and
     # dropping it would trade one silent disagreement for another.
+    all_titles = {bundle.mapping.list_title(name) for name in bundle.mapping.entities}
     retention = {
         key: policy
         for key, policy in bundle.retention_list_defaults.items()
-        if (entity := entity_by_title.get(key, key)) not in bundle.mapping.entities
-        or _deployed(entity)
+        if (key in bundle.mapping.entities and _deployed(key))
+        or (key not in bundle.mapping.entities and
+            (key in entity_by_title or key not in all_titles))
     }
     extras = manifest_extras if manifest_extras is not None else ManifestExtras()
     return template.render(

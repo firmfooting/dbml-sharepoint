@@ -123,6 +123,7 @@
   "index_change_ceiling": 20000,
   "level_renames": [],
   "library_folders": [],
+  "library_roots": [],
   "list_display_titles": [
     [
       "APP_Project",
@@ -1084,6 +1085,26 @@
           `'${title}' could not be read (${why}), so its ownership marker was not checked.`);
         finding(2, sizeKey(title), 'NOT-ASSESSABLE',
           `'${title}' could not be read (${why}), so its size against the list view threshold was not assessed.`);
+      }
+    }
+
+    for (const [title, internalName] of (TARGETS.library_roots || [])) {
+      const key = `library_root:${title}`;
+      const shape = listShapes.get(title);
+      if ((knownTitles && !knownTitles.has(title.toLowerCase())) ||
+          (shape && !shape.ok && shape.status === 404)) {
+        finding(2, key, 'PASS', `'${title}' absent; its declared root will be created.`);
+        continue;
+      }
+      const root = await probeGet(`web/lists/getbytitle('${odataName(title)}')/RootFolder?$select=ServerRelativeUrl`);
+      const actual = root.ok && root.d.ServerRelativeUrl;
+      const expected = decodeURIComponent(WEB).replace(/\/$/, '') + '/' + internalName;
+      if (!shape || !shape.ok || typeof actual !== 'string' || !actual.startsWith('/')) {
+        finding(2, key, 'NOT-ASSESSABLE', `Could not verify the immutable root of '${title}'.`);
+      } else if (shape.d.BaseTemplate !== 101 || actual !== expected) {
+        finding(2, key, 'BLOCKED', `LIBRARY_INTERNAL_NAME_MISMATCH: '${title}' requires '${expected}', read ${JSON.stringify(actual)} (template ${shape.d.BaseTemplate}).`);
+      } else {
+        finding(2, key, 'PASS', `'${title}' has the declared immutable root '${expected}'.`);
       }
     }
 

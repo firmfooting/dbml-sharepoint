@@ -4,6 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, ClassVar, Unpack
 
+import pytest
 from _builders import ID_PK, TITLE, table
 from _model import MappingSections, column, enum, ref
 from _model import bundle as make_bundle
@@ -745,7 +746,8 @@ def test_manifest_announces_a_column_rule_hoisted_to_the_list() -> None:
     assert "Not in the future." in md
 
 
-def test_manifest_covers_only_the_lists_this_role_deploys(tmp_path: Path) -> None:
+@pytest.mark.parametrize("same_title", [False, True])
+def test_manifest_covers_only_the_lists_this_role_deploys(tmp_path: Path, same_title: bool) -> None:
     """The manifest is what an operator reads to decide whether to paste the
     script, so it must describe THIS build and no other.
 
@@ -818,6 +820,10 @@ def test_manifest_covers_only_the_lists_this_role_deploys(tmp_path: Path) -> Non
             """,
         ),
     )
+    if same_title:
+        bundle.mapping.entities["Ledger"] = replace(
+            bundle.mapping.entities["Ledger"], title="APP_Escalation",
+        )
     md = generate_manifest(
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
@@ -833,6 +839,7 @@ def test_manifest_covers_only_the_lists_this_role_deploys(tmp_path: Path) -> Non
     # the real assertion below without proving anything.
     assert "APP_Escalation" in md
     leaked = [ln for ln in md.splitlines() if "APP_Ledger" in ln or "Ledger" in ln]
+    assert "OldNote" not in md
     assert not leaked, f"the manifest describes lists this role does not deploy: {leaked}"
 
 

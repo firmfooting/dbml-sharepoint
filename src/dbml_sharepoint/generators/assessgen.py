@@ -113,6 +113,7 @@ def assess_targets(
     # [[library title, [folder, ...]], ...] for every library that declares
     # folders: the assessment checks nothing stands where a folder will go.
     library_folders: list[list[Any]] = []
+    library_roots: list[list[str]] = []
     # [[list title, [internal name, ...]], ...] in DECLARATION order, for
     # every list holding at least one column declared unique. Pairs for the
     # same reason `markers` is.
@@ -123,6 +124,8 @@ def assess_targets(
         titles.append(bundle.mapping.list_title(table_name))
         if entity.is_library and entity.folders:
             library_folders.append([bundle.mapping.list_title(table_name), list(entity.folders)])
+        if entity.internal_name:
+            library_roots.append([bundle.mapping.list_title(table_name), entity.internal_name])
         previous = bundle.mapping.previous_titles(table_name)
         if previous:
             renames.append([
@@ -201,6 +204,7 @@ def assess_targets(
         "group_renames": group_renames,
         "base_templates": sorted(templates),
         "library_folders": library_folders,
+        "library_roots": library_roots,
         # The two list-size ceilings the item-count probe reports against,
         # carried in the payload so the template spells neither number and
         # cannot disagree with `analysis.limits`.
@@ -254,6 +258,12 @@ def derive_requirements(
             f"Existing list '{title}' is under the {LIST_VIEW_THRESHOLD:,}-item "
             f"list view threshold",
             "WARN",
+        ))
+    for title, root in t["library_roots"]:
+        reqs.append(Requirement(
+            f"library_root:{title}",
+            f"Existing library '{title}' has the declared immutable URL name '{root}'",
+            "BLOCKED",
         ))
     for title, folders in t["library_folders"]:
         # A file standing where a folder is declared stops the folder phase,

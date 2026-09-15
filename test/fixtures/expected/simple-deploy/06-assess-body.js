@@ -506,6 +506,26 @@
       }
     }
 
+    for (const [title, internalName] of (TARGETS.library_roots || [])) {
+      const key = `library_root:${title}`;
+      const shape = listShapes.get(title);
+      if ((knownTitles && !knownTitles.has(title.toLowerCase())) ||
+          (shape && !shape.ok && shape.status === 404)) {
+        finding(2, key, 'PASS', `'${title}' absent; its declared root will be created.`);
+        continue;
+      }
+      const root = await probeGet(`web/lists/getbytitle('${odataName(title)}')/RootFolder?$select=ServerRelativeUrl`);
+      const actual = root.ok && root.d.ServerRelativeUrl;
+      const expected = decodeURIComponent(WEB).replace(/\/$/, '') + '/' + internalName;
+      if (!shape || !shape.ok || typeof actual !== 'string' || !actual.startsWith('/')) {
+        finding(2, key, 'NOT-ASSESSABLE', `Could not verify the immutable root of '${title}'.`);
+      } else if (shape.d.BaseTemplate !== 101 || actual !== expected) {
+        finding(2, key, 'BLOCKED', `LIBRARY_INTERNAL_NAME_MISMATCH: '${title}' requires '${expected}', read ${JSON.stringify(actual)} (template ${shape.d.BaseTemplate}).`);
+      } else {
+        finding(2, key, 'PASS', `'${title}' has the declared immutable root '${expected}'.`);
+      }
+    }
+
     // Column display titles, compared against what the mapping declares.
     //
     // Between deploys nothing else can see this. Renaming a column needs

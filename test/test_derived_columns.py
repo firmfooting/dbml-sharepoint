@@ -9,6 +9,7 @@ the rest of the pipeline has.
 """
 
 import re
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -746,3 +747,19 @@ def test_the_simple_fixture_declares_no_derived_columns() -> None:
     for query in generate_powerquery(schema, bundle, "default").values():
         assert "Derived1" not in query
         assert "DerivedSite1" not in query
+
+
+
+def test_derived_count_escapes_explicit_query_titles() -> None:
+    bundle = _bundle([
+        DerivedColumn(
+            kind="count", from_entity="Action", via="RelatedRisk",
+            name="N", aggregate="count", type="Int64",
+        ),
+    ])
+    bundle.mapping.entities["Action"] = replace(
+        bundle.mapping.entities["Action"], title='Action "Review" #(tab)',
+    )
+    query = _risk_query(bundle)
+    assert '#"Action %22Review%22 #(#)(tab)"' in query
+    assert '#"Action "Review" #(tab)"' not in query

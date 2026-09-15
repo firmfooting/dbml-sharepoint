@@ -71,6 +71,7 @@ class ListPlan:
     joins: list[tuple[str, str, str, tuple[str, ...]]] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
     item_url_path: str = ''
+    item_url_authoritative: bool = False
     item_url_suffix: str = ''
     renames: list[tuple[str, str]] = field(default_factory=list)
     field_internal_names: list[str] = field(default_factory=list)

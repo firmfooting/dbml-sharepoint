@@ -15,7 +15,9 @@ bundle has nothing to configure; the standalone ``report`` command knows
 no site and falls back to a ``SiteUrl`` text parameter.
 """
 
+import hashlib
 from datetime import datetime
+from urllib.parse import quote
 
 from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN
 from dbml_sharepoint.analysis.report_columns import (
@@ -48,6 +50,21 @@ from dbml_sharepoint.analysis.timezones import WINDOW_END, WINDOW_START, ZoneTab
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema
 from dbml_sharepoint.model.release import Release
+
+
+def _query_name(title: str) -> str:
+    """Portable query basename, also used by cross-query references."""
+    name = "".join(
+        f"%{ord(c):02X}" if c in '%<>:"/\\|?*' or c < " " else c
+        for c in title
+    )
+    reserved = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
+    reserved |= {f"{prefix}{n}" for prefix in ("COM", "LPT") for n in "123456789\u00b9\u00b2\u00b3"}
+    if name.split(".")[0].rstrip(" ").upper() in reserved:
+        name = f"%{ord(name[0]):02X}" + name[1:]
+    if len(name.encode("utf-8")) > 180:
+        name = "%~" + name[:20] + hashlib.sha256(title.encode("utf-8")).hexdigest()
+    return name
 
 
 def _m_string(text: str) -> str:
@@ -477,7 +494,7 @@ def _item_url_base_m(plan: ListPlan) -> list[str]:
     branch that ran rides beside the URL, so a report can suppress the link
     rather than ship a 404.
     """
-    escaped_title = plan.list_title.replace("'", "''")
+    escaped_title = quote(plan.list_title.replace("'", "''"), safe="")
     endpoint = (
         f"/_api/web/lists/getbytitle('{escaped_title}')"
         "/RootFolder?$select=ServerRelativeUrl"
@@ -561,7 +578,7 @@ def _query_ref(name: str) -> str:
     name, so a derived join works only where each `.pq` was loaded under the
     name its file has; guide.md says so beside the instruction to paste them.
     """
-    return f'#"{name}"'
+    return '#' + _m_string(_query_name(name))
 
 
 def _derived_site_bindings(plan: ListPlan) -> tuple[list[str], dict[str, str]]:
@@ -806,7 +823,8 @@ def _render_m(plan: ListPlan, *, site_url: str | None = None) -> str:
         *(_site_zone_m(plan.zone) if plan.zone is not None else []),
         "    Source = OData.Feed(",
         "        SiteRoot & " + _m_string(
-            "/_api/web/lists/getbytitle('" + plan.list_title.replace("'", "''") + "')/items",
+            "/_api/web/lists/getbytitle('"
+            + quote(plan.list_title.replace("'", "''"), safe="") + "')/items",
         ),
         f'            & "{query_string}"',
     ]
@@ -1132,9 +1150,16 @@ def generate_powerquery(
     query then carries its transitions and the site-date helpers. See
     `build_plans` for why it is optional here.
     """
+    plans = build_plans(schema, bundle, site_role, time_zone=time_zone)
+    reserved = {"_datadictionary", "_modelinfo", "_useraddedcolumns"}
+    if bundle.mapping.reporting.users_table:
+        reserved.add(USERS_KEY_LIST.casefold())
+    for plan in plans:
+        if _query_name(plan.list_title).casefold() in reserved:
+            raise ValueError(f"Reporting query name {plan.list_title!r} is reserved")
     queries = {
-        f"{plan.list_title}.pq": _render_m(plan, site_url=site_url)
-        for plan in build_plans(schema, bundle, site_role, time_zone=time_zone)
+        f"{_query_name(plan.list_title)}.pq": _render_m(plan, site_url=site_url)
+        for plan in plans
     }
     if bundle.mapping.reporting.users_table:
         queries[f"{USERS_KEY_LIST}.pq"] = _render_users_m(site_url=site_url)
@@ -1328,7 +1353,7 @@ def _render_user_added_columns_m(
         "            Fields = OData.Feed(",
         (
             "                SiteRoot & \"/_api/web/lists/getbytitle('\""
-            " & Text.Replace(listTitle, \"'\", \"''\") & \"')/fields\""
+            " & Uri.EscapeDataString(Text.Replace(listTitle, \"'\", \"''\")) & \"')/fields\""
         ),
         # The two formula properties ride along on a call this query already
         # makes on every refresh, turning the drift audit into a refresh-time

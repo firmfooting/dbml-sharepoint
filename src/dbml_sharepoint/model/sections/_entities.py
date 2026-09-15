@@ -65,9 +65,10 @@ def read(sc: SectionContext) -> dict[str, Any]:
             raise MappingValueError(
                 f"entities.{entity.name}.title must be at most {MAX_DISPLAY_TITLE} characters",
             )
-        if entity.internal_name and entity.renamed_from:
+        if entity.internal_name and (entity.renamed_from or sc.loaded.get("previous_prefixes")):
             raise MappingValueError(
-                f"entities.{entity.name}: internal_name cannot be combined with renamed_from; "
+                f"entities.{entity.name}: internal_name cannot be combined with "
+                "renamed_from or previous_prefixes; "
                 "omit internal_name to retain an existing library root during retitling",
             )
         key = (entity.site_role, title.casefold())

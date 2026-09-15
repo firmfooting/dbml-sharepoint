@@ -79,7 +79,8 @@ def _render_sql_view(plan: ListPlan) -> str:
     ]
     col_lines.append(
         f"    CONCAT('$(SiteUrl){item_path}', CAST(t.[Id] AS INT)) "
-        "AS [ItemURL]",
+        "AS [ItemURL]"
+        if plan.item_url_authoritative else "    CAST(NULL AS NVARCHAR(2048)) AS [ItemURL]",
     )
     cols = ",\n".join(col_lines)
     return (
@@ -139,6 +140,22 @@ def generate_sql_views(
     with; the plans are built with it so the two describe the same columns.
     """
     plans = build_plans(schema, bundle, site_role, time_zone=time_zone)
+    occupied = {
+        f"vw_{bundle.mapping.prefix}{name}".casefold()
+        for name in ("DataDictionary", "ModelInfo", "UserAddedColumns")
+    }
+    for plan in plans:
+        if "$(" in plan.list_title:
+            raise ValueError("SQL reporting titles cannot contain SQLCMD variable syntax")
+        names = [f"vw_{plan.list_title}"]
+        if plan.joins:
+            names.append(f"vw_{plan.list_title}_Enriched")
+        for name in names:
+            if len(name) > 128:
+                raise ValueError(f"SQL reporting identifier {name!r} exceeds 128 characters")
+            if name.casefold() in occupied:
+                raise ValueError(f"SQL reporting identifier {name!r} collides with another view")
+            occupied.add(name.casefold())
     parts = [_sql_header(site_url)]
     parts += [_render_sql_view(plan) for plan in plans]
     parts += [_render_sql_enriched(plan) for plan in plans if plan.joins]

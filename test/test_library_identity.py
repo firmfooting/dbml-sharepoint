@@ -122,3 +122,17 @@ def test_rename_cannot_declare_an_immutable_root(tmp_path: Path) -> None:
                 internal_name: NewRoot
                 renamed_from: [OldDoc]
         """)
+
+
+
+def test_immutable_root_cannot_use_previous_prefix_adoption(tmp_path: Path) -> None:
+    with pytest.raises(MappingValueError, match="previous_prefixes"):
+        pack(tmp_path, dbml=table("Doc", ID_PK, TITLE), mapping="""
+            previous_prefixes: [OLD_]
+            entities:
+              Doc:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                internal_name: NewRoot
+        """)

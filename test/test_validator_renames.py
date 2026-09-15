@@ -6,6 +6,8 @@ previous name that is still a declared entity would make the preflight find
 both, and one claimed by two entities would make two lists race for one.
 """
 
+from dataclasses import replace
+
 from _findings import none_of, only
 from _model import bundle as make_bundle
 from _model import schema as make_schema
@@ -47,7 +49,7 @@ def test_a_previous_name_that_is_still_declared_errors() -> None:
     })
     f = only(found, FindingCode.RENAMED_FROM_IS_A_DECLARED_ENTITY)
     assert f.severity == "error"
-    assert "'Issue'" in f.message and "Risk" in f.message
+    assert "'APP_Issue'" in f.message and "Risk" in f.message
 
 
 def test_an_entity_renamed_from_itself_errors() -> None:
@@ -61,7 +63,7 @@ def test_a_previous_name_claimed_by_two_entities_errors() -> None:
         "Hazard": _entity("Hazard", "ProgramRisk"),
     })
     f = only(found, FindingCode.RENAMED_FROM_CLAIMED_TWICE)
-    assert "'ProgramRisk'" in f.message
+    assert "'APP_ProgramRisk'" in f.message
     assert "Hazard" in f.message and "Risk" in f.message
 
 
@@ -79,7 +81,7 @@ def test_a_previous_entity_name_collides_case_insensitively() -> None:
         "Risk": _entity("Risk", "issue"),
         "Issue": _entity("Issue"),
     })
-    assert "'issue'" in only(found, FindingCode.RENAMED_FROM_IS_A_DECLARED_ENTITY).message
+    assert "'APP_issue'" in only(found, FindingCode.RENAMED_FROM_IS_A_DECLARED_ENTITY).message
 
 
 def test_a_previous_entity_name_claimed_twice_collides_case_insensitively() -> None:
@@ -175,3 +177,14 @@ def test_clean_group_and_level_renames_are_silent() -> None:
     )
     none_of(found, FindingCode.RENAMED_FROM_IS_A_DECLARED_ENTITY)
     none_of(found, FindingCode.RENAMED_FROM_CLAIMED_TWICE)
+
+
+
+def test_explicit_title_collides_with_resolved_alias_in_same_role() -> None:
+    entities = {
+        "Other": replace(_entity("Other"), title="APP_Legacy"),
+        "Current": _entity("Current", "Legacy"),
+    }
+    only(_rename_findings(entities), FindingCode.RENAMED_FROM_IS_A_DECLARED_ENTITY)
+    entities["Other"] = replace(entities["Other"], site_role="another")
+    none_of(_rename_findings(entities), FindingCode.RENAMED_FROM_IS_A_DECLARED_ENTITY)

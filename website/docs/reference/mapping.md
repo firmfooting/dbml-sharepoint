@@ -70,7 +70,7 @@ entities:
 | `kind` | `List`, `HubOnlyList` or `DocumentLibrary` (see [Document libraries](#document-libraries) below) |
 | `base_template` | SP base template id, paired with the kind: `100` (the generic list) for `List` and `HubOnlyList`, `101` for `DocumentLibrary`. The create call sends the number and never the kind, so a mismatch is refused, and so is any other number |
 | `title` | Optional explicit display title, at most 255 characters, independent of the prefix and DBML entity name |
-| `internal_name` | Optional, library only; the URL name used at creation. Use 1-128 letters, digits or underscores, starting with a letter. Cannot be combined with `renamed_from`. Deploy verifies the root URL and refuses mismatches; it does not move an existing library |
+| `internal_name` | Optional, library only; the URL name used at creation. Use 1-128 letters, digits or underscores, starting with a letter. Cannot be combined with `renamed_from` or `previous_prefixes`. Deploy verifies the root URL and refuses mismatches; it does not move an existing library |
 | `folders` | Optional, library only; the root-level folders the deploy creates and verifies, by name. Each name is held to Microsoft's file and folder name rules |
 | `site_role` | Free label; `build --site-role X` deploys the entities labelled `X` |
 | `singleton` | Optional; a one-row configuration list (enables extension seed rows) |
