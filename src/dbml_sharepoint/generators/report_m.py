@@ -15,7 +15,6 @@ bundle has nothing to configure; the standalone ``report`` command knows
 no site and falls back to a ``SiteUrl`` text parameter.
 """
 
-import hashlib
 from datetime import datetime
 from urllib.parse import quote
 
@@ -37,6 +36,7 @@ from dbml_sharepoint.analysis.reporting.dictionary import (
     dictionary_rows,
     metadata_rows,
 )
+from dbml_sharepoint.analysis.reporting.names import query_name
 from dbml_sharepoint.analysis.reporting.plan import (
     TOLERANT_DATE_TYPES,
     ListPlan,
@@ -50,21 +50,6 @@ from dbml_sharepoint.analysis.timezones import WINDOW_END, WINDOW_START, ZoneTab
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema
 from dbml_sharepoint.model.release import Release
-
-
-def _query_name(title: str) -> str:
-    """Portable query basename, also used by cross-query references."""
-    name = "".join(
-        f"%{ord(c):02X}" if c in '%<>:"/\\|?*' or c < " " else c
-        for c in title
-    )
-    reserved = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
-    reserved |= {f"{prefix}{n}" for prefix in ("COM", "LPT") for n in "123456789\u00b9\u00b2\u00b3"}
-    if name.split(".")[0].rstrip(" ").upper() in reserved:
-        name = f"%{ord(name[0]):02X}" + name[1:]
-    if len(name.encode("utf-8")) > 180:
-        name = "%~" + name[:20] + hashlib.sha256(title.encode("utf-8")).hexdigest()
-    return name
 
 
 def _m_string(text: str) -> str:
@@ -578,7 +563,7 @@ def _query_ref(name: str) -> str:
     name, so a derived join works only where each `.pq` was loaded under the
     name its file has; guide.md says so beside the instruction to paste them.
     """
-    return '#' + _m_string(_query_name(name))
+    return '#' + _m_string(query_name(name))
 
 
 def _derived_site_bindings(plan: ListPlan) -> tuple[list[str], dict[str, str]]:
@@ -1155,10 +1140,10 @@ def generate_powerquery(
     if bundle.mapping.reporting.users_table:
         reserved.add(USERS_KEY_LIST.casefold())
     for plan in plans:
-        if _query_name(plan.list_title).casefold() in reserved:
+        if query_name(plan.list_title).casefold() in reserved:
             raise ValueError(f"Reporting query name {plan.list_title!r} is reserved")
     queries = {
-        f"{_query_name(plan.list_title)}.pq": _render_m(plan, site_url=site_url)
+        f"{query_name(plan.list_title)}.pq": _render_m(plan, site_url=site_url)
         for plan in plans
     }
     if bundle.mapping.reporting.users_table:

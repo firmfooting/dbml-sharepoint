@@ -145,8 +145,10 @@ def generate_sql_views(
         for name in ("DataDictionary", "ModelInfo", "UserAddedColumns")
     }
     for plan in plans:
-        if "$(" in plan.list_title:
-            raise ValueError("SQL reporting titles cannot contain SQLCMD variable syntax")
+        if "$(" in plan.list_title or "$(" in plan.item_url_path:
+            raise ValueError(
+                "SQL reporting titles and item URL paths cannot contain SQLCMD variable syntax",
+            )
         names = [f"vw_{plan.list_title}"]
         if plan.joins:
             names.append(f"vw_{plan.list_title}_Enriched")

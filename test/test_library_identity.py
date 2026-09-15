@@ -167,3 +167,24 @@ def test_library_view_emits_one_native_icon(tmp_path: Path, fields: str) -> None
     view = next(v for v in views if v["title"] == "Files")
     assert view["view_fields"].count("DocIcon") == 1
     assert view["view_fields"].count("FileLeafRef") == 1
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("role", ["default", "another"])
+def test_explicit_root_cannot_collide_with_an_implicit_library(
+    tmp_path: Path, reverse: bool, role: str,
+) -> None:
+    declarations = [
+        "First: {kind: DocumentLibrary, base_template: 101, site_role: default, title: Docs}",
+        (f"Second: {{kind: DocumentLibrary, base_template: 101, site_role: {role}, "
+         "title: Other, internal_name: docs}"),
+    ]
+    if reverse:
+        declarations.reverse()
+    mapping = "entities:\n" + "\n".join("  " + value for value in declarations)
+    schema = table("First", ID_PK, TITLE) + table("Second", ID_PK, TITLE)
+    if role == "default":
+        with pytest.raises(MappingValueError, match="duplicate library root"):
+            pack(tmp_path, dbml=schema, mapping=mapping)
+    else:
+        pack(tmp_path, dbml=schema, mapping=mapping)

@@ -11,7 +11,7 @@ needs (`_m_string`, `_sql_string`, `_md_cell`).
 
 THE INTENDED DEPENDENCY DIRECTION, which this module is the gate for:
 
-    model/  ->  analysis/reporting/{plan, dictionary}
+    model/  ->  analysis/reporting/{plan, dictionary, names}
             ->  generators/{report_m, report_sql, report_md}
             ->  generators/reportgen  ->  bundle (deferred, one site)
 
@@ -66,7 +66,7 @@ def _reaching(path: Path, forbidden: tuple[str, ...], **kwargs: bool) -> list[st
 
 def test_the_layout_is_present() -> None:
     """The other tests pass on an empty walk, so this pins the walk."""
-    assert [p.name for p in PLAN_SIDE] == ["__init__.py", "dictionary.py", "plan.py"]
+    assert [p.name for p in PLAN_SIDE] == ["__init__.py", "dictionary.py", "names.py", "plan.py"]
     assert all(p.is_file() for p in RENDERERS) and COMPOSITION.is_file()
 
 

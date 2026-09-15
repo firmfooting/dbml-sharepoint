@@ -76,11 +76,15 @@ def read(sc: SectionContext) -> dict[str, Any]:
         if key in titles:
             raise MappingValueError(f"entities: duplicate deployed title {title!r}")
         titles.add(key)
-        if entity.internal_name:
-            key = (entity.site_role, entity.internal_name.casefold())
+        # Simple title-derived roots are used by the shipped library fixtures.
+        root = entity.internal_name or (
+            title if entity.is_library and re.fullmatch(r"[A-Za-z0-9_]+", title) else None
+        )
+        if root:
+            key = (entity.site_role, root.casefold())
             if key in roots:
                 raise MappingValueError(
-                    f"entities: duplicate internal_name {entity.internal_name!r}",
+                    f"entities: duplicate library root {root!r}",
                 )
             roots.add(key)
     return {"entities": entities}

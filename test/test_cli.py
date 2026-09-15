@@ -372,8 +372,12 @@ def _console_bound_modules() -> list[Path]:
     return [
         path
         for path in sorted(PACKAGE.rglob("*.py"))
-        if (relative := path.relative_to(PACKAGE)).parts[0] in _CONSOLE_BOUND
-        or relative.as_posix() in _CONSOLE_BOUND
+        if (
+            (relative := path.relative_to(PACKAGE)).parts[0] in _CONSOLE_BOUND
+            or relative.as_posix() in _CONSOLE_BOUND
+        )
+        # Query names contain Windows filename data, not console messages.
+        and relative.as_posix() != "analysis/reporting/names.py"
     ]
 
 

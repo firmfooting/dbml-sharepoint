@@ -3043,3 +3043,25 @@ def test_sql_reporting_refuses_unusable_view_names(title: str, reason: str) -> N
     bundle.mapping.entities["Task"] = replace(bundle.mapping.entities["Task"], title=title)
     with pytest.raises(ValueError, match=reason):
         generate_sql_views(schema, bundle, "default")
+
+
+@pytest.mark.parametrize("title", ['Project: "Review"', "Project" * 40])
+def test_relationship_guide_uses_emitted_query_names(title: str) -> None:
+    schema, bundle = _simple()
+    bundle.mapping.entities["Project"] = replace(bundle.mapping.entities["Project"], title=title)
+    queries = generate_powerquery(schema, bundle, "default")
+    filename = next(name for name, text in queries.items() if text.startswith("// " + title + ":"))
+    guide = generate_reporting_md(schema, bundle, "default")
+    assert f"| {filename.removesuffix('.pq')} | Project Key |" in guide
+    assert "filename without its .pq extension" in guide
+    assert "list name (the first line of the file)" not in guide
+
+
+def test_sqlcmd_syntax_in_library_root_is_refused() -> None:
+    schema, bundle = _simple()
+    bundle = as_library(bundle, "Task")
+    bundle.mapping.entities["Task"] = replace(
+        bundle.mapping.entities["Task"], internal_name="Docs$(OtherVariable)",
+    )
+    with pytest.raises(ValueError, match="SQLCMD"):
+        generate_sql_views(schema, bundle, "default")

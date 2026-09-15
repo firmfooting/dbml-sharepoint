@@ -29,6 +29,7 @@ from dbml_sharepoint.analysis.reporting.dictionary import (
     metadata_rows,
     users_dictionary_rows,
 )
+from dbml_sharepoint.analysis.reporting.names import query_name
 from dbml_sharepoint.analysis.reporting.plan import build_plans, tables_for_role
 from dbml_sharepoint.analysis.timezones import WINDOW_END, WINDOW_START, zone_table
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
@@ -174,7 +175,7 @@ def generate_reporting_md(
         setup_step,
         ("2. For each `.pq` file: **Get Data -> Blank Query -> Advanced "
          "Editor**, paste the file contents, and rename the query to the "
-         "list name (the first line of the file)."),
+         "filename without its .pq extension. Keep any encoded characters or digest suffix."),
         ("3. When prompted to authenticate, choose **Organizational account** "
          "and sign in with an account that can read the lists."),
         "",
@@ -234,13 +235,13 @@ def generate_reporting_md(
                 target_title,
             )
             lines.append(
-                f"| {_md_cell(plan.list_title)} | {fk_key_column(fk_col)} "
-                f"| {_md_cell(target_title)} | {target_entity} Key |",
+                f"| {_md_cell(query_name(plan.list_title))} | {fk_key_column(fk_col)} "
+                f"| {_md_cell(query_name(target_title))} | {target_entity} Key |",
             )
         if plan.users_table:
             for name in plan.person_columns:
                 lines.append(
-                    f"| {_md_cell(plan.list_title)} | {person_key_column(name)} "
+                    f"| {_md_cell(query_name(plan.list_title))} | {person_key_column(name)} "
                     f"| {USERS_KEY_LIST} | User{REPORT_KEY_SUFFIX} |",
                 )
     lines += [
