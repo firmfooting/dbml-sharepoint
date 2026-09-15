@@ -183,7 +183,7 @@
     report.reads.libraryScope = await scope(library);
     const root = entries[4].body?.RootFolder?.ServerRelativeUrl;
     report.libraryRootVerified = entries[4].ok && typeof root === 'string' &&
-      root.startsWith(web.pathname.replace(/\/$/, '') + '/') &&
+      root.startsWith(decodeURIComponent(web.pathname).replace(/\/$/, '') + '/') &&
       !root.startsWith('//') && !/[?#\\]/.test(root) &&
       !root.split('/').some(part => part === '..' || part === '.') &&
       entries[4].body.BaseTemplate === 101;

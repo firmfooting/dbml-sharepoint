@@ -8,7 +8,8 @@ from _paths import MANUAL
 
 
 @pytest.mark.parametrize("scenario", [
-    "normal", "library-denied", "library-malformed", "library-wrong-kind", "library-outside-web",
+    "normal", "encoded-web", "library-denied", "library-malformed",
+    "library-wrong-kind", "library-outside-web",
     "throttled", "malformed", "administrator", "identity-denied",
     "owner", "groups-denied", "owners-denied", "groups-malformed", "owners-malformed",
     "groups-partial", "groups-partial-odata", "groups-partial-verbose", "groups-verbose",
@@ -100,6 +101,11 @@ const fetch = async (url, options) => {
   console.log(JSON.stringify({report, calls}));
 })();
 """
+    if scenario == "encoded-web":
+        harness = harness.replace("/sites/probe", "/sites/Legal Team").replace(
+            "https://example.sharepoint.com/sites/Legal Team",
+            "https://example.sharepoint.com/sites/Legal%20Team",
+        )
     script = (
         f"const source = {json.dumps(source)}; const scenario = {json.dumps(scenario)};\n{harness}"
     )
@@ -137,6 +143,7 @@ const fetch = async (url, options) => {
         assert target["fileRead"]["status"] == 429
     findings = {row["id"]: row for row in report["results"]}
     ordinary = scenario in {
+        "encoded-web",
         "normal", "throttled", "malformed", "groups-verbose",
     }
     sharing_state = "awaiting-capture" if ordinary else "void"

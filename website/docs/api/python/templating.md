@@ -33,6 +33,14 @@ Provenance fields (site URL, source file names) are interpolated into
 each script's leading ``/** ... */`` block; a crafted ``*/`` must not
 close the comment and inject JS.
 
+### `markdown_cell`
+
+```python
+def markdown_cell(value: object) -> str
+```
+
+Keep arbitrary text inside one Markdown table cell.
+
 ### `script_env`
 
 ```python

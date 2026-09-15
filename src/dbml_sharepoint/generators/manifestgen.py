@@ -316,9 +316,9 @@ def generate_manifest(
     retention = {
         key: policy
         for key, policy in bundle.retention_list_defaults.items()
-        if (key in bundle.mapping.entities and _deployed(key))
-        or (key not in bundle.mapping.entities and
-            (key in entity_by_title or key not in all_titles))
+        if (key in all_titles and key in entity_by_title)
+        or (key not in all_titles and
+            (key not in bundle.mapping.entities or _deployed(key)))
     }
     extras = manifest_extras if manifest_extras is not None else ManifestExtras()
     return template.render(

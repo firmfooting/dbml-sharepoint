@@ -2,9 +2,7 @@
 
 Shared procedure: [solution deployment](../../README.md), using
 `legal-compliance-register`. The library is **Legislative Compliance**, with
-URL name `LegislativeCompliance`. Earlier `LC_Document` libraries remain in place;
-migrate their files deliberately into the new library. A title change alone
-does not change an existing library URL. Assess the site, review the generated manifest,
+URL name `LegislativeCompliance`. Assess the site, review the generated manifest,
 paste the deploy script, then verify the resulting library.
 
 ## Before you build
@@ -14,6 +12,8 @@ paste the deploy script, then verify the resulting library.
 - [ ] Customise the DBML `division` enum and `entities.Document.folders` in the
       mapping together. Update every `demo_items.Document` entry's `file.folder`
       and `values.Division` to the same divisions before building with `--seed`.
+- [ ] Replace the three sample values in the DBML `oversight_committee` enum
+      with the organisation's committees. The column is optional.
 - [ ] Identify the platform owners, division executives and business owners.
       The platform owner assigns the executive manually based on the folder;
       the executive then assigns the business owner.
@@ -52,8 +52,9 @@ logging sidecars are not wanted.
 - [ ] **Legislative Compliance** exists at `LegislativeCompliance` as a
       document library with the declared folders.
       No Topic list is declared by this version.
-- [ ] All nine views in the family README exist. **Pending** is the default.
-      Every view finds files across the division folders.
+- [ ] All ten views in the family README exist. **Pending** is the default.
+      **Folder View** preserves the folder layout; assessment worklists find
+      files across the division folders.
 - [ ] **Platform owner** is flat and unfiltered, includes SAQs and REGs across
       folders, and shows recently modified files first. An upload with missing
       assignments remains visible here.
@@ -105,38 +106,6 @@ are not reconciled by redeployment.
 
 Populate **LC Compliance Coordinators** and **LC Assessment Owners**. Remove
 the synthetic demonstration files before filing production assessments.
-
-## Moving from version 1
-
-Version 2 uses a new **Legislative Compliance** library, not an in-place
-conversion of
-`LC_Topic` and `LC_SAQ`. The deploy does not remove old containers or copy
-production data. Do not use rollback for this migration.
-
-For an existing installation, preserve the old library and topic list until
-the replacement's files, owners and required history have been reconciled.
-A version-1 *Complete* meant executive confirmation; version-2 **Completed
-date** means business-owner completion. Resolve those meanings from the
-source records rather than copying the old date into both new dates.
-Similarly, determine issuance from the publisher file, not the old period
-columns, which were intended as assessment periods.
-
-During migration, resolve duplicate topics and missing assignments. Transfer
-identity, assignment and tracking dates only. Keep responses, ratings, risk,
-controls and gaps in Excel. Upload each new vendor-issued SAQ and retain its
-supporting REG. Migration automation is maintained separately from this public
-solution family.
-
-## Redeploying
-
-Bump `schema_version` for DBML or mapping changes, rebuild and re-paste.
-Declared library settings, views and folders are reconciled; file contents
-are not rewritten. Undeclared legacy containers require a separate retirement
-decision after migration.
-
-For libraries deployed before 2.1.2, review existing REG metadata and clear
-assessment-only values through the flat **Platform owner** view. Removing
-defaults does not clear stored file metadata.
 
 ## Enterprise reporting access
 

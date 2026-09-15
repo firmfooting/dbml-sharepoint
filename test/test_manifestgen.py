@@ -1209,3 +1209,42 @@ def test_manifest_lists_default_formulas() -> None:
     assert "- APP_Saq.PeriodYear: `=YEAR(TODAY())`" in md
     assert "- Default formulas: 1" in md
     assert f"re-applied in Phase {pn('defaults')}" in md
+
+
+@pytest.mark.parametrize("role,visible", [("default", True), ("finance", False)])
+def test_retention_title_precedes_another_roles_entity(role: str, visible: bool) -> None:
+    schema = make_schema(make_table("Current", "Title"), make_table("Archive", "Title"))
+    bundle = make_bundle(
+        entities={
+            "Current": EntityMapping(name="Current", kind="List", base_template=100,
+                                     site_role="default", title="Archive"),
+            "Archive": EntityMapping(name="Archive", kind="List", base_template=100,
+                                     site_role="finance"),
+        }, retention_list_defaults={"Archive": "Standard7Y"},
+    )
+    md = generate_manifest(
+        schema_json=build_schema_json(schema, bundle, role), findings=[], bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test", site_role=role,
+        source_dbml="s.dbml", source_mtime="2026-09-15T00:00:00Z",
+        generated_at="2026-09-15T00:00:00Z",
+    )
+    assert ("| Archive | Standard7Y |" in md) is visible
+
+
+def test_manifest_escapes_pipe_in_a_retention_title() -> None:
+    schema = make_schema(make_table("Current", "Title"))
+    bundle = make_bundle(
+        entities={"Current": EntityMapping(name="Current", kind="List", base_template=100,
+                                           site_role="default", title="Legal | Compliance")},
+        retention_list_defaults={"Legal | Compliance": "Standard7Y"},
+    )
+    md = generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"), findings=[], bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test", site_role="default",
+        source_dbml="s.dbml", source_mtime="2026-09-15T00:00:00Z",
+        generated_at="2026-09-15T00:00:00Z",
+    )
+    assert "| Legal &#124; Compliance | Standard7Y |" in md
+    assert "| Legal | Compliance |" not in md

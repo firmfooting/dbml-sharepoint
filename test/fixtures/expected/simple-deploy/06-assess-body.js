@@ -509,14 +509,23 @@
     for (const [title, internalName] of (TARGETS.library_roots || [])) {
       const key = `library_root:${title}`;
       const shape = listShapes.get(title);
+      const expected = decodeURIComponent(WEB).replace(/\/$/, '') + '/' + internalName;
       if ((knownTitles && !knownTitles.has(title.toLowerCase())) ||
           (shape && !shape.ok && shape.status === 404)) {
-        finding(2, key, 'PASS', `'${title}' absent; its declared root will be created.`);
+        const occupants = await Promise.all(['Folder', 'File'].map(kind =>
+          probeGet(`web/Get${kind}ByServerRelativeUrl('${odataName(expected)}')?$select=Exists,ServerRelativeUrl`)));
+        if (occupants.some(row => row.ok && row.d.Exists === true)) {
+          finding(2, key, 'BLOCKED', `LIBRARY_ROOT_OCCUPIED: '${expected}' already exists under another title or object.`);
+        } else if (occupants.every(row => (!row.ok && row.status === 404) ||
+            (row.ok && row.d.Exists === false))) {
+          finding(2, key, 'PASS', `'${title}' and its declared root '${expected}' are absent.`);
+        } else {
+          finding(2, key, 'NOT-ASSESSABLE', `Could not establish availability of '${expected}'.`);
+        }
         continue;
       }
       const root = await probeGet(`web/lists/getbytitle('${odataName(title)}')/RootFolder?$select=ServerRelativeUrl`);
       const actual = root.ok && root.d.ServerRelativeUrl;
-      const expected = decodeURIComponent(WEB).replace(/\/$/, '') + '/' + internalName;
       if (!shape || !shape.ok || typeof actual !== 'string' || !actual.startsWith('/')) {
         finding(2, key, 'NOT-ASSESSABLE', `Could not verify the immutable root of '${title}'.`);
       } else if (shape.d.BaseTemplate !== 101 || actual !== expected) {

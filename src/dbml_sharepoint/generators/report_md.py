@@ -234,13 +234,13 @@ def generate_reporting_md(
                 target_title,
             )
             lines.append(
-                f"| {plan.list_title} | {fk_key_column(fk_col)} "
-                f"| {target_title} | {target_entity} Key |",
+                f"| {_md_cell(plan.list_title)} | {fk_key_column(fk_col)} "
+                f"| {_md_cell(target_title)} | {target_entity} Key |",
             )
         if plan.users_table:
             for name in plan.person_columns:
                 lines.append(
-                    f"| {plan.list_title} | {person_key_column(name)} "
+                    f"| {_md_cell(plan.list_title)} | {person_key_column(name)} "
                     f"| {USERS_KEY_LIST} | User{REPORT_KEY_SUFFIX} |",
                 )
     lines += [

@@ -70,7 +70,7 @@ def test_legal_library_identity_and_navigation_are_consistent() -> None:
 
 
 @pytest.mark.parametrize("spec", [
-    "internal_name: ../escape", "internal_name: 'bad name'", "internal_name: 123",
+    "internal_name: ../escape", "internal_name: 'bad?name'", "internal_name: 123",
     "title: '../escape'", "title: '   '",
 ])
 def test_library_identity_rejects_invalid_names(tmp_path: Path, spec: str) -> None:
@@ -136,3 +136,34 @@ def test_immutable_root_cannot_use_previous_prefix_adoption(tmp_path: Path) -> N
                 site_role: default
                 internal_name: NewRoot
         """)
+
+
+@pytest.mark.parametrize("root", [
+    "Shared Documents", "Legal-Compliance", "Compliance_2026", "A" * 129,
+])
+def test_library_root_accepts_supported_folder_names(tmp_path: Path, root: str) -> None:
+    _, bundle = pack(tmp_path, dbml=table("Doc", ID_PK, TITLE), mapping=f"""
+        entities:
+          Doc:
+            kind: DocumentLibrary
+            base_template: 101
+            site_role: default
+            internal_name: {root}
+    """)
+    assert bundle.mapping.entities["Doc"].internal_name == root
+
+
+@pytest.mark.parametrize("fields", ["DocIcon, FileLeafRef", "FileLeafRef, DocIcon", "FileLeafRef"])
+def test_library_view_emits_one_native_icon(tmp_path: Path, fields: str) -> None:
+    schema, bundle = pack(tmp_path, dbml=table("Doc", ID_PK, TITLE), mapping=f"""
+        entities:
+          Doc: {{kind: DocumentLibrary, base_template: 101, site_role: default}}
+        views:
+          Doc:
+            - title: Files
+              fields: [{fields}]
+    """)
+    views = build_schema_json(schema, bundle, "default")["views"]
+    view = next(v for v in views if v["title"] == "Files")
+    assert view["view_fields"].count("DocIcon") == 1
+    assert view["view_fields"].count("FileLeafRef") == 1

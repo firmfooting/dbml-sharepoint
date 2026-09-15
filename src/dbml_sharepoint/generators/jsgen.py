@@ -956,7 +956,10 @@ def build_schema_json(
                 "list": list_title,
                 "title": view.title,
                 # Learn SPBuiltInFieldId.DocIcon: retain SharePoint's native document icon.
-                "view_fields": (["DocIcon"] if entity.is_library else []) + list(view.fields),
+                "view_fields": (
+                    (["DocIcon"] if entity.is_library and "DocIcon" not in view.fields else [])
+                    + list(view.fields)
+                ),
                 "caml_query": _view_caml_query(view, column_types, entity.kind),
                 # SP.View.Scope, or null when no scope is declared, which
                 # leaves the live property alone.

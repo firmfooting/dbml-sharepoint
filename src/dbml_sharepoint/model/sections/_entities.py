@@ -4,6 +4,7 @@
 import re
 from typing import Any, cast
 
+from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
 from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
@@ -112,12 +113,12 @@ def _parse_entity_kind(raw_kind: Any, context: str) -> EntityKind:
 
 def _internal_name(spec: dict[str, Any], name: str) -> str | None:
     value = optional_str(spec, "internal_name", f"entities.{name}")
-    if value is not None and (
-        spec.get("kind") != "DocumentLibrary"
-        or re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,127}", value) is None
-    ):
-        raise MappingValueError(
-            f"entities.{name}.internal_name requires a document library and a "
-            "1-128 character name starting with a letter, using letters, digits or underscores",
-        )
+    if value is not None:
+        reason = invalid_file_name_reason(value)
+        if spec.get("kind") != "DocumentLibrary":
+            reason = "internal_name is only supported on a document library"
+        elif value in {".", ".."} or any(c < " " or c == "\x7f" for c in value):
+            reason = "use a decoded folder name without traversal or control characters"
+        if reason:
+            raise MappingValueError(f"entities.{name}.internal_name: {reason}")
     return value

@@ -33,6 +33,11 @@ def comment_safe(value: object) -> str:
     return str(value).replace("*/", "* /")
 
 
+def markdown_cell(value: object) -> str:
+    """Keep arbitrary text inside one Markdown table cell."""
+    return str(value).replace("&", "&amp;").replace("|", "&#124;").replace("\n", " ")
+
+
 def script_env() -> Environment:
     """Environment for every generated artifact (scripts and manifests)."""
     # No autoescape by design: these templates emit JavaScript and
@@ -47,6 +52,7 @@ def script_env() -> Environment:
         keep_trailing_newline=True,
     )
     env.filters["comment_safe"] = comment_safe
+    env.filters["markdown_cell"] = markdown_cell
     # A GLOBAL rather than a per-render argument, because the fact belongs to
     # every script that reconciles a field and no generator should be able to
     # forget it. The eleven pairs were previously typed out by hand inside

@@ -1,5 +1,5 @@
 /**
- * Library sharing probe, revision b6e5d5e7. Not yet run live.
+ * Library sharing probe, revision 291761f5. Not yet run live.
  * This script only reads. It does not change permissions or send invitations.
  *
  * Prepare disposable content using the intended permission layout:
@@ -121,7 +121,7 @@
   }
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
-  log('INFO', `probe revision b6e5d5e7; core v2; results v1.`);
+  log('INFO', `probe revision 291761f5; core v2; results v1.`);
   log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -238,7 +238,7 @@
     return response.d.ListItemEntityTypeFullName;
   }
   const report = {
-    revision: 'b6e5d5e7', capturedAt: new Date().toISOString(),
+    revision: '291761f5', capturedAt: new Date().toISOString(),
     sharingVerdict: 'NOT ESTABLISHED: requires edit, share and recipient-open observations',
     reads: {}, targets: [], errors: [], results,
   };
@@ -353,7 +353,7 @@
     report.reads.libraryScope = await scope(library);
     const root = entries[4].body?.RootFolder?.ServerRelativeUrl;
     report.libraryRootVerified = entries[4].ok && typeof root === 'string' &&
-      root.startsWith(web.pathname.replace(/\/$/, '') + '/') &&
+      root.startsWith(decodeURIComponent(web.pathname).replace(/\/$/, '') + '/') &&
       !root.startsWith('//') && !/[?#\\]/.test(root) &&
       !root.split('/').some(part => part === '..' || part === '.') &&
       entries[4].body.BaseTemplate === 101;
