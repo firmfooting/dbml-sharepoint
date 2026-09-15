@@ -2540,8 +2540,14 @@ def test_legal_reopened_assessment_must_clear_completion_date(status: str) -> No
     assert _legal_rule_accepts(_legal_assessment(Status=status, CompletedDate=None)) is True
 
 
-def test_legal_cancelled_assessment_can_retain_completion_history() -> None:
-    assert _legal_rule_accepts(_legal_assessment(Status="No longer required")) is True
+@pytest.mark.parametrize("reviewed", [None, "today-1"])
+def test_legal_cancelled_assessment_can_retain_completion_history(reviewed: str | None) -> None:
+    assert _legal_rule_accepts(_legal_assessment(
+        Status="No longer required", ReviewedDate=reviewed,
+    )) is True
+    assert _legal_rule_accepts(_legal_assessment(
+        Status="No longer required", ReviewedDate=reviewed, CompletedDate=None,
+    )) is (reviewed is None)
 
 
 def test_legal_date_order_remains_a_governance_check() -> None:
@@ -2577,7 +2583,7 @@ def test_legal_recording_worklists_follow_the_review_choice(
 def test_legal_regs_never_enter_assessment_worklists() -> None:
     loaded = _load("legal-compliance-register")
     for view in loaded.mapping.views["Document"]:
-        if view.title == "Platform owner":
+        if view.title in {"Platform owner", "Folder View"}:
             continue
         assert view.where is not None
         assert _evaluate(

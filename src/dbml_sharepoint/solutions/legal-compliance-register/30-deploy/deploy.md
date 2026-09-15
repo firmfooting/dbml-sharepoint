@@ -1,7 +1,10 @@
 # Deploying legal compliance register (administrator)
 
 Shared procedure: [solution deployment](../../README.md), using
-`legal-compliance-register`. Assess the site, review the generated manifest,
+`legal-compliance-register`. The library is **Legislative Compliance**, with
+URL name `LegislativeCompliance`. Earlier `LC_Document` libraries remain in place;
+migrate their files deliberately into the new library. A title change alone
+does not change an existing library URL. Assess the site, review the generated manifest,
 paste the deploy script, then verify the resulting library.
 
 ## Before you build

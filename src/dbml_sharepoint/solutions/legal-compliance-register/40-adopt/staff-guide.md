@@ -64,3 +64,6 @@ portal**. The file leaves this worklist and appears in **Recorded assessments**.
 **All assessments** preserves the full assessment history. **Reference
 regulations** holds the REGs. Mark a cancelled SAQ *No longer required*;
 keep its file and explain the cancellation in **Tracking notes**.
+
+Use **Folder View** to browse division folders. Other worklists show files
+across folders. Native folder and file-type icons remain visible.

@@ -6,6 +6,8 @@ prefix: LC_
 
 entities:
   Document:
+    title: Legislative Compliance
+    internal_name: LegislativeCompliance
     kind: DocumentLibrary
     base_template: 101
     site_role: default
@@ -120,6 +122,15 @@ field_sets:
 
 views:
   Document:
+    - title: Folder View
+      scope: default
+      fields: [FileLeafRef, ItemType, TopicName, Division, Modified]
+      sort:
+        - {field: FileLeafRef, direction: asc}
+      widths:
+        FileLeafRef: 300
+        TopicName: 220
+        Division: 180
     - title: Platform owner
       scope: recursive
       fields: [FileLeafRef, ItemType, TopicName, PortalTopicId, Division,
@@ -362,7 +373,7 @@ list_validation:
             - any_of:
                 - {field: ReviewedDate, op: is_null}
                 - all_of:
-                    - {field: Status, op: eq, value: Complete}
+                    - {field: Status, op: in, value: [Complete, No longer required]}
                     - {field: CompletedDate, op: is_not_null}
             - any_of:
                 - {field: ExternalRecorded, op: is_null}
@@ -383,8 +394,8 @@ list_validation:
                 - {field: ExternalRecorded, op: is_null}
                 - {field: ExternalRecorded, op: leq, value: today}
     message: SAQs need status. Required/In progress need blank completion dates. In progress/Complete
-      need topic and division. Complete needs a date and review choice. Review/recording need Complete;
-      requested reviews need a date to record. Dates cannot be future.
+      need topic and division. Complete needs a date and review choice. Review needs Complete or
+      No longer required; recording needs Complete; requested reviews need a date to record. Dates cannot be future.
 
 # Synthetic files exercise both review routes and successive vendor periods.
 

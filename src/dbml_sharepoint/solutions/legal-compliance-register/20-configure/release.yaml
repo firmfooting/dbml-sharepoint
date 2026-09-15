@@ -1,7 +1,7 @@
-release: "2.1.2"
+release: "2.1.3"
 date: "2026-09-15"
 deployer_version: "dbml-sharepoint/0.6.0"
-schema_version: "2.1.2"
+schema_version: "2.1.3"
 notes: |
   Breaking redesign: one Document library replaces the Topic list and SAQ library.
   SAQs are vendor downloads; a new SAQ for the same topic has a new period.
@@ -11,3 +11,5 @@ notes: |
   Require SAQ status and a review decision at completion; clarify governance checks.
   Reject stale completion dates on reopened SAQs and remove assessment defaults.
   Show recently recorded assessments first.
+  Name the library Legislative Compliance at LegislativeCompliance.
+  Retain native file icons and add Folder View. Preserve cancelled review history.
