@@ -8,7 +8,8 @@ from _paths import MANUAL
 
 
 @pytest.mark.parametrize("scenario", [
-    "normal", "library-denied", "throttled", "malformed", "administrator", "identity-denied",
+    "normal", "library-denied", "library-malformed", "library-wrong-kind", "library-outside-web",
+    "throttled", "malformed", "administrator", "identity-denied",
     "owner", "groups-denied", "owners-denied", "groups-malformed", "owners-malformed",
     "groups-partial", "groups-partial-odata", "groups-partial-verbose", "groups-verbose",
     "group-id-malformed",
@@ -76,6 +77,11 @@ const fetch = async (url, options) => {
   else if (url.includes('RootFolder/ServerRelativeUrl')) {
     if (scenario === 'library-denied') status = 403;
     else body = { BaseTemplate: 101, RootFolder: { ServerRelativeUrl: '/sites/probe/Probe' } };
+    if (scenario === 'library-malformed') body.RootFolder = {};
+    if (scenario === 'library-wrong-kind') body.BaseTemplate = 100;
+    if (scenario === 'library-outside-web') {
+      body.RootFolder.ServerRelativeUrl = '/sites/other/Probe';
+    }
   } else if (url.includes('GetFolderByServerRelativeUrl')) status = 404;
   else if (url.includes('GetFileByServerRelativeUrl')) {
     if (scenario === 'throttled') status = 429;
@@ -103,6 +109,16 @@ const fetch = async (url, options) => {
     )
     result: dict[str, Any] = json.loads(completed.stdout)
     report = result["report"]
+    if scenario.startswith("library-"):
+        assert "LIBRARY_ROOT_UNVERIFIED" in report["errors"][0]
+        assert report["libraryRootVerified"] is False
+        assert report["targets"] == []
+        assert not any("GetFileBy" in call["url"] for call in result["calls"])
+        findings = {row["id"]: row for row in report["results"]}
+        for name in ("control-own-file-edit", "control-recipient-denied", "division-isolation",
+                     "folder-resharing", "file-resharing"):
+            assert findings[f"library.access.{name}"]["state"] == "void"
+        return
     assert report["errors"] == []
     assert report["sharingVerdict"].startswith("NOT ESTABLISHED")
     assert {call["method"] for call in result["calls"]} == {"GET"}
@@ -117,13 +133,11 @@ const fetch = async (url, options) => {
     else:
         assert "scope" not in target
         assert target["observation"].startswith("UNRESOLVED")
-    if scenario == "library-denied":
-        assert report["libraryRootVerified"] is False
     if scenario == "throttled":
         assert target["fileRead"]["status"] == 429
     findings = {row["id"]: row for row in report["results"]}
     ordinary = scenario in {
-        "normal", "library-denied", "throttled", "malformed", "groups-verbose",
+        "normal", "throttled", "malformed", "groups-verbose",
     }
     sharing_state = "awaiting-capture" if ordinary else "void"
     for finding in (
