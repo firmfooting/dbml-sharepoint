@@ -8,6 +8,13 @@ Enum division {
   "Executive and governance"
 }
 
+// Replace these sample committees with the organisation's oversight bodies.
+Enum oversight_committee {
+  "Audit and Risk Committee"
+  "Clinical Governance Committee"
+  "Executive Committee"
+}
+
 Enum item_type {
   "SAQ"
   "REG"
@@ -42,6 +49,7 @@ Table Document {
   IssuedYear           int                [note: 'Publisher issuance year from the original filename, not the upload year or assessment year']
   IssuedQuarter        quarter            [note: 'Publisher issuance quarter from the original filename, not the assessment quarter']
   Division             division           [note: 'The executive division whose folder holds this file']
+  OversightCommittee   oversight_committee [note: 'Optional committee overseeing this document']
   ExecutiveResponsible person             [note: 'Assigned by the platform owner according to the executive division folder; assigns the business owner and may review the completed SAQ']
   BusinessOwner        person             [note: 'Assigned by the executive to complete this assessment in Excel']
   Status               assessment_status  [note: 'SAQ progress only. Complete means the business owner has finished; portal recording is tracked separately']

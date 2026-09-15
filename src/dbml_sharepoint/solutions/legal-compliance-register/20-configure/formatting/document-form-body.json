@@ -10,6 +10,7 @@
         "IssuedYear",
         "IssuedQuarter",
         "Division",
+        "OversightCommittee",
         "Title"
       ]
     },

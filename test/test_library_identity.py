@@ -29,6 +29,15 @@ def test_legal_library_identity_and_navigation_are_consistent() -> None:
     title = "Legislative Compliance"
     assert built["lists"][0]["title"] == title
     assert built["lists"][0]["internal_name"] == "LegislativeCompliance"
+    committee = next(
+        f for f in built["lists"][0]["fields_phase1"] if f["title"] == "OversightCommittee"
+    )
+    assert committee["display_title"] == "Oversight Committee"
+    assert not committee["body"].get("Required", False)
+    assert committee["body"]["FieldTypeKind"] == 6
+    assert committee["body"]["Choices"]["results"] == [
+        "Audit and Risk Committee", "Clinical Governance Committee", "Executive Committee",
+    ]
     assert list(dict(assess_targets(schema, bundle, "default")["list_markers"])) == [title]
     assert all(v["list"] == title and v["view_fields"][0] == "DocIcon" for v in built["views"])
     folder = next(v for v in built["views"] if v["title"] == "Folder View")
@@ -50,6 +59,7 @@ def test_legal_library_identity_and_navigation_are_consistent() -> None:
         schema_json=built, findings=[], bundle=bundle,
         source_mtime="2026-09-15T00:00:00Z", **args,
     )
+    assert "Immutable library URL name: `LegislativeCompliance`" in manifest
     assert "filter:" in manifest
     assert "sort: Modified desc" in manifest
     solution = load_solution("legal-compliance-register")
@@ -81,4 +91,34 @@ def test_two_entities_cannot_claim_the_same_title(tmp_path: Path) -> None:
             entities:
               A: {kind: List, base_template: 100, site_role: default, title: Same}
               B: {kind: List, base_template: 100, site_role: default, title: same}
+        """)
+
+
+@pytest.mark.parametrize("length", [255, 256])
+def test_explicit_title_length_boundary(tmp_path: Path, length: int) -> None:
+    mapping = f"""
+        entities:
+          Doc:
+            kind: DocumentLibrary
+            base_template: 101
+            site_role: default
+            title: {'A' * length}
+    """
+    if length == 256:
+        with pytest.raises(MappingValueError, match="at most 255"):
+            pack(tmp_path, dbml=table("Doc", ID_PK, TITLE), mapping=mapping)
+    else:
+        pack(tmp_path, dbml=table("Doc", ID_PK, TITLE), mapping=mapping)
+
+
+def test_rename_cannot_declare_an_immutable_root(tmp_path: Path) -> None:
+    with pytest.raises(MappingValueError, match="internal_name cannot be combined"):
+        pack(tmp_path, dbml=table("Doc", ID_PK, TITLE), mapping="""
+            entities:
+              Doc:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                internal_name: NewRoot
+                renamed_from: [OldDoc]
         """)

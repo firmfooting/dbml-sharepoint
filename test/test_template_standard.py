@@ -2635,3 +2635,17 @@ def test_legal_platform_owner_workspace_keeps_unclassified_uploads_visible() -> 
         "FileLeafRef", "ItemType", "TopicName", "PortalTopicId", "Division",
         "ExecutiveResponsible", "BusinessOwner", "ExternalRecorded",
     } <= set(view.fields)
+
+
+@pytest.mark.parametrize("review", ["Not required", "Required"])
+def test_cancelled_assessments_retain_recording_prerequisites(review: str) -> None:
+    row = _legal_assessment(
+        Status="No longer required", ExternalRecorded="today",
+        ReviewRequirement=review, ReviewedDate="today-1" if review == "Required" else None,
+    )
+    assert _legal_rule_accepts(row) is True
+    assert _legal_rule_accepts({**row, "CompletedDate": None}) is False
+    assert _legal_rule_accepts({**row, "ReviewRequirement": None}) is False
+    assert _legal_rule_accepts({**row, "ExternalRecorded": "today+1"}) is False
+    if review == "Required":
+        assert _legal_rule_accepts({**row, "ReviewedDate": None}) is False

@@ -99,6 +99,7 @@ display_names:
   mode: auto
   overrides:
     Document:
+      OversightCommittee: Oversight Committee
       ItemType: Type
       PortalTopicId: Portal topic ID
       ExternalRecorded: Recorded in portal
@@ -133,7 +134,7 @@ views:
         Division: 180
     - title: Platform owner
       scope: recursive
-      fields: [FileLeafRef, ItemType, TopicName, PortalTopicId, Division,
+      fields: [FileLeafRef, ItemType, TopicName, PortalTopicId, Division, OversightCommittee,
         ExecutiveResponsible, BusinessOwner, Status, CompletedDate,
         ReviewRequirement, ReviewedDate, ExternalRecorded]
       sort:
@@ -378,8 +379,9 @@ list_validation:
             - any_of:
                 - {field: ExternalRecorded, op: is_null}
                 - all_of:
-                    - {field: Status, op: eq, value: Complete}
+                    - {field: Status, op: in, value: [Complete, No longer required]}
                     - {field: CompletedDate, op: is_not_null}
+                    - {field: ReviewRequirement, op: is_not_null}
             - any_of:
                 - {field: ExternalRecorded, op: is_null}
                 - {field: ReviewRequirement, op: eq, value: Not required}
@@ -395,7 +397,8 @@ list_validation:
                 - {field: ExternalRecorded, op: leq, value: today}
     message: SAQs need status. Required/In progress need blank completion dates. In progress/Complete
       need topic and division. Complete needs a date and review choice. Review needs Complete or
-      No longer required; recording needs Complete; requested reviews need a date to record. Dates cannot be future.
+      No longer required; recording needs either status, completion date and review choice.
+      Requested reviews need a date to record. Dates cannot be future.
 
 # Synthetic files exercise both review routes and successive vendor periods.
 
