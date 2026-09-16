@@ -265,7 +265,7 @@ dbml-sharepoint explain unknown_column_type
 | `retirement_without_display_names` | warning | Columns are retired but `display_names` is not enabled, so the ' (retired)' title suffix never reaches SharePoint. |
 | `row_limit_out_of_range` | error | A view's `row_limit` is outside 1-5000. |
 | `style_calculated_type_mismatch` | error | `calculated: true` is set on a style whose column is not the `calculated_*` type that style expects. |
-| `style_input_type_mismatch` | error | A numeric or date style has an incompatible target or comparison operand. Use a scalar of the required type; lookup IDs are lookup objects in formatters. |
+| `style_input_type_mismatch` | error | A numeric or date style has an incompatible target or comparison operand. Use a scalar of the required type. Microsoft documents lookup fields as objects with `lookupId` and `lookupValue`, not scalar integers ([formatting reference](https://learn.microsoft.com/en-us/sharepoint/dev/declarative-customization/formatting-syntax-reference#currentfield)). For a lookup, use custom formatting that selects the intended property. |
 | `style_map_key_not_in_enum` | error | A `severity` or `pill` map names a choice the column's enum does not contain. |
 | `style_on_boolean_matches_nothing` | error | A `severity` or `pill` style sits on a Yes/No column. Both compare `@currentField` against quoted strings, so every branch is false and the cell renders unstyled -- silently. |
 | `style_requires_calculated` | error | A style target or comparison operand uses the matching `calculated_*` column but does not set `calculated: true`, so SharePoint's typed formatter value is never decoded. |

@@ -1,8 +1,9 @@
 """Shared value expressions for SharePoint column formatters.
 
 Operators follow Microsoft's formatting-syntax-reference. Live-confirmed on
-2026-09-16: plain/prefixed values, exact text matching, blank/zero display,
-and invalid numeric/date fallbacks passed the generated visual probes.
+2026-09-16: constant plain/prefixed values in calculated styles, exact text
+matching, blank/zero display and invalid numeric/date fallbacks passed the
+generated visual probes. Native date fields retain their direct-value path.
 """
 
 from dataclasses import dataclass
@@ -42,13 +43,21 @@ class ScalarValue:
         return text_value(self.ref, calculated=self.calculated)
 
     @property
+    def _native_date(self) -> bool:
+        return self.constructor == "Date" and not self.calculated
+
+    @property
     def value(self) -> str:
-        # Preserve native date objects; calculated dates need prefix removal.
+        # Native dates already have the type used by comparisons and locale display.
+        if self._native_date:
+            return self.ref
         source = self.text if self.calculated else self.ref
         return f"{self.constructor}({source})"
 
     @property
     def valid(self) -> str:
+        if self._native_date:
+            return f"({self.ref} != '')"
         number = f"Number({self.value})" if self.constructor == "Date" else self.value
         # Subtracting itself rejects NaN and infinity using documented arithmetic.
         return f"({self.text} != '' && ({number} - {number}) == 0)"

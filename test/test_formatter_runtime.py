@@ -15,6 +15,7 @@ pytestmark = pytest.mark.skipif(NODE is None, reason="node is required")
 
 def render(
     spec: dict[str, Any], value: Any, fields: dict[str, Any] | None = None,
+    *, native_date: bool = False,
 ) -> dict[str, Any]:
     formatter = expand_style(spec, "test")
 
@@ -42,12 +43,19 @@ const toString = String;
 const indexOf = (text, needle) => text.indexOf(needle);
 const substring = (text, start, end) => text.substring(start, end);
 const choose = (condition, yes, no) => condition ? yes : no;
-const asDate = value => new Date(value);
-const toLocaleDateString = date =>
+const asDate = value => {
+    if (value instanceof Date) throw new Error('Unexpected native date conversion');
+    return new Date(value);
+};
+// The harness evaluates both if branches; empty native dates must select the other branch.
+const toLocaleDateString = date => date === '' ? '[unselected empty date]' :
     isNaN(Number(date)) ? 'Invalid Date' : date.toISOString().slice(0, 10);
 const now = new Date('2026-09-16T12:00:00Z');
 """
-    result = run_node(script + f"const value = {json.dumps(value)};\n"
+    literal = json.dumps(value)
+    if native_date and value != "":
+        literal = f"new Date({literal})"
+    result = run_node(script + f"const value = {literal};\n"
                       + f"const fields = {json.dumps(fields or {})};\n"
                       + "console.log(JSON.stringify(" + compile_value(formatter) + "));\n")
     rendered: dict[str, Any] = json.loads(result)
@@ -200,3 +208,34 @@ def test_visual_probe_generation(tmp_path: Any) -> None:
         raw = path.read_text(encoding="utf-8")
         assert "@currentField" not in raw and "@now" not in raw and "[$" not in raw
         assert json.loads(raw)["debugMode"] is True
+
+
+@pytest.mark.parametrize("value, display, icon", [
+    ("", "none", ""),
+    ("2026-09-15", "flex", "Warning"),
+    ("2026-09-15T09:30:00Z", "flex", "Warning"),
+    ("2026-09-17", "flex", ""),
+    ("2026-09-17T09:30:00Z", "flex", ""),
+])
+def test_native_dates_keep_the_direct_value_path(value: str, display: str, icon: str) -> None:
+    spec = {"style": "overdue-date"}
+    raw = json.dumps(expand_style(spec, "test"))
+    assert "Date(@currentField)" not in raw
+    assert "Number(@currentField)" not in raw
+    assert "@currentField < @now" in raw
+    assert "toLocaleDateString(@currentField)" in raw
+    cell = render(spec, value, native_date=True)
+    assert cell["style"]["display"] == display
+    assert cell["children"][0]["attributes"]["iconName"] == icon
+    assert cell["children"][1]["txtContent"] == value[:10]
+
+
+@pytest.mark.parametrize("ref", ["@currentField", "[$DueDate]"])
+def test_native_date_references_are_not_reparsed(ref: str) -> None:
+    from dbml_sharepoint.analysis.formatter_values import ScalarValue
+
+    scalar = ScalarValue("Date", ref)
+    assert scalar.value == ref
+    assert scalar.valid == f"({ref} != '')"
+    calculated = ScalarValue("Date", ref, calculated=True)
+    assert calculated.value.startswith("Date(if(")

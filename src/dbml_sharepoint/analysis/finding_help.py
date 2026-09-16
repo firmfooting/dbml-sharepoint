@@ -1373,7 +1373,11 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.STYLE_INPUT_TYPE_MISMATCH: (
         "A numeric or date style has an incompatible target or comparison operand. "
-        "Use a scalar of the required type; lookup IDs are lookup objects in formatters."
+        "Use a scalar of the required type. Microsoft documents lookup fields as "
+        "objects with `lookupId` and `lookupValue`, not scalar integers "
+        "([formatting reference](https://learn.microsoft.com/en-us/sharepoint/dev/"
+        "declarative-customization/formatting-syntax-reference#currentfield)). "
+        "For a lookup, use custom formatting that selects the intended property."
     ),
     FindingCode.STYLE_MAP_KEY_NOT_IN_ENUM: (
         "A `severity` or `pill` map names a choice the column's enum "

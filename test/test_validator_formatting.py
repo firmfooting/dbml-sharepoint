@@ -829,28 +829,46 @@ def test_scalar_styles_reject_incompatible_targets(
     assert finding.location == Location(Section.COLUMN_FORMATTING, entity="Risk", column="Value")
 
 
-@pytest.mark.parametrize("styled", ["Score", "Baseline"])
-def test_scalar_styles_reject_lookup_targets_and_operands(tmp_path: Path, styled: str) -> None:
-    spec = ("{style: trend, against: Baseline}" if styled == "Score"
-            else "{style: data-bar, max: 25}")
+@pytest.mark.parametrize("styled, spec, scalar_type", [
+    ("Baseline", "{style: data-bar, max: 25}", "number"),
+    ("Baseline", "{style: numeric-severity, bands: [{max: 1, token: good}], otherwise: severe}",
+     "number"),
+    ("Baseline", "{style: overdue-date}", "datetime"),
+    ("Baseline", "{style: trend, against: Score}", "number"),
+    ("Score", "{style: trend, against: Baseline}", "number"),
+])
+@pytest.mark.parametrize("shape", ["scalar", "lookup", "multi-lookup"])
+def test_scalar_style_inputs_follow_documented_lookup_shape(
+    tmp_path: Path, styled: str, spec: str, scalar_type: str, shape: str,
+) -> None:
+    declaration = scalar_type if shape == "scalar" else (
+        "int[] [ref: > Other.Id]" if shape == "multi-lookup" else "int [ref: > Other.Id]"
+    )
     schema, bundle = pack(tmp_path, dbml="""
         Table Risk {
           Id int [pk, increment]
           Title nvarchar [not null]
           Score number
-          Baseline int [ref: > Other.Id]
+          Baseline BASELINE_TYPE
         }
         Table Other {
           Id int [pk, increment]
           Title nvarchar [not null]
         }
-    """, mapping=blocks(entities("Risk", "Other"), f"""
+    """.replace("BASELINE_TYPE", declaration), mapping=blocks(entities("Risk", "Other"), f"""
         column_formatting:
           Risk:
             {styled}: {spec}
     """))
-    finding = only(validate_against_mapping(schema, bundle), FindingCode.STYLE_INPUT_TYPE_MISMATCH)
-    assert "lookup" in finding.message
+    findings = [f for f in validate_against_mapping(schema, bundle)
+                if f.code == FindingCode.STYLE_INPUT_TYPE_MISMATCH]
+    if shape == "scalar":
+        assert findings == []
+    else:
+        assert len(findings) == 1
+        assert "lookup" in findings[0].message
+        assert findings[0].location == Location(Section.COLUMN_FORMATTING,
+                                                entity="Risk", column=styled)
 
 
 @pytest.mark.parametrize("calculated, expected", [(False, True), (True, False)])
@@ -910,3 +928,26 @@ def test_displayed_column_dependencies_are_checked_per_view(
     if missing:
         assert findings[0].location == Location(Section.VIEWS, entity="Risk", view="Working")
         assert "Score" in findings[0].message and "Baseline" in findings[0].message
+
+
+def test_explicit_lookup_property_formatting_remains_available(tmp_path: Path) -> None:
+    schema, bundle = pack(tmp_path, dbml="""
+        Table Risk {
+          Id int [pk, increment]
+          Title nvarchar [not null]
+          Baseline int [ref: > Other.Id]
+        }
+        Table Other {
+          Id int [pk, increment]
+          Title nvarchar [not null]
+        }
+    """, mapping=blocks(entities("Risk", "Other"), """
+        column_formatting:
+          Risk:
+            Baseline: {elmType: span, txtContent: '@currentField.lookupValue'}
+    """))
+    findings = validate_against_mapping(schema, bundle)
+    assert not any(f.code == FindingCode.STYLE_INPUT_TYPE_MISMATCH for f in findings)
+    assert bundle.mapping.column_formatting["Risk"]["Baseline"]["txtContent"] == (
+        "@currentField.lookupValue"
+    )

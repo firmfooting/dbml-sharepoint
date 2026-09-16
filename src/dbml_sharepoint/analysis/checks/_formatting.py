@@ -58,7 +58,11 @@ def _scalar_input_findings(
     registered: StyleSpec, column: str, calculated: bool, flag: str,
     types: dict[str, str], lookups: set[str], context: str, at: Location,
 ) -> list[Finding]:
-    """Apply the same scalar type contract to targets and comparison operands."""
+    """Apply the same scalar type contract to targets and comparison operands.
+
+    Lookup fields expose lookupId/lookupValue objects, not the DBML integer:
+    https://learn.microsoft.com/en-us/sharepoint/dev/declarative-customization/formatting-syntax-reference#currentfield
+    """
     actual = types.get(column)
     if actual is None:
         return []  # Unknown references have their own finding.

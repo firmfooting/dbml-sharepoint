@@ -162,9 +162,9 @@ def test_overdue_date_guard_and_severity_treatment() -> None:
     assert "sp-field-severity--severeWarning" in cls
     assert "[$Status] != 'Closed'" in cls
     assert "[$Status] != 'Cancelled'" in cls
-    assert "Date(@currentField) < @now" in cls
+    assert "@currentField < @now" in cls
     assert "'Warning'" in out["children"][0]["attributes"]["iconName"]
-    assert "toLocaleDateString(Date(@currentField))" in out["children"][1]["txtContent"]
+    assert "toLocaleDateString(@currentField)" in out["children"][1]["txtContent"]
     assert out["style"]["border-radius"] == "4px"
 
 
