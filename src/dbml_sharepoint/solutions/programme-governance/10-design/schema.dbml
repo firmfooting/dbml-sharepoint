@@ -141,23 +141,16 @@ Enum gov_involvement_role {
   "Informed"
 }
 
-// How far an involvement has actually got, which is a different question from
-// how much authority it carries. Kept apart from gov_involvement_role on
-// purpose: "we need this person to Agree and have not approached them yet" is
-// a sentence the programme needs to be able to say, and one column cannot say
-// it. Engaged is the end state and the only one that needs no next contact.
 Enum gov_engagement_status {
   "Identified"
-  "Scheduled"
   "Engaged"
 }
 
 Enum gov_involvement_channel {
-  "Standing agenda item"
+  "Governance forum"
   "Meeting"
   "Email"
   "Report or dashboard"
-  "Ad hoc"
 }
 
 // The classes of tenant-level change the provider holds. Members are drawn
@@ -333,21 +326,19 @@ Table Involvement {
   Activity    int                       [not null, ref: > Activity.Id, note: 'The activity this stakeholder is involved in']
   Stakeholder int                       [not null, ref: > Stakeholder.Id, note: 'Who is involved, from the stakeholder list: a person, a role, a forum or an external body']
   Involvement gov_involvement_role    [not null, default: 'Informed', note: 'Agree means their sign-off is required before the activity proceeds. Consulted means their input is required first, but they cannot refuse. Informed means they are told, and cannot hold it up. This is the AUTHORITY their input carries, not whether it has happened yet']
-  EngagementStatus gov_engagement_status [not null, default: 'Identified', note: 'How far this has actually got. Identified means the involvement is agreed as necessary and nobody has approached them. Scheduled means a date is set. Engaged means it is happening or has happened. Independent of the Involvement column above, so a stakeholder can be an unapproached Agree']
-  NextContact date                      [note: 'The date the next contact is set for, or the date by which one must happen. Required while Scheduled. Leave blank once Engaged, which is what the overdue treatment keys on']
-  Channel     gov_involvement_channel [not null, default: 'Email', note: 'How this happens in practice, so the involvement has a mechanism rather than an intention']
-  Notes       nvarchar                  [note: 'Anything a reader needs: timing, the standing item it sits under, what happens if they do not respond']
+  Lead        person                    [note: 'Who is responsible for leading this consultation?']
+  EngagementPlan longtext               [note: 'What input or decision is needed, how will the stakeholder be engaged, and what preparation is required?']
+  Channel     gov_involvement_channel    [not null, default: 'Email', note: 'How this consultation takes place']
+  ContactDate date                      [note: 'The planned or actual contact date. Keep this date after engagement']
+  EngagementStatus gov_engagement_status [not null, default: 'Identified', note: 'Identified means the involvement is needed and has not yet happened. Engaged means it is happening or has happened']
+  Notes       longtext                  [note: 'What was the consultation outcome? Record the input received, agreements or decisions, and any follow-up actions.']
 
   indexes {
     Activity
     Stakeholder
     Involvement
     EngagementStatus
-    // The backlog view filters EngagementStatus and SORTS on this. Past the
-    // 5,000-item threshold an unindexed sort column fails the view the same
-    // way an unindexed filter does, so both halves of that view are indexed
-    // rather than only the one being compared.
-    NextContact
+    ContactDate
   }
 
   // NOT unique on (Activity, Stakeholder), and it cannot be made so here.

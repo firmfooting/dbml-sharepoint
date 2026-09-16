@@ -327,7 +327,10 @@ demo_items:
         Involvement: "Consulted"
         EngagementStatus: "Engaged"
         Channel: "Email"
-        Notes: "Demo row. Must be asked before the request is authorised, not after the provider has built it."
+        Lead: "@me"
+        ContactDate: "today-7"
+        EngagementPlan: "Ask the privacy officer to review the proposed data boundary before authorisation."
+        Notes: "The privacy officer confirmed the proposed boundary and requested a check before implementation."
     - key: inv-provider-tenant
       values:
         Title: "[DEMO] Whether the change can be delivered inside the requested window"
@@ -335,8 +338,9 @@ demo_items:
         Stakeholder: { demo_ref: stakeholder-provider }
         Involvement: "Consulted"
         EngagementStatus: "Engaged"
-        Channel: "Ad hoc"
-        Notes: "Demo row. Asked on the service request itself. The provider is consulted here and is never Accountable."
+        Channel: "Email"
+        EngagementPlan: "Ask the provider to confirm delivery dates by email."
+        Notes: "The provider confirmed the delivery window by email."
     - key: inv-steering-licensing
       values:
         Title: "[DEMO] Whether the licensing model fits the funded establishment"
@@ -344,8 +348,8 @@ demo_items:
         Stakeholder: { demo_ref: stakeholder-steering }
         Involvement: "Consulted"
         EngagementStatus: "Engaged"
-        Channel: "Standing agenda item"
-        Notes: "Demo row. The steering group is consulted on the model and the sponsor decides the budget."
+        Channel: "Governance forum"
+        Notes: "The steering group supported the proposed model and referred the budget decision to the sponsor."
     - key: inv-champions-migration
       values:
         Title: "[DEMO] What frontline teams will need on the day their drives move"
@@ -354,7 +358,7 @@ demo_items:
         Involvement: "Consulted"
         EngagementStatus: "Engaged"
         Channel: "Meeting"
-        Notes: "Demo row. The champions are the only people who know what each team actually opens first thing in the morning."
+        Notes: "The champions identified the shared files needed at shift handover and agreed to validate access before cutover."
     - key: inv-clinical-cutover
       values:
         Title: "[DEMO] When the migration cutover date for each care setting is fixed"
@@ -363,7 +367,7 @@ demo_items:
         Involvement: "Informed"
         EngagementStatus: "Engaged"
         Channel: "Report or dashboard"
-        Notes: "Demo row. Told, not asked: the date is set by the workstream and the clinical lead needs to know it."
+        Notes: "The clinical lead acknowledged the cutover date and confirmed that each care setting would be notified."
     - key: inv-privacy-comms
       values:
         Title: "[DEMO] Whether a communications pack names any individual"
@@ -372,7 +376,7 @@ demo_items:
         Involvement: "Consulted"
         EngagementStatus: "Engaged"
         Channel: "Email"
-        Notes: "Demo row. The second row consulting the privacy officer, which is what the Consultation load view exists to surface."
+        Notes: "The privacy officer reviewed the communications pack and confirmed that it contains no personal information."
     - key: inv-director-tenant
       values:
         Title: "[DEMO] Whether a tenant-wide setting may change at all this quarter"
@@ -380,8 +384,8 @@ demo_items:
         Stakeholder: { demo_ref: stakeholder-digital-director }
         Involvement: "Agree"
         EngagementStatus: "Engaged"
-        Channel: "Standing agenda item"
-        Notes: "Demo row. The only Agree here: the approval does not proceed without it, which is the difference from the two Consulted rows on the same activity."
+        Channel: "Governance forum"
+        Notes: "The director approved the proposed tenant setting for this quarter and requested a post-change review."
     - key: inv-clinical-licensing
       values:
         Title: "[DEMO] Whether the licensing model leaves clinical systems short"
@@ -390,17 +394,18 @@ demo_items:
         Involvement: "Agree"
         EngagementStatus: "Identified"
         Channel: "Meeting"
-        Notes: "Demo row, and the reason Engagement Status is its own column. The licensing decision does not proceed without this sign-off, and nobody has approached them yet. Read the two columns together: high authority, no contact."
+        EngagementPlan: "Obtain clinical sign-off on the proposed licensing model before the decision."
     - key: inv-steering-migration
       values:
         Title: "[DEMO] Whether the cutover sequence fits the board's reporting cycle"
         Activity: { demo_ref: act-lead-migration }
         Stakeholder: { demo_ref: stakeholder-steering }
         Involvement: "Consulted"
-        EngagementStatus: "Scheduled"
-        NextContact: "today+14"
-        Channel: "Standing agenda item"
-        Notes: "Demo row. Identified, a date set, not yet held. Both this row and the one above it are what the Identified, not yet engaged view lists."
+        EngagementStatus: "Identified"
+        ContactDate: "today+14"
+        Channel: "Governance forum"
+        Lead: "@me"
+        EngagementPlan: "Present the cutover sequence to the steering group and request feedback on reporting dates."
 
   ServiceRequest:
     - key: tr-guest-access

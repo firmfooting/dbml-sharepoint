@@ -12,9 +12,11 @@
       "displayname": "How they are involved",
       "fields": [
         "Involvement",
-        "EngagementStatus",
-        "NextContact",
+        "Lead",
+        "EngagementPlan",
         "Channel",
+        "ContactDate",
+        "EngagementStatus",
         "Notes"
       ]
     }
