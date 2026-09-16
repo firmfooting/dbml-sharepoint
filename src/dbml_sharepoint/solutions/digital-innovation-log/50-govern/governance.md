@@ -97,9 +97,11 @@ Readiness change and are not ranked against Now. *Later* is a dated
 deferral. *Strategic* items are decided by the sponsor and never compete on
 score.
 
-**Review tier** follows Data Sensitivity. Patient or clinical workflow data
-means a clinician signs Clinical Review Date before acceptance. Sensitive
-staff data means a security or privacy check. Standard asks get neither.
+**Review tier** is calculated from Sensitivity, so the two cannot disagree.
+Patient or clinical workflow data means a clinician signs Clinical Review
+Date before acceptance. Sensitive staff data means a security or privacy
+check. *Not sure* reads *Resolve sensitivity first* and blocks acceptance
+until it is resolved. Standard asks get neither review.
 
 **Distribution rule.** If more than a fifth of a month's asks land in Game
 change, the definitions are re-read aloud at the champions meeting before any
@@ -161,10 +163,12 @@ and to the rollout board:
 | Implementation rate | Adopted rows over all rows that are not Duplicate | 10 to 20 percent is normal; higher usually means the scope was narrow |
 | Repeat participation | Champions and teams that have raised more than one ask, from Created By and Team or unit | Rising month on month |
 
-The first two are point-in-time reads of today's values. `column-history`,
-deployed once on a site the service keeps, is what turns them into a trend:
-it records each Status change as a row, so "how long did asks sit in
-Captured last quarter" becomes a question the data can answer.
+The first two are point-in-time reads of today's values. To make them a
+trend, deploy `column-history` once on a site the service keeps and then
+build the Power Automate flow that family's deploy guide describes, watching
+`DI_Opportunity.Status`. Deploying the sink alone records nothing; the flow
+on this list is what turns "how long did asks sit in Captured last quarter"
+into a question the data can answer.
 
 ## Data quality checks a formula cannot make
 
@@ -176,29 +180,33 @@ often.
 
 | Check | View | Cadence |
 | --- | --- | --- |
-| An Accepted ask names a Pattern | **Delivery and adoption**: a row under the empty group has no pattern | Weekly, by the Owner |
-| A Duplicate's Receiving reference really is the earlier ask | **Closed and routed**: filter Status to Duplicate and read the reference against the Title column | Weekly, at triage |
-| A clinical-tier ask names a Clinical Reviewer | **Exploring**: every row whose Review Tier is *Clinical or data review* or whose Data Sensitivity is patient data | Before acceptance, by the Owner; monthly, by the log owner |
-| Acknowledged Date is on or after Captured Date | **By area**: open each row acknowledged since the last meeting and compare the two dates | Monthly, at the champions meeting |
+| An Accepted, Adopted or Not adopted ask names a Pattern | **Delivery and adoption** for Accepted rows (a row under the empty group has no pattern) and **Closed and routed** for Adopted and Not adopted rows, whose Pattern column is shown | Weekly, by the Owner |
+| An Exploring ask has an Owner | **Exploring**: the Owner column is blank | Weekly, by the log owner |
+| An Accepted ask whose pattern is Available has an Adoption Check Due | **Delivery and adoption**: the deadline column is blank under a pattern **Catalogue** lists | Weekly, by the Owner |
+| A duplicate's Receiving reference really is the earlier ask | **Closed and routed**: filter Route to the duplicate route and read the reference against the Title column | Weekly, at triage |
+| A patient-data ask names a Clinical Reviewer | **Exploring**: every row whose Review Tier reads *Clinical or data review* | Before acceptance, by the Owner; monthly, by the log owner |
+| Acknowledged Date is on or after Captured Date | The hidden **All Items** view, which holds every status, sorted by Acknowledged Date; compare each row acknowledged since the last meeting with its Captured Date | Monthly, at the champions meeting |
 | Available Date is on or after Proposed Date | **Catalogue**: compare the two dates on each pattern made Available since the last meeting | Monthly, by the Build Owner |
-| Not now and Not adopted rows have a Decision Rationale | **Closed and routed**: filter Status to Not now, then Not adopted, and open each row | Monthly, at the champions meeting |
+| Every decided ask has a Decision Rationale | **Delivery and adoption** for Accepted rows; **Closed and routed** for Adopted, Not adopted and Not now rows; open each row decided since the last meeting | Monthly, at the champions meeting |
 | An Available pattern has a Guide or exemplar link | **Catalogue**: the link column is empty | Monthly, by the Build Owner; before any team is pointed at it |
 
 SharePoint does enforce, and the deploy checklist verifies: leaving
-Captured needs a Triage Outcome and an Acknowledged Date; Awaiting decision
-and every later status need Value, Ease, Evidence and Horizon; Accepted,
-Adopted, Not adopted and Not now need a Decision Date; an ask whose Data
-Sensitivity is patient or clinical workflow data, or whose Review Tier is
-*Clinical or data review*, needs its Clinical Review Date before acceptance,
-so re-tiering cannot bypass the review; Not now needs a Reopen trigger
-longer than fifteen characters; Routed and Duplicate need a Receiving
-reference; Adopted needs an Adopted Date and an Adoption Note longer than
-ten characters; an Available pattern needs an Available Date; a Retired one
-needs a Retired Date and Reason; and Captured Date and Decision Date refuse
-a future date. Acknowledged, Clinical Review and Adopted dates do not: the
-list formula has a 1023-character ceiling and the acknowledgement and
-clinical gates were worth more than those three checks. Adoption Check Due
-is a planned date and may be in the future.
+Captured needs a Route and an Acknowledged Date; only *Explore here* may
+hold any status other than Captured or Closed, and Closed needs a route
+other than *Explore here*; Awaiting decision and every later status need
+Value, Ease, Evidence and Horizon; Accepted, Adopted and Not adopted need a
+Decision Date and a Sensitivity that is not *Not sure*; an ask whose
+Sensitivity is patient or clinical workflow data needs its Clinical Review
+Date before acceptance, and Review Tier is calculated from Sensitivity so
+nothing can be re-tiered around it; a Not now needs a Decision Date and a
+Reopen trigger longer than fifteen characters; every other closed ask needs
+a Receiving reference; Adopted needs an Adopted Date and an Adoption Note
+longer than ten characters; an Available pattern needs an Available Date; a
+Retired one needs a Retired Date and Reason; and Captured Date and Decision
+Date refuse a future date. Acknowledged, Clinical Review and Adopted dates
+do not: the list formula has a 1023-character ceiling and the
+acknowledgement and clinical gates were worth more than those three checks.
+Adoption Check Due is a planned date and may be in the future.
 
 ## Records and decommissioning
 

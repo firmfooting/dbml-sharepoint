@@ -23,6 +23,8 @@ calculated_formulas:
   Opportunity:
     PriorityScore: '=IF(OR(ISBLANK([ValueBand]),ISBLANK([EaseBand])),"",IF([ValueBand]="Tweak",1,IF([ValueBand]="Optimiser",2,3))*IF([EaseBand]="Hard",1,IF([EaseBand]="Moderate",2,3)))'
     PriorityBand: '=IF(ISBLANK([PriorityScore]),"",IF([PriorityScore]>=6,"Prioritise",IF([PriorityScore]>=3,"Consider","Later")))'
+    # Derived, so the tier can never disagree with the sensitivity flag.
+    ReviewTier: '=IF([DataSensitivity]="Touches patient or clinical workflow data","Clinical or data review",IF([DataSensitivity]="Touches sensitive staff or third-party data","Security review",IF([DataSensitivity]="Not sure","Resolve sensitivity first","Standard")))'
     # Date plus days is the form Learn's common-formulas page documents for
     # a calculated column ("=[Column1]+3").
     AcknowledgeBy: '=IF(ISBLANK([CapturedDate]),"",[CapturedDate]+7)'
@@ -35,12 +37,12 @@ calculated_formulas:
     DaysToAvailable: '=IF(OR(ISBLANK([ProposedDate]),ISBLANK([AvailableDate])),"",IF([AvailableDate]<[ProposedDate],"",DATEDIF([ProposedDate],[AvailableDate],"d")))'
     # MIN against the day before the first of the following month holds a
     # 31st to the last real day of the target month (#418).
-    NextReviewDue: '=IF(ISBLANK([AvailableDate]),"",MIN(DATE(YEAR([AvailableDate]),MONTH([AvailableDate])+12,DAY([AvailableDate])),DATE(YEAR([AvailableDate]),MONTH([AvailableDate])+13,0)))'
+    NextReviewDue: '=IF(ISBLANK([AvailableDate]),"",IF(ISBLANK([LastReviewedDate]),MIN(DATE(YEAR([AvailableDate]),MONTH([AvailableDate])+12,DAY([AvailableDate])),DATE(YEAR([AvailableDate]),MONTH([AvailableDate])+13,0)),MIN(DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+12,DAY([LastReviewedDate])),DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+13,0))))'
 
 # Security: everyone reads, including declined and parked rows, because a
 # visible backlog is what keeps demand coming through the front door.
 # Champions add and edit asks; the digital team works both lists. Neither
-# level deletes: a row leaves by Routed, Duplicate or Not now.
+# level deletes: an ask that does not stay is Closed, and the route says why.
 groups:
   - name: "{prefix} Champions"
     description: "Champions and business analysts who capture asks on behalf of staff and curate them before triage."
@@ -139,6 +141,8 @@ display_names:
       ValueBand: "Value"
       EaseBand: "Ease"
       TeamOrUnit: "Team or unit"
+      TriageOutcome: "Route"
+      DataSensitivity: "Sensitivity"
       HeardAt: "Heard at"
       RequestedFor: "Requested for"
       ReopenTrigger: "Reopen trigger"
@@ -149,9 +153,9 @@ display_names:
       GuideLink: "Guide or exemplar link"
 
 # Tokens by the ROLE a value plays (website/docs/reference/style-guide.md).
-# Captured is the intake state and neutral; Routed is a closed loop and
-# therefore good, not muted: the ask went somewhere and the requester was
-# told. Duplicate and Not now are the not-done terminals.
+# Captured is the intake state and neutral; Closed is the terminal for an
+# ask that did not stay, and the Route pill beside it says whether it went
+# somewhere useful or was declined.
 column_formatting:
   Opportunity:
     Status:
@@ -163,9 +167,7 @@ column_formatting:
         Accepted: low
         Adopted: good
         "Not adopted": warning
-        Routed: good
-        Duplicate: muted
-        "Not now": muted
+        Closed: muted
     TriageOutcome:
       style: pill
       map:
@@ -195,7 +197,8 @@ column_formatting:
       map: { Assumed: neutral, Observed: low, Measured: good }
     ReviewTier:
       style: severity
-      map: { Standard: neutral, "Clinical or data review": severe, "Security review": warning }
+      calculated: true
+      map: { Standard: neutral, "Clinical or data review": severe, "Security review": warning, "Resolve sensitivity first": severe }
     Horizon:
       style: pill
       map: { Now: good, "Next wave": low, Later: neutral, Strategic: warning }
@@ -222,10 +225,10 @@ column_formatting:
     AcknowledgeBy:
       style: overdue-date
       calculated: true
-      guard: { field: Status, not: [Exploring, "Awaiting decision", Accepted, Adopted, "Not adopted", Routed, Duplicate, "Not now"] }
+      guard: { field: Status, not: [Exploring, "Awaiting decision", Accepted, Adopted, "Not adopted", Closed] }
     AdoptionCheckDue:
       style: overdue-date
-      guard: { field: Status, not: [Captured, Exploring, "Awaiting decision", Adopted, "Not adopted", Routed, Duplicate, "Not now"] }
+      guard: { field: Status, not: [Captured, Exploring, "Awaiting decision", Adopted, "Not adopted", Closed] }
   Pattern:
     Status:
       style: severity
@@ -287,7 +290,6 @@ views:
         Evidence: 120
         PriorityBand: 130
         PriorityScore: 140
-        ReviewTier: 200
         Horizon: 120
         Owner: 160
         Status: 150
@@ -312,7 +314,7 @@ views:
       fields: [Title, TeamOrUnit, HeardAt, TriageOutcome, PriorityBand, Horizon,
                CapturedDate, Status]
       where:
-        - { field: Status, op: not_in, value: [Adopted, "Not adopted", Routed, Duplicate, "Not now"] }
+        - { field: Status, op: not_in, value: [Adopted, "Not adopted", Closed] }
       group_by: { field: ServiceArea, collapsed: true }
       sort:
         - { field: CapturedDate, direction: asc }
@@ -330,7 +332,7 @@ views:
                DestinationLink, ReopenTrigger, ValueBand, AdoptedDate, DaysToAdopted,
                AdoptionNote, Modified]
       where:
-        - { field: Status, op: in, value: [Adopted, "Not adopted", Routed, Duplicate, "Not now"] }
+        - { field: Status, op: in, value: [Adopted, "Not adopted", Closed] }
       sort:
         - { field: Modified, direction: desc }
       widths:
@@ -424,10 +426,6 @@ form_visibility:
         new: false
         when:
           - { field: TriageOutcome, op: eq, value: "Explore here" }
-      ReviewTier:
-        new: false
-        when:
-          - { field: TriageOutcome, op: eq, value: "Explore here" }
       Horizon:
         new: false
         when:
@@ -435,15 +433,11 @@ form_visibility:
       ClinicalReviewer:
         new: false
         when:
-          any_of:
-            - { field: ReviewTier, op: eq, value: "Clinical or data review" }
-            - { field: DataSensitivity, op: eq, value: "Touches patient or clinical workflow data" }
+          - { field: DataSensitivity, op: eq, value: "Touches patient or clinical workflow data" }
       ClinicalReviewDate:
         new: false
         when:
-          any_of:
-            - { field: ReviewTier, op: eq, value: "Clinical or data review" }
-            - { field: DataSensitivity, op: eq, value: "Touches patient or clinical workflow data" }
+          - { field: DataSensitivity, op: eq, value: "Touches patient or clinical workflow data" }
       Sponsor:
         new: false
         when:
@@ -455,23 +449,27 @@ form_visibility:
       DecisionDate:
         new: false
         when:
-          - { field: Status, op: in, value: [Accepted, Adopted, "Not adopted", "Not now"] }
+          any_of:
+            - { field: Status, op: in, value: [Accepted, Adopted, "Not adopted"] }
+            - { field: TriageOutcome, op: eq, value: "Not now" }
       DecisionRationale:
         new: false
         when:
-          - { field: Status, op: in, value: [Accepted, Adopted, "Not adopted", "Not now"] }
+          any_of:
+            - { field: Status, op: in, value: [Accepted, Adopted, "Not adopted"] }
+            - { field: TriageOutcome, op: eq, value: "Not now" }
       ReopenTrigger:
         new: false
         when:
-          - { field: Status, op: eq, value: "Not now" }
+          - { field: TriageOutcome, op: eq, value: "Not now" }
       DestinationReference:
         new: false
         when:
-          - { field: Status, op: in, value: [Routed, Duplicate] }
+          - { field: TriageOutcome, op: in, value: ["Service request or fault - send to the helpdesk", "Already available - show and train", "Process change - improvement register", "Project-sized - project pipeline", "Incident, complaint, privacy or cyber - mandated system", "Duplicate - merge into the earlier ask"] }
       DestinationLink:
         new: false
         when:
-          - { field: Status, op: in, value: [Routed, Duplicate] }
+          - { field: TriageOutcome, op: in, value: ["Service request or fault - send to the helpdesk", "Already available - show and train", "Process change - improvement register", "Project-sized - project pipeline", "Incident, complaint, privacy or cyber - mandated system", "Duplicate - merge into the earlier ask"] }
       AdoptionCheckDue:
         new: false
         when:
@@ -566,11 +564,17 @@ column_validation:
             - { field: RetiredDate, op: is_null }
             - { field: RetiredDate, op: leq, value: today }
         message: "Use the date the pattern was retired; it cannot be in the future."
+      LastReviewedDate:
+        when:
+          any_of:
+            - { field: LastReviewedDate, op: is_null }
+            - { field: LastReviewedDate, op: leq, value: today }
+        message: "Use the date the review actually happened; it cannot be in the future."
 
 # Cross-column rules on the list. Each is written as an implication:
 # `if A then B` is `any_of[not A, B]`. Fast exits stay cheap: leaving
-# Captured needs a route and an acknowledgement, Routed and Duplicate need
-# their receiving reference, Not now its trigger and a date.
+# Captured needs a route and an acknowledgement, a closed ask needs its
+# receiving reference, and Not now its trigger and a date.
 # The score is required from Awaiting decision on, so a row cannot skip
 # straight to Accepted unscored. The clinical gate reads Data Sensitivity as
 # well as Review Tier, so re-tiering an ask cannot bypass it.
@@ -584,45 +588,56 @@ column_validation:
 list_validation:
   Opportunity:
     when:
+      # Leaving Captured needs a route and an acknowledgement.
       - any_of:
           - { field: Status, op: eq, value: Captured }
           - all_of:
               - { field: TriageOutcome, op: is_not_null }
               - { field: AcknowledgedDate, op: is_not_null }
+      # Route and status bind both ways: Closed needs a route other than
+      # Explore here, and any other route allows only Captured or Closed, so
+      # a mandated-system ask can never sit in delivery.
       - any_of:
-          - { field: Status, op: not_in, value: ["Awaiting decision", Accepted, Adopted, "Not adopted"] }
+          - { field: Status, op: neq, value: Closed }
+          - { field: TriageOutcome, op: neq, value: "Explore here" }
+      - any_of:
+          - { field: TriageOutcome, op: eq, value: "Explore here" }
+          - { field: Status, op: in, value: [Captured, Closed] }
+      # The score, from Awaiting decision on.
+      - any_of:
+          - { field: Status, op: in, value: [Captured, Exploring, Closed] }
           - all_of:
               - { field: ValueBand, op: is_not_null }
               - { field: EaseBand, op: is_not_null }
               - { field: Evidence, op: is_not_null }
               - { field: Horizon, op: is_not_null }
-      # Accepted and later: a decision date, and the clinical review date
-      # when either Data Sensitivity or Review Tier says patient data. The
-      # two-way OR is written as two ANDed ORs to stay four groups deep.
+      # Accepted and later: a decision date, a resolved sensitivity, and the
+      # clinical review date when the ask touches patient data.
       - any_of:
           - { field: Status, op: not_in, value: [Accepted, Adopted, "Not adopted"] }
           - all_of:
               - { field: DecisionDate, op: is_not_null }
+              - { field: DataSensitivity, op: neq, value: "Not sure" }
               - any_of:
                   - { field: DataSensitivity, op: neq, value: "Touches patient or clinical workflow data" }
                   - { field: ClinicalReviewDate, op: is_not_null }
-              - any_of:
-                  - { field: ReviewTier, op: neq, value: "Clinical or data review" }
-                  - { field: ClinicalReviewDate, op: is_not_null }
+      # Fast exits: Not now needs its trigger and a date; every other closed
+      # route needs the receiving reference.
       - any_of:
-          - { field: Status, op: neq, value: "Not now" }
+          - { field: TriageOutcome, op: neq, value: "Not now" }
           - all_of:
               - { field: ReopenTrigger, op: is_not_null }
               - { field: DecisionDate, op: is_not_null }
       - any_of:
-          - { field: Status, op: not_in, value: [Routed, Duplicate] }
+          - { field: Status, op: neq, value: Closed }
+          - { field: TriageOutcome, op: eq, value: "Not now" }
           - { field: DestinationReference, op: is_not_null }
       - any_of:
           - { field: Status, op: neq, value: Adopted }
           - all_of:
               - { field: AdoptedDate, op: is_not_null }
               - { field: AdoptionNote, op: is_not_null }
-    message: "Check this stage: leaving Captured needs a triage route and an acknowledged date. Awaiting decision and later need Value, Ease, Evidence and Horizon. Accepted, later stages and Not now need a decision date; a patient-data or clinical-tier ask needs its review date first. Not now needs its reopen trigger, Routed and Duplicate their receiving reference, and Adopted its date and what changed."
+    message: "Check this stage: leaving Captured needs a route and an acknowledged date. Only Explore here goes past Captured; every other route closes the ask. Awaiting decision and later need Value, Ease, Evidence and Horizon. Accepted and later need a decision date, a resolved sensitivity, and the clinical review date for patient data. Not now needs its reopen trigger and a decision date; a closed ask needs its receiving reference; Adopted needs its date and what changed."
   Pattern:
     when:
       - any_of:
@@ -704,6 +719,7 @@ demo_items:
         BuildOwner: "@me"
         PilotTeam: "Outpatients reception"
         AvailableDate: "today-150"
+        LastReviewedDate: "today-60"
         RetiredDate: "today-20"
         RetiredReason: "Replaced by the approval flow pattern; rules kept deleting referrals"
   Opportunity:
@@ -749,7 +765,6 @@ demo_items:
         ValueBand: Optimiser
         EaseBand: Moderate
         Evidence: Observed
-        ReviewTier: "Security review"
         Horizon: Now
         Owner: "@me"
         Status: Exploring
@@ -770,7 +785,6 @@ demo_items:
         ValueBand: "Game change"
         EaseBand: Moderate
         Evidence: Measured
-        ReviewTier: "Clinical or data review"
         ClinicalReviewer: "@me"
         ClinicalReviewDate: "today-5"
         Horizon: Now
@@ -794,7 +808,6 @@ demo_items:
         ValueBand: "Game change"
         EaseBand: Hard
         Evidence: Assumed
-        ReviewTier: "Security review"
         Horizon: Strategic
         Owner: "@me"
         Status: Exploring
@@ -815,7 +828,6 @@ demo_items:
         ValueBand: Optimiser
         EaseBand: Easy
         Evidence: Measured
-        ReviewTier: Standard
         Horizon: Now
         Sponsor: "@me"
         Owner: "@me"
@@ -841,7 +853,6 @@ demo_items:
         ValueBand: Optimiser
         EaseBand: Easy
         Evidence: Observed
-        ReviewTier: Standard
         Horizon: Now
         Sponsor: "@me"
         Owner: "@me"
@@ -867,7 +878,6 @@ demo_items:
         ValueBand: Optimiser
         EaseBand: Easy
         Evidence: Measured
-        ReviewTier: Standard
         Horizon: Now
         Sponsor: "@me"
         Owner: "@me"
@@ -895,7 +905,6 @@ demo_items:
         ValueBand: Tweak
         EaseBand: Easy
         Evidence: Observed
-        ReviewTier: Standard
         Horizon: Now
         Sponsor: "@me"
         Owner: "@me"
@@ -919,7 +928,7 @@ demo_items:
         CapturedDate: "today-8"
         TriageOutcome: "Service request or fault - send to the helpdesk"
         Owner: "@me"
-        Status: Routed
+        Status: Closed
         AcknowledgedDate: "today-7"
         DestinationReference: "[DEMO] SR-2026-0311"
         DestinationLink: "https://example.sharepoint.com/sites/helpdesk/Lists/Requests/DispForm.aspx?ID=311"
@@ -937,7 +946,7 @@ demo_items:
         CapturedDate: "today-12"
         TriageOutcome: "Already available - show and train"
         Owner: "@me"
-        Status: Routed
+        Status: Closed
         AcknowledgedDate: "today-11"
         DestinationReference: "[DEMO] Planner walkthrough booked for the leaders meeting"
     - key: opp-routed-improvement
@@ -954,7 +963,7 @@ demo_items:
         CapturedDate: "today-14"
         TriageOutcome: "Process change - improvement register"
         Owner: "@me"
-        Status: Routed
+        Status: Closed
         AcknowledgedDate: "today-13"
         DestinationReference: "[DEMO] CI-2026-0042"
     - key: opp-routed-project
@@ -971,7 +980,7 @@ demo_items:
         CapturedDate: "today-18"
         TriageOutcome: "Project-sized - project pipeline"
         Owner: "@me"
-        Status: Routed
+        Status: Closed
         AcknowledgedDate: "today-16"
         DestinationReference: "[DEMO] PP-2026-0009"
     - key: opp-routed-mandated
@@ -988,7 +997,7 @@ demo_items:
         CapturedDate: "today-4"
         TriageOutcome: "Incident, complaint, privacy or cyber - mandated system"
         Owner: "@me"
-        Status: Routed
+        Status: Closed
         AcknowledgedDate: "today-4"
         DestinationReference: "[DEMO] PRIV-2026-0017"
     - key: opp-duplicate
@@ -1005,7 +1014,7 @@ demo_items:
         CapturedDate: "today-6"
         TriageOutcome: "Duplicate - merge into the earlier ask"
         Owner: "@me"
-        Status: Duplicate
+        Status: Closed
         DestinationReference: "[DEMO] Pharmacy stock requests approved by walking a form upstairs"
         AcknowledgedDate: "today-5"
     - key: opp-not-now
@@ -1022,7 +1031,7 @@ demo_items:
         CapturedDate: "today-25"
         TriageOutcome: "Not now"
         Owner: "@me"
-        Status: "Not now"
+        Status: Closed
         AcknowledgedDate: "today-22"
         DecisionDate: "today-20"
         DecisionRationale: "Demo row. Declined for now: the clinical system's roadmap covers bed management and a bespoke build would duplicate it without the safety controls."

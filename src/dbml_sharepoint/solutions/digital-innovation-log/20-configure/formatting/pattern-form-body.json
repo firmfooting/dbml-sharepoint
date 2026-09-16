@@ -2,19 +2,40 @@
   "sections": [
     {
       "displayname": "What it is",
-      "fields": ["Title", "Description", "Workloads", "ProposedDate"]
+      "fields": [
+        "Title",
+        "Description",
+        "Workloads",
+        "ProposedDate"
+      ]
     },
     {
       "displayname": "Readiness and effort",
-      "fields": ["EffortBand", "Readiness", "GovernanceTier"]
+      "fields": [
+        "EffortBand",
+        "Readiness",
+        "GovernanceTier"
+      ]
     },
     {
       "displayname": "Build and release",
-      "fields": ["Status", "BuildOwner", "PilotTeam", "AvailableDate", "GuideLink", "RetiredDate", "RetiredReason"]
+      "fields": [
+        "Status",
+        "BuildOwner",
+        "PilotTeam",
+        "AvailableDate",
+        "GuideLink",
+        "LastReviewedDate",
+        "RetiredDate",
+        "RetiredReason"
+      ]
     },
     {
       "displayname": "System",
-      "fields": ["DaysToAvailable", "NextReviewDue"]
+      "fields": [
+        "DaysToAvailable",
+        "NextReviewDue"
+      ]
     }
   ]
 }

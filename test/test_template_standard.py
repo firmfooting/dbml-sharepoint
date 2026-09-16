@@ -1849,11 +1849,12 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     remains at 5 (three assigned people plus Author and Editor). The
     distribution is 2 -> 10, 3 -> 30, 4 -> 20, 5 -> 5, 8 -> 2, 9 -> 2.
 
-    RE-MEASURED 2026-09-16 across 37 templates / 71 entities:
+    RE-MEASURED 2026-09-17 across 37 templates / 71 entities:
     digital-innovation-log adds Pattern at 3 (BuildOwner, Author, Editor)
-    and Opportunity at 8 (four people, the Pattern lookup, the MergedInto
-    self-lookup, Author, Editor). The distribution is 2 -> 10, 3 -> 31,
-    4 -> 20, 5 -> 5, 8 -> 3, 9 -> 2. The worst is unchanged at 9."""
+    and Opportunity at 7 (four people, the Pattern lookup, Author, Editor;
+    a MergedInto self-lookup was dropped in review because no probe has
+    measured one). The distribution is 2 -> 10, 3 -> 31, 4 -> 20, 5 -> 5,
+    7 -> 1, 8 -> 2, 9 -> 2. The worst is unchanged at 9."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()

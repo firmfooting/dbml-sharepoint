@@ -61,9 +61,9 @@ run. What to look for:
   patterns. The *Adoption Check Due* on the feedback-cards ask is three days
   past and red.
 - **Closed and routed** holds nine rows: one Adopted with a filled *Days To
-  Adopted* bar and its *Adoption Note*, one Not adopted, five Routed (one per
-  route out), one Duplicate and one Not now with its *Reopen trigger*
-  visible.
+  Adopted* bar and its *Adoption Note*, one Not adopted, and seven Closed
+  whose *Route* pills cover every route out, the duplicate and the Not now
+  with its *Reopen trigger* visible.
 - **Catalogue** shows one Available pattern with a filled *Days To
   Available* bar (50 of 90) and a *Next Review Due* about eleven months
   out.
@@ -100,8 +100,8 @@ seed a site that already holds real asks.
       associated owner group holds the built-in Contribute, as in every
       family, and `50-govern/governance.md` says who can delete and why the
       no-delete promise covers only the two family groups.
-- [ ] A plain Site Member can read both lists, including the demo Not now
-      row, and cannot add to either.
+- [ ] A plain Site Member can read both lists, including the Closed demo
+      rows, and cannot add to either.
 - [ ] The header link opens the published capture guide.
 
 ### Intake
@@ -119,11 +119,11 @@ seed a site that already holds real asks.
       on it.
 - [ ] Editing a saved ask shows **Triage and score**, **Decision and
       delivery** and **Adoption**; **System** is a bare heading on the edit
-      form too. *Value*, *Ease*, *Evidence*,
-      *Review Tier* and *Horizon* appear only once Triage Outcome is
-      *Explore here*; *Clinical Reviewer* and *Clinical Review Date* once
-      Review Tier is *Clinical or data review* or Data Sensitivity is
-      *Touches patient or clinical workflow data*.
+      form too. *Value*, *Ease*, *Evidence* and *Horizon* appear only once
+      Route is *Explore here*; *Clinical Reviewer* and *Clinical Review
+      Date* once Sensitivity is *Touches patient or clinical workflow data*.
+      *Review Tier* is calculated from Sensitivity and cannot be edited: it
+      reads *Resolve sensitivity first* while Sensitivity is *Not sure*.
 - [ ] A Captured Date in the future is refused. The refusal shows the list
       message: date-versus-today rules are hoisted onto the list rule at
       build time, and `deploy-manifest.md` names the two that were (Captured
@@ -133,24 +133,26 @@ seed a site that already holds real asks.
 
 ### Triage and score
 
-- [ ] Setting Status to Exploring with no Triage Outcome, or with no
-      Acknowledged Date, is refused with the list message, which begins
-      "Check this stage".
+- [ ] Setting Status to Exploring with no Route, or with no Acknowledged
+      Date, is refused with the list message, which begins "Check this
+      stage".
+- [ ] Setting Status to Exploring, Awaiting decision or Accepted on an ask
+      whose Route is anything other than *Explore here* is refused, and so
+      is Closed on an ask whose Route is *Explore here*.
 - [ ] Setting Status to Awaiting decision with any of *Value*, *Ease*,
       *Evidence* or *Horizon* empty is refused with the same message.
-- [ ] Setting Status to Accepted on an ask whose Review Tier is *Clinical or
-      data review* and whose Clinical Review Date is empty is refused.
-      Filling the date lets it save. Changing the Review Tier to *Standard*
-      does not: the gate also reads Data Sensitivity, so an ask marked
-      *Touches patient or clinical workflow data* is refused until the date
-      is filled whatever the tier says.
+- [ ] Setting Status to Accepted on an ask whose Sensitivity is *Touches
+      patient or clinical workflow data* and whose Clinical Review Date is
+      empty is refused. Filling the date lets it save. Setting it to Accepted
+      while Sensitivity is *Not sure* is refused until the sensitivity is
+      resolved.
 - [ ] Setting Status to Accepted straight from Exploring with any of *Value*,
       *Ease*, *Evidence* or *Horizon* empty is refused.
-- [ ] Setting Status to Not now with *Reopen trigger* or *Decision Date*
-      empty is refused. A trigger of 15 characters or fewer is refused by the
-      column's own message.
-- [ ] Setting Status to Routed or Duplicate with *Receiving reference* empty
-      is refused. On a Duplicate it names the earlier ask.
+- [ ] Closing an ask whose Route is *Not now* with *Reopen trigger* or
+      *Decision Date* empty is refused. A trigger of 15 characters or fewer
+      is refused by the column's own message.
+- [ ] Closing an ask on any other route with *Receiving reference* empty is
+      refused. On the duplicate route it names the earlier ask.
 - [ ] *Priority Score* renders as a bar out of 9 and takes its colour from
       *Value*, so Tweak x Easy (3) and Game change x Hard (3) render at the
       same length in different colours.
@@ -171,8 +173,8 @@ seed a site that already holds real asks.
       empty is refused. A note of 10 characters or fewer is refused by the
       column's own message.
 - [ ] *Days To Adopted* renders as a bar out of 120 on the Adopted demo row.
-- [ ] **Closed and routed** holds every Adopted, Not adopted, Routed,
-      Duplicate and Not now row, newest change first.
+- [ ] **Closed and routed** holds every Adopted, Not adopted and Closed
+      row, newest change first.
 
 ### Patterns
 
@@ -182,12 +184,13 @@ seed a site that already holds real asks.
       with the pattern list message. Setting it to Retired with *Retired
       Date* or *Retired Reason* empty is refused with the same message.
 - [ ] *Next Review Due* reads twelve months after *Available Date* and
-      cannot be edited. *Days To Available* renders as a bar out of 90,
-      coloured by *Effort Band*.
+      cannot be edited. Setting *Last Reviewed Date* moves it to twelve
+      months after that date instead. *Days To Available* renders as a bar
+      out of 90, coloured by *Effort Band*.
 - [ ] **In build** groups on *Build Owner*. **Retired** sorts by *Retired
       Date*, newest first.
-- [ ] List Settings shows the declared indexes: Status, Service Area, Triage
-      Outcome, Captured Date, Horizon and Adoption Check Due on
+- [ ] List Settings shows the declared indexes: Status, Service Area, Route,
+      Captured Date, Horizon and Adoption Check Due on
       `DI_Opportunity`; Status, Readiness and Available Date on
       `DI_Pattern`.
 - [ ] As a Site Owner, changing a deployed column's type or choices is

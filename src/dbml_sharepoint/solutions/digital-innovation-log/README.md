@@ -21,16 +21,20 @@ used it. That last column is the rollout's benefits story.
 duplicates. Triage picks one of eight routes, sends the ask where it belongs
 with a reply, and only an ask worth an M365 build is scored:
 
-| An ask that is really... | Route | Terminal status |
+| An ask that is really... | Route | Status |
 | --- | --- | --- |
-| A helpdesk request or fault | service-requests or your helpdesk | Routed |
-| A capability that already exists | Show and train; link the how-to | Routed |
-| A process change with no M365 build | improvement-register | Routed |
-| A project-sized change | project-pipeline | Routed |
-| An incident, complaint, privacy or cyber matter | The mandated system | Routed |
-| The same ask another team already raised | Closed, naming that row | Duplicate |
-| Not worth doing now | Declined with what would change the answer | Not now |
+| A helpdesk request or fault | service-requests or your helpdesk | Closed |
+| A capability that already exists | Show and train; link the how-to | Closed |
+| A process change with no M365 build | improvement-register | Closed |
+| A project-sized change | project-pipeline | Closed |
+| An incident, complaint, privacy or cyber matter | The mandated system | Closed |
+| The same ask another team already raised | Closed, naming that row | Closed |
+| Not worth doing now | Declined with what would change the answer | Closed |
 | An M365 build worth exploring | Stays here | Exploring onwards |
+
+Route and status bind both ways in the save rule: only *Explore here* can
+leave Captured for anything but Closed, and a Closed ask needs a route other
+than *Explore here*. A mandated-system matter cannot sit in delivery.
 
 **Build on the pattern, adopt on the ask.** Delivery status lives on the
 pattern, in one place. Adoption lives on each ask, per team. Ten wards asking
@@ -66,15 +70,17 @@ under each pattern is the "twelve teams want this" evidence), *By area* (the
 champions meeting view) and *Closed and routed*. Pattern: *Catalogue* (the
 default), *In build* and *Retired*.
 
-**Save rules.** Leaving Captured needs a triage route and an acknowledged
-date. Awaiting decision and everything after it need Value, Ease, Evidence
-and Horizon. Accepted, Adopted, Not adopted and Not now need a decision date,
-and an ask whose data sensitivity or review tier says patient data needs its
-clinical review date first. Not now needs its reopen trigger, Routed and
-Duplicate their receiving reference, Adopted its date and what changed.
-Lookups, people and multi-line text cannot be read by a SharePoint validation
-formula, so "Accepted needs a Pattern" and "a clinical ask names its
-reviewer" are governance checks, and `50-govern/governance.md` says so.
+**Save rules.** Leaving Captured needs a route and an acknowledged date, and
+the route decides the status. Awaiting decision and everything after it need
+Value, Ease, Evidence and Horizon. Accepted and later need a decision date, a
+Sensitivity that is no longer *Not sure*, and the clinical review date when
+the ask touches patient data. Review tier is calculated from Sensitivity, so
+it cannot be re-typed to dodge that. A *Not now* needs its reopen trigger and
+a decision date; any other closed ask needs its receiving reference; Adopted
+needs its date and what changed. Lookups, people and multi-line text cannot
+be read by a SharePoint validation formula, so "Accepted needs a Pattern"
+and "a clinical ask names its reviewer" are governance checks, and
+`50-govern/governance.md` says so.
 
 **Work the folders in order:**
 

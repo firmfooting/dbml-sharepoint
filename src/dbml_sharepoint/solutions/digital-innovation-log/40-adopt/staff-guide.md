@@ -2,8 +2,8 @@
 
 The log is where an M365 ask goes so that it is answered once and built
 once. Champions capture; the digital team routes, scores, decides and checks
-adoption. Neither group can delete a row: an ask leaves as Routed,
-Duplicate or Not now, and every reader can see why.
+adoption. Neither group can delete a row: an ask that does not stay is
+Closed, its Route says why, and every reader can see it.
 
 ## Champions: capture in about a minute
 
@@ -56,18 +56,18 @@ costs a minute; an unanswered one costs the rollout its credibility.
 
 ## Digital team: triage in three piles
 
-Read **Needs response** oldest first. For each ask pick one **Triage
-Outcome** in under a minute:
+Read **Needs response** oldest first. For each ask pick one **Route** in
+under a minute:
 
-| Pile | Triage Outcome | Then |
+| Pile | Route | Then |
 | --- | --- | --- |
-| Route it out | Service request or fault - send to the helpdesk | Status Routed; Receiving reference is the ticket |
-| Route it out | Already available - show and train | Status Routed; Receiving reference is the how-to or the session booked |
-| Route it out | Process change - improvement register | Status Routed; Receiving reference is the improvement id |
-| Route it out | Project-sized - project pipeline | Status Routed; Receiving reference is the pipeline id |
-| Route it out | Incident, complaint, privacy or cyber - mandated system | Status Routed; Receiving reference is the record id |
-| Close it | Duplicate - merge into the earlier ask | Status Duplicate; Receiving reference names the earlier ask |
-| Close it | Not now | Status Not now; Decision Date, and Reopen trigger says what would change the answer |
+| Route it out | Service request or fault - send to the helpdesk | Status Closed; Receiving reference is the ticket |
+| Route it out | Already available - show and train | Status Closed; Receiving reference is the how-to or the session booked |
+| Route it out | Process change - improvement register | Status Closed; Receiving reference is the improvement id |
+| Route it out | Project-sized - project pipeline | Status Closed; Receiving reference is the pipeline id |
+| Route it out | Incident, complaint, privacy or cyber - mandated system | Status Closed; Receiving reference is the record id |
+| Close it | Duplicate - merge into the earlier ask | Status Closed; Receiving reference names the earlier ask |
+| Close it | Not now | Status Closed; Decision Date, and Reopen trigger says what would change the answer |
 | Keep it | Explore here | Status Exploring; name an Owner |
 
 Set **Acknowledged Date** when the requester has been told, whichever pile
@@ -75,10 +75,17 @@ the ask went to. The seven-day *Acknowledge by* stops being red the moment
 the ask leaves Captured, so leaving Captured without telling the requester
 defeats the clock; tell them first.
 
-The form refuses to leave Captured without a Triage Outcome and an
-Acknowledged Date, refuses Routed and Duplicate without a Receiving
-reference, and refuses Not now without a Decision Date and a Reopen trigger
-of more than fifteen characters.
+The form refuses to leave Captured without a Route and an Acknowledged
+Date, refuses a closed ask without a Receiving reference, and refuses a Not
+now without a Decision Date and a Reopen trigger of more than fifteen
+characters. It also refuses any status but Captured or Closed on a route
+other than *Explore here*, so a mandated-system matter cannot drift into
+delivery, and refuses Closed on an *Explore here* ask: an explored ask ends
+as Adopted, Not adopted, or with its route changed to Not now.
+
+An Exploring ask with no **Owner** is nobody's. The form cannot check a
+person column, so **Exploring** is read weekly for a blank Owner column and
+the log owner assigns one.
 
 Only *Explore here* continues. Everything else is finished once the
 requester has heard.
@@ -106,14 +113,15 @@ Later, Consider or Prioritise from it. Evidence sits beside the score and
 never multiplies it. An Assumed Game change is a prompt to go and look, not
 a prompt to build.
 
-Set **Review Tier** from Data Sensitivity: patient or clinical workflow data
-is *Clinical or data review*; sensitive staff or third-party data is
-*Security review*; otherwise *Standard*. An ask marked patient or clinical
-workflow data, or tiered *Clinical or data review*, shows **Clinical
-Reviewer** and **Clinical Review Date**, and the form will not accept it
-until the review date is filled. Re-tiering it does not get past that: the
-gate reads Data Sensitivity too. Name the reviewer as well; the form cannot
-check a person column, so that one is on you.
+**Review Tier** is calculated from Sensitivity and cannot be typed: patient
+or clinical workflow data is *Clinical or data review*; sensitive staff or
+third-party data is *Security review*; *Not sure* reads *Resolve sensitivity
+first*; otherwise *Standard*. Resolve a *Not sure* before the decision: the
+form will not accept an ask whose Sensitivity is still *Not sure*. An ask
+marked patient or clinical workflow data shows **Clinical Reviewer** and
+**Clinical Review Date**, and the form will not accept it until the review
+date is filled. Name the reviewer as well; the form cannot check a person
+column, so that one is on you.
 
 ## Digital team: decide, link to a pattern, check adoption
 
@@ -130,7 +138,9 @@ under an empty group.
 The ask stays **Accepted** while the pattern is built or piloted; the
 pattern's own Status shows the progress, so it is recorded once. When the
 pattern becomes Available, set **Adoption Check Due** about a month out. It
-is highlighted in **Delivery and adoption** once the date has passed.
+is highlighted in **Delivery and adoption** once the date has passed. A
+blank one never turns red, so that view is also read weekly for an Accepted
+ask whose pattern is Available and whose deadline is still empty.
 
 On that date ask the team whether they use it. Record **Adopted** with an
 **Adopted Date** and an **Adoption Note** in one line with a number where
@@ -149,8 +159,10 @@ Available, Retired.
   exemplar link**; the form checks the date and governance checks the link.
 - **Retired** needs a **Retired Date** and a **Retired Reason** saying what
   replaced it.
-- *Next Review Due* is calculated twelve months after Available Date. It is
-  the reminder to confirm the pattern is still used and still correct.
+- *Next Review Due* is calculated twelve months after Available Date, or
+  after **Last Reviewed Date** once there is one. Record the date of each
+  annual check there and the deadline moves on; leave it and the pattern
+  reads overdue, which is the point.
 
 The count of asks grouped under a pattern in **Delivery and adoption**, and
 the Adopted rows that link to it in **Closed and routed**, are the demand
@@ -159,10 +171,10 @@ is one pattern with ten adoption records, not ten builds.
 
 ## Everyone: the log is public
 
-Every ask, including a Routed, Duplicate or Not now one, is readable by
-every site member. That is deliberate: a visible backlog is what keeps
-demand coming through the front door instead of around it, and a team can
-see that its ask was heard before it asks again.
+Every ask, including a Closed one, is readable by every site member. That
+is deliberate: a visible backlog is what keeps demand coming through the
+front door instead of around it, and a team can see that its ask was heard
+before it asks again.
 
 A Not now is not a no. Its Reopen trigger says what would change the
 answer, and the digital team re-reads Not now rows at the champions

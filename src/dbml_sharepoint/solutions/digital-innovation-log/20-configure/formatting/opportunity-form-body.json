@@ -23,7 +23,6 @@
         "ValueBand",
         "EaseBand",
         "Evidence",
-        "ReviewTier",
         "ClinicalReviewer",
         "ClinicalReviewDate",
         "Horizon"
@@ -56,6 +55,7 @@
       "fields": [
         "PriorityScore",
         "PriorityBand",
+        "ReviewTier",
         "AcknowledgeBy",
         "DaysToAcknowledge",
         "DaysToDecision",

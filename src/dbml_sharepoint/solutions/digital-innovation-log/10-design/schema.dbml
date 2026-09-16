@@ -94,12 +94,6 @@ Enum evidence_band {
   "Measured"
 }
 
-Enum review_tier {
-  "Standard"
-  "Clinical or data review"
-  "Security review"
-}
-
 // The capacity gate. Only Now items are ranked against each other.
 Enum horizon {
   "Now"
@@ -108,6 +102,9 @@ Enum horizon {
   "Strategic"
 }
 
+// Closed is the one terminal state for an ask that does not stay: the route
+// says why. Binding route to status is then two cheap rules rather than a
+// pair table the list formula could not hold.
 Enum opportunity_status {
   "Captured"
   "Exploring"
@@ -115,9 +112,7 @@ Enum opportunity_status {
   "Accepted"
   "Adopted"
   "Not adopted"
-  "Routed"
-  "Duplicate"
-  "Not now"
+  "Closed"
 }
 
 Enum m365_workload {
@@ -179,12 +174,13 @@ Table Pattern {
   PilotTeam        nvarchar          [note: 'The team piloting it, in one line']
   AvailableDate    date              [note: 'The date the pattern became available to any team. Required once Status is Available']
   GuideLink        hyperlink         [note: 'Link to the exemplar or the how-to for this pattern']
+  LastReviewedDate date              [note: 'When the Build Owner last confirmed the pattern is still used and still correct. Blank until the first annual review']
   RetiredDate      date              [note: 'Required once Status is Retired']
   RetiredReason    nvarchar          [note: 'One line on why it was retired and what replaces it. Required once Status is Retired']
 
   // Calculated columns; formulas in mapping.yaml.
   DaysToAvailable  calculated_number [note: 'Calculated automatically: days from proposed to available. Blank until the pattern is available']
-  NextReviewDue    calculated_date   [note: 'Next check that this pattern is still used and still correct. Calculated twelve months after Available Date; nobody can type it. Blank until the pattern is available']
+  NextReviewDue    calculated_date   [note: 'Next check that this pattern is still used and still correct. Calculated twelve months after Last Reviewed Date, or after Available Date until the first review; nobody can type it']
 
   indexes {
     Status
@@ -213,13 +209,12 @@ Table Opportunity {
   ValueBand            value_band          [note: 'Tweak, Optimiser or Game change, using the definitions in the governance guide']
   EaseBand             ease_band           [note: 'Easy, Moderate or Hard, using the definitions in the governance guide']
   Evidence             evidence_band       [note: 'Assumed if heard once, Observed if someone watched the workaround, Measured if there is a number']
-  ReviewTier           review_tier         [note: 'Standard, Clinical or data review, or Security review. Follows Data Sensitivity']
-  ClinicalReviewer     person              [note: 'The clinician who reviews a Clinical or data review ask']
+  ClinicalReviewer     person              [note: 'The clinician who reviews an ask that touches patient or clinical workflow data']
   ClinicalReviewDate   date                [note: 'The date the clinical or data review was signed. Required before a clinical-tier ask can be accepted']
   Horizon              horizon             [note: 'Now items are ranked against each other; Next wave waits on readiness; Strategic is decided by the sponsor and never competes on score']
   Sponsor              person              [note: 'The manager or executive who owns the outcome, set at acceptance']
 
-  Status               opportunity_status  [not null, default: 'Captured', note: 'Lifecycle stage, maintained by the digital team']
+  Status               opportunity_status  [not null, default: 'Captured', note: 'Lifecycle stage, maintained by the digital team. Closed means the route took it elsewhere; only Explore here goes further']
   Pattern              int                 [ref: > Pattern.Id, note: 'The pattern this ask is delivered through, once accepted']
   Owner                person              [note: 'The digital team member accountable for this ask']
   AcknowledgedDate     date                [note: 'The date the requester was told the ask was received']
@@ -228,7 +223,7 @@ Table Opportunity {
   ReopenTrigger        nvarchar            [note: 'For a Not now: what would change the answer, in one specific line']
   // A same-list lookup for duplicates has no live measurement in test/manual
   // yet, so the earlier ask is named here, which a save rule can require.
-  DestinationReference nvarchar            [note: 'For Routed: the ticket, improvement id or record reference it went to. For Duplicate: the ID or title of the earlier ask']
+  DestinationReference nvarchar            [note: 'For a Closed ask: the ticket, improvement id or record reference it went to, or for a duplicate the ID or title of the earlier ask']
   DestinationLink      hyperlink           [note: 'Link to the receiving record or the earlier ask']
   AdoptionCheckDue     date                [note: 'When to check whether the team adopted the pattern. Set when the pattern becomes available; the pattern row carries the build status']
   AdoptedDate          date                [note: 'The date the team was confirmed to be using the solution']
@@ -237,6 +232,7 @@ Table Opportunity {
   // Calculated columns; formulas in mapping.yaml.
   PriorityScore        calculated_number   [note: 'Calculated automatically: Value times Ease, 1 to 9. Blank until both are set']
   PriorityBand         calculated_text     [note: 'Calculated automatically from the score: Later, Consider or Prioritise']
+  ReviewTier           calculated_text     [note: 'Calculated automatically from Sensitivity: Standard, Clinical or data review, Security review, or Resolve sensitivity first while it is Not sure']
   AcknowledgeBy        calculated_date     [note: 'Calculated automatically: seven days after capture. The response promise']
   DaysToAcknowledge    calculated_number   [note: 'Calculated automatically: days from capture to acknowledgement']
   DaysToDecision       calculated_number   [note: 'Calculated automatically: days from capture to decision']
