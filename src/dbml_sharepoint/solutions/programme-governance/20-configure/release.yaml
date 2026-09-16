@@ -1,8 +1,30 @@
-release: "3.2.1"
-date: "2026-09-08"
+release: "4.0.0"
+date: "2026-09-16"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "3.2.1"
+schema_version: "4.0.0"
 notes: |
+  4.0.0 updates Involvement fields, forms, views and reporting. Engagement
+  Status contains Identified and Engaged. Channel contains Governance forum,
+  Meeting, Email and Report or dashboard. Lead is an optional person picker.
+  Engagement Plan and Notes are optional multiline plain text. Contact Date
+  replaces Next Contact and records planned or actual contact. The form runs
+  from involvement and planning through contact details to status and outcomes.
+
+  BREAKING: NextContact is no longer declared and HasNextContact is replaced
+  by HasContactDate in reporting. Existing NextContact columns are not deleted.
+  ContactDate is indexed and overdue formatting applies only while Identified.
+  The engagement backlog and IsAwaitingEngagement select Identified only.
+
+  Before redeploying, export existing rows and convert Notes to multiline
+  plain text through column settings. Verify its name and contents. Change
+  Scheduled rows to Identified and Standing agenda item to Governance forum,
+  adding that channel option temporarily if needed. Review each Ad hoc row
+  and select its replacement channel. Verify all saved changes.
+
+  Run assess, deploy and verify. Copy Next Contact values to Contact Date,
+  verify them, then manually delete Next Contact. Update report consumers
+  from NextContact and HasNextContact to ContactDate and HasContactDate.
+
   3.2.1 indexes Involvement.NextContact. The "Identified, not yet engaged"
   view filters EngagementStatus and sorts on NextContact, and past the
   5,000-item threshold an unindexed SORT column fails a view the same way an

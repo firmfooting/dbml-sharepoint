@@ -3037,6 +3037,59 @@ def _lifted(script: str, header: str) -> str:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_involvement_notes_requires_conversion_before_redeployment() -> None:
+    from _paths import SOLUTION_TEMPLATES
+
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+    from dbml_sharepoint.model.mapping_loader import load_mapping
+    from dbml_sharepoint.model.parser import parse_dbml
+
+    root = SOLUTION_TEMPLATES / "programme-governance"
+    declaration = build_schema_json(
+        parse_dbml(root / "10-design/schema.dbml"),
+        load_mapping(root / "20-configure/mapping.yaml"), "default",
+    )
+    involvement = next(x for x in declaration["lists"] if x["title"] == "GOV_Involvement")
+    notes = next(f for f in involvement["fields_phase1"] if f["title"] == "Notes")
+    script = _deploy_js()
+    program = "\n".join([
+        *(
+            next(ln for ln in script.splitlines() if declaration in ln)
+            for declaration in (
+                "const TYPE_AS_STRING_BY_KIND =", "const MULTI_TYPE_AS_STRING_BY_KIND =",
+                "const BASE_TYPE_AS_STRING =", "const baseTypeAsString =",
+                "const DERIVED_FIELD_PROPERTIES =", "const normalizeDescription =",
+                "const normalizeDefaultValue =",
+            )
+        ),
+        "const indexedFieldKeys = new Set();",
+        "const normalizeDefaultFormula = value => value ?? null;",
+        _lifted(script, "function declaredFieldState"),
+        _lifted(script, "async function immutableFieldMismatches"),
+        f"const field = {json.dumps(notes)};",
+        """
+        (async () => {
+          const actual = {
+            InternalName: 'Notes', TypeAsString: 'Text', ReadOnlyField: false, Sealed: false,
+          };
+          const before = await immutableFieldMismatches('GOV_Involvement', field, actual, null);
+          actual.TypeAsString = 'Note';
+          const after = await immutableFieldMismatches('GOV_Involvement', field, actual, null);
+          console.log('__OUT__' + JSON.stringify({ before, after }));
+        })();
+        """,
+    ])
+    output = _run(program)
+    line = next((ln for ln in output.splitlines() if ln.startswith("__OUT__")), None)
+    assert line is not None, output
+    result = json.loads(line.removeprefix("__OUT__"))
+    assert [(m["property"], m["declared"], m["actual"]) for m in result["before"]] == [
+        ("TypeAsString", "Note", "Text"),
+    ]
+    assert result["after"] == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_the_field_collector_records_what_it_compared_and_what_it_could_not() -> None:
     """`checked` separates "compared and differed" from "could not be compared".
 

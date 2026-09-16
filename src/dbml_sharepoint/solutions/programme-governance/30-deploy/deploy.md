@@ -13,6 +13,35 @@ library: attachments on ten lists, three group memberships, the site home
 page, and the identity phase 2 will run its flows as. Read **Mandatory
 manual go-live steps** before you schedule the paste rather than after it.
 
+## Upgrading Involvement to 4.0.0
+
+1. Export existing Involvement rows, including Notes and Next Contact.
+2. In SharePoint column settings, convert **Notes** to **Multiple lines of
+   text**, select **Plain text**, and leave append-only text disabled. Keep
+   the internal name `Notes`. Read back the settings and verify the existing
+   contents before deployment. Microsoft documents the
+   [single-line to multiline conversion](https://support.microsoft.com/en-us/sharepoint/lists/data-and-lists/list-and-library-column-types-and-options).
+   Assessment blocks deployment while Notes still has its old type.
+3. Change **Scheduled** rows to **Identified**. Add **Governance forum** to
+   the existing Channel choices if needed, then change **Standing agenda
+   item** rows to that value. Review each **Ad hoc** row and select its
+   replacement channel. Read back and verify the saved values.
+4. Build the updated bundle, then run **assess**, **deploy** and **verify**.
+   Confirm Lead accepts a blank value and selects one person, Engagement
+   Plan and Notes accept multiline plain text, and Contact Date is optional.
+   Confirm the form order is Involvement, Lead, Engagement Plan, Channel,
+   Contact Date, Engagement Status, Notes. Check overdue dates appear only
+   while Identified and completed contact dates remain visible.
+5. Copy existing **Next Contact** values into **Contact Date** and verify
+   the copied dates against the export. Manually delete Next Contact after
+   verification. Deployment neither deletes that column nor recreates it
+   after removal.
+6. Rebuild reporting and update consumers of `NextContact` and
+   `HasNextContact` to `ContactDate` and `HasContactDate`. The backlog and
+   `IsAwaitingEngagement` now select Identified only.
+
+Fresh sites require no conversion or data migration.
+
 ## The ten lists
 
 | List | Holds | Who writes to it |

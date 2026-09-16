@@ -571,17 +571,10 @@ column_formatting:
   Involvement:
     Involvement: { style: pill,
                    map: { Agree: warning, Consulted: low, Informed: neutral } }
-    # A progress ramp, deliberately not the severity map above it. Identified
-    # is neutral because it is the correct state for a new row rather than a
-    # problem; it only becomes one when NextContact goes past, which the
-    # column below shows.
     EngagementStatus: { style: pill,
-                        map: { Identified: neutral, Scheduled: low, Engaged: good } }
-    # Guarded off Engaged: once the engagement has happened the date is
-    # history, and an overdue treatment on it would paint every completed row
-    # red forever.
-    NextContact: { style: overdue-date,
-                   guard: { field: EngagementStatus, not: [Engaged] } }
+                        map: { Identified: neutral, Engaged: good } }
+    ContactDate: { style: overdue-date,
+                   guard: { field: EngagementStatus, not: [Engaged, ""] } }
   ServiceRequest:
     # Warning is "with the provider" and severe is "blocked on us": a request
     # handed back is the one the health service has to act on.
@@ -982,8 +975,8 @@ views:
     # list, which is the shape a RACI is normally drawn in.
     - title: "By activity"
       default: true
-      fields: [Title, Activity, Stakeholder, Involvement, EngagementStatus,
-               NextContact, Channel, Notes]
+      fields: [Title, Activity, Stakeholder, Involvement, Lead, EngagementStatus,
+               ContactDate, Channel, Notes]
       group_by: { field: Activity, collapsed: false }
       sort:
         - { field: Involvement, direction: asc }
@@ -992,13 +985,14 @@ views:
         Activity: 240
         Stakeholder: 180
         Involvement: 130
+        Lead: 180
         EngagementStatus: 150
-        NextContact: 130
+        ContactDate: 130
         Channel: 180
         Notes: 200
     - title: "By stakeholder"
       renamed_from: ["By party"]
-      fields: [Title, Stakeholder, StakeholderStatus, Activity, Involvement,
+      fields: [Title, Stakeholder, StakeholderStatus, Activity, Involvement, Lead,
                EngagementStatus, Channel]
       group_by: { field: Stakeholder, collapsed: false }
       sort:
@@ -1009,35 +1003,24 @@ views:
         StakeholderStatus: 120
         Activity: 240
         Involvement: 130
+        Lead: 180
         EngagementStatus: 150
         Channel: 180
-    # The backlog this release exists for. Everyone the programme has decided
-    # it needs and has not yet spoken to, oldest next-contact first, so a
-    # stalled engagement rises rather than sinking into Notes.
-    #
-    # Involvement is on it because the authority level is what makes the row
-    # urgent: an unapproached Agree blocks its activity, an unapproached
-    # Informed does not.
-    #
-    # A row whose EngagementStatus is BLANK stays out, which is what makes
-    # this safe to deploy onto a site whose existing rows predate the column:
-    # CAML <In> matches no null, so the backlog fills with real backlog rather
-    # than with every row already on the list. See the release notes for the
-    # one-time bulk set.
     - title: "Identified, not yet engaged"
-      fields: [Title, Stakeholder, Activity, Involvement, EngagementStatus,
-               NextContact, Channel, Notes]
+      fields: [Title, Stakeholder, Activity, Involvement, Lead, EngagementStatus,
+               ContactDate, Channel, Notes]
       where:
-        - { field: EngagementStatus, op: in, value: ["Identified", "Scheduled"] }
+        - { field: EngagementStatus, op: in, value: ["Identified"] }
       sort:
-        - { field: NextContact, direction: asc }
+        - { field: ContactDate, direction: asc }
       widths:
         Title: 280
         Stakeholder: 180
         Activity: 240
         Involvement: 130
+        Lead: 180
         EngagementStatus: 150
-        NextContact: 130
+        ContactDate: 130
         Channel: 180
         Notes: 200
     # Quarterly step 6, the overload detector. Grouped by stakeholder rather than by
@@ -1045,7 +1028,7 @@ views:
     # Consulted (or, worse, Agree) on everything, and that is invisible in any
     # activity-first view. Involvement is shown so a reader can tell the two apart.
     - title: "Consultation load"
-      fields: [Title, Stakeholder, Involvement, EngagementStatus, Activity,
+      fields: [Title, Stakeholder, Involvement, Lead, EngagementStatus, Activity,
                Channel, Notes]
       where:
         - { field: Involvement, op: in, value: ["Consulted", "Agree"] }
@@ -1056,6 +1039,7 @@ views:
         Title: 280
         Stakeholder: 180
         Involvement: 130
+        Lead: 180
         EngagementStatus: 150
         Activity: 240
         Channel: 180

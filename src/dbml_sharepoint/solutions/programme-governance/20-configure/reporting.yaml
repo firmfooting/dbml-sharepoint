@@ -679,24 +679,23 @@ derived_columns:
       type: logical
       m: '[EngagementStatus] = "Engaged"'
       description: 'Whether this involvement has actually happened. Blank on rows that predate engagement tracking, which read as not engaged until somebody sets them.'
-    # An involvement the programme has agreed is necessary and has not yet had. Identified means nobody has approached them; Scheduled means a date is set.
     - kind: expr
       name: IsAwaitingEngagement
       type: logical
-      m: '[EngagementStatus] = "Identified" or [EngagementStatus] = "Scheduled"'
-      description: 'An involvement the programme has agreed is necessary and has not yet had. Identified means nobody has approached them; Scheduled means a date is set.'
+      m: '[EngagementStatus] = "Identified"'
+      description: 'Whether the involvement is identified and has not yet happened.'
     # Whether the row says how far the involvement has got at all. SharePoint applies a column default to new items only, so every row created before release 3.2.0 reads blank until somebody sets it.
     - kind: expr
       name: EngagementStatusRecorded
       type: logical
       m: '[EngagementStatus] <> null and [EngagementStatus] <> ""'
       description: 'Whether the row says how far the involvement has got at all. SharePoint applies a column default to new items only, so every row created before release 3.2.0 reads blank until somebody sets it.'
-    # Whether a next contact date is set. A scheduled involvement with no date is a plan with no commitment.
     - kind: expr
-      name: HasNextContact
+      name: HasContactDate
       type: logical
-      m: '[NextContact] <> null'
-      description: 'Whether a next contact date is set. A scheduled involvement with no date is a plan with no commitment.'
+      m: '[ContactDate] <> null'
+      description: 'Whether a planned or actual contact date is recorded.'
+
 
 # Group membership is neither declared nor reconciled by the deployer, so
 # populating these is a documented post-deploy step with a release-checklist
