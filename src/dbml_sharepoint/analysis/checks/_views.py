@@ -34,7 +34,11 @@ from dbml_sharepoint.analysis.limits import (
     MAX_FILTER_EDITOR_CONDITIONS,
     MAX_VIEW_ROW_LIMIT,
 )
-from dbml_sharepoint.analysis.rendered_columns import rendered_columns, system_columns_for
+from dbml_sharepoint.analysis.rendered_columns import (
+    effective_view_fields,
+    rendered_columns,
+    system_columns_for,
+)
 from dbml_sharepoint.analysis.typemap import (
     NUMBER_TYPES,
     NUMERIC_ONLY_TOTALS,
@@ -973,7 +977,8 @@ def check(vc: ValidationContext) -> list[Finding]:
                         location=at_view,
                     ))
                 refs = formatter_field_refs(view.formatting)
-                for ref in sorted(refs - view_rendered):
+                readable = set(effective_view_fields(view_rendered, vc.kind_of(entity_name)))
+                for ref in sorted(refs - readable):
                     findings.append(Finding(
                         FindingCode.FORMATTER_FIELD_NOT_RENDERED,
                         f"{ctx}: formatting references [${ref}], which is "
@@ -987,8 +992,8 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # nothing and the format silently never fires. The build
                 # exits 0, the deploy reports the formatter verified, and
                 # the only symptom is a row wash nobody sees.
-                shown = set(view.fields)
-                for ref in sorted((refs & view_rendered) - shown):
+                shown = set(effective_view_fields(view.fields, vc.kind_of(entity_name)))
+                for ref in sorted((refs & readable) - shown):
                     findings.append(Finding(
                         FindingCode.FORMATTER_FIELD_NOT_DISPLAYED,
                         f"{ctx}: formatting references [${ref}], which this "

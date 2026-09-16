@@ -97,7 +97,11 @@ from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
 
 from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
-from dbml_sharepoint.analysis.rendered_columns import rendered_columns, system_columns_for
+from dbml_sharepoint.analysis.rendered_columns import (
+    effective_view_fields,
+    rendered_columns,
+    system_columns_for,
+)
 from dbml_sharepoint.analysis.typemap import JOIN_BEARING_TYPES
 from dbml_sharepoint.model.mapping_types import EntityKind, EntityMapping
 from dbml_sharepoint.model.parser import Table
@@ -211,11 +215,10 @@ def all_items_rendered(
     other's callers unaffected, which is what the test above exists to catch
     now that there is only one copy for it to catch a drift in.
     """
-    return (
+    return set(effective_view_fields(
         rendered_columns(table, set(cross_site_cols), set(projected_cols))
-        | {"Title"} | system_columns_for(kind)
-        | ({"DocIcon"} if kind == "DocumentLibrary" else set())
-    )
+        | {"Title"} | system_columns_for(kind), kind,
+    ))
 
 
 def all_items_joining_fields(

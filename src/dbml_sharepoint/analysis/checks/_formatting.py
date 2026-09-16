@@ -5,7 +5,10 @@ from typing import Any
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.clock_cells import cell_for, sentinel_of
-from dbml_sharepoint.analysis.column_projection import effective_column_types
+from dbml_sharepoint.analysis.column_projection import (
+    effective_column_types,
+    system_column_types_for,
+)
 from dbml_sharepoint.analysis.column_refs import formatter_field_refs, rewrite_formula_refs
 from dbml_sharepoint.analysis.condition_rendering import (
     VALIDATION,
@@ -14,18 +17,20 @@ from dbml_sharepoint.analysis.condition_rendering import (
 )
 from dbml_sharepoint.analysis.conditions import condition_findings, leaves
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
+from dbml_sharepoint.analysis.joins import all_items_hidden, all_items_rendered
 from dbml_sharepoint.analysis.limits import (
     MAX_VALIDATION_FORMULA,
     MAX_VALIDATION_MESSAGE,
 )
 from dbml_sharepoint.analysis.rendered_columns import (
     UNDEPLOYABLE_DECLARATION_COLUMNS,
+    effective_view_fields,
     rendered_columns,
     system_columns_for,
     undeployable,
 )
 from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
-from dbml_sharepoint.analysis.styles import STYLES
+from dbml_sharepoint.analysis.styles import STYLES, StyleSpec
 from dbml_sharepoint.analysis.typemap import is_boolean, is_multi_value
 from dbml_sharepoint.model.mapping_types import MappingBundle
 
@@ -51,6 +56,80 @@ def _nested(spec: dict[str, Any], path: tuple[str, ...]) -> dict[str, Any] | Non
     return node if isinstance(node, dict) else None
 
 
+def _scalar_input_findings(
+    registered: StyleSpec, column: str, calculated: bool, flag: str,
+    types: dict[str, str], lookups: set[str], context: str, at: Location,
+) -> list[Finding]:
+    """Apply the same scalar type contract to targets and comparison operands.
+
+    Lookup fields expose lookupId/lookupValue objects, not the DBML integer:
+    https://learn.microsoft.com/en-us/sharepoint/dev/declarative-customization/formatting-syntax-reference#currentfield
+    """
+    actual = types.get(column)
+    if actual is None:
+        return []  # Unknown references have their own finding.
+    if registered.target_types and (actual not in registered.target_types or column in lookups):
+        return [Finding(
+            FindingCode.STYLE_INPUT_TYPE_MISMATCH,
+            f"{context}: {column!r} must be a scalar of type "
+            f"{', '.join(sorted(registered.target_types))}; got "
+            f"{'lookup' if column in lookups else actual}.", location=at,
+        )]
+    expected = actual == registered.calculated_type
+    if calculated == expected:
+        return []
+    message = (f"requires {flag}: true for {actual}" if expected else
+               f"{flag}: true expects {registered.calculated_type}, not {actual}")
+    return [Finding(
+        FindingCode.STYLE_REQUIRES_CALCULATED if expected
+        else FindingCode.STYLE_CALCULATED_TYPE_MISMATCH,
+        f"{context}: {column!r} {message}.",
+        location=at,
+    )]
+
+
+def _style_type_findings(
+    registered: StyleSpec, spec: dict[str, Any], col_name: str,
+    types: dict[str, str], lookups: set[str], context: str, at: Location,
+) -> list[Finding]:
+    """One type and calculated-flag contract for targets and referenced operands."""
+    if registered.calculated_type is None:
+        return []
+    inputs = [(col_name, "calculated")]
+    inputs.extend((spec[key], flag) for key, flag in registered.scalar_refs
+                  if isinstance(spec.get(key), str))
+    return [finding for column, flag in inputs for finding in _scalar_input_findings(
+        registered, column, spec.get(flag) is True, flag, types, lookups, context, at,
+    )]
+
+
+def _view_dependencies(
+    bundle: MappingBundle, entity_name: str, col_name: str,
+    formatter: dict[str, Any], rendered: set[str],
+) -> list[Finding]:
+    """Check column dependencies only where the formatted column is displayed."""
+    findings: list[Finding] = []
+    ctx = f"column_formatting[{entity_name}].{col_name}"
+    references = formatter_field_refs(formatter) & rendered
+    views = [("All Items", rendered - all_items_hidden(bundle.mapping.entities[entity_name]),
+              "Remove it from hide_from_all_items.")]
+    kind = bundle.mapping.entities[entity_name].kind
+    views.extend((view.title, set(effective_view_fields(view.fields, kind)),
+                  "Add it to the view fields.")
+                 for view in bundle.mapping.views.get(entity_name, []))
+    for title, fields, remedy in views:
+        if col_name not in fields:
+            continue
+        for missing in sorted(references - fields):
+            findings.append(Finding(
+                FindingCode.FORMATTER_FIELD_NOT_DISPLAYED,
+                f"{ctx}: view {title!r} displays {col_name!r} but omits "
+                f"formatter dependency {missing!r}. {remedy}",
+                location=Location(Section.VIEWS, entity=entity_name, view=title),
+            ))
+    return findings
+
+
 def check(vc: ValidationContext) -> list[Finding]:
     schema = vc.schema
     bundle = vc.bundle
@@ -71,9 +150,9 @@ def check(vc: ValidationContext) -> list[Finding]:
             ))
             continue
         xcols = cross_site_by_entity.get(entity_name, set())
-        rendered = (
-            rendered_columns(fmt_table, xcols)
-            | {"Title"} | system_columns_for(vc.kind_of(entity_name))
+        rendered = all_items_rendered(
+            fmt_table, xcols, vc.projected_by_entity.get(entity_name, set()),
+            vc.kind_of(entity_name),
         )
         for col_name, formatter in fmt_cols.items():
             ctx = f"column_formatting[{entity_name}].{col_name}"
@@ -87,10 +166,13 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=at,
                 ))
                 continue
-            if col_name not in rendered:
+            if col_name not in rendered_columns(fmt_table, xcols):
                 findings.append(Finding(
                     FindingCode.FORMATTER_COLUMN_NOT_RENDERED,
-                    f"{ctx}: not a rendered column of {entity_name}.",
+                    f"{ctx}: this column does not receive formatter updates. "
+                    "Only primary deployed fields receive column formatters; "
+                    "generated projections and view-only fields may be referenced, "
+                    "but cannot be formatter targets.",
                     location=at,
                 ))
             if "elmType" not in formatter:
@@ -100,6 +182,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"object with a root 'elmType'.",
                     location=at,
                 ))
+            findings.extend(_view_dependencies(bundle, entity_name, col_name, formatter, rendered))
             for ref in sorted(formatter_field_refs(formatter) - rendered):
                 findings.append(Finding(
                     FindingCode.FORMATTER_FIELD_NOT_RENDERED,
@@ -126,6 +209,8 @@ def check(vc: ValidationContext) -> list[Finding]:
         types_by_col = effective_column_types(
             {col.name: col.type for col in spec_table.columns}, xcols,
         )
+        types_by_col = {**system_column_types_for(vc.kind_of(entity_name)), **types_by_col}
+        lookups = {col.name for col in spec_table.columns if col.ref is not None} - xcols
         for col_name, spec in spec_cols.items():
             ctx = f"column_formatting[{entity_name}].{col_name}"
             at = Location(
@@ -137,34 +222,9 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # The loader expands every declared spec, so an unregistered
                 # style never reaches a bundle here.
                 continue
-            target_type = types_by_col.get(col_name)
-            # Both rules interpolate the COLUMN's type, so one with no
-            # effective type would print "expects calculated_text, not None".
-            # This is a backstop for anything still unmodelled, not the
-            # cross-site case. The pair is guarded rather than the column
-            # skipped, because the trend, guard and color_by checks below
-            # judge OTHER columns.
-            if target_type is not None and registered.calculated_type is not None:
-                if (
-                    target_type == registered.calculated_type
-                    and spec.get("calculated") is not True
-                ):
-                    findings.append(Finding(
-                        FindingCode.STYLE_REQUIRES_CALCULATED,
-                        f"{ctx}: {style} on {target_type} requires calculated: true "
-                        "to decode SharePoint's typed formatter value.",
-                        location=at,
-                    ))
-                elif (
-                    spec.get("calculated") is True
-                    and target_type != registered.calculated_type
-                ):
-                    findings.append(Finding(
-                        FindingCode.STYLE_CALCULATED_TYPE_MISMATCH,
-                        f"{ctx}: calculated: true on {style} expects "
-                        f"{registered.calculated_type}, not {target_type}.",
-                        location=at,
-                    ))
+            findings.extend(_style_type_findings(
+                registered, spec, col_name, types_by_col, lookups, ctx, at,
+            ))
             # A style that compares @currentField against quoted literals can be
             # defeated by the styled column's own kind, before any key is read.
             refused = False

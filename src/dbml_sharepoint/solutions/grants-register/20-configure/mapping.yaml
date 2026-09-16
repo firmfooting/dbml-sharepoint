@@ -238,7 +238,7 @@ views:
     # AcqStatus, so that column must stay in this view's `fields`; view
     # formatting can only read columns the view displays, and dropping it
     # would stop the wash firing with a clean build. It compares with `==`
-    # even though a severity map elsewhere needs contains-matching: the
+    # even though a severity map elsewhere needs prefix decoding: the
     # `string;#` prefix is a COLUMN-formatting thing and never reaches a
     # view formatter's [$Field].
     - title: "Open obligations"

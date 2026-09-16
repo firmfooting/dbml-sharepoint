@@ -340,7 +340,7 @@ views:
       default: true
       fields: [Title, Provider, EventNature, ServiceAffected, FailureMode,
                OccurredAt, ResponseDueDate, LastFollowedUp, ProviderReference,
-               Severity]
+               Severity, OutcomeForUs]
       where:
         - { field: ResolvedDate, op: is_null }
         - { field: EventNature, op: neq, value: "Single occurrence" }

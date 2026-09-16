@@ -156,7 +156,13 @@ column_formatting:
     RiskScore: { style: data-bar, max: 25, calculated: true,
                  color_by: { field: ResidualRiskRating, calculated: true,
                              map: { Low: good, Medium: warning, High: severe, Extreme: blocked } } }
-    LevelsAboveTarget: formatting/levels-above-target.json
+    LevelsAboveTarget:
+      style: numeric-severity
+      calculated: true
+      bands:
+        - { max: 0, token: good }
+        - { max: 1, token: warning }
+      otherwise: severe
     OverallControlEffectiveness:
       style: severity
       map:

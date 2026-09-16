@@ -12,6 +12,7 @@ https://learn.microsoft.com/en-us/sharepoint/dev/declarative-customization/colum
 examples; the emitted structures mirror those samples).
 """
 
+import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -20,6 +21,8 @@ from typing import Any
 # The finding codes the registry names; `findings` imports only the standard
 # library, so there is no cycle.
 from dbml_sharepoint.analysis.findings import FindingCode
+from dbml_sharepoint.analysis.formatter_values import ScalarValue, hide_blank, quoted, text_value
+from dbml_sharepoint.analysis.typemap import DATE_TYPES, NUMBER_TYPES
 
 # The unknown-key guard, imported rather than reimplemented.
 #
@@ -77,35 +80,13 @@ _PILL_CLASSES: dict[str, str] = {
     "muted": "ms-bgColor-neutralLight ms-fontColor-neutralSecondary",
 }
 
-_HIDE_BLANK = "=if(@currentField == '', 'none', 'flex')"
-# Cell inset shared by every filled style: adjacent same-coloured fills
-# (e.g. a blocked-red score bar beside a blocked-red rating cell) blend
-# into one block without it. The radius + right/vertical gap makes each
-# cell read as its own element.
+# Keep adjacent filled cells visually separate.
 _CELL_INSET: dict[str, str] = {"border-radius": "4px", "margin": "1px 4px 1px 0"}
-# Live-confirmed 2026-09-16: calculated scores can arrive without a type prefix.
-_CALC_VALUE = (
-    "if(indexOf(toString(@currentField), ';#') >= 0, "
-    "substring(toString(@currentField), indexOf(toString(@currentField), ';#') + 2, 1000), "
-    "toString(@currentField))"
-)
-_CALC_TEXT = (
-    "=if(indexOf(@currentField, ';#') >= 0, "
-    "substring(@currentField, indexOf(@currentField, ';#') + 2, 1000), "
-    "@currentField)"
-)
-
-
-def _calculated_scalar(constructor: str) -> str:
-    """Convert a calculated value with or without a SharePoint type prefix."""
-    return f"{constructor}({_CALC_VALUE})"
-
 
 def _fail(context: str, message: str) -> MappingShapeError:
     """A spec that is not the shape its expander reads: a key absent, or a
     value of the wrong YAML type."""
     return MappingShapeError(f"{context}: {message}")
-
 
 def _not_in_vocabulary(context: str, message: str) -> MappingValueError:
     """A spec naming a style or a token this module does not define.
@@ -127,13 +108,11 @@ def _not_in_vocabulary(context: str, message: str) -> MappingValueError:
 #: was accepted and emitted a reference the validator then read as valid.
 _INTERNAL_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
-
 def _internal_name(value: object, context: str, message: str) -> str:
     """Read a spec value that becomes a `[$Name]` column reference."""
     if not isinstance(value, str) or not _INTERNAL_NAME.fullmatch(value):
         raise _fail(context, message)
     return value
-
 
 def _bool(spec: dict[str, Any], key: str, context: str, *, default: bool) -> bool:
     """Read a style-spec boolean without truthiness-coercing bad YAML.
@@ -147,7 +126,6 @@ def _bool(spec: dict[str, Any], key: str, context: str, *, default: bool) -> boo
         raise _fail(context, f"{key}: expected true or false, got {value!r}")
     return value
 
-
 def _resolve(
     token_name: str, context: str, theme: dict[str, StyleToken] | None,
 ) -> StyleToken:
@@ -160,14 +138,12 @@ def _resolve(
         )
     return token
 
-
 def _if_chain(pairs: list[tuple[str, str]], fallback: str) -> str:
     """Excel-style nested =if(...) expression over (condition, quoted-value)."""
-    expr = f"'{fallback}'"
+    expr = quoted(fallback)
     for condition, value in reversed(pairs):
-        expr = f"if({condition}, '{value}', {expr})"
+        expr = f"if({condition}, {quoted(value)}, {expr})"
     return "=" + expr
-
 
 def _validated_map(spec: dict[str, Any], context: str) -> dict[str, str]:
     """The `map` of column value to token name.
@@ -185,19 +161,15 @@ def _validated_map(spec: dict[str, Any], context: str) -> dict[str, str]:
             raise _fail(context, f"map[{value!r}] must be a token name, got {token!r}")
     return {str(value): token for value, token in value_map.items()}
 
-
 def _condition(value: str, calculated: bool, ref: str = "@currentField") -> str:
-    escaped = value.replace("'", "''")
-    if calculated:
-        return f"indexOf({ref}, '{escaped}') >= 0"
-    return f"{ref} == '{escaped}'"
+    source = text_value(ref, calculated=True) if calculated else ref
+    return f"{source} == {quoted(value)}"
 
 
 #: The nested key sets, named so the registry publishes the same objects the
 #: expanders enforce and the two cannot drift apart.
 _COLOR_BY_KEYS = frozenset({"field", "map", "calculated"})
 _GUARD_KEYS = frozenset({"field", "not"})
-
 
 def _severity(
     spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
@@ -207,35 +179,80 @@ def _severity(
     icons = _bool(spec, "icons", context, default=True)
     tokens = {v: _resolve(t, context, theme) for v, t in value_map.items()}
     fallback = _resolve("muted", context, theme)
-    class_pairs = [
-        (_condition(v, calculated), tok.classes) for v, tok in tokens.items()
-    ]
-    class_expr = (
-        _if_chain(class_pairs, fallback.classes)
-        + " + ' ms-fontColor-neutralSecondary'"
+    return _severity_cell(
+        [(_condition(v, calculated), tok) for v, tok in tokens.items()], fallback,
+        "=" + text_value(calculated=calculated),
+        text_value(calculated=calculated), icons=icons,
     )
-    text_span: dict[str, Any] = {
-        "elmType": "span",
-        "txtContent": _CALC_TEXT if calculated else "@currentField",
-    }
+
+def _severity_cell(
+    pairs: list[tuple[str, StyleToken]], fallback: StyleToken,
+    label: str, text: str, *, icons: bool,
+) -> dict[str, Any]:
+    """One layout and token-to-icon mapping for categorical and numeric severity."""
     children: list[dict[str, Any]] = []
     if icons:
-        icon_pairs = [
-            (_condition(v, calculated), tok.icon or "") for v, tok in tokens.items()
-        ]
         children.append({
             "elmType": "span",
             "style": {"display": "inline-block", "padding": "0 4px"},
-            "attributes": {"iconName": _if_chain(icon_pairs, fallback.icon or "")},
+            "attributes": {"iconName": _if_chain(
+                [(condition, token.icon or "") for condition, token in pairs],
+                fallback.icon or "",
+            )},
         })
-    children.append(text_span)
+    children.append({"elmType": "span", "txtContent": label})
     return {
         "$schema": _SCHEMA,
         "elmType": "div",
-        "style": {"display": _HIDE_BLANK, **_CELL_INSET},
-        "attributes": {"class": class_expr},
+        "style": {"display": hide_blank(text), **_CELL_INSET},
+        "attributes": {"class": _if_chain(
+            [(condition, token.classes) for condition, token in pairs], fallback.classes,
+        ) + " + ' ms-fontColor-neutralSecondary'"},
         "children": children,
     }
+
+def _finite_number(value: object, context: str) -> int | float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise _fail(context, "expected a finite number")
+    try:
+        finite = math.isfinite(value)
+    except OverflowError:
+        finite = False
+    if not finite:
+        raise _fail(context, "expected a finite number")
+    return value
+
+def _numeric_severity(
+    spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
+) -> dict[str, Any]:
+    bands = spec.get("bands")
+    if not isinstance(bands, list) or not bands:
+        raise _fail(context, "numeric-severity requires non-empty bands")
+    otherwise = spec.get("otherwise")
+    if not isinstance(otherwise, str):
+        raise _fail(context, "numeric-severity requires an otherwise token")
+    fallback = _resolve(otherwise, context, theme)
+    value = ScalarValue("Number", calculated=_bool(spec, "calculated", context, default=False))
+    pairs: list[tuple[str, StyleToken]] = []
+    previous: int | float | None = None
+    for band in bands:
+        if not isinstance(band, dict):
+            raise _fail(context, "each band must be a mapping")
+        _reject_unknown_keys(band, frozenset({"max", "token"}), context)
+        maximum = _finite_number(band.get("max"), context)
+        if previous is not None and maximum <= previous:
+            raise _fail(context, "band maxima must be strictly increasing")
+        previous = maximum
+        token = band.get("token")
+        if not isinstance(token, str):
+            raise _fail(context, "each band requires a token")
+        pairs.append((f"{value.valid} && {value.value} <= {maximum}",
+                      _resolve(token, context, theme)))
+    pairs.append((value.valid, fallback))
+    return _severity_cell(
+        pairs, _resolve("muted", context, theme), value.label, value.text,
+        icons=_bool(spec, "icons", context, default=True),
+    )
 
 
 def _pill(
@@ -259,7 +276,7 @@ def _pill(
         "$schema": _SCHEMA,
         "elmType": "div",
         "style": {
-            "display": "=if(@currentField == '', 'none', 'inline-flex')",
+            "display": hide_blank(text_value(), "inline-flex"),
             "padding": "2px 10px",
             "border-radius": "12px",
             "font-weight": "600",
@@ -268,16 +285,17 @@ def _pill(
         "children": [{"elmType": "span", "txtContent": "@currentField"}],
     }
 
-
 def _data_bar(
     spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
 ) -> dict[str, Any]:
     maximum = spec.get("max")
     if not isinstance(maximum, int) or isinstance(maximum, bool) or maximum <= 0:
         raise _fail(context, "data-bar requires a positive integer 'max'")
+    _finite_number(maximum, context)
     factor_text = f"{100 / maximum:g}"
     target_calculated = _bool(spec, "calculated", context, default=False)
-    value = _calculated_scalar("Number") if target_calculated else "@currentField"
+    scalar = ScalarValue("Number", calculated=target_calculated)
+    value = scalar.value
     color_by = spec.get("color_by")
     if color_by is None:
         class_expr = "sp-field-dataBars"
@@ -310,60 +328,58 @@ def _data_bar(
             _if_chain(pairs, fallback.classes)
             + " + ' ms-fontColor-neutralSecondary'"
         )
+    fill = quoted(class_expr) if not class_expr.startswith("=") else class_expr[1:]
     return {
         "$schema": _SCHEMA,
         "elmType": "div",
         "children": [{
             "elmType": "span",
-            "txtContent": f"={value}" if target_calculated else value,
-            "style": {"padding-left": "8px", "white-space": "nowrap"},
+            "txtContent": scalar.label,
+            "style": {"padding-left": "8px", "white-space": "nowrap", "flex-shrink": "0"},
         }],
-        "attributes": {"class": class_expr},
+        "attributes": {"class": f"=if({scalar.valid}, "
+                       f"{fill}, "
+                       f"{quoted(_resolve('muted', context, theme).classes)})"},
         "style": {
             "padding": "0",
-            "display": _HIDE_BLANK,
+            "display": hide_blank(scalar.text),
             "width": (
-                f"=if({value} >= {maximum}, '100%', "
-                f"({value} * {factor_text}) + '%')"
+                f"=if({scalar.valid}, if({value} <= 0, '0%', "
+                f"if({value} >= {maximum}, '100%', "
+                f"({value} * {factor_text}) + '%')), '100%')"
             ),
             **_CELL_INSET,
         },
     }
 
-
 def _trend(
     spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
 ) -> dict[str, Any]:
-    # `theme` is unread: a trend arrow wears the native sp-field-trending
-    # classes, which no token overrides. The parameter keeps one expander shape.
     against = spec.get("against")
     wanted = "trend requires 'against' (a column internal name or a number)"
-    # A column name becomes a reference; a number stays a bare literal. Anything
-    # else used to be str()'d into the expression, which compares against junk.
+    calculated_against = _bool(spec, "against_calculated", context, default=False)
     if isinstance(against, str):
         ref = f"[${_internal_name(against, context, wanted)}]"
-    elif isinstance(against, int | float) and not isinstance(against, bool):
-        ref = str(against)
     else:
-        raise _fail(context, wanted)
+        ref = str(_finite_number(against, context))
+        if calculated_against:
+            raise _fail(context, "against_calculated requires a column reference")
+    value = ScalarValue("Number", calculated=_bool(spec, "calculated", context, default=False))
+    baseline = ScalarValue("Number", ref, calculated_against)
+    valid = f"{value.valid} && {baseline.valid}"
+    up = f"{valid} && {value.value} > {baseline.value}"
+    down = f"{valid} && {value.value} < {baseline.value}"
     return {
         "$schema": _SCHEMA,
         "elmType": "div",
+        "style": {"display": hide_blank(value.text)},
         "children": [
-            {
-                "elmType": "span",
-                "attributes": {
-                    "class": (
-                        f"=if(@currentField > {ref}, 'sp-field-trending--up', "
-                        f"'sp-field-trending--down')"
-                    ),
-                    "iconName": (
-                        f"=if(@currentField > {ref}, 'SortUp', "
-                        f"if(@currentField < {ref}, 'SortDown', ''))"
-                    ),
-                },
-            },
-            {"elmType": "span", "txtContent": "@currentField"},
+            {"elmType": "span", "attributes": {
+                "class": _if_chain([(up, "sp-field-trending--up"),
+                                    (down, "sp-field-trending--down")], ""),
+                "iconName": _if_chain([(up, "SortUp"), (down, "SortDown")], ""),
+            }},
+            {"elmType": "span", "txtContent": value.label},
         ],
     }
 
@@ -372,7 +388,8 @@ def _overdue_date(
     spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
 ) -> dict[str, Any]:
     calculated = _bool(spec, "calculated", context, default=False)
-    value = _calculated_scalar("Date") if calculated else "@currentField"
+    scalar = ScalarValue("Date", calculated=calculated)
+    value = scalar.value
     guard = spec.get("guard")
     guard_terms = ""
     if guard is not None:
@@ -390,19 +407,20 @@ def _overdue_date(
         if not isinstance(excluded, list):
             raise _fail(context, "overdue-date guard 'not' must be a list of values")
         guard_terms = "".join(
-            f" && [${field_name}] != '{str(v).replace(chr(39), chr(39) * 2)}'"
+            f" && [${field_name}] != {quoted(str(v))}"
             for v in excluded
         )
-    overdue = f"@currentField != '' && {value} < @now{guard_terms}"
+    overdue = f"{scalar.valid} && {value} < @now{guard_terms}"
     severe = _resolve("severe", context, theme)
     return {
         "$schema": _SCHEMA,
         "elmType": "div",
-        "style": dict(_CELL_INSET),
+        "style": {"display": hide_blank(scalar.text), **_CELL_INSET},
         "attributes": {
             "class": (
                 f"=if({overdue}, "
-                f"'{severe.classes} ms-fontColor-neutralSecondary', '')"
+                f"'{severe.classes} ms-fontColor-neutralSecondary', "
+                f"if({scalar.valid}, '', {quoted(_resolve('muted', context, theme).classes)}))"
             ),
         },
         "children": [
@@ -413,7 +431,7 @@ def _overdue_date(
                     "iconName": f"=if({overdue}, '{severe.icon or ''}', '')",
                 },
             },
-            {"elmType": "span", "txtContent": f"=toLocaleDateString({value})"},
+            {"elmType": "span", "txtContent": scalar.label},
         ],
     }
 
@@ -451,6 +469,8 @@ class StyleSpec:
     keys: frozenset[str]
     nested_keys: dict[tuple[str, ...], frozenset[str]] = field(default_factory=dict)
     calculated_type: str | None = None
+    target_types: frozenset[str] = frozenset()
+    scalar_refs: tuple[tuple[str, str], ...] = ()
     literal_match: bool = False   # compares @currentField against quoted literals
     value_maps: tuple[ValueMapRule, ...] = ()
     column_refs: tuple[ColumnRefRule, ...] = ()
@@ -469,6 +489,12 @@ STYLES: dict[str, StyleSpec] = {
         literal_match=True,
         value_maps=(_SEVERITY_MAP,),
     ),
+    "numeric-severity": StyleSpec(
+        expand=_numeric_severity,
+        keys=frozenset({"style", "bands", "otherwise", "calculated", "icons"}),
+        calculated_type="calculated_number",
+        target_types=NUMBER_TYPES,
+    ),
     "pill": StyleSpec(
         expand=_pill,
         keys=frozenset({"style", "map"}),
@@ -480,6 +506,7 @@ STYLES: dict[str, StyleSpec] = {
         keys=frozenset({"style", "max", "calculated", "color_by"}),
         nested_keys={("color_by",): _COLOR_BY_KEYS},
         calculated_type="calculated_number",
+        target_types=NUMBER_TYPES,
         value_maps=(
             ValueMapRule(
                 ("color_by",), "field", FindingCode.COLOR_BY_MAP_KEY_NOT_IN_ENUM,
@@ -489,7 +516,10 @@ STYLES: dict[str, StyleSpec] = {
     ),
     "trend": StyleSpec(
         expand=_trend,
-        keys=frozenset({"style", "against"}),
+        scalar_refs=(("against", "against_calculated"),),
+        keys=frozenset({"style", "against", "calculated", "against_calculated"}),
+        calculated_type="calculated_number",
+        target_types=NUMBER_TYPES,
         column_refs=(
             ColumnRefRule(
                 (), "against", FindingCode.TREND_AGAINST_NOT_RENDERED,
@@ -502,6 +532,7 @@ STYLES: dict[str, StyleSpec] = {
         keys=frozenset({"style", "calculated", "guard"}),
         nested_keys={("guard",): _GUARD_KEYS},
         calculated_type="calculated_date",
+        target_types=DATE_TYPES,
         column_refs=(
             ColumnRefRule(
                 ("guard",), "field", FindingCode.OVERDUE_GUARD_FIELD_NOT_RENDERED,
@@ -510,7 +541,6 @@ STYLES: dict[str, StyleSpec] = {
         ),
     ),
 }
-
 
 def expand_style(
     spec: dict[str, Any],
@@ -532,7 +562,6 @@ def expand_style(
     # failure still wins.
     _reject_unknown_keys(spec, registered.keys, context)
     return registered.expand(spec, context, theme)
-
 
 def parse_theme(raw: object, context: str) -> dict[str, StyleToken]:
     """Parse the optional mapping-level style_theme key: per-token

@@ -157,7 +157,7 @@ ban-relative-imports = "all"
 #
 # The three it is holding, each ASSERTED by test/test_complexity_ratchet.py,
 # which measures them with this same ruff rather than restating them:
-#   `_formatting.py::check` at 57
+#   `_formatting.py::check` at 54
 #   `_views.py::check` at 53
 #   `_permissions.py::check` at 39
 # They were prose once, and three of the four numbers had rotted (#311).
@@ -177,7 +177,7 @@ ban-relative-imports = "all"
 # Deliberately NOT the default of 10. That flags 33 functions at once, which
 # blocks every unrelated change until a large refactor lands -- so it would be
 # turned off again within a week, and the rule would teach nothing.
-max-complexity = 57
+max-complexity = 54
 
 [tool.ruff.lint.per-file-ignores]
 # S101: pytest asserts. PLC0415: RE-MEASURED 2026-09-14 after the jsgen

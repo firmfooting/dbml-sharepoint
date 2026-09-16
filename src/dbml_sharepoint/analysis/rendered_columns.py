@@ -14,6 +14,8 @@ Nothing here may import from `analysis/checks/`, which imports this, or from
 move the cycle rather than close it.
 """
 
+from collections.abc import Iterable
+
 from dbml_sharepoint.model.mapping_types import EntityKind
 from dbml_sharepoint.model.parser import Table
 
@@ -114,3 +116,11 @@ def rendered_columns(
             rendered.add(col.name)
     rendered.update(projected_cols)
     return rendered
+
+
+def effective_view_fields(fields: Iterable[str], kind: EntityKind) -> list[str]:
+    """Include the native document icon injected into every library view."""
+    result = list(fields)
+    if kind == "DocumentLibrary" and "DocIcon" not in result:
+        result.insert(0, "DocIcon")
+    return result

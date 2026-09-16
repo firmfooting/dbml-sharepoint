@@ -23,6 +23,7 @@ from dbml_sharepoint.analysis.condition_rendering import (
     to_validation,
 )
 from dbml_sharepoint.analysis.form_rendering import compose_visibility
+from dbml_sharepoint.analysis.formatter_values import ScalarValue, text_value
 from dbml_sharepoint.analysis.styles import TOKENS, expand_style
 from dbml_sharepoint.analysis.typemap import DATE_TYPES, NUMBER_TYPES
 from dbml_sharepoint.model.conditions import Condition, parse_condition
@@ -34,9 +35,8 @@ _SEVERITY_TEXT_SUFFIX = " + ' ms-fontColor-neutralSecondary'"
 #: spellings `styles._condition` emits (plain, and the `calculated: true`
 #: form that reads past SharePoint's `string;#` prefix).
 _ARM = re.compile(
-    r"if\((?:@currentField == '((?:[^']|'')*)'"
-    r"|indexOf\(@currentField, '((?:[^']|'')*)'\) >= 0), "
-    r"'([^']*)', ",
+    r"if\((?:@currentField|" + re.escape(text_value(calculated=True))
+    + r") == '((?:[^']|'')*)', '([^']*)', "
 )
 
 #: A `[$InternalName]` column reference in a list-formatting expression.
@@ -82,12 +82,12 @@ def _severity_candidate(formatter: dict[str, Any]) -> dict[str, Any] | None:
     class_expr = formatter.get("attributes", {}).get("class")
     if not isinstance(class_expr, str):
         return None
-    calculated = "indexOf(@currentField," in class_expr.replace(", ", ",")
+    calculated = text_value(calculated=True) in class_expr
     chain = class_expr.removesuffix(_SEVERITY_TEXT_SUFFIX)
     value_map: dict[str, str] = {}
     for match in _ARM.finditer(chain):
-        value = match.group(1) if match.group(1) is not None else match.group(2)
-        token = _TOKEN_BY_CLASSES.get(match.group(3))
+        value = match.group(1)
+        token = _TOKEN_BY_CLASSES.get(match.group(2))
         if value is None or token is None:
             # A class this tool never emits, so the formatter was not
             # generated from a style spec. Fall through to the raw path.
@@ -111,7 +111,7 @@ def _overdue_date_candidate(formatter: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(class_expr, str) or "@now" not in class_expr:
         return None
     spec: dict[str, Any] = {"style": "overdue-date"}
-    if "indexOf(toString(@currentField), ';#')" in class_expr:
+    if text_value(calculated=True) in class_expr:
         spec["calculated"] = True
     excluded = re.findall(r"\[\$([A-Za-z_][A-Za-z0-9_]*)\] != '((?:[^']|'')*)'", class_expr)
     if excluded:
@@ -125,6 +125,38 @@ def _overdue_date_candidate(formatter: dict[str, Any]) -> dict[str, Any] | None:
             "not": [_unquote(value) for _, value in excluded],
         }
     return spec
+
+
+def _numeric_severity_candidate(formatter: dict[str, Any]) -> dict[str, Any] | None:
+    """Recover numeric bands using the same scalar expression as the generator."""
+    expression = formatter.get("attributes", {}).get("class")
+    if not isinstance(expression, str):
+        return None
+    calculated = text_value(calculated=True) in expression
+    scalar = ScalarValue("Number", calculated=calculated)
+    arm = re.compile(
+        re.escape(f"if({scalar.valid} && {scalar.value} <= ")
+        + r"(-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?), '([^']*)', "
+    )
+    bands = []
+    for match in arm.finditer(expression):
+        token = _TOKEN_BY_CLASSES.get(match[2])
+        if token is None:
+            return None
+        bands.append({"max": float(match[1]) if "." in match[1] or "e" in match[1].lower()
+                      else int(match[1]), "token": token})
+    fallback = re.search(re.escape(f"if({scalar.valid}, '") + r"([^']*)'", expression)
+    if not bands or fallback is None or fallback[1] not in _TOKEN_BY_CLASSES:
+        return None
+    candidate: dict[str, Any] = {
+        "style": "numeric-severity", "bands": bands,
+        "otherwise": _TOKEN_BY_CLASSES[fallback[1]],
+    }
+    if calculated:
+        candidate["calculated"] = True
+    if len(formatter.get("children", [])) == 1:
+        candidate["icons"] = False
+    return candidate
 
 
 def invert_column_formatting(
@@ -148,14 +180,15 @@ def invert_column_formatting(
     # private to `styles.py`, and copying them here is how the copy and the
     # original come to disagree. A pill formatter is preserved raw, which
     # is faithful, and the notes say the style spec was not recovered.
-    candidates = [_severity_candidate(observed), _overdue_date_candidate(observed)]
+    candidates = (_severity_candidate, _numeric_severity_candidate, _overdue_date_candidate)
     target = _canonical(observed)
-    for candidate in candidates:
-        if candidate is None:
-            continue
+    for propose in candidates:
         try:
+            candidate = propose(observed)
+            if candidate is None:
+                continue
             expanded = expand_style(candidate, context)
-        except (ValueError, KeyError, TypeError):
+        except (ValueError, KeyError, TypeError, AttributeError):
             continue
         if _canonical(expanded) == target:
             return candidate, observed

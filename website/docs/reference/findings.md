@@ -184,8 +184,8 @@ dbml-sharepoint explain unknown_column_type
 | `form_visibility_condition_on_a_boolean_column` | error | A Yes/No column declares a `when`. SharePoint refuses validation formulas on that field type, so the conditional visibility cannot be deployed and the deploy aborts at the field it names. Declare the visibility without `when`, or move the column off boolean. |
 | `form_visibility_condition_unreachable` | error | A column is hidden on every form yet carries a `when`, which can never be reached. |
 | `form_visibility_on_a_calculated_column` | error | A calculated column declares form visibility. Calculated columns never appear on an entry form. |
-| `formatter_column_not_rendered` | error | A `column_formatting:` entry targets a column the entity does not render. |
-| `formatter_field_not_displayed` | error | A view formatter references a real column the view does not display; a view formatter can only read columns in its own `fields`, so the format would never fire. |
+| `formatter_column_not_rendered` | error | A `column_formatting:` entry targets a column that does not receive formatter updates. Only primary deployed fields accept formatters; generated lookup projections and view-only fields may be referenced by a formatter but cannot be its target. |
+| `formatter_field_not_displayed` | error | A row or displayed column formatter references a real column the view does not display; a formatter can only read columns in its own `fields`, so the format would never fire. |
 | `formatter_field_not_rendered` | error | A view formatter references a column the entity does not render. |
 | `formatter_missing_elmtype` | error | A column formatter's JSON has no root `elmType`, so it is not a SharePoint column-formatting object. |
 | `formula_target_not_calculated` | error | A `calculated_formulas:` entry names a column whose DBML type is not one of: calculated_date, calculated_number, calculated_text. |
@@ -265,9 +265,10 @@ dbml-sharepoint explain unknown_column_type
 | `retirement_without_display_names` | warning | Columns are retired but `display_names` is not enabled, so the ' (retired)' title suffix never reaches SharePoint. |
 | `row_limit_out_of_range` | error | A view's `row_limit` is outside 1-5000. |
 | `style_calculated_type_mismatch` | error | `calculated: true` is set on a style whose column is not the `calculated_*` type that style expects. |
+| `style_input_type_mismatch` | error | A numeric or date style has an incompatible target or comparison operand. Use a scalar of the required type. Microsoft documents lookup fields as objects with `lookupId` and `lookupValue`, not scalar integers ([formatting reference](https://learn.microsoft.com/en-us/sharepoint/dev/declarative-customization/formatting-syntax-reference#currentfield)). For a lookup, use custom formatting that selects the intended property. |
 | `style_map_key_not_in_enum` | error | A `severity` or `pill` map names a choice the column's enum does not contain. |
 | `style_on_boolean_matches_nothing` | error | A `severity` or `pill` style sits on a Yes/No column. Both compare `@currentField` against quoted strings, so every branch is false and the cell renders unstyled -- silently. |
-| `style_requires_calculated` | error | A `severity`, `data-bar` or `overdue-date` style sits on the matching `calculated_*` column but does not set `calculated: true`, so SharePoint's typed formatter value is never decoded. |
+| `style_requires_calculated` | error | A style target or comparison operand uses the matching `calculated_*` column but does not set `calculated: true`, so SharePoint's typed formatter value is never decoded. |
 | `superseded_by_is_itself_retired` | error | A `superseded_by` names a column that is itself retired. |
 | `superseded_by_names_the_retired_column` | error | A `superseded_by` names the retired column itself. |
 | `superseded_by_not_rendered` | error | A `superseded_by` names a column the list does not render. |

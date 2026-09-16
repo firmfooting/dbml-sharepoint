@@ -34,6 +34,7 @@ from dbml_sharepoint.analysis.permissions import (
     requires_manage_permissions,
 )
 from dbml_sharepoint.analysis.phases import phases_context
+from dbml_sharepoint.analysis.rendered_columns import effective_view_fields
 from dbml_sharepoint.analysis.role_definition_description import (
     level_description,
     marker_for_level,
@@ -955,11 +956,7 @@ def build_schema_json(
             views_out.append({
                 "list": list_title,
                 "title": view.title,
-                # Learn SPBuiltInFieldId.DocIcon: retain SharePoint's native document icon.
-                "view_fields": (
-                    (["DocIcon"] if entity.is_library and "DocIcon" not in view.fields else [])
-                    + list(view.fields)
-                ),
+                "view_fields": effective_view_fields(view.fields, entity.kind),
                 "caml_query": _view_caml_query(view, column_types, entity.kind),
                 # SP.View.Scope, or null when no scope is declared, which
                 # leaves the live property alone.

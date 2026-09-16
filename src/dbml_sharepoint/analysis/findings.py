@@ -332,6 +332,7 @@ class FindingCode(StrEnum):
     MULTI_VALUE_STYLE_RENDERS_A_FALSE_NEUTRAL = (
         "multi_value_style_renders_a_false_neutral", "error"
     )
+    STYLE_INPUT_TYPE_MISMATCH = "style_input_type_mismatch", "error"
     STYLE_MAP_KEY_NOT_IN_ENUM = "style_map_key_not_in_enum", "error"
     COLOR_BY_MAP_KEY_NOT_IN_ENUM = "color_by_map_key_not_in_enum", "error"
     TREND_AGAINST_NOT_RENDERED = "trend_against_not_rendered", "error"

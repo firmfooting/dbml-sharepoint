@@ -3434,7 +3434,7 @@ _DELEGATED_STYLE_CASES = [
         MappingValueError,
         "column_formatting:\n  Risk:\n    Status: { style: sparkle }",
         "column_formatting.Risk.Status: unknown style 'sparkle' (known: "
-        "['severity', 'pill', 'data-bar', 'trend', 'overdue-date'])",
+        "['severity', 'numeric-severity', 'pill', 'data-bar', 'trend', 'overdue-date'])",
         id="spec-unknown-style",
     ),
     pytest.param(

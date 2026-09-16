@@ -36,7 +36,6 @@ from typer.testing import CliRunner, Result
 
 from dbml_sharepoint.analysis.condition_rendering import to_validation
 from dbml_sharepoint.analysis.form_rendering import compose_visibility
-from dbml_sharepoint.analysis.styles import expand_style
 from dbml_sharepoint.cli import app
 from dbml_sharepoint.extract.decode import (
     DecodedEntity,
@@ -518,33 +517,13 @@ def test_the_fixture_yields_eight_enums_named_from_their_columns() -> None:
 # against the strings the read actually returned.
 
 
-def test_every_recovered_formatter_reproduces_the_stored_one() -> None:
-    """Eight column formatters were recovered as style specs. Expanding
-    each one has to give back the JSON the live list holds."""
+def test_historical_formatters_are_preserved_without_silent_rewrites() -> None:
     entity = _entity()
     stored = _stored("custom_formatter")
-    assert set(entity.column_formatting) == {
-        "EthicsStatus", "SiteAuthorisationStatus", "ProjectStage",
-        "ConditionsStatus", "LatestAmendmentStatus", "SiteReadiness",
-        "EthicsApprovalExpiry", "NextReportDue",
-    }
-    for column, spec in entity.column_formatting.items():
-        expanded = expand_style(spec, f"{ENTITY}.{column}")
-        assert expanded == json.loads(stored[column]), column
-
-
-def test_the_recovered_severity_specs_carry_what_the_formatter_showed() -> None:
-    """`SiteReadiness` is calculated, so its formatter reads past the
-    `string;#` prefix SharePoint puts on a calculated value, and the
-    recovered spec has to say so or it would expand to a chain that never
-    matches."""
-    formatting = _entity().column_formatting
-    assert formatting["SiteReadiness"]["calculated"] is True
-    assert formatting["EthicsStatus"].get("calculated") is None
-    assert formatting["NextReportDue"] == {
-        "style": "overdue-date",
-        "guard": {"field": "ProjectStage", "not": ["Completed", "Discontinued"]},
-    }
+    assert entity.column_formatting == {}
+    assert set(entity.preserved_formatters) == set(stored)
+    for column, raw in entity.preserved_formatters.items():
+        assert json.loads(raw) == json.loads(stored[column])
 
 
 def test_the_recovered_validation_reproduces_the_stored_formula() -> None:
@@ -699,7 +678,7 @@ def test_what_the_inverters_refused_is_reported_and_not_in_the_mapping() -> None
         refused.setdefault(item.kind, set()).add(item.subject)
 
     assert refused["column-formatting"] == {
-        f"{ENTITY}.AmendmentCount", f"{ENTITY}.EthicsPathway",
+        f"{ENTITY}.{column}" for column in _stored("custom_formatter")
     }
     assert refused["column-validation"] == {
         f"{ENTITY}.SubmittedDate", f"{ENTITY}.EthicsDecisionDate",
@@ -720,7 +699,7 @@ def test_the_data_bar_formatter_is_preserved_verbatim() -> None:
     nothing else, so a data bar is kept whole rather than re-derived into a
     style spec that would deploy something else."""
     preserved = _entity().preserved_formatters
-    assert set(preserved) == {"AmendmentCount", "EthicsPathway"}
+    assert set(preserved) == set(_stored("custom_formatter"))
     assert "sp-field-dataBars" in preserved["AmendmentCount"]
     assert json.loads(preserved["AmendmentCount"]) == json.loads(
         _stored("custom_formatter")["AmendmentCount"],
@@ -780,7 +759,7 @@ def test_the_emitted_mapping_loads(tmp_path: Path) -> None:
     bundle = load_mapping(path)
     assert bundle.mapping.prefix == DEFAULT_PREFIX
     assert set(bundle.mapping.entities) == {ENTITY}
-    assert set(bundle.mapping.column_formatting[ENTITY]) == set(
+    assert set(bundle.mapping.column_formatting.get(ENTITY, {})) == set(
         _entity().column_formatting,
     )
     assert set(bundle.mapping.form_visibility[ENTITY].columns) == {"ApprovalConditions"}

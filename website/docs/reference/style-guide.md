@@ -83,10 +83,10 @@ column_formatting:
 - **severity**: the standard look: SharePoint's full-height severity box
   with the token's icon and the value. `icons: false` disables icons;
   `calculated: true` is REQUIRED for calculated-text columns (SharePoint
-  renders their values with a `string;#` prefix; the style switches to
-  contains-matching and strips the prefix for display).
+  may provide a `string;#` prefix; the style strips it when present
+  and compares the resulting value exactly).
 
-:::note The `string;#` prefix is a COLUMN-formatting thing only
+:::note Calculated-value representations differ by surface
 
 Characterised on a live tenant, 2026-07-28, because getting this backwards
 costs a silently-not-firing format either way:
@@ -96,9 +96,11 @@ costs a silently-not-firing format either way:
 | Column formatting | `@currentField` | `string;#Extreme` |
 | View formatting (`views[].formatting`) | `[$Field]` | `Extreme` |
 
-So `calculated: true` is required in `column_formatting` and an exact
-comparison there silently never matches, but a **view** row formatter
-compares directly, and `"=if([$Rating] == 'Extreme', …)"` is correct as
+These observations describe that live run. Plain calculated numeric values
+were also observed in column formatting on 2026-09-16. The shared decoder
+accepts either representation and compares decoded text exactly. A **view**
+row formatter compares directly, and
+`"=if([$Rating] == 'Extreme', …)"` is correct as
 written. `solutions/risk-register` relies on this for its Extreme row
 wash, confirmed rendering on a real list.
 
@@ -108,6 +110,11 @@ somewhere it does not.
 
 :::
 
+- **numeric-severity**: numeric bands using the same severity layout and tokens.
+  Set `bands: [{max: 0, token: good}, {max: 1, token: warning}]` and
+  `otherwise: severe`. Boundaries are inclusive and strictly increasing;
+  the first matching band wins. `otherwise` is required. Supports
+  `calculated: true` and `icons: false`.
 - **pill**: compact native choice-pill look (opt-in alternative).
 - **data-bar**: the documented `sp-field-dataBars` bar; `max` sets the
   full-width value. Optional `color_by: { field, map, calculated }` is
@@ -116,13 +123,22 @@ somewhere it does not.
   ANOTHER column's value (same `map` vocabulary as **severity**), so a
   score bar wears the standardised colours of the rating column beside
   it and the two can never disagree. `calculated: true` when the source
-  column is calculated text (`string;#` contains-matching); unmapped
+  column is calculated text (prefix decoding followed by exact matching); unmapped
   values fall back to the neutral `muted` fill, never a false severity.
 - **trend**: `sp-field-trending--up/--down` with SortUp/SortDown icons;
-  `against` is a column internal name or a number.
+  `against` is a column internal name or a finite number. Numeric inputs are
+  required. Use `calculated: true` for a calculated target and
+  `against_calculated: true` for a calculated comparison column.
+  Equal or invalid operands show no directional arrow.
 - **overdue-date**: locale date, escalating to the `severe` treatment
   (box + Warning icon) once past due; `guard` suppresses the escalation
   when another column holds any excluded value (e.g. Status Closed).
+
+Blank scalar values are hidden; zero remains visible. Data-bar widths are
+clamped to 0-100%, while their labels retain the original numeric value.
+Invalid numeric/date inputs retain their text without a severity verdict.
+Every declared view displaying a formatted column must include its referenced
+fields, including colour sources, trend baselines and overdue guards.
 
 ## Iconography rules
 

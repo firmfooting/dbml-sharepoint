@@ -696,7 +696,7 @@ views:
     # Which workstream has claimed a process, and which have not been claimed.
     # A blank group is the finding.
     - title: "By workstream"
-      fields: [Title, Function, MappingPriority, PriorityScore, MappingStatus, Owner]
+      fields: [Title, Function, MappingPriority, PriorityScore, MappingStatus, Owner, Criticality]
       sort:
         - { field: PriorityScore, direction: desc }
       group_by: { field: Workstream, collapsed: false }
@@ -711,7 +711,7 @@ views:
     # whole durable value once the mapping work is done.
     - title: "Mapped"
       fields: [Title, Function, Owner, Workstream, MapUrl,
-               LastReviewedDate, NextReviewDue]
+               LastReviewedDate, NextReviewDue, MappingStatus]
       where:
         - { field: MappingStatus, op: eq, value: "Mapped" }
       sort:
@@ -931,7 +931,7 @@ views:
     # group heading, since no save rule can catch it.
     - title: "Decisions and approvals"
       fields: [Title, ActivityKind, Criticality, Responsible, Accountable,
-               EscalationRoute, ConfirmationDue]
+               EscalationRoute, ConfirmationDue, ReviewStatus]
       where:
         - { field: ActivityKind, op: neq, value: "Task" }
         - { field: ReviewStatus, op: neq, value: "Retired" }
@@ -1087,7 +1087,7 @@ views:
     - title: "Authorised, not yet picked up"
       renamed_from: ["Authorised, not yet raised"]
       fields: [Title, Workstream, RequestType, RequestedBy,
-               InternalAccountable, AuthorisedBy, AuthorisedDate, NeededBy]
+               InternalAccountable, AuthorisedBy, AuthorisedDate, NeededBy, Status]
       where:
         - { field: Status, op: eq, value: "Authorised" }
       sort:
@@ -1208,7 +1208,7 @@ views:
     - title: "Open"
       default: true
       fields: [Title, Workstream, Likelihood, Consequence, ResidualRiskRating,
-               RiskScore, RiskOwner, RiskResponse, NextReviewDue]
+               RiskScore, RiskOwner, RiskResponse, NextReviewDue, Status]
       where:
         - { field: Status, op: eq, value: "Open" }
       sort:
@@ -1229,7 +1229,7 @@ views:
         NextReviewDue: 160
     - title: "Review due"
       fields: [Title, Workstream, ResidualRiskRating, RiskScore, RiskOwner,
-               RiskResponse, LastReviewedDate, NextReviewDue]
+               RiskResponse, LastReviewedDate, NextReviewDue, Status]
       where:
         - { field: Status, op: eq, value: "Open" }
         - { field: NextReviewDue, op: leq, value: today+14 }

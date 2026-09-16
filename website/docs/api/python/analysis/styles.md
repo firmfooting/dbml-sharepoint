@@ -71,6 +71,8 @@ class StyleSpec:
     keys: frozenset[str]
     nested_keys: dict[tuple[str, ...], frozenset[str]] = field(default_factory=dict)
     calculated_type: str | None = None
+    target_types: frozenset[str] = frozenset()
+    scalar_refs: tuple[tuple[str, str], ...] = ()
     literal_match: bool = False
     value_maps: tuple[dbml_sharepoint.analysis.styles.ValueMapRule, ...] = ()
     column_refs: tuple[dbml_sharepoint.analysis.styles.ColumnRefRule, ...] = ()
@@ -81,7 +83,7 @@ Everything the validator needs to know about one style, beside its expander.
 ### `STYLES`
 
 ```python
-STYLES = {'severity': StyleSpec(expand=<function _severity>, keys=frozenset({'calculated', 'icons', 'map', 'style'}), nested_keys={}, calculated_type='calculated_text', literal_match=True, value_maps=(ValueMap…
+STYLES = {'severity': StyleSpec(expand=<function _severity>, keys=frozenset({'calculated', 'icons', 'map', 'style'}), nested_keys={}, calculated_type='calculated_text', target_types=frozenset(), scalar_refs=()…
 ```
 
 ### `expand_style`
