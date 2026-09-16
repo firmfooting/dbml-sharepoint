@@ -951,3 +951,49 @@ def test_explicit_lookup_property_formatting_remains_available(tmp_path: Path) -
     assert bundle.mapping.column_formatting["Risk"]["Baseline"]["txtContent"] == (
         "@currentField.lookupValue"
     )
+
+
+@pytest.mark.parametrize("kind, template", [("List", 100), ("DocumentLibrary", 101)])
+@pytest.mark.parametrize("dependency", ["Author", "Editor", "Baseline", "BaselineTitle"])
+@pytest.mark.parametrize("hidden, missing", [("", False), ("DEPENDENCY", True),
+                                             ("DEPENDENCY, Target", False)])
+def test_generated_all_items_checks_hidden_formatter_dependencies(
+    tmp_path: Path, kind: str, template: int, dependency: str, hidden: str, missing: bool,
+) -> None:
+    hidden = hidden.replace("DEPENDENCY", dependency)
+    schema, bundle = pack(tmp_path, dbml="""
+        Table Risk {
+          Id int [pk, increment]
+          Target int [ref: > Other.Id]
+          Baseline int [ref: > Other.Id]
+        }
+        Table Other {
+          Id int [pk, increment]
+          Title nvarchar
+        }
+    """, mapping=f"""
+        entities:
+          Risk:
+            kind: {kind}
+            base_template: {template}
+            site_role: default
+            hide_from_all_items: [{hidden}]
+          Other: {{kind: List, base_template: 100, site_role: default}}
+        lookup_projections:
+          Risk:
+            Baseline: [Title]
+        column_formatting:
+          Risk:
+            Target: {{elmType: span, txtContent: '[${dependency}.lookupValue]'}}
+        views:
+          Risk:
+            - title: Working
+              default: true
+              fields: [Target, {dependency}]
+    """)
+    findings = [f for f in validate_against_mapping(schema, bundle)
+                if f.code == FindingCode.FORMATTER_FIELD_NOT_DISPLAYED]
+    assert len(findings) == int(missing)
+    if missing:
+        assert findings[0].location == Location(Section.VIEWS, entity="Risk", view="All Items")
+        assert dependency in findings[0].message

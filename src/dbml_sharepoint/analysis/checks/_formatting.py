@@ -17,6 +17,7 @@ from dbml_sharepoint.analysis.condition_rendering import (
 )
 from dbml_sharepoint.analysis.conditions import condition_findings, leaves
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
+from dbml_sharepoint.analysis.joins import all_items_hidden, all_items_rendered
 from dbml_sharepoint.analysis.limits import (
     MAX_VALIDATION_FORMULA,
     MAX_VALIDATION_MESSAGE,
@@ -109,15 +110,19 @@ def _view_dependencies(
     findings: list[Finding] = []
     ctx = f"column_formatting[{entity_name}].{col_name}"
     references = formatter_field_refs(formatter) & rendered
-    for view in bundle.mapping.views.get(entity_name, []):
-        if col_name not in view.fields:
+    views = [("All Items", rendered - all_items_hidden(bundle.mapping.entities[entity_name]),
+              "Remove it from hide_from_all_items.")]
+    views.extend((view.title, set(view.fields), "Add it to the view fields.")
+                 for view in bundle.mapping.views.get(entity_name, []))
+    for title, fields, remedy in views:
+        if col_name not in fields:
             continue
-        for missing in sorted(references - set(view.fields)):
+        for missing in sorted(references - fields):
             findings.append(Finding(
                 FindingCode.FORMATTER_FIELD_NOT_DISPLAYED,
-                f"{ctx}: view {view.title!r} displays {col_name!r} but omits "
-                f"formatter dependency {missing!r}. Add it to the view fields.",
-                location=Location(Section.VIEWS, entity=entity_name, view=view.title),
+                f"{ctx}: view {title!r} displays {col_name!r} but omits "
+                f"formatter dependency {missing!r}. {remedy}",
+                location=Location(Section.VIEWS, entity=entity_name, view=title),
             ))
     return findings
 
@@ -142,9 +147,9 @@ def check(vc: ValidationContext) -> list[Finding]:
             ))
             continue
         xcols = cross_site_by_entity.get(entity_name, set())
-        rendered = (
-            rendered_columns(fmt_table, xcols)
-            | {"Title"} | system_columns_for(vc.kind_of(entity_name))
+        rendered = all_items_rendered(
+            fmt_table, xcols, vc.projected_by_entity.get(entity_name, set()),
+            vc.kind_of(entity_name),
         )
         for col_name, formatter in fmt_cols.items():
             ctx = f"column_formatting[{entity_name}].{col_name}"
