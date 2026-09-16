@@ -184,7 +184,7 @@ views:
       #
       # It compares with `==` because Severity is a plain Choice column and
       # a view formatter's [$Field] arrives clean. `calculated: true` and
-      # contains-matching belong to COLUMN formatting over calculated
+      # prefix decoding belong to COLUMN formatting over calculated
       # columns, and would be wrong here.
       formatting: formatting/row-critical.json
       widths:

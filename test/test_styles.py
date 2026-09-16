@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from dbml_sharepoint.analysis import styles
+from dbml_sharepoint.analysis.formatter_values import ScalarValue
 from dbml_sharepoint.analysis.styles import (
     STYLES,
     TOKENS,
@@ -50,8 +51,8 @@ def test_severity_expands_to_the_doc_structure() -> None:
     assert icon_span["style"] == {"display": "inline-block", "padding": "0 4px"}
     assert "'Forward'" in icon_span["attributes"]["iconName"]
     assert "'CheckMark'" in icon_span["attributes"]["iconName"]
-    assert text_span["txtContent"] == "@currentField"
-    assert out["style"]["display"] == "=if(@currentField == '', 'none', 'flex')"
+    assert text_span["txtContent"] == "=toString(@currentField)"
+    assert out["style"]["display"] == "=if(toString(@currentField) == '', 'none', 'flex')"
     # Cell inset: adjacent same-coloured fills must read as separate cells.
     assert out["style"]["border-radius"] == "4px"
     assert out["style"]["margin"] == "1px 4px 1px 0"
@@ -65,7 +66,7 @@ def test_severity_icons_can_be_disabled_and_calculated_matching() -> None:
     )
     assert len(out["children"]) == 1                  # no icon span
     cls = out["attributes"]["class"]
-    assert "indexOf(@currentField, 'Low') >= 0" in cls
+    assert "== 'Low'" in cls
     # calculated-text display cleanup (SP renders 'string;#Value')
     assert ";#" in out["children"][0]["txtContent"]
 
@@ -82,8 +83,8 @@ def test_pill_uses_choice_pill_classes_without_icons() -> None:
 
 def test_data_bar_matches_the_doc_pattern() -> None:
     out = expand_style({"style": "data-bar", "max": 25}, "ctx")
-    assert out["attributes"]["class"] == "sp-field-dataBars"
-    assert "@currentField >= 25" in out["style"]["width"]
+    assert "sp-field-dataBars" in out["attributes"]["class"]
+    assert "Number(@currentField) >= 25" in out["style"]["width"]
     assert "* 4" in out["style"]["width"]             # 100/25
     assert out["style"]["border-radius"] == "4px"
     assert out["style"]["margin"] == "1px 4px 1px 0"
@@ -96,7 +97,7 @@ def test_data_bar_decodes_a_calculated_number() -> None:
     width = out["style"]["width"]
     assert "Number(if(indexOf(toString(@currentField)" in width
     assert ";#" in width
-    assert out["children"][0]["txtContent"].startswith("=Number(if(")
+    assert "Number(if(" in out["children"][0]["txtContent"]
 
 
 def test_data_bar_color_by_takes_severity_tokens_from_another_column() -> None:
@@ -112,14 +113,14 @@ def test_data_bar_color_by_takes_severity_tokens_from_another_column() -> None:
         "ctx",
     )
     cls = out["attributes"]["class"]
-    assert "indexOf([$ResidualRiskRating], 'Extreme') >= 0" in cls
+    assert "== 'Extreme'" in cls
     assert "sp-field-severity--blocked" in cls
     assert "sp-field-severity--good" in cls
     assert "ms-fontColor-neutralSecondary" in cls
     assert "ms-bgColor-neutralLight" in cls           # unmapped -> neutral, no false severity
     assert "sp-field-dataBars" not in cls             # native blue fill replaced
     assert "* 4" in out["style"]["width"]             # width semantics unchanged
-    assert "@currentField == ''" in out["style"]["display"]
+    assert "toString(@currentField)" in out["style"]["display"]
 
 
 def test_data_bar_color_by_plain_column_uses_equality() -> None:
@@ -139,7 +140,7 @@ def test_calculated_data_bar_keeps_decoding_with_plain_color_source() -> None:
     )
     decoded = "Number(if(indexOf(toString(@currentField)"
     assert decoded in out["style"]["width"]
-    assert out["children"][0]["txtContent"].startswith(f"={decoded}")
+    assert decoded in out["children"][0]["txtContent"]
     assert "[$Rating] == 'Low'" in out["attributes"]["class"]
 
 
@@ -161,9 +162,9 @@ def test_overdue_date_guard_and_severity_treatment() -> None:
     assert "sp-field-severity--severeWarning" in cls
     assert "[$Status] != 'Closed'" in cls
     assert "[$Status] != 'Cancelled'" in cls
-    assert "@currentField < @now" in cls
+    assert "Date(@currentField) < @now" in cls
     assert "'Warning'" in out["children"][0]["attributes"]["iconName"]
-    assert out["children"][1]["txtContent"] == "=toLocaleDateString(@currentField)"
+    assert "toLocaleDateString(Date(@currentField))" in out["children"][1]["txtContent"]
     assert out["style"]["border-radius"] == "4px"
 
 
@@ -195,7 +196,7 @@ def test_overdue_date_decodes_a_calculated_date() -> None:
      "requires a non-empty 'map'"),
     ({"style": "data-bar", "max": 25,
       "color_by": {"field": "R", "map": {"A": "shiny"}}}, "unknown token"),
-    ({"style": "trend"}, "requires 'against'"),
+    ({"style": "trend"}, "finite number"),
     ({"style": "overdue-date", "guard": {"not": ["X"]}}, "guard requires 'field'"),
     # A numeric field emitted `[$42]`, which resolves to no column: SharePoint
     # accepts the formatter and renders nothing.
@@ -335,7 +336,10 @@ _LEGITIMATE_SPECS: dict[str, dict[str, Any]] = {
     "pill": {"style": "pill", "map": {"Open": "low"}},
     "data-bar": {"style": "data-bar", "max": 25,
                  "color_by": {"field": "Rating", "map": {"Low": "good"}}},
-    "trend": {"style": "trend", "against": "Target"},
+    "numeric-severity": {"style": "numeric-severity", "calculated": False, "icons": True,
+                         "bands": [{"max": 1, "token": "good"}], "otherwise": "severe"},
+    "trend": {"style": "trend", "against": "Target",
+              "calculated": False, "against_calculated": False},
     "overdue-date": {"style": "overdue-date",
                      "guard": {"field": "Status", "not": ["Closed"]}},
 }
@@ -472,7 +476,7 @@ def test_trend_still_accepts_a_number_to_compare_against() -> None:
     """The invariant is about references, not types: a numeric `against` is
     documented and emits a bare literal, so it must not be caught by it."""
     out = expand_style({"style": "trend", "against": 42}, "ctx")
-    assert "@currentField > 42" in out["children"][0]["attributes"]["class"]
+    assert "Number(@currentField) > Number(42)" in out["children"][0]["attributes"]["class"]
     assert _field_refs(out) == []
 
 
@@ -502,12 +506,12 @@ def test_a_field_name_ending_in_a_newline_is_refused() -> None:
 def test_calculated_number_expression_preserves_the_whole_value(
     value: int | str, expected: float,
 ) -> None:
-    assert _evaluate_scalar(styles._calculated_scalar("Number"), value) == expected
+    assert _evaluate_scalar(ScalarValue("Number", calculated=True).value, value) == expected
 
 
 @pytest.mark.parametrize("prefix", ["", "datetime;#"])
 def test_calculated_date_expression_preserves_the_year(prefix: str) -> None:
-    expression = styles._calculated_scalar("Date")
+    expression = ScalarValue("Date", calculated=True).value
     assert _evaluate_scalar(expression, prefix + "2026-09-16T00:00:00Z") == 1789516800000
 
 
@@ -531,15 +535,16 @@ const choose = (condition, yes, no) => condition ? yes : no;
     ))
 
 
-def test_levels_above_target_uses_the_safe_numeric_decoder() -> None:
+def test_levels_above_target_uses_numeric_severity() -> None:
     from _paths import PACKAGE
 
-    path = PACKAGE / "solutions/risk-register/20-configure/formatting/levels-above-target.json"
-    formatter = json.loads(path.read_text(encoding="utf-8"))
-    scalar = styles._calculated_scalar("Number")
-    assert scalar in formatter["attributes"]["class"]
-    assert scalar in formatter["children"][0]["attributes"]["iconName"]
-    assert formatter["children"][1]["txtContent"] == "=" + scalar
+    from dbml_sharepoint.model.mapping_loader import load_mapping
+
+    bundle = load_mapping(PACKAGE / "solutions/risk-register/20-configure/mapping.yaml")
+    spec = bundle.mapping.column_style_specs["Risk"]["LevelsAboveTarget"]
+    assert spec == {"style": "numeric-severity", "calculated": True,
+                    "bands": [{"max": 0, "token": "good"}, {"max": 1, "token": "warning"}],
+                    "otherwise": "severe"}
 
 
 def test_calculated_overdue_date_round_trips_through_extraction() -> None:

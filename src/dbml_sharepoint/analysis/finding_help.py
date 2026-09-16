@@ -926,8 +926,8 @@ FINDING_HELP: dict[FindingCode, str] = {
         "not render."
     ),
     FindingCode.FORMATTER_FIELD_NOT_DISPLAYED: (
-        "A view formatter references a real column the view does not "
-        "display; a view formatter can only read columns in its own "
+        "A row or displayed column formatter references a real column the view does not "
+        "display; a formatter can only read columns in its own "
         "`fields`, so the format would never fire."
     ),
     FindingCode.FORMATTER_FIELD_NOT_RENDERED: (
@@ -1371,6 +1371,10 @@ FINDING_HELP: dict[FindingCode, str] = {
         "`calculated: true` is set on a style whose column is not the "
         "`calculated_*` type that style expects."
     ),
+    FindingCode.STYLE_INPUT_TYPE_MISMATCH: (
+        "A numeric or date style has an incompatible target or comparison operand. "
+        "Use a scalar of the required type; lookup IDs are lookup objects in formatters."
+    ),
     FindingCode.STYLE_MAP_KEY_NOT_IN_ENUM: (
         "A `severity` or `pill` map names a choice the column's enum "
         "does not contain."
@@ -1381,7 +1385,7 @@ FINDING_HELP: dict[FindingCode, str] = {
         "branch is false and the cell renders unstyled -- silently."
     ),
     FindingCode.STYLE_REQUIRES_CALCULATED: (
-        "A `severity`, `data-bar` or `overdue-date` style sits on the "
+        "A style target or comparison operand uses the "
         "matching `calculated_*` column but does not set `calculated: "
         "true`, so SharePoint's typed formatter value is never decoded."
     ),

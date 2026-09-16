@@ -896,16 +896,17 @@ column_formatting:
     DueDate:   { style: overdue-date, guard: { field: Status, not: [Closed] } }
 ```
 
-Available styles: `severity`, `pill`, `data-bar`, `trend`,
+Available styles: `severity`, `numeric-severity`, `pill`, `data-bar`, `trend`,
 `overdue-date`. Semantic tokens: `good`, `low`, `warning`, `severe`,
 `blocked`, `neutral`, `muted`. A bespoke formatter JSON file can be used
 where a parameterised style does not fit; the validator checks either
 form. The [style guide](style-guide.md) defines the tokens, icon rules
 and authoring rules in full.
 
-Set `calculated: true` when `severity`, `data-bar`, or `overdue-date`
-formats a `calculated_text`, `calculated_number`, or `calculated_date`
-target respectively. Calculated values can arrive as plain values or typed
+Set `calculated: true` on styles targeting calculated fields: `severity`
+for text, `numeric-severity`, `data-bar` and `trend` for numbers, and
+`overdue-date` for dates. A calculated trend comparison column also requires
+`against_calculated: true`. Calculated values can arrive as plain values or typed
 `type;#value` strings. The flag handles either representation before
 comparison, arithmetic, display, or date conversion.
 

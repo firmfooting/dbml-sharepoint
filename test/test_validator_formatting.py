@@ -417,6 +417,11 @@ _BAD_DECLARATIONS: dict[str, tuple[str, str]] = {
           Risk:
             Rating: { style: pill, map: { Bogus: good } }
     """),
+    "numeric-severity": (_STYLED_SCHEMA, """
+        column_formatting:
+          Risk:
+            Rating: { style: numeric-severity, bands: [{max: 1, token: good}], otherwise: severe }
+    """),
     "data-bar": (_STYLED_SCHEMA, """
         column_formatting:
           Risk:
@@ -439,6 +444,7 @@ _BAD_DECLARATIONS: dict[str, tuple[str, str]] = {
 
 #: Every finding a style declaration can earn from the registry-driven block.
 _STYLE_RULE_CODES = frozenset({
+    FindingCode.STYLE_INPUT_TYPE_MISMATCH,
     FindingCode.STYLE_REQUIRES_CALCULATED,
     FindingCode.STYLE_CALCULATED_TYPE_MISMATCH,
     FindingCode.MULTI_VALUE_STYLE_RENDERS_A_FALSE_NEUTRAL,
@@ -796,3 +802,111 @@ def test_calculated_formula_referencing_a_phase_one_column_is_fine() -> None:
         entities=["Risk"], calculated_formulas={"Risk": {"Label": "=CONCATENATE([Title])"}},
     )
     assert by_severity(validate_against_mapping(schema, bundle), "error") == []
+
+
+@pytest.mark.parametrize("column_type, spec", [
+    ("nvarchar", "{style: data-bar, max: 25}"),
+    ("person", "{style: data-bar, max: 25}"),
+    ("int[]", "{style: trend, against: 2}"),
+    ("boolean", "{style: numeric-severity, bands: [{max: 1, token: good}], otherwise: severe}"),
+    ("number", "{style: overdue-date}"),
+])
+def test_scalar_styles_reject_incompatible_targets(
+    tmp_path: Path, column_type: str, spec: str,
+) -> None:
+    schema, bundle = pack(tmp_path, dbml=f"""
+        Table Risk {{
+          Id int [pk, increment]
+          Title nvarchar [not null]
+          Value {column_type}
+        }}
+    """, mapping=blocks(entities("Risk"), f"""
+        column_formatting:
+          Risk:
+            Value: {spec}
+    """))
+    finding = only(validate_against_mapping(schema, bundle), FindingCode.STYLE_INPUT_TYPE_MISMATCH)
+    assert finding.location == Location(Section.COLUMN_FORMATTING, entity="Risk", column="Value")
+
+
+@pytest.mark.parametrize("styled", ["Score", "Baseline"])
+def test_scalar_styles_reject_lookup_targets_and_operands(tmp_path: Path, styled: str) -> None:
+    spec = ("{style: trend, against: Baseline}" if styled == "Score"
+            else "{style: data-bar, max: 25}")
+    schema, bundle = pack(tmp_path, dbml="""
+        Table Risk {
+          Id int [pk, increment]
+          Title nvarchar [not null]
+          Score number
+          Baseline int [ref: > Other.Id]
+        }
+        Table Other {
+          Id int [pk, increment]
+          Title nvarchar [not null]
+        }
+    """, mapping=blocks(entities("Risk", "Other"), f"""
+        column_formatting:
+          Risk:
+            {styled}: {spec}
+    """))
+    finding = only(validate_against_mapping(schema, bundle), FindingCode.STYLE_INPUT_TYPE_MISMATCH)
+    assert "lookup" in finding.message
+
+
+@pytest.mark.parametrize("calculated, expected", [(False, True), (True, False)])
+def test_calculated_trend_operand_requires_its_decoder(
+    tmp_path: Path, calculated: bool, expected: bool,
+) -> None:
+    schema, bundle = pack(tmp_path, dbml="""
+        Table Risk {
+          Id int [pk, increment]
+          Title nvarchar [not null]
+          Score number
+          Baseline calculated_number
+        }
+    """, mapping=blocks(entities("Risk"), f"""
+        calculated_formulas:
+          Risk:
+            Baseline: '=1'
+        column_formatting:
+          Risk:
+            Score: {{style: trend, against: Baseline,
+                     against_calculated: {str(calculated).lower()}}}
+    """))
+    findings = validate_against_mapping(schema, bundle)
+    assert any(f.code == FindingCode.STYLE_REQUIRES_CALCULATED for f in findings) is expected
+    assert not any(f.code == FindingCode.STYLE_INPUT_TYPE_MISMATCH for f in findings)
+
+
+@pytest.mark.parametrize("fields, missing", [
+    ("Title, Score", True), ("Title, Score, Baseline", False), ("Title", False),
+])
+@pytest.mark.parametrize("formatter", [
+    "{style: trend, against: Baseline}",
+    "{elmType: div, txtContent: '[$Baseline]'}",
+])
+def test_displayed_column_dependencies_are_checked_per_view(
+    tmp_path: Path, fields: str, missing: bool, formatter: str,
+) -> None:
+    schema, bundle = pack(tmp_path, dbml="""
+        Table Risk {
+          Id int [pk, increment]
+          Title nvarchar [not null]
+          Score number
+          Baseline number
+        }
+    """, mapping=blocks(entities("Risk"), f"""
+        column_formatting:
+          Risk:
+            Score: {formatter}
+        views:
+          Risk:
+            - title: Working
+              fields: [{fields}]
+    """))
+    findings = [f for f in validate_against_mapping(schema, bundle)
+                if f.code == FindingCode.FORMATTER_FIELD_NOT_DISPLAYED]
+    assert bool(findings) is missing
+    if missing:
+        assert findings[0].location == Location(Section.VIEWS, entity="Risk", view="Working")
+        assert "Score" in findings[0].message and "Baseline" in findings[0].message
