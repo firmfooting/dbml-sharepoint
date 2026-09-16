@@ -14,8 +14,13 @@ def text_value(ref: str = "@currentField", *, calculated: bool = False) -> str:
     text = f"toString({ref})"
     if not calculated:
         return text
+    # These prefixes are the supported calculated-value wire forms.
+    prefix = " || ".join(
+        f"indexOf({text}, '{kind};#') == 0"
+        for kind in ("string", "float", "number", "datetime")
+    )
     return (
-        f"if(indexOf({text}, ';#') >= 0, "
+        f"if({prefix}, "
         f"substring({text}, indexOf({text}, ';#') + 2, 1000), {text})"
     )
 

@@ -70,6 +70,7 @@ BANDS = {"style": "numeric-severity", "calculated": True,
 @pytest.mark.parametrize("value, treatment", [
     (-1, "good"), (0, "good"), (0.5, "warning"), (1, "warning"), (2, "severeWarning"),
     ("float;#0", "good"), ("float;#1", "warning"), ("float;#2", "severeWarning"),
+    ("number;#0", "good"),
     ("bad", "muted"), ("NaN", "muted"), ("Infinity", "muted"),
 ])
 def test_numeric_bands(value: Any, treatment: str) -> None:
@@ -239,3 +240,41 @@ def test_native_date_references_are_not_reparsed(ref: str) -> None:
     assert scalar.valid == f"({ref} != '')"
     calculated = ScalarValue("Date", ref, calculated=True)
     assert calculated.value.startswith("Date(if(")
+
+
+@pytest.mark.parametrize("value, label", [
+    ("Section;#Closed", "Section;#Closed"),
+    ("unknown;#Closed", "unknown;#Closed"),
+    ("Sectionstring;#Closed", "Sectionstring;#Closed"),
+    ("string;#Section;#Closed", "Section;#Closed"),
+    ("string;#Closed", "Closed"),
+])
+def test_calculated_text_only_strips_a_leading_known_prefix(value: str, label: str) -> None:
+    cell = render({"style": "severity", "calculated": True,
+                   "map": {"Closed": "good"}}, value)
+    assert cell["children"][1]["txtContent"] == label
+    assert ("sp-field-severity--good" in cell["attributes"]["class"]) == (label == "Closed")
+    bar = render({"style": "data-bar", "max": 25, "color_by": {
+        "field": "Rating", "calculated": True, "map": {"Closed": "good"},
+    }}, 25, {"Rating": value})
+    assert ("sp-field-severity--good" in bar["attributes"]["class"]) == (label == "Closed")
+
+
+@pytest.mark.parametrize("spec, value", [
+    (BANDS, "Section;#1"),
+    ({"style": "data-bar", "max": 25, "calculated": True}, "unknown;#25"),
+    ({"style": "overdue-date", "calculated": True}, "Section;#2026-09-15T00:00:00Z"),
+])
+def test_embedded_delimiters_do_not_turn_invalid_scalars_into_valid_values(
+    spec: dict[str, Any], value: str,
+) -> None:
+    cell = render(spec, value)
+    assert "ms-bgColor-neutralLight" in cell["attributes"]["class"]
+    assert cell["children"][-1]["txtContent"] == value
+
+
+@pytest.mark.parametrize("current, baseline", [("unknown;#2", 1), (2, "unknown;#1")])
+def test_trend_does_not_strip_unknown_operand_prefixes(current: Any, baseline: Any) -> None:
+    cell = render({"style": "trend", "against": "Baseline", "calculated": True,
+                   "against_calculated": True}, current, {"Baseline": baseline})
+    assert cell["children"][0]["attributes"]["iconName"] == ""

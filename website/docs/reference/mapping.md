@@ -907,8 +907,9 @@ Set `calculated: true` on styles targeting calculated fields: `severity`
 for text, `numeric-severity`, `data-bar` and `trend` for numbers, and
 `overdue-date` for dates. A calculated trend comparison column also requires
 `against_calculated: true`. Calculated values can arrive as plain values or typed
-`type;#value` strings. The flag handles either representation before
-comparison, arithmetic, display, or date conversion.
+`type;#value` strings. The flag removes only a leading `string;#`, `float;#`,
+`number;#` or `datetime;#` prefix before comparison, arithmetic, display, or
+date conversion. Embedded delimiters and unknown prefixes remain unchanged.
 
 :::danger `severity` and `pill` paint a false neutral on a multi-value column
 
