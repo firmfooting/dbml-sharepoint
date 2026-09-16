@@ -24,6 +24,7 @@ from dbml_sharepoint.analysis.limits import (
 )
 from dbml_sharepoint.analysis.rendered_columns import (
     UNDEPLOYABLE_DECLARATION_COLUMNS,
+    effective_view_fields,
     rendered_columns,
     system_columns_for,
     undeployable,
@@ -112,7 +113,9 @@ def _view_dependencies(
     references = formatter_field_refs(formatter) & rendered
     views = [("All Items", rendered - all_items_hidden(bundle.mapping.entities[entity_name]),
               "Remove it from hide_from_all_items.")]
-    views.extend((view.title, set(view.fields), "Add it to the view fields.")
+    kind = bundle.mapping.entities[entity_name].kind
+    views.extend((view.title, set(effective_view_fields(view.fields, kind)),
+                  "Add it to the view fields.")
                  for view in bundle.mapping.views.get(entity_name, []))
     for title, fields, remedy in views:
         if col_name not in fields:
@@ -163,10 +166,13 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=at,
                 ))
                 continue
-            if col_name not in rendered:
+            if col_name not in rendered_columns(fmt_table, xcols):
                 findings.append(Finding(
                     FindingCode.FORMATTER_COLUMN_NOT_RENDERED,
-                    f"{ctx}: not a rendered column of {entity_name}.",
+                    f"{ctx}: this column does not receive formatter updates. "
+                    "Only primary deployed fields receive column formatters; "
+                    "generated projections and view-only fields may be referenced, "
+                    "but cannot be formatter targets.",
                     location=at,
                 ))
             if "elmType" not in formatter:

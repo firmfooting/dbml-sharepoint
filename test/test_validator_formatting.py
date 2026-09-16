@@ -997,3 +997,73 @@ def test_generated_all_items_checks_hidden_formatter_dependencies(
     if missing:
         assert findings[0].location == Location(Section.VIEWS, entity="Risk", view="All Items")
         assert dependency in findings[0].message
+
+
+@pytest.mark.parametrize("target", ["BaselineTitle", "DocIcon", "Title", "ID", "FileLeafRef"])
+@pytest.mark.parametrize("formatter", ["{elmType: span, txtContent: '@currentField'}",
+                                       "{style: severity, map: {Open: good}}"])
+def test_readable_fields_without_formatter_deployment_are_rejected(
+    tmp_path: Path, target: str, formatter: str,
+) -> None:
+    schema, bundle = pack(tmp_path, dbml="""
+        Table Risk {
+          Id int [pk, increment]
+          Baseline int [ref: > Other.Id]
+        }
+        Table Other {
+          Id int [pk, increment]
+          Title nvarchar
+        }
+    """, mapping=f"""
+        entities:
+          Risk: {{kind: DocumentLibrary, base_template: 101, site_role: default}}
+          Other: {{kind: List, base_template: 100, site_role: default}}
+        lookup_projections:
+          Risk:
+            Baseline: [Title]
+        column_formatting:
+          Risk:
+            {target}: {formatter}
+    """)
+    findings = validate_against_mapping(schema, bundle)
+    assert any(f.code in {FindingCode.FORMATTER_COLUMN_NOT_RENDERED,
+                          FindingCode.UNDEPLOYABLE_COLUMN_DECLARATION}
+               and f.location == Location(Section.COLUMN_FORMATTING, entity="Risk", column=target)
+               for f in findings)
+
+
+@pytest.mark.parametrize("kind, template", [("List", 100), ("DocumentLibrary", 101)])
+@pytest.mark.parametrize("surface", ["column", "row"])
+def test_implicit_docicon_is_readable_only_in_library_formatters(
+    tmp_path: Path, kind: str, template: int, surface: str,
+) -> None:
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    column = "column_formatting:\n  Risk:\n    Label: {elmType: span, txtContent: '[$DocIcon]'}"
+    row = "{additionalRowClass: '=[$DocIcon]'}"
+    schema, bundle = pack(tmp_path, dbml="""
+        Table Risk {
+          Id int [pk, increment]
+          Label nvarchar
+        }
+    """, mapping=blocks(f"""
+        entities:
+          Risk: {{kind: {kind}, base_template: {template}, site_role: default}}
+        views:
+          Risk:
+            - title: Working
+              fields: [Label]
+              formatting: {row if surface == 'row' else '{}'}
+    """, column if surface == "column" else ""))
+    findings = validate_against_mapping(schema, bundle)
+    errors = [f for f in findings if f.code in {
+        FindingCode.FORMATTER_FIELD_NOT_DISPLAYED, FindingCode.FORMATTER_FIELD_NOT_RENDERED,
+    }]
+    assert bool(errors) == (kind == "List")
+    generated = build_schema_json(schema, bundle, "default")
+    for view in generated["views"]:
+        assert ("DocIcon" in view["view_fields"]) == (kind == "DocumentLibrary")
+    if surface == "column":
+        field = generated["lists"][0]["fields_phase1"][0]
+        assert field["title"] == "Label"
+        assert "DocIcon" in field["custom_formatter"]

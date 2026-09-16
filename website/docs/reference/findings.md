@@ -184,7 +184,7 @@ dbml-sharepoint explain unknown_column_type
 | `form_visibility_condition_on_a_boolean_column` | error | A Yes/No column declares a `when`. SharePoint refuses validation formulas on that field type, so the conditional visibility cannot be deployed and the deploy aborts at the field it names. Declare the visibility without `when`, or move the column off boolean. |
 | `form_visibility_condition_unreachable` | error | A column is hidden on every form yet carries a `when`, which can never be reached. |
 | `form_visibility_on_a_calculated_column` | error | A calculated column declares form visibility. Calculated columns never appear on an entry form. |
-| `formatter_column_not_rendered` | error | A `column_formatting:` entry targets a column the entity does not render. |
+| `formatter_column_not_rendered` | error | A `column_formatting:` entry targets a column that does not receive formatter updates. Only primary deployed fields accept formatters; generated lookup projections and view-only fields may be referenced by a formatter but cannot be its target. |
 | `formatter_field_not_displayed` | error | A row or displayed column formatter references a real column the view does not display; a formatter can only read columns in its own `fields`, so the format would never fire. |
 | `formatter_field_not_rendered` | error | A view formatter references a column the entity does not render. |
 | `formatter_missing_elmtype` | error | A column formatter's JSON has no root `elmType`, so it is not a SharePoint column-formatting object. |

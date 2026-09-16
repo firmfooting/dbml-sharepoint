@@ -922,8 +922,10 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A field set is declared but no view on that entity expands it."
     ),
     FindingCode.FORMATTER_COLUMN_NOT_RENDERED: (
-        "A `column_formatting:` entry targets a column the entity does "
-        "not render."
+        "A `column_formatting:` entry targets a column that does not receive "
+        "formatter updates. Only primary deployed fields accept formatters; "
+        "generated lookup projections and view-only fields may be referenced "
+        "by a formatter but cannot be its target."
     ),
     FindingCode.FORMATTER_FIELD_NOT_DISPLAYED: (
         "A row or displayed column formatter references a real column the view does not "

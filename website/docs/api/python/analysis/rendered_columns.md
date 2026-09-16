@@ -71,3 +71,11 @@ projected_cols are the lookup-projection columns the mapping declares
 (read-only dependent Lookups); they exist on the list and are renderable,
 but are not DBML columns.
 
+### `effective_view_fields`
+
+```python
+def effective_view_fields(fields: collections.abc.Iterable[str], kind: EntityKind) -> list[str]
+```
+
+Include the native document icon injected into every library view.
+
