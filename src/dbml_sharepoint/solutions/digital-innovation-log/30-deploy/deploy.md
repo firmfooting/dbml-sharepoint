@@ -57,8 +57,9 @@ run. What to look for:
 - **Exploring** shows three asks: two under *Now* and one under *Strategic*.
   The *Priority Score* bar is longest on the Awaiting decision ask (Game
   change x Moderate, 6) and takes its colour from *Value*.
-- **Delivery and adoption** shows one ask under each of two patterns. The
-  *Adoption Check Due* on the In delivery ask is three days past and red.
+- **Delivery and adoption** shows one Accepted ask under each of two
+  patterns. The *Adoption Check Due* on the feedback-cards ask is three days
+  past and red.
 - **Closed and routed** holds nine rows: one Adopted with a filled *Days To
   Adopted* bar and its *Adoption Note*, one Not adopted, five Routed (one per
   route out), one Duplicate and one Not now with its *Reopen trigger*
@@ -95,7 +96,10 @@ seed a site that already holds real asks.
 - [ ] A champion account can save a personal view on **Needs response** and
       create an alert on it.
 - [ ] A test account in `DI Digital Team` can add and edit rows on both
-      lists and cannot delete on either.
+      lists and cannot delete on either. A Site Owner can delete: the
+      associated owner group holds the built-in Contribute, as in every
+      family, and `50-govern/governance.md` says who can delete and why the
+      no-delete promise covers only the two family groups.
 - [ ] A plain Site Member can read both lists, including the demo Not now
       row, and cannot add to either.
 - [ ] The header link opens the published capture guide.
@@ -117,25 +121,36 @@ seed a site that already holds real asks.
       delivery** and **Adoption**; **System** is a bare heading on the edit
       form too. *Value*, *Ease*, *Evidence*,
       *Review Tier* and *Horizon* appear only once Triage Outcome is
-      *Explore here*; *Clinical Reviewer* and *Clinical Review Date* only
-      once Review Tier is *Clinical or data review*.
+      *Explore here*; *Clinical Reviewer* and *Clinical Review Date* once
+      Review Tier is *Clinical or data review* or Data Sensitivity is
+      *Touches patient or clinical workflow data*.
 - [ ] A Captured Date in the future is refused. The refusal shows the list
       message: date-versus-today rules are hoisted onto the list rule at
-      build time, and `deploy-manifest.md` names the five that were.
+      build time, and `deploy-manifest.md` names the two that were (Captured
+      Date and Decision Date). Acknowledged, Clinical Review and Adopted
+      dates carry no future-date rule; the list formula's 1023-character
+      ceiling went to the acknowledgement and clinical gates instead.
 
 ### Triage and score
 
-- [ ] Setting Status to Exploring with no Triage Outcome is refused with the
-      list message, which begins "Check this stage".
+- [ ] Setting Status to Exploring with no Triage Outcome, or with no
+      Acknowledged Date, is refused with the list message, which begins
+      "Check this stage".
 - [ ] Setting Status to Awaiting decision with any of *Value*, *Ease*,
       *Evidence* or *Horizon* empty is refused with the same message.
 - [ ] Setting Status to Accepted on an ask whose Review Tier is *Clinical or
       data review* and whose Clinical Review Date is empty is refused.
-      Filling the date lets it save.
-- [ ] Setting Status to Not now with *Reopen trigger* empty is refused. A
-      trigger of 15 characters or fewer is refused by the column's own
-      message.
-- [ ] Setting Status to Routed with *Receiving reference* empty is refused.
+      Filling the date lets it save. Changing the Review Tier to *Standard*
+      does not: the gate also reads Data Sensitivity, so an ask marked
+      *Touches patient or clinical workflow data* is refused until the date
+      is filled whatever the tier says.
+- [ ] Setting Status to Accepted straight from Exploring with any of *Value*,
+      *Ease*, *Evidence* or *Horizon* empty is refused.
+- [ ] Setting Status to Not now with *Reopen trigger* or *Decision Date*
+      empty is refused. A trigger of 15 characters or fewer is refused by the
+      column's own message.
+- [ ] Setting Status to Routed or Duplicate with *Receiving reference* empty
+      is refused. On a Duplicate it names the earlier ask.
 - [ ] *Priority Score* renders as a bar out of 9 and takes its colour from
       *Value*, so Tweak x Easy (3) and Game change x Hard (3) render at the
       same length in different colours.
@@ -149,10 +164,9 @@ seed a site that already holds real asks.
 ### Delivery and adoption
 
 - [ ] **Delivery and adoption** groups on *Pattern* and holds only Accepted
-      and In delivery rows.
+      rows. Build progress is read from the pattern's own Status.
 - [ ] *Sponsor* appears from Awaiting decision on; *Pattern* appears from
-      Accepted on; *Adoption Check Due* appears on Accepted and In delivery
-      rows only.
+      Accepted on; *Adoption Check Due* appears on Accepted rows only.
 - [ ] Setting Status to Adopted with *Adopted Date* or *Adoption Note*
       empty is refused. A note of 10 characters or fewer is refused by the
       column's own message.

@@ -2,8 +2,8 @@
 
 The log is where an M365 ask goes so that it is answered once and built
 once. Champions capture; the digital team routes, scores, decides and checks
-adoption. Nobody deletes a row: an ask leaves as Routed, Duplicate or Not
-now, and every reader can see why.
+adoption. Neither group can delete a row: an ask leaves as Routed,
+Duplicate or Not now, and every reader can see why.
 
 ## Champions: capture in about a minute
 
@@ -66,8 +66,8 @@ Outcome** in under a minute:
 | Route it out | Process change - improvement register | Status Routed; Receiving reference is the improvement id |
 | Route it out | Project-sized - project pipeline | Status Routed; Receiving reference is the pipeline id |
 | Route it out | Incident, complaint, privacy or cyber - mandated system | Status Routed; Receiving reference is the record id |
-| Close it | Duplicate - merge into the earlier ask | Status Duplicate; Merged into names the earlier ask |
-| Close it | Not now | Status Not now; Reopen trigger says what would change the answer |
+| Close it | Duplicate - merge into the earlier ask | Status Duplicate; Receiving reference names the earlier ask |
+| Close it | Not now | Status Not now; Decision Date, and Reopen trigger says what would change the answer |
 | Keep it | Explore here | Status Exploring; name an Owner |
 
 Set **Acknowledged Date** when the requester has been told, whichever pile
@@ -75,10 +75,10 @@ the ask went to. The seven-day *Acknowledge by* stops being red the moment
 the ask leaves Captured, so leaving Captured without telling the requester
 defeats the clock; tell them first.
 
-The form refuses to leave Captured without a Triage Outcome, refuses Routed
-without a Receiving reference, and refuses Not now without a Reopen trigger
-of more than fifteen characters. It cannot check that a Duplicate names its
-earlier ask; do that yourself.
+The form refuses to leave Captured without a Triage Outcome and an
+Acknowledged Date, refuses Routed and Duplicate without a Receiving
+reference, and refuses Not now without a Decision Date and a Reopen trigger
+of more than fifteen characters.
 
 Only *Explore here* continues. Everything else is finished once the
 requester has heard.
@@ -108,16 +108,18 @@ a prompt to build.
 
 Set **Review Tier** from Data Sensitivity: patient or clinical workflow data
 is *Clinical or data review*; sensitive staff or third-party data is
-*Security review*; otherwise *Standard*. A *Clinical or data review* ask
-shows **Clinical Reviewer** and **Clinical Review Date**, and the form will
-not accept it until the review date is filled. Name the reviewer as well;
-the form cannot check a person column, so that one is on you.
+*Security review*; otherwise *Standard*. An ask marked patient or clinical
+workflow data, or tiered *Clinical or data review*, shows **Clinical
+Reviewer** and **Clinical Review Date**, and the form will not accept it
+until the review date is filled. Re-tiering it does not get past that: the
+gate reads Data Sensitivity too. Name the reviewer as well; the form cannot
+check a person column, so that one is on you.
 
 ## Digital team: decide, link to a pattern, check adoption
 
-Setting Status to **Awaiting decision** needs all four bands filled; the
-form refuses otherwise. Name the **Sponsor**, the manager or executive who
-owns the outcome.
+Setting Status to **Awaiting decision** needs all four bands filled, and so
+does every status after it; the form refuses an unscored acceptance. Name
+the **Sponsor**, the manager or executive who owns the outcome.
 
 **Accepting** means setting a **Decision Date**, writing the **Decision
 Rationale**, and choosing a **Pattern**. If no pattern fits, create one in
@@ -125,9 +127,10 @@ Rationale**, and choosing a **Pattern**. If no pattern fits, create one in
 to be delivered through, and the *Delivery and adoption* view will show it
 under an empty group.
 
-Move the ask to **In delivery** while the pattern is built or piloted. When
-the pattern becomes Available, set **Adoption Check Due** about a month out.
-It is highlighted in **Delivery and adoption** once the date has passed.
+The ask stays **Accepted** while the pattern is built or piloted; the
+pattern's own Status shows the progress, so it is recorded once. When the
+pattern becomes Available, set **Adoption Check Due** about a month out. It
+is highlighted in **Delivery and adoption** once the date has passed.
 
 On that date ask the team whether they use it. Record **Adopted** with an
 **Adopted Date** and an **Adoption Note** in one line with a number where

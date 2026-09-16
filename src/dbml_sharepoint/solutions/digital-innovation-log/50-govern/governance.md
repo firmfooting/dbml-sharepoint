@@ -60,8 +60,12 @@ every field on it. The New form hides the digital team's fields; the edit
 form does not. The role split in the Ownership table is therefore a working
 rule rather than a permission, and the staff guide says so. Two things make
 that acceptable: versioning is on with a two-hundred-version limit, so a
-wrong edit is visible and reversible, and no level deletes, so a row cannot
-vanish. Restricting champions to their own rows would need SharePoint's
+wrong edit is visible and reversible, and neither family group can delete.
+Site Owners hold the built-in Contribute, which does delete, and `dbml List
+Administrators` hold Full Control; that is the fleet norm, and it means the
+no-delete promise covers champions and the digital team, not the site's
+owners. Keep the owner group small and treat a deleted ask as an incident
+for the log owner. Restricting champions to their own rows would need SharePoint's
 item-level settings, which the deployer neither sets nor verifies; a
 service that wants that reads opportunities-register's deploy guide for the
 manual gate and its two-account test.
@@ -134,9 +138,10 @@ this agenda follows that split:
    their Adoption Notes. This is the part champions carry back to their
    teams.
 2. **The asks, area by area.** Open **By area** and expand each Service
-   Area in turn. Decisions made since last month are read out, Not now rows
-   have their Reopen trigger confirmed, and anything still Captured past its
-   *Acknowledge by* is assigned on the spot.
+   Area in turn. Decisions made since last month are read out, and anything
+   still Captured past its *Acknowledge by* is assigned on the spot. Then
+   open **Closed and routed**, which is where Not now rows live, and confirm
+   each one's *Reopen trigger* still holds.
 3. **What is coming.** New features in the next rollout wave, which *Next
    wave* asks they unblock, and what the champions should listen for next
    month.
@@ -171,24 +176,29 @@ often.
 
 | Check | View | Cadence |
 | --- | --- | --- |
-| An Accepted or In delivery ask names a Pattern | **Delivery and adoption**: a row under the empty group has no pattern | Weekly, by the Owner |
-| A Duplicate names its earlier ask in Merged into | **Closed and routed**: filter Status to Duplicate and open each row | Weekly, at triage |
-| A Clinical or data review ask names a Clinical Reviewer | **Exploring**: every row whose Review Tier is *Clinical or data review* | Before acceptance, by the Owner; monthly, by the log owner |
+| An Accepted ask names a Pattern | **Delivery and adoption**: a row under the empty group has no pattern | Weekly, by the Owner |
+| A Duplicate's Receiving reference really is the earlier ask | **Closed and routed**: filter Status to Duplicate and read the reference against the Title column | Weekly, at triage |
+| A clinical-tier ask names a Clinical Reviewer | **Exploring**: every row whose Review Tier is *Clinical or data review* or whose Data Sensitivity is patient data | Before acceptance, by the Owner; monthly, by the log owner |
 | Acknowledged Date is on or after Captured Date | **By area**: open each row acknowledged since the last meeting and compare the two dates | Monthly, at the champions meeting |
 | Available Date is on or after Proposed Date | **Catalogue**: compare the two dates on each pattern made Available since the last meeting | Monthly, by the Build Owner |
 | Not now and Not adopted rows have a Decision Rationale | **Closed and routed**: filter Status to Not now, then Not adopted, and open each row | Monthly, at the champions meeting |
 | An Available pattern has a Guide or exemplar link | **Catalogue**: the link column is empty | Monthly, by the Build Owner; before any team is pointed at it |
 
 SharePoint does enforce, and the deploy checklist verifies: leaving
-Captured needs a Triage Outcome; Awaiting decision needs Value, Ease,
-Evidence and Horizon; Accepted and later need a Decision Date; a Clinical
-or data review ask needs its Clinical Review Date before acceptance; Not
-now needs a Reopen trigger longer than fifteen characters; Routed needs a
-Receiving reference; Adopted needs an Adopted Date and an Adoption Note
-longer than ten characters; an Available pattern needs an Available Date;
-a Retired one needs a Retired Date and Reason; and no dated column that
-records something that has happened accepts a future date. Adoption Check
-Due is a planned date and may be in the future.
+Captured needs a Triage Outcome and an Acknowledged Date; Awaiting decision
+and every later status need Value, Ease, Evidence and Horizon; Accepted,
+Adopted, Not adopted and Not now need a Decision Date; an ask whose Data
+Sensitivity is patient or clinical workflow data, or whose Review Tier is
+*Clinical or data review*, needs its Clinical Review Date before acceptance,
+so re-tiering cannot bypass the review; Not now needs a Reopen trigger
+longer than fifteen characters; Routed and Duplicate need a Receiving
+reference; Adopted needs an Adopted Date and an Adoption Note longer than
+ten characters; an Available pattern needs an Available Date; a Retired one
+needs a Retired Date and Reason; and Captured Date and Decision Date refuse
+a future date. Acknowledged, Clinical Review and Adopted dates do not: the
+list formula has a 1023-character ceiling and the acknowledgement and
+clinical gates were worth more than those three checks. Adoption Check Due
+is a planned date and may be in the future.
 
 ## Records and decommissioning
 

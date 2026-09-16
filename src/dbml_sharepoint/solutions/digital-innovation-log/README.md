@@ -6,7 +6,8 @@ The M365 asks a rollout hears, captured once by a champion, routed before
 they are scored, and delivered through a pattern built once. Every ask is
 acknowledged within a week and checked for adoption afterwards. Two lists:
 `DI_Opportunity` (one row per ask) and `DI_Pattern` (one row per reusable
-solution).
+solution). Build progress lives on the pattern; the ask records the decision
+and, later, whether the team adopted it.
 
 **The value case.** During an M365 rollout the same asks come up in every
 workshop and floor walk: "can Teams do our roster", "we still print this
@@ -27,7 +28,7 @@ with a reply, and only an ask worth an M365 build is scored:
 | A process change with no M365 build | improvement-register | Routed |
 | A project-sized change | project-pipeline | Routed |
 | An incident, complaint, privacy or cyber matter | The mandated system | Routed |
-| The same ask another team already raised | Merged into that row | Duplicate |
+| The same ask another team already raised | Closed, naming that row | Duplicate |
 | Not worth doing now | Declined with what would change the answer | Not now |
 | An M365 build worth exploring | Stays here | Exploring onwards |
 
@@ -65,13 +66,15 @@ under each pattern is the "twelve teams want this" evidence), *By area* (the
 champions meeting view) and *Closed and routed*. Pattern: *Catalogue* (the
 default), *In build* and *Retired*.
 
-**Save rules.** Leaving Captured needs a triage route. Awaiting decision needs
-Value, Ease, Evidence and Horizon. Accepted and later need a decision date,
-and a Clinical or data review ask needs its review date first. Not now needs
-its reopen trigger, Routed its receiving reference, Adopted its date and what
-changed. Lookups, people and multi-line text cannot be read by a SharePoint
-validation formula, so "Accepted needs a Pattern" and "a clinical ask names
-its reviewer" are governance checks, and `50-govern/governance.md` says so.
+**Save rules.** Leaving Captured needs a triage route and an acknowledged
+date. Awaiting decision and everything after it need Value, Ease, Evidence
+and Horizon. Accepted, Adopted, Not adopted and Not now need a decision date,
+and an ask whose data sensitivity or review tier says patient data needs its
+clinical review date first. Not now needs its reopen trigger, Routed and
+Duplicate their receiving reference, Adopted its date and what changed.
+Lookups, people and multi-line text cannot be read by a SharePoint validation
+formula, so "Accepted needs a Pattern" and "a clinical ask names its
+reviewer" are governance checks, and `50-govern/governance.md` says so.
 
 **Work the folders in order:**
 

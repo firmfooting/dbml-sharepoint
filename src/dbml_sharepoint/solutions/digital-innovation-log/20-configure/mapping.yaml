@@ -141,7 +141,6 @@ display_names:
       TeamOrUnit: "Team or unit"
       HeardAt: "Heard at"
       RequestedFor: "Requested for"
-      MergedInto: "Merged into"
       ReopenTrigger: "Reopen trigger"
       DestinationReference: "Receiving reference"
       DestinationLink: "Receiving record link"
@@ -162,7 +161,6 @@ column_formatting:
         Exploring: low
         "Awaiting decision": warning
         Accepted: low
-        "In delivery": low
         Adopted: good
         "Not adopted": warning
         Routed: good
@@ -224,7 +222,7 @@ column_formatting:
     AcknowledgeBy:
       style: overdue-date
       calculated: true
-      guard: { field: Status, not: [Exploring, "Awaiting decision", Accepted, "In delivery", Adopted, "Not adopted", Routed, Duplicate, "Not now"] }
+      guard: { field: Status, not: [Exploring, "Awaiting decision", Accepted, Adopted, "Not adopted", Routed, Duplicate, "Not now"] }
     AdoptionCheckDue:
       style: overdue-date
       guard: { field: Status, not: [Captured, Exploring, "Awaiting decision", Adopted, "Not adopted", Routed, Duplicate, "Not now"] }
@@ -297,7 +295,7 @@ views:
       fields: [Title, ServiceArea, TeamOrUnit, Pattern, Owner, Sponsor,
                AdoptionCheckDue, Status]
       where:
-        - { field: Status, op: in, value: [Accepted, "In delivery"] }
+        - { field: Status, op: in, value: [Accepted] }
       group_by: { field: Pattern, collapsed: false }
       sort:
         - { field: AdoptionCheckDue, direction: asc }
@@ -437,31 +435,31 @@ form_visibility:
       ClinicalReviewer:
         new: false
         when:
-          - { field: ReviewTier, op: eq, value: "Clinical or data review" }
+          any_of:
+            - { field: ReviewTier, op: eq, value: "Clinical or data review" }
+            - { field: DataSensitivity, op: eq, value: "Touches patient or clinical workflow data" }
       ClinicalReviewDate:
         new: false
         when:
-          - { field: ReviewTier, op: eq, value: "Clinical or data review" }
+          any_of:
+            - { field: ReviewTier, op: eq, value: "Clinical or data review" }
+            - { field: DataSensitivity, op: eq, value: "Touches patient or clinical workflow data" }
       Sponsor:
         new: false
         when:
-          - { field: Status, op: in, value: ["Awaiting decision", Accepted, "In delivery", Adopted, "Not adopted"] }
+          - { field: Status, op: in, value: ["Awaiting decision", Accepted, Adopted, "Not adopted"] }
       Pattern:
         new: false
         when:
-          - { field: Status, op: in, value: [Accepted, "In delivery", Adopted, "Not adopted"] }
-      MergedInto:
-        new: false
-        when:
-          - { field: Status, op: eq, value: Duplicate }
+          - { field: Status, op: in, value: [Accepted, Adopted, "Not adopted"] }
       DecisionDate:
         new: false
         when:
-          - { field: Status, op: in, value: [Accepted, "In delivery", Adopted, "Not adopted", "Not now"] }
+          - { field: Status, op: in, value: [Accepted, Adopted, "Not adopted", "Not now"] }
       DecisionRationale:
         new: false
         when:
-          - { field: Status, op: in, value: [Accepted, "In delivery", Adopted, "Not adopted", "Not now"] }
+          - { field: Status, op: in, value: [Accepted, Adopted, "Not adopted", "Not now"] }
       ReopenTrigger:
         new: false
         when:
@@ -469,15 +467,15 @@ form_visibility:
       DestinationReference:
         new: false
         when:
-          - { field: Status, op: eq, value: Routed }
+          - { field: Status, op: in, value: [Routed, Duplicate] }
       DestinationLink:
         new: false
         when:
-          - { field: Status, op: eq, value: Routed }
+          - { field: Status, op: in, value: [Routed, Duplicate] }
       AdoptionCheckDue:
         new: false
         when:
-          - { field: Status, op: in, value: [Accepted, "In delivery"] }
+          - { field: Status, op: in, value: [Accepted] }
       AdoptedDate:
         new: false
         when:
@@ -520,6 +518,9 @@ form_formatting:
 # and adoption figures. The date-versus-today rules are hoisted onto the
 # list rule at build time (see the mapping reference), so their refusal shows
 # the list message; only the two length rules keep a message of their own.
+# Acknowledged, Clinical Review and Adopted dates carry no future-date rule:
+# the list formula has a 1023-character ceiling, and the clinical gate and
+# the acknowledgement gate below are worth more than those three checks.
 column_validation:
   Opportunity:
     reconcile: exact
@@ -528,30 +529,12 @@ column_validation:
         when:
           - { field: CapturedDate, op: leq, value: today }
         message: "An ask cannot be captured in the future. Use the date it was heard, or today."
-      AcknowledgedDate:
-        when:
-          any_of:
-            - { field: AcknowledgedDate, op: is_null }
-            - { field: AcknowledgedDate, op: leq, value: today }
-        message: "Use the date the requester was actually told; it cannot be in the future."
-      ClinicalReviewDate:
-        when:
-          any_of:
-            - { field: ClinicalReviewDate, op: is_null }
-            - { field: ClinicalReviewDate, op: leq, value: today }
-        message: "Use the date the review was signed; it cannot be in the future."
       DecisionDate:
         when:
           any_of:
             - { field: DecisionDate, op: is_null }
             - { field: DecisionDate, op: leq, value: today }
         message: "Use the date the decision was made; it cannot be in the future."
-      AdoptedDate:
-        when:
-          any_of:
-            - { field: AdoptedDate, op: is_null }
-            - { field: AdoptedDate, op: leq, value: today }
-        message: "Use the date adoption was confirmed; it cannot be in the future."
       ReopenTrigger:
         when:
           any_of:
@@ -585,13 +568,15 @@ column_validation:
         message: "Use the date the pattern was retired; it cannot be in the future."
 
 # Cross-column rules on the list. Each is written as an implication:
-# `if A then B` is `any_of[not A, B]`. Fast exits stay cheap: Routed needs
-# only its destination, Duplicate needs nothing a formula can read (the
-# Merged Into lookup is a governance check), and only Awaiting decision needs
-# the score.
+# `if A then B` is `any_of[not A, B]`. Fast exits stay cheap: leaving
+# Captured needs a route and an acknowledgement, Routed and Duplicate need
+# their receiving reference, Not now its trigger and a date.
+# The score is required from Awaiting decision on, so a row cannot skip
+# straight to Accepted unscored. The clinical gate reads Data Sensitivity as
+# well as Review Tier, so re-tiering an ask cannot bypass it.
 #
 # NOT enforceable, and 50-govern/governance.md says so:
-#   - "Accepted needs a Pattern" and "Duplicate needs Merged Into": lookups.
+#   - "Accepted needs a Pattern": a lookup.
 #   - "A clinical-tier ask names a Clinical Reviewer": a person column.
 #   - "Acknowledged Date is on or after Captured Date": formulas here compare
 #     a column with a literal, not with another column.
@@ -601,33 +586,43 @@ list_validation:
     when:
       - any_of:
           - { field: Status, op: eq, value: Captured }
-          - { field: TriageOutcome, op: is_not_null }
+          - all_of:
+              - { field: TriageOutcome, op: is_not_null }
+              - { field: AcknowledgedDate, op: is_not_null }
       - any_of:
-          - { field: Status, op: neq, value: "Awaiting decision" }
+          - { field: Status, op: not_in, value: ["Awaiting decision", Accepted, Adopted, "Not adopted"] }
           - all_of:
               - { field: ValueBand, op: is_not_null }
               - { field: EaseBand, op: is_not_null }
               - { field: Evidence, op: is_not_null }
               - { field: Horizon, op: is_not_null }
+      # Accepted and later: a decision date, and the clinical review date
+      # when either Data Sensitivity or Review Tier says patient data. The
+      # two-way OR is written as two ANDed ORs to stay four groups deep.
       - any_of:
-          - { field: Status, op: not_in, value: [Accepted, "In delivery", Adopted, "Not adopted"] }
-          - { field: DecisionDate, op: is_not_null }
-      - any_of:
-          - { field: ReviewTier, op: neq, value: "Clinical or data review" }
-          - { field: Status, op: not_in, value: [Accepted, "In delivery", Adopted, "Not adopted"] }
-          - { field: ClinicalReviewDate, op: is_not_null }
+          - { field: Status, op: not_in, value: [Accepted, Adopted, "Not adopted"] }
+          - all_of:
+              - { field: DecisionDate, op: is_not_null }
+              - any_of:
+                  - { field: DataSensitivity, op: neq, value: "Touches patient or clinical workflow data" }
+                  - { field: ClinicalReviewDate, op: is_not_null }
+              - any_of:
+                  - { field: ReviewTier, op: neq, value: "Clinical or data review" }
+                  - { field: ClinicalReviewDate, op: is_not_null }
       - any_of:
           - { field: Status, op: neq, value: "Not now" }
-          - { field: ReopenTrigger, op: is_not_null }
+          - all_of:
+              - { field: ReopenTrigger, op: is_not_null }
+              - { field: DecisionDate, op: is_not_null }
       - any_of:
-          - { field: Status, op: neq, value: Routed }
+          - { field: Status, op: not_in, value: [Routed, Duplicate] }
           - { field: DestinationReference, op: is_not_null }
       - any_of:
           - { field: Status, op: neq, value: Adopted }
           - all_of:
               - { field: AdoptedDate, op: is_not_null }
               - { field: AdoptionNote, op: is_not_null }
-    message: "Check this stage: leaving Captured needs a triage route. Awaiting decision needs Value, Ease, Evidence and Horizon. Accepted and later need a decision date, and a clinical-tier ask needs its review date first. Not now needs what would change the answer, Routed needs the receiving reference, and Adopted needs the date and what changed."
+    message: "Check this stage: leaving Captured needs a triage route and an acknowledged date. Awaiting decision and later need Value, Ease, Evidence and Horizon. Accepted, later stages and Not now need a decision date; a patient-data or clinical-tier ask needs its review date first. Not now needs its reopen trigger, Routed and Duplicate their receiving reference, and Adopted its date and what changed."
   Pattern:
     when:
       - any_of:
@@ -830,7 +825,7 @@ demo_items:
         DecisionDate: "today-30"
         DecisionRationale: "Demo row. Accepted: the approval flow pattern already exists and the team measured the walk at about forty trips a week."
         AdoptionCheckDue: "today+20"
-    - key: opp-in-delivery
+    - key: opp-accepted-building
       values:
         Title: "[DEMO] Outpatient feedback cards typed up weekly"
         ProblemStatement: "Demo row. Paper feedback cards are collected from the waiting room and typed into a spreadsheet every Friday. Comments from Monday reach anyone on Friday."
@@ -850,7 +845,7 @@ demo_items:
         Horizon: Now
         Sponsor: "@me"
         Owner: "@me"
-        Status: "In delivery"
+        Status: Accepted
         Pattern: { demo_ref: pat-form }
         AcknowledgedDate: "today-40"
         DecisionDate: "today-25"
@@ -1011,7 +1006,7 @@ demo_items:
         TriageOutcome: "Duplicate - merge into the earlier ask"
         Owner: "@me"
         Status: Duplicate
-        MergedInto: { demo_ref: opp-accepted }
+        DestinationReference: "[DEMO] Pharmacy stock requests approved by walking a form upstairs"
         AcknowledgedDate: "today-5"
     - key: opp-not-now
       values:

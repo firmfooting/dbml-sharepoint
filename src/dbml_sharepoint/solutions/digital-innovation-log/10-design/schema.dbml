@@ -113,7 +113,6 @@ Enum opportunity_status {
   "Exploring"
   "Awaiting decision"
   "Accepted"
-  "In delivery"
   "Adopted"
   "Not adopted"
   "Routed"
@@ -222,15 +221,16 @@ Table Opportunity {
 
   Status               opportunity_status  [not null, default: 'Captured', note: 'Lifecycle stage, maintained by the digital team']
   Pattern              int                 [ref: > Pattern.Id, note: 'The pattern this ask is delivered through, once accepted']
-  MergedInto           int                 [ref: > Opportunity.Id, note: 'For a duplicate: the earlier ask that carries it']
   Owner                person              [note: 'The digital team member accountable for this ask']
   AcknowledgedDate     date                [note: 'The date the requester was told the ask was received']
   DecisionDate         date                [note: 'The date the ask was accepted or declined. Cannot be in the future']
   DecisionRationale    longtext            [note: 'The decision and its reason, in a few sentences']
   ReopenTrigger        nvarchar            [note: 'For a Not now: what would change the answer, in one specific line']
-  DestinationReference nvarchar            [note: 'For a Routed ask: the ticket, improvement id or record reference it went to']
-  DestinationLink      hyperlink           [note: 'Link to the receiving record where readers are authorised to open it']
-  AdoptionCheckDue     date                [note: 'When to check whether the team adopted the pattern. Set when the pattern becomes available']
+  // A same-list lookup for duplicates has no live measurement in test/manual
+  // yet, so the earlier ask is named here, which a save rule can require.
+  DestinationReference nvarchar            [note: 'For Routed: the ticket, improvement id or record reference it went to. For Duplicate: the ID or title of the earlier ask']
+  DestinationLink      hyperlink           [note: 'Link to the receiving record or the earlier ask']
+  AdoptionCheckDue     date                [note: 'When to check whether the team adopted the pattern. Set when the pattern becomes available; the pattern row carries the build status']
   AdoptedDate          date                [note: 'The date the team was confirmed to be using the solution']
   AdoptionNote         nvarchar            [note: 'What changed for the team, in one line, with a number where there is one']
 
