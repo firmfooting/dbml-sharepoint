@@ -63,6 +63,7 @@ A SharePoint list never replaces a mandated system:
 | Consumer feedback (Std 2 partnering) | complaints-feedback | Statutory-scheme check first |
 | Quality improvement (Std 1 CQI) | improvement-register | Feed it from feedback, audits, incidents |
 | Out-of-scope problems discovered by projects | opportunities-register | One-minute capture; route to existing controls before assessing anything |
+| M365 asks heard by champions during the rollout | digital-innovation-log | Route before score; a clinical or data review tier follows the data-sensitivity flag; nothing patient-identifiable enters the list |
 | Clinical audit actions / accreditation findings | audit-actions | Recommendations to closure with evidence |
 | Research & QI projects sent to a partner HREC | research-ethics-register-simple | The single-list register for a service referring to a partner's HREC; a service with its own research office wants the multi-list shape instead. Two separate gates (ethics approval and site authorisation) on one row |
 | Where digitised records may be filed | records-digitisation | One row per platform: can it keep a record, or only store a file. The register a digitisation program needs before it scans anything |

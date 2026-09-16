@@ -8,6 +8,7 @@ solutions:
   - project-pipeline
   - change-register
   - opportunities-register
+  - digital-innovation-log
   - deployment-log
   - column-history
 ---
@@ -24,6 +25,12 @@ ones go through `project-pipeline` for a gate decision and `change-register`
 for the approval trail. `opportunities-register` catches the problems a
 delivery team finds but cannot fix itself, so they reach this chain rather than
 being lost.
+
+`digital-innovation-log` is the same idea for an M365 rollout: champions
+capture what staff ask for, triage routes the helpdesk tickets and training
+gaps out with a reply, and the asks that stay are scored in small bands and
+delivered through a pattern built once. Deploy it when the rollout starts, on
+the site the champions already use.
 
 `deployment-log` is second last and is different in kind: it records what
 this tool itself did, rather than what the organisation decided. Deploy it
