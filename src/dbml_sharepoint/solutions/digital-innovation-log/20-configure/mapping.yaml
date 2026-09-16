@@ -32,7 +32,8 @@ calculated_formulas:
     # so a date typed before capture reads blank rather than as an error.
     DaysToAcknowledge: '=IF(OR(ISBLANK([CapturedDate]),ISBLANK([AcknowledgedDate])),"",IF([AcknowledgedDate]<[CapturedDate],"",DATEDIF([CapturedDate],[AcknowledgedDate],"d")))'
     DaysToDecision: '=IF(OR(ISBLANK([CapturedDate]),ISBLANK([DecisionDate])),"",IF([DecisionDate]<[CapturedDate],"",DATEDIF([CapturedDate],[DecisionDate],"d")))'
-    DaysToAdopted: '=IF(OR(ISBLANK([CapturedDate]),ISBLANK([AdoptedDate])),"",IF([AdoptedDate]<[CapturedDate],"",DATEDIF([CapturedDate],[AdoptedDate],"d")))'
+    # Reads Status so a Not adopted outcome date never fills the adoption bar.
+    DaysToAdopted: '=IF(OR([Status]<>"Adopted",ISBLANK([CapturedDate]),ISBLANK([AdoptionOutcomeDate])),"",IF([AdoptionOutcomeDate]<[CapturedDate],"",DATEDIF([CapturedDate],[AdoptionOutcomeDate],"d")))'
   Pattern:
     DaysToAvailable: '=IF(OR(ISBLANK([ProposedDate]),ISBLANK([AvailableDate])),"",IF([AvailableDate]<[ProposedDate],"",DATEDIF([ProposedDate],[AvailableDate],"d")))'
     # MIN against the day before the first of the following month holds a
@@ -149,6 +150,8 @@ display_names:
       DestinationReference: "Receiving reference"
       DestinationLink: "Receiving record link"
       AcknowledgeBy: "Acknowledge by"
+      DeferredUntil: "Deferred until"
+      AdoptionOutcomeDate: "Outcome date"
     Pattern:
       GuideLink: "Guide or exemplar link"
 
@@ -229,6 +232,10 @@ column_formatting:
     AdoptionCheckDue:
       style: overdue-date
       guard: { field: Status, not: [Captured, Exploring, "Awaiting decision", Adopted, "Not adopted", Closed] }
+    # A Later ask comes back on this date; it shouts only while still open.
+    DeferredUntil:
+      style: overdue-date
+      guard: { field: Status, not: [Captured, Accepted, Adopted, "Not adopted", Closed] }
   Pattern:
     Status:
       style: severity
@@ -276,7 +283,8 @@ views:
         Status: 120
     - title: "Exploring"
       fields: [Title, ServiceArea, ValueBand, EaseBand, Evidence, PriorityBand,
-               PriorityScore, ReviewTier, Horizon, Owner, Status]
+               PriorityScore, ReviewTier, Horizon, DeferredUntil, Owner,
+               DecisionDate, Status]
       where:
         - { field: Status, op: in, value: [Exploring, "Awaiting decision"] }
       group_by: { field: Horizon, collapsed: false }
@@ -291,7 +299,29 @@ views:
         PriorityBand: 130
         PriorityScore: 140
         Horizon: 120
+        DeferredUntil: 150
         Owner: 160
+        DecisionDate: 150
+        Status: 150
+    # Every open ask whose sensitivity calls for a review, whatever its stage,
+    # so a named reviewer and a signed date can be checked after acceptance.
+    - title: "Review sign-off"
+      fields: [Title, ServiceArea, DataSensitivity, ReviewTier, Reviewer, ReviewDate,
+               Owner, Sponsor, Status]
+      where:
+        - { field: DataSensitivity, op: in, value: ["Touches patient or clinical workflow data", "Touches sensitive staff or third-party data", "Not sure"] }
+        - { field: Status, op: not_in, value: [Captured, Closed] }
+      sort:
+        - { field: CapturedDate, direction: asc }
+      widths:
+        Title: 300
+        ServiceArea: 210
+        DataSensitivity: 260
+        ReviewTier: 200
+        Reviewer: 160
+        ReviewDate: 150
+        Owner: 160
+        Sponsor: 160
         Status: 150
     - title: "Delivery and adoption"
       fields: [Title, ServiceArea, TeamOrUnit, Pattern, Owner, Sponsor,
@@ -328,9 +358,10 @@ views:
         CapturedDate: 150
         Status: 150
     - title: "Closed and routed"
-      fields: [Title, ServiceArea, TriageOutcome, Status, Pattern, DestinationReference,
-               DestinationLink, ReopenTrigger, ValueBand, AdoptedDate, DaysToAdopted,
-               AdoptionNote, Modified]
+      fields: [Title, ServiceArea, TriageOutcome, Status, Pattern, Sponsor,
+               DestinationReference, DestinationLink, ReopenTrigger, ValueBand,
+               DecisionDate, AdoptionOutcomeDate, DaysToAdopted, AdoptionNote,
+               Modified]
       where:
         - { field: Status, op: in, value: [Adopted, "Not adopted", Closed] }
       sort:
@@ -341,11 +372,13 @@ views:
         TriageOutcome: 300
         Status: 130
         Pattern: 240
+        Sponsor: 160
         DestinationReference: 220
         DestinationLink: 170
         ReopenTrigger: 280
         ValueBand: 130
-        AdoptedDate: 150
+        DecisionDate: 150
+        AdoptionOutcomeDate: 150
         DaysToAdopted: 140
         AdoptionNote: 280
         Modified: 170
@@ -430,14 +463,18 @@ form_visibility:
         new: false
         when:
           - { field: TriageOutcome, op: eq, value: "Explore here" }
-      ClinicalReviewer:
+      DeferredUntil:
         new: false
         when:
-          - { field: DataSensitivity, op: eq, value: "Touches patient or clinical workflow data" }
-      ClinicalReviewDate:
+          - { field: Horizon, op: eq, value: Later }
+      Reviewer:
         new: false
         when:
-          - { field: DataSensitivity, op: eq, value: "Touches patient or clinical workflow data" }
+          - { field: DataSensitivity, op: in, value: ["Touches patient or clinical workflow data", "Touches sensitive staff or third-party data"] }
+      ReviewDate:
+        new: false
+        when:
+          - { field: DataSensitivity, op: in, value: ["Touches patient or clinical workflow data", "Touches sensitive staff or third-party data"] }
       Sponsor:
         new: false
         when:
@@ -446,18 +483,10 @@ form_visibility:
         new: false
         when:
           - { field: Status, op: in, value: [Accepted, Adopted, "Not adopted"] }
-      DecisionDate:
-        new: false
-        when:
-          any_of:
-            - { field: Status, op: in, value: [Accepted, Adopted, "Not adopted"] }
-            - { field: TriageOutcome, op: eq, value: "Not now" }
-      DecisionRationale:
-        new: false
-        when:
-          any_of:
-            - { field: Status, op: in, value: [Accepted, Adopted, "Not adopted"] }
-            - { field: TriageOutcome, op: eq, value: "Not now" }
+      # Always on the edit form: a reopened Not now keeps its old decision
+      # until somebody clears it, and hiding the fields would hide that.
+      DecisionDate: { new: false }
+      DecisionRationale: { new: false }
       ReopenTrigger:
         new: false
         when:
@@ -474,7 +503,7 @@ form_visibility:
         new: false
         when:
           - { field: Status, op: in, value: [Accepted] }
-      AdoptedDate:
+      AdoptionOutcomeDate:
         new: false
         when:
           - { field: Status, op: in, value: [Adopted, "Not adopted"] }
@@ -516,9 +545,9 @@ form_formatting:
 # and adoption figures. The date-versus-today rules are hoisted onto the
 # list rule at build time (see the mapping reference), so their refusal shows
 # the list message; only the two length rules keep a message of their own.
-# Acknowledged, Clinical Review and Adopted dates carry no future-date rule:
-# the list formula has a 1023-character ceiling, and the clinical gate and
-# the acknowledgement gate below are worth more than those three checks.
+# Acknowledged, Review, Deferred until and Outcome dates carry no
+# future-date rule: the list formula has a 1023-character ceiling, and the
+# review gate and the acknowledgement gate below are worth more.
 column_validation:
   Opportunity:
     reconcile: exact
@@ -581,10 +610,11 @@ column_validation:
 #
 # NOT enforceable, and 50-govern/governance.md says so:
 #   - "Accepted needs a Pattern": a lookup.
-#   - "A clinical-tier ask names a Clinical Reviewer": a person column.
-#   - "Acknowledged Date is on or after Captured Date": formulas here compare
-#     a column with a literal, not with another column.
-#   - "A Not now or Not adopted has a Decision Rationale": multi-line text.
+#   - "A reviewed ask names a Reviewer", "an accepted ask names a Sponsor",
+#     "an Exploring ask has an Owner": person columns.
+#   - "Acknowledged and Decision dates are on or after Captured Date":
+#     formulas here compare a column with a literal, not with another column.
+#   - "A decided ask has a Decision Rationale": multi-line text.
 list_validation:
   Opportunity:
     when:
@@ -612,32 +642,36 @@ list_validation:
               - { field: Evidence, op: is_not_null }
               - { field: Horizon, op: is_not_null }
       # Accepted and later: a decision date, a resolved sensitivity, and the
-      # clinical review date when the ask touches patient data.
+      # signed review date unless the ask touches no patient or sensitive data.
       - any_of:
           - { field: Status, op: not_in, value: [Accepted, Adopted, "Not adopted"] }
           - all_of:
               - { field: DecisionDate, op: is_not_null }
               - { field: DataSensitivity, op: neq, value: "Not sure" }
               - any_of:
-                  - { field: DataSensitivity, op: neq, value: "Touches patient or clinical workflow data" }
-                  - { field: ClinicalReviewDate, op: is_not_null }
-      # Fast exits: Not now needs its trigger and a date; every other closed
-      # route needs the receiving reference.
-      - any_of:
-          - { field: TriageOutcome, op: neq, value: "Not now" }
-          - all_of:
-              - { field: ReopenTrigger, op: is_not_null }
-              - { field: DecisionDate, op: is_not_null }
+                  - { field: DataSensitivity, op: eq, value: "No patient or sensitive data" }
+                  - { field: ReviewDate, op: is_not_null }
+      # Closing is a decision too: the date is when the ask was routed, merged
+      # or declined, and the thirty-day figure is read from it. Every closed
+      # route but Not now also needs the receiving reference.
       - any_of:
           - { field: Status, op: neq, value: Closed }
-          - { field: TriageOutcome, op: eq, value: "Not now" }
-          - { field: DestinationReference, op: is_not_null }
-      - any_of:
-          - { field: Status, op: neq, value: Adopted }
           - all_of:
-              - { field: AdoptedDate, op: is_not_null }
+              - { field: DecisionDate, op: is_not_null }
+              - any_of:
+                  - { field: TriageOutcome, op: eq, value: "Not now" }
+                  - { field: DestinationReference, op: is_not_null }
+      # Not now needs its trigger, whatever the status.
+      - any_of:
+          - { field: TriageOutcome, op: neq, value: "Not now" }
+          - { field: ReopenTrigger, op: is_not_null }
+      # Both adoption outcomes are dated and explained.
+      - any_of:
+          - { field: Status, op: not_in, value: [Adopted, "Not adopted"] }
+          - all_of:
+              - { field: AdoptionOutcomeDate, op: is_not_null }
               - { field: AdoptionNote, op: is_not_null }
-    message: "Check this stage: leaving Captured needs a route and an acknowledged date. Only Explore here goes past Captured; every other route closes the ask. Awaiting decision and later need Value, Ease, Evidence and Horizon. Accepted and later need a decision date, a resolved sensitivity, and the clinical review date for patient data. Not now needs its reopen trigger and a decision date; a closed ask needs its receiving reference; Adopted needs its date and what changed."
+    message: "Check this stage: leaving Captured needs a route and an acknowledged date. Only Explore here goes past Captured; every other route closes the ask. Awaiting decision and later need Value, Ease, Evidence and Horizon. Accepted and later need a decision date, a resolved sensitivity, and the signed review date when the ask touches patient or sensitive data. A closed ask needs a decision date and, unless it is Not now, its receiving reference; Not now needs its reopen trigger. Adopted and Not adopted need the outcome date and the note."
   Pattern:
     when:
       - any_of:
@@ -765,7 +799,8 @@ demo_items:
         ValueBand: Optimiser
         EaseBand: Moderate
         Evidence: Observed
-        Horizon: Now
+        Horizon: Later
+        DeferredUntil: "today-3"
         Owner: "@me"
         Status: Exploring
         AcknowledgedDate: "today-18"
@@ -785,8 +820,8 @@ demo_items:
         ValueBand: "Game change"
         EaseBand: Moderate
         Evidence: Measured
-        ClinicalReviewer: "@me"
-        ClinicalReviewDate: "today-5"
+        Reviewer: "@me"
+        ReviewDate: "today-5"
         Horizon: Now
         Sponsor: "@me"
         Owner: "@me"
@@ -887,7 +922,7 @@ demo_items:
         DecisionDate: "today-100"
         DecisionRationale: "Demo row. Accepted; delivered through the approval flow pattern with a facilities queue."
         AdoptionCheckDue: "today-30"
-        AdoptedDate: "today-28"
+        AdoptionOutcomeDate: "today-28"
         AdoptionNote: "Phone requests fell from about 40 a week to under 5 within a month"
     - key: opp-not-adopted
       values:
@@ -912,8 +947,10 @@ demo_items:
         Pattern: { demo_ref: pat-approval }
         AcknowledgedDate: "today-105"
         DecisionDate: "today-90"
-        DecisionRationale: "Demo row. Not adopted: the flow added a step to a request the linen room already answers within the hour. The lesson is recorded and the pattern is unchanged."
+        DecisionRationale: "Demo row. Accepted because the approval pattern fitted the request as described. The lesson from the adoption check is in the note."
         AdoptionCheckDue: "today-25"
+        AdoptionOutcomeDate: "today-20"
+        AdoptionNote: "Not adopted: the flow added a step to a request the linen room already answers within the hour"
     - key: opp-routed-helpdesk
       values:
         Title: "[DEMO] Give the new ward clerk access to the shared calendar"
@@ -930,6 +967,7 @@ demo_items:
         Owner: "@me"
         Status: Closed
         AcknowledgedDate: "today-7"
+        DecisionDate: "today-7"
         DestinationReference: "[DEMO] SR-2026-0311"
         DestinationLink: "https://example.sharepoint.com/sites/helpdesk/Lists/Requests/DispForm.aspx?ID=311"
     - key: opp-routed-training
@@ -948,6 +986,7 @@ demo_items:
         Owner: "@me"
         Status: Closed
         AcknowledgedDate: "today-11"
+        DecisionDate: "today-11"
         DestinationReference: "[DEMO] Planner walkthrough booked for the leaders meeting"
     - key: opp-routed-improvement
       values:
@@ -965,6 +1004,7 @@ demo_items:
         Owner: "@me"
         Status: Closed
         AcknowledgedDate: "today-13"
+        DecisionDate: "today-13"
         DestinationReference: "[DEMO] CI-2026-0042"
     - key: opp-routed-project
       values:
@@ -982,6 +1022,7 @@ demo_items:
         Owner: "@me"
         Status: Closed
         AcknowledgedDate: "today-16"
+        DecisionDate: "today-16"
         DestinationReference: "[DEMO] PP-2026-0009"
     - key: opp-routed-mandated
       values:
@@ -999,6 +1040,7 @@ demo_items:
         Owner: "@me"
         Status: Closed
         AcknowledgedDate: "today-4"
+        DecisionDate: "today-4"
         DestinationReference: "[DEMO] PRIV-2026-0017"
     - key: opp-duplicate
       values:
@@ -1017,6 +1059,7 @@ demo_items:
         Status: Closed
         DestinationReference: "[DEMO] Pharmacy stock requests approved by walking a form upstairs"
         AcknowledgedDate: "today-5"
+        DecisionDate: "today-5"
     - key: opp-not-now
       values:
         Title: "[DEMO] Build a bed-management app in Power Apps"

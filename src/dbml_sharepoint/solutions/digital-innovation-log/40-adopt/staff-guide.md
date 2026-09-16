@@ -76,9 +76,11 @@ the ask leaves Captured, so leaving Captured without telling the requester
 defeats the clock; tell them first.
 
 The form refuses to leave Captured without a Route and an Acknowledged
-Date, refuses a closed ask without a Receiving reference, and refuses a Not
-now without a Decision Date and a Reopen trigger of more than fifteen
-characters. It also refuses any status but Captured or Closed on a route
+Date, refuses any closed ask without a Decision Date (the day it was routed,
+merged or declined, which is what the thirty-day figure reads), refuses a
+closed ask without a Receiving reference, and refuses a Not now without a
+Reopen trigger of more than fifteen characters. It also refuses any status
+but Captured or Closed on a route
 other than *Explore here*, so a mandated-system matter cannot drift into
 delivery, and refuses Closed on an *Explore here* ask: an explored ask ends
 as Adopted, Not adopted, or with its route changed to Not now.
@@ -89,6 +91,13 @@ the log owner assigns one.
 
 Only *Explore here* continues. Everything else is finished once the
 requester has heard.
+
+**Reopening a Not now.** When its trigger fires, set Route to *Explore
+here*, Status to Exploring, and clear the Decision Date; leave the old
+rationale in place under a dated line so the history reads. Decision Date
+and Decision Rationale stay on every edit form for this reason, and
+**Exploring** shows the Decision Date column so a reopened ask that kept its
+old date is caught: an Exploring ask has none.
 
 ## Digital team: score only what stays
 
@@ -105,8 +114,9 @@ in `50-govern/governance.md`; these are the short versions.
 - **Evidence**: *Assumed* means the champion heard it once; *Observed* means
   someone watched the workaround; *Measured* means there is a number.
 - **Horizon**: *Now* items are ranked against each other; *Next wave* waits
-  on readiness; *Later* is a dated deferral; *Strategic* is decided by the
-  sponsor and never competes on score.
+  on readiness; *Later* is a dated deferral, so set **Deferred until** and
+  the ask turns red in **Exploring** once that date passes; *Strategic* is
+  decided by the sponsor and never competes on score.
 
 *Priority Score* is Value times Ease, 1 to 9, and *Priority Band* reads
 Later, Consider or Prioritise from it. Evidence sits beside the score and
@@ -118,16 +128,20 @@ or clinical workflow data is *Clinical or data review*; sensitive staff or
 third-party data is *Security review*; *Not sure* reads *Resolve sensitivity
 first*; otherwise *Standard*. Resolve a *Not sure* before the decision: the
 form will not accept an ask whose Sensitivity is still *Not sure*. An ask
-marked patient or clinical workflow data shows **Clinical Reviewer** and
-**Clinical Review Date**, and the form will not accept it until the review
-date is filled. Name the reviewer as well; the form cannot check a person
-column, so that one is on you.
+marked patient data or sensitive staff data shows **Reviewer** and **Review
+Date**, and the form will not accept it until the review date is filled: a
+clinician signs the clinical tier, the security or privacy lead signs the
+security tier. Name the reviewer as well; the form cannot check a person
+column, so **Review sign-off** lists every open ask on either tier, at any
+stage, and the log owner reads it for a blank Reviewer.
 
 ## Digital team: decide, link to a pattern, check adoption
 
 Setting Status to **Awaiting decision** needs all four bands filled, and so
 does every status after it; the form refuses an unscored acceptance. Name
-the **Sponsor**, the manager or executive who owns the outcome.
+the **Sponsor**, the manager or executive who owns the outcome. The form
+cannot check that either, so the Sponsor column is read weekly in
+**Delivery and adoption** and **Closed and routed**.
 
 **Accepting** means setting a **Decision Date**, writing the **Decision
 Rationale**, and choosing a **Pattern**. If no pattern fits, create one in
@@ -142,11 +156,12 @@ is highlighted in **Delivery and adoption** once the date has passed. A
 blank one never turns red, so that view is also read weekly for an Accepted
 ask whose pattern is Available and whose deadline is still empty.
 
-On that date ask the team whether they use it. Record **Adopted** with an
-**Adopted Date** and an **Adoption Note** in one line with a number where
+On that date ask the team whether they use it. Record **Adopted** with the
+**Outcome date** and an **Adoption Note** in one line with a number where
 there is one ("phone requests fell from about 40 a week to under 5"), or
-**Not adopted** with the reason in Decision Rationale. Both are honest
-outcomes; only the second is a lesson.
+**Not adopted** with the same date and the reason in the note. The form
+refuses either outcome without both. Both are honest outcomes; only the
+second is a lesson.
 
 ## Digital team: patterns
 
@@ -155,8 +170,9 @@ workloads it uses, whether those are rolled out and licensed today, who
 builds it and how hard it is. Status runs Proposed, Building, Piloting,
 Available, Retired.
 
-- **Available** needs an **Available Date** and should carry a **Guide or
-  exemplar link**; the form checks the date and governance checks the link.
+- **Available** needs an **Available Date**, a **Build Owner** and a
+  **Guide or exemplar link**; the form checks the date and governance checks
+  the other two, because a pattern nobody owns has nobody to review it.
 - **Retired** needs a **Retired Date** and a **Retired Reason** saying what
   replaced it.
 - *Next Review Due* is calculated twelve months after Available Date, or

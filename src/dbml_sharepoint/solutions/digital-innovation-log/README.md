@@ -63,24 +63,26 @@ capture and turns red while the ask is still Captured. A *Not now* must say
 what would change the answer. Both are what keeps demand coming through the
 front door instead of around it.
 
-**Eight declared views**, deployed with the paste. Opportunity: *Needs
+**Nine declared views**, deployed with the paste. Opportunity: *Needs
 response* (the default, oldest first), *Exploring* (grouped by Horizon,
-score descending), *Delivery and adoption* (grouped by Pattern, so the count
-under each pattern is the "twelve teams want this" evidence), *By area* (the
-champions meeting view) and *Closed and routed*. Pattern: *Catalogue* (the
-default), *In build* and *Retired*.
+score descending), *Review sign-off* (every open ask whose sensitivity calls
+for a review, at any stage), *Delivery and adoption* (grouped by Pattern, so
+the count under each pattern is the "twelve teams want this" evidence), *By
+area* (the champions meeting view) and *Closed and routed*. Pattern:
+*Catalogue* (the default), *In build* and *Retired*.
 
 **Save rules.** Leaving Captured needs a route and an acknowledged date, and
 the route decides the status. Awaiting decision and everything after it need
 Value, Ease, Evidence and Horizon. Accepted and later need a decision date, a
-Sensitivity that is no longer *Not sure*, and the clinical review date when
-the ask touches patient data. Review tier is calculated from Sensitivity, so
-it cannot be re-typed to dodge that. A *Not now* needs its reopen trigger and
-a decision date; any other closed ask needs its receiving reference; Adopted
-needs its date and what changed. Lookups, people and multi-line text cannot
-be read by a SharePoint validation formula, so "Accepted needs a Pattern"
-and "a clinical ask names its reviewer" are governance checks, and
-`50-govern/governance.md` says so.
+Sensitivity that is no longer *Not sure*, and the signed review date when
+the ask touches patient or sensitive staff data. Review tier is calculated
+from Sensitivity, so it cannot be re-typed to dodge that. A closed ask needs
+a decision date, the day it was routed, merged or declined, and its receiving
+reference unless the route is *Not now*, which needs its reopen trigger
+instead. Adopted and Not adopted both need the outcome date and the note.
+Lookups, people and multi-line text cannot be read by a SharePoint
+validation formula, so "Accepted needs a Pattern" and "a reviewed ask names
+its reviewer" are governance checks, and `50-govern/governance.md` says so.
 
 **Work the folders in order:**
 
@@ -101,6 +103,7 @@ renamed member empties a view without failing the build.
 **Demo data.** Build with `--seed` and the bundle gains a `demo-data.js.txt`
 that pastes five `[DEMO]` patterns and sixteen `[DEMO]` asks: two awaiting a
 response (one overdue), one per triage route, a duplicate merged into an
-accepted ask, a clinical-review ask, an adopted ask with a measured note and
-a not-adopted one with its lesson.
+accepted ask, a signed clinical review, a deferred ask whose date has
+passed, an adopted ask with a measured note and a not-adopted one with its
+lesson.
 See `30-deploy/deploy.md`.

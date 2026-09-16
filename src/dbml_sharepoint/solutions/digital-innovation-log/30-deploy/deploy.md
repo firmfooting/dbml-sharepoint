@@ -54,9 +54,13 @@ run. What to look for:
 
 - **Needs response** shows two asks. One was captured ten days ago and its
   *Acknowledge by* is red; the other was captured two days ago and is not.
-- **Exploring** shows three asks: two under *Now* and one under *Strategic*.
-  The *Priority Score* bar is longest on the Awaiting decision ask (Game
-  change x Moderate, 6) and takes its colour from *Value*.
+- **Exploring** shows three asks: one under *Now*, one under *Later* with a
+  *Deferred until* three days past and red, and one under *Strategic*. The
+  *Priority Score* bar is longest on the Awaiting decision ask (Game change
+  x Moderate, 6) and takes its colour from *Value*.
+- **Review sign-off** shows the same three asks: two on the security tier
+  with no reviewer yet, and the patient-data one with its *Reviewer* and
+  *Review Date* filled.
 - **Delivery and adoption** shows one Accepted ask under each of two
   patterns. The *Adoption Check Due* on the feedback-cards ask is three days
   past and red.
@@ -120,16 +124,19 @@ seed a site that already holds real asks.
 - [ ] Editing a saved ask shows **Triage and score**, **Decision and
       delivery** and **Adoption**; **System** is a bare heading on the edit
       form too. *Value*, *Ease*, *Evidence* and *Horizon* appear only once
-      Route is *Explore here*; *Clinical Reviewer* and *Clinical Review
-      Date* once Sensitivity is *Touches patient or clinical workflow data*.
-      *Review Tier* is calculated from Sensitivity and cannot be edited: it
-      reads *Resolve sensitivity first* while Sensitivity is *Not sure*.
+      Route is *Explore here*; *Deferred until* once Horizon is *Later*;
+      *Reviewer* and *Review Date* once Sensitivity is patient or sensitive
+      staff data. *Decision Date* and *Decision Rationale* are on every edit
+      form. *Review Tier* is calculated from Sensitivity and cannot be
+      edited: it reads *Resolve sensitivity first* while Sensitivity is *Not
+      sure*.
 - [ ] A Captured Date in the future is refused. The refusal shows the list
       message: date-versus-today rules are hoisted onto the list rule at
       build time, and `deploy-manifest.md` names the two that were (Captured
-      Date and Decision Date). Acknowledged, Clinical Review and Adopted
-      dates carry no future-date rule; the list formula's 1023-character
-      ceiling went to the acknowledgement and clinical gates instead.
+      Date and Decision Date). Acknowledged, Review, Deferred until and
+      Outcome dates carry no future-date rule; the list formula's
+      1023-character ceiling went to the acknowledgement and review gates
+      instead.
 
 ### Triage and score
 
@@ -142,15 +149,16 @@ seed a site that already holds real asks.
 - [ ] Setting Status to Awaiting decision with any of *Value*, *Ease*,
       *Evidence* or *Horizon* empty is refused with the same message.
 - [ ] Setting Status to Accepted on an ask whose Sensitivity is *Touches
-      patient or clinical workflow data* and whose Clinical Review Date is
-      empty is refused. Filling the date lets it save. Setting it to Accepted
-      while Sensitivity is *Not sure* is refused until the sensitivity is
-      resolved.
+      patient or clinical workflow data* or *Touches sensitive staff or
+      third-party data* and whose Review Date is empty is refused. Filling
+      the date lets it save. Setting it to Accepted while Sensitivity is
+      *Not sure* is refused until the sensitivity is resolved.
 - [ ] Setting Status to Accepted straight from Exploring with any of *Value*,
       *Ease*, *Evidence* or *Horizon* empty is refused.
-- [ ] Closing an ask whose Route is *Not now* with *Reopen trigger* or
-      *Decision Date* empty is refused. A trigger of 15 characters or fewer
-      is refused by the column's own message.
+- [ ] Closing an ask on any route with *Decision Date* empty is refused.
+- [ ] Closing an ask whose Route is *Not now* with *Reopen trigger* empty is
+      refused. A trigger of 15 characters or fewer is refused by the
+      column's own message.
 - [ ] Closing an ask on any other route with *Receiving reference* empty is
       refused. On the duplicate route it names the earlier ask.
 - [ ] *Priority Score* renders as a bar out of 9 and takes its colour from
@@ -161,7 +169,10 @@ seed a site that already holds real asks.
 - [ ] *Acknowledge by* is red on the overdue demo ask in **Needs response**
       and is not red on any row that has left Captured.
 - [ ] **Exploring** groups on *Horizon* and sorts by *Priority Score*
-      descending within each group.
+      descending within each group. *Deferred until* is red on the Later
+      demo ask and *Decision Date* is empty on every row.
+- [ ] **Review sign-off** holds every ask past Captured and not Closed whose
+      Sensitivity is patient data, sensitive staff data or *Not sure*.
 
 ### Delivery and adoption
 
@@ -169,12 +180,13 @@ seed a site that already holds real asks.
       rows. Build progress is read from the pattern's own Status.
 - [ ] *Sponsor* appears from Awaiting decision on; *Pattern* appears from
       Accepted on; *Adoption Check Due* appears on Accepted rows only.
-- [ ] Setting Status to Adopted with *Adopted Date* or *Adoption Note*
-      empty is refused. A note of 10 characters or fewer is refused by the
-      column's own message.
-- [ ] *Days To Adopted* renders as a bar out of 120 on the Adopted demo row.
+- [ ] Setting Status to Adopted or Not adopted with *Outcome date* or
+      *Adoption Note* empty is refused. A note of 10 characters or fewer is
+      refused by the column's own message.
+- [ ] *Days To Adopted* renders as a bar out of 120 on the Adopted demo row
+      and is empty on the Not adopted one, which has an *Outcome date* too.
 - [ ] **Closed and routed** holds every Adopted, Not adopted and Closed
-      row, newest change first.
+      row, newest change first, with *Sponsor* and *Decision Date* shown.
 
 ### Patterns
 

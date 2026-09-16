@@ -16,8 +16,8 @@ Describe the process and reference the clinical system where one applies.
 
 **Data Sensitivity** tiers the review that follows and holds no data. An
 ask marked *Touches patient or clinical workflow data* takes the *Clinical
-or data review* tier, and a registered clinician signs its **Clinical Review
-Date** before the ask can be accepted. That is the local expression of NSQHS
+or data review* tier, and a registered clinician signs its **Review Date**
+before the ask can be accepted. That is the local expression of NSQHS
 Clinical Governance Standard actions 1.10, 1.16 and 1.24
 (<https://www.safetyandquality.gov.au/national-standards/nsqhs-standards/clinical-governance-standard>)
 and, where the service follows it, of DCB0160
@@ -25,7 +25,8 @@ and, where the service follows it, of DCB0160
 under which the organisation deploying health IT owns the clinical risk and
 a clinician signs it off. An ask marked
 *Touches sensitive staff or third-party data* takes the *Security review*
-tier.
+tier, and the security or privacy lead signs its **Review Date** the same
+way. Either tier is refused at acceptance until that date is filled.
 
 An incident, a complaint, a privacy or cyber matter goes to its mandated
 system first. The triage route *Incident, complaint, privacy or cyber -
@@ -41,7 +42,7 @@ mandated system* records only the hand-off and the receiving reference. See
 | Owner | The digital team member named on each Explore here ask | Triage, scoring, the decision and the adoption check for that ask |
 | Sponsor | The manager or executive named at acceptance | The outcome, and the Strategic horizon decisions |
 | Build Owner | The person named on each pattern | Building it, its guide, its annual review |
-| Clinical Reviewer | A registered clinician | Signing a Clinical or data review ask before acceptance |
+| Reviewer | A registered clinician for the clinical tier; the security or privacy lead for the security tier | Signing the Review Date before acceptance |
 
 Every Explore here ask has an Owner, every accepted ask has a Sponsor and
 every pattern has a Build Owner. If it is everyone's responsibility it is
@@ -98,9 +99,9 @@ deferral. *Strategic* items are decided by the sponsor and never compete on
 score.
 
 **Review tier** is calculated from Sensitivity, so the two cannot disagree.
-Patient or clinical workflow data means a clinician signs Clinical Review
-Date before acceptance. Sensitive staff data means a security or privacy
-check. *Not sure* reads *Resolve sensitivity first* and blocks acceptance
+Patient or clinical workflow data means a clinician signs Review Date
+before acceptance. Sensitive staff data means the security or privacy lead
+signs it. *Not sure* reads *Resolve sensitivity first* and blocks acceptance
 until it is resolved. Standard asks get neither review.
 
 **Distribution rule.** If more than a fifth of a month's asks land in Game
@@ -116,10 +117,11 @@ encoded in SharePoint:
   is calculated seven days after capture and is red in **Needs response**
   once missed. It stops being red when the ask leaves Captured, so the
   requester is told before the status changes.
-- **Thirty days** from Captured Date to a Decision Date or a Receiving
-  reference. An Explore here ask that cannot be decided in thirty days gets
-  a Horizon of *Later* with a date in the Decision Rationale, and the
-  requester is told that too.
+- **Thirty days** from Captured Date to Decision Date. A closed ask sets
+  its Decision Date when it is routed, merged or declined, so the one clock
+  covers every exit. An Explore here ask that cannot be decided in thirty
+  days gets a Horizon of *Later* with a *Deferred until* date, which turns
+  red in **Exploring** once it passes, and the requester is told that too.
 
 A **Not now** must contain a Decision Date, a Decision Rationale the
 requester can read, and a Reopen trigger that names the specific change that
@@ -149,7 +151,8 @@ this agenda follows that split:
    month.
 
 Not now rows are re-read here, not re-litigated. A trigger that has fired
-reopens the ask as Exploring; one that has not stays where it is.
+reopens the ask as Exploring, with the Route back on *Explore here* and the
+Decision Date cleared; one that has not stays where it is.
 
 ## Measuring the log itself
 
@@ -159,7 +162,7 @@ and to the rollout board:
 | Metric | Where it comes from | Target |
 | --- | --- | --- |
 | Time to first response | Median *Days To Acknowledge* over asks captured in the month; the column is in the **System** section of each ask, and a personal view can list it | Median under 7 |
-| Share of asks with a written decision | Rows past Captured with a Decision Date or a Receiving reference, over all rows captured 30 or more days ago | Over 90 percent within 30 days |
+| Share of asks decided in time | Rows whose *Days To Decision* is 30 or under, over all rows captured 30 or more days ago; a closed ask counts because closing sets its Decision Date | Over 90 percent |
 | Implementation rate | Adopted rows over all rows that are not Duplicate | 10 to 20 percent is normal; higher usually means the scope was narrow |
 | Repeat participation | Champions and teams that have raised more than one ask, from Created By and Team or unit | Rising month on month |
 
@@ -184,8 +187,12 @@ often.
 | An Exploring ask has an Owner | **Exploring**: the Owner column is blank | Weekly, by the log owner |
 | An Accepted ask whose pattern is Available has an Adoption Check Due | **Delivery and adoption**: the deadline column is blank under a pattern **Catalogue** lists | Weekly, by the Owner |
 | A duplicate's Receiving reference really is the earlier ask | **Closed and routed**: filter Route to the duplicate route and read the reference against the Title column | Weekly, at triage |
-| A patient-data ask names a Clinical Reviewer | **Exploring**: every row whose Review Tier reads *Clinical or data review* | Before acceptance, by the Owner; monthly, by the log owner |
-| Acknowledged Date is on or after Captured Date | The hidden **All Items** view, which holds every status, sorted by Acknowledged Date; compare each row acknowledged since the last meeting with its Captured Date | Monthly, at the champions meeting |
+| A reviewed ask names a Reviewer | **Review sign-off**: every row whose Review Tier reads *Clinical or data review* or *Security review*, from Exploring through to Not adopted, with a blank Reviewer column | Before acceptance, by the Owner; monthly, by the log owner |
+| An Accepted, Adopted or Not adopted ask names a Sponsor | **Delivery and adoption** for Accepted rows and **Closed and routed** for the others; the Sponsor column is blank | Weekly, by the log owner |
+| An Exploring or Awaiting decision ask has no Decision Date | **Exploring**: the Decision Date column is filled, which means a reopened Not now kept its old decision | Weekly, by the log owner |
+| A Later ask has a Deferred until date | **Exploring**: the Later group, blank Deferred until column | Weekly, by the log owner |
+| An Available pattern names a Build Owner | **Catalogue**: the Build Owner column is blank | Monthly, by the log owner |
+| Acknowledged Date and Decision Date are on or after Captured Date | The hidden **All Items** view, which holds every status; compare each row acknowledged or decided since the last meeting with its Captured Date. A reversed date leaves *Days To Acknowledge* or *Days To Decision* blank | Monthly, at the champions meeting |
 | Available Date is on or after Proposed Date | **Catalogue**: compare the two dates on each pattern made Available since the last meeting | Monthly, by the Build Owner |
 | Every decided ask has a Decision Rationale | **Delivery and adoption** for Accepted rows; **Closed and routed** for Adopted, Not adopted and Not now rows; open each row decided since the last meeting | Monthly, at the champions meeting |
 | An Available pattern has a Guide or exemplar link | **Catalogue**: the link column is empty | Monthly, by the Build Owner; before any team is pointed at it |
@@ -196,17 +203,18 @@ hold any status other than Captured or Closed, and Closed needs a route
 other than *Explore here*; Awaiting decision and every later status need
 Value, Ease, Evidence and Horizon; Accepted, Adopted and Not adopted need a
 Decision Date and a Sensitivity that is not *Not sure*; an ask whose
-Sensitivity is patient or clinical workflow data needs its Clinical Review
-Date before acceptance, and Review Tier is calculated from Sensitivity so
-nothing can be re-tiered around it; a Not now needs a Decision Date and a
-Reopen trigger longer than fifteen characters; every other closed ask needs
-a Receiving reference; Adopted needs an Adopted Date and an Adoption Note
-longer than ten characters; an Available pattern needs an Available Date; a
-Retired one needs a Retired Date and Reason; and Captured Date and Decision
-Date refuse a future date. Acknowledged, Clinical Review and Adopted dates
-do not: the list formula has a 1023-character ceiling and the
-acknowledgement and clinical gates were worth more than those three checks.
-Adoption Check Due is a planned date and may be in the future.
+Sensitivity is patient data or sensitive staff data needs its Review Date
+before acceptance, and Review Tier is calculated from Sensitivity so
+nothing can be re-tiered around it; a Closed ask needs a Decision Date; a
+Not now needs a Reopen trigger longer than fifteen characters; every other
+closed ask needs a Receiving reference; Adopted and Not adopted need an
+Outcome date and an Adoption Note longer than ten characters; an Available
+pattern needs an Available Date; a Retired one needs a Retired Date and
+Reason; and Captured Date and Decision Date refuse a future date.
+Acknowledged, Review, Deferred until and Outcome dates do not: the list
+formula has a 1023-character ceiling and the acknowledgement and review
+gates were worth more than those checks. Adoption Check Due and Deferred
+until are planned dates and may be in the future.
 
 ## Records and decommissioning
 

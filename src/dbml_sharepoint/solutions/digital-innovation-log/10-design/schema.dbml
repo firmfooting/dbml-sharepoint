@@ -209,16 +209,17 @@ Table Opportunity {
   ValueBand            value_band          [note: 'Tweak, Optimiser or Game change, using the definitions in the governance guide']
   EaseBand             ease_band           [note: 'Easy, Moderate or Hard, using the definitions in the governance guide']
   Evidence             evidence_band       [note: 'Assumed if heard once, Observed if someone watched the workaround, Measured if there is a number']
-  ClinicalReviewer     person              [note: 'The clinician who reviews an ask that touches patient or clinical workflow data']
-  ClinicalReviewDate   date                [note: 'The date the clinical or data review was signed. Required before a clinical-tier ask can be accepted']
+  Reviewer             person              [note: 'The clinician, or the security or privacy reviewer, who signed off an ask that touches patient, clinical workflow or sensitive staff data']
+  ReviewDate           date                [note: 'The date the clinical, security or privacy review was signed. Required before an ask that touches patient or sensitive data is accepted']
   Horizon              horizon             [note: 'Now items are ranked against each other; Next wave waits on readiness; Strategic is decided by the sponsor and never competes on score']
+  DeferredUntil        date                [note: 'For a Later ask: the date it comes back for a decision. Highlighted in Exploring once it has passed']
   Sponsor              person              [note: 'The manager or executive who owns the outcome, set at acceptance']
 
   Status               opportunity_status  [not null, default: 'Captured', note: 'Lifecycle stage, maintained by the digital team. Closed means the route took it elsewhere; only Explore here goes further']
   Pattern              int                 [ref: > Pattern.Id, note: 'The pattern this ask is delivered through, once accepted']
   Owner                person              [note: 'The digital team member accountable for this ask']
   AcknowledgedDate     date                [note: 'The date the requester was told the ask was received']
-  DecisionDate         date                [note: 'The date the ask was accepted or declined. Cannot be in the future']
+  DecisionDate         date                [note: 'The date the ask was accepted, declined or closed. Cannot be in the future. Blank while it is still being explored']
   DecisionRationale    longtext            [note: 'The decision and its reason, in a few sentences']
   ReopenTrigger        nvarchar            [note: 'For a Not now: what would change the answer, in one specific line']
   // A same-list lookup for duplicates has no live measurement in test/manual
@@ -226,8 +227,8 @@ Table Opportunity {
   DestinationReference nvarchar            [note: 'For a Closed ask: the ticket, improvement id or record reference it went to, or for a duplicate the ID or title of the earlier ask']
   DestinationLink      hyperlink           [note: 'Link to the receiving record or the earlier ask']
   AdoptionCheckDue     date                [note: 'When to check whether the team adopted the pattern. Set when the pattern becomes available; the pattern row carries the build status']
-  AdoptedDate          date                [note: 'The date the team was confirmed to be using the solution']
-  AdoptionNote         nvarchar            [note: 'What changed for the team, in one line, with a number where there is one']
+  AdoptionOutcomeDate  date                [note: 'The date the team was checked and found to be using the solution, or not. Required for Adopted and Not adopted']
+  AdoptionNote         nvarchar            [note: 'What changed for the team, or why it was not adopted, in one line with a number where there is one']
 
   // Calculated columns; formulas in mapping.yaml.
   PriorityScore        calculated_number   [note: 'Calculated automatically: Value times Ease, 1 to 9. Blank until both are set']
@@ -236,7 +237,7 @@ Table Opportunity {
   AcknowledgeBy        calculated_date     [note: 'Calculated automatically: seven days after capture. The response promise']
   DaysToAcknowledge    calculated_number   [note: 'Calculated automatically: days from capture to acknowledgement']
   DaysToDecision       calculated_number   [note: 'Calculated automatically: days from capture to decision']
-  DaysToAdopted        calculated_number   [note: 'Calculated automatically: days from capture to confirmed adoption']
+  DaysToAdopted        calculated_number   [note: 'Calculated automatically: days from capture to confirmed adoption. Blank unless Adopted']
 
   indexes {
     Status
