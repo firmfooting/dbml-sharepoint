@@ -174,11 +174,21 @@ Available, Retired.
   **Guide or exemplar link**; the form checks the date and governance checks
   the other two, because a pattern nobody owns has nobody to review it.
 - **Retired** needs a **Retired Date** and a **Retired Reason** saying what
-  replaced it.
+  replaced it. Before retiring, open **Delivery and adoption**, expand the
+  pattern's group, and move every Accepted ask there: re-link it to the
+  replacement pattern, or record its outcome. The form cannot see the other
+  list, so a pattern retired with asks still under it strands them, and
+  governance reads for that monthly.
 - *Next Review Due* is calculated twelve months after Available Date, or
-  after **Last Reviewed Date** once there is one. Record the date of each
-  annual check there and the deadline moves on; leave it and the pattern
-  reads overdue, which is the point.
+  after **Last Reviewed Date** once there is one. That field appears once
+  the pattern is Available, and a date earlier than the Available Date is
+  ignored. Record the date of each annual check there and the deadline
+  moves on; leave it and the pattern reads overdue, which is the point.
+
+The catalogue does not start empty. `20-configure/patterns-seed.yaml` holds
+twenty-nine patterns Microsoft and other health services already document,
+every one Proposed, so triage can route an ask to "Approval flow on a list"
+on day one and the first build makes it Available.
 
 The count of asks grouped under a pattern in **Delivery and adoption**, and
 the Adopted rows that link to it in **Closed and routed**, are the demand

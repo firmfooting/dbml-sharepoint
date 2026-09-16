@@ -100,6 +100,12 @@ the seven-day acknowledgement in `AcknowledgeBy`; the `max:` on the
 members by name, and so do the overdue guards and the visibility rules, so a
 renamed member empties a view without failing the build.
 
+**Starting catalogue.** `20-configure/patterns-seed.yaml` holds twenty-nine
+reusable patterns, from an approval flow on a list to a SharePoint agent
+over the policy library, each with its workloads, effort, readiness,
+governance tier and a Microsoft guide link, all Proposed. The build does not
+read it; the deploy guide says how to load it, and a test keeps it valid.
+
 **Demo data.** Build with `--seed` and the bundle gains a `demo-data.js.txt`
 that pastes five `[DEMO]` patterns and sixteen `[DEMO]` asks: two awaiting a
 response (one overdue), one per triage route, a duplicate merged into an

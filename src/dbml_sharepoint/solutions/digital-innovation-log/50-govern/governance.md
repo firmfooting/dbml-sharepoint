@@ -192,6 +192,8 @@ often.
 | An Exploring or Awaiting decision ask has no Decision Date | **Exploring**: the Decision Date column is filled, which means a reopened Not now kept its old decision | Weekly, by the log owner |
 | A Later ask has a Deferred until date | **Exploring**: the Later group, blank Deferred until column | Weekly, by the log owner |
 | An Available pattern names a Build Owner | **Catalogue**: the Build Owner column is blank | Monthly, by the log owner |
+| A Retired pattern has no Accepted asks | **Delivery and adoption**: a group headed by a pattern that **Retired** lists; re-link each ask or record its outcome | At retirement, by the Build Owner; monthly, by the log owner |
+| Acknowledged Date, Decision Date and Outcome date are not in the future | The hidden **All Items** view sorted by each column descending; the top row is the latest date | Monthly, at the champions meeting |
 | Acknowledged Date and Decision Date are on or after Captured Date | The hidden **All Items** view, which holds every status; compare each row acknowledged or decided since the last meeting with its Captured Date. A reversed date leaves *Days To Acknowledge* or *Days To Decision* blank | Monthly, at the champions meeting |
 | Available Date is on or after Proposed Date | **Catalogue**: compare the two dates on each pattern made Available since the last meeting | Monthly, by the Build Owner |
 | Every decided ask has a Decision Rationale | **Delivery and adoption** for Accepted rows; **Closed and routed** for Adopted, Not adopted and Not now rows; open each row decided since the last meeting | Monthly, at the champions meeting |
@@ -210,11 +212,13 @@ Not now needs a Reopen trigger longer than fifteen characters; every other
 closed ask needs a Receiving reference; Adopted and Not adopted need an
 Outcome date and an Adoption Note longer than ten characters; an Available
 pattern needs an Available Date; a Retired one needs a Retired Date and
-Reason; and Captured Date and Decision Date refuse a future date.
-Acknowledged, Review, Deferred until and Outcome dates do not: the list
-formula has a 1023-character ceiling and the acknowledgement and review
-gates were worth more than those checks. Adoption Check Due and Deferred
-until are planned dates and may be in the future.
+Reason; and Captured Date and Review Date refuse a future date, the second
+because its value is what lets a patient-data ask be accepted. Acknowledged,
+Decision and Outcome dates do not: the list formula has a 1023-character
+ceiling and a 32-leaf limit, both reached, and the acknowledgement, review
+and closure gates were worth more than those checks, so the table above
+reads them monthly. Adoption Check Due and Deferred until are planned dates
+and may be in the future.
 
 ## Records and decommissioning
 

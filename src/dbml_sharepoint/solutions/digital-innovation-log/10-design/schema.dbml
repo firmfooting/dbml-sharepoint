@@ -174,7 +174,7 @@ Table Pattern {
   PilotTeam        nvarchar          [note: 'The team piloting it, in one line']
   AvailableDate    date              [note: 'The date the pattern became available to any team. Required once Status is Available']
   GuideLink        hyperlink         [note: 'Link to the exemplar or the how-to for this pattern']
-  LastReviewedDate date              [note: 'When the Build Owner last confirmed the pattern is still used and still correct. Blank until the first annual review']
+  LastReviewedDate date              [note: 'When the Build Owner last confirmed the pattern is still used and still correct. Blank until the first annual review; a date before Available Date is ignored']
   RetiredDate      date              [note: 'Required once Status is Retired']
   RetiredReason    nvarchar          [note: 'One line on why it was retired and what replaces it. Required once Status is Retired']
 
@@ -210,7 +210,7 @@ Table Opportunity {
   EaseBand             ease_band           [note: 'Easy, Moderate or Hard, using the definitions in the governance guide']
   Evidence             evidence_band       [note: 'Assumed if heard once, Observed if someone watched the workaround, Measured if there is a number']
   Reviewer             person              [note: 'The clinician, or the security or privacy reviewer, who signed off an ask that touches patient, clinical workflow or sensitive staff data']
-  ReviewDate           date                [note: 'The date the clinical, security or privacy review was signed. Required before an ask that touches patient or sensitive data is accepted']
+  ReviewDate           date                [note: 'The date the clinical, security or privacy review was signed, not in the future. Required before an ask touching patient or sensitive data is accepted']
   Horizon              horizon             [note: 'Now items are ranked against each other; Next wave waits on readiness; Strategic is decided by the sponsor and never competes on score']
   DeferredUntil        date                [note: 'For a Later ask: the date it comes back for a decision. Highlighted in Exploring once it has passed']
   Sponsor              person              [note: 'The manager or executive who owns the outcome, set at acceptance']
@@ -219,7 +219,7 @@ Table Opportunity {
   Pattern              int                 [ref: > Pattern.Id, note: 'The pattern this ask is delivered through, once accepted']
   Owner                person              [note: 'The digital team member accountable for this ask']
   AcknowledgedDate     date                [note: 'The date the requester was told the ask was received']
-  DecisionDate         date                [note: 'The date the ask was accepted, declined or closed. Cannot be in the future. Blank while it is still being explored']
+  DecisionDate         date                [note: 'The date the ask was accepted, declined or closed. Blank while it is still being explored']
   DecisionRationale    longtext            [note: 'The decision and its reason, in a few sentences']
   ReopenTrigger        nvarchar            [note: 'For a Not now: what would change the answer, in one specific line']
   // A same-list lookup for duplicates has no live measurement in test/manual

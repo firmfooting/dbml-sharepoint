@@ -18,8 +18,10 @@ passes.
       Statement describes a process, never a person; see
       [`sectors/healthcare.md`](../../sectors/healthcare.md).
 - [ ] Name the digital team owner of the log and the champions who will
-      capture asks. Both go into `DI Champions` and `DI Digital Team` only
-      after verification.
+      capture asks. Neither goes into a group until after verification, and
+      each goes into one group only: champions into `DI Champions`, digital
+      team members into `DI Digital Team`. A champion in both would gain
+      the digital team's grant on `DI_Pattern`.
 - [ ] Replace `https://REPLACE-WITH-CAPTURE-GUIDE-URL` in
       `20-configure/formatting/opportunity-form-header.json` with the
       published capture guide (`40-adopt/staff-guide.md`, or wherever the
@@ -80,6 +82,20 @@ rows before active use: each Title begins with `[DEMO]`, they are matched by
 Title on re-paste, and `rollback.js.txt` asks per list before deleting. Do not
 seed a site that already holds real asks.
 
+## Load the catalogue
+
+`20-configure/patterns-seed.yaml` holds twenty-nine reusable patterns,
+researched against Microsoft's own guidance and health customer stories, so
+the first asks can be routed to a pattern rather than a bespoke build. The
+build does not read it: the demo seeder requires the `[DEMO]` marker by
+design, and these rows stay. Enter them by hand in `DI_Pattern` after the
+deploy, one row per entry, from the edit form or grid view. Every row is
+Proposed; a pattern becomes Available only when its Build Owner has built
+it, written the guide and set the Available Date. Retag the Readiness of
+the Power Apps, Viva and Bookings rows if the first rollout wave carries
+those workloads. A test in the repository keeps every row valid against the
+schema, so a member that was renamed fails there rather than in the form.
+
 ## Verification checklist
 
 ### Security
@@ -130,13 +146,14 @@ seed a site that already holds real asks.
       form. *Review Tier* is calculated from Sensitivity and cannot be
       edited: it reads *Resolve sensitivity first* while Sensitivity is *Not
       sure*.
-- [ ] A Captured Date in the future is refused. The refusal shows the list
-      message: date-versus-today rules are hoisted onto the list rule at
-      build time, and `deploy-manifest.md` names the two that were (Captured
-      Date and Decision Date). Acknowledged, Review, Deferred until and
-      Outcome dates carry no future-date rule; the list formula's
-      1023-character ceiling went to the acknowledgement and review gates
-      instead.
+- [ ] A Captured Date in the future is refused, and so is a Review Date in
+      the future. The refusal shows the list message: date-versus-today
+      rules are hoisted onto the list rule at build time, and
+      `deploy-manifest.md` names the two that were (Captured Date and Review
+      Date). Acknowledged, Decision, Deferred until and Outcome dates carry
+      no future-date rule; the list formula's 1023-character ceiling and
+      32-leaf limit went to the acknowledgement, review and closure gates
+      instead, and governance reads those dates monthly.
 
 ### Triage and score
 
@@ -195,9 +212,12 @@ seed a site that already holds real asks.
 - [ ] Setting Status to Available with *Available Date* empty is refused
       with the pattern list message. Setting it to Retired with *Retired
       Date* or *Retired Reason* empty is refused with the same message.
+- [ ] *Last Reviewed Date* is absent from the edit form of a Proposed,
+      Building or Piloting pattern and present on an Available one.
 - [ ] *Next Review Due* reads twelve months after *Available Date* and
       cannot be edited. Setting *Last Reviewed Date* moves it to twelve
-      months after that date instead. *Days To Available* renders as a bar
+      months after that date instead; a Last Reviewed Date earlier than the
+      Available Date leaves it unchanged. *Days To Available* renders as a bar
       out of 90, coloured by *Effort Band*.
 - [ ] **In build** groups on *Build Owner*. **Retired** sorts by *Retired
       Date*, newest first.

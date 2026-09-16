@@ -38,7 +38,9 @@ calculated_formulas:
     DaysToAvailable: '=IF(OR(ISBLANK([ProposedDate]),ISBLANK([AvailableDate])),"",IF([AvailableDate]<[ProposedDate],"",DATEDIF([ProposedDate],[AvailableDate],"d")))'
     # MIN against the day before the first of the following month holds a
     # 31st to the last real day of the target month (#418).
-    NextReviewDue: '=IF(ISBLANK([AvailableDate]),"",IF(ISBLANK([LastReviewedDate]),MIN(DATE(YEAR([AvailableDate]),MONTH([AvailableDate])+12,DAY([AvailableDate])),DATE(YEAR([AvailableDate]),MONTH([AvailableDate])+13,0)),MIN(DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+12,DAY([LastReviewedDate])),DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+13,0))))'
+    # A review date earlier than availability is ignored, so a date typed
+    # while the pattern was still in build cannot shorten the first interval.
+    NextReviewDue: '=IF(ISBLANK([AvailableDate]),"",IF(OR(ISBLANK([LastReviewedDate]),[LastReviewedDate]<[AvailableDate]),MIN(DATE(YEAR([AvailableDate]),MONTH([AvailableDate])+12,DAY([AvailableDate])),DATE(YEAR([AvailableDate]),MONTH([AvailableDate])+13,0)),MIN(DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+12,DAY([LastReviewedDate])),DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+13,0))))'
 
 # Security: everyone reads, including declined and parked rows, because a
 # visible backlog is what keeps demand coming through the front door.
@@ -523,6 +525,10 @@ form_visibility:
         new: false
         when:
           - { field: Status, op: in, value: [Available, Retired] }
+      LastReviewedDate:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Available, Retired] }
       RetiredDate:
         new: false
         when:
@@ -545,9 +551,10 @@ form_formatting:
 # and adoption figures. The date-versus-today rules are hoisted onto the
 # list rule at build time (see the mapping reference), so their refusal shows
 # the list message; only the two length rules keep a message of their own.
-# Acknowledged, Review, Deferred until and Outcome dates carry no
-# future-date rule: the list formula has a 1023-character ceiling, and the
-# review gate and the acknowledgement gate below are worth more.
+# Acknowledged, Decision, Deferred until and Outcome dates carry no
+# future-date rule: the list formula has a 1023-character ceiling and 32
+# leaves, and the review, acknowledgement and closure gates below are
+# worth more. Governance reads those dates monthly instead.
 column_validation:
   Opportunity:
     reconcile: exact
@@ -556,12 +563,16 @@ column_validation:
         when:
           - { field: CapturedDate, op: leq, value: today }
         message: "An ask cannot be captured in the future. Use the date it was heard, or today."
-      DecisionDate:
+      # Of the completed-event dates, this is the one whose value gates a
+      # status: a future Review Date would let a patient-data ask be accepted
+      # before the review happened. Decision Date's presence gates, its value
+      # does not, so its future-date rule gave way to this one (round four).
+      ReviewDate:
         when:
           any_of:
-            - { field: DecisionDate, op: is_null }
-            - { field: DecisionDate, op: leq, value: today }
-        message: "Use the date the decision was made; it cannot be in the future."
+            - { field: ReviewDate, op: is_null }
+            - { field: ReviewDate, op: leq, value: today }
+        message: "Use the date the review was signed; it cannot be in the future."
       ReopenTrigger:
         when:
           any_of:
