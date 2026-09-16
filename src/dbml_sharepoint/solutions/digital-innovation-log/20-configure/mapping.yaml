@@ -1,0 +1,995 @@
+# Digital innovation log: physical mapping.
+prefix: "DI_"
+
+entities:
+  Pattern:     { kind: List, base_template: 100, site_role: default }
+  Opportunity: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 200
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources: {}
+watched_lists: []
+
+# The score orders a conversation between Now items. It is never a clinical
+# or safety rating; Data Sensitivity and Review Tier carry that concern.
+calculated_formulas:
+  Opportunity:
+    PriorityScore: '=IF(OR(ISBLANK([ValueBand]),ISBLANK([EaseBand])),"",IF([ValueBand]="Tweak",1,IF([ValueBand]="Optimiser",2,3))*IF([EaseBand]="Hard",1,IF([EaseBand]="Moderate",2,3)))'
+    PriorityBand: '=IF(ISBLANK([PriorityScore]),"",IF([PriorityScore]>=6,"Prioritise",IF([PriorityScore]>=3,"Consider","Later")))'
+    # Date plus days is the form Learn's common-formulas page documents for
+    # a calculated column ("=[Column1]+3").
+    AcknowledgeBy: '=IF(ISBLANK([CapturedDate]),"",[CapturedDate]+7)'
+    DaysToAcknowledge: '=IF(OR(ISBLANK([CapturedDate]),ISBLANK([AcknowledgedDate])),"",DATEDIF([CapturedDate],[AcknowledgedDate],"d"))'
+    DaysToDecision: '=IF(OR(ISBLANK([CapturedDate]),ISBLANK([DecisionDate])),"",DATEDIF([CapturedDate],[DecisionDate],"d"))'
+    DaysToAdopted: '=IF(OR(ISBLANK([CapturedDate]),ISBLANK([AdoptedDate])),"",DATEDIF([CapturedDate],[AdoptedDate],"d"))'
+  Pattern:
+    DaysToAvailable: '=IF(OR(ISBLANK([ProposedDate]),ISBLANK([AvailableDate])),"",DATEDIF([ProposedDate],[AvailableDate],"d"))'
+    # MIN against the day before the first of the following month holds a
+    # 31st to the last real day of the target month (#418).
+    NextReviewDue: '=IF(ISBLANK([AvailableDate]),"",MIN(DATE(YEAR([AvailableDate]),MONTH([AvailableDate])+12,DAY([AvailableDate])),DATE(YEAR([AvailableDate]),MONTH([AvailableDate])+13,0)))'
+
+# Security: everyone reads, including declined and parked rows, because a
+# visible backlog is what keeps demand coming through the front door.
+# Champions add and edit asks; the digital team works both lists. Neither
+# level deletes: a row leaves by Routed, Duplicate or Not now.
+groups:
+  - name: "{prefix} Champions"
+    description: "Champions and business analysts who capture asks on behalf of staff and curate them before triage."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+  - name: "{prefix} Digital Team"
+    description: "The digital team: triage, score, decide, build patterns and check adoption."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+  - name: "dbml List Administrators"
+    description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: true
+    enroll_operator_during_deploy: true
+  - name: "dbml Enterprise Readers"
+    description: "Read-only accounts for aggregated cross-site reporting. Empty by default; membership is operator-owned."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    enroll_enterprise_reader: true
+
+permission_levels:
+  - name: "{prefix} Contribute No Delete"
+    description: "Add, edit and read items; no deleting and no schema rights."
+    base_permissions:
+      - AddListItems
+      - EditListItems
+      - ViewListItems
+      - ViewVersions
+      - ViewFormPages
+      - Open
+      - ViewPages
+      - BrowseUserInfo
+      - UseRemoteAPIs
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "{prefix} Champions" }
+        level: "Read"
+      - principal: { kind: group, name: "{prefix} Digital Team" }
+        level: "{prefix} Contribute No Delete"
+      - principal: { kind: group, name: "dbml List Administrators" }
+        level: "Full Control"
+      - principal: { kind: associated_member_group }
+        level: "Read"
+      - principal: { kind: associated_owner_group }
+        level: "Contribute"
+      - principal: { kind: group, name: "dbml Enterprise Readers" }
+        level: "Read"
+  # Champions add and edit asks but only read the pattern catalogue.
+  overrides:
+    Opportunity:
+      break_inheritance: true
+      reconcile: exact
+      assignments:
+        - principal: { kind: group, name: "{prefix} Champions" }
+          level: "{prefix} Contribute No Delete"
+        - principal: { kind: group, name: "{prefix} Digital Team" }
+          level: "{prefix} Contribute No Delete"
+        - principal: { kind: group, name: "dbml List Administrators" }
+          level: "Full Control"
+        - principal: { kind: associated_member_group }
+          level: "Read"
+        - principal: { kind: associated_owner_group }
+          level: "Contribute"
+        - principal: { kind: group, name: "dbml Enterprise Readers" }
+          level: "Read"
+
+seal_columns: true
+prevent_list_deletion: true
+
+display_names:
+  mode: auto
+  overrides:
+    Opportunity:
+      ValueBand: "Value"
+      EaseBand: "Ease"
+      TeamOrUnit: "Team or unit"
+      HeardAt: "Heard at"
+      RequestedFor: "Requested for"
+      MergedInto: "Merged into"
+      ReopenTrigger: "Reopen trigger"
+      DestinationReference: "Receiving reference"
+      DestinationLink: "Receiving record link"
+      AcknowledgeBy: "Acknowledge by"
+    Pattern:
+      GuideLink: "Guide or exemplar link"
+
+# Tokens by the ROLE a value plays (website/docs/reference/style-guide.md).
+# Captured is the intake state and neutral; Routed is a closed loop and
+# therefore good, not muted: the ask went somewhere and the requester was
+# told. Duplicate and Not now are the not-done terminals.
+column_formatting:
+  Opportunity:
+    Status:
+      style: severity
+      map:
+        Captured: neutral
+        Exploring: low
+        "Awaiting decision": warning
+        Accepted: low
+        "In delivery": low
+        Adopted: good
+        "Not adopted": warning
+        Routed: good
+        Duplicate: muted
+        "Not now": muted
+    TriageOutcome:
+      style: pill
+      map:
+        "Explore here": low
+        "Service request or fault - send to the helpdesk": neutral
+        "Already available - show and train": good
+        "Process change - improvement register": low
+        "Project-sized - project pipeline": low
+        "Incident, complaint, privacy or cyber - mandated system": severe
+        "Duplicate - merge into the earlier ask": muted
+        "Not now": muted
+    DataSensitivity:
+      style: severity
+      map:
+        "No patient or sensitive data": good
+        "Touches patient or clinical workflow data": severe
+        "Touches sensitive staff or third-party data": warning
+        "Not sure": neutral
+    ValueBand:
+      style: pill
+      map: { Tweak: neutral, Optimiser: low, "Game change": good }
+    EaseBand:
+      style: pill
+      map: { Hard: warning, Moderate: low, Easy: good }
+    Evidence:
+      style: pill
+      map: { Assumed: neutral, Observed: low, Measured: good }
+    ReviewTier:
+      style: severity
+      map: { Standard: neutral, "Clinical or data review": severe, "Security review": warning }
+    Horizon:
+      style: pill
+      map: { Now: good, "Next wave": low, Later: neutral, Strategic: warning }
+    PriorityBand:
+      style: severity
+      calculated: true
+      map: { Later: neutral, Consider: low, Prioritise: good }
+    PriorityScore:
+      style: data-bar
+      max: 9
+      calculated: true
+      color_by:
+        field: ValueBand
+        map: { Tweak: neutral, Optimiser: low, "Game change": good }
+    DaysToAdopted:
+      style: data-bar
+      max: 120
+      calculated: true
+      color_by:
+        field: ValueBand
+        map: { Tweak: neutral, Optimiser: low, "Game change": good }
+    # Shouts only while the ask is still Captured: acknowledgement happens at
+    # triage, and a row that has moved on has been answered.
+    AcknowledgeBy:
+      style: overdue-date
+      calculated: true
+      guard: { field: Status, not: [Exploring, "Awaiting decision", Accepted, "In delivery", Adopted, "Not adopted", Routed, Duplicate, "Not now"] }
+    AdoptionCheckDue:
+      style: overdue-date
+      guard: { field: Status, not: [Captured, Exploring, "Awaiting decision", Adopted, "Not adopted", Routed, Duplicate, "Not now"] }
+  Pattern:
+    Status:
+      style: severity
+      map: { Proposed: neutral, Building: low, Piloting: low, Available: good, Retired: muted }
+    Readiness:
+      style: pill
+      map: { "Available now": good, "Later rollout wave": low, "Needs licence or approval": warning, "Not available": severe }
+    EffortBand:
+      style: pill
+      map: { Small: good, Medium: low, Large: warning }
+    GovernanceTier:
+      style: pill
+      map: { "Self-service": good, "Digital team build": low, "Reviewed build": warning }
+    DaysToAvailable:
+      style: data-bar
+      max: 90
+      calculated: true
+      color_by:
+        field: EffortBand
+        map: { Small: good, Medium: low, Large: warning }
+    NextReviewDue:
+      style: overdue-date
+      calculated: true
+      guard: { field: Status, not: [Proposed, Building, Piloting, Retired] }
+
+views:
+  Opportunity:
+    - title: "Needs response"
+      default: true
+      fields: [Title, ServiceArea, TeamOrUnit, HeardAt, DataSensitivity, Author,
+               CapturedDate, AcknowledgeBy, Status]
+      where:
+        - { field: Status, op: eq, value: Captured }
+      sort:
+        - { field: CapturedDate, direction: asc }
+      widths:
+        Title: 320
+        ServiceArea: 220
+        TeamOrUnit: 180
+        HeardAt: 160
+        DataSensitivity: 260
+        Author: 160
+        CapturedDate: 150
+        AcknowledgeBy: 150
+        Status: 120
+    - title: "Exploring"
+      fields: [Title, ServiceArea, ValueBand, EaseBand, Evidence, PriorityBand,
+               PriorityScore, ReviewTier, Horizon, Owner, Status]
+      where:
+        - { field: Status, op: in, value: [Exploring, "Awaiting decision"] }
+      group_by: { field: Horizon, collapsed: false }
+      sort:
+        - { field: PriorityScore, direction: desc }
+      widths:
+        Title: 300
+        ServiceArea: 210
+        ValueBand: 130
+        EaseBand: 120
+        Evidence: 120
+        PriorityBand: 130
+        PriorityScore: 140
+        ReviewTier: 200
+        Horizon: 120
+        Owner: 160
+        Status: 150
+    - title: "Delivery and adoption"
+      fields: [Title, ServiceArea, TeamOrUnit, Pattern, Owner, Sponsor,
+               AdoptionCheckDue, Status]
+      where:
+        - { field: Status, op: in, value: [Accepted, "In delivery"] }
+      group_by: { field: Pattern, collapsed: false }
+      sort:
+        - { field: AdoptionCheckDue, direction: asc }
+      widths:
+        Title: 300
+        ServiceArea: 210
+        TeamOrUnit: 180
+        Pattern: 240
+        Owner: 160
+        Sponsor: 160
+        AdoptionCheckDue: 170
+        Status: 130
+    - title: "By area"
+      fields: [Title, TeamOrUnit, HeardAt, TriageOutcome, PriorityBand, Horizon,
+               CapturedDate, Status]
+      where:
+        - { field: Status, op: not_in, value: [Adopted, "Not adopted", Routed, Duplicate, "Not now"] }
+      group_by: { field: ServiceArea, collapsed: true }
+      sort:
+        - { field: CapturedDate, direction: asc }
+      widths:
+        Title: 300
+        TeamOrUnit: 180
+        HeardAt: 160
+        TriageOutcome: 300
+        PriorityBand: 130
+        Horizon: 120
+        CapturedDate: 150
+        Status: 150
+    - title: "Closed and routed"
+      fields: [Title, ServiceArea, TriageOutcome, Status, DestinationReference,
+               DestinationLink, ReopenTrigger, ValueBand, AdoptedDate, DaysToAdopted,
+               Modified]
+      where:
+        - { field: Status, op: in, value: [Adopted, "Not adopted", Routed, Duplicate, "Not now"] }
+      sort:
+        - { field: Modified, direction: desc }
+      widths:
+        Title: 300
+        ServiceArea: 210
+        TriageOutcome: 300
+        Status: 130
+        DestinationReference: 220
+        DestinationLink: 170
+        ReopenTrigger: 280
+        ValueBand: 130
+        AdoptedDate: 150
+        DaysToAdopted: 140
+        Modified: 170
+  Pattern:
+    - title: "Catalogue"
+      default: true
+      fields: [Title, Workloads, Readiness, GovernanceTier, EffortBand, BuildOwner,
+               GuideLink, AvailableDate, DaysToAvailable, NextReviewDue, Status]
+      where:
+        - { field: Status, op: eq, value: Available }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        Workloads: 240
+        Readiness: 200
+        GovernanceTier: 170
+        EffortBand: 110
+        BuildOwner: 160
+        GuideLink: 170
+        AvailableDate: 150
+        DaysToAvailable: 140
+        NextReviewDue: 150
+        Status: 120
+    - title: "In build"
+      fields: [Title, Workloads, Readiness, EffortBand, GovernanceTier, PilotTeam,
+               ProposedDate, Status]
+      where:
+        - { field: Status, op: in, value: [Proposed, Building, Piloting] }
+      group_by: { field: BuildOwner, collapsed: false }
+      sort:
+        - { field: ProposedDate, direction: asc }
+      widths:
+        Title: 300
+        Workloads: 240
+        Readiness: 200
+        EffortBand: 110
+        GovernanceTier: 170
+        PilotTeam: 200
+        ProposedDate: 150
+        Status: 120
+    - title: "Retired"
+      fields: [Title, Workloads, AvailableDate, RetiredDate, RetiredReason, Status]
+      where:
+        - { field: Status, op: eq, value: Retired }
+      sort:
+        - { field: RetiredDate, direction: desc }
+      widths:
+        Title: 300
+        Workloads: 240
+        AvailableDate: 150
+        RetiredDate: 150
+        RetiredReason: 320
+        Status: 120
+
+# The New form is the champion's minute. Every digital-team column is off it,
+# and the later blocks appear only once the row has reached them.
+form_visibility:
+  Opportunity:
+    reconcile: exact
+    columns:
+      CapturedDate: { new: false }
+      TriageOutcome: { new: false }
+      Owner: { new: false }
+      Status: { new: false }
+      AcknowledgedDate: { new: false }
+      ValueBand:
+        new: false
+        when:
+          - { field: TriageOutcome, op: eq, value: "Explore here" }
+      EaseBand:
+        new: false
+        when:
+          - { field: TriageOutcome, op: eq, value: "Explore here" }
+      Evidence:
+        new: false
+        when:
+          - { field: TriageOutcome, op: eq, value: "Explore here" }
+      ReviewTier:
+        new: false
+        when:
+          - { field: TriageOutcome, op: eq, value: "Explore here" }
+      Horizon:
+        new: false
+        when:
+          - { field: TriageOutcome, op: eq, value: "Explore here" }
+      ClinicalReviewer:
+        new: false
+        when:
+          - { field: ReviewTier, op: eq, value: "Clinical or data review" }
+      ClinicalReviewDate:
+        new: false
+        when:
+          - { field: ReviewTier, op: eq, value: "Clinical or data review" }
+      Sponsor:
+        new: false
+        when:
+          - { field: Status, op: in, value: ["Awaiting decision", Accepted, "In delivery", Adopted, "Not adopted"] }
+      Pattern:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Accepted, "In delivery", Adopted, "Not adopted"] }
+      MergedInto:
+        new: false
+        when:
+          - { field: Status, op: eq, value: Duplicate }
+      DecisionDate:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Accepted, "In delivery", Adopted, "Not adopted", "Not now"] }
+      DecisionRationale:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Accepted, "In delivery", Adopted, "Not adopted", "Not now"] }
+      ReopenTrigger:
+        new: false
+        when:
+          - { field: Status, op: eq, value: "Not now" }
+      DestinationReference:
+        new: false
+        when:
+          - { field: Status, op: eq, value: Routed }
+      DestinationLink:
+        new: false
+        when:
+          - { field: Status, op: eq, value: Routed }
+      AdoptionCheckDue:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Accepted, "In delivery"] }
+      AdoptedDate:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Adopted, "Not adopted"] }
+      AdoptionNote:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Adopted, "Not adopted"] }
+  Pattern:
+    reconcile: exact
+    columns:
+      ProposedDate: { new: false }
+      PilotTeam:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Piloting, Available, Retired] }
+      AvailableDate:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Available, Retired] }
+      RetiredDate:
+        new: false
+        when:
+          - { field: Status, op: eq, value: Retired }
+      RetiredReason:
+        new: false
+        when:
+          - { field: Status, op: eq, value: Retired }
+
+form_formatting:
+  Opportunity:
+    header: formatting/opportunity-form-header.json
+    body: formatting/opportunity-form-body.json
+  Pattern:
+    header: formatting/pattern-form-header.json
+    body: formatting/pattern-form-body.json
+
+# Per-column rules, each with its own message. Every dated clock in this log
+# is counted from CapturedDate, so a future date silently removes a row from
+# the response and adoption figures.
+column_validation:
+  Opportunity:
+    reconcile: exact
+    columns:
+      CapturedDate:
+        when:
+          - { field: CapturedDate, op: leq, value: today }
+        message: "An ask cannot be captured in the future. Use the date it was heard, or today."
+      AcknowledgedDate:
+        when:
+          any_of:
+            - { field: AcknowledgedDate, op: is_null }
+            - { field: AcknowledgedDate, op: leq, value: today }
+        message: "Use the date the requester was actually told; it cannot be in the future."
+      ClinicalReviewDate:
+        when:
+          any_of:
+            - { field: ClinicalReviewDate, op: is_null }
+            - { field: ClinicalReviewDate, op: leq, value: today }
+        message: "Use the date the review was signed; it cannot be in the future."
+      DecisionDate:
+        when:
+          any_of:
+            - { field: DecisionDate, op: is_null }
+            - { field: DecisionDate, op: leq, value: today }
+        message: "Use the date the decision was made; it cannot be in the future."
+      AdoptedDate:
+        when:
+          any_of:
+            - { field: AdoptedDate, op: is_null }
+            - { field: AdoptedDate, op: leq, value: today }
+        message: "Use the date adoption was confirmed; it cannot be in the future."
+      ReopenTrigger:
+        when:
+          any_of:
+            - { field: ReopenTrigger, op: is_null }
+            - { field: ReopenTrigger, measure: length, op: gt, value: 15 }
+        message: "Say specifically what would change the answer, in more than 15 characters. Not aligned with strategy tells the requester nothing."
+      AdoptionNote:
+        when:
+          any_of:
+            - { field: AdoptionNote, op: is_null }
+            - { field: AdoptionNote, measure: length, op: gt, value: 10 }
+        message: "Say what changed for the team, with a number where there is one."
+  Pattern:
+    reconcile: exact
+    columns:
+      ProposedDate:
+        when:
+          - { field: ProposedDate, op: leq, value: today }
+        message: "A pattern cannot be proposed in the future. Use today's date."
+      AvailableDate:
+        when:
+          any_of:
+            - { field: AvailableDate, op: is_null }
+            - { field: AvailableDate, op: leq, value: today }
+        message: "Use the date the pattern actually became available; it cannot be in the future."
+      RetiredDate:
+        when:
+          any_of:
+            - { field: RetiredDate, op: is_null }
+            - { field: RetiredDate, op: leq, value: today }
+        message: "Use the date the pattern was retired; it cannot be in the future."
+
+# Cross-column rules on the list. Each is written as an implication:
+# `if A then B` is `any_of[not A, B]`. Fast exits stay cheap: Routed needs
+# only its destination, Duplicate needs nothing a formula can read (the
+# Merged Into lookup is a governance check), and only Awaiting decision needs
+# the score.
+#
+# NOT enforceable, and 50-govern/governance.md says so:
+#   - "Accepted needs a Pattern" and "Duplicate needs Merged Into": lookups.
+#   - "A clinical-tier ask names a Clinical Reviewer": a person column.
+#   - "Acknowledged Date is on or after Captured Date": formulas here compare
+#     a column with a literal, not with another column.
+#   - "A Not now or Not adopted has a Decision Rationale": multi-line text.
+list_validation:
+  Opportunity:
+    when:
+      - any_of:
+          - { field: Status, op: eq, value: Captured }
+          - { field: TriageOutcome, op: is_not_null }
+      - any_of:
+          - { field: Status, op: neq, value: "Awaiting decision" }
+          - all_of:
+              - { field: ValueBand, op: is_not_null }
+              - { field: EaseBand, op: is_not_null }
+              - { field: Evidence, op: is_not_null }
+              - { field: Horizon, op: is_not_null }
+      - any_of:
+          - { field: Status, op: not_in, value: [Accepted, "In delivery", Adopted, "Not adopted"] }
+          - { field: DecisionDate, op: is_not_null }
+      - any_of:
+          - { field: ReviewTier, op: neq, value: "Clinical or data review" }
+          - { field: Status, op: not_in, value: [Accepted, "In delivery", Adopted, "Not adopted"] }
+          - { field: ClinicalReviewDate, op: is_not_null }
+      - any_of:
+          - { field: Status, op: neq, value: "Not now" }
+          - { field: ReopenTrigger, op: is_not_null }
+      - any_of:
+          - { field: Status, op: neq, value: Routed }
+          - { field: DestinationReference, op: is_not_null }
+      - any_of:
+          - { field: Status, op: neq, value: Adopted }
+          - all_of:
+              - { field: AdoptedDate, op: is_not_null }
+              - { field: AdoptionNote, op: is_not_null }
+    message: "Check this stage: leaving Captured needs a triage route. Awaiting decision needs Value, Ease, Evidence and Horizon. Accepted and later need a decision date, and a clinical-tier ask needs its review date first. Not now needs what would change the answer, Routed needs the receiving reference, and Adopted needs the date and what changed."
+  Pattern:
+    when:
+      - any_of:
+          - { field: Status, op: neq, value: Available }
+          - { field: AvailableDate, op: is_not_null }
+      - any_of:
+          - { field: Status, op: neq, value: Retired }
+          - all_of:
+              - { field: RetiredDate, op: is_not_null }
+              - { field: RetiredReason, op: is_not_null }
+    message: "An Available pattern needs its Available Date; a Retired one needs its Retired Date and Reason."
+
+# Demo rows, emitted as demo-data.js only under --seed. Patterns first
+# because asks look them up; the duplicate ask is declared after the ask it
+# merges into, because a demo_ref may only point backwards. Every view
+# returns at least one row and every formatted column renders. Nothing here
+# is patient-identifiable; the two clinical-workflow asks describe the
+# process, not a person.
+demo_items:
+  Pattern:
+    - key: pat-approval
+      values:
+        Title: "[DEMO] Approval flow on a list"
+        Description: "Demo row. A request is typed into a list, an approval runs in Power Automate, and the requester sees the outcome without chasing anyone."
+        Workloads: ["SharePoint list", "Power Automate"]
+        ProposedDate: "today-90"
+        EffortBand: Small
+        Readiness: "Available now"
+        GovernanceTier: "Digital team build"
+        Status: Available
+        BuildOwner: "@me"
+        PilotTeam: "Pharmacy stores"
+        AvailableDate: "today-40"
+        GuideLink: "https://example.sharepoint.com/sites/digital/SitePages/approval-flow-pattern.aspx"
+    - key: pat-roster
+      values:
+        Title: "[DEMO] Team roster in Shifts"
+        Description: "Demo row. A team's roster kept in Teams Shifts so swaps and cover are visible to the whole team and the manager."
+        Workloads: ["Teams"]
+        ProposedDate: "today-30"
+        EffortBand: Medium
+        Readiness: "Available now"
+        GovernanceTier: "Self-service"
+        Status: Piloting
+        BuildOwner: "@me"
+        PilotTeam: "Community nursing"
+    - key: pat-form
+      values:
+        Title: "[DEMO] Paper form replaced by Forms and a list"
+        Description: "Demo row. A paper form becomes a Microsoft Form whose responses land in a list the team works from, with the paper version withdrawn."
+        Workloads: ["Forms", "SharePoint list", "Power Automate"]
+        ProposedDate: "today-14"
+        EffortBand: Small
+        Readiness: "Available now"
+        GovernanceTier: "Digital team build"
+        Status: Building
+        BuildOwner: "@me"
+    - key: pat-copilot
+      values:
+        Title: "[DEMO] Meeting summaries with Copilot"
+        Description: "Demo row. Recorded committee meetings summarised by Copilot into the meeting record. Needs licences and a review of what may be recorded."
+        Workloads: ["Copilot", "Teams"]
+        ProposedDate: "today-5"
+        EffortBand: Large
+        Readiness: "Needs licence or approval"
+        GovernanceTier: "Reviewed build"
+        Status: Proposed
+        BuildOwner: "@me"
+    - key: pat-retired
+      values:
+        Title: "[DEMO] Shared mailbox rules for referrals"
+        Description: "Demo row. Inbox rules that sorted referral emails into folders. Retired when the approval flow pattern replaced the mailbox."
+        Workloads: ["Other"]
+        ProposedDate: "today-200"
+        EffortBand: Medium
+        Readiness: "Not available"
+        GovernanceTier: "Self-service"
+        Status: Retired
+        BuildOwner: "@me"
+        PilotTeam: "Outpatients reception"
+        AvailableDate: "today-150"
+        RetiredDate: "today-20"
+        RetiredReason: "Replaced by the approval flow pattern; rules kept deleting referrals"
+  Opportunity:
+    - key: opp-captured-overdue
+      values:
+        Title: "[DEMO] Ward clerks re-key the bed board into a spreadsheet"
+        ProblemStatement: "Demo row. The bed board is updated on the whiteboard and then typed into a spreadsheet twice a shift for the bed manager. It is often behind and the two disagree."
+        ServiceArea: "Inpatient services"
+        TeamOrUnit: "Medical ward 2"
+        CurrentMethod: Spreadsheet
+        PeopleAffected: "One team"
+        HeardAt: "Floor walk"
+        DataSensitivity: "Touches patient or clinical workflow data"
+        RequestedFor: "@me"
+        CapturedDate: "today-10"
+        Status: Captured
+    - key: opp-captured-new
+      values:
+        Title: "[DEMO] Leave requests still go by email to three people"
+        ProblemStatement: "Demo row. A leave request is emailed to the manager, the roster clerk and payroll, and each keeps their own copy. Nobody knows which requests are approved."
+        ServiceArea: "Corporate and operational support"
+        TeamOrUnit: "Finance"
+        CurrentMethod: Email
+        PeopleAffected: "Several teams"
+        HeardAt: "Drop-in"
+        DataSensitivity: "No patient or sensitive data"
+        RequestedFor: "@me"
+        CapturedDate: "today-2"
+        Status: Captured
+    - key: opp-exploring
+      values:
+        Title: "[DEMO] Community nurses swap shifts by text message"
+        ProblemStatement: "Demo row. Shift swaps are arranged by personal text message and the manager finds out afterwards. Cover gaps are discovered on the day."
+        ServiceArea: "Community and virtual care"
+        TeamOrUnit: "Community nursing"
+        CurrentMethod: "Verbal or phone"
+        PeopleAffected: "One team"
+        HeardAt: "Rollout workshop"
+        DataSensitivity: "Touches sensitive staff or third-party data"
+        RequestedFor: "@me"
+        CapturedDate: "today-20"
+        TriageOutcome: "Explore here"
+        ValueBand: Optimiser
+        EaseBand: Moderate
+        Evidence: Observed
+        ReviewTier: "Security review"
+        Horizon: Now
+        Owner: "@me"
+        Status: Exploring
+        AcknowledgedDate: "today-18"
+    - key: opp-awaiting
+      values:
+        Title: "[DEMO] Theatre equipment loans signed out on paper"
+        ProblemStatement: "Demo row. Loan equipment is signed out in a paper book that lives in one theatre. When it is not returned nobody can tell who has it without walking the book around."
+        ServiceArea: "Clinical support services"
+        TeamOrUnit: "Theatres"
+        CurrentMethod: Paper
+        PeopleAffected: "Several teams"
+        HeardAt: "Champions meeting"
+        DataSensitivity: "Touches patient or clinical workflow data"
+        RequestedFor: "@me"
+        CapturedDate: "today-35"
+        TriageOutcome: "Explore here"
+        ValueBand: "Game change"
+        EaseBand: Moderate
+        Evidence: Measured
+        ReviewTier: "Clinical or data review"
+        ClinicalReviewer: "@me"
+        ClinicalReviewDate: "today-5"
+        Horizon: Now
+        Sponsor: "@me"
+        Owner: "@me"
+        Status: "Awaiting decision"
+        AcknowledgedDate: "today-30"
+    - key: opp-strategic
+      values:
+        Title: "[DEMO] Copilot summaries for every committee"
+        ProblemStatement: "Demo row. Committee secretaries spend a day a week writing minutes from recordings. The executive office asked whether Copilot could draft them."
+        ServiceArea: "Whole health service"
+        TeamOrUnit: "Executive office"
+        CurrentMethod: "M365 feature not used"
+        PeopleAffected: "Whole service"
+        HeardAt: "Direct request"
+        DataSensitivity: "Touches sensitive staff or third-party data"
+        RequestedFor: "@me"
+        CapturedDate: "today-15"
+        TriageOutcome: "Explore here"
+        ValueBand: "Game change"
+        EaseBand: Hard
+        Evidence: Assumed
+        ReviewTier: "Security review"
+        Horizon: Strategic
+        Owner: "@me"
+        Status: Exploring
+        AcknowledgedDate: "today-12"
+    - key: opp-accepted
+      values:
+        Title: "[DEMO] Pharmacy stock requests approved by walking a form upstairs"
+        ProblemStatement: "Demo row. A stock request is filled in on paper, carried to the pharmacist for a signature, then carried to stores. About forty a week, each taking a walk."
+        ServiceArea: "Diagnostics and pharmacy"
+        TeamOrUnit: "Pharmacy stores"
+        CurrentMethod: Paper
+        PeopleAffected: "One team"
+        HeardAt: "Rollout workshop"
+        DataSensitivity: "No patient or sensitive data"
+        RequestedFor: "@me"
+        CapturedDate: "today-50"
+        TriageOutcome: "Explore here"
+        ValueBand: Optimiser
+        EaseBand: Easy
+        Evidence: Measured
+        ReviewTier: Standard
+        Horizon: Now
+        Sponsor: "@me"
+        Owner: "@me"
+        Status: Accepted
+        Pattern: { demo_ref: pat-approval }
+        AcknowledgedDate: "today-46"
+        DecisionDate: "today-30"
+        DecisionRationale: "Demo row. Accepted: the approval flow pattern already exists and the team measured the walk at about forty trips a week."
+        AdoptionCheckDue: "today+20"
+    - key: opp-in-delivery
+      values:
+        Title: "[DEMO] Outpatient feedback cards typed up weekly"
+        ProblemStatement: "Demo row. Paper feedback cards are collected from the waiting room and typed into a spreadsheet every Friday. Comments from Monday reach anyone on Friday."
+        ServiceArea: "Outpatient and ambulatory care"
+        TeamOrUnit: "Outpatients reception"
+        CurrentMethod: Paper
+        PeopleAffected: "One team"
+        HeardAt: "Floor walk"
+        DataSensitivity: "No patient or sensitive data"
+        RequestedFor: "@me"
+        CapturedDate: "today-45"
+        TriageOutcome: "Explore here"
+        ValueBand: Optimiser
+        EaseBand: Easy
+        Evidence: Observed
+        ReviewTier: Standard
+        Horizon: Now
+        Sponsor: "@me"
+        Owner: "@me"
+        Status: "In delivery"
+        Pattern: { demo_ref: pat-form }
+        AcknowledgedDate: "today-40"
+        DecisionDate: "today-25"
+        DecisionRationale: "Demo row. Accepted as the pilot for the Forms and list pattern; the paper card is withdrawn once the QR code is on the wall."
+        AdoptionCheckDue: "today-3"
+    - key: opp-adopted
+      values:
+        Title: "[DEMO] Facilities job requests by phone call"
+        ProblemStatement: "Demo row. Maintenance jobs were phoned through to whoever answered and written on a pad. Jobs were lost and requesters rang again."
+        ServiceArea: "Corporate and operational support"
+        TeamOrUnit: "Maintenance"
+        CurrentMethod: "Verbal or phone"
+        PeopleAffected: "Several teams"
+        HeardAt: "Rollout workshop"
+        DataSensitivity: "No patient or sensitive data"
+        RequestedFor: "@me"
+        CapturedDate: "today-120"
+        TriageOutcome: "Explore here"
+        ValueBand: Optimiser
+        EaseBand: Easy
+        Evidence: Measured
+        ReviewTier: Standard
+        Horizon: Now
+        Sponsor: "@me"
+        Owner: "@me"
+        Status: Adopted
+        Pattern: { demo_ref: pat-approval }
+        AcknowledgedDate: "today-115"
+        DecisionDate: "today-100"
+        DecisionRationale: "Demo row. Accepted; delivered through the approval flow pattern with a facilities queue."
+        AdoptionCheckDue: "today-30"
+        AdoptedDate: "today-28"
+        AdoptionNote: "Phone requests fell from about 40 a week to under 5 within a month"
+    - key: opp-routed-helpdesk
+      values:
+        Title: "[DEMO] Give the new ward clerk access to the shared calendar"
+        ProblemStatement: "Demo row. A new starter cannot see the ward's shared calendar. This is an access request, not an innovation."
+        ServiceArea: "Inpatient services"
+        TeamOrUnit: "Medical ward 1"
+        CurrentMethod: Email
+        PeopleAffected: "One person"
+        HeardAt: "Drop-in"
+        DataSensitivity: "No patient or sensitive data"
+        RequestedFor: "@me"
+        CapturedDate: "today-8"
+        TriageOutcome: "Service request or fault - send to the helpdesk"
+        Owner: "@me"
+        Status: Routed
+        AcknowledgedDate: "today-7"
+        DestinationReference: "[DEMO] SR-2026-0311"
+        DestinationLink: "https://example.sharepoint.com/sites/helpdesk/Lists/Requests/DispForm.aspx?ID=311"
+    - key: opp-routed-training
+      values:
+        Title: "[DEMO] Managers want a shared team task list"
+        ProblemStatement: "Demo row. Team leaders keep task lists in personal notebooks and email. Planner already does this and is switched on; nobody has shown them."
+        ServiceArea: "Corporate and operational support"
+        TeamOrUnit: "People and culture"
+        CurrentMethod: Email
+        PeopleAffected: "Several teams"
+        HeardAt: "Champions meeting"
+        DataSensitivity: "No patient or sensitive data"
+        RequestedFor: "@me"
+        CapturedDate: "today-12"
+        TriageOutcome: "Already available - show and train"
+        Owner: "@me"
+        Status: Routed
+        AcknowledgedDate: "today-11"
+        DestinationReference: "[DEMO] Planner walkthrough booked for the leaders meeting"
+    - key: opp-routed-improvement
+      values:
+        Title: "[DEMO] Two sign-offs on the same stores requisition"
+        ProblemStatement: "Demo row. The requisition is signed by the team leader and again by the same team leader as cost-centre owner. A process fix, not an M365 build."
+        ServiceArea: "Corporate and operational support"
+        TeamOrUnit: "Supply"
+        CurrentMethod: Paper
+        PeopleAffected: "One team"
+        HeardAt: "Rollout workshop"
+        DataSensitivity: "No patient or sensitive data"
+        RequestedFor: "@me"
+        CapturedDate: "today-14"
+        TriageOutcome: "Process change - improvement register"
+        Owner: "@me"
+        Status: Routed
+        AcknowledgedDate: "today-13"
+        DestinationReference: "[DEMO] CI-2026-0042"
+    - key: opp-routed-project
+      values:
+        Title: "[DEMO] Replace the paper patient transport booking book"
+        ProblemStatement: "Demo row. Transport bookings are taken by phone into a book and rung through to the contractor. It spans three services and the contractor, so it is a project rather than a pattern."
+        ServiceArea: "Multi-service or external interface"
+        TeamOrUnit: "Patient transport"
+        CurrentMethod: Paper
+        PeopleAffected: "Whole service"
+        HeardAt: "Direct request"
+        DataSensitivity: "Touches patient or clinical workflow data"
+        RequestedFor: "@me"
+        CapturedDate: "today-18"
+        TriageOutcome: "Project-sized - project pipeline"
+        Owner: "@me"
+        Status: Routed
+        AcknowledgedDate: "today-16"
+        DestinationReference: "[DEMO] PP-2026-0009"
+    - key: opp-routed-mandated
+      values:
+        Title: "[DEMO] Shared drive folder open to everyone on site"
+        ProblemStatement: "Demo row. A champion noticed a folder of staff files readable by every site member. Reported to the privacy officer first; this row only records the hand-off."
+        ServiceArea: "Corporate and operational support"
+        TeamOrUnit: "People and culture"
+        CurrentMethod: "Legacy system"
+        PeopleAffected: "Several teams"
+        HeardAt: "Floor walk"
+        DataSensitivity: "Touches sensitive staff or third-party data"
+        RequestedFor: "@me"
+        CapturedDate: "today-4"
+        TriageOutcome: "Incident, complaint, privacy or cyber - mandated system"
+        Owner: "@me"
+        Status: Routed
+        AcknowledgedDate: "today-4"
+        DestinationReference: "[DEMO] PRIV-2026-0017"
+    - key: opp-duplicate
+      values:
+        Title: "[DEMO] Dispensary stock approvals by walking a form"
+        ProblemStatement: "Demo row. The dispensary carries the same stock request form to the same pharmacist. Merged into the stores ask, which is already accepted."
+        ServiceArea: "Diagnostics and pharmacy"
+        TeamOrUnit: "Pharmacy dispensary"
+        CurrentMethod: Paper
+        PeopleAffected: "One team"
+        HeardAt: "Floor walk"
+        DataSensitivity: "No patient or sensitive data"
+        RequestedFor: "@me"
+        CapturedDate: "today-6"
+        TriageOutcome: "Duplicate - merge into the earlier ask"
+        Owner: "@me"
+        Status: Duplicate
+        MergedInto: { demo_ref: opp-accepted }
+        AcknowledgedDate: "today-5"
+    - key: opp-not-now
+      values:
+        Title: "[DEMO] Build a bed-management app in Power Apps"
+        ProblemStatement: "Demo row. Patient flow asked for a bespoke app to replace the bed board. The patient administration system's roadmap covers this and a bespoke app would need a clinical safety case."
+        ServiceArea: "Inpatient services"
+        TeamOrUnit: "Patient flow"
+        CurrentMethod: "Legacy system"
+        PeopleAffected: "Whole service"
+        HeardAt: "Direct request"
+        DataSensitivity: "Touches patient or clinical workflow data"
+        RequestedFor: "@me"
+        CapturedDate: "today-25"
+        TriageOutcome: "Not now"
+        Owner: "@me"
+        Status: "Not now"
+        AcknowledgedDate: "today-22"
+        DecisionDate: "today-20"
+        DecisionRationale: "Demo row. Declined for now: the clinical system's roadmap covers bed management and a bespoke build would duplicate it without the safety controls."
+        ReopenTrigger: "The clinical system roadmap drops bed management, and a funded clinical safety review is agreed"
