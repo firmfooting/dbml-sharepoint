@@ -14,20 +14,26 @@ fields and none of the digital team's, and you type nine things:
    roster" is better than "Rostering solution".
 2. **Problem Statement**: two to four sentences on what happens today, who
    is affected and why it matters.
-3. **Service Area** and **Team or unit**: where you heard it. Choose *Not
-   sure* rather than guessing an area.
-4. **Current Method**: how the work is done today.
-5. **People Affected**: how many it touches, in four steps. This is the
+3. **Service Area**: the service the ask came from. Choose *Not sure*
+   rather than guessing.
+4. **Team or unit**: the ward, team or unit you heard it in.
+5. **Current Method**: how the work is done today.
+6. **People Affected**: how many it touches, in four steps. This is the
    only sizing you are asked for.
-6. **Heard at**: the workshop, floor walk, drop-in or meeting.
-7. **Data Sensitivity**: would a solution touch patient, clinical workflow
+7. **Heard at**: the workshop, floor walk, drop-in or meeting.
+8. **Data Sensitivity**: would a solution touch patient, clinical workflow
    or sensitive staff data? *Not sure* is an honest answer and decides who
    reviews the ask; it does not decline it.
-8. **Requested for**: the staff member who raised it. You are recorded as
+9. **Requested for**: the staff member who raised it. You are recorded as
    Created By.
 
 Save. Status becomes Captured, Captured Date fills with today and the ask
 appears in **Needs response**.
+
+The New form hides the digital team's fields, but SharePoint does not stop
+a champion opening any ask afterwards and editing them. The split between
+champions and the digital team is a working rule, not a permission: correct
+a capture, never a triage, and leave the scored fields to the Owner.
 
 What never goes in: a patient, a clinical record, a named staff grievance.
 Describe the process, not the person. Attachments are switched off by the

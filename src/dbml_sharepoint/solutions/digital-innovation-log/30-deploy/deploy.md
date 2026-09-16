@@ -48,7 +48,7 @@ console. A successful deployment ends with `[SP-DEPLOY] [DONE]` and
 
 Add `--seed` to the build command and the bundle gains `demo-data.js.txt`.
 Paste `deploy.js.txt` first, then `demo-data.js.txt`, from the same bundle.
-It creates five `[DEMO]` patterns and fifteen `[DEMO]` asks. Dates are
+It creates five `[DEMO]` patterns and sixteen `[DEMO]` asks. Dates are
 offsets from the day of the paste, so the picture below holds whenever it is
 run. What to look for:
 
@@ -59,9 +59,10 @@ run. What to look for:
   change x Moderate, 6) and takes its colour from *Value*.
 - **Delivery and adoption** shows one ask under each of two patterns. The
   *Adoption Check Due* on the In delivery ask is three days past and red.
-- **Closed and routed** holds eight rows: one Adopted with a filled *Days To
-  Adopted* bar, five Routed (one per route out), one Duplicate and one Not
-  now with its *Reopen trigger* visible.
+- **Closed and routed** holds nine rows: one Adopted with a filled *Days To
+  Adopted* bar and its *Adoption Note*, one Not adopted, five Routed (one per
+  route out), one Duplicate and one Not now with its *Reopen trigger*
+  visible.
 - **Catalogue** shows one Available pattern with a filled *Days To
   Available* bar (50 of 90) and a *Next Review Due* about eleven months
   out.
@@ -87,6 +88,12 @@ seed a site that already holds real asks.
 - [ ] A test account in `DI Champions` can add an ask and edit it, and
       cannot delete it. The same account can read `DI_Pattern` and cannot add
       a pattern.
+- [ ] The same champion account can open an ask another account created and
+      edit its digital-team fields. That is the declared model, not a defect:
+      the level does not trim by item, and `50-govern/governance.md` says the
+      role split is a working rule. Versioning is on, so the edit is visible.
+- [ ] A champion account can save a personal view on **Needs response** and
+      create an alert on it.
 - [ ] A test account in `DI Digital Team` can add and edit rows on both
       lists and cannot delete on either.
 - [ ] A plain Site Member can read both lists, including the demo Not now
@@ -107,11 +114,14 @@ seed a site that already holds real asks.
       Data Sensitivity and Requested for. The digital team's fields are not
       on it.
 - [ ] Editing a saved ask shows **Triage and score**, **Decision and
-      delivery**, **Adoption** and **System**. *Value*, *Ease*, *Evidence*,
+      delivery** and **Adoption**; **System** is a bare heading on the edit
+      form too. *Value*, *Ease*, *Evidence*,
       *Review Tier* and *Horizon* appear only once Triage Outcome is
       *Explore here*; *Clinical Reviewer* and *Clinical Review Date* only
       once Review Tier is *Clinical or data review*.
-- [ ] A Captured Date in the future is refused with its own message.
+- [ ] A Captured Date in the future is refused. The refusal shows the list
+      message: date-versus-today rules are hoisted onto the list rule at
+      build time, and `deploy-manifest.md` names the five that were.
 
 ### Triage and score
 

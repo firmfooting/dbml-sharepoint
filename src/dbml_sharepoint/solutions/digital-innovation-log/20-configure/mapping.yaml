@@ -26,11 +26,13 @@ calculated_formulas:
     # Date plus days is the form Learn's common-formulas page documents for
     # a calculated column ("=[Column1]+3").
     AcknowledgeBy: '=IF(ISBLANK([CapturedDate]),"",[CapturedDate]+7)'
-    DaysToAcknowledge: '=IF(OR(ISBLANK([CapturedDate]),ISBLANK([AcknowledgedDate])),"",DATEDIF([CapturedDate],[AcknowledgedDate],"d"))'
-    DaysToDecision: '=IF(OR(ISBLANK([CapturedDate]),ISBLANK([DecisionDate])),"",DATEDIF([CapturedDate],[DecisionDate],"d"))'
-    DaysToAdopted: '=IF(OR(ISBLANK([CapturedDate]),ISBLANK([AdoptedDate])),"",DATEDIF([CapturedDate],[AdoptedDate],"d"))'
+    # DATEDIF rejects a reversed range (audit-actions guards the same way),
+    # so a date typed before capture reads blank rather than as an error.
+    DaysToAcknowledge: '=IF(OR(ISBLANK([CapturedDate]),ISBLANK([AcknowledgedDate])),"",IF([AcknowledgedDate]<[CapturedDate],"",DATEDIF([CapturedDate],[AcknowledgedDate],"d")))'
+    DaysToDecision: '=IF(OR(ISBLANK([CapturedDate]),ISBLANK([DecisionDate])),"",IF([DecisionDate]<[CapturedDate],"",DATEDIF([CapturedDate],[DecisionDate],"d")))'
+    DaysToAdopted: '=IF(OR(ISBLANK([CapturedDate]),ISBLANK([AdoptedDate])),"",IF([AdoptedDate]<[CapturedDate],"",DATEDIF([CapturedDate],[AdoptedDate],"d")))'
   Pattern:
-    DaysToAvailable: '=IF(OR(ISBLANK([ProposedDate]),ISBLANK([AvailableDate])),"",DATEDIF([ProposedDate],[AvailableDate],"d"))'
+    DaysToAvailable: '=IF(OR(ISBLANK([ProposedDate]),ISBLANK([AvailableDate])),"",IF([AvailableDate]<[ProposedDate],"",DATEDIF([ProposedDate],[AvailableDate],"d")))'
     # MIN against the day before the first of the following month holds a
     # 31st to the last real day of the target month (#418).
     NextReviewDue: '=IF(ISBLANK([AvailableDate]),"",MIN(DATE(YEAR([AvailableDate]),MONTH([AvailableDate])+12,DAY([AvailableDate])),DATE(YEAR([AvailableDate]),MONTH([AvailableDate])+13,0)))'
@@ -72,8 +74,11 @@ groups:
     enroll_enterprise_reader: true
 
 permission_levels:
+  # CreateAlerts and ManagePersonalViews are what the built-in Contribute
+  # carries and Read does not; without them nobody on a custom level can
+  # save the personal view governance asks for or set an alert on a queue.
   - name: "{prefix} Contribute No Delete"
-    description: "Add, edit and read items; no deleting and no schema rights."
+    description: "Add, edit and read items, save personal views and alerts; no deleting and no schema rights."
     base_permissions:
       - AddListItems
       - EditListItems
@@ -84,6 +89,8 @@ permission_levels:
       - ViewPages
       - BrowseUserInfo
       - UseRemoteAPIs
+      - CreateAlerts
+      - ManagePersonalViews
 
 list_permissions:
   default:
@@ -321,9 +328,9 @@ views:
         CapturedDate: 150
         Status: 150
     - title: "Closed and routed"
-      fields: [Title, ServiceArea, TriageOutcome, Status, DestinationReference,
+      fields: [Title, ServiceArea, TriageOutcome, Status, Pattern, DestinationReference,
                DestinationLink, ReopenTrigger, ValueBand, AdoptedDate, DaysToAdopted,
-               Modified]
+               AdoptionNote, Modified]
       where:
         - { field: Status, op: in, value: [Adopted, "Not adopted", Routed, Duplicate, "Not now"] }
       sort:
@@ -333,18 +340,21 @@ views:
         ServiceArea: 210
         TriageOutcome: 300
         Status: 130
+        Pattern: 240
         DestinationReference: 220
         DestinationLink: 170
         ReopenTrigger: 280
         ValueBand: 130
         AdoptedDate: 150
         DaysToAdopted: 140
+        AdoptionNote: 280
         Modified: 170
   Pattern:
     - title: "Catalogue"
       default: true
       fields: [Title, Workloads, Readiness, GovernanceTier, EffortBand, BuildOwner,
-               GuideLink, AvailableDate, DaysToAvailable, NextReviewDue, Status]
+               GuideLink, ProposedDate, AvailableDate, DaysToAvailable, NextReviewDue,
+               Status]
       where:
         - { field: Status, op: eq, value: Available }
       sort:
@@ -357,6 +367,7 @@ views:
         EffortBand: 110
         BuildOwner: 160
         GuideLink: 170
+        ProposedDate: 150
         AvailableDate: 150
         DaysToAvailable: 140
         NextReviewDue: 150
@@ -504,9 +515,11 @@ form_formatting:
     header: formatting/pattern-form-header.json
     body: formatting/pattern-form-body.json
 
-# Per-column rules, each with its own message. Every dated clock in this log
-# is counted from CapturedDate, so a future date silently removes a row from
-# the response and adoption figures.
+# Per-column rules. Every dated clock in this log is counted from
+# CapturedDate, so a future date silently removes a row from the response
+# and adoption figures. The date-versus-today rules are hoisted onto the
+# list rule at build time (see the mapping reference), so their refusal shows
+# the list message; only the two length rules keep a message of their own.
 column_validation:
   Opportunity:
     reconcile: exact
@@ -871,6 +884,32 @@ demo_items:
         AdoptionCheckDue: "today-30"
         AdoptedDate: "today-28"
         AdoptionNote: "Phone requests fell from about 40 a week to under 5 within a month"
+    - key: opp-not-adopted
+      values:
+        Title: "[DEMO] Linen top-up requests through the approval flow"
+        ProblemStatement: "Demo row. Linen top-ups were requested by phone. The approval flow was offered, the team tried it for a fortnight and went back to the phone because the linen room answers faster."
+        ServiceArea: "Inpatient services"
+        TeamOrUnit: "Surgical ward"
+        CurrentMethod: "Verbal or phone"
+        PeopleAffected: "One team"
+        HeardAt: "Rollout workshop"
+        DataSensitivity: "No patient or sensitive data"
+        RequestedFor: "@me"
+        CapturedDate: "today-110"
+        TriageOutcome: "Explore here"
+        ValueBand: Tweak
+        EaseBand: Easy
+        Evidence: Observed
+        ReviewTier: Standard
+        Horizon: Now
+        Sponsor: "@me"
+        Owner: "@me"
+        Status: "Not adopted"
+        Pattern: { demo_ref: pat-approval }
+        AcknowledgedDate: "today-105"
+        DecisionDate: "today-90"
+        DecisionRationale: "Demo row. Not adopted: the flow added a step to a request the linen room already answers within the hour. The lesson is recorded and the pattern is unchanged."
+        AdoptionCheckDue: "today-25"
     - key: opp-routed-helpdesk
       values:
         Title: "[DEMO] Give the new ward clerk access to the shared calendar"

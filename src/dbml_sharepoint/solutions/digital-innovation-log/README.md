@@ -85,12 +85,13 @@ its reviewer" are governance checks, and `50-govern/governance.md` says so.
 
 **Customisation points:** `service_area` and `m365_workload` in the schema;
 the seven-day acknowledgement in `AcknowledgeBy`; the `max:` on the
-`DaysToAdopted` bar, which ships at 120 days. Five views filter on `Status`
-members by name, so a renamed member empties a view without failing the
-build.
+`DaysToAdopted` bar, which ships at 120 days. Every view filters on `Status`
+members by name, and so do the overdue guards and the visibility rules, so a
+renamed member empties a view without failing the build.
 
 **Demo data.** Build with `--seed` and the bundle gains a `demo-data.js.txt`
-that pastes five `[DEMO]` patterns and fifteen `[DEMO]` asks: two awaiting a
+that pastes five `[DEMO]` patterns and sixteen `[DEMO]` asks: two awaiting a
 response (one overdue), one per triage route, a duplicate merged into an
-accepted ask, a clinical-review ask, and an adopted ask with a measured note.
+accepted ask, a clinical-review ask, an adopted ask with a measured note and
+a not-adopted one with its lesson.
 See `30-deploy/deploy.md`.

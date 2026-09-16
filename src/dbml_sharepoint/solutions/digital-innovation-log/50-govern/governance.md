@@ -18,9 +18,12 @@ Describe the process and reference the clinical system where one applies.
 ask marked *Touches patient or clinical workflow data* takes the *Clinical
 or data review* tier, and a registered clinician signs its **Clinical Review
 Date** before the ask can be accepted. That is the local expression of NSQHS
-Clinical Governance Standard actions 1.10, 1.16 and 1.24, and, where the
-service follows it, of DCB0160, under which the organisation deploying
-health IT owns the clinical risk and a clinician signs it off. An ask marked
+Clinical Governance Standard actions 1.10, 1.16 and 1.24
+(<https://www.safetyandquality.gov.au/national-standards/nsqhs-standards/clinical-governance-standard>)
+and, where the service follows it, of DCB0160
+(<https://www.england.nhs.uk/long-read/digital-clinical-safety-assurance/>),
+under which the organisation deploying health IT owns the clinical risk and
+a clinician signs it off. An ask marked
 *Touches sensitive staff or third-party data* takes the *Security review*
 tier.
 
@@ -43,6 +46,25 @@ mandated system* records only the hand-off and the receiving reference. See
 Every Explore here ask has an Owner, every accepted ask has a Sponsor and
 every pattern has a Build Owner. If it is everyone's responsibility it is
 nobody's.
+
+## Access model
+
+Site Members read both lists. `DI Champions` hold `DI Contribute No Delete`
+on `DI_Opportunity` and Read on `DI_Pattern`; `DI Digital Team` hold the
+same level on both. The level adds, edits, reads, saves personal views and
+alerts, and cannot delete.
+
+The level does not trim by item, so a champion can open any ask, including
+one another champion captured or one the digital team has scored, and edit
+every field on it. The New form hides the digital team's fields; the edit
+form does not. The role split in the Ownership table is therefore a working
+rule rather than a permission, and the staff guide says so. Two things make
+that acceptable: versioning is on with a two-hundred-version limit, so a
+wrong edit is visible and reversible, and no level deletes, so a row cannot
+vanish. Restricting champions to their own rows would need SharePoint's
+item-level settings, which the deployer neither sets nor verifies; a
+service that wants that reads opportunities-register's deploy guide for the
+manual gate and its two-account test.
 
 ## Band definitions
 
@@ -101,8 +123,11 @@ and the form refuses a trigger that short.
 
 ## The champions meeting
 
-Monthly, one hour, run by the log owner. The agenda has three parts, which
-is the shape Microsoft recommends for a champions programme:
+Monthly, one hour, run by the log owner. Microsoft's Teams adoption
+guidance asks for a monthly champions meeting with an agenda split between
+new features, feedback and self-service tools
+(<https://learn.microsoft.com/microsoftteams/teams-adoption-optimize-feedback-and-reporting>);
+this agenda follows that split:
 
 1. **What shipped.** Patterns that became Available since last month, read
    from **Catalogue**, and the Adopted rows in **Closed and routed** with
@@ -161,8 +186,9 @@ or data review ask needs its Clinical Review Date before acceptance; Not
 now needs a Reopen trigger longer than fifteen characters; Routed needs a
 Receiving reference; Adopted needs an Adopted Date and an Adoption Note
 longer than ten characters; an Available pattern needs an Available Date;
-a Retired one needs a Retired Date and Reason; and no dated column accepts
-a future date.
+a Retired one needs a Retired Date and Reason; and no dated column that
+records something that has happened accepts a future date. Adoption Check
+Due is a planned date and may be in the future.
 
 ## Records and decommissioning
 
