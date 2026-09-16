@@ -83,7 +83,12 @@ _HIDE_BLANK = "=if(@currentField == '', 'none', 'flex')"
 # into one block without it. The radius + right/vertical gap makes each
 # cell read as its own element.
 _CELL_INSET: dict[str, str] = {"border-radius": "4px", "margin": "1px 4px 1px 0"}
-# SP renders calculated-text values as 'string;#Value'; strip for display.
+# Live-confirmed 2026-09-16: calculated scores can arrive without a type prefix.
+_CALC_VALUE = (
+    "if(indexOf(toString(@currentField), ';#') >= 0, "
+    "substring(toString(@currentField), indexOf(toString(@currentField), ';#') + 2, 1000), "
+    "toString(@currentField))"
+)
 _CALC_TEXT = (
     "=if(indexOf(@currentField, ';#') >= 0, "
     "substring(@currentField, indexOf(@currentField, ';#') + 2, 1000), "
@@ -92,11 +97,8 @@ _CALC_TEXT = (
 
 
 def _calculated_scalar(constructor: str) -> str:
-    """Decode SharePoint's ``type;#value`` calculated-field payload."""
-    return (
-        f"{constructor}(substring(@currentField, "
-        "indexOf(@currentField, ';#') + 2, 1000))"
-    )
+    """Convert a calculated value with or without a SharePoint type prefix."""
+    return f"{constructor}({_CALC_VALUE})"
 
 
 def _fail(context: str, message: str) -> MappingShapeError:

@@ -905,9 +905,9 @@ and authoring rules in full.
 
 Set `calculated: true` when `severity`, `data-bar`, or `overdue-date`
 formats a `calculated_text`, `calculated_number`, or `calculated_date`
-target respectively. SharePoint exposes calculated values to column
-formatters as typed `type;#value` strings; the flag selects the matching
-decode before comparison, arithmetic, display, or date conversion.
+target respectively. Calculated values can arrive as plain values or typed
+`type;#value` strings. The flag handles either representation before
+comparison, arithmetic, display, or date conversion.
 
 :::danger `severity` and `pill` paint a false neutral on a multi-value column
 

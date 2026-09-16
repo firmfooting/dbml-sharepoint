@@ -94,9 +94,9 @@ def test_data_bar_decodes_a_calculated_number() -> None:
         {"style": "data-bar", "max": 25, "calculated": True}, "ctx",
     )
     width = out["style"]["width"]
-    assert "Number(substring(@currentField" in width
+    assert "Number(if(indexOf(toString(@currentField)" in width
     assert ";#" in width
-    assert out["children"][0]["txtContent"].startswith("=Number(substring(")
+    assert out["children"][0]["txtContent"].startswith("=Number(if(")
 
 
 def test_data_bar_color_by_takes_severity_tokens_from_another_column() -> None:
@@ -137,7 +137,7 @@ def test_calculated_data_bar_keeps_decoding_with_plain_color_source() -> None:
          "color_by": {"field": "Rating", "map": {"Low": "good"}}},
         "ctx",
     )
-    decoded = "Number(substring(@currentField"
+    decoded = "Number(if(indexOf(toString(@currentField)"
     assert decoded in out["style"]["width"]
     assert out["children"][0]["txtContent"].startswith(f"={decoded}")
     assert "[$Rating] == 'Low'" in out["attributes"]["class"]
@@ -172,9 +172,9 @@ def test_overdue_date_decodes_a_calculated_date() -> None:
         {"style": "overdue-date", "calculated": True}, "ctx",
     )
     cls = out["attributes"]["class"]
-    assert "Date(substring(@currentField" in cls
+    assert "Date(if(indexOf(toString(@currentField)" in cls
     assert ";#" in cls
-    assert "toLocaleDateString(Date(substring(" in out["children"][1]["txtContent"]
+    assert "toLocaleDateString(Date(if(" in out["children"][1]["txtContent"]
 
 
 @pytest.mark.parametrize("spec, fragment", [
@@ -491,3 +491,60 @@ def test_a_field_name_ending_in_a_newline_is_refused() -> None:
              "guard": {"field": trailing, "not": ["Done"]}},
             "ctx",
         )
+
+
+@pytest.mark.parametrize("value, expected", [
+    (25, 25), ("25", 25), ("float;#25", 25),
+    (4, 4), ("4", 4), ("float;#4", 4),
+    (0, 0), ("0", 0), ("float;#0", 0),
+    (-2, -2), ("float;#-2", -2), ("12.5", 12.5),
+])
+def test_calculated_number_expression_preserves_the_whole_value(
+    value: int | str, expected: float,
+) -> None:
+    assert _evaluate_scalar(styles._calculated_scalar("Number"), value) == expected
+
+
+@pytest.mark.parametrize("prefix", ["", "datetime;#"])
+def test_calculated_date_expression_preserves_the_year(prefix: str) -> None:
+    expression = styles._calculated_scalar("Date")
+    assert _evaluate_scalar(expression, prefix + "2026-09-16T00:00:00Z") == 1789516800000
+
+
+def _evaluate_scalar(expression: str, value: int | str) -> Any:
+    """Exercise documented scalar operations; this is not a SharePoint renderer."""
+    from _node import NODE, run_node
+
+    if NODE is None:
+        pytest.skip("node is required")
+    expression = expression.replace("@currentField", "value").replace("if(", "choose(")
+    expression = expression.replace("Date(", "Date.parse(")
+    script = """
+const toString = String;
+const indexOf = (value, search) => value.indexOf(search);
+const substring = (value, start, end) => value.substring(start, end);
+const choose = (condition, yes, no) => condition ? yes : no;
+"""
+    return json.loads(run_node(
+        script + f"const value = {json.dumps(value)};\n"
+        + f"console.log(JSON.stringify({expression}));\n",
+    ))
+
+
+def test_levels_above_target_uses_the_safe_numeric_decoder() -> None:
+    from _paths import PACKAGE
+
+    path = PACKAGE / "solutions/risk-register/20-configure/formatting/levels-above-target.json"
+    formatter = json.loads(path.read_text(encoding="utf-8"))
+    scalar = styles._calculated_scalar("Number")
+    assert scalar in formatter["attributes"]["class"]
+    assert scalar in formatter["children"][0]["attributes"]["iconName"]
+    assert formatter["children"][1]["txtContent"] == "=" + scalar
+
+
+def test_calculated_overdue_date_round_trips_through_extraction() -> None:
+    from dbml_sharepoint.extract.inverse import invert_column_formatting
+
+    spec = {"style": "overdue-date", "calculated": True}
+    formatter = expand_style(spec, "ctx")
+    assert invert_column_formatting(json.dumps(formatter), "ctx")[0] == spec

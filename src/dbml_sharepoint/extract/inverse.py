@@ -111,7 +111,7 @@ def _overdue_date_candidate(formatter: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(class_expr, str) or "@now" not in class_expr:
         return None
     spec: dict[str, Any] = {"style": "overdue-date"}
-    if "indexOf(@currentField, ';#')" in class_expr:
+    if "indexOf(toString(@currentField), ';#')" in class_expr:
         spec["calculated"] = True
     excluded = re.findall(r"\[\$([A-Za-z_][A-Za-z0-9_]*)\] != '((?:[^']|'')*)'", class_expr)
     if excluded:
