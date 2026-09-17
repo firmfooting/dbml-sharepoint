@@ -26,6 +26,7 @@ ones, measure what matters, and close the loop.
 | [improvement-register](improvement-register/) | Continuous improvement log | Idea -> test -> adopt/abandon stages; before/after measures; fed by complaints, incidents and audits |
 | [measures-register](measures-register/) | KPI / measures catalogue | Definitions with numerator/denominator discipline, making "improved" provable |
 | [opportunities-register](opportunities-register/) | Project-discovered business problems | Safety-first, one-minute capture -> existing-system routing -> selective assessment and hand-off |
+| [digital-innovation-log](digital-innovation-log/) | M365 asks heard during a rollout | Champions capture; route before score; Value x Ease bands; a pattern built once, adoption recorded per team |
 | [project-pipeline](project-pipeline/) | Project ideas to decisions | Calculated benefit x feasibility priority score; gate + graveyard discipline |
 | [change-register](change-register/) | Change requests & approvals | Submit-only intake, decision authority trail, days-to-decision |
 | [deployment-log](deployment-log/) | What this tool deployed, where, by whom | The fleet's own record of itself: one list every other family's deploy stamps from wherever it runs, so an aborted run or a site left on an old schema version is visible in one place |
@@ -38,7 +39,9 @@ your own schema for the worst ones -> define how you'll know it worked
 *change-register*. When a delivery team discovers a worthwhile business
 problem outside its authority, *opportunities-register* captures it once,
 routes known destinations immediately, and assesses only the remainder before
-hand-off into that same improvement/investment chain.
+hand-off into that same improvement/investment chain. During an M365
+rollout, *digital-innovation-log* is where champions put what they hear, and
+its routes point at the same chain.
 
 *Theme: Governance, risk & compliance.*
 

@@ -1,0 +1,387 @@
+# The go-live catalogue for DI_Pattern: twenty-nine reusable M365 solution
+# patterns a regional health service can offer on day one, so the first asks
+# route to a pattern rather than a bespoke build. Researched 2026-09-17 from
+# Microsoft Learn, Microsoft Support, Microsoft customer stories for public
+# health providers, and NHS England's DCB0160 clinical safety standard;
+# every GuideLink was opened and describes what its row claims.
+#
+# Rows are in the `demo_items` value grammar (see the mapping reference) with
+# two differences: Titles carry no `[DEMO]` marker, because these rows stay,
+# and this file is not read by the build. The demo seeder requires the marker
+# by design (it is rollback's visible notice), so load this catalogue by hand
+# after `deploy.js.txt`, from the edit form or grid view, one row per entry.
+# `test/test_digital_innovation_log_seed.py` proves every row valid against
+# the schema, so a renamed enum member or column fails the build's tests
+# rather than the person typing it in.
+#
+# Every row is Proposed: this catalogue says what the service could offer,
+# and a pattern becomes Available only when its Build Owner has built it,
+# written the guide and set the Available Date. Readiness follows the
+# convention that Power Apps, Viva and Bookings ship in a later rollout wave
+# even where the licence includes them; retag them if wave one carries them.
+# The Reviewed build tier on Shifts, virtual appointments, intelligent recap
+# and the SharePoint agent follows DCB0160: anything touching patient flow or
+# staff personal data is signed off before it is used.
+#
+# Two cautions verified on Microsoft Learn on 2026-09-17: the Virtual
+# Appointments app in Teams is no longer available and Bookings is the
+# replacement (Teams Premium adds the queue and SMS), and Microsoft-managed
+# Shifts connectors to workforce management systems were retired on
+# 7 December 2025, so a link from Shifts to an e-rostering system is a vendor
+# connector or a custom Graph integration, and a Large build.
+
+seed_items:
+  Pattern:
+    # Evidence: Microsoft Learn tutorial on the "Start approval when a new item
+    # is added" template; Microsoft's healthcare guidance recommends Approvals
+    # for care teams (learn.microsoft.com/microsoft-365/frontline/teams-in-hc).
+    - key: seed-approval-flow
+      values:
+        Title: "Approval flow on a list"
+        Description: "A list holds requests such as equipment, access, leave cover or minor purchases. When an item is added, a flow sends an approval to a named approver, who responds from email, Teams or the Approvals app, and the outcome is written back to the item. Suits any team or corporate function with a sign-off step."
+        Workloads: ["SharePoint list", "Power Automate", "Teams"]
+        EffortBand: Small
+        Readiness: "Available now"
+        GovernanceTier: "Self-service"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/power-automate/trigger-sharepoint-list"
+    # Evidence: Microsoft Support's list template catalogue documents the
+    # Issue tracker template, its columns and its two pre-built rules.
+    - key: seed-issue-log
+      values:
+        Title: "Team request and issue log"
+        Description: "The Issue tracker list template gives a team a shared log with priority, status, assignment and attachments, and ships with two rules that email the assignee. Suits ward clerks, admin teams, facilities liaison and project teams for issues that belong to no mandated system."
+        Workloads: ["SharePoint list"]
+        EffortBand: Small
+        Readiness: "Available now"
+        GovernanceTier: "Self-service"
+        Status: Proposed
+        GuideLink: "https://support.microsoft.com/en-us/sharepoint/lists/data-and-lists/list-templates-in-microsoft-365"
+    # Evidence: Microsoft Support's list template catalogue documents the
+    # Asset manager template columns.
+    - key: seed-asset-tracker
+      values:
+        Title: "Equipment and asset tracker"
+        Description: "The Asset manager list template tracks who has which item, its status (available, in use, in repair, retired), check-out and due dates. Suits equipment libraries, loan pools, IT peripherals and training equipment."
+        Workloads: ["SharePoint list"]
+        EffortBand: Small
+        Readiness: "Available now"
+        GovernanceTier: "Self-service"
+        Status: Proposed
+        GuideLink: "https://support.microsoft.com/en-us/sharepoint/lists/data-and-lists/list-templates-in-microsoft-365"
+    # Evidence: Microsoft Learn documents the Forms flow templates (send
+    # responses for approval, get response details). Northern Health and
+    # Surrey and Borders Partnership NHS FT show Power Platform automation
+    # replacing paper processes in health.
+    - key: seed-form-intake
+      values:
+        Title: "Form intake to a list"
+        Description: "A Microsoft Form collects a request, audit or checklist; a flow writes each response to a list, notifies the owner and can start an approval. Suits requests, environment audits, cleaning and equipment checklists and event registrations. Not for clinical audits without clinical review."
+        Workloads: ["Forms", "Power Automate", "SharePoint list"]
+        EffortBand: Small
+        Readiness: "Available now"
+        GovernanceTier: "Self-service"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/power-automate/forms/popular-scenarios"
+    # Evidence: Microsoft Support page for creating forms and surveys.
+    - key: seed-staff-survey
+      values:
+        Title: "Staff feedback survey"
+        Description: "A Forms survey collects staff feedback, pulse checks or event evaluations with results in Excel. Suits any team. If responses are identifiable and about staff wellbeing, treat it as a Reviewed build."
+        Workloads: ["Forms"]
+        EffortBand: Small
+        Readiness: "Available now"
+        GovernanceTier: "Self-service"
+        Status: Proposed
+        GuideLink: "https://support.microsoft.com/en-us/forms/create-a-form-with-microsoft-forms"
+    # Evidence: Microsoft Support page for Forms quizzes.
+    - key: seed-competency-quiz
+      values:
+        Title: "Competency check quiz"
+        Description: "A Forms quiz with automatic marking checks understanding after local training, for example a new device or process. Suits educators and team leads. It does not replace the mandated learning management system for credentialed competencies."
+        Workloads: ["Forms"]
+        EffortBand: Small
+        Readiness: "Available now"
+        GovernanceTier: "Self-service"
+        Status: Proposed
+        GuideLink: "https://support.microsoft.com/en-us/forms/create-a-quiz-with-microsoft-forms"
+    # Evidence: Microsoft's frontline guidance gives a healthcare example of a
+    # team leader assigning a recurring daily equipment-preparation checklist
+    # (learn.microsoft.com/microsoft-365/frontline/flw-team-collaboration).
+    - key: seed-updates-checkin
+      values:
+        Title: "Recurring check-in with Updates"
+        Description: "The Updates app in Teams runs recurring check-ins from templates, such as daily equipment preparation or a weekly safety walk. Submitters get a Teams notification and reviewers see every submission in one place. Suits team leaders and coordinators."
+        Workloads: ["Teams"]
+        EffortBand: Small
+        Readiness: "Available now"
+        GovernanceTier: "Self-service"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/microsoftteams/manage-updates-app"
+    # Evidence: Microsoft Learn admin guide; the healthcare frontline guidance
+    # lists Approvals as a core app.
+    - key: seed-teams-approvals
+      values:
+        Title: "Quick approval in Teams"
+        Description: "The Approvals app lets a person raise an approval from a chat, a channel or the app itself, with attachments and organisation-wide templates, without building a flow. Suits ad hoc sign-offs. Approvals are audited in Purview."
+        Workloads: ["Teams"]
+        EffortBand: Small
+        Readiness: "Available now"
+        GovernanceTier: "Self-service"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/microsoftteams/approval-admin"
+    # Evidence: Microsoft Support page for Planner in Teams; Microsoft's
+    # healthcare guidance describes Planner for health team to-do items.
+    - key: seed-planner-actions
+      values:
+        Title: "Meeting action tracker in Planner"
+        Description: "A Planner plan pinned as a channel tab holds the actions from team meetings with an owner, a due date and a status, and rolls up to each person's My Tasks. Suits committees, working groups and management meetings."
+        Workloads: ["Planner", "Teams"]
+        EffortBand: Small
+        Readiness: "Available now"
+        GovernanceTier: "Self-service"
+        Status: Proposed
+        GuideLink: "https://support.microsoft.com/office/getting-started-with-planner-in-teams-7a5e58f1-2cee-41b0-a41d-55d512c4a59c"
+    # Evidence: Microsoft Learn documents scheduled cloud flows with the
+    # Recurrence trigger.
+    - key: seed-scheduled-reminders
+      values:
+        Title: "Scheduled reminders and overdue chasers"
+        Description: "A scheduled flow runs daily or weekly, reads a list for items past a date such as a calibration due, an overdue action or a review due, and posts to a Teams channel or emails the owner. Suits any list-based tracker."
+        Workloads: ["Power Automate", "SharePoint list", "Teams"]
+        EffortBand: Small
+        Readiness: "Available now"
+        GovernanceTier: "Self-service"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/power-automate/run-scheduled-tasks"
+    # Evidence: Microsoft Learn documents the SharePoint "remind me" flow.
+    - key: seed-document-review-reminders
+      values:
+        Title: "Document review-date reminders"
+        Description: "On a document library with a review-date column, the built-in Set a reminder flow emails the owner a set number of days before the date. Suits local procedure and guideline folders."
+        Workloads: ["SharePoint site or page", "Power Automate"]
+        EffortBand: Small
+        Readiness: "Available now"
+        GovernanceTier: "Self-service"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/power-automate/create-sharepoint-reminder-flows"
+    # Evidence: Microsoft Support page on requiring approval of items; modern
+    # Approvals in lists and libraries is the newer surface for the same job.
+    - key: seed-controlled-publishing
+      values:
+        Title: "Controlled document publishing"
+        Description: "Content approval on a library keeps drafts hidden until an approver publishes them, with major and minor versions. Suits policy, procedure and form libraries where only the approved version may be seen."
+        Workloads: ["SharePoint site or page"]
+        EffortBand: Small
+        Readiness: "Available now"
+        GovernanceTier: "Digital team build"
+        Status: Proposed
+        GuideLink: "https://support.microsoft.com/en-us/sharepoint/lists/documents-and-library/require-approval-of-items-in-a-list-or-library"
+    # Evidence: Microsoft Learn's guided walkthrough covers the site, the hub,
+    # page approval and the news digest.
+    - key: seed-news-digest
+      values:
+        Title: "Department news page and digest"
+        Description: "A communication site with the News web part, optional page approval and a periodic news digest emailed to staff. Suits departments and services that rely on all-staff email today."
+        Workloads: ["SharePoint site or page"]
+        EffortBand: Small
+        Readiness: "Available now"
+        GovernanceTier: "Self-service"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/sharepoint/guided-walkthrough-set-up-news-with-hub-site"
+    # Evidence: Microsoft Learn documents the Patient Care and Hospital team
+    # templates, their channels and their apps.
+    - key: seed-ward-team-template
+      values:
+        Title: "Ward team workspace from template"
+        Description: "Teams admins expose the Patient Care and Hospital healthcare templates so a ward or department gets consistent channels (Announcements, Huddles, Rounds, Staffing, Training) and apps (Approvals, Lists, Shifts, Planner, Inspection) on creation. Suits every new ward or service team."
+        Workloads: ["Teams", "SharePoint site or page"]
+        EffortBand: Small
+        Readiness: "Available now"
+        GovernanceTier: "Digital team build"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/microsoftteams/expand-teams-across-your-org/healthcare/healthcare-templates-admin-console"
+    # Evidence: Microsoft's healthcare guidance gives the example of publishing
+    # tasks for a new safety protocol across a hospital; Learn documents setup.
+    - key: seed-task-publishing
+      values:
+        Title: "Task publishing to wards"
+        Description: "A central team such as quality, infection control or corporate publishes a task list to selected wards; ward managers assign the tasks locally and publishers see completion by location. Needs a team targeting hierarchy uploaded by the digital team."
+        Workloads: ["Planner", "Teams"]
+        EffortBand: Medium
+        Readiness: "Available now"
+        GovernanceTier: "Digital team build"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/microsoftteams/manage-planner-app"
+    # Evidence: Microsoft's healthcare guidance describes nurse managers using
+    # Shifts. Learn records that Microsoft-managed WFM connectors were retired
+    # on 7 December 2025, so e-rostering integration is a vendor connector.
+    - key: seed-shifts
+      values:
+        Title: "Shift visibility and swap requests"
+        Description: "Shifts in Teams shows staff their own and their team's schedule and handles swap, offer and time-off requests with manager approval. Position it as visibility and local requests beside the roster of record, not instead of it. Availability and leave are staff personal data, so a privacy review applies."
+        Workloads: ["Teams"]
+        EffortBand: Medium
+        Readiness: "Available now"
+        GovernanceTier: "Reviewed build"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/microsoft-365/frontline/shifts-for-teams-landing-page"
+    # Evidence: Microsoft Support's list template catalogue documents the
+    # Employee onboarding template columns.
+    - key: seed-new-starter-checklist
+      values:
+        Title: "New starter checklist"
+        Description: "The Employee onboarding list template gives each new starter a checklist with due dates, a mentor and links. Suits ward managers and corporate team leads for local induction."
+        Workloads: ["SharePoint list"]
+        EffortBand: Small
+        Readiness: "Available now"
+        GovernanceTier: "Self-service"
+        Status: Proposed
+        GuideLink: "https://support.microsoft.com/en-us/sharepoint/lists/data-and-lists/list-templates-in-microsoft-365"
+    # Evidence: Microsoft Learn's provisioning guide for the New Employee
+    # Onboarding site templates.
+    - key: seed-onboarding-site
+      values:
+        Title: "Onboarding site for new staff"
+        Description: "Microsoft's New Employee Onboarding site templates (pre-onboarding, corporate, departmental) provision from the look book and include an onboarding journey list and sample pages. Suits People and Culture and large departments."
+        Workloads: ["SharePoint site or page"]
+        EffortBand: Medium
+        Readiness: "Available now"
+        GovernanceTier: "Digital team build"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/sharepoint/provision-neo-hub"
+    # Evidence: Microsoft Support confirms requesters do not need OneDrive.
+    - key: seed-file-request
+      values:
+        Title: "Collect files from outside parties"
+        Description: "A OneDrive or SharePoint file request gives outside parties such as contractors, students or applicants a link to upload files into one folder without seeing its contents or needing an account. Needs external sharing to be enabled, hence the security review."
+        Workloads: ["OneDrive"]
+        EffortBand: Small
+        Readiness: "Available now"
+        GovernanceTier: "Reviewed build"
+        Status: Proposed
+        GuideLink: "https://support.microsoft.com/office/create-a-file-request-f54aa7f8-2589-4421-b351-d415fc3b83af"
+    # Evidence: Microsoft Learn confirms Bookings is included in E3, E5, F1
+    # and F3 and is reached from Outlook and Teams.
+    - key: seed-bookable-services
+      values:
+        Title: "Bookable staff services"
+        Description: "A shared Bookings page lets staff book slots with a service such as an IT drop-in, the library, education or wellbeing, and creates Teams meetings automatically. Suits corporate services and educators. If the service collects staff health information, treat it as a Reviewed build."
+        Workloads: ["Bookings", "Teams"]
+        EffortBand: Small
+        Readiness: "Later rollout wave"
+        GovernanceTier: "Self-service"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/en-us/microsoft-365/bookings/bookings-overview"
+    # Evidence: Microsoft Learn states the Virtual Appointments app is no
+    # longer available and points to Bookings, and warns that Teams does not
+    # hold the legal medical record. Barnsley Hospital NHS FT built its video
+    # consultation platform on Teams and Power Platform.
+    - key: seed-virtual-appointments
+      values:
+        Title: "Virtual appointments with Bookings"
+        Description: "Clinicians schedule patient video appointments through a shared Bookings calendar; patients join from a browser without installing Teams. Teams Premium adds a queue view and SMS reminders. Needs clinical safety, privacy and consent review, and a decision about where the record of the consultation lives."
+        Workloads: ["Bookings", "Teams"]
+        EffortBand: Large
+        Readiness: "Later rollout wave"
+        GovernanceTier: "Reviewed build"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/microsoft-365/frontline/virtual-appointments"
+    # Evidence: Microsoft Learn documents one-step generation from a list.
+    # Austin Health staff without coding backgrounds built Power Apps for job
+    # allocation and screening.
+    - key: seed-mobile-app-on-list
+      values:
+        Title: "Mobile data entry app on a list"
+        Description: "Power Apps generates a responsive phone and tablet app directly from a list so staff can capture data away from a desk, using standard connectors only. Suits stock counts, equipment checks and visitor logs."
+        Workloads: ["Power Apps", "SharePoint list"]
+        EffortBand: Medium
+        Readiness: "Later rollout wave"
+        GovernanceTier: "Digital team build"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/power-apps/maker/canvas-apps/app-from-sharepoint"
+    # Evidence: Microsoft Learn lists the Inspection sample template; the
+    # Patient Care and Hospital team templates pre-install it.
+    - key: seed-inspection-app
+      values:
+        Title: "Area inspection app"
+        Description: "The Inspection sample app on Dataverse for Teams gives inspectors a mobile checklist with photos and creates follow-up tasks in Planner, with a manager app for reporting. Suits environment, cleaning and equipment inspections."
+        Workloads: ["Power Apps", "Teams", "Planner"]
+        EffortBand: Medium
+        Readiness: "Later rollout wave"
+        GovernanceTier: "Digital team build"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/power-apps/teams/use-sample-apps"
+    # Evidence: Microsoft Learn describes the Issue reporting two-app template
+    # and its Planner integration.
+    - key: seed-fault-reporting-app
+      values:
+        Title: "Facility fault reporting app"
+        Description: "The Issue reporting sample app lets staff log building, equipment and supply faults from Teams; each issue becomes a Planner task in a chosen channel, with a template per issue type. Not for clinical incidents, complaints or privacy matters, which stay in their mandated systems."
+        Workloads: ["Power Apps", "Teams", "Planner"]
+        EffortBand: Medium
+        Readiness: "Later rollout wave"
+        GovernanceTier: "Digital team build"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/power-apps/teams/use-sample-apps"
+    # Evidence: Microsoft Learn's admin key concepts and leadership guide
+    # describe creating communities; Viva Engage core is in enterprise plans.
+    - key: seed-champions-community
+      values:
+        Title: "Champions community in Viva Engage"
+        Description: "A Viva Engage community for digital champions, with questions and answers, polls and pinned resources, replaces scattered email threads. Suits the champions network and any community of practice."
+        Workloads: ["Viva"]
+        EffortBand: Small
+        Readiness: "Later rollout wave"
+        GovernanceTier: "Digital team build"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/viva/engage/admin-key-concepts"
+    # Evidence: Microsoft's frontline guidance describes the dashboard with a
+    # Shifts card; Viva Connections is in every enterprise plan.
+    - key: seed-viva-connections
+      values:
+        Title: "Frontline home in Viva Connections"
+        Description: "A Viva Connections dashboard in Teams puts cards for the next shift, approvals, tasks and news in front of staff on mobile. Suits wards and frontline services where the intranet is otherwise hard to reach."
+        Workloads: ["Viva", "Teams", "SharePoint site or page"]
+        EffortBand: Medium
+        Readiness: "Later rollout wave"
+        GovernanceTier: "Digital team build"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/microsoft-365/frontline/flw-team-collaboration"
+    # Evidence: Microsoft Learn's set-up page states the licensing and names
+    # SharePoint as a content source.
+    - key: seed-viva-learning
+      values:
+        Title: "Local learning content in Viva Learning"
+        Description: "SharePoint folders of local how-to videos and guides become a content source in Viva Learning, so staff find them beside Microsoft training in Teams. Basic Viva Learning is included with enterprise plans; recommendations and LMS integration need the add-on."
+        Workloads: ["Viva", "SharePoint site or page"]
+        EffortBand: Medium
+        Readiness: "Later rollout wave"
+        GovernanceTier: "Digital team build"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/viva/learning/set-up-viva-learning"
+    # Evidence: Microsoft Learn documents where recap data is stored and that
+    # it needs Teams Premium or Microsoft 365 Copilot.
+    - key: seed-intelligent-recap
+      values:
+        Title: "Meeting recap with intelligent recap"
+        Description: "Intelligent recap generates notes, suggested tasks and speaker markers for recorded Teams meetings. Suits management and project meetings. The transcription and recording policy, and the exclusion of clinical consultations, need sign-off first."
+        Workloads: ["Copilot", "Teams"]
+        EffortBand: Small
+        Readiness: "Needs licence or approval"
+        GovernanceTier: "Reviewed build"
+        Status: Proposed
+        GuideLink: "https://learn.microsoft.com/microsoftteams/privacy/intelligent-recap"
+    # Evidence: Microsoft Support states the edit permission and licence
+    # requirements; Learn's tool comparison notes an agent may fall back to
+    # outdated content if its scope is thin.
+    - key: seed-policies-agent
+      values:
+        Title: "Ask-the-policies agent in SharePoint"
+        Description: "A site editor creates an agent scoped to a policy or procedure library so staff can ask questions in plain language and get cited answers. Needs a Copilot licence or pay-as-you-go, plus a review of the agent's scope and of how current the content is."
+        Workloads: ["Copilot", "SharePoint site or page"]
+        EffortBand: Small
+        Readiness: "Needs licence or approval"
+        GovernanceTier: "Reviewed build"
+        Status: Proposed
+        GuideLink: "https://support.microsoft.com/office/get-started-with-sharepoint-agents-69e2faf9-2c1e-4baa-8305-23e625021bcf"

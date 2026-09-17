@@ -1,0 +1,67 @@
+{
+  "sections": [
+    {
+      "displayname": "What we heard",
+      "fields": [
+        "Title",
+        "ProblemStatement",
+        "ServiceArea",
+        "TeamOrUnit",
+        "CurrentMethod",
+        "PeopleAffected",
+        "HeardAt",
+        "DataSensitivity",
+        "RequestedFor",
+        "CapturedDate"
+      ]
+    },
+    {
+      "displayname": "Triage and score",
+      "fields": [
+        "AcknowledgedDate",
+        "TriageOutcome",
+        "ValueBand",
+        "EaseBand",
+        "Evidence",
+        "Reviewer",
+        "ReviewDate",
+        "Horizon",
+        "DeferredUntil"
+      ]
+    },
+    {
+      "displayname": "Decision and delivery",
+      "fields": [
+        "Status",
+        "Owner",
+        "Sponsor",
+        "Pattern",
+        "DecisionDate",
+        "DecisionRationale",
+        "ReopenTrigger",
+        "DestinationReference",
+        "DestinationLink"
+      ]
+    },
+    {
+      "displayname": "Adoption",
+      "fields": [
+        "AdoptionCheckDue",
+        "AdoptionOutcomeDate",
+        "AdoptionNote"
+      ]
+    },
+    {
+      "displayname": "System",
+      "fields": [
+        "PriorityScore",
+        "PriorityBand",
+        "ReviewTier",
+        "AcknowledgeBy",
+        "DaysToAcknowledge",
+        "DaysToDecision",
+        "DaysToAdopted"
+      ]
+    }
+  ]
+}

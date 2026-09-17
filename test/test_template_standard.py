@@ -126,6 +126,19 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
     # decides whether this register is the right home at all, and it comes
     # before capture because a safety or privacy matter must not be typed
     # in here first and rerouted afterwards.
+    ("digital-innovation-log", "Opportunity"): {
+        "What we heard": "Identify",
+        "Triage and score": "Assess",
+        "Decision and delivery": "Act",
+        "Adoption": "Govern",
+        "System": "System",
+    },
+    ("digital-innovation-log", "Pattern"): {
+        "What it is": "Identify",
+        "Readiness and effort": "Assess",
+        "Build and release": "Act",
+        "System": "System",
+    },
     ("opportunities-register", "Opportunity"): {
         "Stop and route safely": "Identify",
         "Capture once": "Identify",
@@ -1834,12 +1847,19 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     RE-MEASURED 2026-09-14 across 36 templates / 69 entities: replacing
     Topic and SAQ with Document removes one entity in band 5. Document
     remains at 5 (three assigned people plus Author and Editor). The
-    distribution is 2 -> 10, 3 -> 30, 4 -> 20, 5 -> 5, 8 -> 2, 9 -> 2."""
+    distribution is 2 -> 10, 3 -> 30, 4 -> 20, 5 -> 5, 8 -> 2, 9 -> 2.
+
+    RE-MEASURED 2026-09-17 across 37 templates / 71 entities:
+    digital-innovation-log adds Pattern at 3 (BuildOwner, Author, Editor)
+    and Opportunity at 7 (four people, the Pattern lookup, Author, Editor;
+    a MergedInto self-lookup was dropped in review because no probe has
+    measured one). The distribution is 2 -> 10, 3 -> 31, 4 -> 20, 5 -> 5,
+    7 -> 1, 8 -> 2, 9 -> 2. The worst is unchanged at 9."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
-    assert len(templates) == 36, (
-        f"{len(templates)} templates discovered, not the 36 this survey was "
+    assert len(templates) == 37, (
+        f"{len(templates)} templates discovered, not the 37 this survey was "
         f"measured against. A template appeared or disappeared from the "
         f"roster. Re-measure the distribution and the worst count below "
         f"before trusting either."
@@ -1865,8 +1885,8 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     # LIST keeps the roster at 34 while the distribution above moves under it,
     # and the docstring's entity total was wrong for exactly that reason
     # before this pin existed.
-    assert counted == 69, (
-        f"{counted} entities were surveyed, not the 69 the distribution above "
+    assert counted == 71, (
+        f"{counted} entities were surveyed, not the 71 the distribution above "
         f"was measured over. An entity appeared or disappeared inside a "
         f"template that is still on the roster. Re-measure the distribution "
         f"and the worst count before trusting either."

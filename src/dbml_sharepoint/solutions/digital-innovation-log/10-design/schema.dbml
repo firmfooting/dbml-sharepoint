@@ -1,0 +1,252 @@
+// ============================================================================
+// Digital innovation log: the M365 asks a rollout hears. Each is captured
+// once by a champion, routed before it is scored, and delivered through a
+// pattern that is built once and adopted by many teams.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project digital_innovation_log { database_type: 'SharePoint Online Lists' }
+
+// Replace with the health service's directorates or facilities before
+// deployment. Not sure is a legitimate answer; a steward routes it.
+Enum service_area {
+  "Not sure - steward to route"
+  "Whole health service"
+  "Emergency and urgent care"
+  "Inpatient services"
+  "Outpatient and ambulatory care"
+  "Maternity and paediatrics"
+  "Mental health and alcohol or other drugs"
+  "Community and virtual care"
+  "Diagnostics and pharmacy"
+  "Clinical support services"
+  "Corporate and operational support"
+  "Multi-service or external interface"
+  "Other"
+}
+
+Enum current_method {
+  "Paper"
+  "Email"
+  "Spreadsheet"
+  "Verbal or phone"
+  "Legacy system"
+  "M365 feature not used"
+  "Other"
+}
+
+// Reach, in four plain steps. It is the only sizing a champion is asked for.
+Enum people_affected {
+  "One person"
+  "One team"
+  "Several teams"
+  "Whole service"
+}
+
+Enum heard_at {
+  "Rollout workshop"
+  "Floor walk"
+  "Drop-in"
+  "Champions meeting"
+  "Direct request"
+  "Other"
+}
+
+// Tiers the review that follows. It never holds the data it describes.
+Enum data_sensitivity {
+  "No patient or sensitive data"
+  "Touches patient or clinical workflow data"
+  "Touches sensitive staff or third-party data"
+  "Not sure"
+}
+
+// Null means not yet triaged. Every value except Explore here is a short
+// path out of this list; the destination reference proves the route completed.
+Enum triage_outcome {
+  "Explore here"
+  "Service request or fault - send to the helpdesk"
+  "Already available - show and train"
+  "Process change - improvement register"
+  "Project-sized - project pipeline"
+  "Incident, complaint, privacy or cyber - mandated system"
+  "Duplicate - merge into the earlier ask"
+  "Not now"
+}
+
+// Descriptive bands rather than High, Medium, Low, because everything ends
+// up High. Definitions are in 50-govern/governance.md.
+Enum value_band {
+  "Tweak"
+  "Optimiser"
+  "Game change"
+}
+
+Enum ease_band {
+  "Hard"
+  "Moderate"
+  "Easy"
+}
+
+// Confidence, shown beside the score and never multiplied into it.
+Enum evidence_band {
+  "Assumed"
+  "Observed"
+  "Measured"
+}
+
+// The capacity gate. Only Now items are ranked against each other.
+Enum horizon {
+  "Now"
+  "Next wave"
+  "Later"
+  "Strategic"
+}
+
+// Closed is the one terminal state for an ask that does not stay: the route
+// says why. Binding route to status is then two cheap rules rather than a
+// pair table the list formula could not hold.
+Enum opportunity_status {
+  "Captured"
+  "Exploring"
+  "Awaiting decision"
+  "Accepted"
+  "Adopted"
+  "Not adopted"
+  "Closed"
+}
+
+Enum m365_workload {
+  "Teams"
+  "SharePoint list"
+  "SharePoint site or page"
+  "Forms"
+  "Power Automate"
+  "Power Apps"
+  "Planner"
+  "Bookings"
+  "OneDrive"
+  "Copilot"
+  "Viva"
+  "Other"
+}
+
+Enum effort_band {
+  "Small"
+  "Medium"
+  "Large"
+}
+
+Enum readiness {
+  "Available now"
+  "Later rollout wave"
+  "Needs licence or approval"
+  "Not available"
+}
+
+Enum governance_tier {
+  "Self-service"
+  "Digital team build"
+  "Reviewed build"
+}
+
+Enum pattern_status {
+  "Proposed"
+  "Building"
+  "Piloting"
+  "Available"
+  "Retired"
+}
+
+// Declared first because Opportunity looks it up.
+Table Pattern {
+  Id               int               [pk, increment]
+  Title            nvarchar          [not null, note: 'The pattern in plain words, for example Approval flow on a list']
+  Description      longtext          [note: 'What it does and which teams it suits, in two or three sentences']
+  Workloads        m365_workload[]   [note: 'Every M365 workload the pattern uses. Choose all that apply']
+  ProposedDate     date              [not null, default: '[today]', note: 'Filled automatically when the pattern is proposed']
+
+  EffortBand       effort_band       [note: 'Small is days from an existing pattern; Medium is a build inside a quarter; Large needs a licence, an integration or longer']
+  Readiness        readiness         [note: 'Whether the workloads this needs are rolled out, licensed and supported today']
+  GovernanceTier   governance_tier   [note: 'Self-service means a champion can build it; Reviewed build means a clinical, security or privacy review signs it off first']
+
+  Status           pattern_status    [not null, default: 'Proposed', note: 'Proposed, Building, Piloting, Available or Retired. Available needs an Available Date']
+  BuildOwner       person            [note: 'The person building or maintaining this pattern']
+  PilotTeam        nvarchar          [note: 'The team piloting it, in one line']
+  AvailableDate    date              [note: 'The date the pattern became available to any team. Required once Status is Available']
+  GuideLink        hyperlink         [note: 'Link to the exemplar or the how-to for this pattern']
+  LastReviewedDate date              [note: 'When the Build Owner last confirmed the pattern is still used and still correct. Blank until the first annual review; a date before Available Date is ignored']
+  RetiredDate      date              [note: 'Required once Status is Retired']
+  RetiredReason    nvarchar          [note: 'One line on why it was retired and what replaces it. Required once Status is Retired']
+
+  // Calculated columns; formulas in mapping.yaml.
+  DaysToAvailable  calculated_number [note: 'Calculated automatically: days from proposed to available. Blank until the pattern is available']
+  NextReviewDue    calculated_date   [note: 'Next check that this pattern is still used and still correct. Calculated twelve months after Last Reviewed Date, or after Available Date until the first review; nobody can type it']
+
+  indexes {
+    Status
+    Readiness
+    AvailableDate
+  }
+
+  Note: 'One row per reusable M365 solution: what it is, which workloads it uses, whether it is ready and who built it. Asks link here so it is built once.'
+}
+
+Table Opportunity {
+  Id                   int                 [pk, increment]
+  Title                nvarchar            [not null, note: 'The ask in one plain line, as the person who raised it would say it']
+  ProblemStatement     longtext            [not null, note: 'What happens today, who is affected and why it matters, in two to four sentences. No patient identifiers or clinical record content']
+  ServiceArea          service_area        [not null, note: 'The service or area the ask came from. Choose Not sure rather than guessing']
+  TeamOrUnit           nvarchar            [note: 'The ward, team or unit it was heard in']
+  CurrentMethod        current_method      [not null, note: 'How the work is done today']
+  PeopleAffected       people_affected     [not null, note: 'How many people the ask touches']
+  HeardAt              heard_at            [not null, note: 'Where the champion heard it']
+  DataSensitivity      data_sensitivity    [not null, note: 'Would a solution touch patient, clinical workflow or sensitive staff data? Choose Not sure if unsure; this decides who reviews it']
+  RequestedFor         person              [note: 'The staff member who raised the ask. You, the champion, are recorded automatically as Created By']
+  CapturedDate         date                [not null, default: '[today]', note: 'Filled automatically when the ask is captured. Leave as-is']
+
+  // Digital-team fields, absent from the New form.
+  TriageOutcome        triage_outcome      [note: 'The shortest valid route. Only Explore here keeps the ask in this log']
+  ValueBand            value_band          [note: 'Tweak, Optimiser or Game change, using the definitions in the governance guide']
+  EaseBand             ease_band           [note: 'Easy, Moderate or Hard, using the definitions in the governance guide']
+  Evidence             evidence_band       [note: 'Assumed if heard once, Observed if someone watched the workaround, Measured if there is a number']
+  Reviewer             person              [note: 'The clinician, or the security or privacy reviewer, who signed off an ask that touches patient, clinical workflow or sensitive staff data']
+  ReviewDate           date                [note: 'The date the clinical, security or privacy review was signed, not in the future. Required before an ask touching patient or sensitive data is accepted']
+  Horizon              horizon             [note: 'Now items are ranked against each other; Next wave waits on readiness; Strategic is decided by the sponsor and never competes on score']
+  DeferredUntil        date                [note: 'For a Later ask: the date it comes back for a decision. Highlighted in Exploring once it has passed']
+  Sponsor              person              [note: 'The manager or executive who owns the outcome, set at acceptance']
+
+  Status               opportunity_status  [not null, default: 'Captured', note: 'Lifecycle stage, maintained by the digital team. Closed means the route took it elsewhere; only Explore here goes further']
+  Pattern              int                 [ref: > Pattern.Id, note: 'The pattern this ask is delivered through, once accepted']
+  Owner                person              [note: 'The digital team member accountable for this ask']
+  AcknowledgedDate     date                [note: 'The date the requester was told the ask was received']
+  DecisionDate         date                [note: 'The date the ask was accepted, declined or closed. Blank while it is still being explored']
+  DecisionRationale    longtext            [note: 'The decision and its reason, in a few sentences']
+  ReopenTrigger        nvarchar            [note: 'For a Not now: what would change the answer, in one specific line']
+  // A same-list lookup for duplicates has no live measurement in test/manual
+  // yet, so the earlier ask is named here, which a save rule can require.
+  DestinationReference nvarchar            [note: 'For a Closed ask: the ticket, improvement id or record reference it went to, or for a duplicate the ID or title of the earlier ask']
+  DestinationLink      hyperlink           [note: 'Link to the receiving record or the earlier ask']
+  AdoptionCheckDue     date                [note: 'When to check whether the team adopted the pattern. Set when the pattern becomes available; the pattern row carries the build status']
+  AdoptionOutcomeDate  date                [note: 'The date the team was checked and found to be using the solution, or not. Required for Adopted and Not adopted']
+  AdoptionNote         nvarchar            [note: 'What changed for the team, or why it was not adopted, in one line with a number where there is one']
+
+  // Calculated columns; formulas in mapping.yaml.
+  PriorityScore        calculated_number   [note: 'Calculated automatically: Value times Ease, 1 to 9. Blank until both are set']
+  PriorityBand         calculated_text     [note: 'Calculated automatically from the score: Later, Consider or Prioritise']
+  ReviewTier           calculated_text     [note: 'Calculated automatically from Sensitivity: Standard, Clinical or data review, Security review, or Resolve sensitivity first while it is Not sure']
+  AcknowledgeBy        calculated_date     [note: 'Calculated automatically: seven days after capture. The response promise']
+  DaysToAcknowledge    calculated_number   [note: 'Calculated automatically: days from capture to acknowledgement']
+  DaysToDecision       calculated_number   [note: 'Calculated automatically: days from capture to decision']
+  DaysToAdopted        calculated_number   [note: 'Calculated automatically: days from capture to confirmed adoption. Blank unless Adopted']
+
+  indexes {
+    Status
+    ServiceArea
+    TriageOutcome
+    CapturedDate
+    Horizon
+    AdoptionCheckDue
+  }
+
+  Note: 'One row per M365 ask a champion hears: captured once, acknowledged in a week, routed if it belongs elsewhere, scored if it stays, checked for adoption.'
+}
