@@ -39,6 +39,7 @@ from dbml_sharepoint.analysis.reporting.dictionary import (
 from dbml_sharepoint.analysis.reporting.names import query_name
 from dbml_sharepoint.analysis.reporting.plan import (
     TOLERANT_DATE_TYPES,
+    DerivedStep,
     ListPlan,
     build_plans,
     grouped_record_expands,
@@ -587,6 +588,10 @@ def _derived_site_bindings(plan: ListPlan) -> tuple[list[str], dict[str, str]]:
     for step in plan.derived:
         if step.kind != "count" or step.source_query in named:
             continue
+        if step.source_query == plan.list_title:
+            # Its own rows are on its own site by construction, and naming
+            # the query here would be a cyclic reference: see `_derived_m`.
+            continue
         binding = f"DerivedSite{len(named) + 1}"
         named[step.source_query] = binding
         lines += [
@@ -652,14 +657,28 @@ def _derived_m(plan: ListPlan, prev: str, sites: dict[str, str]) -> tuple[list[s
                 ]
             prev = name
             continue
-        lines.append(
-            f"    // Reads the {entry.source_query} query. Both are keyed by "
-            "site,",
-        )
-        lines.append(
-            "    // so a copy of this query pointed at another site matches "
-            "nothing.",
-        )
+        # A step over THIS list reads the step above it, never the query by
+        # name: in M a query whose expression names itself is a cyclic
+        # reference, and the refresh fails. Nothing short of a refresh can
+        # see it: the text parses, the model loads, and the name resolves,
+        # to the query being defined. Reported 2026-09-17 against 4.0.0 by
+        # a consumer of programme-governance, whose Decision list reads its
+        # own rows to find the decision that superseded each one.
+        own_rows = entry.source_query == plan.list_title
+        if own_rows:
+            lines += [
+                "    // Reads this query's own rows as they stand at the step",
+                "    // above. Naming the query itself would be a cyclic",
+                "    // reference, which M refuses only at refresh.",
+            ]
+        else:
+            lines += [
+                (f"    // Reads the {entry.source_query} query. Both are keyed "
+                 "by site,"),
+                ("    // so a copy of this query pointed at another site "
+                 "matches nothing."),
+            ]
+        child_ref = prev if own_rows else _query_ref(entry.source_query)
         if entry.kind == "lookup":
             picks = [source for source, _out, _t in entry.picks]
             outs = [out for _source, out, _t in entry.picks]
@@ -668,7 +687,7 @@ def _derived_m(plan: ListPlan, prev: str, sites: dict[str, str]) -> tuple[list[s
                 f"    {name} = Table.NestedJoin(",
                 f'        {prev}, {{"{entry.own_key}"}},',
                 "        Table.SelectColumns(",
-                f"            {_query_ref(entry.source_query)},",
+                f"            {child_ref},",
                 "            {" + ", ".join(
                     f'"{c}"' for c in [entry.other_key, *picks]
                 ) + "}",
@@ -699,7 +718,7 @@ def _derived_m(plan: ListPlan, prev: str, sites: dict[str, str]) -> tuple[list[s
             ]
             prev = typed
             continue
-        child = _query_ref(entry.source_query)
+        child = child_ref
         if entry.where:
             child = f"Table.SelectRows({child}, each {entry.where})"
         aggregate = _DERIVED_AGGREGATE_M[entry.aggregate].format(
@@ -728,31 +747,42 @@ def _derived_m(plan: ListPlan, prev: str, sites: dict[str, str]) -> tuple[list[s
         ]
         prev = expanded
         typed = step_name()
-        if entry.aggregate == "count":
-            binding = sites[entry.source_query]
-            blank = (
-                f"if {binding} = null or {binding} = SiteRoot "
-                "then 0 else null"
-            )
-            lines += [
-                f"    {typed} = Table.TransformColumns(",
-                f"        {prev},",
-                "        {",
-                f'            {{"{entry.name}",',
-                f"                each if _ = null then ({blank}) else _,",
-                f"                {entry.m_type}}}",
-                "        }",
-                "    ),",
-            ]
-        else:
-            lines += [
-                f"    {typed} = Table.TransformColumnTypes(",
-                f"        {prev},",
-                f'        {{{{"{entry.name}", {entry.m_type}}}}}',
-                "    ),",
-            ]
+        lines += _aggregate_typed_m(entry, prev, typed, sites, own_rows)
         prev = typed
     return lines, prev
+
+
+def _aggregate_typed_m(
+    entry: DerivedStep, prev: str, typed: str, sites: dict[str, str], own_rows: bool,
+) -> list[str]:
+    """The typing step that closes an aggregate, and what a blank count means."""
+    if entry.aggregate != "count":
+        return [
+            f"    {typed} = Table.TransformColumnTypes(",
+            f"        {prev},",
+            f'        {{{{"{entry.name}", {entry.m_type}}}}}',
+            "    ),",
+        ]
+    if own_rows:
+        # Its own rows are always on its own site, so a blank is a true
+        # zero; there is no binding to consult.
+        blank = "0"
+    else:
+        binding = sites[entry.source_query]
+        blank = (
+            f"(if {binding} = null or {binding} = SiteRoot "
+            "then 0 else null)"
+        )
+    return [
+        f"    {typed} = Table.TransformColumns(",
+        f"        {prev},",
+        "        {",
+        f'            {{"{entry.name}",',
+        f"                each if _ = null then {blank} else _,",
+        f"                {entry.m_type}}}",
+        "        }",
+        "    ),",
+    ]
 
 
 def _render_m(plan: ListPlan, *, site_url: str | None = None) -> str:

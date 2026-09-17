@@ -53,6 +53,21 @@ def _produced(vc: ValidationContext, entity: str) -> set[str] | None:
     return None if plan is None else set(report_column_names(plan))
 
 
+def _readable(
+    vc: ValidationContext, entity: str, target: str, available: set[str],
+) -> set[str] | None:
+    """What a read of `target` from `entity`'s query can see.
+
+    Another list is read as a finished query, so everything it produces is
+    there, its own derived columns included. THIS list is read by one of its
+    own steps, which sees only what the steps above it produced: the
+    generator reads the step above rather than the query by name (a query
+    naming itself is a cyclic reference), so a reference to an output
+    declared below would name a column that is not there yet.
+    """
+    return set(available) if target == entity else _produced(vc, target)
+
+
 def _derived_columns(vc: ValidationContext) -> list[Finding]:
     findings: list[Finding] = []
     bundle = vc.bundle
@@ -110,7 +125,7 @@ def _one(
     if entry.kind == "lookup":
         findings += _lookup(vc, entity, table, entry, where, available)
         return findings
-    findings += _count(vc, entity, entry, where)
+    findings += _count(vc, entity, entry, where, available)
     return findings
 
 
@@ -164,7 +179,7 @@ def _lookup(
                 f"{where}: from {entry.from_entity!r} is not in the schema.",
                 location=_at(entity, entry.from_entity),
             )]
-        return _picks(vc, entity, entry, where, entry.from_entity)
+        return _picks(vc, entity, entry, where, entry.from_entity, available)
     target = _lookup_target(table, entry.via)
     if target is None:
         return [Finding(
@@ -191,7 +206,7 @@ def _lookup(
         # target is reported beside it, which is the same condition
         # `_build_plans` puts on the join.
         return [_unreported_target(entity, where, entry.from_entity)]
-    return findings + _picks(vc, entity, entry, where, target)
+    return findings + _picks(vc, entity, entry, where, target, available)
 
 
 def _picks(
@@ -200,18 +215,25 @@ def _picks(
     entry: DerivedColumn,
     where: str,
     target: str,
+    available: set[str],
 ) -> list[Finding]:
-    """Every column a `lookup` takes must be one the target query produces."""
-    target_columns = _produced(vc, target)
+    """Every column a `lookup` takes must be one the read can see."""
+    target_columns = _readable(vc, entity, target, available)
     if target_columns is None:
         return [_unreported_target(entity, where, target)]
+    subject = (
+        "this list's report query carries at this point (a read of its own "
+        "rows sees only the columns produced above this entry)"
+        if target == entity
+        else f"{target}'s report query produces"
+    )
     return [
         Finding(
             FindingCode.DERIVED_UNKNOWN_REFERENCE,
             f"{where}: pick {new_name!r} reads {source!r}, which "
-            f"{target}'s report query does not produce. Name the "
-            f"column as the SCHEMA declares it; the generator "
-            f"translates it to whatever that query renames it to.",
+            f"{subject} not. Name the column as the SCHEMA declares it; "
+            f"the generator translates it to whatever that query renames "
+            f"it to.",
             location=_at(entity, new_name),
         )
         for new_name, source in entry.pick.items()
@@ -268,6 +290,7 @@ def _count(
     entity: str,
     entry: DerivedColumn,
     where: str,
+    available: set[str],
 ) -> list[Finding]:
     findings: list[Finding] = []
     child = vc.tables_by_name.get(entry.from_entity)
@@ -292,26 +315,29 @@ def _count(
             f"is the child's column that points back here.",
             location=_at(entity, entry.via),
         )]
-    child_columns = _produced(vc, entry.from_entity)
+    child_columns = _readable(vc, entity, entry.from_entity, available)
     if child_columns is None:
         return [_unreported_target(entity, where, entry.from_entity)]
     _own_key, child_key = lookup_key_columns(entry, entity)
     if child_key not in child_columns:
         return [_unreported_target(entity, where, entry.from_entity)]
+    subject = (
+        "this list's own rows, as the step above this entry carries them,"
+        if entry.from_entity == entity
+        else f"{entry.from_entity}'s report query"
+    )
     if entry.column and entry.column not in child_columns:
         findings.append(Finding(
             FindingCode.DERIVED_UNKNOWN_REFERENCE,
             f"{where}: aggregate {entry.aggregate} reads "
-            f"{entry.column!r}, which {entry.from_entity}'s report query "
-            f"does not produce.",
+            f"{entry.column!r}, which {subject} does not produce.",
             location=_at(entity, entry.name),
         ))
     # A `where` filters the CHILD rows, so it resolves against the child's
     # columns and not this list's. Reading it against the wrong table is how
     # a filter silently matches nothing and the count reads zero.
     findings += _references(
-        entry.where, child_columns, entity, where, entry.name,
-        subject=f"{entry.from_entity}'s report query",
+        entry.where, child_columns, entity, where, entry.name, subject=subject,
     )
     return findings
 

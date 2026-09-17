@@ -451,6 +451,21 @@ def _projection_types(
     )
 
 
+def _names_as_read(target: ListPlan, reader: ListPlan) -> dict[str, str]:
+    """The rename map a step reads `target`'s columns through.
+
+    Any other list is read as a finished query, after the model-facing
+    rename that is its last step, so its columns carry display titles. THIS
+    list, read by one of its own steps, has not renamed yet, so the author's
+    internal names are the ones the step above carries. One answer for the
+    automatic key-joined projections and the declared reads alike: reported
+    2026-09-17 against 4.0.0, a self-read that named its own query was a
+    cyclic reference at refresh, and the fix that read the step above
+    instead had to read it under the names that step has.
+    """
+    return {} if target is reader else dict(target.renames)
+
+
 def _translate_refs(text: str, renames: dict[str, str]) -> str:
     """Rewrite every `[Column]` through one query's own rename map.
 
@@ -485,7 +500,7 @@ def _resolve_derived(
         # arrived through the expand. Their names and order are what the
         # author declared; only the mechanism differs.
         for via, target, target_column, out, m_type in plan.key_joined:
-            other = by_entity[target]
+            renames = _names_as_read(by_entity[target], plan)
             plan.derived.append(DerivedStep(
                 kind="lookup",
                 source_query=bundle.mapping.list_title(target),
@@ -493,7 +508,7 @@ def _resolve_derived(
                 own_key=fk_key_column(f"{via}Id"),
                 other_key=f"{target}{REPORT_KEY_SUFFIX}",
                 picks=((
-                    dict(other.renames).get(target_column, target_column),
+                    renames.get(target_column, target_column),
                     out,
                     m_type,
                 ),),
@@ -553,7 +568,7 @@ def _derived_step(
     target = by_entity.get(entry.from_entity)
     if target is None:
         return None
-    renames = dict(target.renames)
+    renames = _names_as_read(target, plan)
     own_key, other_key = lookup_key_columns(entry, plan.entity)
     if entry.kind == "lookup":
         return DerivedStep(
