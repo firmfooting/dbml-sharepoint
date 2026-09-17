@@ -553,7 +553,12 @@ def _derived_step(
     target = by_entity.get(entry.from_entity)
     if target is None:
         return None
-    renames = dict(target.renames)
+    # A step that reads THIS list reads its own rows as they stand at that
+    # step, before the model-facing rename, so the author's internal names
+    # are the right ones. Every other target is read as a finished query,
+    # after its rename. (Reported 2026-09-17 against 4.0.0: a self-read that
+    # named its own query was a cyclic reference at refresh.)
+    renames = {} if target is plan else dict(target.renames)
     own_key, other_key = lookup_key_columns(entry, plan.entity)
     if entry.kind == "lookup":
         return DerivedStep(

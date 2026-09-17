@@ -30,7 +30,7 @@ from dbml_sharepoint.analysis.reporting.dictionary import (
     users_dictionary_rows,
 )
 from dbml_sharepoint.analysis.reporting.names import query_name
-from dbml_sharepoint.analysis.reporting.plan import build_plans, tables_for_role
+from dbml_sharepoint.analysis.reporting.plan import ListPlan, build_plans, tables_for_role
 from dbml_sharepoint.analysis.timezones import WINDOW_END, WINDOW_START, zone_table
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
 from dbml_sharepoint.generators._indexes import deployable_index_columns
@@ -335,6 +335,7 @@ def generate_reporting_md(
          "than zero, which is why the blank is worth checking."),
         ":::",
         "",
+        *_reads_paragraphs(plans),
         *_date_zone_guide_paragraphs(time_zone),
         "",
         "## Data dictionary page (in-report)",
@@ -385,6 +386,32 @@ def generate_reporting_md(
 
 
 # ---------------------------------------------------------- Data dictionary
+
+
+def _reads_paragraphs(plans: list[ListPlan]) -> list[str]:
+    """Which queries each query reads by name, so a consumer that loads the
+    files under names of its own knows what to rewrite before the refresh
+    tells them, one unresolved import at a time. A query reading its own
+    rows is not listed: it reads a step, not a name."""
+    rows: list[str] = []
+    for plan in plans:
+        reads: list[str] = []
+        for step in plan.derived:
+            source = step.source_query
+            if source and source != plan.list_title and source not in reads:
+                reads.append(source)
+        if reads:
+            named = ", ".join(f"`{query_name(source)}`" for source in reads)
+            rows.append(f"- `{query_name(plan.list_title)}` reads {named}.")
+    if not rows:
+        return []
+    return [
+        ("Queries that read other queries, and the names they read them "
+         "under:"),
+        "",
+        *rows,
+        "",
+    ]
 
 
 def _md_cell(text: str) -> str:
