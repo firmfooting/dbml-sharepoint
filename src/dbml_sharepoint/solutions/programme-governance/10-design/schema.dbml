@@ -540,7 +540,7 @@ Table Decision {
   DecisionOutcome richtext [note: 'What was actually decided, kept separate so an amended decision does not overwrite what was asked']
   RaisedDate   date     [not null, default: '[today]', note: 'When the proposal was raised. Never blank, which is what makes it the sortable axis the queue is ordered on']
   DecisionDate date     [note: 'When the decision was made, not when it was typed in here. Blank while the proposal is still Proposed']
-  DecidedBy    person   [note: 'The one person who made the call, when one person decided under delegation. Leave blank when a forum decided and name the forum in Decided By Forum. For Endorsed, name both: the person here and the endorsing forum there']
+  DecidedBy    person   [note: 'The one person who made the call, when one person decided under delegation. Leave blank when a forum decided and name the forum in Deciding Forum. For Endorsed, name both: the person here and the endorsing forum there']
   // Nothing at save compares this against the activity's DecisionRoute:
   // SharePoint cannot read two lookups across two lists in one validation
   // formula, so route-versus-outcome drift is a reporting reconciliation.

@@ -116,10 +116,12 @@ the order is the point:
    each person's group. Overdue first, so the exception is not buried in
    the whole list. This is the two minutes that make actions get done,
    because everybody knows the view is coming.
-4. `GOV_Risk` -> *Review due*. Only the risks whose review date
-   has arrived or passed. Re-rate, move the date forward, or close it. The
-   full log is a monthly read, and walking every risk fortnightly is how a
-   risk log becomes a ritual.
+4. `GOV_Risk` -> *Proposed*, then *Review due*. Every proposal is set
+   Open or Rejected now, oldest first, so nothing waits two cycles. Then
+   only the risks whose review date has arrived or passed: re-rate, move
+   **Last Reviewed Date** to today, or close it. The full log is a monthly
+   read, and walking every risk fortnightly is how a risk log becomes a
+   ritual.
 5. `GOV_Decision` -> *Awaiting decision*, then *Decision log*. The
    queue first: anything the meeting can answer, it answers now. Then the
    chair reads out anything decided since last time, in thirty seconds.
@@ -196,18 +198,26 @@ rating.
    "Pilot group".
 2. **Workstream** is required. It is what lets a lead read their own risks
    rather than the whole programme log.
-3. *Describe it*: cause, event, consequence in **Detail**. What could
-   trigger it, and what happens to the programme if it does.
+3. *Describe it* in three fields. **Cause** is the condition that is
+   already true, **Trigger** is the event that would turn it into a
+   problem, and **Effect** is what it does to the programme if that
+   happens. Three fields rather than one, so a reviewer can see which
+   part has not been written.
 4. *Assess it*: **Likelihood** and **Consequence** as things stand today,
    with whatever is already in place. **Residual Risk Rating** and **Risk
    Score** calculate themselves and there is nowhere to type over them. If
    you disagree with the answer, the argument is about the two inputs.
 5. *Own it*: one **Risk Owner**, never a team, and a **Risk Response**.
    Tolerate is always for a set period and belongs in the decision log.
-6. *Review it*: a **Review Date** set from how fast the risk could move,
-   not from a calendar habit. **Closure Note** appears once you set the
-   status to Closed. Nothing refuses a save without it, which is exactly
-   why it is read at the steering group.
+6. *Save it*. A new risk is **Proposed**: it sits on the *Proposed*
+   view until governance sets it **Open** at the fortnightly, or
+   **Rejected** with the reason in **Closure Note**. Only Open risks are
+   on the log and offered by the pickers.
+7. *Review it*: **Next Review Due** calculates itself from **Last
+   Reviewed Date** and the rating, so completing a review means moving
+   the reviewed date and nothing else. **Closure Note** appears once you
+   set the status to Closed or Rejected. Nothing refuses a save without
+   it, which is exactly why it is read at the steering group.
 
 ## Writing an action people do
 
@@ -238,8 +248,8 @@ actions quietly die.
 
 **An issue is a fact.** "The pilot group has not been created" is an
 issue. "The pilot group might not be created in time" is a risk. Write
-what is happening, since when, and what it is costing the programme, in
-**Detail**.
+what is happening and since when in **What is happening**, what set it off
+in **Trigger**, and what it is costing the programme in **Effect**.
 
 - **Severity** is how much it is hurting the programme right now, not how
   much it might. Re-set it as the answer changes.
@@ -279,15 +289,16 @@ there is no standing activity, which is the ordinary case.
 **To record what was decided**, open the same row afterwards. Set **Status**,
 fill **Decision Date**, and put what was actually decided in **Decision
 Outcome**, which is separate from Resolution Sought so an amendment does not
-overwrite what was asked. **Decided By Forum** is the forum that decided.
+overwrite what was asked. **Deciding Forum** is the forum that decided,
+or the forum a proposal is going to.
 **Recommended By Forum** is the committee that recommended first, where one
 did. **Decided By** is one person, for a call one person made.
 
 The five outcomes:
 
 - **Approved** and **Rejected** mean the forum decided.
-- **Ratified** means somebody decided under delegation and the forum
-  validated it afterwards. Use it rather than backdating an approval.
+- **Endorsed** means somebody decided under delegation and the forum
+  endorsed it afterwards. Use it rather than backdating an approval.
 - **Noted** means the forum noted the paper and no decision was required.
 - **Withdrawn** means it was taken off the table before anybody decided.
 
@@ -300,14 +311,14 @@ Sought blank; nothing requires the proposal half.
 
 **Detail** carries the options considered, why this one, and who disagreed.
 That last part is what stops the decision being reopened in six months by
-somebody who was not there.
+somebody who was not there, and the form will not save without it.
 
 Nobody on the site can delete a decision or a proposal, deliberately. The
 log's whole value is that it survives, and *Withdrawn* is how a proposal
 ends. Superseding a decision is a new row that references the old one.
 
 Pickers on other lists only offer decisions that were **Approved** or
-**Ratified**. A proposal nobody has answered cannot be cited as authority
+**Endorsed**. A proposal nobody has answered cannot be cited as authority
 for an action, a risk tolerance or a service request, which is the point.
 
 ## Raising a service request
@@ -424,8 +435,9 @@ combination with anything else on the row.
 Nothing checks this. Multi-line fields cannot be validation operands, so
 the sentence on three of the forms is a prompt and not a control. What
 backs it up is that there are few places to type prose at all
-(**Justification** on a service request, **Detail** and **Resolution** on
-an issue, **Detail** and the **Closure Note** on a risk, **Notes** on an
+(**Justification** on a service request, **What is happening**,
+**Trigger**, **Effect** and **Resolution** on an issue, **Cause**,
+**Trigger**, **Effect** and the **Closure Note** on a risk, **Notes** on an
 action, **Detail** on an activity and on a decision), that attachments
 are turned off on all ten lists as a go-live
 step, and that the programme owner samples the narrative fields every
@@ -441,9 +453,11 @@ and a redeploy does not reassert it.
 
 | View | List | What it is for |
 | --- | --- | --- |
-| *My actions* | Action | What you owe, soonest first. The default |
+| *My actions* | Action | What you owe, soonest first, overdue rows washed red. The default |
+| *My overdue* | Action | What you owe and have already missed |
 | *Overdue* | Action | Read first at the fortnightly, so it is not buried |
 | *Open by person* | Action | Grouped by owner, opened at each person's group |
+| *Open by risk*, *Open by issue*, *Open by decision* | Action | What is being done about each risk, issue or decision, grouped by it |
 | *My accountabilities* | Activity | What you are accountable for. The default, and gold means somebody has said it is wrong |
 | *Confirmation due* | Activity | Falling due within thirty days, or already past |
 | *Workstream leads* | Activity | Who leads what, grouped by workstream. Exactly one each |
@@ -455,7 +469,9 @@ and a redeploy does not reassert it.
 | *Needed soon or overdue* | Service Request | Within fourteen days of the needed-by date |
 | *Open* | Issue | What is broken, grouped by workstream. The default |
 | *Severe and open* | Issue | Major and Critical only |
+| *Open, no related risk* | Issue | Open issues the risk log never saw coming, oldest first |
 | *Open* | Risk | The full log, worst score first. Read monthly |
+| *Proposed* | Risk | Put forward and not yet accepted or turned away. Read fortnightly |
 | *Review due* | Risk | Only the risks actually due. Read fortnightly |
 | *The programme* | Workstream | Phase and dates for every stream, in sequence |
 | *Decision log* | Decision | Everything decided, newest first |
@@ -471,8 +487,9 @@ and a redeploy does not reassert it.
   the gap.
 - Do not describe a request in an action's **Notes**. **Related Service
   Request** is the field for it, and it is the only one anything can read.
-- Do not put a risk on the log with a review date you do not mean. An
-  unreviewed risk log is a document, not a control.
+- Do not move a risk's **Last Reviewed Date** without having reviewed it.
+  The next due date follows from it, and an unreviewed risk log is a
+  document, not a control.
 - Do not invent a **Related Risk** to fill the column in. Most actions are
   ordinary programme work and the link is blank on purpose.
 - Do not assign actions to people who were not in the meeting without

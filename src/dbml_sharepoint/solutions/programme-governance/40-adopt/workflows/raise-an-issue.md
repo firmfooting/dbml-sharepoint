@@ -12,7 +12,7 @@ not. You report it, and someone owns it within one business day.
 flowchart TD
     A["Something broke, or a promised thing did not happen"] --> B["Open 'What is broken?' and start a new issue"]
     B --> C["Title: state it as a fact, past tense"]
-    C --> D["Set Severity, then write Detail: what is happening, since when, what it costs"]
+    C --> D["Set Severity, then write What is happening, Trigger and Effect"]
     D --> E{"Do you know which workstream owns it, and who will drive it?"}
     E -- "Yes" --> F["Set Workstream and Owner"]
     E -- "No" --> G["Leave both blank - that is expected"]
@@ -32,7 +32,9 @@ flowchart TD
 3. **Anyone** starts a new issue. The **Title** is the fact, not the
    complaint: "The pilot group has not been created", not "IT are slow".
 4. **Anyone** sets **Severity** (how much it hurts right now) and writes
-   **Detail**: what is happening, since when, and what it is costing.
+   **What is happening** (the fact, and since when), **Trigger** (what set
+   it off, if you know) and **Effect** (what it is costing). The last two
+   can wait for the owner; the first cannot.
 5. **Anyone** answers the workstream and owner question. If you do not
    know which workstream owns it or who will drive it, leave both blank.
    The form saves without them.

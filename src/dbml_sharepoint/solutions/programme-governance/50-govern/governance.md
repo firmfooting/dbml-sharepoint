@@ -45,7 +45,7 @@ work.
 | --- | --- | --- |
 | Daily, no meeting | The triage owner | *Needs triage*; assign a workstream and owner to each row |
 | Weekly, no meeting | Everyone named on a row | *My actions* and *My accountabilities*, ten minutes alone |
-| Fortnightly | Programme owner and the workstream leads | Open issues; *In progress* and *Authorised, not yet picked up*, checking every authorised request names an `AuthorisedBy` and every request In progress names an `AssignedTo`; overdue actions; risks due for review; *Awaiting decision* and *Stalled proposals*; decisions made today |
+| Fortnightly | Programme owner and the workstream leads | Open issues; *In progress* and *Authorised, not yet picked up*, checking every authorised request names an `AuthorisedBy` and every request In progress names an `AssignedTo`; overdue actions; *Proposed* risks, each set Open or Rejected; risks due for review; *Awaiting decision* and *Stalled proposals*; decisions made today |
 | Monthly | Steering group | *The programme*; the full risk log worst first; *Closed this quarter*; *Escalated* and *Needed soon or overdue*; the graduation check; *Awaiting decision*, and the three decision reconciliations in `50-govern/reporting-joins.md` |
 | Quarterly | Register owner and governance | The accountability register, in the nine steps below |
 | Annually | Sponsor and governance | The workstream set, the stakeholder vocabulary, the escalation counts, the minutes spent on closed requests and the adoption measures |
@@ -470,7 +470,7 @@ afterwards can authorise it a moment later.
 
 | Rule | When | Why it cannot be enforced |
 | --- | --- | --- |
-| Every closed risk carries a closure note | Monthly | `ClosureNote` is rich text and validation formulas refuse multi-line operands |
+| Every closed or rejected risk carries a closure note | Monthly | `ClosureNote` is rich text and validation formulas refuse multi-line operands |
 | A risk is genuinely reviewed rather than date-bumped | Monthly | SharePoint can require a date; it cannot require a thought |
 | A risk that has outgrown the programme graduates | Monthly | Four criteria, listed under closure below, and it is a copy rather than a move |
 | No action is filed against a closed workstream | Fortnightly | A lookup picker cannot be filtered, so the `WorkstreamPhase` projection makes the mistake visible instead of preventing it |
@@ -732,9 +732,9 @@ change to list settings, not only at go-live.
 
 ## Retention and closure
 
-**Nothing is deleted in flight.** Closed risks, dropped actions, resolved
-issues, retired activities and inactive stakeholders are the entire content of a
-lessons session, and a register pruned to its live rows cannot answer what
+**Nothing is deleted in flight.** Closed and rejected risks, dropped
+actions, resolved issues, retired activities and inactive stakeholders are
+the entire content of a lessons session, and a register pruned to its live rows cannot answer what
 the programme already dealt with. Retire instead: `ReviewStatus: Retired`
 on an activity, `Status: Inactive` on a stakeholder, `Dropped` on an action.
 
