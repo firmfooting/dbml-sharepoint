@@ -36,13 +36,14 @@ from dbml_sharepoint.analysis.reporting.dictionary import (
     dictionary_rows,
     metadata_rows,
 )
-from dbml_sharepoint.analysis.reporting.names import query_name
+from dbml_sharepoint.analysis.reporting.names import base_query_name, query_name
 from dbml_sharepoint.analysis.reporting.plan import (
     TOLERANT_DATE_TYPES,
     DerivedStep,
     ListPlan,
     build_plans,
     grouped_record_expands,
+    read_by_another,
     reads_zone,
     tables_for_role,
     tolerant_date_columns,
@@ -567,49 +568,34 @@ def _query_ref(name: str) -> str:
     return '#' + _m_string(query_name(name))
 
 
-def _derived_site_bindings(plan: ListPlan) -> tuple[list[str], dict[str, str]]:
-    """One binding per query a `count` reads, and the name each got.
+def _base_call(list_title: str) -> str:
+    """One list's base function, called for THIS query's site.
 
-    WHY A COUNT ASKS WHICH SITE ITS CHILD QUERY IS ON. A derived join reads
-    the other query as it stands in the model. The pack's guide tells an
-    operator building a multi-site report to duplicate each query per site,
-    and a duplicate pointed at another site would still read THIS copy of the
-    child. Every key carries its site, so nothing matches, and a count then
-    reads as a confident ZERO where the truth is not zero. That is a wrong
-    number with nothing able to notice it.
+    A read of another list calls that list's base function rather than
+    naming its query. The query carries reporting-only columns of its own,
+    so two queries whose reporting-only columns read each other would name
+    each other, which in M is a cyclic reference and fails only at refresh:
+    the text parses, the model loads and every name resolves. Reported
+    2026-09-18 against 4.0.0 by a consumer of programme-governance, whose
+    ten queries formed six mutual pairs and twelve cycles, and nine could
+    not refresh. A base function reads no query, so no chain of reads can
+    return to where it started.
 
-    So a count coalesces its blank to zero only where the child query is on
-    the same site, and to null otherwise. An EMPTY child list still reads
-    zero: it names no site, there are no rows to miss, and zero is the right
-    answer.
+    Called with `SiteRoot`, this query's own site, rather than the raw
+    `SiteUrl`: the function normalises what it is given by the same steps,
+    a root passes through them unchanged, so both build identical keys,
+    and the raw value stays read at the normalisation seed alone. Calling
+    it for this site is also what makes a copy of this query pointed at
+    another site read that site's children: a reference to the child's
+    query would read the original copy, whose keys name the original
+    site, and match nothing.
     """
-    lines: list[str] = []
-    named: dict[str, str] = {}
-    for step in plan.derived:
-        if step.kind != "count" or step.source_query in named:
-            continue
-        if step.source_query == plan.list_title:
-            # Its own rows are on its own site by construction, and naming
-            # the query here would be a cyclic reference: see `_derived_m`.
-            continue
-        binding = f"DerivedSite{len(named) + 1}"
-        named[step.source_query] = binding
-        lines += [
-            f"    // Which site {step.source_query} reads; see the count",
-            "    // steps below for why a blank there is not always a zero.",
-            f"    {binding} =",
-            "        try",
-            "            List.First(",
-            (f"                Table.Column({_query_ref(step.source_query)}, "
-             f'"{REPORT_FIXED_COLUMNS[0]}"),'),
-            "                null",
-            "            )",
-            "        otherwise null,",
-        ]
-    return lines, named
+    # Quoted like `_query_ref`, but the name is already a query name: sending
+    # it through `query_name` again would percent-encode its escapes twice.
+    return "#" + _m_string(base_query_name(list_title)) + "(SiteRoot)"
 
 
-def _derived_m(plan: ListPlan, prev: str, sites: dict[str, str]) -> tuple[list[str], str]:
+def _derived_m(plan: ListPlan, prev: str) -> tuple[list[str], str]:
     """The derived-column steps for one list, and the step they end on."""
     lines: list[str] = []
     index = 0
@@ -671,14 +657,27 @@ def _derived_m(plan: ListPlan, prev: str, sites: dict[str, str]) -> tuple[list[s
                 "    // above. Naming the query itself would be a cyclic",
                 "    // reference, which M refuses only at refresh.",
             ]
-        else:
+            child_ref = prev
+        elif entry.source_entity == USERS_KEY_LIST:
             lines += [
                 (f"    // Reads the {entry.source_query} query. Both are keyed "
                  "by site,"),
                 ("    // so a copy of this query pointed at another site "
                  "matches nothing."),
             ]
-        child_ref = prev if own_rows else _query_ref(entry.source_query)
+            child_ref = _query_ref(entry.source_query)
+        else:
+            # The list's base function, never its query: see `_base_call`.
+            lines += [
+                (f"    // Reads the {entry.source_query} rows through their "
+                 "base function,"),
+                "    // for this query's own site, so a copy of this query",
+                "    // pointed at another site reads that site's rows too.",
+                (f"    // Not the {query_name(entry.source_query)} query, "
+                 "whose reporting-only"),
+                "    // columns may read this list back: a cyclic reference.",
+            ]
+            child_ref = _base_call(entry.source_query)
         if entry.kind == "lookup":
             picks = [source for source, _out, _t in entry.picks]
             outs = [out for _source, out, _t in entry.picks]
@@ -747,15 +746,24 @@ def _derived_m(plan: ListPlan, prev: str, sites: dict[str, str]) -> tuple[list[s
         ]
         prev = expanded
         typed = step_name()
-        lines += _aggregate_typed_m(entry, prev, typed, sites, own_rows)
+        lines += _aggregate_typed_m(entry, prev, typed)
         prev = typed
     return lines, prev
 
 
-def _aggregate_typed_m(
-    entry: DerivedStep, prev: str, typed: str, sites: dict[str, str], own_rows: bool,
-) -> list[str]:
-    """The typing step that closes an aggregate, and what a blank count means."""
+def _aggregate_typed_m(entry: DerivedStep, prev: str, typed: str) -> list[str]:
+    """The typing step that closes an aggregate, and what a blank count means.
+
+    A blank count is a true zero. The child rows come from THIS query's
+    site, whether they are its own rows at the step above or another
+    list's through its base function called with this site, so no child
+    row is out of the join's reach, and an empty child list has no rows to
+    miss. Until 2026-09-18 a count read the child's QUERY, which a copy of
+    this query pointed at another site still read from the original site,
+    and the blank had to be coalesced to null unless a site read proved the
+    child was on this site. A min over no rows is unknown, not zero, so
+    nothing is filled in for the other aggregates.
+    """
     if entry.aggregate != "count":
         return [
             f"    {typed} = Table.TransformColumnTypes(",
@@ -763,29 +771,31 @@ def _aggregate_typed_m(
             f'        {{{{"{entry.name}", {entry.m_type}}}}}',
             "    ),",
         ]
-    if own_rows:
-        # Its own rows are always on its own site, so a blank is a true
-        # zero; there is no binding to consult.
-        blank = "0"
-    else:
-        binding = sites[entry.source_query]
-        blank = (
-            f"(if {binding} = null or {binding} = SiteRoot "
-            "then 0 else null)"
-        )
     return [
         f"    {typed} = Table.TransformColumns(",
         f"        {prev},",
         "        {",
         f'            {{"{entry.name}",',
-        f"                each if _ = null then {blank} else _,",
+        "                each if _ = null then 0 else _,",
         f"                {entry.m_type}}}",
         "        }",
         "    ),",
     ]
 
 
-def _render_m(plan: ListPlan, *, site_url: str | None = None) -> str:
+def _fetch_m(
+    plan: ListPlan, *, site_url: str | None, as_function: bool,
+) -> tuple[list[str], str]:
+    """From `let` to the last key column: the text a list query and its base
+    function share, and the step it ends on.
+
+    ONE rendering for both, so the rows a query reads from another list
+    through its base function are the rows that list's own query carries,
+    step for step, up to the reporting-only columns. The function takes
+    `SiteUrl` as its parameter, so it binds nothing where the query bakes
+    the URL in or reads it as a parameter; everything from `SiteRoot` on
+    is the same text.
+    """
     query_string = "?$select=" + ",".join(plan.selects)
     # Every column a step below names. `multi_value_joins` is the one output
     # column deliberately absent from `m_types` (its join step ascribes the
@@ -797,27 +807,9 @@ def _render_m(plan: ListPlan, *, site_url: str | None = None) -> str:
     )
     dates = tolerant_date_columns(plan)
     zone_read = reads_zone(plan)
-    # Bound once: the step lines and the names the count steps read must
-    # come from ONE call, or a rename here would leave the counts reading a
-    # binding that is not there.
-    site_lines, site_bindings = _derived_site_bindings(plan)
-    header = [] if site_url is not None else [
-        "// Requires a text parameter named SiteUrl holding the site URL,",
-        "// e.g. https://tenant.sharepoint.com/sites/YourSite, the SITE, not",
-        "// a list or a page. A list URL is trimmed back to the site for you;",
-        "// see the SiteRoot step below.",
-        "//",
-        "// To report on several sites at once, duplicate this query per site",
-        "// and point each copy at its own SiteUrl parameter. Everything",
-        "// below, including the site name, derives from whichever URL that",
-        "// copy uses. Then append the copies.",
-    ]
     lines = [
-        (f"// {plan.list_title}: generated by dbml-sharepoint; regenerate "
-         "rather than hand-edit."),
-        *header,
         "let",
-        *_site_url_binding_m(site_url),
+        *([] if as_function else _site_url_binding_m(site_url)),
         *_SITE_ROOT_M,
         # Deliberately inline rather than a shared _SiteName query. A shared
         # query binds to ONE SiteUrl parameter, so every duplicate of this
@@ -831,7 +823,6 @@ def _render_m(plan: ListPlan, *, site_url: str | None = None) -> str:
         *_SITE_NAME_M,
         *_SITE_ORIGIN_M,
         *_item_url_base_m(plan),
-        *site_lines,
         *(_zone_m(plan.zone) if zone_read else []),
         *(_AS_STAMP_M if zone_read else []),
         *(_AS_DATE_M if dates else []),
@@ -1098,6 +1089,29 @@ def _render_m(plan: ListPlan, *, site_url: str | None = None) -> str:
                 "    )",
             ]
             prev = step
+    return lines, prev
+
+
+def _render_m(plan: ListPlan, *, site_url: str | None = None) -> str:
+    header = [] if site_url is not None else [
+        "// Requires a text parameter named SiteUrl holding the site URL,",
+        "// e.g. https://tenant.sharepoint.com/sites/YourSite, the SITE, not",
+        "// a list or a page. A list URL is trimmed back to the site for you;",
+        "// see the SiteRoot step below.",
+        "//",
+        "// To report on several sites at once, duplicate this query per site",
+        "// and point each copy at its own SiteUrl parameter. Everything",
+        "// below, including the site name and the rows any reporting-only",
+        "// column reads from another list, derives from whichever URL that",
+        "// copy uses. Then append the copies.",
+    ]
+    fetch, prev = _fetch_m(plan, site_url=site_url, as_function=False)
+    lines = [
+        (f"// {plan.list_title}: generated by dbml-sharepoint; regenerate "
+         "rather than hand-edit."),
+        *header,
+        *fetch,
+    ]
     if plan.derived:
         lines[-1] += ","
         lines += [
@@ -1107,7 +1121,7 @@ def _render_m(plan: ListPlan, *, site_url: str | None = None) -> str:
             "    // because a join reads them; before the rename, so a",
             "    // derived column takes a display title like any other.",
         ]
-        derived_lines, prev = _derived_m(plan, prev, site_bindings)
+        derived_lines, prev = _derived_m(plan, prev)
         lines += derived_lines
         # The steps above each close with their own comma; the chain has to
         # end without one for whatever follows to attach.
@@ -1142,13 +1156,46 @@ def _render_m(plan: ListPlan, *, site_url: str | None = None) -> str:
     return "\n".join(lines)
 
 
+def _render_base_m(plan: ListPlan) -> str:
+    """One list's base function: its rows for a site URL, fetched and keyed
+    as its query fetches them, under the internal names and with none of
+    the reporting-only columns. Why it exists: `_base_call`."""
+    name = base_query_name(plan.list_title)
+    fetch, prev = _fetch_m(plan, site_url=None, as_function=True)
+    return "\n".join([
+        f"// {name}: generated by dbml-sharepoint; regenerate rather than hand-edit.",
+        "//",
+        f"// The rows of {plan.list_title} for one site, fetched and keyed",
+        f"// exactly as the {query_name(plan.list_title)} query fetches them,",
+        "// under the internal column names and with none of that query's",
+        "// reporting-only columns.",
+        "//",
+        "// A query whose reporting-only columns read this list calls this",
+        "// function with its own site URL rather than naming the list's",
+        "// query. That query carries reporting-only columns of its own, and",
+        "// two queries that read each other are a cyclic reference, which M",
+        "// refuses at refresh and nothing earlier can see. A function reads",
+        "// no query, so no chain of reads can return to where it started.",
+        "//",
+        "// Load it under the name of this file, which is how the queries",
+        "// call it. A function is not loaded to the model; there is nothing",
+        "// to disable.",
+        "(SiteUrl as text) as table =>",
+        *fetch,
+        "in",
+        f"    {prev}",
+        "",
+    ])
+
+
 def generate_powerquery(
     schema: Schema, bundle: MappingBundle, site_role: str,
     *,
     site_url: str | None = None,
     time_zone: str | None = None,
 ) -> dict[str, str]:
-    """One M query per list for the site role: {filename: query text}.
+    """One M query per list for the site role, and a base function for each
+    list another list's reporting-only columns read: {filename: text}.
 
     Each query is self-contained, including its site-name lookup. That is
     what makes a multi-site report possible: duplicate a query, point the
@@ -1176,6 +1223,14 @@ def generate_powerquery(
         f"{query_name(plan.list_title)}.pq": _render_m(plan, site_url=site_url)
         for plan in plans
     }
+    taken = {query_name(plan.list_title).casefold() for plan in plans} | reserved
+    for plan in read_by_another(plans):
+        base = base_query_name(plan.list_title)
+        if base.casefold() in taken:
+            # A list titled like another list's base would be read in its
+            # place by every query that joins that list.
+            raise ValueError(f"Reporting query name {base!r} collides with a list query")
+        queries[f"{base}.pq"] = _render_base_m(plan)
     if bundle.mapping.reporting.users_table:
         queries[f"{USERS_KEY_LIST}.pq"] = _render_users_m(site_url=site_url)
     return queries

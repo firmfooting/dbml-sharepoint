@@ -29,7 +29,7 @@ from dbml_sharepoint.analysis.reporting.dictionary import (
     metadata_rows,
     users_dictionary_rows,
 )
-from dbml_sharepoint.analysis.reporting.names import query_name
+from dbml_sharepoint.analysis.reporting.names import base_query_name, query_name
 from dbml_sharepoint.analysis.reporting.plan import ListPlan, build_plans, tables_for_role
 from dbml_sharepoint.analysis.timezones import WINDOW_END, WINDOW_START, zone_table
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
@@ -325,14 +325,19 @@ def generate_reporting_md(
          "SQL view names must remain distinct from metadata views and within 128 characters."),
         "",
         ":::warning Load each query under the name of its file",
-        ("A query that reads another list names it, so `GOV_Risk.pq` must "
-         "be loaded as `GOV_Risk` for a query that reads it to resolve. "
-         "Renaming a query breaks every derived column that reads it, at "
-         "refresh. Appending several sites needs the same care: a "
-         "duplicated query still reads the ORIGINAL copy of whatever it "
-         "joins, so point each duplicate at its own copies. A count that "
-         "finds itself reading another site's rows reports blank rather "
-         "than zero, which is why the blank is worth checking."),
+        ("A query that reads another list calls that list's base function "
+         "by name, so `GOV_Risk_Base.pq` must be loaded as `GOV_Risk_Base` "
+         "for a query that reads Risk to resolve. Renaming it breaks every "
+         "derived column that reads it, at refresh, and the error names "
+         "only the first missing import. A base function fetches the "
+         "list's rows for the site URL it is given, keyed like the list's "
+         "query and without its reporting-only columns; it exists so that "
+         "no query reads another query, because two queries that read each "
+         "other are a cyclic reference that only a refresh can see. Power "
+         "BI does not load a function to the model, so there is nothing to "
+         "disable. A duplicated query pointed at another site calls each "
+         "base with that site, so its reporting-only columns read that "
+         "site's rows without further editing."),
         ":::",
         "",
         *_reads_paragraphs(plans),
@@ -389,25 +394,33 @@ def generate_reporting_md(
 
 
 def _reads_paragraphs(plans: list[ListPlan]) -> list[str]:
-    """Which queries each query reads by name, so a consumer that loads the
-    files under names of its own knows what to rewrite before the refresh
-    tells them, one unresolved import at a time. A query reading its own
-    rows is not listed: it reads a step, not a name."""
+    """Which names each query reads, so a consumer that loads the files
+    under names of its own knows what to rewrite before the refresh tells
+    them, one unresolved import at a time. A query reading its own rows is
+    not listed: it reads a step, not a name. Another list is read through
+    its base function, and `_Users` as the query it is."""
     rows: list[str] = []
     for plan in plans:
         reads: list[str] = []
         for step in plan.derived:
-            source = step.source_query
-            if source and source != plan.list_title and source not in reads:
-                reads.append(source)
+            if not step.source_query or step.source_query == plan.list_title:
+                continue
+            name = (
+                query_name(step.source_query)
+                if step.source_entity == USERS_KEY_LIST
+                else base_query_name(step.source_query)
+            )
+            if name not in reads:
+                reads.append(name)
         if reads:
-            named = ", ".join(f"`{query_name(source)}`" for source in reads)
+            named = ", ".join(f"`{name}`" for name in reads)
             rows.append(f"- `{query_name(plan.list_title)}` reads {named}.")
     if not rows:
         return []
     return [
-        ("Queries that read other queries, and the names they read them "
-         "under:"),
+        ("Queries that read other queries or base functions, and the names "
+         "they read them under. No base function reads anything, so no "
+         "chain of reads returns to where it started:"),
         "",
         *rows,
         "",

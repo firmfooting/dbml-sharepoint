@@ -524,11 +524,13 @@ def test_a_lookup_joins_on_the_packs_own_keys() -> None:
     assert '{"ToleranceStatus"}' in query
 
 
-def test_a_picked_column_is_translated_to_what_the_target_query_renames_it_to() -> None:
-    """An author writes internal names everywhere. The target query renames
-    its columns in its LAST step, so the join has to ask for the name it
-    ends with, and that map is read off the target's own plan rather than
-    re-derived."""
+def test_a_picked_column_keeps_its_internal_name_through_the_base_function() -> None:
+    """An author writes internal names everywhere, and so does the join. The
+    target is read through its base function, which stops before the
+    model-facing rename, so the name asked for is the schema's; the display
+    title appears only in this query's own last step. Until 2026-09-18 the
+    join read the target's finished query and had to ask for the renamed
+    title, which is the read that made two queries name each other."""
     schema = make_schema(
         make_table("Decision", column("Title"), column("ReviewStatus")),
         make_table("Risk", column("Title"), make_ref("D", "Decision.Id")),
@@ -542,9 +544,11 @@ def test_a_picked_column_is_translated_to_what_the_target_query_renames_it_to() 
             ),
         ]},
     )
-    query = generate_powerquery(schema, bundle, "default")["APP_Risk.pq"]
-    assert '{"Decision Key", "Review Status"}' in query
-    assert "ReviewStatus" not in query.split("Derived1")[1]
+    queries = generate_powerquery(schema, bundle, "default")
+    query = queries["APP_Risk.pq"]
+    assert '{"Decision Key", "ReviewStatus"}' in query
+    assert "Review Status" not in query.split("RenamedForModel")[0]
+    assert "Review Status" not in queries["APP_Decision_Base.pq"]
 
 
 def test_a_count_groups_the_child_and_joins_the_aggregate_back() -> None:
@@ -556,18 +560,21 @@ def test_a_count_groups_the_child_and_joins_the_aggregate_back() -> None:
         ),
     ])
     query = _risk_query(bundle)
-    assert 'Table.SelectRows(#"APP_Action", each [Status] = "Open")' in query
+    assert (
+        'Table.SelectRows(#"APP_Action_Base"(SiteRoot), each [Status] = "Open")'
+    ) in query
     assert '{"RelatedRisk Key"}' in query
     assert "each Table.RowCount(_)" in query
 
 
-def test_a_count_that_finds_another_site_reports_blank_not_zero() -> None:
-    """THE guard. A derived join reads the other query as it stands, and the
-    guide tells an operator building a multi-site report to duplicate each
-    query per site. A duplicate pointed elsewhere still reads THIS child, so
-    nothing matches and a coalesced zero would be a confident wrong number
-    where the truth is not zero. An EMPTY child list still reads zero: it
-    names no site and there are no rows to miss."""
+def test_a_count_reads_the_child_for_its_own_site_so_a_blank_is_zero() -> None:
+    """The guide tells an operator building a multi-site report to duplicate
+    each query per site. A derived join used to read the child's QUERY,
+    which a duplicate pointed elsewhere still read from the original site,
+    so a coalesced zero was a confident wrong number and the blank had to
+    be null unless a site read proved the child was here. The child is now
+    fetched through its base function for THIS query's site, so no child
+    row is out of the join's reach and a blank is a true zero."""
     bundle = _bundle([
         DerivedColumn(
             kind="count", from_entity="Action", via="RelatedRisk",
@@ -575,10 +582,10 @@ def test_a_count_that_finds_another_site_reports_blank_not_zero() -> None:
         ),
     ])
     query = _risk_query(bundle)
-    assert 'Table.Column(#"APP_Action", "Site Url")' in query
-    assert (
-        "if DerivedSite1 = null or DerivedSite1 = SiteRoot then 0 else null"
-    ) in query
+    assert '#"APP_Action_Base"(SiteRoot)' in query
+    assert "DerivedSite" not in query
+    assert "each if _ = null then 0 else _" in query
+    assert "then 0 else null" not in query
 
 
 def test_only_a_count_coalesces_a_missing_match() -> None:
@@ -626,10 +633,16 @@ def test_every_cross_query_reference_is_a_quoted_identifier() -> None:
         reporting=ReportingOptions(users_table=True),
     )
     query = _risk_query(bundle)
-    for name in ("APP_Action", "_Users"):
+    code = [
+        line for line in query.splitlines() if not line.strip().startswith("//")
+    ]
+    for name in ("APP_Action_Base", "_Users"):
         assert f'#"{name}"' in query
-        # No bare reference anywhere, which would resolve only by luck.
-        assert f"({name}," not in query
+        # No bare reference anywhere, which would resolve only by luck. A
+        # quoted string is a key literal, not a reference.
+        for line in code:
+            bare = line.replace(f'#"{name}"', "").replace(f'"{name}"', "")
+            assert name not in bare, line
 
 
 def test_a_derived_column_takes_a_display_title_like_any_other() -> None:
@@ -761,5 +774,5 @@ def test_derived_count_escapes_explicit_query_titles() -> None:
         bundle.mapping.entities["Action"], title='Action "Review" #(tab)',
     )
     query = _risk_query(bundle)
-    assert '#"Action %22Review%22 #(#)(tab)"' in query
-    assert '#"Action "Review" #(tab)"' not in query
+    assert '#"Action %22Review%22 #(#)(tab)_Base"(SiteRoot)' in query
+    assert '#"Action "Review" #(tab)' not in query
