@@ -32,6 +32,11 @@ from _model import table as make_table
 from _packs import pack
 from _paths import SOLUTION_TEMPLATES
 
+from dbml_sharepoint.analysis.reporting.names import (
+    BASE_SUFFIX,
+    base_query_name,
+    query_name,
+)
 from dbml_sharepoint.generators.report_m import generate_powerquery
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import DerivedColumn, MappingBundle
@@ -242,6 +247,46 @@ def test_a_count_over_a_base_coalesces_a_blank_to_zero_without_a_site_read(
     assert "DerivedSite" not in risk
     assert 'Table.Column(#"APP_Action"' not in risk
     assert "each if _ = null then 0 else _" in risk
+
+
+# --------------------------------------------- the base name is one name
+
+_PORTABLE_LIMIT = 184  # bytes, the same figure test_report_query_paths_are_portable holds
+
+
+@pytest.mark.parametrize("length", [176, 177, 180, 181, 255])
+def test_a_base_filename_stays_inside_the_portable_budget(
+    tmp_path: Path, length: int,
+) -> None:
+    """Review of #590. The length budget was applied to the title part and
+    `_Base` appended after it, so a title encoding to 177 to 180 bytes
+    passed on its own and its base file came out at up to 188. The budget
+    now runs over the whole basename, and the query names what the file is
+    called, at every length either side of the limit."""
+    schema, bundle = pack(
+        tmp_path, _PAIR_DBML, _PAIR_MAPPING,
+        dbml_name=f"len{length}.dbml", mapping_name=f"len{length}.yaml",
+    )
+    bundle.mapping.entities["Action"] = replace(
+        bundle.mapping.entities["Action"], title="A" * length,
+    )
+    queries = generate_powerquery(schema, bundle, "default")
+    for filename in queries:
+        assert len(filename.encode("utf-8")) <= _PORTABLE_LIMIT, filename
+    graph = _reads(queries)
+    for reader, read in graph.items():
+        assert read <= set(graph), f"{reader} reads a name that is not a file"
+    base = base_query_name("A" * length)
+    assert f"{base}.pq" in queries
+    assert base.endswith(BASE_SUFFIX)
+
+
+def test_a_reserved_stem_is_judged_on_the_whole_basename() -> None:
+    """`CON_Base` is not a reserved stem, so nothing is escaped; `CON` alone
+    still is. One rule over the composed name rather than one per part."""
+    assert query_name("CON") == "%43ON"
+    assert base_query_name("CON") == "CON_Base"
+    assert base_query_name("CON .x") == "%43ON .x_Base"
 
 
 def test_a_list_titled_like_another_lists_base_is_refused() -> None:

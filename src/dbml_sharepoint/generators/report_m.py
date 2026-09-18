@@ -554,21 +554,24 @@ _DERIVED_AGGREGATE_M: dict[str, str] = {
 
 
 def _query_ref(name: str) -> str:
-    """One query named as M identifier syntax, always quoted.
+    """One query or function, named as M identifier syntax, always quoted.
 
-    `#"..."` is valid for ANY name, and a bare identifier is not: `_Users`
-    leads with an underscore and a family whose prefix carries a space or a
-    dash would not be an identifier at all. Quoting unconditionally means
-    the emitted reference never depends on what a prefix happens to contain.
+    `name` is the basename its file carries, already composed by
+    `reporting.names`; nothing here encodes, so a name cannot be encoded
+    twice. `#"..."` is valid for ANY name, and a bare identifier is not:
+    `_Users` leads with an underscore and a family whose prefix carries a
+    space or a dash would not be an identifier at all. Quoting
+    unconditionally means the emitted reference never depends on what a
+    prefix happens to contain.
 
     THE QUERY MUST CARRY THIS NAME. A cross-query reference resolves by
     name, so a derived join works only where each `.pq` was loaded under the
     name its file has; guide.md says so beside the instruction to paste them.
     """
-    return '#' + _m_string(query_name(name))
+    return "#" + _m_string(name)
 
 
-def _base_call(list_title: str) -> str:
+def _base_call(name: str) -> str:
     """One list's base function, called for THIS query's site.
 
     A read of another list calls that list's base function rather than
@@ -590,9 +593,7 @@ def _base_call(list_title: str) -> str:
     query would read the original copy, whose keys name the original
     site, and match nothing.
     """
-    # Quoted like `_query_ref`, but the name is already a query name: sending
-    # it through `query_name` again would percent-encode its escapes twice.
-    return "#" + _m_string(base_query_name(list_title)) + "(SiteRoot)"
+    return f"{_query_ref(name)}(SiteRoot)"
 
 
 def _derived_m(plan: ListPlan, prev: str) -> tuple[list[str], str]:
@@ -650,34 +651,32 @@ def _derived_m(plan: ListPlan, prev: str) -> tuple[list[str], str]:
         # to the query being defined. Reported 2026-09-17 against 4.0.0 by
         # a consumer of programme-governance, whose Decision list reads its
         # own rows to find the decision that superseded each one.
-        own_rows = entry.source_query == plan.list_title
-        if own_rows:
+        if not entry.reads:
             lines += [
                 "    // Reads this query's own rows as they stand at the step",
                 "    // above. Naming the query itself would be a cyclic",
                 "    // reference, which M refuses only at refresh.",
             ]
             child_ref = prev
-        elif entry.source_entity == USERS_KEY_LIST:
-            lines += [
-                (f"    // Reads the {entry.source_query} query. Both are keyed "
-                 "by site,"),
-                ("    // so a copy of this query pointed at another site "
-                 "matches nothing."),
-            ]
-            child_ref = _query_ref(entry.source_query)
-        else:
-            # The list's base function, never its query: see `_base_call`.
+        elif entry.reads_base:
+            # The list's base function rather than its query; see `_base_call`.
             lines += [
                 (f"    // Reads the {entry.source_query} rows through their "
                  "base function,"),
                 "    // for this query's own site, so a copy of this query",
                 "    // pointed at another site reads that site's rows too.",
-                (f"    // Not the {query_name(entry.source_query)} query, "
-                 "whose reporting-only"),
-                "    // columns may read this list back: a cyclic reference.",
+                "    // The list's own query is not read, because its",
+                "    // reporting-only columns may read this list back.",
             ]
-            child_ref = _base_call(entry.source_query)
+            child_ref = _base_call(entry.reads)
+        else:
+            lines += [
+                (f"    // Reads the {entry.reads} query. Both are keyed "
+                 "by site,"),
+                ("    // so a copy of this query pointed at another site "
+                 "matches nothing."),
+            ]
+            child_ref = _query_ref(entry.reads)
         if entry.kind == "lookup":
             picks = [source for source, _out, _t in entry.picks]
             outs = [out for _source, out, _t in entry.picks]
@@ -1160,26 +1159,26 @@ def _render_base_m(plan: ListPlan) -> str:
     """One list's base function: its rows for a site URL, fetched and keyed
     as its query fetches them, under the internal names and with none of
     the reporting-only columns. Why it exists: `_base_call`."""
-    name = base_query_name(plan.list_title)
     fetch, prev = _fetch_m(plan, site_url=None, as_function=True)
     return "\n".join([
-        f"// {name}: generated by dbml-sharepoint; regenerate rather than hand-edit.",
+        (f"// {base_query_name(plan.list_title)}: generated by dbml-sharepoint; "
+         "regenerate rather than hand-edit."),
         "//",
-        f"// The rows of {plan.list_title} for one site, fetched and keyed",
-        f"// exactly as the {query_name(plan.list_title)} query fetches them,",
-        "// under the internal column names and with none of that query's",
-        "// reporting-only columns.",
+        f"// The rows of {plan.list_title} for one site, fetched and keyed as",
+        f"// the {query_name(plan.list_title)} query fetches them, under the",
+        "// internal column names and with none of that query's reporting-only",
+        "// columns.",
         "//",
         "// A query whose reporting-only columns read this list calls this",
-        "// function with its own site URL rather than naming the list's",
-        "// query. That query carries reporting-only columns of its own, and",
+        "// function with its own site URL instead of naming the list's",
+        "// query. The query carries reporting-only columns of its own, and",
         "// two queries that read each other are a cyclic reference, which M",
-        "// refuses at refresh and nothing earlier can see. A function reads",
-        "// no query, so no chain of reads can return to where it started.",
+        "// refuses at refresh and nothing earlier can see. This function",
+        "// reads no query, so no chain of reads can return to where it",
+        "// started.",
         "//",
         "// Load it under the name of this file, which is how the queries",
-        "// call it. A function is not loaded to the model; there is nothing",
-        "// to disable.",
+        "// call it. Power BI does not load a function to the model.",
         "(SiteUrl as text) as table =>",
         *fetch,
         "in",
@@ -1216,14 +1215,15 @@ def generate_powerquery(
     reserved = {"_datadictionary", "_modelinfo", "_useraddedcolumns"}
     if bundle.mapping.reporting.users_table:
         reserved.add(USERS_KEY_LIST.casefold())
+    names = {plan.entity: query_name(plan.list_title) for plan in plans}
     for plan in plans:
-        if query_name(plan.list_title).casefold() in reserved:
+        if names[plan.entity].casefold() in reserved:
             raise ValueError(f"Reporting query name {plan.list_title!r} is reserved")
     queries = {
-        f"{query_name(plan.list_title)}.pq": _render_m(plan, site_url=site_url)
+        f"{names[plan.entity]}.pq": _render_m(plan, site_url=site_url)
         for plan in plans
     }
-    taken = {query_name(plan.list_title).casefold() for plan in plans} | reserved
+    taken = {name.casefold() for name in names.values()} | reserved
     for plan in read_by_another(plans):
         base = base_query_name(plan.list_title)
         if base.casefold() in taken:

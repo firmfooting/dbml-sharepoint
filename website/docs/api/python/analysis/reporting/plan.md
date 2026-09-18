@@ -37,6 +37,8 @@ class DerivedStep:
     description: str = ''
     source_query: str = ''
     source_entity: str = ''
+    reads: str = ''
+    reads_base: bool = False
     own_key: str = ''
     other_key: str = ''
     picks: tuple[tuple[str, str, str], ...] = ()
@@ -47,11 +49,11 @@ class DerivedStep:
 
 One derived column, with every name already resolved.
 
-Built in a POST-PASS over the plans, because a join has to translate the
-columns it reads through the TARGET query's own rename map, and that map
-only exists once the target's plan does. Reading the map rather than
-re-deriving the display title is the point: it is the rename the target
-query actually performs, so the two cannot disagree.
+Built in a POST-PASS over the plans, because a join needs the target's
+plan to know its list title and whether it is reported at this site.
+Column names are the schema's internal ones throughout: another list
+is read through its base function and this list at the step above,
+and neither has renamed yet. Only `_Users` renames unconditionally.
 
 ### `ListPlan`
 

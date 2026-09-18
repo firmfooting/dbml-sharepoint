@@ -16,6 +16,7 @@ import re
 import pytest
 from _paths import MANUAL
 
+from dbml_sharepoint.analysis.reporting.names import base_query_name
 from dbml_sharepoint.generators import report_m
 
 PROBES = MANUAL / "powerquery"
@@ -119,7 +120,7 @@ def test_the_base_function_probe_is_called_the_way_the_generator_calls_one() -> 
     and invoked, and the base is a function of the site URL. The probe has
     to use the same two shapes or it measures something the pack does not
     emit."""
-    assert report_m._base_call("_Probe") == '#"_Probe_Base"(SiteRoot)'
+    assert report_m._base_call(base_query_name("_Probe")) == '#"_Probe_Base"(SiteRoot)'
     assert '#"_Probe_Base"(' in _probe("m-runtime-probe.pq")
     base = _probe("_Probe_Base.pq")
     assert "(SiteUrl as text) as table =>" in base

@@ -477,9 +477,9 @@ FINDING_HELP: dict[FindingCode, str] = {
         "rather than a build failure. Names are the internal ones the "
         "schema declares, not the display titles the model shows. Another "
         "list is read as it is fetched, keys included and reporting-only "
-        "columns excluded: reading them would make the two queries name "
-        "each other, which is a cyclic reference at refresh. This list's "
-        "own rows are read as the entries above have left them."
+        "columns excluded, because reading those would make the two queries "
+        "name each other, a cyclic reference at refresh. This list's own "
+        "rows are read as the entries above have left them."
     ),
     FindingCode.DERIVED_LOOKUP_BAD_TARGET: (
         "A derived `lookup` names a `via` column that is not a lookup, one "

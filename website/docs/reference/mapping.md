@@ -1670,8 +1670,8 @@ carries one, and a site shows no trace of them. They exist so a report is
 built from the pack rather than from a second layer maintained beside it.
 
 Names are the **internal** ones the schema declares, here and inside every
-expression; an author never writes a display title. Another list is read as
-it is fetched: its columns and its keys, not its reporting-only columns. Its
+expression, and an author never writes a display title. Another list is read
+as it is fetched, columns and keys, without its reporting-only columns. Its
 query carries those, and two queries whose reporting-only columns read each
 other are a cyclic reference that only a refresh can see, so the generator
 reads a list through a base function that stops before them. Declaration

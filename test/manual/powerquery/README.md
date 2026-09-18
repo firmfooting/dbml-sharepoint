@@ -65,13 +65,12 @@ directory has stayed green.
 
 Any change to the emitted M that a Python test cannot execute. The date
 conversion, the derived column steps, the zone table lookup and the cross
-query joins are all in that category. The base-function call is the one
-construct here that a live pack exercises differently from the probe: in the
-pack the calling query also reads its own list from SharePoint, which the
-Data Privacy Firewall allowed by default from the July 2026 Power BI Desktop
-and has always allowed in the Service (Learn, "Allow data privacy firewall
-partitions that reference other partitions to also access data sources"). An
-older Desktop refuses that combination with `Formula.Firewall`, as it refused
-the query-to-query reads that preceded it. A generated query that passes every
+query joins are all in that category. A live pack exercises the base-function
+call differently from the probe, because the calling query also reads its own
+list from SharePoint. The Data Privacy Firewall has allowed that combination
+by default since the July 2026 Power BI Desktop and always allowed it in the
+Service (Learn, "Allow data privacy firewall partitions that reference other
+partitions to also access data sources"). An older Desktop refuses it with
+`Formula.Firewall`, as it refused the query-to-query reads that preceded it. A generated query that passes every
 gate in this repository has been proved to be the text the generator meant to
 write, and nothing more.

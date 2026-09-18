@@ -29,7 +29,7 @@ from dbml_sharepoint.analysis.reporting.dictionary import (
     metadata_rows,
     users_dictionary_rows,
 )
-from dbml_sharepoint.analysis.reporting.names import base_query_name, query_name
+from dbml_sharepoint.analysis.reporting.names import query_name
 from dbml_sharepoint.analysis.reporting.plan import ListPlan, build_plans, tables_for_role
 from dbml_sharepoint.analysis.timezones import WINDOW_END, WINDOW_START, zone_table
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
@@ -331,13 +331,12 @@ def generate_reporting_md(
          "derived column that reads it, at refresh, and the error names "
          "only the first missing import. A base function fetches the "
          "list's rows for the site URL it is given, keyed like the list's "
-         "query and without its reporting-only columns; it exists so that "
-         "no query reads another query, because two queries that read each "
-         "other are a cyclic reference that only a refresh can see. Power "
-         "BI does not load a function to the model, so there is nothing to "
-         "disable. A duplicated query pointed at another site calls each "
-         "base with that site, so its reporting-only columns read that "
-         "site's rows without further editing."),
+         "query and without its reporting-only columns. No query reads "
+         "another query, because two queries that read each other are a "
+         "cyclic reference that only a refresh can see. Power BI does not "
+         "load a function to the model. A duplicated query pointed at "
+         "another site calls each base with that site, so its reporting-only "
+         "columns read that site's rows without further editing."),
         ":::",
         "",
         *_reads_paragraphs(plans),
@@ -397,21 +396,14 @@ def _reads_paragraphs(plans: list[ListPlan]) -> list[str]:
     """Which names each query reads, so a consumer that loads the files
     under names of its own knows what to rewrite before the refresh tells
     them, one unresolved import at a time. A query reading its own rows is
-    not listed: it reads a step, not a name. Another list is read through
-    its base function, and `_Users` as the query it is."""
+    not listed: it reads a step, not a name. Which name a step reads is the
+    planner's decision, so this list and the emitted M cannot differ."""
     rows: list[str] = []
     for plan in plans:
         reads: list[str] = []
         for step in plan.derived:
-            if not step.source_query or step.source_query == plan.list_title:
-                continue
-            name = (
-                query_name(step.source_query)
-                if step.source_entity == USERS_KEY_LIST
-                else base_query_name(step.source_query)
-            )
-            if name not in reads:
-                reads.append(name)
+            if step.reads and step.reads not in reads:
+                reads.append(step.reads)
         if reads:
             named = ", ".join(f"`{name}`" for name in reads)
             rows.append(f"- `{query_name(plan.list_title)}` reads {named}.")
