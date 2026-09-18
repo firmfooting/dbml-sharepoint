@@ -734,9 +734,10 @@ change to list settings, not only at go-live.
 
 **Nothing is deleted in flight.** Closed and rejected risks, dropped
 actions, resolved issues, retired activities and inactive stakeholders are
-the entire content of a lessons session, and a register pruned to its live rows cannot answer what
-the programme already dealt with. Retire instead: `ReviewStatus: Retired`
-on an activity, `Status: Inactive` on a stakeholder, `Dropped` on an action.
+the entire content of a lessons session, and a register pruned to its live
+rows cannot answer what the programme already dealt with. Retire instead:
+`ReviewStatus: Retired` on an activity, `Status: Inactive` on a stakeholder,
+`Dropped` on an action.
 
 ### The retention decision, and whose it is
 
