@@ -157,29 +157,30 @@ calculated_formulas:
   Risk:
     ResidualRiskRating: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence])),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),"Low","Low","Low","Medium","Medium","Low","Low","Medium","Medium","High","Low","Medium","Medium","High","High","Medium","Medium","High","High","Extreme","Medium","High","High","Extreme","Extreme"))'
     RiskScore: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence])),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),1,4,6,13,15,2,5,11,14,21,3,9,12,19,22,7,10,17,20,24,8,16,18,23,25))'
-    # The RelatedRisk picker shows this column. Blank for Closed means the
-    # picker offers only live risks: below the 5,000-item threshold a blank
-    # calculated label is simply omitted from the picker.
+    # The RelatedRisk picker shows this column. Blank unless Open means the
+    # picker offers only risks that are on the log: a Proposed risk is not yet
+    # accepted and a Closed or Rejected one is over. Below the 5,000-item
+    # threshold a blank calculated label is simply omitted from the picker.
     # Cadence: quarterly for High or Extreme, six-monthly where the response
     # is Manage or Tolerate, otherwise annual, counted from Last Reviewed
     # Date. risk-register's rule with its control-effectiveness and
     # levels-above-target arms dropped, because this family carries neither
     # column. Month-end clamped like ConfirmationDue; see the note above.
     NextReviewDue: '=IF(OR(ISBLANK([LastReviewedDate]),[ResidualRiskRating]=""),"",MIN(DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+IF(OR([ResidualRiskRating]="High",[ResidualRiskRating]="Extreme"),3,IF(OR([RiskResponse]="Manage",[RiskResponse]="Tolerate"),6,12)),DAY([LastReviewedDate])),DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+IF(OR([ResidualRiskRating]="High",[ResidualRiskRating]="Extreme"),3,IF(OR([RiskResponse]="Manage",[RiskResponse]="Tolerate"),6,12))+1,0)))'
-    LiveRiskTitle: '=IF([Status]="Closed","",[Title])'
+    LiveRiskTitle: '=IF([Status]="Open",[Title],"")'
   Decision:
-    # Every picker onto this list shows this column. Approved and Ratified are
+    # Every picker onto this list shows this column. Approved and Endorsed are
     # the two states that carry authority; a Proposed, Rejected, Withdrawn or
     # Noted row is blank here and so is not offered.
-    LiveDecisionTitle: '=IF(OR([Status]="Approved",[Status]="Ratified"),[Title],"")'
+    LiveDecisionTitle: '=IF(OR([Status]="Approved",[Status]="Endorsed"),[Title],"")'
   Activity:
     ConfirmationDue: '=IF(OR(ISBLANK([LastConfirmed]),[ReviewStatus]="Retired"),"",MIN(DATE(YEAR([LastConfirmed]),MONTH([LastConfirmed])+IF([Criticality]="Statutory",6,IF([Criticality]="High",12,24)),DAY([LastConfirmed])),DATE(YEAR([LastConfirmed]),MONTH([LastConfirmed])+IF([Criticality]="Statutory",6,IF([Criticality]="High",12,24))+1,0)))'
 
 # Projections cost no join. Each RelatedRisk lookup projects the target's real
 # Title onto the source list as a read-only dependent field
-# (RelatedRiskTitle): the picker shows LiveRiskTitle, blank once a risk is
-# Closed, while views show the projected Title, so a closed risk still reads
-# by name.
+# (RelatedRiskTitle): the picker shows LiveRiskTitle, blank unless a risk is
+# Open, while views show the projected Title, so a closed or rejected risk
+# still reads by name.
 #
 # Action.Workstream projects Phase as WorkstreamPhase. A lookup picker
 # cannot be filtered, so an action cannot be PREVENTED from being filed
@@ -491,8 +492,12 @@ display_names:
       Title: "Action"
     Issue:
       Title: "Issue"
+      Situation: "What is happening"
     Decision:
       Title: "Decision"
+      # A proposal names the forum it is going to before anybody has decided,
+      # so the label reads as the forum's role rather than a past tense.
+      DecidedByForum: "Deciding Forum"
     BusinessProcess:
       Title: "Business Process"
 
@@ -507,9 +512,10 @@ display_names:
 # a taxonomy of strategies, same reason. RaisedDate, ResolvedDate,
 # AuthorisedDate, EscalatedDate and DecisionDate record when something
 # HAPPENED and are not deadlines. Decision carries formatting on Status
-# only, and that column is a lifecycle rather than a severity: a decision is
-# not more or less severe, but a proposal nobody has answered yet reads
-# differently from one that was approved.
+# only, and Risk's Status takes the same treatment: both are a lifecycle
+# rather than a severity. A decision is not more or less severe, but a
+# proposal nobody has answered yet reads differently from one that was
+# approved, and a proposed risk reads differently from one on the log.
 column_formatting:
   BusinessProcess:
     Criticality: { style: severity, map: { Low: good, Medium: warning, High: severe } }
@@ -586,7 +592,7 @@ column_formatting:
                               "3 Contractual": severe, "4 Executive": blocked } }
     NeededBy: { style: overdue-date, guard: { field: Status, not: [Closed, Withdrawn] } }
   Risk:
-    Status: { style: severity, map: { Open: low, Closed: good } }
+    Status: { style: severity, map: { Proposed: warning, Open: low, Closed: good, Rejected: muted } }
     ResidualRiskRating: { style: severity, calculated: true,
                           map: { Low: good, Medium: warning, High: severe, Extreme: blocked } }
     # Data-bar with the fill translated from the rating column via the
@@ -596,8 +602,10 @@ column_formatting:
                  color_by: { field: ResidualRiskRating, calculated: true,
                              map: { Low: good, Medium: warning, High: severe,
                                     Extreme: blocked } } }
+    # The cadence runs from Open: a proposal is not overdue for a review it
+    # has not been accepted onto, and a closed or rejected risk has had its last.
     NextReviewDue: { style: overdue-date, calculated: true,
-                     guard: { field: Status, not: [Closed] } }
+                     guard: { field: Status, not: [Proposed, Closed, Rejected] } }
   Action:
     Status: { style: severity,
               map: { Open: low, "In progress": low, Done: good, Dropped: muted } }
@@ -611,19 +619,21 @@ column_formatting:
     # Lifecycle, not severity. Proposed is the only value that is not an
     # outcome, so it is the one that has to stand out in the queue.
     Status: { style: severity,
-              map: { Proposed: warning, Approved: good, Ratified: good,
+              map: { Proposed: warning, Approved: good, Endorsed: good,
                      Rejected: muted, Withdrawn: muted, Noted: neutral } }
 
 # Every action view and every issue view opens with the same identifying
 # columns and then its own payload, so each spine is declared once.
 # WorkstreamPhase is the projected read-only phase of the action's workstream:
 # it is in the spine because an action filed against a closed workstream is
-# the failure the projection exists to reveal.
+# the failure the projection exists to reveal. ID leads every delivery view
+# (the risk and decision views name it directly) because the number is how a
+# row is cited in a meeting, and the modern list hides it unless asked.
 field_sets:
   Action:
-    action: [Title, Workstream, WorkstreamPhase, AssignedTo, DueDate, Status]
+    action: [ID, Title, Workstream, WorkstreamPhase, AssignedTo, DueDate, Status]
   Issue:
-    issue: [Title, Workstream, Severity, Status, Owner, RaisedDate]
+    issue: [ID, Title, Workstream, Severity, Status, Owner, RaisedDate]
 
 # A view that lets you set a value in Quick Edit must also carry whatever a
 # save rule then requires. Reported live 2026-09-08: marking an action Done
@@ -1207,7 +1217,7 @@ views:
   Risk:
     - title: "Open"
       default: true
-      fields: [Title, Workstream, Likelihood, Consequence, ResidualRiskRating,
+      fields: [ID, Title, Workstream, Likelihood, Consequence, ResidualRiskRating,
                RiskScore, RiskOwner, RiskResponse, NextReviewDue, Status]
       where:
         - { field: Status, op: eq, value: "Open" }
@@ -1227,8 +1237,30 @@ views:
         RiskOwner: 160
         RiskResponse: 140
         NextReviewDue: 160
+    # Read at the fortnightly, before Open: everything somebody has put
+    # forward that governance has not yet accepted or turned away. Oldest
+    # first, because a proposal nobody answers is the same failure as a
+    # stalled decision. Author and Created are the built-in columns; a risk
+    # has no separate raiser or raised-date column.
+    - title: "Proposed"
+      fields: [ID, Title, Workstream, Likelihood, Consequence, ResidualRiskRating,
+               RiskScore, RiskOwner, Author, Created, Status]
+      where:
+        - { field: Status, op: eq, value: "Proposed" }
+      sort:
+        - { field: Created, direction: asc }
+      widths:
+        Title: 280
+        Workstream: 180
+        Likelihood: 140
+        Consequence: 160
+        ResidualRiskRating: 160
+        RiskScore: 140
+        RiskOwner: 160
+        Author: 160
+        Created: 170
     - title: "Review due"
-      fields: [Title, Workstream, ResidualRiskRating, RiskScore, RiskOwner,
+      fields: [ID, Title, Workstream, ResidualRiskRating, RiskScore, RiskOwner,
                RiskResponse, LastReviewedDate, NextReviewDue, Status]
       where:
         - { field: Status, op: eq, value: "Open" }
@@ -1250,12 +1282,13 @@ views:
     # split, LastReviewedDate is the dated event itself. Every row here should
     # carry a closure note, which is a HUMAN check. ClosureNote is rich text
     # and SharePoint validation formulas refuse multi-line operands, so no
-    # save rule can ask for it.
+    # save rule can ask for it. Rejected proposals sit here with the closed
+    # risks, because a rejection needs its reason written down just as much.
     - title: "Closed this quarter"
-      fields: [Title, Workstream, ResidualRiskRating, RiskOwner,
-               LastReviewedDate, ClosureNote]
+      fields: [ID, Title, Workstream, ResidualRiskRating, RiskOwner,
+               LastReviewedDate, Status, ClosureNote]
       where:
-        - { field: Status, op: eq, value: "Closed" }
+        - { field: Status, op: in, value: ["Closed", "Rejected"] }
         - { field: LastReviewedDate, op: geq, value: today-90 }
       sort:
         - { field: LastReviewedDate, direction: desc }
@@ -1265,6 +1298,7 @@ views:
         ResidualRiskRating: 160
         RiskOwner: 160
         LastReviewedDate: 170
+        Status: 120
         ClosureNote: 240
   Action:
     # The weekly personal read and the default: what do I owe? AssignedTo is a
@@ -1277,16 +1311,32 @@ views:
         - { field: Status, op: in, value: ["Open", "In progress"] }
       sort:
         - { field: DueDate, direction: asc }
+      # Action's one row-level signal, reserved for a due date that has
+      # passed. The wash reads DueDate, which is in the field set. The filter
+      # already keeps the view to Open and In progress, so the expression
+      # needs no status arm.
+      formatting: formatting/row-overdue.json
+      # The spine's widths, declared once and merged into every action view.
+      # A field set expands fields only, so the widths ride a YAML anchor.
       widths:
-        Title: 280
-        Workstream: 180
-        WorkstreamPhase: 130
-        AssignedTo: 160
-        DueDate: 160
-        Status: 120
+        <<: &action_spine { Title: 280, Workstream: 180, WorkstreamPhase: 130,
+                            AssignedTo: 160, DueDate: 160, Status: 120 }
         RelatedRiskTitle: 220
         Notes: 200
         CompletedDate: 160
+    # The same read narrowed to what I owe and have already missed.
+    - title: "My overdue"
+      fields: ["@action", RelatedRiskTitle, Notes]
+      where:
+        - { field: AssignedTo, op: eq, value: me }
+        - { field: Status, op: in, value: ["Open", "In progress"] }
+        - { field: DueDate, op: lt, value: today }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        <<: *action_spine
+        RelatedRiskTitle: 220
+        Notes: 200
     # Read FIRST at the fortnightly, so the exception is not buried in the
     # whole list.
     - title: "Overdue"
@@ -1297,12 +1347,8 @@ views:
       sort:
         - { field: DueDate, direction: asc }
       widths:
+        <<: *action_spine
         Title: 300
-        Workstream: 180
-        WorkstreamPhase: 130
-        AssignedTo: 160
-        DueDate: 160
-        Status: 120
         RelatedRiskTitle: 220
         CompletedDate: 160
     - title: "Open by person"
@@ -1313,15 +1359,53 @@ views:
       sort:
         - { field: DueDate, direction: asc }
       widths:
-        Title: 280
-        Workstream: 180
-        WorkstreamPhase: 130
-        AssignedTo: 160
-        DueDate: 160
-        Status: 120
+        <<: *action_spine
         RelatedRiskTitle: 220
         Notes: 200
         CompletedDate: 160
+    # The four optional links read the other way: what is being done about
+    # this risk, this issue, this decision. Each groups by the lookup itself.
+    # A lookup groups by its display column, and RelatedRisk and
+    # AuthorisingDecision display the live titles, so an open action on a
+    # risk or decision that is no longer live lands under a blank heading
+    # rather than under its name. A risk, issue or decision with no open
+    # action has no heading at all; that absence is a reporting question.
+    - title: "Open by risk"
+      fields: ["@action", RelatedRiskTitle, Notes]
+      where:
+        - { field: Status, op: in, value: ["Open", "In progress"] }
+        - { field: RelatedRisk, op: is_not_null }
+      group_by: { field: RelatedRisk, collapsed: false }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        <<: *action_spine
+        RelatedRiskTitle: 220
+        Notes: 200
+    - title: "Open by issue"
+      fields: ["@action", RelatedIssue, Notes]
+      where:
+        - { field: Status, op: in, value: ["Open", "In progress"] }
+        - { field: RelatedIssue, op: is_not_null }
+      group_by: { field: RelatedIssue, collapsed: false }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        <<: *action_spine
+        RelatedIssue: 220
+        Notes: 200
+    - title: "Open by decision"
+      fields: ["@action", AuthorisingDecisionTitle, Notes]
+      where:
+        - { field: Status, op: in, value: ["Open", "In progress"] }
+        - { field: AuthorisingDecision, op: is_not_null }
+      group_by: { field: AuthorisingDecision, collapsed: false }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        <<: *action_spine
+        AuthorisingDecisionTitle: 220
+        Notes: 200
     - title: "Done and dropped"
       fields: ["@action", CompletedDate, Notes]
       where:
@@ -1329,12 +1413,7 @@ views:
       sort:
         - { field: CompletedDate, direction: desc }
       widths:
-        Title: 280
-        Workstream: 180
-        WorkstreamPhase: 130
-        AssignedTo: 160
-        DueDate: 160
-        Status: 120
+        <<: *action_spine
         CompletedDate: 160
         Notes: 200
   Issue:
@@ -1342,7 +1421,7 @@ views:
     # workstream so each lead's broken things arrive together.
     - title: "Open"
       default: true
-      fields: ["@issue", RelatedRiskTitle, Detail, ResolvedDate]
+      fields: ["@issue", RelatedRiskTitle, Situation, ResolvedDate]
       where:
         - { field: Status, op: in, value: ["Open", "In progress"] }
       group_by: { field: Workstream, collapsed: false }
@@ -1352,19 +1431,15 @@ views:
       # field set, so the wash can read it.
       formatting: formatting/row-critical.json
       widths:
-        Title: 280
-        Workstream: 180
-        Severity: 130
-        Status: 120
-        Owner: 160
-        RaisedDate: 160
+        <<: &issue_spine { Title: 280, Workstream: 180, Severity: 130,
+                           Status: 120, Owner: 160, RaisedDate: 160 }
         RelatedRiskTitle: 220
-        Detail: 260
+        Situation: 260
         ResolvedDate: 160
     # Phase 1's answer to a severe issue, and phase 2 flow D's fallback: both
     # exist, and the view works with the flow off.
     - title: "Severe and open"
-      fields: ["@issue", RelatedRiskTitle, Detail, ResolvedDate]
+      fields: ["@issue", RelatedRiskTitle, Situation, ResolvedDate]
       where:
         - { field: Severity, op: in, value: ["Major", "Critical"] }
         - { field: Status, op: in, value: ["Open", "In progress"] }
@@ -1372,14 +1447,9 @@ views:
         - { field: RaisedDate, direction: desc }
       formatting: formatting/row-critical.json
       widths:
-        Title: 280
-        Workstream: 180
-        Severity: 130
-        Status: 120
-        Owner: 160
-        RaisedDate: 160
+        <<: *issue_spine
         RelatedRiskTitle: 220
-        Detail: 260
+        Situation: 260
         ResolvedDate: 160
     - title: "By owner"
       fields: ["@issue", RelatedRiskTitle, ResolvedDate]
@@ -1389,12 +1459,7 @@ views:
       sort:
         - { field: RaisedDate, direction: desc }
       widths:
-        Title: 280
-        Workstream: 180
-        Severity: 130
-        Status: 120
-        Owner: 160
-        RaisedDate: 160
+        <<: *issue_spine
         RelatedRiskTitle: 220
         ResolvedDate: 160
     - title: "Resolved and closed"
@@ -1404,19 +1469,14 @@ views:
       sort:
         - { field: ResolvedDate, direction: desc }
       widths:
-        Title: 280
-        Workstream: 180
-        Severity: 130
-        Status: 120
-        Owner: 160
-        RaisedDate: 160
+        <<: *issue_spine
         ResolvedDate: 160
         Resolution: 260
     # The triage owner's queue: any new issue nobody has picked up yet.
     # Workstream and Owner are the two fields an occasional raiser cannot
     # answer, so the view surfaces wherever either is still blank.
     - title: "Needs triage"
-      fields: ["@issue", RelatedRiskTitle, Detail, ResolvedDate]
+      fields: ["@issue", RelatedRiskTitle, Situation, ResolvedDate]
       where:
         - any_of:
             - { field: Workstream, op: is_null }
@@ -1424,32 +1484,36 @@ views:
       sort:
         - { field: RaisedDate, direction: asc }
       widths:
-        Title: 280
-        Workstream: 180
-        Severity: 130
-        Status: 120
-        Owner: 160
-        RaisedDate: 160
+        <<: *issue_spine
         RelatedRiskTitle: 220
-        Detail: 260
+        Situation: 260
+        ResolvedDate: 160
+    # The triage question in the other direction: an issue with no risk
+    # behind it is either a risk the log never had, or one it had and nobody
+    # linked. Read oldest first so the ones that have waited longest come up.
+    - title: "Open, no related risk"
+      fields: ["@issue", Situation, ResolvedDate]
+      where:
+        - { field: Status, op: in, value: ["Open", "In progress"] }
+        - { field: RelatedRisk, op: is_null }
+      sort:
+        - { field: RaisedDate, direction: asc }
+      widths:
+        <<: *issue_spine
+        Situation: 260
         ResolvedDate: 160
     # "Did the thing I reported get seen, and where is it now?" Author is the
     # built-in Created By column; an issue has no separate raiser column.
     - title: "My raised items"
-      fields: ["@issue", RelatedRiskTitle, Detail, ResolvedDate]
+      fields: ["@issue", RelatedRiskTitle, Situation, ResolvedDate]
       where:
         - { field: Author, op: eq, value: me }
       sort:
         - { field: RaisedDate, direction: desc }
       widths:
-        Title: 280
-        Workstream: 180
-        Severity: 130
-        Status: 120
-        Owner: 160
-        RaisedDate: 160
+        <<: *issue_spine
         RelatedRiskTitle: 220
-        Detail: 260
+        Situation: 260
         ResolvedDate: 160
   Decision:
     # The queue comes first and the log second, because the list now holds
@@ -1458,13 +1522,13 @@ views:
     # this list.
     - title: "Awaiting decision"
       default: true
-      fields: [Title, Status, RaisedDate, Activity, Workstream,
+      fields: [ID, Title, Status, RaisedDate, Activity, Workstream,
                ResolutionSought, Author, DecisionDate]
       where:
         - { field: Status, op: eq, value: Proposed }
       sort:
         - { field: RaisedDate, direction: asc }
-      widths:
+      widths: &decision_queue_widths
         Title: 300
         Status: 120
         RaisedDate: 150
@@ -1474,7 +1538,7 @@ views:
         Author: 170
         DecisionDate: 150
     - title: "Decision log"
-      fields: [Title, Status, DecisionDate, Workstream, DecidedBy,
+      fields: [ID, Title, Status, DecisionDate, Workstream, DecidedBy,
                DecidedByForum, RecommendedByForum, SupersedesDecisionTitle,
                DecisionOutcome, Detail]
       where:
@@ -1495,27 +1559,19 @@ views:
     # Six weeks is the outer edge of two monthly meeting cycles: a proposal
     # older than that has missed both, so it is stuck rather than pending.
     - title: "Stalled proposals"
-      fields: [Title, Status, RaisedDate, Activity, Workstream,
+      fields: [ID, Title, Status, RaisedDate, Activity, Workstream,
                ResolutionSought, Author, DecisionDate]
       where:
         - { field: Status, op: eq, value: Proposed }
         - { field: RaisedDate, op: lt, value: today-42 }
       sort:
         - { field: RaisedDate, direction: asc }
-      widths:
-        Title: 300
-        Status: 120
-        RaisedDate: 150
-        Activity: 220
-        Workstream: 180
-        ResolutionSought: 280
-        Author: 170
-        DecisionDate: 150
+      widths: *decision_queue_widths
 
     # Quarterly step 9 renders Modified and Editor, most recent first, so the
     # reviewer can read down to the last review.
     - title: "Changed since last review"
-      fields: [Title, Modified, Editor]
+      fields: [ID, Title, Modified, Editor]
       sort:
         - { field: Modified, direction: desc }
       widths:
@@ -1664,7 +1720,7 @@ form_visibility:
       ClosureNote:
         new: false
         when:
-          - { field: Status, op: eq, value: "Closed" }
+          - { field: Status, op: in, value: ["Closed", "Rejected"] }
   Action:
     columns:
       CompletedDate:
@@ -1757,7 +1813,8 @@ column_validation:
 # ClosureNote is rich text and SharePoint validation formulas refuse
 # multi-line operands outright. It is a monthly human check instead, read on
 # the "Closed this quarter" view. The same limit rules out any rule reading
-# Purpose, Detail, Justification, Resolution or Notes, and any rule reading a
+# Purpose, Justification, Resolution, Notes or Detail, or the Cause, Trigger,
+# Effect and Situation fields on a risk or an issue, and any rule reading a
 # person or lookup column, which is why "the provider is never the
 # Accountable" and "an External stakeholder names a service desk address" are
 # quarterly checks rather than save rules.
@@ -1850,11 +1907,12 @@ list_validation:
 # decision route and rule; seven involvements, three of them consulting the
 # same stakeholder so "Consultation load" has something to show and one of them the
 # single Agree; seven service requests across all six statuses with two
-# escalations, three of them assigned with minutes logged; six risks spanning all four rating bands and both statuses;
+# escalations, three of them assigned with minutes logged; eight risks
+# spanning all four rating bands and all four statuses;
 # seven actions across every status including one overdue and still open;
 # seven issues across every severity and every status, one untriaged with no
 # owner or workstream; and seven decisions, three of them programme-wide, one
-# still Proposed and old enough to be stalled, one Ratified under delegation,
+# still Proposed and old enough to be stalled, one Endorsed under delegation,
 # and one carrying the recommend-then-decide pair of forums.
 # ReviewDate was one hand-set date standing for both halves of a review,
 # so moving it forward destroyed the evidence that a review had happened.
@@ -1863,6 +1921,11 @@ list_validation:
 # with the columns sidecar; deleting the declaration instead would leave a
 # live column the schema no longer knows about, reported as user-added drift
 # on every report refresh.
+#
+# Detail on Risk and on Issue went the same way on 2026-09-18: one field held
+# cause, trigger and effect, and a reviewer could not tell which part was
+# missing. Each is split into three richtext columns; superseded_by names
+# the first of them because it takes one column.
 retired_columns:
   BusinessProcess:
     ReviewDate:
@@ -1874,4 +1937,13 @@ retired_columns:
       retired: "2026-09-04"
       superseded_by: NextReviewDue
       reason: "Split into LastReviewedDate and NextReviewDue"
+    Detail:
+      retired: "2026-09-18"
+      superseded_by: Cause
+      reason: "Split into Cause, Trigger and Effect"
+  Issue:
+    Detail:
+      retired: "2026-09-18"
+      superseded_by: Situation
+      reason: "Split into Situation, Trigger and Effect"
 

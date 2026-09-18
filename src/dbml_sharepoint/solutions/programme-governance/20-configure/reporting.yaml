@@ -81,6 +81,10 @@ derived_columns:
       type: logical
       m: '[Status] = "Open"'
     - kind: expr
+      name: IsProposed
+      type: logical
+      m: '[Status] = "Proposed"'
+    - kind: expr
       name: IsRated
       type: logical
       m: '[RiskScore] <> null'
@@ -109,7 +113,7 @@ derived_columns:
     - kind: expr
       name: ClosedWithoutNote
       type: logical
-      m: '[Status] = "Closed" and Text.Length(Text.Trim([ClosureNote] ?? "")) = 0'
+      m: 'List.Contains({"Closed", "Rejected"}, [Status]) and Text.Length(Text.Trim([ClosureNote] ?? "")) = 0'
     - kind: expr
       name: NeedsAction
       type: logical
@@ -117,13 +121,13 @@ derived_columns:
     - kind: expr
       name: ToleranceDecisionIsAuthority
       type: logical
-      m: 'List.Contains({"Approved", "Ratified"}, [ToleranceDecisionStatus])'
-    # Reads 'Closed without a note' when a closed risk has no closure note; blank otherwise.
+      m: 'List.Contains({"Approved", "Endorsed"}, [ToleranceDecisionStatus])'
+    # Reads 'Closed without a note' when a closed or rejected risk has no closure note; blank otherwise.
     - kind: expr
       name: ClosureCheck
       type: text
       m: 'if [ClosedWithoutNote] then "Closed without a note" else null'
-      description: 'Reads ''Closed without a note'' when a closed risk has no closure note; blank otherwise.'
+      description: 'Reads ''Closed without a note'' when a closed or rejected risk has no closure note; blank otherwise.'
     # Link to the SharePoint edit form for this item; tables show it as the link behind the Open Item column.
     - kind: expr
       name: ItemEditURL
@@ -403,7 +407,7 @@ derived_columns:
     - kind: expr
       name: IsAuthority
       type: logical
-      m: 'List.Contains({"Approved", "Ratified"}, [Status])'
+      m: 'List.Contains({"Approved", "Endorsed"}, [Status])'
     - kind: expr
       name: DaysToDecide
       type: Int64
