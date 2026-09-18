@@ -169,10 +169,10 @@ calculated_formulas:
     NextReviewDue: '=IF(OR(ISBLANK([LastReviewedDate]),[ResidualRiskRating]=""),"",MIN(DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+IF(OR([ResidualRiskRating]="High",[ResidualRiskRating]="Extreme"),3,IF(OR([RiskResponse]="Manage",[RiskResponse]="Tolerate"),6,12)),DAY([LastReviewedDate])),DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+IF(OR([ResidualRiskRating]="High",[ResidualRiskRating]="Extreme"),3,IF(OR([RiskResponse]="Manage",[RiskResponse]="Tolerate"),6,12))+1,0)))'
     LiveRiskTitle: '=IF([Status]="Open",[Title],"")'
   Decision:
-    # Every picker onto this list shows this column. Approved and Ratified are
+    # Every picker onto this list shows this column. Approved and Endorsed are
     # the two states that carry authority; a Proposed, Rejected, Withdrawn or
     # Noted row is blank here and so is not offered.
-    LiveDecisionTitle: '=IF(OR([Status]="Approved",[Status]="Ratified"),[Title],"")'
+    LiveDecisionTitle: '=IF(OR([Status]="Approved",[Status]="Endorsed"),[Title],"")'
   Activity:
     ConfirmationDue: '=IF(OR(ISBLANK([LastConfirmed]),[ReviewStatus]="Retired"),"",MIN(DATE(YEAR([LastConfirmed]),MONTH([LastConfirmed])+IF([Criticality]="Statutory",6,IF([Criticality]="High",12,24)),DAY([LastConfirmed])),DATE(YEAR([LastConfirmed]),MONTH([LastConfirmed])+IF([Criticality]="Statutory",6,IF([Criticality]="High",12,24))+1,0)))'
 
@@ -619,7 +619,7 @@ column_formatting:
     # Lifecycle, not severity. Proposed is the only value that is not an
     # outcome, so it is the one that has to stand out in the queue.
     Status: { style: severity,
-              map: { Proposed: warning, Approved: good, Ratified: good,
+              map: { Proposed: warning, Approved: good, Endorsed: good,
                      Rejected: muted, Withdrawn: muted, Noted: neutral } }
 
 # Every action view and every issue view opens with the same identifying
@@ -1316,13 +1316,11 @@ views:
       # already keeps the view to Open and In progress, so the expression
       # needs no status arm.
       formatting: formatting/row-overdue.json
+      # The spine's widths, declared once and merged into every action view.
+      # A field set expands fields only, so the widths ride a YAML anchor.
       widths:
-        Title: 280
-        Workstream: 180
-        WorkstreamPhase: 130
-        AssignedTo: 160
-        DueDate: 160
-        Status: 120
+        <<: &action_spine { Title: 280, Workstream: 180, WorkstreamPhase: 130,
+                            AssignedTo: 160, DueDate: 160, Status: 120 }
         RelatedRiskTitle: 220
         Notes: 200
         CompletedDate: 160
@@ -1336,12 +1334,7 @@ views:
       sort:
         - { field: DueDate, direction: asc }
       widths:
-        Title: 280
-        Workstream: 180
-        WorkstreamPhase: 130
-        AssignedTo: 160
-        DueDate: 160
-        Status: 120
+        <<: *action_spine
         RelatedRiskTitle: 220
         Notes: 200
     # Read FIRST at the fortnightly, so the exception is not buried in the
@@ -1354,12 +1347,8 @@ views:
       sort:
         - { field: DueDate, direction: asc }
       widths:
+        <<: *action_spine
         Title: 300
-        Workstream: 180
-        WorkstreamPhase: 130
-        AssignedTo: 160
-        DueDate: 160
-        Status: 120
         RelatedRiskTitle: 220
         CompletedDate: 160
     - title: "Open by person"
@@ -1370,12 +1359,7 @@ views:
       sort:
         - { field: DueDate, direction: asc }
       widths:
-        Title: 280
-        Workstream: 180
-        WorkstreamPhase: 130
-        AssignedTo: 160
-        DueDate: 160
-        Status: 120
+        <<: *action_spine
         RelatedRiskTitle: 220
         Notes: 200
         CompletedDate: 160
@@ -1395,12 +1379,7 @@ views:
       sort:
         - { field: DueDate, direction: asc }
       widths:
-        Title: 280
-        Workstream: 180
-        WorkstreamPhase: 130
-        AssignedTo: 160
-        DueDate: 160
-        Status: 120
+        <<: *action_spine
         RelatedRiskTitle: 220
         Notes: 200
     - title: "Open by issue"
@@ -1412,12 +1391,7 @@ views:
       sort:
         - { field: DueDate, direction: asc }
       widths:
-        Title: 280
-        Workstream: 180
-        WorkstreamPhase: 130
-        AssignedTo: 160
-        DueDate: 160
-        Status: 120
+        <<: *action_spine
         RelatedIssue: 220
         Notes: 200
     - title: "Open by decision"
@@ -1429,12 +1403,7 @@ views:
       sort:
         - { field: DueDate, direction: asc }
       widths:
-        Title: 280
-        Workstream: 180
-        WorkstreamPhase: 130
-        AssignedTo: 160
-        DueDate: 160
-        Status: 120
+        <<: *action_spine
         AuthorisingDecisionTitle: 220
         Notes: 200
     - title: "Done and dropped"
@@ -1444,12 +1413,7 @@ views:
       sort:
         - { field: CompletedDate, direction: desc }
       widths:
-        Title: 280
-        Workstream: 180
-        WorkstreamPhase: 130
-        AssignedTo: 160
-        DueDate: 160
-        Status: 120
+        <<: *action_spine
         CompletedDate: 160
         Notes: 200
   Issue:
@@ -1467,12 +1431,8 @@ views:
       # field set, so the wash can read it.
       formatting: formatting/row-critical.json
       widths:
-        Title: 280
-        Workstream: 180
-        Severity: 130
-        Status: 120
-        Owner: 160
-        RaisedDate: 160
+        <<: &issue_spine { Title: 280, Workstream: 180, Severity: 130,
+                           Status: 120, Owner: 160, RaisedDate: 160 }
         RelatedRiskTitle: 220
         Situation: 260
         ResolvedDate: 160
@@ -1487,12 +1447,7 @@ views:
         - { field: RaisedDate, direction: desc }
       formatting: formatting/row-critical.json
       widths:
-        Title: 280
-        Workstream: 180
-        Severity: 130
-        Status: 120
-        Owner: 160
-        RaisedDate: 160
+        <<: *issue_spine
         RelatedRiskTitle: 220
         Situation: 260
         ResolvedDate: 160
@@ -1504,12 +1459,7 @@ views:
       sort:
         - { field: RaisedDate, direction: desc }
       widths:
-        Title: 280
-        Workstream: 180
-        Severity: 130
-        Status: 120
-        Owner: 160
-        RaisedDate: 160
+        <<: *issue_spine
         RelatedRiskTitle: 220
         ResolvedDate: 160
     - title: "Resolved and closed"
@@ -1519,12 +1469,7 @@ views:
       sort:
         - { field: ResolvedDate, direction: desc }
       widths:
-        Title: 280
-        Workstream: 180
-        Severity: 130
-        Status: 120
-        Owner: 160
-        RaisedDate: 160
+        <<: *issue_spine
         ResolvedDate: 160
         Resolution: 260
     # The triage owner's queue: any new issue nobody has picked up yet.
@@ -1539,12 +1484,7 @@ views:
       sort:
         - { field: RaisedDate, direction: asc }
       widths:
-        Title: 280
-        Workstream: 180
-        Severity: 130
-        Status: 120
-        Owner: 160
-        RaisedDate: 160
+        <<: *issue_spine
         RelatedRiskTitle: 220
         Situation: 260
         ResolvedDate: 160
@@ -1559,12 +1499,7 @@ views:
       sort:
         - { field: RaisedDate, direction: asc }
       widths:
-        Title: 280
-        Workstream: 180
-        Severity: 130
-        Status: 120
-        Owner: 160
-        RaisedDate: 160
+        <<: *issue_spine
         Situation: 260
         ResolvedDate: 160
     # "Did the thing I reported get seen, and where is it now?" Author is the
@@ -1576,12 +1511,7 @@ views:
       sort:
         - { field: RaisedDate, direction: desc }
       widths:
-        Title: 280
-        Workstream: 180
-        Severity: 130
-        Status: 120
-        Owner: 160
-        RaisedDate: 160
+        <<: *issue_spine
         RelatedRiskTitle: 220
         Situation: 260
         ResolvedDate: 160
@@ -1598,7 +1528,7 @@ views:
         - { field: Status, op: eq, value: Proposed }
       sort:
         - { field: RaisedDate, direction: asc }
-      widths:
+      widths: &decision_queue_widths
         Title: 300
         Status: 120
         RaisedDate: 150
@@ -1636,15 +1566,7 @@ views:
         - { field: RaisedDate, op: lt, value: today-42 }
       sort:
         - { field: RaisedDate, direction: asc }
-      widths:
-        Title: 300
-        Status: 120
-        RaisedDate: 150
-        Activity: 220
-        Workstream: 180
-        ResolutionSought: 280
-        Author: 170
-        DecisionDate: 150
+      widths: *decision_queue_widths
 
     # Quarterly step 9 renders Modified and Editor, most recent first, so the
     # reviewer can read down to the last review.
@@ -1990,7 +1912,7 @@ list_validation:
 # seven actions across every status including one overdue and still open;
 # seven issues across every severity and every status, one untriaged with no
 # owner or workstream; and seven decisions, three of them programme-wide, one
-# still Proposed and old enough to be stalled, one Ratified under delegation,
+# still Proposed and old enough to be stalled, one Endorsed under delegation,
 # and one carrying the recommend-then-decide pair of forums.
 # ReviewDate was one hand-set date standing for both halves of a review,
 # so moving it forward destroyed the evidence that a review had happened.

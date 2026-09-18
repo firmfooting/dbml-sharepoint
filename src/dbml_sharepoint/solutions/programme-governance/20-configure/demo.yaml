@@ -791,14 +791,14 @@ demo_items:
         DecidedBy: "@me"
         DecidedByForum: { demo_ref: stakeholder-steering }
         Detail: "Demo row. Uplifting everyone was affordable in year one and not in year three. Two people argued for the wider uplift and said so, which is recorded here so nobody rediscovers the argument in November."
-    # Ratified: the sponsor decided between meetings under the delegation, and
-    # the steering group validated it at the next one. The two lookups that
-    # cite this row stay visible because Ratified is one of the two states
+    # Endorsed: the sponsor decided between meetings under the delegation, and
+    # the steering group endorsed it at the next one. The two lookups that
+    # cite this row stay visible because Endorsed is one of the two states
     # LiveDecisionTitle renders.
     - key: dec-licence-tier-revised
       values:
         Title: "[DEMO] We will licence fifty frontline accounts and tolerate the remaining gap"
-        Status: "Ratified"
+        Status: "Endorsed"
         Activity: { demo_ref: act-decide-licensing }
         Workstream: { demo_ref: ws-teams }
         SupersedesDecision: { demo_ref: dec-licence-tier }
@@ -807,7 +807,7 @@ demo_items:
         DecidedBy: "@me"
         DecidedByForum: { demo_ref: stakeholder-steering }
         ResolutionSought: "Demo row. That the fifty-account uplift be funded from the contingency line without waiting for the next steering group."
-        DecisionOutcome: "Demo row. The sponsor agreed it under delegation on the day it was asked, and the steering group ratified it at the following meeting."
+        DecisionOutcome: "Demo row. The sponsor agreed it under delegation on the day it was asked, and the steering group endorsed it at the following meeting."
         Detail: "Demo row. This supersedes the narrower external-calls-only decision, authorises the fifty-account request, and tolerates the remaining unfunded gap until the next budget review."
     # The two-stage route: a working group recommends, the steering group
     # decides. Nothing at save checks that the deciding forum was entitled to

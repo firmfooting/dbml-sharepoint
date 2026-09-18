@@ -121,7 +121,7 @@ derived_columns:
     - kind: expr
       name: ToleranceDecisionIsAuthority
       type: logical
-      m: 'List.Contains({"Approved", "Ratified"}, [ToleranceDecisionStatus])'
+      m: 'List.Contains({"Approved", "Endorsed"}, [ToleranceDecisionStatus])'
     # Reads 'Closed without a note' when a closed or rejected risk has no closure note; blank otherwise.
     - kind: expr
       name: ClosureCheck
@@ -407,7 +407,7 @@ derived_columns:
     - kind: expr
       name: IsAuthority
       type: logical
-      m: 'List.Contains({"Approved", "Ratified"}, [Status])'
+      m: 'List.Contains({"Approved", "Endorsed"}, [Status])'
     - kind: expr
       name: DaysToDecide
       type: Int64

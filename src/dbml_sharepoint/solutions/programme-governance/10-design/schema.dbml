@@ -82,7 +82,7 @@ Enum gov_issue_status {
 
 // The proposal queue and the decision log in one column. Proposed is the
 // only state that is not an outcome, which is what makes the queue
-// filterable. Ratified means decided under delegation and validated by the
+// filterable. Endorsed means decided under delegation and endorsed by the
 // forum afterwards; Noted means the forum noted it and no decision was
 // required.
 Enum gov_decision_status {
@@ -91,7 +91,7 @@ Enum gov_decision_status {
   "Rejected"
   "Withdrawn"
   "Noted"
-  "Ratified"
+  "Endorsed"
 }
 
 Enum gov_stakeholder_kind {
@@ -527,7 +527,7 @@ Table Decision {
   Title        nvarchar [not null, note: 'The decision, stated as a decision: "We will run the telephony pilot with one directorate only"']
   // The proposal queue and the decision log are the same list, separated by
   // this column alone. Proposed is the only value that is not an outcome.
-  Status       gov_decision_status [not null, default: 'Proposed', note: 'Proposed is a paper awaiting a forum. Ratified means somebody decided under delegation and the forum validated it afterwards. Noted means the forum noted it and no decision was required']
+  Status       gov_decision_status [not null, default: 'Proposed', note: 'Proposed is a paper awaiting a forum. Endorsed means somebody decided under delegation and the forum endorsed it afterwards. Noted means the forum noted it and no decision was required']
   // Nullable, and the Ad-Hoc catch-all activity was rejected: four of the six
   // shipped decisions have no standing activity, and a catch-all with no real
   // Responsible is worse than a blank the Unlinked decisions report can see.
@@ -540,11 +540,11 @@ Table Decision {
   DecisionOutcome richtext [note: 'What was actually decided, kept separate so an amended decision does not overwrite what was asked']
   RaisedDate   date     [not null, default: '[today]', note: 'When the proposal was raised. Never blank, which is what makes it the sortable axis the queue is ordered on']
   DecisionDate date     [note: 'When the decision was made, not when it was typed in here. Blank while the proposal is still Proposed']
-  DecidedBy    person   [note: 'The one person who made the call, when one person decided under delegation. Leave blank when a forum decided and name the forum in Decided By Forum. For Ratified, name both: the person here and the ratifying forum there']
+  DecidedBy    person   [note: 'The one person who made the call, when one person decided under delegation. Leave blank when a forum decided and name the forum in Decided By Forum. For Endorsed, name both: the person here and the endorsing forum there']
   // Nothing at save compares this against the activity's DecisionRoute:
   // SharePoint cannot read two lookups across two lists in one validation
   // formula, so route-versus-outcome drift is a reporting reconciliation.
-  DecidedByForum int    [ref: > Stakeholder.Id, note: 'The forum that decided, from the stakeholder list. For Ratified, the forum that validated the delegated decision. It may differ from the DecisionRoute on the activity, and that difference is worth reporting on']
+  DecidedByForum int    [ref: > Stakeholder.Id, note: 'The forum that decided, from the stakeholder list. For Endorsed, the forum that endorsed the delegated decision. It may differ from the DecisionRoute on the activity, and that difference is worth reporting on']
   RecommendedByForum int [ref: > Stakeholder.Id, note: 'The committee that recommended before the deciding forum approved. Committee recommends, board decides is the statutory default shape (Health Services Act 1988 s 65S(2)(j))']
   Detail       richtext [not null, note: 'Context, the options considered, and who disagreed. Enough that nobody reopens it in six months. Required, because a decision with no recorded reasoning is the one that gets reopened']
   EndorsementRoute longtext [note: 'Where the paper went before it was decided: which stakeholders saw it, in what role, when, and any stakeholder that declined or did not respond, with a pointer to where each endorsement is recorded. Prose reads fine; this is evidence, not data. Lives on the item form only, never in a view']
