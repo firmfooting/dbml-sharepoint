@@ -508,7 +508,9 @@ demo_items:
       values:
         Title: "[DEMO] Provider lead times push the security baseline past its funding deadline"
         Workstream: { demo_ref: ws-security }
-        Detail: "Demo row. Two of the three baseline changes are tenant-level and none of them is inside the health service's control. The funding milestone is not moveable."
+        Cause: "Demo row. Two of the three baseline changes are tenant-level and none of them is inside the health service's control."
+        Trigger: "The provider's change queue runs past the funding milestone."
+        Effect: "The funding milestone is not moveable, so the baseline lands unfunded and the security workstream slips a quarter."
         Likelihood: "Almost Certain"
         Consequence: "Business Critical"
         RiskOwner: "@me"
@@ -519,7 +521,9 @@ demo_items:
       values:
         Title: "[DEMO] Frontline teams keep using the shared drives after cutover"
         Workstream: { demo_ref: ws-migration }
-        Detail: "Demo row. The benefit case depends on the new location being used, not installed. Nothing about a cutover makes people change where they save."
+        Cause: "Demo row. The benefit case depends on the new location being used, not installed."
+        Trigger: "Cutover happens while the old drives are still reachable."
+        Effect: "Nothing about a cutover makes people change where they save, so the migrated copy goes stale while the benefit is being claimed."
         Likelihood: "Very Likely"
         Consequence: "Substantial"
         RiskOwner: "@me"
@@ -530,7 +534,9 @@ demo_items:
       values:
         Title: "[DEMO] The licensing uplift is not funded for the whole frontline"
         Workstream: { demo_ref: ws-teams }
-        Detail: "Demo row. The pilot group is funded from the programme budget. Extending to every frontline role needs a recurrent line nobody has committed."
+        Cause: "Demo row. The pilot group is funded from the programme budget."
+        Trigger: "The rollout reaches roles outside the pilot before a recurrent line is committed."
+        Effect: "Frontline staff outside the pilot stay on the wrong licence tier, or the programme carries a cost it cannot fund."
         Likelihood: "Likely"
         Consequence: "Major"
         RiskOwner: "@me"
@@ -542,7 +548,9 @@ demo_items:
       values:
         Title: "[DEMO] The champions network loses its most active members"
         Workstream: { demo_ref: ws-comms }
-        Detail: "Demo row. Roughly a third of the network does the visible work, and none of it is in anybody's job description."
+        Cause: "Demo row. Roughly a third of the network does the visible work, and none of it is in anybody's job description."
+        Trigger: "Two or three of the active members move roles in the same quarter."
+        Effect: "Floor-level support for each wave goes with them and adoption stalls."
         Likelihood: "Unlikely"
         Consequence: "Moderate"
         RiskOwner: "@me"
@@ -553,7 +561,9 @@ demo_items:
       values:
         Title: "[DEMO] Conditional access locks staff out of unmanaged devices at go-live"
         Workstream: { demo_ref: ws-security }
-        Detail: "Demo row. The policy is correct and the device inventory may not be. A wrong inventory reads to a member of staff as an outage."
+        Cause: "Demo row. The policy is correct and the device inventory may not be."
+        Trigger: "Conditional access is enforced before the inventory has been reconciled."
+        Effect: "A wrong inventory reads to a member of staff as an outage, on go-live day."
         Likelihood: "Likely"
         Consequence: "Substantial"
         RiskOwner: "@me"
@@ -564,7 +574,9 @@ demo_items:
       values:
         Title: "[DEMO] The fax gateway is switched off before its replacement is proven"
         Workstream: { demo_ref: ws-legacy }
-        Detail: "Demo row. Referral routes were the last thing on the gateway, and a lost referral is a clinical event rather than an inconvenience."
+        Cause: "Demo row. Referral routes were the last thing on the gateway."
+        Trigger: "The gateway is switched off before every route has been proven on its replacement."
+        Effect: "A lost referral is a clinical event rather than an inconvenience."
         Likelihood: "Rare"
         Consequence: "Moderate"
         RiskOwner: "@me"
@@ -572,6 +584,31 @@ demo_items:
         Status: "Closed"
         LastReviewedDate: "today-20"
         ClosureNote: "Demo row. Every route was moved and monitored for two clean weeks before the gateway was switched off, and the two clinics still sending were contacted individually. The risk can no longer happen."
+    - key: risk-retention
+      values:
+        Title: "[DEMO] The retention schedule is not applied to migrated content"
+        Workstream: { demo_ref: ws-migration }
+        Cause: "Demo row. Retention labels were designed for the new location, and migrated content arrives without them."
+        Trigger: "The migration tool copies files without mapping the old folder-level retention."
+        Effect: "Records due for disposal are kept, or records the service must hold go with a folder."
+        Likelihood: "Likely"
+        Consequence: "Major"
+        RiskOwner: "@me"
+        Status: "Proposed"
+        LastReviewedDate: "today-3"
+    - key: risk-printers
+      values:
+        Title: "[DEMO] Ward printers stop working when the print server is decommissioned"
+        Workstream: { demo_ref: ws-legacy }
+        Cause: "Demo row. Every ward printer is still queued through the old print server."
+        Trigger: "The server is decommissioned before the queues are moved."
+        Effect: "Wards print nothing until the service desk re-points each device."
+        Likelihood: "Rare"
+        Consequence: "Minor"
+        RiskOwner: "@me"
+        Status: "Rejected"
+        LastReviewedDate: "today-12"
+        ClosureNote: "Demo row. Rejected at the fortnightly: print is outside the programme's scope and the service desk already carries it as a standing risk. Nothing here for the programme to manage."
   Action:
     - key: act-rehearse-migration
       values:
@@ -643,7 +680,9 @@ demo_items:
         Status: "Open"
         Owner: "@me"
         RaisedDate: "today-21"
-        Detail: "Demo row. Nothing in the security workstream can be signed off while the policy change is paused, and every week of it moves the funding milestone."
+        Situation: "Demo row. The conditional access request has sat at the provider for three weeks with no handler named."
+        Trigger: "The provider's change board deferred it pending a security review nobody scheduled."
+        Effect: "Nothing in the security workstream can be signed off while the policy change is paused, and every week of it moves the funding milestone."
     - key: iss-mapped-drives
       values:
         Title: "[DEMO] Mapped drive letters still point at the old file server on forty devices"
@@ -653,7 +692,9 @@ demo_items:
         Owner: "@me"
         RaisedDate: "today-9"
         RelatedRisk: { demo_ref: risk-adoption }
-        Detail: "Demo row. Staff on those devices are still saving to the old location, so the migrated copy is going stale as it is being read."
+        Situation: "Demo row. Forty devices still map drive letters to the old file server."
+        Trigger: "The login script for one directorate was not updated at cutover."
+        Effect: "Staff on those devices are still saving to the old location, so the migrated copy is going stale as it is being read."
     - key: iss-room-audio
       values:
         Title: "[DEMO] Two meeting rooms drop audio partway through Teams calls"
@@ -662,7 +703,9 @@ demo_items:
         Status: "Open"
         Owner: "@me"
         RaisedDate: "today-4"
-        Detail: "Demo row. Reproducible in both rooms and not on any other device, so it is being treated as a room fault rather than a Teams fault."
+        Situation: "Demo row. Two meeting rooms drop audio partway through Teams calls. Reproducible in both rooms and not on any other device, so it is being treated as a room fault rather than a Teams fault."
+        Trigger: "Both rooms took a firmware update the week before."
+        Effect: "Neither room can be used for an external meeting until it is fixed."
     - key: iss-training-slots
       values:
         Title: "[DEMO] Night shift has had no training slot offered"
@@ -671,7 +714,9 @@ demo_items:
         Status: "Open"
         Owner: "@me"
         RaisedDate: "today-2"
-        Detail: "Demo row. The schedule was built from a daytime roster. This is the adoption risk turning into something real."
+        Situation: "Demo row. Night shift has had no training slot offered."
+        Trigger: "The schedule was built from a daytime roster."
+        Effect: "This is the adoption risk turning into something real: a third of the ward staff go live untrained."
     - key: iss-stale-links
       values:
         Title: "[DEMO] The intranet still links to the retired forms library"
@@ -681,7 +726,9 @@ demo_items:
         Owner: "@me"
         RaisedDate: "today-30"
         ResolvedDate: "today-10"
-        Detail: "Demo row. Eleven links on six pages, all pointing at a library that now returns an access denied page."
+        Situation: "Demo row. Eleven links on six intranet pages point at the retired forms library."
+        Trigger: "The library was retired before the page owners were told."
+        Effect: "Each link returns an access denied page, which staff read as the new forms being broken."
         Resolution: "Demo row. All eleven links repointed and the old library set to read-only. The page owners now publish from a single link list, so the next move follows automatically."
     - key: iss-fax-referrals
       values:
@@ -692,7 +739,9 @@ demo_items:
         Owner: "@me"
         RaisedDate: "today-60"
         ResolvedDate: "today-40"
-        Detail: "Demo row. Found during the two-week monitoring window, before the gateway was switched off."
+        Situation: "Demo row. Two clinics kept sending referrals to the retired fax number."
+        Trigger: "Their referral templates still carried the old number."
+        Effect: "Found during the two-week monitoring window, before the gateway was switched off, so no referral was lost."
         Resolution: "Demo row. Both clinics were contacted, their referral templates were corrected, and the monitoring window was extended by a week to confirm nothing else was still routing there."
     - key: iss-triage-queue
       values:
@@ -700,7 +749,7 @@ demo_items:
         Severity: "Minor"
         Status: "Open"
         RaisedDate: "today"
-        Detail: "Demo row. No workstream and no owner yet: this is the row the triage owner picks up, and it is what the Needs triage view is for."
+        Situation: "Demo row. A clinician reported a login loop on a shared ward device. No workstream and no owner yet: this is the row the triage owner picks up, and it is what the Needs triage view is for."
   Decision:
     - key: dec-one-site
       values:

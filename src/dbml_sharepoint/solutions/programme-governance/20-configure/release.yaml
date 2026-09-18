@@ -1,7 +1,7 @@
-release: "4.0.0"
-date: "2026-09-16"
+release: "5.0.0"
+date: "2026-09-18"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "4.0.0"
+schema_version: "5.0.0"
 notes: |
   4.0.0 updates Involvement fields, forms, views and reporting. Engagement
   Status contains Identified and Engaged. Channel contains Governance forum,
