@@ -71,6 +71,7 @@ list from SharePoint. The Data Privacy Firewall has allowed that combination
 by default since the July 2026 Power BI Desktop and always allowed it in the
 Service (Learn, "Allow data privacy firewall partitions that reference other
 partitions to also access data sources"). An older Desktop refuses it with
-`Formula.Firewall`, as it refused the query-to-query reads that preceded it. A generated query that passes every
-gate in this repository has been proved to be the text the generator meant to
-write, and nothing more.
+`Formula.Firewall`, as it refused the query-to-query reads that preceded it.
+
+A generated query that passes every gate in this repository has been proved
+to be the text the generator meant to write, and nothing more.
