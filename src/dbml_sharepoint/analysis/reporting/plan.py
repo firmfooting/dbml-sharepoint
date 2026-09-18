@@ -20,7 +20,6 @@ from dataclasses import dataclass, field
 
 from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
 from dbml_sharepoint.analysis.derived import (
-    DERIVED_REFERENCE,
     DERIVED_TYPES,
     derived_output_names,
     is_users_source,
@@ -46,6 +45,7 @@ from dbml_sharepoint.analysis.report_columns import (
     projection_output_name,
     report_output_names,
 )
+from dbml_sharepoint.analysis.reporting.names import base_query_name, query_name
 from dbml_sharepoint.analysis.timezones import ZoneTable, zone_table
 from dbml_sharepoint.analysis.typemap import SPField, is_person, map_column
 from dbml_sharepoint.model.mapping_types import DerivedColumn, MappingBundle
@@ -56,11 +56,11 @@ from dbml_sharepoint.model.parser import Schema, Table
 class DerivedStep:
     """One derived column, with every name already resolved.
 
-    Built in a POST-PASS over the plans, because a join has to translate the
-    columns it reads through the TARGET query's own rename map, and that map
-    only exists once the target's plan does. Reading the map rather than
-    re-deriving the display title is the point: it is the rename the target
-    query actually performs, so the two cannot disagree.
+    Built in a POST-PASS over the plans, because a join needs the target's
+    plan to know its list title and whether it is reported at this site.
+    Column names are the schema's internal ones throughout: another list
+    is read through its base function and this list at the step above,
+    and neither has renamed yet. Only `_Users` renames unconditionally.
     """
 
     kind: str
@@ -70,15 +70,22 @@ class DerivedStep:
     replace: bool = False
     hidden: bool = False
     description: str = ""
-    # The other query this step reads, by the name its file carries.
+    # The list this step reads, by its title and its entity. Empty for an
+    # `expr`, which reads this query's own row.
     source_query: str = ""
     source_entity: str = ""
+    # The query or function this step names, as its file is named: a base
+    # function for another list, the `_Users` query for a person lookup,
+    # and nothing for a read of this list's own rows, which reads the step
+    # above. Decided here once, so the renderer and the guide cannot name
+    # different things.
+    reads: str = ""
+    reads_base: bool = False
     own_key: str = ""
     other_key: str = ""
     # (column on the target, column produced here, M type token)
     picks: tuple[tuple[str, str, str], ...] = ()
     aggregate: str = ""
-    # Already translated to the names the source query ends with.
     column: str = ""
     where: str = ""
 
@@ -451,36 +458,30 @@ def _projection_types(
     )
 
 
-def _names_as_read(target: ListPlan, reader: ListPlan) -> dict[str, str]:
-    """The rename map a step reads `target`'s columns through.
+def read_by_another(plans: list[ListPlan]) -> list[ListPlan]:
+    """The plans whose rows some OTHER list's derived step reads, in plan order.
 
-    Any other list is read as a finished query, after the model-facing
-    rename that is its last step, so its columns carry display titles. THIS
-    list, read by one of its own steps, has not renamed yet, so the author's
-    internal names are the ones the step above carries. One answer for the
-    automatic key-joined projections and the declared reads alike: reported
-    2026-09-17 against 4.0.0, a self-read that named its own query was a
-    cyclic reference at refresh, and the fix that read the step above
-    instead had to read it under the names that step has.
+    Each of these gets a base function beside its query: the rows fetched
+    and keyed, under the internal names, with none of the reporting-only
+    columns. A cross-list read calls the base rather than naming the list's
+    query, because the query carries derived steps of its own and two
+    queries whose derived steps read each other name each other, which in M
+    is a cyclic reference (Learn, M language specification, operator
+    behavior) that nothing before a refresh can see. Reported 2026-09-18
+    against a programme-governance pack: six mutual pairs, twelve cycles,
+    and nine of ten queries unable to refresh. A base reads no query at
+    all, so no chain of reads can return to where it started.
+
+    A read of the list's OWN rows reads the step above it and needs no
+    base; `_Users` is not a list and has no plan.
     """
-    return {} if target is reader else dict(target.renames)
-
-
-def _translate_refs(text: str, renames: dict[str, str]) -> str:
-    """Rewrite every `[Column]` through one query's own rename map.
-
-    An author writes internal names everywhere. A `where` and an aggregate's
-    `column` read the CHILD query's rows, and that query renamed its columns
-    in its last step, so the names have to be the ones it ends with. Taken
-    from the plan's own rename list rather than re-derived, because that list
-    IS the rename the query performs.
-    """
-    if not renames:
-        return text
-    return DERIVED_REFERENCE.sub(
-        lambda match: f"[{renames.get(match.group(1), match.group(1))}]",
-        text,
-    )
+    read = {
+        step.source_entity
+        for plan in plans
+        for step in plan.derived
+        if step.reads_base
+    }
+    return [plan for plan in plans if plan.entity in read]
 
 
 def _resolve_derived(
@@ -500,18 +501,15 @@ def _resolve_derived(
         # arrived through the expand. Their names and order are what the
         # author declared; only the mechanism differs.
         for via, target, target_column, out, m_type in plan.key_joined:
-            renames = _names_as_read(by_entity[target], plan)
+            reads, reads_base = _reads(by_entity[target], plan)
             plan.derived.append(DerivedStep(
                 kind="lookup",
                 source_query=bundle.mapping.list_title(target),
                 source_entity=target,
+                reads=reads, reads_base=reads_base,
                 own_key=fk_key_column(f"{via}Id"),
                 other_key=f"{target}{REPORT_KEY_SUFFIX}",
-                picks=((
-                    renames.get(target_column, target_column),
-                    out,
-                    m_type,
-                ),),
+                picks=((target_column, out, m_type),),
                 description=(
                     f"{target_column} read from the matching {target} row. "
                     f"SharePoint will not project a column of this type "
@@ -522,6 +520,15 @@ def _resolve_derived(
             step = _derived_step(entry, plan, by_entity, prefix)
             if step is not None:
                 plan.derived.append(step)
+
+
+def _reads(target: ListPlan, reader: ListPlan) -> tuple[str, bool]:
+    """The `(reads, reads_base)` a step over `target`'s rows carries: nothing
+    for the reader's own list, whose steps read the step above, and the base
+    function for any other. `read_by_another` says why not the query."""
+    if target is reader:
+        return "", False
+    return base_query_name(target.list_title), True
 
 
 def _derived_step(
@@ -552,6 +559,7 @@ def _derived_step(
             kind="lookup",
             source_query=USERS_KEY_LIST,
             source_entity=USERS_KEY_LIST,
+            reads=query_name(USERS_KEY_LIST),
             own_key=own_key,
             other_key=other_key,
             picks=tuple(
@@ -568,21 +576,18 @@ def _derived_step(
     target = by_entity.get(entry.from_entity)
     if target is None:
         return None
-    renames = _names_as_read(target, plan)
     own_key, other_key = lookup_key_columns(entry, plan.entity)
+    reads, reads_base = _reads(target, plan)
     if entry.kind == "lookup":
         return DerivedStep(
             kind="lookup",
             source_query=target.list_title,
             source_entity=entry.from_entity,
+            reads=reads, reads_base=reads_base,
             own_key=own_key,
             other_key=other_key,
             picks=tuple(
-                (
-                    renames.get(source, source),
-                    new_name,
-                    DERIVED_TYPES[entry.types[new_name]],
-                )
+                (source, new_name, DERIVED_TYPES[entry.types[new_name]])
                 for new_name, source in entry.pick.items()
             ),
             hidden=hidden,
@@ -594,11 +599,12 @@ def _derived_step(
         m_type=DERIVED_TYPES[entry.type],
         source_query=target.list_title,
         source_entity=entry.from_entity,
+        reads=reads, reads_base=reads_base,
         own_key=own_key,
         other_key=other_key,
         aggregate=entry.aggregate,
-        column=renames.get(entry.column, entry.column),
-        where=_translate_refs(entry.where, renames),
+        column=entry.column,
+        where=entry.where,
         hidden=hidden,
         description=description,
     )

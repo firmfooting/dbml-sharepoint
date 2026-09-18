@@ -28,7 +28,8 @@ no site and falls back to a ``SiteUrl`` text parameter.
 def generate_powerquery(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, site_url: str | None = None, time_zone: str | None = None) -> dict[str, str]
 ```
 
-One M query per list for the site role: {filename: query text}.
+One M query per list for the site role, and a base function for each
+list another list's reporting-only columns read: {filename: text}.
 
 Each query is self-contained, including its site-name lookup. That is
 what makes a multi-site report possible: duplicate a query, point the

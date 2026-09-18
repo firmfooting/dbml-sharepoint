@@ -46,11 +46,14 @@ def _lookup_target(table: Table, via: str) -> str | None:
     return col.ref.target_table
 
 
-def _produced(vc: ValidationContext, entity: str) -> set[str] | None:
-    """Every column `entity`'s report query produces, or None where no query
-    exists for it at any site."""
+def _fetched(vc: ValidationContext, entity: str) -> set[str] | None:
+    """Every column `entity`'s base function carries, which is its report
+    query up to the keys and before the reporting-only columns, or None
+    where no query exists for it at any site."""
     plan = vc.report_plan(entity)
-    return None if plan is None else set(report_column_names(plan))
+    if plan is None:
+        return None
+    return set(report_column_names(plan, include_derived=False))
 
 
 def _readable(
@@ -58,14 +61,15 @@ def _readable(
 ) -> set[str] | None:
     """What a read of `target` from `entity`'s query can see.
 
-    Another list is read as a finished query, so everything it produces is
-    there, its own derived columns included. THIS list is read by one of its
-    own steps, which sees only what the steps above it produced: the
-    generator reads the step above rather than the query by name (a query
-    naming itself is a cyclic reference), so a reference to an output
-    declared below would name a column that is not there yet.
+    Never another query's reporting-only columns. Another list is read
+    through its base function, which stops before them: the list's query
+    carries derived steps of its own, and two queries whose derived steps
+    read each other are a cyclic reference, which M refuses only at
+    refresh. THIS list is read by one of its own steps, which sees only
+    what the steps above it produced, for the same reason one level down:
+    the generator reads the step above rather than the query by name.
     """
-    return set(available) if target == entity else _produced(vc, target)
+    return set(available) if target == entity else _fetched(vc, target)
 
 
 def _derived_columns(vc: ValidationContext) -> list[Finding]:
@@ -225,7 +229,9 @@ def _picks(
         "this list's report query carries at this point (a read of its own "
         "rows sees only the columns produced above this entry)"
         if target == entity
-        else f"{target}'s report query produces"
+        else f"{target}'s rows carry as another list reads them (its own "
+        "reporting-only columns are not readable from another list; "
+        "restate the expression over the columns the list fetches)"
     )
     return [
         Finding(
@@ -324,7 +330,8 @@ def _count(
     subject = (
         "this list's own rows, as the step above this entry carries them,"
         if entry.from_entity == entity
-        else f"{entry.from_entity}'s report query"
+        else f"{entry.from_entity}'s rows as another list reads them (its "
+        "own reporting-only columns are not readable from another list)"
     )
     if entry.column and entry.column not in child_columns:
         findings.append(Finding(

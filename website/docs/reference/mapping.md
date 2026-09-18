@@ -1670,10 +1670,13 @@ carries one, and a site shows no trace of them. They exist so a report is
 built from the pack rather than from a second layer maintained beside it.
 
 Names are the **internal** ones the schema declares, here and inside every
-expression. A column read out of another list is translated by the generator
-to whatever that list's query renames it to, so an author never writes a
-display title. Declaration order is the contract: an entry may read a column
-an entry above it produced, and may not read one below it.
+expression, and an author never writes a display title. Another list is read
+as it is fetched, columns and keys, without its reporting-only columns. Its
+query carries those, and two queries whose reporting-only columns read each
+other are a cyclic reference that only a refresh can see, so the generator
+reads a list through a base function that stops before them. Declaration
+order is the contract for this list's own rows: an entry may read a column an
+entry above it produced, and may not read one below it.
 
 `from` names an **entity**, not a list title or a query name, so the
 generator derives the key columns from the schema's own `ref:` and a key
@@ -1708,11 +1711,12 @@ columns and the lookup joins, because a row-level expression written in M has
 no SQL to translate to.
 
 :::warning Load each query under the name of its file
-A query that reads another list names it, so `GOV_Risk.pq` must be loaded as
-`GOV_Risk`. A model appending several sites needs the same care: a duplicated
-query still reads the original copy of whatever it joins. Every key carries
-its site, so nothing matches, and a `count` reports blank rather than zero
-where that happens.
+A query that reads another list calls that list's base function, so
+`GOV_Risk_Base.pq` must be loaded as `GOV_Risk_Base` beside `GOV_Risk`. The
+function fetches the list's rows for the site URL it is given, and Power BI
+does not load a function to the model. A duplicated query pointed at another
+site calls each base with that site, so its reporting-only columns follow the
+copy without further editing.
 :::
 
 ## Structure and behaviour

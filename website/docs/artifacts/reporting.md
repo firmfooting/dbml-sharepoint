@@ -208,6 +208,14 @@ No SharePoint field stands behind one. `data-dictionary.md` marks each as
 it. The SQL views carry none of them: a row-level expression written in M has
 no SQL to translate to.
 
+A column read off another list comes through that list's **base function**,
+`<Query>_Base`, which fetches the rows for a site URL and stops before the
+reporting-only columns. The pack emits one for each list another list reads.
+Nothing reads a query that carries reporting-only columns, so a parent may
+count its children while each child looks up its parent without the cyclic
+reference M would otherwise raise at refresh. Power BI does not load a
+function to the model.
+
 The rule that makes this safe is the reference check. A derived column names
 its inputs in a string, and nothing between the build and Power BI reads that
 string, so an unresolved name is a refresh failure after the model is

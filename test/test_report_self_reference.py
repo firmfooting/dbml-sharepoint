@@ -134,8 +134,10 @@ def test_the_guide_names_what_each_query_reads() -> None:
     line = next(
         row for row in guide.splitlines() if row.startswith("- `GOV_Decision` reads ")
     )
-    assert "`GOV_Action`" in line
-    assert "`GOV_Decision`" not in line.split(" reads ", 1)[1]
+    assert "`GOV_Action_Base`" in line
+    read = line.split(" reads ", 1)[1]
+    assert "`GOV_Action`" not in read, "another list is read through its base"
+    assert "GOV_Decision" not in read
 
 
 # --------------------------------------------- what a self-read can see
@@ -291,12 +293,15 @@ derived_columns:
 """
 
 
-def test_another_querys_derived_output_stays_readable(tmp_path: Path) -> None:
-    """Only a self-read is held to declaration order. Another list is read
-    as a finished query, so its own derived columns are there whatever the
-    order the two entities are declared in."""
+def test_another_lists_reporting_only_column_is_not_readable(tmp_path: Path) -> None:
+    """A read of another list sees its rows as fetched, keys included and
+    reporting-only columns excluded, whatever the declaration order. The
+    list's QUERY would carry `Flag`, and reading that query is the cycle
+    one level up: Risk reads Action, and Action's reporting-only columns
+    may read Risk back (reported 2026-09-18, six such pairs in one pack).
+    Refused at build with the entry named, rather than at refresh."""
     schema, bundle = pack(tmp_path, _OTHER_LIST_DBML, _OTHER_LIST_MAPPING)
-    assert FindingCode.DERIVED_UNKNOWN_REFERENCE not in _errors(schema, bundle)
+    assert FindingCode.DERIVED_UNKNOWN_REFERENCE in _errors(schema, bundle)
     risk = generate_powerquery(schema, bundle, "default")["APP_Risk.pq"]
-    assert '#"APP_Action"' in risk
-    assert "[Flag] = true" in risk
+    assert '#"APP_Action"' not in risk
+    assert '#"APP_Action_Base"(SiteRoot)' in risk

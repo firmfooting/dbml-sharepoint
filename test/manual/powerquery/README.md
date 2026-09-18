@@ -29,16 +29,17 @@ refreshes.
 | File | Needs a site | Asks |
 | --- | --- | --- |
 | `m-runtime-probe.pq` | no | Does the emitted M mean what the generator thinks: the type tests behind the date conversion, the offset lookup, the row-aware replace, the grouped count, the two-field expand, the set comparison, and a cross-query reference |
-| `_ProbeOther.pq` | no | Nothing. It exists to be read by name, which is how a derived lookup or count reads another list's query |
+| `_ProbeOther.pq` | no | Nothing. It exists to be read by name, which is how a derived lookup into `_Users` reads that query |
+| `_Probe_Base.pq` | no | Nothing. A function that echoes its argument, called by name, which is how a derived lookup or count reads another list since 2026-09-18: through that list's `_Base` function rather than its query, so that no query reads a query that could read it back |
 | `sharepoint-feed-probe.pq` | yes | What the feed hands back through the exact call the pack makes: the shape of a date-only value, of a calculated date, of a projected dependent lookup, and whether the zone and the list's own folder read at all |
 
 ## Running them
 
 1. Power BI Desktop, Get data, Blank query, Advanced Editor, paste the whole
    file, Done.
-2. Name each query as its header says. `_ProbeOther` in particular is read by
-   name, and a query loaded under a different name is the failure that row is
-   looking for.
+2. Name each query as its header says. `_ProbeOther` and `_Probe_Base` in
+   particular are read by name, and a query loaded under a different name is
+   the failure those rows are looking for.
 3. For `sharepoint-feed-probe.pq`, edit the five values under CONFIGURE.
    Unedited, it reads nothing and returns one row saying so.
 4. Read the result table. Every row carries the value the generator assumes
@@ -64,6 +65,13 @@ directory has stayed green.
 
 Any change to the emitted M that a Python test cannot execute. The date
 conversion, the derived column steps, the zone table lookup and the cross
-query joins are all in that category. A generated query that passes every
-gate in this repository has been proved to be the text the generator meant to
-write, and nothing more.
+query joins are all in that category. A live pack exercises the base-function
+call differently from the probe, because the calling query also reads its own
+list from SharePoint. The Data Privacy Firewall has allowed that combination
+by default since the July 2026 Power BI Desktop and always allowed it in the
+Service (Learn, "Allow data privacy firewall partitions that reference other
+partitions to also access data sources"). An older Desktop refuses it with
+`Formula.Firewall`, as it refused the query-to-query reads that preceded it.
+
+A generated query that passes every gate in this repository has been proved
+to be the text the generator meant to write, and nothing more.

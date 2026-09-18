@@ -471,11 +471,15 @@ FINDING_HELP: dict[FindingCode, str] = {
         "is computed over."
     ),
     FindingCode.DERIVED_UNKNOWN_REFERENCE: (
-        "A derived reporting column reads a column that its source query "
-        "does not produce. Nothing between the build and Power BI reads "
-        "these names, so an unresolved one is a refresh failure after "
-        "publication rather than a build failure. Names are the internal "
-        "ones the schema declares, not the display titles the model shows."
+        "A derived reporting column reads a column that its source does "
+        "not carry. Nothing between the build and Power BI reads these "
+        "names, so an unresolved one is a refresh failure after publication "
+        "rather than a build failure. Names are the internal ones the "
+        "schema declares, not the display titles the model shows. Another "
+        "list is read as it is fetched, keys included and reporting-only "
+        "columns excluded, because reading those would make the two queries "
+        "name each other, a cyclic reference at refresh. This list's own "
+        "rows are read as the entries above have left them."
     ),
     FindingCode.DERIVED_LOOKUP_BAD_TARGET: (
         "A derived `lookup` names a `via` column that is not a lookup, one "

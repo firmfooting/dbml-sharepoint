@@ -325,14 +325,18 @@ def generate_reporting_md(
          "SQL view names must remain distinct from metadata views and within 128 characters."),
         "",
         ":::warning Load each query under the name of its file",
-        ("A query that reads another list names it, so `GOV_Risk.pq` must "
-         "be loaded as `GOV_Risk` for a query that reads it to resolve. "
-         "Renaming a query breaks every derived column that reads it, at "
-         "refresh. Appending several sites needs the same care: a "
-         "duplicated query still reads the ORIGINAL copy of whatever it "
-         "joins, so point each duplicate at its own copies. A count that "
-         "finds itself reading another site's rows reports blank rather "
-         "than zero, which is why the blank is worth checking."),
+        ("A query that reads another list calls that list's base function "
+         "by name, so `GOV_Risk_Base.pq` must be loaded as `GOV_Risk_Base` "
+         "for a query that reads Risk to resolve. Renaming it breaks every "
+         "derived column that reads it, at refresh, and the error names "
+         "only the first missing import. A base function fetches the "
+         "list's rows for the site URL it is given, keyed like the list's "
+         "query and without its reporting-only columns. No query reads "
+         "another query, because two queries that read each other are a "
+         "cyclic reference that only a refresh can see. Power BI does not "
+         "load a function to the model. A duplicated query pointed at "
+         "another site calls each base with that site, so its reporting-only "
+         "columns read that site's rows without further editing."),
         ":::",
         "",
         *_reads_paragraphs(plans),
@@ -389,25 +393,26 @@ def generate_reporting_md(
 
 
 def _reads_paragraphs(plans: list[ListPlan]) -> list[str]:
-    """Which queries each query reads by name, so a consumer that loads the
-    files under names of its own knows what to rewrite before the refresh
-    tells them, one unresolved import at a time. A query reading its own
-    rows is not listed: it reads a step, not a name."""
+    """Which names each query reads, so a consumer that loads the files
+    under names of its own knows what to rewrite before the refresh tells
+    them, one unresolved import at a time. A query reading its own rows is
+    not listed: it reads a step, not a name. Which name a step reads is the
+    planner's decision, so this list and the emitted M cannot differ."""
     rows: list[str] = []
     for plan in plans:
         reads: list[str] = []
         for step in plan.derived:
-            source = step.source_query
-            if source and source != plan.list_title and source not in reads:
-                reads.append(source)
+            if step.reads and step.reads not in reads:
+                reads.append(step.reads)
         if reads:
-            named = ", ".join(f"`{query_name(source)}`" for source in reads)
+            named = ", ".join(f"`{name}`" for name in reads)
             rows.append(f"- `{query_name(plan.list_title)}` reads {named}.")
     if not rows:
         return []
     return [
-        ("Queries that read other queries, and the names they read them "
-         "under:"),
+        ("Queries that read other queries or base functions, and the names "
+         "they read them under. No base function reads anything, so no "
+         "chain of reads returns to where it started:"),
         "",
         *rows,
         "",
