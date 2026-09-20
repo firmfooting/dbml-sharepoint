@@ -1,4 +1,4 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/sp/view-formatting.schema.json",
-  "additionalRowClass": "=if(@now > [$DueDate], 'sp-css-backgroundColor-BgDustRose', '')"
+  "additionalRowClass": "=if([$DueDate] == '', '', if(toDateString(@now) == toDateString([$DueDate]), '', if(@now > [$DueDate], 'sp-css-backgroundColor-BgDustRose', '')))"
 }

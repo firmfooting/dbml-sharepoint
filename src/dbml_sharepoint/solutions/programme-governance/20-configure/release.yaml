@@ -15,6 +15,8 @@ notes: |
   Issue and Decision view. Action gains an overdue row wash on My actions,
   a My overdue view, and Open by risk, Open by issue and Open by decision;
   Issue gains Open, no related risk.
+  The four new action views carry Completed Date so an action can be marked
+  Done in the grid. The row wash excludes dates on today's calendar day.
 
   BREAKING: Detail on Risk and on Issue is RETIRED, not deleted. It keeps
   its values, drops off every view and the New form, and reads "Detail
@@ -33,10 +35,12 @@ notes: |
   been measured. Fill every blank Detail on GOV_Decision before the paste
   and the question never arises.
 
-  The migration, in this order: export the three lists; fill blank Decision
-  Detail; build, assess, deploy, verify; re-key Ratified rows to Endorsed;
-  transfer each Detail into its three fields; delete Detail on GOV_Risk and
-  GOV_Issue with the columns sidecar; rebuild reporting.
+  The migration, in this order: export all rows of the three lists with ID,
+  Detail and Status; use the export to find and fill blank Decision Detail;
+  build, assess, deploy, verify; re-key Ratified rows to Endorsed using the
+  exported IDs; transfer each Detail into its three fields and read back
+  against the export; delete Detail on GOV_Risk and GOV_Issue with the columns
+  sidecar only after every transfer is verified; rebuild reporting.
   30-deploy/deploy.md has the same sequence with the detail.
 
   4.0.0 updates Involvement fields, forms, views and reporting. Engagement

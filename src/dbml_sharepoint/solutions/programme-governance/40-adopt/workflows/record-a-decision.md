@@ -15,7 +15,7 @@ flowchart TD
     A{"Has the forum decided yet?"}
     A -- "Not yet" --> P1["New decision, title as a decision, Status Proposed"]
     P1 --> P2["Set Raised Date, and Activity if there is a standing one"]
-    P2 --> P3["Write Resolution Sought: what the forum is asked to decide"]
+    P2 --> P3["Write Resolution Sought and Detail: the request, context and options"]
     P3 --> P4["Save. Leave Decision Date blank"]
     P4 --> P5["It sits on Awaiting decision until the forum answers"]
     P5 --> B
@@ -51,7 +51,8 @@ flowchart TD
    forum that decided against the route the activity names is a monthly
    report rather than anything the form knows. Blank is the ordinary case.
 5. **They** write **Resolution Sought**: what the forum is being asked to
-   decide, in the words the paper uses.
+   decide, in the words the paper uses. **Detail** is required on proposals
+   too: record the context and options being put to the forum before saving.
 6. **They** leave **Decision Date** blank. The list does not stop you
    typing one, but the only rule is the reverse: a decision that has been
    made needs a date, and it will not accept a future date.

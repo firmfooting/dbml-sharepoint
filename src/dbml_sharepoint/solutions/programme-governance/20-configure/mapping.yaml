@@ -1311,10 +1311,8 @@ views:
         - { field: Status, op: in, value: ["Open", "In progress"] }
       sort:
         - { field: DueDate, direction: asc }
-      # Action's one row-level signal, reserved for a due date that has
-      # passed. The wash reads DueDate, which is in the field set. The filter
-      # already keeps the view to Open and In progress, so the expression
-      # needs no status arm.
+      # Date-only deadlines get the row wash after their calendar day ends.
+      # https://learn.microsoft.com/en-us/sharepoint/dev/declarative-customization/formatting-syntax-reference
       formatting: formatting/row-overdue.json
       # The spine's widths, declared once and merged into every action view.
       # A field set expands fields only, so the widths ride a YAML anchor.
@@ -1326,7 +1324,7 @@ views:
         CompletedDate: 160
     # The same read narrowed to what I owe and have already missed.
     - title: "My overdue"
-      fields: ["@action", RelatedRiskTitle, Notes]
+      fields: ["@action", RelatedRiskTitle, Notes, CompletedDate]
       where:
         - { field: AssignedTo, op: eq, value: me }
         - { field: Status, op: in, value: ["Open", "In progress"] }
@@ -1337,6 +1335,7 @@ views:
         <<: *action_spine
         RelatedRiskTitle: 220
         Notes: 200
+        CompletedDate: 160
     # Read FIRST at the fortnightly, so the exception is not buried in the
     # whole list.
     - title: "Overdue"
@@ -1371,7 +1370,7 @@ views:
     # rather than under its name. A risk, issue or decision with no open
     # action has no heading at all; that absence is a reporting question.
     - title: "Open by risk"
-      fields: ["@action", RelatedRiskTitle, Notes]
+      fields: ["@action", RelatedRiskTitle, Notes, CompletedDate]
       where:
         - { field: Status, op: in, value: ["Open", "In progress"] }
         - { field: RelatedRisk, op: is_not_null }
@@ -1382,8 +1381,9 @@ views:
         <<: *action_spine
         RelatedRiskTitle: 220
         Notes: 200
+        CompletedDate: 160
     - title: "Open by issue"
-      fields: ["@action", RelatedIssue, Notes]
+      fields: ["@action", RelatedIssue, Notes, CompletedDate]
       where:
         - { field: Status, op: in, value: ["Open", "In progress"] }
         - { field: RelatedIssue, op: is_not_null }
@@ -1394,8 +1394,9 @@ views:
         <<: *action_spine
         RelatedIssue: 220
         Notes: 200
+        CompletedDate: 160
     - title: "Open by decision"
-      fields: ["@action", AuthorisingDecisionTitle, Notes]
+      fields: ["@action", AuthorisingDecisionTitle, Notes, CompletedDate]
       where:
         - { field: Status, op: in, value: ["Open", "In progress"] }
         - { field: AuthorisingDecision, op: is_not_null }
@@ -1406,6 +1407,7 @@ views:
         <<: *action_spine
         AuthorisingDecisionTitle: 220
         Notes: 200
+        CompletedDate: 160
     - title: "Done and dropped"
       fields: ["@action", CompletedDate, Notes]
       where:

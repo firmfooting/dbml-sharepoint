@@ -21,12 +21,16 @@ Decision Detail required, renames the Ratified decision outcome to Endorsed,
 and adds views. Rows are untouched by the paste, but three of those changes
 need a hand step around it.
 
-1. Export `GOV_Risk`, `GOV_Issue` and `GOV_Decision`, including Detail and
-   Status.
-2. On `GOV_Decision`, filter on a blank **Detail** and write one on each row
-   before the paste. The deploy sets Detail required, and what SharePoint
-   does with rows already blank when a column becomes required has not
-   been measured; with no blank rows left it never matters.
+1. Export `GOV_Risk`, `GOV_Issue` and `GOV_Decision`, including ID, Detail and
+   Status. Check that the exports include every row and the full Detail
+   text, and keep them until the migration has been verified.
+2. Review the `GOV_Decision` export for missing **Detail**, then open each
+   affected item by ID and fill it before the paste. SharePoint does not
+   offer a column filter for this rich-text field; see Microsoft's
+   [supported filter types](https://support.microsoft.com/en-us/sharepoint/data-and-lists/use-filtering-to-modify-a-sharepoint-view).
+   Reopen the saved items and check the text. The deploy sets Detail
+   required, and what SharePoint does with existing blank rows when a column
+   becomes required has not been measured; fill them all before proceeding.
 3. Build the updated bundle, then run **assess**, **deploy** and **verify**.
    Expect `columns +6` (Cause, Trigger and Effect on Risk; Situation,
    Trigger and Effect on Issue) and `views +6`. Every existing risk keeps
@@ -34,15 +38,18 @@ need a hand step around it.
    items only; only risks raised after the paste start Proposed. Confirm
    the risk status picker offers Proposed, Open, Closed and Rejected in
    that order and the decision picker offers Endorsed and not Ratified.
-4. On `GOV_Decision`, filter **Status** on `Ratified` and set each row to
-   **Endorsed**. Until a row is re-keyed it is not offered by any decision
-   picker and reporting does not count it as authority; a risk or action
-   that already cites it keeps the link.
+4. Use the saved export to identify the IDs of `GOV_Decision` rows whose
+   **Status** was `Ratified`. Open those items and set each to **Endorsed**,
+   then reopen them to verify the saved status. Until a row is re-keyed it
+   is not offered by any decision picker and reporting does not count it as
+   authority; a risk or action that already cites it keeps the link.
 5. On each `GOV_Risk` row copy **Detail (retired)** into **Cause**,
    **Trigger** and **Effect**, and on each `GOV_Issue` row into
    **Situation**, **Trigger** and **Effect**, working from the export. The
    retired column stays on the edit form until step 6 removes it, and it
-   is already off every view and the New form.
+   is already off every view and the New form. Reopen each saved item and
+   compare the new fields with the exported Detail. Do not delete either
+   old column until all its text has been accounted for in the new fields.
 6. Delete **Detail** on `GOV_Risk` and on `GOV_Issue` with `columns.js.txt`,
    generated per list with `dbml-sharepoint columns-script <the list's URL>`.
    Type the internal name `Detail` and let the script unseal it, delete it
@@ -424,8 +431,9 @@ visible.
 - [ ] Row washes: an activity set to **Needs review** washes its row in *My
       accountabilities*, an **Extreme** risk washes its row in the risk
       *Open* view, a **Critical** issue washes its row in the issue *Open*
-      view, and an action whose due date has passed washes its row in *My
-      actions*. Nothing else does, on any list. One row-level signal per
+      view, and an action due before today washes its row in *My actions*.
+      Check yesterday, today and tomorrow: only yesterday gets the action
+      row wash. Nothing else does, on any list. One row-level signal per
       list is the whole budget.
 - [ ] An action filed against a **Closed** workstream still saves, and
       shows the closed phase beside it through the `WorkstreamPhase`
