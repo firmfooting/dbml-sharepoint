@@ -38,12 +38,16 @@ Enum gov_consequence {
   "Business Critical"
 }
 
-// Open or closed, with no Provisional step. A programme risk has a named owner
-// from the moment it is raised, so a draft state would only be a queue nobody
-// drains.
+// Proposed is the intake state: anybody can put a rated risk forward, and it
+// reaches the log, the pickers and the review cadence only once governance
+// sets it Open. Rejected is the terminal state for a proposal that was never
+// accepted, kept apart from Closed so the log records what was turned away as
+// well as what ran its course. Both terminal states take a Closure Note.
 Enum gov_risk_status {
+  "Proposed"
   "Open"
   "Closed"
+  "Rejected"
 }
 
 Enum gov_risk_response {
@@ -78,7 +82,7 @@ Enum gov_issue_status {
 
 // The proposal queue and the decision log in one column. Proposed is the
 // only state that is not an outcome, which is what makes the queue
-// filterable. Ratified means decided under delegation and validated by the
+// filterable. Endorsed means decided under delegation and endorsed by the
 // forum afterwards; Noted means the forum noted it and no decision was
 // required.
 Enum gov_decision_status {
@@ -87,7 +91,7 @@ Enum gov_decision_status {
   "Rejected"
   "Withdrawn"
   "Noted"
-  "Ratified"
+  "Endorsed"
 }
 
 Enum gov_stakeholder_kind {
@@ -388,7 +392,13 @@ Table Risk {
   Id          int               [pk, increment]
   Title       nvarchar          [not null, note: 'The risk, stated as an uncertain event: "The provider does not create the pilot group before the pilot starts"']
   Workstream  int               [not null, ref: > Workstream.Id, note: 'The workstream this risk sits in. It is what lets a workstream lead see their own risks rather than the whole programme log']
-  Detail      richtext          [note: 'Cause -> event -> consequence. What could trigger it, what happens to the programme if it does']
+  // The three parts of a risk statement, kept apart so each can be read and
+  // reported on its own. One Detail field held all three and reviewers could
+  // not tell an unstated cause from an unwritten one.
+  Cause       richtext          [note: 'What makes this risk possible: the condition or dependency that is already true today']
+  Trigger     richtext          [note: 'The event that would turn the cause into a problem, stated so somebody could recognise it happening']
+  Effect      richtext          [note: 'What it does to the programme if the trigger fires: the schedule, cost, clinical or reputational consequence']
+  Detail      richtext          [note: 'Retired, superseded by Cause, Trigger and Effect. Kept declared so the deploy still manages it; transfer the values, then delete the column with the columns sidecar']
   Likelihood  gov_likelihood  [not null, note: 'How likely the assessed consequence is, with whatever is already in place']
   Consequence gov_consequence [not null, note: 'The highest reasonable consequence for the programme, with whatever is already in place']
   // Calculated: the 5x5 matrix formula lives in mapping.yaml so the rating
@@ -397,11 +407,11 @@ Table Risk {
   // either.
   ResidualRiskRating calculated_text   [note: 'Calculated automatically from Likelihood and Consequence: Low, Medium, High or Extreme']
   RiskScore   calculated_number [note: 'Calculated automatically: the matrix score 1-25. Sort the log by this, highest first']
-  LiveRiskTitle calculated_text [note: 'Title for open risks, blank once Closed. The RelatedRisk lookup displays this, so the picker only offers live risks']
+  LiveRiskTitle calculated_text [note: 'Title while the risk is Open, blank for Proposed, Closed and Rejected. The RelatedRisk lookup displays this, so the picker only offers risks that are on the log']
   RiskOwner   person            [not null, note: 'Manages the risk day to day. One named person']
   RiskResponse gov_risk_response [note: 'What the programme is doing about it. Tolerate is always for a set period and belongs in the decision log']
   ToleranceDecision int          [ref: > Decision.Id, note: 'The decision-log entry accepting this risk for a set period when Risk Response is Tolerate. Leave blank for every other response']
-  Status      gov_risk_status [not null, default: 'Open', note: 'Close only once the risk can no longer happen or no longer matters, and say why in Closure Note']
+  Status      gov_risk_status [not null, default: 'Proposed', note: 'New risks start Proposed; governance sets them Open at the fortnightly, or Rejected with the reason in Closure Note. Close only once the risk can no longer happen or no longer matters, and say why in Closure Note']
   // Two halves of a review, kept apart. One hand-set date recorded neither:
   // moving it forward destroyed the evidence that a review had happened, so
   // nothing could tell an on-time review from a push-out by somebody who had
@@ -487,7 +497,12 @@ Table Issue {
   // materialised is the interesting one.
   RelatedRisk  int                 [ref: > Risk.Id, note: 'The risk that materialised into this issue, if one did. Leave blank if the issue was never on the risk log']
   ResolvedDate date                [note: 'The date the issue stopped happening']
-  Detail       richtext            [note: 'What is happening, since when, and what it is costing the programme']
+  // The three parts of an issue statement, kept apart for the same reason
+  // as the risk's: one Detail field hid which part had not been written.
+  Situation    richtext            [note: 'What is happening, stated as a fact, and since when']
+  Trigger      richtext            [note: 'What set it off: the change, failure or decision that made it start']
+  Effect       richtext            [note: 'What it is costing the programme right now, in time, money or confidence']
+  Detail       richtext            [note: 'Retired, superseded by Situation, Trigger and Effect. Kept declared so the deploy still manages it; transfer the values, then delete the column with the columns sidecar']
   Resolution   richtext            [note: 'What was done, and what would stop it recurring']
   // Machine-owned: the phase-2 escalation flow stamps this when it notifies
   // the owner, so a repeat notify is distinguishable from a first one. Hidden
@@ -512,7 +527,7 @@ Table Decision {
   Title        nvarchar [not null, note: 'The decision, stated as a decision: "We will run the telephony pilot with one directorate only"']
   // The proposal queue and the decision log are the same list, separated by
   // this column alone. Proposed is the only value that is not an outcome.
-  Status       gov_decision_status [not null, default: 'Proposed', note: 'Proposed is a paper awaiting a forum. Ratified means somebody decided under delegation and the forum validated it afterwards. Noted means the forum noted it and no decision was required']
+  Status       gov_decision_status [not null, default: 'Proposed', note: 'Proposed is a paper awaiting a forum. Endorsed means somebody decided under delegation and the forum endorsed it afterwards. Noted means the forum noted it and no decision was required']
   // Nullable, and the Ad-Hoc catch-all activity was rejected: four of the six
   // shipped decisions have no standing activity, and a catch-all with no real
   // Responsible is worse than a blank the Unlinked decisions report can see.
@@ -525,13 +540,13 @@ Table Decision {
   DecisionOutcome richtext [note: 'What was actually decided, kept separate so an amended decision does not overwrite what was asked']
   RaisedDate   date     [not null, default: '[today]', note: 'When the proposal was raised. Never blank, which is what makes it the sortable axis the queue is ordered on']
   DecisionDate date     [note: 'When the decision was made, not when it was typed in here. Blank while the proposal is still Proposed']
-  DecidedBy    person   [note: 'The one person who made the call, when one person decided under delegation. Leave blank when a forum decided and name the forum in Decided By Forum. For Ratified, name both: the person here and the ratifying forum there']
+  DecidedBy    person   [note: 'The one person who made the call, when one person decided under delegation. Leave blank when a forum decided and name the forum in Deciding Forum. For Endorsed, name both: the person here and the endorsing forum there']
   // Nothing at save compares this against the activity's DecisionRoute:
   // SharePoint cannot read two lookups across two lists in one validation
   // formula, so route-versus-outcome drift is a reporting reconciliation.
-  DecidedByForum int    [ref: > Stakeholder.Id, note: 'The forum that decided, from the stakeholder list. For Ratified, the forum that validated the delegated decision. It may differ from the DecisionRoute on the activity, and that difference is worth reporting on']
+  DecidedByForum int    [ref: > Stakeholder.Id, note: 'The forum that decided, from the stakeholder list. For Endorsed, the forum that endorsed the delegated decision. It may differ from the DecisionRoute on the activity, and that difference is worth reporting on']
   RecommendedByForum int [ref: > Stakeholder.Id, note: 'The committee that recommended before the deciding forum approved. Committee recommends, board decides is the statutory default shape (Health Services Act 1988 s 65S(2)(j))']
-  Detail       richtext [note: 'Context, the options considered, and who disagreed. Enough that nobody reopens it in six months']
+  Detail       richtext [not null, note: 'Context, the options considered, and who disagreed. Enough that nobody reopens it in six months. Required, because a decision with no recorded reasoning is the one that gets reopened']
   EndorsementRoute longtext [note: 'Where the paper went before it was decided: which stakeholders saw it, in what role, when, and any stakeholder that declined or did not respond, with a pointer to where each endorsement is recorded. Prose reads fine; this is evidence, not data. Lives on the item form only, never in a view']
   LiveDecisionTitle calculated_text [note: 'Title for decisions that were actually made, blank otherwise. Every picker onto this list displays it, so nobody can cite a withdrawn proposal as authority']
 

@@ -102,25 +102,30 @@ a rating that disagrees with the matrix, because the rating is never typed.
 **Three lookups are nullable on purpose.** `Action.RelatedRisk`,
 `Action.RelatedServiceRequest` and `Issue.RelatedRisk` are all
 optional, because most actions are ordinary programme work and most issues
-arrived out of nowhere. The risk pickers offer only **live** risks, through a
-calculated `LiveRiskTitle` that is blank once a risk is Closed, while views
-show the real `Title` through a read-only projection. `GOV_Action` also
+arrived out of nowhere. The risk pickers offer only risks **on the log**,
+through a calculated `LiveRiskTitle` that is blank unless a risk is Open, so a
+proposal nobody has accepted and a risk that is closed or rejected both drop
+out of the pickers, while views show the real `Title` through a read-only
+projection. `GOV_Action` also
 projects its workstream's `Phase`, so an action filed against a closed
 workstream is visible in every action view: a lookup picker cannot be
 filtered, so the mistake is shown rather than prevented.
 
-**Forty-three declared views**, deployed with the paste:
+**Fifty-four declared views**, deployed with the paste. Every Action, Risk,
+Issue and Decision view leads with the row's ID, because the number is how a
+row is cited in a meeting:
 
 | List | Views |
 | --- | --- |
 | `GOV_Workstream` | *The programme* (the default, in sequence) |
+| `GOV_BusinessProcess` | *The mapping queue* (the default), *Unowned*, *By workstream* (grouped), *Mapped* |
 | `GOV_Stakeholder` | *Active stakeholders* (the default), *By kind* (grouped), *Retired stakeholders*, *Changed since last review* |
 | `GOV_Activity` | *My accountabilities* (the default), *Confirmation due*, *Never confirmed*, *Needs review*, *By workstream* (grouped), *Workstream leads* (grouped), *Decisions and approvals* (grouped by forum), *Retired*, *Changed since last review* |
-| `GOV_Involvement` | *By activity* (the default, grouped), *By stakeholder* (grouped), *Consultation load* (grouped), *Changed since last review* |
+| `GOV_Involvement` | *By activity* (the default, grouped), *By stakeholder* (grouped), *Identified, not yet engaged*, *Consultation load* (grouped), *Changed since last review* |
 | `GOV_ServiceRequest` | *In progress* (the default), *Authorised, not yet picked up*, *My assigned requests*, *Closed* (with the minutes totalled), *Escalated*, *Needed soon or overdue*, *My raised items*, *Changed since last review* |
-| `GOV_Risk` | *Open* (the default, worst first), *Review due*, *Closed this quarter* |
-| `GOV_Action` | *My actions* (the default), *Overdue*, *Open by person* (grouped), *Done and dropped* |
-| `GOV_Issue` | *Open* (the default, grouped by workstream), *Severe and open*, *By owner* (grouped), *Needs triage*, *My raised items*, *Resolved and closed* |
+| `GOV_Risk` | *Open* (the default, worst first), *Proposed* (oldest first), *Review due*, *Closed this quarter* (closed and rejected) |
+| `GOV_Action` | *My actions* (the default, overdue rows washed), *My overdue*, *Overdue*, *Open by person* (grouped), *Open by risk*, *Open by issue*, *Open by decision* (each grouped), *Done and dropped* |
+| `GOV_Issue` | *Open* (the default, grouped by workstream), *Severe and open*, *By owner* (grouped), *Needs triage*, *Open, no related risk*, *My raised items*, *Resolved and closed* |
 | `GOV_Decision` | *Awaiting decision* (the default), *Decision log*, *Stalled proposals*, *Changed since last review* |
 
 **What the lists cannot enforce.** SharePoint validation formulas refuse

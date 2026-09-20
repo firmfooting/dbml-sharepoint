@@ -1,8 +1,48 @@
-release: "4.0.0"
-date: "2026-09-16"
+release: "5.0.0"
+date: "2026-09-18"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "4.0.0"
+schema_version: "5.0.0"
 notes: |
+  5.0.0 changes what a risk is when it arrives, how a risk and an issue are
+  described, and what every delivery view leads with. Risk Status contains
+  Proposed, Open, Closed and Rejected and a new risk starts Proposed; the
+  Proposed view is the fortnightly intake, and LiveRiskTitle is blank unless
+  a risk is Open, so the RelatedRisk pickers offer only risks on the log.
+  Risk carries Cause, Trigger and Effect and Issue carries Situation (shown
+  as What is happening), Trigger and Effect, in place of one Detail field.
+  Decision Detail is required, Decided By Forum is shown as Deciding Forum,
+  and the Ratified outcome is renamed Endorsed. ID leads every Action, Risk,
+  Issue and Decision view. Action gains an overdue row wash on My actions,
+  a My overdue view, and Open by risk, Open by issue and Open by decision;
+  Issue gains Open, no related risk.
+  The four new action views carry Completed Date so an action can be marked
+  Done in the grid. The row wash excludes dates on today's calendar day.
+
+  BREAKING: Detail on Risk and on Issue is RETIRED, not deleted. It keeps
+  its values, drops off every view and the New form, and reads "Detail
+  (retired)". Transfer the values into the three new fields, then delete
+  each column with the columns sidecar. Ratified is no longer a decision
+  status: rows holding it keep the value but are not offered by any picker
+  and are not counted as authority until re-keyed to Endorsed. Reporting
+  gains IsProposed on Risk and ClosedWithoutNote now covers Rejected.
+
+  SharePoint applies a column default to new items only, so every existing
+  risk keeps its Open or Closed status and only risks raised after the paste
+  start Proposed. The Proposed view is empty until then, which is correct.
+
+  ONE UNMEASURED STEP. The deploy sets Decision Detail required with a plain
+  property write, and what SharePoint does with rows already blank has not
+  been measured. Fill every blank Detail on GOV_Decision before the paste
+  and the question never arises.
+
+  The migration, in this order: export all rows of the three lists with ID,
+  Detail and Status; use the export to find and fill blank Decision Detail;
+  build, assess, deploy, verify; re-key Ratified rows to Endorsed using the
+  exported IDs; transfer each Detail into its three fields and read back
+  against the export; delete Detail on GOV_Risk and GOV_Issue with the columns
+  sidecar only after every transfer is verified; rebuild reporting.
+  30-deploy/deploy.md has the same sequence with the detail.
+
   4.0.0 updates Involvement fields, forms, views and reporting. Engagement
   Status contains Identified and Engaged. Channel contains Governance forum,
   Meeting, Email and Report or dashboard. Lead is an optional person picker.

@@ -45,8 +45,11 @@ flowchart TD
    - **Not doing it** - set **Status** to **Dropped** and write the reason
      in **Notes**.
 5. **The fortnightly check-in** reads **Overdue** first, then **Open by
-   person** opened at each person's group. Both show open and in-progress
-   work only, so a row you marked Done has already left them.
+   person** opened at each person's group, and **Open by risk**, **Open by
+   issue** or **Open by decision** when the question is what is being done
+   about one of those. All show open and in-progress work only, so a row
+   you marked Done has already left them. **My overdue** is the same read
+   narrowed to you.
 
 ## The four optional links
 

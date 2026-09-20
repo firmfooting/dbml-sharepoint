@@ -13,6 +13,55 @@ library: attachments on ten lists, three group memberships, the site home
 page, and the identity phase 2 will run its flows as. Read **Mandatory
 manual go-live steps** before you schedule the paste rather than after it.
 
+## Upgrading to 5.0.0
+
+5.0.0 adds Proposed and Rejected to the risk status, defaults a new risk to
+Proposed, splits Detail on Risk and on Issue into three fields, makes
+Decision Detail required, renames the Ratified decision outcome to Endorsed,
+and adds views. Rows are untouched by the paste, but three of those changes
+need a hand step around it.
+
+1. Export `GOV_Risk`, `GOV_Issue` and `GOV_Decision`, including ID, Detail and
+   Status. Check that the exports include every row and the full Detail
+   text, and keep them until the migration has been verified.
+2. Review the `GOV_Decision` export for missing **Detail**, then open each
+   affected item by ID and fill it before the paste. SharePoint does not
+   offer a column filter for this rich-text field; see Microsoft's
+   [supported filter types](https://support.microsoft.com/en-us/sharepoint/data-and-lists/use-filtering-to-modify-a-sharepoint-view).
+   Reopen the saved items and check the text. The deploy sets Detail
+   required, and what SharePoint does with existing blank rows when a column
+   becomes required has not been measured; fill them all before proceeding.
+3. Build the updated bundle, then run **assess**, **deploy** and **verify**.
+   Expect `columns +6` (Cause, Trigger and Effect on Risk; Situation,
+   Trigger and Effect on Issue) and `views +6`. Every existing risk keeps
+   its Open or Closed status, because a column default applies to new
+   items only; only risks raised after the paste start Proposed. Confirm
+   the risk status picker offers Proposed, Open, Closed and Rejected in
+   that order and the decision picker offers Endorsed and not Ratified.
+4. Use the saved export to identify the IDs of `GOV_Decision` rows whose
+   **Status** was `Ratified`. Open those items and set each to **Endorsed**,
+   then reopen them to verify the saved status. Until a row is re-keyed it
+   is not offered by any decision picker and reporting does not count it as
+   authority; a risk or action that already cites it keeps the link.
+5. On each `GOV_Risk` row copy **Detail (retired)** into **Cause**,
+   **Trigger** and **Effect**, and on each `GOV_Issue` row into
+   **Situation**, **Trigger** and **Effect**, working from the export. The
+   retired column stays on the edit form until step 6 removes it, and it
+   is already off every view and the New form. Reopen each saved item and
+   compare the new fields with the exported Detail. Do not delete either
+   old column until all its text has been accounted for in the new fields.
+6. Delete **Detail** on `GOV_Risk` and on `GOV_Issue` with `columns.js.txt`,
+   generated per list with `dbml-sharepoint columns-script <the list's URL>`.
+   Type the internal name `Detail` and let the script unseal it, delete it
+   and read the field back. Deployment neither deletes the column nor
+   recreates it after removal.
+7. Rebuild reporting. The six new columns arrive in the list queries,
+   `IsProposed` joins the risk flags, `ClosedWithoutNote` now counts a
+   rejected risk with no closure note, and the authority flags read
+   Endorsed in place of Ratified.
+
+Fresh sites require none of this.
+
 ## Upgrading Involvement to 4.0.0
 
 1. Export existing Involvement rows, including Notes and Next Contact.
@@ -150,9 +199,9 @@ and a mail gateway treat them as text, and node refuses an unknown
 extension with `ERR_UNKNOWN_FILE_EXTENSION` before it parses anything.
 Feeding the file on stdin and naming the dialect is the form CI uses.
 
-Then read `build/deploy-manifest.md`. As shipped it reports 10 lists, 105
-non-lookup columns, 6 phase-2 lookup columns, 58 indexed columns, 57 views,
-26 formatted columns, and **0 validation errors and 0 validation
+Then read `build/deploy-manifest.md`. As shipped it reports 10 lists, 116
+non-lookup columns, 6 phase-2 lookup columns, 60 indexed columns, 64 views,
+28 formatted columns, and **0 validation errors and 0 validation
 warnings**. A number that differs from these means the schema or the
 mapping has been edited, which is legitimate; an error count above zero
 means do not paste.
@@ -164,15 +213,16 @@ The risk matrix, the overdue `ConfirmationDue` cell, the gold wash on a
 conditional date fields are all invisible on empty lists, and this family
 is judged in the first two minutes of the first meeting it appears in.
 
-`demo-data.js.txt` creates 58 rows: six workstreams spanning all six
-phases, seven stakeholders covering all four kinds and both statuses, eight
+`demo-data.js.txt` creates 73 rows: six workstreams spanning all six
+phases, seven stakeholders covering all four kinds and both statuses, nine
 activities across every criticality, every review status and all three
-activity roles, six involvements (three of them consulting the same stakeholder,
-so *Consultation load* has something to reveal), seven service requests
-across the request lifecycle, including escalated ones and three with
-minutes logged, six risks spanning
-all four rating bands, seven actions including one overdue and still open,
-six issues across every severity, and five decisions.
+activity roles, nine involvements (three of them consulting the same
+stakeholder, so *Consultation load* has something to reveal), seven service
+requests across the request lifecycle, including escalated ones and three
+with minutes logged, eight risks spanning all four rating bands and all four
+statuses, seven actions including one overdue and still open, seven issues
+across every severity and every status, seven decisions, and six business
+processes.
 
 **Paste order matters.** Paste `deploy.js.txt` first, then
 `demo-data.js.txt`, from the same bundle. The demo rows reference each
@@ -257,11 +307,13 @@ visible.
 
 - [ ] The two pickers show only live rows, which is the property the
       deferral exists to deliver and the one nothing else checks. Create a
-      test risk and confirm both `RelatedRisk` pickers offer it by title,
-      then close it and confirm it drops out. Create a decision, leave it
-      `Proposed`, and confirm none of the four `GOV_Decision` pickers offer
-      it; approve it and confirm all four do.
-- [ ] All forty-seven declared views appear:
+      test risk and confirm neither `RelatedRisk` picker offers it while it
+      is `Proposed`; set it `Open` and confirm both offer it by title; then
+      close or reject it and confirm it drops out. Create a decision, leave
+      it `Proposed`, and confirm none of the four `GOV_Decision` pickers
+      offer it; approve it and confirm all four do.
+- [ ] All fifty-four declared views appear, and every Risk, Action, Issue
+      and Decision view opens with the **ID** column:
       - **Workstream**: *The programme* (the default).
       - **Stakeholder**: *Active stakeholders* (the default), *By kind*,
         *Retired stakeholders*, *Changed since last review*.
@@ -272,26 +324,29 @@ visible.
         *Workstream leads*, *Decisions and approvals*, *Retired*, *Changed
         since last review*.
       - **Involvement**: *By activity* (the default), *By stakeholder*,
-        *Consultation load*, *Changed since last review*.
+        *Identified, not yet engaged*, *Consultation load*, *Changed since
+        last review*.
       - **Service Request**: *In progress* (the default), *Authorised, not
         yet picked up*, *My assigned requests*, *Closed*, *Escalated*,
         *Needed soon or overdue*, *My raised items*, *Changed since last
         review*.
-      - **Risk**: *Open* (the default), *Review due*, *Closed this
-        quarter*.
-      - **Action**: *My actions* (the default), *Overdue*, *Open by
-        person*, *Done and dropped*.
+      - **Risk**: *Open* (the default), *Proposed*, *Review due*, *Closed
+        this quarter*.
+      - **Action**: *My actions* (the default), *My overdue*, *Overdue*,
+        *Open by person*, *Open by risk*, *Open by issue*, *Open by
+        decision*, *Done and dropped*.
       - **Issue**: *Open* (the default), *Severe and open*, *By
-        owner*, *Needs triage*, *My raised items*, *Resolved and closed*.
+        owner*, *Needs triage*, *Open, no related risk*, *My raised items*,
+        *Resolved and closed*.
       - **Decision**: *Awaiting decision* (the default),
         *Decision log*, *Stalled proposals*, *Changed since last review*.
-      The manifest counts 57, which is these forty-seven plus the ten generated
+      The manifest counts 64, which is these fifty-four plus the ten generated
       **All Items** recovery views, hidden from the modern view bar because
       every list has an authored default.
 - [ ] **My actions** and **My accountabilities** show *your* rows and
       change per signed-in user. Ask a colleague to open both and confirm
       they see theirs, not yours.
-- [ ] List Settings -> Indexed columns matches the 51 the manifest lists.
+- [ ] List Settings -> Indexed columns matches the 60 the manifest lists.
       `LiveRiskTitle` is **not** among them, and that is correct: it is a
       calculated column and cannot be indexed. `GOV_Risk` and
       `GOV_Decision` are the two lists whose `Title` is not
@@ -359,10 +414,13 @@ visible.
       authorisation names a person" and "a request being worked names its
       handler" are fortnightly checks on *Authorised, not yet picked up*
       and *In progress*.
-- [ ] A closed risk with an empty `ClosureNote` still saves, for the same
-      class of reason: `ClosureNote` is rich text and validation formulas
-      refuse multi-line operands. It is a monthly check read on *Closed
-      this quarter*.
+- [ ] A closed or rejected risk with an empty `ClosureNote` still saves,
+      for the same class of reason: `ClosureNote` is rich text and
+      validation formulas refuse multi-line operands. It is a monthly check
+      read on *Closed this quarter*.
+- [ ] A new risk saves as **Proposed** without touching Status, is absent
+      from *Open* and both `RelatedRisk` pickers, and appears on *Proposed*
+      oldest first. Setting it Open moves it to the log.
 - [ ] `LastConfirmed` is **absent from the New form** and present on Edit
       and Display. It fills itself with today at creation, which is the
       baseline the whole cadence counts from.
@@ -372,8 +430,10 @@ visible.
       structural claim the accountability layer makes.
 - [ ] Row washes: an activity set to **Needs review** washes its row in *My
       accountabilities*, an **Extreme** risk washes its row in the risk
-      *Open* view, and a **Critical** issue washes its row in the issue
-      *Open* view. Nothing else does, on any list. One row-level signal per
+      *Open* view, a **Critical** issue washes its row in the issue *Open*
+      view, and an action due before today washes its row in *My actions*.
+      Check yesterday, today and tomorrow: only yesterday gets the action
+      row wash. Nothing else does, on any list. One row-level signal per
       list is the whole budget.
 - [ ] An action filed against a **Closed** workstream still saves, and
       shows the closed phase beside it through the `WorkstreamPhase`
@@ -387,12 +447,13 @@ visible.
       **Involvement** has *State the input*, *How they are
       involved*; **Service Request** has *Describe the request*, *Who
       needs it and when*, *Internal authorisation*, *Handling*,
-      *Escalation*; **Risk** has *Describe the risk*, *Assess the
-      risk*, *Response and owner*, *Review and closure* and, last,
-      *System*; **Action** has *The action*, *Owner and date*,
-      *Progress*; **Issue** has *Describe the issue*, *Severity and
-      owner*, *Progress*, *Resolution and closure*; **Decision**
-      has *The decision*, *Why*.
+      *Escalation*; **Risk** has *Describe the risk* (Cause, Trigger and
+      Effect beside the title), *Assess the risk*, *Response and owner*,
+      *Review and closure* and, last, *System*; **Action** has *The action*,
+      *Owner and date*, *Progress*; **Issue** has *Describe the issue*
+      (Situation, Trigger and Effect), *Severity and owner*, *Progress*,
+      *Resolution and closure*; **Decision** has *The decision*, *Why*,
+      *Endorsement route*.
 - [ ] Both custom permission levels exist under **Site settings -> Site
       permissions -> Permission levels**, and both behave. That test needs
       a second account and is the section below.

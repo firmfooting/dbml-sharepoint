@@ -49,7 +49,7 @@ lists in a validation formula, so each is a report somebody reads.
    equal `DecidedByForum`. A row where one forum did both stages has recorded a
    recommendation it then accepted from itself.
 3. **Decide then perform.** Count `Action` rows per
-   `AuthorisingDecision`. An Approved or Ratified decision with no action
+   `AuthorisingDecision`. An Approved or Endorsed decision with no action
    against it either needed none or was never carried out, and only the second
    case matters.
 

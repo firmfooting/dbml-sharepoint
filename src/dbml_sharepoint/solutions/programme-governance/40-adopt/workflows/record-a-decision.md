@@ -15,14 +15,14 @@ flowchart TD
     A{"Has the forum decided yet?"}
     A -- "Not yet" --> P1["New decision, title as a decision, Status Proposed"]
     P1 --> P2["Set Raised Date, and Activity if there is a standing one"]
-    P2 --> P3["Write Resolution Sought: what the forum is asked to decide"]
+    P2 --> P3["Write Resolution Sought and Detail: the request, context and options"]
     P3 --> P4["Save. Leave Decision Date blank"]
     P4 --> P5["It sits on Awaiting decision until the forum answers"]
     P5 --> B
     A -- "Yes" --> B["Open the row, or start one if the decision was never proposed here"]
-    B --> C["Set Status: Approved, Rejected, Withdrawn, Noted or Ratified"]
+    B --> C["Set Status: Approved, Rejected, Withdrawn, Noted or Endorsed"]
     C --> D["Set Decision Date: when it was made, not when it was typed"]
-    D --> E["Set Decided By Forum, and Recommended By Forum if a committee recommended first"]
+    D --> E["Set Deciding Forum, and Recommended By Forum if a committee recommended first"]
     E --> F["Set Decided By for a call one person made, or leave it blank"]
     F --> G["Write Decision Outcome and Detail, and Endorsement Route if a paper went to stakeholders first"]
     G --> G2{"Does it replace an earlier decision?"}
@@ -51,7 +51,8 @@ flowchart TD
    forum that decided against the route the activity names is a monthly
    report rather than anything the form knows. Blank is the ordinary case.
 5. **They** write **Resolution Sought**: what the forum is being asked to
-   decide, in the words the paper uses.
+   decide, in the words the paper uses. **Detail** is required on proposals
+   too: record the context and options being put to the forum before saving.
 6. **They** leave **Decision Date** blank. The list does not stop you
    typing one, but the only rule is the reverse: a decision that has been
    made needs a date, and it will not accept a future date.
@@ -68,20 +69,21 @@ flowchart TD
    the matter was actually raised; left alone it lands after the decision
    date, which reads as a decision made before it was raised.
 3. **They** set **Status**. *Approved* and *Rejected* mean the forum
-   decided. *Ratified* means somebody decided under delegation and the forum
-   validated it afterwards. *Noted* means no decision was required.
+   decided. *Endorsed* means somebody decided under delegation and the forum
+   endorsed it afterwards. *Noted* means no decision was required.
    *Withdrawn* means it came off the table before anybody decided.
 4. **They** set **Decision Date** to when it was actually made, not when it
    was typed in. Anything but *Proposed* and *Withdrawn* needs one, and the
    save rule says so.
-5. **They** set **Decided By Forum**, and **Recommended By Forum** where a
+5. **They** set **Deciding Forum**, and **Recommended By Forum** where a
    committee recommended before the deciding forum approved.
 6. **They** set **Decided By** to the person who made the call, or leave it
    blank when a group decided.
 7. **They** write **Decision Outcome**, which is what was decided, and
    **Detail**, which is the context, the options considered, and who
-   disagreed. Outcome stays separate from Resolution Sought so an amendment
-   does not overwrite what was asked.
+   disagreed. Detail is required, so a decision typed up after the fact
+   still carries its reasoning. Outcome stays separate from Resolution
+   Sought so an amendment does not overwrite what was asked.
 8. **They** fill **Endorsement Route** where a paper went to stakeholders before
    the forum decided: which stakeholders saw it, in what role, when, and any
    stakeholder that declined or did not respond, with a pointer to where each
