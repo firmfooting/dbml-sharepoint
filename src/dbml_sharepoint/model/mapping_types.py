@@ -102,6 +102,14 @@ class FoldersFromEnum:
 #: does not exist, so no caller can read a folder list without going through
 #: `analysis/folders.py::declared_folders` and supplying the schema's enums.
 type FolderSource = tuple[str, ...] | FoldersFromEnum
+"""A library's declared root folders: the names, or the enum to take them from.
+
+Held as DECLARED rather than resolved, because the mapping loader never sees
+the schema. The deploy creates each folder through the folder endpoint, reads
+it back and refuses a file standing where a folder was declared; a redeploy
+verifies and skips. Library only: the validator refuses the key on a list.
+Read it through `analysis/folders.py::declared_folders`, never directly.
+"""
 
 
 @dataclass(frozen=True)
@@ -138,12 +146,7 @@ class EntityMapping:
     # A previous title without that marker, or present beside the current
     # one, is refused at assessment and at preflight.
     renamed_from: tuple[str, ...] = ()
-    # Root-level folders a document library declares, as DECLARED: a list of
-    # names, or the enum to take them from. The deploy creates each one
-    # through the folder endpoint, reads it back and refuses a file standing
-    # where a folder was declared; a redeploy verifies and skips. Library
-    # only: the validator refuses the key on a list. Read it through
-    # `analysis/folders.py::declared_folders`, never directly.
+    # Unresolved: read it through `analysis/folders.py::declared_folders`.
     folder_source: FolderSource = ()
     title: str | None = None
     internal_name: str | None = None
