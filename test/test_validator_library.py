@@ -260,6 +260,52 @@ def test_folders_from_an_enum_no_column_uses_are_flagged(tmp_path: Path) -> None
     assert "division" in f.message, "the message must name what the columns DO carry"
 
 
+def test_a_multichoice_column_of_the_enum_counts_as_using_it(
+    tmp_path: Path,
+) -> None:
+    """`Division division[]` is a MultiChoice of the same enum.
+
+    Compared raw, `division[]` never equals `division`, so a library that
+    files by a multi-value column got told its folders came from an enum it
+    does not use, which is the opposite of true.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division[]")
+        ),
+        mapping="""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: division}
+        """,
+    )
+    none_of(
+        validate_against_mapping(schema, bundle),
+        FindingCode.FOLDER_ENUM_NOT_A_COLUMN_TYPE,
+    )
+
+
+def test_a_list_declaring_folders_from_an_unknown_enum_is_told_both(
+    tmp_path: Path,
+) -> None:
+    """Two independent errors, reported together.
+
+    Whether a list may hold folders at all does not depend on how many names
+    resolved. Reporting only the spelling meant the author fixed it, rebuilt,
+    and met a second error that had been true all along.
+    """
+    findings = _folders_from_enum(
+        tmp_path, "List", 100, '  "Clinical services"', named="divison",
+    )
+    only(findings, FindingCode.FOLDER_ENUM_UNKNOWN)
+    only(findings, FindingCode.FOLDERS_ON_A_LIST)
+
+
 def test_folders_from_the_entitys_own_enum_are_not_flagged(tmp_path: Path) -> None:
     """The ordinary shape stays quiet, or the warning is noise."""
     none_of(
