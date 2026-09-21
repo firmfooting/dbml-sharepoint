@@ -13,6 +13,7 @@ from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.folders import UnknownFolderEnumError, declared_folders
 from dbml_sharepoint.analysis.limits import LIST_VIEW_THRESHOLD
+from dbml_sharepoint.analysis.typemap import element_type
 from dbml_sharepoint.model.mapping_types import (
     DemoItem,
     EntityMapping,
@@ -45,7 +46,10 @@ def check(vc: ValidationContext) -> list[Finding]:
             # Unresolved, which is not the same answer as "declares none".
             folders = None
         findings += _folder_enum_is_this_entity_s(vc, entity_name, entity)
-        findings += _folders(entity_name, entity, folders or ())
+        findings += _folders(
+            entity_name, entity, folders or (),
+            declared=bool(entity.folder_source),
+        )
         for view in vc.bundle.mapping.views.get(entity_name, []):
             findings += _view_scope(entity_name, entity, view)
         for row in vc.bundle.mapping.demo_items.get(entity_name, []):
@@ -127,7 +131,8 @@ def _folder_enum_is_this_entity_s(
     table = vc.tables_by_name.get(entity_name)
     if table is None:
         return []
-    if any(column.type == source.enum for column in table.columns):
+    # `division[]` is a MultiChoice of the same enum, so compare elements.
+    if any(element_type(column.type) == source.enum for column in table.columns):
         return []
     return [Finding(
         FindingCode.FOLDER_ENUM_NOT_A_COLUMN_TYPE,
@@ -135,7 +140,7 @@ def _folder_enum_is_this_entity_s(
         f"which no column on {entity_name} uses. That is legal, but it is "
         f"also what naming the wrong enum looks like: the folders resolve "
         f"and every one of them is wrong. Columns on {entity_name} carry: "
-        f"{', '.join(sorted({c.type for c in table.columns})) or 'nothing'}.",
+        f"{', '.join(sorted({element_type(c.type) for c in table.columns})) or 'nothing'}.",
         location=Location(Section.ENTITIES, entity=entity_name, sub="folders"),
     )]
 
@@ -247,6 +252,7 @@ def _view_scope(entity_name: str, entity: EntityMapping, view: ViewDef) -> list[
 
 def _folders(
     entity_name: str, entity: EntityMapping, folders: tuple[str, ...],
+    *, declared: bool,
 ) -> list[Finding]:
     """Declared folders: library only, legal names, no duplicates.
 
@@ -261,10 +267,11 @@ def _folders(
     the site as one URL segment under the library root. The name rules are
     Microsoft's (analysis/file_names.py).
     """
-    if not folders:
-        return []
     at = Location(Section.ENTITIES, entity=entity_name, sub="folders")
-    if not entity.is_library:
+    # Asked before the empty return: whether a list may hold folders at all
+    # does not depend on how many names resolved, and an unresolved enum
+    # used to hide it until the author had fixed the spelling and rebuilt.
+    if declared and not entity.is_library:
         return [Finding(
             FindingCode.FOLDERS_ON_A_LIST,
             f"entities[{entity_name}].folders: {entity_name} is a {entity.kind}, "
