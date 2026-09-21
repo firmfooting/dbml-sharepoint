@@ -13,8 +13,17 @@ Nothing here imports a check, so a generator can read it.
 """
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 
-from dbml_sharepoint.model.mapping_types import FoldersFromEnum, FolderSource
+from dbml_sharepoint.model.mapping_types import (
+    FoldersFromEnum,
+    FolderSource,
+    ListPermissionPolicy,
+    PermissionsConfig,
+    Principal,
+    RoleAssignment,
+)
+from dbml_sharepoint.model.prefix import expand_member
 
 
 class UnknownFolderEnumError(LookupError):
@@ -47,3 +56,53 @@ def declared_folders(
             raise UnknownFolderEnumError(source.enum)
         return tuple(enum_members[source.enum])
     return source
+
+
+def _policy_for_folder(
+    policy: ListPermissionPolicy, folder: str,
+) -> ListPermissionPolicy:
+    """`policy` with `{member}` expanded to one folder's name.
+
+    Both the principal and the level take the token. A per-division group is
+    the obvious use of the first; the second is there because a family that
+    wanted a level per division would otherwise have to write the policy out
+    once per folder, which is the duplication this whole shape removes.
+    """
+    return replace(policy, assignments=[
+        RoleAssignment(
+            principal=Principal(
+                kind=a.principal.kind,
+                name=(
+                    None if a.principal.name is None
+                    else expand_member(a.principal.name, folder)
+                ),
+            ),
+            level=expand_member(a.level, folder),
+        )
+        for a in policy.assignments
+    ])
+
+
+def folder_policies(
+    entity_name: str,
+    source: FolderSource,
+    perms: PermissionsConfig | None,
+    enum_members: Mapping[str, Sequence[str]],
+) -> tuple[tuple[str, ListPermissionPolicy], ...]:
+    """(folder name, policy) for every folder `entity_name` declares.
+
+    `list_permissions.folders` is keyed by entity and never by folder, so
+    the folders this returns are exactly `declared_folders`' answer and the
+    two cannot drift. An entity with a policy and no folders gets an empty
+    tuple here; that the block then does nothing is the validator's finding
+    (`folder_permissions_without_folders`), not a silence to paper over.
+    """
+    if perms is None:
+        return ()
+    policy = perms.folder_policies.get(entity_name)
+    if policy is None:
+        return ()
+    return tuple(
+        (folder, _policy_for_folder(policy, folder))
+        for folder in declared_folders(source, enum_members)
+    )
