@@ -676,6 +676,15 @@ FINDING_HELP: dict[FindingCode, str] = {
         "`_vti_`, starts with `~$`, U+309B or U+1027, or is a reserved name. "
         "The message names the rule."
     ),
+    FindingCode.FOLDER_ENUM_NOT_A_COLUMN_TYPE: (
+        "A library's `folders: {from_enum: <name>}` names an enum that no "
+        "column on that entity uses. That is legal, and folders keyed by "
+        "something the library does not store are a reasonable design, but "
+        "it is also what a name that matches a DIFFERENT enum looks like: "
+        "the build finds the enum, the folders resolve, and every folder is "
+        "the wrong one. Check the enum against the column the folders are "
+        "meant to follow, usually the Choice column a file's row carries."
+    ),
     FindingCode.FOLDER_ENUM_UNKNOWN: (
         "A library's `folders: {from_enum: <name>}` names an enum the DBML "
         "does not declare. The folders are the enum's members, so there is "

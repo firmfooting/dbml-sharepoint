@@ -13,7 +13,12 @@ from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.folders import UnknownFolderEnumError, declared_folders
 from dbml_sharepoint.analysis.limits import LIST_VIEW_THRESHOLD
-from dbml_sharepoint.model.mapping_types import DemoItem, EntityMapping, ViewDef
+from dbml_sharepoint.model.mapping_types import (
+    DemoItem,
+    EntityMapping,
+    FoldersFromEnum,
+    ViewDef,
+)
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -37,11 +42,9 @@ def check(vc: ValidationContext) -> list[Finding]:
                 f"{', '.join(sorted(vc.enum_members_by_name)) or 'none'}.",
                 location=at,
             ))
-            # None, not (): the folders are UNRESOLVED, which is not the same
-            # answer as "this library declares none". Reporting them as none
-            # would make every demo row's folder undeclared and bury the one
-            # finding that can be acted on under a row-per-file cascade.
+            # Unresolved, which is not the same answer as "declares none".
             folders = None
+        findings += _folder_enum_is_this_entity_s(vc, entity_name, entity)
         findings += _folders(entity_name, entity, folders or ())
         for view in vc.bundle.mapping.views.get(entity_name, []):
             findings += _view_scope(entity_name, entity, view)
@@ -101,6 +104,42 @@ def _folder_permissions(vc: ValidationContext) -> list[Finding]:
     return findings
 
 
+def _folder_enum_is_this_entity_s(
+    vc: ValidationContext, entity_name: str, entity: EntityMapping,
+) -> list[Finding]:
+    """`folders.from_enum` usually names an enum this entity has a column of.
+
+    A schema holds many enums and `from_enum` accepts any of them, so a name
+    that matches a DIFFERENT enum resolves, passes every rule, and creates a
+    full set of the wrong folders. Nothing downstream can see it: both
+    declarations are individually valid, which is the same shape as the drift
+    this spelling exists to remove.
+
+    A warning rather than an error, because folders keyed by something the
+    library does not store are a legitimate design and an enforced rule must
+    not be stronger than what a reference implementation has to satisfy.
+    """
+    source = entity.folder_source
+    if not isinstance(source, FoldersFromEnum):
+        return []
+    if source.enum not in vc.enum_members_by_name:
+        return []  # folder_enum_unknown owns that sentence
+    table = vc.tables_by_name.get(entity_name)
+    if table is None:
+        return []
+    if any(column.type == source.enum for column in table.columns):
+        return []
+    return [Finding(
+        FindingCode.FOLDER_ENUM_NOT_A_COLUMN_TYPE,
+        f"entities[{entity_name}].folders: from_enum names {source.enum!r}, "
+        f"which no column on {entity_name} uses. That is legal, but it is "
+        f"also what naming the wrong enum looks like: the folders resolve "
+        f"and every one of them is wrong. Columns on {entity_name} carry: "
+        f"{', '.join(sorted({c.type for c in table.columns})) or 'nothing'}.",
+        location=Location(Section.ENTITIES, entity=entity_name, sub="folders"),
+    )]
+
+
 def _demo_file(
     entity_name: str, entity: EntityMapping, row: DemoItem,
     folders: tuple[str, ...] | None,
@@ -152,8 +191,7 @@ def _demo_file(
             f"{ctx}: {row.file.name!r} cannot be a file name: {reason}.",
             location=at,
         ))
-    # `folders is None` means the enum reference could not be resolved, so
-    # membership is unanswerable rather than false.
+    # None means unresolved, so membership is unanswerable rather than false.
     if (
         row.file.folder is not None
         and folders is not None

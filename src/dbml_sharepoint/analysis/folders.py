@@ -26,7 +26,7 @@ from dbml_sharepoint.model.mapping_types import (
 from dbml_sharepoint.model.prefix import expand_member
 
 
-class UnknownFolderEnumError(LookupError):
+class UnknownFolderEnumError(LookupError, ValueError):
     """`folders.from_enum` names an enum the schema does not declare.
 
     Raised rather than answered with an empty tuple: a library that silently
@@ -34,6 +34,11 @@ class UnknownFolderEnumError(LookupError):
     operator filing into a root that has none of the folders the mapping
     asked for. The validator reports this as `folder_enum_unknown` before a
     generator ever runs, so reaching this exception is a defect.
+
+    Both bases on purpose. `LookupError` is what it is; `ValueError` is what
+    `pipeline.execute_report` catches, and escaping that handler skipped the
+    path that clears a previously generated pack, leaving a stale report
+    looking current behind an unhandled traceback.
     """
 
     def __init__(self, enum: str) -> None:

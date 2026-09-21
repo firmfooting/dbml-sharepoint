@@ -217,8 +217,12 @@ entities:
     folders: {from_enum: division}
 ```
 
-The folders are then the enum's members, in declaration order, and editing
-the enum moves the folders with it. Written out twice they drift silently:
+The folders are then the enum's members, in declaration order, so an edit to
+the enum reaches the folder list with it. On a site that is already deployed
+that is not a move: the folder phase creates a declared folder it cannot find
+and never renames or removes one, so renaming a member adds the new folder
+and leaves the old one and its files where they are. Move the content and
+delete the old folder by hand. Written out twice they drift silently:
 the shipped legislative compliance register declared four divisions in its
 DBML and the same four in its `folders`, an edit to the enum left the list
 behind, and the deploy created four folders no `Division` value could match.
