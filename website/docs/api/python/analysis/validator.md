@@ -57,3 +57,9 @@ Run every validation stage: core schema rules, mapping cross-checks,
 the cross-site/extension contract, then the active extension's
 project-specific rules.
 
+`orphan_enum` is the one finding the union has to reconsider. It is a
+schema-only rule and cannot see a mapping, but a mapping can be the only
+thing that uses an enum: `folders: {from_enum: <name>}` turns its members
+into a library's folders without any column naming it. Reported anyway,
+the remedy it invites is deleting an enum the deploy needs.
+

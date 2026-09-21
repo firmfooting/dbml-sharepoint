@@ -11,7 +11,7 @@ from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN, ambiguous_members
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import MAX_INTERNAL_NAME
 from dbml_sharepoint.extension import DeploymentExtension
-from dbml_sharepoint.model.mapping_types import MappingBundle
+from dbml_sharepoint.model.mapping_types import FoldersFromEnum, MappingBundle
 from dbml_sharepoint.model.parser import Column, Schema
 
 # Hard-error reserved names. Note: 'Title' is special-cased (PATCH existing
@@ -424,10 +424,40 @@ def validate_all(
 ) -> list[Finding]:
     """Run every validation stage: core schema rules, mapping cross-checks,
     the cross-site/extension contract, then the active extension's
-    project-specific rules."""
+    project-specific rules.
+
+    `orphan_enum` is the one finding the union has to reconsider. It is a
+    schema-only rule and cannot see a mapping, but a mapping can be the only
+    thing that uses an enum: `folders: {from_enum: <name>}` turns its members
+    into a library's folders without any column naming it. Reported anyway,
+    the remedy it invites is deleting an enum the deploy needs.
+    """
+    mapped = _enums_used_by_mapping(bundle)
+    core = [
+        f for f in validate(schema)
+        if not (f.code is FindingCode.ORPHAN_ENUM and _names_a_mapped_enum(f, mapped))
+    ]
     return (
-        validate(schema)
+        core
         + validate_against_mapping(schema, bundle)
         + _validate_cross_site_expansion(schema, bundle, extension)
         + extension.extra_validators(bundle, schema)
     )
+
+
+def _enums_used_by_mapping(bundle: MappingBundle) -> set[str]:
+    """Every enum the MAPPING names, which no column need mention."""
+    return {
+        entity.folder_source.enum
+        for entity in bundle.mapping.entities.values()
+        if isinstance(entity.folder_source, FoldersFromEnum)
+    }
+
+
+def _names_a_mapped_enum(finding: Finding, mapped: set[str]) -> bool:
+    """Whether an `orphan_enum` finding is about one of `mapped`.
+
+    Matched on the location's entity, which for an enum finding IS the enum
+    name, rather than by re-parsing the sentence.
+    """
+    return finding.location is not None and finding.location.entity in mapped

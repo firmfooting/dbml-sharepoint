@@ -19,7 +19,8 @@ from _packs import pack
 
 from dbml_sharepoint.analysis.checks._structure import TEMPLATE_BY_KIND
 from dbml_sharepoint.analysis.findings import Finding, FindingCode
-from dbml_sharepoint.analysis.validator import validate_against_mapping
+from dbml_sharepoint.analysis.validator import validate_against_mapping, validate_all
+from dbml_sharepoint.extension import NullExtension
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.mapping_types import (
     ENTITY_KINDS,
@@ -304,6 +305,46 @@ def test_a_list_declaring_folders_from_an_unknown_enum_is_told_both(
     )
     only(findings, FindingCode.FOLDER_ENUM_UNKNOWN)
     only(findings, FindingCode.FOLDERS_ON_A_LIST)
+
+
+def test_an_enum_used_only_for_folders_is_not_called_an_orphan(
+    tmp_path: Path,
+) -> None:
+    """The mapping can be the only thing that uses an enum.
+
+    `orphan_enum` is a schema-only rule and cannot see a mapping, but
+    `folders: {from_enum: <name>}` turns an enum's members into a library's
+    folders without any column naming it. The remedy the finding invites is
+    deleting the enum, which would take the deploy's folders with it.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum shelf {\n  "Ground floor"\n}\n'
+            + table("Docs", ID_PK, TITLE)
+        ),
+        mapping="""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: shelf}
+        """,
+    )
+    none_of(validate_all(schema, bundle, NullExtension()), FindingCode.ORPHAN_ENUM)
+    # Still reported when nothing uses it at all, or the rule is gone.
+    unused = tmp_path / "unused"
+    unused.mkdir()
+    schema2, bundle2 = pack(
+        unused,
+        dbml=('Enum shelf {\n  "Ground floor"\n}\n' + table("Docs", ID_PK, TITLE)),
+        mapping="""
+            entities:
+              Docs: { kind: DocumentLibrary, base_template: 101, site_role: default }
+        """,
+    )
+    only(validate_all(schema2, bundle2, NullExtension()), FindingCode.ORPHAN_ENUM)
 
 
 def test_folders_from_the_entitys_own_enum_are_not_flagged(tmp_path: Path) -> None:
