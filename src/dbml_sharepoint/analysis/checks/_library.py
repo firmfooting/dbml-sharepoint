@@ -37,8 +37,12 @@ def check(vc: ValidationContext) -> list[Finding]:
                 f"{', '.join(sorted(vc.enum_members_by_name)) or 'none'}.",
                 location=at,
             ))
-            folders = ()
-        findings += _folders(entity_name, entity, folders)
+            # None, not (): the folders are UNRESOLVED, which is not the same
+            # answer as "this library declares none". Reporting them as none
+            # would make every demo row's folder undeclared and bury the one
+            # finding that can be acted on under a row-per-file cascade.
+            folders = None
+        findings += _folders(entity_name, entity, folders or ())
         for view in vc.bundle.mapping.views.get(entity_name, []):
             findings += _view_scope(entity_name, entity, view)
         for row in vc.bundle.mapping.demo_items.get(entity_name, []):
@@ -99,7 +103,7 @@ def _folder_permissions(vc: ValidationContext) -> list[Finding]:
 
 def _demo_file(
     entity_name: str, entity: EntityMapping, row: DemoItem,
-    folders: tuple[str, ...],
+    folders: tuple[str, ...] | None,
 ) -> list[Finding]:
     """`demo_items[].file`: required on a library, refused on a list, and a
     legal, marked name filed in a declared folder.
@@ -148,7 +152,13 @@ def _demo_file(
             f"{ctx}: {row.file.name!r} cannot be a file name: {reason}.",
             location=at,
         ))
-    if row.file.folder is not None and row.file.folder not in folders:
+    # `folders is None` means the enum reference could not be resolved, so
+    # membership is unanswerable rather than false.
+    if (
+        row.file.folder is not None
+        and folders is not None
+        and row.file.folder not in folders
+    ):
         findings.append(Finding(
             FindingCode.DEMO_FILE_FOLDER_UNDECLARED,
             f"{ctx}: file.folder {row.file.folder!r} is not one of "

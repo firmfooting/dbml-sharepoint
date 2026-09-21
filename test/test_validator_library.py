@@ -228,6 +228,44 @@ def test_folders_from_an_unknown_enum_are_refused(tmp_path: Path) -> None:
     assert "division" in f.message, "the message must name the enums that DO exist"
 
 
+def test_an_unresolved_folder_enum_does_not_condemn_every_demo_file(
+    tmp_path: Path,
+) -> None:
+    """One actionable finding, not one per row.
+
+    The folders are unresolved, which is not the same answer as "this library
+    declares none". Treating the failure as an empty declaration made every
+    demo row report a folder the library does not declare, so the finding an
+    author can act on arrived buried under a cascade caused by it.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping="""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: divison}
+            demo_items:
+              Docs:
+                - key: d1
+                  values: { Division: "Clinical services" }
+                  file: { name: "[DEMO] Privacy.txt", folder: "Clinical services" }
+                - key: d2
+                  values: { Division: "Clinical services" }
+                  file: { name: "[DEMO] Records.txt", folder: "Clinical services" }
+        """,
+    )
+    findings = validate_against_mapping(schema, bundle)
+    only(findings, FindingCode.FOLDER_ENUM_UNKNOWN)
+    none_of(findings, FindingCode.DEMO_FILE_FOLDER_UNDECLARED)
+
+
 def test_an_enum_member_that_cannot_be_a_folder_is_refused(tmp_path: Path) -> None:
     """The folder name rules apply to the resolved names. An enum is free
     to carry a `/` where a folder name is not, and the build has to say so

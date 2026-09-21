@@ -9,9 +9,10 @@ paste the deploy script, then verify the resulting library.
 
 - [ ] Confirm that **Legislative Compliance** and URL name
       `LegislativeCompliance` are available.
-- [ ] Customise the DBML `division` enum and `entities.Document.folders` in the
-      mapping together. Update every `demo_items.Document` entry's `file.folder`
-      and `values.Division` to the same divisions before building with `--seed`.
+- [ ] Customise the DBML `division` enum. The library's folders are its
+      members, so the mapping needs no second list. Update every
+      `demo_items.Document` entry's `file.folder` and `values.Division` to the
+      same divisions before building with `--seed`.
 - [ ] Replace the three sample values in the DBML `oversight_committee` enum
       with the organisation's committees. The column is optional.
 - [ ] Identify the platform owners, division executives and business owners.
