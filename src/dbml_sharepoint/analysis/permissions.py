@@ -276,9 +276,17 @@ def requires_manage_permissions(mapping: Mapping, table_names: Iterable[str]) ->
     perms = mapping.permissions
     if perms is None:
         return False
-    if perms.levels or perms.groups or perms.group_sources or perms.folder_policies:
+    if perms.levels or perms.groups or perms.group_sources:
         return True
-    return any(mapping.permissions_for_entity(name) is not None for name in table_names)
+    # A folder policy is keyed by entity, so it is counted through
+    # `table_names` like a per-list policy and not as a mapping-wide fact. A
+    # policy on a library this build does not deploy must not make the build
+    # demand a right it never exercises.
+    return any(
+        mapping.permissions_for_entity(name) is not None
+        or name in perms.folder_policies
+        for name in table_names
+    )
 
 
 def lists_granting_group(
@@ -305,11 +313,21 @@ def lists_granting_group(
     `test_the_reader_group_is_granted_read_on_every_policy_block`; nothing
     constrains a custom one.
     """
+    perms = mapping.permissions
     granted: list[str] = []
     excluded: list[str] = []
     for name in table_names:
         policy = mapping.permissions_for_entity(name)
-        assignments = policy.assignments if policy is not None else []
+        assignments = list(policy.assignments if policy is not None else [])
+        # The entity's folder policy counts too. This function reports what
+        # the deploy will actually bind, and the deploy binds a folder
+        # assignment for this entity just as it binds a list one; a group
+        # granted only there was reported as excluded while the validator's
+        # own union called it granted. Principals are compared unexpanded,
+        # which is right: a `{member}` principal names a per-member group and
+        # is not the literal group being asked about.
+        if perms is not None and name in perms.folder_policies:
+            assignments += perms.folder_policies[name].assignments
         if any(
             a.principal.kind == "group" and a.principal.name == group_name
             for a in assignments

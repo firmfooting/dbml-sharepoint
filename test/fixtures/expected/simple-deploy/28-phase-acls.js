@@ -414,6 +414,22 @@
           }
         }
       }
+
+      // NOT verified by re-reading the bindings here, deliberately. The
+      // writes above answered HTTP 200, which is evidence the request was
+      // accepted rather than that the scope now holds them, and nothing
+      // downstream checks: verify.js reads lists, columns and views and
+      // never role assignments. A read-back belongs here, but it cannot be
+      // added on the assumption that this surface answers a write
+      // immediately. The settle loop above exists because it does NOT:
+      // MEASURED 2026-09-09, a library's HasUniqueRoleAssignments read false
+      // on the first read after breakroleinheritance and true on the second.
+      // A single post-write enumeration would turn that same lag into an
+      // abort on a run that had in fact succeeded.
+      // test/manual/library-access-probe.js already attaches a role
+      // assignment and reads it back, but not after a batched ChangeSet and
+      // not with the lag measured, which is what a settle loop here would
+      // have to be sized from. Measure that before adding one.
     };
 
     // Folder policies may name a list whose own policy is absent, so the
@@ -443,7 +459,16 @@
         // untouched. A folder this bundle declares is not such a scope: it is
         // one this phase is about to write, so it is excluded by
         // `surveyDescendants` rather than by a second rule here.
-        const before = await surveyDescendants(listTitle, wantedFolders);
+        // The survey pages every item in the list, so it runs only when its
+        // answer is read: exact mode needs the descendant guard, and a folder
+        // policy needs the item id it resolves. A configured-mode list with no
+        // folder policy would otherwise enumerate a populated production
+        // library for a result nothing uses, and can meet the list view
+        // threshold doing it. This is the condition the pre-folder code met
+        // implicitly by surveying only in exact mode.
+        const before = (exact || folderAssignments.length > 0)
+          ? await surveyDescendants(listTitle, wantedFolders)
+          : { folderIds: new Map(), undeclared: [] };
         if (exact) assertNoUndeclaredScopes(listTitle, before.undeclared);
         if (la) {
           await reconcileScope({

@@ -474,6 +474,7 @@ A SharePoint site group to create at the site.
 class GroupsFromEnum:
     enum: str
     template: SiteGroup
+    after: int | None = None
 ```
 
 `groups: [{from_enum: division, name: '{prefix} {member} Division'}]`:

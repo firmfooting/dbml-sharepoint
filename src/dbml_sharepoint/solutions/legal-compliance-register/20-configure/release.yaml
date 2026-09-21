@@ -1,7 +1,7 @@
-release: "2.1.4"
-date: "2026-09-15"
+release: "2.2.0"
+date: "2026-09-22"
 deployer_version: "dbml-sharepoint/0.6.0"
-schema_version: "2.1.4"
+schema_version: "2.2.0"
 notes: |
   Breaking redesign: one Document library replaces the Topic list and SAQ library.
   SAQs are vendor downloads; a new SAQ for the same topic has a new period.
@@ -14,3 +14,6 @@ notes: |
   Name the library Legislative Compliance at LegislativeCompliance.
   Retain native file icons and add Folder View. Preserve cancelled review history.
   Add optional Oversight Committee choices and preserve cancelled portal-recording history.
+  Take the library's folders from the division enum instead of a second list.
+  Create one group per division, owned by the coordinators, and give each
+  division folder its own permissions so a division edits only its own files.

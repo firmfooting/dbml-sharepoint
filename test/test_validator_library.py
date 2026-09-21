@@ -491,6 +491,8 @@ def _folder_policy(
     entity: str = "Docs",
     group_name: str = "{member} Editors",
     from_enum: str = "division",
+    folder_level: str = "Folder Editor",
+    folder_principal: str | None = None,
 ) -> list[Finding]:
     """A library whose folders carry their own ACL, and one group per member
     to hold it. The two halves are declared together because that is the only
@@ -533,8 +535,8 @@ def _folder_policy(
                   break_inheritance: true
                   reconcile: exact
                   assignments:
-                    - principal: {{ kind: group, name: "{group_name}" }}
-                      level: "Folder Editor"
+                    - principal: {{ kind: group, name: "{folder_principal or group_name}" }}
+                      level: "{folder_level}"
         """,
     )
     return validate_against_mapping(schema, bundle)
@@ -552,6 +554,110 @@ def test_a_group_per_enum_member_securing_its_own_folder_is_clean(
     none_of(findings, FindingCode.FOLDER_PERMISSIONS_WITHOUT_FOLDERS)
     none_of(findings, FindingCode.UNKNOWN_PRINCIPAL_GROUP)
     assert by_severity(findings, "error") == [], by_severity(findings, "error")
+
+
+def test_a_folder_policy_level_that_does_not_exist_is_refused(
+    tmp_path: Path,
+) -> None:
+    """A folder policy is a policy block and gets a policy block's checks.
+
+    Folder policies were resolved and emitted but never handed to the
+    assignment checks, so a misspelled level passed the build and failed at
+    the ACL phase, after the list, column and view phases had already written
+    to the site. The whole point of this tool is that a name that cannot
+    resolve fails before anything is touched.
+    """
+    findings = [
+        f for f in _folder_policy(tmp_path, folder_level="Folder Edtior")
+        if f.code == FindingCode.UNKNOWN_PERMISSION_LEVEL
+    ]
+    assert findings, "a folder policy's level must be judged like any other"
+    assert all("Folder Edtior" in f.message for f in findings)
+    # One per folder, each naming its own: the principal resolves to a
+    # different group per member, so no single folder speaks for the rest.
+    assert {"Clinical services", "Corporate services"} == {
+        folder for folder in ("Clinical services", "Corporate services")
+        for f in findings if folder in f.message
+    }
+
+
+def test_a_folder_policy_principal_that_does_not_exist_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The same for the principal, judged AFTER expansion.
+
+    The name is checked per folder, so a principal that resolves for one
+    member and not another is caught rather than averaged away.
+    """
+    findings = _folder_policy(tmp_path, folder_principal="{member} Editers")
+    codes = [f.code for f in findings]
+    assert FindingCode.UNKNOWN_PRINCIPAL_GROUP in codes, codes
+
+
+def test_a_member_that_sanitises_to_nothing_is_refused(tmp_path: Path) -> None:
+    """`{member_safe}` can produce an empty name, which SharePoint refuses.
+
+    The measured server error refuses an empty name in the same sentence as
+    the character list. A member built only from refused characters leaves
+    nothing behind, so the name passed the character test by having no
+    characters at all.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "@"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping="""
+            entities:
+              Docs: { kind: List, base_template: 100, site_role: default }
+
+            groups:
+              - from_enum: division
+                name: "{member_safe}"
+                description: "Editors."
+                owner_group: "Site Owners"
+        """,
+    )
+    f = only(validate_against_mapping(schema, bundle), FindingCode.GROUP_NAME_INVALID)
+    assert "empty" in f.message
+
+
+def test_one_unknown_enum_does_not_hide_the_groups_that_resolved(
+    tmp_path: Path,
+) -> None:
+    """A misspelled source reports itself and nothing else stops being judged.
+
+    The old fallback dropped every generated group as soon as one source was
+    unknown, so the duplicate, name, owner, provenance and rename checks
+    silently stopped covering groups that had resolved perfectly well.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical, services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping="""
+            entities:
+              Docs: { kind: List, base_template: 100, site_role: default }
+
+            groups:
+              - from_enum: division
+                name: "{member} Editors"
+                description: "Editors."
+                owner_group: "Site Owners"
+              - from_enum: divison
+                name: "{member} Readers"
+                description: "Readers."
+                owner_group: "Site Owners"
+        """,
+    )
+    findings = validate_against_mapping(schema, bundle)
+    only(findings, FindingCode.GROUP_ENUM_UNKNOWN)
+    # The resolvable source still gets judged: its member carries a comma.
+    f = only(findings, FindingCode.GROUP_NAME_INVALID)
+    assert "','" in f.message
 
 
 def test_groups_from_an_unknown_enum_are_refused(tmp_path: Path) -> None:

@@ -197,6 +197,26 @@ def test_site_group_empty_gate_requires_boolean(tmp_path: Path) -> None:
     )
 
 
+def test_a_group_source_with_no_enum_named_is_refused(tmp_path: Path) -> None:
+    """`from_enum:` with nothing after it is a mistake, not a literal group.
+
+    Read by presence rather than truthiness. Treating an explicit null as an
+    absent key deployed the template verbatim, which put a literal
+    `{member}` in a live group name while the folder policy naming that group
+    expanded it to something else and then could not resolve its principal.
+    """
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        groups:
+          - from_enum:
+            name: "{member} Editors"
+    """), name="mapping.yaml")
+
+    _refuses(
+        tmp_path / "mapping.yaml", MappingShapeError,
+        "from_enum must be a string",
+    )
+
+
 def test_a_group_can_declare_itself_the_enterprise_reader_target(
     tmp_path: Path,
 ) -> None:

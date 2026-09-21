@@ -58,10 +58,15 @@ def declared_folders(
     return source
 
 
-def _policy_for_folder(
+def policy_for_folder(
     policy: ListPermissionPolicy, folder: str,
 ) -> ListPermissionPolicy:
     """`policy` with `{member}` expanded to one folder's name.
+
+    Public because the validator expands the same policy the generator does:
+    a level or principal that only exists after expansion has to be judged
+    after expansion, and judging it against a second implementation would be
+    the drift this module exists to remove.
 
     Both the principal and the level take the token. A per-division group is
     the obvious use of the first; the second is there because a family that
@@ -103,6 +108,6 @@ def folder_policies(
     if policy is None:
         return ()
     return tuple(
-        (folder, _policy_for_folder(policy, folder))
+        (folder, policy_for_folder(policy, folder))
         for folder in declared_folders(source, enum_members)
     )

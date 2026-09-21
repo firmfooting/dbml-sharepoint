@@ -1050,6 +1050,11 @@ def build_schema_json(
     permission_levels_out: list[dict[str, Any]] = []
     groups_out: list[dict[str, Any]] = []
     list_assignments_out: list[dict[str, Any]] = []
+    # Initialised beside the others rather than inside the block below.
+    # `Mapping.permissions` is optional, so a caller composing a Mapping
+    # through the public API can leave it None, and the schema dict reads
+    # this key unconditionally.
+    folder_assignments_out: list[dict[str, Any]] = []
 
     mapping_perms = bundle.mapping.permissions
     if mapping_perms is not None:
@@ -1130,7 +1135,7 @@ def build_schema_json(
                 "assignments": assignments_out,
             })
 
-        folder_assignments_out = _folder_assignments(
+        folder_assignments_out += _folder_assignments(
             bundle, plan.list_creation_order, site_role, enum_members,
         )
 

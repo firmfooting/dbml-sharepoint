@@ -566,6 +566,14 @@ class GroupsFromEnum:
 
     enum: str
     template: SiteGroup
+    #: How many literal groups were declared before this source, so the
+    #: generated groups can be spliced back into declaration order. The
+    #: deploy creates groups in the order it is given them and resolves a
+    #: custom `owner_group` right after creating the group that names it, so
+    #: an author who declares the owner first has to keep that position.
+    #: None means "after every literal group", which is what a caller
+    #: composing this type without a loader gets.
+    after: int | None = None
 
 
 @dataclass(frozen=True)

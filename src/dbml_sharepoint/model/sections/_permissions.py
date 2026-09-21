@@ -104,12 +104,16 @@ def read(sc: SectionContext) -> dict[str, Any]:
     group_sources: list[GroupsFromEnum] = []
     for i, grp in enumerate(raw_groups):
         group = _parse_group(grp, f"groups[{i}]", prefix, previous_prefixes)
-        raw_enum = grp.get("from_enum")
-        if raw_enum is None:
+        # Presence, not truthiness: `from_enum:` with no value is a mistake
+        # worth reporting, and `.get()` would read it as an absent key and
+        # deploy the template verbatim, leaving `{member}` in a live group
+        # name while the folder policy naming that group expanded it.
+        if "from_enum" not in grp:
             groups.append(group)
             continue
         group_sources.append(GroupsFromEnum(
             enum=require_str(grp, "from_enum", f"groups[{i}]"), template=group,
+            after=len(groups),
         ))
 
     default_policy: ListPermissionPolicy | None = None

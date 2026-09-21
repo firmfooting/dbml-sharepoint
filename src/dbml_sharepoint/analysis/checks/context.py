@@ -14,7 +14,7 @@ tested one at a time.
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
-from dbml_sharepoint.analysis.groups import UnknownGroupEnumError, declared_groups
+from dbml_sharepoint.analysis.groups import resolvable_groups
 from dbml_sharepoint.analysis.list_description import family_for
 from dbml_sharepoint.analysis.lookups import lookup_display_columns, lookup_target_entities
 from dbml_sharepoint.analysis.reporting.plan import (
@@ -180,10 +180,12 @@ class ValidationContext:
         )
         enum_members_by_name = {enum.name: tuple(enum.members) for enum in schema.enums}
         perms = bundle.mapping.permissions
-        try:
-            site_groups = declared_groups(perms, enum_members_by_name)
-        except UnknownGroupEnumError:
-            site_groups = tuple(perms.groups) if perms is not None else ()
+        # Resolves every source it can and leaves out only the ones naming an
+        # enum that does not exist, which `group_enum_unknown` reports on its
+        # own. The old fallback dropped every generated group as soon as one
+        # source was misspelled, so the checks below silently stopped judging
+        # groups that had resolved.
+        site_groups = resolvable_groups(perms, enum_members_by_name)
         report_plans_by_role: dict[str, dict[str, ListPlan] | None] = {}
         for role in sorted({e.site_role for e in bundle.mapping.entities.values()}):
             try:

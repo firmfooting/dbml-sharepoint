@@ -54,11 +54,24 @@ the SAQ being answered; two files sharing a topic need not share an issue.
 ## Division folders
 
 The four example folders are **Clinical services**, **Corporate services**,
-**Community services** and **Executive and governance**. Customise these to
-the organisation's executive divisions in both the DBML enum and mapping.
-The platform owner assigns the executive according to the folder. The
-bundle does not automate that person assignment or delegation. These folders
-currently inherit library permissions; they do not yet isolate division access.
+**Community services** and **Executive and governance**. Customise them in the
+DBML `division` enum alone: the folders are its members and the mapping keeps
+no second list. The platform owner assigns the executive according to the
+folder. The bundle does not automate that person assignment or delegation.
+
+Each folder has its own permissions. The deploy creates one
+`{prefix} <division> Division` group per member and breaks the folder's
+inheritance so that only that group and **{prefix} Compliance Coordinators**
+can edit inside it, with **dbml List Administrators** holding Full Control and
+site members, site owners and **dbml Enterprise Readers** keeping Read. Each
+division group is owned by the coordinators, so they can move people between
+divisions without holding site Full Control.
+
+Two consequences are worth planning for. A grant made at library scope no
+longer reaches files inside a division folder, so anyone who needs to edit
+across divisions belongs in the coordinators' group. And sharing a file
+directly out of a folder breaks that folder's inheritance for the recipient,
+which the group design cannot govern.
 
 ## Worklists
 

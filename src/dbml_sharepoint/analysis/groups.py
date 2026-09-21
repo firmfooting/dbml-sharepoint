@@ -71,23 +71,65 @@ def declaring_groups(perms: PermissionsConfig | None) -> tuple[SiteGroup, ...]:
     return (*perms.groups, *(source.template for source in perms.group_sources))
 
 
+def _ordered(
+    perms: PermissionsConfig,
+    enum_members: Mapping[str, Sequence[str]],
+    *,
+    strict: bool,
+) -> tuple[SiteGroup, ...]:
+    """The shared body of `declared_groups` and `resolvable_groups`.
+
+    `strict` decides what an unknown enum does: raise, or leave that source
+    out and resolve the rest. The order is the same either way.
+    """
+    literals = list(perms.groups)
+    at_position: dict[int, list[SiteGroup]] = {}
+    for source in perms.group_sources:
+        if source.enum not in enum_members:
+            if strict:
+                raise UnknownGroupEnumError(source.enum)
+            continue
+        where = len(literals) if source.after is None else source.after
+        at_position.setdefault(where, []).extend(
+            group_for_member(source, member) for member in enum_members[source.enum]
+        )
+    out: list[SiteGroup] = []
+    for index in range(len(literals) + 1):
+        out.extend(at_position.get(index, ()))
+        if index < len(literals):
+            out.append(literals[index])
+    return tuple(out)
+
+
 def declared_groups(
     perms: PermissionsConfig | None, enum_members: Mapping[str, Sequence[str]],
 ) -> tuple[SiteGroup, ...]:
-    """Every group the mapping declares: the literal ones, then the generated.
+    """Every group the mapping declares, in the order it declares them.
 
-    Literal groups keep their declaration order and come first, so the shared
-    tool-owned groups stay where a reader expects them. Generated groups
-    follow in enum order, which is the order the DBML writes the members in
-    and therefore the order the folders are created in.
+    Generated groups sit where their `from_enum` entry was written rather
+    than after every literal group. The deploy creates groups in this order
+    and resolves a custom `owner_group` immediately after creating the group
+    that names it, so an author who declares the owner first has to keep that
+    position. Within one source the groups follow enum order, which is the
+    order the DBML writes the members in and therefore the order the folders
+    are created in.
     """
     if perms is None:
         return ()
-    out = list(perms.groups)
-    for source in perms.group_sources:
-        if source.enum not in enum_members:
-            raise UnknownGroupEnumError(source.enum)
-        out.extend(
-            group_for_member(source, member) for member in enum_members[source.enum]
-        )
-    return tuple(out)
+    return _ordered(perms, enum_members, strict=True)
+
+
+def resolvable_groups(
+    perms: PermissionsConfig | None, enum_members: Mapping[str, Sequence[str]],
+) -> tuple[SiteGroup, ...]:
+    """`declared_groups`, but an unknown enum leaves out only its own source.
+
+    For the validator, which must keep judging everything it CAN resolve
+    while one misspelled `from_enum` is reported by its own rule. Discarding
+    every generated group instead would skip the duplicate, name, owner,
+    provenance and rename checks for groups that resolved perfectly well, and
+    make list policies naming them look like unknown principals.
+    """
+    if perms is None:
+        return ()
+    return _ordered(perms, enum_members, strict=False)

@@ -8,6 +8,7 @@ allowlists and enrol the operator, and every one of them is a write against
 somebody's live site.
 """
 
+import dataclasses
 from pathlib import Path
 from typing import Any
 
@@ -16,13 +17,19 @@ from _paths import FIXTURES
 from test_jsgen import _generate_simple_js, _schema_json_for
 
 from dbml_sharepoint.analysis.group_description import marker_for_group
+from dbml_sharepoint.analysis.groups import declared_groups
 from dbml_sharepoint.analysis.list_description import family_for
 from dbml_sharepoint.analysis.phases import phase_number as pn
 from dbml_sharepoint.analysis.provenance import MARKER_PREFIX
 from dbml_sharepoint.analysis.role_definition_description import marker_for_level
 from dbml_sharepoint.generators.jsgen import build_schema_json, generate_deploy_js
 from dbml_sharepoint.model.mapping_loader import load_mapping
-from dbml_sharepoint.model.mapping_types import EntityMapping
+from dbml_sharepoint.model.mapping_types import (
+    EntityMapping,
+    GroupsFromEnum,
+    PermissionsConfig,
+    SiteGroup,
+)
 from dbml_sharepoint.model.parser import parse_dbml
 from dbml_sharepoint.model.release import load_release
 
@@ -556,3 +563,173 @@ def test_groups_and_levels_carry_their_previous_names_and_markers(tmp_path: Path
         {"name": name, "expected_marker": marker_for_group(name, family)}
         for name in ("ADOPT Programme Leads", "GOV Program Governance", "ADOPT Program Governance")
     ]
+
+
+def _group(name: str, owner_group: str = "Site Owners") -> SiteGroup:
+    """A SiteGroup with the membership controls every declaration must set."""
+
+    return SiteGroup(
+        name=name,
+        description="Declared by a test.",
+        owner_group=owner_group,
+        allow_members_edit_membership=False,
+        allow_request_to_join_leave=False,
+        auto_accept_request_to_join_leave=False,
+        only_allow_members_view_membership=False,
+    )
+
+
+def test_a_mapping_with_no_permissions_still_emits_folder_assignments() -> None:
+    """`Mapping.permissions` is optional and the schema key is not.
+
+    `folder_assignments` was only ever assigned inside the `permissions is
+    not None` branch while the returned dict read it unconditionally, so a
+    Mapping composed through the public Python API with no permissions raised
+    `UnboundLocalError` from a generator that used to work.
+    """
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    stripped = dataclasses.replace(
+        bundle, mapping=dataclasses.replace(bundle.mapping, permissions=None),
+    )
+
+    schema_json = build_schema_json(schema, stripped, "default")
+
+    assert schema_json["folder_assignments"] == []
+    assert schema_json["groups"] == []
+
+
+def test_generated_groups_keep_the_position_they_were_declared_in() -> None:
+    """The deploy creates groups in this order and resolves a custom
+    `owner_group` right after creating the group that names it, so a
+    generated group declared before the literal group that names it as owner
+    has to stay there. Sorting every literal group to the front moved it.
+    """
+
+    owner = _group("{member} Owners")
+    literal = _group("Coordinators", owner_group="Clinical Owners")
+    perms = PermissionsConfig(
+        levels=[], default_policy=None, overrides={},
+        groups=[literal],
+        # Declared BEFORE the literal group, which is what `after=0` records.
+        group_sources=(GroupsFromEnum(enum="division", template=owner, after=0),),
+    )
+
+    names = [g.name for g in declared_groups(perms, {"division": ("Clinical",)})]
+
+    assert names == ["Clinical Owners", "Coordinators"], names
+
+
+def test_a_group_source_with_no_recorded_position_still_follows_the_literals() -> None:
+    """`after=None` is what a caller composing the type by hand gets, and it
+    has to keep the order those callers already relied on."""
+
+    perms = PermissionsConfig(
+        levels=[], default_policy=None, overrides={},
+        groups=[_group("Coordinators")],
+        group_sources=(
+            GroupsFromEnum(enum="division", template=_group("{member} Owners")),
+        ),
+    )
+
+    names = [g.name for g in declared_groups(perms, {"division": ("Clinical",)})]
+
+    assert names == ["Coordinators", "Clinical Owners"], names
+
+
+def test_the_descendant_survey_only_runs_when_its_answer_is_read() -> None:
+    """The survey pages every item in the list.
+
+    Before folder ACLs it ran only in exact mode, where it is the removal
+    guard. Making it unconditional meant a `reconcile: configured` list with
+    no folder policy enumerated a populated production library for a result
+    nothing reads, which can meet the list view threshold before any ACL work
+    begins.
+    """
+    js = _generate_simple_js()
+    region = js[js.index("const aclListTitles"):]
+    guard = region.index("exact || folderAssignments.length > 0")
+    call = region.index("await surveyDescendants(listTitle, wantedFolders)")
+
+    assert guard < call, "the survey must sit behind the condition, not before it"
+
+
+def test_a_folder_grant_counts_as_a_grant_on_that_entity(tmp_path: Path) -> None:
+    """`lists_granting_group` reports what the deploy will bind.
+
+    The deploy binds an entity's folder assignments exactly as it binds its
+    list ones, so a group granted only there is granted on that entity. Left
+    at list scope it contradicted the validator, which counts a folder policy
+    when deciding whether a group has any grant at all: the build passed
+    validation and the CLI then refused the same reader for holding none.
+    """
+    from dbml_sharepoint.analysis.permissions import lists_granting_group
+    from dbml_sharepoint.model.mapping_types import (
+        ListPermissionPolicy,
+        Principal,
+        RoleAssignment,
+    )
+
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    folder_only = ListPermissionPolicy(
+        break_inheritance=True, reconcile_mode="exact",
+        assignments=[RoleAssignment(
+            principal=Principal(kind="group", name="dbml Enterprise Readers"),
+            level="Read",
+        )],
+    )
+    entity = next(iter(bundle.mapping.entities))
+    perms = bundle.mapping.permissions
+    assert perms is not None
+    patched = dataclasses.replace(
+        bundle.mapping,
+        permissions=dataclasses.replace(
+            perms, overrides={}, default_policy=None,
+            folder_policies={entity: folder_only},
+        ),
+    )
+
+    granted, excluded = lists_granting_group(
+        patched, "dbml Enterprise Readers", [entity],
+    )
+
+    assert granted == [entity], (granted, excluded)
+
+
+def test_a_folder_policy_off_this_build_does_not_demand_manage_permissions(
+) -> None:
+    """`requires_manage_permissions` is scoped by the entities in THIS build.
+
+    A folder policy is keyed by entity, so counting it as a mapping-wide fact
+    made a site_role that deploys none of those entities advertise a right it
+    never exercises, and deploy.js then aborts an operator who correctly
+    lacks it.
+    """
+    from dbml_sharepoint.analysis.permissions import requires_manage_permissions
+    from dbml_sharepoint.model.mapping_types import (
+        ListPermissionPolicy,
+        Principal,
+        RoleAssignment,
+    )
+
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    perms = bundle.mapping.permissions
+    assert perms is not None
+    policy = ListPermissionPolicy(
+        break_inheritance=True, reconcile_mode="exact",
+        assignments=[RoleAssignment(
+            principal=Principal(kind="associated_owner_group", name=None),
+            level="Read",
+        )],
+    )
+    bare = dataclasses.replace(
+        bundle.mapping,
+        permissions=dataclasses.replace(
+            perms, levels=[], groups=[], group_sources=(),
+            default_policy=None, overrides={},
+            folder_policies={"ElsewhereOnly": policy},
+        ),
+    )
+
+    assert requires_manage_permissions(bare, ["ElsewhereOnly"]) is True
+    assert requires_manage_permissions(bare, ["SomethingElse"]) is False

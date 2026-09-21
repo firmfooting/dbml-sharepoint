@@ -1,8 +1,15 @@
 # src/dbml_sharepoint/analysis/checks/_permissions.py
 """Permission levels, groups, and per-list policies."""
 
+from collections.abc import Callable
+
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
+from dbml_sharepoint.analysis.folders import (
+    UnknownFolderEnumError,
+    declared_folders,
+    policy_for_folder,
+)
 from dbml_sharepoint.analysis.group_description import (
     AUTOMATION_GROUP_NAME,
     description_budget,
@@ -107,6 +114,48 @@ def _levels_granted_to_group(
     ]
 
 
+def _folder_policy_assignments(
+    vc: ValidationContext,
+    perms: PermissionsConfig,
+    check_policy: Callable[[ListPermissionPolicy, str, Location], None],
+) -> None:
+    """Run the policy-block assignment checks over every folder policy.
+
+    Expanded per folder, so a `{member}` principal or level is judged as the
+    name it actually resolves to rather than as the template. Without this a
+    misspelled level or group in a folder policy survived the build and
+    failed at the ACL phase, after the earlier phases had already written to
+    the site.
+
+    Takes the check as a callable because it is a closure over `check`'s
+    findings list, and lives out here because `check` is at the complexity
+    ceiling the ratchet pins.
+    """
+    for entity_name, folder_policy in sorted(perms.folder_policies.items()):
+        entity = vc.bundle.mapping.entities.get(entity_name)
+        if entity is None:
+            # `folder_permissions_on_a_list` and the unknown-entity rule in
+            # `_library.py` own that sentence; nothing to expand against.
+            continue
+        try:
+            folders = declared_folders(entity.folder_source, vc.enum_members_by_name)
+        except UnknownFolderEnumError:
+            continue
+        # Once per folder, and the finding names the folder. One policy is
+        # many resolved policies: a `{member}` principal is a different group
+        # for every member, and only some of them may be wrong. A mapping
+        # error shared by every folder therefore reports once per folder,
+        # which is repetitive but never misleading; collapsing it would mean
+        # choosing one folder's resolution to speak for the others.
+        base = f"list_permissions.folders[{entity_name!r}]"
+        for folder in folders:
+            check_policy(
+                policy_for_folder(folder_policy, folder),
+                f"{base}[{folder!r}]",
+                _FOLDERS,
+            )
+
+
 def _group_name_characters(vc: ValidationContext) -> list[Finding]:
     """No declared group name may carry a character SharePoint refuses.
 
@@ -119,6 +168,21 @@ def _group_name_characters(vc: ValidationContext) -> list[Finding]:
     """
     findings: list[Finding] = []
     for grp in vc.site_groups:
+        # The measured error refuses an EMPTY name in the same sentence as
+        # the character list, and sanitisation can produce one: a member of
+        # only refused characters leaves nothing behind, so a template of
+        # `{member_safe}` alone passes the character test with no name.
+        if not grp.name.strip():
+            findings.append(Finding(
+                FindingCode.GROUP_NAME_INVALID,
+                f"groups[{grp.name!r}]: SharePoint refuses an empty group "
+                f"name. A name built only from "
+                f"{MEMBER_SAFE_PLACEHOLDER} is empty when the member holds "
+                f"nothing SharePoint allows; give the name a literal part, "
+                f"or rename the enum member.",
+                location=_GROUPS,
+            ))
+            continue
         refused = refused_group_name_characters(grp.name)
         if not refused:
             continue
@@ -652,5 +716,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 ))
             ctx_key = f"list_permissions.overrides[{entity_name!r}]"
             _check_policy_assignments(override_policy, ctx_key, _OVERRIDES)
+
+        _folder_policy_assignments(vc, perms, _check_policy_assignments)
 
     return findings
