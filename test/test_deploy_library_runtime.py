@@ -247,8 +247,11 @@ _FOLDER_JS = """globalThis.fetch = async (url, opts = {}) => {
     return folderAnswer({ d: { Name: 'Clinical services' } });
   }
   if (requested.includes('/ListItemAllFields')) {
+    // Id is what the ACL phase addresses the folder by; __folderIdMissing
+    // models a tenant that answers the read without it.
     const item = { FileSystemObjectType: 1,
       FileRef: '/sites/test/APP_Escalation/Clinical services' };
+    if (!globalThis.__folderIdMissing) item.Id = 1;
     return folderAnswer({ d: item });
   }
   if (requested.includes('GetFolderByServerRelativeUrl(')) {
@@ -1139,6 +1142,28 @@ def test_configured_mode_keeps_every_level_one_principal_is_declared_with(
         c["url"] for c in calls if "removeroleassignment" in c.get("url", "")
     ]
     assert removals == [], removals
+
+
+def test_a_folder_lookup_without_an_id_is_refused(tmp_path: Path) -> None:
+    """A folder read that answers without an Id must abort, not proceed.
+
+    The id is the whole point of the lookup, and it is the only thing that
+    addresses the folder afterwards. Left unchecked the map carried
+    `undefined`, every folder endpoint became `items(undefined)`, SharePoint
+    answered it, and the phase reported a clean run having secured nothing.
+    Found exactly that way: the mock answered the read without an Id.
+    """
+    harness = _library_harness(declared_folder=True, unique_after=1)
+    summary, calls, _ = _run(
+        "globalThis.__folderIdMissing = true;\n" + harness,
+        _library_deploy_js(tmp_path, _TWO_LEVEL_CONFIGURED_LIBRARY, titled=False),
+    )
+
+    assert summary["errors"], "a folder with no addressable id must fail the phase"
+    assert any(
+        "no usable list item Id" in e["error"] for e in summary["errors"]
+    ), summary["errors"]
+    assert not any("items(undefined)" in c.get("url", "") for c in calls)
 
 
 def test_a_declared_folder_gets_its_own_acl(tmp_path: Path) -> None:

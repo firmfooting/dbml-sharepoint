@@ -541,13 +541,13 @@ soon as each list is created or probed in Phase {{ phase_num['lists'] }}, with
 `copyRoleAssignments=false` and `clearSubscopes=false`. Phase {{ phase_num['acls'] }} still performs
 the complete allowlist reconciliation and its descendant-scope checks.
 
-### Per-folder assignments (inheritance broken)
+### Per-folder assignments
 {% if schema_json.get('folder_assignments') %}
-| Folder | Principal | Level |
-|--------|-----------|-------|
+| Folder | Inheritance | Principal | Level |
+|--------|-------------|-----------|-------|
 {% for fa in schema_json.get('folder_assignments') %}
 {% for a in fa.assignments %}
-| {{ (fa.list ~ '/' ~ fa.folder) | markdown_cell }} | {% if a.principal.kind == 'group' %}{{ a.principal.name | markdown_cell }} (group){% elif a.principal.kind == 'associated_owner_group' %}Site Owners (associated owner){% elif a.principal.kind == 'associated_member_group' %}Site Members (associated member){% else %}Site Visitors (associated visitor){% endif %} | {{ a.level | markdown_cell }} |
+| {{ (fa.list ~ '/' ~ fa.folder) | markdown_cell }} | {% if fa.break_inheritance %}broken{% else %}inherited{% endif %} | {% if a.principal.kind == 'group' %}{{ a.principal.name | markdown_cell }} (group){% elif a.principal.kind == 'associated_owner_group' %}Site Owners (associated owner){% elif a.principal.kind == 'associated_member_group' %}Site Members (associated member){% else %}Site Visitors (associated visitor){% endif %} | {{ a.level | markdown_cell }} |
 {% endfor %}
 {% endfor %}
 {% else %}
@@ -555,9 +555,10 @@ _(no per-folder assignments configured)_
 {% endif %}
 
 A folder scope is written against the folder's list item, after its library's
-own reconciliation. A grant made at library scope does not reach a folder that
-has broken inheritance, so every principal that needs access inside one
-appears above.
+own reconciliation. A folder marked **broken** no longer receives grants made
+at library scope, so every principal that needs access inside it appears
+above; one marked **inherited** still receives them, and the assignments above
+are added to what it already has.
 
 ## Seed items
 

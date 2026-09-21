@@ -82,6 +82,63 @@
     // to come from the same read -- a guard and a writer that resolved the
     // folders separately could disagree about which scopes are expected, and
     // the guard's whole job is to abort on a scope nobody declared.
+    // A path inside an OData string literal: the one escape SharePoint
+    // needs, doubled quotes, exactly as the folder phase escapes the same
+    // paths when it creates these folders.
+    const aclPathLiteral = (path) => String(path).replace(/'/g, "''");
+
+    // The library root, which both folder lookups below hang a path off.
+    async function listRootUrl(listTitle) {
+      const rootResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/RootFolder?$select=ServerRelativeUrl`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!rootResp.ok) {
+        const text = await rootResp.text();
+        throw new Error(`RootFolder read failed for '${listTitle}': HTTP ${rootResp.status} ${text}`);
+      }
+      const rootUrl = ((await rootResp.json()).d || {}).ServerRelativeUrl;
+      if (typeof rootUrl !== 'string' || !rootUrl) {
+        throw new Error(`RootFolder for '${listTitle}' returned no ServerRelativeUrl`);
+      }
+      return rootUrl;
+    }
+
+    // The declared folders' item ids WITHOUT enumerating the library. Used
+    // when nothing needs the descendant guard, because that enumeration pages
+    // every document and a configured-mode redeploy would scale with the
+    // library's size to learn a handful of ids. Addressed exactly as the
+    // folder phase addresses the same folders when it creates them, so the
+    // two cannot resolve to different objects.
+    async function declaredFolderIds(listTitle, wantedFolders) {
+      const folderIds = new Map();
+      if (wantedFolders.length === 0) return folderIds;
+      const rootUrl = await listRootUrl(listTitle);
+      for (const name of wantedFolders) {
+        const wanted = `${rootUrl}/${name}`;
+        const resp = await fetchWithRetry(apiUrl(`web/GetFolderByServerRelativeUrl('${aclPathLiteral(wanted)}')/ListItemAllFields?$select=Id,FileSystemObjectType,FileRef`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!resp.ok) {
+          const text = await resp.text();
+          throw new Error(`declared folder '${name}' was not found at '${wanted}'; its permissions cannot be set until the folder phase has created it (HTTP ${resp.status} ${text})`);
+        }
+        const item = (await resp.json()).d || {};
+        // The same two guards the enumeration path applies: the object has
+        // to BE a folder and sit at the path asked for.
+        if (item.FileSystemObjectType !== ACL_FOLDER_OBJECT_TYPE || item.FileRef !== wanted) {
+          throw new Error(`'${wanted}' did not read back as a folder at that path (FileSystemObjectType ${JSON.stringify(item.FileSystemObjectType)}, FileRef ${JSON.stringify(item.FileRef)})`);
+        }
+        // The id IS the thing being fetched. Without this the map carries
+        // undefined and every folder endpoint below reads items(undefined),
+        // which SharePoint answers and this phase reports as a success.
+        if (!Number.isInteger(item.Id)) {
+          throw new Error(`'${wanted}' returned no usable list item Id (${JSON.stringify(item.Id)}); its permissions cannot be addressed`);
+        }
+        folderIds.set(name, item.Id);
+      }
+      return folderIds;
+    }
+
     async function surveyDescendants(listTitle, wantedFolders) {
       const rows = [];
       let itemsUrl = apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/items?$select=Id,HasUniqueRoleAssignments,FileSystemObjectType,FileRef&$top=5000`);
@@ -100,17 +157,7 @@
       }
       const folderIds = new Map();
       if (wantedFolders.length > 0) {
-        const rootResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/RootFolder?$select=ServerRelativeUrl`), {
-          headers: { 'Accept': 'application/json;odata=verbose' },
-        });
-        if (!rootResp.ok) {
-          const text = await rootResp.text();
-          throw new Error(`RootFolder read failed for '${listTitle}': HTTP ${rootResp.status} ${text}`);
-        }
-        const rootUrl = ((await rootResp.json()).d || {}).ServerRelativeUrl;
-        if (typeof rootUrl !== 'string' || !rootUrl) {
-          throw new Error(`RootFolder for '${listTitle}' returned no ServerRelativeUrl`);
-        }
+        const rootUrl = await listRootUrl(listTitle);
         // Matched on the FULL server-relative path and FileSystemObjectType,
         // never on the leaf name: a subfolder may share a leaf with a root
         // folder, and securing the wrong one reads back clean.
@@ -492,9 +539,16 @@
         // library for a result nothing uses, and can meet the list view
         // threshold doing it. This is the condition the pre-folder code met
         // implicitly by surveying only in exact mode.
-        const before = (exact || folderAssignments.length > 0)
+        // Exact mode is the only mode that reads `undeclared`, and reading
+        // it costs a full enumeration of the library. Without it the ids of
+        // a handful of declared folders are all this phase needs, and those
+        // are one request each.
+        const before = exact
           ? await surveyDescendants(listTitle, wantedFolders)
-          : { folderIds: new Map(), undeclared: [] };
+          : {
+            folderIds: await declaredFolderIds(listTitle, wantedFolders),
+            undeclared: [],
+          };
         if (exact) assertNoUndeclaredScopes(listTitle, before.undeclared);
         if (la) {
           await reconcileScope({

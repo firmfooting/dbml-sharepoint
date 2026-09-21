@@ -230,6 +230,7 @@
           summary: {
             groupId: id,
             Owner: owner.ok ? owner.body?.Title ?? null : null,
+            OwnerId: owner.ok ? owner.body?.Id ?? null : null,
             OwnerPrincipalType: owner.ok ? owner.body?.PrincipalType ?? null : null,
             AllowMembersEditMembership: entity.body?.AllowMembersEditMembership ?? null,
             CanCurrentUserEditMembership: entity.body?.CanCurrentUserEditMembership ?? null,
@@ -254,6 +255,21 @@
           foreign.editable === null
             ? 'control could not read a boolean CanCurrentUserEditMembership, so the property cannot answer this either'
             : 'control reported editing ALLOWED on a group the actor neither owns nor belongs to, so the property does not discriminate on this site',
+          'void');
+      } else if (owned.summary.OwnerId !== report.leadsGroupId) {
+        // The fixture is what the measurement DEPENDS on, so it is checked
+        // before the observation is allowed to mean anything. An allow read
+        // off a group the leads do not own says nothing about delegation.
+        record('access.group.owner-edits-membership', 'owner membership editing', 'VOID',
+          'division group owner is ' + JSON.stringify(owned.summary.OwnerId)
+            + ', not the leads group ' + JSON.stringify(report.leadsGroupId)
+            + '; the fixture does not set up the question this asks',
+          'void');
+      } else if (owned.summary.AllowMembersEditMembership !== false) {
+        record('access.group.owner-edits-membership', 'owner membership editing', 'VOID',
+          'division group has AllowMembersEditMembership '
+            + JSON.stringify(owned.summary.AllowMembersEditMembership)
+            + ', so an allow could come from plain membership rather than ownership',
           'void');
       } else if (owned.editable === null) {
         record('access.group.owner-edits-membership', 'owner membership editing',

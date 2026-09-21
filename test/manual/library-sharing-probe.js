@@ -1,5 +1,5 @@
 /**
- * Library sharing probe, revision 5208461d. Not yet run live.
+ * Library sharing probe, revision e7e06dea. Not yet run live.
  * This script only reads. It does not change permissions or send invitations.
  *
  * Prepare disposable content using the intended permission layout:
@@ -133,7 +133,7 @@
   }
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
-  log('INFO', `probe revision 5208461d; core v2; results v1.`);
+  log('INFO', `probe revision e7e06dea; core v2; results v1.`);
   log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -250,7 +250,7 @@
     return response.d.ListItemEntityTypeFullName;
   }
   const report = {
-    revision: '5208461d', capturedAt: new Date().toISOString(),
+    revision: 'e7e06dea', capturedAt: new Date().toISOString(),
     sharingVerdict: 'NOT ESTABLISHED: requires edit, share and recipient-open observations',
     reads: {}, targets: [], errors: [], results,
   };
@@ -400,6 +400,7 @@
           summary: {
             groupId: id,
             Owner: owner.ok ? owner.body?.Title ?? null : null,
+            OwnerId: owner.ok ? owner.body?.Id ?? null : null,
             OwnerPrincipalType: owner.ok ? owner.body?.PrincipalType ?? null : null,
             AllowMembersEditMembership: entity.body?.AllowMembersEditMembership ?? null,
             CanCurrentUserEditMembership: entity.body?.CanCurrentUserEditMembership ?? null,
@@ -424,6 +425,21 @@
           foreign.editable === null
             ? 'control could not read a boolean CanCurrentUserEditMembership, so the property cannot answer this either'
             : 'control reported editing ALLOWED on a group the actor neither owns nor belongs to, so the property does not discriminate on this site',
+          'void');
+      } else if (owned.summary.OwnerId !== report.leadsGroupId) {
+        // The fixture is what the measurement DEPENDS on, so it is checked
+        // before the observation is allowed to mean anything. An allow read
+        // off a group the leads do not own says nothing about delegation.
+        record('access.group.owner-edits-membership', 'owner membership editing', 'VOID',
+          'division group owner is ' + JSON.stringify(owned.summary.OwnerId)
+            + ', not the leads group ' + JSON.stringify(report.leadsGroupId)
+            + '; the fixture does not set up the question this asks',
+          'void');
+      } else if (owned.summary.AllowMembersEditMembership !== false) {
+        record('access.group.owner-edits-membership', 'owner membership editing', 'VOID',
+          'division group has AllowMembersEditMembership '
+            + JSON.stringify(owned.summary.AllowMembersEditMembership)
+            + ', so an allow could come from plain membership rather than ownership',
           'void');
       } else if (owned.editable === null) {
         record('access.group.owner-edits-membership', 'owner membership editing',

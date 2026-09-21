@@ -760,7 +760,13 @@ FINDING_HELP: dict[FindingCode, str] = {
         "name is judged after `{prefix}` and `{member}` have been expanded, "
         "so a template that reads cleanly can still generate a refused name "
         "from one enum member. Use `{member_safe}`, which expands to the "
-        "member with those characters replaced by spaces, or rename the group."
+        "member with those characters replaced by spaces, or rename the group. "
+        "The same code covers an EMPTY resolved name, which the server error "
+        "refuses in the same sentence as the character list. A name built "
+        "only from `{member_safe}` is empty when the member holds nothing "
+        "SharePoint allows, so `{member_safe}` is the wrong remedy there: "
+        "give the name a literal part, such as `{member_safe} Division`, or "
+        "rename the enum member."
     ),
     FindingCode.GROUP_ENUM_NAME_NOT_UNIQUE: (
         "A `groups` entry declares `from_enum` but its `name` carries no "

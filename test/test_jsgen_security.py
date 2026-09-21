@@ -640,18 +640,20 @@ def test_a_group_source_with_no_recorded_position_still_follows_the_literals() -
 def test_the_descendant_survey_only_runs_when_its_answer_is_read() -> None:
     """The survey pages every item in the list.
 
-    Before folder ACLs it ran only in exact mode, where it is the removal
-    guard. Making it unconditional meant a `reconcile: configured` list with
-    no folder policy enumerated a populated production library for a result
-    nothing reads, which can meet the list view threshold before any ACL work
-    begins.
+    Exact mode is the only mode that reads `undeclared`, and reading it costs
+    a full enumeration. Running it unconditionally meant a `reconcile:
+    configured` library enumerated every document to learn the ids of a
+    handful of declared folders, which can meet the list view threshold
+    before any ACL work begins.
     """
     js = _generate_simple_js()
     region = js[js.index("const aclListTitles"):]
-    guard = region.index("exact || folderAssignments.length > 0")
-    call = region.index("await surveyDescendants(listTitle, wantedFolders)")
+    guard = region.index("const before = exact")
+    survey = region.index("await surveyDescendants(listTitle, wantedFolders)")
+    cheap = region.index("await declaredFolderIds(listTitle, wantedFolders)")
 
-    assert guard < call, "the survey must sit behind the condition, not before it"
+    assert guard < survey, "the enumeration must sit behind the exact test"
+    assert guard < cheap, "so must the per-folder lookup that replaces it"
 
 
 def test_a_folder_grant_counts_as_a_grant_on_that_entity(tmp_path: Path) -> None:
