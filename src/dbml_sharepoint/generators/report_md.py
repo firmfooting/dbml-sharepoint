@@ -15,6 +15,7 @@ in ``guide.md``.
 """
 
 from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN
+from dbml_sharepoint.analysis.folders import declared_folders
 from dbml_sharepoint.analysis.lookups import lookup_display_columns
 from dbml_sharepoint.analysis.report_columns import (
     DATE_ZONE_RESOLVED_COLUMN,
@@ -547,6 +548,10 @@ def generate_data_dictionary(
         else:
             details.append("Versioning: off.")
         if entity.is_library:
+            entity_folders = declared_folders(
+                entity.folder_source,
+                {enum.name: enum.members for enum in schema.enums},
+            )
             # A reader of this page decides what a row IS before reading its
             # columns; on a library that is a file, and Title is not its name.
             details.append(
@@ -554,8 +559,8 @@ def generate_data_dictionary(
                 "(its Title is empty after upload), carried into the report as "
                 "FileLeafRef and FileRef"
                 + (
-                    f", filed in one of: {', '.join(entity.folders)}."
-                    if entity.folders else "."
+                    f", filed in one of: {', '.join(entity_folders)}."
+                    if entity_folders else "."
                 ),
             )
         lines += ["", " ".join(details)]

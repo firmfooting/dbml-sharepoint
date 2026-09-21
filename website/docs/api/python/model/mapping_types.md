@@ -66,6 +66,26 @@ are created with this slug and renamed to the declared title afterwards
 ("Open by score" lives at OpenByScore.aspx, not Open%20by%20score.aspx,
 the same create-then-rename trick fields use for display titles).
 
+### `FoldersFromEnum`
+
+```python
+@dataclass(frozen=True)
+class FoldersFromEnum:
+    enum: str
+```
+
+`folders: {from_enum: division}`: the folders ARE the enum's members.
+
+A library whose folders name the values of one of its own Choice columns
+used to declare both, and nothing compared them. The shipped legislative
+compliance register drifted exactly that way: the `division` enum was
+edited, the folder list was not, and the deploy created four folders no
+Division value could match. Naming the enum removes the second copy, so
+there is nothing left to disagree.
+
+Resolved by `analysis/folders.py`, not here, because the schema is not
+loaded with the mapping.
+
 ### `EntityMapping`
 
 ```python
@@ -80,7 +100,7 @@ class EntityMapping:
     accept_unindexable_display_column: bool = False
     hide_from_all_items: tuple[str, ...] = ()
     renamed_from: tuple[str, ...] = ()
-    folders: tuple[str, ...] = ()
+    folder_source: FolderSource = ()
     title: str | None = None
     internal_name: str | None = None
 ```

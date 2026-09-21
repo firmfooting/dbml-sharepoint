@@ -71,7 +71,7 @@ entities:
 | `base_template` | SP base template id, paired with the kind: `100` (the generic list) for `List` and `HubOnlyList`, `101` for `DocumentLibrary`. The create call sends the number and never the kind, so a mismatch is refused, and so is any other number |
 | `title` | Optional explicit display title, at most 255 characters, independent of the prefix and DBML entity name |
 | `internal_name` | Optional, library only; the URL name used at creation. Use a decoded folder name following the shared file/folder naming rules. Spaces, hyphens and Unicode are supported; `#` and `%` remain excluded by the current path transport. Cannot be combined with `renamed_from` or `previous_prefixes`. Deploy verifies the root URL and refuses mismatches; it does not move an existing library |
-| `folders` | Optional, library only; the root-level folders the deploy creates and verifies, by name. Each name is held to Microsoft's file and folder name rules |
+| `folders` | Optional, library only; the root-level folders the deploy creates and verifies. Either a list of names, or `{from_enum: <enum>}` to take them from a DBML enum's members in declaration order. Each resolved name is held to Microsoft's file and folder name rules |
 | `site_role` | Free label; `build --site-role X` deploys the entities labelled `X` |
 | `singleton` | Optional; a one-row configuration list (enables extension seed rows) |
 | `display_column` | Optional; which column a lookup INTO this entity displays. Defaults to `Title`. **When a real Lookup points at this entity, the column is indexed automatically on this list** (a picker cannot enumerate an unindexed column past 5,000 items) so it also spends one of the list's 20 indexes. Nothing is indexed if no `ref` points here, if the only refs pointing here are `cross_site_reference_columns` (those expand to a Choice + URL pair, so no picker ever enumerates this list), or if the column is calculated (see below). The column must be indexable: a Note or Hyperlink `display_column` on a lookup target fails the build |
@@ -205,6 +205,29 @@ entities:
       - "Corporate services"
 ```
 
+Where the folders are the values of one of the library's own Choice columns,
+name the enum instead of writing them out again:
+
+```yaml
+entities:
+  SAQ:
+    kind: DocumentLibrary
+    base_template: 101
+    site_role: default
+    folders: {from_enum: division}
+```
+
+The folders are then the enum's members, in declaration order, and editing
+the enum moves the folders with it. Written out twice they drift silently:
+the shipped legislative compliance register declared four divisions in its
+DBML and the same four in its `folders`, an edit to the enum left the list
+behind, and the deploy created four folders no `Division` value could match.
+Nothing in the build, the assessment or the deploy could see the
+disagreement, because both declarations were individually valid. An enum the
+schema does not declare is refused at build (`folder_enum_unknown`), and the
+resolved names are held to the folder name rules like any other, so an enum
+member that cannot be a folder fails the build rather than the folder phase.
+
 A library's items **are files**. Each fact below was measured on a live
 tenant, and the deploy relies on nothing about a library that was not:
 
@@ -218,7 +241,8 @@ tenant, and the deploy relies on nothing about a library that was not:
   folder endpoint, read back, and checked to be folders rather than files
   of the same name, in their own deploy phase right after list creation
   (`folder-probe.js`, 2026-09-03). A redeploy verifies and skips them and
-  never touches what they hold.
+  never touches what they hold. `{from_enum: <enum>}` resolves before any of
+  that, so the phase sees a list of names either way.
 - A view may declare `scope: recursive` to show every file at any depth,
   which is what lets a filtered view find a file whichever folder it was
   filed in (`library-nesting-probe.js`, 2026-09-08). The generated

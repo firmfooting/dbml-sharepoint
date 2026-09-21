@@ -176,6 +176,80 @@ def test_a_duplicate_folder_is_refused_case_insensitively(tmp_path: Path) -> Non
     assert "clinical" in f.message
 
 
+def _folders_from_enum(
+    tmp_path: Path, kind: str, template: int, members: str, named: str = "division",
+) -> list[Finding]:
+    """The same library, declaring its folders as one enum's members."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            f"Enum division {{\n{members}\n}}\n"
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping=f"""
+            entities:
+              Docs:
+                kind: {kind}
+                base_template: {template}
+                site_role: default
+                folders: {{from_enum: {named}}}
+        """,
+    )
+    return validate_against_mapping(schema, bundle)
+
+
+def test_folders_from_enum_are_the_enums_members(tmp_path: Path) -> None:
+    """The shipped legislative compliance register declared its divisions
+    twice, once as an enum and once as a folder list, and an edit to the
+    enum left the deploy creating the four retired folders. Naming the enum
+    removes the second copy."""
+    findings = _folders_from_enum(
+        tmp_path, "DocumentLibrary", 101,
+        '  "Clinical services"\n  "Corporate & community services"',
+    )
+    none_of(findings, FindingCode.FOLDER_ENUM_UNKNOWN)
+    none_of(findings, FindingCode.FOLDER_NAME_INVALID)
+    none_of(findings, FindingCode.DUPLICATE_FOLDER)
+
+
+def test_folders_from_an_unknown_enum_are_refused(tmp_path: Path) -> None:
+    """The folders ARE the members, so an enum that does not exist leaves
+    the library with none. Silently creating nothing is the failure this
+    spelling exists to prevent, so it is an error and names what is
+    declared."""
+    f = only(
+        _folders_from_enum(
+            tmp_path, "DocumentLibrary", 101, '  "Clinical services"',
+            named="divison",
+        ),
+        FindingCode.FOLDER_ENUM_UNKNOWN,
+    )
+    assert "divison" in f.message
+    assert "division" in f.message, "the message must name the enums that DO exist"
+
+
+def test_an_enum_member_that_cannot_be_a_folder_is_refused(tmp_path: Path) -> None:
+    """The folder name rules apply to the resolved names. An enum is free
+    to carry a `/` where a folder name is not, and the build has to say so
+    rather than let the folder phase fail on a live site."""
+    f = only(
+        _folders_from_enum(
+            tmp_path, "DocumentLibrary", 101, '  "Clinical/services"',
+        ),
+        FindingCode.FOLDER_NAME_INVALID,
+    )
+    assert "/" in f.message
+
+
+def test_folders_from_enum_are_refused_on_a_list(tmp_path: Path) -> None:
+    """Whichever way the folders are spelled, only a library holds them."""
+    f = only(
+        _folders_from_enum(tmp_path, "List", 100, '  "Clinical services"'),
+        FindingCode.FOLDERS_ON_A_LIST,
+    )
+    assert "Docs" in f.message
+
+
 def _scoped_view(
     tmp_path: Path, kind: str, template: int, scope_line: str, group_line: str = "",
 ) -> list[Finding]:

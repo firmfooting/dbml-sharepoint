@@ -42,6 +42,7 @@ from dbml_sharepoint.model.mapping_types import (
     DerivedColumn,
     EntityMapping,
     EntitySection,
+    FolderSource,
     FormFormatting,
     FormVisibility,
     ItemSecurity,
@@ -332,7 +333,7 @@ def bundle(
 
 
 def as_library(
-    source: MappingBundle, entity: str, folders: tuple[str, ...] = (),
+    source: MappingBundle, entity: str, folders: FolderSource = (),
 ) -> MappingBundle:
     """`source` with `entity` redeclared as a document library.
 
@@ -346,6 +347,6 @@ def as_library(
         **source.mapping.entities,
         entity: replace(
             source.mapping.entities[entity],
-            kind="DocumentLibrary", base_template=101, folders=folders,
+            kind="DocumentLibrary", base_template=101, folder_source=folders,
         ),
     }))

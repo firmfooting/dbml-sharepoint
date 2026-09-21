@@ -8,7 +8,13 @@ from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
 from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
-from dbml_sharepoint.model.mapping_types import ENTITY_KINDS, EntityKind, EntityMapping
+from dbml_sharepoint.model.mapping_types import (
+    ENTITY_KINDS,
+    EntityKind,
+    EntityMapping,
+    FoldersFromEnum,
+    FolderSource,
+)
 from dbml_sharepoint.model.reading import (
     optional_bool,
     optional_str,
@@ -23,6 +29,8 @@ _ENTITY_KEYS = frozenset({
     "accept_unindexable_display_column", "hide_from_all_items", "renamed_from",
     "folders", "title", "internal_name",
 })
+
+_FOLDER_SOURCE_KEYS = frozenset({"from_enum"})
 
 
 def read(sc: SectionContext) -> dict[str, Any]:
@@ -51,9 +59,10 @@ def read(sc: SectionContext) -> dict[str, Any]:
             renamed_from=optional_str_list(
                 spec, "renamed_from", f"entities.{name}",
             ),
-            # Shape only here; that the entity is a library, and that each
-            # name is one SharePoint accepts, are the validator's.
-            folders=optional_str_list(spec, "folders", f"entities.{name}"),
+            # Shape only here; that the entity is a library, that the enum
+            # exists, and that each name is one SharePoint accepts, are the
+            # validator's.
+            folder_source=_folder_source(spec, f"entities.{name}"),
         )
     titles: set[tuple[str, str]] = set()
     roots: set[tuple[str, str]] = set()
@@ -113,6 +122,21 @@ def _parse_entity_kind(raw_kind: Any, context: str) -> EntityKind:
             f"{', '.join(sorted(ENTITY_KINDS))}; got {raw_kind!r}",
         )
     return cast("EntityKind", raw_kind)
+
+
+def _folder_source(spec: dict[str, Any], context: str) -> FolderSource:
+    """`folders` as a list of names, or as `{from_enum: <enum>}`.
+
+    Both spellings are accepted at the same key rather than at two, so an
+    entity cannot declare folders twice over and leave the loader to pick.
+    Which enums exist is the validator's question: this family never sees
+    the schema.
+    """
+    value = spec.get("folders")
+    if not isinstance(value, dict):
+        return optional_str_list(spec, "folders", context)
+    _reject_unknown_keys(value, _FOLDER_SOURCE_KEYS, f"{context}.folders")
+    return FoldersFromEnum(enum=require_str(value, "from_enum", f"{context}.folders"))
 
 
 def _internal_name(spec: dict[str, Any], name: str) -> str | None:

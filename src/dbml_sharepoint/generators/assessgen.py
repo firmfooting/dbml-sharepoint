@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from dbml_sharepoint.analysis.clock_usage import clock_usage
+from dbml_sharepoint.analysis.folders import declared_folders
 from dbml_sharepoint.analysis.group_description import marker_for_group
 from dbml_sharepoint.analysis.limits import (
     INDEX_CHANGE_CEILING,
@@ -119,11 +120,15 @@ def assess_targets(
     # same reason `markers` is.
     unique_columns: list[list[Any]] = []
     enum_names = {enum.name for enum in schema.enums}
+    enum_members = {enum.name: enum.members for enum in schema.enums}
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):
         entity = bundle.mapping.entities[table_name]
         titles.append(bundle.mapping.list_title(table_name))
-        if entity.is_library and entity.folders:
-            library_folders.append([bundle.mapping.list_title(table_name), list(entity.folders)])
+        entity_folders = declared_folders(entity.folder_source, enum_members)
+        if entity.is_library and entity_folders:
+            library_folders.append(
+                [bundle.mapping.list_title(table_name), list(entity_folders)],
+            )
         if entity.internal_name:
             library_roots.append([bundle.mapping.list_title(table_name), entity.internal_name])
         previous = bundle.mapping.previous_titles(table_name)

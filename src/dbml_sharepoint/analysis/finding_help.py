@@ -676,6 +676,12 @@ FINDING_HELP: dict[FindingCode, str] = {
         "`_vti_`, starts with `~$`, U+309B or U+1027, or is a reserved name. "
         "The message names the rule."
     ),
+    FindingCode.FOLDER_ENUM_UNKNOWN: (
+        "A library's `folders: {from_enum: <name>}` names an enum the DBML "
+        "does not declare. The folders are the enum's members, so there is "
+        "nothing to create. Check the spelling against the schema's `Enum` "
+        "blocks, or write the folder names out as a list."
+    ),
     FindingCode.VIEW_SCOPE_ON_A_LIST: (
         "A view declares `scope` on an entity that is not a "
         "`DocumentLibrary`. Scope decides whether a view shows the files in "

@@ -1,6 +1,6 @@
 Project legal_compliance_register { database_type: 'SharePoint Online Lists' }
 
-// Customise these executive divisions and the mapping's folders together.
+// The library's folders are these members, so customise this enum alone.
 Enum division {
   "Clinical services"
   "Corporate services"

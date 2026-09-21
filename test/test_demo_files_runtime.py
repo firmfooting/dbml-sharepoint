@@ -47,7 +47,7 @@ def _demo_js() -> str:
         entities={
             "Doc": EntityMapping(
                 name="Doc", kind="DocumentLibrary", base_template=101,
-                site_role="default", folders=(_FOLDER, "Corporate services"),
+                site_role="default", folder_source=(_FOLDER, "Corporate services"),
             ),
         },
         demo_items={
@@ -332,7 +332,7 @@ def _rich_demo_js(written: str = _RICH_WRITTEN) -> str:
         entities={
             "Doc": EntityMapping(
                 name="Doc", kind="DocumentLibrary", base_template=101,
-                site_role="default", folders=(_FOLDER, "Corporate services"),
+                site_role="default", folder_source=(_FOLDER, "Corporate services"),
             ),
         },
         demo_items={

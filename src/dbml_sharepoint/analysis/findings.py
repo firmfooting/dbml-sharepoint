@@ -300,6 +300,7 @@ class FindingCode(StrEnum):
     DUPLICATE_FOLDER = "duplicate_folder", "error"
     FOLDERS_ON_A_LIST = "folders_on_a_list", "error"
     FOLDER_NAME_INVALID = "folder_name_invalid", "error"
+    FOLDER_ENUM_UNKNOWN = "folder_enum_unknown", "error"
     VIEW_SCOPE_ON_A_LIST = "view_scope_on_a_list", "error"
     # Warning severity: the view renders and answers correctly below the
     # threshold; what changes past it is measured, and the author may accept it.
