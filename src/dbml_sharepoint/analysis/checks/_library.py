@@ -268,9 +268,7 @@ def _folders(
     Microsoft's (analysis/file_names.py).
     """
     at = Location(Section.ENTITIES, entity=entity_name, sub="folders")
-    # Asked before the empty return: whether a list may hold folders at all
-    # does not depend on how many names resolved, and an unresolved enum
-    # used to hide it until the author had fixed the spelling and rebuilt.
+    # Before the empty return: the container question is independent.
     if declared and not entity.is_library:
         return [Finding(
             FindingCode.FOLDERS_ON_A_LIST,

@@ -97,10 +97,7 @@ class FoldersFromEnum:
     enum: str
 
 
-#: What `entities.<name>.folders` parses into: the names written out, or the
-#: enum to take them from. Unresolved on purpose; `EntityMapping.folders`
-#: does not exist, so no caller can read a folder list without going through
-#: `analysis/folders.py::declared_folders` and supplying the schema's enums.
+#: What `entities.<name>.folders` parses into. Contract in the docstring below.
 type FolderSource = tuple[str, ...] | FoldersFromEnum
 """A library's declared root folders: the names, or the enum to take them from.
 
