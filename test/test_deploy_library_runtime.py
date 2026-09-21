@@ -77,6 +77,54 @@ list_permissions:
           level: "Folder Editor"
 """
 
+#: The same library in `configured` mode, with ONE principal declared at TWO
+#: levels. That is the shape the per-assignment prune got wrong: each pass
+#: treated its own level as the principal's whole desired state, so the pass
+#: for one level removed the other and the pass for the other removed the
+#: first, off the same pre-write snapshot.
+_TWO_LEVEL_CONFIGURED_LIBRARY = _FOLDERED_LIBRARY + """
+permission_levels:
+  - name: "Folder Editor"
+    description: "Edit inside one folder."
+    base_permissions:
+      - ViewListItems
+      - AddListItems
+      - EditListItems
+  - name: "Folder Approver"
+    description: "Approve inside one folder."
+    base_permissions:
+      - ViewListItems
+      - ApproveItems
+
+groups:
+  - name: "List Maintainer"
+    description: "Test group."
+    owner_group: "Site Owners"
+  - name: "Clinical services Editors"
+    description: "One folder's editors."
+    owner_group: "Site Owners"
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: configured
+    assignments:
+      - principal: { kind: group, name: "List Maintainer" }
+        level: "Folder Editor"
+      - principal: { kind: group, name: "List Maintainer" }
+        level: "Folder Approver"
+  folders:
+    Escalation:
+      break_inheritance: true
+      reconcile: configured
+      assignments:
+        - principal: { kind: group, name: "{member} Editors" }
+          level: "Folder Editor"
+        - principal: { kind: group, name: "{member} Editors" }
+          level: "Folder Approver"
+"""
+
 #: A declared view whose previous title is the one a bare library ships on
 #: AllItems.aspx. Nothing refuses this at build time: 'All Documents' is not
 #: another declared title, so the checks in `_views.py` have nothing to see.
@@ -1054,6 +1102,43 @@ def _folder_acl_run(
         _library_deploy_js(tmp_path, _FOLDER_ACL_LIBRARY, titled=False),
     )
     return summary, calls
+
+
+def test_configured_mode_keeps_every_level_one_principal_is_declared_with(
+    tmp_path: Path,
+) -> None:
+    """Two levels for one principal survive a redeploy that already has both.
+
+    `configured` mode prunes the levels a DECLARED principal holds that the
+    mapping does not. Asked per assignment, each pass treated its own level
+    as that principal's whole desired state: the pass for the first removed
+    the second, the pass for the second removed the first, both off the same
+    pre-write snapshot, and the principal ended with neither. The deploy read
+    back clean because the snapshot it pruned against was never re-read.
+    """
+    # Principal 9 is what the mock resolves any group to; 2 and 3 are the two
+    # declared levels, in declaration order.
+    both = json.dumps({"APP_Escalation": [[{
+        "Member": {"Id": 9, "Title": "List Maintainer", "PrincipalType": 8},
+        "RoleDefinitionBindings": {"results": [
+            {"Id": 2, "Name": "Folder Editor"},
+            {"Id": 3, "Name": "Folder Approver"},
+        ]},
+    }]]})
+    harness = _library_harness(declared_folder=True, unique_after=1).replace(
+        "const ROLE_ASSIGNMENT_PAGES = {};",
+        f"const ROLE_ASSIGNMENT_PAGES = {both};",
+    )
+    summary, calls, _ = _run(
+        harness,
+        _library_deploy_js(tmp_path, _TWO_LEVEL_CONFIGURED_LIBRARY, titled=False),
+    )
+
+    assert summary["errors"] == [], summary["errors"]
+    removals = [
+        c["url"] for c in calls if "removeroleassignment" in c.get("url", "")
+    ]
+    assert removals == [], removals
 
 
 def test_a_declared_folder_gets_its_own_acl(tmp_path: Path) -> None:

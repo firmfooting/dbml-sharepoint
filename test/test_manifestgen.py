@@ -1248,3 +1248,64 @@ def test_manifest_escapes_pipe_in_a_retention_title() -> None:
     )
     assert "| Legal &#124; Compliance | Standard7Y |" in md
     assert "| Legal | Compliance |" not in md
+
+
+def test_manifest_inventories_folder_assignments(tmp_path: Path) -> None:
+    """The manifest is what an operator reads before pasting the script.
+
+    Folder ACLs were emitted into deploy.js but rendered nowhere, so a build
+    that moved edit rights from library scope into per-folder scopes showed
+    the operator none of it, and a library whose only policy was a folder one
+    read as having no assignments configured at all.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping="""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: division}
+
+            permission_levels:
+              - name: "Folder Editor"
+                description: "Edit inside one folder."
+                base_permissions: [ViewListItems, AddListItems, EditListItems]
+
+            groups:
+              - from_enum: division
+                name: "{member} Editors"
+                description: "Editors for {member}."
+                owner_group: "Site Owners"
+
+            list_permissions:
+              folders:
+                Docs:
+                  break_inheritance: true
+                  reconcile: exact
+                  assignments:
+                    - principal: { kind: group, name: "{member} Editors" }
+                      level: "Folder Editor"
+        """,
+    )
+    md = generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="docs.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+    assert "Per-folder assignments" in md
+    assert "Clinical services Editors (group)" in md
+    assert "Folder Editor" in md
+    assert "_(no per-folder assignments configured)_" not in md

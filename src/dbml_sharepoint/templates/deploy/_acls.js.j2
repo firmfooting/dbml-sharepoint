@@ -403,7 +403,21 @@
       } else {
         // Backward-compatible configured-principal mode: remove stale levels
         // for declared principals but leave unrelated principals untouched.
+        //
+        // Grouped by principal, because one principal may be declared with
+        // more than one level. Per assignment, each pass treated its own
+        // level as the principal's whole desired state: the pass for level A
+        // removed B as stale and the pass for B removed A, off the same
+        // pre-write snapshot, leaving the principal with neither.
+        const desiredByPrincipal = new Map();
         for (const resolved of resolvedAssignments) {
+          if (!desiredByPrincipal.has(resolved.principalId)) {
+            desiredByPrincipal.set(resolved.principalId, new Set());
+          }
+          desiredByPrincipal.get(resolved.principalId).add(resolved.roleDefId);
+        }
+        for (const [principalId, wanted] of desiredByPrincipal) {
+          const resolved = { principalId };
           let bindings = bindingsFor(resolved.principalId);
           if (bindings === null) {
             const raResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}/roleassignments/getbyprincipalid(${resolved.principalId})?$expand=RoleDefinitionBindings&$select=RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`), {
@@ -420,8 +434,8 @@
             }
           }
           for (const binding of bindings) {
-            if (binding.Name !== 'Limited Access' && binding.Id !== resolved.roleDefId) {
-              await removeBinding(resolved.principalId, binding.Id, 'stale');
+            if (binding.Name !== 'Limited Access' && !wanted.has(binding.Id)) {
+              await removeBinding(principalId, binding.Id, 'stale');
             }
           }
         }

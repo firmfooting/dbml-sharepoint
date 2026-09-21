@@ -113,6 +113,12 @@ list_permissions:
           level: '{prefix} Contribute No Delete'
         - principal: {kind: group, name: '{prefix} Compliance Coordinators'}
           level: '{prefix} Contribute No Delete'
+        # Assessment Owners edit at list scope, and every document lives in a
+        # folder, so omitting them here would take that away rather than
+        # scope it. The division groups add per-division delegation; they do
+        # not replace the register-wide role the family already declares.
+        - principal: {kind: group, name: '{prefix} Assessment Owners'}
+          level: '{prefix} Contribute No Delete'
         # Full Control on every folder this deploy creates. Without it a later
         # run cannot manage the scope it wrote, and the tool locks itself out.
         - principal: {kind: group, name: dbml List Administrators}
