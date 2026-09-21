@@ -38,6 +38,45 @@ entities:
     folders: ["Clinical services"]
 """
 
+#: A library whose one folder carries its own ACL. The folder policy names
+#: its principal through `{member}`, which is what lets one declaration cover
+#: every folder and is how `groups[].from_enum` names the same object without
+#: either list being written twice. Only DECLARED levels are used: the mock
+#: knows the levels this pack creates and nothing about SharePoint's built-ins.
+_FOLDER_ACL_LIBRARY = _FOLDERED_LIBRARY + """
+permission_levels:
+  - name: "Folder Editor"
+    description: "Edit inside one folder."
+    base_permissions:
+      - ViewListItems
+      - AddListItems
+      - EditListItems
+
+groups:
+  - name: "List Maintainer"
+    description: "Test group."
+    owner_group: "Site Owners"
+  - name: "Clinical services Editors"
+    description: "One folder's editors."
+    owner_group: "Site Owners"
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "List Maintainer" }
+        level: "Folder Editor"
+  folders:
+    Escalation:
+      break_inheritance: true
+      reconcile: exact
+      assignments:
+        - principal: { kind: group, name: "{member} Editors" }
+          level: "Folder Editor"
+"""
+
 #: A declared view whose previous title is the one a bare library ships on
 #: AllItems.aspx. Nothing refuses this at build time: 'All Documents' is not
 #: another declared title, so the checks in `_views.py` have nothing to see.
@@ -171,10 +210,31 @@ _FOLDER_JS = """globalThis.fetch = async (url, opts = {}) => {
     } });
   }
   if (requested.includes('FileSystemObjectType')) {
-    const rows = globalThis.__folderCreated
+    globalThis.__calls.push({ url: requested, method: opts.method || 'GET', body: null });
+    const rows = (globalThis.__folderCreated && !globalThis.__folderMissing)
       ? [{ Id: 1, FileSystemObjectType: 1, FileLeafRef: 'Clinical services',
-          FileRef: '/sites/test/APP_Escalation/Clinical services' }] : [];
+          FileRef: '/sites/test/APP_Escalation/Clinical services',
+          HasUniqueRoleAssignments: Boolean(globalThis.__folderScoped) }] : [];
+    // A file somebody shared by hand: a descendant scope this bundle never
+    // declared, which the ACL phase must still refuse to run past.
+    if (globalThis.__strayScope) {
+      rows.push({ Id: 99, FileSystemObjectType: 0, FileLeafRef: 'stray.docx',
+        FileRef: '/sites/test/APP_Escalation/stray.docx',
+        HasUniqueRoleAssignments: true });
+    }
     return folderAnswer({ d: { results: rows } });
+  }
+  // The folder's OWN inheritance flag. The shared inheritance mock tracks one
+  // global `__broke`, which would make the folder read as already unique the
+  // moment the list's break landed and skip the branch under test.
+  if (requested.includes('/items(')
+      && requested.endsWith('$select=HasUniqueRoleAssignments')) {
+    return folderAnswer({
+      d: { HasUniqueRoleAssignments: Boolean(globalThis.__folderScoped) },
+    });
+  }
+  if (requested.includes('/items(') && requested.includes('/breakroleinheritance')) {
+    globalThis.__folderScoped = true;
   }
 """
 
@@ -974,3 +1034,92 @@ def test_declared_library_url_is_created_and_verified(
     else:
         assert "LIBRARY_INTERNAL_NAME_MISMATCH" in str(summary["errors"])
         assert not any(c["method"] == "POST" and "/fields" in c["url"] for c in calls)
+
+
+def _folder_acl_run(
+    tmp_path: Path, *, stray: bool = False, missing: bool = False,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """The whole deploy against a library whose one folder carries an ACL."""
+    # `unique_after=1` is what makes the mock answer the inheritance flag
+    # at all; both securables read it, the list for its settle loop and
+    # the folder for the same wait.
+    harness = _library_harness(declared_folder=True, unique_after=1)
+    flags = ""
+    if stray:
+        flags += "globalThis.__strayScope = true;\n"
+    if missing:
+        flags += "globalThis.__folderMissing = true;\n"
+    summary, calls, _ = _run(
+        flags + harness,
+        _library_deploy_js(tmp_path, _FOLDER_ACL_LIBRARY, titled=False),
+    )
+    return summary, calls
+
+
+def test_a_declared_folder_gets_its_own_acl(tmp_path: Path) -> None:
+    """The folder is secured as its own list item, addressed by id.
+
+    A folder is not itself a SecurableObject -- Microsoft Learn derives
+    SecurableObject as List, ListItem and Web -- so the grant goes on the
+    folder's list item. Addressed by `items(<id>)` rather than by
+    server-relative path because the id falls out of the descendant-scope
+    enumeration the phase already runs, it keeps the write inside the
+    ownership bracket that proves the title still resolves to the surveyed
+    list, and it never has to quote a folder name.
+    """
+    summary, calls = _folder_acl_run(tmp_path)
+    assert summary["errors"] == [], summary["errors"]
+    urls = [c["url"] for c in calls]
+    assert any(
+        "/items(1)/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)"
+        in u for u in urls
+    ), "the folder's inheritance was never broken"
+    assert any(
+        "/items(1)/roleassignments/addroleassignment(" in u for u in urls
+    ), "the folder grant was never written"
+    # The list's own ACL is untouched by the folder pass: two securables, one
+    # rule, and neither addressed through the other.
+    assert any(
+        u.endswith("/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)")
+        and "/items(" not in u for u in urls
+    ), "the list's own inheritance break went missing"
+
+    # The guard runs again AFTER the folder pass, by which point the folder
+    # reads HasUniqueRoleAssignments=true because this run just broke it. A
+    # clean summary is therefore the assertion that matters most in this
+    # module: without the declared-scope exclusion, the very next deploy
+    # would abort forever on the phase's own work.
+    surveys = [u for u in urls if "FileSystemObjectType" in u]
+    assert len(surveys) >= 2, surveys
+
+
+def test_an_undeclared_descendant_scope_still_aborts(tmp_path: Path) -> None:
+    """Declaring folder ACLs must not blunt the guard.
+
+    The whole risk of teaching this phase to create descendant scopes is that
+    it stops noticing the ones nobody asked for -- a file somebody shared by
+    hand, which is how SharePoint breaks inheritance behind an operator's
+    back. The scope is named by path, and nothing is erased.
+    """
+    summary, calls = _folder_acl_run(tmp_path, stray=True)
+    messages = [e["error"] for e in summary["errors"]]
+    assert any("undeclared item/folder unique permission scope" in m for m in messages), \
+        messages
+    assert any("stray.docx" in m for m in messages), messages
+    # Never erased, only reported.
+    assert not any("removeroleassignment" in c["url"] for c in calls)
+
+
+def test_a_declared_folder_that_does_not_exist_is_refused(tmp_path: Path) -> None:
+    """The branch that only runs when the folder phase has not done its job.
+
+    Without it the folder id reads `undefined`, the phase writes to
+    `items(undefined)`, and what the operator gets is a REST parse error
+    rather than the sentence naming the folder (#454 is the same shape: an
+    abort path whose own diagnosis threw).
+    """
+    summary, calls = _folder_acl_run(tmp_path, missing=True)
+    messages = [e["error"] for e in summary["errors"]]
+    assert any("declared folder 'Clinical services' was not found" in m for m in messages), \
+        messages
+    assert not any("items(undefined)" in c["url"] for c in calls)

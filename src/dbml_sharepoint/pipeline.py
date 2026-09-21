@@ -21,6 +21,7 @@ import typer
 
 from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
 from dbml_sharepoint.analysis.findings import Finding
+from dbml_sharepoint.analysis.groups import declaring_groups
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.permissions import lists_granting_group
 from dbml_sharepoint.analysis.sidecars import (
@@ -282,7 +283,7 @@ def execute_build(
         validate_enterprise_reader(enterprise_reader)
         perms = bundle.mapping.permissions
         targets = [
-            g for g in (perms.groups if perms else [])
+            g for g in declaring_groups(perms)
             if g.enroll_enterprise_reader
         ]
         if not targets:

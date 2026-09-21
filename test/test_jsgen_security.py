@@ -329,11 +329,17 @@ def test_exact_acl_reconciliation_detects_descendant_unique_scopes() -> None:
     """
     js = _generate_simple_js()
 
-    assert "$select=Id,HasUniqueRoleAssignments&$top=5000" in js
+    # FileSystemObjectType and FileRef ride along so the one enumeration also
+    # resolves each DECLARED folder to its item id; see
+    # test_declared_folder_scopes_are_excluded_from_the_guard below.
+    assert (
+        "$select=Id,HasUniqueRoleAssignments,FileSystemObjectType,FileRef&$top=5000"
+        in js
+    )
     assert "while (itemsUrl)" in js
     assert "const next = validatedNextPage(itemsJson.d," in js
     assert "itemsUrl = next;" in js
-    assert "item/folder unique permission scope(s) remain" in js
+    assert "undeclared item/folder unique permission scope(s) remain" in js
     assert "never erase" in js
     assert (
         "breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)" in js
@@ -341,11 +347,64 @@ def test_exact_acl_reconciliation_detects_descendant_unique_scopes() -> None:
     assert (
         "breakroleinheritance(copyRoleAssignments=false,clearSubscopes=true)" not in js
     )
-    descendant_probe = "await findDescendantUniqueScopeIds(la.list)"
-    assert js.count(descendant_probe) == 2
-    break_call = "breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)"
+    descendant_probe = "await surveyDescendants(listTitle, wantedFolders)"
+    assert js.count(descendant_probe) == 2, "survey once before the writes, once after"
+
+    # Asserted over the DRIVER, not over the whole phase. The reconciliation
+    # body is a function now, so it is defined above the loop and the break
+    # call appears earlier in the text than the survey while still running
+    # after it. Position in the driver is what actually orders the two.
     phase4 = js.split(f"Starting Phase {pn('acls')}")[1].split(f"Starting Phase {pn('seeds')}")[0]
-    assert phase4.index(descendant_probe) < phase4.index(break_call)
+    driver = phase4.split("for (const listTitle of aclListTitles)")[1]
+    assert driver.index("assertNoUndeclaredScopes(listTitle, before.undeclared)") < \
+        driver.index("await reconcileScope("), \
+        "the guard must run before the first securable is written"
+
+
+def test_folder_acls_address_the_folder_as_a_list_item() -> None:
+    """A folder is not itself a SecurableObject; its list item is, which is why
+    every folder endpoint is the list's own base plus `/items(<id>)`.
+
+    Addressed by id rather than by server-relative path deliberately. The id
+    comes from the same enumeration the descendant-scope guard already runs,
+    so it costs no request, it keeps every folder write inside the
+    `withOwnedList` bracket that proves the title still resolves to the
+    surveyed list, and it sidesteps path-literal quoting for folder names
+    carrying `&` or a comma, which the shipped division folders do.
+    """
+    js = _generate_simple_js()
+    phase4 = js.split(f"Starting Phase {pn('acls')}")[1].split(f"Starting Phase {pn('seeds')}")[0]
+    assert "suffix: `/items(${before.folderIds.get(fa.folder)})`" in phase4
+    # One literal base for both securables, so the endpoint inventory in
+    # test_template_lint.py sees one family rather than an opaque variable.
+    assert (
+        "web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}"
+        "/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)"
+    ) in phase4
+    assert "${scope.base}" not in phase4
+
+
+def test_declared_folder_scopes_are_excluded_from_the_guard() -> None:
+    """The guard aborts on an UNDECLARED descendant scope only.
+
+    Without this, a deliberate folder ACL would abort every redeploy after the
+    one that created it: the phase would find the scope it had just written
+    and refuse to continue. The exclusion is computed from the folder ids the
+    same survey resolved, never from a second lookup, because a guard and a
+    writer that disagreed about which folders are declared would either erase
+    nothing and abort forever or wave through a scope nobody declared.
+    """
+    js = _generate_simple_js()
+    assert "const declared = new Set(folderIds.values());" in js
+    assert (
+        "undeclared: rows.filter(r => r.HasUniqueRoleAssignments "
+        "&& !declared.has(r.Id))" in js
+    )
+    # Matched on the full path, never the leaf: a subfolder may share a leaf
+    # name with a root folder and securing the wrong one reads back clean.
+    assert "r.FileSystemObjectType === ACL_FOLDER_OBJECT_TYPE && r.FileRef === wanted" in js
+    # Own constant: the folder phase's is another phase body's scope (#454).
+    assert "const ACL_FOLDER_OBJECT_TYPE = 1;" in js
 
 
 def test_other_role_build_does_not_apply_scoped_default_policy() -> None:

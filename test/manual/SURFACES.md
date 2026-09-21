@@ -623,6 +623,7 @@ Applying the keying rule. Every straddle named in the mapping resolves here.
 | `view-edit-page-probe.js` | `view` | `guarded-single-clause-inert`, `tautology-alone-partitions` (was `S1`, `S2`) | `query.caml.*` |
 | `view-edit-page-probe.js` | `view` | `guarded-single-clause-stored` (was `Q1`) | `query.view-query.*` |
 | `siteuserinfolist-probe.js` | `access` | `system-columns-item-shape` | `field.person.*` |
+| `library-sharing-probe.js` | `library` | `control-non-owner-cannot-edit`, `owner-edits-membership` | `access.group.*` |
 | `today-source-probe.js` | `formula` | `profile-regional-settings` | `access.principal.*` |
 | `today-source-probe.js` | `formula` | `today-element-*`, `today-offset-element-*`, `today-include-time-*` | `query.caml-adhoc.*` |
 | `today-source-probe.js` | `formula` | `dynamic-default-rest-fill` | `field.date.*` |

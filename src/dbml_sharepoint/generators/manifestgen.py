@@ -6,6 +6,7 @@ from typing import Any
 
 from dbml_sharepoint.analysis.condition_description import describe
 from dbml_sharepoint.analysis.findings import Finding
+from dbml_sharepoint.analysis.groups import declaring_groups
 from dbml_sharepoint.analysis.limits import MAX_VALIDATION_FORMULA, MAX_VALIDATION_MESSAGE
 from dbml_sharepoint.analysis.permissions import lists_granting_group
 from dbml_sharepoint.analysis.phases import phase_numbers
@@ -106,7 +107,7 @@ def generate_manifest(
     # owns is not something this operator can act on.
     _perms = bundle.mapping.permissions
     _reader_groups = [
-        g.name for g in (_perms.groups if _perms else []) if g.enroll_enterprise_reader
+        g.name for g in declaring_groups(_perms) if g.enroll_enterprise_reader
     ]
     _deployed_entities = [e for e in bundle.mapping.entities if _deployed(e)]
     # The granted half is passed too, not just discarded: when every deployed

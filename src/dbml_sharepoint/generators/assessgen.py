@@ -14,6 +14,7 @@ from typing import Any
 from dbml_sharepoint.analysis.clock_usage import clock_usage
 from dbml_sharepoint.analysis.folders import declared_folders
 from dbml_sharepoint.analysis.group_description import marker_for_group
+from dbml_sharepoint.analysis.groups import declared_groups
 from dbml_sharepoint.analysis.limits import (
     INDEX_CHANGE_CEILING,
     LIST_VIEW_THRESHOLD,
@@ -167,6 +168,7 @@ def assess_targets(
                 unique_columns.append([bundle.mapping.list_title(table_name), unique])
     m = bundle.mapping
     perms = m.permissions
+    site_groups = declared_groups(perms, enum_members)
     # [[current name, [[previous name, previous marker], ...]], ...] for
     # every level and group that has previous names, the same shape as
     # `renames` above so one assessment loop serves all three.
@@ -177,7 +179,7 @@ def assess_targets(
     ]
     group_renames: list[list[Any]] = [
         [grp.name, [[p, marker_for_group(p, family)] for p in grp.previous_names]]
-        for grp in (perms.groups if perms else [])
+        for grp in site_groups
         if grp.previous_names
     ]
     # Does any list THIS RUN provisions end up with versioning on? Asked
@@ -215,7 +217,7 @@ def assess_targets(
         # cannot disagree with `analysis.limits`.
         "list_view_threshold": LIST_VIEW_THRESHOLD,
         "index_change_ceiling": INDEX_CHANGE_CEILING,
-        "declares_groups": bool(perms and perms.groups),
+        "declares_groups": bool(site_groups),
         "declares_seal": bool(m.seal_columns),
         "declares_prevent_deletion": bool(m.prevent_list_deletion),
         "declares_column_formatting": bool(m.column_formatting),

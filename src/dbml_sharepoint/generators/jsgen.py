@@ -16,9 +16,10 @@ from dbml_sharepoint.analysis.column_refs import (
 )
 from dbml_sharepoint.analysis.condition_description import describe
 from dbml_sharepoint.analysis.condition_rendering import to_caml_protected, to_validation
-from dbml_sharepoint.analysis.folders import declared_folders
+from dbml_sharepoint.analysis.folders import declared_folders, folder_policies
 from dbml_sharepoint.analysis.form_rendering import compose_visibility
 from dbml_sharepoint.analysis.group_description import group_description, marker_for_group
+from dbml_sharepoint.analysis.groups import declared_groups
 from dbml_sharepoint.analysis.joins import all_items_hidden
 from dbml_sharepoint.analysis.list_description import family_for, list_description, marker_for
 from dbml_sharepoint.analysis.lookups import (
@@ -493,6 +494,51 @@ def _title_patch(col: Column, display_title: str | None) -> dict[str, Any]:
     return patch
 
 
+def _principal_json(principal: Any) -> dict[str, Any]:
+    """A principal as the templates read it: the kind, and a name only for a
+    named group. The three `associated_*` kinds resolve through the site's own
+    endpoints and carry no name at all."""
+    out: dict[str, Any] = {"kind": principal.kind}
+    if principal.kind == "group" and principal.name is not None:
+        out["name"] = principal.name
+    return out
+
+
+def _folder_assignments(
+    bundle: MappingBundle,
+    creation_order: Sequence[str],
+    site_role: str,
+    enum_members: dict[str, list[str]],
+) -> list[dict[str, Any]]:
+    """Folder-scoped ACLs, one entry per declared folder of every entity
+    `list_permissions.folders` names.
+
+    Emitted beside the list assignments and consumed by the same phase,
+    because that phase's descendant-scope guard has to know which folder
+    scopes this bundle means to create. A folder scope it has not been told
+    about is still an abort.
+    """
+    out: list[dict[str, Any]] = []
+    for table_name in creation_order:
+        entity = bundle.mapping.entities.get(table_name)
+        if entity is None or entity.site_role != site_role:
+            continue
+        for folder, policy in folder_policies(
+            table_name, entity.folder_source, bundle.mapping.permissions, enum_members,
+        ):
+            out.append({
+                "list": bundle.mapping.list_title(table_name),
+                "folder": folder,
+                "break_inheritance": policy.break_inheritance,
+                "reconcile_mode": policy.reconcile_mode,
+                "assignments": [
+                    {"principal": _principal_json(a.principal), "level": a.level}
+                    for a in policy.assignments
+                ],
+            })
+    return out
+
+
 def build_schema_json(
     schema: Schema,
     bundle: MappingBundle,
@@ -517,6 +563,11 @@ def build_schema_json(
     # expansion). Subtract cross_site_keys defensively.
     deferred_set = set(plan.phase2_lookups) - cross_site_keys
     enums_by_name = {e.name: e for e in schema.enums}
+    # One projection for every caller that resolves a `from_enum`
+    # declaration: the library's folders and the groups generated per
+    # member. Two derivations could disagree about which members exist,
+    # and the groups exist to hold the folders' grants.
+    enum_members = {name: e.members for name, e in enums_by_name.items()}
 
     calculated_by_entity = {
         table.name: {c.name for c in table.columns if c.type in CALCULATED_TYPES}
@@ -779,10 +830,7 @@ def build_schema_json(
             # than on the kind string, so a third kind cannot be mistaken for
             # a library by a string test in JavaScript.
             "is_library": entity.is_library,
-            "folders": list(declared_folders(
-                entity.folder_source,
-                {name: e.members for name, e in enums_by_name.items()},
-            )),
+            "folders": list(declared_folders(entity.folder_source, enum_members)),
             "description": list_description(
                 table.note, family=family, entity=table_name,
             ),
@@ -1029,7 +1077,7 @@ def build_schema_json(
                 "base_permissions": {"high": hl.high, "low": hl.low},
             })
 
-        for grp in mapping_perms.groups:
+        for grp in declared_groups(mapping_perms, enum_members):
             groups_out.append({
                 "name": grp.name,
                 # The marker is composed HERE, not in the template, so the
@@ -1071,22 +1119,20 @@ def build_schema_json(
             if policy is None:
                 continue
             list_title = bundle.mapping.list_title(table_name)
-            assignments_out: list[dict[str, Any]] = []
-            for assignment in policy.assignments:
-                p = assignment.principal
-                principal_out: dict[str, Any] = {"kind": p.kind}
-                if p.kind == "group" and p.name is not None:
-                    principal_out["name"] = p.name
-                assignments_out.append({
-                    "principal": principal_out,
-                    "level": assignment.level,
-                })
+            assignments_out: list[dict[str, Any]] = [
+                {"principal": _principal_json(a.principal), "level": a.level}
+                for a in policy.assignments
+            ]
             list_assignments_out.append({
                 "list": list_title,
                 "break_inheritance": policy.break_inheritance,
                 "reconcile_mode": policy.reconcile_mode,
                 "assignments": assignments_out,
             })
+
+        folder_assignments_out = _folder_assignments(
+            bundle, plan.list_creation_order, site_role, enum_members,
+        )
 
     # === Seed items (extension-provided) ===
     # The active extension decides which lists get a seeded singleton row and
@@ -1110,6 +1156,7 @@ def build_schema_json(
         "permission_levels": permission_levels_out,
         "groups": groups_out,
         "list_assignments": list_assignments_out,
+        "folder_assignments": folder_assignments_out,
         # The single boolean the manifest and deploy.js's own preflight
         # abort both key off, instead of each re-deriving "declares levels /
         # groups / a per-list policy" independently -- see
