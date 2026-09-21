@@ -20,7 +20,7 @@ from dbml_sharepoint.model.mapping_types import GroupsFromEnum, PermissionsConfi
 from dbml_sharepoint.model.prefix import expand_member
 
 
-class UnknownGroupEnumError(LookupError):
+class UnknownGroupEnumError(LookupError, ValueError):
     """`groups[].from_enum` names an enum the schema does not declare.
 
     Raised rather than answered with an empty tuple, for the reason
