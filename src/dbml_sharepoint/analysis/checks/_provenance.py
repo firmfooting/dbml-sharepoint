@@ -127,7 +127,7 @@ def _marker_over_ceiling(vc: ValidationContext) -> Iterator[Finding]:
                 f"`Project` name or the level name.",
                 location=_LEVELS,
             )
-    for grp in perms.groups:
+    for grp in vc.site_groups:
         marker = marker_for_group(grp.name, family)
         if len(marker) > MAX_GROUP_DESCRIPTION:
             yield Finding(
@@ -165,7 +165,7 @@ def _interpolated_names(
         yield f"permission level {lvl.name!r}", lvl.name, _LEVELS
         for previous in lvl.previous_names:
             yield f"previous name {previous!r} of permission level {lvl.name!r}", previous, _LEVELS
-    for grp in perms.groups:
+    for grp in vc.site_groups:
         yield f"site group {grp.name!r}", grp.name, _GROUPS
         for previous in grp.previous_names:
             yield f"previous name {previous!r} of site group {grp.name!r}", previous, _GROUPS

@@ -440,3 +440,254 @@ def test_a_per_column_declaration_on_the_file_name_is_undeployable() -> None:
         column_formatting={"Docs": {"FileLeafRef": {"elmType": "div"}}},
     )
     only(findings, FindingCode.UNDEPLOYABLE_COLUMN_DECLARATION)
+
+
+# --- list_permissions.folders and groups[].from_enum ------------------------
+
+def _folder_policy(
+    tmp_path: Path,
+    *,
+    kind: str = "DocumentLibrary",
+    template: int = 101,
+    folders: str = "{from_enum: division}",
+    entity: str = "Docs",
+    group_name: str = "{member} Editors",
+    from_enum: str = "division",
+) -> list[Finding]:
+    """A library whose folders carry their own ACL, and one group per member
+    to hold it. The two halves are declared together because that is the only
+    shape either is useful in."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n  "Corporate services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping=f"""
+            entities:
+              Docs:
+                kind: {kind}
+                base_template: {template}
+                site_role: default
+                folders: {folders}
+
+            permission_levels:
+              - name: "Folder Editor"
+                description: "Edit inside one folder."
+                base_permissions: [ViewListItems, AddListItems, EditListItems]
+
+            groups:
+              - from_enum: {from_enum}
+                name: "{group_name}"
+                description: "Editors for {{member}}."
+                owner_group: "Site Owners"
+
+            list_permissions:
+              default:
+                site_role: default
+                break_inheritance: true
+                reconcile: exact
+                assignments:
+                  - principal: {{ kind: associated_owner_group }}
+                    level: "Folder Editor"
+              folders:
+                {entity}:
+                  break_inheritance: true
+                  reconcile: exact
+                  assignments:
+                    - principal: {{ kind: group, name: "{group_name}" }}
+                      level: "Folder Editor"
+        """,
+    )
+    return validate_against_mapping(schema, bundle)
+
+
+def test_a_group_per_enum_member_securing_its_own_folder_is_clean(
+    tmp_path: Path,
+) -> None:
+    """The whole point of the pair: the folders and the groups that hold their
+    grants come from one enum, so neither list can drift from the other."""
+    findings = _folder_policy(tmp_path)
+    none_of(findings, FindingCode.GROUP_ENUM_UNKNOWN)
+    none_of(findings, FindingCode.GROUP_ENUM_NAME_NOT_UNIQUE)
+    none_of(findings, FindingCode.FOLDER_PERMISSIONS_ON_A_LIST)
+    none_of(findings, FindingCode.FOLDER_PERMISSIONS_WITHOUT_FOLDERS)
+    none_of(findings, FindingCode.UNKNOWN_PRINCIPAL_GROUP)
+    assert by_severity(findings, "error") == [], by_severity(findings, "error")
+
+
+def test_groups_from_an_unknown_enum_are_refused(tmp_path: Path) -> None:
+    """No enum, no groups, and every folder grant then names a principal that
+    was never created. Named like the folder rule, and for the same reason."""
+    f = only(
+        _folder_policy(tmp_path, from_enum="divison"),
+        FindingCode.GROUP_ENUM_UNKNOWN,
+    )
+    assert "divison" in f.message
+    assert "division" in f.message, "the message must name the enums that DO exist"
+
+
+def test_an_enum_group_name_without_the_member_token_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The silent one. Every member resolves to the same name, so ONE group is
+    created, written, read back byte-identical and reported clean, while every
+    folder grant meant for a particular division lands on it."""
+    f = only(
+        _folder_policy(tmp_path, group_name="Division Editors"),
+        FindingCode.GROUP_ENUM_NAME_NOT_UNIQUE,
+    )
+    assert "{member}" in f.message
+    assert "division" in f.message
+
+
+def test_folder_permissions_on_a_list_are_refused(tmp_path: Path) -> None:
+    """A folder ACL is written against the folder's list item, and a list has
+    no folders to write one on."""
+    f = only(
+        _folder_policy(tmp_path, kind="List", template=100, folders="[]"),
+        FindingCode.FOLDER_PERMISSIONS_ON_A_LIST,
+    )
+    assert "Docs" in f.message
+
+
+def test_folder_permissions_on_a_library_with_no_folders_are_refused(
+    tmp_path: Path,
+) -> None:
+    """A policy governing nothing is the failure this rule exists to make
+    loud: it builds, deploys, writes no folder ACL at all and reports
+    success."""
+    f = only(
+        _folder_policy(tmp_path, folders="[]"),
+        FindingCode.FOLDER_PERMISSIONS_WITHOUT_FOLDERS,
+    )
+    assert "Docs" in f.message
+
+
+def test_folder_permissions_on_an_unknown_entity_are_refused(
+    tmp_path: Path,
+) -> None:
+    """Keyed by entity exactly as `overrides` is, and refused the same way."""
+    f = only(
+        _folder_policy(tmp_path, entity="Nope"),
+        FindingCode.UNKNOWN_TABLE,
+    )
+    assert "Nope" in f.message
+
+
+@pytest.mark.parametrize(
+    "flag", ["enroll_enterprise_reader", "enroll_operator_during_deploy"],
+)
+def test_an_enum_group_cannot_enrol_an_identity(tmp_path: Path, flag: str) -> None:
+    """Each flag enrols ONE identity, and `from_enum` makes one group per
+    member to enrol it into.
+
+    Refused rather than given a meaning it does not have. It also keeps the
+    three callers that ask whether ANY declaration carries these flags --
+    `pipeline`, `wizard` and `manifestgen`, none of which holds a schema and
+    so none of which can resolve the enum -- correct by construction.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=('Enum division {\n  "Clinical services"\n}\n' + table("Docs", ID_PK, TITLE)),
+        mapping=f"""
+            entities:
+              Docs: {{ kind: List, base_template: 100, site_role: default }}
+
+            groups:
+              - from_enum: division
+                name: "{{member}} Editors"
+                description: "Editors."
+                owner_group: "Site Owners"
+                {flag}: true
+        """,
+    )
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.GROUP_ENUM_ENROLS_AN_IDENTITY,
+    )
+    assert flag in f.message
+    assert "division" in f.message
+
+
+def test_a_generated_group_name_sharepoint_refuses_is_caught_at_build(
+    tmp_path: Path,
+) -> None:
+    """The live failure, pinned.
+
+    MEASURED 2026-09-21: a live deploy created six division groups from one
+    `from_enum` declaration and then stopped at phase 1.4 on the seventh,
+    whose member carried a comma: "The group name is empty, or you are using
+    one or more of the following invalid characters:
+    \" / \\ [ ] : | < > + = ; , ? * ' @".
+
+    Nothing before this rule could see it. The template reads
+    `{prefix} {member} Division` and carries nothing refused; only one of the
+    names it generates does, so the name has to be judged after expansion or
+    not at all.
+    """
+    findings = _folder_policy(
+        tmp_path, group_name="{member} Division", folders="{from_enum: division}",
+    )
+    none_of(findings, FindingCode.GROUP_NAME_INVALID)
+
+    comma = tmp_path / "comma"
+    comma.mkdir()
+    schema, bundle = pack(
+        comma,
+        dbml=(
+            'Enum division {\n  "Clinical, community & aged services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping="""
+            entities:
+              Docs: { kind: List, base_template: 100, site_role: default }
+
+            groups:
+              - from_enum: division
+                name: "{member} Division"
+                description: "Editors."
+                owner_group: "Site Owners"
+        """,
+    )
+    f = only(validate_against_mapping(schema, bundle), FindingCode.GROUP_NAME_INVALID)
+    assert "','" in f.message, f.message
+    assert "{member_safe}" in f.message, "the message must name the way out"
+    # `&` is allowed: sibling groups whose names carried one were created in
+    # the same live run, which is what stops this widening to punctuation.
+    assert "'&'" not in f.message
+
+
+def test_member_safe_makes_a_refused_member_usable(tmp_path: Path) -> None:
+    """`{member_safe}` replaces each refused character with a space and
+    collapses the run, so the comma case becomes a name SharePoint accepts
+    while the folder it secures keeps its real name."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical, community & aged services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping="""
+            entities:
+              Docs: { kind: List, base_template: 100, site_role: default }
+
+            groups:
+              - from_enum: division
+                name: "{member_safe} Division"
+                description: "Editors."
+                owner_group: "Site Owners"
+        """,
+    )
+    findings = validate_against_mapping(schema, bundle)
+    none_of(findings, FindingCode.GROUP_NAME_INVALID)
+    # Still one group per member: {member_safe} varies the name exactly as
+    # {member} does, so it must not trip the collapse rule either.
+    none_of(findings, FindingCode.GROUP_ENUM_NAME_NOT_UNIQUE)
+
+    from dbml_sharepoint.analysis.groups import declared_groups
+
+    assert [g.name for g in declared_groups(
+        bundle.mapping.permissions,
+        {e.name: e.members for e in schema.enums},
+    )] == ["Clinical community & aged services Division"]

@@ -43,6 +43,57 @@ def check(vc: ValidationContext) -> list[Finding]:
             findings += _view_scope(entity_name, entity, view)
         for row in vc.bundle.mapping.demo_items.get(entity_name, []):
             findings += _demo_file(entity_name, entity, row, folders)
+    findings += _folder_permissions(vc)
+    return findings
+
+
+def _folder_permissions(vc: ValidationContext) -> list[Finding]:
+    """`list_permissions.folders.<entity>`: it must name a library with folders.
+
+    Keyed by entity and never by folder, so the only questions left are
+    whether the entity exists, whether it can hold folders, and whether it
+    declares any. Which folders it declares is `declared_folders`' answer
+    and is not re-derived here.
+    """
+    perms = vc.bundle.mapping.permissions
+    if perms is None:
+        return []
+    at = Location(Section.LIST_PERMISSIONS, sub="folders")
+    findings: list[Finding] = []
+    for entity_name in perms.folder_policies:
+        entity = vc.bundle.mapping.entities.get(entity_name)
+        if entity is None:
+            findings.append(Finding(
+                FindingCode.UNKNOWN_TABLE,
+                f"list_permissions.folders.{entity_name}: no such entity; the "
+                f"mapping declares "
+                f"{', '.join(sorted(vc.bundle.mapping.entities)) or 'none'}.",
+                location=at,
+            ))
+            continue
+        if not entity.is_library:
+            findings.append(Finding(
+                FindingCode.FOLDER_PERMISSIONS_ON_A_LIST,
+                f"list_permissions.folders.{entity_name}: {entity_name} is not "
+                f"a DocumentLibrary, so it has no folders to secure.",
+                location=at,
+            ))
+            continue
+        try:
+            folders = declared_folders(entity.folder_source, vc.enum_members_by_name)
+        except UnknownFolderEnumError:
+            # Already reported against the entity by `check` above, where the
+            # message can name the enum and the declared ones. Saying it twice
+            # from two locations reads as two faults.
+            continue
+        if not folders:
+            findings.append(Finding(
+                FindingCode.FOLDER_PERMISSIONS_WITHOUT_FOLDERS,
+                f"list_permissions.folders.{entity_name}: {entity_name} "
+                f"declares no folders, so this policy governs nothing and no "
+                f"folder ACL is written.",
+                location=at,
+            ))
     return findings
 
 

@@ -276,7 +276,7 @@ def requires_manage_permissions(mapping: Mapping, table_names: Iterable[str]) ->
     perms = mapping.permissions
     if perms is None:
         return False
-    if perms.levels or perms.groups:
+    if perms.levels or perms.groups or perms.group_sources or perms.folder_policies:
         return True
     return any(mapping.permissions_for_entity(name) is not None for name in table_names)
 

@@ -682,6 +682,18 @@ FINDING_HELP: dict[FindingCode, str] = {
         "nothing to create. Check the spelling against the schema's `Enum` "
         "blocks, or write the folder names out as a list."
     ),
+    FindingCode.FOLDER_PERMISSIONS_ON_A_LIST: (
+        "`list_permissions.folders` names an entity that is not a "
+        "`DocumentLibrary`. A folder-scoped ACL is written against the "
+        "folder's list item, and a list has no folders to write one on."
+    ),
+    FindingCode.FOLDER_PERMISSIONS_WITHOUT_FOLDERS: (
+        "`list_permissions.folders` names a library that declares no "
+        "`folders`, so the policy applies to nothing and the deploy writes "
+        "no folder ACL at all. Declare the folders on the entity, or remove "
+        "the block: a policy that silently governs nothing is the failure "
+        "this rule exists to make loud."
+    ),
     FindingCode.VIEW_SCOPE_ON_A_LIST: (
         "A view declares `scope` on an entity that is not a "
         "`DocumentLibrary`. Scope decides whether a view shows the files in "
@@ -723,6 +735,36 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.DUPLICATE_INDEX_TARGET: (
         "One table's `indexes { }` names the same column twice."
+    ),
+    FindingCode.GROUP_ENUM_ENROLS_AN_IDENTITY: (
+        "A `groups` entry combines `from_enum` with `enroll_enterprise_reader` "
+        "or `enroll_operator_during_deploy`. Each of those enrols ONE "
+        "identity -- the account `--enterprise-reader` names, or the operator "
+        "running the paste -- and `from_enum` makes one group per enum "
+        "member, so the identity would land in one of them and the rest "
+        "would stay empty. Put the flag on a group declared on its own."
+    ),
+    FindingCode.GROUP_NAME_INVALID: (
+        "A declared group's name carries a character SharePoint refuses in a "
+        "group name. Measured on a live tenant on 2026-09-21, the refused set "
+        "is `\" / \\ [ ] : | < > + = ; , ? * ' @`; `&` is not in it. The "
+        "name is judged after `{prefix}` and `{member}` have been expanded, "
+        "so a template that reads cleanly can still generate a refused name "
+        "from one enum member. Use `{member_safe}`, which expands to the "
+        "member with those characters replaced by spaces, or rename the group."
+    ),
+    FindingCode.GROUP_ENUM_NAME_NOT_UNIQUE: (
+        "A `groups` entry declares `from_enum` but its `name` carries no "
+        "`{member}` placeholder, so every member resolves to the same name "
+        "and one group is created instead of one per member. Nothing fails "
+        "at deploy time: the single group is written, read back "
+        "byte-identical and reported clean, while every grant meant for a "
+        "particular member lands on it. Put `{member}` in the name."
+    ),
+    FindingCode.GROUP_ENUM_UNKNOWN: (
+        "A `groups` entry's `from_enum` names an enum the DBML does not "
+        "declare, so no group is generated from it. Check the spelling "
+        "against the schema's `Enum` blocks, or write the groups out."
     ),
     FindingCode.DUPLICATE_PERMISSION_LEVEL_NAME: (
         "Two `permission_levels` entries share a name case- "

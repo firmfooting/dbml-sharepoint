@@ -14,6 +14,7 @@ tested one at a time.
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
+from dbml_sharepoint.analysis.groups import UnknownGroupEnumError, declared_groups
 from dbml_sharepoint.analysis.list_description import family_for
 from dbml_sharepoint.analysis.lookups import lookup_display_columns, lookup_target_entities
 from dbml_sharepoint.analysis.reporting.plan import (
@@ -22,7 +23,7 @@ from dbml_sharepoint.analysis.reporting.plan import (
     build_plans,
 )
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, supports_unique
-from dbml_sharepoint.model.mapping_types import EntityKind, MappingBundle
+from dbml_sharepoint.model.mapping_types import EntityKind, MappingBundle, SiteGroup
 from dbml_sharepoint.model.parser import EnumDef, Schema, Table
 
 
@@ -52,6 +53,13 @@ class ValidationContext:
     tables_by_name: dict[str, Table] = field(default_factory=dict)
     enum_by_name: dict[str, EnumDef] = field(default_factory=dict)
     enum_members_by_name: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # Every declared site group, the literal ones and the ones generated from
+    # an enum, resolved ONCE. Five check families ask what groups exist, and
+    # a family that resolved `groups[].from_enum` for itself could judge a
+    # different set from the one the deploy creates. Falls back to the literal
+    # groups when the enum is unknown; `group_enum_unknown` reports that, and
+    # every other rule then judges the groups that do resolve.
+    site_groups: tuple[SiteGroup, ...] = ()
     # Columns expanded to a Choice+URL pair rather than deployed as declared,
     # so a check asking "is this column rendered?" must consult this too.
     cross_site_by_entity: dict[str, set[str]] = field(default_factory=dict)
@@ -170,6 +178,12 @@ class ValidationContext:
         display_columns = lookup_display_columns(
             schema, bundle.mapping.entities, calculated_by_entity, cross_site_pairs,
         )
+        enum_members_by_name = {enum.name: tuple(enum.members) for enum in schema.enums}
+        perms = bundle.mapping.permissions
+        try:
+            site_groups = declared_groups(perms, enum_members_by_name)
+        except UnknownGroupEnumError:
+            site_groups = tuple(perms.groups) if perms is not None else ()
         report_plans_by_role: dict[str, dict[str, ListPlan] | None] = {}
         for role in sorted({e.site_role for e in bundle.mapping.entities.values()}):
             try:
@@ -185,9 +199,8 @@ class ValidationContext:
             table_names={t.name for t in schema.tables},
             tables_by_name={t.name: t for t in schema.tables},
             enum_by_name={e.name: e for e in schema.enums},
-            enum_members_by_name={
-                enum.name: tuple(enum.members) for enum in schema.enums
-            },
+            enum_members_by_name=enum_members_by_name,
+            site_groups=site_groups,
             cross_site_by_entity=cross_site_by_entity,
             cross_site_pairs=cross_site_pairs,
             lookup_targets=lookup_targets,
