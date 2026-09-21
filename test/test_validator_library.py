@@ -228,6 +228,48 @@ def test_folders_from_an_unknown_enum_are_refused(tmp_path: Path) -> None:
     assert "division" in f.message, "the message must name the enums that DO exist"
 
 
+def test_folders_from_an_enum_no_column_uses_are_flagged(tmp_path: Path) -> None:
+    """A schema holds many enums and `from_enum` takes any of them.
+
+    Naming the wrong one resolves, passes every rule and creates a full set
+    of the wrong folders, which nothing downstream can see because both
+    declarations are individually valid. A warning and not an error: folders
+    keyed by something the library does not store are a legitimate design.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n}\n'
+            'Enum region {\n  "North"\n  "South"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping="""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: region}
+        """,
+    )
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.FOLDER_ENUM_NOT_A_COLUMN_TYPE,
+    )
+    assert "region" in f.message
+    assert "division" in f.message, "the message must name what the columns DO carry"
+
+
+def test_folders_from_the_entitys_own_enum_are_not_flagged(tmp_path: Path) -> None:
+    """The ordinary shape stays quiet, or the warning is noise."""
+    none_of(
+        _folders_from_enum(
+            tmp_path, "DocumentLibrary", 101, '  "Clinical services"',
+        ),
+        FindingCode.FOLDER_ENUM_NOT_A_COLUMN_TYPE,
+    )
+
+
 def test_an_unresolved_folder_enum_does_not_condemn_every_demo_file(
     tmp_path: Path,
 ) -> None:
