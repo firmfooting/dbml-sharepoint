@@ -59,9 +59,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
             renamed_from=optional_str_list(
                 spec, "renamed_from", f"entities.{name}",
             ),
-            # Shape only here; that the entity is a library, that the enum
-            # exists, and that each name is one SharePoint accepts, are the
-            # validator's.
+            # Shape only here; the rest is the validator's.
             folder_source=_folder_source(spec, f"entities.{name}"),
         )
     titles: set[tuple[str, str]] = set()

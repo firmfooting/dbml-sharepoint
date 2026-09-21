@@ -305,8 +305,7 @@ class FindingCode(StrEnum):
     # Warning severity: the view renders and answers correctly below the
     # threshold; what changes past it is measured, and the author may accept it.
     LIBRARY_GROUP_BY_FOLDER_SCOPED = "library_group_by_folder_scoped", "warning"
-    # Warning, not error: an enum no column on this entity uses is a legal
-    # way to name folders, and only usually a typo onto a second enum.
+    # Warning: folders keyed by something the library does not store are legal.
     FOLDER_ENUM_NOT_A_COLUMN_TYPE = "folder_enum_not_a_column_type", "warning"
     # A library row IS a file, so these five are about the file a demo row
     # uploads. The row's values are `_demo.py`'s, on either container.
