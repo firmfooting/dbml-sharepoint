@@ -47,3 +47,35 @@ order the folder phase creates them in and the order the reporting pack
 lists them in, so a reordered enum reorders nothing that matters and a
 diff of either stays readable.
 
+### `policy_for_folder`
+
+```python
+def policy_for_folder(policy: dbml_sharepoint.model.mapping_types.ListPermissionPolicy, folder: str) -> dbml_sharepoint.model.mapping_types.ListPermissionPolicy
+```
+
+`policy` with `{member}` expanded to one folder's name.
+
+Public because the validator expands the same policy the generator does:
+a level or principal that only exists after expansion has to be judged
+after expansion, and judging it against a second implementation would be
+the drift this module exists to remove.
+
+Both the principal and the level take the token. A per-division group is
+the obvious use of the first; the second is there because a family that
+wanted a level per division would otherwise have to write the policy out
+once per folder, which is the duplication this whole shape removes.
+
+### `folder_policies`
+
+```python
+def folder_policies(entity_name: str, source: FolderSource, perms: dbml_sharepoint.model.mapping_types.PermissionsConfig | None, enum_members: collections.abc.Mapping[str, collections.abc.Sequence[str]]) -> tuple[tuple[str, dbml_sharepoint.model.mapping_types.ListPermissionPolicy], ...]
+```
+
+(folder name, policy) for every folder `entity_name` declares.
+
+`list_permissions.folders` is keyed by entity and never by folder, so
+the folders this returns are exactly `declared_folders`' answer and the
+two cannot drift. An entity with a policy and no folders gets an empty
+tuple here; that the block then does nothing is the validator's finding
+(`folder_permissions_without_folders`), not a silence to paper over.
+

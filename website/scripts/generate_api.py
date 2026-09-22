@@ -65,6 +65,7 @@ MODULES: list[tuple[str, str]] = [
     ("analysis.phases", "the deploy-phase manifest"),
     ("analysis.folders", "which folders a library declares, enum sources resolved"),
     ("analysis.permissions", "SP base-permission bitmask helpers"),
+    ("analysis.groups", "which site groups a mapping declares, enum sources resolved"),
     ("analysis.styles", "the fleet style standard"),
     ("analysis.condition_rendering", "condition normalisation and target rendering"),
     ("analysis.conditions", "classified condition diagnosis"),

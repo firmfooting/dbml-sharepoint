@@ -98,7 +98,7 @@ ASSOCIATED_GROUP_ALIASES = {'site owners': 'associated_owner_group', 'site membe
 ### `requires_manage_permissions`
 
 ```python
-def requires_manage_permissions(mapping: dbml_sharepoint.model.mapping_types.Mapping, table_names: collections.abc.Iterable[str]) -> bool
+def requires_manage_permissions(mapping: dbml_sharepoint.model.mapping_types.Mapping, table_names: collections.abc.Iterable[str], enum_members: collections.abc.Mapping[str, collections.abc.Sequence[str]]) -> bool
 ```
 
 True when deploying `table_names` performs ANY ACL work, and so needs
@@ -120,7 +120,8 @@ still binds the declared role assignments on the (inherited) list, which
 still needs the bit. `table_names` should be the entity names actually in
 this build (`analysis.ordering.site_tables_in_order`'s output), not every
 entity in the mapping -- a policy scoped to a site_role this build does
-not deploy must not demand a right the build never exercises.
+not deploy must not demand a right the build never exercises. `groups`
+is resolved through `analysis/groups.py` for the same reason.
 
 ### `lists_granting_group`
 
