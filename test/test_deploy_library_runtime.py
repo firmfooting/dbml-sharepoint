@@ -310,21 +310,44 @@ _FOLDER_JS = r"""globalThis.fetch = async (url, opts = {}) => {
   if (requested.includes('/items(')
       && requested.includes('/roleassignments/removeroleassignment(')) {
     const m = /principalid=(\d+),roleDefId=(\d+)/.exec(requested);
-    if (m) globalThis.__folderBindings.delete(m[1] + ':' + m[2]);
+    // __folderRemovalsIgnored answers the delete and keeps the binding,
+    // which is what an accepted but ineffective removal looks like.
+    if (m && !globalThis.__folderRemovalsIgnored) {
+      globalThis.__folderBindings.delete(m[1] + ':' + m[2]);
+    }
   }
   if (requested.includes('/items(') && /\/roleassignments\?/.test(requested)) {
     globalThis.__calls.push({ url: requested, method: opts.method || 'GET', body: null });
     const byPrincipal = new Map();
     if (!globalThis.__folderBindingsBlind) {
-      for (const pair of globalThis.__folderBindings) {
+      const pairs = [...globalThis.__folderBindings];
+      // A binding nobody declared, left behind by an earlier run or a hand
+      // edit: what an exact policy has to prune and then prove it pruned.
+      if (globalThis.__folderStrayBinding) pairs.push('777:888');
+      for (const pair of pairs) {
         const [principalId, roleDefId] = pair.split(':').map(Number);
         if (!byPrincipal.has(principalId)) byPrincipal.set(principalId, []);
         byPrincipal.get(principalId).push({ Id: roleDefId, Name: 'Level ' + roleDefId });
       }
     }
-    return folderAnswer({ d: { results: [...byPrincipal].map(([PrincipalId, rows]) => ({
-      PrincipalId, RoleDefinitionBindings: { results: rows },
-    })) } });
+    // Both shapes: the exact-mode allowlist enumeration selects Member/Id
+    // and the read-back selects PrincipalId, off the same endpoint.
+    const rows = [...byPrincipal].map(([PrincipalId, bindings]) => ({
+      PrincipalId,
+      Member: { Id: PrincipalId, Title: 'Principal ' + PrincipalId },
+      RoleDefinitionBindings: { results: bindings },
+    }));
+    // One row per page, so a declared binding sits behind a __next the
+    // read-back has to follow.
+    if (globalThis.__folderBindingsPaged && rows.length > 0) {
+      const page = Number((/[?&]fpage=(\d+)/.exec(requested) || [])[1] || 0);
+      const payload = { d: { results: rows.slice(page, page + 1) } };
+      if (page + 1 < rows.length) {
+        payload.d.__next = requested.replace(/&fpage=\d+/, '') + '&fpage=' + (page + 1);
+      }
+      return folderAnswer(payload);
+    }
+    return folderAnswer({ d: { results: rows } });
   }
 """
 
@@ -1345,6 +1368,76 @@ def test_a_folder_that_never_reports_its_bindings_is_refused(tmp_path: Path) -> 
     # The read-back is a read: it must not have pruned anything on its way to
     # deciding the grant is missing.
     assert not any("removeroleassignment" in c.get("url", "") for c in calls)
+
+
+def test_a_folder_removal_that_did_not_take_is_refused(tmp_path: Path) -> None:
+    """An exact policy has to prove what it REMOVED, not only what it added.
+
+    `removeroleassignment` answering HTTP 200 is evidence the request was
+    accepted. A stale principal that survives it keeps access to the folder
+    on a run that reports success, which is the half a presence-only
+    read-back could not see.
+    """
+    harness = _library_harness(declared_folder=True, unique_after=1)
+    summary, calls, _ = _run(
+        "globalThis.__folderStrayBinding = true;\n"
+        "globalThis.__folderRemovalsIgnored = true;\n" + harness,
+        _library_deploy_js(tmp_path, _FOLDER_ACL_LIBRARY, titled=False),
+    )
+
+    messages = [e["error"] for e in summary["errors"]]
+    assert any("does not declare" in m for m in messages), messages
+    assert any("777:888" in m for m in messages), messages
+    # It tried: the refusal is about the removal not taking, not about
+    # never having been attempted.
+    assert any("removeroleassignment" in c.get("url", "") for c in calls)
+
+
+def test_a_folder_binding_on_a_later_page_is_found(tmp_path: Path) -> None:
+    """The read-back pages to the end, like the allowlist enumeration.
+
+    A capped read is a PARTIAL view. Treating a second page as absence fails
+    a folder whose declared bindings are all present, and it fails it after
+    the ACL has already been modified, so every retry does the same.
+    """
+    harness = _library_harness(declared_folder=True, unique_after=1)
+    summary, calls, _ = _run(
+        "globalThis.__folderBindingsPaged = true;\n"
+        "globalThis.__folderStrayBinding = true;\n" + harness,
+        _library_deploy_js(tmp_path, _TWO_LEVEL_CONFIGURED_LIBRARY, titled=False),
+    )
+
+    assert summary["errors"] == [], summary["errors"]
+    followed = [c["url"] for c in calls if "fpage=" in c.get("url", "")]
+    assert followed, "the read-back never followed a next-page link"
+
+
+def test_a_folder_that_never_reports_its_grants_is_refused_before_pruning(
+    tmp_path: Path,
+) -> None:
+    """Order matters, because breaking inheritance with
+    copyRoleAssignments=false can leave the operator's own binding as the
+    only way back in.
+
+    Pruning first and finding out afterwards that the declared
+    administrators never landed is how a folder gets locked with nobody in
+    it. Verified first, the phase aborts with every existing binding still
+    in place.
+    """
+    harness = _library_harness(declared_folder=True, unique_after=1)
+    summary, calls, _ = _run(
+        "globalThis.__folderBindingsBlind = true;\n"
+        "globalThis.__folderStrayBinding = true;\n" + harness,
+        _library_deploy_js(tmp_path, _FOLDER_ACL_LIBRARY, titled=False),
+    )
+
+    messages = [e["error"] for e in summary["errors"]]
+    assert any("does not report" in m for m in messages), messages
+    folder_removals = [
+        c["url"] for c in calls
+        if "/items(" in c.get("url", "") and "removeroleassignment" in c.get("url", "")
+    ]
+    assert folder_removals == [], folder_removals
 
 
 def test_an_undeclared_descendant_scope_still_aborts(tmp_path: Path) -> None:

@@ -209,6 +209,52 @@
       return result;
     };
 
+    // Every direct binding a scope holds, as `principalId:roleDefId`, paged
+    // to the end. Paginated for the reason the allowlist enumeration above
+    // is: a capped read is a PARTIAL view, and a verification that treats a
+    // second page as absence fails a folder whose bindings are all present.
+    const scopeBindings = async (scope) => {
+      const rows = [];
+      let url = apiUrl(`web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}/roleassignments?$expand=RoleDefinitionBindings&$select=PrincipalId,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`);
+      while (url) {
+        const resp = await fetchWithRetry(url, {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!resp.ok) {
+          const text = await resp.text();
+          throw new Error(`role assignment read-back failed for '${scope.label}': HTTP ${resp.status} ${text}`);
+        }
+        const json = await resp.json();
+        const next = validatedNextPage(json.d, `Role assignment read-back for '${scope.label}'`);
+        for (const row of ((json.d && json.d.results) || [])) {
+          for (const binding of ((row.RoleDefinitionBindings && row.RoleDefinitionBindings.results) || [])) {
+            rows.push({ key: `${row.PrincipalId}:${binding.Id}`, name: binding.Name });
+          }
+        }
+        url = next;
+      }
+      return rows;
+    };
+
+    // Re-read until `judge` is satisfied or the window runs out, and hand
+    // back its last complaint. The window is BORROWED, not measured for this
+    // surface: MEASURED 2026-09-09, `library.access.unique-permissions-library`,
+    // a library's HasUniqueRoleAssignments read false on the first read after
+    // breakroleinheritance and true on the second, within 10 s. Whether a
+    // binding written inside a batched ChangeSet is any slower is not
+    // measured; `library.access.role-assignment-library` in the manual probe
+    // now counts the reads one takes to appear, and that number replaces this.
+    const settleBindings = async (scope, judge) => {
+      const FOLDER_BINDING_SETTLE_MS = 2000;
+      let complaint = null;
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        if (attempt > 0) await sleep(FOLDER_BINDING_SETTLE_MS);
+        complaint = judge(await scopeBindings(scope));
+        if (complaint === null) return null;
+      }
+      return complaint;
+    };
+
     // One securable at a time: a list, or one folder's list item. Every
     // endpoint below hangs off one literal base plus `scope.suffix`, the only
     // thing that differs between the two, so a list allowlist and a folder
@@ -415,6 +461,26 @@
         });
       }
 
+      // BEFORE a single removal, not after. Breaking inheritance with
+      // copyRoleAssignments=false can leave the operator's own binding as
+      // the only way back into the folder, so pruning first and discovering
+      // afterwards that the declared administrators never landed is how a
+      // folder gets locked. Verified here, the phase aborts with every
+      // existing binding still in place.
+      if (scope.folderPath && resolvedAssignments.length > 0) {
+        const wanted = resolvedAssignments.map(
+          x => ({ key: `${x.principalId}:${x.roleDefId}`, at: x }),
+        );
+        const complaint = await settleBindings(scope, (rows) => {
+          const held = new Set(rows.map(row => row.key));
+          const missing = wanted.filter(w => !held.has(w.key));
+          return missing.length === 0 ? null : missing;
+        });
+        if (complaint !== null) {
+          throw new Error(`'${scope.label}' does not report ${complaint.length} declared role assignment(s) after writing them (${complaint.map(w => `principal ${w.at.principalId} level ${w.at.roleDefId}`).join(', ')}). The writes were accepted, so this is either a scope that has not caught up or a write that did not take; nothing was removed and rerunning reads the bindings again.`);
+        }
+      }
+
       if (scope.reconcile_mode === 'exact') {
         // Exact mode treats the mapping as an allowlist. Enumerate every
         // direct role binding, including principals absent from the mapping,
@@ -507,53 +573,29 @@
         }
       }
 
-      // Read back, because HTTP 200 on the writes above is evidence the
-      // request was accepted and not that the scope holds them, and nothing
-      // downstream checks: verify.js reads lists, columns and views and
-      // never role assignments.
-      //
-      // Folder scope only. The list path has the same gap and it is older
-      // than this phase's folder support; widening it means teaching every
-      // ACL harness to model a write, which belongs in its own change
-      // rather than riding along with folders.
-      //
-      // The retry window is BORROWED, not measured for this surface:
-      // MEASURED 2026-09-09, `library.access.unique-permissions-library`,
-      // a library's HasUniqueRoleAssignments read false on the first read
-      // after breakroleinheritance and true on the second, within 10 s.
-      // `library.access.role-assignment-library` now counts the reads and
-      // the elapsed time a single-POST binding takes to become visible, so
-      // that half is measurable on the next live run. Whether a binding
-      // written inside a batched ChangeSet is any slower is not measured,
-      // and the number that run reports replaces this one. Until then the
-      // failure says what it saw rather than claiming the write was lost.
-      if (scope.folderPath && resolvedAssignments.length > 0) {
-        const FOLDER_BINDING_SETTLE_MS = 2000;
-        let missing = [];
-        for (let attempt = 0; attempt < 5; attempt += 1) {
-          if (attempt > 0) await sleep(FOLDER_BINDING_SETTLE_MS);
-          const backResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}/roleassignments?$expand=RoleDefinitionBindings&$select=PrincipalId,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name&$top=200`), {
-            headers: { 'Accept': 'application/json;odata=verbose' },
-          });
-          if (!backResp.ok) {
-            const text = await backResp.text();
-            throw new Error(`role assignment read-back failed for '${scope.label}': HTTP ${backResp.status} ${text}`);
-          }
-          const backJson = await backResp.json();
-          const held = new Set();
-          for (const row of ((backJson.d && backJson.d.results) || [])) {
-            for (const binding of ((row.RoleDefinitionBindings && row.RoleDefinitionBindings.results) || [])) {
-              held.add(`${row.PrincipalId}:${binding.Id}`);
-            }
-          }
-          missing = resolvedAssignments.filter(
-            x => !held.has(`${x.principalId}:${x.roleDefId}`),
+      // After the pruning, the complete resulting set. Presence alone was
+      // half the question: `removeroleassignment` answering HTTP 200 is
+      // evidence the request was accepted, and an exact-mode folder whose
+      // removal did not take leaves a stale principal with access on a run
+      // that reports success. Runs with an EMPTY declared set too, which is
+      // the policy that strips a folder and therefore the one whose removals
+      // matter most. Only 'Limited Access' is exempt: SharePoint derives it
+      // to support lower-scope access and this phase never writes it.
+      if (scope.folderPath && scope.reconcile_mode === 'exact') {
+        const desired = new Set(resolvedAssignments.map(
+          x => `${x.principalId}:${x.roleDefId}`,
+        ));
+        const complaint = await settleBindings(scope, (rows) => {
+          const strays = rows.filter(
+            row => row.name !== 'Limited Access' && !desired.has(row.key),
           );
-          if (missing.length === 0) break;
+          return strays.length === 0 ? null : strays;
+        });
+        if (complaint !== null) {
+          throw new Error(`'${scope.label}' still reports ${complaint.length} role assignment(s) this exact policy does not declare (${complaint.map(row => row.key).join(', ')}). The removals were accepted, so either the scope has not caught up or they did not take; the declared grants are in place and rerunning reads the bindings again.`);
         }
-        if (missing.length > 0) {
-          throw new Error(`'${scope.label}' does not report ${missing.length} declared role assignment(s) after writing them (${missing.map(x => `principal ${x.principalId} level ${x.roleDefId}`).join(', ')}). The writes were accepted, so this is either a scope that has not caught up or a write that did not take; nothing was removed and rerunning reads the bindings again.`);
-        }
+        log('INFO', `[Phase 4.2] '${scope.label}' reports exactly the ${desired.size} declared role assignment(s).`);
+      } else if (scope.folderPath) {
         log('INFO', `[Phase 4.2] '${scope.label}' reports all ${resolvedAssignments.length} declared role assignment(s).`);
       }
     };
