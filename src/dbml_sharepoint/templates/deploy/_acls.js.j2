@@ -514,16 +514,38 @@
       // and therefore the one whose removals matter most. Only 'Limited
       // Access' is exempt: SharePoint derives it to support lower-scope
       // access and this phase never writes it.
+      //
+      // A check must be as wide as its own claim: in direction, in inputs,
+      // in set, and in time. SET EQUALITY is the direction half, because the
+      // log line below claims the scope reports EXACTLY the declared set. A
+      // declared grant that vanishes between the presence check and this
+      // read, through a concurrent edit or a removal broader than this
+      // policy asked for, leaves a snapshot with no strays at all, and a
+      // judge that tested only for strays would certify a scope that had
+      // just lost its administrator grant.
+      //
+      // The wider judge is no new source of false aborts: MEASURED
+      // 2026-09-22, `access.list-acl.enumeration-is-monotonic`, a read of
+      // this enumeration can omit a row that is there, so a transient miss
+      // complains, `settleBindings` re-reads, and the window resolves it.
+      // What the early exit does NOT catch is a stray that genuinely returns
+      // after the first clean read, because nothing observes the rest of the
+      // window. Closing that needs a live measurement over a longer window
+      // rather than a stricter rule written here from plausibility.
       if (scope.reconcile_mode === 'exact') {
         const complaint = await settleBindings(scope, (rows) => {
           // 'Limited Access' is the English name; a localized tenant is unverified.
           const strays = rows.filter(
             row => row.name !== 'Limited Access' && !desired.has(row.key),
           );
-          return strays.length === 0 ? null : strays;
+          const reported = new Set(rows.map(row => row.key));
+          const missing = [...desired].filter(key => !reported.has(key));
+          return (strays.length === 0 && missing.length === 0) ? null : { strays, missing };
         });
         if (complaint !== null) {
-          throw new Error(`'${scope.label}' still reports ${complaint.length} role assignment(s) this exact policy does not declare (${complaint.map(row => row.key).join(', ')}). ${removalsIssued === 0 ? 'This scope issued no removals, so the binding entered it after the snapshot the prune ran from' : `${removalsIssued} removal(s) were accepted, so either the scope has not caught up or they did not take`}; the declared grants are in place and rerunning reads the bindings again.`);
+          const stray = complaint.strays.length === 0 ? '' : `'${scope.label}' still reports ${complaint.strays.length} role assignment(s) this exact policy does not declare (${complaint.strays.map(row => row.key).join(', ')}). ${removalsIssued === 0 ? 'This scope issued no removals, so the binding entered it after the snapshot the prune ran from' : `${removalsIssued} removal(s) were accepted, so either the scope has not caught up or they did not take`}. `;
+          const lost = complaint.missing.length === 0 ? '' : `'${scope.label}' no longer reports ${complaint.missing.length} DECLARED role assignment(s) (${complaint.missing.join(', ')}), which read back before the pruning. A concurrent edit or a removal broader than this policy asked for both look like this, and the scope may have lost an administrator or a reader grant. `;
+          throw new Error(`${stray}${lost}Nothing further was written and rerunning reads the bindings again.`);
         }
         log('INFO', `[Phase {{ phase.number }}] '${scope.label}' reports exactly the ${desired.size} declared role assignment(s).`);
       } else if (hasDeclaredAssignments) {

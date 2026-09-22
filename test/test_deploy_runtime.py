@@ -8145,6 +8145,101 @@ def test_a_binding_that_arrived_after_the_snapshot_is_not_blamed_on_a_removal(
     assert "removal(s) were accepted" not in complaint[0], complaint[0]
 
 
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_exact_list_that_lost_a_declared_grant_during_the_prune_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The log line says the scope reports EXACTLY the declared set, so the
+    judge behind it has to test set equality.
+
+    A declared grant that vanishes between the presence check and the final
+    read leaves a snapshot with no strays. A one-directional judge returns
+    success on it and the phase certifies a scope that has just lost its
+    reader grant.
+    """
+    seeded = _ownership_harness(tmp_path, ("Escalation",))
+    # Two spaces, for the dedent the refused-enumeration test above names.
+    # ENUMERATIONS are counted, not every URL this branch serves: it answers
+    # the addroleassignment POST too, and counting that moved the presence
+    # check onto the read meant for the completeness check. Reads 1 and 2 are
+    # the prune's snapshot and the presence check; every read after them
+    # reports an empty scope, which is a lost declared grant and no stray.
+    vanished = seeded.replace(
+        "  if (url.includes('/roleassignments')) {\n",
+        "  if (url.includes('/roleassignments')"
+        " && !url.includes('roleassignment(')) {\n"
+        "    globalThis.__scopeReads = (globalThis.__scopeReads || 0) + 1;\n"
+        "    if (globalThis.__scopeReads > 2) return { d: { results: [] } };\n"
+        "  }\n"
+        "  if (url.includes('/roleassignments')) {\n",
+    )
+    assert vanished != seeded, "the vanishing-grant splice did not apply"
+    summary, _calls, _output = _run_ownership_deploy(
+        tmp_path, harness=_FAST_TIMERS_JS + vanished,
+    )
+
+    complaint = [
+        err["error"] for err in summary["errors"]
+        if "DECLARED role assignment(s)" in err["error"]
+    ]
+    assert complaint, [err["error"] for err in summary["errors"]]
+    # Named as its own kind, so an operator can tell a binding that should
+    # not be there from a grant that should be and is gone.
+    assert "no longer reports 1 DECLARED" in complaint[0], complaint[0]
+    assert "may have lost an administrator or a reader grant" in complaint[0], (
+        complaint[0]
+    )
+    # And it does not report the other kind, because there is no stray here.
+    assert "does not declare" not in complaint[0], complaint[0]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_read_that_transiently_omits_a_declared_grant_is_re_read_not_aborted(
+    tmp_path: Path,
+) -> None:
+    """Why testing both directions is not a new source of false aborts.
+
+    MEASURED 2026-09-22, `access.list-acl.enumeration-is-monotonic`: this
+    enumeration can omit a row that is there. The wider judge complains,
+    `settleBindings` re-reads, and the window resolves it. Only the third
+    read is short here, which is the read the completeness check starts on.
+    """
+    seeded = _ownership_harness(tmp_path, ("Escalation",))
+    flapping = seeded.replace(
+        "  if (url.includes('/roleassignments')) {\n",
+        "  if (url.includes('/roleassignments')"
+        " && !url.includes('roleassignment(')) {\n"
+        "    globalThis.__scopeReads = (globalThis.__scopeReads || 0) + 1;\n"
+        "    if (globalThis.__scopeReads === 3) return { d: { results: [] } };\n"
+        "  }\n"
+        "  if (url.includes('/roleassignments')) {\n",
+    )
+    assert flapping != seeded, "the flapping-read splice did not apply"
+    summary, calls, output = _run_ownership_deploy(
+        tmp_path, harness=_FAST_TIMERS_JS + flapping,
+    )
+
+    assert summary.get("errors") == [], summary["errors"]
+    log = _phase_log(output, pn("acls"))
+    assert any(
+        "reports exactly the 1 declared role assignment(s)" in line for line in log
+    ), log
+    # Counted from the last removal, which is where the completeness check
+    # begins. Counting every read of the scope passes against a judge that
+    # never looked again, because earlier phases read it too.
+    pruned = max(
+        i for i, c in enumerate(calls) if "removeroleassignment" in c["url"]
+    )
+    settling = [
+        c for c in calls[pruned:]
+        if "/roleassignments" in c["url"] and "roleassignment(" not in c["url"]
+    ]
+    assert len(settling) >= 2, (
+        "the short read was accepted as the final state rather than re-read: "
+        f"{len(settling)} completeness read(s)"
+    )
+
+
 def test_the_deploy_confirms_the_editor_still_refuses_the_guard() -> None:
     """The emitted script must ask the tenant rather than assume.
 
