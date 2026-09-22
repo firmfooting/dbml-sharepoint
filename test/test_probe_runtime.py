@@ -9270,10 +9270,12 @@ def test_a_break_whose_removal_sticks_answers_every_question() -> None:
     levels = rows["access.list-acl.derived-level-names"]
     assert "'Full Control', 'Limited Access'" in levels["evidence"]
     sticks = rows["access.list-acl.operator-binding-removal-sticks"]
-    assert sticks["outcome"] == "OBSERVED"
+    assert sticks["outcome"] == "REMOVED"
     assert "answered HTTP 200" in sticks["evidence"]
     assert "binding gone" in sticks["evidence"]
     assert "binding PRESENT" not in sticks["evidence"]
+    # A binding that went is conclusive, so no cause is offered for it.
+    assert "negative control" not in sticks["evidence"]
     assert not [row for row in rows.values() if row["state"] != "settled"]
     assert _restored(urls), "the restore pass did not reset inheritance"
 
@@ -9290,12 +9292,14 @@ def test_a_removal_the_platform_undoes_is_reported_as_coming_back() -> None:
     rows, urls, _output = _run_operator_grant_probe(removalReDerives=True)
 
     sticks = rows["access.list-acl.operator-binding-removal-sticks"]
-    assert sticks["outcome"] == "OBSERVED"
+    assert sticks["outcome"] == "STILL PRESENT"
     assert sticks["state"] == "settled"
     assert "answered HTTP 200" in sticks["evidence"]
     assert sticks["evidence"].count("binding PRESENT") == 5, (
         f"every one of the five settle reads has to be reported: {sticks['evidence']}"
     )
+    # The control held here, so the cause is named.
+    assert "re-derived by the platform or never removed" in sticks["evidence"]
     assert _restored(urls)
 
 
@@ -9361,7 +9365,7 @@ def test_a_refused_removal_is_recorded_rather_than_treated_as_a_failure() -> Non
     rows, urls, _output = _run_operator_grant_probe(removalRefused=True)
 
     sticks = rows["access.list-acl.operator-binding-removal-sticks"]
-    assert sticks["outcome"] == "OBSERVED"
+    assert sticks["outcome"] == "STILL PRESENT"
     assert "answered HTTP 500" in sticks["evidence"]
     assert "removeroleassignment refused" in sticks["evidence"]
     assert sticks["evidence"].count("binding PRESENT") == 5
@@ -9369,20 +9373,60 @@ def test_a_refused_removal_is_recorded_rather_than_treated_as_a_failure() -> Non
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_an_accepted_bogus_removal_voids_the_removal_row() -> None:
-    """The negative control doing its job. A server that accepts a removal
-    for a principal and a level nobody holds cannot be read as having applied
-    the real one, whatever it answered."""
-    rows, _urls, _output = _run_operator_grant_probe(controlAccepted=True)
+def test_a_failed_control_still_answers_a_removal_that_stuck() -> None:
+    """MEASURED 2026-09-22: this control FAILED on a live tenant, and voiding
+    the removal question with it threw away the answer.
+
+    The control tells a re-derivation from a call the server accepted and
+    ignored. Those are two causes with one consequence, and the consequence
+    is the question: the deploy aborts either way. A binding GONE after the
+    settle window is conclusive whatever a 200 means, so this direction does
+    not need the control at all.
+    """
+    rows, urls, _output = _run_operator_grant_probe(controlAccepted=True)
 
     control = rows["access.list-acl.control-unknown-principal-refused"]
     assert control["outcome"] == "FAIL"
     assert "accepted a nonexistent principal and level" in control["evidence"]
+
     sticks = rows["access.list-acl.operator-binding-removal-sticks"]
-    assert sticks["state"] == "void"
-    assert "the negative control did not hold" in sticks["evidence"]
-    # The observations that do not rest on a removal are still answers.
+    assert sticks["outcome"] == "REMOVED", sticks
+    assert sticks["state"] == "settled"
+    assert "binding gone" in sticks["evidence"]
+    # Conclusive, so no caveat is attached to it.
+    assert "cannot tell" not in sticks["evidence"]
+    # And the removal really was issued, rather than reported from a 200.
+    assert [
+        url for url in urls
+        if "/removeroleassignment(" in url and "42424242" not in url
+    ], urls
     assert rows["access.list-acl.break-leaves-bindings"]["state"] == "settled"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_failed_control_reports_a_present_binding_with_the_cause_open() -> None:
+    """The other direction, and the one the control would have been for.
+
+    The binding is still there, so the deploy aborts. Whether the platform
+    re-derived it or the server accepted a call it ignored is undetermined
+    without the control, and the row says exactly that rather than claiming
+    either or claiming nothing.
+    """
+    rows, _urls, _output = _run_operator_grant_probe(
+        controlAccepted=True, removalReDerives=True,
+    )
+
+    sticks = rows["access.list-acl.operator-binding-removal-sticks"]
+    assert sticks["outcome"] == "STILL PRESENT", sticks
+    assert sticks["state"] == "settled"
+    assert sticks["evidence"].count("binding PRESENT") == 5
+    assert "cannot tell a binding the platform re-derived from a call the " in (
+        sticks["evidence"]
+    )
+    assert "server accepted and ignored" in sticks["evidence"]
+    assert "The deploy aborts either way" in sticks["evidence"]
+    # The cause the control WOULD have named must not be asserted.
+    assert "re-derived by the platform or never removed" not in sticks["evidence"]
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

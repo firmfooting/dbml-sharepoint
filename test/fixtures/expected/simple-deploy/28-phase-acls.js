@@ -476,10 +476,13 @@
       // half the question: `removeroleassignment` answering HTTP 200 is
       // evidence the request was accepted, and a scope whose removal did not
       // take leaves a stale principal with access on a run that reports
-      // success. Runs with an EMPTY declared set too, which is the policy
-      // that strips a scope and therefore the one whose removals matter
-      // most. Only 'Limited Access' is exempt: SharePoint derives it to
-      // support lower-scope access and this phase never writes it.
+      // success. MEASURED 2026-09-22, operator-safety-grant-probe.js: that
+      // endpoint answered 200 for a principal id and a role definition id
+      // the tenant does not have, so a 200 is not even that much. Runs with
+      // an EMPTY declared set too, which is the policy that strips a scope
+      // and therefore the one whose removals matter most. Only 'Limited
+      // Access' is exempt: SharePoint derives it to support lower-scope
+      // access and this phase never writes it.
       if (scope.reconcile_mode === 'exact') {
         const complaint = await settleBindings(scope, (rows) => {
           // 'Limited Access' is the English name; a localized tenant is unverified.

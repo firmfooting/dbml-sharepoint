@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHAT A BREAK LEAVES, AND WHETHER REMOVING IT STICKS
  *
- * REVISION: 09528a60
+ * REVISION: a3f177fe
  *
  * THE CLAIM UNDER TEST. `deploy/_lists.js.j2` says, beside the early
  * isolation break, that "copyRoleAssignments=false leaves only SharePoint's
@@ -112,8 +112,28 @@
  * interrupted between the break and the restore leaves one scratch list with
  * unique permissions: re-run with CLEANUP, or delete the list.
  *
- * STATUS: NOT YET RUN. No transcript exists, so nothing here is settled and
- * the claim in `_lists.js.j2` stands unmeasured.
+ * STATUS: RUN ONCE, 2026-09-22, revision 09528a60, one site the operator
+ * owns. What it settled:
+ *
+ *   The break left EXACTLY ONE role assignment, and it was this account's
+ *   own direct USER binding (PrincipalType 1) at 'Full Control'. That
+ *   confirms the first of the two claims in `_lists.js.j2`, which had
+ *   stood on reasoning since it was written.
+ *
+ *   `removeroleassignment` ANSWERED HTTP 200 for a principal id and a role
+ *   definition id that do not exist on the tenant, so the negative control
+ *   FAILED. A 200 from that endpoint is not evidence the call did anything,
+ *   which is exactly why `_acls.js.j2` reads the scope back after pruning.
+ *
+ *   No 'Limited Access' row existed on a fresh scratch list, consistent
+ *   with SharePoint deriving it only to support access at a lower scope.
+ *
+ * What it did NOT settle. The removal question was voided by the failed
+ * control on that run, which was too strict and has since been corrected:
+ * the question now answers off the read-back, because the deploy aborts on
+ * a binding that is still there whatever caused it. That needs another run.
+ * The tenant reported English level names, so whether a localized tenant
+ * names the derived level differently is untouched.
  *
  * WHEN FINISHED: delete the list it created.
  */
@@ -341,7 +361,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 09528a60. Quote this when reporting results.');
+  log('INFO', 'probe revision a3f177fe. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe OperatorGrant';
   const OWNERSHIP = 'dbml-sharepoint operator-safety-grant probe list. Safe to delete.';
@@ -716,10 +736,12 @@
                  + 'rejecting the call. The removal row below is void.');
 
     // ---- operator-binding-removal-sticks ------------------------------
-    if (!controlHeld) {
-      record('access.list-acl.operator-binding-removal-sticks', Q_STICKS, 'NOT ESTABLISHED',
-             'the negative control did not hold, so no removal on this scope is trustworthy', 'void');
-    } else if (!mine.length) {
+    // NOT gated on the control. The control tells a re-derivation from a call
+    // the server accepted and ignored, which are two CAUSES with one
+    // consequence, and the consequence is the question: the deploy aborts
+    // either way. A binding gone after the window is conclusive whatever a
+    // 200 means, and a binding still there is the failure whatever caused it.
+    if (!mine.length) {
       record('access.list-acl.operator-binding-removal-sticks', Q_STICKS,
              'NOT REACHED', 'the break left no direct binding for this account, so there was '
              + 'nothing to remove. That is an answer about the premise and not about the '
@@ -751,13 +773,25 @@
         // is the finding.
         const settled = await settleForBinding(
           target.principalId, target.levelId, false, false);
-        record('access.list-acl.operator-binding-removal-sticks', Q_STICKS, 'OBSERVED',
+        // The verdict is the last read, and the control only says which
+        // cause produced it.
+        const cause = settled.present !== true
+          ? ''
+          : controlHeld
+            ? ' The negative control held, so the 200 was a real acceptance and the binding '
+              + 'was either re-derived by the platform or never removed.'
+            : ' The negative control did NOT hold on this tenant, so this run cannot tell a '
+              + 'binding the platform re-derived from a call the server accepted and ignored. '
+              + 'The deploy aborts either way, which is what this question is about.';
+        record('access.list-acl.operator-binding-removal-sticks', Q_STICKS,
+               settled.present === null ? 'NOT ESTABLISHED'
+                 : settled.present ? 'STILL PRESENT' : 'REMOVED',
                `the owner group (principal ${grant.principalId}) was granted '${grant.levelName}' `
                + 'first, so the scope held another role assignment throughout, as it does when '
                + `the deploy prunes. Then removeroleassignment(principalid=${target.principalId},`
                + `roleDefId=${target.levelId}) answered HTTP ${removed.status}`
                + `${removed.ok ? '' : ` ${removed.text.slice(0, 200)}`}. `
-               + `Over ${(SETTLE_READS - 1) * SETTLE_MS} ms: ${settled.reads.join('; ')}.`);
+               + `Over ${(SETTLE_READS - 1) * SETTLE_MS} ms: ${settled.reads.join('; ')}.${cause}`);
       }
     }
   };

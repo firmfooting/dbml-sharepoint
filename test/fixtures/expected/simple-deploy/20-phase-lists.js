@@ -74,7 +74,9 @@
       // expose newly created fields/content to the site's inherited principals.
       // copyRoleAssignments=false leaves only SharePoint's current-operator
       // safety grant; clearSubscopes=false preserves every descendant scope.
-      // Neither claim is measured; operator-safety-grant-probe.js settles the first.
+      // MEASURED 2026-09-22, operator-safety-grant-probe.js: the break left
+      // exactly one role assignment, this account's own direct USER binding
+      // (PrincipalType 1) at Full Control. clearSubscopes stays unmeasured.
       if (earlyIsolationLists.has(list.title)) {
         const aclResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(list.title)}')?$select=HasUniqueRoleAssignments`), {
           headers: { 'Accept': 'application/json;odata=verbose' },
