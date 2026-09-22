@@ -8901,3 +8901,465 @@ def test_calculated_operand_malformed_payload_is_not_a_stored_value(payload: Any
                 "expression.client-validation.person-operand"):
         assert rows[row]["outcome"] == "NOT ESTABLISHED", row
     assert rows["formula.validation.lookup-operand"]["outcome"] == "ACCEPTED"
+
+
+# --------------------------------------------------------------------------
+# operator-safety-grant-probe.js: what a break leaves, and whether removing
+# it sticks.
+#
+# This one gets a runtime block although neither sibling ACL probe has one,
+# because it breaks role inheritance and removes a role assignment on a live
+# site and then RESTORES both from a `finally`. #454 is the precedent: a name
+# is resolved only when its branch runs, so a scope error on a path that only
+# executes when something has gone wrong is invisible to `node --check` and
+# surfaces as a list nobody can get back into.
+# --------------------------------------------------------------------------
+OPERATOR_GRANT_PROBE = MANUAL / "operator-safety-grant-probe.js"
+
+#: The waits the probe ships, replaced with something a test can afford. The
+#: replacement doubles as the pin: change either value in the probe and the
+#: splice assertion below fails rather than the suite quietly sleeping for it.
+_OPERATOR_TEST_WAIT_MS = 1
+
+#: The mock's principal ids. The operator is a user (PrincipalType 1) and the
+#: other row a group (8), so `break-leaves-operator-binding` has to pick by id
+#: rather than by being the only row there.
+_OPERATOR_PRINCIPAL = 11
+_OPERATOR_OWNER_GROUP = 5
+
+#: What the break leaves by default: this account's own grant, plus a derived
+#: binding for a group. Two level NAMES, so `derived-level-names` reports a
+#: set rather than a single string that could be anything.
+_OPERATOR_LEFT_BINDINGS = [
+    {
+        "principalId": _OPERATOR_PRINCIPAL, "title": "Probe Operator",
+        "principalType": 1, "levelId": 3, "levelName": "Full Control",
+    },
+    {
+        "principalId": 8, "title": "Probe Visitors",
+        "principalType": 8, "levelId": 4, "levelName": "Limited Access",
+    },
+]
+
+_OPERATOR_HARNESS = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+
+    // Every request, in order. Asserted on for the restore pass, which runs
+    // in a `finally` AFTER the result table has been printed, so the rows
+    // cannot show whether it happened.
+    globalThis.__calls = [];
+    process.on('exit', () => {
+      console.log('__CALLS__' + JSON.stringify(globalThis.__calls));
+    });
+
+    globalThis.window = {
+      _spPageContextInfo: {
+        webAbsoluteUrl: 'https://example.sharepoint.com/sites/test',
+      },
+    };
+
+    const jsonResponse = (status, payload) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      json: async () => payload,
+      text: async () => JSON.stringify(payload),
+    });
+
+    // The scratch list's own state. `bindings` is the role-assignment
+    // collection at its scope, one entry per (principal, level) pair, which
+    // is how _acls.js.j2 keys one.
+    const site = {
+      listExists: CONFIG.listExists,
+      unique: CONFIG.alreadyUnique,
+      bindings: CONFIG.alreadyUnique ? CONFIG.leftBindings.map((b) => ({ ...b })) : [],
+    };
+
+    const REMOVE = /removeroleassignment\\(principalid=(\\d+),roleDefId=(\\d+)\\)/;
+    const ADD = /addroleassignment\\(principalid=(\\d+),roleDefId=(\\d+)\\)/;
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const method = opts.method || 'GET';
+      globalThis.__calls.push({ url: u, method });
+
+      // A read that throws rather than answering, which is how a run reaches
+      // the catch and therefore the finally with a break already made.
+      if (CONFIG.throwOn && u.includes(CONFIG.throwOn)) {
+        throw new Error(`mock transport failure for ${CONFIG.throwOn}`);
+      }
+      if (u.includes('/contextinfo')) {
+        return jsonResponse(200, { d: { GetContextWebInformation: {
+          FormDigestValue: 'digest' } } });
+      }
+      if (u.endsWith('/web/lists') && method === 'POST') {
+        if (CONFIG.createRefused) return jsonResponse(500, { error: 'list create refused' });
+        site.listExists = true;
+        return jsonResponse(201, { Title: JSON.parse(String(opts.body)).Title });
+      }
+      if (u.includes('/web/currentuser')) {
+        return jsonResponse(200, {
+          Id: CONFIG.operatorPrincipal, Title: 'Probe Operator', PrincipalType: 1 });
+      }
+      if (u.includes('/web/associatedownergroup')) {
+        if (CONFIG.ownerGroupUnreadable) return jsonResponse(500, { error: 'refused' });
+        return jsonResponse(200, { Id: CONFIG.ownerGroup, Title: 'Probe Owners' });
+      }
+      if (u.includes('/web/roledefinitions')) {
+        return jsonResponse(200, { value: [
+          { Id: 2, Name: 'Read', RoleTypeKind: 2 },
+          { Id: 3, Name: 'Full Control', RoleTypeKind: 5 },
+        ] });
+      }
+
+      if (!u.includes("getbytitle('")) return jsonResponse(404, { error: 'no such endpoint' });
+      if (!site.listExists) return jsonResponse(404, { error: 'list not found' });
+
+      const removal = REMOVE.exec(u);
+      if (removal) {
+        const principalId = Number(removal[1]);
+        const levelId = Number(removal[2]);
+        const held = site.bindings.some(
+          (b) => b.principalId === principalId && b.levelId === levelId);
+        // A principal or level nobody holds is what the negative control
+        // sends. Refused 500, the status every refusal this project has
+        // recorded came back as, unless a test asks for the control to fail.
+        if (!held) {
+          return CONFIG.controlAccepted
+            ? jsonResponse(200, {})
+            : jsonResponse(500, { error: 'principal or role definition not found' });
+        }
+        if (CONFIG.removalRefused) {
+          return jsonResponse(500, { error: 'removeroleassignment refused' });
+        }
+        // An accepted removal that does not apply is the whole question the
+        // probe exists to ask, so the mock can answer 200 and keep the row.
+        if (!CONFIG.removalReDerives) {
+          site.bindings = site.bindings.filter(
+            (b) => !(b.principalId === principalId && b.levelId === levelId));
+        }
+        return jsonResponse(200, {});
+      }
+      const addition = ADD.exec(u);
+      if (addition) {
+        site.bindings.push({
+          principalId: Number(addition[1]), title: 'Probe Owners',
+          principalType: 8, levelId: Number(addition[2]), levelName: 'Full Control',
+        });
+        return jsonResponse(200, {});
+      }
+      if (u.includes('/breakroleinheritance(')) {
+        if (CONFIG.breakRefused) {
+          return jsonResponse(500, { error: 'breakroleinheritance refused' });
+        }
+        site.unique = !CONFIG.uniqueNeverTrue;
+        site.bindings = CONFIG.leftBindings.map((b) => ({ ...b }));
+        return jsonResponse(200, {});
+      }
+      if (u.includes('/resetroleinheritance')) {
+        if (CONFIG.resetRefused) {
+          return jsonResponse(500, { error: 'resetroleinheritance refused' });
+        }
+        site.unique = false;
+        site.bindings = [];
+        return jsonResponse(200, {});
+      }
+      if (u.includes('/roleassignments?')) {
+        if (CONFIG.enumerationRefused) return jsonResponse(500, { error: 'refused' });
+        // One entity per PRINCIPAL carrying every level it holds, which is
+        // the shape $expand=RoleDefinitionBindings returns.
+        const byPrincipal = new Map();
+        for (const binding of site.bindings) {
+          if (!byPrincipal.has(binding.principalId)) {
+            byPrincipal.set(binding.principalId, {
+              PrincipalId: binding.principalId,
+              Member: { Id: binding.principalId, Title: binding.title,
+                        PrincipalType: binding.principalType },
+              RoleDefinitionBindings: [],
+            });
+          }
+          byPrincipal.get(binding.principalId).RoleDefinitionBindings.push(
+            { Id: binding.levelId, Name: binding.levelName });
+        }
+        return jsonResponse(200, { value: [...byPrincipal.values()] });
+      }
+      if (u.includes('$select=HasUniqueRoleAssignments')) {
+        return jsonResponse(200, { HasUniqueRoleAssignments: site.unique });
+      }
+      return jsonResponse(200, { Title: 'dbmlsp Probe OperatorGrant' });
+    };
+""")
+
+
+def _operator_grant_probe_js() -> str:
+    """The rendered probe with its gates open, its waits shortened and its
+    result table exposed.
+
+    Edited by replacement rather than re-rendered, so what runs here is the
+    committed file an operator would paste. Each splice is asserted, which
+    makes every one of them a pin on the shipped spelling.
+    """
+    js = OPERATOR_GRANT_PROBE.read_text(encoding="utf-8")
+    for gate in ("CONFIRMED", "ALLOW_WRITES"):
+        opened = js.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
+        assert opened != js, f"the {gate} gate is not spelled as this test expects"
+        js = opened
+    for wait, indent in (("UNIQUE_WAIT_MS", "  "), ("SETTLE_MS", "      ")):
+        shortened = js.replace(
+            f"{indent}const {wait} = 2000;",
+            f"{indent}const {wait} = {_OPERATOR_TEST_WAIT_MS};",
+            1,
+        )
+        assert shortened != js, f"{wait} is not spelled as this test expects"
+        js = shortened
+    # Spliced into report() rather than before a call site: the probe returns
+    # through report() from six different places, including two early aborts.
+    exposed = js.replace(
+        "  const report = () => {\n",
+        "  const report = () => {\n"
+        "    console.log('__ROWS__' + JSON.stringify(RESULTS));\n",
+        1,
+    )
+    assert exposed != js, "the result table dump did not splice in"
+    return exposed
+
+
+def _run_operator_grant_probe(**config: Any) -> tuple[dict[str, dict[str, str]], list[str]]:
+    """Run the probe and return (id -> the whole recorded row, request urls).
+
+    The urls as well as the rows, because the restore pass records nothing:
+    it logs, and it runs in a `finally` after the table has been printed. The
+    only evidence it ran at all is what it asked the site for.
+    """
+    settings: dict[str, Any] = {
+        "listExists": False,
+        "createRefused": False,
+        "alreadyUnique": False,
+        "breakRefused": False,
+        "uniqueNeverTrue": False,
+        "enumerationRefused": False,
+        "controlAccepted": False,
+        "removalRefused": False,
+        "removalReDerives": False,
+        "resetRefused": False,
+        "ownerGroupUnreadable": False,
+        "throwOn": None,
+        "operatorPrincipal": _OPERATOR_PRINCIPAL,
+        "ownerGroup": _OPERATOR_OWNER_GROUP,
+        "leftBindings": _OPERATOR_LEFT_BINDINGS,
+    }
+    unknown = set(config) - set(settings)
+    assert not unknown, f"no such config knob: {sorted(unknown)}"
+    settings.update(config)
+    script = (
+        _OPERATOR_HARNESS.replace("__CONFIG__", json.dumps(settings))
+        + "\n"
+        + _operator_grant_probe_js()
+    )
+    output = _run(script)
+    rows = next(
+        (ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None,
+    )
+    assert rows is not None, f"the probe recorded no result table:\n{output[-3000:]}"
+    calls = next(
+        (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
+    )
+    assert calls is not None, f"the mock logged no requests:\n{output[-3000:]}"
+    return (
+        {row["id"]: row for row in json.loads(rows.removeprefix("__ROWS__"))},
+        [call["url"] for call in json.loads(calls.removeprefix("__CALLS__"))],
+    )
+
+
+def _restored(urls: list[str]) -> bool:
+    """Did the restore pass reset the scratch list's inheritance."""
+    return any("/resetroleinheritance" in url for url in urls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_break_whose_removal_sticks_answers_every_question() -> None:
+    """The healthy run, and what gives the others their meaning.
+
+    Each test below asserts that some row did NOT settle. That passes just as
+    happily against a probe that answers nothing at all, so one run has to
+    answer everything first.
+    """
+    rows, urls = _run_operator_grant_probe()
+
+    assert rows["access.list-acl.fixture-scratch-list"]["outcome"] == "PASS"
+    assert rows["access.list-acl.control-unknown-principal-refused"]["outcome"] == "PASS"
+    assert rows["access.list-acl.break-leaves-bindings"]["outcome"] == "OBSERVED"
+    assert "2 binding(s) after the break" in (
+        rows["access.list-acl.break-leaves-bindings"]["evidence"]
+    )
+    # By id and by principal type, which is what the row claims to compare on.
+    operator = rows["access.list-acl.break-leaves-operator-binding"]
+    assert operator["outcome"] == "OBSERVED"
+    assert f"principal {_OPERATOR_PRINCIPAL} is this account and holds 1 binding(s)" in (
+        operator["evidence"]
+    )
+    levels = rows["access.list-acl.derived-level-names"]
+    assert "'Full Control', 'Limited Access'" in levels["evidence"]
+    sticks = rows["access.list-acl.operator-binding-removal-sticks"]
+    assert sticks["outcome"] == "OBSERVED"
+    assert "answered HTTP 200" in sticks["evidence"]
+    assert "binding gone" in sticks["evidence"]
+    assert "binding PRESENT" not in sticks["evidence"]
+    assert not [row for row in rows.values() if row["state"] != "settled"]
+    assert _restored(urls), "the restore pass did not reset inheritance"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_removal_the_platform_undoes_is_reported_as_coming_back() -> None:
+    """The finding the probe exists to produce, and the one that would make
+    every shipped family's Phase 4.2 abort.
+
+    Recorded, never asserted: the row says PRESENT on each read rather than
+    FAIL, because a platform that re-derives the binding is a measurement and
+    not a broken run.
+    """
+    rows, urls = _run_operator_grant_probe(removalReDerives=True)
+
+    sticks = rows["access.list-acl.operator-binding-removal-sticks"]
+    assert sticks["outcome"] == "OBSERVED"
+    assert sticks["state"] == "settled"
+    assert "answered HTTP 200" in sticks["evidence"]
+    assert sticks["evidence"].count("binding PRESENT") == 5, (
+        f"every one of the five settle reads has to be reported: {sticks['evidence']}"
+    )
+    assert _restored(urls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_break_voids_every_question_and_restores_nothing() -> None:
+    """Nothing was broken, so there is nothing to observe and nothing to put
+    back. A restore sent here would reset a list this run never touched."""
+    rows, urls = _run_operator_grant_probe(breakRefused=True)
+
+    assert rows["access.list-acl.fixture-scratch-list"]["outcome"] == "PASS"
+    for question in ("access.list-acl.control-unknown-principal-refused",
+                     "access.list-acl.break-leaves-bindings",
+                     "access.list-acl.break-leaves-operator-binding",
+                     "access.list-acl.operator-binding-removal-sticks",
+                     "access.list-acl.derived-level-names"):
+        assert rows[question]["outcome"] == "NOT ESTABLISHED", question
+        assert rows[question]["state"] == "void", question
+        assert "breakroleinheritance answered HTTP 500" in rows[question]["evidence"]
+    assert not _restored(urls), (
+        "the restore pass reset a list whose break was refused"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_break_that_never_reads_unique_is_not_measured() -> None:
+    """The other half of the same dependency. The call was accepted, so the
+    restore still runs, but a scope that never reads as holding unique
+    permissions has nothing to enumerate."""
+    rows, urls = _run_operator_grant_probe(uniqueNeverTrue=True)
+
+    for question in ("access.list-acl.break-leaves-bindings",
+                     "access.list-acl.operator-binding-removal-sticks"):
+        assert rows[question]["state"] == "void", question
+        assert "the break was accepted but the list never read" in (
+            rows[question]["evidence"]
+        )
+    assert _restored(urls), (
+        "the break was accepted, so the restore has to run even though the "
+        "scope never read as unique"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_removal_is_recorded_rather_than_treated_as_a_failure() -> None:
+    """`removeroleassignment` refusing is an observation about the surface,
+    so the row carries the status and the settle reads that followed it. The
+    binding is still there, and saying so is the point."""
+    rows, urls = _run_operator_grant_probe(removalRefused=True)
+
+    sticks = rows["access.list-acl.operator-binding-removal-sticks"]
+    assert sticks["outcome"] == "OBSERVED"
+    assert "answered HTTP 500" in sticks["evidence"]
+    assert "removeroleassignment refused" in sticks["evidence"]
+    assert sticks["evidence"].count("binding PRESENT") == 5
+    assert _restored(urls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_accepted_bogus_removal_voids_the_removal_row() -> None:
+    """The negative control doing its job. A server that accepts a removal
+    for a principal and a level nobody holds cannot be read as having applied
+    the real one, whatever it answered."""
+    rows, _urls = _run_operator_grant_probe(controlAccepted=True)
+
+    control = rows["access.list-acl.control-unknown-principal-refused"]
+    assert control["outcome"] == "FAIL"
+    assert "accepted a nonexistent principal and level" in control["evidence"]
+    sticks = rows["access.list-acl.operator-binding-removal-sticks"]
+    assert sticks["state"] == "void"
+    assert "the negative control did not hold" in sticks["evidence"]
+    # The observations that do not rest on a removal are still answers.
+    assert rows["access.list-acl.break-leaves-bindings"]["state"] == "settled"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_break_with_no_operator_binding_reports_the_premise_as_unmet() -> None:
+    """`_lists.js.j2` says the break leaves the operator's own grant. A
+    tenant where it does not is the answer to that claim, and it is NOT a
+    settled answer to the removal question, which was never exercised."""
+    rows, urls = _run_operator_grant_probe(
+        leftBindings=[_OPERATOR_LEFT_BINDINGS[1]],
+    )
+
+    operator = rows["access.list-acl.break-leaves-operator-binding"]
+    assert operator["outcome"] == "OBSERVED"
+    assert "holds NO direct binding here" in operator["evidence"]
+    sticks = rows["access.list-acl.operator-binding-removal-sticks"]
+    assert sticks["outcome"].startswith("NOT REACHED")
+    assert sticks["state"] == "awaiting-capture"
+    assert _restored(urls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_failure_after_the_break_still_restores_the_list() -> None:
+    """#454's branch: the restore runs from a `finally`, so it only ever
+    executes on a run that already went wrong, and a scope error in it would
+    leave an operator with a list nobody can get back into.
+
+    Thrown at `web/currentuser`, which is after the break and after the
+    enumeration, so the run reaches the catch with a broken scope and a
+    result table that is half filled in.
+    """
+    rows, urls = _run_operator_grant_probe(throwOn="web/currentuser")
+
+    assert rows["access.list-acl.break-leaves-bindings"]["outcome"] == "OBSERVED"
+    assert rows["access.list-acl.break-leaves-operator-binding"]["outcome"] == (
+        "NOT ESTABLISHED"
+    )
+    # The whole point: the owner-group grant and the reset both went out, in
+    # that order, on a run that threw.
+    grant = next((i for i, url in enumerate(urls) if "/addroleassignment(" in url), None)
+    reset = next((i for i, url in enumerate(urls) if "/resetroleinheritance" in url), None)
+    assert grant is not None, f"no owner-group safety grant was sent: {urls}"
+    assert reset is not None, f"the list was left broken after a failure: {urls}"
+    assert grant < reset, "the safety grant has to precede the reset"
+    assert f"principalid={_OPERATOR_OWNER_GROUP},roleDefId=3" in urls[grant], (
+        f"the full-control level was not resolved from the tenant: {urls[grant]}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_an_earlier_run_left_broken_answers_nothing() -> None:
+    """A leftover scope's bindings are a previous run's, and reporting them
+    as this run's measurement is exactly what the fixture row exists to
+    prevent. It aborts before breaking anything, so it restores nothing."""
+    rows, urls = _run_operator_grant_probe(listExists=True, alreadyUnique=True)
+
+    fixture = rows["access.list-acl.fixture-scratch-list"]
+    assert fixture["outcome"] == "ABORTED"
+    assert fixture["state"] == "open"
+    assert "Set CLEANUP = true" in fixture["evidence"]
+    assert not _restored(urls), "a run that never broke anything reset a list"
+    assert [
+        row for row in rows.values()
+        if row["evidence"] == "the run did not reach this question"
+    ], "the unreached questions must still report as unanswered"
