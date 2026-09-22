@@ -1974,7 +1974,10 @@ handful of ids would make a redeploy scale with the library's size, so each
 declared folder is fetched by path through `GetFolderByServerRelativeUrl`,
 quoted the way the folder phase quotes the same path when it creates the
 folder. Either way the object has to read back as a folder, at the path asked
-for, with a usable item id, before anything is written to it.
+for, with a usable item id, before anything is written to it, and it is
+re-read inside the ownership bracket immediately before the write: proving
+the title still resolves to the surveyed list does not prove that a number
+resolved earlier still names the folder it was resolved from.
 
 **The descendant-scope guard now allows what the mapping declares.** Under
 `exact`, a unique scope on an item or folder that `list_permissions.folders`

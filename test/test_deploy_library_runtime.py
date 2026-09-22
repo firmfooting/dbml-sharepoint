@@ -260,6 +260,17 @@ _FOLDER_JS = """globalThis.fetch = async (url, opts = {}) => {
       ServerRelativeUrl: '/sites/test/APP_Escalation/Clinical services',
     } });
   }
+  // ONE item, re-read inside the ownership bracket before the folder is
+  // written to. Ahead of the enumeration below because that matches any URL
+  // naming the field, and answering this read with a results array is what
+  // made the re-read see `undefined`.
+  if (requested.includes('/items(') && requested.includes('FileSystemObjectType')) {
+    globalThis.__calls.push({ url: requested, method: opts.method || 'GET', body: null });
+    return folderAnswer({ d: globalThis.__folderIdentity || {
+      FileSystemObjectType: 1,
+      FileRef: '/sites/test/APP_Escalation/Clinical services',
+    } });
+  }
   if (requested.includes('FileSystemObjectType')) {
     globalThis.__calls.push({ url: requested, method: opts.method || 'GET', body: null });
     const rows = (globalThis.__folderCreated && !globalThis.__folderMissing)
@@ -1172,10 +1183,10 @@ def test_a_declared_folder_gets_its_own_acl(tmp_path: Path) -> None:
     A folder is not itself a SecurableObject -- Microsoft Learn derives
     SecurableObject as List, ListItem and Web -- so the grant goes on the
     folder's list item. Addressed by `items(<id>)` rather than by
-    server-relative path because the id falls out of the descendant-scope
-    enumeration the phase already runs, it keeps the write inside the
-    ownership bracket that proves the title still resolves to the surveyed
-    list, and it never has to quote a folder name.
+    server-relative path, which keeps the write inside the ownership bracket
+    that proves the title still resolves to the surveyed list. In exact mode
+    the id falls out of the descendant-scope enumeration the phase already
+    runs; configured mode has no enumeration and resolves it by path.
     """
     summary, calls = _folder_acl_run(tmp_path)
     assert summary["errors"] == [], summary["errors"]
@@ -1199,8 +1210,40 @@ def test_a_declared_folder_gets_its_own_acl(tmp_path: Path) -> None:
     # clean summary is therefore the assertion that matters most in this
     # module: without the declared-scope exclusion, the very next deploy
     # would abort forever on the phase's own work.
-    surveys = [u for u in urls if "FileSystemObjectType" in u]
+    surveys = [
+        u for u in urls if "FileSystemObjectType" in u and "/items(" not in u
+    ]
     assert len(surveys) >= 2, surveys
+
+
+def test_a_folder_that_no_longer_reads_back_at_its_path_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The id is resolved before the write bracket, so it is re-proved inside it.
+
+    `withOwnedList` proves the LIST's identity and nothing below it. A title
+    rebound between the lookup and the write could hand back an id from a
+    replacement library, and restoring the title afterwards leaves that
+    numeric suffix addressing an unrelated item of the intended one, whose
+    ACL would then be rewritten. Nothing further down can see that, so the
+    item is re-read inside the bracket and the phase fails closed.
+    """
+    harness = _library_harness(declared_folder=True, unique_after=1)
+    summary, calls, _ = _run(
+        "globalThis.__folderIdentity = { FileSystemObjectType: 0,"
+        " FileRef: '/sites/test/APP_Escalation/stray.docx' };\n" + harness,
+        _library_deploy_js(tmp_path, _TWO_LEVEL_CONFIGURED_LIBRARY, titled=False),
+    )
+
+    messages = [e["error"] for e in summary["errors"]]
+    assert any("no longer reads back as a folder" in m for m in messages), messages
+    assert any("nothing was written to it" in m for m in messages), messages
+    # Fails closed: the refusal comes before any write to that item.
+    assert not any(
+        "/items(" in c.get("url", "")
+        and ("roleassignment" in c.get("url", "") or "breakroleinheritance" in c.get("url", ""))
+        for c in calls
+    ), [c.get("url") for c in calls]
 
 
 def test_an_undeclared_descendant_scope_still_aborts(tmp_path: Path) -> None:

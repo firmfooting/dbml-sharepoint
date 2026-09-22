@@ -111,7 +111,8 @@
     // two cannot resolve to different objects.
     async function declaredFolderIds(listTitle, wantedFolders) {
       const folderIds = new Map();
-      if (wantedFolders.length === 0) return folderIds;
+      const folderPaths = new Map();
+      if (wantedFolders.length === 0) return { folderIds, folderPaths };
       const rootUrl = await listRootUrl(listTitle);
       for (const name of wantedFolders) {
         const wanted = `${rootUrl}/${name}`;
@@ -135,8 +136,9 @@
           throw new Error(`'${wanted}' returned no usable list item Id (${JSON.stringify(item.Id)}); its permissions cannot be addressed`);
         }
         folderIds.set(name, item.Id);
+        folderPaths.set(name, wanted);
       }
-      return folderIds;
+      return { folderIds, folderPaths };
     }
 
     async function surveyDescendants(listTitle, wantedFolders) {
@@ -156,6 +158,7 @@
         itemsUrl = next;
       }
       const folderIds = new Map();
+      const folderPaths = new Map();
       if (wantedFolders.length > 0) {
         const rootUrl = await listRootUrl(listTitle);
         // Matched on the FULL server-relative path and FileSystemObjectType,
@@ -167,12 +170,19 @@
           if (!hit) {
             throw new Error(`declared folder '${name}' was not found at '${wanted}'; its permissions cannot be set until the folder phase has created it`);
           }
+          // The same guard the by-path lookup applies: without an id the
+          // suffix reads items(undefined), which SharePoint answers.
+          if (!Number.isInteger(hit.Id)) {
+            throw new Error(`'${wanted}' returned no usable list item Id (${JSON.stringify(hit.Id)}); its permissions cannot be addressed`);
+          }
           folderIds.set(name, hit.Id);
+          folderPaths.set(name, wanted);
         }
       }
       const declared = new Set(folderIds.values());
       return {
         folderIds,
+        folderPaths,
         undeclared: rows.filter(r => r.HasUniqueRoleAssignments && !declared.has(r.Id)),
       };
     }
@@ -216,6 +226,27 @@
     // thing that differs between the two, so a list allowlist and a folder
     // allowlist cannot be reconciled by two rules that have drifted apart.
     const reconcileScope = async (scope) => {
+      // The item id was resolved before this bracket, and `withOwnedList`
+      // proves only the LIST's identity: a title rebound in between could
+      // have yielded an id from a replacement library, leaving a numeric
+      // suffix that addresses an unrelated item of the intended one once the
+      // title is restored. Re-proved here, inside the bracket, before any
+      // read this phase acts on.
+      if (scope.folderPath) {
+        await withOwnedList(scope.listTitle, scope.listId, `folder identity for '${scope.label}'`, async () => {
+          const idResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}?$select=FileSystemObjectType,FileRef`), {
+            headers: { 'Accept': 'application/json;odata=verbose' },
+          });
+          if (!idResp.ok) {
+            const text = await idResp.text();
+            throw new Error(`folder identity re-read failed for '${scope.label}': HTTP ${idResp.status} ${text}`);
+          }
+          const item = (await idResp.json()).d || {};
+          if (item.FileSystemObjectType !== ACL_FOLDER_OBJECT_TYPE || item.FileRef !== scope.folderPath) {
+            throw new Error(`'${scope.label}' no longer reads back as a folder at '${scope.folderPath}' (FileSystemObjectType ${JSON.stringify(item.FileSystemObjectType)}, FileRef ${JSON.stringify(item.FileRef)}); nothing was written to it`);
+          }
+        });
+      }
       if (scope.break_inheritance) {
         const checkResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}?$select=HasUniqueRoleAssignments`), {
           headers: { 'Accept': 'application/json;odata=verbose' },
@@ -545,10 +576,7 @@
         // are one request each.
         const before = exact
           ? await surveyDescendants(listTitle, wantedFolders)
-          : {
-            folderIds: await declaredFolderIds(listTitle, wantedFolders),
-            undeclared: [],
-          };
+          : { ...await declaredFolderIds(listTitle, wantedFolders), undeclared: [] };
         if (exact) assertNoUndeclaredScopes(listTitle, before.undeclared);
         if (la) {
           await reconcileScope({
@@ -570,6 +598,7 @@
             listTitle, listId: aclListId,
             label: `${listTitle}/${fa.folder}`,
             suffix: `/items(${before.folderIds.get(fa.folder)})`,
+            folderPath: before.folderPaths.get(fa.folder),
             assignments: fa.assignments,
             break_inheritance: fa.break_inheritance,
             reconcile_mode: fa.reconcile_mode,
