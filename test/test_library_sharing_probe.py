@@ -18,6 +18,7 @@ from _paths import MANUAL
     "group-id-malformed",
     "extra-administrator", "extra-division", "wrong-division", "no-groups",
     "division-missing", "division-malformed", "division-unsafe", "division-is-owners",
+    "delegation", "delegation-control-owned-by-actor", "delegation-control-owned-by-leads",
 ])
 def test_sharing_snapshot_preserves_observations_without_claiming_enforcement(
     scenario: str,
@@ -31,7 +32,8 @@ def test_sharing_snapshot_preserves_observations_without_claiming_enforcement(
 const vm = require('node:vm');
 const division = { 'division-missing': '', 'division-malformed': '8junk',
   'division-unsafe': '9007199254740993', 'division-is-owners': '7' }[scenario] ?? '8';
-const prompts = ['Probe', 'division A before', '/sites/probe/Probe/A/test.txt', division];
+const leads = scenario.startsWith('delegation') ? '11' : '';
+const prompts = ['Probe', 'division A before', '/sites/probe/Probe/A/test.txt', division, leads];
 const calls = [];
 let captured;
 const window = {
@@ -48,7 +50,7 @@ const fetch = async (url, options) => {
   let body = {};
   if (url.includes('currentuser?')) {
     if (scenario === 'identity-denied') status = 403;
-    else body = { IsSiteAdmin: scenario === 'administrator' };
+    else body = { Id: 5, IsSiteAdmin: scenario === 'administrator' };
   }
   else if (url.includes('currentuser/groups?')) {
     body = { value: [{ Id: scenario === 'owner' ? 7 : 8 }] };
@@ -59,6 +61,9 @@ const fetch = async (url, options) => {
     if (scenario === 'wrong-division') body = { value: [{ Id: 10 }] };
     if (scenario === 'no-groups') body = { value: [] };
     if (scenario === 'division-is-owners') body = { value: [{ Id: 7 }] };
+    // The delegation fixture: the actor is in its division group and in the
+    // leads group that owns it, and in nothing else.
+    if (scenario.startsWith('delegation')) body = { value: [{ Id: 8 }, { Id: 11 }] };
     if (scenario === 'groups-denied') status = 403;
     if (scenario === 'groups-malformed') body = {};
     if (scenario === 'group-id-malformed') body = { value: [{}] };
@@ -71,6 +76,22 @@ const fetch = async (url, options) => {
     body = { Id: 7 };
     if (scenario === 'owners-denied') status = 403;
     if (scenario === 'owners-malformed') body = {};
+  }
+  else if (url.includes('/sitegroups(')) {
+    const id = Number(url.match(/sitegroups\((\d+)\)/)[1]);
+    if (url.includes('/owner')) {
+      // Group 8 is the division group the leads group 11 owns. Group 7 is the
+      // control, owned by a third party unless the scenario says otherwise.
+      let ownerId = 99;
+      if (id === 8) ownerId = 11;
+      else if (scenario === 'delegation-control-owned-by-actor') ownerId = 5;
+      else if (scenario === 'delegation-control-owned-by-leads') ownerId = 11;
+      body = { Id: ownerId, Title: 'Owner ' + ownerId, PrincipalType: ownerId === 5 ? 1 : 8 };
+    } else {
+      body = { AllowMembersEditMembership: false,
+        CanCurrentUserEditMembership: id === 8, CanCurrentUserManageGroup: id === 8,
+        CanCurrentUserViewMembership: true };
+    }
   }
   else if (url.includes('RoleAssignments?')) {
     status = 403;
@@ -155,6 +176,8 @@ const fetch = async (url, options) => {
     ordinary = scenario in {
         "encoded-web",
         "normal", "throttled", "malformed", "groups-verbose",
+        "delegation", "delegation-control-owned-by-actor",
+        "delegation-control-owned-by-leads",
     }
     sharing_state = "awaiting-capture" if ordinary else "void"
     for finding in (
@@ -169,3 +192,22 @@ const fetch = async (url, options) => {
         assert findings["access.effective-perms.control-ordinary-actor"]["observed"] == (
             "PASS" if ordinary else "FAIL"
         )
+    if scenario == "delegation":
+        # The fixture the delegation question depends on: a control owned by
+        # neither the actor nor a prepared group, reporting editing refused.
+        assert findings["access.group.control-non-owner-cannot-edit"]["observed"] == (
+            "EDIT REPORTED REFUSED"
+        )
+        assert findings["access.group.owner-edits-membership"]["observed"] == (
+            "EDIT REPORTED ALLOWED"
+        )
+    if scenario.startswith("delegation-control-owned-by-"):
+        # A control the actor owns is not a control. Without this the probe
+        # would read its ALLOWED as the platform failing to discriminate,
+        # which is indistinguishable from a real negative result.
+        control = findings["access.group.control-non-owner-cannot-edit"]
+        assert control["observed"].startswith("NOT ESTABLISHED")
+        assert control["state"] == "open"
+        delegation = findings["access.group.owner-edits-membership"]
+        assert delegation["state"] == "void"
+        assert "not a non-owner control" in delegation["detail"]

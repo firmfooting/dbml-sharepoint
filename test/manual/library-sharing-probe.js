@@ -1,5 +1,5 @@
 /**
- * Library sharing probe, revision e7e06dea. Not yet run live.
+ * Library sharing probe, revision 48163f40. Not yet run live.
  * This script only reads. It does not change permissions or send invitations.
  *
  * Prepare disposable content using the intended permission layout:
@@ -133,7 +133,7 @@
   }
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
-  log('INFO', `probe revision e7e06dea; core v2; results v1.`);
+  log('INFO', `probe revision 48163f40; core v2; results v1.`);
   log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -250,7 +250,7 @@
     return response.d.ListItemEntityTypeFullName;
   }
   const report = {
-    revision: 'e7e06dea', capturedAt: new Date().toISOString(),
+    revision: '48163f40', capturedAt: new Date().toISOString(),
     sharingVerdict: 'NOT ESTABLISHED: requires edit, share and recipient-open observations',
     reads: {}, targets: [], errors: [], results,
   };
@@ -412,15 +412,31 @@
       const owned = await groupState(report.expectedDivisionGroupId, 'divisionGroupState');
       const foreign = await groupState(ownersId, 'associatedOwnersGroupState');
       const observedAs = (value) => (value ? 'EDIT REPORTED ALLOWED' : 'EDIT REPORTED REFUSED');
+      // The control is a fixture this DEPENDS on, so its owner is checked
+      // before its reading is allowed to mean anything. A control the actor
+      // owns, directly or through a prepared group, reports ALLOWED, and
+      // that is indistinguishable from a platform that does not discriminate.
+      const controlOwnerId = foreign.summary.OwnerId;
+      const controlIndependent = validId(controlOwnerId) && validId(entries[0].body.Id)
+        && controlOwnerId !== entries[0].body.Id && !preparedGroupIds.has(controlOwnerId);
+      const notIndependent = 'control group owner is ' + JSON.stringify(controlOwnerId)
+        + ', which is the actor or a prepared group rather than a third party,'
+        + ' so it is not a non-owner control';
+      let controlOutcome = observedAs(foreign.editable);
+      if (!controlIndependent) {
+        controlOutcome = 'NOT ESTABLISHED (control group is not owned by a third party)';
+      } else if (foreign.editable === null) {
+        controlOutcome = 'NOT ESTABLISHED (CanCurrentUserEditMembership absent or not a boolean)';
+      }
       record('access.group.control-non-owner-cannot-edit', 'non-owner membership editing',
-        foreign.editable === null
-          ? 'NOT ESTABLISHED (CanCurrentUserEditMembership absent or not a boolean)'
-          : observedAs(foreign.editable),
-        JSON.stringify(foreign.summary));
+        controlOutcome, JSON.stringify(foreign.summary));
       // Only this probe's own dependant is voided. voidDependants() would
       // take every other open row with it, and the sharing questions do not
       // depend on group delegation.
-      if (foreign.editable !== false) {
+      if (!controlIndependent) {
+        record('access.group.owner-edits-membership', 'owner membership editing', 'VOID',
+          notIndependent, 'void');
+      } else if (foreign.editable !== false) {
         record('access.group.owner-edits-membership', 'owner membership editing', 'VOID',
           foreign.editable === null
             ? 'control could not read a boolean CanCurrentUserEditMembership, so the property cannot answer this either'
