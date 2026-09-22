@@ -10,7 +10,14 @@ from _model import MappingSections, column, enum, ref
 from _model import bundle as make_bundle
 from _model import schema as make_schema
 from _model import table as make_table
-from _packs import blocks, entities, entity, pack, write_mapping
+from _packs import (
+    blocks,
+    entities,
+    entity,
+    pack,
+    two_libraries_with_list_and_folder_scopes,
+    write_mapping,
+)
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.phases import phase_number as pn
@@ -1349,53 +1356,9 @@ def test_the_manifest_splits_one_acl_collection_into_its_two_tables(
     tmp_path: Path,
 ) -> None:
     """`selectattr('folder', ...)` failing silently renders an empty table or
-    the wrong rows, and nothing throws. Both tables are asserted on one
-    bundle that has a list scope and two folder scopes."""
-    schema, bundle = pack(
-        tmp_path,
-        dbml=(
-            'Enum division {\n  "Clinical services"\n  "Corporate services"\n}\n'
-            + table("Docs", ID_PK, TITLE, "Division division")
-        ),
-        mapping="""
-            entities:
-              Docs:
-                kind: DocumentLibrary
-                base_template: 101
-                site_role: default
-                folders: {from_enum: division}
-
-            permission_levels:
-              - name: "Folder Editor"
-                description: "Edit inside one folder."
-                base_permissions: [ViewListItems, AddListItems, EditListItems]
-
-            groups:
-              - name: "Librarians"
-                description: "Library maintainers."
-                owner_group: "Site Owners"
-              - from_enum: division
-                name: "{member} Editors"
-                description: "Editors for {member}."
-                owner_group: "Site Owners"
-
-            list_permissions:
-              overrides:
-                Docs:
-                  break_inheritance: true
-                  reconcile: exact
-                  assignments:
-                    - principal: { kind: group, name: "Librarians" }
-                      level: "Folder Editor"
-              folders:
-                Docs:
-                  break_inheritance: true
-                  reconcile: exact
-                  assignments:
-                    - principal: { kind: group, name: "{member} Editors" }
-                      level: "Folder Editor"
-        """,
-    )
+    the wrong rows, and nothing throws. Both tables are asserted on a bundle
+    that has a list scope and two folder scopes per library."""
+    schema, bundle = two_libraries_with_list_and_folder_scopes(tmp_path)
     md = generate_manifest(
         enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
@@ -1476,10 +1439,11 @@ def test_manifest_inventories_folder_scopes(tmp_path: Path) -> None:
         generated_at="2026-05-04T00:00:00Z",
     )
 
-    assert "Per-folder assignments" in md
-    assert "Clinical services Editors (group)" in md
-    assert "Folder Editor" in md
-    assert "_(no per-folder assignments configured)_" not in md
+    per_folder = md.split("### Per-folder assignments")[1].split("\n###")[0]
+
+    assert "Clinical services Editors (group)" in per_folder
+    assert "Folder Editor" in per_folder
+    assert "_(no per-folder assignments configured)_" not in per_folder
 
 
 def _acl_manifest(tmp_path: Path, mode: str) -> str:
