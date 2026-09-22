@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY ACCESS SURFACE
  *
- * REVISION: 72f1c73c
+ * REVISION: a3f34f2c
  *
  * ONE QUESTION:
  *   Does the permission model of a document library diverge from a generic list?
@@ -313,7 +313,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 72f1c73c. Quote this when reporting results.');
+  log('INFO', 'probe revision a3f34f2c. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibAccess';
   const FILE = 'probe-access-doc.txt';
@@ -629,23 +629,43 @@
                        + 'library, and a lagging read is ruled out by the attempts above.'));
 
             // Q2 verdict: the assignment attached at library scope and read back.
-            const assignResp = await spGet(
-              `${listPath}/roleassignments?$select=PrincipalId&$expand=RoleDefinitionBindings&$top=200`);
-            const rows = (assignResp.ok && assignResp.body && Array.isArray(assignResp.body.value))
-              ? assignResp.body.value : [];
-            const ownersRow = rows.find((r) =>
-              Number(r.PrincipalId) === Number(owners.body.Id)
-              && Array.isArray(r.RoleDefinitionBindings)
-              && r.RoleDefinitionBindings.some((b) => b.Name === 'Full Control'));
+            // COUNTED, because the deploy's ACL phase needs a number to size
+            // its read-back loop from and `HasUniqueRoleAssignments` above is
+            // a different property. Attempts and elapsed time are OBSERVED
+            // here and nothing is asserted over them: a binding that takes
+            // four reads is a measurement, not a failed probe.
+            const bindingStarted = Date.now();
+            let assignResp = null;
+            let rows = [];
+            let ownersRow = null;
+            let bindingReads = 0;
+            for (let i = 0; i < UNIQUE_TRIES; i += 1) {
+              if (i) await sleep(UNIQUE_WAIT_MS);
+              bindingReads += 1;
+              assignResp = await spGet(
+                `${listPath}/roleassignments?$select=PrincipalId&$expand=RoleDefinitionBindings&$top=200`);
+              rows = (assignResp.ok && assignResp.body && Array.isArray(assignResp.body.value))
+                ? assignResp.body.value : [];
+              ownersRow = rows.find((r) =>
+                Number(r.PrincipalId) === Number(owners.body.Id)
+                && Array.isArray(r.RoleDefinitionBindings)
+                && r.RoleDefinitionBindings.some((b) => b.Name === 'Full Control'));
+              if (ownersRow) break;
+            }
+            const bindingElapsed = Date.now() - bindingStarted;
             record('library.access.role-assignment-library', Q_ROLE_ATTACH,
                    ownersRow ? 'SAME AS LIST' : 'ASSIGNMENT NOT READ BACK',
                    ownersRow
                      ? `addroleassignment(principalid=${owners.body.Id},roledefid=1073741829) succeeded `
                        + `on '${LIB}' and the library's roleassignments read back ${rows.length} row(s) `
                        + `including the owners group bound to Full Control, exactly as a generic list `
-                       + 'reads an assignment back (reader-bindings-probe.js).'
+                       + `reads an assignment back (reader-bindings-probe.js). Visible after `
+                       + `${bindingReads} read(s), ${bindingElapsed} ms: that is the number a `
+                       + 'post-write read-back in the deploy has to be sized from, for ONE POST. '
+                       + 'A batched ChangeSet is not measured here.'
                      : `the library roleassignments read answered HTTP ${assignResp.status} with `
-                       + `${rows.length} row(s), but none bound principal ${owners.body.Id} to Full Control. `
+                       + `${rows.length} row(s) after ${bindingReads} read(s) over ${bindingElapsed} ms, `
+                       + `but none bound principal ${owners.body.Id} to Full Control. `
                        + 'A list would have read the assignment back; this is a divergence.');
 
             // ---- file-scoped-unique-permission --------------------------

@@ -507,21 +507,55 @@
         }
       }
 
-      // NOT verified by re-reading the bindings here, deliberately. The
-      // writes above answered HTTP 200, which is evidence the request was
-      // accepted rather than that the scope now holds them, and nothing
+      // Read back, because HTTP 200 on the writes above is evidence the
+      // request was accepted and not that the scope holds them, and nothing
       // downstream checks: verify.js reads lists, columns and views and
-      // never role assignments. A read-back belongs here, but it cannot be
-      // added on the assumption that this surface answers a write
-      // immediately. The settle loop above exists because it does NOT:
-      // MEASURED 2026-09-09, a library's HasUniqueRoleAssignments read false
-      // on the first read after breakroleinheritance and true on the second.
-      // A single post-write enumeration would turn that same lag into an
-      // abort on a run that had in fact succeeded.
-      // test/manual/library-access-probe.js already attaches a role
-      // assignment and reads it back, but not after a batched ChangeSet and
-      // not with the lag measured, which is what a settle loop here would
-      // have to be sized from. Measure that before adding one.
+      // never role assignments.
+      //
+      // Folder scope only. The list path has the same gap and it is older
+      // than this phase's folder support; widening it means teaching every
+      // ACL harness to model a write, which belongs in its own change
+      // rather than riding along with folders.
+      //
+      // The retry window is BORROWED, not measured for this surface:
+      // MEASURED 2026-09-09, `library.access.unique-permissions-library`,
+      // a library's HasUniqueRoleAssignments read false on the first read
+      // after breakroleinheritance and true on the second, within 10 s.
+      // `library.access.role-assignment-library` now counts the reads and
+      // the elapsed time a single-POST binding takes to become visible, so
+      // that half is measurable on the next live run. Whether a binding
+      // written inside a batched ChangeSet is any slower is not measured,
+      // and the number that run reports replaces this one. Until then the
+      // failure says what it saw rather than claiming the write was lost.
+      if (scope.folderPath && resolvedAssignments.length > 0) {
+        const FOLDER_BINDING_SETTLE_MS = 2000;
+        let missing = [];
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          if (attempt > 0) await sleep(FOLDER_BINDING_SETTLE_MS);
+          const backResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}/roleassignments?$expand=RoleDefinitionBindings&$select=PrincipalId,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name&$top=200`), {
+            headers: { 'Accept': 'application/json;odata=verbose' },
+          });
+          if (!backResp.ok) {
+            const text = await backResp.text();
+            throw new Error(`role assignment read-back failed for '${scope.label}': HTTP ${backResp.status} ${text}`);
+          }
+          const backJson = await backResp.json();
+          const held = new Set();
+          for (const row of ((backJson.d && backJson.d.results) || [])) {
+            for (const binding of ((row.RoleDefinitionBindings && row.RoleDefinitionBindings.results) || [])) {
+              held.add(`${row.PrincipalId}:${binding.Id}`);
+            }
+          }
+          missing = resolvedAssignments.filter(
+            x => !held.has(`${x.principalId}:${x.roleDefId}`),
+          );
+          if (missing.length === 0) break;
+        }
+        if (missing.length > 0) {
+          throw new Error(`'${scope.label}' does not report ${missing.length} declared role assignment(s) after writing them (${missing.map(x => `principal ${x.principalId} level ${x.roleDefId}`).join(', ')}). The writes were accepted, so this is either a scope that has not caught up or a write that did not take; nothing was removed and rerunning reads the bindings again.`);
+        }
+        log('INFO', `[Phase 4.2] '${scope.label}' reports all ${resolvedAssignments.length} declared role assignment(s).`);
+      }
     };
 
     // Folder policies may name a list whose own policy is absent, so the

@@ -230,7 +230,7 @@ _INHERITANCE_JS = """globalThis.fetch = async (url, opts = {}) => {
 #: Answers the folder phase's reads for the one folder `_FOLDERED_LIBRARY`
 #: declares. `__folderCreated` turns on at the create POST, after which the
 #: folder reads back as existing and its item as FileSystemObjectType 1.
-_FOLDER_JS = """globalThis.fetch = async (url, opts = {}) => {
+_FOLDER_JS = r"""globalThis.fetch = async (url, opts = {}) => {
   const requested = String(url);
   const folderAnswer = (payload) => ({
     ok: true, status: 200, headers: { get: () => null },
@@ -297,6 +297,34 @@ _FOLDER_JS = """globalThis.fetch = async (url, opts = {}) => {
   }
   if (requested.includes('/items(') && requested.includes('/breakroleinheritance')) {
     globalThis.__folderScoped = true;
+  }
+  // Role assignments at FOLDER scope as state, so the phase's read-back sees
+  // what it wrote rather than a fixed empty snapshot. `__folderBindingsBlind`
+  // accepts every write and reports none, which is what a scope that never
+  // catches up looks like from the script's side.
+  globalThis.__folderBindings = globalThis.__folderBindings || new Set();
+  if (requested.includes('/items(') && requested.includes('/roleassignments/addroleassignment(')) {
+    const m = /principalid=(\d+),roleDefId=(\d+)/.exec(requested);
+    if (m) globalThis.__folderBindings.add(m[1] + ':' + m[2]);
+  }
+  if (requested.includes('/items(')
+      && requested.includes('/roleassignments/removeroleassignment(')) {
+    const m = /principalid=(\d+),roleDefId=(\d+)/.exec(requested);
+    if (m) globalThis.__folderBindings.delete(m[1] + ':' + m[2]);
+  }
+  if (requested.includes('/items(') && /\/roleassignments\?/.test(requested)) {
+    globalThis.__calls.push({ url: requested, method: opts.method || 'GET', body: null });
+    const byPrincipal = new Map();
+    if (!globalThis.__folderBindingsBlind) {
+      for (const pair of globalThis.__folderBindings) {
+        const [principalId, roleDefId] = pair.split(':').map(Number);
+        if (!byPrincipal.has(principalId)) byPrincipal.set(principalId, []);
+        byPrincipal.get(principalId).push({ Id: roleDefId, Name: 'Level ' + roleDefId });
+      }
+    }
+    return folderAnswer({ d: { results: [...byPrincipal].map(([PrincipalId, rows]) => ({
+      PrincipalId, RoleDefinitionBindings: { results: rows },
+    })) } });
   }
 """
 
@@ -1293,6 +1321,30 @@ def test_a_reader_granted_only_inside_the_folders_has_its_level_judged(
     # Nothing was created: the abort comes before list creation, so the
     # account is not left holding a level this run never judged.
     assert summary["listsCreated"] == []
+
+
+def test_a_folder_that_never_reports_its_bindings_is_refused(tmp_path: Path) -> None:
+    """HTTP 200 on the write is evidence the request was accepted, not that
+    the folder holds the grant.
+
+    Nothing downstream would catch it: verify.js reads lists, columns and
+    views and never role assignments, so a write that did not take left an
+    operator with a green run and a folder the division cannot reach. The
+    mock accepts every write and reports none, which is what that looks like
+    from the script's side.
+    """
+    harness = _library_harness(declared_folder=True, unique_after=1)
+    summary, calls, _ = _run(
+        "globalThis.__folderBindingsBlind = true;\n" + harness,
+        _library_deploy_js(tmp_path, _TWO_LEVEL_CONFIGURED_LIBRARY, titled=False),
+    )
+
+    messages = [e["error"] for e in summary["errors"]]
+    assert any("does not report" in m for m in messages), messages
+    assert any("nothing was removed" in m for m in messages), messages
+    # The read-back is a read: it must not have pruned anything on its way to
+    # deciding the grant is missing.
+    assert not any("removeroleassignment" in c.get("url", "") for c in calls)
 
 
 def test_an_undeclared_descendant_scope_still_aborts(tmp_path: Path) -> None:
