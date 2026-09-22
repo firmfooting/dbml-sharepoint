@@ -269,6 +269,11 @@
     // consecutive agreement, which is the correct design against an
     // enumeration measured to flap: a check demanding N consecutive reads
     // would fail on exactly the sequence above.
+    //
+    // What that does NOT catch: nothing observes the window after the first
+    // satisfying read, so a stray genuinely re-derived later goes unseen.
+    // Closing it needs a live measurement of how long a removal can come
+    // back, not a stricter rule here, which the flap above would break.
     const settleBindings = async (scope, judge) => {
       const SCOPE_BINDING_SETTLE_MS = 2000;
       let complaint = null;
