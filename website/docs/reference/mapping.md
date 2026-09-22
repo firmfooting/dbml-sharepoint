@@ -1963,11 +1963,18 @@ Five refusals, all at build time:
 **A folder is secured as its own list item.** Microsoft Learn derives
 `SecurableObject` as `List`, `ListItem` and `Web`; a folder is not one, so
 the grant goes on the folder's list item through
-`web/lists/getbytitle(...)/items(<id>)`. The id comes from the same
-enumeration the descendant-scope guard already runs, so it costs no extra
-request, the write stays inside the bracket that proves the title still
-resolves to the surveyed list, and no folder name has to be quoted into a
-path.
+`web/lists/getbytitle(...)/items(<id>)`, inside the bracket that proves the
+title still resolves to the surveyed list.
+
+Where that id comes from depends on the mode. Under `exact` it is read out of
+the descendant-scope enumeration the guard already runs, matched on the full
+server-relative path, so no folder name is quoted into a URL. Under
+`configured` there is no enumeration, and paging every document to learn a
+handful of ids would make a redeploy scale with the library's size, so each
+declared folder is fetched by path through `GetFolderByServerRelativeUrl`,
+quoted the way the folder phase quotes the same path when it creates the
+folder. Either way the object has to read back as a folder, at the path asked
+for, with a usable item id, before anything is written to it.
 
 **The descendant-scope guard now allows what the mapping declares.** Under
 `exact`, a unique scope on an item or folder that `list_permissions.folders`
