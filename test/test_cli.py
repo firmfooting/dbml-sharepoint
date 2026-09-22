@@ -2372,6 +2372,64 @@ def test_report_refusal_clears_previous_generated_outputs(tmp_path: Path) -> Non
     assert (out / "operator-notes.txt").read_text(encoding="utf-8") == "preserve me"
 
 
+def test_report_refusal_over_an_unknown_folder_enum_clears_the_stale_pack(
+    tmp_path: Path,
+) -> None:
+    """The named error has to stay a `ValueError`, not become a `KeyError`.
+
+    `report` runs no validation, so a misspelled `folders.from_enum` meets
+    the data dictionary first. `UnknownFolderEnumError` is a `ValueError` so
+    `execute_report` catches it, clears the previously generated pack and
+    exits 1 with the enum named. Read through a plain dict subscript instead
+    it is a `KeyError`, which is a `LookupError` and not a `ValueError`, so
+    it walks through that handler: the operator gets a traceback and the
+    last run's pack stays on disk describing a schema that no longer exists.
+    """
+    dbml = blocks("""
+        Enum division {
+          "Clinical services"
+          "Corporate services"
+        }
+
+        Table Docs {
+          Id int [pk, increment]
+          Title nvarchar [not null]
+          Division division
+        }
+    """)
+    library = """
+        entities:
+          Docs:
+            kind: DocumentLibrary
+            base_template: 101
+            site_role: default
+            folders: {from_enum: %s}
+    """
+    schema = write_dbml(tmp_path, dbml)
+    mapping = write_mapping(tmp_path, library % "division")
+    out = tmp_path / "reports"
+    first = _cli(
+        "report", "--time-zone", "UTC", "--schema", str(schema),
+        "--mapping", str(mapping), "--out", str(out),
+    )
+    assert first.returncode == 0, first.stderr
+    assert (out / "data-dictionary.md").is_file()
+
+    mapping = write_mapping(tmp_path, library % "divison")
+    failed = _cli(
+        "report", "--time-zone", "UTC", "--schema", str(schema),
+        "--mapping", str(mapping), "--out", str(out),
+    )
+
+    assert failed.returncode == 1, failed.stderr
+    assert "Traceback" not in failed.stderr, failed.stderr
+    assert "divison" in failed.stderr, failed.stderr
+    assert not (out / "data-dictionary.md").exists()
+    assert not (out / "guide.md").exists()
+    assert not (out / "sql").exists()
+    assert not (out / "powerquery").exists()
+
+
 def test_report_never_clears_output_before_it_reads_the_schema(tmp_path: Path) -> None:
     """An input error must not destroy the last good report set.
 

@@ -197,3 +197,37 @@ def test_resolve_carries_the_mapping_it_resolved() -> None:
     # none. Absent would mean unresolved, which is a different answer.
     assert resolved.folders == {"Risk": ()}
     assert resolved.unresolved == ()
+
+
+def test_require_folders_names_the_enum_rather_than_answering_a_key_error() -> None:
+    """A `KeyError` is a `LookupError` and not a `ValueError`.
+
+    `pipeline.execute_report` catches `ValueError` to clear a previously
+    generated pack before it exits, so a bare `KeyError` from a direct
+    subscript escapes that handler and leaves the last run's pack on disk
+    looking current. `UnknownFolderEnumError` declares both bases for
+    exactly this, and the strict accessor is what raises it.
+    """
+    schema = make_schema(make_table("Risk", "Title"), make_table("Action", "Title"))
+    mapping = make_mapping(entities={
+        "Risk": EntityMapping(
+            name="Risk", kind="DocumentLibrary", base_template=101,
+            site_role="default", folder_source=FoldersFromEnum(enum="divison"),
+        ),
+        "Action": EntityMapping(
+            name="Action", kind="DocumentLibrary", base_template=101,
+            site_role="default", folder_source=("North",),
+        ),
+    })
+
+    resolved = resolve(schema, mapping)
+
+    with pytest.raises(UnknownFolderEnumError) as excinfo:
+        resolved.require_folders("Risk")
+    assert excinfo.value.enum == "divison"
+    assert isinstance(excinfo.value, ValueError)
+    # The entity that resolved still answers, and an entity this mapping
+    # never declared is a KeyError about a name, not a claim about an enum.
+    assert resolved.require_folders("Action") == ("North",)
+    with pytest.raises(KeyError):
+        resolved.require_folders("NoSuchEntity")

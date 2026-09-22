@@ -462,13 +462,19 @@ def generate_data_dictionary(
     ``time_zone`` is the site's zone the pack was built with, named in the
     `DateZoneResolved` row.
 
-    No `resolved.require_resolved()` call here: `report` runs no validation
-    pass of its own and must still describe site role A correctly when an
-    entity that belongs to an unrelated site role B carries the mapping's
-    only bad `from_enum`. `resolved.folders` below is read only for entities
+    No `resolved.require_resolved()` call here, unlike `jsgen` and
+    `assessgen`, which do widen to the whole mapping and say why. This one
+    writes documentation and touches no site, so the reason to fail closed
+    across roles does not apply, and `report` runs no validation pass of its
+    own: it must still describe site role A correctly when an entity that
+    belongs to an unrelated site role B carries the mapping's only bad
+    `from_enum`. `require_folders` below is read only for entities
     `tables_for_role` already scoped to THIS role, the same scope
     `declared_folders` was called at before, so a reachable defect there
-    still surfaces as a `KeyError` rather than a silent omission.
+    surfaces as `UnknownFolderEnumError` rather than a silent omission.
+    Named rather than a `KeyError` because `pipeline.execute_report` catches
+    `ValueError` to clear a previously generated pack, and a `KeyError`
+    walks through that handler and leaves the stale pack looking current.
     """
     tables = tables_for_role(schema, bundle, site_role)
     enum_names = {e.name for e in schema.enums}
@@ -558,7 +564,7 @@ def generate_data_dictionary(
         else:
             details.append("Versioning: off.")
         if entity.is_library:
-            entity_folders = resolved.folders[table.name]
+            entity_folders = resolved.require_folders(table.name)
             # A reader of this page decides what a row IS before reading its
             # columns; on a library that is a file, and Title is not its name.
             details.append(

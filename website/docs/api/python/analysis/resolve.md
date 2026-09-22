@@ -80,6 +80,33 @@ to `()`, which `declared_folders` resolves to no folders without ever
 raising. So every entity in the mapping is a key in both `folders` and
 `folder_policies`, except the ones actually unresolved.
 
+A caller that has NOT called `require_resolved()` reads one entity
+through `require_folders` rather than by subscript: a subscript answers
+an unresolved entity with a bare `KeyError`, which is not a `ValueError`
+and so escapes the handlers that catch the named errors raised
+everywhere else here.
+
+#### `ResolvedMapping.require_folders`
+
+```python
+def require_folders(self, entity: str) -> tuple[str, ...]
+```
+
+`folders[entity]`, raising the named error rather than `KeyError`.
+
+The strict read, for a caller already scoped to entities it knows
+this build touches and which therefore wants one entity's defect and
+not the whole mapping's. Subscripting `folders` directly answers a
+`KeyError`, which is a `LookupError` and not a `ValueError`, so it
+walks straight through `pipeline.execute_report`'s handler and skips
+the path that clears a previously generated pack, leaving a stale
+report looking current behind an unhandled traceback.
+`UnknownFolderEnumError` is both bases, which is why it has both.
+
+An entity this mapping does not declare is still a `KeyError`: that
+is a caller bug about a name, not a defect in an enum, and blaming
+it on one would name an enum nobody wrote.
+
 #### `ResolvedMapping.require_resolved`
 
 ```python
