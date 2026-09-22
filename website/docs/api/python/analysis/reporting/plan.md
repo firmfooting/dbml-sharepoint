@@ -1,6 +1,6 @@
 ---
 title: plan
-sidebar_position: 33
+sidebar_position: 34
 ---
 
 # `dbml_sharepoint.analysis.reporting.plan`
