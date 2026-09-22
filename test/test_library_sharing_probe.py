@@ -1,6 +1,8 @@
 import json
 import shutil
 import subprocess
+import tempfile
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -109,10 +111,18 @@ const fetch = async (url, options) => {
     script = (
         f"const source = {json.dumps(source)}; const scenario = {json.dumps(scenario)};\n{harness}"
     )
-    completed = subprocess.run(  # noqa: S603 - executes repository-owned probe with mocked reads
-        [node, "-e", script],
-        capture_output=True, text=True, check=True,
-    )
+    # Via a FILE, never `node -e`, for the reason `_node.run_node` gives:
+    # Windows caps a command line and this probe is past it. MEASURED in CI
+    # on 2026-09-21, every scenario here failed with WinError 206 once the
+    # probe grew, while Ubuntu passed. `newline="\n"` so Node parses the
+    # bytes the repository ships rather than a CRLF copy of them.
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "probe.js"
+        path.write_text(script, encoding="utf-8", newline="\n")
+        completed = subprocess.run(  # noqa: S603 - executes repository-owned probe with mocked reads
+            [node, str(path)],
+            capture_output=True, text=True, check=True,
+        )
     result: dict[str, Any] = json.loads(completed.stdout)
     report = result["report"]
     if scenario.startswith("library-"):
