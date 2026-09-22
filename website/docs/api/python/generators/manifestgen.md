@@ -40,8 +40,9 @@ No `resolved.require_resolved()` call here: this function still renders
 a findings-only manifest on a build that failed validation (that is the
 whole point of writing one), and a mapping with a genuinely unresolved
 enum is exactly the shape such a build has. `lists_granting_group` below
-only reads `resolved.folder_policies` for the entities THIS build
-deploys, the same scope `declared_folders` was called at before, so a
-reachable defect there still surfaces as a `KeyError` and not a silent
-omission.
+reads folder policies through `require_folder_policies`, which answers
+`()` for an entity that declares none and raises the named
+`UnknownFolderEnumError` only where the answer actually depends on an
+enum that did not resolve, so a reachable defect there is neither a
+bare `KeyError` nor a silent omission.
 

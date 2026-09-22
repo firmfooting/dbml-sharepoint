@@ -64,10 +64,11 @@ def generate_manifest(
     a findings-only manifest on a build that failed validation (that is the
     whole point of writing one), and a mapping with a genuinely unresolved
     enum is exactly the shape such a build has. `lists_granting_group` below
-    only reads `resolved.folder_policies` for the entities THIS build
-    deploys, the same scope `declared_folders` was called at before, so a
-    reachable defect there still surfaces as a `KeyError` and not a silent
-    omission.
+    reads folder policies through `require_folder_policies`, which answers
+    `()` for an entity that declares none and raises the named
+    `UnknownFolderEnumError` only where the answer actually depends on an
+    enum that did not resolve, so a reachable defect there is neither a
+    bare `KeyError` nor a silent omission.
     """
     template = script_env().get_template("manifest.md.j2")
 
@@ -128,6 +129,11 @@ def generate_manifest(
     # list excludes the group, the excluded half is every list, and a template
     # that only ever sees "excluded" has no way to say "nothing" instead of
     # "everything except everything".
+    #
+    # What keeps an unresolved folder enum out of this loop on a
+    # findings-only manifest is `pipeline`'s `_EMPTY_SCHEMA_JSON`: a build
+    # that failed validation passes it, so both lists above are empty and
+    # nothing is asked. A valid build has nothing unresolved to ask about.
     _reader_split = [
         lists_granting_group(resolved, name, _deployed_entities)
         for name in _reader_groups

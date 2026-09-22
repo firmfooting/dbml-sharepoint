@@ -74,10 +74,10 @@ class ResolvedMapping:
     `folder_policies`, except the ones actually unresolved.
 
     A caller that has NOT called `require_resolved()` reads one entity
-    through `require_folders` rather than by subscript: a subscript answers
-    an unresolved entity with a bare `KeyError`, which is not a `ValueError`
-    and so escapes the handlers that catch the named errors raised
-    everywhere else here.
+    through `require_folders` or `require_folder_policies` rather than by
+    subscript: a subscript answers an unresolved entity with a bare
+    `KeyError`, which is not a `ValueError` and so escapes the handlers that
+    catch the named errors raised everywhere else here.
     """
 
     #: The mapping this was resolved from, so a consumer needs no second
@@ -140,6 +140,27 @@ class ResolvedMapping:
         if unknown is None:
             raise KeyError(entity)
         raise UnknownFolderEnumError(unknown)
+
+    def require_folder_policies(
+        self, entity: str,
+    ) -> tuple[tuple[str, ListPermissionPolicy], ...]:
+        """Every (folder, policy) `entity` declares, strict where it matters.
+
+        Scoped exactly as `analysis/folders.py::folder_policies` was: an
+        entity with no `list_permissions.folders` entry contributes no folder
+        assignments whatever its folder source resolves to, so answering `()`
+        there is the correct answer and not a default papering over an
+        unknown. Where the answer DOES depend on an enum that did not
+        resolve, this raises `UnknownFolderEnumError` as `require_folders`
+        does, rather than the `KeyError` a direct subscript gives.
+        """
+        policies = self.folder_policies.get(entity)
+        if policies is not None:
+            return policies
+        perms = self.mapping.permissions
+        if perms is not None and entity in perms.folder_policies:
+            self.require_folders(entity)
+        return ()
 
 
 def resolve(schema: Schema, mapping: Mapping) -> ResolvedMapping:

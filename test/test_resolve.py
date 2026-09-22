@@ -231,3 +231,40 @@ def test_require_folders_names_the_enum_rather_than_answering_a_key_error() -> N
     assert resolved.require_folders("Action") == ("North",)
     with pytest.raises(KeyError):
         resolved.require_folders("NoSuchEntity")
+
+
+def test_require_folder_policies_keeps_the_scope_the_old_resolver_had() -> None:
+    """No folder policy means no folder assignments, whatever the enum does.
+
+    `folders.py::folder_policies` returned `()` for an entity with no
+    `list_permissions.folders` entry BEFORE it resolved anything, so such an
+    entity never reached the raising resolver. Subscripting
+    `resolved.folder_policies` instead raises for every unresolved entity,
+    which moved a build's failure from `folder_enum_unknown` with its
+    findings manifest to a bare `KeyError` at the reader gate.
+    """
+    schema = make_schema(make_table("Risk", "Title"), make_table("Docs", "Title"))
+    perms = PermissionsConfig(
+        levels=[], groups=[], default_policy=None, overrides={},
+        folder_policies={"Docs": ListPermissionPolicy(
+            break_inheritance=True,
+            assignments=[RoleAssignment(
+                principal=Principal(kind="group", name="Librarians"), level="Read",
+            )],
+        )},
+    )
+    library = {
+        name: EntityMapping(
+            name=name, kind="DocumentLibrary", base_template=101,
+            site_role="default", folder_source=FoldersFromEnum(enum="divison"),
+        )
+        for name in ("Risk", "Docs")
+    }
+    resolved = resolve(schema, make_mapping(entities=library, permissions=perms))
+
+    # Unresolved and no folder policy: the answer does not depend on the enum.
+    assert resolved.require_folder_policies("Risk") == ()
+    # Unresolved and a folder policy: it does, so it fails closed by name.
+    with pytest.raises(UnknownFolderEnumError) as excinfo:
+        resolved.require_folder_policies("Docs")
+    assert excinfo.value.enum == "divison"

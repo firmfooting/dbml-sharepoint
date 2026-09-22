@@ -378,13 +378,20 @@ def lists_granting_group(
     `test_the_reader_group_is_granted_read_on_every_policy_block`; nothing
     constrains a custom one.
 
-    `resolved.folder_policies` is read directly, keyed on `name`: an entity
-    in `table_names` is present there unless its own folder source is
-    unresolved. No `require_resolved()` call precedes this -- `table_names`
-    is scoped to one build's site role, and this must judge exactly that
-    scope rather than fail the whole mapping over an entity this call was
-    never asked about. A `KeyError` here means `name` itself is unresolved,
-    which is a caller bug and not something to hide behind a default.
+    Folder policies are read through `require_folder_policies`, which keeps
+    the scope `analysis/folders.py::folder_policies` had: an entity with no
+    `list_permissions.folders` entry answers `()` whatever its folder source
+    resolves to, and one whose policy's folders depend on an enum that did
+    not resolve raises `UnknownFolderEnumError`. Subscripting
+    `resolved.folder_policies` instead raised for every unresolved entity,
+    including the ones with no folder policy, and raised `KeyError`:
+    `pipeline` calls this at the reader gate BEFORE `validate_all`, so a
+    mapping whose only defect is a misspelled `folders.from_enum` died on a
+    bare traceback instead of reporting `folder_enum_unknown` with its
+    findings manifest. No `require_resolved()` call precedes this either --
+    `table_names` is scoped to one build's site role, and this must judge
+    exactly that scope rather than fail the whole mapping over an entity
+    this call was never asked about.
     """
     mapping = resolved.mapping
 
@@ -405,7 +412,7 @@ def lists_granting_group(
         entity = mapping.entities.get(name)
         in_folders = entity is not None and any(
             holds(folder_policy.assignments)
-            for _folder, folder_policy in resolved.folder_policies[name]
+            for _folder, folder_policy in resolved.require_folder_policies(name)
         )
         if at_list:
             reach.granted.append(name)

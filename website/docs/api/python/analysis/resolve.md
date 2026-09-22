@@ -81,10 +81,26 @@ raising. So every entity in the mapping is a key in both `folders` and
 `folder_policies`, except the ones actually unresolved.
 
 A caller that has NOT called `require_resolved()` reads one entity
-through `require_folders` rather than by subscript: a subscript answers
-an unresolved entity with a bare `KeyError`, which is not a `ValueError`
-and so escapes the handlers that catch the named errors raised
-everywhere else here.
+through `require_folders` or `require_folder_policies` rather than by
+subscript: a subscript answers an unresolved entity with a bare
+`KeyError`, which is not a `ValueError` and so escapes the handlers that
+catch the named errors raised everywhere else here.
+
+#### `ResolvedMapping.require_folder_policies`
+
+```python
+def require_folder_policies(self, entity: str) -> tuple[tuple[str, dbml_sharepoint.model.mapping_types.ListPermissionPolicy], ...]
+```
+
+Every (folder, policy) `entity` declares, strict where it matters.
+
+Scoped exactly as `analysis/folders.py::folder_policies` was: an
+entity with no `list_permissions.folders` entry contributes no folder
+assignments whatever its folder source resolves to, so answering `()`
+there is the correct answer and not a default papering over an
+unknown. Where the answer DOES depend on an enum that did not
+resolve, this raises `UnknownFolderEnumError` as `require_folders`
+does, rather than the `KeyError` a direct subscript gives.
 
 #### `ResolvedMapping.require_folders`
 
