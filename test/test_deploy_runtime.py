@@ -7632,6 +7632,7 @@ _STRAY_BINDING = [[{
 def _run_ownership_deploy(
     tmp_path: Path,
     *,
+    harness: str | None = None,
     table_names: tuple[str, ...] = ("Escalation",),
     sabotage_phase: str | None = None,
     sabotage_titles: tuple[str, ...] = (),
@@ -7646,7 +7647,7 @@ def _run_ownership_deploy(
     carry.
     """
     descriptions = _ownership_list_descriptions(tmp_path, table_names)
-    harness = _READER_ACL_HARNESS.replace(
+    built = _READER_ACL_HARNESS.replace(
         "const LIST_DESCRIPTIONS = new Map([]);",
         f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(descriptions.items()))});",
     ).replace(
@@ -7666,6 +7667,7 @@ def _run_ownership_deploy(
         "const SABOTAGE_AFTER_READS = 0;",
         f"const SABOTAGE_AFTER_READS = {json.dumps(sabotage_after_reads)};",
     )
+    harness = built if harness is None else harness
     script = harness + "\n" + _ownership_deploy_js(tmp_path, table_names).replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
@@ -7893,6 +7895,32 @@ def test_a_same_titled_replacement_stops_a_write_phase(
         f"phase {phase.key} wrote to a replaced list: "
         f"{_writes_in_phase(calls, pn(phase.key))}"
     )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_whose_role_assignments_cannot_be_read_is_refused(
+    tmp_path: Path,
+) -> None:
+    """Reconciliation runs off ONE enumeration, so a refused read is a
+    partial view of the bindings and not a reason to probe principal by
+    principal. Exact mode already failed closed here; configured mode fell
+    back, which is the path that no longer exists."""
+    # Two spaces, not the six the source file shows: the harness is a
+    # dedented literal, so this is the branch's opening line as it exists.
+    sabotaged = _READER_ACL_HARNESS.replace(
+        "  if (url.includes('/roleassignments')) {\n",
+        "  if (url.includes('/roleassignments')"
+        " && !url.includes('roleassignment(')) {\n"
+        "    return { error: { message: { value: 'refused' }, status: 500 } };\n"
+        "  }\n"
+        "  if (false) {\n",
+    )
+    assert sabotaged != _READER_ACL_HARNESS, "the refusal did not splice in"
+    summary, _calls, _output = _run_ownership_deploy(tmp_path, harness=sabotaged)
+    assert any(
+        "role assignment enumeration failed" in err["error"]
+        for err in summary["errors"]
+    ), summary
 
 
 def test_the_deploy_confirms_the_editor_still_refuses_the_guard() -> None:

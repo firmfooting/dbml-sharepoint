@@ -221,10 +221,12 @@
       return result;
     };
 
-    // Every direct binding a scope holds, as `principalId:roleDefId`, paged
-    // to the end. Paginated for the reason the allowlist enumeration above
-    // is: a capped read is a PARTIAL view, and a verification that treats a
-    // second page as absence fails a folder whose bindings are all present.
+    // Every direct binding a scope holds, paged to the end. ONE read answers
+    // every question this phase asks about a scope: which declared grants are
+    // missing, which undeclared ones an exact policy prunes, and what the
+    // scope reports once both have been written. Paginated because a capped
+    // read is a PARTIAL view, and an allowlist pruned against one removes
+    // bindings it never saw.
     const scopeBindings = async (scope) => {
       const rows = [];
       let url = apiUrl(`web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}/roleassignments?$expand=RoleDefinitionBindings&$select=PrincipalId,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`);
@@ -234,13 +236,19 @@
         });
         if (!resp.ok) {
           const text = await resp.text();
-          throw new Error(`role assignment read-back failed for '${scope.label}': HTTP ${resp.status} ${text}`);
+          throw new Error(`role assignment enumeration failed for '${scope.label}': HTTP ${resp.status} ${text}`);
         }
         const json = await resp.json();
-        const next = validatedNextPage(json.d, `Role assignment read-back for '${scope.label}'`);
+        const next = validatedNextPage(json.d, `Role assignment enumeration for '${scope.label}'`);
         for (const row of ((json.d && json.d.results) || [])) {
+          if (row.PrincipalId == null) {
+            throw new Error(`role assignment enumeration for '${scope.label}' returned an entry without PrincipalId`);
+          }
           for (const binding of ((row.RoleDefinitionBindings && row.RoleDefinitionBindings.results) || [])) {
-            rows.push({ key: `${row.PrincipalId}:${binding.Id}`, name: binding.Name });
+            rows.push({
+              principalId: row.PrincipalId, roleDefId: binding.Id,
+              key: `${row.PrincipalId}:${binding.Id}`, name: binding.Name,
+            });
           }
         }
         url = next;
@@ -381,72 +389,20 @@
       // Establish every desired grant before pruning. This keeps at least the
       // declared owner path in place when breakroleinheritance(false) has
       // temporarily granted the current operator direct Full Control. Any add
-      // failure aborts the list before exact mode removes a single binding.
-      // GetByPrincipalId is positional in SharePoint REST; add/remove role
-      // assignment methods below use their documented named parameters.
-      // ONE enumeration answers every question below. getbyprincipalid
-      // answers 404 for a principal that has no assignment on this list
-      // yet (which every declared principal is on a first deploy), and
-      // the browser paints that red whether or not the script handles it.
-      // Same treatment lists, views and site groups already get.
+      // failure aborts the list before a single binding is removed.
       //
-      // Deliberately not fatal: if the enumeration is refused we fall
-      // back to per-principal probing, which is noisier and still
-      // correct. Exact mode below reuses this same snapshot; it was
-      // taken BEFORE the adds, which changes no removal because a
-      // binding this run adds is by definition declared, and exact mode
-      // only removes bindings that are not.
-      let existingAssignments = null;
-      {
-        const collected = [];
-        let pageUrl = apiUrl(`web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}/roleassignments?$expand=Member,RoleDefinitionBindings&$select=Member/Id,Member/Title,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`);
-        let ok = true;
-        while (pageUrl && ok) {
-          const pageResp = await fetchWithRetry(pageUrl, {
-            headers: { 'Accept': 'application/json;odata=verbose' },
-          });
-          if (!pageResp.ok) { ok = false; break; }
-          const pageJson = await pageResp.json();
-          const next = validatedNextPage(pageJson.d, `Role assignment enumeration for '${scope.label}'`);
-          collected.push(...((pageJson.d && pageJson.d.results) || []));
-          pageUrl = next;
-        }
-        if (ok) existingAssignments = collected;
-      }
-      const bindingsFor = (principalId) => {
-        if (!existingAssignments) return null;
-        const hit = existingAssignments.find(
-          (a) => a.Member && a.Member.Id === principalId,
-        );
-        return (hit && hit.RoleDefinitionBindings && hit.RoleDefinitionBindings.results) || [];
-      };
-
-      // Which grants are missing is a question of reads, and it is settled
-      // for every declared assignment before the first add: the adds are
-      // independent of one another, so they go out as ONE $batch rather
-      // than one POST each. breakroleinheritance above and every removal
-      // below stay single, because those are ordered against the reads
-      // around them.
-      const missingGrants = [];
-      for (const resolved of resolvedAssignments) {
-        let desiredBindings = bindingsFor(resolved.principalId);
-        if (desiredBindings === null) {
-          const desiredResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}/roleassignments/getbyprincipalid(${resolved.principalId})?$expand=RoleDefinitionBindings&$select=RoleDefinitionBindings/Id`), {
-            headers: { 'Accept': 'application/json;odata=verbose' },
-          });
-          if (desiredResp.ok) {
-            const desiredJson = await desiredResp.json();
-            desiredBindings = (desiredJson.d && desiredJson.d.RoleDefinitionBindings && desiredJson.d.RoleDefinitionBindings.results) || [];
-          } else if (desiredResp.status === 404) {
-            desiredBindings = [];
-          } else {
-            const text = await desiredResp.text();
-            throw new Error(`desired binding probe failed: HTTP ${desiredResp.status} ${text}`);
-          }
-        }
-        const desiredPresent = desiredBindings.some(binding => binding.Id === resolved.roleDefId);
-        if (!desiredPresent) missingGrants.push(resolved);
-      }
+      // ONE enumeration answers every question below, in one shape. It is
+      // taken BEFORE the adds, which changes no removal: a binding this run
+      // adds is by definition declared, and neither mode removes a declared
+      // one.
+      const desired = new Set(resolvedAssignments.map(
+        x => `${x.principalId}:${x.roleDefId}`,
+      ));
+      const existing = await scopeBindings(scope);
+      const held = new Set(existing.map(row => row.key));
+      const missingGrants = resolvedAssignments.filter(
+        x => !held.has(`${x.principalId}:${x.roleDefId}`),
+      );
       if (missingGrants.length > 0) {
         // The bracket is no weaker for holding a batch, only wider: the
         // title is proved to be the surveyed list immediately before the
@@ -493,95 +449,28 @@
         }
       }
 
-      if (scope.reconcile_mode === 'exact') {
-        // Exact mode treats the mapping as an allowlist. Enumerate every
-        // direct role binding, including principals absent from the mapping,
-        // and remove all non-declared pairs. SharePoint's derived "Limited
-        // Access" binding is protected: it is created to support lower-scope
-        // access and is not a direct permission grant at this list scope.
-        const expected = new Set(resolvedAssignments.map(
-          x => `${x.principalId}:${x.roleDefId}`,
-        ));
-        // Reuses the snapshot taken above when it succeeded. Exact mode
-        // is an allowlist, so it must never run on a PARTIAL view of the
-        // bindings: if that enumeration was refused, this one repeats it
-        // and stays fatal on failure rather than pruning against
-        // whatever it managed to read.
-        let allAssignments = existingAssignments;
-        if (allAssignments === null) {
-          allAssignments = [];
-          let assignmentsUrl = apiUrl(`web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}/roleassignments?$expand=Member,RoleDefinitionBindings&$select=Member/Id,Member/Title,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`);
-          while (assignmentsUrl) {
-            const allResp = await fetchWithRetry(assignmentsUrl, {
-              headers: { 'Accept': 'application/json;odata=verbose' },
-            });
-            if (!allResp.ok) {
-              const text = await allResp.text();
-              throw new Error(`role assignment enumeration failed: HTTP ${allResp.status} ${text}`);
-            }
-            const allJson = await allResp.json();
-            const next = validatedNextPage(allJson.d, `Role assignment enumeration for '${scope.label}'`);
-            allAssignments.push(...((allJson.d && allJson.d.results) || []));
-            assignmentsUrl = next;
-          }
-        }
-        // The snapshot above may have been taken before the adds; either
-        // way it is the allowlist this loop prunes against, so the title it
-        // was read through has to still be the surveyed list.
-        await ownedListIdentity(scope.listTitle, scope.listId, `before exact-mode pruning on '${scope.label}'`);
-        for (const existing of allAssignments) {
-          const principalId = existing.Member && existing.Member.Id;
-          if (principalId == null) {
-            throw new Error('role assignment enumeration returned an entry without Member.Id');
-          }
-          const bindings = (existing.RoleDefinitionBindings && existing.RoleDefinitionBindings.results) || [];
-          for (const binding of bindings) {
-            if (binding.Name === 'Limited Access') {
-              continue;
-            }
-            if (!expected.has(`${principalId}:${binding.Id}`)) {
-              await removeBinding(principalId, binding.Id, 'unlisted');
-            }
-          }
-        }
-      } else {
-        // Backward-compatible configured-principal mode: remove stale levels
-        // for declared principals but leave unrelated principals untouched.
-        //
-        // Grouped by principal, because one principal may be declared with
-        // more than one level. Per assignment, each pass treated its own
-        // level as the principal's whole desired state: the pass for level A
-        // removed B as stale and the pass for B removed A, off the same
-        // pre-write snapshot, leaving the principal with neither.
-        const desiredByPrincipal = new Map();
-        for (const resolved of resolvedAssignments) {
-          if (!desiredByPrincipal.has(resolved.principalId)) {
-            desiredByPrincipal.set(resolved.principalId, new Set());
-          }
-          desiredByPrincipal.get(resolved.principalId).add(resolved.roleDefId);
-        }
-        for (const [principalId, wanted] of desiredByPrincipal) {
-          const resolved = { principalId };
-          let bindings = bindingsFor(resolved.principalId);
-          if (bindings === null) {
-            const raResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}/roleassignments/getbyprincipalid(${resolved.principalId})?$expand=RoleDefinitionBindings&$select=RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`), {
-              headers: { 'Accept': 'application/json;odata=verbose' },
-            });
-            if (raResp.ok) {
-              const raJson = await raResp.json();
-              bindings = (raJson.d && raJson.d.RoleDefinitionBindings && raJson.d.RoleDefinitionBindings.results) || [];
-            } else if (raResp.status === 404) {
-              bindings = [];
-            } else {
-              const text = await raResp.text();
-              throw new Error(`role assignment probe failed: HTTP ${raResp.status} ${text}`);
-            }
-          }
-          for (const binding of bindings) {
-            if (binding.Name !== 'Limited Access' && !wanted.has(binding.Id)) {
-              await removeBinding(principalId, binding.Id, 'stale');
-            }
-          }
+      // The snapshot above was taken before the adds, and it is the list this
+      // loop prunes against, so the title it was read through has to still be
+      // the surveyed list. Both modes, because both now prune off one
+      // snapshot rather than one probe per principal.
+      await ownedListIdentity(scope.listTitle, scope.listId, `before pruning role assignments on '${scope.label}'`);
+      for (const row of existing) {
+        // SharePoint derives 'Limited Access' to support lower-scope access.
+        // It is not a direct grant at this scope and this phase never writes
+        // it, so neither mode removes it.
+        if (row.name === 'Limited Access') continue;
+        if (desired.has(row.key)) continue;
+        if (scope.reconcile_mode === 'exact') {
+          // Exact mode treats the mapping as an allowlist: a direct binding
+          // the mapping does not declare goes, whoever holds it.
+          await removeBinding(row.principalId, row.roleDefId, 'unlisted');
+        } else if (resolvedAssignments.some(x => x.principalId === row.principalId)) {
+          // Configured mode leaves a principal the mapping never names alone
+          // and removes only a level a DECLARED principal no longer holds.
+          // Judged against the principal's whole desired set, because one
+          // principal may be declared with more than one level and a pass
+          // that judged per assignment removed the other pass's level.
+          await removeBinding(row.principalId, row.roleDefId, 'stale');
         }
       }
 
