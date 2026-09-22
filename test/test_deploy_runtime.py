@@ -7629,6 +7629,25 @@ _STRAY_BINDING = [[{
 }]]
 
 
+def _ownership_harness(tmp_path: Path, table_names: tuple[str, ...]) -> str:
+    """`_READER_ACL_HARNESS` with this pack's list descriptions and the stray
+    binding seeded.
+
+    A test that splices its own mutation in starts here rather than from the
+    bare harness, so the splice is the only thing that differs from an
+    ordinary run. Without the seed an exact-mode run has nothing to prune.
+    """
+    descriptions = _ownership_list_descriptions(tmp_path, table_names)
+    return _READER_ACL_HARNESS.replace(
+        "const LIST_DESCRIPTIONS = new Map([]);",
+        f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(descriptions.items()))});",
+    ).replace(
+        "const ROLE_ASSIGNMENT_PAGES = {};",
+        "const ROLE_ASSIGNMENT_PAGES = "
+        f"{json.dumps(dict.fromkeys(descriptions, _STRAY_BINDING))};",
+    )
+
+
 def _run_ownership_deploy(
     tmp_path: Path,
     *,
@@ -7646,15 +7665,7 @@ def _run_ownership_deploy(
     level ('Read'), which the plain harness's role-definition state does not
     carry.
     """
-    descriptions = _ownership_list_descriptions(tmp_path, table_names)
-    built = _READER_ACL_HARNESS.replace(
-        "const LIST_DESCRIPTIONS = new Map([]);",
-        f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(descriptions.items()))});",
-    ).replace(
-        "const ROLE_ASSIGNMENT_PAGES = {};",
-        "const ROLE_ASSIGNMENT_PAGES = "
-        f"{json.dumps(dict.fromkeys(descriptions, _STRAY_BINDING))};",
-    ).replace(
+    built = _ownership_harness(tmp_path, table_names).replace(
         "const SABOTAGE_FROM_PHASE = null;",
         f"const SABOTAGE_FROM_PHASE = {json.dumps(sabotage_phase)};",
     ).replace(
@@ -7786,15 +7797,7 @@ def test_the_ownership_guard_costs_one_request_per_call(tmp_path: Path) -> None:
     replaces is unchanged: the absent list still produces the same message,
     for the same one request.
     """
-    descriptions = _ownership_list_descriptions(tmp_path, ("Escalation", "Other"))
-    harness = _READER_ACL_HARNESS.replace(
-        "const LIST_DESCRIPTIONS = new Map([]);",
-        f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(descriptions.items()))});",
-    ).replace(
-        "const ROLE_ASSIGNMENT_PAGES = {};",
-        "const ROLE_ASSIGNMENT_PAGES = "
-        f"{json.dumps(dict.fromkeys(descriptions, _STRAY_BINDING))};",
-    )
+    harness = _ownership_harness(tmp_path, ("Escalation", "Other"))
     js = _ownership_deploy_js(tmp_path, ("Escalation", "Other"))
     exported = js.replace(
         _GUARD_EXPORT_ANCHOR,
@@ -7919,6 +7922,61 @@ def test_a_list_whose_role_assignments_cannot_be_read_is_refused(
     summary, _calls, _output = _run_ownership_deploy(tmp_path, harness=sabotaged)
     assert any(
         "role assignment enumeration failed" in err["error"]
+        for err in summary["errors"]
+    ), summary
+
+
+# A failing verification re-reads five times at 2000 ms, which is real time
+# the mock needs none of. The library harness already shortens its own.
+_FAST_TIMERS_JS = (
+    "{ const real = globalThis.setTimeout;"
+    " globalThis.setTimeout = (fn, _ms, ...a) => real(fn, 0, ...a); }\n"
+)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_that_never_reports_a_declared_grant_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The write was accepted and the binding is not there. Refused before a
+    single removal, so the phase aborts with every existing binding in place
+    rather than pruning against a desired state it failed to establish."""
+    seeded = _ownership_harness(tmp_path, ("Escalation",))
+    # Two spaces, not the six the source file shows: the harness is a
+    # dedented literal, so this is the branch's opening line as it exists.
+    blinded = seeded.replace(
+        "  if ((opts.method || 'GET') === 'POST' && u.includes('roleassignment(')) {\n",
+        "  if (false) {\n",
+    )
+    assert blinded != seeded, "the blind-write splice did not apply"
+    harness = _FAST_TIMERS_JS + blinded
+    summary, calls, _output = _run_ownership_deploy(tmp_path, harness=harness)
+    assert any(
+        "does not report" in err["error"] and "declared role assignment" in err["error"]
+        for err in summary["errors"]
+    ), summary
+    # The seeded stray is removable, so an unordered check would prune it.
+    assert not [c for c in calls if "removeroleassignment" in c["url"]], (
+        "the phase pruned against a desired state it failed to establish"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_removal_that_did_not_take_is_refused(tmp_path: Path) -> None:
+    """removeroleassignment answering HTTP 200 is evidence the request was
+    accepted and nothing more. An exact-mode list whose removal did not apply
+    leaves a stale principal with access on a run that reports success."""
+    seeded = _ownership_harness(tmp_path, ("Escalation",))
+    # Four spaces, for the dedent the blind-write test above names.
+    ignored = seeded.replace(
+        "    } else if (binding) {\n",
+        "    } else if (false) {\n",
+    )
+    assert ignored != seeded, "the ignored-removal splice did not apply"
+    harness = _FAST_TIMERS_JS + ignored
+    summary, _calls, _output = _run_ownership_deploy(tmp_path, harness=harness)
+    assert any(
+        "still reports" in err["error"] and "does not declare" in err["error"]
         for err in summary["errors"]
     ), summary
 

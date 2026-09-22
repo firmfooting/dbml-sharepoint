@@ -1,11 +1,13 @@
 {# Phase body: break role inheritance and reconcile declared role
    assignments, for each list and for each folder the mapping secures.
    'configured' mode asserts the declared grants; 'exact' additionally
-   removes undeclared direct grants (an allowlist). Principals resolve by
-   name: site groups and the web's associated Owner/Member/Visitor groups;
-   levels by role-definition name. A folder is secured through its own list
-   item, `items(<id>)`, since a folder is not itself a SecurableObject; the
-   id comes from the descendant-scope enumeration this phase already runs.
+   removes undeclared direct grants (an allowlist). Every scope is read back
+   after the writes, before any removal and again after the pruning, and the
+   phase fails closed naming what it read. Principals resolve by name: site
+   groups and the web's associated Owner/Member/Visitor groups; levels by
+   role-definition name. A folder is secured through its own list item,
+   `items(<id>)`, since a folder is not itself a SecurableObject; the id
+   comes from the descendant-scope enumeration this phase already runs.
    That guard aborts on any unique scope the mapping does NOT declare, and
    erases none of them. #}
   // === Phase {{ phase.number }}: break inheritance + role assignments ===
@@ -432,13 +434,13 @@
         });
       }
 
-      // BEFORE a single removal, not after. Breaking inheritance with
-      // copyRoleAssignments=false can leave the operator's own binding as
-      // the only way back into the folder, so pruning first and discovering
-      // afterwards that the declared administrators never landed is how a
-      // folder gets locked. Verified here, the phase aborts with every
-      // existing binding still in place.
-      if (scope.folderPath && resolvedAssignments.length > 0) {
+      // BEFORE a single removal, not after, and on a list as well as a
+      // folder. Breaking inheritance with copyRoleAssignments=false can
+      // leave the operator's own binding as the only way back in, so pruning
+      // first and discovering afterwards that the declared administrators
+      // never landed is how a scope gets locked. Verified here, the phase
+      // aborts with every existing binding still in place.
+      if (resolvedAssignments.length > 0) {
         const wanted = resolvedAssignments.map(
           x => ({ key: `${x.principalId}:${x.roleDefId}`, at: x }),
         );
@@ -479,13 +481,13 @@
 
       // After the pruning, the complete resulting set. Presence alone was
       // half the question: `removeroleassignment` answering HTTP 200 is
-      // evidence the request was accepted, and an exact-mode folder whose
-      // removal did not take leaves a stale principal with access on a run
-      // that reports success. Runs with an EMPTY declared set too, which is
-      // the policy that strips a folder and therefore the one whose removals
-      // matter most. Only 'Limited Access' is exempt: SharePoint derives it
-      // to support lower-scope access and this phase never writes it.
-      if (scope.folderPath && scope.reconcile_mode === 'exact') {
+      // evidence the request was accepted, and a scope whose removal did not
+      // take leaves a stale principal with access on a run that reports
+      // success. Runs with an EMPTY declared set too, which is the policy
+      // that strips a scope and therefore the one whose removals matter
+      // most. Only 'Limited Access' is exempt: SharePoint derives it to
+      // support lower-scope access and this phase never writes it.
+      if (scope.reconcile_mode === 'exact') {
         const complaint = await settleBindings(scope, (rows) => {
           const strays = rows.filter(
             row => row.name !== 'Limited Access' && !desired.has(row.key),
@@ -496,7 +498,7 @@
           throw new Error(`'${scope.label}' still reports ${complaint.length} role assignment(s) this exact policy does not declare (${complaint.map(row => row.key).join(', ')}). The removals were accepted, so either the scope has not caught up or they did not take; the declared grants are in place and rerunning reads the bindings again.`);
         }
         log('INFO', `[Phase {{ phase.number }}] '${scope.label}' reports exactly the ${desired.size} declared role assignment(s).`);
-      } else if (scope.folderPath) {
+      } else {
         log('INFO', `[Phase {{ phase.number }}] '${scope.label}' reports all ${resolvedAssignments.length} declared role assignment(s).`);
       }
     };

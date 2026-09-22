@@ -420,13 +420,13 @@
         });
       }
 
-      // BEFORE a single removal, not after. Breaking inheritance with
-      // copyRoleAssignments=false can leave the operator's own binding as
-      // the only way back into the folder, so pruning first and discovering
-      // afterwards that the declared administrators never landed is how a
-      // folder gets locked. Verified here, the phase aborts with every
-      // existing binding still in place.
-      if (scope.folderPath && resolvedAssignments.length > 0) {
+      // BEFORE a single removal, not after, and on a list as well as a
+      // folder. Breaking inheritance with copyRoleAssignments=false can
+      // leave the operator's own binding as the only way back in, so pruning
+      // first and discovering afterwards that the declared administrators
+      // never landed is how a scope gets locked. Verified here, the phase
+      // aborts with every existing binding still in place.
+      if (resolvedAssignments.length > 0) {
         const wanted = resolvedAssignments.map(
           x => ({ key: `${x.principalId}:${x.roleDefId}`, at: x }),
         );
@@ -467,13 +467,13 @@
 
       // After the pruning, the complete resulting set. Presence alone was
       // half the question: `removeroleassignment` answering HTTP 200 is
-      // evidence the request was accepted, and an exact-mode folder whose
-      // removal did not take leaves a stale principal with access on a run
-      // that reports success. Runs with an EMPTY declared set too, which is
-      // the policy that strips a folder and therefore the one whose removals
-      // matter most. Only 'Limited Access' is exempt: SharePoint derives it
-      // to support lower-scope access and this phase never writes it.
-      if (scope.folderPath && scope.reconcile_mode === 'exact') {
+      // evidence the request was accepted, and a scope whose removal did not
+      // take leaves a stale principal with access on a run that reports
+      // success. Runs with an EMPTY declared set too, which is the policy
+      // that strips a scope and therefore the one whose removals matter
+      // most. Only 'Limited Access' is exempt: SharePoint derives it to
+      // support lower-scope access and this phase never writes it.
+      if (scope.reconcile_mode === 'exact') {
         const complaint = await settleBindings(scope, (rows) => {
           const strays = rows.filter(
             row => row.name !== 'Limited Access' && !desired.has(row.key),
@@ -484,7 +484,7 @@
           throw new Error(`'${scope.label}' still reports ${complaint.length} role assignment(s) this exact policy does not declare (${complaint.map(row => row.key).join(', ')}). The removals were accepted, so either the scope has not caught up or they did not take; the declared grants are in place and rerunning reads the bindings again.`);
         }
         log('INFO', `[Phase 4.2] '${scope.label}' reports exactly the ${desired.size} declared role assignment(s).`);
-      } else if (scope.folderPath) {
+      } else {
         log('INFO', `[Phase 4.2] '${scope.label}' reports all ${resolvedAssignments.length} declared role assignment(s).`);
       }
     };

@@ -215,7 +215,7 @@ The whole verification, taking its collaborators as an argument so the standalon
 
 *Phase 4.2 (PROTECTION): role inheritance and assignments*
 
-Phase body: break role inheritance and reconcile declared role assignments, for each list and for each folder the mapping secures. 'configured' mode asserts the declared grants; 'exact' additionally removes undeclared direct grants (an allowlist). Principals resolve by name: site groups and the web's associated Owner/Member/Visitor groups; levels by role-definition name. A folder is secured through its own list item, `items(<id>)`, since a folder is not itself a SecurableObject; the id comes from the descendant-scope enumeration this phase already runs. That guard aborts on any unique scope the mapping does NOT declare, and erases none of them.
+Phase body: break role inheritance and reconcile declared role assignments, for each list and for each folder the mapping secures. 'configured' mode asserts the declared grants; 'exact' additionally removes undeclared direct grants (an allowlist). Every scope is read back after the writes, before any removal and again after the pruning, and the phase fails closed naming what it read. Principals resolve by name: site groups and the web's associated Owner/Member/Visitor groups; levels by role-definition name. A folder is secured through its own list item, `items(<id>)`, since a folder is not itself a SecurableObject; the id comes from the descendant-scope enumeration this phase already runs. That guard aborts on any unique scope the mapping does NOT declare, and erases none of them.
 
 ### `deploy/_assess_gate.js.j2`
 
