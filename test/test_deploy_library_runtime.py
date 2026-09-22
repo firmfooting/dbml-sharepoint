@@ -1237,6 +1237,30 @@ def test_a_library_secured_only_at_folder_scope_reaches_every_consumer(
     assert any("effectivebasepermissions" in c["url"] for c in calls)
 
 
+def test_the_folder_branch_never_takes_the_list_scope_row(tmp_path: Path) -> None:
+    """`acl_scopes` carries both kinds, so the folder branch has to say which
+    kind it means.
+
+    Dropping `s.folder` from that filter puts the list-scope row into the
+    folder loop, where its absent `folder` resolves to no item id and the run
+    addresses a folder that does not exist. A folder-only fixture cannot see
+    this, because with no list row beside them the guarded and unguarded
+    filters return the same array. The both-kinds shape is the only place the
+    guard is observable, and this test exists so that coverage is named rather
+    than incidental.
+    """
+    summary, calls = _folder_acl_run(tmp_path)
+
+    assert summary["errors"] == [], summary["errors"]
+    folder_breaks = [
+        c["url"] for c in calls
+        if "breakroleinheritance" in c["url"] and "/items(" in c["url"]
+    ]
+    assert len(folder_breaks) == 1, folder_breaks
+    stray = [c["url"] for c in calls if "undefined" in c["url"]]
+    assert not stray, f"the list-scope row reached the folder loop: {stray}"
+
+
 def test_configured_mode_keeps_every_level_one_principal_is_declared_with(
     tmp_path: Path,
 ) -> None:
