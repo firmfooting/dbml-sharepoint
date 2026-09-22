@@ -1,6 +1,6 @@
 ---
 title: derived
-sidebar_position: 32
+sidebar_position: 33
 ---
 
 # `dbml_sharepoint.analysis.derived`
