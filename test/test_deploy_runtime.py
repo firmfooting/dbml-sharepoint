@@ -5436,6 +5436,11 @@ def test_an_accepted_change_log_grant_that_is_not_observed_is_recorded() -> None
 #: list scope with the built-in Read. Both grant the SAME reader group, so
 #: the winner is decided by scope kind and creation order, not by which
 #: level is stronger.
+#: `folders:` on a `kind: List` is refused by FOLDERS_ON_A_LIST, and is
+#: deliberate here: the logging phase runs before any list or folder is
+#: created, so only the SHAPE of SCHEMA.acl_scopes reaches the code under
+#: test. Do not "correct" these to DocumentLibrary; this file's harness does
+#: not carry the library endpoints.
 _FOLDER_AND_LIST_READER_MAPPING = """
 entities:
   Docs:
@@ -5485,6 +5490,11 @@ list_permissions:
 #: anywhere grants it anything. The round-8 regression this pins: the change
 #: log must still get a grant mirrored, not be left with no role
 #: assignments, when the only grant a merged collection holds is a folder one.
+#: `folders:` on a `kind: List` is refused by FOLDERS_ON_A_LIST, and is
+#: deliberate here: the logging phase runs before any list or folder is
+#: created, so only the SHAPE of SCHEMA.acl_scopes reaches the code under
+#: test. Do not "correct" these to DocumentLibrary; this file's harness does
+#: not carry the library endpoints.
 _FOLDER_ONLY_READER_MAPPING = """
 entities:
   Docs:

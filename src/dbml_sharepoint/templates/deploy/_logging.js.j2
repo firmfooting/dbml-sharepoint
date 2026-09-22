@@ -952,14 +952,9 @@
 {% if enterprise_reader %}
       const readerGroup = SCHEMA.groups.find((g) => g.enroll_enterprise_reader);
       // Prefer a list-scope grant: the change log is a list with no folders,
-      // so a list-scope grant is the closer analogue. Fall back to a
-      // folder-scope grant so a reader granted only inside a library's
-      // folders still gets one mirrored, rather than none. Scanning list
-      // scopes to exhaustion before any folder scope is what a reader
-      // granted only inside the folders depends on, and it is also what the
-      // rest of the schema depends on this NOT doing when it wants every
-      // scope regardless of kind: `_acls.js.j2` and `_reader_enrolment.js.j2`
-      // read `SCHEMA.acl_scopes` unfiltered for exactly that reason.
+      // so a list-scope grant is the closer analogue. The folder fallback is
+      // what leaves a reader granted only inside a library's folders with a
+      // grant mirrored rather than none.
       const findGrant = (scopes) => scopes
         .map((s) => s.assignments.find((a) => a.principal.kind === 'group'
                 && a.principal.name === readerGroup.name))
