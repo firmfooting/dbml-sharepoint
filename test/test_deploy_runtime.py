@@ -5763,7 +5763,7 @@ def test_the_measured_built_in_read_passes_the_gate_silently() -> None:
 # Step 0 judges the level this bundle grants. It cannot see a binding the
 # group carries for some other reason -- an earlier deploy, a hand edit,
 # another tool -- and the account this phase enrols inherits every one of
-# them permanently, because the ACL phase reconciles only the lists
+# them permanently, because the ACL phase reconciles only the scopes
 # SCHEMA.acl_scopes names.
 #
 # `_BOUND_*` below are role definitions the group is made to hold at web
