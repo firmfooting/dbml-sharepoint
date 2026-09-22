@@ -199,6 +199,9 @@
     // below addresses a list by title. Survey the whole batch first: a list
     // that has lost its marker or been replaced must stop the phase before
     // the lists ahead of it in the loop have their permissions rewritten.
+    // Every scope, not just list scopes: a folder policy can name a list
+    // whose own list-scope policy is absent, and that list still needs its
+    // ownership surveyed before anything below writes to it.
     const aclOwned = await surveyOwnedListsForWrites(
       [...new Set(SCHEMA.acl_scopes.map(s => s.list))], '{{ phase.number }}', 'ACL',
     );
@@ -603,6 +606,10 @@
       }
     };
 
+    // Folder policies may name a list whose own policy is absent, so this
+    // reads every acl_scopes row for the list rather than filtering to list
+    // scopes alone -- which is why `la` below can be undefined, and why
+    // `if (la)` further down is not dead code.
     const aclListTitles = [...new Set(SCHEMA.acl_scopes.map(s => s.list))];
 
     for (const listTitle of aclListTitles) {
