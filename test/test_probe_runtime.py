@@ -9124,12 +9124,18 @@ def _operator_grant_probe_js() -> str:
     return exposed
 
 
-def _run_operator_grant_probe(**config: Any) -> tuple[dict[str, dict[str, str]], list[str]]:
-    """Run the probe and return (id -> the whole recorded row, request urls).
+def _run_operator_grant_probe(
+    **config: Any,
+) -> tuple[dict[str, dict[str, str]], list[str], str]:
+    """Run the probe and return the rows by id, the request urls and the
+    whole transcript.
 
     The urls as well as the rows, because the restore pass records nothing:
     it logs, and it runs in a `finally` after the table has been printed. The
-    only evidence it ran at all is what it asked the site for.
+    only evidence it ran at all is what it asked the site for. The transcript
+    as well as the urls, because a restore that was SENT and REFUSED asks the
+    site for exactly what a restore that worked asks for, and the difference
+    is a line of console text that no row carries.
     """
     settings: dict[str, Any] = {
         "listExists": False,
@@ -9168,6 +9174,7 @@ def _run_operator_grant_probe(**config: Any) -> tuple[dict[str, dict[str, str]],
     return (
         {row["id"]: row for row in json.loads(rows.removeprefix("__ROWS__"))},
         [call["url"] for call in json.loads(calls.removeprefix("__CALLS__"))],
+        output,
     )
 
 
@@ -9184,7 +9191,7 @@ def test_a_break_whose_removal_sticks_answers_every_question() -> None:
     happily against a probe that answers nothing at all, so one run has to
     answer everything first.
     """
-    rows, urls = _run_operator_grant_probe()
+    rows, urls, _output = _run_operator_grant_probe()
 
     assert rows["access.list-acl.fixture-scratch-list"]["outcome"] == "PASS"
     assert rows["access.list-acl.control-unknown-principal-refused"]["outcome"] == "PASS"
@@ -9218,7 +9225,7 @@ def test_a_removal_the_platform_undoes_is_reported_as_coming_back() -> None:
     FAIL, because a platform that re-derives the binding is a measurement and
     not a broken run.
     """
-    rows, urls = _run_operator_grant_probe(removalReDerives=True)
+    rows, urls, _output = _run_operator_grant_probe(removalReDerives=True)
 
     sticks = rows["access.list-acl.operator-binding-removal-sticks"]
     assert sticks["outcome"] == "OBSERVED"
@@ -9234,7 +9241,7 @@ def test_a_removal_the_platform_undoes_is_reported_as_coming_back() -> None:
 def test_a_refused_break_voids_every_question_and_restores_nothing() -> None:
     """Nothing was broken, so there is nothing to observe and nothing to put
     back. A restore sent here would reset a list this run never touched."""
-    rows, urls = _run_operator_grant_probe(breakRefused=True)
+    rows, urls, _output = _run_operator_grant_probe(breakRefused=True)
 
     assert rows["access.list-acl.fixture-scratch-list"]["outcome"] == "PASS"
     for question in ("access.list-acl.control-unknown-principal-refused",
@@ -9255,7 +9262,7 @@ def test_a_break_that_never_reads_unique_is_not_measured() -> None:
     """The other half of the same dependency. The call was accepted, so the
     restore still runs, but a scope that never reads as holding unique
     permissions has nothing to enumerate."""
-    rows, urls = _run_operator_grant_probe(uniqueNeverTrue=True)
+    rows, urls, _output = _run_operator_grant_probe(uniqueNeverTrue=True)
 
     for question in ("access.list-acl.break-leaves-bindings",
                      "access.list-acl.operator-binding-removal-sticks"):
@@ -9274,7 +9281,7 @@ def test_a_refused_removal_is_recorded_rather_than_treated_as_a_failure() -> Non
     """`removeroleassignment` refusing is an observation about the surface,
     so the row carries the status and the settle reads that followed it. The
     binding is still there, and saying so is the point."""
-    rows, urls = _run_operator_grant_probe(removalRefused=True)
+    rows, urls, _output = _run_operator_grant_probe(removalRefused=True)
 
     sticks = rows["access.list-acl.operator-binding-removal-sticks"]
     assert sticks["outcome"] == "OBSERVED"
@@ -9289,7 +9296,7 @@ def test_an_accepted_bogus_removal_voids_the_removal_row() -> None:
     """The negative control doing its job. A server that accepts a removal
     for a principal and a level nobody holds cannot be read as having applied
     the real one, whatever it answered."""
-    rows, _urls = _run_operator_grant_probe(controlAccepted=True)
+    rows, _urls, _output = _run_operator_grant_probe(controlAccepted=True)
 
     control = rows["access.list-acl.control-unknown-principal-refused"]
     assert control["outcome"] == "FAIL"
@@ -9306,7 +9313,7 @@ def test_a_break_with_no_operator_binding_reports_the_premise_as_unmet() -> None
     """`_lists.js.j2` says the break leaves the operator's own grant. A
     tenant where it does not is the answer to that claim, and it is NOT a
     settled answer to the removal question, which was never exercised."""
-    rows, urls = _run_operator_grant_probe(
+    rows, urls, _output = _run_operator_grant_probe(
         leftBindings=[_OPERATOR_LEFT_BINDINGS[1]],
     )
 
@@ -9329,7 +9336,7 @@ def test_a_failure_after_the_break_still_restores_the_list() -> None:
     enumeration, so the run reaches the catch with a broken scope and a
     result table that is half filled in.
     """
-    rows, urls = _run_operator_grant_probe(throwOn="web/currentuser")
+    rows, urls, _output = _run_operator_grant_probe(throwOn="web/currentuser")
 
     assert rows["access.list-acl.break-leaves-bindings"]["outcome"] == "OBSERVED"
     assert rows["access.list-acl.break-leaves-operator-binding"]["outcome"] == (
@@ -9352,7 +9359,7 @@ def test_a_list_an_earlier_run_left_broken_answers_nothing() -> None:
     """A leftover scope's bindings are a previous run's, and reporting them
     as this run's measurement is exactly what the fixture row exists to
     prevent. It aborts before breaking anything, so it restores nothing."""
-    rows, urls = _run_operator_grant_probe(listExists=True, alreadyUnique=True)
+    rows, urls, _output = _run_operator_grant_probe(listExists=True, alreadyUnique=True)
 
     fixture = rows["access.list-acl.fixture-scratch-list"]
     assert fixture["outcome"] == "ABORTED"
@@ -9363,3 +9370,82 @@ def test_a_list_an_earlier_run_left_broken_answers_nothing() -> None:
         row for row in rows.values()
         if row["evidence"] == "the run did not reach this question"
     ], "the unreached questions must still report as unanswered"
+
+
+#: The scratch list's title, as the probe spells it. The two tests below
+#: assert the operator is told WHICH list to repair, so the name is what they
+#: are checking for and not incidental.
+_OPERATOR_LIST_TITLE = "dbmlsp Probe OperatorGrant"
+
+
+def _fail_lines(output: str) -> list[str]:
+    """The FAIL lines a run printed. `_probe_harness.js.j2` logs
+    `[<level>] <message>`, so this is the whole of what these two branches
+    produce."""
+    return [line for line in output.splitlines() if line.startswith("[FAIL] ")]
+
+
+# The two tests below assert on console text, which no other section in this
+# module does. They have to: both branches end in `log('FAIL', ...)` with no
+# row and no return value, so the console text is the entire output. The
+# alternative is leaving the probe's most consequential branch unexecuted.
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_reset_that_is_refused_tells_the_operator_what_to_repair() -> None:
+    """The branch that stands between an operator and a silently damaged
+    site: the measurements were taken, the restore was sent, and it did not
+    take, so somebody is holding a list with unique permissions and no way
+    back in.
+
+    Asserted on the specific sentence rather than on FAIL and the title
+    alone. The restore pass has a second failure line that also carries both,
+    for a reset that was ACCEPTED and did not read back, and the two mean
+    different things to whoever has to fix it.
+    """
+    rows, urls, output = _run_operator_grant_probe(resetRefused=True)
+
+    failures = _fail_lines(output)
+    assert len(failures) == 1, f"expected exactly one FAIL line: {failures}"
+    assert f"Could not restore '{_OPERATOR_LIST_TITLE}'" in failures[0]
+    assert "HTTP 500" in failures[0]
+    assert "The list still holds unique permissions" in failures[0]
+    assert "Fix or delete it by hand" in failures[0]
+    # The reset was SENT. This branch is about it not taking, which is a
+    # different failure from never trying.
+    assert any("/resetroleinheritance" in url for url in urls)
+    # Nothing may claim the site was put back.
+    assert not [
+        line for line in output.splitlines()
+        if line.startswith("[OK] ") and "restored to inherited permissions" in line
+    ], output
+    # The measurements were taken BEFORE the restore, so a failed restore
+    # neither invalidates them nor licenses a row the run did not establish.
+    assert rows["access.list-acl.operator-binding-removal-sticks"]["state"] == "settled"
+    assert not [row for row in rows.values() if row["state"] != "settled"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unreadable_owner_group_is_reported_before_the_reset_is_tried() -> None:
+    """The same class one step earlier. The safety grant is what keeps the
+    scope writable when the run has just removed this account's own binding,
+    so an operator who cannot be given it has to be told BEFORE the reset
+    rather than left to infer it from a reset that then fails."""
+    rows, urls, output = _run_operator_grant_probe(ownerGroupUnreadable=True)
+
+    failures = _fail_lines(output)
+    assert len(failures) == 1, f"expected exactly one FAIL line: {failures}"
+    assert "Could not resolve the owner group or a full-control level" in failures[0]
+    assert "no safety grant was made" in failures[0]
+    assert f"fix '{_OPERATOR_LIST_TITLE}' by hand" in failures[0]
+    # Said rather than guessed: no grant went out, and the reset was still
+    # attempted, which is why the message is conditional on it failing.
+    assert not [url for url in urls if "/addroleassignment(" in url], urls
+    assert any("/resetroleinheritance" in url for url in urls)
+    # Here the reset DID take, so the run is allowed to say so.
+    assert any(
+        line.startswith("[OK] ") and "restored to inherited permissions" in line
+        for line in output.splitlines()
+    ), output
+    # The grant runs after every measurement, so losing it changes no row.
+    assert not [row for row in rows.values() if row["state"] != "settled"]
