@@ -40,7 +40,7 @@ with.
 ### `generate_data_dictionary`
 
 ```python
-def generate_data_dictionary(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None = None, generated_at: str = '', source_schema: str = '', source_mapping: str = '', time_zone: str | None = None) -> str
+def generate_data_dictionary(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, release: dbml_sharepoint.model.release.Release | None = None, generated_at: str = '', source_schema: str = '', source_mapping: str = '', time_zone: str | None = None) -> str
 ```
 
 Companion data dictionary: deployment/schema metadata + every list and
@@ -48,4 +48,12 @@ column as deployed, including choices, lookup targets, calculated
 formulas, indexing, versioning and the query-layer helper columns.
 ``time_zone`` is the site's zone the pack was built with, named in the
 `DateZoneResolved` row.
+
+No `resolved.require_resolved()` call here: `report` runs no validation
+pass of its own and must still describe site role A correctly when an
+entity that belongs to an unrelated site role B carries the mapping's
+only bad `from_enum`. `resolved.folders` below is read only for entities
+`tables_for_role` already scoped to THIS role, the same scope
+`declared_folders` was called at before, so a reachable defect there
+still surfaces as a `KeyError` rather than a silent omission.
 

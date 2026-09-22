@@ -12,7 +12,7 @@ Render deploy.js from the schema, mapping bundle, and release.
 ### `generate_deploy_js`
 
 ```python
-def generate_deploy_js(*, schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, release: dbml_sharepoint.model.release.Release, site_url: str, site_role: str, source_dbml: str, source_mtime: str, generated_at: str, extension: dbml_sharepoint.extension.DeploymentExtension | None = None, site_context: dbml_sharepoint.extension.SiteContext | None = None, enterprise_reader: str | None = None, env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=()), deployment_log_list: str = '', deployment_log_change_list: str = '', deployment_log_site: str = '', sidecar_run_log_title: str | None = None, sidecar_run_log_marker: str | None = None, sidecar_run_log_fields: collections.abc.Sequence[dict[str, Any]] | None = None, sidecar_change_log_title: str | None = None, sidecar_change_log_marker: str | None = None, sidecar_change_fields: collections.abc.Sequence[dict[str, Any]] | None = None) -> str
+def generate_deploy_js(*, schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, release: dbml_sharepoint.model.release.Release, site_url: str, site_role: str, source_dbml: str, source_mtime: str, generated_at: str, extension: dbml_sharepoint.extension.DeploymentExtension | None = None, site_context: dbml_sharepoint.extension.SiteContext | None = None, enterprise_reader: str | None = None, env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=()), deployment_log_list: str = '', deployment_log_change_list: str = '', deployment_log_site: str = '', sidecar_run_log_title: str | None = None, sidecar_run_log_marker: str | None = None, sidecar_run_log_fields: collections.abc.Sequence[dict[str, Any]] | None = None, sidecar_change_log_title: str | None = None, sidecar_change_log_marker: str | None = None, sidecar_change_fields: collections.abc.Sequence[dict[str, Any]] | None = None) -> str
 ```
 
 ### `UNMANAGED`
@@ -24,6 +24,6 @@ UNMANAGED = '__dbmlsp_unmanaged__'
 ### `build_schema_json`
 
 ```python
-def build_schema_json(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, site_url: str = '', release: dbml_sharepoint.model.release.Release | None = None, extension: dbml_sharepoint.extension.DeploymentExtension | None = None, site_context: dbml_sharepoint.extension.SiteContext | None = None) -> dict[str, typing.Any]
+def build_schema_json(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, site_url: str = '', release: dbml_sharepoint.model.release.Release | None = None, extension: dbml_sharepoint.extension.DeploymentExtension | None = None, site_context: dbml_sharepoint.extension.SiteContext | None = None) -> dict[str, typing.Any]
 ```
 
