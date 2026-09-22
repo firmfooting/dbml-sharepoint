@@ -21,7 +21,7 @@ import typer
 
 from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
 from dbml_sharepoint.analysis.findings import Finding
-from dbml_sharepoint.analysis.groups import resolvable_groups
+from dbml_sharepoint.analysis.groups import declaring_groups, resolvable_groups
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.permissions import lists_granting_group
 from dbml_sharepoint.analysis.sidecars import (
@@ -285,15 +285,22 @@ def execute_build(
     if isinstance(enterprise_reader, str):
         validate_enterprise_reader(enterprise_reader)
         perms = bundle.mapping.permissions
-        # RESOLVED, because the name is used below and a `from_enum` group's
-        # template spelling matches no assignment. `resolvable_groups` rather
-        # than `declared_groups` so a misspelled enum is left to its own
-        # finding instead of raising out of the CLI.
+        # Two questions, two resolutions. "Does a reader group exist at all"
+        # is answered over the DECLARATIONS, because a source whose enum is
+        # misspelled still declares one and `group_enum_unknown` is the
+        # finding for it; resolving here instead reported "declares no
+        # group", sent the author to add a flag that is already there, and
+        # took the manifest and every other finding with it.
+        declared_readers = [
+            g for g in declaring_groups(perms) if g.enroll_enterprise_reader
+        ]
+        # "Which lists grant it" needs the RESOLVED name, because a
+        # `from_enum` group's template spelling matches no assignment.
         targets = [
             g for g in resolvable_groups(perms, enum_members)
             if g.enroll_enterprise_reader
         ]
-        if not targets:
+        if not declared_readers:
             # Fail closed rather than emitting a bundle that quietly enrols
             # nobody. The operator would not find out until a report came
             # back short, weeks later. `MULTIPLE_ENTERPRISE_READER_GROUPS`
@@ -327,7 +334,10 @@ def execute_build(
             lists_granting_group(bundle.mapping, g.name, deployed_here, enum_members)[0]
             for g in targets
         )
-        if not granted_anywhere_here:
+        # `targets` empty while `declared_readers` is not means every reader
+        # source named an enum the schema does not declare. There is no name
+        # to ask about, and validation below says so by its own code.
+        if targets and not granted_anywhere_here:
             names = ", ".join(repr(g.name) for g in targets)
             raise typer.BadParameter(
                 f"--enterprise-reader names an account to enrol into "

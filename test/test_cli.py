@@ -719,6 +719,58 @@ def test_the_reader_flag_accepts_a_group_generated_from_a_one_member_enum(
     assert (out / "deploy.js.txt").exists()
 
 
+def test_an_unknown_reader_group_enum_is_reported_by_validation(
+    tmp_path: Path,
+) -> None:
+    """The finding that names the real mistake has to survive the gate.
+
+    Resolving the reader targets dropped a source whose enum is misspelled,
+    left the list empty and raised "declares no group" first, which sends
+    the author to add a flag that is already there and takes the manifest
+    and every other finding with it.
+    """
+    schema = write_dbml(tmp_path, blocks("""
+        Enum division {
+          "Clinical services"
+        }
+
+        Table Docs {
+          Id int [pk, increment]
+          Title nvarchar [not null]
+          Division division
+        }
+    """))
+    mapping = write_mapping(tmp_path, blocks("""
+        prefix: XX
+
+        entities:
+          Docs: { kind: List, base_template: 100, site_role: default }
+
+        groups:
+          - from_enum: divison
+            name: "XX {member} Readers"
+            description: "Readers for {member}."
+            owner_group: "Site Owners"
+            enroll_enterprise_reader: true
+    """))
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(schema),
+        "--mapping", str(mapping),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
+        "--site-role", "default",
+        "--out", str(out),
+        "--enterprise-reader", "svc-reporting@example.org",
+    ])
+
+    assert result.exit_code != 0, result.output
+    assert "group_enum_unknown" in result.output, result.output
+    assert "declares no group" not in result.output, result.output
+
+
 def test_the_reader_flag_needs_a_grant_in_the_role_being_built(
     tmp_path: Path,
 ) -> None:
