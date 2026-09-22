@@ -56,6 +56,7 @@ def test_legal_library_identity_and_navigation_are_consistent() -> None:
         assert title in emitted
         assert "LC_Document" not in emitted
     manifest = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=built, findings=[], bundle=bundle,
         source_mtime="2026-09-15T00:00:00Z", **args,
     )

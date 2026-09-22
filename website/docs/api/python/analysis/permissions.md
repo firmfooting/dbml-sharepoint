@@ -126,7 +126,7 @@ is resolved through `analysis/groups.py` for the same reason.
 ### `lists_granting_group`
 
 ```python
-def lists_granting_group(mapping: dbml_sharepoint.model.mapping_types.Mapping, group_name: str, table_names: collections.abc.Iterable[str]) -> tuple[list[str], list[str]]
+def lists_granting_group(mapping: dbml_sharepoint.model.mapping_types.Mapping, group_name: str, table_names: collections.abc.Iterable[str], enum_members: collections.abc.Mapping[str, collections.abc.Sequence[str]]) -> tuple[list[str], list[str]]
 ```
 
 Split `table_names` into those `group_name` is granted on, and those not.

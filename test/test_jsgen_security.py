@@ -683,8 +683,16 @@ def test_a_folder_grant_counts_as_a_grant_on_that_entity(tmp_path: Path) -> None
     entity = next(iter(bundle.mapping.entities))
     perms = bundle.mapping.permissions
     assert perms is not None
+    # The entity has to DECLARE folders: a policy on a library with none
+    # binds nothing, which is `folder_permissions_without_folders`.
     patched = dataclasses.replace(
         bundle.mapping,
+        entities={
+            **bundle.mapping.entities,
+            entity: dataclasses.replace(
+                bundle.mapping.entities[entity], folder_source=("Cases",),
+            ),
+        },
         permissions=dataclasses.replace(
             perms, overrides={}, default_policy=None,
             folder_policies={entity: folder_only},
@@ -692,10 +700,94 @@ def test_a_folder_grant_counts_as_a_grant_on_that_entity(tmp_path: Path) -> None
     )
 
     granted, excluded = lists_granting_group(
-        patched, "dbml Enterprise Readers", [entity],
+        patched, "dbml Enterprise Readers", [entity], {},
     )
 
     assert granted == [entity], (granted, excluded)
+
+
+def test_a_folder_principal_template_resolving_to_the_reader_counts() -> None:
+    """A `{member}` principal is not necessarily a per-member group.
+
+    `dbml Enterprise {member}` over a folder named Automation resolves to a
+    literal group, and the deploy binds it. Compared unexpanded, the CLI
+    refused the enrolment and the manifest called the list excluded while the
+    emitted script granted the reader on every folder of it.
+    """
+    from dbml_sharepoint.analysis.permissions import lists_granting_group
+    from dbml_sharepoint.model.mapping_types import (
+        FoldersFromEnum,
+        ListPermissionPolicy,
+        Principal,
+        RoleAssignment,
+    )
+
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    entity = next(iter(bundle.mapping.entities))
+    perms = bundle.mapping.permissions
+    assert perms is not None
+    patched = dataclasses.replace(
+        bundle.mapping,
+        entities={
+            **bundle.mapping.entities,
+            entity: dataclasses.replace(
+                bundle.mapping.entities[entity],
+                folder_source=FoldersFromEnum(enum="area"),
+            ),
+        },
+        permissions=dataclasses.replace(
+            perms, overrides={}, default_policy=None,
+            folder_policies={entity: ListPermissionPolicy(
+                break_inheritance=True, reconcile_mode="exact",
+                assignments=[RoleAssignment(
+                    principal=Principal(kind="group", name="dbml Enterprise {member}"),
+                    level="Read",
+                )],
+            )},
+        ),
+    )
+
+    granted, excluded = lists_granting_group(
+        patched, "dbml Enterprise Readers", [entity], {"area": ["Readers"]},
+    )
+
+    assert (granted, excluded) == ([entity], [])
+
+
+def test_a_folder_policy_over_an_entity_with_no_folders_grants_nothing() -> None:
+    """`lists_granting_group` reports what the deploy BINDS, and a policy on
+    an entity declaring no folders binds nothing: there is no folder to write
+    it to. `folder_permissions_without_folders` is the finding for it."""
+    from dbml_sharepoint.analysis.permissions import lists_granting_group
+    from dbml_sharepoint.model.mapping_types import (
+        ListPermissionPolicy,
+        Principal,
+        RoleAssignment,
+    )
+
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    entity = next(iter(bundle.mapping.entities))
+    perms = bundle.mapping.permissions
+    assert perms is not None
+    patched = dataclasses.replace(
+        bundle.mapping,
+        permissions=dataclasses.replace(
+            perms, overrides={}, default_policy=None,
+            folder_policies={entity: ListPermissionPolicy(
+                break_inheritance=True, reconcile_mode="exact",
+                assignments=[RoleAssignment(
+                    principal=Principal(kind="group", name="dbml Enterprise Readers"),
+                    level="Read",
+                )],
+            )},
+        ),
+    )
+
+    granted, excluded = lists_granting_group(
+        patched, "dbml Enterprise Readers", [entity], {},
+    )
+
+    assert (granted, excluded) == ([], [entity])
 
 
 def test_a_folder_policy_off_this_build_does_not_demand_manage_permissions(

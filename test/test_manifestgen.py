@@ -43,6 +43,7 @@ def test_manifest_includes_phase_headings_and_release() -> None:
     schema_json = build_schema_json(schema, bundle, "default")
 
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=schema_json,
         findings=findings,
         bundle=bundle,
@@ -120,6 +121,7 @@ def test_manifest_renders_seed_items_and_extension_extras() -> None:
     )
 
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=schema_json,
         findings=[],
         bundle=bundle,
@@ -153,6 +155,7 @@ def test_manifest_carries_operator_run_instructions() -> None:
     release = load_release(FIXTURES / "release.yaml")
     schema_json = build_schema_json(schema, bundle, "default")
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=schema_json,
         findings=[],
         bundle=bundle,
@@ -200,6 +203,7 @@ def test_manifest_describes_operator_self_enrolment(tmp_path: Path) -> None:
     release = load_release(FIXTURES / "release.yaml")
     schema_json = build_schema_json(schema, bundle, "default")
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=schema_json,
         findings=[],
         bundle=bundle,
@@ -221,6 +225,7 @@ def _reader_manifest(enterprise_reader: str | None) -> str:
     bundle = load_mapping(FIXTURES / "sharepoint-mapping-with-reader.yaml")
     release = load_release(FIXTURES / "release.yaml")
     return generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -260,6 +265,7 @@ def _manifest_for_bundle(bundle: MappingBundle, enterprise_reader: str | None) -
     """Render `bundle`'s manifest, built with or without the reader flag."""
     schema = parse_dbml(FIXTURES / "simple.dbml")
     return generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -452,6 +458,7 @@ def test_a_mapping_with_no_reader_group_gets_no_reader_prose() -> None:
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     release = load_release(FIXTURES / "release.yaml")
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -495,6 +502,7 @@ def test_manifest_lists_declared_views() -> None:
     release = load_release(FIXTURES / "release.yaml")
     schema_json = build_schema_json(schema, bundle, "default")
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=schema_json,
         findings=[],
         bundle=bundle,
@@ -528,6 +536,7 @@ def test_manifest_view_bullets_render_one_per_line() -> None:
     )
     release = load_release(FIXTURES / "release.yaml")
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -551,6 +560,7 @@ def test_manifest_lists_column_formatting() -> None:
         column_formatting={"Risk": {"Score": {"elmType": "div"}}},
     )
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -576,6 +586,7 @@ def test_manifest_lists_form_formatting() -> None:
         )},
     )
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -599,6 +610,7 @@ def test_manifest_run_order_puts_assessment_first() -> None:
     release = load_release(FIXTURES / "release.yaml")
     schema_json = build_schema_json(schema, bundle, "default")
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=schema_json,
         findings=[],
         bundle=bundle,
@@ -642,6 +654,7 @@ def _manifest_for(**sections: Unpack[MappingSections]) -> str:
     ))
     bundle = make_bundle(entities=["Escalation"], **sections)
     return generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -731,6 +744,7 @@ def test_manifest_announces_a_column_rule_hoisted_to_the_list() -> None:
         },
     )
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -825,6 +839,7 @@ def test_manifest_covers_only_the_lists_this_role_deploys(tmp_path: Path, same_t
             bundle.mapping.entities["Ledger"], title="APP_Escalation",
         )
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -873,6 +888,7 @@ def test_manifest_retention_table_covers_only_this_role() -> None:
         },
     )
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -922,6 +938,7 @@ def test_manifest_lists_retired_columns(tmp_path: Path) -> None:
         """),
     )
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -947,6 +964,7 @@ def test_manifest_omits_retired_section_when_nothing_is_retired() -> None:
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -990,6 +1008,7 @@ def test_manifest_prints_resolved_view_fields_with_set_footnote(tmp_path: Path) 
         """),
     )
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -1016,6 +1035,7 @@ def test_manifest_says_so_when_no_env_file_was_read() -> None:
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     release = load_release(FIXTURES / "release.yaml")
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -1043,6 +1063,7 @@ def test_manifest_reports_the_env_file_that_was_read() -> None:
         ),
     )
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -1066,6 +1087,7 @@ def test_manifest_describes_the_central_change_list_when_one_is_configured() -> 
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     release = load_release(FIXTURES / "release.yaml")
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -1092,6 +1114,7 @@ def test_manifest_omits_the_change_list_paragraph_without_one() -> None:
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     release = load_release(FIXTURES / "release.yaml")
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -1123,6 +1146,7 @@ def test_the_versioning_and_field_count_bullets_stay_on_separate_lines() -> None
     schema_json = build_schema_json(schema, bundle, "default")
 
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=schema_json,
         findings=[],
         bundle=bundle,
@@ -1169,6 +1193,7 @@ def test_manifest_prints_the_list_rule_budget_against_sharepoint_limits() -> Non
     schema_json = build_schema_json(schema, bundle, "default")
     written = next(lst for lst in schema_json["lists"] if lst["validation_formula"] is not None)
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=schema_json,
         findings=[],
         bundle=bundle,
@@ -1195,6 +1220,7 @@ def test_manifest_lists_default_formulas() -> None:
         default_formulas={"Saq": {"PeriodYear": "=YEAR(TODAY())"}},
     )
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -1223,6 +1249,7 @@ def test_retention_title_precedes_another_roles_entity(role: str, visible: bool)
         }, retention_list_defaults={"Archive": "Standard7Y"},
     )
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, role), findings=[], bundle=bundle,
         release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test", site_role=role,
@@ -1240,6 +1267,7 @@ def test_manifest_escapes_pipe_in_a_retention_title() -> None:
         retention_list_defaults={"Legal | Compliance": "Standard7Y"},
     )
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"), findings=[], bundle=bundle,
         release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test", site_role="default",
@@ -1294,6 +1322,7 @@ def test_manifest_inventories_folder_assignments(tmp_path: Path) -> None:
         """,
     )
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -1344,6 +1373,7 @@ def test_a_folder_policy_granting_nothing_still_names_its_folder(
         """,
     )
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,
@@ -1404,6 +1434,7 @@ def test_a_folder_the_deploy_does_not_break_is_not_called_inherited(
         """,
     )
     md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
         bundle=bundle,

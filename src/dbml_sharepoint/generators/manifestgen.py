@@ -2,6 +2,7 @@
 """Render deploy-manifest.md."""
 
 import json
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from dbml_sharepoint.analysis.condition_description import describe
@@ -20,6 +21,7 @@ from dbml_sharepoint.templating import script_env
 def generate_manifest(
     *,
     schema_json: dict[str, Any],
+    enum_members: Mapping[str, Sequence[str]],
     findings: list[Finding],
     bundle: MappingBundle,
     release: Release,
@@ -118,7 +120,9 @@ def generate_manifest(
     # that only ever sees "excluded" has no way to say "nothing" instead of
     # "everything except everything".
     _reader_split = [
-        lists_granting_group(bundle.mapping, name, _deployed_entities)
+        lists_granting_group(
+            bundle.mapping, name, _deployed_entities, enum_members,
+        )
         for name in _reader_groups
     ]
     reader_granted_lists = sorted({

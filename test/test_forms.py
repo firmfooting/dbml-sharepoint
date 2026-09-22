@@ -653,8 +653,9 @@ def test_manifest_shows_the_composed_formula_and_reconcile_mode() -> None:
         })},
     }
     schema_json = _schema_json(**declared)
-    _, bundle = _escalation(**declared)
+    schema, bundle = _escalation(**declared)
     manifest = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
         schema_json=schema_json,
         bundle=bundle,
         release=load_release(Path("test/fixtures") / "release.yaml"),

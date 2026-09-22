@@ -21,7 +21,7 @@ import typer
 
 from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
 from dbml_sharepoint.analysis.findings import Finding
-from dbml_sharepoint.analysis.groups import declaring_groups
+from dbml_sharepoint.analysis.groups import resolvable_groups
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.permissions import lists_granting_group
 from dbml_sharepoint.analysis.sidecars import (
@@ -189,6 +189,9 @@ def execute_build(
     parsed_schema, bundle, release_obj = load_config(schema, mapping, release)
     if release_obj is None:  # unreachable: --release is a required option
         raise typer.BadParameter("--release is required for `build`.")
+    # Derived once: the reader gate and the manifest both resolve enum
+    # sources, and two derivations of the same fact could disagree.
+    enum_members = {enum.name: enum.members for enum in parsed_schema.enums}
     ext = resolve_extension_or_refuse(extension, bundle, mapping)
 
     if ext.requires_project_cli:
@@ -282,8 +285,12 @@ def execute_build(
     if isinstance(enterprise_reader, str):
         validate_enterprise_reader(enterprise_reader)
         perms = bundle.mapping.permissions
+        # RESOLVED, because the name is used below and a `from_enum` group's
+        # template spelling matches no assignment. `resolvable_groups` rather
+        # than `declared_groups` so a misspelled enum is left to its own
+        # finding instead of raising out of the CLI.
         targets = [
-            g for g in declaring_groups(perms)
+            g for g in resolvable_groups(perms, enum_members)
             if g.enroll_enterprise_reader
         ]
         if not targets:
@@ -317,7 +324,7 @@ def execute_build(
             parsed_schema, bundle.mapping.entities, site_role,
         )
         granted_anywhere_here = any(
-            lists_granting_group(bundle.mapping, g.name, deployed_here)[0]
+            lists_granting_group(bundle.mapping, g.name, deployed_here, enum_members)[0]
             for g in targets
         )
         if not granted_anywhere_here:
@@ -390,6 +397,7 @@ def execute_build(
 
     manifest_md = generate_manifest(
         schema_json=schema_json,
+        enum_members=enum_members,
         findings=findings,
         bundle=bundle,
         release=release_obj,

@@ -655,6 +655,70 @@ def test_the_reader_flag_needs_a_group_to_enrol_into(tmp_path: Path) -> None:
     assert not (out / "deploy.js.txt").exists()
 
 
+def test_the_reader_flag_accepts_a_group_generated_from_a_one_member_enum(
+    tmp_path: Path,
+) -> None:
+    """The gate reads the name, so it has to read the RESOLVED one.
+
+    A one-member `from_enum` group may carry the flag, and the emitted schema
+    names the group it generates. Asked through the template spelling the
+    gate searched for a principal called `{member} Editors`, found no grant,
+    and refused a build whose deploy grants the reader on every folder.
+    """
+    schema = write_dbml(tmp_path, blocks("""
+        Enum division {
+          "Clinical services"
+        }
+
+        Table Docs {
+          Id int [pk, increment]
+          Title nvarchar [not null]
+          Division division
+        }
+    """))
+    mapping = write_mapping(tmp_path, blocks("""
+        prefix: XX
+
+        entities:
+          Docs:
+            kind: DocumentLibrary
+            base_template: 101
+            site_role: default
+            folders: {from_enum: division}
+
+        groups:
+          - from_enum: division
+            name: "XX {member} Readers"
+            description: "Readers for {member}."
+            owner_group: "Site Owners"
+            enroll_enterprise_reader: true
+
+        list_permissions:
+          folders:
+            Docs:
+              break_inheritance: true
+              reconcile: configured
+              assignments:
+                - principal: { kind: group, name: "XX {member} Readers" }
+                  level: "Read"
+    """))
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(schema),
+        "--mapping", str(mapping),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
+        "--site-role", "default",
+        "--out", str(out),
+        "--enterprise-reader", "svc-reporting@example.org",
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert (out / "deploy.js.txt").exists()
+
+
 def test_the_reader_flag_needs_a_grant_in_the_role_being_built(
     tmp_path: Path,
 ) -> None:

@@ -5,6 +5,7 @@ from collections.abc import Iterable, Sequence
 from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass
 
+from dbml_sharepoint.analysis.folders import folder_policies
 from dbml_sharepoint.analysis.groups import resolvable_groups
 from dbml_sharepoint.model.mapping_types import Mapping
 
@@ -299,7 +300,10 @@ def requires_manage_permissions(
 
 
 def lists_granting_group(
-    mapping: Mapping, group_name: str, table_names: Iterable[str],
+    mapping: Mapping,
+    group_name: str,
+    table_names: Iterable[str],
+    enum_members: MappingABC[str, Sequence[str]],
 ) -> tuple[list[str], list[str]]:
     """Split `table_names` into those `group_name` is granted on, and those not.
 
@@ -332,11 +336,19 @@ def lists_granting_group(
         # the deploy will actually bind, and the deploy binds a folder
         # assignment for this entity just as it binds a list one; a group
         # granted only there was reported as excluded while the validator's
-        # own union called it granted. Principals are compared unexpanded,
-        # which is right: a `{member}` principal names a per-member group and
-        # is not the literal group being asked about.
-        if perms is not None and name in perms.folder_policies:
-            assignments += perms.folder_policies[name].assignments
+        # own union called it granted. Expanded per folder, because a
+        # `{member}` principal is not necessarily a per-member group:
+        # `dbml Enterprise {member}` over a folder named Automation resolves
+        # to a literal group somebody may be asking about.
+        entity = mapping.entities.get(name)
+        if entity is not None:
+            assignments += [
+                assignment
+                for _folder, policy in folder_policies(
+                    name, entity.folder_source, perms, enum_members,
+                )
+                for assignment in policy.assignments
+            ]
         if any(
             a.principal.kind == "group" and a.principal.name == group_name
             for a in assignments
