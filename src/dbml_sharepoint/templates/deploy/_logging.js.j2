@@ -951,10 +951,15 @@
     } else if (changeLogReady) {
 {% if enterprise_reader %}
       const readerGroup = SCHEMA.groups.find((g) => g.enroll_enterprise_reader);
-      const readerGrant = readerGroup && SCHEMA.list_assignments
-        .map((la) => la.assignments.find((a) => a.principal.kind === 'group'
-                && a.principal.name === readerGroup.name))
-        .find((a) => a);
+      // Both collections. A reader granted only inside a library's folders
+      // holds a real grant, and reading the list ones alone left the change
+      // log with no role assignments while reporting that as a finding of
+      // fact rather than a gap in what was searched.
+      const readerGrant = readerGroup
+        && [...SCHEMA.list_assignments, ...SCHEMA.folder_assignments]
+          .map((la) => la.assignments.find((a) => a.principal.kind === 'group'
+                  && a.principal.name === readerGroup.name))
+          .find((a) => a);
       const levelName = readerGrant ? readerGrant.level : null;
       if (!readerGroup || !levelName) {
         log('INFO', 'Change log: no reader group grant found to mirror; leaving it with no role assignments.');
