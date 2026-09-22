@@ -38,7 +38,9 @@
  *     attach to a document library and read back, the way it does on a list?
  *     Uses the same roleassignments/addroleassignment attach and expanded
  *     read-back shape lookup-acl-probe.js and reader-bindings-probe.js use
- *     at list scope.
+ *     at list scope. It also OBSERVES, at library and at item scope, what the
+ *     deploy's own $select composition returns, because the deploy now decides
+ *     removals off that read rather than only verifying against it.
  *   library.access.file-scoped-unique-permission
  *     A library's security-scoped objects are files and folders, not list
  *     items. Does a unique permission set on a single file inside the
@@ -185,6 +187,37 @@
       text: `${attempts.length} read(s) waiting for ${String(wanted)}, over up to `
         + `${(UNIQUE_TRIES - 1) * UNIQUE_WAIT_MS} ms: ${attempts.join('; ')}`,
     };
+  };
+
+  // The deploy reads a scope's bindings through ONE url, and since the
+  // reconcile unification that read decides which bindings are REMOVED rather
+  // than only which are verified. The plainer shape read below does not answer
+  // whether SharePoint honours PrincipalId in a $select that also names
+  // expanded sub-properties, so the deploy's own url is read here as it sends
+  // it. OBSERVED and never asserted: the row count is reported beside the
+  // count carrying an id, so a read that returned nothing is legible as that
+  // rather than as agreement, and a shape this probe did not predict is a
+  // measurement instead of a failure.
+  const DEPLOY_BINDING_QUERY =
+    'roleassignments?$expand=RoleDefinitionBindings'
+    + '&$select=PrincipalId,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name';
+  const deployShapeRead = async (scopePath, where) => {
+    let res = null;
+    try {
+      res = await fetch(`${WEB}/_api/${scopePath}/${DEPLOY_BINDING_QUERY}`, {
+        headers: { Accept: 'application/json;odata=verbose' },
+      });
+    } catch (err) {
+      return `${where}: the read threw (${String(err)})`;
+    }
+    if (!res.ok) return `${where}: HTTP ${res.status}`;
+    const body = await res.json().catch(() => null);
+    const rows = (body && body.d && Array.isArray(body.d.results)) ? body.d.results : null;
+    if (rows === null) return `${where}: HTTP 200 carrying no d.results array`;
+    const withId = rows.filter(
+      (r) => r.PrincipalId !== null && r.PrincipalId !== undefined);
+    return `${where}: HTTP 200, ${rows.length} row(s), ${withId.length} of them `
+      + 'carrying a non-null PrincipalId';
   };
 
   // The restore pass. Runs on every path out of the access questions, so a
@@ -433,9 +466,18 @@
               if (ownersRow) break;
             }
             const bindingElapsed = Date.now() - bindingStarted;
+            // Both scopes, at this point in the run: the library holds the
+            // grant above and the file item inherits it, so neither read is
+            // vacuous. Nothing here changes the outcome.
+            const deployShape =
+              ' The deploy\'s own $select composition read '
+              + await deployShapeRead(listPath, 'at library scope') + '; '
+              + await deployShapeRead(
+                `${listPath}/items(${fileItem.Id})`,
+                'at item scope, the file still inheriting') + '.';
             record('library.access.role-assignment-library', Q_ROLE_ATTACH,
                    ownersRow ? 'SAME AS LIST' : 'ASSIGNMENT NOT READ BACK',
-                   ownersRow
+                   (ownersRow
                      ? `addroleassignment(principalid=${owners.body.Id},roledefid=1073741829) succeeded `
                        + `on '${LIB}' and the library's roleassignments read back ${rows.length} row(s) `
                        + `including the owners group bound to Full Control, exactly as a generic list `
@@ -446,7 +488,8 @@
                      : `the library roleassignments read answered HTTP ${assignResp.status} with `
                        + `${rows.length} row(s) after ${bindingReads} read(s) over ${bindingElapsed} ms, `
                        + `but none bound principal ${owners.body.Id} to Full Control. `
-                       + 'A list would have read the assignment back; this is a divergence.');
+                       + 'A list would have read the assignment back; this is a divergence.')
+                   + deployShape);
 
             // ---- file-scoped-unique-permission --------------------------
             // The file is the library's item analogue. Break inheritance on

@@ -1261,6 +1261,54 @@ def test_configured_mode_prunes_a_declared_principal_and_spares_a_stranger(
     )
 
 
+def test_exact_mode_prunes_a_stray_binding_and_never_the_derived_one(
+    tmp_path: Path,
+) -> None:
+    """'Limited Access' survives an allowlist that declares neither it nor
+    the principal holding it.
+
+    SharePoint derives that binding to support access at a LOWER scope, so
+    removing it from the list breaks the folder or item grant it exists for,
+    and nothing in the run or in verify.js reads it back afterwards. Both
+    rows come off the one snapshot this phase now prunes from, so the exempt
+    one and the pruned one are judged by the same pass.
+    """
+    # The exemption is keyed on the binding's NAME, so the level ids here are
+    # arbitrary and the names are not. Neither principal is one the mock
+    # resolves a declared group to, which is 9.
+    seeded = json.dumps({"APP_Escalation": [[
+        {
+            "Member": {"Id": 7, "Title": "Stray Group", "PrincipalType": 8},
+            "RoleDefinitionBindings": {"results": [
+                {"Id": 888, "Name": "Full Control"},
+            ]},
+        },
+        {
+            "Member": {"Id": 8, "Title": "Lower Scope Group", "PrincipalType": 8},
+            "RoleDefinitionBindings": {"results": [
+                {"Id": 889, "Name": "Limited Access"},
+            ]},
+        },
+    ]]})
+    harness = _library_harness(declared_folder=True, unique_after=1).replace(
+        "const ROLE_ASSIGNMENT_PAGES = {};",
+        f"const ROLE_ASSIGNMENT_PAGES = {seeded};",
+    )
+    summary, calls, _ = _run(
+        harness, _library_deploy_js(tmp_path, _FOLDER_ACL_LIBRARY, titled=False),
+    )
+
+    assert summary["errors"] == [], summary["errors"]
+    removals = [
+        c["url"] for c in calls if "removeroleassignment" in c.get("url", "")
+    ]
+    assert len(removals) == 1, removals
+    assert "removeroleassignment(principalid=7,roleDefId=888)" in removals[0], removals
+    assert not any("roleDefId=889)" in url for url in removals), (
+        f"the derived 'Limited Access' binding was removed: {removals}"
+    )
+
+
 def test_a_folder_lookup_without_an_id_is_refused(tmp_path: Path) -> None:
     """A folder read that answers without an Id must abort, not proceed.
 

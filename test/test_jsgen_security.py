@@ -132,6 +132,18 @@ def test_each_level_carries_its_own_expected_marker() -> None:
         assert lvl["expected_marker"] == marker_for_level("change-register", lvl["name"])
 
 
+def _acl_phase(js: str) -> str:
+    """Phase 4.2's own text, from its banner to the next phase's.
+
+    A search over the whole script answers for templates this one has nothing
+    to do with: `_reader_enrolment.js.j2` names `roleassignments/getbyprincipalid`
+    in a comment, and the simple fixture omits it only for want of an
+    enterprise reader.
+    """
+    return js.split(f"Starting Phase {pn('acls')}")[1].split(
+        f"Starting Phase {pn('seeds')}")[0]
+
+
 def test_exact_acl_reconciliation_removes_unlisted_principals() -> None:
     """Exact mode is a real allowlist, not just stale-level cleanup for the
     principals that happen to be declared in the mapping."""
@@ -155,7 +167,7 @@ def test_role_assignment_writes_keep_their_named_parameters() -> None:
     goes through the one collection enumeration."""
     js = _generate_simple_js()
 
-    assert "roleassignments/getbyprincipalid" not in js
+    assert "roleassignments/getbyprincipalid" not in _acl_phase(js)
     assert "addroleassignment(principalid=${resolved.principalId}" in js
     assert "removeroleassignment(principalid=${principalId}" in js
 
@@ -513,13 +525,14 @@ def test_one_enumeration_answers_every_role_assignment_question() -> None:
 
     Asserted on the generated source rather than by running it: a shape that
     only the exact-mode branch reaches is invisible to a run whose fixture
-    declares no exact policy.
+    declares no exact policy. Over Phase 4.2's own text rather than the whole
+    script, for the reason `_acl_phase` gives.
     """
     js = _generate_simple_js()
     assert js.count("roleassignments?$expand=RoleDefinitionBindings") == 1, (
         "every read of a scope's bindings must go through scopeBindings"
     )
-    assert "getbyprincipalid" not in js.split("scopeBindings")[1], (
+    assert "getbyprincipalid" not in _acl_phase(js), (
         "a per-principal probe is a second way to read the same thing"
     )
 

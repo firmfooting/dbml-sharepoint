@@ -443,8 +443,8 @@
           x => ({ key: `${x.principalId}:${x.roleDefId}`, at: x }),
         );
         const complaint = await settleBindings(scope, (rows) => {
-          const held = new Set(rows.map(row => row.key));
-          const missing = wanted.filter(w => !held.has(w.key));
+          const reported = new Set(rows.map(row => row.key));
+          const missing = wanted.filter(w => !reported.has(w.key));
           return missing.length === 0 ? null : missing;
         });
         if (complaint !== null) {
