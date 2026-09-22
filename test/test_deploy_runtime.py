@@ -417,7 +417,31 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     // probe's brand-new-site fiction ('nothing bound yet') so an
     // unconfigured run only ever adds.
     const ROLE_ASSIGNMENT_PAGES = {};
-    const roleAssignmentPages = (listTitle) => ROLE_ASSIGNMENT_PAGES[listTitle] || [[]];
+    // Role assignments are STATE, because Phase 4.2 reads a scope's bindings
+    // back after writing them. ROLE_ASSIGNMENT_PAGES stays the seed a test
+    // configures, and the pages keep their shape so a continuation link
+    // still has a second page to point at.
+    const ROLE_ASSIGNMENT_STATE = {};
+    const roleAssignmentPages = (listTitle) => (
+      ROLE_ASSIGNMENT_STATE[listTitle] ||= (ROLE_ASSIGNMENT_PAGES[listTitle] || [[]])
+        .map((page) => page.map((row) => ({
+          ...row,
+          // Both shapes off one endpoint: the phase selects PrincipalId and
+          // a seed written before it expands Member.
+          PrincipalId: row.PrincipalId == null ? row.Member && row.Member.Id : row.PrincipalId,
+          RoleDefinitionBindings: { results: [...row.RoleDefinitionBindings.results] },
+        })))
+    );
+    // A binding's NAME is what exact mode exempts 'Limited Access' by, so a
+    // binding this mock invents needs the name its role definition holds.
+    const roleDefNameById = (id) => (
+      Object.entries(ROLE_DEF_STATE).find(([, s]) => Number(s.Id) === Number(id))
+      || [`Level ${id}`]
+    )[0];
+    const roleAssignmentBinding = (url) => {
+      const m = /roleassignment\(principalid=(\d+),roleDefId=(\d+)\)/.exec(url);
+      return m ? { principalId: Number(m[1]), roleDefId: Number(m[2]) } : null;
+    };
     // Per-list Title state, mutated by MERGEs exactly as SharePoint would.
     const titles = Object.create(null);
     // Indexed is state, not a constant: a lookup's TARGET carries the
@@ -660,7 +684,9 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
         const pages = roleAssignmentPages(listTitle);
         const marked = /[?&]page=(\d+)/.exec(url);
         const page = marked ? Number(marked[1]) : 0;
-        const payload = { d: { results: pages[page] || [] } };
+        const payload = { d: { results: (pages[page] || []).filter(
+          (row) => row.RoleDefinitionBindings.results.length > 0,
+        ) } };
         if (page + 1 < pages.length) {
           payload.d.__next =
             `https://example.sharepoint.com/_api/web/lists/getbytitle('${encodeURIComponent(listTitle)}')`
@@ -937,6 +963,37 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
           }
         }
       }
+      // addroleassignment and removeroleassignment take their arguments in
+      // the URL and carry no body, so they are applied from the URL rather
+      // than from a parsed payload. A batched ChangeSet part arrives here
+      // too: BATCH_MOCK redispatches each part through globalThis.fetch.
+      if ((opts.method || 'GET') === 'POST' && u.includes('roleassignment(')) {
+        const binding = roleAssignmentBinding(u);
+        const pages = roleAssignmentPages(listOf(u));
+        if (binding && u.includes('/addroleassignment(')) {
+          let row = pages.flat().find((r) => r.PrincipalId === binding.principalId);
+          if (!row) {
+            row = {
+              PrincipalId: binding.principalId,
+              Member: { Id: binding.principalId, Title: `Principal ${binding.principalId}`,
+                        PrincipalType: 8 },
+              RoleDefinitionBindings: { results: [] },
+            };
+            pages[pages.length - 1].push(row);
+          }
+          if (!row.RoleDefinitionBindings.results.some((b) => b.Id === binding.roleDefId)) {
+            row.RoleDefinitionBindings.results.push({
+              Id: binding.roleDefId, Name: roleDefNameById(binding.roleDefId),
+            });
+          }
+        } else if (binding) {
+          for (const row of pages.flat()) {
+            if (row.PrincipalId !== binding.principalId) continue;
+            row.RoleDefinitionBindings.results =
+              row.RoleDefinitionBindings.results.filter((b) => b.Id !== binding.roleDefId);
+          }
+        }
+      }
       const payload = body(u, opts);
       const absent = payload && payload.error;
       // Most absence mocks in this file don't carry a measured status and
@@ -952,6 +1009,64 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     };
     globalThis.__calls = calls;
 """) + BATCH_MOCK
+
+
+_ACL_STATE_BASE = (
+    "https://example.sharepoint.com/_api/web/lists/getbytitle('Escalation')"
+)
+_ACL_STATE_READ = (
+    "/roleassignments?$expand=RoleDefinitionBindings"
+    "&$select=PrincipalId,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name"
+)
+
+
+def _acl_write(method_url: str) -> str:
+    """One JS statement POSTing `method_url` against the Escalation list."""
+    return (
+        f"await fetch({json.dumps(_ACL_STATE_BASE + method_url)},"
+        " { method: 'POST' });\n"
+    )
+
+
+def _acl_state_rows(script: str) -> list[tuple[int, list[int]]]:
+    """The mock's role assignments after `script` has run against it, as
+    (principalId, [roleDefId]) pairs."""
+    read = json.dumps(_ACL_STATE_BASE + _ACL_STATE_READ)
+    output = _run(
+        _ADOPTED_HARNESS
+        + "\n(async () => {\n"
+        + script
+        + f"  const payload = await (await fetch({read})).json();\n"
+        "  console.log('__ROWS__' + JSON.stringify(payload.d.results));\n"
+        "})();\n",
+    )
+    line = next(ln for ln in output.splitlines() if ln.startswith("__ROWS__"))
+    return [
+        (row["PrincipalId"],
+         [b["Id"] for b in row["RoleDefinitionBindings"]["results"]])
+        for row in json.loads(line.removeprefix("__ROWS__"))
+    ]
+
+
+_ADD_42 = "/roleassignments/addroleassignment(principalid=42,roleDefId=1073741826)"
+_REMOVE_42 = "/roleassignments/removeroleassignment(principalid=42,roleDefId=1073741826)"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_mock_reports_a_list_binding_a_run_wrote() -> None:
+    """Phase 4.2 is about to read a list's bindings back after writing them.
+    A mock answering a fixed snapshot reports none of them, so every
+    list-scope deploy test would fail for a reason that is not the deploy's.
+    """
+    assert _acl_state_rows(_acl_write(_ADD_42)) == [(42, [1073741826])]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_mock_drops_a_list_binding_a_run_removed() -> None:
+    """The mirror. An exact-mode removal that the mock keeps answering looks
+    identical to a removal SharePoint accepted and did not apply, which is
+    the branch the completeness check exists to catch."""
+    assert _acl_state_rows(_acl_write(_ADD_42) + _acl_write(_REMOVE_42)) == []
 
 
 def _run_deploy(harness: str, tail: str) -> str:
