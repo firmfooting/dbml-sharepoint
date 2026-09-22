@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHAT A BREAK LEAVES, AND WHETHER REMOVING IT STICKS
  *
- * REVISION: a3f177fe
+ * REVISION: 9335f1e8
  *
  * THE CLAIM UNDER TEST. `deploy/_lists.js.j2` says, beside the early
  * isolation break, that "copyRoleAssignments=false leaves only SharePoint's
@@ -112,28 +112,37 @@
  * interrupted between the break and the restore leaves one scratch list with
  * unique permissions: re-run with CLEANUP, or delete the list.
  *
- * STATUS: RUN ONCE, 2026-09-22, revision 09528a60, one site the operator
- * owns. What it settled:
+ * STATUS: RUN TWICE, 2026-09-22, on two different sites.
  *
- *   The break left EXACTLY ONE role assignment, and it was this account's
- *   own direct USER binding (PrincipalType 1) at 'Full Control'. That
- *   confirms the first of the two claims in `_lists.js.j2`, which had
- *   stood on reasoning since it was written.
+ * Run one, revision 09528a60. The break left EXACTLY ONE role assignment,
+ * and it was this account's own direct USER binding (PrincipalType 1) at
+ * 'Full Control', which confirms the first of the two claims in
+ * `_lists.js.j2`. No 'Limited Access' row existed on a fresh scratch list,
+ * consistent with SharePoint deriving it only to support access at a lower
+ * scope. The negative control FAILED: `removeroleassignment` answered HTTP
+ * 200 for a principal id and a role definition id that do not exist on the
+ * tenant, so a 200 from that endpoint is not evidence the call did anything,
+ * which is why `_acls.js.j2` reads the scope back after pruning. The removal
+ * question was voided by that failed control, which was too strict, and it
+ * answers off the read-back now: the deploy aborts on a binding that is
+ * still there whatever caused it.
  *
- *   `removeroleassignment` ANSWERED HTTP 200 for a principal id and a role
- *   definition id that do not exist on the tenant, so the negative control
- *   FAILED. A 200 from that endpoint is not evidence the call did anything,
- *   which is exactly why `_acls.js.j2` reads the scope back after pruning.
+ * Run two, revision a3f177fe, a different site. The removal STUCK. The owner
+ * group was granted first, so the scope held another role assignment
+ * throughout, exactly as it does when the deploy prunes. Two sites agreed on
+ * what the break leaves: one binding, this account's own, PrincipalType 1 at
+ * 'Full Control'.
  *
- *   No 'Limited Access' row existed on a fresh scratch list, consistent
- *   with SharePoint deriving it only to support access at a lower scope.
+ * Run two also produced the finding that matters more than that verdict. The
+ * role-assignment enumeration at list scope is NOT MONOTONIC. The removed
+ * binding read gone on reads 1, 2 and 3, PRESENT again on read 4, and gone
+ * on read 5, over 8000 ms with nothing written between them. A single
+ * read-back landing on read 4 would have aborted a deploy whose removal had
+ * in fact taken, which is what `settleBindings` in `_acls.js.j2` exists to
+ * survive. `enumeration-is-monotonic` carries that on a row of its own.
  *
- * What it did NOT settle. The removal question was voided by the failed
- * control on that run, which was too strict and has since been corrected:
- * the question now answers off the read-back, because the deploy aborts on
- * a binding that is still there whatever caused it. That needs another run.
- * The tenant reported English level names, so whether a localized tenant
- * names the derived level differently is untouched.
+ * Still open: whether a localized tenant names the derived level
+ * differently. Both runs reported English level names.
  *
  * WHEN FINISHED: delete the list it created.
  */
@@ -361,7 +370,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision a3f177fe. Quote this when reporting results.');
+  log('INFO', 'probe revision 9335f1e8. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe OperatorGrant';
   const OWNERSHIP = 'dbml-sharepoint operator-safety-grant probe list. Safe to delete.';
@@ -372,6 +381,7 @@
   const Q_LEFT = 'What role assignments does breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false) leave on a list';
   const Q_OPERATOR = 'Is one of them a direct binding for the account that ran the break';
   const Q_STICKS = 'Does removing that direct binding stick, or does SharePoint re-derive it';
+  const Q_MONOTONIC = 'Once a read of the role-assignment enumeration reflects a removal, does every later read reflect it';
   const Q_LEVELS = 'What level names does this tenant report at a list scope, for the English literal the deploy matches on';
 
   expect('access.list-acl.fixture-scratch-list', Q_FIXTURE);
@@ -379,6 +389,7 @@
   expect('access.list-acl.break-leaves-bindings', Q_LEFT);
   expect('access.list-acl.break-leaves-operator-binding', Q_OPERATOR);
   expect('access.list-acl.operator-binding-removal-sticks', Q_STICKS);
+  expect('access.list-acl.enumeration-is-monotonic', Q_MONOTONIC);
   expect('access.list-acl.derived-level-names', Q_LEVELS);
 
   if (!CONFIRMED) {
@@ -469,6 +480,10 @@
   // and comes back is the finding and the first agreement would hide it.
   const settleForBinding = async (principalId, levelId, wanted, stopEarly) => {
     const reads = [];
+    // The prose for a reader and the raw states beside it, because
+    // enumeration-is-monotonic is derived from THIS sequence: a second set of
+    // reads would answer for a different moment.
+    const states = [];
     let present = null;
     for (let attempt = 0; attempt < SETTLE_READS; attempt += 1) {
       if (attempt > 0) await sleep(SETTLE_MS);
@@ -478,9 +493,10 @@
         : null;
       reads.push(`read ${attempt + 1}: HTTP ${now.status}, ${now.ok ? `${now.rows.length} row(s), ` : ''}`
                  + `binding ${present === null ? 'unreadable' : present ? 'PRESENT' : 'gone'}`);
+      states.push(present);
       if (stopEarly && present === wanted) break;
     }
-    return { present, reached: present === wanted, reads };
+    return { present, reached: present === wanted, reads, states };
   };
 
   // One read, not the bounded poll: a caller deciding whether to RESTORE
@@ -630,6 +646,7 @@
     record('access.list-acl.break-leaves-bindings', Q_LEFT, outcome, why, state);
     record('access.list-acl.break-leaves-operator-binding', Q_OPERATOR, outcome, why, state);
     record('access.list-acl.operator-binding-removal-sticks', Q_STICKS, outcome, why, state);
+    record('access.list-acl.enumeration-is-monotonic', Q_MONOTONIC, outcome, why, state);
     record('access.list-acl.derived-level-names', Q_LEVELS, outcome, why, state);
   };
 
@@ -735,6 +752,41 @@
                : `the request failed with HTTP ${bogus.status}, which is not the server `
                  + 'rejecting the call. The removal row below is void.');
 
+    // ---- enumeration-is-monotonic -------------------------------------
+    // Derived from the reads the removal row already took, never a second
+    // enumeration: a fresh sequence would answer for a different moment. The
+    // question is whether a read that has once reflected the removal keeps
+    // reflecting it, so the reversal to look for is a PRESENT after a gone.
+    const recordMonotonic = (settled) => {
+      const firstGone = settled.states.indexOf(false);
+      const reversed = firstGone === -1
+        ? -1
+        : settled.states.findIndex((state, i) => i > firstGone && state === true);
+      const unreadable = settled.states.filter((state) => state === null).length;
+      const sequence = `Over ${(SETTLE_READS - 1) * SETTLE_MS} ms: `
+        + `${settled.reads.join('; ')}.`
+        + (unreadable
+          ? ` ${unreadable} read(s) could not be read, so a reversal inside them would `
+            + 'not be visible here.'
+          : '');
+      if (firstGone === -1) {
+        record('access.list-acl.enumeration-is-monotonic', Q_MONOTONIC, 'NOT ESTABLISHED',
+               'no read reported the binding gone, so the enumeration never reflected the '
+               + `removal and there was no transition for a later read to reverse. ${sequence}`);
+      } else if (reversed === -1) {
+        record('access.list-acl.enumeration-is-monotonic', Q_MONOTONIC, 'OBSERVED',
+               `the binding read gone at read ${firstGone + 1} and on every read after it. `
+               + sequence);
+      } else {
+        record('access.list-acl.enumeration-is-monotonic', Q_MONOTONIC, 'OBSERVED',
+               `NOT MONOTONIC on this tenant: the binding read gone at read ${firstGone + 1} `
+               + `and PRESENT again at read ${reversed + 1}, on the same scope with nothing `
+               + 'written between the two. A single read-back that had landed on read '
+               + `${reversed + 1} would have reported a removal that had in fact taken. `
+               + sequence);
+      }
+    };
+
     // ---- operator-binding-removal-sticks ------------------------------
     // NOT gated on the control. The control tells a re-derivation from a call
     // the server accepted and ignored, which are two CAUSES with one
@@ -746,6 +798,8 @@
              'NOT REACHED', 'the break left no direct binding for this account, so there was '
              + 'nothing to remove. That is an answer about the premise and not about the '
              + 'removal: on this tenant the deploy has no operator grant to prune.');
+      record('access.list-acl.enumeration-is-monotonic', Q_MONOTONIC, 'NOT REACHED',
+             'nothing was removed, so no read sequence was taken.');
     } else {
       // The grant comes FIRST because the deploy removes this binding from a
       // scope that already holds the declared grants: its adds and its
@@ -762,6 +816,8 @@
                + `A declared grant had to be in place first, and ${grant.ok
                  ? `the owner-group grant never read back: ${landed.reads.join('; ')}`
                  : grant.why}. Nothing was removed.`);
+        record('access.list-acl.enumeration-is-monotonic', Q_MONOTONIC, 'NOT ESTABLISHED',
+               'nothing was removed, so no read sequence was taken.');
       } else {
         const target = mine[0];
         digest = await getDigest();
@@ -792,6 +848,7 @@
                + `roleDefId=${target.levelId}) answered HTTP ${removed.status}`
                + `${removed.ok ? '' : ` ${removed.text.slice(0, 200)}`}. `
                + `Over ${(SETTLE_READS - 1) * SETTLE_MS} ms: ${settled.reads.join('; ')}.${cause}`);
+        recordMonotonic(settled);
       }
     }
   };

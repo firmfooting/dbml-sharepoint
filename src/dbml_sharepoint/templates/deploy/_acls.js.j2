@@ -259,13 +259,30 @@
     };
 
     // Re-read until `judge` is satisfied or the window runs out, and hand
-    // back its last complaint. The window is BORROWED, not measured for this
-    // surface: MEASURED 2026-09-09, `library.access.unique-permissions-library`,
-    // a library's HasUniqueRoleAssignments read false on the first read after
+    // back its last complaint. Half the window is now measured and half is
+    // still borrowed, and they are different halves.
+    //
+    // REMOVAL visibility at list scope is MEASURED 2026-09-22,
+    // `access.list-acl.enumeration-is-monotonic` in
+    // operator-safety-grant-probe.js: a removed binding read gone on reads 1
+    // to 3, PRESENT again on read 4 and gone on read 5, over 8000 ms with
+    // nothing written between them. A single read-back landing on that fourth
+    // read would abort a scope whose removal had in fact taken, and this loop
+    // is why this phase does not.
+    //
+    // ADD visibility is still BORROWED: MEASURED 2026-09-09,
+    // `library.access.unique-permissions-library`, a library's
+    // HasUniqueRoleAssignments read false on the first read after
     // breakroleinheritance and true on the second, within 10 s. Whether a
     // binding written inside a batched ChangeSet is any slower is not
     // measured; `library.access.role-assignment-library` in the manual probe
-    // now counts the reads one takes to appear, and that number replaces this.
+    // counts the reads one takes to appear, and that number replaces this
+    // half.
+    //
+    // Both judges stop at the FIRST satisfying read rather than requiring
+    // consecutive agreement, which is the correct design against an
+    // enumeration measured to flap: a check demanding N consecutive reads
+    // would fail on exactly the sequence above.
     const settleBindings = async (scope, judge) => {
       const SCOPE_BINDING_SETTLE_MS = 2000;
       let complaint = null;

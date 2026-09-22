@@ -8980,6 +8980,10 @@ _OPERATOR_HARNESS = textwrap.dedent("""
       unique: CONFIG.alreadyUnique,
       bindings: CONFIG.alreadyUnique ? CONFIG.leftBindings.map((b) => ({ ...b })) : [],
       uniqueReads: 0,
+      // What the last accepted removal took away, and how many enumerations
+      // have been served since. `reappearOnRead` needs both.
+      removed: null,
+      readsSinceRemoval: 0,
     };
 
     const REMOVE = /removeroleassignment\\(principalid=(\\d+),roleDefId=(\\d+)\\)/;
@@ -9045,6 +9049,9 @@ _OPERATOR_HARNESS = textwrap.dedent("""
         // An accepted removal that does not apply is the whole question the
         // probe exists to ask, so the mock can answer 200 and keep the row.
         if (!CONFIG.removalReDerives) {
+          site.removed = site.bindings.find(
+            (b) => b.principalId === principalId && b.levelId === levelId) || null;
+          site.readsSinceRemoval = 0;
           site.bindings = site.bindings.filter(
             (b) => !(b.principalId === principalId && b.levelId === levelId));
         }
@@ -9097,10 +9104,18 @@ _OPERATOR_HARNESS = textwrap.dedent("""
       }
       if (u.includes('/roleassignments?')) {
         if (CONFIG.enumerationRefused) return jsonResponse(500, { error: 'refused' });
+        // MEASURED 2026-09-22: a removed binding read gone on reads 1 to 3,
+        // PRESENT again on read 4 and gone on read 5, over 8000 ms with
+        // nothing written between them. Modelled on the READ rather than on
+        // the stored bindings, because that is the layer it showed at.
+        if (site.removed) site.readsSinceRemoval += 1;
+        const visible = (site.removed && site.readsSinceRemoval === CONFIG.reappearOnRead)
+          ? [...site.bindings, site.removed]
+          : site.bindings;
         // One entity per PRINCIPAL carrying every level it holds, which is
         // the shape $expand=RoleDefinitionBindings returns.
         const byPrincipal = new Map();
-        for (const binding of site.bindings) {
+        for (const binding of visible) {
           if (!byPrincipal.has(binding.principalId)) {
             byPrincipal.set(binding.principalId, {
               PrincipalId: binding.principalId,
@@ -9190,6 +9205,7 @@ def _run_operator_grant_probe(
         "controlAccepted": False,
         "removalRefused": False,
         "removalReDerives": False,
+        "reappearOnRead": None,
         "resetRefused": False,
         "resetNeverClears": False,
         "uniqueReadShape": None,
@@ -9276,6 +9292,12 @@ def test_a_break_whose_removal_sticks_answers_every_question() -> None:
     assert "binding PRESENT" not in sticks["evidence"]
     # A binding that went is conclusive, so no cause is offered for it.
     assert "negative control" not in sticks["evidence"]
+    monotonic = rows["access.list-acl.enumeration-is-monotonic"]
+    # OBSERVED, never PASS: a tenant whose reads do not reverse is a
+    # measurement of this tenant and not the enumeration being well behaved.
+    assert monotonic["outcome"] == "OBSERVED", monotonic
+    assert "gone at read 1 and on every read after it" in monotonic["evidence"]
+    assert "NOT MONOTONIC" not in monotonic["evidence"]
     assert not [row for row in rows.values() if row["state"] != "settled"]
     assert _restored(urls), "the restore pass did not reset inheritance"
 
@@ -9430,6 +9452,57 @@ def test_a_failed_control_reports_a_present_binding_with_the_cause_open() -> Non
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_enumeration_that_serves_a_removed_binding_back_is_recorded() -> None:
+    """MEASURED 2026-09-22, run two: the removed binding read gone on reads 1
+    to 3, PRESENT again on read 4 and gone on read 5, over 8000 ms.
+
+    Two things are asserted and they are separate. The removal row still says
+    REMOVED, because the verdict is the last read and the settle loop is what
+    lets it survive the fourth. And the reversal gets a row of its own, since
+    a reader skimming REMOVED would never see it inside that row's evidence.
+    """
+    rows, _urls, _output = _run_operator_grant_probe(reappearOnRead=4)
+
+    sticks = rows["access.list-acl.operator-binding-removal-sticks"]
+    assert sticks["outcome"] == "REMOVED", sticks
+    assert "binding PRESENT" in sticks["evidence"], (
+        "the reversal has to survive into the evidence, not be smoothed away"
+    )
+
+    monotonic = rows["access.list-acl.enumeration-is-monotonic"]
+    assert monotonic["outcome"] == "OBSERVED", monotonic
+    assert monotonic["state"] == "settled"
+    assert "NOT MONOTONIC on this tenant" in monotonic["evidence"]
+    assert "gone at read 1 and PRESENT again at read 4" in monotonic["evidence"]
+    assert "nothing written between the two" in monotonic["evidence"]
+    assert "read 4 would have reported a removal that had in fact taken" in (
+        monotonic["evidence"]
+    )
+    # The whole sequence, on the row that is about the sequence.
+    assert monotonic["evidence"].count("read ") >= 5, monotonic["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_removal_the_enumeration_never_reflected_answers_no_monotonic_question(
+) -> None:
+    """A binding present on all five reads never made the transition the
+    question is about, so there was nothing for a later read to reverse.
+
+    NOT ESTABLISHED rather than a claim of stability: an enumeration that
+    never moved is not an enumeration measured not to move back.
+    """
+    rows, _urls, _output = _run_operator_grant_probe(removalReDerives=True)
+
+    assert rows["access.list-acl.operator-binding-removal-sticks"]["outcome"] == (
+        "STILL PRESENT"
+    )
+    monotonic = rows["access.list-acl.enumeration-is-monotonic"]
+    assert monotonic["outcome"] == "NOT ESTABLISHED", monotonic
+    assert monotonic["state"] == "open"
+    assert "never reflected the removal" in monotonic["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_break_with_no_operator_binding_reports_the_premise_as_unmet() -> None:
     """`_lists.js.j2` says the break leaves the operator's own grant. A
     tenant where it does not is the answer to that claim, and it is NOT a
@@ -9444,6 +9517,9 @@ def test_a_break_with_no_operator_binding_reports_the_premise_as_unmet() -> None
     sticks = rows["access.list-acl.operator-binding-removal-sticks"]
     assert sticks["outcome"].startswith("NOT REACHED")
     assert sticks["state"] == "awaiting-capture"
+    monotonic = rows["access.list-acl.enumeration-is-monotonic"]
+    assert monotonic["outcome"] == "NOT REACHED"
+    assert monotonic["evidence"] == "nothing was removed, so no read sequence was taken."
     assert _restored(urls)
 
 
@@ -9621,6 +9697,7 @@ _OPERATOR_BREAK_GATED = (
     "access.list-acl.break-leaves-bindings",
     "access.list-acl.break-leaves-operator-binding",
     "access.list-acl.operator-binding-removal-sticks",
+    "access.list-acl.enumeration-is-monotonic",
     "access.list-acl.derived-level-names",
 )
 
