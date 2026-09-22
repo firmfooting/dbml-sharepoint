@@ -10539,6 +10539,333 @@
           ]
         }
       ]
+    },
+    {
+      "file": "library-lookup-write-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch document library holding two files, one of them given a Title, and two calculated columns; two scratch generic lists holding three items between them, four lookup columns and one text column on the source list, and up to seven further source rows created through an item POST and the new-item form endpoint"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "permission to create and recycle lists and libraries on the site",
+        "permission to upload a file to a library"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.doc-lib.fixture-library-created",
+              "depends_on": []
+            },
+            {
+              "id": "library.lookup.fixture-write-containers-ready",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
+              "id": "library.lookup.control-whole-item-read-before-lookups",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready"
+              ]
+            },
+            {
+              "id": "library.lookup.control-list-to-list-merge-write",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready"
+              ]
+            },
+            {
+              "id": "library.lookup.control-list-to-list-create-write",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready"
+              ]
+            },
+            {
+              "id": "library.lookup.control-list-to-list-form-write",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready"
+              ]
+            },
+            {
+              "id": "library.lookup.control-text-column-item-writes",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready"
+              ]
+            },
+            {
+              "id": "library.lookup.control-list-to-list-create-write-string-id",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready"
+              ]
+            },
+            {
+              "id": "library.lookup.list-to-library-title-addfield-created",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready"
+              ]
+            },
+            {
+              "id": "library.lookup.whole-item-read-with-title-lookup-column",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready",
+                "library.lookup.control-whole-item-read-before-lookups",
+                "library.lookup.list-to-library-title-addfield-created"
+              ]
+            },
+            {
+              "id": "library.lookup.list-to-library-name-addfield-created",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready"
+              ]
+            },
+            {
+              "id": "library.lookup.whole-item-read-with-name-lookup-column",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready",
+                "library.lookup.control-whole-item-read-before-lookups",
+                "library.lookup.list-to-library-name-addfield-created"
+              ]
+            },
+            {
+              "id": "library.lookup.list-to-library-name-merge-write",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready",
+                "library.lookup.control-list-to-list-merge-write",
+                "library.lookup.list-to-library-name-addfield-created"
+              ]
+            },
+            {
+              "id": "library.lookup.list-to-library-titled-file-merge-write",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready",
+                "library.lookup.control-list-to-list-merge-write",
+                "library.lookup.list-to-library-title-addfield-created"
+              ]
+            },
+            {
+              "id": "library.lookup.list-to-library-name-create-write",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready",
+                "library.lookup.control-list-to-list-create-write",
+                "library.lookup.list-to-library-name-addfield-created",
+                "library.lookup.control-list-to-list-create-write-string-id"
+              ]
+            },
+            {
+              "id": "library.lookup.list-to-library-title-create-write",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready",
+                "library.lookup.control-list-to-list-create-write",
+                "library.lookup.list-to-library-title-addfield-created",
+                "library.lookup.control-list-to-list-create-write-string-id"
+              ]
+            },
+            {
+              "id": "library.lookup.list-to-library-title-form-write",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready",
+                "library.lookup.control-list-to-list-form-write",
+                "library.lookup.list-to-library-title-addfield-created"
+              ]
+            },
+            {
+              "id": "library.lookup.title-bound-row-read-after-write",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready",
+                "library.lookup.control-list-to-list-form-write",
+                "library.lookup.list-to-library-title-addfield-created",
+                "library.lookup.list-to-library-title-form-write"
+              ]
+            },
+            {
+              "id": "library.formula.calc-name-operand",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready"
+              ]
+            },
+            {
+              "id": "library.lookup.list-to-library-calc-name-addfield-created",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready",
+                "library.formula.calc-name-operand"
+              ]
+            },
+            {
+              "id": "library.lookup.list-to-library-calc-name-form-write",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready",
+                "library.lookup.control-list-to-list-form-write",
+                "library.lookup.list-to-library-calc-name-addfield-created"
+              ]
+            },
+            {
+              "id": "library.lookup.calc-name-bound-row-read-after-write",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready",
+                "library.lookup.control-list-to-list-form-write",
+                "library.lookup.list-to-library-calc-name-addfield-created",
+                "library.lookup.list-to-library-calc-name-form-write"
+              ]
+            },
+            {
+              "id": "library.lookup.list-to-library-calc-name-create-write",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready",
+                "library.lookup.control-list-to-list-create-write",
+                "library.lookup.control-list-to-list-create-write-string-id",
+                "library.lookup.list-to-library-calc-name-addfield-created"
+              ]
+            },
+            {
+              "id": "library.lookup.list-to-library-calc-name-expand-projects",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready",
+                "library.lookup.list-to-library-calc-name-addfield-created"
+              ]
+            },
+            {
+              "id": "library.lookup.list-to-library-name-form-write",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready",
+                "library.lookup.control-list-to-list-form-write",
+                "library.lookup.list-to-library-name-addfield-created"
+              ]
+            },
+            {
+              "id": "library.lookup.name-bound-row-read-after-write",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready",
+                "library.lookup.control-list-to-list-form-write",
+                "library.lookup.list-to-library-name-addfield-created",
+                "library.lookup.list-to-library-name-form-write"
+              ]
+            },
+            {
+              "id": "library.lookup.list-to-library-new-form-write",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready",
+                "library.lookup.control-list-to-list-form-write",
+                "library.lookup.list-to-library-name-addfield-created"
+              ]
+            },
+            {
+              "id": "library.lookup.list-to-library-name-expand-projects",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready",
+                "library.lookup.list-to-library-name-addfield-created"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.doc-lib.fixture-library-created",
+            "library.lookup.fixture-write-containers-ready",
+            "library.lookup.control-whole-item-read-before-lookups",
+            "library.lookup.control-list-to-list-merge-write",
+            "library.lookup.control-list-to-list-create-write",
+            "library.lookup.control-list-to-list-create-write-string-id",
+            "library.lookup.control-list-to-list-form-write",
+            "library.lookup.control-text-column-item-writes"
+          ]
+        },
+        {
+          "id": "calc-name-bound-picker",
+          "surface": "library",
+          "pattern": "single-visible-state",
+          "findings": [
+            {
+              "id": "library.lookup.calc-name-bound-picker-labels-files",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready",
+                "library.lookup.list-to-library-calc-name-addfield-created"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "role": "picker-open",
+              "page": "the scratch source list's NewForm.aspx, with the calculated-name-bound lookup's dropdown open",
+              "assertions": [
+                "the dropdown is open and its entries are legible",
+                "the number of entries offered is countable: the library holds exactly two files and no folder",
+                "each entry's label is readable, and whether it is the file name or blank is recorded per entry",
+                "after picking the untitled file and saving, whether the form saved and what the list view shows for the row"
+              ]
+            }
+          ],
+          "controls": [
+            "library.lookup.fixture-write-containers-ready",
+            "library.lookup.list-to-library-calc-name-addfield-created"
+          ]
+        },
+        {
+          "id": "name-bound-picker",
+          "surface": "library",
+          "pattern": "single-visible-state",
+          "findings": [
+            {
+              "id": "library.lookup.name-bound-picker-labels-files",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.lookup.fixture-write-containers-ready",
+                "library.lookup.list-to-library-name-addfield-created"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "role": "picker-open",
+              "page": "the scratch source list's NewForm.aspx, with the FileLeafRef-bound lookup's dropdown open",
+              "assertions": [
+                "the dropdown is open and its entries are legible",
+                "the number of entries offered is countable: the library holds exactly two files and no folder",
+                "each entry's label is readable, and whether it is the file name, the Title, or blank is recorded per entry",
+                "after picking the untitled file and saving, whether the form saved and what the row shows"
+              ]
+            }
+          ],
+          "controls": [
+            "library.lookup.fixture-write-containers-ready",
+            "library.lookup.list-to-library-name-addfield-created"
+          ]
+        }
+      ]
     }
   ]
 }

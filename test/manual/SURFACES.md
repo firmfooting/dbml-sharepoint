@@ -332,7 +332,7 @@ Probes: `document-library-probe.js`, `file-operations-probe.js`,
 `library-guards-probe.js`, `view-scope-revert-probe.js`,
 `folder-shape-probe.js`, `folder-create-refusal-probe.js`,
 `folder-under-schema-probe.js`, `library-builtin-view-probe.js`,
-`library-header-token-probe.js`
+`library-header-token-probe.js`, `library-lookup-write-probe.js`
 
 `index` is the newest scope and it is a divergence question, which is what
 qualifies it for `library` rather than for `scale`. `scale.index` holds what a
@@ -658,6 +658,8 @@ surface boundary, and are listed for the same reason:
 | `library-nesting-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 | `library-nesting-probe.js` | `control-missing-group-column-ungrouped` and `control-group-by-single-value-column`, the two grouping controls its folder-depth rows rest on, kept under the ids `library-grouping-probe.js` registers for the same questions by the same method | `library.view.*` |
 | `library-view-interaction-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
+| `library-lookup-write-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
+| `library-lookup-write-probe.js` | `calc-name-operand`, whether a library formula can read `[Name]`, measured on the way to a lookup bound to it | `library.formula.*` |
 | `library-large-list-fixture-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 | `library-large-list-preindex-fixture-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
 | `library-large-list-foldered-fixture-probe.js` | `fixture-library-created`, its own library-creation control | `library.doc-lib.*` |
@@ -687,6 +689,14 @@ different questions and take different ids. They do not merge.
 | Does a multi-value lookup carry its source's index | the column was created after the source was indexed | `field.multilookup.source-index-carry-at-create` |
 | How many lookups can one view project | a 6,000-row fixture, past the item threshold | `scale.join.lookup-column-ceiling` |
 | How many lookups can one view project | a four-row list, nowhere near the threshold | `scale.join.control-ceiling-small-list` |
+| Is a list's lookup into a library created bound | `createfieldasxml` naming the target by GUID | `library.lookup.list-to-library-title-created`, `library.lookup.list-to-library-name-created` |
+| Is a list's lookup into a library created bound | `fields/addfield` with `SP.FieldCreationInformation`, the deploy's route | `library.lookup.list-to-library-title-addfield-created`, `library.lookup.list-to-library-name-addfield-created` |
+| Can a list's lookup into a library be set to a file | an item MERGE on the Title-bound column, the file untitled | `library.lookup.list-to-library-item-write` |
+| Can a list's lookup into a library be set to a file | an item MERGE on the Name-bound column | `library.lookup.list-to-library-name-merge-write` |
+| Can a list's lookup into a library be set to a file | an item MERGE on the Title-bound column, the file titled | `library.lookup.list-to-library-titled-file-merge-write` |
+| Can a list's lookup into a library be set to a file | an item POST in the deploy's seed shape, per binding | `library.lookup.list-to-library-name-create-write`, `library.lookup.list-to-library-title-create-write` |
+| Can a list's lookup into a library be set to a file | `ValidateUpdateListItem` on an existing row, per binding | `library.lookup.list-to-library-title-form-write`, `library.lookup.list-to-library-name-form-write` |
+| Can a list's lookup into a library be set to a file | `AddValidateUpdateItemUsingPath` on a new row | `library.lookup.list-to-library-new-form-write` |
 | Does `Indexed: true` stick on a text column | on a generic list, beside a 6,000-row fixture the index is then exercised against | `scale.index.indexed-autoindexed-flags` |
 | Does `Indexed: true` stick on a text column | on a document library, the flag alone, with no threshold fixture behind it | `library.index.text-column-indexed` |
 | How many lookups can one view project | a one-item list, as the baseline the library is compared against | `scale.join.control-list-lookup-ceiling` |
