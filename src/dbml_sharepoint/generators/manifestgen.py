@@ -2,7 +2,6 @@
 """Render deploy-manifest.md."""
 
 import json
-from collections.abc import Mapping, Sequence
 from typing import Any
 
 from dbml_sharepoint.analysis.condition_description import describe
@@ -10,6 +9,7 @@ from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.limits import MAX_VALIDATION_FORMULA, MAX_VALIDATION_MESSAGE
 from dbml_sharepoint.analysis.permissions import lists_granting_group
 from dbml_sharepoint.analysis.phases import phase_numbers
+from dbml_sharepoint.analysis.resolve import ResolvedMapping
 from dbml_sharepoint.extension import ManifestExtras
 from dbml_sharepoint.generators.jsgen import UNMANAGED
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
@@ -21,7 +21,7 @@ from dbml_sharepoint.templating import script_env
 def generate_manifest(
     *,
     schema_json: dict[str, Any],
-    enum_members: Mapping[str, Sequence[str]],
+    resolved: ResolvedMapping,
     findings: list[Finding],
     bundle: MappingBundle,
     release: Release,
@@ -59,6 +59,15 @@ def generate_manifest(
     promising two log lists the deploy script it documents never emits. The
     manifest describes what was built, so the default has to be the built
     default and not the module's idea of a title.
+
+    No `resolved.require_resolved()` call here: this function still renders
+    a findings-only manifest on a build that failed validation (that is the
+    whole point of writing one), and a mapping with a genuinely unresolved
+    enum is exactly the shape such a build has. `lists_granting_group` below
+    only reads `resolved.folder_policies` for the entities THIS build
+    deploys, the same scope `declared_folders` was called at before, so a
+    reachable defect there still surfaces as a `KeyError` and not a silent
+    omission.
     """
     template = script_env().get_template("manifest.md.j2")
 
@@ -120,9 +129,7 @@ def generate_manifest(
     # that only ever sees "excluded" has no way to say "nothing" instead of
     # "everything except everything".
     _reader_split = [
-        lists_granting_group(
-            bundle.mapping, name, _deployed_entities, enum_members,
-        )
+        lists_granting_group(resolved, name, _deployed_entities)
         for name in _reader_groups
     ]
     def _titles(scope: str) -> list[str]:

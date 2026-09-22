@@ -46,6 +46,7 @@ from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
 
 if TYPE_CHECKING:
+    from dbml_sharepoint.analysis.resolve import ResolvedMapping
     from dbml_sharepoint.extension import DeploymentExtension, SiteContext
     from dbml_sharepoint.model.mapping_types import MappingBundle
     from dbml_sharepoint.model.parser import Schema
@@ -317,6 +318,7 @@ def emit_bundle(
     *,
     schema: "Schema",
     mapping_bundle: "MappingBundle",
+    resolved: "ResolvedMapping",
     release: "Release",
     site_url: str,
     site_role: str,
@@ -381,7 +383,7 @@ def emit_bundle(
     write_artifact(
         out / DEPLOY_SCRIPT,
         generate_deploy_js(
-            schema=schema, bundle=mapping_bundle, release=release,
+            schema=schema, bundle=mapping_bundle, resolved=resolved, release=release,
             site_url=site_url, site_role=site_role,
             source_dbml=schema_name, source_mtime=source_mtime,
             generated_at=generated_at,
@@ -418,7 +420,7 @@ def emit_bundle(
     write_artifact(
         out / ASSESS_SCRIPT,
         generate_assess_js(
-            schema=schema, bundle=mapping_bundle, release=release,
+            schema=schema, bundle=mapping_bundle, resolved=resolved, release=release,
             site_url=site_url, site_role=site_role,
             source_dbml=schema_name, generated_at=generated_at,
         ),
@@ -426,7 +428,7 @@ def emit_bundle(
     write_artifact(
         out / "assess-manifest.md",
         generate_assess_manifest(
-            schema=schema, bundle=mapping_bundle,
+            schema=schema, bundle=mapping_bundle, resolved=resolved,
             site_url=site_url, site_role=site_role,
         ),
     )
@@ -461,6 +463,7 @@ def emit_bundle(
         relpaths.append(DEMO_SCRIPT)
     relpaths += emit_reporting(
         out, schema, mapping_bundle, site_role,
+        resolved=resolved,
         release=release, generated_at=generated_at,
         source_schema=schema_name, source_mapping=mapping_name,
         # The build knows where this is going, so the reporting pack does

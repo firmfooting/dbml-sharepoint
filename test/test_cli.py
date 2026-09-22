@@ -27,6 +27,7 @@ from typer.testing import CliRunner, Result
 from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis import sidecars
 from dbml_sharepoint.analysis.findings import Finding
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.catalogue import (
     RELEASE_RELPATH,
     SCHEMA_RELPATH,
@@ -2228,7 +2229,10 @@ def test_report_writes_the_pack_render_reporting_renders(tmp_path: Path) -> None
         "default",
         release=None, generated_at="STAMP",
         source_schema="simple.dbml", source_mapping="sharepoint-mapping.yaml",
-        time_zone="UTC",
+        time_zone="UTC", resolved=resolve(
+            parse_dbml(FIXTURES / "simple.dbml"),
+            load_mapping(FIXTURES / "sharepoint-mapping.yaml").mapping,
+        ),
     )
     written = {
         path.relative_to(out).as_posix(): path.read_text(encoding="utf-8")

@@ -36,6 +36,7 @@ from _node import NODE
 from _node import run_node as _run
 from _paths import FIXTURES
 
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.generators.jsgen import generate_deploy_js
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.parser import parse_dbml
@@ -73,7 +74,10 @@ def _transport() -> str:
         site_role="default",
         source_dbml="x.dbml",
         source_mtime="2026-09-04T00:00:00Z",
-        generated_at="2026-09-04T00:00:00Z",
+        generated_at="2026-09-04T00:00:00Z", resolved=resolve(
+            parse_dbml(FIXTURES / "simple.dbml"),
+            load_mapping(FIXTURES / "sharepoint-mapping.yaml").mapping,
+        ),
     )
     start = js.index("  const DEBUG = false;")
     end = js.index("  let cachedDigest = null;")

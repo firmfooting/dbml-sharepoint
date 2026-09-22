@@ -33,6 +33,7 @@ from _node import NODE
 from _node import run_node as _run
 from _paths import FIXTURES
 
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.sidecars import (
     APPLICATION_NAME,
     CENTRAL_CHANGE_COLUMNS,
@@ -477,7 +478,7 @@ def _deploy_js(*, protect: bool = False) -> str:
         sidecar_change_fields=list(CHANGE_FIELDS),
         deployment_log_list=EXTERNAL_LOG_DEFAULT,
         deployment_log_change_list=EXTERNAL_CHANGE_LOG_DEFAULT,
-        deployment_log_site=CENTRAL_LOG_SITE_DEFAULT,
+        deployment_log_site=CENTRAL_LOG_SITE_DEFAULT, resolved=resolve(schema, bundle.mapping),
     )
     # The assessment is a whole second script's worth of probes and is not
     # what these runs are about; the renames harness stubs it the same way.

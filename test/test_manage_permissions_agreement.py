@@ -21,6 +21,7 @@ from _model import bundle as make_bundle
 from _model import schema as make_schema
 from _model import table as make_table
 
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.generators.assessgen import assess_targets
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.model.mapping_types import (
@@ -35,8 +36,12 @@ from dbml_sharepoint.model.mapping_types import (
 
 def _agree(bundle: MappingBundle, *, expected: bool) -> None:
     schema = make_schema(make_table("Risk", column("Title", required=True)))
-    assess_flag = assess_targets(schema, bundle, "default")["requires_manage_permissions"]
-    jsgen_flag = build_schema_json(schema, bundle, "default")["requires_manage_permissions"]
+    assess_flag = assess_targets(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )["requires_manage_permissions"]
+    jsgen_flag = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )["requires_manage_permissions"]
     assert assess_flag is expected, (
         f"assessgen.assess_targets disagreed with the fixture: "
         f"expected {expected}, got {assess_flag}"

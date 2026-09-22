@@ -20,6 +20,7 @@ own write policy (#171).
 
 from pathlib import Path
 
+from dbml_sharepoint.analysis.resolve import ResolvedMapping
 from dbml_sharepoint.bundle import (
     REPORT_DICTIONARY,
     REPORT_DIR,
@@ -51,6 +52,7 @@ def render_reporting(
     bundle: MappingBundle,
     site_role: str,
     *,
+    resolved: ResolvedMapping,
     release: Release | None,
     generated_at: str,
     source_schema: str,
@@ -111,7 +113,7 @@ def render_reporting(
         schema, bundle, site_role, site_url=site_url, time_zone=time_zone,
     )
     pack[REPORT_DICTIONARY] = generate_data_dictionary(
-        schema, bundle, site_role,
+        schema, bundle, site_role, resolved=resolved,
         release=release, generated_at=generated_at,
         source_schema=source_schema, source_mapping=source_mapping,
         time_zone=time_zone,
@@ -125,6 +127,7 @@ def emit_reporting(
     bundle: MappingBundle,
     site_role: str,
     *,
+    resolved: ResolvedMapping,
     release: Release | None,
     generated_at: str,
     source_schema: str,
@@ -141,7 +144,7 @@ def emit_reporting(
     every artifact has rendered.
     """
     pack = render_reporting(
-        schema, bundle, site_role,
+        schema, bundle, site_role, resolved=resolved,
         release=release, generated_at=generated_at,
         source_schema=source_schema, source_mapping=source_mapping,
         site_url=site_url, time_zone=time_zone,

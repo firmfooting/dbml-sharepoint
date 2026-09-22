@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import dbml_sharepoint
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.generators.jsgen import generate_deploy_js
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.parser import parse_dbml
@@ -35,9 +36,12 @@ _FIXED_ARGS: dict[str, Any] = {
 
 def _family_deploy_js() -> str:
     """The real family, because it is what carries projections in the fleet."""
+    schema = parse_dbml(FAMILY / "10-design" / "schema.dbml")
+    bundle = load_mapping(FAMILY / "20-configure" / "mapping.yaml")
     return generate_deploy_js(
-        schema=parse_dbml(FAMILY / "10-design" / "schema.dbml"),
-        bundle=load_mapping(FAMILY / "20-configure" / "mapping.yaml"),
+        schema=schema,
+        bundle=bundle,
+        resolved=resolve(schema, bundle.mapping),
         release=load_release(FAMILY / "20-configure" / "release.yaml"),
         **_FIXED_ARGS,
     )

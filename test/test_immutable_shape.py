@@ -10,6 +10,7 @@ from dbml_sharepoint.analysis.immutable_shape import (
     IMMUTABLE_LIST_PROPERTIES,
     IMMUTABLE_LOOKUP_PROPERTIES,
 )
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.typemap import (
     DERIVED_FIELD_PROPERTIES,
     DERIVED_FIELD_PROPERTY_KINDS,
@@ -70,7 +71,10 @@ def _deploy_js() -> str:
         site_role="default",
         source_dbml="simple.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(
+            parse_dbml(FIXTURES / "simple.dbml"),
+            load_mapping(FIXTURES / "sharepoint-mapping.yaml").mapping,
+        ),
     )
 
 

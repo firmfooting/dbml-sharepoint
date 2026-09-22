@@ -6,6 +6,7 @@ from typing import Any
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.list_description import family_for, marker_for
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.generators.jsgen import generate_deploy_js
 from dbml_sharepoint.generators.rollbackgen import generate_rollback_js
 from dbml_sharepoint.model.mapping_loader import load_mapping
@@ -142,6 +143,7 @@ def test_rollback_order_is_reverse_of_deploy_order() -> None:
     deploy_js = generate_deploy_js(
         schema=schema,
         bundle=bundle,
+        resolved=resolve(schema, bundle.mapping),
         release=release,
         source_mtime="2026-05-04T00:00:00Z",
         **_COMMON_ARGS,

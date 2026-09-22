@@ -28,6 +28,7 @@ from _node import run_node as _run
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.list_description import family_for, marker_for
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.generators.jsgen import generate_deploy_js
 from dbml_sharepoint.model.mapping_types import EntityMapping, MappingBundle
 from dbml_sharepoint.model.parser import Schema
@@ -125,7 +126,7 @@ def _deploy_js(*, with_assessment: bool = False) -> str:
         schema=schema, bundle=bundle, release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test", site_role="default",
         source_dbml="x.dbml", source_mtime="2026-09-03T00:00:00Z",
-        generated_at="2026-09-03T00:00:00Z",
+        generated_at="2026-09-03T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     if with_assessment:
         return js
@@ -407,7 +408,10 @@ def _run_lookup_deploy(
         release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test", site_role="default",
         source_dbml="x.dbml", source_mtime="2026-09-03T00:00:00Z",
-        generated_at="2026-09-03T00:00:00Z",
+        generated_at="2026-09-03T00:00:00Z", resolved=resolve(
+            _lookup_schema(display_column=display_column),
+            _lookup_bundle(display_column=display_column).mapping,
+        ),
     )
     body = js.replace(
         "    assessment = await assessSite({",

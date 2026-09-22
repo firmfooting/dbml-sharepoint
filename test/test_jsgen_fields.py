@@ -19,6 +19,7 @@ from _paths import FIXTURES
 from test_jsgen import _CrossSiteExpansion, _generate_simple_js
 
 from dbml_sharepoint.analysis.phases import phase_number as pn
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.typemap import FieldKind, map_column
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.extension import BaseExtension
@@ -41,7 +42,7 @@ def test_schema_output_takes_indexes_from_dbml(tmp_path: Path) -> None:
         dbml=table("Risk", ID_PK, "Status nvarchar", "indexes { Status }"),
         mapping=entities("Risk"),
     )
-    output = build_schema_json(schema, bundle, "default")
+    output = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     assert output["indexed_columns"] == [{"list": "APP_Risk", "field": "Status"}]
 
 
@@ -58,7 +59,7 @@ def test_a_lookup_targets_display_column_is_deployed_as_an_index(
         ),
         mapping=entities(entity("Event", display_column="EventRef"), "FollowUp"),
     )
-    output = build_schema_json(schema, bundle, "default")
+    output = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     assert {"list": "APP_Event", "field": "EventRef"} in output["indexed_columns"]
     # Once, not twice, when it is also declared in indexes { }.
     assert output["indexed_columns"].count(
@@ -84,6 +85,7 @@ def test_a_cross_site_ref_does_not_index_the_far_list(tmp_path: Path) -> None:
     )
     output = build_schema_json(
         schema, bundle, "default", extension=_CrossSiteExpansion(),
+        resolved=resolve(schema, bundle.mapping),
     )
     assert output["indexed_columns"] == []
 
@@ -105,6 +107,7 @@ def test_a_target_of_both_ref_kinds_still_gets_its_index(tmp_path: Path) -> None
     )
     output = build_schema_json(
         schema, bundle, "default", extension=_CrossSiteExpansion(),
+        resolved=resolve(schema, bundle.mapping),
     )
     assert output["indexed_columns"] == [{"list": "APP_FlowRunLog", "field": "Title"}]
 
@@ -131,7 +134,7 @@ def test_choice_and_lookup_unique_constraints_are_deployed(tmp_path: Path) -> No
         mapping=entities("Project", "Task"),
     )
 
-    output = build_schema_json(schema, bundle, "default")
+    output = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     task = next(item for item in output["lists"] if item["title"] == "APP_Task")
     fields = {field["title"]: field for field in task["fields_phase1"]}
 
@@ -202,7 +205,9 @@ def test_number_default_is_string_in_create_and_merge_shapes() -> None:
 
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     project = next(lst for lst in schema_json["lists"] if lst["title"] == "APP_Project")
     sort_order = next(
         entry for entry in project["fields_phase1"] if entry["title"] == "SortOrder"
@@ -284,7 +289,9 @@ def test_declared_defaults_are_reconciled_on_existing_fields() -> None:
     """A skipped existing field must still receive its declared default."""
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
 
     assert {
         "list": "APP_Project",
@@ -346,7 +353,9 @@ def test_immediate_lookup_uses_addfield_creation_information() -> None:
     """A normal Phase-1 lookup uses FieldCollection.AddField's exact shape."""
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     task = next(item for item in schema_json["lists"] if item["title"] == "APP_Task")
     lookup = next(field for field in task["fields_phase1"] if field["title"] == "Project")
     assert lookup["lookup_creation_parameters"] == {
@@ -384,7 +393,9 @@ def test_deferred_circular_lookup_uses_addfield_creation_information(
     bundle = load_mapping(tmp_path / "mapping.yaml")
     release = load_release(FIXTURES / "release.yaml")
 
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     assert schema_json["phase2_lookups"]
     for deferred in schema_json["phase2_lookups"]:
         parameters = deferred["field"]["lookup_creation_parameters"]
@@ -403,7 +414,7 @@ def test_deferred_circular_lookup_uses_addfield_creation_information(
         site_role="default",
         source_dbml="circular.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     phase2 = js.split(f"Starting Phase {pn('lookups')}")[1].split(
         f"Starting Phase {pn('indexes')}")[0]
@@ -423,7 +434,9 @@ def test_self_lookup_is_deferred_with_addfield_parameters(tmp_path: Path) -> Non
     schema = parse_dbml(FIXTURES / "self-ref.dbml")
     bundle = load_mapping(tmp_path / "mapping.yaml")
     release = load_release(FIXTURES / "release.yaml")
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
 
     assert len(schema_json["phase2_lookups"]) == 1
     deferred = schema_json["phase2_lookups"][0]
@@ -447,7 +460,7 @@ def test_self_lookup_is_deferred_with_addfield_parameters(tmp_path: Path) -> Non
         site_role="default",
         source_dbml="self-ref.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     assert '"target_list": "APP_Node"' in js
     assert '"type": "SP.FieldCreationInformation"' in js
@@ -459,7 +472,9 @@ def test_choice_fields_disable_fill_in_and_preserve_exact_order() -> None:
     """Choice adoption cannot silently accept extra/reordered free-form values."""
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     project = next(lst for lst in schema_json["lists"] if lst["title"] == "APP_Project")
     status = next(field for field in project["fields_phase1"] if field["title"] == "Status")
 
@@ -523,7 +538,7 @@ def test_no_title_list_gets_required_false_title_patch(tmp_path: Path) -> None:
         dbml=table("Attendance", ID_PK, "Notes nvarchar"),
         mapping=entities("Attendance"),
     )
-    sj = build_schema_json(schema, bundle, "default")
+    sj = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     att = next(lst for lst in sj["lists"] if lst["title"] == "APP_Attendance")
     assert att["title_patch"] is not None
     assert att["title_patch"]["Required"] is False
@@ -545,7 +560,12 @@ def test_a_library_gets_no_title_patch_when_it_would_only_clear_required(
         dbml=table("Attendance", ID_PK, "Notes nvarchar"),
         mapping=entities("Attendance"),
     )
-    sj = build_schema_json(schema, as_library(bundle, "Attendance"), "default")
+    sj = build_schema_json(
+        schema,
+        as_library(bundle, "Attendance"),
+        "default",
+        resolved=resolve(schema, as_library(bundle, "Attendance").mapping),
+    )
     att = next(lst for lst in sj["lists"] if lst["title"] == "APP_Attendance")
     assert att["title_patch"] is None
 
@@ -568,7 +588,12 @@ def test_a_library_still_patches_title_for_a_declared_rename(
             "      Title: 'Session'",
         ])),
     )
-    sj = build_schema_json(schema, as_library(bundle, "Attendance"), "default")
+    sj = build_schema_json(
+        schema,
+        as_library(bundle, "Attendance"),
+        "default",
+        resolved=resolve(schema, as_library(bundle, "Attendance").mapping),
+    )
     att = next(lst for lst in sj["lists"] if lst["title"] == "APP_Attendance")
     assert att["title_patch"]["Title"] == "Session"
 
@@ -634,7 +659,9 @@ def test_generated_condition_fields_are_typed_in_schema_output(tmp_path: Path) -
     assert not [
         f for f in validate_all(schema, bundle, Expansion()) if f.severity == "error"
     ]
-    output = build_schema_json(schema, bundle, "default", extension=Expansion())
+    output = build_schema_json(
+        schema, bundle, "default", extension=Expansion(), resolved=resolve(schema, bundle.mapping),
+    )
     risk = next(item for item in output["lists"] if item["title"] == "APP_Risk")
     note = next(item for item in risk["fields_phase1"] if item["title"] == "Note")
     assert "[$Title]" in note["client_validation_formula"]
@@ -656,7 +683,7 @@ def test_calculated_field_rendered_with_formula_and_output_type() -> None:
         site_role="default",
         source_dbml="calculated.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     assert "SP.FieldCalculated" in js
     assert '"FieldTypeKind": 17' in js
@@ -704,7 +731,9 @@ def test_calculated_fields_are_created_after_referenced_columns(
         """),
     )
     risk = next(
-        lst for lst in build_schema_json(schema, bundle, "default")["lists"]
+        lst for lst in build_schema_json(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )["lists"]
         if lst["title"] == "APP_Risk"
     )
     assert [field["title"] for field in risk["fields_phase1"]] == [
@@ -729,7 +758,7 @@ def test_calculated_field_shape_gate_expects_intrinsic_read_only() -> None:
         site_role="default",
         source_dbml="calculated.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     assert "const expectReadOnly = desired.typeAsString === 'Calculated'" in js
     assert "actual.ReadOnlyField !== expectReadOnly" in js
@@ -754,7 +783,7 @@ def test_formula_comparison_decodes_xml_character_entities() -> None:
         site_role="default",
         source_dbml="calculated.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     assert "if (name === 'Formula') return canonicalFormula(value)" in js
     assert "replace(/&lt;/g, '<')" in js
@@ -807,7 +836,7 @@ def test_calculated_kind_wired_into_reconciliation_machinery() -> None:
         site_role="default",
         source_dbml="calculated.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     # Double-quoted since the map became `| tojson` of the Python pairing.
     assert '[17, "Calculated"]' in js
@@ -881,7 +910,7 @@ def _titled(
         )),
         mapping=with_tail(entities("Risk"), "\n".join(tail)),
     )
-    sj = build_schema_json(schema, bundle, "default")
+    sj = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     return next(lst for lst in sj["lists"] if lst["title"] == "APP_Risk")
 
 
@@ -945,7 +974,9 @@ def test_a_declared_default_formula_rides_the_create_body_and_the_defaults_phase
                 Due: "=TODAY()"
         """),
     )
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     bodies = {f["title"]: f["body"] for f in schema_json["lists"][0]["fields_phase1"]}
     assert bodies["PeriodYear"]["DefaultFormula"] == "=YEAR(TODAY())"
     assert "DefaultValue" not in bodies["PeriodYear"]
@@ -963,7 +994,10 @@ def test_a_column_without_a_default_formula_carries_no_such_key() -> None:
     schema_json = build_schema_json(
         parse_dbml(FIXTURES / "simple.dbml"),
         load_mapping(FIXTURES / "sharepoint-mapping.yaml"),
-        "default",
+        "default", resolved=resolve(
+            parse_dbml(FIXTURES / "simple.dbml"),
+            load_mapping(FIXTURES / "sharepoint-mapping.yaml").mapping,
+        ),
     )
     assert all(
         "DefaultFormula" not in f["body"]
@@ -1013,7 +1047,7 @@ def _stakeholder_title_patch(tmp_path: Path, *, unique: bool) -> dict[str, Any]:
         dbml=table("Stakeholder", ID_PK, declaration),
         mapping=entities("Stakeholder"),
     )
-    sj = build_schema_json(schema, bundle, "default")
+    sj = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     built = next(lst for lst in sj["lists"] if lst["title"] == "APP_Stakeholder")
     patch = built["title_patch"]
     assert patch is not None

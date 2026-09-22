@@ -33,6 +33,7 @@ from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.list_description import marker_for
 from dbml_sharepoint.analysis.phases import phase_number as pn
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.extension import BaseExtension
 
 
@@ -55,7 +56,10 @@ def _deploy_js_with_assessment() -> str:
         site_role="default",
         source_dbml="simple.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(
+            parse_dbml(FIXTURES / "simple.dbml"),
+            load_mapping(FIXTURES / "sharepoint-mapping.yaml").mapping,
+        ),
     )
 
 
@@ -1225,7 +1229,7 @@ def _list_only_deploy_js(tmp_path: Path) -> str:
         site_role="default",
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
 
 
@@ -1302,7 +1306,9 @@ def test_missing_list_ownership_blocks_embedded_assessment_before_preflight() ->
 
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
-    titles = assess_targets(schema, bundle, "default")["list_titles"]
+    titles = assess_targets(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )["list_titles"]
     harness = _ADOPTED_HARNESS.replace(
         "const LIST_DESCRIPTIONS = new Map([]);",
         "const LIST_DESCRIPTIONS = new Map("
@@ -1669,7 +1675,9 @@ def _declared_list_descriptions(
         tmp_path, "", prefix, table_names=table_names,
         self_reference=self_reference,
     )
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     return {entry["title"]: entry["description"] for entry in schema_json["lists"]}
 
 
@@ -1680,7 +1688,9 @@ def _declared_list_markers(
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema, bundle = _declared_pack(tmp_path, "", prefix)
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     return {entry["title"]: entry["expected_marker"] for entry in schema_json["lists"]}
 
 
@@ -1863,7 +1873,7 @@ def test_owned_list_named_proto_reaches_reconciliation(tmp_path: Path) -> None:
     schema, bundle = _declared_pack(
         tmp_path, "", prefix='prefix: ""', table_name="__proto__",
     )
-    built = build_schema_json(schema, bundle, "default")
+    built = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     descriptions = {
         entry["title"]: entry["description"] for entry in built["lists"]
     }
@@ -3161,9 +3171,10 @@ def test_involvement_notes_requires_conversion_before_redeployment() -> None:
     from dbml_sharepoint.model.parser import parse_dbml
 
     root = SOLUTION_TEMPLATES / "programme-governance"
+    gov_schema = parse_dbml(root / "10-design/schema.dbml")
+    gov_bundle = load_mapping(root / "20-configure/mapping.yaml")
     declaration = build_schema_json(
-        parse_dbml(root / "10-design/schema.dbml"),
-        load_mapping(root / "20-configure/mapping.yaml"), "default",
+        gov_schema, gov_bundle, "default", resolved=resolve(gov_schema, gov_bundle.mapping),
     )
     involvement = next(x for x in declaration["lists"] if x["title"] == "GOV_Involvement")
     notes = next(f for f in involvement["fields_phase1"] if f["title"] == "Notes")
@@ -4463,7 +4474,7 @@ def _declared_deploy_js(
         site_role="default",
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     ))
 
 
@@ -4790,7 +4801,10 @@ def _reader_deploy_js(
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
         enterprise_reader=enterprise_reader,
-        **sidecar_args,
+        **sidecar_args, resolved=resolve(
+            parse_dbml(FIXTURES / "simple.dbml"),
+            load_mapping(FIXTURES / "sharepoint-mapping-with-reader.yaml").mapping,
+        ),
     ))
 
 
@@ -5554,7 +5568,7 @@ def _run_folder_and_list_reader_deploy(
         sidecar_run_log_fields=list(RUN_LOG_STAMP_COLUMNS),
         sidecar_change_log_title=CHANGE_LOG_TITLE,
         sidecar_change_log_marker=change_log_marker(),
-        sidecar_change_fields=list(CHANGE_FIELDS),
+        sidecar_change_fields=list(CHANGE_FIELDS), resolved=resolve(schema, bundle.mapping),
     ))
     # Neither entity is in DEFAULT_LIST_DESCRIPTIONS, so the harness's
     # "every probed list is already there" fiction would otherwise report
@@ -6341,7 +6355,7 @@ def _declared_reader_deploy_js(tmp_path: Path) -> str:
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
-        enterprise_reader=_READER_ADDRESS,
+        enterprise_reader=_READER_ADDRESS, resolved=resolve(schema, bundle.mapping),
     ))
 
 
@@ -7830,7 +7844,9 @@ def _ownership_deploy_js(
         tmp_path, table_names, declare_assignments=declare_assignments,
     )
     titles = tuple(
-        entry["title"] for entry in build_schema_json(schema, bundle, "default")["lists"]
+        entry["title"] for entry in build_schema_json(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )["lists"]
     )
     return _without_assessment(generate_deploy_js(
         schema=schema,
@@ -7841,7 +7857,7 @@ def _ownership_deploy_js(
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
-        extension=_OwnershipSeedExtension(titles),
+        extension=_OwnershipSeedExtension(titles), resolved=resolve(schema, bundle.mapping),
     ))
 
 
@@ -7859,7 +7875,9 @@ def _ownership_list_descriptions(
     schema, bundle = _ownership_pack(tmp_path, table_names)
     return {
         entry["title"]: entry["description"]
-        for entry in build_schema_json(schema, bundle, "default")["lists"]
+        for entry in build_schema_json(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )["lists"]
     }
 
 

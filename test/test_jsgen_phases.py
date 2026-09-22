@@ -18,6 +18,7 @@ from _paths import FIXTURES
 from test_jsgen import _FIXED_ARGS, _generate_simple_js, _generate_views_js
 
 from dbml_sharepoint.analysis.phases import phase_number as pn
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.extension import BaseExtension, NullExtension, SiteContext
 from dbml_sharepoint.generators.assessgen import assess_targets
@@ -182,7 +183,9 @@ def test_the_deploy_carries_the_assessment_inputs_assess_js_uses() -> None:
     js = _generate_simple_js()
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
-    expected = assess_targets(schema, bundle, _FIXED_ARGS["site_role"])
+    expected = assess_targets(
+        schema, bundle, _FIXED_ARGS["site_role"], resolved=resolve(schema, bundle.mapping),
+    )
     # `tojson(indent=2)` indents the members but leaves the closing brace in
     # column 0, so that is the terminator, not the assignment's indent.
     match = re.search(r"const ASSESS_TARGETS = (\{.*?\n\});", js, re.DOTALL)
@@ -483,7 +486,7 @@ def test_seed_items_empty_with_null_extension() -> None:
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
 
-    sj = build_schema_json(schema, bundle, "default")
+    sj = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
 
     assert sj["seed_items"] == []
     assert "app_settings_seed" not in sj
@@ -518,7 +521,7 @@ def test_stub_extension_seed_rendered_in_generic_phase_5() -> None:
         schema, bundle, "default",
         site_url="https://example.sharepoint.com/sites/t1",
         release=release,
-        extension=_SeedExtension(),
+        extension=_SeedExtension(), resolved=resolve(schema, bundle.mapping),
     )
     assert sj["seed_items"] == [
         {
@@ -540,7 +543,7 @@ def test_stub_extension_seed_rendered_in_generic_phase_5() -> None:
         source_dbml="simple.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
-        extension=_SeedExtension(),
+        extension=_SeedExtension(), resolved=resolve(schema, bundle.mapping),
     )
     assert f"Phase {pn('seeds')}" in js
     assert "SCHEMA.seed_items" in js
@@ -588,7 +591,9 @@ def _hardening_inputs(tmp_path: Path) -> tuple[Schema, MappingBundle]:
 def test_hardening_flags_flow_to_schema(tmp_path: Path) -> None:
     schema, bundle = _hardening_inputs(tmp_path)
     risk = next(
-        lst for lst in build_schema_json(schema, bundle, "default")["lists"]
+        lst for lst in build_schema_json(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )["lists"]
         if lst["title"] == "APP_Risk"
     )
     assert risk["prevent_deletion"] is True
@@ -610,7 +615,7 @@ def test_template_brackets_writes_with_unseal_and_seal_phases(tmp_path: Path) ->
         site_role="default",
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     assert "Maintenance unseal" in js
     assert f"Starting Phase {pn('seal')}: seal declared columns" in js
@@ -638,7 +643,7 @@ def test_exit_restores_every_field_the_run_unsealed(tmp_path: Path) -> None:
         site_role="default",
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
 
     assert "const fieldsUnsealedForRun = new Map();" in js
@@ -688,7 +693,7 @@ def test_template_blocks_list_deletion_when_declared(tmp_path: Path) -> None:
         site_role="default",
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     assert "list.prevent_deletion" in js
     assert "$select=AllowDeletion" in js

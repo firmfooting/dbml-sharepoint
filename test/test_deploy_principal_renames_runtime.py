@@ -28,6 +28,7 @@ from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.group_description import marker_for_group
 from dbml_sharepoint.analysis.list_description import family_for
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.role_definition_description import marker_for_level
 from dbml_sharepoint.generators.jsgen import generate_deploy_js
 from dbml_sharepoint.model.mapping_loader import load_mapping
@@ -211,7 +212,7 @@ def _deploy_js(tmp_path: Path, *, with_assessment: bool = False) -> str:
         schema=schema, bundle=bundle, release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test", site_role="default",
         source_dbml="x.dbml", source_mtime="2026-09-03T00:00:00Z",
-        generated_at="2026-09-03T00:00:00Z",
+        generated_at="2026-09-03T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     if with_assessment:
         return js

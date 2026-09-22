@@ -14,6 +14,8 @@ from typing import Any
 
 import pytest
 from _builders import ID_PK, TITLE, table
+from _model import enum as make_enum
+from _model import schema as make_schema
 from _packs import (
     blocks,
     pack,
@@ -29,6 +31,7 @@ from dbml_sharepoint.analysis.groups import declared_groups
 from dbml_sharepoint.analysis.list_description import family_for
 from dbml_sharepoint.analysis.phases import phase_number as pn
 from dbml_sharepoint.analysis.provenance import MARKER_PREFIX
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.role_definition_description import marker_for_level
 from dbml_sharepoint.generators.jsgen import build_schema_json, generate_deploy_js
 from dbml_sharepoint.model.mapping_loader import load_mapping
@@ -47,7 +50,9 @@ def test_schema_json_has_permission_keys() -> None:
     acl_scopes keys (R5)."""
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
 
     assert "permission_levels" in schema_json
     assert "groups" in schema_json
@@ -91,7 +96,7 @@ def test_acl_scopes_emits_each_list_scope_before_its_own_folder_scopes(
     coincide for one list."""
     schema, bundle = two_libraries_with_list_and_folder_scopes(tmp_path)
 
-    out = build_schema_json(schema, bundle, "default")
+    out = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
 
     assert "list_assignments" not in out
     assert "folder_assignments" not in out
@@ -159,7 +164,7 @@ def test_acl_scopes_fails_closed_on_an_empty_or_blank_folder_name(
     )
 
     with pytest.raises(ValueError, match="empty or whitespace-only folder"):
-        build_schema_json(schema, bundle, "default")
+        build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
 
 
 def _schema_json_for_risk_register() -> dict[str, Any]:
@@ -525,11 +530,13 @@ def test_other_role_build_does_not_apply_scoped_default_policy() -> None:
         name="Task", kind="HubOnlyList", base_template=100, site_role="admin",
     )
 
-    hub_json = build_schema_json(schema, bundle, "admin")
+    hub_json = build_schema_json(schema, bundle, "admin", resolved=resolve(schema, bundle.mapping))
     assert [lst["title"] for lst in hub_json["lists"]] == ["APP_Task"]
     assert hub_json["acl_scopes"] == []
 
-    default_json = build_schema_json(schema, bundle, "default")
+    default_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     assert {la["list"] for la in default_json["acl_scopes"]} == {
         "APP_Project", "APP_AppSettings",
     }
@@ -576,7 +583,7 @@ def test_group_management_automation_rendered(tmp_path: Path) -> None:
         site_role="default",
         source_dbml="calculated.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     assert '"enroll_operator_during_deploy": true' in js
     assert "ProcessQuery" in js          # owner-set fallback endpoint
@@ -648,7 +655,7 @@ def test_groups_and_levels_carry_their_previous_names_and_markers(tmp_path: Path
     bundle = load_mapping(tmp_path / "m.yaml")
     schema = parse_dbml(FIXTURES / "simple.dbml")
     family = family_for(schema)
-    built = build_schema_json(schema, bundle, "default")
+    built = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     level = marker_for_level(family, "ADOPT Submit Only")
     assert built["permission_levels"][0]["previous_names"] == [
         {"name": "ADOPT Submit Only", "expected_marker": level},
@@ -687,7 +694,9 @@ def test_a_mapping_with_no_permissions_still_emits_acl_scopes() -> None:
         bundle, mapping=dataclasses.replace(bundle.mapping, permissions=None),
     )
 
-    schema_json = build_schema_json(schema, stripped, "default")
+    schema_json = build_schema_json(
+        schema, stripped, "default", resolved=resolve(schema, stripped.mapping),
+    )
 
     assert schema_json["acl_scopes"] == []
     assert schema_json["groups"] == []
@@ -796,7 +805,9 @@ def test_a_folder_grant_counts_as_a_grant_on_that_entity(tmp_path: Path) -> None
         ),
     )
 
-    reach = lists_granting_group(patched, "dbml Enterprise Readers", [entity], {})
+    reach = lists_granting_group(
+        resolve(make_schema(), patched), "dbml Enterprise Readers", [entity],
+    )
 
     assert reach.folder_only == [entity], reach
     assert reach.granted == [], reach
@@ -844,8 +855,9 @@ def test_a_folder_principal_template_resolving_to_the_reader_counts() -> None:
         ),
     )
 
+    area_schema = make_schema(enums=[make_enum("area", "Readers")])
     reach = lists_granting_group(
-        patched, "dbml Enterprise Readers", [entity], {"area": ["Readers"]},
+        resolve(area_schema, patched), "dbml Enterprise Readers", [entity],
     )
 
     assert (reach.granted, reach.folder_only, reach.excluded) == ([], [entity], [])
@@ -880,7 +892,9 @@ def test_a_folder_policy_over_an_entity_with_no_folders_grants_nothing() -> None
         ),
     )
 
-    reach = lists_granting_group(patched, "dbml Enterprise Readers", [entity], {})
+    reach = lists_granting_group(
+        resolve(make_schema(), patched), "dbml Enterprise Readers", [entity],
+    )
 
     assert (reach.granted, reach.folder_only, reach.excluded) == ([], [], [entity])
 
@@ -920,8 +934,9 @@ def test_a_folder_policy_off_this_build_does_not_demand_manage_permissions(
         ),
     )
 
-    assert requires_manage_permissions(bare, ["ElsewhereOnly"], {}) is True
-    assert requires_manage_permissions(bare, ["SomethingElse"], {}) is False
+    resolved = resolve(make_schema(), bare)
+    assert requires_manage_permissions(resolved, ["ElsewhereOnly"]) is True
+    assert requires_manage_permissions(resolved, ["SomethingElse"]) is False
 
 
 def test_a_group_source_over_an_empty_enum_does_not_demand_manage_permissions(
@@ -953,5 +968,7 @@ def test_a_group_source_over_an_empty_enum_does_not_demand_manage_permissions(
         ),
     )
 
-    assert requires_manage_permissions(bare, [], {"division": []}) is False
-    assert requires_manage_permissions(bare, [], {"division": ["Clinical"]}) is True
+    empty_division = make_schema(enums=[make_enum("division")])
+    populated_division = make_schema(enums=[make_enum("division", "Clinical")])
+    assert requires_manage_permissions(resolve(empty_division, bare), []) is False
+    assert requires_manage_permissions(resolve(populated_division, bare), []) is True

@@ -12,6 +12,7 @@ from _packs import pack
 from _paths import FIXTURES, PACKAGE
 
 from dbml_sharepoint.analysis.findings import FindingCode
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.typemap import (
     FIELD_KIND_BY_TYPE_KIND,
     FIELD_TYPE_KIND_BY_KIND,
@@ -583,7 +584,10 @@ def test_the_deploy_script_map_covers_every_field_kind() -> None:
         site_role="default",
         source_dbml="simple.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(
+            parse_dbml(FIXTURES / "simple.dbml"),
+            load_mapping(FIXTURES / "sharepoint-mapping.yaml").mapping,
+        ),
     )
     rendered = _rendered_type_as_string_map(js)
     rendered_multi = _rendered_type_as_string_map(js, "MULTI_TYPE_AS_STRING_BY_KIND")

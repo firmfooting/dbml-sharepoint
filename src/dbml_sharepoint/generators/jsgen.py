@@ -16,10 +16,8 @@ from dbml_sharepoint.analysis.column_refs import (
 )
 from dbml_sharepoint.analysis.condition_description import describe
 from dbml_sharepoint.analysis.condition_rendering import to_caml_protected, to_validation
-from dbml_sharepoint.analysis.folders import declared_folders, folder_policies
 from dbml_sharepoint.analysis.form_rendering import compose_visibility
 from dbml_sharepoint.analysis.group_description import group_description, marker_for_group
-from dbml_sharepoint.analysis.groups import declared_groups
 from dbml_sharepoint.analysis.joins import all_items_hidden
 from dbml_sharepoint.analysis.list_description import family_for, list_description, marker_for
 from dbml_sharepoint.analysis.lookups import (
@@ -37,6 +35,7 @@ from dbml_sharepoint.analysis.permissions import (
 )
 from dbml_sharepoint.analysis.phases import phases_context
 from dbml_sharepoint.analysis.rendered_columns import effective_view_fields
+from dbml_sharepoint.analysis.resolve import ResolvedMapping
 from dbml_sharepoint.analysis.role_definition_description import (
     level_description,
     marker_for_level,
@@ -106,6 +105,7 @@ def generate_deploy_js(
     *,
     schema: Schema,
     bundle: MappingBundle,
+    resolved: ResolvedMapping,
     release: Release,
     site_url: str,
     site_role: str,
@@ -135,6 +135,7 @@ def generate_deploy_js(
         schema,
         bundle,
         site_role,
+        resolved=resolved,
         site_url=site_url,
         release=release,
         extension=ext,
@@ -229,9 +230,9 @@ def generate_deploy_js(
         # the context name does not shadow the imported function.
         assess_requirements=[
             {"key": r.key, "description": r.description, "level_on_fail": r.level_on_fail}
-            for r in derive_requirements(schema, bundle, site_role)
+            for r in derive_requirements(schema, bundle, site_role, resolved=resolved)
         ],
-        assess_targets_data=assess_targets(schema, bundle, site_role),
+        assess_targets_data=assess_targets(schema, bundle, site_role, resolved=resolved),
         assess_not_assessable=list(NOT_ASSESSABLE),
     )
 
@@ -508,7 +509,7 @@ def _acl_scopes(
     bundle: MappingBundle,
     creation_order: Sequence[str],
     site_role: str,
-    enum_members: dict[str, list[str]],
+    resolved: ResolvedMapping,
 ) -> list[dict[str, Any]]:
     """Every securable this bundle writes role assignments to, list scopes and
     folder scopes in one collection.
@@ -537,9 +538,7 @@ def _acl_scopes(
             })
         # A folder policy on a list with no policy of its own emits folder
         # rows and no list row, which is why no consumer may assume a pair.
-        for folder, folder_policy in folder_policies(
-            table_name, entity.folder_source, bundle.mapping.permissions, enum_members,
-        ):
+        for folder, folder_policy in resolved.folder_policies[table_name]:
             if not folder.strip():
                 # Guarded here too because build_schema_json is public API:
                 # validate_against_mapping reports FOLDER_NAME_INVALID first.
@@ -565,11 +564,17 @@ def build_schema_json(
     bundle: MappingBundle,
     site_role: str,
     *,
+    resolved: ResolvedMapping,
     site_url: str = "",
     release: Release | None = None,
     extension: DeploymentExtension | None = None,
     site_context: SiteContext | None = None,
 ) -> dict[str, Any]:
+    # Fails closed exactly as `declared_folders`/`declared_groups` did before
+    # this read anything: a build must never silently omit a declared group
+    # or folder. `resolve()` itself stays lenient, so this call is the one
+    # place in this function's own path that turns "unresolved" into a raise.
+    resolved.require_resolved()
     by_name = {t.name: t for t in schema.tables}
     plan = compute_phases(schema, bundle.mapping.entities)
 
@@ -584,11 +589,6 @@ def build_schema_json(
     # expansion). Subtract cross_site_keys defensively.
     deferred_set = set(plan.phase2_lookups) - cross_site_keys
     enums_by_name = {e.name: e for e in schema.enums}
-    # One projection for every caller that resolves a `from_enum`
-    # declaration: the library's folders and the groups generated per
-    # member. Two derivations could disagree about which members exist,
-    # and the groups exist to hold the folders' grants.
-    enum_members = {name: e.members for name, e in enums_by_name.items()}
 
     calculated_by_entity = {
         table.name: {c.name for c in table.columns if c.type in CALCULATED_TYPES}
@@ -851,7 +851,7 @@ def build_schema_json(
             # than on the kind string, so a third kind cannot be mistaken for
             # a library by a string test in JavaScript.
             "is_library": entity.is_library,
-            "folders": list(declared_folders(entity.folder_source, enum_members)),
+            "folders": list(resolved.folders[table_name]),
             "description": list_description(
                 table.note, family=family, entity=table_name,
             ),
@@ -1102,7 +1102,7 @@ def build_schema_json(
                 "base_permissions": {"high": hl.high, "low": hl.low},
             })
 
-        for grp in declared_groups(mapping_perms, enum_members):
+        for grp in resolved.groups:
             groups_out.append({
                 "name": grp.name,
                 # The marker is composed HERE, not in the template, so the
@@ -1135,7 +1135,7 @@ def build_schema_json(
             })
 
         acl_scopes_out += _acl_scopes(
-            bundle, plan.list_creation_order, site_role, enum_members,
+            bundle, plan.list_creation_order, site_role, resolved,
         )
 
     # === Seed items (extension-provided) ===
@@ -1165,7 +1165,7 @@ def build_schema_json(
         # groups / a per-list policy" independently -- see
         # requires_manage_permissions and #166 item 5.
         "requires_manage_permissions": requires_manage_permissions(
-            bundle.mapping, role_tables, enum_members,
+            resolved, role_tables,
         ),
         "seed_items": seed_items,
     }

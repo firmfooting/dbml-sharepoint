@@ -17,6 +17,7 @@ from _node import NODE, run_node
 from _paths import EXPECTED, FIXTURES, write_golden
 
 from dbml_sharepoint.analysis.list_description import family_for, marker_for
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.generators.assessgen import (
     assess_targets,
     derive_requirements,
@@ -50,7 +51,9 @@ def _simple() -> tuple[Schema, MappingBundle]:
 
 def test_always_requirements_present() -> None:
     schema, bundle = _simple()
-    keys = {r.key for r in derive_requirements(schema, bundle, "default")}
+    keys = {r.key for r in derive_requirements(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )}
     assert {"manage_lists_bit", "site_not_locked"} <= keys
     assert "collision:APP_Project" in keys
     assert "collision:APP_Task" in keys
@@ -58,7 +61,9 @@ def test_always_requirements_present() -> None:
 
 def test_base_template_requirements_from_entities() -> None:
     schema, bundle = _simple()
-    keys = {r.key for r in derive_requirements(schema, bundle, "default")}
+    keys = {r.key for r in derive_requirements(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )}
     assert "list_template_100" in keys
 
 
@@ -70,24 +75,32 @@ def test_library_folders_are_assessed_and_required() -> None:
 
     schema, bundle = _simple()
     bundle = as_library(bundle, "Task", ("Clinical services", "Corporate"))
-    targets = assess_targets(schema, bundle, "default")
+    targets = assess_targets(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     assert targets["library_folders"] == [["APP_Task", ["Clinical services", "Corporate"]]]
     assert 101 in targets["base_templates"]
-    keys = {r.key for r in derive_requirements(schema, bundle, "default")}
+    keys = {r.key for r in derive_requirements(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )}
     assert "folder_shape:APP_Task" in keys
     assert "folder_shape:APP_Project" not in keys
-    plain = assess_targets(*_simple(), "default")
+    plain_schema, plain_bundle = _simple()
+    plain = assess_targets(
+        plain_schema, plain_bundle, "default",
+        resolved=resolve(plain_schema, plain_bundle.mapping),
+    )
     assert plain["library_folders"] == []
 
 
 def test_conditional_requirements_absent_on_bare_mapping() -> None:
     schema = make_schema(make_table("Risk", column("Title", required=True)))
     bundle = make_bundle(entities=["Risk"])
-    keys = {r.key for r in derive_requirements(schema, bundle, "default")}
+    keys = {r.key for r in derive_requirements(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )}
     assert "manage_permissions_bit" not in keys
     assert "process_query" not in keys
     assert "sealed_surface" not in keys
-    t = assess_targets(schema, bundle, "default")
+    t = assess_targets(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     assert t["list_titles"] == ["APP_Risk"]
     assert t["base_templates"] == [100]
     assert t["declares_groups"] is False
@@ -128,7 +141,9 @@ def test_styled_pack_requirements() -> None:
             overrides={},
         ),
     )
-    reqs = {r.key: r for r in derive_requirements(schema, bundle, "default")}
+    reqs = {r.key: r for r in derive_requirements(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )}
     assert reqs["manage_permissions_bit"].level_on_fail == "BLOCKED"
     assert reqs["process_query"].level_on_fail == "WARN"
     assert reqs["sealed_surface"].level_on_fail == "WARN"
@@ -160,9 +175,13 @@ def test_version_trim_is_not_probed_when_no_list_here_versions() -> None:
         versioning_overrides={"SomeOtherRoleEntity": {"enable_versioning": True}},
     )
 
-    assert assess_targets(schema, bundle, "default")["declares_versioning"] is False
+    assert assess_targets(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )["declares_versioning"] is False
     assert "version_trim_mode" not in {
-        r.key for r in derive_requirements(schema, bundle, "default")
+        r.key for r in derive_requirements(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )
     }
 
 
@@ -179,7 +198,9 @@ def test_version_trim_is_probed_when_an_override_turns_versioning_on() -> None:
         versioning_overrides={"Risk": {"enable_versioning": True}},
     )
 
-    assert assess_targets(schema, bundle, "default")["declares_versioning"] is True
+    assert assess_targets(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )["declares_versioning"] is True
 
 
 def test_manage_permissions_required_even_with_inheritance_left_alone() -> None:
@@ -220,10 +241,12 @@ def test_manage_permissions_required_even_with_inheritance_left_alone() -> None:
             overrides={},
         ),
     )
-    t = assess_targets(schema, bundle, "default")
+    t = assess_targets(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     assert t["declares_groups"] is False
     assert t["requires_manage_permissions"] is True
-    keys = {r.key for r in derive_requirements(schema, bundle, "default")}
+    keys = {r.key for r in derive_requirements(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )}
     assert "manage_permissions_bit" in keys
 
 
@@ -236,7 +259,7 @@ def _assess_js() -> str:
         release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test",
         site_role="default", source_dbml="simple.dbml",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
 
 
@@ -320,7 +343,9 @@ def test_assess_manifest_lists_requirements_and_honesty() -> None:
     schema, bundle = _simple()
     md = generate_assess_manifest(
         schema=schema, bundle=bundle,
-        site_url="https://x.sharepoint.com/sites/t", site_role="default",
+        site_url="https://x.sharepoint.com/sites/t", site_role="default", resolved=resolve(
+            schema, bundle.mapping,
+        ),
     )
     assert "# Site assessment" in md
     assert "manage_lists_bit" in md
@@ -361,7 +386,9 @@ def _declared_descriptions(
     Defaults to the simple pack; `pack` reads another schema and mapping.
     """
     schema, bundle = pack if pack is not None else _simple()
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     return {entry["title"]: entry["description"] for entry in schema_json["lists"]}
 
 
@@ -377,7 +404,9 @@ def test_assess_targets_carry_the_marker_from_the_shared_speller() -> None:
     """
     schema, bundle = _simple()
     family = family_for(schema)
-    assert assess_targets(schema, bundle, "default")["list_markers"] == [
+    assert assess_targets(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )["list_markers"] == [
         ("APP_Project", marker_for(family, "Project")),
         ("APP_Task", marker_for(family, "Task")),
         # The settings list the mapping adds. Every list this pack provisions
@@ -395,7 +424,9 @@ def test_every_provisioned_list_has_a_blocking_marker_requirement() -> None:
     right up until the uncovered list is the one that collides.
     """
     schema, bundle = _simple()
-    reqs = {r.key: r for r in derive_requirements(schema, bundle, "default")}
+    reqs = {r.key: r for r in derive_requirements(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )}
     for title in _declared_descriptions():
         key = f"{_MARKER_KEY}{title}"
         assert key in reqs, f"no marker requirement for '{title}': {sorted(reqs)}"
@@ -648,7 +679,9 @@ def test_assess_reports_a_provisioned_list_whose_marker_is_missing() -> None:
     # keys, so a WARN nobody declared a requirement for is logged and then
     # ignored -- the operator reads COMPATIBLE on a site that is not.
     schema, bundle = _simple()
-    declared = {r.key for r in derive_requirements(schema, bundle, "default")}
+    declared = {r.key for r in derive_requirements(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )}
     assert {f["key"] for f in blocked} <= declared, (
         "blocked on keys no requirement covers, so the verdict ignores them: "
         f"{sorted({f['key'] for f in blocked} - declared)}"
@@ -671,7 +704,7 @@ def _library_assess_js() -> str:
         release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test",
         site_role="default", source_dbml="simple.dbml",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
 
 
@@ -681,7 +714,8 @@ def _library_markers() -> dict[str, str]:
     from dbml_sharepoint.generators.assessgen import assess_targets
 
     schema, bundle = _library_pack()
-    return dict(assess_targets(schema, bundle, "default")["list_markers"])
+    targets = assess_targets(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
+    return dict(targets["list_markers"])
 
 
 def _folder_harness(
@@ -1145,7 +1179,9 @@ def _deployed_unique_columns(
     payload would make it agree with whatever assess happens to believe.
     """
     schema, bundle = pack
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     deployed: dict[str, set[str]] = {}
     for entry in schema_json["lists"]:
         names = {
@@ -1175,7 +1211,9 @@ def test_assess_targets_name_the_columns_the_deploy_declares_unique() -> None:
         _simple(), _library_pack(), _unique_pack(), _unique_title_pack(),
         _identity_pack(),
     ):
-        targets = assess_targets(pack[0], pack[1], "default")
+        targets = assess_targets(
+            pack[0], pack[1], "default", resolved=resolve(pack[0], pack[1].mapping),
+        )
         named = {title: set(columns) for title, columns in targets["list_unique_columns"]}
         assert named == _deployed_unique_columns(pack), targets["list_unique_columns"]
 
@@ -1190,7 +1228,12 @@ def test_declared_unique_columns_are_named_in_declaration_order() -> None:
         column("Tag", required=True, unique=True),
         note="Assets.",
     ))
-    targets = assess_targets(schema, make_bundle(entities=["Asset"]), "default")
+    targets = assess_targets(
+        schema,
+        make_bundle(entities=["Asset"]),
+        "default",
+        resolved=resolve(schema, make_bundle(entities=["Asset"]).mapping),
+    )
     assert targets["list_unique_columns"] == [
         ["APP_Asset", ["Title", "Reference", "Tag"]],
     ]
@@ -1200,14 +1243,22 @@ def test_a_pending_unique_requirement_warns_and_never_blocks() -> None:
     """What SharePoint does with this transition over existing duplicates is
     not established, so refusing a deploy on it would be a rule stronger than
     anything measured."""
+    unique_schema, unique_bundle = _unique_pack()
     reqs = {
-        r.key: r for r in derive_requirements(*_unique_pack(), "default")
+        r.key: r for r in derive_requirements(
+            unique_schema, unique_bundle, "default",
+            resolved=resolve(unique_schema, unique_bundle.mapping),
+        )
     }
     assert reqs["pending_unique:APP_Asset"].level_on_fail == "WARN"
     assert "Reference" in reqs["pending_unique:APP_Asset"].description
     # And absent entirely for a pack that declares no unique column, rather
     # than a requirement every family carries and nothing ever files.
-    plain = {r.key for r in derive_requirements(*_simple(), "default")}
+    plain_schema, plain_bundle = _simple()
+    plain = {r.key for r in derive_requirements(
+        plain_schema, plain_bundle, "default",
+        resolved=resolve(plain_schema, plain_bundle.mapping),
+    )}
     assert not [key for key in plain if key.startswith(_UNIQUE_KEY)]
 
 
@@ -1218,7 +1269,7 @@ def _unique_assess_js(pack: tuple[Schema, MappingBundle] | None = None) -> str:
         release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test",
         site_role="default", source_dbml="unique.dbml",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
 
 
@@ -1674,7 +1725,9 @@ def test_one_column_enumeration_serves_both_column_checks() -> None:
     to one request per loop, and on a large family that is the whole cost.
     """
     pack = _renamed_and_unique_pack()
-    targets = assess_targets(pack[0], pack[1], "default")
+    targets = assess_targets(
+        pack[0], pack[1], "default", resolved=resolve(pack[0], pack[1].mapping),
+    )
     assert [title for title, _ in targets["list_display_titles"]] == ["APP_Asset"]
     assert [title for title, _ in targets["list_unique_columns"]] == ["APP_Asset"]
     summary = _run_unique_assess(
@@ -1783,7 +1836,9 @@ def test_a_description_reported_as_null_is_blocked_not_unassessable() -> None:
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_missing_generated_marker_contract_blocks_assessment() -> None:
     schema, bundle = _simple()
-    title, marker = assess_targets(schema, bundle, "default")["list_markers"][0]
+    title, marker = assess_targets(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )["list_markers"][0]
     js = _assess_js()
     mutated, count = js.replace(json.dumps(marker), "null", 1), js.count(json.dumps(marker))
     assert count == 1, "the selected marker was not emitted exactly once"
@@ -1830,7 +1885,7 @@ def test_a_list_named_proto_still_gets_its_marker_checked() -> None:
         release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test",
         site_role="default", source_dbml="simple.dbml",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     declared = _declared_descriptions((schema, bundle))
     assert list(declared) == ["__proto__"], declared
@@ -1996,7 +2051,9 @@ def test_unreadable_permissions_leave_no_required_key_unspoken() -> None:
     This pack requires `manage_permissions_bit` at BLOCKED.
     """
     schema, bundle = _simple()
-    required = {r.key: r for r in derive_requirements(schema, bundle, "default")}
+    required = {r.key: r for r in derive_requirements(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )}
     assert required["manage_permissions_bit"].level_on_fail == "BLOCKED"
 
     summary = _run_assess(
@@ -2094,7 +2151,9 @@ def test_a_requirement_nobody_could_assess_degrades_the_verdict() -> None:
     than BLOCKED, because nothing here says the requirement is unmet.
     """
     schema, bundle = _simple()
-    required = {r.key for r in derive_requirements(schema, bundle, "default")}
+    required = {r.key for r in derive_requirements(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )}
     assert "manage_lists_bit" in required
 
     summary = _run_assess(
@@ -2164,7 +2223,11 @@ def test_the_two_size_ceilings_travel_with_the_pack() -> None:
     The script quotes both numbers to the operator and spells neither, so the
     payload is the one place they could drift from `analysis.limits`.
     """
-    targets = assess_targets(*_simple(), "default")
+    ceiling_schema, ceiling_bundle = _simple()
+    targets = assess_targets(
+        ceiling_schema, ceiling_bundle, "default",
+        resolved=resolve(ceiling_schema, ceiling_bundle.mapping),
+    )
     assert targets["list_view_threshold"] == 5000
     assert targets["index_change_ceiling"] == 20000
 
@@ -2176,10 +2239,12 @@ def test_every_provisioned_list_has_a_size_requirement_that_only_warns() -> None
     BLOCKED would stop a deploy on evidence that does not support stopping it.
     """
     schema, bundle = _simple()
-    targets = assess_targets(schema, bundle, "default")
+    targets = assess_targets(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     sizes = {
         r.key: r.level_on_fail
-        for r in derive_requirements(schema, bundle, "default")
+        for r in derive_requirements(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )
         if r.key.startswith("item_count:")
     }
     assert sizes == {f"item_count:{title}": "WARN" for title in targets["list_titles"]}
@@ -2332,7 +2397,9 @@ def test_a_site_that_reports_no_lock_state_is_not_read_as_writable() -> None:
     the first assertion on its own.
     """
     schema, bundle = _simple()
-    required = {r.key: r for r in derive_requirements(schema, bundle, "default")}
+    required = {r.key: r for r in derive_requirements(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )}
     assert required["site_not_locked"].level_on_fail == "BLOCKED"
 
     summary = _run_assess(
@@ -2375,7 +2442,9 @@ def test_a_list_that_reports_no_trim_mode_is_not_read_as_untrimmed() -> None:
     the declared MajorVersionLimit, which nothing had checked.
     """
     schema, bundle = _simple()
-    required = {r.key: r for r in derive_requirements(schema, bundle, "default")}
+    required = {r.key: r for r in derive_requirements(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )}
     assert required["version_trim_mode"].level_on_fail == "WARN"
 
     summary = _run_assess(
@@ -2726,9 +2795,13 @@ def _today_pack() -> tuple[Schema, MappingBundle]:
 
 def test_assess_targets_report_whether_the_pack_uses_today() -> None:
     schema, bundle = _today_pack()
-    assert assess_targets(schema, bundle, "default")["uses_today"] is True
+    assert assess_targets(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )["uses_today"] is True
     plain = make_bundle(entities=["Project"])
-    assert assess_targets(schema, plain, "default")["uses_today"] is False
+    assert assess_targets(
+        schema, plain, "default", resolved=resolve(schema, plain.mapping),
+    )["uses_today"] is False
     # A `[today]` default is a use as well: it is filled in the site's zone.
     dated = make_schema(
         make_table(
@@ -2736,15 +2809,21 @@ def test_assess_targets_report_whether_the_pack_uses_today() -> None:
             column("Raised", "date", default="[today]"),
         ),
     )
-    assert assess_targets(dated, plain, "default")["uses_today"] is True
+    assert assess_targets(
+        dated, plain, "default", resolved=resolve(dated, plain.mapping),
+    )["uses_today"] is True
 
 
 def test_a_pack_that_uses_today_requires_the_site_time_zone() -> None:
     schema, bundle = _today_pack()
-    levels = {r.key: r.level_on_fail for r in derive_requirements(schema, bundle, "default")}
+    levels = {r.key: r.level_on_fail for r in derive_requirements(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )}
     assert levels["time_zone"] == "WARN"
     plain = make_bundle(entities=["Project"])
-    assert "time_zone" not in {r.key for r in derive_requirements(schema, plain, "default")}
+    assert "time_zone" not in {r.key for r in derive_requirements(
+        schema, plain, "default", resolved=resolve(schema, plain.mapping),
+    )}
 
 
 # The site runs in AUS Eastern (Bias -600, daylight bias -60) and the
@@ -2771,7 +2850,7 @@ def test_the_time_zone_finding_warns_when_the_browser_is_ahead_of_the_site() -> 
         release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test",
         site_role="default", source_dbml="simple.dbml",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
 
     def zone_finding(browser_offset_min: int) -> dict[str, Any]:
@@ -2799,7 +2878,7 @@ def test_a_pack_without_today_only_reports_the_site_time_zone() -> None:
         release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test",
         site_role="default", source_dbml="simple.dbml",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     harness = _ZONE_HARNESS.replace("BROWSER_OFFSET_MIN", "0")
     finding = next(
@@ -2831,11 +2910,13 @@ def test_a_renamed_entity_is_a_blocking_requirement_with_its_previous_titles() -
         ),
     })
     family = family_for(schema)
-    targets = assess_targets(schema, bundle, "default")
+    targets = assess_targets(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     assert targets["list_renames"] == [
         ["APP_Risk", [["APP_ProgramRisk", marker_for(family, "ProgramRisk")]]],
     ]
-    reqs = {r.key: r for r in derive_requirements(schema, bundle, "default")}
+    reqs = {r.key: r for r in derive_requirements(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )}
     assert reqs["rename:APP_Risk"].level_on_fail == "BLOCKED"
     assert "rename:APP_Action" not in reqs
 
@@ -2866,14 +2947,16 @@ def test_group_and_level_renames_are_blocking_requirements_with_their_previous_n
     bundle = load_mapping(tmp_path / "m.yaml")
     schema = make_schema(make_table("Risk", "Title", note="Risks."))
     family = family_for(schema)
-    targets = assess_targets(schema, bundle, "default")
+    targets = assess_targets(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     level = marker_for_level(family, "ADOPT Submit Only")
     group = marker_for_group("ADOPT Request Handlers", family)
     assert targets["level_renames"] == [["GOV Submit Only", [["ADOPT Submit Only", level]]]]
     assert targets["group_renames"] == [
         ["GOV Request Handlers", [["ADOPT Request Handlers", group]]],
     ]
-    reqs = {r.key: r for r in derive_requirements(schema, bundle, "default")}
+    reqs = {r.key: r for r in derive_requirements(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )}
     assert reqs["rename_level:GOV Submit Only"].level_on_fail == "BLOCKED"
     assert reqs["rename_group:GOV Request Handlers"].level_on_fail == "BLOCKED"
 
@@ -2927,7 +3010,9 @@ def test_assessment_checks_immutable_library_root(root: str | None, expected: st
     js = generate_assess_js(
         schema=schema, bundle=bundle, release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test", site_role="default",
-        source_dbml="simple.dbml", generated_at="2026-09-15T00:00:00Z",
+        source_dbml="simple.dbml", generated_at="2026-09-15T00:00:00Z", resolved=resolve(
+            schema, bundle.mapping,
+        ),
     )
     harness = _folder_harness(1)
     if root != "/sites/test/APP_Task":
@@ -2956,7 +3041,9 @@ def test_absent_library_requires_an_available_root(
     js = generate_assess_js(
         schema=schema, bundle=bundle, release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test", site_role="default",
-        source_dbml="simple.dbml", generated_at="2026-09-15T00:00:00Z",
+        source_dbml="simple.dbml", generated_at="2026-09-15T00:00:00Z", resolved=resolve(
+            schema, bundle.mapping,
+        ),
     )
     harness = _ASSESS_HARNESS.replace("const body = (url) => {", "const body = (url) => {"
         "\n  if (url.includes('GetFolderByServerRelativeUrl')) return { d: { Exists: " +
