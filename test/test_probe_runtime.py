@@ -9127,7 +9127,7 @@ def _operator_grant_probe_js() -> str:
         assert shortened != js, f"{wait} is not spelled as this test expects"
         js = shortened
     # Spliced into report() rather than before a call site: the probe returns
-    # through report() from six different places, including two early aborts.
+    # through report() from three different places, two of them early aborts.
     exposed = js.replace(
         "  const report = () => {\n",
         "  const report = () => {\n"
@@ -9348,11 +9348,12 @@ def test_a_failure_after_the_break_still_restores_the_list() -> None:
     executes on a run that already went wrong, and a scope error in it would
     leave an operator with a list nobody can get back into.
 
-    Thrown at the role-assignment enumeration, which is the first read AFTER
-    the break, so the run reaches the catch with a broken scope and a result
-    table that is half filled in. Not at `web/currentuser`: that read now
-    happens before the break, so a throw there breaks nothing and the
-    `finally` would have nothing to restore.
+    Thrown at the role-assignment enumeration, the first read after the
+    break that is not `readUnique`'s HasUniqueRoleAssignments poll, so the run
+    reaches the catch with a broken scope and a result table that is half
+    filled in. Not at `web/currentuser`: that read now happens before the
+    break, so a throw there breaks nothing and the `finally` would have
+    nothing to restore.
     """
     rows, urls, _output = _run_operator_grant_probe(
         throwOn="roleassignments?$expand",
@@ -9528,6 +9529,12 @@ def test_an_account_that_is_not_a_site_admin_breaks_nothing_at_all() -> None:
         assert rows[question]["state"] == "void", question
         assert "not a site collection administrator" in rows[question]["evidence"]
         assert "Nothing was broken" in rows[question]["evidence"]
+        # What the run DID leave behind, not only what it did not: an
+        # operator reading "nothing was broken" could infer nothing was made.
+        assert f"the scratch list '{_OPERATOR_LIST_TITLE}' was created" in (
+            rows[question]["evidence"]
+        )
+        assert "safe to delete" in rows[question]["evidence"]
     # The fixture question was answered before the gate, and stands.
     assert rows["access.list-acl.fixture-scratch-list"]["outcome"] == "PASS"
     # Nothing was written, so there is nothing to put back.

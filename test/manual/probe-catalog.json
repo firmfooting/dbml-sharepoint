@@ -6261,7 +6261,7 @@
         "policy": "before"
       },
       "prerequisites": [
-        "site collection administrator, checked rather than trusted: the removal is refused and its question recorded NOT REACHED when web/currentuser does not report IsSiteAdmin=true"
+        "site collection administrator, checked rather than trusted: when web/currentuser does not report IsSiteAdmin=true the BREAK is refused, so the run writes nothing past its scratch list and all five questions the break gates are recorded NOT REACHED"
       ],
       "scenarios": [
         {

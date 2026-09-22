@@ -345,7 +345,9 @@
         + 'IsSiteAdmin=false). Whether breakroleinheritance(copyRoleAssignments=false) '
         + 'leaves this account able to write the scope is the very thing being measured, '
         + 'so breaking as a non-administrator risks a list nobody can restore. Nothing '
-        + 'was broken. Re-run as a site collection administrator.');
+        + `was broken and nothing was removed; the scratch list '${LIST}' was created and `
+        + 'still inherits, so it is safe to delete. Re-run as a site collection '
+        + 'administrator.');
       return;
     }
 

@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHAT A BREAK LEAVES, AND WHETHER REMOVING IT STICKS
  *
- * REVISION: 1396d6de
+ * REVISION: 23d3ad37
  *
  * THE CLAIM UNDER TEST. `deploy/_lists.js.j2` says, beside the early
  * isolation break, that "copyRoleAssignments=false leaves only SharePoint's
@@ -335,7 +335,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 1396d6de. Quote this when reporting results.');
+  log('INFO', 'probe revision 23d3ad37. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe OperatorGrant';
   const OWNERSHIP = 'dbml-sharepoint operator-safety-grant probe list. Safe to delete.';
@@ -565,7 +565,9 @@
         + 'IsSiteAdmin=false). Whether breakroleinheritance(copyRoleAssignments=false) '
         + 'leaves this account able to write the scope is the very thing being measured, '
         + 'so breaking as a non-administrator risks a list nobody can restore. Nothing '
-        + 'was broken. Re-run as a site collection administrator.');
+        + `was broken and nothing was removed; the scratch list '${LIST}' was created and `
+        + 'still inherits, so it is safe to delete. Re-run as a site collection '
+        + 'administrator.');
       return;
     }
 
