@@ -301,7 +301,10 @@ _FOLDER_JS = """globalThis.fetch = async (url, opts = {}) => {
 """
 
 
-def _library_deploy_js(tmp_path: Path, mapping: str, *, titled: bool = True) -> str:
+def _library_deploy_js(
+    tmp_path: Path, mapping: str, *, titled: bool = True,
+    enterprise_reader: str | None = None,
+) -> str:
     """`titled` declares a Title column, which is what puts a `title_patch` on
     the list. A library naming its files through FileLeafRef declares none, and
     the shipped legal-compliance-register library is one, so `titled=False` is
@@ -322,6 +325,7 @@ def _library_deploy_js(tmp_path: Path, mapping: str, *, titled: bool = True) -> 
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
+        enterprise_reader=enterprise_reader,
     ))
 
 
@@ -1244,6 +1248,51 @@ def test_a_folder_that_no_longer_reads_back_at_its_path_is_refused(
         and ("roleassignment" in c.get("url", "") or "breakroleinheritance" in c.get("url", ""))
         for c in calls
     ), [c.get("url") for c in calls]
+
+
+#: The folder group carries the reader flag and is granted NOTHING at list
+#: scope, which is the shape that made the enrolment preflight read an empty
+#: level list and enrol the account without judging any bitmap.
+_FOLDER_ONLY_READER_LIBRARY = _TWO_LEVEL_CONFIGURED_LIBRARY.replace(
+    '  - name: "Clinical services Editors"\n'
+    "    description: \"One folder's editors.\"\n"
+    '    owner_group: "Site Owners"\n',
+    '  - name: "Clinical services Editors"\n'
+    "    description: \"One folder's editors.\"\n"
+    '    owner_group: "Site Owners"\n'
+    "    enroll_enterprise_reader: true\n",
+)
+
+
+def test_a_reader_granted_only_inside_the_folders_has_its_level_judged(
+    tmp_path: Path,
+) -> None:
+    """The enrolment preflight reads the folder grants, not the list ones alone.
+
+    `ENTERPRISE_READER_GROUP_NOT_GRANTED` counts a folder grant, so a mapping
+    granting the reader only inside the folders builds. The preflight read
+    `list_assignments` alone, found nothing, took the branch that says the
+    group grants nothing here, skipped the bitmap check and enrolled the
+    account permanently into a level nothing had judged.
+
+    'Folder Editor' carries neither ViewFormPages nor Open, so a preflight
+    that looks at it has to abort. A clean run is this test failing.
+    """
+    js = _library_deploy_js(
+        tmp_path, _FOLDER_ONLY_READER_LIBRARY, titled=False,
+        enterprise_reader="reader@example.com",
+    )
+    output = _run_output(_library_harness(declared_folder=True, unique_after=1), js)
+
+    assert "Folder Editor' on this site does not grant" in output, output[-3000:]
+    assert "granted no permission level" not in output, (
+        "the preflight took the no-grant branch although the folders grant the reader"
+    )
+    summary = _summary_of(output)
+    assert [e for e in summary["errors"] if str(e.get("phase")) == "1.6"], summary["errors"]
+    # Nothing was created: the abort comes before list creation, so the
+    # account is not left holding a level this run never judged.
+    assert summary["listsCreated"] == []
 
 
 def test_an_undeclared_descendant_scope_still_aborts(tmp_path: Path) -> None:

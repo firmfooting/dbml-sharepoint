@@ -181,7 +181,12 @@
         // the lower Id, and one run cannot say which rule decided it). So an
         // impostor beside the built-in did not capture this call, and the
         // bitmap check is what makes that safe rather than the name.
-        const levelNames = [...new Set(SCHEMA.list_assignments
+        // Folder grants count, because the validator counts them: a reader
+        // granted only inside the folders satisfies
+        // ENTERPRISE_READER_GROUP_NOT_GRANTED, and reading only the list
+        // grants here would take the no-grant branch below, skip this bitmap
+        // check and enrol the account into a level nothing had judged.
+        const levelNames = [...new Set([...SCHEMA.list_assignments, ...SCHEMA.folder_assignments]
           .flatMap(la => la.assignments)
           .filter(a => a.principal.kind === 'group' && a.principal.name === grp.name)
           .map(a => a.level))];
@@ -196,10 +201,10 @@
         // above is a loop, and stays a WARN because nothing is granted: there
         // is no bitmap that could be wrong and nothing to fail closed on.
         if (levelNames.length === 0) {
-          log('WARN', `'${grp.name}' is granted no permission level on the lists this bundle `
-            + `deploys, so enrolling '${READER_ADDRESS}' into it grants nothing here. Its `
-            + `bitmap was not checked. If this family is meant to be readable, declare the `
-            + `grant in list_permissions for this site role.`);
+          log('WARN', `'${grp.name}' is granted no permission level on the lists or folders `
+            + `this bundle deploys, so enrolling '${READER_ADDRESS}' into it grants nothing `
+            + `here. Its bitmap was not checked. If this family is meant to be readable, `
+            + `declare the grant in list_permissions for this site role.`);
         }
         // The Ids step 0 judges, so step 1 does not report this bundle's own
         // declared grant back as an extra binding. Collected here rather than
