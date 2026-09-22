@@ -9402,17 +9402,32 @@ def test_a_break_that_never_reads_unique_is_still_restored() -> None:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_a_refused_removal_is_recorded_rather_than_treated_as_a_failure() -> None:
-    """`removeroleassignment` refusing is an observation about the surface,
-    so the row carries the status and the settle reads that followed it. The
-    binding is still there, and saying so is the point."""
+def test_a_refused_removal_draws_no_conclusion_about_persistence() -> None:
+    """A write the server never accepted is a prerequisite this run did not
+    meet, not a measurement.
+
+    The assertion here CHANGED: the row used to read STILL PRESENT, which is
+    the head for a binding that survived an ACCEPTED removal. A transcript
+    saying that after a refused call could be read as evidence the platform
+    re-derives, when no removal was made at all. The reads are still carried,
+    because what the scope reported is worth having.
+    """
     rows, urls, _output = _run_operator_grant_probe(removalRefused=True)
 
     sticks = rows["access.list-acl.operator-binding-removal-sticks"]
-    assert sticks["outcome"] == "STILL PRESENT"
+    assert sticks["outcome"] == "NOT ESTABLISHED", sticks
+    assert sticks["state"] == "open"
     assert "answered HTTP 500" in sticks["evidence"]
     assert "removeroleassignment refused" in sticks["evidence"]
+    assert "not an answer about whether an accepted removal persists" in (
+        sticks["evidence"]
+    )
     assert sticks["evidence"].count("binding PRESENT") == 5
+    # And no cause is offered, because there is nothing to explain.
+    assert "negative control" not in sticks["evidence"]
+    monotonic = rows["access.list-acl.enumeration-is-monotonic"]
+    assert monotonic["outcome"] == "NOT ESTABLISHED"
+    assert "no removal was accepted" in monotonic["evidence"]
     assert _restored(urls)
 
 
@@ -9522,6 +9537,57 @@ def test_a_removal_the_enumeration_never_reflected_answers_no_monotonic_question
     assert monotonic["outcome"] == "NOT ESTABLISHED", monotonic
     assert monotonic["state"] == "open"
     assert "never reflected the removal" in monotonic["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_every_operator_binding_the_prune_would_take_is_removed() -> None:
+    """`mine[0]` measured whichever row the server returned first.
+
+    Exact mode removes every binding it does not declare, so a break leaving
+    this account two direct levels leaves production with two removals to
+    make, and a probe that made one answered from a sample.
+    """
+    rows, urls, _output = _run_operator_grant_probe(leftBindings=[
+        {"principalId": _OPERATOR_PRINCIPAL, "title": "Wilhelmina Torres",
+         "principalType": 1, "levelId": 3, "levelName": "Full Control"},
+        {"principalId": _OPERATOR_PRINCIPAL, "title": "Wilhelmina Torres",
+         "principalType": 1, "levelId": 2, "levelName": "Read"},
+        _OPERATOR_LEFT_BINDINGS[1],
+    ])
+
+    real = [
+        url for url in urls
+        if "/removeroleassignment(" in url and "42424242" not in url
+    ]
+    assert len(real) == 2, real
+    assert any(f"principalid={_OPERATOR_PRINCIPAL},roleDefId=3" in u for u in real)
+    assert any(f"principalid={_OPERATOR_PRINCIPAL},roleDefId=2" in u for u in real)
+    sticks = rows["access.list-acl.operator-binding-removal-sticks"]
+    assert sticks["outcome"] == "REMOVED", sticks
+    # The count is carried, so a partial removal could not read as a clean one.
+    assert "(0 of 2)" in sticks["evidence"], sticks["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_derived_binding_this_account_holds_is_never_removed() -> None:
+    """Exact mode exempts 'Limited Access' by that English name, so removing
+    it would measure a request production never makes."""
+    rows, urls, _output = _run_operator_grant_probe(leftBindings=[
+        {"principalId": _OPERATOR_PRINCIPAL, "title": "Wilhelmina Torres",
+         "principalType": 1, "levelId": 4, "levelName": "Limited Access"},
+        _OPERATOR_LEFT_BINDINGS[1],
+    ])
+
+    assert not [
+        url for url in urls
+        if "/removeroleassignment(" in url and "42424242" not in url
+    ], urls
+    sticks = rows["access.list-acl.operator-binding-removal-sticks"]
+    assert sticks["outcome"] == "NOT REACHED", sticks
+    assert "exact mode exempts and never removes" in sticks["evidence"]
+    assert rows["access.list-acl.enumeration-is-monotonic"]["outcome"] == "NOT REACHED"
+    # The premise row still answers: the break DID leave this account a row.
+    assert rows["access.list-acl.break-leaves-operator-binding"]["outcome"] == "OBSERVED"
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
