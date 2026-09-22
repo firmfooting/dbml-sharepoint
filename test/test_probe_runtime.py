@@ -8930,6 +8930,12 @@ _OPERATOR_OWNER_GROUP = 5
 #: What the break leaves by default: this account's own grant, plus a derived
 #: binding for a group. Two level NAMES, so `derived-level-names` reports a
 #: set rather than a single string that could be anything.
+#:
+#: The TITLES must collide with nothing else the probe prints, and must differ
+#: in length from each other. `test_no_principal_title_reaches_the_result_table`
+#: asserts neither string appears in the transcript, and an earlier pair failed
+#: that against a CORRECT probe because "Probe Operator" is a substring of the
+#: list title "dbmlsp Probe OperatorGrant".
 _OPERATOR_LEFT_BINDINGS = [
     {
         "principalId": _OPERATOR_PRINCIPAL, "title": "Wilhelmina Torres",
@@ -9342,16 +9348,20 @@ def test_a_failure_after_the_break_still_restores_the_list() -> None:
     executes on a run that already went wrong, and a scope error in it would
     leave an operator with a list nobody can get back into.
 
-    Thrown at `web/currentuser`, which is after the break and after the
-    enumeration, so the run reaches the catch with a broken scope and a
-    result table that is half filled in.
+    Thrown at the role-assignment enumeration, which is the first read AFTER
+    the break, so the run reaches the catch with a broken scope and a result
+    table that is half filled in. Not at `web/currentuser`: that read now
+    happens before the break, so a throw there breaks nothing and the
+    `finally` would have nothing to restore.
     """
-    rows, urls, _output = _run_operator_grant_probe(throwOn="web/currentuser")
-
-    assert rows["access.list-acl.break-leaves-bindings"]["outcome"] == "OBSERVED"
-    assert rows["access.list-acl.break-leaves-operator-binding"]["outcome"] == (
-        "NOT ESTABLISHED"
+    rows, urls, _output = _run_operator_grant_probe(
+        throwOn="roleassignments?$expand",
     )
+
+    # Half filled in: the fixture answered, and nothing past the break did.
+    assert rows["access.list-acl.fixture-scratch-list"]["outcome"] == "PASS"
+    for question in _OPERATOR_BREAK_GATED:
+        assert rows[question]["evidence"] == "the run did not reach this question"
     # The whole point: the owner-group grant and the reset both went out, in
     # that order, on a run that threw.
     grant = next((i for i, url in enumerate(urls) if "/addroleassignment(" in url), None)
@@ -9487,46 +9497,57 @@ def test_an_aborting_run_restores_before_it_prints_the_block_to_copy() -> None:
     )
 
 
-@pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_an_account_that_is_not_a_site_admin_is_refused_the_removal() -> None:
-    """The prerequisite was documented three times and enforced nowhere.
+#: The five questions the break gates. A run that cannot safely break has
+#: nothing to measure, and all five have to say so rather than four of them.
+_OPERATOR_BREAK_GATED = (
+    "access.list-acl.control-unknown-principal-refused",
+    "access.list-acl.break-leaves-bindings",
+    "access.list-acl.break-leaves-operator-binding",
+    "access.list-acl.operator-binding-removal-sticks",
+    "access.list-acl.derived-level-names",
+)
 
-    A non-administrator who removes its own binding can lose write access to
-    the scope, and the restore then cannot put it back. The probe reads
-    IsSiteAdmin off the `web/currentuser` call it was already making and
-    refuses, rather than proceeding and hoping.
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_account_that_is_not_a_site_admin_breaks_nothing_at_all() -> None:
+    """The gate is on the BREAK, not on the removal.
+
+    Whether `breakroleinheritance(copyRoleAssignments=false)` leaves the
+    caller able to write the scope is the very thing this probe measures, so
+    a non-administrator can lose the list at the break, before any removal,
+    with the restore then unable to put it back. Gating the removal alone
+    protects the second hazard and leaves the first one open.
+
+    Void rather than open: the reason names this identity, and no re-run as
+    this identity clears it.
     """
     rows, urls, _output = _run_operator_grant_probe(siteAdmin=False)
 
-    sticks = rows["access.list-acl.operator-binding-removal-sticks"]
-    assert sticks["outcome"] == "NOT REACHED"
-    assert sticks["state"] == "awaiting-capture"
-    assert "not a site collection administrator" in sticks["evidence"]
-    assert "Nothing was removed" in sticks["evidence"]
-    # Said rather than claimed: the only removal that went out is the
-    # negative control's, which names a principal nobody is.
-    removals = [url for url in urls if "/removeroleassignment(" in url]
-    assert len(removals) == 1, removals
-    assert "principalid=42424242" in removals[0]
-    # Everything that does not rest on a removal is still measured.
-    assert rows["access.list-acl.break-leaves-bindings"]["state"] == "settled"
-    assert rows["access.list-acl.break-leaves-operator-binding"]["state"] == "settled"
-    assert _restored(urls)
+    for question in _OPERATOR_BREAK_GATED:
+        assert rows[question]["outcome"] == "NOT REACHED", question
+        assert rows[question]["state"] == "void", question
+        assert "not a site collection administrator" in rows[question]["evidence"]
+        assert "Nothing was broken" in rows[question]["evidence"]
+    # The fixture question was answered before the gate, and stands.
+    assert rows["access.list-acl.fixture-scratch-list"]["outcome"] == "PASS"
+    # Nothing was written, so there is nothing to put back.
+    assert not [url for url in urls if "/breakroleinheritance(" in url], urls
+    assert not [url for url in urls if "/removeroleassignment(" in url], urls
+    assert not _restored(urls)
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_an_unreadable_is_site_admin_is_as_fatal_as_an_unreadable_id() -> None:
-    """The restore depends on it, so it is asserted rather than observed. A
-    `web/currentuser` that answers without it cannot license a removal."""
+    """The run depends on it, so it is asserted rather than observed. A
+    `web/currentuser` that answers without it cannot license a break."""
     rows, urls, _output = _run_operator_grant_probe(siteAdmin=None)
 
-    for question in ("access.list-acl.break-leaves-operator-binding",
-                     "access.list-acl.operator-binding-removal-sticks",
-                     "access.list-acl.control-unknown-principal-refused"):
+    for question in _OPERATOR_BREAK_GATED:
         assert rows[question]["state"] == "void", question
         assert "without a readable Id and IsSiteAdmin" in rows[question]["evidence"]
-    assert not [url for url in urls if "/removeroleassignment(" in url]
-    assert _restored(urls)
+    assert not [url for url in urls if "/breakroleinheritance(" in url], urls
+    assert not [url for url in urls if "/removeroleassignment(" in url], urls
+    assert not _restored(urls)
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHAT A BREAK LEAVES, AND WHETHER REMOVING IT STICKS
  *
- * REVISION: bc694d53
+ * REVISION: 1396d6de
  *
  * THE CLAIM UNDER TEST. `deploy/_lists.js.j2` says, beside the early
  * isolation break, that "copyRoleAssignments=false leaves only SharePoint's
@@ -66,9 +66,7 @@
  *   access.list-acl.operator-binding-removal-sticks
  *     The deploy's question. Remove that binding, then re-read over the same
  *     window `settleBindings` uses (five reads, 2000 ms apart), and record
- *     whether it stayed gone or came back, and on which read. Refused, and
- *     recorded NOT REACHED, unless `web/currentuser` reports
- *     IsSiteAdmin=true.
+ *     whether it stayed gone or came back, and on which read.
  *   access.list-acl.derived-level-names
  *     `_acls.js.j2` exempts a binding whose level is named `Limited Access`,
  *     an English literal. This records the level names THIS tenant reports
@@ -93,13 +91,18 @@
  *   4. Copy the RESULTS block back verbatim.
  *
  * RUN AS A SITE COLLECTION ADMINISTRATOR, and the probe checks rather than
- * trusts. The run deliberately removes this account's own binding on the
- * scratch list, which is the measurement. A site collection administrator
- * keeps access regardless; anyone else may not, and would then be unable to
- * restore the list. So the removal is REFUSED, and its question recorded NOT
- * REACHED, when `web/currentuser` does not report IsSiteAdmin=true. The
- * restore pass runs on every path out, grants the site's owner group full
- * control before it resets, and says loudly if it could not. A run
+ * trusts. It breaks role inheritance with copyRoleAssignments=false and then
+ * removes this account's own binding, and whether either leaves the account
+ * able to write the scope is the very thing being measured. A site
+ * collection administrator keeps access whatever the bindings say; anyone
+ * else may lose the list and would then be unable to restore it. So NOTHING
+ * IS BROKEN, and every question the break gates is recorded NOT REACHED,
+ * when `web/currentuser` does not report IsSiteAdmin=true. The gate is on
+ * the break rather than on the removal because the break is the earlier and
+ * the less understood of the two.
+ *
+ * The restore pass runs on every path out, grants the site's owner group
+ * full control before it resets, and says loudly if it could not. A run
  * interrupted between the break and the restore leaves one scratch list with
  * unique permissions: re-run with CLEANUP, or delete the list.
  *
@@ -332,7 +335,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision bc694d53. Quote this when reporting results.');
+  log('INFO', 'probe revision 1396d6de. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe OperatorGrant';
   const OWNERSHIP = 'dbml-sharepoint operator-safety-grant probe list. Safe to delete.';
@@ -522,12 +525,50 @@
   record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'PASS',
          `'${LIST}' exists and inherits. ${beforeBreak.text}`);
 
+  // Every question the break gates, voided in one place. They are voided
+  // rather than left open because the reason names this identity or this
+  // tenant, and no re-run under the same one clears it.
+  const voidEveryQuestion = (outcome, why) => {
+    record('access.list-acl.control-unknown-principal-refused', Q_CONTROL, outcome, why, 'void');
+    record('access.list-acl.break-leaves-bindings', Q_LEFT, outcome, why, 'void');
+    record('access.list-acl.break-leaves-operator-binding', Q_OPERATOR, outcome, why, 'void');
+    record('access.list-acl.operator-binding-removal-sticks', Q_STICKS, outcome, why, 'void');
+    record('access.list-acl.derived-level-names', Q_LEVELS, outcome, why, 'void');
+  };
+
   // The measurement pass, in a function of its own rather than in the body
   // of the try below. `return report()` inside a try is EVALUATED before the
   // finally runs, so each early exit printed the RESULTS block and restored
   // the list afterwards, and an operator doing what the block's last line
   // tells them left out the line saying their site was still broken.
   const measure = async () => {
+    // ---- who is running this, before anything is written ---------------
+    // The gate sits on the BREAK, not on the removal. Breaking with
+    // copyRoleAssignments=false is the call whose result this probe exists
+    // to measure, so it may leave the scope unwritable by this account, and
+    // the restore would then be unable to put it back. A site collection
+    // administrator keeps access to a scope whatever its bindings say.
+    // IsSiteAdmin comes off the same read as the id, the way
+    // library-sharing-probe.js takes it. Both are values the run DEPENDS on
+    // rather than things it measures, so both are asserted.
+    const me = await spGet('web/currentuser?$select=Id,PrincipalType,IsSiteAdmin');
+    if (readFailed(me) || typeof me.body.IsSiteAdmin !== 'boolean') {
+      voidEveryQuestion('NOT ESTABLISHED',
+        `web/currentuser answered HTTP ${me.status} without a readable Id and IsSiteAdmin, `
+        + 'so no row could be attributed to this account and no break was safe to make');
+      return;
+    }
+    const myId = Number(me.body.Id);
+    if (me.body.IsSiteAdmin !== true) {
+      voidEveryQuestion('NOT REACHED',
+        'this account is not a site collection administrator (web/currentuser reports '
+        + 'IsSiteAdmin=false). Whether breakroleinheritance(copyRoleAssignments=false) '
+        + 'leaves this account able to write the scope is the very thing being measured, '
+        + 'so breaking as a non-administrator risks a list nobody can restore. Nothing '
+        + 'was broken. Re-run as a site collection administrator.');
+      return;
+    }
+
     // ---- the break ----------------------------------------------------
     // Asserted, not measured: every row below is about a scope that actually
     // holds unique permissions, so a break that was refused or never took
@@ -542,12 +583,7 @@
       const why = broke.ok
         ? `the break was accepted but the list never read HasUniqueRoleAssignments=true. ${unique.text}`
         : `breakroleinheritance answered HTTP ${broke.status} ${broke.text.slice(0, 200)}`;
-      record('access.list-acl.control-unknown-principal-refused', Q_CONTROL,
-             'NOT ESTABLISHED', why, 'void');
-      record('access.list-acl.break-leaves-bindings', Q_LEFT, 'NOT ESTABLISHED', why, 'void');
-      record('access.list-acl.break-leaves-operator-binding', Q_OPERATOR, 'NOT ESTABLISHED', why, 'void');
-      record('access.list-acl.operator-binding-removal-sticks', Q_STICKS, 'NOT ESTABLISHED', why, 'void');
-      record('access.list-acl.derived-level-names', Q_LEVELS, 'NOT ESTABLISHED', why, 'void');
+      voidEveryQuestion('NOT ESTABLISHED', why);
       return;
     }
 
@@ -573,22 +609,6 @@
            + `_acls.js.j2 exempts the literal 'Limited Access' and matches no other name.`);
 
     // ---- break-leaves-operator-binding --------------------------------
-    // IsSiteAdmin off the same read, the way library-sharing-probe.js takes
-    // it. The restore DEPENDS on this account still being able to write the
-    // scope after its own binding goes, so it is asserted rather than
-    // observed, and an unreadable one is as fatal as an unreadable id.
-    const me = await spGet('web/currentuser?$select=Id,PrincipalType,IsSiteAdmin');
-    const identityKnown = !readFailed(me) && typeof me.body.IsSiteAdmin === 'boolean';
-    if (!identityKnown) {
-      const why = `web/currentuser answered HTTP ${me.status} without a readable Id and `
-        + 'IsSiteAdmin, so no row can be attributed to this account and no removal is safe';
-      record('access.list-acl.break-leaves-operator-binding', Q_OPERATOR, 'NOT ESTABLISHED', why, 'void');
-      record('access.list-acl.operator-binding-removal-sticks', Q_STICKS, 'NOT ESTABLISHED', why, 'void');
-      record('access.list-acl.control-unknown-principal-refused', Q_CONTROL, 'NOT ESTABLISHED', why, 'void');
-      return;
-    }
-    const myId = Number(me.body.Id);
-    const isSiteAdmin = me.body.IsSiteAdmin === true;
     const mine = left.rows.filter((r) => r.principalId === myId);
     record('access.list-acl.break-leaves-operator-binding', Q_OPERATOR, 'OBSERVED',
            mine.length
@@ -624,16 +644,6 @@
              'NOT REACHED', 'the break left no direct binding for this account, so there was '
              + 'nothing to remove. That is an answer about the premise and not about the '
              + 'removal: on this tenant the deploy has no operator grant to prune.');
-    } else if (!isSiteAdmin) {
-      // Refused rather than attempted. A site collection administrator keeps
-      // access to a scope whatever its bindings say; anyone else may lose the
-      // list the moment their own binding goes, and the restore below would
-      // then be unable to run.
-      record('access.list-acl.operator-binding-removal-sticks', Q_STICKS,
-             'NOT REACHED', 'this account is not a site collection administrator '
-             + '(web/currentuser reports IsSiteAdmin=false), so removing its own binding '
-             + 'could leave the scope unwritable and the restore unable to put it back. '
-             + 'Nothing was removed. Re-run as a site collection administrator.');
     } else {
       const target = mine[0];
       digest = await getDigest();
