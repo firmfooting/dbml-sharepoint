@@ -147,10 +147,9 @@
           if (!verifyOwned) {
             throw new Error('the list ownership re-check failed, so this list was not read back');
           }
-          const listId = verifyOwned.get(form.list);
-          if (listId == null) {
-            throw new Error(`Declared list '${form.list}' disappeared across the form write`);
-          }
+          // A miss here cannot mean the list vanished: an absent list fails
+          // the survey, which returns null and takes the branch above.
+          const listId = surveyedListId(verifyOwned, form.list, 'Form read-back');
           if (sharePointGuid(listId, 'list')
               !== sharePointGuid(surveyedListId(formsOwned, form.list, 'Form'), 'list')) {
             throw new Error(`List '${form.list}' changed identity across the form write`);

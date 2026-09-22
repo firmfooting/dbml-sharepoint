@@ -105,10 +105,9 @@
           if (!verifyOwned) {
             throw new Error('the list ownership re-check failed, so this column was not read back');
           }
-          const listId = verifyOwned.get(idx.list);
-          if (listId == null) {
-            throw new Error(`Declared list '${idx.list}' disappeared across the index write`);
-          }
+          // A miss here cannot mean the list vanished: an absent list fails
+          // the survey, which returns null and takes the branch above.
+          const listId = surveyedListId(verifyOwned, idx.list, 'Index read-back');
           if (sharePointGuid(listId, 'list') !== sharePointGuid(target.listId, 'list')) {
             throw new Error(`List '${idx.list}' changed identity across the index write`);
           }
