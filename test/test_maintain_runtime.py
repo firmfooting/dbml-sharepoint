@@ -112,9 +112,14 @@ _HARNESS = textwrap.dedent(r"""
       return notFound('field');
     };
     const fieldById = (id) => state.fields.find((f) => f.Id === id);
+    // CanBeDeleted is DERIVED at every read, never stored: it follows the
+    // seal. Measured 2026-09-19 and 2026-09-20 (field-sealed-probe.js, #381):
+    // sealing reads it false, unsealing restores true, and a write of it is
+    // accepted and ignored. A stored value let an unseal leave a column
+    // reading undeletable, which no tenant does.
     const fieldView = (f) => {
-      const { deleted, lookupList, ...rest } = f;
-      return rest;
+      const { deleted, lookupList, refusesDeleteUnsealed, ...rest } = f;
+      return { ...rest, CanBeDeleted: !f.Sealed && !refusesDeleteUnsealed };
     };
 
     globalThis.fetch = async (url, opts = {}) => {
@@ -186,11 +191,23 @@ _HARNESS = textwrap.dedent(r"""
           state.fieldMerges += 1;
           const takes = state.fieldMerges <= (FLAGS.discardFieldMergeAfter || 0);
           if (!FLAGS.discardFieldMerge || takes) {
-            Object.assign(f, body || {}, { __metadata: undefined });
+            // CanBeDeleted is read-only: SharePoint answers 204 to a write of
+            // it in either seal state and changes nothing (#381).
+            const { CanBeDeleted, ...writable } = body || {};
+            Object.assign(f, writable, { __metadata: undefined });
           }
           return reply(204, {});
         }
         if (method === 'POST' && headers['X-HTTP-Method'] === 'DELETE') {
+          // A sealed column refuses the delete and survives it, with this
+          // exact answer (measured 2026-09-19 and 2026-09-20, #381). A mock
+          // that deleted it would pass a script that skipped the unseal.
+          if (f.Sealed === true) {
+            return reply(400, { error: {
+              code: '-1, System.InvalidOperationException',
+              message: { value: 'Operation is not valid due to the current state of the object.' },
+            } });
+          }
           if (!FLAGS.discardDelete) f.deleted = true;
           return reply(200, {});
         }
@@ -293,19 +310,22 @@ def _field(
 ) -> dict[str, Any]:
     """One field's shape, with `CanBeDeleted` derived rather than assumed.
 
-    MEASURED 2026-09-03 against a live list: every one of its 11 sealed
-    columns reported `CanBeDeleted: false`, and all 3 unsealed custom columns
-    reported true. Sealing a column is what makes SharePoint refuse to delete
-    it, so a fixture pairing `Sealed: true` with `CanBeDeleted: true` describes
-    a list no tenant can produce -- and that pairing is what let the sidecars
-    ship unable to see a sealed column at all.
+    Sealing a column is what makes SharePoint report `CanBeDeleted: false`,
+    and unsealing it restores true. First observed 2026-09-03 on a live list
+    (11 sealed columns false, 3 unsealed true), then MEASURED by
+    `field-sealed-probe.js` on 2026-09-19 and 2026-09-20 (#381), both runs
+    identical, on a Text column only. A fixture pairing `Sealed: true` with
+    `CanBeDeleted: true` describes a list no tenant can produce, and that
+    pairing is what let the sidecars ship unable to see a sealed column.
 
-    `can_delete` still takes an explicit value, for the case this default
-    cannot express: a column SharePoint refuses to delete for its own reasons
-    while unsealed.
+    The mock derives `CanBeDeleted` from the CURRENT seal on every read, so an
+    unseal is visible the way it is live. `can_delete=False` on an unsealed
+    column is the one case the seal cannot express: a column SharePoint
+    refuses to delete for its own reasons.
     """
     if can_delete is None:
         can_delete = not sealed
+    assert not (sealed and can_delete), "no tenant reports a sealed column as deletable"
     return {
         "Id": field_id,
         "InternalName": internal,
@@ -316,6 +336,7 @@ def _field(
         "Sealed": sealed,
         "FromBaseType": from_base,
         "CanBeDeleted": can_delete,
+        "refusesDeleteUnsealed": not sealed and not can_delete,
         "lookupList": lookup_list,
     }
 
@@ -691,6 +712,74 @@ def test_an_empty_sealed_column_is_unsealed_and_read_back_before_the_delete() ->
     )
     assert summary["deleted"] == ["ColumnOne"]
     assert summary["errors"] == []
+
+
+_SEAL_WALK = textwrap.dedent("""
+    (async () => {
+      const f = `https://example.sharepoint.com/sites/test/_api/web/lists(guid'__LIST__')/fields(guid'__FIELD__')`;
+      const read = async () => (await (await fetch(f)).json()).d.CanBeDeleted;
+      const write = async (verb, body) => (await fetch(f, {
+        method: 'POST', headers: { 'X-HTTP-Method': verb },
+        body: body ? JSON.stringify(body) : undefined,
+      })).status;
+      const out = {};
+      out.sealed = await read();
+      out.writeWhileSealed = await write('MERGE', { CanBeDeleted: true });
+      out.afterWriteWhileSealed = await read();
+      out.deleteWhileSealed = await write('DELETE');
+      out.afterDeleteWhileSealed = (await fetch(f)).status;
+      out.unseal = await write('MERGE', { Sealed: false });
+      out.unsealed = await read();
+      out.writeWhileUnsealed = await write('MERGE', { CanBeDeleted: false });
+      out.afterWriteWhileUnsealed = await read();
+      out.deleteWhileUnsealed = await write('DELETE');
+      out.afterDeleteWhileUnsealed = (await fetch(f)).status;
+      return out;
+    })();
+""")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_mock_seals_a_column_the_way_the_probe_measured() -> None:
+    """Every script test in this file is only as strict as this mock.
+
+    `field-sealed-probe.js`, 2026-09-19 and 2026-09-20 (#381), both runs
+    identical: sealing reads CanBeDeleted false and unsealing restores true;
+    a MERGE of CanBeDeleted answers 204 and changes nothing in either state;
+    a DELETE on a sealed column answers 400 and the column survives; after
+    unsealing the DELETE takes. A mock looser than that passes a script that
+    skips the unseal, which is the class #574 describes.
+    """
+    body = _SEAL_WALK.replace("__LIST__", LIST_ID).replace("__FIELD__", F_ONE)
+    walk = _run_script(body, _config(), [])[0]
+    assert walk == {
+        "sealed": False,
+        "writeWhileSealed": 204,
+        "afterWriteWhileSealed": False,
+        "deleteWhileSealed": 400,
+        "afterDeleteWhileSealed": 200,
+        "unseal": 204,
+        "unsealed": True,
+        "writeWhileUnsealed": 204,
+        "afterWriteWhileUnsealed": True,
+        "deleteWhileUnsealed": 200,
+        "afterDeleteWhileUnsealed": 404,
+    }
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unseal_that_does_not_take_stops_before_the_delete() -> None:
+    """Live, a DELETE on a column still sealed is refused with a 400 naming no
+    property, so the readback between the unseal and the delete is the only
+    place the operator can be told why."""
+    config = _config(items=[{"Id": 1, "ColumnOne": None}])
+    summary, calls, _prompts, _tables = _columns(
+        config, ["ColumnOne", "ColumnOne", ""], {"discardFieldMerge": True},
+    )
+    assert _deletes(calls) == []
+    assert summary["deleted"] == []
+    assert summary["aborted"] == "readback-mismatch"
+    assert "Sealed=true after writing false" in summary["errors"][0]["error"]
 
 
 def test_a_delete_readback_that_answers_400_is_recorded_as_deleted() -> None:

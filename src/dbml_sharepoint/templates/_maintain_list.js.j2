@@ -121,9 +121,10 @@
   // the base type, and not one SharePoint itself refuses to delete.
   //
   // A SEAL IS NOT THAT REFUSAL. Sealing a column is what makes SharePoint
-  // report CanBeDeleted:false -- MEASURED 2026-09-03 on a live list, where all
-  // 11 sealed columns read false and all 3 unsealed ones read true. This tool
-  // sealed those columns and can unseal them, so filtering on CanBeDeleted
+  // report CanBeDeleted:false, and unsealing restores true: MEASURED by
+  // field-sealed-probe.js on 2026-09-19 and 2026-09-20 (#381), Text column
+  // only, and a sealed column refuses DELETE with a 400 naming no property.
+  // This tool seals its columns and can unseal them, so filtering on CanBeDeleted
   // alone hid every column these scripts exist to act on: the delete path
   // unseals and reads back before deleting, and the protection script's
   // unseal verb had no targets at all. A column refusing deletion while
