@@ -74,6 +74,11 @@ class ResolvedMapping:
     `folder_policies`, except the ones actually unresolved.
     """
 
+    #: The mapping this was resolved from, so a consumer needs no second
+    #: parameter for the many fields that have nothing to do with enums.
+    #: That leaves the raw enum-source fields reachable through it, which is
+    #: what Piece 4's ratchet is for.
+    mapping: Mapping
     #: The schema's own enums, keyed by name. Five call sites used to rebuild
     #: this same projection from `schema.enums`; built once here instead.
     enum_members: MappingABC[str, tuple[str, ...]]
@@ -141,6 +146,7 @@ def resolve(schema: Schema, mapping: Mapping) -> ResolvedMapping:
         )
 
     return ResolvedMapping(
+        mapping=mapping,
         enum_members=enum_members,
         folders=folders,
         folder_policies=policies,

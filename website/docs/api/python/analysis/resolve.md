@@ -52,6 +52,7 @@ the loop that found the source, not from this record.
 ```python
 @dataclass(frozen=True)
 class ResolvedMapping:
+    mapping: Mapping
     enum_members: collections.abc.Mapping[str, tuple[str, ...]]
     folders: collections.abc.Mapping[str, tuple[str, ...]]
     folder_policies: collections.abc.Mapping[str, tuple[tuple[str, dbml_sharepoint.model.mapping_types.ListPermissionPolicy], ...]]

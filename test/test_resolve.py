@@ -173,3 +173,27 @@ def test_require_resolved_raises_the_named_error_for_a_generator() -> None:
     with pytest.raises(UnknownGroupEnumError) as group_excinfo:
         resolve(schema, group_mapping).require_resolved()
     assert group_excinfo.value.enum == "missing"
+
+
+def test_resolve_carries_the_mapping_it_resolved() -> None:
+    """A consumer takes one parameter, not a ResolvedMapping and a Mapping.
+
+    Every signature this piece changes drops `enum_members` in favour of a
+    ResolvedMapping, and most of what those consumers then read off the
+    mapping has nothing to do with enums. Handing them both would leave two
+    things that can disagree about which mapping is being deployed.
+    """
+    schema = make_schema(make_table("Risk", "Title"))
+    mapping = make_mapping(
+        entities={"Risk": EntityMapping(
+            name="Risk", kind="List", base_template=100, site_role="default",
+        )},
+    )
+
+    resolved = resolve(schema, mapping)
+
+    assert resolved.mapping is mapping
+    # An entity that never writes a `folders:` key resolved, and declares
+    # none. Absent would mean unresolved, which is a different answer.
+    assert resolved.folders == {"Risk": ()}
+    assert resolved.unresolved == ()
