@@ -221,16 +221,19 @@ def _enum_groups(vc: ValidationContext, perms: PermissionsConfig) -> list[Findin
         # deploys, reads back byte-identical and leaves a single group where
         # the folder grants expect one per member, so it has to be refused
         # here rather than discovered on a site.
+        members = vc.enum_members_by_name[source.enum]
         varies = any(
             token in source.template.name
             for token in (MEMBER_PLACEHOLDER, MEMBER_SAFE_PLACEHOLDER)
         )
-        if not varies:
+        # One member cannot collapse onto anything, so a fixed name there is
+        # the author's choice rather than the mistake this rule names.
+        if not varies and len(members) > 1:
             findings.append(Finding(
                 FindingCode.GROUP_ENUM_NAME_NOT_UNIQUE,
                 f"groups[{source.template.name!r}]: from_enum generates one "
                 f"group per member of {source.enum!r} "
-                f"({len(vc.enum_members_by_name[source.enum])} of them), but "
+                f"({len(members)} of them), but "
                 f"the name carries neither {MEMBER_PLACEHOLDER} nor "
                 f"{MEMBER_SAFE_PLACEHOLDER}, so "
                 f"they would all be the same group.",

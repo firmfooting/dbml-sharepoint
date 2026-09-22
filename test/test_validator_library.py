@@ -814,6 +814,35 @@ def test_an_enum_group_name_without_the_member_token_is_refused(
     assert "division" in f.message
 
 
+def test_a_fixed_name_over_a_single_member_enum_is_allowed(tmp_path: Path) -> None:
+    """One member generates one group, so a fixed name is what the author
+    wrote rather than seven declarations collapsing onto one.
+
+    An enforced rule must not be stronger than what it is judging.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping="""
+            entities:
+              Docs: { kind: List, base_template: 100, site_role: default }
+
+            groups:
+              - from_enum: division
+                name: "Division Editors"
+                description: "Editors."
+                owner_group: "Site Owners"
+        """,
+    )
+    none_of(
+        validate_against_mapping(schema, bundle),
+        FindingCode.GROUP_ENUM_NAME_NOT_UNIQUE,
+    )
+
+
 def test_folder_permissions_on_a_list_are_refused(tmp_path: Path) -> None:
     """A folder ACL is written against the folder's list item, and a list has
     no folders to write one on."""

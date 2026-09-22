@@ -774,7 +774,9 @@ FINDING_HELP: dict[FindingCode, str] = {
         "and one group is created instead of one per member. Nothing fails "
         "at deploy time: the single group is written, read back "
         "byte-identical and reported clean, while every grant meant for a "
-        "particular member lands on it. Put `{member}` in the name."
+        "particular member lands on it. Put `{member}` in the name. An enum "
+        "with a single member is not reported, because one name cannot collapse "
+        "onto another."
     ),
     FindingCode.GROUP_ENUM_UNKNOWN: (
         "A `groups` entry's `from_enum` names an enum the DBML does not "

@@ -1946,10 +1946,12 @@ Five refusals, all at build time:
 
 - `group_enum_unknown` and `folder_enum_unknown`, for an enum the schema does
   not declare.
-- `group_enum_name_not_unique`, for a generated name carrying no `{member}`.
-  Every member would resolve to one name, and one group would be created,
-  written, read back byte-identical and reported clean while every grant
-  meant for a particular member landed on it.
+- `group_enum_name_not_unique`, for a generated name carrying no `{member}`
+  where the enum has more than one member. They would all resolve to one
+  name, and one group would be created, written, read back byte-identical and
+  reported clean while every grant meant for a particular member landed on
+  it. A single-member enum is left alone, because one name cannot collapse
+  onto another.
 - `group_enum_enrols_an_identity`, for `from_enum` combined with
   `enroll_enterprise_reader` or `enroll_operator_during_deploy`. Each enrols
   one identity and there would be one group per member to enrol it into.
