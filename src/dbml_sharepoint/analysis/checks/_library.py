@@ -45,7 +45,9 @@ def check(vc: ValidationContext) -> list[Finding]:
             # Unresolved, which is not the same answer as "declares none".
             folders = None
         else:
-            folders = vc.resolved.folders.get(entity_name, ())
+            # No default: absent means unresolved, which the line above
+            # spells `None` for exactly this reason.
+            folders = vc.resolved.folders.get(entity_name)
         findings += _folder_enum_is_this_entity_s(vc, entity_name, entity)
         findings += _folders(
             entity_name, entity, folders or (),
