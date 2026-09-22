@@ -6,7 +6,6 @@ from typing import Any
 
 from dbml_sharepoint.analysis.condition_description import describe
 from dbml_sharepoint.analysis.findings import Finding
-from dbml_sharepoint.analysis.groups import declaring_groups
 from dbml_sharepoint.analysis.limits import MAX_VALIDATION_FORMULA, MAX_VALIDATION_MESSAGE
 from dbml_sharepoint.analysis.permissions import lists_granting_group
 from dbml_sharepoint.analysis.phases import phase_numbers
@@ -106,8 +105,12 @@ def generate_manifest(
     # lists this build deploys -- an exclusion on a list another site role
     # owns is not something this operator can act on.
     _perms = bundle.mapping.permissions
+    # From `schema_json`, whose groups are already resolved: a `from_enum`
+    # group's name reaches `lists_granting_group` below, and the template
+    # spelling matches no assignment.
     _reader_groups = [
-        g.name for g in declaring_groups(_perms) if g.enroll_enterprise_reader
+        g["name"] for g in schema_json.get("groups", [])
+        if g.get("enroll_enterprise_reader")
     ]
     _deployed_entities = [e for e in bundle.mapping.entities if _deployed(e)]
     # The granted half is passed too, not just discarded: when every deployed
