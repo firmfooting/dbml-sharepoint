@@ -6250,6 +6250,74 @@
       ]
     },
     {
+      "file": "operator-safety-grant-probe.js",
+      "surface": "access",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch list, its broken role inheritance, the removal of this account's own binding on it, and the owner-group grant the restore makes"
+      ],
+      "cleanup": {
+        "policy": "before"
+      },
+      "prerequisites": [
+        "site collection administrator, because the run removes this account's own binding on the scratch list"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "access",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "access.list-acl.fixture-scratch-list",
+              "depends_on": []
+            },
+            {
+              "id": "access.list-acl.control-unknown-principal-refused",
+              "depends_on": [
+                "access.list-acl.fixture-scratch-list"
+              ]
+            },
+            {
+              "id": "access.list-acl.break-leaves-bindings",
+              "depends_on": [
+                "access.list-acl.fixture-scratch-list"
+              ]
+            },
+            {
+              "id": "access.list-acl.break-leaves-operator-binding",
+              "depends_on": [
+                "access.list-acl.fixture-scratch-list",
+                "access.list-acl.break-leaves-bindings"
+              ]
+            },
+            {
+              "id": "access.list-acl.operator-binding-removal-sticks",
+              "depends_on": [
+                "access.list-acl.fixture-scratch-list",
+                "access.list-acl.control-unknown-principal-refused",
+                "access.list-acl.break-leaves-operator-binding"
+              ]
+            },
+            {
+              "id": "access.list-acl.derived-level-names",
+              "depends_on": [
+                "access.list-acl.fixture-scratch-list",
+                "access.list-acl.break-leaves-bindings"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "access.list-acl.fixture-scratch-list",
+            "access.list-acl.control-unknown-principal-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "projected-lookup-probe.js",
       "surface": "field",
       "harness": "shared-v1",

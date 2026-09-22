@@ -281,7 +281,7 @@ role definition can hold but whether the platform defends the six it ships.
 
 Probes: `enterprise-reader-probe.js`, `reader-bindings-probe.js`,
 `built-in-levels-probe.js`, `lookup-acl-probe.js`,
-`siteuserinfolist-probe.js`
+`siteuserinfolist-probe.js`, `operator-safety-grant-probe.js`
 
 ### 9. `scale`: behaviour at and beyond the list view threshold
 

@@ -1,0 +1,639 @@
+/**
+ * dbml-sharepoint PROBE: WHAT A BREAK LEAVES, AND WHETHER REMOVING IT STICKS
+ *
+ * REVISION: d400b5cc
+ *
+ * THE CLAIM UNDER TEST. `deploy/_lists.js.j2` says, beside the early
+ * isolation break, that "copyRoleAssignments=false leaves only SharePoint's
+ * current-operator safety grant". Nothing in this repository measures that.
+ * `library.access.unique-permissions-library` GRANTS the owner group as its
+ * own safety net immediately after the break, so it never observes what the
+ * break left behind on its own.
+ *
+ * WHY IT MATTERS NOW. Phase 4.2 has always PRUNED such a binding under
+ * `reconcile: exact`, and it now reads the scope back afterwards and ABORTS
+ * if an undeclared binding is still reported. Every shipped family uses
+ * `reconcile: exact` with `break_inheritance: true` on every list. So if
+ * SharePoint re-derives the operator's grant after a removal it accepted,
+ * every shipped family's deploy starts failing at Phase 4.2 where it
+ * previously reported success. The question is whether the platform treats
+ * that binding as removable or as something it restores.
+ *
+ * WHY THIS CANNOT BE ANSWERED FROM DOCUMENTATION. Microsoft Learn documents
+ * `SecurableObject.BreakRoleInheritance(copyRoleAssignments, clearSubscopes)`
+ * as a signature and says what copying means. It does not say what the
+ * collection contains when nothing is copied, and it does not say whether a
+ * binding the platform created for the caller can be removed. Checked
+ * 2026-09-22: the method page, the RoleAssignmentCollection page and "Role,
+ * inheritance, elevation of privilege, and password changes in SharePoint"
+ * are all silent on both.
+ *
+ * SEPARATING WHAT IS DEPENDED ON FROM WHAT IS OBSERVED. The break being
+ * ACCEPTED, the scope then reading HasUniqueRoleAssignments=true, and the
+ * negative control refusing are things every measurement below DEPENDS on,
+ * so they are asserted and a failure voids the rows that rest on them. What
+ * the break LEFT, whether any of it names this account, whether a removal
+ * stuck, and what the levels are called are the things being measured, so
+ * they are recorded exactly as they came back and never asserted. A probe
+ * that asserted "the break leaves one binding" would report FAIL on a tenant
+ * that leaves two, which is a measurement, and it would report PASS on a
+ * tenant that leaves one belonging to somebody else.
+ *
+ * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
+ * `<surface>.<scope>.<question>`.
+ *
+ *   access.list-acl.fixture-scratch-list
+ *     A generic list exists and still INHERITS, so the break below has
+ *     something to act on and its result is this run's rather than a
+ *     previous run's leftover.
+ *   access.list-acl.control-unknown-principal-refused
+ *     NEGATIVE CONTROL: `removeroleassignment` naming a principal and a
+ *     level that do not exist is REFUSED on the broken scope. Without it a
+ *     removal answering HTTP 200 says nothing, and "the binding came back"
+ *     could not be told from "the server accepted a call it ignored".
+ *   access.list-acl.break-leaves-bindings
+ *     What does the collection hold after
+ *     breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)?
+ *     Recorded as found: how many rows, and for each the principal id, its
+ *     title, its principal type and the level names bound to it.
+ *   access.list-acl.break-leaves-operator-binding
+ *     Is one of those rows a DIRECT binding for the account that ran the
+ *     break? Compared by principal id against `web/currentuser`, so the
+ *     answer does not depend on reading a login name.
+ *   access.list-acl.operator-binding-removal-sticks
+ *     The deploy's question. Remove that binding, then re-read over the same
+ *     window `settleBindings` uses (five reads, 2000 ms apart), and record
+ *     whether it stayed gone or came back, and on which read.
+ *   access.list-acl.derived-level-names
+ *     `_acls.js.j2` exempts a binding whose level is named `Limited Access`,
+ *     an English literal. This records the level names THIS tenant reports
+ *     at a list scope, so a localized tenant is visible rather than assumed.
+ *
+ * MICROSOFT LEARN CITATIONS
+ *   Breaking and restoring role inheritance:
+ *     "SP.SecurableObject.breakRoleInheritance method"
+ *     "SP.SecurableObject.resetRoleInheritance method"
+ *   Removing a role assignment:
+ *     "SP.RoleAssignmentCollection.removeRoleAssignment(principalId,
+ *      roleDefId) method"
+ *   Reading role assignments back:
+ *     "SP.RoleAssignmentCollection object"
+ *   List creation via POST to `web/lists`:
+ *     "Working with lists and list items with REST"
+ *
+ * HOW TO RUN
+ *   1. Open a site you own, at /_layouts/15/settings.aspx.
+ *   2. F12 -> Console -> paste -> Enter. It prints its plan and stops.
+ *   3. Edit CONFIRMED, ALLOW_WRITES and CLEANUP to true, paste again.
+ *   4. Copy the RESULTS block back verbatim.
+ *
+ * RUN AS A SITE COLLECTION ADMINISTRATOR. The run deliberately removes this
+ * account's own binding on the scratch list, which is the measurement. A site
+ * collection administrator keeps access regardless; anyone else may not, and
+ * would then be unable to restore the list. The restore pass runs on every
+ * path out, grants the site's owner group Full Control before it resets, and
+ * says loudly if it could not. A run interrupted between the break and the
+ * restore leaves one scratch list with unique permissions: re-run with
+ * CLEANUP, or delete the list.
+ *
+ * STATUS: NOT YET RUN. No transcript exists, so nothing here is settled and
+ * the claim in `_lists.js.j2` stands unmeasured.
+ *
+ * WHEN FINISHED: delete the list it created.
+ */
+(async () => {
+  // ---- Operator gate -------------------------------------------------
+  // All default false. Pasting an unedited probe prints its plan and
+  // stops; nothing touches the tenant until the operator opts in.
+  const CONFIRMED = false;
+  const ALLOW_WRITES = false;
+
+  // CLEANUP deletes the probe's own list BEFORE the run, so every question
+  // is answered by actually creating something rather than reporting
+  // "already present" from a previous run, which is much weaker evidence.
+  //
+  // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
+  // ever touches the explicitly named probe-owned list or lists; it never
+  // enumerates or deletes anything else. Each list is RECYCLED, not purged,
+  // so a mistake is recoverable from the site recycle bin.
+  const CLEANUP = false;
+
+  // No SITE_URL constant, deliberately. The probe reads the site it was
+  // pasted into. A tenant URL committed to this repo has leaked twice, and
+  // the field was the vector both times.
+  const pageCtx = window._spPageContextInfo;
+  if (!pageCtx) {
+    console.error('[FATAL] No _spPageContextInfo. Paste this into a SharePoint page.');
+    return;
+  }
+  const WEB = pageCtx.webAbsoluteUrl;
+
+  const log = (level, msg) => console.log(`[${level}] ${msg}`);
+
+  const getDigest = async () => {
+    const res = await fetch(`${WEB}/_api/contextinfo`, {
+      method: 'POST', headers: { Accept: 'application/json;odata=verbose' },
+    });
+    if (!res.ok) throw new Error(`contextinfo failed: HTTP ${res.status}`);
+    const body = await res.json();
+    return body.d.GetContextWebInformation.FormDigestValue;
+  };
+
+  const spGet = async (path) => {
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      headers: { Accept: 'application/json;odata=nometadata' },
+    });
+    return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
+  };
+
+  // NOTE the contract, because getting it wrong has produced false verdicts
+  // here twice: `body` is the PARSED payload whether or not the request
+  // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
+  // so `body !== null` says the response was JSON, never that the call
+  // worked. Anything asking "did I actually read this?" must test `ok`.
+  const readFailed = (r) => !r.ok || r.body === null;
+
+  // Was this request REFUSED (the server saying no to what was sent) or
+  // did it merely fail? A negative control that cannot tell the difference
+  // certifies the surface as observable on the strength of a throttle, and
+  // every row it guards is then read as evidence.
+  //
+  // Defined by what it EXCLUDES, because the tempting definition is wrong
+  // here. "400 means bad request" is the HTTP convention and it is not what
+  // this tenant does: every SharePoint refusal this project has recorded
+  // came back 500:
+  //
+  //   "To add an item to a document library, use SPFileCollection.Add()"
+  //   "One or more column references are not allowed, because the columns
+  //    are defined as a data type that is not supported in formulas"
+  //   "The formula refers to a column that does not exist"
+  //   "This field type does not support..."
+  //
+  // (analysis/checks/_structure.py, analysis/conditions.py, generators/
+  // jsgen.py, each dated and cited to a live run). A 400-only test would
+  // therefore have reported NOT ESTABLISHED for every negative control on a
+  // tenant behaving exactly as recorded, which is the opposite failure and a
+  // worse one: it would quietly retire the controls the stack's own evidence
+  // rests on.
+  //
+  // So: 401/403 are about WHO is asking and 408/429 about the moment; those
+  // are never refusals. Everything else non-2xx is treated as the server
+  // rejecting the content, and the response TEXT is always printed beside
+  // the verdict so a reader can see which it was.
+  const isRefusal = (status) =>
+    status >= 400 && status !== 401 && status !== 403
+    && status !== 408 && status !== 429;
+
+  // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
+  // both through POST rather than accepting them as real verbs.
+  const spPost = async (path, payload, digest, extraHeaders = {}) => {
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json;odata=nometadata',
+        'Content-Type': 'application/json;odata=nometadata',
+        'X-RequestDigest': digest,
+        ...extraHeaders,
+      },
+      body: JSON.stringify(payload),
+    });
+    // The interesting result is often the REFUSAL, so the response text is
+    // returned rather than thrown: a 400 here is the finding, not a crash.
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* SharePoint sent plain text */ }
+    return { ok: res.ok, status: res.status, body: parsed, text };
+  };
+
+  // ---- Pre-run reset --------------------------------------------------
+  // Call this before bootstrapping. A no-op unless CLEANUP is on, so the
+  // probe body reads the same either way.
+  const resetList = async (title) => {
+    if (!CLEANUP) return false;
+    if (!ALLOW_WRITES) {
+      log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
+      return false;
+    }
+    const found = await spGet(`web/lists/getbytitle('${title}')`);
+    if (!found.ok) {
+      log('INFO', `CLEANUP: no list named '${title}' to remove.`);
+      return false;
+    }
+    log('INFO', `CLEANUP: removing list '${title}' and its items.`);
+
+    // Items first. Recycling the list takes them with it, but doing this
+    // explicitly still clears the data if the list itself cannot be
+    // removed. A locked or no-delete list would otherwise leave rows from
+    // a previous run answering this run's questions.
+    let digest = await getDigest();
+    const items = await spGet(
+      `web/lists/getbytitle('${title}')/items?$select=Id&$top=5000`);
+    const rows = (items.ok && items.body && items.body.value) || [];
+    for (const row of rows) {
+      digest = await getDigest();
+      await spPost(`web/lists/getbytitle('${title}')/items(${row.Id})`, {}, digest,
+                   { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
+    }
+    if (rows.length) log('INFO', `CLEANUP: deleted ${rows.length} item(s).`);
+    if (rows.length === 5000) {
+      log('INFO', 'CLEANUP: hit the 5000-row page limit; re-run to clear the rest.');
+    }
+
+    digest = await getDigest();
+    const gone = await spPost(`web/lists/getbytitle('${title}')/recycle`, {}, digest);
+    if (gone.ok) {
+      log('OK', `CLEANUP: recycled list '${title}'. It is restorable from the recycle bin.`);
+    } else {
+      log('FAIL', `CLEANUP: could not recycle '${title}': HTTP ${gone.status} ${gone.text.slice(0, 200)}`);
+    }
+    return gone.ok;
+  };
+
+  // ---- Result table --------------------------------------------------
+  // A probe answers questions. Outcome and EVIDENCE are recorded
+  // separately so a run cannot be summarised as a verdict with nothing
+  // behind it.
+  //
+  // Every question is REGISTERED UP FRONT as NOT ESTABLISHED, and record()
+  // overwrites. Appending as you go looks equivalent and is not: a probe
+  // that aborts early then reports only what it reached, and prints
+  // "0 not established" while most of its questions were never asked.
+  //
+  // STATE carries the coarse answer alongside the prose, from the five-value
+  // vocabulary in test/manual/SURFACES.md: settled, open, awaiting-capture,
+  // void, needs-human. There are 83 distinct outcome heads across the
+  // committed evidence, which is good prose and a bad enum, so a reader
+  // downstream sorts on state and quotes outcome. record() takes an explicit
+  // state and that always wins; the classifier below is the default for the
+  // rows nobody has ruled on yet, and it reproduces exactly what report()
+  // used to derive from the outcome head.
+  //
+  // ABORTED is open, not settled. It is the head a probe records when its
+  // fixture never built, so the question it names was never asked; classifying
+  // it settled printed "N answered, 0 open" for a run that measured nothing.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT', 'ABORTED'];
+  const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
+  const stateFor = (outcome) => {
+    if (AWAITING_CAPTURE_HEADS.some((p) => outcome.startsWith(p))) return 'awaiting-capture';
+    if (OPEN_HEADS.some((p) => outcome.startsWith(p))) return 'open';
+    return 'settled';
+  };
+  const RESULTS = [];
+  const expect = (id, question) => {
+    RESULTS.push({
+      id, question, outcome: 'NOT ESTABLISHED',
+      evidence: 'the run did not reach this question', state: 'open',
+    });
+  };
+  const record = (id, question, outcome, evidence, state) => {
+    const next = { question, outcome, evidence, state: state || stateFor(outcome) };
+    const row = RESULTS.find((r) => r.id === id);
+    if (row) {
+      Object.assign(row, next);
+    } else {
+      RESULTS.push({ id, ...next });
+    }
+    const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
+    log(level, `${id}: ${outcome}. ${question}`);
+    if (evidence) console.log(`      evidence: ${evidence}`);
+  };
+
+  const report = () => {
+    console.log('\n==================== RESULTS ====================');
+    for (const r of RESULTS) {
+      console.log(`${r.id.padEnd(6)} ${r.state.padEnd(16)} ${r.outcome.padEnd(16)} ${r.question}`);
+      if (r.evidence) console.log(`       ${r.evidence}`);
+    }
+    console.log('=================================================');
+    // Counted off state rather than off the outcome head, so the summary and
+    // the per-row state can never disagree. awaiting-capture stays open until
+    // a person records the observation. void does NOT: the control row names a
+    // reason this identity can never answer, so counting it open reports work
+    // that no re-run can clear, and counting it answered claims a measurement
+    // nobody made. It gets its own number.
+    const voided = RESULTS.filter((r) => r.state === 'void').length;
+    const open = RESULTS.filter((r) => r.state !== 'settled' && r.state !== 'void').length;
+    const waiting = RESULTS.filter((r) => r.state === 'awaiting-capture').length;
+    const answered = RESULTS.length - open - voided;
+    console.log(`${RESULTS.length} question(s); ${answered} answered, ${open} open, ${voided} voided.`);
+    if (waiting) {
+      console.log(`${waiting} of those are waiting on an observation somebody has to make.`);
+    }
+    if (open) {
+      console.log('A question with no observation is NOT a pass. Report it as open.');
+    }
+    console.log('Copy this whole block back verbatim.');
+  };
+
+  log('INFO', 'probe revision d400b5cc. Quote this when reporting results.');
+
+  const LIST = 'dbmlsp Probe OperatorGrant';
+  const OWNERSHIP = 'dbml-sharepoint operator-safety-grant probe list. Safe to delete.';
+  const listPath = `web/lists/getbytitle('${LIST}')`;
+
+  const Q_FIXTURE = 'A generic list exists and still inherits, so the break below has something to act on';
+  const Q_CONTROL = 'NEGATIVE CONTROL: removeroleassignment naming a principal and a level that do not exist is refused on the broken scope';
+  const Q_LEFT = 'What role assignments does breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false) leave on a list';
+  const Q_OPERATOR = 'Is one of them a direct binding for the account that ran the break';
+  const Q_STICKS = 'Does removing that direct binding stick, or does SharePoint re-derive it';
+  const Q_LEVELS = 'What level names does this tenant report at a list scope, for the English literal the deploy matches on';
+
+  expect('access.list-acl.fixture-scratch-list', Q_FIXTURE);
+  expect('access.list-acl.control-unknown-principal-refused', Q_CONTROL);
+  expect('access.list-acl.break-leaves-bindings', Q_LEFT);
+  expect('access.list-acl.break-leaves-operator-binding', Q_OPERATOR);
+  expect('access.list-acl.operator-binding-removal-sticks', Q_STICKS);
+  expect('access.list-acl.derived-level-names', Q_LEVELS);
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create a LIST '${LIST}' on ${WEB}, break its role inheritance`);
+    log('INFO', 'with copyRoleAssignments=false, record exactly what bindings the break');
+    log('INFO', "left, remove this account's own binding if there is one, and record");
+    log('INFO', 'whether it came back. It then grants the owner group Full Control and');
+    log('INFO', 'restores inheritance. Run as a site collection administrator.');
+    if (CLEANUP) {
+      log('INFO', `CLEANUP is ON: '${LIST}' would be RECYCLED first.`);
+    } else {
+      log('INFO', 'CLEANUP is off. A list left unique by an earlier run cannot answer');
+      log('INFO', 'what a break leaves, so set CLEANUP = true for a clean run.');
+    }
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write.');
+    log('INFO', 'Set ALLOW_WRITES = true to proceed. Stopping.');
+    return;
+  }
+
+  // Track what this run broke so the restore pass knows what to reset.
+  let listBroken = false;
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // HasUniqueRoleAssignments reports the state BEFORE the write for a moment:
+  // MEASURED 2026-09-09 by library.access.unique-permissions-library, where a
+  // library read false on the first read after a successful break and true on
+  // the second. Every reading of it is a bounded re-read that reports each
+  // attempt, so a lagging property stays separable from a break that did not
+  // hold.
+  const UNIQUE_TRIES = 6;
+  const UNIQUE_WAIT_MS = 2000;
+  const readUnique = async (wanted) => {
+    const attempts = [];
+    let value = null;
+    for (let i = 0; i < UNIQUE_TRIES; i += 1) {
+      if (i) await sleep(UNIQUE_WAIT_MS);
+      const res = await spGet(`${listPath}?$select=HasUniqueRoleAssignments`);
+      value = readFailed(res) ? null : res.body.HasUniqueRoleAssignments;
+      attempts.push(`read ${i + 1}: HTTP ${res.status}, HasUniqueRoleAssignments=${String(value)}`);
+      if (value === wanted) break;
+    }
+    return {
+      value,
+      reached: value === wanted,
+      text: `${attempts.length} read(s) waiting for ${String(wanted)}: ${attempts.join('; ')}`,
+    };
+  };
+
+  // One binding per (principal, level) pair, which is the shape _acls.js.j2
+  // reconciles in. The login name is deliberately NOT carried out of here: the
+  // only question about identity is whether a row is THIS account, and a
+  // principal id answers it without putting a UPN in a transcript.
+  const bindings = async () => {
+    const res = await spGet(`${listPath}/roleassignments?$expand=Member,RoleDefinitionBindings&$top=200`);
+    if (readFailed(res) || !Array.isArray(res.body.value)) {
+      return { ok: false, status: res.status, rows: [] };
+    }
+    const rows = [];
+    for (const row of res.body.value) {
+      const member = row.Member || {};
+      for (const level of (row.RoleDefinitionBindings || [])) {
+        rows.push({
+          principalId: Number(row.PrincipalId),
+          title: member.Title == null ? '(no title)' : member.Title,
+          principalType: member.PrincipalType,
+          levelId: Number(level.Id),
+          levelName: level.Name,
+        });
+      }
+    }
+    return { ok: true, status: res.status, rows };
+  };
+
+  const describe = (rows) => (
+    rows.length === 0
+      ? 'no rows'
+      : rows.map((r) => (
+        `principal ${r.principalId} '${r.title}' (PrincipalType ${r.principalType}) `
+        + `-> level ${r.levelId} '${r.levelName}'`
+      )).join('; ')
+  );
+
+  // Runs on every path out of the questions, so a break that happened is
+  // always paired with its reset. The owner group is granted Full Control
+  // FIRST and deliberately after every measurement: the run may have removed
+  // this account's own binding, and a scope nobody can write is a scope
+  // nobody can restore.
+  const restoreInheritance = async () => {
+    if (!listBroken) {
+      log('OK', `'${LIST}' was never broken by this run; nothing to restore.`);
+      return;
+    }
+    try {
+      // Resolved from the tenant, never from a remembered id: a wrong level
+      // id here would grant something nobody chose. RoleTypeKind 5 is read
+      // rather than trusted, and a miss costs only the safety net.
+      const owners = await spGet('web/associatedownergroup?$select=Id,Title');
+      const defs = await spGet('web/roledefinitions?$select=Id,Name,RoleTypeKind&$top=100');
+      const full = (!readFailed(defs) && Array.isArray(defs.body.value))
+        ? defs.body.value.find((d) => Number(d.RoleTypeKind) === 5)
+        : null;
+      if (!readFailed(owners) && owners.body.Id && full) {
+        const grantDigest = await getDigest();
+        const grant = await spPost(
+          `${listPath}/roleassignments/addroleassignment(principalid=${owners.body.Id},roleDefId=${full.Id})`,
+          {}, grantDigest);
+        log(grant.ok ? 'OK' : 'INFO',
+            `owner-group safety grant ('${full.Name}') before the reset: HTTP ${grant.status}`);
+      } else {
+        log('FAIL', 'Could not resolve the owner group or a full-control level, so no safety '
+                    + `grant was made. If the reset below fails, fix '${LIST}' by hand.`);
+      }
+      const digest = await getDigest();
+      const reset = await spPost(`${listPath}/resetroleinheritance`, {}, digest);
+      if (!reset.ok) {
+        log('FAIL', `Could not restore '${LIST}': HTTP ${reset.status} ${reset.text.slice(0, 200)}. `
+                    + 'The list still holds unique permissions. Fix or delete it by hand.');
+        return;
+      }
+      const after = await readUnique(false);
+      log(after.reached ? 'OK' : 'FAIL',
+          after.reached
+            ? `'${LIST}' restored to inherited permissions.`
+            : `'${LIST}' still does not read as inheriting after a successful reset. `
+              + `Verify by hand. ${after.text}`);
+    } catch (err) {
+      log('FAIL', `restore pass failed: ${String(err)}. Check '${LIST}' by hand.`);
+    }
+  };
+
+  await resetList(LIST);
+  let digest = await getDigest();
+
+  // ---- fixture-scratch-list -------------------------------------------
+  const existing = await spGet(`${listPath}?$select=Title`);
+  if (!existing.ok) {
+    digest = await getDigest();
+    const made = await spPost('web/lists', {
+      Title: LIST,
+      BaseTemplate: 100,
+      Description: OWNERSHIP,
+    }, digest);
+    if (!made.ok) {
+      record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'ABORTED',
+             `could not create '${LIST}': HTTP ${made.status} ${made.text.slice(0, 260)}`);
+      return report();
+    }
+  }
+
+  // A list an earlier run left broken cannot answer what a break leaves, and
+  // reporting its leftover bindings as this run's measurement is the exact
+  // failure a fixture row exists to prevent.
+  const beforeBreak = await readUnique(false);
+  if (!beforeBreak.reached) {
+    record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'ABORTED',
+           `'${LIST}' does not read as inheriting before the break, so what a break `
+           + `leaves cannot be observed on it. Set CLEANUP = true and paste again. `
+           + beforeBreak.text);
+    return report();
+  }
+  record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'PASS',
+         `'${LIST}' exists and inherits. ${beforeBreak.text}`);
+
+  try {
+    // ---- the break ----------------------------------------------------
+    // Asserted, not measured: every row below is about a scope that actually
+    // holds unique permissions, so a break that was refused or never took
+    // leaves nothing to observe rather than something to report.
+    digest = await getDigest();
+    const broke = await spPost(
+      `${listPath}/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)`,
+      {}, digest);
+    if (broke.ok) listBroken = true;
+    const unique = broke.ok ? await readUnique(true) : null;
+    if (!broke.ok || !unique.reached) {
+      const why = broke.ok
+        ? `the break was accepted but the list never read HasUniqueRoleAssignments=true. ${unique.text}`
+        : `breakroleinheritance answered HTTP ${broke.status} ${broke.text.slice(0, 200)}`;
+      record('access.list-acl.control-unknown-principal-refused', Q_CONTROL,
+             'NOT ESTABLISHED', why, 'void');
+      record('access.list-acl.break-leaves-bindings', Q_LEFT, 'NOT ESTABLISHED', why, 'void');
+      record('access.list-acl.break-leaves-operator-binding', Q_OPERATOR, 'NOT ESTABLISHED', why, 'void');
+      record('access.list-acl.operator-binding-removal-sticks', Q_STICKS, 'NOT ESTABLISHED', why, 'void');
+      record('access.list-acl.derived-level-names', Q_LEVELS, 'NOT ESTABLISHED', why, 'void');
+      return report();
+    }
+
+    // ---- break-leaves-bindings, derived-level-names -------------------
+    // OBSERVED. Whatever came back is the answer, including nothing.
+    const left = await bindings();
+    if (!left.ok) {
+      const why = `the role-assignment enumeration answered HTTP ${left.status}, so what the `
+        + 'break left was never read. A refused read here may itself be the answer: this '
+        + 'account may no longer be able to read the scope it just broke.';
+      record('access.list-acl.break-leaves-bindings', Q_LEFT, 'NOT ESTABLISHED', why);
+      record('access.list-acl.break-leaves-operator-binding', Q_OPERATOR, 'NOT ESTABLISHED', why, 'void');
+      record('access.list-acl.operator-binding-removal-sticks', Q_STICKS, 'NOT ESTABLISHED', why, 'void');
+      record('access.list-acl.derived-level-names', Q_LEVELS, 'NOT ESTABLISHED', why, 'void');
+      record('access.list-acl.control-unknown-principal-refused', Q_CONTROL, 'NOT ESTABLISHED', why, 'void');
+      return report();
+    }
+    record('access.list-acl.break-leaves-bindings', Q_LEFT, 'OBSERVED',
+           `${left.rows.length} binding(s) after the break: ${describe(left.rows)}`);
+    const levelNames = [...new Set(left.rows.map((r) => r.levelName))];
+    record('access.list-acl.derived-level-names', Q_LEVELS, 'OBSERVED',
+           `level name(s) this scope reports: ${levelNames.length ? levelNames.map((n) => `'${n}'`).join(', ') : 'none'}. `
+           + `_acls.js.j2 exempts the literal 'Limited Access' and matches no other name.`);
+
+    // ---- break-leaves-operator-binding --------------------------------
+    const me = await spGet('web/currentuser?$select=Id,Title,PrincipalType');
+    if (readFailed(me)) {
+      const why = `web/currentuser answered HTTP ${me.status}, so no row can be attributed to `
+        + 'this account';
+      record('access.list-acl.break-leaves-operator-binding', Q_OPERATOR, 'NOT ESTABLISHED', why, 'void');
+      record('access.list-acl.operator-binding-removal-sticks', Q_STICKS, 'NOT ESTABLISHED', why, 'void');
+      record('access.list-acl.control-unknown-principal-refused', Q_CONTROL, 'NOT ESTABLISHED', why, 'void');
+      return report();
+    }
+    const myId = Number(me.body.Id);
+    const mine = left.rows.filter((r) => r.principalId === myId);
+    record('access.list-acl.break-leaves-operator-binding', Q_OPERATOR, 'OBSERVED',
+           mine.length
+             ? `principal ${myId} is this account and holds ${mine.length} binding(s) here: ${describe(mine)}`
+             : `principal ${myId} is this account and holds NO direct binding here. The `
+               + `${left.rows.length} row(s) the break left name other principals.`);
+
+    // ---- control-unknown-principal-refused ----------------------------
+    // 42424242 is far above any real principal or role definition id on a
+    // tenant. If the server accepts it, a removal answering HTTP 200 below
+    // proves nothing and the removal row is void.
+    digest = await getDigest();
+    const bogus = await spPost(
+      `${listPath}/roleassignments/removeroleassignment(principalid=42424242,roleDefId=42424242)`,
+      {}, digest);
+    const controlHeld = !bogus.ok && isRefusal(bogus.status);
+    record('access.list-acl.control-unknown-principal-refused', Q_CONTROL,
+           bogus.ok ? 'FAIL' : controlHeld ? 'PASS' : 'NOT ESTABLISHED',
+           bogus.ok
+             ? 'removeroleassignment accepted a nonexistent principal and level with HTTP 200, '
+               + 'so a 200 from the real removal below is not evidence of anything.'
+             : controlHeld
+               ? `refused with HTTP ${bogus.status}: ${bogus.text.slice(0, 260)}`
+               : `the request failed with HTTP ${bogus.status}, which is not the server `
+                 + 'rejecting the call. The removal row below is void.');
+
+    // ---- operator-binding-removal-sticks ------------------------------
+    if (!controlHeld) {
+      record('access.list-acl.operator-binding-removal-sticks', Q_STICKS, 'NOT ESTABLISHED',
+             'the negative control did not hold, so no removal on this scope is trustworthy', 'void');
+    } else if (!mine.length) {
+      record('access.list-acl.operator-binding-removal-sticks', Q_STICKS,
+             'NOT REACHED', 'the break left no direct binding for this account, so there was '
+             + 'nothing to remove. That is an answer about the premise and not about the '
+             + 'removal: on this tenant the deploy has no operator grant to prune.');
+    } else {
+      const target = mine[0];
+      digest = await getDigest();
+      const removed = await spPost(
+        `${listPath}/roleassignments/removeroleassignment(principalid=${target.principalId},roleDefId=${target.levelId})`,
+        {}, digest);
+      // The same window settleBindings uses: five reads, 2000 ms apart. The
+      // deploy's verdict is whatever the LAST of those sees, so every read is
+      // reported rather than only the one that agreed.
+      const SETTLE_READS = 5;
+      const SETTLE_MS = 2000;
+      const seen = [];
+      let stillThere = null;
+      for (let attempt = 0; attempt < SETTLE_READS; attempt += 1) {
+        if (attempt > 0) await sleep(SETTLE_MS);
+        const now = await bindings();
+        stillThere = now.ok
+          ? now.rows.some((r) => r.principalId === target.principalId && r.levelId === target.levelId)
+          : null;
+        seen.push(`read ${attempt + 1}: HTTP ${now.status}, ${now.ok ? `${now.rows.length} row(s), ` : ''}`
+                  + `binding ${stillThere === null ? 'unreadable' : stillThere ? 'PRESENT' : 'gone'}`);
+      }
+      record('access.list-acl.operator-binding-removal-sticks', Q_STICKS, 'OBSERVED',
+             `removeroleassignment(principalid=${target.principalId},roleDefId=${target.levelId}) `
+             + `answered HTTP ${removed.status}${removed.ok ? '' : ` ${removed.text.slice(0, 200)}`}. `
+             + `Then, over ${(SETTLE_READS - 1) * SETTLE_MS} ms: ${seen.join('; ')}.`);
+    }
+  } catch (err) {
+    log('FAIL', `the access pass aborted: ${err && err.message ? err.message : String(err)}`);
+  } finally {
+    await restoreInheritance();
+  }
+
+  return report();
+})();

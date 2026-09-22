@@ -253,10 +253,10 @@
     // measured; `library.access.role-assignment-library` in the manual probe
     // now counts the reads one takes to appear, and that number replaces this.
     const settleBindings = async (scope, judge) => {
-      const FOLDER_BINDING_SETTLE_MS = 2000;
+      const SCOPE_BINDING_SETTLE_MS = 2000;
       let complaint = null;
       for (let attempt = 0; attempt < 5; attempt += 1) {
-        if (attempt > 0) await sleep(FOLDER_BINDING_SETTLE_MS);
+        if (attempt > 0) await sleep(SCOPE_BINDING_SETTLE_MS);
         complaint = judge(await scopeBindings(scope));
         if (complaint === null) return null;
       }
@@ -426,7 +426,8 @@
       // first and discovering afterwards that the declared administrators
       // never landed is how a scope gets locked. Verified here, the phase
       // aborts with every existing binding still in place.
-      if (resolvedAssignments.length > 0) {
+      const verifiedDeclaredPresent = resolvedAssignments.length > 0;
+      if (verifiedDeclaredPresent) {
         const wanted = resolvedAssignments.map(
           x => ({ key: `${x.principalId}:${x.roleDefId}`, at: x }),
         );
@@ -475,6 +476,7 @@
       // support lower-scope access and this phase never writes it.
       if (scope.reconcile_mode === 'exact') {
         const complaint = await settleBindings(scope, (rows) => {
+          // 'Limited Access' is the English name; a localized tenant is unverified.
           const strays = rows.filter(
             row => row.name !== 'Limited Access' && !desired.has(row.key),
           );
@@ -484,7 +486,7 @@
           throw new Error(`'${scope.label}' still reports ${complaint.length} role assignment(s) this exact policy does not declare (${complaint.map(row => row.key).join(', ')}). The removals were accepted, so either the scope has not caught up or they did not take; the declared grants are in place and rerunning reads the bindings again.`);
         }
         log('INFO', `[Phase 4.2] '${scope.label}' reports exactly the ${desired.size} declared role assignment(s).`);
-      } else {
+      } else if (verifiedDeclaredPresent) {
         log('INFO', `[Phase 4.2] '${scope.label}' reports all ${resolvedAssignments.length} declared role assignment(s).`);
       }
     };

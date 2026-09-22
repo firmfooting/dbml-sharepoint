@@ -7665,20 +7665,22 @@ def _run_ownership_deploy(
     level ('Read'), which the plain harness's role-definition state does not
     carry.
     """
-    built = _ownership_harness(tmp_path, table_names).replace(
-        "const SABOTAGE_FROM_PHASE = null;",
-        f"const SABOTAGE_FROM_PHASE = {json.dumps(sabotage_phase)};",
-    ).replace(
-        "const SABOTAGE_TITLES = [];",
-        f"const SABOTAGE_TITLES = {json.dumps(list(sabotage_titles))};",
-    ).replace(
-        "const SABOTAGE_MODE = 'marker';",
-        f"const SABOTAGE_MODE = {json.dumps(sabotage_mode)};",
-    ).replace(
-        "const SABOTAGE_AFTER_READS = 0;",
-        f"const SABOTAGE_AFTER_READS = {json.dumps(sabotage_after_reads)};",
-    )
-    harness = built if harness is None else harness
+    # Built only when it is going to be used. Rendering the pack to throw
+    # the result away is what hid the seed a `harness=` caller loses.
+    if harness is None:
+        harness = _ownership_harness(tmp_path, table_names).replace(
+            "const SABOTAGE_FROM_PHASE = null;",
+            f"const SABOTAGE_FROM_PHASE = {json.dumps(sabotage_phase)};",
+        ).replace(
+            "const SABOTAGE_TITLES = [];",
+            f"const SABOTAGE_TITLES = {json.dumps(list(sabotage_titles))};",
+        ).replace(
+            "const SABOTAGE_MODE = 'marker';",
+            f"const SABOTAGE_MODE = {json.dumps(sabotage_mode)};",
+        ).replace(
+            "const SABOTAGE_AFTER_READS = 0;",
+            f"const SABOTAGE_AFTER_READS = {json.dumps(sabotage_after_reads)};",
+        )
     script = harness + "\n" + _ownership_deploy_js(tmp_path, table_names).replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
@@ -7979,6 +7981,59 @@ def test_a_list_removal_that_did_not_take_is_refused(tmp_path: Path) -> None:
         "still reports" in err["error"] and "does not declare" in err["error"]
         for err in summary["errors"]
     ), summary
+
+
+# Configured mode with an empty `assignments` is reachable: `_permissions.py`
+# defaults the key to `[]`, and the present check is skipped when nothing is
+# declared, so the line beneath it has nothing behind it.
+_CONFIGURED_ACL_SECTION = """
+    groups:
+      - name: "Configured Reader"
+        description: "Read-only grant target for the configured-mode tests."
+        owner_group: "Site Owners"
+        allow_members_edit_membership: false
+        allow_request_to_join_leave: false
+        auto_accept_request_to_join_leave: false
+        only_allow_members_view_membership: false
+
+    list_permissions:
+      default:
+        site_role: default
+        break_inheritance: true
+        reconcile: configured
+{assignments}
+"""
+
+_CONFIGURED_ACL_GRANT = """        assignments:
+          - principal: { kind: group, name: "Configured Reader" }
+            level: "Read"
+"""
+
+
+def _configured_acl_log(tmp_path: Path, assignments: str) -> list[str]:
+    """Phase 4.2's log lines for one configured-mode list."""
+    js = _declared_deploy_js(
+        tmp_path, _CONFIGURED_ACL_SECTION.format(assignments=assignments),
+    )
+    script = _READER_ACL_HARNESS + "\n" + js.replace(
+        "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+    # A log read off a broken run says nothing about which branch it took.
+    assert _summary_of(output).get("errors") == [], output[-3000:]
+    return _phase_log(output, pn("acls"))
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_configured_list_reports_only_a_read_back_it_made(tmp_path: Path) -> None:
+    """Both halves, because the absence on its own passes just as happily
+    against a phase that stopped logging altogether."""
+    granted = _configured_acl_log(tmp_path, _CONFIGURED_ACL_GRANT)
+    assert any("reports all 1 declared role assignment(s)" in line for line in granted), (
+        granted
+    )
+    silent = _configured_acl_log(tmp_path, "")
+    assert not [line for line in silent if "reports all" in line], silent
 
 
 def test_the_deploy_confirms_the_editor_still_refuses_the_guard() -> None:
