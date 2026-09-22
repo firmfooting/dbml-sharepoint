@@ -546,8 +546,11 @@ the complete allowlist reconciliation and its descendant-scope checks.
 | Folder | Inheritance | Principal | Level |
 |--------|-------------|-----------|-------|
 {% for fa in schema_json.get('folder_assignments') %}
+{% if not fa.assignments %}
+| {{ (fa.list ~ '/' ~ fa.folder) | markdown_cell }} | {% if fa.break_inheritance %}broken{% else %}not broken here{% endif %} | _none declared_ | {% if fa.break_inheritance and fa.reconcile_mode == 'exact' %}every direct grant on this folder is removed{% else %}nothing is granted{% endif %} |
+{% endif %}
 {% for a in fa.assignments %}
-| {{ (fa.list ~ '/' ~ fa.folder) | markdown_cell }} | {% if fa.break_inheritance %}broken{% else %}inherited{% endif %} | {% if a.principal.kind == 'group' %}{{ a.principal.name | markdown_cell }} (group){% elif a.principal.kind == 'associated_owner_group' %}Site Owners (associated owner){% elif a.principal.kind == 'associated_member_group' %}Site Members (associated member){% else %}Site Visitors (associated visitor){% endif %} | {{ a.level | markdown_cell }} |
+| {{ (fa.list ~ '/' ~ fa.folder) | markdown_cell }} | {% if fa.break_inheritance %}broken{% else %}not broken here{% endif %} | {% if a.principal.kind == 'group' %}{{ a.principal.name | markdown_cell }} (group){% elif a.principal.kind == 'associated_owner_group' %}Site Owners (associated owner){% elif a.principal.kind == 'associated_member_group' %}Site Members (associated member){% else %}Site Visitors (associated visitor){% endif %} | {{ a.level | markdown_cell }} |
 {% endfor %}
 {% endfor %}
 {% else %}
@@ -557,8 +560,10 @@ _(no per-folder assignments configured)_
 A folder scope is written against the folder's list item, after its library's
 own reconciliation. A folder marked **broken** no longer receives grants made
 at library scope, so every principal that needs access inside it appears
-above; one marked **inherited** still receives them, and the assignments above
-are added to what it already has.
+above. **Not broken here** means this deploy does not call
+`breakroleinheritance` on that folder and does not read its current state, so
+whether it inherits or already carries a unique scope of its own is not
+something this manifest can report.
 
 ## Seed items
 

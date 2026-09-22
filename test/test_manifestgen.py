@@ -1309,3 +1309,111 @@ def test_manifest_inventories_folder_assignments(tmp_path: Path) -> None:
     assert "Clinical services Editors (group)" in md
     assert "Folder Editor" in md
     assert "_(no per-folder assignments configured)_" not in md
+
+
+def test_a_folder_policy_granting_nothing_still_names_its_folder(
+    tmp_path: Path,
+) -> None:
+    """The emptiest policy is the most consequential one to render.
+
+    `break_inheritance: true` with `reconcile: exact` and no assignments
+    removes every direct grant on that folder. Rendered as a row per
+    assignment it produced a table with a header and no rows, so the one
+    folder the deploy strips was the one the manifest never named.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping="""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: division}
+
+            list_permissions:
+              folders:
+                Docs:
+                  break_inheritance: true
+                  reconcile: exact
+                  assignments: []
+        """,
+    )
+    md = generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="docs.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+    assert "APP_Docs/Clinical services" in md
+    assert "every direct grant on this folder is removed" in md
+
+
+def test_a_folder_the_deploy_does_not_break_is_not_called_inherited(
+    tmp_path: Path,
+) -> None:
+    """`break_inheritance: false` skips `breakroleinheritance` and reads
+    nothing, so whether that folder inherits is not something this run knows.
+
+    A folder somebody had already given a unique scope would be reported as
+    inheriting the library's grants, which is the class of claim this
+    repository refuses to make without a read behind it.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping="""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: division}
+
+            permission_levels:
+              - name: "Folder Editor"
+                description: "Edit inside one folder."
+                base_permissions: [ViewListItems, AddListItems, EditListItems]
+
+            groups:
+              - name: "Docs Editors"
+                description: "Editors."
+                owner_group: "Site Owners"
+
+            list_permissions:
+              folders:
+                Docs:
+                  break_inheritance: false
+                  reconcile: configured
+                  assignments:
+                    - principal: { kind: group, name: "Docs Editors" }
+                      level: "Folder Editor"
+        """,
+    )
+    md = generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="docs.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+    assert "not broken here" in md
+    assert "inherited" not in md
