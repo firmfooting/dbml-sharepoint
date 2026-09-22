@@ -450,8 +450,7 @@
         // SharePoint derives 'Limited Access' to support lower-scope access.
         // It is not a direct grant at this scope and this phase never writes
         // it, so neither mode removes it.
-        // The English name. On a localized tenant this match fails silently
-        // and the phase removes SharePoint's own derived binding.
+        // This matches the English name, so a localized tenant's derived binding is removed.
         if (row.name === 'Limited Access') continue;
         if (desired.has(row.key)) continue;
         if (scope.reconcile_mode === 'exact') {

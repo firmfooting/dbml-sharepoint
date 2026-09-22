@@ -8932,11 +8932,11 @@ _OPERATOR_OWNER_GROUP = 5
 #: set rather than a single string that could be anything.
 _OPERATOR_LEFT_BINDINGS = [
     {
-        "principalId": _OPERATOR_PRINCIPAL, "title": "Probe Operator",
+        "principalId": _OPERATOR_PRINCIPAL, "title": "Wilhelmina Torres",
         "principalType": 1, "levelId": 3, "levelName": "Full Control",
     },
     {
-        "principalId": 8, "title": "Probe Visitors",
+        "principalId": 8, "title": "Kirkmichael Team",
         "principalType": 8, "levelId": 4, "levelName": "Limited Access",
     },
 ]
@@ -8999,11 +8999,14 @@ _OPERATOR_HARNESS = textwrap.dedent("""
       }
       if (u.includes('/web/currentuser')) {
         return jsonResponse(200, {
-          Id: CONFIG.operatorPrincipal, Title: 'Probe Operator', PrincipalType: 1 });
+          Id: CONFIG.operatorPrincipal,
+          PrincipalType: 1,
+          IsSiteAdmin: CONFIG.siteAdmin,
+        });
       }
       if (u.includes('/web/associatedownergroup')) {
         if (CONFIG.ownerGroupUnreadable) return jsonResponse(500, { error: 'refused' });
-        return jsonResponse(200, { Id: CONFIG.ownerGroup, Title: 'Probe Owners' });
+        return jsonResponse(200, { Id: CONFIG.ownerGroup, Title: 'Restored Owner Group' });
       }
       if (u.includes('/web/roledefinitions')) {
         return jsonResponse(200, { value: [
@@ -9043,7 +9046,7 @@ _OPERATOR_HARNESS = textwrap.dedent("""
       const addition = ADD.exec(u);
       if (addition) {
         site.bindings.push({
-          principalId: Number(addition[1]), title: 'Probe Owners',
+          principalId: Number(addition[1]), title: 'Restored Owner Group',
           principalType: 8, levelId: Number(addition[2]), levelName: 'Full Control',
         });
         return jsonResponse(200, {});
@@ -9060,8 +9063,13 @@ _OPERATOR_HARNESS = textwrap.dedent("""
         if (CONFIG.resetRefused) {
           return jsonResponse(500, { error: 'resetroleinheritance refused' });
         }
-        site.unique = false;
-        site.bindings = [];
+        // A 200 that changes nothing is the other restore failure: the reset
+        // was ACCEPTED and the scope still reads as holding unique
+        // permissions, which means something different to whoever repairs it.
+        if (!CONFIG.resetNeverClears) {
+          site.unique = false;
+          site.bindings = [];
+        }
         return jsonResponse(200, {});
       }
       if (u.includes('/roleassignments?')) {
@@ -9148,7 +9156,9 @@ def _run_operator_grant_probe(
         "removalRefused": False,
         "removalReDerives": False,
         "resetRefused": False,
+        "resetNeverClears": False,
         "ownerGroupUnreadable": False,
+        "siteAdmin": True,
         "throwOn": None,
         "operatorPrincipal": _OPERATOR_PRINCIPAL,
         "ownerGroup": _OPERATOR_OWNER_GROUP,
@@ -9449,3 +9459,152 @@ def test_an_unreadable_owner_group_is_reported_before_the_reset_is_tried() -> No
     ), output
     # The grant runs after every measurement, so losing it changes no row.
     assert not [row for row in rows.values() if row["state"] != "settled"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_aborting_run_restores_before_it_prints_the_block_to_copy() -> None:
+    """The RESULTS block ends with "Copy this whole block back verbatim", so
+    anything printed after it is what an obedient operator leaves out.
+
+    The three early exits used to sit inside the try, and `return report()`
+    in a try is evaluated BEFORE the finally, so the block went out and the
+    list was restored afterwards. On this path the restore also FAILS, which
+    is the line that must not be the one omitted.
+    """
+    _rows, _urls, output = _run_operator_grant_probe(
+        enumerationRefused=True, resetRefused=True,
+    )
+
+    lines = output.splitlines()
+    header = next(i for i, line in enumerate(lines) if "RESULTS" in line)
+    failure = next(
+        i for i, line in enumerate(lines)
+        if line.startswith("[FAIL] ") and "still holds unique permissions" in line
+    )
+    assert failure < header, (
+        "the restore failure printed AFTER the block the operator is told to "
+        "copy back:\n" + "\n".join(lines[min(header, failure):])
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_account_that_is_not_a_site_admin_is_refused_the_removal() -> None:
+    """The prerequisite was documented three times and enforced nowhere.
+
+    A non-administrator who removes its own binding can lose write access to
+    the scope, and the restore then cannot put it back. The probe reads
+    IsSiteAdmin off the `web/currentuser` call it was already making and
+    refuses, rather than proceeding and hoping.
+    """
+    rows, urls, _output = _run_operator_grant_probe(siteAdmin=False)
+
+    sticks = rows["access.list-acl.operator-binding-removal-sticks"]
+    assert sticks["outcome"] == "NOT REACHED"
+    assert sticks["state"] == "awaiting-capture"
+    assert "not a site collection administrator" in sticks["evidence"]
+    assert "Nothing was removed" in sticks["evidence"]
+    # Said rather than claimed: the only removal that went out is the
+    # negative control's, which names a principal nobody is.
+    removals = [url for url in urls if "/removeroleassignment(" in url]
+    assert len(removals) == 1, removals
+    assert "principalid=42424242" in removals[0]
+    # Everything that does not rest on a removal is still measured.
+    assert rows["access.list-acl.break-leaves-bindings"]["state"] == "settled"
+    assert rows["access.list-acl.break-leaves-operator-binding"]["state"] == "settled"
+    assert _restored(urls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unreadable_is_site_admin_is_as_fatal_as_an_unreadable_id() -> None:
+    """The restore depends on it, so it is asserted rather than observed. A
+    `web/currentuser` that answers without it cannot license a removal."""
+    rows, urls, _output = _run_operator_grant_probe(siteAdmin=None)
+
+    for question in ("access.list-acl.break-leaves-operator-binding",
+                     "access.list-acl.operator-binding-removal-sticks",
+                     "access.list-acl.control-unknown-principal-refused"):
+        assert rows[question]["state"] == "void", question
+        assert "without a readable Id and IsSiteAdmin" in rows[question]["evidence"]
+    assert not [url for url in urls if "/removeroleassignment(" in url]
+    assert _restored(urls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_no_principal_title_reaches_the_result_table() -> None:
+    """A transcript gets pasted into a pull request. On a live run a
+    principal's Title is the operator's display name, and the derived row's
+    is a group name that usually carries the site's.
+
+    The classification is recorded instead: principal type, title LENGTH, and
+    which id is this account.
+    """
+    rows, _urls, output = _run_operator_grant_probe()
+
+    for binding in _OPERATOR_LEFT_BINDINGS:
+        title = str(binding["title"])
+        assert title not in output, (
+            f"the principal Title {title!r} reached the transcript"
+        )
+    left = rows["access.list-acl.break-leaves-bindings"]["evidence"]
+    # Two different lengths, so the number is per row rather than a constant.
+    assert "(PrincipalType 1, title 17 chars)" in left, left
+    assert "(PrincipalType 8, title 16 chars)" in left, left
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_reset_accepted_that_clears_nothing_is_a_different_failure() -> None:
+    """The restore's third failure line, and the one M12 showed a refused
+    reset must not be mistaken for. Here the call was ACCEPTED, so what the
+    operator has to check is the scope rather than the request."""
+    rows, urls, output = _run_operator_grant_probe(resetNeverClears=True)
+
+    failures = _fail_lines(output)
+    assert len(failures) == 1, f"expected exactly one FAIL line: {failures}"
+    assert f"'{_OPERATOR_LIST_TITLE}' still does not read as inheriting" in failures[0]
+    assert "after a successful reset" in failures[0]
+    assert "Verify by hand" in failures[0]
+    assert "Could not restore" not in failures[0], (
+        "an accepted reset that cleared nothing must not read as a refused one"
+    )
+    assert any("/resetroleinheritance" in url for url in urls)
+    assert not [row for row in rows.values() if row["state"] != "settled"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_that_cannot_be_created_answers_nothing_and_breaks_nothing() -> None:
+    """No fixture, so no question was asked. The run must say that rather
+    than report five rows nobody measured, and it must not reset a list it
+    never made."""
+    rows, urls, _output = _run_operator_grant_probe(createRefused=True)
+
+    fixture = rows["access.list-acl.fixture-scratch-list"]
+    assert fixture["outcome"] == "ABORTED"
+    assert fixture["state"] == "open"
+    assert "could not create" in fixture["evidence"]
+    assert "HTTP 500" in fixture["evidence"]
+    assert not [url for url in urls if "/breakroleinheritance(" in url]
+    assert not _restored(urls)
+    assert [
+        row for row in rows.values()
+        if row["evidence"] == "the run did not reach this question"
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unreadable_enumeration_may_itself_be_the_answer() -> None:
+    """A read refused immediately after this account broke the scope could
+    be the break having removed its own access, which is the premise under
+    test. The row says so rather than reporting an empty collection."""
+    rows, urls, _output = _run_operator_grant_probe(enumerationRefused=True)
+
+    left = rows["access.list-acl.break-leaves-bindings"]
+    assert left["outcome"] == "NOT ESTABLISHED"
+    assert "may no longer be able to read the scope it just broke" in left["evidence"]
+    for question in ("access.list-acl.break-leaves-operator-binding",
+                     "access.list-acl.operator-binding-removal-sticks",
+                     "access.list-acl.derived-level-names",
+                     "access.list-acl.control-unknown-principal-refused"):
+        assert rows[question]["state"] == "void", question
+    assert not [url for url in urls if "/removeroleassignment(" in url]
+    # The break happened, so the restore still has to run.
+    assert _restored(urls)
