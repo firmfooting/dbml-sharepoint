@@ -11,7 +11,6 @@ from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
-from dbml_sharepoint.analysis.folders import UnknownFolderEnumError, declared_folders
 from dbml_sharepoint.analysis.limits import LIST_VIEW_THRESHOLD
 from dbml_sharepoint.analysis.typemap import element_type
 from dbml_sharepoint.model.mapping_types import (
@@ -24,24 +23,29 @@ from dbml_sharepoint.model.mapping_types import (
 
 def check(vc: ValidationContext) -> list[Finding]:
     findings: list[Finding] = []
+    # Read off `resolved.unresolved` rather than re-tested here, so the
+    # message and the deploy's tuple agree.
+    unresolved_folder_enums = {
+        item.entity: item.enum
+        for item in vc.resolved.unresolved
+        if item.entity is not None
+    }
     for entity_name, entity in vc.bundle.mapping.entities.items():
         at = Location(Section.ENTITIES, entity=entity_name, sub="folders")
-        try:
-            folders = declared_folders(
-                entity.folder_source, vc.enum_members_by_name,
-            )
-        except UnknownFolderEnumError as err:
-            # Caught rather than re-tested here, so the message and the deploy's tuple agree.
+        unknown_enum = unresolved_folder_enums.get(entity_name)
+        if unknown_enum is not None:
             findings.append(Finding(
                 FindingCode.FOLDER_ENUM_UNKNOWN,
                 f"entities[{entity_name}].folders: from_enum names "
-                f"{err.enum!r}, which the schema does not declare. Declared "
+                f"{unknown_enum!r}, which the schema does not declare. Declared "
                 f"enums are: "
                 f"{', '.join(sorted(vc.enum_members_by_name)) or 'none'}.",
                 location=at,
             ))
             # Unresolved, which is not the same answer as "declares none".
             folders = None
+        else:
+            folders = vc.resolved.folders.get(entity_name, ())
         findings += _folder_enum_is_this_entity_s(vc, entity_name, entity)
         findings += _folders(
             entity_name, entity, folders or (),
@@ -60,7 +64,7 @@ def _folder_permissions(vc: ValidationContext) -> list[Finding]:
 
     Keyed by entity and never by folder, so the only questions left are
     whether the entity exists, whether it can hold folders, and whether it
-    declares any. Which folders it declares is `declared_folders`' answer
+    declares any. Which folders it declares is `resolved.folders`' answer
     and is not re-derived here.
     """
     perms = vc.bundle.mapping.permissions
@@ -87,9 +91,8 @@ def _folder_permissions(vc: ValidationContext) -> list[Finding]:
                 location=at,
             ))
             continue
-        try:
-            folders = declared_folders(entity.folder_source, vc.enum_members_by_name)
-        except UnknownFolderEnumError:
+        folders = vc.resolved.folders.get(entity_name)
+        if folders is None:
             # Already reported against the entity by `check` above, where the
             # message can name the enum and the declared ones. Saying it twice
             # from two locations reads as two faults.
