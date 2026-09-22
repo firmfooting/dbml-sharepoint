@@ -9058,6 +9058,15 @@ _OPERATOR_HARNESS = textwrap.dedent("""
         return jsonResponse(200, {});
       }
       if (u.includes('/breakroleinheritance(')) {
+        // Applied and then THROWN out of, which leaves the flag false the
+        // same way a non-2xx answer does, by a different control path: the
+        // throw lands in the measurement pass's catch rather than in its
+        // refusal branch.
+        if (CONFIG.breakAppliedThenThrows) {
+          site.unique = true;
+          site.bindings = CONFIG.leftBindings.map((b) => ({ ...b }));
+          throw new Error('mock transport failure after the break was applied');
+        }
         // Applied and then answered non-2xx, which is what leaves a run's own
         // `listBroken` flag false over a list that really is unique.
         if (CONFIG.breakAppliedThenRefused) {
@@ -9166,6 +9175,7 @@ def _run_operator_grant_probe(
         "alreadyUnique": False,
         "breakRefused": False,
         "breakAppliedThenRefused": False,
+        "breakAppliedThenThrows": False,
         "uniqueNeverTrue": False,
         "enumerationRefused": False,
         "controlAccepted": False,
@@ -9286,13 +9296,18 @@ def test_a_refused_break_leaves_every_question_open_and_restores_nothing() -> No
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_a_break_that_never_reads_unique_is_not_measured() -> None:
+def test_a_break_that_never_reads_unique_is_still_restored() -> None:
     """The other half of the same dependency: a scope that never reads as
     holding unique permissions has nothing to enumerate.
 
-    And nothing to restore either. The restore reads the tenant rather than
-    the run's own flag, so a list reporting that it inherits is left alone
-    instead of being written to for the sake of a flag.
+    It still has to be reset. The break was ACCEPTED, and
+    HasUniqueRoleAssignments is measured to lag it: 2026-09-09,
+    `library.access.unique-permissions-library`, where the property read false
+    on the first read after a successful break and true on the second, within
+    10 s. So "the flag says I broke it and the property says it inherits" is
+    the documented shape of a break that DID take and has not surfaced, and a
+    false read is not permission to walk away. Resetting an inheriting list is
+    a no-op write; leaving a production list broken is not.
     """
     rows, urls, output = _run_operator_grant_probe(uniqueNeverTrue=True)
 
@@ -9302,12 +9317,12 @@ def test_a_break_that_never_reads_unique_is_not_measured() -> None:
         assert "the break was accepted but the list never read" in (
             rows[question]["evidence"]
         )
-    assert not _restored(urls), (
-        "the list reads as inheriting, so resetting it writes to somebody's "
-        "site for nothing"
+    assert _restored(urls), (
+        "the break was accepted, so the reset has to go out however the "
+        f"property reads:\n{output[-2000:]}"
     )
     assert any(
-        line.startswith("[OK] ") and "reads as inheriting; nothing to restore" in line
+        line.startswith("[INFO] ") and "measured to lag the break" in line
         for line in output.splitlines()
     ), output
 
@@ -9717,5 +9732,33 @@ def test_a_restore_that_throws_says_which_list_to_check() -> None:
     # And the outer catch caught the same throw out of the measurement pass.
     assert any(
         line.startswith("[FAIL] ") and "the access pass aborted" in line
+        for line in output.splitlines()
+    ), output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_break_that_landed_before_its_fetch_threw_is_still_restored() -> None:
+    """The second route into the gap the union buys, by a different control
+    path from the refused one.
+
+    The server applied the break and the request then threw, so `listBroken`
+    is false and the throw lands in the measurement pass's catch rather than
+    in its refusal branch. Only the tenant knows the list is unique.
+    """
+    rows, urls, output = _run_operator_grant_probe(breakAppliedThenThrows=True)
+
+    assert any(
+        line.startswith("[FAIL] ") and "the access pass aborted" in line
+        for line in output.splitlines()
+    ), output
+    # Nothing past the break was reached, so nothing past it may claim an answer.
+    for question in _OPERATOR_BREAK_GATED:
+        assert rows[question]["evidence"] == "the run did not reach this question"
+    assert _restored(urls), (
+        "the server applied the break and only the tenant knows it, so the "
+        f"flag alone would leave a production list unique:\n{output[-2000:]}"
+    )
+    assert any(
+        line.startswith("[OK] ") and "restored to inherited permissions" in line
         for line in output.splitlines()
     ), output

@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHAT A BREAK LEAVES, AND WHETHER REMOVING IT STICKS
  *
- * REVISION: 90a03536
+ * REVISION: f3b74e72
  *
  * THE CLAIM UNDER TEST. `deploy/_lists.js.j2` says, beside the early
  * isolation break, that "copyRoleAssignments=false leaves only SharePoint's
@@ -340,7 +340,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 90a03536. Quote this when reporting results.');
+  log('INFO', 'probe revision f3b74e72. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe OperatorGrant';
   const OWNERSHIP = 'dbml-sharepoint operator-safety-grant probe list. Safe to delete.';
@@ -512,20 +512,28 @@
   // restore.
   const restoreInheritance = async () => {
     try {
-      // The TENANT decides, not the flag. `listBroken` is set only when the
-      // break POST answered 2xx, so a break that was applied and answered
-      // otherwise, or one whose fetch threw after the server applied it,
-      // would leave a production list unique while the run said there was
-      // nothing to put back.
+      // The UNION of the two, never one of them. `listBroken` alone misses a
+      // break the server applied and answered non-2xx, or one whose fetch
+      // threw after the write landed. The property alone misses a break that
+      // took and has not surfaced: MEASURED 2026-09-09,
+      // `library.access.unique-permissions-library`, where
+      // HasUniqueRoleAssignments read FALSE on the first read after a
+      // successful break and TRUE on the second, within 10 s. So a false read
+      // is not permission to walk away from a break that was accepted. The
+      // costs are not symmetric: resetting an inheriting list is a no-op
+      // write, and leaving a production list broken is not.
       const unique = await readsUnique();
-      if (unique === false) {
-        log('OK', `'${LIST}' reads as inheriting; nothing to restore.`);
+      if (!listBroken && unique !== true) {
+        log(unique === null ? 'FAIL' : 'OK',
+            unique === null
+              ? `Could not read whether '${LIST}' holds unique permissions, and this run has `
+                + 'no record of breaking it. Check it by hand.'
+              : `'${LIST}' reads as inheriting and this run broke nothing; nothing to restore.`);
         return;
       }
-      if (unique === null && !listBroken) {
-        log('FAIL', `Could not read whether '${LIST}' holds unique permissions, and this run `
-                    + 'has no record of breaking it. Check it by hand.');
-        return;
+      if (unique === false) {
+        log('INFO', `'${LIST}' reads as inheriting, and this run broke it. Resetting anyway: `
+                    + 'the property is measured to lag the break.');
       }
       if (unique === null) {
         log('FAIL', `Could not read whether '${LIST}' holds unique permissions after this run `
