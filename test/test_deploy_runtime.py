@@ -24,7 +24,7 @@ from urllib.parse import quote
 
 import pytest
 from _batch_mock import BATCH_MOCK
-from _builders import ID_PK, table
+from _builders import ID_PK, TITLE, table
 from _node import NODE
 from _node import run_node as _run
 from _packs import DEFAULT_PREFIX, blocks, entities, pack
@@ -5415,6 +5415,238 @@ def test_an_accepted_change_log_grant_that_is_not_observed_is_recorded() -> None
         c for c in calls
         if c.get("body") and "enterprise reader grant" in str(c["body"])
     ], "a change row claimed a grant the list does not report"
+
+
+# === The change log's grant picks a scope kind, not just a level ===
+#
+# `readerGrant` in _logging.js.j2 chooses ONE grant to mirror onto the change
+# log from every scope the reader group holds across SCHEMA.acl_scopes list
+# and folder scopes alike. The two tests below run a bespoke two-entity
+# schema rather than the fixed reader fixture, because the fixed fixture
+# grants the reader only at list scope and cannot distinguish the two
+# emission orders a merged collection makes possible. Logging is phase 1.6,
+# in PREPARE, before list creation (2.1), folder creation (2.2) and ACL
+# reconciliation (4.2), so neither entity's list nor its folder has to exist
+# on the mock site for phase 1.6 to be observed -- exactly as the note above
+# records for the fixed fixture's own later abort.
+
+#: 'Docs', created first, secured ONLY at folder scope with a level that is
+#: Read plus two elevated bits -- the concrete shape a folder policy takes
+#: when it grants more than reading. 'Policies', created second, secured at
+#: list scope with the built-in Read. Both grant the SAME reader group, so
+#: the winner is decided by scope kind and creation order, not by which
+#: level is stronger.
+_FOLDER_AND_LIST_READER_MAPPING = """
+entities:
+  Docs:
+    kind: List
+    base_template: 100
+    site_role: default
+    folders: ["Team"]
+  Policies:
+    kind: List
+    base_template: 100
+    site_role: default
+
+permission_levels:
+  - name: "Folder Reader Plus"
+    description: "Read, plus edit rights inside one folder."
+    base_permissions:
+      - ViewListItems
+      - ViewFormPages
+      - Open
+      - AddListItems
+      - EditListItems
+
+groups:
+  - name: "Enterprise Reader"
+    description: "Read-only enrolment target for --enterprise-reader."
+    owner_group: "Site Owners"
+    enroll_enterprise_reader: true
+
+list_permissions:
+  overrides:
+    Policies:
+      break_inheritance: true
+      reconcile: exact
+      assignments:
+        - principal: { kind: group, name: "Enterprise Reader" }
+          level: "Read"
+  folders:
+    Docs:
+      break_inheritance: true
+      reconcile: exact
+      assignments:
+        - principal: { kind: group, name: "Enterprise Reader" }
+          level: "Folder Reader Plus"
+"""
+
+#: The same reader group, granted ONLY inside 'Docs' folders -- no list
+#: anywhere grants it anything. The round-8 regression this pins: the change
+#: log must still get a grant mirrored, not be left with no role
+#: assignments, when the only grant a merged collection holds is a folder one.
+_FOLDER_ONLY_READER_MAPPING = """
+entities:
+  Docs:
+    kind: List
+    base_template: 100
+    site_role: default
+    folders: ["Team"]
+
+permission_levels:
+  - name: "Folder Reader Plus"
+    description: "Read, plus edit rights inside one folder."
+    base_permissions:
+      - ViewListItems
+      - ViewFormPages
+      - Open
+      - AddListItems
+      - EditListItems
+
+groups:
+  - name: "Enterprise Reader"
+    description: "Read-only enrolment target for --enterprise-reader."
+    owner_group: "Site Owners"
+    enroll_enterprise_reader: true
+
+list_permissions:
+  folders:
+    Docs:
+      break_inheritance: true
+      reconcile: exact
+      assignments:
+        - principal: { kind: group, name: "Enterprise Reader" }
+          level: "Folder Reader Plus"
+"""
+
+
+def _run_folder_and_list_reader_deploy(
+    tmp_path: Path, mapping: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    """`_run_reader_deploy`, but for a schema built here rather than the
+    fixed `sharepoint-mapping-with-reader.yaml`, and always with sidecars
+    on: both new tests are about the change log's grant."""
+    from dbml_sharepoint.analysis.sidecars import (
+        CHANGE_FIELDS,
+        CHANGE_LOG_TITLE,
+        RUN_LOG_STAMP_COLUMNS,
+        RUN_LOG_TITLE,
+        change_log_marker,
+        run_log_marker,
+    )
+    from dbml_sharepoint.generators.jsgen import generate_deploy_js
+    from dbml_sharepoint.model.release import load_release
+
+    schema, bundle = pack(
+        tmp_path, dbml=table("Docs", ID_PK, TITLE) + table("Policies", ID_PK, TITLE),
+        mapping=mapping,
+    )
+    js = _without_assessment(generate_deploy_js(
+        schema=schema,
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="s.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+        enterprise_reader=_READER_ADDRESS,
+        sidecar_run_log_title=RUN_LOG_TITLE,
+        sidecar_run_log_marker=run_log_marker(),
+        sidecar_run_log_fields=list(RUN_LOG_STAMP_COLUMNS),
+        sidecar_change_log_title=CHANGE_LOG_TITLE,
+        sidecar_change_log_marker=change_log_marker(),
+        sidecar_change_fields=list(CHANGE_FIELDS),
+    ))
+    # Neither entity is in DEFAULT_LIST_DESCRIPTIONS, so the harness's
+    # "every probed list is already there" fiction would otherwise report
+    # both as existing with a blank Description and abort preflight (1.2) on
+    # a marker mismatch, before phase 1.6 ever runs.
+    harness = _with_sidecar_descriptions(_reader_harness(_RESOLVED_USER))
+    absent = "const ABSENT_LIST_TITLES = [];"
+    assert harness.count(absent) == 1, "the adopted harness no longer declares no absent lists"
+    harness = harness.replace(absent, 'const ABSENT_LIST_TITLES = ["APP_Docs", "APP_Policies"];')
+    script = harness + "\n" + js.replace(
+        "})();",
+        "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
+        " console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); })",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+    result_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
+    )
+    assert result_line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
+    calls_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
+    )
+    assert calls_line is not None, f"harness produced no call log:\n{output[-3000:]}"
+    assert f"Starting Phase {pn('logging')}" in output, (
+        f"the logging phase never ran:\n{output[-3000:]}"
+    )
+    return (
+        json.loads(result_line.removeprefix("__RESULT__")),
+        json.loads(calls_line.removeprefix("__CALLS__")),
+        output,
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_change_logs_reader_grant_prefers_a_list_scope_over_a_folder_scope(
+    tmp_path: Path,
+) -> None:
+    """The reader group holds a stronger level inside 'Docs' folders and the
+    built-in Read at 'Policies' list scope. 'Docs' is created first, so a
+    readerGrant that took the first grant in SCHEMA.acl_scopes order -- the
+    bug this pins -- would mirror the FOLDER level onto the change log
+    instead, handing the reporting account edit rights it must not have."""
+    from dbml_sharepoint.analysis.sidecars import CHANGE_LOG_TITLE
+
+    summary, calls, output = _run_folder_and_list_reader_deploy(
+        tmp_path, _FOLDER_AND_LIST_READER_MAPPING,
+    )
+    assert not summary.get("loggingFailures"), summary.get("loggingFailures")
+    granted = [
+        c for c in calls
+        if c["method"] == "POST"
+        and f"getbytitle('{CHANGE_LOG_TITLE}')" in c["url"]
+        and "roleassignments/addroleassignment" in c["url"]
+    ]
+    assert granted, (
+        f"the reader was never granted on {CHANGE_LOG_TITLE}: "
+        f"{[c['url'] for c in calls if CHANGE_LOG_TITLE in c['url']]}\n{output[-3000:]}"
+    )
+    assert f"principalid=9,roleDefId={_READ_LEVEL_ID}" in granted[0]["url"], (
+        f"the change log was granted something other than the list-scope Read: "
+        f"{granted[0]}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_change_logs_reader_grant_still_mirrors_a_folder_only_grant(
+    tmp_path: Path,
+) -> None:
+    """The reader group holds a grant ONLY inside 'Docs' folders -- no list
+    anywhere grants it anything. A readerGrant that filtered SCHEMA.acl_scopes
+    down to list scopes before searching -- the mutation Fix 1 warns against
+    -- would find nothing here and leave the change log with no role
+    assignments, which is the round-8 regression this pins."""
+    from dbml_sharepoint.analysis.sidecars import CHANGE_LOG_TITLE
+
+    summary, calls, output = _run_folder_and_list_reader_deploy(
+        tmp_path, _FOLDER_ONLY_READER_MAPPING,
+    )
+    assert not summary.get("loggingFailures"), summary.get("loggingFailures")
+    assert "no reader group grant found to mirror" not in output, output[-3000:]
+    granted = [
+        c for c in calls
+        if c["method"] == "POST"
+        and f"getbytitle('{CHANGE_LOG_TITLE}')" in c["url"]
+        and "roleassignments/addroleassignment" in c["url"]
+    ]
+    assert granted, (
+        f"the folder-only grant was never mirrored onto the change log: "
+        f"{[c['url'] for c in calls if CHANGE_LOG_TITLE in c['url']]}\n{output[-3000:]}"
+    )
 
 
 # === Step 0: the grant is judged by its bitmap, not by its name (#199) ===
