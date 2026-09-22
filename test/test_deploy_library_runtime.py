@@ -77,6 +77,32 @@ list_permissions:
           level: "Folder Editor"
 """
 
+# A library secured ONLY at folder scope: `permissions_for_entity` returns
+# None for it, so `acl_scopes` carries its folder rows and no list row.
+_FOLDER_ONLY_LIBRARY = _FOLDERED_LIBRARY + """
+permission_levels:
+  - name: "Folder Editor"
+    description: "Edit inside one folder."
+    base_permissions:
+      - ViewListItems
+      - AddListItems
+      - EditListItems
+
+groups:
+  - name: "Clinical services Editors"
+    description: "One folder's editors."
+    owner_group: "Site Owners"
+
+list_permissions:
+  folders:
+    Escalation:
+      break_inheritance: true
+      reconcile: exact
+      assignments:
+        - principal: { kind: group, name: "{member} Editors" }
+          level: "Folder Editor"
+"""
+
 #: The same library in `configured` mode, with ONE principal declared at TWO
 #: levels. That is the shape the per-assignment prune got wrong: each pass
 #: treated its own level as the principal's whole desired state, so the pass
@@ -1171,6 +1197,44 @@ def _folder_acl_run(
         _library_deploy_js(tmp_path, _FOLDER_ACL_LIBRARY, titled=False),
     )
     return summary, calls
+
+
+def test_a_library_secured_only_at_folder_scope_reaches_every_consumer(
+    tmp_path: Path,
+) -> None:
+    """Folder rows with no list row beside them.
+
+    This is the shape the two collections' union used to carry, and after the
+    merge it is five filters in five files that have to agree about it. A
+    wrong filter drops the library from a phase silently: nothing throws and
+    the phase logs success over an empty list.
+    """
+    harness = _library_harness(declared_folder=True, unique_after=1)
+    summary, calls, _ = _run(
+        harness,
+        _library_deploy_js(tmp_path, _FOLDER_ONLY_LIBRARY, titled=False),
+    )
+
+    assert summary["errors"] == [], summary["errors"]
+
+    # _acls.js.j2 reconciles the folder scope.
+    folder_breaks = [
+        c for c in calls
+        if "breakroleinheritance" in c["url"] and "/items(" in c["url"]
+    ]
+    assert folder_breaks, [c["url"] for c in calls]
+
+    # _lists.js.j2 does NOT early-isolate the LIST: no list-scope policy
+    # asked for it, and breaking it here would take the library away from
+    # everybody the web grants.
+    list_breaks = [
+        c for c in calls
+        if "breakroleinheritance" in c["url"] and "/items(" not in c["url"]
+    ]
+    assert list_breaks == [], [c["url"] for c in list_breaks]
+
+    # _seeds.js.j2 still checks the operator's rights on the library.
+    assert any("effectivebasepermissions" in c["url"] for c in calls)
 
 
 def test_configured_mode_keeps_every_level_one_principal_is_declared_with(
