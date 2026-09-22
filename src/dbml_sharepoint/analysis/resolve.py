@@ -1,0 +1,149 @@
+# src/dbml_sharepoint/analysis/resolve.py
+"""Resolve every enum-sourced mapping section once, at the boundary.
+
+`entities.<name>.folders` and `groups[].from_enum` are both written against a
+schema enum and resolved by `analysis/folders.py` and `analysis/groups.py`.
+Each of those already offers a strict resolver (raise on an unknown enum) and
+a lenient one (drop that source, keep the rest), because a generator and a
+check need different behaviour for the same defect: a build must never
+silently omit a declared group or folder, but a check must keep judging every
+OTHER group and folder while the misspelling itself is reported by its own
+rule.
+
+This module does not choose between the two. It resolves LENIENTLY, once, and
+records what it could not resolve, so the difference between a generator's
+needs and a check's becomes what a caller does with one field (`unresolved`)
+rather than which function it called. `ResolvedMapping.require_resolved`
+gives a generator the strict behaviour back, raising the same error types
+the strict resolvers raise today.
+
+Nothing here imports a check, so a generator can read it.
+"""
+
+from collections.abc import Mapping as MappingABC
+from dataclasses import dataclass
+
+from dbml_sharepoint.analysis.folders import (
+    UnknownFolderEnumError,
+    declared_folders,
+    folder_policies,
+)
+from dbml_sharepoint.analysis.groups import UnknownGroupEnumError, resolvable_groups
+from dbml_sharepoint.model.mapping_types import ListPermissionPolicy, Mapping, SiteGroup
+from dbml_sharepoint.model.parser import Schema
+
+
+@dataclass(frozen=True)
+class UnresolvedEnum:
+    """One `from_enum` source naming an enum the schema does not declare.
+
+    `entity` is the entity whose `folders` named it, for a folder source.
+    It is `None` for a `groups[].from_enum` source, which is not scoped to
+    any one entity. One shape carries both rather than a tagged type per
+    source, because nothing downstream asks for more than this: the finding
+    each source's own rule reports (`FOLDER_ENUM_UNKNOWN`,
+    `GROUP_ENUM_UNKNOWN`) builds its message from the enum name alone, and
+    where an entity is part of that message the check already has it from
+    the loop that found the source, not from this record.
+    """
+
+    enum: str
+    entity: str | None = None
+
+
+@dataclass(frozen=True)
+class ResolvedMapping:
+    """Every enum source in a mapping, resolved once against a schema.
+
+    Built by `resolve()`, always leniently: a folder or group source naming
+    an enum the schema does not declare is left out of the resolved fields
+    below and recorded in `unresolved` instead of raised, so one bad
+    `from_enum` does not stop every OTHER group or folder from being judged.
+    A caller that must fail closed instead -- a generator, which must never
+    silently omit a declared group or folder -- calls `require_resolved()`
+    first.
+
+    `folders` and `folder_policies` key by entity name and agree with each
+    other on what "no answer" means: an entity ABSENT from either is one
+    whose folder source could not be resolved (recorded in `unresolved`); an
+    entity PRESENT with an empty tuple is one that resolved and declares no
+    folders. An entity that never writes a `folders:` key at all falls into
+    the second case, never the first: `EntityMapping.folder_source` defaults
+    to `()`, which `declared_folders` resolves to no folders without ever
+    raising. So every entity in the mapping is a key in both `folders` and
+    `folder_policies`, except the ones actually unresolved.
+    """
+
+    #: The schema's own enums, keyed by name. Five call sites used to rebuild
+    #: this same projection from `schema.enums`; built once here instead.
+    enum_members: MappingABC[str, tuple[str, ...]]
+    folders: MappingABC[str, tuple[str, ...]]
+    folder_policies: MappingABC[str, tuple[tuple[str, ListPermissionPolicy], ...]]
+    #: Every group that resolved, literal and enum-generated, in declaration
+    #: order -- `analysis/groups.py::_ordered`'s order, not re-derived here.
+    groups: tuple[SiteGroup, ...]
+    unresolved: tuple[UnresolvedEnum, ...] = ()
+
+    def require_resolved(self) -> None:
+        """Raise what the strict resolvers raise today, for a generator.
+
+        Raises on the FIRST unresolved source: `UnknownFolderEnumError` for
+        a folder source, `UnknownGroupEnumError` for a group source, each
+        carrying the same `.enum` the strict `declared_folders` and
+        `declared_groups` raise today. An existing `except
+        UnknownFolderEnumError` therefore still catches it, and a finding
+        that formats its message off `err.enum` (`_library.py` does exactly
+        this) reads the same whichever resolver raised it.
+
+        A no-op when nothing is unresolved.
+        """
+        if not self.unresolved:
+            return
+        first = self.unresolved[0]
+        if first.entity is not None:
+            raise UnknownFolderEnumError(first.enum)
+        raise UnknownGroupEnumError(first.enum)
+
+
+def resolve(schema: Schema, mapping: Mapping) -> ResolvedMapping:
+    """Resolve `mapping`'s folders, folder policies and groups against `schema`.
+
+    Lenient, as `ResolvedMapping` describes: an entity or group source naming
+    an enum the schema does not declare is left out of the resolved fields
+    and appended to `unresolved` rather than raised. Folders are resolved per
+    entity, in `mapping.entities` order; groups are resolved once via
+    `resolvable_groups`, which already leaves out only the sources it cannot
+    resolve, and `mapping.permissions.group_sources` is then walked once more
+    to name which of those, if any, that was.
+    """
+    enum_members = {enum.name: tuple(enum.members) for enum in schema.enums}
+    unresolved: list[UnresolvedEnum] = []
+
+    folders: dict[str, tuple[str, ...]] = {}
+    policies: dict[str, tuple[tuple[str, ListPermissionPolicy], ...]] = {}
+    perms = mapping.permissions
+    for entity_name, entity in mapping.entities.items():
+        try:
+            folders[entity_name] = declared_folders(entity.folder_source, enum_members)
+        except UnknownFolderEnumError as err:
+            unresolved.append(UnresolvedEnum(enum=err.enum, entity=entity_name))
+            continue
+        policies[entity_name] = folder_policies(
+            entity_name, entity.folder_source, perms, enum_members,
+        )
+
+    groups = resolvable_groups(perms, enum_members)
+    if perms is not None:
+        unresolved.extend(
+            UnresolvedEnum(enum=source.enum)
+            for source in perms.group_sources
+            if source.enum not in enum_members
+        )
+
+    return ResolvedMapping(
+        enum_members=enum_members,
+        folders=folders,
+        folder_policies=policies,
+        groups=groups,
+        unresolved=tuple(unresolved),
+    )

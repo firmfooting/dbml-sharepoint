@@ -1,6 +1,6 @@
 ---
 title: bundle
-sidebar_position: 47
+sidebar_position: 48
 ---
 
 # `dbml_sharepoint.bundle`
