@@ -1210,6 +1210,57 @@ def test_configured_mode_keeps_every_level_one_principal_is_declared_with(
     assert removals == [], removals
 
 
+def test_configured_mode_prunes_a_declared_principal_and_spares_a_stranger(
+    tmp_path: Path,
+) -> None:
+    """Both halves of the configured-mode predicate, in one run.
+
+    Configured mode judges a binding by whether the mapping names its
+    PRINCIPAL: a declared principal loses a level the mapping does not
+    declare, and a principal the mapping never names keeps every binding it
+    holds. This branch now reads the one snapshot rather than probing each
+    declared principal, and a predicate wrong in either direction reports the
+    same clean run, having stripped a stranger or having pruned nothing.
+    """
+    # Principal 9 is what the mock resolves any group to, so 7 is a principal
+    # this mapping cannot name. 2 and 3 are the two declared levels, in
+    # declaration order; 99 is a level it never declares.
+    seeded = json.dumps({"APP_Escalation": [[
+        {
+            "Member": {"Id": 9, "Title": "List Maintainer", "PrincipalType": 8},
+            "RoleDefinitionBindings": {"results": [
+                {"Id": 2, "Name": "Folder Editor"},
+                {"Id": 3, "Name": "Folder Approver"},
+                {"Id": 99, "Name": "Full Control"},
+            ]},
+        },
+        {
+            "Member": {"Id": 7, "Title": "Stray Group", "PrincipalType": 8},
+            "RoleDefinitionBindings": {"results": [
+                {"Id": 2, "Name": "Folder Editor"},
+            ]},
+        },
+    ]]})
+    harness = _library_harness(declared_folder=True, unique_after=1).replace(
+        "const ROLE_ASSIGNMENT_PAGES = {};",
+        f"const ROLE_ASSIGNMENT_PAGES = {seeded};",
+    )
+    summary, calls, _ = _run(
+        harness,
+        _library_deploy_js(tmp_path, _TWO_LEVEL_CONFIGURED_LIBRARY, titled=False),
+    )
+
+    assert summary["errors"] == [], summary["errors"]
+    removals = [
+        c["url"] for c in calls if "removeroleassignment" in c.get("url", "")
+    ]
+    assert len(removals) == 1, removals
+    assert "removeroleassignment(principalid=9,roleDefId=99)" in removals[0], removals
+    assert not any("principalid=7," in url for url in removals), (
+        f"a principal the mapping never names lost a binding: {removals}"
+    )
+
+
 def test_a_folder_lookup_without_an_id_is_refused(tmp_path: Path) -> None:
     """A folder read that answers without an Id must abort, not proceed.
 

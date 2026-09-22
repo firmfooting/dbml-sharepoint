@@ -391,6 +391,9 @@
       const missingGrants = resolvedAssignments.filter(
         x => !held.has(`${x.principalId}:${x.roleDefId}`),
       );
+      // The adds are independent of one another, so they go out as ONE $batch.
+      // The break above and every removal below stay single POSTs, because those
+      // are ordered against the reads around them.
       if (missingGrants.length > 0) {
         // The bracket is no weaker for holding a batch, only wider: the
         // title is proved to be the surveyed list immediately before the
@@ -471,9 +474,6 @@
       // matter most. Only 'Limited Access' is exempt: SharePoint derives it
       // to support lower-scope access and this phase never writes it.
       if (scope.folderPath && scope.reconcile_mode === 'exact') {
-        const desired = new Set(resolvedAssignments.map(
-          x => `${x.principalId}:${x.roleDefId}`,
-        ));
         const complaint = await settleBindings(scope, (rows) => {
           const strays = rows.filter(
             row => row.name !== 'Limited Access' && !desired.has(row.key),
