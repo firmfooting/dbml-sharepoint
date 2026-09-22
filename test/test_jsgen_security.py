@@ -12,8 +12,15 @@ import dataclasses
 from pathlib import Path
 from typing import Any
 
+import pytest
 from _builders import ID_PK, TITLE, table
-from _packs import blocks, pack, write_mapping
+from _packs import (
+    blocks,
+    pack,
+    replaced,
+    two_libraries_with_list_and_folder_scopes,
+    write_mapping,
+)
 from _paths import FIXTURES
 from test_jsgen import _generate_simple_js, _schema_json_for
 
@@ -76,52 +83,13 @@ def test_acl_scopes_emits_each_list_scope_before_its_own_folder_scopes(
 ) -> None:
     """One collection, and the order is the contract: a list scope, then that
     list's folders, in list creation order. A consumer reading the rows in
-    order sees a library before anything inside it."""
-    schema, bundle = pack(
-        tmp_path,
-        dbml=(
-            'Enum division {\n  "Clinical services"\n  "Corporate services"\n}\n'
-            + table("Docs", ID_PK, TITLE, "Division division")
-        ),
-        mapping="""
-            entities:
-              Docs:
-                kind: DocumentLibrary
-                base_template: 101
-                site_role: default
-                folders: {from_enum: division}
+    order sees a library before anything inside it.
 
-            permission_levels:
-              - name: "Folder Editor"
-                description: "Edit inside one folder."
-                base_permissions: [ViewListItems, AddListItems, EditListItems]
-
-            groups:
-              - name: "Librarians"
-                description: "Library maintainers."
-                owner_group: "Site Owners"
-              - from_enum: division
-                name: "{member} Editors"
-                description: "Editors for {member}."
-                owner_group: "Site Owners"
-
-            list_permissions:
-              overrides:
-                Docs:
-                  break_inheritance: true
-                  reconcile: exact
-                  assignments:
-                    - principal: { kind: group, name: "Librarians" }
-                      level: "Folder Editor"
-              folders:
-                Docs:
-                  break_inheritance: true
-                  reconcile: exact
-                  assignments:
-                    - principal: { kind: group, name: "{member} Editors" }
-                      level: "Folder Editor"
-        """,
-    )
+    TWO foldered libraries, not one: with a single list, this same
+    assertion would pass just as well under a two-pass emission that writes
+    every list scope before any list's folder scopes, since the two orderings
+    coincide for one list."""
+    schema, bundle = two_libraries_with_list_and_folder_scopes(tmp_path)
 
     out = build_schema_json(schema, bundle, "default")
 
@@ -129,14 +97,69 @@ def test_acl_scopes_emits_each_list_scope_before_its_own_folder_scopes(
     assert "folder_assignments" not in out
 
     docs = bundle.mapping.list_title("Docs")
+    policies = bundle.mapping.list_title("Policies")
     shape = [(row["list"], row.get("folder")) for row in out["acl_scopes"]]
     assert shape == [
         (docs, None),
         (docs, "Clinical services"),
         (docs, "Corporate services"),
+        (policies, None),
+        (policies, "Clinical services"),
+        (policies, "Corporate services"),
     ], shape
     # Absent, not null: every JavaScript consumer filters on `!s.folder`.
     assert "folder" not in out["acl_scopes"][0]
+
+
+@pytest.mark.parametrize("folder_name", ["", "   "])
+def test_acl_scopes_fails_closed_on_an_empty_or_blank_folder_name(
+    tmp_path: Path, folder_name: str,
+) -> None:
+    """The contract is that `folder` is ABSENT for a list scope, not falsy:
+    Jinja tests `defined`, JavaScript tests truthiness, and an empty string
+    satisfies one and not the other. A validated build never reaches this --
+    the validator reports an empty or whitespace-only folder name as
+    FOLDER_NAME_INVALID first -- but `build_schema_json` is public API and
+    does not require a prior validation pass, so it must refuse the row
+    itself rather than emit a scope no consumer agrees on the kind of."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Docs", ID_PK, TITLE),
+        mapping=replaced(
+            """
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: [__FOLDER_NAME__]
+
+            permission_levels:
+              - name: "Folder Editor"
+                description: "Edit inside one folder."
+                base_permissions: [ViewListItems, AddListItems, EditListItems]
+
+            groups:
+              - name: "Editors"
+                description: "Editors."
+                owner_group: "Site Owners"
+
+            list_permissions:
+              folders:
+                Docs:
+                  break_inheritance: true
+                  reconcile: exact
+                  assignments:
+                    - principal: { kind: group, name: "Editors" }
+                      level: "Folder Editor"
+        """,
+            "__FOLDER_NAME__",
+            repr(folder_name),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="empty or whitespace-only folder"):
+        build_schema_json(schema, bundle, "default")
 
 
 def _schema_json_for_risk_register() -> dict[str, Any]:

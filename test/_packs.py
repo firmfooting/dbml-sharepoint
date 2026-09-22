@@ -48,6 +48,8 @@ import re
 from pathlib import Path
 from textwrap import dedent
 
+from _builders import ID_PK, TITLE, table
+
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema, parse_dbml
@@ -337,3 +339,81 @@ def replaced(text: str, needle: str, replacement: str) -> str:
     """
     assert needle in text, f"needle not found; the replacement would be a no-op: {needle!r}"
     return text.replace(needle, replacement)
+
+
+def two_libraries_with_list_and_folder_scopes(tmp_path: Path) -> tuple[Schema, MappingBundle]:
+    """Two DocumentLibraries ('Docs', 'Policies'), each with a list-scope
+    policy for 'Librarians' and a per-folder policy for '{member} Editors'
+    over a shared two-member division enum.
+
+    Shared by `test_jsgen_security.py`'s emission-order test and
+    `test_manifestgen.py`'s per-list/per-folder split tests, which duplicated
+    this fixture verbatim. TWO libraries, not one: with a single list,
+    interleaved emission (a list scope, then that list's own folder scopes)
+    and a two-pass emission (every list scope, then every list's folder
+    scopes) produce the identical row order, so a one-library fixture cannot
+    tell the two apart.
+    """
+    return pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n  "Corporate services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+            + table("Policies", ID_PK, TITLE, "Division division")
+        ),
+        mapping="""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: division}
+              Policies:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: division}
+
+            permission_levels:
+              - name: "Folder Editor"
+                description: "Edit inside one folder."
+                base_permissions: [ViewListItems, AddListItems, EditListItems]
+
+            groups:
+              - name: "Librarians"
+                description: "Library maintainers."
+                owner_group: "Site Owners"
+              - from_enum: division
+                name: "{member} Editors"
+                description: "Editors for {member}."
+                owner_group: "Site Owners"
+
+            list_permissions:
+              overrides:
+                Docs:
+                  break_inheritance: true
+                  reconcile: exact
+                  assignments:
+                    - principal: { kind: group, name: "Librarians" }
+                      level: "Folder Editor"
+                Policies:
+                  break_inheritance: true
+                  reconcile: exact
+                  assignments:
+                    - principal: { kind: group, name: "Librarians" }
+                      level: "Folder Editor"
+              folders:
+                Docs:
+                  break_inheritance: true
+                  reconcile: exact
+                  assignments:
+                    - principal: { kind: group, name: "{member} Editors" }
+                      level: "Folder Editor"
+                Policies:
+                  break_inheritance: true
+                  reconcile: exact
+                  assignments:
+                    - principal: { kind: group, name: "{member} Editors" }
+                      level: "Folder Editor"
+        """,
+    )
