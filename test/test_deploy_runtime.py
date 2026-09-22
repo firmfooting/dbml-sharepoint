@@ -5532,7 +5532,7 @@ def test_the_measured_built_in_read_passes_the_gate_silently() -> None:
 # group carries for some other reason -- an earlier deploy, a hand edit,
 # another tool -- and the account this phase enrols inherits every one of
 # them permanently, because the ACL phase reconciles only the lists
-# SCHEMA.list_assignments names.
+# SCHEMA.acl_scopes names.
 #
 # `_BOUND_*` below are role definitions the group is made to hold at web
 # scope. Their bitmaps are built from the measured built-in Read

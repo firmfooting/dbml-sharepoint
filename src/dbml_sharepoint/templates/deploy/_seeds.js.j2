@@ -174,11 +174,9 @@
   // site collection administrators and Full Control holders bypass list
   // ACLs entirely. Member-level behaviour must be verified with an
   // ordinary member account.
-  // Both collections: the operator needs rights on a library this bundle
-  // secures at folder scope exactly as on one it secures at list scope.
-  for (const listTitle of [...new Set(
-    [...SCHEMA.list_assignments, ...SCHEMA.folder_assignments].map((la) => la.list),
-  )]) {
+  // Every list any scope names: the operator needs rights on a library this
+  // bundle secures at folder scope exactly as on one it secures at list scope.
+  for (const listTitle of [...new Set(SCHEMA.acl_scopes.map((s) => s.list))]) {
     try {
       const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/effectivebasepermissions`), {
         headers: { 'Accept': 'application/json;odata=verbose' },

@@ -96,7 +96,7 @@ _EMPTY_SCHEMA_JSON: dict[str, Any] = {
     "form_formatting": [],
     "permission_levels": [],
     "groups": [],
-    "list_assignments": [],
+    "acl_scopes": [],
     "requires_manage_permissions": False,
     "seed_items": [],
 }

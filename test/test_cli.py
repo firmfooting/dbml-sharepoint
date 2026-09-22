@@ -919,7 +919,7 @@ def test_the_reader_flag_needs_a_grant_in_the_role_being_built(
     `hq`, so `permissions_for_entity` excludes it for the one entity in
     `branch`. The validator is satisfied -- it unions every policy block and
     has no site role to narrow by -- and the mapping is genuinely correct for
-    the `hq` build. What it cannot be is this build: `list_assignments` comes
+    the `hq` build. What it cannot be is this build: `acl_scopes` comes
     out empty, the account is enrolled permanently, the run reports success,
     and it can read none of this site's lists.
     """

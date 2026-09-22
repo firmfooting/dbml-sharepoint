@@ -12,7 +12,8 @@ import dataclasses
 from pathlib import Path
 from typing import Any
 
-from _packs import blocks, write_mapping
+from _builders import ID_PK, TITLE, table
+from _packs import blocks, pack, write_mapping
 from _paths import FIXTURES
 from test_jsgen import _generate_simple_js, _schema_json_for
 
@@ -36,14 +37,14 @@ from dbml_sharepoint.model.release import load_release
 
 def test_schema_json_has_permission_keys() -> None:
     """SCHEMA literal in generated JS must include permission_levels, groups,
-    list_assignments keys (R5)."""
+    acl_scopes keys (R5)."""
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     schema_json = build_schema_json(schema, bundle, "default")
 
     assert "permission_levels" in schema_json
     assert "groups" in schema_json
-    assert "list_assignments" in schema_json
+    assert "acl_scopes" in schema_json
 
     # Fixture has one custom level and one group.
     assert len(schema_json["permission_levels"]) == 1
@@ -56,12 +57,10 @@ def test_schema_json_has_permission_keys() -> None:
     assert schema_json["groups"][0]["require_empty_at_deploy"] is True
 
     # All default-role lists should have assignments.
-    assert len(schema_json["list_assignments"]) == 3
-    assert all(
-        item["reconcile_mode"] == "exact"
-        for item in schema_json["list_assignments"]
-    )
-    list_names = {la["list"] for la in schema_json["list_assignments"]}
+    list_scopes = [s for s in schema_json["acl_scopes"] if not s.get("folder")]
+    assert len(list_scopes) == 3
+    assert all(item["reconcile_mode"] == "exact" for item in list_scopes)
+    list_names = {la["list"] for la in list_scopes}
     assert "APP_Project" in list_names
     assert "APP_Task" in list_names
     assert "APP_AppSettings" in list_names
@@ -70,6 +69,74 @@ def test_schema_json_has_permission_keys() -> None:
     # key off (#166 item 5) -- this fixture declares levels, groups AND
     # assignments, so it must be True regardless of which one drove it.
     assert schema_json["requires_manage_permissions"] is True
+
+
+def test_acl_scopes_emits_each_list_scope_before_its_own_folder_scopes(
+    tmp_path: Path,
+) -> None:
+    """One collection, and the order is the contract: a list scope, then that
+    list's folders, in list creation order. A consumer reading the rows in
+    order sees a library before anything inside it."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n  "Corporate services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping="""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: division}
+
+            permission_levels:
+              - name: "Folder Editor"
+                description: "Edit inside one folder."
+                base_permissions: [ViewListItems, AddListItems, EditListItems]
+
+            groups:
+              - name: "Librarians"
+                description: "Library maintainers."
+                owner_group: "Site Owners"
+              - from_enum: division
+                name: "{member} Editors"
+                description: "Editors for {member}."
+                owner_group: "Site Owners"
+
+            list_permissions:
+              overrides:
+                Docs:
+                  break_inheritance: true
+                  reconcile: exact
+                  assignments:
+                    - principal: { kind: group, name: "Librarians" }
+                      level: "Folder Editor"
+              folders:
+                Docs:
+                  break_inheritance: true
+                  reconcile: exact
+                  assignments:
+                    - principal: { kind: group, name: "{member} Editors" }
+                      level: "Folder Editor"
+        """,
+    )
+
+    out = build_schema_json(schema, bundle, "default")
+
+    assert "list_assignments" not in out
+    assert "folder_assignments" not in out
+
+    docs = bundle.mapping.list_title("Docs")
+    shape = [(row["list"], row.get("folder")) for row in out["acl_scopes"]]
+    assert shape == [
+        (docs, None),
+        (docs, "Clinical services"),
+        (docs, "Corporate services"),
+    ], shape
+    # Absent, not null: every JavaScript consumer filters on `!s.folder`.
+    assert "folder" not in out["acl_scopes"][0]
 
 
 def _schema_json_for_risk_register() -> dict[str, Any]:
@@ -274,7 +341,7 @@ def test_exact_lists_break_inheritance_immediately_in_phase_1() -> None:
         f"Starting Phase {pn('lookups')}")[0]
 
     assert "earlyIsolationLists" in phase1
-    assert "la.break_inheritance && la.reconcile_mode === 'exact'" in phase1
+    assert "!s.folder && s.break_inheritance && s.reconcile_mode === 'exact'" in phase1
     assert "early HasUniqueRoleAssignments probe failed" in phase1
     assert "early breakroleinheritance failed" in phase1
     break_call = (
@@ -425,7 +492,7 @@ def test_declared_folder_scopes_are_excluded_from_the_guard() -> None:
 
 def test_other_role_build_does_not_apply_scoped_default_policy() -> None:
     """Regression: with a role-scoped default policy, a build for another role
-    must emit NO list_assignments for that role's lists (previously the default fell
+    must emit NO acl_scopes for that role's lists (previously the default fell
     back onto every entity, re-ACLing them with the other role's groups)."""
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
@@ -437,10 +504,10 @@ def test_other_role_build_does_not_apply_scoped_default_policy() -> None:
 
     hub_json = build_schema_json(schema, bundle, "admin")
     assert [lst["title"] for lst in hub_json["lists"]] == ["APP_Task"]
-    assert hub_json["list_assignments"] == []
+    assert hub_json["acl_scopes"] == []
 
     default_json = build_schema_json(schema, bundle, "default")
-    assert {la["list"] for la in default_json["list_assignments"]} == {
+    assert {la["list"] for la in default_json["acl_scopes"]} == {
         "APP_Project", "APP_AppSettings",
     }
 
@@ -583,10 +650,10 @@ def _group(name: str, owner_group: str = "Site Owners") -> SiteGroup:
     )
 
 
-def test_a_mapping_with_no_permissions_still_emits_folder_assignments() -> None:
+def test_a_mapping_with_no_permissions_still_emits_acl_scopes() -> None:
     """`Mapping.permissions` is optional and the schema key is not.
 
-    `folder_assignments` was only ever assigned inside the `permissions is
+    `acl_scopes_out` was only ever assigned inside the `permissions is
     not None` branch while the returned dict read it unconditionally, so a
     Mapping composed through the public Python API with no permissions raised
     `UnboundLocalError` from a generator that used to work.
@@ -599,7 +666,7 @@ def test_a_mapping_with_no_permissions_still_emits_folder_assignments() -> None:
 
     schema_json = build_schema_json(schema, stripped, "default")
 
-    assert schema_json["folder_assignments"] == []
+    assert schema_json["acl_scopes"] == []
     assert schema_json["groups"] == []
 
 

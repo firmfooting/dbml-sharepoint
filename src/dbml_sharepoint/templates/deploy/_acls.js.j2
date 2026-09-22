@@ -200,10 +200,7 @@
     // that has lost its marker or been replaced must stop the phase before
     // the lists ahead of it in the loop have their permissions rewritten.
     const aclOwned = await surveyOwnedListsForWrites(
-      [...new Set([
-        ...SCHEMA.list_assignments.map(la => la.list),
-        ...SCHEMA.folder_assignments.map(fa => fa.list),
-      ])], '{{ phase.number }}', 'ACL',
+      [...new Set(SCHEMA.acl_scopes.map(s => s.list))], '{{ phase.number }}', 'ACL',
     );
     if (!aclOwned) {
       log('ERROR', 'ACL ownership survey failed; aborting before any role assignment changes.');
@@ -606,18 +603,13 @@
       }
     };
 
-    // Folder policies may name a list whose own policy is absent, so the
-    // batch is the union rather than `list_assignments` alone.
-    const aclListTitles = [...new Set([
-      ...SCHEMA.list_assignments.map(la => la.list),
-      ...SCHEMA.folder_assignments.map(fa => fa.list),
-    ])];
+    const aclListTitles = [...new Set(SCHEMA.acl_scopes.map(s => s.list))];
 
     for (const listTitle of aclListTitles) {
       log('INFO', `[Phase {{ phase.number }}] Processing role assignments for '${listTitle}'...`);
       try {
-        const la = SCHEMA.list_assignments.find(x => x.list === listTitle);
-        const folderAssignments = SCHEMA.folder_assignments.filter(fa => fa.list === listTitle);
+        const la = SCHEMA.acl_scopes.find(s => s.list === listTitle && !s.folder);
+        const folderAssignments = SCHEMA.acl_scopes.filter(s => s.list === listTitle && s.folder);
         const wantedFolders = folderAssignments.map(fa => fa.folder);
         const aclListId = aclOwned.get(listTitle);
         // Before the first READ, not just the first write: exact mode turns

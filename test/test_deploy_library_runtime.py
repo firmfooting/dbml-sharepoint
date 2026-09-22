@@ -1421,7 +1421,7 @@ def test_a_reader_granted_only_inside_the_folders_has_its_level_judged(
 
     `ENTERPRISE_READER_GROUP_NOT_GRANTED` counts a folder grant, so a mapping
     granting the reader only inside the folders builds. The preflight read
-    `list_assignments` alone, found nothing, took the branch that says the
+    the list scopes alone, found nothing, took the branch that says the
     group grants nothing here, skipped the bitmap check and enrolled the
     account permanently into a level nothing had judged.
 

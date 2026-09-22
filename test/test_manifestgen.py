@@ -1345,7 +1345,82 @@ def test_manifest_escapes_pipe_in_a_retention_title() -> None:
     assert "| Legal | Compliance |" not in md
 
 
-def test_manifest_inventories_folder_assignments(tmp_path: Path) -> None:
+def test_the_manifest_splits_one_acl_collection_into_its_two_tables(
+    tmp_path: Path,
+) -> None:
+    """`selectattr('folder', ...)` failing silently renders an empty table or
+    the wrong rows, and nothing throws. Both tables are asserted on one
+    bundle that has a list scope and two folder scopes."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n  "Corporate services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping="""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: division}
+
+            permission_levels:
+              - name: "Folder Editor"
+                description: "Edit inside one folder."
+                base_permissions: [ViewListItems, AddListItems, EditListItems]
+
+            groups:
+              - name: "Librarians"
+                description: "Library maintainers."
+                owner_group: "Site Owners"
+              - from_enum: division
+                name: "{member} Editors"
+                description: "Editors for {member}."
+                owner_group: "Site Owners"
+
+            list_permissions:
+              overrides:
+                Docs:
+                  break_inheritance: true
+                  reconcile: exact
+                  assignments:
+                    - principal: { kind: group, name: "Librarians" }
+                      level: "Folder Editor"
+              folders:
+                Docs:
+                  break_inheritance: true
+                  reconcile: exact
+                  assignments:
+                    - principal: { kind: group, name: "{member} Editors" }
+                      level: "Folder Editor"
+        """,
+    )
+    md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="docs.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+    per_list = md.split("### Per-list assignments")[1].split("\n###")[0]
+    per_folder = md.split("### Per-folder assignments")[1].split("\n###")[0]
+
+    assert "Librarians (group)" in per_list
+    assert "Clinical services Editors" not in per_list
+    assert "Clinical services Editors (group)" in per_folder
+    assert "Librarians (group)" not in per_folder
+    assert "_(no per-list assignments configured)_" not in per_list
+    assert "_(no per-folder assignments configured)_" not in per_folder
+
+
+def test_manifest_inventories_folder_scopes(tmp_path: Path) -> None:
     """The manifest is what an operator reads before pasting the script.
 
     Folder ACLs were emitted into deploy.js but rendered nowhere, so a build

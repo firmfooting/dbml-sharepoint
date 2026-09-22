@@ -1,55 +1,6 @@
   // === Schema definition (rendered from DBML + mapping) ===
   const SCHEMA = {
-  "field_defaults": [
-    {
-      "default_formula": null,
-      "default_value": "Open",
-      "field": "Status",
-      "list": "APP_Project",
-      "metadata_type": "SP.FieldChoice"
-    },
-    {
-      "default_formula": null,
-      "default_value": "0",
-      "field": "SortOrder",
-      "list": "APP_Project",
-      "metadata_type": "SP.FieldNumber"
-    }
-  ],
-  "folder_assignments": [],
-  "form_formatting": [
-    {
-      "client_form_custom_formatter": "{\"bodyJSONFormatter\":{\"sections\":[{\"displayname\":\"Project\",\"fields\":[\"Title\",\"Status\",\"Sort Order\"]}]}}",
-      "list": "APP_Project"
-    }
-  ],
-  "groups": [
-    {
-      "allow_members_edit_membership": false,
-      "allow_request_to_join_leave": false,
-      "auto_accept_request_to_join_leave": false,
-      "description": "Test group. Provisioned by dbml-sharepoint from simple-test for group List Maintainer.",
-      "enroll_enterprise_reader": false,
-      "enroll_operator_during_deploy": false,
-      "expected_marker": "Provisioned by dbml-sharepoint from simple-test for group List Maintainer.",
-      "name": "List Maintainer",
-      "only_allow_members_view_membership": false,
-      "owner_group": "Site Owners",
-      "previous_names": [],
-      "require_empty_at_deploy": true
-    }
-  ],
-  "indexed_columns": [
-    {
-      "field": "Title",
-      "list": "APP_Project"
-    },
-    {
-      "field": "DueDate",
-      "list": "APP_Task"
-    }
-  ],
-  "list_assignments": [
+  "acl_scopes": [
     {
       "assignments": [
         {
@@ -127,6 +78,54 @@
       "break_inheritance": true,
       "list": "APP_AppSettings",
       "reconcile_mode": "exact"
+    }
+  ],
+  "field_defaults": [
+    {
+      "default_formula": null,
+      "default_value": "Open",
+      "field": "Status",
+      "list": "APP_Project",
+      "metadata_type": "SP.FieldChoice"
+    },
+    {
+      "default_formula": null,
+      "default_value": "0",
+      "field": "SortOrder",
+      "list": "APP_Project",
+      "metadata_type": "SP.FieldNumber"
+    }
+  ],
+  "form_formatting": [
+    {
+      "client_form_custom_formatter": "{\"bodyJSONFormatter\":{\"sections\":[{\"displayname\":\"Project\",\"fields\":[\"Title\",\"Status\",\"Sort Order\"]}]}}",
+      "list": "APP_Project"
+    }
+  ],
+  "groups": [
+    {
+      "allow_members_edit_membership": false,
+      "allow_request_to_join_leave": false,
+      "auto_accept_request_to_join_leave": false,
+      "description": "Test group. Provisioned by dbml-sharepoint from simple-test for group List Maintainer.",
+      "enroll_enterprise_reader": false,
+      "enroll_operator_during_deploy": false,
+      "expected_marker": "Provisioned by dbml-sharepoint from simple-test for group List Maintainer.",
+      "name": "List Maintainer",
+      "only_allow_members_view_membership": false,
+      "owner_group": "Site Owners",
+      "previous_names": [],
+      "require_empty_at_deploy": true
+    }
+  ],
+  "indexed_columns": [
+    {
+      "field": "Title",
+      "list": "APP_Project"
+    },
+    {
+      "field": "DueDate",
+      "list": "APP_Task"
     }
   ],
   "lists": [
