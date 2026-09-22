@@ -446,12 +446,19 @@ def validate_all(
 
 
 def _enums_used_by_mapping(bundle: MappingBundle) -> set[str]:
-    """Every enum the MAPPING names, which no column need mention."""
+    """Every enum the MAPPING names, which no column need mention.
+
+    Both enum sources, because either one alone deploys objects derived from
+    that enum: an enum named only by `groups[].from_enum` is depended on by
+    every group the site ends up with, and reporting it orphaned would
+    recommend deleting it.
+    """
+    perms = bundle.mapping.permissions
     return {
         entity.folder_source.enum
         for entity in bundle.mapping.entities.values()
         if isinstance(entity.folder_source, FoldersFromEnum)
-    }
+    } | {source.enum for source in (perms.group_sources if perms else ())}
 
 
 def _names_a_mapped_enum(finding: Finding, mapped: set[str]) -> bool:

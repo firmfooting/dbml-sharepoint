@@ -347,6 +347,34 @@ def test_an_enum_used_only_for_folders_is_not_called_an_orphan(
     only(validate_all(schema2, bundle2, NullExtension()), FindingCode.ORPHAN_ENUM)
 
 
+def test_an_enum_used_only_for_groups_is_not_called_an_orphan(
+    tmp_path: Path,
+) -> None:
+    """`groups[].from_enum` uses an enum exactly as `folders` does.
+
+    The remedy `orphan_enum` invites is deleting the enum, which here would
+    take every group the site is given with it.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n}\n'
+            + table("Docs", ID_PK, TITLE)
+        ),
+        mapping="""
+            entities:
+              Docs: { kind: List, base_template: 100, site_role: default }
+
+            groups:
+              - from_enum: division
+                name: "{member} Editors"
+                description: "Editors."
+                owner_group: "Site Owners"
+        """,
+    )
+    none_of(validate_all(schema, bundle, NullExtension()), FindingCode.ORPHAN_ENUM)
+
+
 def test_folders_from_the_entitys_own_enum_are_not_flagged(tmp_path: Path) -> None:
     """The ordinary shape stays quiet, or the warning is noise."""
     none_of(
