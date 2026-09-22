@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHAT A BREAK LEAVES, AND WHETHER REMOVING IT STICKS
  *
- * REVISION: 98c30187
+ * REVISION: 819eb22e
  *
  * THE CLAIM UNDER TEST. `deploy/_lists.js.j2` says, beside the early
  * isolation break, that "copyRoleAssignments=false leaves only SharePoint's
@@ -376,7 +376,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 98c30187. Quote this when reporting results.');
+  log('INFO', 'probe revision 819eb22e. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe OperatorGrant';
   const OWNERSHIP = 'dbml-sharepoint operator-safety-grant probe list. Safe to delete.';
@@ -421,6 +421,13 @@
 
   // Track what this run broke so the restore pass knows what to reset.
   let listBroken = false;
+  // And, separately, that a break was SENT at all. `listBroken` is only set
+  // by a 2xx answer, so a break the server applied and then threw or refused
+  // on leaves it false, and the restore's single HasUniqueRoleAssignments
+  // read is measured to lag (2026-09-09,
+  // `library.access.unique-permissions-library`). Two values that establish
+  // nothing were being read together as proof that nothing was broken.
+  let breakAttempted = false;
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -573,7 +580,7 @@
       // an inheriting list is a no-op write, and leaving a production list
       // broken is not. Only two falses skip.
       const unique = await readsUnique();
-      if (!listBroken && unique === false) {
+      if (!breakAttempted && unique === false) {
         log('OK', `'${LIST}' reads as inheriting and this run broke nothing; nothing to restore.`);
         return;
       }
@@ -582,10 +589,19 @@
                     + `${listBroken ? ' after this run broke it' : ''}. Resetting anyway, `
                     + 'because leaving a list broken is the worse error.');
       } else if (unique === false) {
-        log('INFO', `'${LIST}' reads as inheriting, and this run broke it. Resetting anyway: `
-                    + 'the property is measured to lag the break.');
+        log('INFO', `'${LIST}' reads as inheriting, and this run sent a break to it. `
+                    + 'Resetting anyway: the property is measured to lag the break, and a '
+                    + 'break the server applied and then threw on never sets a 2xx flag.');
       }
-      const grant = await grantOwnersFullControl();
+      // Its own catch. A transport throw here would otherwise land in the
+      // outer one and skip the reset below, which is the single write this
+      // pass exists to make.
+      let grant;
+      try {
+        grant = await grantOwnersFullControl();
+      } catch (err) {
+        grant = { ok: false, why: `resolving or adding the safety grant threw: ${String(err)}` };
+      }
       log(grant.ok ? 'OK' : 'FAIL',
           grant.ok
             ? `owner-group safety grant ('${grant.levelName}') before the reset.`
@@ -706,7 +722,19 @@
         + 'so no row could be attributed to this account and no break was safe to make');
       return;
     }
+    // A finite positive id, because `myId` is what every enumerated row is
+    // matched against. A missing or nonnumeric Id makes it NaN, no row
+    // matches, and the run reports that the break left no operator binding
+    // when it never looked. That is a false answer to the experiment's own
+    // premise, so the identity is asserted like IsSiteAdmin beside it.
     const myId = Number(me.body.Id);
+    if (!Number.isFinite(myId) || myId <= 0) {
+      closeEveryGatedQuestion('NOT ESTABLISHED',
+        `web/currentuser answered HTTP ${me.status} with an Id this run cannot match a `
+        + `role assignment against (${JSON.stringify(me.body.Id)}), so no binding could `
+        + 'be attributed to this account. Nothing was broken.');
+      return;
+    }
     if (me.body.IsSiteAdmin !== true) {
       // Void: no re-run as THIS account clears it.
       closeEveryGatedQuestion('NOT REACHED',
@@ -725,6 +753,9 @@
     // holds unique permissions, so a break that was refused or never took
     // leaves nothing to observe rather than something to report.
     digest = await getDigest();
+    // Before the write, because a fetch that throws after the server applied
+    // the break is the case this flag exists for.
+    breakAttempted = true;
     const broke = await spPost(
       `${listPath}/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)`,
       {}, digest);

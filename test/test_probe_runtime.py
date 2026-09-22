@@ -9144,6 +9144,12 @@ _OPERATOR_HARNESS = textwrap.dedent("""
             ? jsonResponse(200, {})
             : jsonResponse(500, { error: 'HasUniqueRoleAssignments read refused' });
         }
+        // MEASURED 2026-09-09, library.access.unique-permissions-library: the
+        // property reports the state BEFORE the write for a moment, so a read
+        // of false is not evidence the scope inherits.
+        if (CONFIG.uniqueLagsOnRead === site.uniqueReads) {
+          return jsonResponse(200, { HasUniqueRoleAssignments: false });
+        }
         return jsonResponse(200, { HasUniqueRoleAssignments: site.unique });
       }
       return jsonResponse(200, { Title: 'dbmlsp Probe OperatorGrant',
@@ -9217,6 +9223,7 @@ def _run_operator_grant_probe(
         "resetNeverClears": False,
         "listDescription": _OPERATOR_OWNERSHIP,
         "ownershipReadRefused": False,
+        "uniqueLagsOnRead": None,
         "uniqueReadShape": None,
         "uniqueReadShapeAfter": 1,
         "ownerGroupUnreadable": False,
@@ -9335,9 +9342,15 @@ def test_a_removal_the_platform_undoes_is_reported_as_coming_back() -> None:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_a_refused_break_leaves_every_question_open_and_restores_nothing() -> None:
-    """Nothing was broken, so there is nothing to observe and nothing to put
-    back. A restore sent here would reset a list this run never touched.
+def test_a_refused_break_leaves_every_question_open_and_is_reset_anyway() -> None:
+    """Nothing can be observed on a scope whose break was refused, so every
+    question stays open. The list is still reset.
+
+    The assertion here CHANGED direction. It used to require that no reset
+    went out, on the reasoning that a refused break broke nothing. A non-2xx
+    answer does not establish that: `breakAppliedThenRefused` is a shape this
+    mock has modelled all along, and resetting an inheriting scratch list is
+    a no-op write while leaving one broken is not.
 
     OPEN rather than void: `_probe_harness.js.j2` defines void as a reason no
     re-run can clear, and a refused request is one that can be made again. A
@@ -9351,8 +9364,8 @@ def test_a_refused_break_leaves_every_question_open_and_restores_nothing() -> No
         assert rows[question]["outcome"] == "NOT ESTABLISHED", question
         assert rows[question]["state"] == "open", question
         assert "breakroleinheritance answered HTTP 500" in rows[question]["evidence"]
-    assert not _restored(urls), (
-        "the restore pass reset a list whose break was refused"
+    assert _restored(urls), (
+        "a break the server may have applied was left unreset"
     )
 
 
@@ -9603,6 +9616,62 @@ def test_a_failure_after_the_break_still_restores_the_list() -> None:
     assert f"principalid={_OPERATOR_OWNER_GROUP},roleDefId=3" in urls[grant], (
         f"the full-control level was not resolved from the tenant: {urls[grant]}"
     )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_break_that_landed_before_its_fetch_threw_is_reset_off_a_lagging_flag(
+) -> None:
+    """The two values that establish nothing, together.
+
+    The server applied the break and the fetch threw, so no 2xx was ever
+    seen, and the restore's single HasUniqueRoleAssignments read returns the
+    documented lagging false (2026-09-09,
+    `library.access.unique-permissions-library`). Deciding from those two is
+    how the restore skipped the reset after precisely the transport failure
+    it exists to contain.
+    """
+    _rows, urls, _output = _run_operator_grant_probe(
+        breakAppliedThenThrows=True, uniqueLagsOnRead=2,
+    )
+
+    assert _restored(urls), (
+        "the scratch list was left with unique permissions after an "
+        f"interrupted break: {urls}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_safety_grant_that_throws_does_not_take_the_reset_with_it() -> None:
+    """The restore's one job is the reset. A throw while resolving or adding
+    the owner-group grant used to land in the outer catch and skip it,
+    leaving a live list broken and nobody but a site admin able to fix it."""
+    _rows, urls, output = _run_operator_grant_probe(
+        throwOn="associatedownergroup",
+    )
+
+    assert _restored(urls), f"the grant took the reset with it: {urls}"
+    failures = [ln for ln in output.splitlines() if "FAIL" in ln and "safety grant" in ln]
+    assert failures, output[-2000:]
+    assert "threw" in failures[0], failures[0]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("bad_id", [None, "not-a-number", 0, -3])
+def test_an_identity_the_run_cannot_match_a_binding_against_breaks_nothing(
+    bad_id: object,
+) -> None:
+    """`myId` is what every enumerated row is compared to. A missing or
+    nonnumeric Id makes it NaN, nothing matches, and the run reports that the
+    break left no operator binding when it never looked: a false answer to
+    the experiment's own premise, from a read it never checked."""
+    rows, urls, _output = _run_operator_grant_probe(operatorPrincipal=bad_id)
+
+    for question in _OPERATOR_BREAK_GATED:
+        assert rows[question]["outcome"] == "NOT ESTABLISHED", question
+        assert rows[question]["state"] == "open", question
+        assert "cannot match a role assignment against" in rows[question]["evidence"]
+    assert not [url for url in urls if "breakroleinheritance" in url], urls
+    assert not _restored(urls), "nothing was broken, so nothing needed resetting"
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -9918,11 +9987,14 @@ def test_a_restore_that_throws_says_which_list_to_check() -> None:
     """`restoreInheritance`'s own catch is a branch that runs only when a run
     has already gone wrong, which is the class #454 shipped.
 
-    The throw is at `web/associatedownergroup`, which the restore reads. It
-    also reaches the measurement pass's catch, since the grant that prepares
-    the scope reads the same endpoint, so one splice executes both.
+    The throw is at the reset itself. It used to be at
+    `web/associatedownergroup`, but the safety grant has its own catch now,
+    precisely so a throw there cannot reach this one and take the reset with
+    it. `test_a_safety_grant_that_throws_does_not_take_the_reset_with_it`
+    pins that, and the measurement pass's own catch is pinned by
+    `test_a_failure_after_the_break_still_restores_the_list`.
     """
-    rows, urls, output = _run_operator_grant_probe(throwOn="associatedownergroup")
+    rows, urls, output = _run_operator_grant_probe(throwOn="resetroleinheritance")
 
     assert any(
         line.startswith("[FAIL] ") and "restore pass failed" in line
@@ -9932,11 +10004,8 @@ def test_a_restore_that_throws_says_which_list_to_check() -> None:
     # It got far enough to break the scope, which is why the failure matters.
     assert any("/breakroleinheritance(" in url for url in urls)
     assert rows["access.list-acl.break-leaves-bindings"]["outcome"] == "OBSERVED"
-    # And the outer catch caught the same throw out of the measurement pass.
-    assert any(
-        line.startswith("[FAIL] ") and "the access pass aborted" in line
-        for line in output.splitlines()
-    ), output
+    # And the grant that precedes the reset still went out.
+    assert any("/addroleassignment(" in url for url in urls), urls
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
