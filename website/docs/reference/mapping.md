@@ -74,7 +74,7 @@ entities:
 | `folders` | Optional, library only; the root-level folders the deploy creates and verifies, by name. Each name is held to Microsoft's file and folder name rules |
 | `site_role` | Free label; `build --site-role X` deploys the entities labelled `X` |
 | `singleton` | Optional; a one-row configuration list (enables extension seed rows) |
-| `display_column` | Optional; which column a lookup INTO this entity displays. Defaults to `Title`. **When a real Lookup points at this entity, the column is indexed automatically on this list** (a picker cannot enumerate an unindexed column past 5,000 items) so it also spends one of the list's 20 indexes. Nothing is indexed if no `ref` points here, if the only refs pointing here are `cross_site_reference_columns` (those expand to a Choice + URL pair, so no picker ever enumerates this list), or if the column is calculated (see below). The column must be indexable: a Note or Hyperlink `display_column` on a lookup target fails the build |
+| `display_column` | Optional; which column a lookup INTO this entity displays. Defaults to `Title`. **When a real Lookup points at this entity, the column is indexed automatically on this list** (a picker cannot enumerate an unindexed column past 5,000 items) so it also spends one of the list's 20 indexes. Nothing is indexed if no `ref` points here, if the only refs pointing here are `cross_site_reference_columns` (those expand to a Choice + URL pair, so no picker ever enumerates this list), or if the column is calculated (see below). The column must be indexable: a Note or Hyperlink `display_column` on a lookup target fails the build. A `DocumentLibrary` may not name `FileLeafRef`, its file Name: the lookup is created bound to it and its picker lists every file, and then a row holding a value answers HTTP 500 to the deploy's readback and renders as `2_.000` in a view (`library-lookup-write-probe.js`, 2026-09-18), so the build refuses it (`library_name_display_column_unreadable`). A calculated copy of the name cannot stand in: `=[Name]` on a library is refused at creation, "The formula refers to a column that does not exist" (same probe). A library's built-in `Title` takes the index a list's does (`library-index-probe.js`, 2026-09-07) |
 | `accept_unindexable_display_column` | Optional; accept that a **calculated** `display_column` cannot be indexed, and that this list's lookup picker will therefore stop working past ~5,000 items. Silences the warning |
 | `renamed_from` | Optional; the previous entity names this list was deployed under, oldest last. On a redeploy where nothing carries the current title, a list carrying exactly one of the previous titles **and the exact provenance marker for that previous name** is retitled in place and its marker rewritten, keeping items, views, lookups and permissions (the URL keeps its original slug). A previous title without that marker, present beside the current title, or present twice over is refused at assessment and at preflight, before any write. Keep the aliases declared so a site that skipped releases can still migrate. `previous_prefixes` multiplies the candidates: each previous prefix is tried with the current name and with every previous name |
 | `hide_from_all_items` | Optional; a list of columns the generated `All Items` view must not render. The **only** accepted reason is the list view lookup threshold (see below). Every named column must be join-bearing and rendered; naming anything else fails the build. Declared views are unaffected |
@@ -231,6 +231,22 @@ tenant, and the deploy relies on nothing about a library that was not:
   `File Name` and `File Path`, so a display title landing on either is
   refused on a library (`display_title_collides_with_report_column`) and
   allowed on a list.
+- A list may look a library up, and the lookup shows the file's `Title`,
+  never its name. Measured on 2026-09-18 (`library-lookup-write-probe.js`,
+  three runs, lookups created by the deploy's own route on the last): a
+  Title-bound lookup is set by the form's save path, reads back through
+  `$select=<name>Id` and the collection, and renders its title in a view;
+  its picker lists titled files only. A `FileLeafRef`-bound lookup is
+  created and its picker lists every file by name, and then a row holding
+  a value answers HTTP 500 to the same reads and renders as `2_.000`, so
+  the build refuses that binding. Declare `Title` on the library's table so
+  the target passes the blank-lookup rule, and ask users to title every
+  file. The fourth run created the name-bound column last: once it exists,
+  a whole-item read with no `$select` fails on the host list's rows with
+  no value set, and with it absent the deploy's seed POST set a Title-bound
+  lookup on a list row and read it back, so a family may seed one. A
+  calculated `=[Name]` on the library is refused at creation, so no copy of
+  the name can stand in for `Title`.
 - Breaking inheritance, role assignments, indexes, choice, lookup and
   calculated columns, list validation, column formatting, versioning and
   sealing all behave as on a list, each with its own probe under

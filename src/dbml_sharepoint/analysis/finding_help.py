@@ -1077,6 +1077,18 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A lookup's source and target entities map to different "
         "`site_role`s; a SharePoint lookup cannot span webs."
     ),
+    FindingCode.LIBRARY_NAME_DISPLAY_COLUMN_UNREADABLE: (
+        "A document library that lookups point at declares `display_column: "
+        "FileLeafRef`. Such a lookup is created bound to the file Name and "
+        "its picker lists every file, and then a row holding a value answers "
+        "HTTP 500 to the item read the deploy verifies every write with, "
+        "a view renders the value as `2_.000` rather than the file name, and "
+        "while the column exists the list's whole-item read fails with no "
+        "value set (measured on a live tenant, 2026-09-18, four runs). A "
+        "calculated copy of the name cannot stand in: `=[Name]` on a library "
+        "is refused at creation. Bind the lookup to `Title` and give each "
+        "file a Title, or link the file from a hyperlink column."
+    ),
     FindingCode.LOOKUP_DISPLAY_COLUMN_UNKNOWN: (
         "A lookup target declares a `display_column` that is not one of "
         "its columns, so the deploy would emit an unresolvable "

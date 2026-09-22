@@ -1245,6 +1245,13 @@ def _calculated_formulas(vc: ValidationContext) -> list[Finding]:
         # are names the deploy never creates while sitting in table.columns,
         # and a formula naming either passed this very check before dying at
         # paste time.
+        #
+        # Not the kind-aware set: a library's FileLeafRef renders in views
+        # and formatters and is NOT a formula operand. MEASURED 2026-09-18,
+        # library-lookup-write-probe.js `library.formula.calc-name-operand`:
+        # `=[Name]`, the display name a formula resolves against, answered
+        # HTTP 500 "The formula refers to a column that does not exist", and
+        # the refused create left a Calculated column with Formula `=""`.
         xcols = vc.cross_site_columns(table.name)
         rendered = rendered_columns(table, xcols)
         columns_by_name = {candidate.name: candidate for candidate in table.columns}
