@@ -1,7 +1,7 @@
 # src/dbml_sharepoint/analysis/checks/_permissions.py
 """Permission levels, groups, and per-list policies."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
@@ -67,7 +67,7 @@ _DERIVED_LEVEL_KEYS: frozenset[str] = frozenset(
 
 
 def _levels_granted_to_group(
-    perms: PermissionsConfig, name: str,
+    vc: ValidationContext, perms: PermissionsConfig, name: str,
 ) -> list[tuple[str, Location]]:
     """Every (level, origin) grant to `name` across all policy blocks.
 
@@ -100,10 +100,14 @@ def _levels_granted_to_group(
         *((policy, _OVERRIDES) for policy in perms.overrides.values()),
         # A folder policy is a policy block like any other. Left out, a
         # reader granted Read on the folders alone would read as granted
-        # nothing anywhere. Its `{member}` is unexpanded here, which costs
-        # nothing: a name carrying the token is a per-member group, and no
-        # rule in this union is about one.
-        *((policy, _FOLDERS) for policy in perms.folder_policies.values()),
+        # nothing anywhere. EXPANDED, because a `{member}` principal is not
+        # necessarily a per-member group: `dbml Enterprise {member}` over a
+        # folder named Readers resolves to a protected group these rules are
+        # about, and the template spelling would never match it.
+        *(
+            (policy, _FOLDERS)
+            for _entity, _folder, policy in _expanded_folder_policies(vc, perms)
+        ),
     ]
     return [
         (a.level, origin)
@@ -112,6 +116,29 @@ def _levels_granted_to_group(
         for a in policy.assignments
         if a.principal.kind == "group" and a.principal.name == name
     ]
+
+
+def _expanded_folder_policies(
+    vc: ValidationContext, perms: PermissionsConfig,
+) -> Iterator[tuple[str, str, ListPermissionPolicy]]:
+    """(entity, folder, policy) for every folder policy, `{member}` resolved.
+
+    An unknown enum is skipped rather than raised: `folder_enum_unknown`
+    owns that sentence, and a rule that raised here would replace it with a
+    traceback.
+    """
+    for entity_name, folder_policy in sorted(perms.folder_policies.items()):
+        entity = vc.bundle.mapping.entities.get(entity_name)
+        if entity is None:
+            # `folder_permissions_on_a_list` and the unknown-entity rule in
+            # `_library.py` own that sentence; nothing to expand against.
+            continue
+        try:
+            folders = declared_folders(entity.folder_source, vc.enum_members_by_name)
+        except UnknownFolderEnumError:
+            continue
+        for folder in folders:
+            yield entity_name, folder, policy_for_folder(folder_policy, folder)
 
 
 def _folder_policy_assignments(
@@ -131,29 +158,18 @@ def _folder_policy_assignments(
     findings list, and lives out here because `check` is at the complexity
     ceiling the ratchet pins.
     """
-    for entity_name, folder_policy in sorted(perms.folder_policies.items()):
-        entity = vc.bundle.mapping.entities.get(entity_name)
-        if entity is None:
-            # `folder_permissions_on_a_list` and the unknown-entity rule in
-            # `_library.py` own that sentence; nothing to expand against.
-            continue
-        try:
-            folders = declared_folders(entity.folder_source, vc.enum_members_by_name)
-        except UnknownFolderEnumError:
-            continue
-        # Once per folder, and the finding names the folder. One policy is
-        # many resolved policies: a `{member}` principal is a different group
-        # for every member, and only some of them may be wrong. A mapping
-        # error shared by every folder therefore reports once per folder,
-        # which is repetitive but never misleading; collapsing it would mean
-        # choosing one folder's resolution to speak for the others.
-        base = f"list_permissions.folders[{entity_name!r}]"
-        for folder in folders:
-            check_policy(
-                policy_for_folder(folder_policy, folder),
-                f"{base}[{folder!r}]",
-                _FOLDERS,
-            )
+    # Once per folder, and the finding names the folder. One policy is many
+    # resolved policies: a `{member}` principal is a different group for
+    # every member, and only some of them may be wrong. A mapping error
+    # shared by every folder therefore reports once per folder, which is
+    # repetitive but never misleading; collapsing it would mean choosing one
+    # folder's resolution to speak for the others.
+    for entity_name, folder, policy in _expanded_folder_policies(vc, perms):
+        check_policy(
+            policy,
+            f"list_permissions.folders[{entity_name!r}][{folder!r}]",
+            _FOLDERS,
+        )
 
 
 def _group_name_characters(vc: ValidationContext) -> list[Finding]:
@@ -244,7 +260,9 @@ def _enum_groups(vc: ValidationContext, perms: PermissionsConfig) -> list[Findin
         # Generating a group per enum member to hold one identity enrols it
         # in the first and leaves the rest empty, so the flags are refused on
         # a generated group rather than given a meaning they do not have.
-        enrolments = [
+        # One member generates one group and there is no rest, which is the
+        # only reason this refusal does not apply to it.
+        enrolments = [] if len(members) < 2 else [
             flag for flag, on in (
                 ("enroll_enterprise_reader", source.template.enroll_enterprise_reader),
                 (
@@ -602,7 +620,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=_GROUPS,
                 ))
 
-            grants = _levels_granted_to_group(perms, grp.name)
+            grants = _levels_granted_to_group(vc, perms, grp.name)
             if not grants:
                 findings.append(Finding(
                     FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED,
@@ -684,7 +702,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             {
                 origin
                 for level, origin in _levels_granted_to_group(
-                    perms, AUTOMATION_GROUP_NAME,
+                    vc, perms, AUTOMATION_GROUP_NAME,
                 )
                 if level == "Full Control"
             },

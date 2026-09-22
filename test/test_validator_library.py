@@ -871,6 +871,47 @@ def test_a_fixed_name_over_a_single_member_enum_is_allowed(tmp_path: Path) -> No
     )
 
 
+def test_a_folder_principal_resolving_to_a_protected_group_is_judged(
+    tmp_path: Path,
+) -> None:
+    """A `{member}` principal is not necessarily a per-member group.
+
+    `dbml Enterprise {member}` over a folder named Automation resolves to
+    `dbml Enterprise Automation`, which the deploy grants and the targeted
+    rules are about. Compared unexpanded, the template spelling matched no
+    protected name and the grant went out unjudged.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum area {\n  "Automation"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Area area")
+        ),
+        mapping="""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: area}
+
+            list_permissions:
+              folders:
+                Docs:
+                  break_inheritance: true
+                  reconcile: exact
+                  assignments:
+                    - principal: { kind: group, name: "dbml Enterprise {member}" }
+                      level: "Full Control"
+        """,
+    )
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.AUTOMATION_GROUP_GRANTED_FULL_CONTROL,
+    )
+    assert "dbml Enterprise Automation" in f.message
+
+
 def test_folder_permissions_on_a_list_are_refused(tmp_path: Path) -> None:
     """A folder ACL is written against the folder's list item, and a list has
     no folders to write one on."""
@@ -912,14 +953,16 @@ def test_an_enum_group_cannot_enrol_an_identity(tmp_path: Path, flag: str) -> No
     """Each flag enrols ONE identity, and `from_enum` makes one group per
     member to enrol it into.
 
-    Refused rather than given a meaning it does not have. It also keeps the
-    three callers that ask whether ANY declaration carries these flags --
-    `pipeline`, `wizard` and `manifestgen`, none of which holds a schema and
-    so none of which can resolve the enum -- correct by construction.
+    Refused rather than given a meaning it does not have: the account lands
+    in whichever group the phase reaches first and every other one is left
+    empty.
     """
     schema, bundle = pack(
         tmp_path,
-        dbml=('Enum division {\n  "Clinical services"\n}\n' + table("Docs", ID_PK, TITLE)),
+        dbml=(
+            'Enum division {\n  "Clinical services"\n  "Corporate services"\n}\n'
+            + table("Docs", ID_PK, TITLE)
+        ),
         mapping=f"""
             entities:
               Docs: {{ kind: List, base_template: 100, site_role: default }}
@@ -938,6 +981,39 @@ def test_an_enum_group_cannot_enrol_an_identity(tmp_path: Path, flag: str) -> No
     )
     assert flag in f.message
     assert "division" in f.message
+
+
+@pytest.mark.parametrize(
+    "flag", ["enroll_enterprise_reader", "enroll_operator_during_deploy"],
+)
+def test_a_single_member_enum_may_enrol_an_identity(tmp_path: Path, flag: str) -> None:
+    """One member generates one group, so the sentence the refusal gives --
+    the identity lands in the first and the rest stay empty -- is not true of
+    it, and a finding whose reason does not hold is the wrong finding.
+
+    The name every reader resolves is the generated one: `manifestgen` takes
+    it from `schema_json`, whose groups are already expanded, and `pipeline`
+    and `wizard` only ask whether any declaration carries the flag at all.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=('Enum division {\n  "Clinical services"\n}\n' + table("Docs", ID_PK, TITLE)),
+        mapping=f"""
+            entities:
+              Docs: {{ kind: List, base_template: 100, site_role: default }}
+
+            groups:
+              - from_enum: division
+                name: "{{member}} Editors"
+                description: "Editors."
+                owner_group: "Site Owners"
+                {flag}: true
+        """,
+    )
+    none_of(
+        validate_against_mapping(schema, bundle),
+        FindingCode.GROUP_ENUM_ENROLS_AN_IDENTITY,
+    )
 
 
 def test_a_generated_group_name_sharepoint_refuses_is_caught_at_build(
