@@ -8979,6 +8979,7 @@ _OPERATOR_HARNESS = textwrap.dedent("""
       listExists: CONFIG.listExists,
       unique: CONFIG.alreadyUnique,
       bindings: CONFIG.alreadyUnique ? CONFIG.leftBindings.map((b) => ({ ...b })) : [],
+      uniqueReads: 0,
     };
 
     const REMOVE = /removeroleassignment\\(principalid=(\\d+),roleDefId=(\\d+)\\)/;
@@ -9114,6 +9115,14 @@ _OPERATOR_HARNESS = textwrap.dedent("""
         return jsonResponse(200, { value: [...byPrincipal.values()] });
       }
       if (u.includes('$select=HasUniqueRoleAssignments')) {
+        site.uniqueReads += 1;
+        if (CONFIG.uniqueReadShape && site.uniqueReads > CONFIG.uniqueReadShapeAfter) {
+          // A 2xx body that simply lacks the field, and a read that fails.
+          // Both are UNKNOWN, and neither may read as 'inherits'.
+          return CONFIG.uniqueReadShape === 'absent'
+            ? jsonResponse(200, {})
+            : jsonResponse(500, { error: 'HasUniqueRoleAssignments read refused' });
+        }
         return jsonResponse(200, { HasUniqueRoleAssignments: site.unique });
       }
       return jsonResponse(200, { Title: 'dbmlsp Probe OperatorGrant' });
@@ -9183,6 +9192,8 @@ def _run_operator_grant_probe(
         "removalReDerives": False,
         "resetRefused": False,
         "resetNeverClears": False,
+        "uniqueReadShape": None,
+        "uniqueReadShapeAfter": 1,
         "ownerGroupUnreadable": False,
         "siteAdmin": True,
         "throwOn": None,
@@ -9228,6 +9239,21 @@ def test_a_break_whose_removal_sticks_answers_every_question() -> None:
     answer everything first.
     """
     rows, urls, _output = _run_operator_grant_probe()
+
+    # FIRST, because it is the whole substance of the fix and every message
+    # below survives the order being wrong. The deploy prunes a scope that
+    # already holds the declared grants, and the evidence this run records
+    # claims the scope held another binding throughout; reversed, that claim
+    # is false and nothing in the prose says so.
+    granted = next(i for i, url in enumerate(urls) if "/addroleassignment(" in url)
+    removed = next(
+        i for i, url in enumerate(urls)
+        if "/removeroleassignment(" in url and "42424242" not in url
+    )
+    assert granted < removed, (
+        f"the owner-group grant (call {granted}) has to precede the removal "
+        f"(call {removed}), or the probe measures a scope being emptied"
+    )
 
     assert rows["access.list-acl.fixture-scratch-list"]["outcome"] == "PASS"
     assert rows["access.list-acl.control-unknown-principal-refused"]["outcome"] == "PASS"
@@ -9762,3 +9788,41 @@ def test_a_break_that_landed_before_its_fetch_threw_is_still_restored() -> None:
         line.startswith("[OK] ") and "restored to inherited permissions" in line
         for line in output.splitlines()
     ), output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("shape", ["absent", "refused"])
+def test_an_unreadable_unique_flag_resets_rather_than_walking_away(
+    shape: str,
+) -> None:
+    """UNKNOWN is not 'inherits'.
+
+    A 2xx body that simply lacks HasUniqueRoleAssignments, and a read that
+    fails outright, are the two ways the property can come back unusable.
+    Collapsing either into false would skip the reset over a list the tenant
+    holds unique, which is the one place in the restore where uncertainty
+    could fail open.
+
+    Paired with a break the server applied and answered 500, so the run's own
+    flag is false too and the read is the only thing left to go on.
+    """
+    _rows, urls, output = _run_operator_grant_probe(
+        breakAppliedThenRefused=True, uniqueReadShape=shape,
+    )
+
+    assert _restored(urls), (
+        f"a {shape} HasUniqueRoleAssignments read skipped the reset over a "
+        f"list the tenant holds unique:\n{output[-2000:]}"
+    )
+    assert any(
+        line.startswith("[FAIL] ")
+        and "Could not read whether" in line
+        and _OPERATOR_LIST_TITLE in line
+        and "Resetting anyway" in line
+        for line in output.splitlines()
+    ), output
+    # And it must not have claimed the list inherits.
+    assert not [
+        line for line in output.splitlines()
+        if "nothing to restore" in line
+    ], output

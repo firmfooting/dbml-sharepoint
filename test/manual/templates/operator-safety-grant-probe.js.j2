@@ -32,9 +32,10 @@
  * SEPARATING WHAT IS DEPENDED ON FROM WHAT IS OBSERVED. The break being
  * ACCEPTED, the scope then reading HasUniqueRoleAssignments=true, and the
  * negative control refusing are things every measurement below DEPENDS on,
- * so they are asserted and a failure voids the rows that rest on them. What
- * the break LEFT, whether any of it names this account, whether a removal
- * stuck, and what the levels are called are the things being measured, so
+ * so they are asserted, and a failure CLOSES the rows that rest on them:
+ * void when no re-run by this account could clear it, open when one could.
+ * What the break LEFT, whether any of it names this account, whether a
+ * removal stuck, and what the levels are called are the things measured, so
  * they are recorded exactly as they came back and never asserted. A probe
  * that asserted "the break leaves one binding" would report FAIL on a tenant
  * that leaves two, which is a measurement, and it would report PASS on a
@@ -244,9 +245,15 @@
 
   // One read, not the bounded poll: a caller deciding whether to RESTORE
   // cannot spend the whole settle window waiting for an answer it already has.
+  // null is UNKNOWN and never false. A 2xx body that simply lacks the field
+  // would otherwise read as 'inherits' and skip the reset over a list the
+  // tenant holds unique, which is the one place uncertainty could fail open.
+  // `readUnique` keeps the raw value for the same reason.
   const readsUnique = async () => {
     const res = await spGet(`${listPath}?$select=HasUniqueRoleAssignments`);
-    return readFailed(res) ? null : res.body.HasUniqueRoleAssignments === true;
+    if (readFailed(res)) return null;
+    const value = res.body.HasUniqueRoleAssignments;
+    return typeof value === 'boolean' ? value : null;
   };
 
   // The owner group bound to this site's full-control level, at the scratch
@@ -292,32 +299,29 @@
   // restore.
   const restoreInheritance = async () => {
     try {
-      // The UNION of the two, never one of them. `listBroken` alone misses a
-      // break the server applied and answered non-2xx, or one whose fetch
-      // threw after the write landed. The property alone misses a break that
-      // took and has not surfaced: MEASURED 2026-09-09,
+      // The UNION of the two, never one of them, and UNKNOWN resets. The flag
+      // alone misses a break the server applied and answered non-2xx, or one
+      // whose fetch threw after the write landed. The property alone misses a
+      // break that took and has not surfaced: MEASURED 2026-09-09,
       // `library.access.unique-permissions-library`, where
       // HasUniqueRoleAssignments read FALSE on the first read after a
       // successful break and TRUE on the second, within 10 s. So a false read
-      // is not permission to walk away from a break that was accepted. The
-      // costs are not symmetric: resetting an inheriting list is a no-op
-      // write, and leaving a production list broken is not.
+      // is not permission to walk away from a break that was accepted, and an
+      // unreadable one is not either. The costs are not symmetric: resetting
+      // an inheriting list is a no-op write, and leaving a production list
+      // broken is not. Only two falses skip.
       const unique = await readsUnique();
-      if (!listBroken && unique !== true) {
-        log(unique === null ? 'FAIL' : 'OK',
-            unique === null
-              ? `Could not read whether '${LIST}' holds unique permissions, and this run has `
-                + 'no record of breaking it. Check it by hand.'
-              : `'${LIST}' reads as inheriting and this run broke nothing; nothing to restore.`);
+      if (!listBroken && unique === false) {
+        log('OK', `'${LIST}' reads as inheriting and this run broke nothing; nothing to restore.`);
         return;
       }
-      if (unique === false) {
+      if (unique === null) {
+        log('FAIL', `Could not read whether '${LIST}' holds unique permissions`
+                    + `${listBroken ? ' after this run broke it' : ''}. Resetting anyway, `
+                    + 'because leaving a list broken is the worse error.');
+      } else if (unique === false) {
         log('INFO', `'${LIST}' reads as inheriting, and this run broke it. Resetting anyway: `
                     + 'the property is measured to lag the break.');
-      }
-      if (unique === null) {
-        log('FAIL', `Could not read whether '${LIST}' holds unique permissions after this run `
-                    + 'broke it. Resetting anyway, because leaving it is the worse error.');
       }
       const grant = await grantOwnersFullControl();
       log(grant.ok ? 'OK' : 'FAIL',
