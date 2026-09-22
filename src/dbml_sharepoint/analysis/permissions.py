@@ -177,8 +177,8 @@ ENTERPRISE_READER_ADVISORY_PERMISSIONS: tuple[str, ...] = (
 #: role assignment the group already carries for some other reason: an earlier
 #: deploy, a hand edit, another tool. The reader group is resolved by name and
 #: enrolled into, so the account inherits every one of those bindings
-#: permanently, and no phase removes them -- `_acls.js.j2` reconciles the lists
-#: `SCHEMA.list_assignments` names and nothing else. So
+#: permanently, and no phase removes them -- `_acls.js.j2` reconciles the
+#: scopes `SCHEMA.acl_scopes` names and nothing else. So
 #: `_reader_enrolment.js.j2` enumerates what the group holds at web scope and
 #: judges each binding's live bitmap against this set.
 #:

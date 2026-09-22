@@ -318,7 +318,7 @@ def execute_build(
         # scoped to another role is excluded per list by
         # `permissions_for_entity`. `--site-role branch --enterprise-reader`
         # against a default scoped to `hq` therefore emitted a bundle whose
-        # `list_assignments` was empty: the account is enrolled permanently,
+        # `acl_scopes` was empty: the account is enrolled permanently,
         # the run reports success, and it can read none of this site's lists.
         #
         # Refused here rather than in the validator, which has no site role
