@@ -35,6 +35,13 @@
  * key of SAMPLES below and the zone the site is set to. F12 -> Console,
  * paste, Enter; set CONFIRMED = true and paste again. Copy the RESULTS
  * block back.
+ *
+ * ZONES SAMPLED: Australia/Melbourne, Australia/Lord_Howe, Europe/London,
+ * America/New_York and America/Los_Angeles. Any other zone records NOT
+ * ESTABLISHED. Do not stand in a zone that shares transition DATES: New York
+ * on a Pacific site failed every offset row on 2026-09-19 (#593). To add a
+ * zone, copy three rows from analysis/timezones.transitions(); the test
+ * pinning SAMPLES refuses any row the pack does not emit.
  */
 (async () => {
 {% include "_probe_harness.js.j2" %}
@@ -68,6 +75,11 @@
       { at: '2025-11-02T06:00:00Z', before: -240, after: -300 },
       { at: '2026-03-08T07:00:00Z', before: -300, after: -240 },
       { at: '2026-11-01T06:00:00Z', before: -240, after: -300 },
+    ],
+    'America/Los_Angeles': [
+      { at: '2025-11-02T09:00:00Z', before: -420, after: -480 },
+      { at: '2026-03-08T10:00:00Z', before: -480, after: -420 },
+      { at: '2026-11-01T09:00:00Z', before: -420, after: -480 },
     ],
   };
   const rows = SAMPLES[ZONE] || [];
