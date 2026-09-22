@@ -9027,6 +9027,12 @@ _OPERATOR_HARNESS = textwrap.dedent("""
       }
 
       if (!u.includes("getbytitle('")) return jsonResponse(404, { error: 'no such endpoint' });
+      // A read that fails for a reason that is not "absent". The title may or
+      // may not be occupied and this run cannot tell, which is the whole
+      // point of the branch it exercises.
+      if (CONFIG.ownershipReadRefused && u.includes('Description')) {
+        return jsonResponse(500, { error: 'list read refused' });
+      }
       if (!site.listExists) return jsonResponse(404, { error: 'list not found' });
 
       const removal = REMOVE.exec(u);
@@ -9140,7 +9146,8 @@ _OPERATOR_HARNESS = textwrap.dedent("""
         }
         return jsonResponse(200, { HasUniqueRoleAssignments: site.unique });
       }
-      return jsonResponse(200, { Title: 'dbmlsp Probe OperatorGrant' });
+      return jsonResponse(200, { Title: 'dbmlsp Probe OperatorGrant',
+                                 Description: CONFIG.listDescription });
     };
 """)
 
@@ -9208,6 +9215,8 @@ def _run_operator_grant_probe(
         "reappearOnRead": None,
         "resetRefused": False,
         "resetNeverClears": False,
+        "listDescription": _OPERATOR_OWNERSHIP,
+        "ownershipReadRefused": False,
         "uniqueReadShape": None,
         "uniqueReadShapeAfter": 1,
         "ownerGroupUnreadable": False,
@@ -9524,6 +9533,46 @@ def test_a_break_with_no_operator_binding_reports_the_premise_as_unmet() -> None
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_same_title_list_this_probe_did_not_make_is_never_touched() -> None:
+    """The strictest guard in this probe, and it runs before both paths.
+
+    With CLEANUP on, a title match is recycled. With CLEANUP off, it is
+    reused and its permissions are rewritten. Either one can be somebody's
+    production list, so the title alone is never ownership.
+    """
+    rows, urls, output = _run_operator_grant_probe(
+        listExists=True, listDescription="Quarterly board packs, do not delete",
+    )
+
+    fixture = rows["access.list-acl.fixture-scratch-list"]
+    assert fixture["outcome"] == "ABORTED", fixture
+    assert fixture["state"] == "open"
+    assert "ownership marker" in fixture["evidence"], fixture["evidence"]
+    assert "not a scratch list this probe made" in fixture["evidence"]
+    # Nothing at all was written to it.
+    for forbidden in ("/recycle", "breakroleinheritance", "resetroleinheritance",
+                      "roleassignment(", "/items("):
+        assert not [url for url in urls if forbidden in url], (forbidden, urls)
+    assert _OPERATOR_LIST_TITLE in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_title_whose_ownership_cannot_be_read_aborts_rather_than_guessing() -> None:
+    """A read that fails for a reason that is not absence establishes
+    nothing about who owns the title, so it cannot license either path."""
+    rows, urls, _output = _run_operator_grant_probe(
+        listExists=True, ownershipReadRefused=True,
+    )
+
+    fixture = rows["access.list-acl.fixture-scratch-list"]
+    assert fixture["outcome"] == "ABORTED", fixture
+    assert "could not read whether" in fixture["evidence"], fixture["evidence"]
+    assert "HTTP 500" in fixture["evidence"]
+    for forbidden in ("/recycle", "breakroleinheritance", "resetroleinheritance"):
+        assert not [url for url in urls if forbidden in url], (forbidden, urls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_failure_after_the_break_still_restores_the_list() -> None:
     """#454's branch: the restore runs from a `finally`, so it only ever
     executes on a run that already went wrong, and a scope error in it would
@@ -9578,6 +9627,13 @@ def test_a_list_an_earlier_run_left_broken_answers_nothing() -> None:
 #: assert the operator is told WHICH list to repair, so the name is what they
 #: are checking for and not incidental.
 _OPERATOR_LIST_TITLE = "dbmlsp Probe OperatorGrant"
+
+#: The Description this probe stamps on a list it made. Title is never
+#: ownership: a site can already hold a list under this title that somebody
+#: depends on, and both the cleanup path and the reuse path would touch it.
+_OPERATOR_OWNERSHIP = (
+    "dbml-sharepoint operator-safety-grant probe list. Safe to delete."
+)
 
 
 def _fail_lines(output: str) -> list[str]:

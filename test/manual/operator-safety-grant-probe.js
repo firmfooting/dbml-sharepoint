@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHAT A BREAK LEAVES, AND WHETHER REMOVING IT STICKS
  *
- * REVISION: 9335f1e8
+ * REVISION: 98c30187
  *
  * THE CLAIM UNDER TEST. `deploy/_lists.js.j2` says, beside the early
  * isolation break, that "copyRoleAssignments=false leaves only SharePoint's
@@ -95,6 +95,12 @@
  *   2. F12 -> Console -> paste -> Enter. It prints its plan and stops.
  *   3. Edit CONFIRMED, ALLOW_WRITES and CLEANUP to true, paste again.
  *   4. Copy the RESULTS block back verbatim.
+ *
+ * The scratch list is claimed by its DESCRIPTION, never by its title. A
+ * same-title list this probe did not create is refused before anything is
+ * recycled or reused, and so is a title whose occupancy cannot be read,
+ * because CLEANUP would recycle a title match and a run without CLEANUP
+ * would reuse it and rewrite its permissions.
  *
  * RUN AS A SITE COLLECTION ADMINISTRATOR, and the probe checks rather than
  * trusts. It breaks role inheritance with copyRoleAssignments=false and then
@@ -370,7 +376,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 9335f1e8. Quote this when reporting results.');
+  log('INFO', 'probe revision 98c30187. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe OperatorGrant';
   const OWNERSHIP = 'dbml-sharepoint operator-safety-grant probe list. Safe to delete.';
@@ -602,6 +608,33 @@
       log('FAIL', `restore pass failed: ${String(err)}. Check '${LIST}' by hand.`);
     }
   };
+
+  // ---- OWNERSHIP, before either path touches the title ----------------
+  // Title is never ownership. A site can already hold a list under this
+  // title that somebody's work depends on, and both paths below would touch
+  // it: CLEANUP recycles a title match, and a run without CLEANUP reuses it
+  // and rewrites its permissions. So the Description has to carry this
+  // probe's exact marker, and a read that fails for any reason other than
+  // absence establishes nothing and licenses neither path.
+  const claimed = await spGet(`${listPath}?$select=Title,Description`);
+  if (!readFailed(claimed) && claimed.body.Description !== OWNERSHIP) {
+    record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'ABORTED',
+           `a list titled '${LIST}' already exists on this site and its Description is `
+           + 'not this probe\'s ownership marker, so it is not a scratch list this probe '
+           + 'made. Nothing was recycled, reused, broken or written. Rename or remove '
+           + 'that list, or change LIST at the top of this script, and paste again.');
+    return report();
+  }
+  // A 404 is the title being free. Anything else that did not read, a
+  // refusal or a body that would not parse, leaves ownership unestablished.
+  if (readFailed(claimed) && claimed.status !== 404) {
+    record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'ABORTED',
+           `could not read whether the title '${LIST}' is already occupied: `
+           + `HTTP ${claimed.status} ${JSON.stringify(claimed.body || '').slice(0, 200)}. `
+           + 'That is not the same as the title being free, so nothing was recycled, '
+           + 'reused or written.');
+    return report();
+  }
 
   await resetList(LIST);
   let digest = await getDigest();
