@@ -70,6 +70,7 @@ A SharePoint list never replaces a mandated system:
 | Committee meetings, decisions, actions | meeting-actions | Governance-lite for every committee |
 | Corporate risk tiers | risk-register | See boundary 2 |
 | Project delivery risk, actions, issues, decisions | programme-governance | Risks, actions, issues and decisions on one site with the accountabilities that answer for them; a risk that grows beyond the programme graduates to risk-register |
+| What the service depends on its ICT providers for | seam-register | A six-week exercise for a service that gets its ICT from a shared-services body or several providers: one row per service with evidence behind it, every disagreement as a seam, and a one-page map that is a view rather than a drawing |
 | How long a rating or an action sat where it was | column-history | Deployed once for the whole service. A register holds today's value, so "how long was that risk Extreme" and "how long do audit actions sit open" are otherwise unanswerable; this turns each change into a countable row |
 | Everything else | the general library | Assets, contracts, onboarding, training, service requests... |
 

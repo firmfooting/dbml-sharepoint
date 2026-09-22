@@ -1,0 +1,22 @@
+{
+  "sections": [
+    {
+      "displayname": "The week",
+      "fields": [
+        "Title",
+        "WeekNo",
+        "WeekEnding"
+      ]
+    },
+    {
+      "displayname": "Five lines",
+      "fields": [
+        "RowsVerified",
+        "SeamsFound",
+        "Blocked",
+        "Next",
+        "Surprise"
+      ]
+    }
+  ]
+}

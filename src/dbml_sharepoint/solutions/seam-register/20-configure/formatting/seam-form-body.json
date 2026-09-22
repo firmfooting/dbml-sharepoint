@@ -1,0 +1,25 @@
+{
+  "sections": [
+    {
+      "displayname": "The seam",
+      "fields": [
+        "Title",
+        "Service",
+        "SeamType",
+        "Description",
+        "EvidenceInConflict",
+        "RaisedOn"
+      ]
+    },
+    {
+      "displayname": "Resolution",
+      "fields": [
+        "Status",
+        "ResolveOwner",
+        "ResolveBy",
+        "ResolvedOn",
+        "Resolution"
+      ]
+    }
+  ]
+}

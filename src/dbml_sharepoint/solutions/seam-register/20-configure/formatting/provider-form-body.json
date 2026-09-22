@@ -1,0 +1,28 @@
+{
+  "sections": [
+    {
+      "displayname": "The provider",
+      "fields": [
+        "Title",
+        "ProviderType",
+        "Tier"
+      ]
+    },
+    {
+      "displayname": "How we work with them",
+      "fields": [
+        "RelationshipOwner",
+        "ServiceDeskContact"
+      ]
+    },
+    {
+      "displayname": "The agreement",
+      "fields": [
+        "AgreementLink",
+        "AgreementEnds",
+        "Status",
+        "Notes"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "sections": [
+    {
+      "displayname": "The conversation",
+      "fields": [
+        "Title",
+        "IntervieweeSide",
+        "IntervieweeProvider",
+        "Status",
+        "InterviewDate",
+        "DurationMin"
+      ]
+    },
+    {
+      "displayname": "What they run and use",
+      "fields": [
+        "Q1Runs",
+        "Q2Uses",
+        "Q3Call",
+        "Q4Decides"
+      ]
+    },
+    {
+      "displayname": "What they depend on",
+      "fields": [
+        "Q5AskProvider",
+        "Q6AskedProvider"
+      ]
+    },
+    {
+      "displayname": "What worries them",
+      "fields": [
+        "Q7Auditor",
+        "Q8Saturday"
+      ]
+    },
+    {
+      "displayname": "Afterwards",
+      "fields": [
+        "RecordingLink",
+        "NotesFile",
+        "FollowUps"
+      ]
+    }
+  ]
+}

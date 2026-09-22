@@ -60,6 +60,7 @@ its routes point at the same chain.
 | [records-digitisation](records-digitisation/) | Can a digitised record be kept in this platform? | Platform-by-platform capability assessment: six answers that can each say *Unknown*, three multi-value evidence lists, and a verdict a person types |
 | [programme-governance](programme-governance/) | Programme delivery, accountability and provider requests | Nine lists on one site: RAID and RACI merged, plus the service requests only the provider can action |
 | [column-history](column-history/) | Change history for any register, across every site | One list on the central logging site that Power Automate writes into, so a register that only stores today's value can still be reported on over time |
+| [seam-register](seam-register/) | What we depend on our providers for | A provider list, one row per service with evidence against it, every disagreement as a seam, the files in a library; the seam map is a view grouped by which side runs each service |
 
 *Theme: Operations & service.*
 

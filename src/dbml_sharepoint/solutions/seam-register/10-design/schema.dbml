@@ -1,0 +1,401 @@
+Project seam_register { database_type: 'SharePoint Online Lists' }
+
+// An organisation relies on providers and nobody can say where the joins
+// are. One row per service, every fact behind it in Evidence, every
+// disagreement in Seam. A row says which side runs a thing with this fixed
+// choice, and which provider with a lookup into Provider: the save rules,
+// the colours and the two-source rule need a fixed value, and a validation
+// formula cannot read a lookup.
+Enum side {
+  "Us"          [note: 'This organisation, including its own ICT team']
+  "Provider"    [note: 'A provider that delivers the service under an agreement, such as a shared-services body or a managed service. Name it in the provider column']
+  "Third party" [note: 'Anyone else reached directly, such as a software vendor or a cloud platform. Name it in the provider column if it is listed']
+  "Shared"      [note: 'Genuinely split between us and a provider; the split is described in the row']
+  "Unknown"     [note: 'Nobody has claimed it yet']
+}
+
+Enum provider_type {
+  "Shared-services body" [note: 'An organisation that serves several members, such as a shared ICT service']
+  "Managed service"      [note: 'A company contracted to operate something on our behalf']
+  "Vendor"               [note: 'A software or hardware supplier whose support we reach directly']
+  "Cloud platform"       [note: 'A platform we build on, such as Microsoft 365']
+  "Other"
+}
+
+// The four supplier categories of ITIL supplier management, by how much
+// of the business depends on the provider and how hard it is to replace.
+Enum provider_tier {
+  "Strategic"   [note: 'Hard to replace and much of the organisation depends on it']
+  "Tactical"    [note: 'Significant, with an agreement worth managing actively']
+  "Operational" [note: 'Supports operational services; replaceable with some effort']
+  "Commodity"   [note: 'Standard goods or services, easily bought elsewhere']
+}
+
+Enum provider_status {
+  "Active"
+  "Retired" [note: 'No longer used. Kept, because services, incidents and interviews still point at it']
+}
+
+Enum service_area {
+  "Identity and access"
+  "Backup, retention and records"
+  "Infrastructure and devices"
+  "Business applications"
+  "M365 tenant"
+  "Other"
+}
+
+Enum confidence {
+  "Assumed"  [note: 'Nobody has told us; the row is a hypothesis']
+  "Claimed"  [note: 'One person or one document says so']
+  "Verified" [note: 'Two independent sources agree, or system evidence shows it']
+}
+
+Enum documentation_status {
+  "Not asked"        [note: 'Default until the question has been put']
+  "None found"       [note: 'Asked, and nothing exists or nobody can find it']
+  "Exists, not seen" [note: 'Someone says it exists; we have not read it']
+  "Held"             [note: 'We have a copy']
+  "Verified"         [note: 'We have a copy and it matches what people say happens']
+}
+
+Enum hosting {
+  "Own on-site data centre"
+  "Provider data centre"
+  "Microsoft cloud"
+  "Vendor cloud"
+  "Other or unknown"
+}
+
+Enum evidence_type {
+  "Interview"
+  "Document"
+  "Incident data"
+  "Invoice"
+  "System data"  [note: 'An export, log or console view we looked at ourselves']
+  "Email"
+  "Observation"  [note: 'Something one of us saw happen']
+}
+
+Enum supports_field {
+  "Run by"
+  "Support"
+  "Decided by"
+  "Runs where"
+  "Documentation"
+  "Last failure"
+  "Dependency"
+  "Out of hours"
+}
+
+Enum seam_type {
+  "No owner"                [note: 'Nobody claims the row']
+  "Disputed owner"          [note: 'Two sources name different operators or deciders']
+  "Disputed support"        [note: 'Two sources name different people to call when it breaks']
+  "Undocumented dependency" [note: 'We rely on a provider, or it on us, with nothing written down']
+  "Single person"           [note: 'One named individual is the only one who can do it']
+  "No evidence"             [note: 'Claimed by one source and nobody can produce anything']
+  "Contradicts document"    [note: 'What people say differs from what the document says']
+}
+
+Enum seam_status {
+  "Open"
+  "Confirmed gap" [note: 'We and the provider agree the gap is real']
+  "Escalated"     [note: 'Handed to a decision-maker with a date']
+  "Resolved"      [note: 'A source of truth was found and the service row updated']
+}
+
+Enum document_type {
+  "Services agreement"
+  "Services schedule"
+  "Invoice"
+  "DR plan"
+  "Attestation"         [note: 'Cyber or regulatory compliance statement, with who signed it']
+  "Risk register"
+  "Audit report"
+  "Policy or procedure"
+  "Runbook"
+  "Other"
+}
+
+Enum request_status {
+  "To ask"
+  "Asked"
+  "Received"
+  "Refused"
+  "Not found"
+}
+
+Enum artefact_type {
+  "Document copy"
+  "Interview notes"
+  "Incident export"
+  "Invoice extract"
+  "System export"
+  "Correspondence"
+  "Other"
+}
+
+Enum interview_status {
+  "Booked"
+  "Completed"
+  "Declined"
+  "Cancelled"
+}
+
+Enum incident_source {
+  "Ticket export"
+  "Recalled outage"
+}
+
+// Every organisation we depend on, once. The fields follow what a supplier
+// register keeps: who they are, how critical, who manages the relationship,
+// how to reach them and the agreement they work under. Roles, not names.
+Table Provider {
+  Id                 int             [pk, increment]
+  Title              nvarchar        [not null, unique, note: 'The name everyone uses for the provider']
+  ProviderType       provider_type   [not null, note: 'What kind of organisation it is']
+  Tier               provider_tier   [note: 'How much depends on it and how hard it would be to replace. Blank until the exercise has a view']
+  RelationshipOwner  nvarchar        [note: 'The role in this organisation that manages the relationship. Roles, not names']
+  ServiceDeskContact nvarchar        [note: 'How the provider is reached when something breaks: a portal, queue, phone line or shared mailbox']
+  AgreementLink      hyperlink       [note: 'The agreement or services schedule, if held']
+  AgreementEnds      date            [note: 'When the current agreement ends or next renews']
+  Status             provider_status [not null, default: 'Active', note: 'Set Retired when it is no longer used. Never delete a provider; rows elsewhere point at it']
+  Notes              longtext        [note: 'Subcontractors it relies on, what the agreement is silent on, anything else a reader needs']
+
+  indexes {
+    ProviderType
+    Tier
+    Status
+    AgreementEnds
+  }
+
+  Note: 'Every provider the organisation depends on, with its tier, relationship owner, contact and agreement. Retired, never deleted.'
+}
+
+// The register. Roles, never names: the row says who runs a thing and who
+// to call, in role terms, so there is no person column on it.
+Table Service {
+  Id                int                  [pk, increment]
+  Title             nvarchar             [not null, note: 'The name the people who run it use, for example Account creation script, not a category']
+  Area              service_area         [not null, note: 'Which first-pass area the row belongs to']
+  Description       longtext             [note: 'What the service does, in one or two sentences a non-ICT reader can follow']
+  RunBySide         side                 [not null, default: 'Unknown', note: 'Which side operates it day to day']
+  RunByProvider     int                  [ref: > Provider.Id, note: 'Which provider operates it, when that is not us']
+  RunByTeam         nvarchar             [note: 'Team or role that operates it. Roles, not names']
+  SupportSide       side                 [not null, default: 'Unknown', note: 'Which side you call when it breaks']
+  SupportProvider   int                  [ref: > Provider.Id, note: 'Which provider you call, when that is not us']
+  SupportTeam       nvarchar             [note: 'Team or role you call when it breaks, with the tier if known (L1, L2, L3)']
+  DecidedBy         nvarchar             [note: 'Who can change it: configuration, policy, scope. Role and organisation']
+  Hosting           hosting              [note: 'Where it physically or logically runs']
+  Dependency        longtext             [note: 'What inside this service we cannot do without a provider, stated plainly. Blank means none known, not none']
+  SinglePerson      boolean              [default: false, note: 'Tick when only one named individual can operate or repair it']
+  Documentation     documentation_status [not null, default: 'Not asked', note: 'State of written documentation for this service']
+  DocumentationLink hyperlink            [note: 'Where the documentation lives, if held']
+  LastFailureDate   date                 [note: 'Most recent outage or failure anyone can date']
+  LastFailure       longtext             [note: 'What happened and how it was noticed']
+  Confidence        confidence           [not null, default: 'Assumed', note: 'Verified needs two agreeing evidence rows from different sides, or one system-data row, and both of us have read them']
+  FirstPass         boolean              [default: true, note: 'Untick to send the row to the backlog']
+  OutOfHours        nvarchar             [note: 'Answer to question 8: who gets the call if it fails on a Saturday night']
+  Notes             longtext             [note: 'Anything that does not fit; keep it about the service']
+
+  indexes {
+    Area
+    RunBySide
+    RunByProvider
+    SupportSide
+    SupportProvider
+    Confidence
+    Documentation
+    LastFailureDate
+    SinglePerson
+    FirstPass
+  }
+
+  Note: 'One row per service or capability. Cap the first pass at about thirty rows and verify before adding.'
+}
+
+// Every fact traces to a row here. A service with no evidence rows is
+// Assumed by definition. Who recorded it and when are the system columns.
+Table Evidence {
+  Id            int            [pk, increment]
+  Title         nvarchar       [not null, note: 'A short label: the source and the date, for example Provider support lead interview, 22 Sep']
+  Service       int            [not null, ref: > Service.Id, note: 'The service row this evidence supports or contradicts']
+  EvidenceType  evidence_type  [not null]
+  Source        nvarchar       [not null, note: 'Who or what: a role for a person, a title for a document, the export date for data']
+  SourceSide    side           [not null, default: 'Unknown', note: 'Which side the evidence comes from; the two-source rule needs it']
+  Statement     longtext       [not null, note: 'What the source says, as close to verbatim as possible. No paraphrase that adds meaning']
+  SupportsField supports_field [note: 'Which service column this bears on']
+  Contradicts   boolean        [default: false, note: 'Tick when this disagrees with another evidence row for the same service']
+  EvidenceDate  date           [not null, note: 'When the statement was made or the document is dated']
+  ArtefactLink  hyperlink      [note: 'The file in the artefact library, or the recording timestamp for an interview']
+  Artefact      int            [ref: > Artefact.Id, note: 'The file itself, picked from the library by its Title. The link beside it stays as the direct URL']
+
+  indexes {
+    Service
+    EvidenceType
+    SourceSide
+    EvidenceDate
+    Contradicts
+    Artefact
+  }
+
+  Note: 'Every fact in the register traces to a row here. A service with no evidence rows is Assumed by definition.'
+}
+
+// The product of the exercise. A seam is never resolved by quietly editing
+// a service row; it closes here, with the evidence that was in conflict.
+Table Seam {
+  Id                 int         [pk, increment]
+  Title              nvarchar    [not null, note: 'The disagreement or gap in a few words']
+  Service            int         [not null, ref: > Service.Id]
+  SeamType           seam_type   [not null]
+  Description        longtext    [not null, note: 'The disagreement or gap in one paragraph, naming the sources by role']
+  EvidenceInConflict int[]       [ref: > Evidence.Id, note: 'The evidence rows that disagree, or the single row nobody can back up']
+  RaisedOn           date        [not null, note: 'Filled with today when the seam is raised']
+  Status             seam_status [not null, default: 'Open']
+  ResolveOwner       nvarchar    [note: 'Role asked to resolve it; blank until someone accepts']
+  ResolveBy          date        [note: 'Date agreed, if any']
+  ResolvedOn         date        [note: 'When it closed']
+  Resolution         longtext    [note: 'How it closed and what changed on the service row']
+
+  indexes {
+    Service
+    SeamType
+    Status
+    RaisedOn
+    ResolveBy
+  }
+
+  Note: 'Every place two sources disagree or nobody answers. Seams are never resolved by quietly editing a service row.'
+}
+
+// Every document asked for, found or not. Not found is a result and gets
+// a row, which is why the asks are a list and the copies are a library.
+Table DocumentRequest {
+  Id             int            [pk, increment]
+  Title          nvarchar       [not null, note: 'The document as asked for, for example Services agreement and schedule']
+  DocumentType   document_type  [not null]
+  Holder         nvarchar       [note: 'Who was asked for it, by role']
+  HolderSide     side           [not null, default: 'Unknown', note: 'Which side holds it']
+  HolderProvider int            [ref: > Provider.Id, note: 'Which provider holds it, when that is not us']
+  Status         request_status [not null, default: 'To ask']
+  AskedOn        date           [note: 'When the ask went out']
+  DueOn          date           [note: 'The date given for an answer, five working days by default']
+  ReceivedOn     date           [note: 'When a copy arrived']
+  SignedBy       nvarchar       [note: 'For attestations and agreements: the signatory role and date']
+  Summary        longtext       [note: 'What it covers and what it is silent on']
+  Services       int[]          [ref: > Service.Id, note: 'The services this document touches']
+
+  indexes {
+    DocumentType
+    HolderSide
+    HolderProvider
+    Status
+    DueOn
+  }
+
+  Note: 'Every document asked for, found or not. Not found is a result and gets a row.'
+}
+
+// The files: copies received, interview notes, ticket exports, invoice
+// lines, emails. A file links to the services it bears on and, where it
+// answers an ask, to the request row.
+Table Artefact {
+  Id           int           [pk, increment]
+  Title        nvarchar      [note: 'A short name for the file. The pickers on Evidence and Interview list titled files only, so give every file one']
+  ArtefactType artefact_type [not null, default: 'Document copy', note: 'What kind of file this is; it also says which folder it belongs in']
+  SourceSide   side          [not null, default: 'Unknown', note: 'Which side produced it']
+  ArtefactDate date          [note: 'The date on the document, the interview date or the export date']
+  Request      int           [ref: > DocumentRequest.Id, note: 'The ask this file answers, if it answers one']
+  Services     int[]         [ref: > Service.Id, note: 'The services this file bears on']
+  Summary      longtext      [note: 'What it shows in a line or two, and which section or line matters']
+
+  indexes {
+    ArtefactType
+    SourceSide
+    ArtefactDate
+    Request
+  }
+
+  Note: 'Every file held: copies received, interview notes, exports, invoice lines and emails, filed by kind.'
+}
+
+// One row per conversation, with the fixed eight questions so every
+// conversation is comparable. Answers are transcribed into Evidence rows.
+Table Interview {
+  Id                  int              [pk, increment]
+  Title               nvarchar         [not null, note: 'Role and organisation, for example ICT technician (accounts script). Names live in the calendar, not here']
+  IntervieweeSide     side             [not null]
+  IntervieweeProvider int              [ref: > Provider.Id, note: 'Which provider they work for, when that is not us']
+  Status              interview_status [not null, default: 'Booked']
+  InterviewDate       date             [not null, note: 'The date booked, or the date it happened']
+  DurationMin         int              [note: 'Minutes. Thirty is the ceiling']
+  Q1Runs              longtext         [note: 'What do you run?']
+  Q2Uses              longtext         [note: 'What do you use that someone else runs?']
+  Q3Call              longtext         [note: 'Who do you call when it breaks?']
+  Q4Decides           longtext         [note: 'Who decides changes to it?']
+  Q5AskProvider       longtext         [note: 'What would you have to ask the other side for?']
+  Q6AskedProvider     longtext         [note: 'What have you asked them for in the last three months?']
+  Q7Auditor           longtext         [note: 'What do you rely on that you could not explain to an auditor?']
+  Q8Saturday          longtext         [note: 'If it failed on a Saturday night, who gets the call?']
+  RecordingLink       hyperlink        [note: 'Transcript or recording location, if consented']
+  NotesFile           int              [ref: > Artefact.Id, note: 'The notes file in the library, picked by its Title. The link beside it stays as the direct URL']
+  FollowUps           longtext         [note: 'Things promised, with dates']
+
+  indexes {
+    IntervieweeSide
+    IntervieweeProvider
+    Status
+    InterviewDate
+    NotesFile
+  }
+
+  Note: 'One row per conversation, the same eight questions every time. Answers are transcribed into evidence rows against the services they name.'
+}
+
+// Twelve months of exported tickets plus remembered outages. Who closed a
+// ticket is the strongest single signal of who really runs a service.
+Table Incident {
+  Id               int             [pk, increment]
+  Title            nvarchar        [not null, note: 'Ticket reference where one exists, otherwise a short hand key']
+  Service          int             [ref: > Service.Id, note: 'Which service it belongs to, assigned by us. Blank until assigned']
+  IncidentDate     date            [not null]
+  Category         nvarchar        [note: 'The ticketing system category, as exported']
+  Summary          longtext
+  ResolverSide     side            [not null, default: 'Unknown', note: 'Which side closed it. The strongest single signal of who really runs the service']
+  ResolverProvider int             [ref: > Provider.Id, note: 'Which provider closed it, when that is not us']
+  ResolverTeam     nvarchar        [note: 'The resolving team or queue, as exported']
+  Source           incident_source [not null, note: 'A row from the ticket export, or an outage somebody remembered']
+  SourceDetail     nvarchar        [note: 'The export date, or the role who recalled it']
+
+  indexes {
+    Service
+    IncidentDate
+    ResolverSide
+    ResolverProvider
+    Source
+  }
+
+  Note: 'Twelve months of exported tickets plus remembered outages. Grouping by resolver draws the seam map on its own.'
+}
+
+// Five lines every Friday. The audit trail of the exercise.
+Table WeeklyUpdate {
+  Id           int      [pk, increment]
+  Title        nvarchar [not null, note: 'Week 1 to Week 6']
+  WeekNo       int      [not null, note: '1 to 6']
+  WeekEnding   date     [not null, note: 'The Friday']
+  RowsVerified int      [note: 'Count of service rows that moved to Verified this week']
+  SeamsFound   int      [note: 'Seams raised this week']
+  Blocked      longtext [note: 'What did not move and why, in a line']
+  Next         longtext [note: 'Rows and conversations planned for next week']
+  Surprise     longtext [note: 'The one thing that surprised us. Often the most useful line six weeks later']
+
+  indexes {
+    WeekNo
+    WeekEnding
+  }
+
+  Note: 'Five lines every Friday. The audit trail of the exercise.'
+}

@@ -139,6 +139,56 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Build and release": "Act",
         "System": "System",
     },
+    # Nine entities, no calculated columns, so no System beat anywhere.
+    ("seam-register", "Provider"): {
+        "The provider": "Identify",
+        "How we work with them": "Assess",
+        "The agreement": "Govern",
+    },
+    # The register's two Assess sections are consecutive: who runs it is
+    # the assessment, and documentation and failures are what backs it.
+    ("seam-register", "Service"): {
+        "The service": "Identify",
+        "Who runs it and who to call": "Assess",
+        "Documentation and failures": "Assess",
+        "Confidence and scope": "Govern",
+    },
+    ("seam-register", "Evidence"): {
+        "The claim": "Identify",
+        "The source": "Assess",
+        "Agreement": "Govern",
+    },
+    ("seam-register", "Seam"): {
+        "The seam": "Identify",
+        "Resolution": "Act",
+    },
+    ("seam-register", "DocumentRequest"): {
+        "The document": "Identify",
+        "The ask": "Act",
+        "What it covers": "Govern",
+    },
+    ("seam-register", "Artefact"): {
+        "The file": "Identify",
+        "What it bears on": "Assess",
+    },
+    # Three Assess sections: the eight questions in the three groups the
+    # interviewer asks them in, so the form reads like the script.
+    ("seam-register", "Interview"): {
+        "The conversation": "Identify",
+        "What they run and use": "Assess",
+        "What they depend on": "Assess",
+        "What worries them": "Assess",
+        "Afterwards": "Act",
+    },
+    ("seam-register", "Incident"): {
+        "The incident": "Identify",
+        "Who resolved it": "Assess",
+        "Where it came from": "Govern",
+    },
+    ("seam-register", "WeeklyUpdate"): {
+        "The week": "Identify",
+        "Five lines": "Assess",
+    },
     ("opportunities-register", "Opportunity"): {
         "Stop and route safely": "Identify",
         "Capture once": "Identify",
@@ -988,11 +1038,11 @@ def test_every_header_has_an_icon_a_title_line_and_a_strapline(template: str) ->
             problems.append(f"{entity}: no form header declared")
             continue
         nodes = list(_walk(header))
-        kind = loaded.mapping.entities[entity].kind
+        identities = _header_identity_tokens(loaded, entity)
         missing = [
             part for part, present in (
                 ("icon", any(_is_icon(node) for node in nodes)),
-                ("title line", any(_is_title_line(node, kind) for node in nodes)),
+                ("title line", any(_is_title_line(node, identities) for node in nodes)),
                 ("strapline", any(_is_strapline(node) for node in nodes)),
             ) if not present
         ]
@@ -1217,13 +1267,33 @@ def _is_icon(node: dict[str, Any]) -> bool:
     return isinstance(icon, str) and bool(icon) and "ms-fontSize-42" in _classes(node)
 
 
-def _is_title_line(node: dict[str, Any], kind: str) -> bool:
-    """Use ordinary item fields; the 2026-09-13 header probe found file tokens empty."""
+def _header_identity_tokens(loaded: Loaded, entity: str) -> frozenset[str]:
+    """The tokens a header's title line may identify the row by.
+
+    A list reads `[$Title]`. A library reads an ORDINARY item field, never a
+    file token: the 2026-09-13 header probe (sp-dev-docs#11026) found every
+    file-identity spelling rendering empty while `[$Title]`, Choice and
+    Number resolved, which is what seam-register's library reads. A custom
+    single-line text column is accepted too, on the strength of
+    legal-compliance-register's shipped `[$TopicName]` header rather than a
+    measurement: `library-header-token-probe.js` has no text column in its
+    typed battery, so round five is where that gets settled.
+    """
+    if loaded.mapping.entities[entity].kind != "DocumentLibrary":
+        return frozenset({"[$Title]"})
+    text_columns = {
+        name for name, col_type in loaded.column_types(entity).items()
+        if col_type == "nvarchar"
+    }
+    return frozenset({"[$Title]"} | {f"[${name}]" for name in text_columns})
+
+
+def _is_title_line(node: dict[str, Any], identities: frozenset[str]) -> bool:
+    """A live expression naming one of the accepted identity tokens."""
     text = _text(node)
-    identity = "[$TopicName]" if kind == "DocumentLibrary" else "[$Title]"
     return (
         text.startswith("=")
-        and identity in text
+        and any(identity in text for identity in identities)
         and {"ms-fontSize-16", "ms-fontWeight-bold"} <= _classes(node)
     )
 
@@ -1854,12 +1924,25 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     and Opportunity at 7 (four people, the Pattern lookup, Author, Editor;
     a MergedInto self-lookup was dropped in review because no probe has
     measured one). The distribution is 2 -> 10, 3 -> 31, 4 -> 20, 5 -> 5,
-    7 -> 1, 8 -> 2, 9 -> 2. The worst is unchanged at 9."""
+    7 -> 1, 8 -> 2, 9 -> 2. The worst is unchanged at 9.
+
+    RE-MEASURED 2026-09-23 across 38 templates / 80 entities, when
+    seam-register joined the roster with eight lists and a library and no
+    person column anywhere, because its rows describe roles rather than
+    people. Provider and WeeklyUpdate land at 2 (Author, Editor). Every
+    other entity lands at 4: Service (RunByProvider, SupportProvider),
+    Evidence (Service, Artefact), Seam (Service, the multi-value
+    EvidenceInConflict), DocumentRequest (HolderProvider, the multi-value
+    Services), Artefact (Request, the multi-value Services), Interview
+    (IntervieweeProvider, NotesFile) and Incident (Service,
+    ResolverProvider), each plus Author and Editor. The distribution is
+    2 -> 12, 3 -> 31, 4 -> 27, 5 -> 5, 7 -> 1, 8 -> 2, 9 -> 2. The worst is
+    unchanged at 9."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
-    assert len(templates) == 37, (
-        f"{len(templates)} templates discovered, not the 37 this survey was "
+    assert len(templates) == 38, (
+        f"{len(templates)} templates discovered, not the 38 this survey was "
         f"measured against. A template appeared or disappeared from the "
         f"roster. Re-measure the distribution and the worst count below "
         f"before trusting either."
@@ -1885,8 +1968,8 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     # LIST keeps the roster at 34 while the distribution above moves under it,
     # and the docstring's entity total was wrong for exactly that reason
     # before this pin existed.
-    assert counted == 71, (
-        f"{counted} entities were surveyed, not the 71 the distribution above "
+    assert counted == 80, (
+        f"{counted} entities were surveyed, not the 80 the distribution above "
         f"was measured over. An entity appeared or disappeared inside a "
         f"template that is still on the roster. Re-measure the distribution "
         f"and the worst count before trusting either."

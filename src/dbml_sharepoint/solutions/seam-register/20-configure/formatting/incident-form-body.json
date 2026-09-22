@@ -1,0 +1,29 @@
+{
+  "sections": [
+    {
+      "displayname": "The incident",
+      "fields": [
+        "Title",
+        "Service",
+        "IncidentDate",
+        "Category",
+        "Summary"
+      ]
+    },
+    {
+      "displayname": "Who resolved it",
+      "fields": [
+        "ResolverSide",
+        "ResolverProvider",
+        "ResolverTeam"
+      ]
+    },
+    {
+      "displayname": "Where it came from",
+      "fields": [
+        "Source",
+        "SourceDetail"
+      ]
+    }
+  ]
+}
