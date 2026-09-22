@@ -7520,7 +7520,9 @@ class _OwnershipSeedExtension(BaseExtension):
         return {title: {"Title": "seeded"} for title in self._titles}
 
 
-def _ownership_section(table_names: tuple[str, ...]) -> str:
+def _ownership_section(
+    table_names: tuple[str, ...], *, declare_assignments: bool = True,
+) -> str:
     """Mapping that gives every guarded write phase something to write.
 
     `_declared_pack`'s schema reaches the end of the run but declares no
@@ -7549,16 +7551,20 @@ def _ownership_section(table_names: tuple[str, ...]) -> str:
         "    site_role: default\n"
         "    break_inheritance: true\n"
         "    reconcile: exact\n"
-        "    assignments:\n"
-        '      - principal: { kind: group, name: "Ownership Reader" }\n'
-        '        level: "Read"\n'
-        "\n"
+        # An exact policy declaring NOTHING is the phase's most destructive
+        # path: every direct binding goes, and the completeness check is the
+        # only thing between a removal that did not apply and a clean run.
+        + ("    assignments:\n"
+           '      - principal: { kind: group, name: "Ownership Reader" }\n'
+           '        level: "Read"\n' if declare_assignments else "")
+        + "\n"
         f"form_formatting:\n{forms}"
     )
 
 
 def _ownership_pack(
-    tmp_path: Path, table_names: tuple[str, ...],
+    tmp_path: Path, table_names: tuple[str, ...], *,
+    declare_assignments: bool = True,
 ) -> tuple[Any, Any]:
     """The (schema, bundle) the ownership runs deploy.
 
@@ -7576,15 +7582,23 @@ def _ownership_pack(
             )
             for name in table_names
         ),
-        mapping=blocks(entities(*table_names), _ownership_section(table_names)),
+        mapping=blocks(
+            entities(*table_names),
+            _ownership_section(table_names, declare_assignments=declare_assignments),
+        ),
     )
 
 
-def _ownership_deploy_js(tmp_path: Path, table_names: tuple[str, ...]) -> str:
+def _ownership_deploy_js(
+    tmp_path: Path, table_names: tuple[str, ...], *,
+    declare_assignments: bool = True,
+) -> str:
     from dbml_sharepoint.generators.jsgen import build_schema_json, generate_deploy_js
     from dbml_sharepoint.model.release import load_release
 
-    schema, bundle = _ownership_pack(tmp_path, table_names)
+    schema, bundle = _ownership_pack(
+        tmp_path, table_names, declare_assignments=declare_assignments,
+    )
     titles = tuple(
         entry["title"] for entry in build_schema_json(schema, bundle, "default")["lists"]
     )
@@ -7657,6 +7671,7 @@ def _run_ownership_deploy(
     sabotage_titles: tuple[str, ...] = (),
     sabotage_mode: str = "marker",
     sabotage_after_reads: int = 0,
+    declare_assignments: bool = True,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     """Run the ownership pack against the adopted-site mock.
 
@@ -7681,7 +7696,9 @@ def _run_ownership_deploy(
             "const SABOTAGE_AFTER_READS = 0;",
             f"const SABOTAGE_AFTER_READS = {json.dumps(sabotage_after_reads)};",
         )
-    script = harness + "\n" + _ownership_deploy_js(tmp_path, table_names).replace(
+    script = harness + "\n" + _ownership_deploy_js(
+        tmp_path, table_names, declare_assignments=declare_assignments,
+    ).replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
         " console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); })",
@@ -8034,6 +8051,98 @@ def test_a_configured_list_reports_only_a_read_back_it_made(tmp_path: Path) -> N
     )
     silent = _configured_acl_log(tmp_path, "")
     assert not [line for line in silent if "reports all" in line], silent
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_exact_list_declaring_nothing_strips_it_and_reads_it_back(
+    tmp_path: Path,
+) -> None:
+    """The phase's most destructive path, and the one its own comment calls
+    the policy whose removals matter most.
+
+    With nothing declared the presence check is skipped, so every direct
+    binding is removed and the completeness check is the only thing standing
+    between a removal that did not apply and a run reporting success.
+    """
+    summary, calls, output = _run_ownership_deploy(tmp_path, declare_assignments=False)
+
+    assert summary.get("aborted") is None, summary
+    assert summary.get("errors") == [], summary["errors"]
+    # The seeded stray is the only binding there, and it goes.
+    removals = [c for c in calls if "removeroleassignment" in c["url"]]
+    assert len(removals) == 1, removals
+    stray_principal = _STRAY_BINDING[0][0]["Member"]["Id"]  # type: ignore[index]
+    assert f"principalid={stray_principal}" in removals[0]["url"]
+    log = _phase_log(output, pn("acls"))
+    assert any(
+        "reports exactly the 0 declared role assignment(s)" in line for line in log
+    ), log
+    # Nothing was declared, so nothing could have been verified present.
+    assert not [line for line in log if "reports all" in line], log
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_exact_list_declaring_nothing_whose_removal_did_not_take_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The completeness check carrying the whole weight. The declared set is
+    empty, so no earlier check runs at all, and a removal SharePoint accepted
+    and did not apply would otherwise leave a stray principal with access on
+    a run that reported success."""
+    seeded = _ownership_harness(tmp_path, ("Escalation",))
+    # Four spaces, for the dedent the blind-write test above names.
+    ignored = seeded.replace(
+        "    } else if (binding) {\n",
+        "    } else if (false) {\n",
+    )
+    assert ignored != seeded, "the ignored-removal splice did not apply"
+    summary, _calls, _output = _run_ownership_deploy(
+        tmp_path, harness=_FAST_TIMERS_JS + ignored, declare_assignments=False,
+    )
+    complaint = [
+        err["error"] for err in summary["errors"]
+        if "still reports" in err["error"] and "does not declare" in err["error"]
+    ]
+    assert complaint, summary
+    # The other half of the count: one removal WAS issued for this binding.
+    assert "1 removal(s) were accepted" in complaint[0], complaint[0]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_binding_that_arrived_after_the_snapshot_is_not_blamed_on_a_removal(
+    tmp_path: Path,
+) -> None:
+    """The prune iterates the snapshot taken before the adds, so a binding
+    that entered afterwards is reported by the completeness check with no
+    removal ever attempted for it.
+
+    The message used to say "The removals were accepted", pointing the
+    operator at requests this scope never made. It now counts what it issued.
+    """
+    seeded = _ownership_harness(tmp_path, ("Escalation",))
+    # Two spaces, for the dedent the blind-write test above names. The stray
+    # is invisible to the FIRST scope enumeration, which is the snapshot the
+    # prune runs from, and present on every read after it.
+    late = seeded.replace(
+        "  if (url.includes('/roleassignments')) {\n",
+        "  if (url.includes('/roleassignments')) {\n"
+        "    globalThis.__scopeReads = (globalThis.__scopeReads || 0) + 1;\n"
+        "    if (globalThis.__scopeReads === 1) return { d: { results: [] } };\n",
+    )
+    assert late != seeded, "the late-binding splice did not apply"
+    summary, calls, _output = _run_ownership_deploy(
+        tmp_path, harness=_FAST_TIMERS_JS + late, declare_assignments=False,
+    )
+    assert not [c for c in calls if "removeroleassignment" in c["url"]], (
+        "the prune had an empty snapshot, so it cannot have removed anything"
+    )
+    complaint = [
+        err["error"] for err in summary["errors"] if "still reports" in err["error"]
+    ]
+    assert complaint, summary
+    assert "issued no removals" in complaint[0], complaint[0]
+    assert "entered it after the snapshot" in complaint[0], complaint[0]
+    assert "removal(s) were accepted" not in complaint[0], complaint[0]
 
 
 def test_the_deploy_confirms_the_editor_still_refuses_the_guard() -> None:

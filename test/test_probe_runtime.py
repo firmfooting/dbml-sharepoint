@@ -9058,6 +9058,13 @@ _OPERATOR_HARNESS = textwrap.dedent("""
         return jsonResponse(200, {});
       }
       if (u.includes('/breakroleinheritance(')) {
+        // Applied and then answered non-2xx, which is what leaves a run's own
+        // `listBroken` flag false over a list that really is unique.
+        if (CONFIG.breakAppliedThenRefused) {
+          site.unique = true;
+          site.bindings = CONFIG.leftBindings.map((b) => ({ ...b }));
+          return jsonResponse(500, { error: 'breakroleinheritance refused' });
+        }
         if (CONFIG.breakRefused) {
           return jsonResponse(500, { error: 'breakroleinheritance refused' });
         }
@@ -9118,7 +9125,9 @@ def _operator_grant_probe_js() -> str:
         opened = js.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
         assert opened != js, f"the {gate} gate is not spelled as this test expects"
         js = opened
-    for wait, indent in (("UNIQUE_WAIT_MS", "  "), ("SETTLE_MS", "      ")):
+    # Both at two spaces: the settle constants are declared beside the helper
+    # that uses them now, not inside the branch that used to own them.
+    for wait, indent in (("UNIQUE_WAIT_MS", "  "), ("SETTLE_MS", "  ")):
         shortened = js.replace(
             f"{indent}const {wait} = 2000;",
             f"{indent}const {wait} = {_OPERATOR_TEST_WAIT_MS};",
@@ -9156,6 +9165,7 @@ def _run_operator_grant_probe(
         "createRefused": False,
         "alreadyUnique": False,
         "breakRefused": False,
+        "breakAppliedThenRefused": False,
         "uniqueNeverTrue": False,
         "enumerationRefused": False,
         "controlAccepted": False,
@@ -9254,19 +9264,21 @@ def test_a_removal_the_platform_undoes_is_reported_as_coming_back() -> None:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_a_refused_break_voids_every_question_and_restores_nothing() -> None:
+def test_a_refused_break_leaves_every_question_open_and_restores_nothing() -> None:
     """Nothing was broken, so there is nothing to observe and nothing to put
-    back. A restore sent here would reset a list this run never touched."""
+    back. A restore sent here would reset a list this run never touched.
+
+    OPEN rather than void: `_probe_harness.js.j2` defines void as a reason no
+    re-run can clear, and a refused request is one that can be made again. A
+    throttled break printing "5 voided" would tell the operator that nothing
+    further could be learned.
+    """
     rows, urls, _output = _run_operator_grant_probe(breakRefused=True)
 
     assert rows["access.list-acl.fixture-scratch-list"]["outcome"] == "PASS"
-    for question in ("access.list-acl.control-unknown-principal-refused",
-                     "access.list-acl.break-leaves-bindings",
-                     "access.list-acl.break-leaves-operator-binding",
-                     "access.list-acl.operator-binding-removal-sticks",
-                     "access.list-acl.derived-level-names"):
+    for question in _OPERATOR_BREAK_GATED:
         assert rows[question]["outcome"] == "NOT ESTABLISHED", question
-        assert rows[question]["state"] == "void", question
+        assert rows[question]["state"] == "open", question
         assert "breakroleinheritance answered HTTP 500" in rows[question]["evidence"]
     assert not _restored(urls), (
         "the restore pass reset a list whose break was refused"
@@ -9275,21 +9287,29 @@ def test_a_refused_break_voids_every_question_and_restores_nothing() -> None:
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_break_that_never_reads_unique_is_not_measured() -> None:
-    """The other half of the same dependency. The call was accepted, so the
-    restore still runs, but a scope that never reads as holding unique
-    permissions has nothing to enumerate."""
-    rows, urls, _output = _run_operator_grant_probe(uniqueNeverTrue=True)
+    """The other half of the same dependency: a scope that never reads as
+    holding unique permissions has nothing to enumerate.
+
+    And nothing to restore either. The restore reads the tenant rather than
+    the run's own flag, so a list reporting that it inherits is left alone
+    instead of being written to for the sake of a flag.
+    """
+    rows, urls, output = _run_operator_grant_probe(uniqueNeverTrue=True)
 
     for question in ("access.list-acl.break-leaves-bindings",
                      "access.list-acl.operator-binding-removal-sticks"):
-        assert rows[question]["state"] == "void", question
+        assert rows[question]["state"] == "open", question
         assert "the break was accepted but the list never read" in (
             rows[question]["evidence"]
         )
-    assert _restored(urls), (
-        "the break was accepted, so the restore has to run even though the "
-        "scope never read as unique"
+    assert not _restored(urls), (
+        "the list reads as inheriting, so resetting it writes to somebody's "
+        "site for nothing"
     )
+    assert any(
+        line.startswith("[OK] ") and "reads as inheriting; nothing to restore" in line
+        for line in output.splitlines()
+    ), output
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -9456,8 +9476,8 @@ def test_an_unreadable_owner_group_is_reported_before_the_reset_is_tried() -> No
 
     failures = _fail_lines(output)
     assert len(failures) == 1, f"expected exactly one FAIL line: {failures}"
-    assert "Could not resolve the owner group or a full-control level" in failures[0]
-    assert "no safety grant was made" in failures[0]
+    assert "No safety grant was made before the reset" in failures[0]
+    assert "could not resolve the owner group or a full-control level" in failures[0]
     assert f"fix '{_OPERATOR_LIST_TITLE}' by hand" in failures[0]
     # Said rather than guessed: no grant went out, and the reset was still
     # attempted, which is why the message is conditional on it failing.
@@ -9468,8 +9488,19 @@ def test_an_unreadable_owner_group_is_reported_before_the_reset_is_tried() -> No
         line.startswith("[OK] ") and "restored to inherited permissions" in line
         for line in output.splitlines()
     ), output
-    # The grant runs after every measurement, so losing it changes no row.
-    assert not [row for row in rows.values() if row["state"] != "settled"]
+    # The same grant is what puts the scope into the condition the deploy
+    # removes from, so losing it costs the removal question and nothing else.
+    sticks = rows["access.list-acl.operator-binding-removal-sticks"]
+    assert sticks["outcome"] == "NOT ESTABLISHED"
+    assert "could not be put into the condition the deploy removes from" in (
+        sticks["evidence"]
+    )
+    assert "Nothing was removed" in sticks["evidence"]
+    assert not [
+        url for url in urls
+        if "/removeroleassignment(" in url and "42424242" not in url
+    ], urls
+    assert rows["access.list-acl.break-leaves-bindings"]["state"] == "settled"
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -9550,7 +9581,7 @@ def test_an_unreadable_is_site_admin_is_as_fatal_as_an_unreadable_id() -> None:
     rows, urls, _output = _run_operator_grant_probe(siteAdmin=None)
 
     for question in _OPERATOR_BREAK_GATED:
-        assert rows[question]["state"] == "void", question
+        assert rows[question]["state"] == "open", question
         assert "without a readable Id and IsSiteAdmin" in rows[question]["evidence"]
     assert not [url for url in urls if "/breakroleinheritance(" in url], urls
     assert not [url for url in urls if "/removeroleassignment(" in url], urls
@@ -9628,11 +9659,63 @@ def test_an_unreadable_enumeration_may_itself_be_the_answer() -> None:
     left = rows["access.list-acl.break-leaves-bindings"]
     assert left["outcome"] == "NOT ESTABLISHED"
     assert "may no longer be able to read the scope it just broke" in left["evidence"]
-    for question in ("access.list-acl.break-leaves-operator-binding",
-                     "access.list-acl.operator-binding-removal-sticks",
-                     "access.list-acl.derived-level-names",
-                     "access.list-acl.control-unknown-principal-refused"):
-        assert rows[question]["state"] == "void", question
+    # All five the same, including the row the other four depend on: one
+    # condition cannot make a question open and its dependants unanswerable.
+    for question in _OPERATOR_BREAK_GATED:
+        assert rows[question]["state"] == "open", question
     assert not [url for url in urls if "/removeroleassignment(" in url]
     # The break happened, so the restore still has to run.
     assert _restored(urls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_break_the_server_applied_and_then_refused_is_still_restored() -> None:
+    """The restore reads the tenant, not the run's own flag.
+
+    `listBroken` is set only when the break POST answered 2xx. A break that
+    was APPLIED and answered otherwise leaves the flag false over a list that
+    really does hold unique permissions, and deciding from the flag would
+    leave a production list modified while telling the operator there was
+    nothing to put back.
+    """
+    rows, urls, output = _run_operator_grant_probe(breakAppliedThenRefused=True)
+
+    # The run believes the break failed, and says so.
+    for question in _OPERATOR_BREAK_GATED:
+        assert rows[question]["outcome"] == "NOT ESTABLISHED", question
+        assert "breakroleinheritance answered HTTP 500" in rows[question]["evidence"]
+    # And restores anyway, because the list reads as unique.
+    assert _restored(urls), (
+        "a list the server left unique was not reset, because the run's own "
+        f"flag said it had not broken anything:\n{output[-2000:]}"
+    )
+    assert any(
+        line.startswith("[OK] ") and "restored to inherited permissions" in line
+        for line in output.splitlines()
+    ), output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_restore_that_throws_says_which_list_to_check() -> None:
+    """`restoreInheritance`'s own catch is a branch that runs only when a run
+    has already gone wrong, which is the class #454 shipped.
+
+    The throw is at `web/associatedownergroup`, which the restore reads. It
+    also reaches the measurement pass's catch, since the grant that prepares
+    the scope reads the same endpoint, so one splice executes both.
+    """
+    rows, urls, output = _run_operator_grant_probe(throwOn="associatedownergroup")
+
+    assert any(
+        line.startswith("[FAIL] ") and "restore pass failed" in line
+        and f"Check '{_OPERATOR_LIST_TITLE}' by hand" in line
+        for line in output.splitlines()
+    ), output
+    # It got far enough to break the scope, which is why the failure matters.
+    assert any("/breakroleinheritance(" in url for url in urls)
+    assert rows["access.list-acl.break-leaves-bindings"]["outcome"] == "OBSERVED"
+    # And the outer catch caught the same throw out of the measurement pass.
+    assert any(
+        line.startswith("[FAIL] ") and "the access pass aborted" in line
+        for line in output.splitlines()
+    ), output

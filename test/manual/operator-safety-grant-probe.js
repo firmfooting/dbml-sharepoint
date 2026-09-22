@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHAT A BREAK LEAVES, AND WHETHER REMOVING IT STICKS
  *
- * REVISION: 23d3ad37
+ * REVISION: 90a03536
  *
  * THE CLAIM UNDER TEST. `deploy/_lists.js.j2` says, beside the early
  * isolation break, that "copyRoleAssignments=false leaves only SharePoint's
@@ -64,9 +64,14 @@
  *     break? Compared by principal id against `web/currentuser`, so the
  *     answer does not depend on reading a login name.
  *   access.list-acl.operator-binding-removal-sticks
- *     The deploy's question. Remove that binding, then re-read over the same
- *     window `settleBindings` uses (five reads, 2000 ms apart), and record
- *     whether it stayed gone or came back, and on which read.
+ *     The deploy's question. Grant the owner group full control FIRST, so
+ *     the scope holds another role assignment exactly as it does when the
+ *     deploy prunes, then remove that binding, re-read over the same window
+ *     `settleBindings` uses (five reads, 2000 ms apart), and record whether
+ *     it stayed gone or came back, and on which read. Without the grant the
+ *     probe would be removing the LAST role assignment on the scope, which
+ *     is a different request, and a refusal could be an artifact of emptying
+ *     the scope rather than the answer.
  *   access.list-acl.derived-level-names
  *     `_acls.js.j2` exempts a binding whose level is named `Limited Access`,
  *     an English literal. This records the level names THIS tenant reports
@@ -335,7 +340,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 23d3ad37. Quote this when reporting results.');
+  log('INFO', 'probe revision 90a03536. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe OperatorGrant';
   const OWNERSHIP = 'dbml-sharepoint operator-safety-grant probe list. Safe to delete.';
@@ -434,6 +439,62 @@
     return { ok: true, status: res.status, rows };
   };
 
+  // The window settleBindings uses in the deploy: five reads, 2000 ms apart.
+  const SETTLE_READS = 5;
+  const SETTLE_MS = 2000;
+
+  // Bounded wait for one binding to appear or disappear, reporting every read
+  // it took. `stopEarly` is false for the removal, because a binding that goes
+  // and comes back is the finding and the first agreement would hide it.
+  const settleForBinding = async (principalId, levelId, wanted, stopEarly) => {
+    const reads = [];
+    let present = null;
+    for (let attempt = 0; attempt < SETTLE_READS; attempt += 1) {
+      if (attempt > 0) await sleep(SETTLE_MS);
+      const now = await bindings();
+      present = now.ok
+        ? now.rows.some((r) => r.principalId === principalId && r.levelId === levelId)
+        : null;
+      reads.push(`read ${attempt + 1}: HTTP ${now.status}, ${now.ok ? `${now.rows.length} row(s), ` : ''}`
+                 + `binding ${present === null ? 'unreadable' : present ? 'PRESENT' : 'gone'}`);
+      if (stopEarly && present === wanted) break;
+    }
+    return { present, reached: present === wanted, reads };
+  };
+
+  // One read, not the bounded poll: a caller deciding whether to RESTORE
+  // cannot spend the whole settle window waiting for an answer it already has.
+  const readsUnique = async () => {
+    const res = await spGet(`${listPath}?$select=HasUniqueRoleAssignments`);
+    return readFailed(res) ? null : res.body.HasUniqueRoleAssignments === true;
+  };
+
+  // The owner group bound to this site's full-control level, at the scratch
+  // list's scope. Resolved from the tenant, never from a remembered id: a
+  // wrong level id here would grant something nobody chose, and RoleTypeKind 5
+  // is read rather than trusted.
+  const grantOwnersFullControl = async () => {
+    const owners = await spGet('web/associatedownergroup?$select=Id,Title');
+    const defs = await spGet('web/roledefinitions?$select=Id,Name,RoleTypeKind&$top=100');
+    const full = (!readFailed(defs) && Array.isArray(defs.body.value))
+      ? defs.body.value.find((d) => Number(d.RoleTypeKind) === 5)
+      : null;
+    if (readFailed(owners) || !owners.body.Id || !full) {
+      return { ok: false, why: 'could not resolve the owner group or a full-control level' };
+    }
+    const digest = await getDigest();
+    const granted = await spPost(
+      `${listPath}/roleassignments/addroleassignment(principalid=${owners.body.Id},roleDefId=${full.Id})`,
+      {}, digest);
+    return {
+      ok: granted.ok,
+      principalId: Number(owners.body.Id),
+      levelId: Number(full.Id),
+      levelName: full.Name,
+      why: granted.ok ? null : `addroleassignment answered HTTP ${granted.status}`,
+    };
+  };
+
   const describe = (rows) => (
     rows.length === 0
       ? 'no rows'
@@ -444,36 +505,38 @@
       )).join('; ')
   );
 
-  // Runs on every path out of the questions, so a break that happened is
-  // always paired with its reset. The owner group is granted Full Control
-  // FIRST and deliberately after every measurement: the run may have removed
-  // this account's own binding, and a scope nobody can write is a scope
-  // nobody can restore.
+  // Runs on every path out of the questions, so a scope that is unique is
+  // always put back. The owner group is granted full control FIRST and
+  // deliberately after every measurement: the run may have removed this
+  // account's own binding, and a scope nobody can write is a scope nobody can
+  // restore.
   const restoreInheritance = async () => {
-    if (!listBroken) {
-      log('OK', `'${LIST}' was never broken by this run; nothing to restore.`);
-      return;
-    }
     try {
-      // Resolved from the tenant, never from a remembered id: a wrong level
-      // id here would grant something nobody chose. RoleTypeKind 5 is read
-      // rather than trusted, and a miss costs only the safety net.
-      const owners = await spGet('web/associatedownergroup?$select=Id,Title');
-      const defs = await spGet('web/roledefinitions?$select=Id,Name,RoleTypeKind&$top=100');
-      const full = (!readFailed(defs) && Array.isArray(defs.body.value))
-        ? defs.body.value.find((d) => Number(d.RoleTypeKind) === 5)
-        : null;
-      if (!readFailed(owners) && owners.body.Id && full) {
-        const grantDigest = await getDigest();
-        const grant = await spPost(
-          `${listPath}/roleassignments/addroleassignment(principalid=${owners.body.Id},roleDefId=${full.Id})`,
-          {}, grantDigest);
-        log(grant.ok ? 'OK' : 'INFO',
-            `owner-group safety grant ('${full.Name}') before the reset: HTTP ${grant.status}`);
-      } else {
-        log('FAIL', 'Could not resolve the owner group or a full-control level, so no safety '
-                    + `grant was made. If the reset below fails, fix '${LIST}' by hand.`);
+      // The TENANT decides, not the flag. `listBroken` is set only when the
+      // break POST answered 2xx, so a break that was applied and answered
+      // otherwise, or one whose fetch threw after the server applied it,
+      // would leave a production list unique while the run said there was
+      // nothing to put back.
+      const unique = await readsUnique();
+      if (unique === false) {
+        log('OK', `'${LIST}' reads as inheriting; nothing to restore.`);
+        return;
       }
+      if (unique === null && !listBroken) {
+        log('FAIL', `Could not read whether '${LIST}' holds unique permissions, and this run `
+                    + 'has no record of breaking it. Check it by hand.');
+        return;
+      }
+      if (unique === null) {
+        log('FAIL', `Could not read whether '${LIST}' holds unique permissions after this run `
+                    + 'broke it. Resetting anyway, because leaving it is the worse error.');
+      }
+      const grant = await grantOwnersFullControl();
+      log(grant.ok ? 'OK' : 'FAIL',
+          grant.ok
+            ? `owner-group safety grant ('${grant.levelName}') before the reset.`
+            : `No safety grant was made before the reset: ${grant.why}. If the reset below `
+              + `fails, fix '${LIST}' by hand.`);
       const digest = await getDigest();
       const reset = await spPost(`${listPath}/resetroleinheritance`, {}, digest);
       if (!reset.ok) {
@@ -525,15 +588,17 @@
   record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'PASS',
          `'${LIST}' exists and inherits. ${beforeBreak.text}`);
 
-  // Every question the break gates, voided in one place. They are voided
-  // rather than left open because the reason names this identity or this
-  // tenant, and no re-run under the same one clears it.
-  const voidEveryQuestion = (outcome, why) => {
-    record('access.list-acl.control-unknown-principal-refused', Q_CONTROL, outcome, why, 'void');
-    record('access.list-acl.break-leaves-bindings', Q_LEFT, outcome, why, 'void');
-    record('access.list-acl.break-leaves-operator-binding', Q_OPERATOR, outcome, why, 'void');
-    record('access.list-acl.operator-binding-removal-sticks', Q_STICKS, outcome, why, 'void');
-    record('access.list-acl.derived-level-names', Q_LEVELS, outcome, why, 'void');
+  // Every question the break gates, closed in one place. The STATE is an
+  // argument because the reasons differ in kind: a throttled read clears on a
+  // re-run and is open, while an account that is not an administrator can
+  // never answer these and is void. Defaulting everything to void printed
+  // "5 voided" for a 429, which reads as nothing further being learnable.
+  const closeEveryGatedQuestion = (outcome, why, state) => {
+    record('access.list-acl.control-unknown-principal-refused', Q_CONTROL, outcome, why, state);
+    record('access.list-acl.break-leaves-bindings', Q_LEFT, outcome, why, state);
+    record('access.list-acl.break-leaves-operator-binding', Q_OPERATOR, outcome, why, state);
+    record('access.list-acl.operator-binding-removal-sticks', Q_STICKS, outcome, why, state);
+    record('access.list-acl.derived-level-names', Q_LEVELS, outcome, why, state);
   };
 
   // The measurement pass, in a function of its own rather than in the body
@@ -553,21 +618,23 @@
     // rather than things it measures, so both are asserted.
     const me = await spGet('web/currentuser?$select=Id,PrincipalType,IsSiteAdmin');
     if (readFailed(me) || typeof me.body.IsSiteAdmin !== 'boolean') {
-      voidEveryQuestion('NOT ESTABLISHED',
+      // Open, not void: a 429 or a 500 here clears on a re-run.
+      closeEveryGatedQuestion('NOT ESTABLISHED',
         `web/currentuser answered HTTP ${me.status} without a readable Id and IsSiteAdmin, `
         + 'so no row could be attributed to this account and no break was safe to make');
       return;
     }
     const myId = Number(me.body.Id);
     if (me.body.IsSiteAdmin !== true) {
-      voidEveryQuestion('NOT REACHED',
+      // Void: no re-run as THIS account clears it.
+      closeEveryGatedQuestion('NOT REACHED',
         'this account is not a site collection administrator (web/currentuser reports '
         + 'IsSiteAdmin=false). Whether breakroleinheritance(copyRoleAssignments=false) '
         + 'leaves this account able to write the scope is the very thing being measured, '
         + 'so breaking as a non-administrator risks a list nobody can restore. Nothing '
         + `was broken and nothing was removed; the scratch list '${LIST}' was created and `
         + 'still inherits, so it is safe to delete. Re-run as a site collection '
-        + 'administrator.');
+        + 'administrator.', 'void');
       return;
     }
 
@@ -585,7 +652,8 @@
       const why = broke.ok
         ? `the break was accepted but the list never read HasUniqueRoleAssignments=true. ${unique.text}`
         : `breakroleinheritance answered HTTP ${broke.status} ${broke.text.slice(0, 200)}`;
-      voidEveryQuestion('NOT ESTABLISHED', why);
+      // Open, not void: a refused break is a request that can be made again.
+      closeEveryGatedQuestion('NOT ESTABLISHED', why);
       return;
     }
 
@@ -596,11 +664,9 @@
       const why = `the role-assignment enumeration answered HTTP ${left.status}, so what the `
         + 'break left was never read. A refused read here may itself be the answer: this '
         + 'account may no longer be able to read the scope it just broke.';
-      record('access.list-acl.break-leaves-bindings', Q_LEFT, 'NOT ESTABLISHED', why);
-      record('access.list-acl.break-leaves-operator-binding', Q_OPERATOR, 'NOT ESTABLISHED', why, 'void');
-      record('access.list-acl.operator-binding-removal-sticks', Q_STICKS, 'NOT ESTABLISHED', why, 'void');
-      record('access.list-acl.derived-level-names', Q_LEVELS, 'NOT ESTABLISHED', why, 'void');
-      record('access.list-acl.control-unknown-principal-refused', Q_CONTROL, 'NOT ESTABLISHED', why, 'void');
+      // All five open, matching the row they depend on: a refused read is a
+      // read that can be made again.
+      closeEveryGatedQuestion('NOT ESTABLISHED', why);
       return;
     }
     record('access.list-acl.break-leaves-bindings', Q_LEFT, 'OBSERVED',
@@ -647,31 +713,40 @@
              + 'nothing to remove. That is an answer about the premise and not about the '
              + 'removal: on this tenant the deploy has no operator grant to prune.');
     } else {
-      const target = mine[0];
-      digest = await getDigest();
-      const removed = await spPost(
-        `${listPath}/roleassignments/removeroleassignment(principalid=${target.principalId},roleDefId=${target.levelId})`,
-        {}, digest);
-      // The same window settleBindings uses: five reads, 2000 ms apart. The
-      // deploy's verdict is whatever the LAST of those sees, so every read is
-      // reported rather than only the one that agreed.
-      const SETTLE_READS = 5;
-      const SETTLE_MS = 2000;
-      const seen = [];
-      let stillThere = null;
-      for (let attempt = 0; attempt < SETTLE_READS; attempt += 1) {
-        if (attempt > 0) await sleep(SETTLE_MS);
-        const now = await bindings();
-        stillThere = now.ok
-          ? now.rows.some((r) => r.principalId === target.principalId && r.levelId === target.levelId)
-          : null;
-        seen.push(`read ${attempt + 1}: HTTP ${now.status}, ${now.ok ? `${now.rows.length} row(s), ` : ''}`
-                  + `binding ${stillThere === null ? 'unreadable' : stillThere ? 'PRESENT' : 'gone'}`);
+      // The grant comes FIRST because the deploy removes this binding from a
+      // scope that already holds the declared grants: its adds and its
+      // presence check both run before any removal. Removing the last
+      // remaining role assignment is a different request, and a refusal of it
+      // would answer a harsher question than the one asked.
+      const grant = await grantOwnersFullControl();
+      const landed = grant.ok
+        ? await settleForBinding(grant.principalId, grant.levelId, true, true)
+        : null;
+      if (!grant.ok || !landed.reached) {
+        record('access.list-acl.operator-binding-removal-sticks', Q_STICKS, 'NOT ESTABLISHED',
+               'the scope could not be put into the condition the deploy removes from. '
+               + `A declared grant had to be in place first, and ${grant.ok
+                 ? `the owner-group grant never read back: ${landed.reads.join('; ')}`
+                 : grant.why}. Nothing was removed.`);
+      } else {
+        const target = mine[0];
+        digest = await getDigest();
+        const removed = await spPost(
+          `${listPath}/roleassignments/removeroleassignment(principalid=${target.principalId},roleDefId=${target.levelId})`,
+          {}, digest);
+        // Every read, not the first agreement: the deploy's verdict is
+        // whatever the LAST one sees, and a binding that goes and comes back
+        // is the finding.
+        const settled = await settleForBinding(
+          target.principalId, target.levelId, false, false);
+        record('access.list-acl.operator-binding-removal-sticks', Q_STICKS, 'OBSERVED',
+               `the owner group (principal ${grant.principalId}) was granted '${grant.levelName}' `
+               + 'first, so the scope held another role assignment throughout, as it does when '
+               + `the deploy prunes. Then removeroleassignment(principalid=${target.principalId},`
+               + `roleDefId=${target.levelId}) answered HTTP ${removed.status}`
+               + `${removed.ok ? '' : ` ${removed.text.slice(0, 200)}`}. `
+               + `Over ${(SETTLE_READS - 1) * SETTLE_MS} ms: ${settled.reads.join('; ')}.`);
       }
-      record('access.list-acl.operator-binding-removal-sticks', Q_STICKS, 'OBSERVED',
-             `removeroleassignment(principalid=${target.principalId},roleDefId=${target.levelId}) `
-             + `answered HTTP ${removed.status}${removed.ok ? '' : ` ${removed.text.slice(0, 200)}`}. `
-             + `Then, over ${(SETTLE_READS - 1) * SETTLE_MS} ms: ${seen.join('; ')}.`);
     }
   };
 

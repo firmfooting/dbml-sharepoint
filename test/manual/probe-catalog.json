@@ -6255,7 +6255,7 @@
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
-        "one scratch list, its broken role inheritance, the removal of this account's own binding on it, and the owner-group grant the restore makes"
+        "one scratch list, its broken role inheritance, an owner-group full-control grant on it, the removal of this account's own binding, and the reset that restores inheritance"
       ],
       "cleanup": {
         "policy": "before"

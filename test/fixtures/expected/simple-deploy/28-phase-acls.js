@@ -359,6 +359,10 @@
       // The one irreversible operation in this phase, so it carries the
       // strictest bracket: nothing is removed unless the title still
       // resolves to the surveyed list at the moment of the request.
+      // Counted so the completeness failure below can say what was tried. The
+      // prune runs off a snapshot taken before the adds, so a binding that
+      // entered afterwards is reported with no removal ever attempted for it.
+      let removalsIssued = 0;
       const removeBinding = async (principalId, roleDefId, reason) => {
         await withOwnedList(scope.listTitle, scope.listId, `removeroleassignment (${reason}) on '${scope.label}'`, async () => {
           digest4 = await getDigest();
@@ -371,6 +375,7 @@
             throw new Error(`removeroleassignment (${reason}, principal ${principalId}, binding ${roleDefId}) failed: HTTP ${rmResp.status} ${text}`);
           }
         });
+        removalsIssued += 1;
         log('INFO', `[Phase 4.2] '${scope.label}' removed ${reason} binding ${roleDefId} for principal ${principalId}.`);
       };
 
@@ -426,8 +431,8 @@
       // first and discovering afterwards that the declared administrators
       // never landed is how a scope gets locked. Verified here, the phase
       // aborts with every existing binding still in place.
-      const verifiedDeclaredPresent = resolvedAssignments.length > 0;
-      if (verifiedDeclaredPresent) {
+      const hasDeclaredAssignments = resolvedAssignments.length > 0;
+      if (hasDeclaredAssignments) {
         const wanted = resolvedAssignments.map(
           x => ({ key: `${x.principalId}:${x.roleDefId}`, at: x }),
         );
@@ -484,10 +489,10 @@
           return strays.length === 0 ? null : strays;
         });
         if (complaint !== null) {
-          throw new Error(`'${scope.label}' still reports ${complaint.length} role assignment(s) this exact policy does not declare (${complaint.map(row => row.key).join(', ')}). The removals were accepted, so either the scope has not caught up or they did not take; the declared grants are in place and rerunning reads the bindings again.`);
+          throw new Error(`'${scope.label}' still reports ${complaint.length} role assignment(s) this exact policy does not declare (${complaint.map(row => row.key).join(', ')}). ${removalsIssued === 0 ? 'This scope issued no removals, so the binding entered it after the snapshot the prune ran from' : `${removalsIssued} removal(s) were accepted, so either the scope has not caught up or they did not take`}; the declared grants are in place and rerunning reads the bindings again.`);
         }
         log('INFO', `[Phase 4.2] '${scope.label}' reports exactly the ${desired.size} declared role assignment(s).`);
-      } else if (verifiedDeclaredPresent) {
+      } else if (hasDeclaredAssignments) {
         log('INFO', `[Phase 4.2] '${scope.label}' reports all ${resolvedAssignments.length} declared role assignment(s).`);
       }
     };
