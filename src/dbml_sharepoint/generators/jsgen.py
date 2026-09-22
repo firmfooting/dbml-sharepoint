@@ -1167,7 +1167,7 @@ def build_schema_json(
         # groups / a per-list policy" independently -- see
         # requires_manage_permissions and #166 item 5.
         "requires_manage_permissions": requires_manage_permissions(
-            bundle.mapping, role_tables,
+            bundle.mapping, role_tables, enum_members,
         ),
         "seed_items": seed_items,
     }

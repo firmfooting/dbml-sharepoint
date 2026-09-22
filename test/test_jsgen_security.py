@@ -733,5 +733,38 @@ def test_a_folder_policy_off_this_build_does_not_demand_manage_permissions(
         ),
     )
 
-    assert requires_manage_permissions(bare, ["ElsewhereOnly"]) is True
-    assert requires_manage_permissions(bare, ["SomethingElse"]) is False
+    assert requires_manage_permissions(bare, ["ElsewhereOnly"], {}) is True
+    assert requires_manage_permissions(bare, ["SomethingElse"], {}) is False
+
+
+def test_a_group_source_over_an_empty_enum_does_not_demand_manage_permissions(
+) -> None:
+    """An empty enum is a warning, not a refusal, so a mapping whose only
+    permission declaration is a `from_enum` source over one generates no
+    groups and writes no ACL. Demanding the right anyway aborts an operator
+    who correctly lacks it, which is the #166 item 5 failure again."""
+    from dbml_sharepoint.analysis.permissions import requires_manage_permissions
+    from dbml_sharepoint.model.mapping_types import GroupsFromEnum, SiteGroup
+
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    perms = bundle.mapping.permissions
+    assert perms is not None
+    source = GroupsFromEnum(
+        enum="division",
+        template=SiteGroup(
+            name="{member} Editors", description="", owner_group="Site Owners",
+            allow_members_edit_membership=False, allow_request_to_join_leave=False,
+            auto_accept_request_to_join_leave=False,
+            only_allow_members_view_membership=False,
+        ),
+    )
+    bare = dataclasses.replace(
+        bundle.mapping,
+        permissions=dataclasses.replace(
+            perms, levels=[], groups=[], group_sources=(source,),
+            default_policy=None, overrides={}, folder_policies={},
+        ),
+    )
+
+    assert requires_manage_permissions(bare, [], {"division": []}) is False
+    assert requires_manage_permissions(bare, [], {"division": ["Clinical"]}) is True

@@ -1,9 +1,11 @@
 # src/dbml_sharepoint/analysis/permissions.py
 """SP base permissions bitmask + permission-level / group / role-assignment helpers."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass
 
+from dbml_sharepoint.analysis.groups import resolvable_groups
 from dbml_sharepoint.model.mapping_types import Mapping
 
 # Per Microsoft.SharePoint.SPBasePermissions (64-bit unsigned). All bit
@@ -251,7 +253,11 @@ ASSOCIATED_GROUP_ALIASES = {
 }
 
 
-def requires_manage_permissions(mapping: Mapping, table_names: Iterable[str]) -> bool:
+def requires_manage_permissions(
+    mapping: Mapping,
+    table_names: Iterable[str],
+    enum_members: MappingABC[str, Sequence[str]],
+) -> bool:
     """True when deploying `table_names` performs ANY ACL work, and so needs
     the ManagePermissions site right.
 
@@ -271,12 +277,15 @@ def requires_manage_permissions(mapping: Mapping, table_names: Iterable[str]) ->
     still needs the bit. `table_names` should be the entity names actually in
     this build (`analysis.ordering.site_tables_in_order`'s output), not every
     entity in the mapping -- a policy scoped to a site_role this build does
-    not deploy must not demand a right the build never exercises.
+    not deploy must not demand a right the build never exercises. `groups`
+    is resolved through `analysis/groups.py` for the same reason.
     """
     perms = mapping.permissions
     if perms is None:
         return False
-    if perms.levels or perms.groups or perms.group_sources:
+    # The RESOLVED groups, because a `from_enum` source over an empty enum
+    # declares none and this build would then demand a right it never uses.
+    if perms.levels or resolvable_groups(perms, enum_members):
         return True
     # A folder policy is keyed by entity, so it is counted through
     # `table_names` like a per-list policy and not as a mapping-wide fact. A

@@ -226,7 +226,9 @@ def assess_targets(
         # Shared with manifestgen/jsgen's schema_json and deploy.js's own
         # live preflight, so the three cannot independently drift again --
         # see requires_manage_permissions's docstring and #166 item 5.
-        "requires_manage_permissions": requires_manage_permissions(m, table_names),
+        "requires_manage_permissions": requires_manage_permissions(
+            m, table_names, enum_members,
+        ),
     }
 
 
