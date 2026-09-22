@@ -26,7 +26,12 @@ from dbml_sharepoint.model.mapping_types import (
     RoleAssignment,
     SiteGroup,
 )
-from dbml_sharepoint.model.prefix import expand_prefix, previous_object_names
+from dbml_sharepoint.model.prefix import (
+    MEMBER_PLACEHOLDER,
+    MEMBER_SAFE_PLACEHOLDER,
+    expand_prefix,
+    previous_object_names,
+)
 from dbml_sharepoint.model.reading import (
     optional_bool,
     optional_str,
@@ -109,6 +114,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
         # deploy the template verbatim, leaving `{member}` in a live group
         # name while the folder policy naming that group expanded it.
         if "from_enum" not in grp:
+            _reject_member_placeholders(group, f"groups[{i}]")
             groups.append(group)
             continue
         group_sources.append(GroupsFromEnum(
@@ -154,6 +160,33 @@ def read(sc: SectionContext) -> dict[str, Any]:
             folder_policies=folder_policies,
         ),
     }
+
+
+def _reject_member_placeholders(group: SiteGroup, context: str) -> None:
+    """A member placeholder on a group with no `from_enum` to expand it.
+
+    Nothing downstream expands one, and a brace is not a character
+    SharePoint refuses in a group name, so the deploy would create a group
+    called `{member}` and read it back byte-identical. Only the fields
+    `analysis.groups.group_for_member` expands are checked, because those
+    are the only ones a `from_enum` would have changed.
+    """
+    fields: list[tuple[str, str]] = [
+        ("name", group.name),
+        ("description", group.description),
+        ("owner_group", group.owner_group),
+        *(
+            (f"renamed_from[{i}]", name)
+            for i, name in enumerate(group.renamed_from)
+        ),
+    ]
+    for key, value in fields:
+        for placeholder in (MEMBER_SAFE_PLACEHOLDER, MEMBER_PLACEHOLDER):
+            if placeholder in value:
+                raise MappingValueError(
+                    f"{context}.{key}: {placeholder} is expanded only on a "
+                    f"group declaring 'from_enum'; got {value!r}",
+                )
 
 
 def _parse_group(
