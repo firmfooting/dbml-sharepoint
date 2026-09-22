@@ -31,10 +31,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 entity.folder_source, vc.enum_members_by_name,
             )
         except UnknownFolderEnumError as err:
-            # Resolved through the shared module and not by re-testing
-            # membership here, so the sentence an operator reads and the
-            # tuple the deploy is built from come from one answer. Nothing
-            # further is judged about folders this entity has none of.
+            # Caught rather than re-tested here, so the message and the deploy's tuple agree.
             findings.append(Finding(
                 FindingCode.FOLDER_ENUM_UNKNOWN,
                 f"entities[{entity_name}].folders: from_enum names "
