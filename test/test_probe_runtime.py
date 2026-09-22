@@ -8914,6 +8914,93 @@ def test_calculated_operand_malformed_payload_is_not_a_stored_value(payload: Any
 # executes when something has gone wrong is invisible to `node --check` and
 # surfaces as a list nobody can get back into.
 # --------------------------------------------------------------------------
+LIBRARY_ACCESS_PROBE = MANUAL / "library-access-probe.js"
+
+
+def _deploy_shape_read_js() -> str:
+    """`DEPLOY_BINDING_QUERY` and `deployShapeRead`, lifted out of the probe.
+
+    Sliced rather than re-spelled, and both anchors are asserted, so what
+    runs here is the committed text an operator would paste. The probe has
+    no runtime module of its own, and this function is the one piece of it
+    whose output is a claim about the deploy's own query composition.
+    """
+    js = LIBRARY_ACCESS_PROBE.read_text(encoding="utf-8")
+    start = "  const DEPLOY_BINDING_QUERY =\n"
+    end = "  // The restore pass."
+    assert js.count(start) == 1, "DEPLOY_BINDING_QUERY is not spelled as this test expects"
+    assert js.count(end) == 1, "the restore-pass anchor is not spelled as this test expects"
+    return js[js.index(start):js.index(end)]
+
+
+def _run_deploy_shape_read(rows: object) -> str:
+    """Run it against one mocked answer and return the line it produced."""
+    script = (
+        "const WEB = 'https://example.sharepoint.com/sites/test';\n"
+        f"const ROWS = {json.dumps(rows)};\n"
+        "globalThis.fetch = async () => ({\n"
+        "  ok: true, status: 200,\n"
+        "  json: async () => ({ d: { results: ROWS } }),\n"
+        "});\n"
+        "(async () => {\n"
+        + _deploy_shape_read_js()
+        + "  console.log('__OUT__' + await deployShapeRead("
+        "'web/lists/getbytitle(%27L%27)', 'at library scope'));\n"
+        "})();\n"
+    )
+    output = _run(script)
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__OUT__")), None,
+    )
+    assert line is not None, output[-2000:]
+    return line.removeprefix("__OUT__")
+
+
+#: One row shaped the way $expand=RoleDefinitionBindings returns it.
+_SHAPE_ROW = {
+    "PrincipalId": 11,
+    "RoleDefinitionBindings": {"results": [{"Id": 1073741829, "Name": "Full Control"}]},
+}
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_shape_read_reports_the_expanded_fields_the_deploy_builds_keys_from(
+) -> None:
+    """The deploy keys a binding as `${PrincipalId}:${binding.Id}` and
+    exempts on `binding.Name`, so the observation has to cover all three."""
+    said = _run_deploy_shape_read([_SHAPE_ROW])
+
+    assert "1 of them carrying a non-null PrincipalId" in said, said
+    assert "1 carrying a RoleDefinitionBindings.results array" in said, said
+    assert "1 expanded binding(s), 1 with a non-null Id" in said, said
+    assert "'Full Control'" in said, said
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_nested_field_the_tenant_drops_is_visible_rather_than_looking_healthy(
+) -> None:
+    """The failure item 6 names: the top-level field is honoured and a
+    nested one is not. The deploy then builds keys off `undefined` and
+    exempts nothing, while an observation counting PrincipalId alone reads
+    exactly as it does on a healthy tenant."""
+    dropped_name = _run_deploy_shape_read([{
+        "PrincipalId": 11,
+        "RoleDefinitionBindings": {"results": [{"Id": 1073741829}]},
+    }])
+    assert "1 of them carrying a non-null PrincipalId" in dropped_name, dropped_name
+    assert "name(s) '<undefined>'" in dropped_name, dropped_name
+
+    dropped_id = _run_deploy_shape_read([{
+        "PrincipalId": 11,
+        "RoleDefinitionBindings": {"results": [{"Name": "Full Control"}]},
+    }])
+    assert "1 expanded binding(s), 0 with a non-null Id" in dropped_id, dropped_id
+
+    dropped_all = _run_deploy_shape_read([{"PrincipalId": 11}])
+    assert "0 carrying a RoleDefinitionBindings.results array" in dropped_all, dropped_all
+    assert "0 expanded binding(s)" in dropped_all, dropped_all
+
+
 OPERATOR_GRANT_PROBE = MANUAL / "operator-safety-grant-probe.js"
 
 #: The waits the probe ships, replaced with something a test can afford. The

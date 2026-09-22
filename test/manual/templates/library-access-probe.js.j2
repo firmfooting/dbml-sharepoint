@@ -216,8 +216,28 @@
     if (rows === null) return `${where}: HTTP 200 carrying no d.results array`;
     const withId = rows.filter(
       (r) => r.PrincipalId !== null && r.PrincipalId !== undefined);
+    // All THREE fields, because the deploy keys a binding as
+    // `${PrincipalId}:${binding.Id}` and exempts on `binding.Name`. A tenant
+    // that honours the top-level field of this $select composition and drops
+    // a nested one looks healthy on a PrincipalId count while the deploy
+    // builds undefined keys, matches no declared grant and exempts nothing.
+    // Reported, never asserted: whatever comes back is the observation.
+    const nested = rows.filter(
+      (r) => r.RoleDefinitionBindings
+        && Array.isArray(r.RoleDefinitionBindings.results)).length;
+    const expanded = rows.flatMap((r) => (
+      (r.RoleDefinitionBindings && Array.isArray(r.RoleDefinitionBindings.results))
+        ? r.RoleDefinitionBindings.results
+        : []));
+    const withBindingId = expanded.filter(
+      (b) => b.Id !== null && b.Id !== undefined);
+    const names = [...new Set(expanded.map(
+      (b) => (typeof b.Name === 'string' ? b.Name : `<${typeof b.Name}>`)))];
     return `${where}: HTTP 200, ${rows.length} row(s), ${withId.length} of them `
-      + 'carrying a non-null PrincipalId';
+      + `carrying a non-null PrincipalId, ${nested} carrying a `
+      + `RoleDefinitionBindings.results array; ${expanded.length} expanded `
+      + `binding(s), ${withBindingId.length} with a non-null Id, name(s) `
+      + `${names.length ? names.map((nm) => `'${nm}'`).join(', ') : 'none'}`;
   };
 
   // The restore pass. Runs on every path out of the access questions, so a
