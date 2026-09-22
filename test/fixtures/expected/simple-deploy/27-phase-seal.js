@@ -81,7 +81,8 @@
         // re-proving the list per column would buy nothing the by-Id address
         // does not already give.
         laneListId = (await ownedListIdentity(
-          listTitle, sealOwned.get(listTitle), `before sealing '${listTitle}'`,
+          listTitle, surveyedListId(sealOwned, listTitle, 'Seal'),
+          `before sealing '${listTitle}'`,
         )).Id;
       } catch (err) {
         log('ERROR', `Phase 4.1 seal '${listTitle}': ${err.message}`);

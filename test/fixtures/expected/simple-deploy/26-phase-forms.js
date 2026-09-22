@@ -79,7 +79,7 @@
           // batch, so a list that fails it is dropped here and never reaches
           // a ChangeSet part.
           await ownedListIdentity(
-            form.list, formsOwned.get(form.list),
+            form.list, surveyedListId(formsOwned, form.list, 'Form'),
             `before writing form formatting on '${form.list}'`,
           );
           formTargets.push({ form, target });
@@ -149,7 +149,8 @@
           if (listId == null) {
             throw new Error(`Declared list '${form.list}' disappeared across the form write`);
           }
-          if (sharePointGuid(listId, 'list') !== sharePointGuid(formsOwned.get(form.list), 'list')) {
+          if (sharePointGuid(listId, 'list')
+              !== sharePointGuid(surveyedListId(formsOwned, form.list, 'Form'), 'list')) {
             throw new Error(`List '${form.list}' changed identity across the form write`);
           }
           if (!readbacks) {

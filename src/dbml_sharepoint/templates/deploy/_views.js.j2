@@ -115,7 +115,7 @@
       // phase measured and removed. So the lane is bracketed: owned before
       // the first read, and the title proved to still resolve to the same Id
       // after the last write, before this view is reported verified.
-      const viewListId = viewsOwned.get(view.list);
+      const viewListId = surveyedListId(viewsOwned, view.list, 'View');
       await ownedListIdentity(view.list, viewListId, `before writing views on '${view.list}'`);
       let viewDigest = await getDigest();
       const listPath = `web/lists/getbytitle('${odataName(view.list)}')`;

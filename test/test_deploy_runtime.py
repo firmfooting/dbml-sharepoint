@@ -18,6 +18,7 @@ import re
 import subprocess
 import tempfile
 import textwrap
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar, NamedTuple
 from urllib.parse import quote
@@ -7901,6 +7902,7 @@ def _run_ownership_deploy(
     sabotage_mode: str = "marker",
     sabotage_after_reads: int = 0,
     declare_assignments: bool = True,
+    deploy_edit: Callable[[str], str] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     """Run the ownership pack against the adopted-site mock.
 
@@ -7908,6 +7910,10 @@ def _run_ownership_deploy(
     same reason the enterprise-reader run is: these lists grant a BUILT-IN
     level ('Read'), which the plain harness's role-definition state does not
     carry.
+
+    `deploy_edit` rewrites the emitted script before it runs, for the defects
+    the mock cannot express: the harness answers requests, so a fault in the
+    run's own bookkeeping has to be introduced in the run.
     """
     # Built only when it is going to be used. Rendering the pack to throw
     # the result away is what hid the seed a `harness=` caller loses.
@@ -7925,9 +7931,14 @@ def _run_ownership_deploy(
             "const SABOTAGE_AFTER_READS = 0;",
             f"const SABOTAGE_AFTER_READS = {json.dumps(sabotage_after_reads)};",
         )
-    script = harness + "\n" + _ownership_deploy_js(
+    deploy = _ownership_deploy_js(
         tmp_path, table_names, declare_assignments=declare_assignments,
-    ).replace(
+    )
+    if deploy_edit is not None:
+        edited = deploy_edit(deploy)
+        assert edited != deploy, "the deploy edit matched nothing and changed nothing"
+        deploy = edited
+    script = harness + "\n" + deploy.replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
         " console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); })",
@@ -8146,6 +8157,184 @@ def test_a_same_titled_replacement_stops_a_write_phase(
         f"phase {phase.key} wrote to a replaced list: "
         f"{_writes_in_phase(calls, pn(phase.key))}"
     )
+
+
+class _SurveyedPhase(NamedTuple):
+    """A write phase and the `label` its pre-write ownership survey runs under."""
+
+    key: str
+    label: str
+
+
+#: The phases that bind a write to an Id read back out of a survey they ran
+#: with `allowAbsent` false. The unseal phase is absent on purpose: it surveys
+#: with `allowAbsent` true and has its own branch for a title the survey did
+#: not find, which is the case the run below must not break.
+_SURVEYED_WRITE_PHASES = (
+    _SurveyedPhase("indexes", "Index"),
+    _SurveyedPhase("defaults", "Field default"),
+    _SurveyedPhase("views", "View"),
+    _SurveyedPhase("forms", "Form"),
+    _SurveyedPhase("seal", "Seal"),
+    _SurveyedPhase("acls", "ACL"),
+    _SurveyedPhase("seeds", "Seed"),
+)
+
+#: The last line of `surveyOwnedListsForWrites`, spliced to make one phase's
+#: survey come back without the title the phase is about to write to.
+_SURVEY_RETURN = "    return failed ? null : identities;"
+
+
+def _survey_drops(label: str, title: str) -> Callable[[str], str]:
+    """Make the survey labelled `label` return a Map missing `title`.
+
+    No caller can produce that Map today: each one looks its Ids up from the
+    same collection it handed the survey, so every lookup hits. What this
+    reproduces is the next caller that surveys one set of titles and writes
+    to another, which the guard has to refuse rather than write with no
+    proven identity behind it. Introduced in the run because the mock answers
+    requests and this is a fault in the run's own bookkeeping.
+    """
+    def edit(js: str) -> str:
+        assert js.count(_SURVEY_RETURN) == 1, "the survey's return moved"
+        return js.replace(
+            _SURVEY_RETURN,
+            f"    if (label === {json.dumps(label)}) "
+            f"identities.delete({json.dumps(title)});\n" + _SURVEY_RETURN,
+        )
+    return edit
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    "phase", _SURVEYED_WRITE_PHASES, ids=[p.key for p in _SURVEYED_WRITE_PHASES],
+)
+def test_a_write_phase_refuses_a_list_its_survey_never_proved(
+    tmp_path: Path, phase: _SurveyedPhase,
+) -> None:
+    """A survey Map with no entry for the title, and the write must not go.
+
+    `Map.get` answers a miss with `undefined`, and a default parameter fires
+    on `undefined`, so `ownedListIdentity(title, owned.get(title))` used to
+    bind the default and skip the identity comparison altogether. The list
+    here is genuinely owned and carries its marker, so the marker check the
+    guard degraded to passes and the phase wrote: the one case the Id
+    comparison exists for, a same-titled replacement carrying a copied
+    Description, would have been written to in the same silence.
+
+    One list, so "this phase wrote nothing" is the whole claim. Several of
+    these phases address their writes by list GUID, and the mock answers every
+    title with one Id, so a per-list filter over the call log could not
+    separate them.
+    """
+    summary, calls, output = _run_ownership_deploy(
+        tmp_path, deploy_edit=_survey_drops(phase.label, _OWNED_TITLE),
+    )
+    assert any(
+        f"ownership survey proved no identity for '{_OWNED_TITLE}'" in line
+        for line in _phase_log(output, pn(phase.key))
+    ), f"phase {phase.key} did not name the unproven list:\n{output[-3000:]}"
+    assert summary["errors"], summary
+    assert not _writes_in_phase(calls, pn(phase.key)), (
+        f"phase {phase.key} wrote to a list its survey never proved: "
+        f"{_writes_in_phase(calls, pn(phase.key))}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_unseal_phase_still_runs_when_its_survey_found_no_list(
+    tmp_path: Path,
+) -> None:
+    """The one place a missing survey entry is the expected answer.
+
+    The maintenance unseal runs before the structural phases, so a clean first
+    provision reaches it with the list not yet created. It surveys with
+    `allowAbsent` true and reads the list shape itself when the survey held
+    nothing, and that path must survive the refusal the other phases now make.
+    Without this run, closing the fail-open everywhere would look equally
+    correct and would break every first provision.
+    """
+    summary, calls, _output = _run_ownership_deploy(
+        tmp_path,
+        deploy_edit=_survey_drops("Maintenance ownership recheck", _OWNED_TITLE),
+    )
+    assert summary.get("aborted") is None, summary
+    assert summary.get("errors") == [], summary["errors"]
+    assert _writes_in_phase(calls, pn("unseal")), (
+        "the unseal phase wrote nothing, so this run proves nothing about it"
+    )
+
+
+#: Exported beside the guard-cost splice, and for the same reason: the guard is
+#: a closure, so the argument shapes a future caller could reach are only
+#: reachable from inside the run.
+_IDENTITY_EXPORTS = (
+    "  globalThis.__ownedIdentity = (...args) => ownedListIdentity(...args);\n"
+    "  globalThis.__ownedShape = (name) => assertDeclaredListOwnedNow(name);\n"
+)
+
+_IDENTITY_TAIL = """.then(async (r) => {
+  console.log('__RESULT__' + JSON.stringify(r));
+  const attempt = async (call) => {
+    try { await call(); return null; } catch (err) { return err.message; }
+  };
+  const proven = (await globalThis.__ownedShape('APP_Escalation')).Id;
+  console.log('__IDENTITY__' + JSON.stringify({
+    omitted: await attempt(() => globalThis.__ownedIdentity('APP_Escalation')),
+    undefinedId: await attempt(
+      () => globalThis.__ownedIdentity('APP_Escalation', undefined, 'in this test'),
+    ),
+    nullId: await attempt(
+      () => globalThis.__ownedIdentity('APP_Escalation', null, 'in this test'),
+    ),
+    proven: await attempt(
+      () => globalThis.__ownedIdentity('APP_Escalation', proven, 'in this test'),
+    ),
+  }));
+});
+"""
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_identity_guard_refuses_an_expected_id_it_was_never_given(
+    tmp_path: Path,
+) -> None:
+    """Absence is refused in the signature, not told apart inside it.
+
+    JavaScript binds a default on `undefined`, so an omitted argument and an
+    explicit `undefined` arrive as the same value and no test written inside
+    the function can separate them. All three shapes below therefore have to
+    fail, and a real captured Id still has to pass: a guard that refused that
+    one too would be indistinguishable from this one on the failing cases and
+    would abort every write phase.
+    """
+    harness = _ownership_harness(tmp_path, ("Escalation",))
+    js = _ownership_deploy_js(tmp_path, ("Escalation",))
+    exported = js.replace(
+        _GUARD_EXPORT_ANCHOR, _IDENTITY_EXPORTS + _GUARD_EXPORT_ANCHOR, 1,
+    )
+    assert exported != js, "the identity exports did not splice in"
+    # Wrapped rather than spliced on `})();`, for the reason the guard-cost
+    # run gives: an emitted comment names that sequence.
+    body = exported.rstrip()
+    assert body.endswith("})();")
+    output = _run(f"{harness}\n({body[:-1]}){_IDENTITY_TAIL}")
+    assert _summary_of(output).get("errors") == [], output[-3000:]
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__IDENTITY__")), None,
+    )
+    assert line is not None, f"the guard was never called:\n{output[-3000:]}"
+    measured = json.loads(line.removeprefix("__IDENTITY__"))
+
+    assert measured["omitted"] == (
+        f"No proven identity was captured for list '{_OWNED_TITLE}' before a write"
+    ), measured
+    refusal = (
+        f"No proven identity was captured for list '{_OWNED_TITLE}' in this test"
+    )
+    assert measured["undefinedId"] == refusal, measured
+    assert measured["nullId"] == refusal, measured
+    assert measured["proven"] is None, measured
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

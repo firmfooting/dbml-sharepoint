@@ -29,7 +29,8 @@
         defaultTargets.push({
           fieldDefault,
           target: await ownedFieldIdentity(
-            fieldDefault.list, fieldDefault.field, defaultsOwned.get(fieldDefault.list),
+            fieldDefault.list, fieldDefault.field,
+            surveyedListId(defaultsOwned, fieldDefault.list, 'Field default'),
           ),
         });
       } catch (err) {

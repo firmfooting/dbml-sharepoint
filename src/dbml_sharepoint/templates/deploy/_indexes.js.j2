@@ -28,7 +28,9 @@
       try {
         indexTargets.push({
           idx,
-          target: await ownedFieldIdentity(idx.list, idx.field, indexOwned.get(idx.list)),
+          target: await ownedFieldIdentity(
+            idx.list, idx.field, surveyedListId(indexOwned, idx.list, 'Index'),
+          ),
         });
       } catch (err) {
         log('ERROR', `Index ${idx.list}.${idx.field}: ${err.message}`);

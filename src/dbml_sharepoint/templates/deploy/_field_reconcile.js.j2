@@ -498,10 +498,20 @@
   // The marker alone cannot see a same-titled replacement, since a
   // replacement can carry a copied Description; the list Id is what separates
   // them.
-  async function ownedListIdentity(listName, expectedId = null, when = 'before a write') {
+  //
+  // `expectedId` takes no default and may not be nullish. A default fires on
+  // `undefined`, so `ownedListIdentity(title, owned.get(title))` for a title
+  // the survey never covered bound the default and skipped the comparison
+  // entirely, leaving the marker-only check the comment above says is not
+  // enough. The two cases are indistinguishable from inside the function, so
+  // absence is refused here rather than told apart.
+  async function ownedListIdentity(listName, expectedId, when = 'before a write') {
+    if (expectedId == null) {
+      throw new Error(`No proven identity was captured for list '${listName}' ${when}`);
+    }
     const actual = await assertDeclaredListOwnedNow(listName);
     const listId = sharePointGuid(actual.Id, 'list');
-    if (expectedId != null && listId !== sharePointGuid(expectedId, 'list')) {
+    if (listId !== sharePointGuid(expectedId, 'list')) {
       throw new Error(`List '${listName}' changed identity ${when}`);
     }
     return actual;
@@ -535,6 +545,24 @@
       }
     }, 4);
     return failed ? null : identities;
+  }
+
+  // The one way a write phase reads an Id back out of a survey it ran with
+  // `allowAbsent` false. Such a survey returns a Map holding every title it
+  // was given or no Map at all, so a miss means the caller asked about a
+  // title the survey never covered and holds no proven identity to bind the
+  // write to. Named where the value is produced, because `Map.get` answers a
+  // miss with the same `undefined` a deliberate omission would pass.
+  //
+  // The phases that legitimately run before their list exists survey with
+  // `allowAbsent` true and branch on absence themselves; they do not come
+  // through here.
+  function surveyedListId(identities, listTitle, label) {
+    const listId = identities.get(listTitle);
+    if (listId == null) {
+      throw new Error(`The ${label} ownership survey proved no identity for '${listTitle}'`);
+    }
+    return listId;
   }
 
   // The live field a MERGE is addressed by, bound to both identities: the
