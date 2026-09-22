@@ -101,36 +101,18 @@
   // unconstrained, by list title. Null-prototype for the same reason
   // listOutcomes is, and written once per list by the lane that owns it.
   const newlyUniqueColumns = Object.create(null);
-  // Columns that declare unique and were not in the list's field
-  // enumeration, where that enumeration may have ended before the list did.
-  // Held apart from the map above because "the site holds this
-  // unconstrained" and "this read did not establish what the site holds"
-  // are different claims and the second one must not be reported as the
-  // first.
-  const unseenUniqueColumns = Object.create(null);
 
   await mapLanes(
     SCHEMA.lists.filter((list) => preflightListShapes[list.title]),
     (list) => list.title,
     async (list) => {
     const newlyUnique = [];
-    const unseenUnique = [];
     for (const field of declaredFieldsForList(list)) {
       try {
         const actual = await readFieldShape(probeTitleFor(list), field.title, field);
-        if (!actual) {
-          // Null is "the one field enumeration did not hold this name", and
-          // on a page that may be short that is not "the list does not hold
-          // it". The cache the probe just filled answers which, at no
-          // request, and staying silent here would drop the warning in
-          // exactly the case it exists for: a long list whose declared
-          // unique column sits past the page.
-          if (field.body.EnforceUniqueValues === true
-              && (await listFieldShapes(probeTitleFor(list))).truncated) {
-            unseenUnique.push(field.title);
-          }
-          continue;
-        }
+        // Null is absence, even past a truncated page: readFieldShape asks
+        // a column it did not see by name before answering.
+        if (!actual) continue;
         // The field phase's own EnforceUniqueValues comparison, made here
         // where nothing has been written yet. Collected before the immutable
         // checks below, which `continue` past this on a clean column.
@@ -160,7 +142,6 @@
       }
     }
     if (newlyUnique.length > 0) newlyUniqueColumns[list.title] = newlyUnique;
-    if (unseenUnique.length > 0) unseenUniqueColumns[list.title] = unseenUnique;
   }, 4);
 
   // #550 made a declared `unique` actually deploy its constraint, so a list
@@ -186,23 +167,6 @@
       + 'This preflight did not count duplicate values in them, so it cannot say whether the '
       + 'attempt will be accepted. Check those columns before the field phase reaches them. A '
       + 'refused write is reported with the reason SharePoint gave and stops the run.');
-  }
-
-  // The same comparison, on the columns it could not make. assess.js reports
-  // these under `pending_unique:` as NOT-ASSESSABLE, so an operator who ran
-  // it before the paste reads the same set here.
-  const listsWithUnseenUnique = SCHEMA.lists.filter((list) => unseenUniqueColumns[list.title]);
-  if (listsWithUnseenUnique.length > 0) {
-    log('WARN', 'Declared unique columns this preflight could not read:');
-    for (const list of listsWithUnseenUnique) {
-      for (const column of unseenUniqueColumns[list.title]) {
-        log('WARN', `  ${list.title}.${column}: not in a field enumeration that came back at its ${FIELD_PAGE_SIZE}-row page size`);
-      }
-    }
-    log('WARN', 'Missing from a page that may be truncated is not missing from the list, so whether '
-      + 'the site already holds those columns under the declared constraint was not established. The '
-      + 'field phase reads the same enumeration, so a column it does not see is one it treats as not '
-      + 'provisioned. Check those columns before it reaches them.');
   }
 
   if (summary.errors.length > 0) {

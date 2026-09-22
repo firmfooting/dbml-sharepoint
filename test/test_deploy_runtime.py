@@ -2958,17 +2958,14 @@ def test_a_unique_constraint_the_site_already_carries_is_silent(
 # The comparison above is made from ONE field enumeration per list, which asks
 # for one page. A list holding more fields than that answers with the page it
 # asked for, and a declared column on a later one is missing from the answer
-# exactly as a column that is not provisioned yet is. Reading the second
-# meaning made `readFieldShape` answer null and the comparison never run, so
-# the warning stayed silent on the long list it exists for.
+# exactly as a column that is not provisioned yet is. `readFieldShape` then
+# asks that column by name, because every caller creates what it reports
+# absent (#577).
 
 #: The page size the field enumeration asks for. A page that came back holding
 #: this many rows may have ended before the list did, and `$top` is
 #: client-driven paging, which returns no next link to say so.
 _FIELD_PAGE_SIZE = 500
-
-_UNSEEN_UNIQUE_HEADING = "Declared unique columns this preflight could not read:"
-
 
 def test_the_field_page_size_is_spelled_once_and_the_assess_side_reads_it_too(
 ) -> None:
@@ -2987,25 +2984,30 @@ def test_the_field_page_size_is_spelled_once_and_the_assess_side_reads_it_too(
     assert f"const COLUMN_PAGE_SIZE = {_FIELD_PAGE_SIZE};" in js
 
 
+_CODE_PROBE = "getbytitle('APP_Escalation')/fields/getbyinternalnameortitle('Code')"
+
+
 def _paged_fields_harness(
     *, rows: int, holds_code: bool, next_link: str | None = None,
+    site_holds_code: bool = True, code_probe_status: int | None = None,
 ) -> str:
-    """`_unique_column_harness(enforced=False)` answering ONE enumeration by hand.
+    """A long `APP_Escalation`: every field enumeration answers `rows` rows.
 
-    The site still holds `Code` unconstrained: the by-name probe finds it, as
-    a live site's would for a column on a later page. What changes is the
-    enumeration the preflight reads, which answers `rows` rows and shows
-    `Code` only if `holds_code`.
-
-    The fiction is confined to the preflight phase, because what the later
-    phases do with a page that may be short is the subject of #577 and not of
-    this comparison. Filler rows carry every property the request selects, so
-    a guard cannot pass here on a payload thinner than SharePoint's.
+    The page shows `Code` only if `holds_code`, in every phase, as a live
+    list's would. `site_holds_code` is whether the list holds it at all
+    (unconstrained, the pre-#550 state), which is what the by-name probe
+    answers. `code_probe_status` makes that probe fail instead. Filler rows
+    carry every property the request selects, so a guard cannot pass here on
+    a payload thinner than SharePoint's.
     """
-    return _unique_column_harness(enforced=False) + textwrap.dedent(f"""
+    base = (
+        _unique_column_harness(enforced=False) if site_holds_code else _ADOPTED_HARNESS
+    )
+    return base + textwrap.dedent(f"""
         const PAGE_ROWS = {rows};
         const PAGE_HOLDS_CODE = {json.dumps(holds_code)};
         const PAGE_NEXT = {json.dumps(next_link)};
+        const CODE_PROBE_STATUS = {json.dumps(code_probe_status)};
         const fillerField = (n) => ({{
           Id: '66666666-6666-6666-6666-666666666666',
           InternalName: `Filler${{n}}`, Title: `Filler${{n}}`,
@@ -3014,98 +3016,125 @@ def _paged_fields_harness(
           Sealed: false, DefaultValue: null, DefaultFormula: null,
           CustomFormatter: null,
         }});
+        const answer = (status, payload) => ({{
+          ok: status >= 200 && status < 300, status,
+          headers: {{ get: () => null }},
+          json: async () => payload,
+          text: async () => JSON.stringify(payload),
+        }});
         const _passThrough = globalThis.fetch;
         globalThis.fetch = async (url, opts = {{}}) => {{
           const u = String(url);
-          // The list's one enumeration, not a by-name probe of it: those two
-          // are what the run tells apart, so the mock must too.
-          const enumerating = mockPhase === {json.dumps(pn("preflight"))}
+          const method = opts.method || 'GET';
+          if (CODE_PROBE_STATUS && method === 'GET' && u.includes({json.dumps(_CODE_PROBE)})) {{
+            calls.push({{ url: u, method, body: null }});
+            const refused = {{ error: {{ message: {{ value: 'probe failed' }} }} }};
+            return answer(CODE_PROBE_STATUS, refused);
+          }}
+          // The list's enumeration, not a by-name probe of it: those two are
+          // what the run tells apart, so the mock must too.
+          const enumerating = method === 'GET'
             && u.includes("getbytitle('APP_Escalation')/fields?")
             && !u.includes('getbyinternalnameortitle');
           if (!enumerating) return _passThrough(url, opts);
-          const results = PAGE_HOLDS_CODE ? [created['APP_Escalation Code']] : [];
+          const code = created['APP_Escalation Code'];
+          const results = PAGE_HOLDS_CODE && code ? [code] : [];
           while (results.length < PAGE_ROWS) results.push(fillerField(results.length));
-          const answer = {{ results }};
-          if (PAGE_NEXT) answer.__next = PAGE_NEXT;
-          const payload = {{ d: answer }};
-          calls.push({{ url: u, method: opts.method || 'GET', body: null }});
-          return {{
-            ok: true, status: 200,
-            headers: {{ get: () => null }},
-            json: async () => payload,
-            text: async () => JSON.stringify(payload),
-          }};
+          const page = {{ results }};
+          if (PAGE_NEXT) page.__next = PAGE_NEXT;
+          calls.push({{ url: u, method, body: null }});
+          return answer(200, {{ d: page }});
         }};
     """)
 
 
-@pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_a_declared_unique_column_missing_from_a_full_page_is_not_absent(
-    tmp_path: Path,
-) -> None:
-    """A read that did not see every column established no absence.
+def _code_creates(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Field creates for `Code`: a create names its kind, a MERGE by Id does not."""
+    return [
+        body
+        for body in (
+            json.loads(call["body"])
+            for call in _field_writes(calls, "APP_Escalation")
+            if call["body"] and not call["url"].endswith("$batch")
+        )
+        if body.get("Title") == "Code" and "FieldTypeKind" in body
+    ]
 
-    This is the case the whole comparison exists for: a list long enough that
-    a column provisioned before #550 sits past the page. Treating the null as
-    "not provisioned yet" left the preflight silent, and silence here is
-    indistinguishable from a site that carries every declared constraint.
+
+def _probed_code_by_name(calls: list[dict[str, Any]]) -> bool:
+    """Whether `readFieldShape` asked `Code` by name, in the preflight.
+
+    Keyed on the shape probe's own select: derived-property reads (MaxLength)
+    use the same path and are not the existence question. The preflight is
+    the first reader, so a probe there is the fall-through and not a later
+    phase's re-read after a write.
     """
-    _summary, _calls, output = _run_capturing_calls(
-        _paged_fields_harness(rows=_FIELD_PAGE_SIZE, holds_code=False),
+    return any(
+        c["method"] == "GET"
+        and f"{_CODE_PROBE}?$select=Id,InternalName," in c["url"]
+        and c.get("phase") == pn("preflight")
+        for c in calls
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("rows", "next_link"),
+    [
+        (_FIELD_PAGE_SIZE, None),
+        # Learn's "PageSize, Top and MaxTop" documents the other truncation: a
+        # service paging below the asked-for size answers a short page WITH a
+        # next link, and a short page is what an absent column looks like.
+        (1, (
+            "https://example.sharepoint.com/sites/test/_api/web/lists/"
+            "getbytitle('APP_Escalation')/fields?$skiptoken=Paged"
+        )),
+    ],
+    ids=["full-page", "next-link"],
+)
+def test_a_column_past_the_field_page_is_read_by_name_not_created(
+    tmp_path: Path, rows: int, next_link: str | None,
+) -> None:
+    """A column missing from a page that may have ended early is asked by name.
+
+    Answering null here made the field phase create a column the list already
+    holds, and Learn's Field element says SharePoint amends a colliding
+    internal name to keep it unique, so the likely result is a second column
+    rather than an error. Found by name, the column is compared the way one on
+    the page is: the preflight names the missing constraint before any write,
+    and the field phase reconciles it rather than creating a sibling.
+    """
+    summary, calls, output = _run_capturing_calls(
+        _paged_fields_harness(rows=rows, holds_code=False, next_link=next_link),
         _unique_column_deploy_js(tmp_path),
     )
-    assert _UNSEEN_UNIQUE_HEADING in output, output[-4000:]
+    assert _probed_code_by_name(calls), [c["url"] for c in calls if "Code" in c["url"]]
+    assert _code_creates(calls) == [], _code_creates(calls)
     assert (
-        f"  APP_Escalation.Code: not in a field enumeration that came back at "
-        f"its {_FIELD_PAGE_SIZE}-row page size" in output
+        "  APP_Escalation.Code: declared unique, readback EnforceUniqueValues false"
+        in output
     ), output[-4000:]
-    # Not reported as a constraint the site lacks: what this read established
-    # is that it established nothing, and the two must not collapse.
-    assert _NEWLY_UNIQUE_HEADING not in output, output[-4000:]
-    # Before the first write, for the same reason the warning beside it is.
     first_write = f"Starting Phase {pn('renames')}"
-    assert first_write in output, output[-4000:]
-    assert output.index(_UNSEEN_UNIQUE_HEADING) < output.index(first_write), output[:8000]
-
-
-@pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_a_field_page_carrying_a_next_link_is_not_a_whole_list(
-    tmp_path: Path,
-) -> None:
-    """The other truncation, where the server pages below the asked-for size.
-
-    Learn's "PageSize, Top and MaxTop" documents both: `$top` returns no next
-    link of its own, and a service whose own page size is smaller answers a
-    short page WITH one. A short page is what an absent column looks like, so
-    the link is the only thing separating them here.
-    """
-    _summary, _calls, output = _run_capturing_calls(
-        _paged_fields_harness(
-            rows=1, holds_code=False,
-            next_link=(
-                "https://example.sharepoint.com/sites/test/_api/web/lists/"
-                "getbytitle('APP_Escalation')/fields?$skiptoken=Paged"
-            ),
-        ),
-        _unique_column_deploy_js(tmp_path),
-    )
-    assert _UNSEEN_UNIQUE_HEADING in output, output[-4000:]
-    assert "APP_Escalation.Code" in output, output[-4000:]
-    assert _NEWLY_UNIQUE_HEADING not in output, output[-4000:]
+    assert output.index(_NEWLY_UNIQUE_HEADING) < output.index(first_write), output[:8000]
+    sent = [
+        json.loads(call["body"])
+        for call in _field_writes(calls, "APP_Escalation")
+        if call["body"] and "EnforceUniqueValues" in call["body"]
+    ]
+    assert [body["EnforceUniqueValues"] for body in sent] == [True], sent
+    assert not summary.get("aborted"), summary
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_full_page_holding_the_declared_column_still_answers_for_it(
     tmp_path: Path,
 ) -> None:
-    """The control: the guard withholds an absence, never a reading.
+    """The control: a full page is exact about what IS in it.
 
-    A page that came back full is unreliable about what is NOT in it and
-    exact about what is, so a declared column present in one is compared the
-    way it always was. Without this, reporting every full page unreadable
-    would satisfy the two tests above while telling the operator nothing.
+    No by-name probe is spent on a column the page already showed, so the
+    fall-through above costs a request only where the page could not answer.
     """
-    _summary, _calls, output = _run_capturing_calls(
+    _summary, calls, output = _run_capturing_calls(
         _paged_fields_harness(rows=_FIELD_PAGE_SIZE, holds_code=True),
         _unique_column_deploy_js(tmp_path),
     )
@@ -3114,7 +3143,49 @@ def test_a_full_page_holding_the_declared_column_still_answers_for_it(
         "  APP_Escalation.Code: declared unique, readback EnforceUniqueValues false"
         in output
     ), output[-4000:]
-    assert _UNSEEN_UNIQUE_HEADING not in output, output[-4000:]
+    assert _code_creates(calls) == [], _code_creates(calls)
+    assert not _probed_code_by_name(calls), [c["url"] for c in calls if "Code" in c["url"]]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_column_absent_by_name_past_a_full_page_is_still_created(
+    tmp_path: Path,
+) -> None:
+    """The by-name answer is the authority both ways: absent there is absent.
+
+    Without this, refusing to create anything behind a full page would satisfy
+    the test above while leaving a long list unable to gain a column.
+    """
+    summary, calls, output = _run_capturing_calls(
+        _paged_fields_harness(
+            rows=_FIELD_PAGE_SIZE, holds_code=False, site_holds_code=False,
+        ),
+        _unique_column_deploy_js(tmp_path),
+    )
+    assert _probed_code_by_name(calls), output[-4000:]
+    assert len(_code_creates(calls)) == 1, _code_creates(calls)
+    assert _NEWLY_UNIQUE_HEADING not in output, output[-4000:]
+    assert not summary.get("aborted"), summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_failed_by_name_read_past_a_full_page_creates_nothing(
+    tmp_path: Path,
+) -> None:
+    """Neither answer was established, so the run names the column and stops."""
+    summary, calls, _output = _run_capturing_calls(
+        _paged_fields_harness(
+            rows=_FIELD_PAGE_SIZE, holds_code=False, code_probe_status=500,
+        ),
+        _unique_column_deploy_js(tmp_path),
+    )
+    assert _code_creates(calls) == [], _code_creates(calls)
+    named = [
+        error for error in summary["errors"]
+        if error.get("column") == "Code" and "HTTP 500" in error.get("error", "")
+    ]
+    assert named, summary["errors"]
+    assert summary.get("aborted"), summary
 
 
 # The collector's two collaborators. Stubbed because this test is about what the

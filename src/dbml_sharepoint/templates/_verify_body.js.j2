@@ -144,8 +144,21 @@
 
     // ---- 3. Columns and the list rule ----------------------------------------
     const fieldsPath = `${listPath}/fields`;
-    const have = await readJson(`${fieldsPath}?$select=InternalName&$top=500`);
-    const present = new Set(((have.ok && have.d && have.d.results) || []).map((f) => String(f.InternalName).toLowerCase()));
+    const FIELD_PAGE_SIZE = 500;
+    const have = await readJson(`${fieldsPath}?$select=InternalName&$top=${FIELD_PAGE_SIZE}`);
+    // A column missing from this read is created below, so a failed or
+    // possibly short read must stop the run rather than read as "none" (#577).
+    if (!have.ok || !have.d || !Array.isArray(have.d.results)) {
+      finding('scratch_list', 'NOT-ASSESSABLE', `Could not read the list's columns (HTTP ${have.status} ${have.reason}); nothing was verified.`);
+      return { findings, verdict: 'NOT-VERIFIED', aborted: 'field-page-unreadable' };
+    }
+    const fieldsNext = have.d.__next;
+    if (have.d.results.length >= FIELD_PAGE_SIZE
+      || (fieldsNext !== undefined && fieldsNext !== null && fieldsNext !== '')) {
+      finding('scratch_list', 'NOT-ASSESSABLE', `The list's column read came back at its ${FIELD_PAGE_SIZE}-row page size or with a next link, so a column missing from it may exist; nothing was verified.`);
+      return { findings, verdict: 'NOT-VERIFIED', aborted: 'field-page-truncated' };
+    }
+    const present = new Set(have.d.results.map((f) => String(f.InternalName).toLowerCase()));
     const unavailable = new Set();
     for (const col of T.columns) {
       if (present.has(col.name.toLowerCase())) continue;

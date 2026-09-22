@@ -233,7 +233,11 @@
     const fieldPath = fieldShapePath(listName, columnName);
     let shape;
     if (!fresh) {
-      shape = (await listFieldShapes(listName)).get(columnName) || null;
+      const shapes = await listFieldShapes(listName);
+      shape = shapes.get(columnName) || null;
+      // Missing from a page that may have ended early is not missing from the
+      // list, and a caller creates what this reports absent (#577).
+      if (!shape && shapes.truncated) return readFieldShape(listName, columnName, declaredField, true);
       if (!shape) return null;
       // Cached entries were validated at enumeration time by the same checks
       // below; re-validate anyway, one shared gate for both paths.
