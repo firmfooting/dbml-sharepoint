@@ -29,6 +29,13 @@ Proxy that RECORDS a read of a PascalCase property that was neither selected
 nor assigned by the script; camelCase names are the script's own. At exit the
 prelude prints the record after `SENTINEL`, and `run_node` fails the test
 naming the property, the request URL and the script line that read it.
+
+A GET of one entity that a harness answers with an empty set is answered
+instead with the status SharePoint gives an absent entity of that kind (404
+for a list, group or item; the absent-400 for a field or view by name). An
+empty set is never an entity, and a catch-all that answered one made
+"absent" and "present with nothing in it" the same observation, so no
+absence guard could be mutation-checked (#574).
 """
 
 import json
@@ -191,12 +198,89 @@ PRELUDE = r"""
     },
   });
 
+  // A GET of one entity that is not there, and the status SharePoint answers
+  // it with. Only kinds with a recorded answer are listed: the list 404 and
+  // its body were measured (docs/reference/findings, search-discovery
+  // 2026-08-28), the field and view 400s are the live findings `isAbsent400`
+  // exists for, the group 404 is group-description-probe.js's control and the
+  // item 404 is projected-lookup-probe.js's. A folder read is left out on
+  // purpose: an empty path answers 200 with Exists false (folder-shape-probe
+  // 2026-09-13), and a field read by id answered 400 once and 404 elsewhere.
+  const ABSENT = [
+    { at: /\/lists\/getbytitle\('((?:[^']|'')*)'\)$/i, status: 404,
+      code: '-1, System.ArgumentException',
+      value: (name, site) => `List '${name}' does not exist at site with URL '${site}'.` },
+    { at: /\/fields\/getbyinternalnameortitle\('((?:[^']|'')*)'\)$/i, status: 400,
+      code: '-2147024809, System.ArgumentException',
+      value: (name) => `Column '${name}' does not exist.` },
+    { at: /\/views\/getbytitle\('((?:[^']|'')*)'\)$/i, status: 400,
+      code: '-2147024809, System.ArgumentException',
+      value: () => 'The specified view is invalid.' },
+    { at: /\/sitegroups\/getbyname\('((?:[^']|'')*)'\)$/i, status: 404,
+      value: (name) => `Group '${name}' not found.` },
+    { at: /\/items\((\d+)\)$/i, status: 404,
+      value: (id) => `Item ${id} does not exist.` },
+  ];
+  const isEmptySet = (body) => body !== null && typeof body === 'object' && (
+    (Array.isArray(body.value) && body.value.length === 0)
+    || (body.d !== null && typeof body.d === 'object' && Array.isArray(body.d.results)
+      && body.d.results.length === 0));
+  // An empty set is never an entity, so a harness answering one to an entity
+  // address is answering "not there" the way SharePoint does not. The body is
+  // read once, through whichever of json() and text() the harness has, and
+  // that accessor then serves the copy; the other is left as the harness
+  // wrote it, since some harnesses deliberately make the two disagree.
+  const answerAbsence = async (response, url, opts) => {
+    const path = String(url).split('?')[0];
+    const kind = ABSENT.find((k) => k.at.test(path));
+    if (!kind) return response;
+    const via = typeof response.json === 'function' ? 'json' : 'text';
+    let body;
+    let failure = null;
+    try { body = await response[via](); } catch (err) { failure = err; }
+    let parsed = body;
+    if (via === 'text' && failure === null) {
+      try { parsed = JSON.parse(body); } catch { parsed = undefined; }
+    }
+    if (failure !== null || !isEmptySet(parsed)) {
+      return new Proxy(response, {
+        get(target, prop) {
+          if (prop === via) {
+            return async () => {
+              if (failure !== null) throw failure;
+              return body;
+            };
+          }
+          const value = Reflect.get(target, prop, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+    }
+    const name = decode(path.match(kind.at)[1]).replace(/''/g, "'");
+    const site = path.split('/_api')[0];
+    const message = { lang: 'en-US', value: kind.value(name, site) };
+    const error = kind.code ? { code: kind.code, message } : { message };
+    const headers = (opts && opts.headers) || {};
+    const accept = String(headers.Accept || headers.accept || '');
+    const answer = JSON.stringify(accept.includes('odata=verbose')
+      ? { error } : { 'odata.error': error });
+    return {
+      ok: false, status: kind.status, url: String(url),
+      headers: { get: () => null },
+      json: async () => JSON.parse(answer),
+      text: async () => answer,
+    };
+  };
+
   const wrap = (raw) => {
     if (typeof raw !== 'function') return raw;
     return async function projectedFetch(url, opts) {
       const nested = inner.getStore() === true;
-      const response = await inner.run(true, () => raw.call(this, url, opts));
       const method = String((opts && opts.method) || 'GET').toUpperCase();
+      let response = await inner.run(true, () => raw.call(this, url, opts));
+      if (method === 'GET' && response && typeof response === 'object' && response.ok) {
+        response = await answerAbsence(response, url, opts);
+      }
       if (method !== 'GET' || !response || typeof response !== 'object' || !response.ok) {
         return response;
       }

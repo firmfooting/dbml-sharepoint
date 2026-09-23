@@ -261,6 +261,11 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     // there. Exposed as the array itself so a test can arm it mid-run.
     const ABSENT_LIST_TITLES = [];
     globalThis.__absentListTitles = ABSENT_LIST_TITLES;
+    // Lists whose inheritance a list-level breakroleinheritance POST has
+    // broken. Every list starts inheriting, which is what the catch-all's
+    // empty set used to stand for; the read is an entity read, so it answers
+    // from the same store the list probe below does.
+    const UNIQUE_ROLE_LISTS = new Set();
     let sabotageArmed = false;
     const sabotageReads = Object.create(null);
     // The phase every request belongs to, read off the run's own phase
@@ -730,6 +735,13 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       // fallback in ensureKnownListTitles: enumeration unavailable, probe
       // per list. The fast path itself is NOT covered here.
       if (url.includes('web/lists?')) return { error: { code: 'enumeration-not-mocked' } };
+      if (/\/lists\/getbytitle\('[^/]*'\)\?\$select=HasUniqueRoleAssignments$/.test(url)) {
+        const listTitle = listOf(url);
+        if (ABSENT_LIST_TITLES.includes(listTitle)) {
+          return { error: { code: 'List not found', status: 404 } };
+        }
+        return { d: { HasUniqueRoleAssignments: UNIQUE_ROLE_LISTS.has(listTitle) } };
+      }
       // The attachments probe reads one property and nothing else, so it
       // must answer before the shape branch rather than through it.
       if (url.includes('getbytitle') && url.includes('EnableAttachments')) {
@@ -998,6 +1010,10 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
               row.RoleDefinitionBindings.results.filter((b) => b.Id !== binding.roleDefId);
           }
         }
+      }
+      if ((opts.method || 'GET') === 'POST'
+          && /\/lists\/getbytitle\('[^/]*'\)\/breakroleinheritance\(/.test(u)) {
+        UNIQUE_ROLE_LISTS.add(listOf(u));
       }
       const payload = body(u, opts);
       const absent = payload && payload.error;
