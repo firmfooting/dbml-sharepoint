@@ -24,6 +24,7 @@ from _raw_enum_readers import (
     POSITIONAL_FIELDS,
     RATCHETED,
     RESOLUTION_FIELDS,
+    RESOLVER_MODULE,
     _reads_in,
     scan,
 )
@@ -178,6 +179,36 @@ def test_a_positional_pattern_on_an_unplaceable_class_is_flagged() -> None:
         (MODULE_SCOPE, name) for name in RATCHETED
     }
     assert _reads_in("match obj:\n    case Elsewhere(levels=n):\n        use(n)\n") == set()
+
+
+def test_an_alias_two_imports_bind_differently_is_treated_as_unplaceable() -> None:
+    """The alias map is per module, so a name rebound in a second import used
+    to resolve to whichever the walk reached last and could silently place a
+    pattern against the wrong class's `__match_args__`.
+    """
+    source = (
+        "from dbml_sharepoint.model.mapping_types import PermissionsConfig as C\n"
+        "match obj:\n    case C(_, wanted):\n        use(wanted)\n"
+        "def later():\n"
+        "    from dbml_sharepoint.model.mapping_types import EntityMapping as C\n"
+        "    return C\n"
+    )
+    assert _reads_in(source) == {(MODULE_SCOPE, name) for name in RATCHETED}
+
+
+def test_a_resolved_field_is_suppressed_only_inside_the_resolver_module() -> None:
+    """`RESOLUTION_FIELDS` is keyed by the short class name, so a class called
+    `ResolvedMapping` in any other module had every `self.folder_policies` in
+    it suppressed and its raw read hidden.
+    """
+    source = (
+        "class ResolvedMapping:\n"
+        "    def read(self):\n        return self.folder_policies\n"
+    )
+    assert _reads_in(source, RESOLVER_MODULE) == set()
+    assert _reads_in(source, "dbml_sharepoint/generators/jsgen.py") == {
+        ("ResolvedMapping.read", "folder_policies"),
+    }
 
 
 def test_positional_positions_come_from_the_live_classes() -> None:

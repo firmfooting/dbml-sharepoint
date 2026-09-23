@@ -107,6 +107,10 @@ def _resolution_fields() -> dict[str, frozenset[str]]:
 #: them. `self.folder_policies` on one of these is that answer, not a source.
 RESOLUTION_FIELDS = _resolution_fields()
 
+#: The only module whose classes those names belong to, path-relative to the
+#: scanned root.
+RESOLVER_MODULE = "dbml_sharepoint/analysis/resolve.py"
+
 
 @dataclass
 class _Found:
@@ -130,13 +134,23 @@ def _import_aliases(tree: ast.Module) -> dict[str, str]:
     no positions. A plain `import` is not collected: it binds a module, and a
     pattern reaching a class through one spells the class name itself.
     """
-    aliases: dict[str, str] = {}
+    bound: dict[str, set[str]] = {}
     for node in ast.walk(tree):
         if not isinstance(node, ast.ImportFrom):
             continue
         for alias in node.names:
-            aliases[alias.asname or alias.name] = alias.name
-    return aliases
+            bound.setdefault(alias.asname or alias.name, set()).add(alias.name)
+    # A name two imports bind differently is UNPLACEABLE, not whichever the
+    # walk reached last: `_fields_matched` then reports every ratcheted field.
+    return {
+        name: next(iter(classes)) if len(classes) == 1 else _SHADOWED
+        for name, classes in bound.items()
+    }
+
+
+#: What an import name bound to more than one class resolves to. No class is
+#: called this, so every lookup on it misses and the pattern fails closed.
+_SHADOWED = "<shadowed>"
 
 
 def _pattern_class(node: ast.expr, aliases: dict[str, str]) -> str:
@@ -163,31 +177,21 @@ def _getattr_field(node: ast.Call) -> str | None:
 
 
 def _fields_matched(node: ast.MatchClass, aliases: dict[str, str]) -> set[str]:
-    """The ratcheted fields one `case Cls(...)` pattern reads.
-
-    `case EntityMapping(folder_source=src)` spells the name as a plain string
-    in `kwd_attrs`, which an `ast.Attribute` walk never sees. A POSITIONAL
-    pattern spells it nowhere at all: `case EntityMapping(_, ..., source)`
-    reads whatever `__match_args__` holds at that index, so the positions are
-    resolved against the real class, through `aliases` where the module
-    imported it under another name.
-
-    A positional pattern on a class this walk cannot place is reported as
-    reading every ratcheted field, so it lands on the allowlist rather than
-    passing unseen: a ratchet that fails open is not a ratchet. A pattern
-    naming its fields as keywords needs none of this, because it spells
-    exactly what it reads.
-    """
+    """The ratcheted fields one `case Cls(...)` pattern reads, which an
+    `ast.Attribute` walk never sees because a pattern spells them in
+    `kwd_attrs` or, positionally, nowhere at all."""
     fields = set(node.kwd_attrs) & RATCHETED
     if not node.patterns:
         return fields
     positions = POSITIONAL_FIELDS.get(_pattern_class(node.cls, aliases))
     if positions is None:
+        # A class this walk cannot place reports every field, because a
+        # ratchet that fails open is not a ratchet.
         return fields | set(RATCHETED)
     return fields | (set(positions[: len(node.patterns)]) & RATCHETED)
 
 
-def _reads_its_own_answer(node: ast.Attribute, owner: str) -> bool:
+def _reads_its_own_answer(node: ast.Attribute, owner: str, module: str) -> bool:
     """Whether `node` is a resolution reading its OWN resolved field.
 
     `ResolvedMapping.require_folder_policies` reads `self.folder_policies`,
@@ -195,21 +199,28 @@ def _reads_its_own_answer(node: ast.Attribute, owner: str) -> bool:
     field name alone the two collapse into one site, so a single exemption
     covers both and outlives whichever read goes first. The receiver tells
     them apart without the type inference the module docstring rules out.
+
+    Scoped to the resolver's own module, because the class name alone is not
+    the class: another module declaring its own `ResolvedMapping` would have
+    every `self.folder_policies` in it suppressed.
     """
     return (
-        isinstance(node.value, ast.Name)
+        module == RESOLVER_MODULE
+        and isinstance(node.value, ast.Name)
         and node.value.id == "self"
         and node.attr in RESOLUTION_FIELDS.get(owner, frozenset())
     )
 
 
-def _fields_read(node: ast.AST, aliases: dict[str, str], owner: str) -> set[str]:
+def _fields_read(
+    node: ast.AST, aliases: dict[str, str], owner: str, module: str,
+) -> set[str]:
     """The ratcheted fields `node` itself reads, its children aside."""
     if isinstance(node, ast.Attribute):
         # `Load` context separates a read from a keyword argument, a type
         # annotation and an assignment target, none of which read a field.
         reads = node.attr in RATCHETED and isinstance(node.ctx, ast.Load)
-        if reads and not _reads_its_own_answer(node, owner):
+        if reads and not _reads_its_own_answer(node, owner, module):
             return {node.attr}
         return set()
     if isinstance(node, ast.MatchClass):
@@ -232,6 +243,7 @@ def _collect(
     found: _Found,
     aliases: dict[str, str],
     owner: str,
+    module: str,
 ) -> None:
     """Walk `node`, carrying the qualified name its children sit under and the
     class they are declared in."""
@@ -241,27 +253,29 @@ def _collect(
             nested = (*scope, child.name)
             found.functions.add(".".join(nested))
             holder = child.name if isinstance(child, ast.ClassDef) else owner
-            _collect(child, nested, found, aliases, holder)
+            _collect(child, nested, found, aliases, holder, module)
             continue
-        found.reads |= {(qualname, name) for name in _fields_read(child, aliases, owner)}
-        _collect(child, scope, found, aliases, owner)
+        found.reads |= {
+            (qualname, name) for name in _fields_read(child, aliases, owner, module)
+        }
+        _collect(child, scope, found, aliases, owner, module)
 
 
-def _walk(source: str) -> _Found:
+def _walk(source: str, module: str = "") -> _Found:
     tree = ast.parse(source)
     found = _Found()
-    _collect(tree, (), found, _import_aliases(tree), "")
+    _collect(tree, (), found, _import_aliases(tree), "", module)
     return found
 
 
-def _reads_in(source: str) -> set[tuple[str, str]]:
+def _reads_in(source: str, module: str = RESOLVER_MODULE) -> set[tuple[str, str]]:
     """(scope, ratcheted field) for every raw read in `source`.
 
     A chained read such as `bundle.mapping.permissions.group_sources` reports
     only the ratcheted attribute at the end of the chain: the others are not
     fields this walk is about.
     """
-    return _walk(source).reads
+    return _walk(source, module).reads
 
 
 class Scan(NamedTuple):
@@ -291,7 +305,7 @@ def scan(root: Path) -> Scan:
     sites: set[str] = set()
     for path in sorted(root.rglob("*.py")):
         rel = path.relative_to(root).as_posix()
-        found = _walk(path.read_text(encoding="utf-8"))
+        found = _walk(path.read_text(encoding="utf-8"), rel)
         reads |= {f"{rel}::{scope}::{name}" for scope, name in found.reads}
         for scope in {MODULE_SCOPE, *found.functions}:
             sites |= {f"{rel}::{scope}::{name}" for name in RATCHETED}
