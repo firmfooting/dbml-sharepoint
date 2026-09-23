@@ -84,8 +84,8 @@ talking about first.
 | Provider | Agreements ending | Providers in use with an agreement end date, soonest first |
 | Provider | Retired | Providers no longer used, kept because rows still point at them |
 | Service | Seam map | First-pass rows grouped by which side runs them, coloured by confidence. The default |
-| Service | By provider | Every row grouped by the provider that runs it |
-| Service | By support provider | Every row grouped by the provider you call, including rows another side runs |
+| Service | By provider | Rows run by a provider, a third party or shared, grouped by which provider |
+| Service | By support provider | Rows supported by a provider, a third party or shared, grouped by which one, including rows another side runs |
 | Service | Provider not named | Rows whose run-by or support side owes a provider and names none |
 | Service | By area | Every row grouped by first-pass area |
 | Service | Assumed | First-pass rows nobody has told us about yet |

@@ -382,8 +382,12 @@ views:
         Documentation: 160
     # The same register cut by provider rather than by side, so a
     # provider's whole footprint reads as one group.
+    # Grouped only where the side involves a provider, so a provider left
+    # hidden on a row set back to Us or Unknown does not count against it.
     - title: "By provider"
       fields: [Title, Area, RunBySide, RunByTeam, SupportProvider, Confidence]
+      where:
+        - { field: RunBySide, op: in, value: [Provider, "Third party", Shared] }
       group_by: { field: RunByProvider, collapsed: false }
       sort:
         - { field: Area, direction: asc }
@@ -398,6 +402,8 @@ views:
     # A provider that supports a service it does not run belongs here.
     - title: "By support provider"
       fields: [Title, Area, SupportSide, SupportTeam, RunByProvider, Confidence]
+      where:
+        - { field: SupportSide, op: in, value: [Provider, "Third party", Shared] }
       group_by: { field: SupportProvider, collapsed: false }
       sort:
         - { field: Area, direction: asc }

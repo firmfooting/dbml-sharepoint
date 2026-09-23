@@ -83,7 +83,9 @@ Standard deployment logging is separate infrastructure; use the build's
       virtual desktop rows.
 - [ ] **By provider** groups the services by **Run by provider**: the
       shared ICT service runs two, the telephony managed service one, and
-      the rest sit in the blank group. **By support provider** puts the M365
+      the visitor badge row sits in the blank group because nobody has
+      named its vendor. Rows we run, or nobody has claimed, are not in the
+      view. **By support provider** puts the M365
       tenant row under the cloud platform although we run it. **Provider
       not named** on the service list shows the visitor badge and desk
       phones rows, each on a side that owes a provider nobody has named. The
