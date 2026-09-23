@@ -255,14 +255,10 @@ def _enum_groups(vc: ValidationContext, perms: PermissionsConfig) -> list[Findin
                 f"they would all be the same group.",
                 location=_GROUPS,
             ))
-        # Each enrolment flag names ONE identity: the account
-        # `--enterprise-reader` supplies, or the operator running the paste.
-        # Generating a group per enum member to hold one identity enrols it
-        # in the first and leaves the rest empty, so the flags are refused on
-        # a generated group rather than given a meaning they do not have.
-        # One member generates one group and there is no rest, which is the
-        # only reason this refusal does not apply to it.
-        enrolments = [] if len(members) < 2 else [
+        # Each enrolment flag names ONE identity, and exactly one member is
+        # the only count that gives it one group to land in: more leave every
+        # group after the first empty, and none generates no group at all.
+        enrolments = [] if len(members) == 1 else [
             flag for flag, on in (
                 ("enroll_enterprise_reader", source.template.enroll_enterprise_reader),
                 (
@@ -272,12 +268,18 @@ def _enum_groups(vc: ValidationContext, perms: PermissionsConfig) -> list[Findin
             ) if on
         ]
         if enrolments:
+            target = (
+                f"there would be one group per member of {source.enum!r} to "
+                f"enrol it into"
+                if members
+                else f"{source.enum!r} has no members, so no group would be "
+                f"generated to enrol it into"
+            )
             findings.append(Finding(
                 FindingCode.GROUP_ENUM_ENROLS_AN_IDENTITY,
                 f"groups[{source.template.name!r}]: from_enum cannot be "
                 f"combined with {' or '.join(enrolments)}; each enrols one "
-                f"identity, and there would be one group per member of "
-                f"{source.enum!r} to enrol it into.",
+                f"identity, and {target}.",
                 location=_GROUPS,
             ))
     return findings

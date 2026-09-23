@@ -1016,6 +1016,42 @@ def test_a_single_member_enum_may_enrol_an_identity(tmp_path: Path, flag: str) -
     )
 
 
+@pytest.mark.parametrize(
+    "flag", ["enroll_enterprise_reader", "enroll_operator_during_deploy"],
+)
+def test_an_empty_enum_may_not_enrol_an_identity(tmp_path: Path, flag: str) -> None:
+    """No members, no generated group, so the flag would enrol nobody.
+
+    The DBML grammar refuses an empty enum body, so the members are cleared
+    after parsing. `validate_against_mapping` is public API and a caller that
+    builds its own Schema reaches this, which is the same reason
+    `build_schema_json` guards its own inputs. An empty enum is only a
+    warning, so nothing else in the run stops the build.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=('Enum division {\n  "Clinical services"\n}\n' + table("Docs", ID_PK, TITLE)),
+        mapping=f"""
+            entities:
+              Docs: {{ kind: List, base_template: 100, site_role: default }}
+
+            groups:
+              - from_enum: division
+                name: "{{member}} Editors"
+                description: "Editors."
+                owner_group: "Site Owners"
+                {flag}: true
+        """,
+    )
+    next(e for e in schema.enums if e.name == "division").members.clear()
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.GROUP_ENUM_ENROLS_AN_IDENTITY,
+    )
+    assert flag in f.message
+    assert "no members" in f.message
+
+
 def test_a_generated_group_name_sharepoint_refuses_is_caught_at_build(
     tmp_path: Path,
 ) -> None:

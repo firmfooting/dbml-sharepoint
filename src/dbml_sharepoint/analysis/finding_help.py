@@ -751,7 +751,9 @@ FINDING_HELP: dict[FindingCode, str] = {
         "identity -- the account `--enterprise-reader` names, or the operator "
         "running the paste -- and `from_enum` makes one group per enum "
         "member, so the identity would land in one of them and the rest "
-        "would stay empty. Put the flag on a group declared on its own."
+        "would stay empty. An enum with no members generates no group at "
+        "all, so the identity would land nowhere. Put the flag on a group "
+        "declared on its own."
     ),
     FindingCode.GROUP_NAME_INVALID: (
         "A declared group's name carries a character SharePoint refuses in a "
