@@ -319,6 +319,8 @@ _(none; no document library declares folders)_
 _(none; all lookups resolved in phase 1)_
 {% endif %}
 
+This deploy does not set delete behaviour on any lookup. An adopted lookup's delete behaviour is read and reported as a preflight warning at deploy time.
+
 ## Phase {{ phase_num['indexes'] }}: indexed columns
 
 {% if indexed %}

@@ -55,6 +55,8 @@
     // otherwise succeeded. Declared here, beside `errors`, so the summary
     // has one shape whether or not the logging phase renders.
     loggingFailures: [],
+    // Reported and never a reason to stop, so kept apart from `errors`.
+    warnings: [],
     releaseTag: RELEASE_TAG,
     schemaVersion: SCHEMA_VERSION,
   };
