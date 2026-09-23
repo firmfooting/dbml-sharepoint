@@ -455,9 +455,9 @@ _SETTINGS_HARNESS = textwrap.dedent("""
         const stale = held.props.Description;
         held.lag -= 1;
         if (held.lag === 0) held.props.Description = held.pending;
-        return jsonResponse(200, { Description: stale });
+        return jsonResponse(200, { ...held.props, Description: stale });
       }
-      return jsonResponse(200, { [name]: held.props[name] });
+      return jsonResponse(200, { ...held.props });
     };
 """)
 
@@ -2127,22 +2127,13 @@ _LARGE_LIST_HARNESS = textwrap.dedent("""
       return 'unknown';
     };
 
-    const readItem = (item, select) => {
-      const out = { Id: item.Id, FileLeafRef: item.FileLeafRef };
-      if (/LVCalc/.test(select)) {
-        // Serialised the way the live run reported it, as decimal text.
-        out.LVCalc = item.LVNumber === null || item.LVNumber === undefined
-          ? null : `${(item.LVNumber * 2).toFixed(14)}`;
-        return out;
-      }
-      out.LVText = item.LVText;
-      out.LVChoice = item.LVChoice;
-      out.LVNumber = item.LVNumber;
-      out.LVDate = item.LVDate === null ? null : renderDate(item.LVDate);
-      out.LVMultiChoice = item.LVMultiChoice;
-      out.LVLookupId = item.LVLookupId;
-      return out;
-    };
+    const readItem = (item) => ({
+      ...item,
+      LVDate: item.LVDate === null ? null : renderDate(item.LVDate),
+      // Serialised the way the live run reported it, as decimal text.
+      LVCalc: item.LVNumber === null || item.LVNumber === undefined
+        ? null : `${(item.LVNumber * 2).toFixed(14)}`,
+    });
 
     globalThis.fetch = async (url, init = {}) => {
       const path = decodeURIComponent(String(url).split('/_api/')[1] || '');
@@ -2202,9 +2193,7 @@ _LARGE_LIST_HARNESS = textwrap.dedent("""
         const name = fileRead[1].slice(fileRead[1].lastIndexOf('/') + 1);
         const item = files.get(name);
         if (!item) return jsonResponse(404, { error: `no file named ${name}` });
-        const select = fileRead[2];
-        if (/\\$select=Id$/.test(select)) return jsonResponse(200, { Id: item.Id });
-        return jsonResponse(200, readItem(item, select));
+        return jsonResponse(200, readItem(item));
       }
 
       const list = path.match(LIST);
@@ -3598,13 +3587,11 @@ _HEADER_TOKEN_HARNESS = textwrap.dedent("""
     // back null, which is what SharePoint serves for an empty column and
     // what the form would then render as a blank.
     const itemView = (item, names) => {
-      if (!names.length) return { ...item };
-      const view = {};
-      for (const name of names) {
-        const held = item[name];
-        view[name] = held === undefined ? null
-          : (name === 'dbmlspDate' && CONFIG.dateReadBack ? CONFIG.dateReadBack : held);
+      const view = { ...item };
+      if (names.includes('dbmlspDate') && item.dbmlspDate !== undefined && CONFIG.dateReadBack) {
+        view.dbmlspDate = CONFIG.dateReadBack;
       }
+      for (const name of names) if (view[name] === undefined) view[name] = null;
       return view;
     };
 
@@ -4035,7 +4022,6 @@ _TEXT_HARNESS = textwrap.dedent("""
 
     const FIELD_RE = /getbyinternalnameortitle\\('([^']+)'\\)/;
     const ITEM_RE = /items\\((\\d+)\\)/;
-    const SELECT_RE = /\\$select=([^&]+)/;
 
     // What a rich text column did to a value on the live run of 2026-09-13: a
     // colon came back as a numeric character reference. Keyed off the shape
@@ -4106,9 +4092,7 @@ _TEXT_HARNESS = textwrap.dedent("""
         }
         const held = items.get(Number(ITEM_RE.exec(u)[1]));
         if (!held) return jsonResponse(404, { error: 'item not found' });
-        const out = {};
-        for (const name of SELECT_RE.exec(u)[1].split(',')) out[name] = held[name];
-        return jsonResponse(200, out);
+        return jsonResponse(200, { ...held });
       }
 
       if (u.includes('ListItemEntityTypeFullName')) {

@@ -19,9 +19,11 @@ A nested GET, such as a `$batch` part the batch mock redispatches, has only
 its `text()` projected, since that is the body a batch envelope carries.
 
 Projection follows the spike measured in #574: decode `$select`; keep the
-first segment of each selected name, every `$expand` name, and `__metadata`;
-ignore case; pass `*` through; apply to a verbose `d`, `d.results[]` and
-`value[]`. Error answers and requests with no `$select` are left alone.
+first segment of each selected name, every `$expand` name, `__metadata` and
+`odata.*` annotations; ignore case; pass `*` through; apply to a verbose `d`,
+`d.results[]`, `value[]`, and a bare entity answered to an `odata=nometadata`
+Accept (#634). A nometadata `{ "value": <scalar> }` is a single-property read
+and is left alone, as are error answers and requests with no `$select`.
 
 The tripwire does not throw inside the script, because a script's own
 try/catch could swallow it and the test would pass. Each projected row is a
@@ -139,7 +141,8 @@ PRELUDE = r"""
     if (row === null || typeof row !== 'object' || Array.isArray(row)) return row;
     const copy = {};
     for (const [name, value] of Object.entries(row)) {
-      if (keep.has(name.toLowerCase())) copy[name] = value;
+      const lower = name.toLowerCase();
+      if (keep.has(lower) || lower.startsWith('odata.')) copy[name] = value;
     }
     if (!trip) return copy;
     const assigned = new Set();
@@ -163,14 +166,15 @@ PRELUDE = r"""
     });
   };
 
-  // A verbose entity `d`, a verbose collection `d.results[]`, or a
-  // nometadata collection `value[]`. Anything else passes through.
-  const projectBody = (body, keep, url, trip) => {
-    if (body === null || typeof body !== 'object') return body;
+  // A verbose entity `d`, a verbose collection `d.results[]`, a nometadata
+  // collection `value[]`, or a bare nometadata entity. Anything else passes through.
+  const projectBody = (body, keep, url, trip, bare) => {
+    if (body === null || typeof body !== 'object' || Array.isArray(body)) return body;
     if (Array.isArray(body.value)) {
       return { ...body, value: body.value.map((r) => projectRow(r, keep, url, trip)) };
     }
     const d = body.d;
+    if (bare && !('d' in body) && !('value' in body)) return projectRow(body, keep, url, trip);
     if (d === null || typeof d !== 'object') return body;
     if (Array.isArray(d.results)) {
       const results = d.results.map((r) => projectRow(r, keep, url, trip));
@@ -181,17 +185,17 @@ PRELUDE = r"""
 
   // `outer` is the script's own call; a nested one projects text() only, which
   // is what a $batch envelope carries its part bodies in.
-  const projectResponse = (response, keep, url, outer) => new Proxy(response, {
+  const projectResponse = (response, keep, url, outer, bare) => new Proxy(response, {
     get(target, prop) {
       if (prop === 'json' && outer) {
-        return async () => projectBody(await target.json(), keep, url, true);
+        return async () => projectBody(await target.json(), keep, url, true, bare);
       }
       if (prop === 'text') {
         return async () => {
           const text = await target.text();
           let parsed;
           try { parsed = JSON.parse(text); } catch { return text; }
-          return JSON.stringify(projectBody(parsed, keep, url, false));
+          return JSON.stringify(projectBody(parsed, keep, url, false, bare));
         };
       }
       const value = Reflect.get(target, prop, target);
@@ -214,6 +218,10 @@ PRELUDE = r"""
     { at: /\/sitegroups\/getbyname\('((?:[^']|'')*)'\)$/i, status: 404,
       envelope: null, value: null },
   ];
+  const acceptOf = (opts) => {
+    const headers = (opts && opts.headers) || {};
+    return String(headers.Accept || headers.accept || '').toLowerCase();
+  };
   const isEmptySet = (body) => body !== null && typeof body === 'object' && (
     (Array.isArray(body.value) && body.value.length === 0)
     || (body.d !== null && typeof body.d === 'object' && Array.isArray(body.d.results)
@@ -248,9 +256,7 @@ PRELUDE = r"""
     const name = decode(path.match(kind.at)[1]).replace(/''/g, "'");
     // Server-relative and non-root only: the recorded message carries a /sites/ path.
     const site = path.replace(/^[a-z]+:\/\/[^/]+/i, '').split('/_api')[0];
-    const headers = (opts && opts.headers) || {};
-    const accept = String(headers.Accept || headers.accept || '');
-    const wanted = accept.toLowerCase();
+    const wanted = acceptOf(opts);
     const envelope = wanted.includes('odata=verbose') ? 'verbose'
       : wanted.includes('odata=nometadata') ? 'nometadata' : null;
     const text = kind.envelope === envelope && kind.value ? kind.value(name, site) : '';
@@ -280,7 +286,9 @@ PRELUDE = r"""
         return response;
       }
       const keep = selectionOf(url);
-      return keep === null ? response : projectResponse(response, keep, String(url), !nested);
+      if (keep === null) return response;
+      const bare = acceptOf(opts).includes('odata=nometadata');
+      return projectResponse(response, keep, String(url), !nested, bare);
     };
   };
 
