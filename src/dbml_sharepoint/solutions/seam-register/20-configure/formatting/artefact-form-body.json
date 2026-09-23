@@ -1,0 +1,22 @@
+{
+  "sections": [
+    {
+      "displayname": "The file",
+      "fields": [
+        "FileLeafRef",
+        "Title",
+        "ArtefactType",
+        "SourceSide",
+        "ArtefactDate"
+      ]
+    },
+    {
+      "displayname": "What it bears on",
+      "fields": [
+        "Services",
+        "Request",
+        "Summary"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "sections": [
+    {
+      "displayname": "The document",
+      "fields": [
+        "Title",
+        "DocumentType",
+        "Holder",
+        "HolderSide",
+        "HolderProvider",
+        "Services"
+      ]
+    },
+    {
+      "displayname": "The ask",
+      "fields": [
+        "Status",
+        "AskedOn",
+        "DueOn",
+        "AnsweredOn"
+      ]
+    },
+    {
+      "displayname": "What it covers",
+      "fields": [
+        "SignedBy",
+        "Summary"
+      ]
+    }
+  ]
+}

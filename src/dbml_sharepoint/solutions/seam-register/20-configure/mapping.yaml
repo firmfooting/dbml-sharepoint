@@ -1,0 +1,1829 @@
+# Seam register: physical mapping.
+prefix: "SEAM_"
+
+# Eight lists and one library. The library holds the files; a document that
+# was refused or never found has no file, so the asks are a list.
+entities:
+  Provider:        { kind: List, base_template: 100, site_role: default }
+  Service:         { kind: List, base_template: 100, site_role: default }
+  Evidence:        { kind: List, base_template: 100, site_role: default }
+  Seam:            { kind: List, base_template: 100, site_role: default }
+  DocumentRequest: { kind: List, base_template: 100, site_role: default }
+  Artefact:
+    kind: DocumentLibrary
+    base_template: 101
+    site_role: default
+    folders: [Documents, Interviews, Incidents, Invoices, System exports, Correspondence]
+  Interview:       { kind: List, base_template: 100, site_role: default }
+  Incident:        { kind: List, base_template: 100, site_role: default }
+  WeeklyUpdate:    { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 200
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources: {}
+watched_lists: []
+
+# The two runners may delete their own mistakes; people offered rows to
+# check may edit but not delete. Site Members and Visitors get nothing,
+# because the register holds notes about providers who may be members.
+groups:
+  - name: "{prefix} Discovery Team"
+    description: "The two people running the exercise: interviews, evidence, register hygiene and the weekly five lines."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+  - name: "{prefix} Contributors"
+    description: "Internal staff offered rows to correct, such as an ICT manager. Never a provider's contact: this group reads every list and file. Edit without delete."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+  - name: "dbml List Administrators"
+    description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: true
+    enroll_operator_during_deploy: true
+  - name: "dbml Enterprise Readers"
+    description: "Read-only accounts for aggregated cross-site reporting. Empty by default; membership is operator-owned."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    enroll_enterprise_reader: true
+
+permission_levels:
+  - name: "{prefix} Contribute No Delete"
+    description: "Add, edit and read items and files, save personal views and alerts; no deleting and no schema rights."
+    base_permissions:
+      - AddListItems
+      - EditListItems
+      - ViewListItems
+      - OpenItems
+      - ViewVersions
+      - ViewFormPages
+      - Open
+      - ViewPages
+      - BrowseUserInfo
+      - UseClientIntegration
+      - UseRemoteAPIs
+      - CreateAlerts
+      - ManagePersonalViews
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "{prefix} Discovery Team" }
+        level: "Contribute"
+      - principal: { kind: group, name: "{prefix} Contributors" }
+        level: "{prefix} Contribute No Delete"
+      - principal: { kind: group, name: "dbml List Administrators" }
+        level: "Full Control"
+      - principal: { kind: associated_owner_group }
+        level: "Contribute"
+      - principal: { kind: group, name: "dbml Enterprise Readers" }
+        level: "Read"
+  # Rows on four lists point at a provider, so it is retired by Status and
+  # only dbml List Administrators can delete one.
+  overrides:
+    Provider:
+      break_inheritance: true
+      reconcile: exact
+      assignments:
+        - principal: { kind: group, name: "{prefix} Discovery Team" }
+          level: "{prefix} Contribute No Delete"
+        - principal: { kind: group, name: "{prefix} Contributors" }
+          level: "{prefix} Contribute No Delete"
+        - principal: { kind: group, name: "dbml List Administrators" }
+          level: "Full Control"
+        - principal: { kind: associated_owner_group }
+          level: "{prefix} Contribute No Delete"
+        - principal: { kind: group, name: "dbml Enterprise Readers" }
+          level: "Read"
+
+seal_columns: true
+prevent_list_deletion: true
+
+display_names:
+  mode: auto
+  overrides:
+    Provider:
+      Title: "Provider"
+      ProviderType: "Type"
+      RelationshipOwner: "Relationship owner"
+      ServiceDeskContact: "Service desk contact"
+      AgreementLink: "Agreement link"
+      AgreementEnds: "Agreement ends"
+    Service:
+      RunBySide: "Run by"
+      RunByProvider: "Run by provider"
+      RunByTeam: "Run by team"
+      SupportSide: "Support from"
+      SupportProvider: "Support provider"
+      SupportTeam: "Support team"
+      DecidedBy: "Decided by"
+      OutOfHours: "Out of hours call"
+      DocumentationLink: "Documentation link"
+      LastFailureDate: "Last failure date"
+      LastFailure: "Last failure"
+      FirstPass: "First pass"
+      SinglePerson: "Single person"
+    Evidence:
+      EvidenceType: "Type"
+      SourceSide: "Source side"
+      SupportsField: "Bears on"
+      EvidenceDate: "Evidence date"
+      ArtefactLink: "Artefact link"
+      Artefact: "Artefact file"
+    Seam:
+      SeamType: "Type"
+      EvidenceInConflict: "Evidence in conflict"
+      RaisedOn: "Raised on"
+      ResolveOwner: "Resolve owner"
+      ResolveBy: "Resolve by"
+      ResolvedOn: "Resolved on"
+    DocumentRequest:
+      DocumentType: "Type"
+      HolderSide: "Held by"
+      HolderProvider: "Holding provider"
+      AskedOn: "Asked on"
+      DueOn: "Due on"
+      AnsweredOn: "Answered on"
+      SignedBy: "Signed by"
+    Artefact:
+      ArtefactType: "Type"
+      SourceSide: "Source side"
+      ArtefactDate: "Dated"
+    Interview:
+      IntervieweeSide: "Side"
+      IntervieweeProvider: "Provider"
+      InterviewDate: "Interview date"
+      DurationMin: "Minutes"
+      Q1Runs: "Q1 What do you run"
+      Q2Uses: "Q2 What do you use that someone else runs"
+      Q3Call: "Q3 Who do you call when it breaks"
+      Q4Decides: "Q4 Who decides changes to it"
+      Q5AskProvider: "Q5 What would you have to ask them for"
+      Q6AskedProvider: "Q6 What have you asked them for lately"
+      Q7Auditor: "Q7 What could you not explain to an auditor"
+      Q8Saturday: "Q8 Saturday night call"
+      RecordingLink: "Recording link"
+      NotesFile: "Notes file"
+      FollowUps: "Follow-ups"
+    Incident:
+      IncidentDate: "Incident date"
+      ResolverSide: "Resolved by"
+      ResolverProvider: "Resolving provider"
+      ResolverTeam: "Resolver team"
+      SourceDetail: "Source detail"
+    WeeklyUpdate:
+      WeekNo: "Week"
+      WeekEnding: "Week ending"
+      RowsVerified: "Rows verified"
+      SeamsFound: "Seams found"
+
+# Unknown is severe because an unclaimed row is the exercise's reason to
+# exist. Edit the side pill map at its anchor; the aliases follow.
+column_formatting:
+  Provider:
+    Tier:
+      style: pill
+      map: { Strategic: warning, Tactical: low, Operational: neutral, Commodity: neutral }
+    Status:
+      style: severity
+      map: { Active: good, Retired: muted }
+    # Shouts only while the provider is still in use.
+    AgreementEnds:
+      style: overdue-date
+      guard: { field: Status, not: [Retired] }
+  Service:
+    Confidence:
+      style: severity
+      map: { Assumed: warning, Claimed: low, Verified: good }
+    RunBySide:
+      style: pill
+      map: &side_pill { Us: good, Provider: low, "Third party": neutral, Shared: warning, Unknown: severe }
+    SupportSide:
+      style: pill
+      map: *side_pill
+    Documentation:
+      style: severity
+      map: { "Not asked": neutral, "None found": severe, "Exists, not seen": warning, Held: low, Verified: good }
+  Evidence:
+    EvidenceType:
+      style: pill
+      map: { Interview: low, Document: good, "Incident data": good, Invoice: good, "System data": good, Email: neutral, Observation: low }
+    SourceSide:
+      style: pill
+      map: *side_pill
+  Seam:
+    Status:
+      style: severity
+      map: { Open: warning, "Confirmed gap": severe, Escalated: severe, Resolved: good }
+    SeamType:
+      style: pill
+      map: { "No owner": severe, "Disputed owner": warning, "Disputed support": warning, "Undocumented dependency": warning, "Single person": severe, "No evidence": neutral, "Contradicts document": warning }
+    # Shouts only while the seam is still open.
+    ResolveBy:
+      style: overdue-date
+      guard: { field: Status, not: [Resolved] }
+  DocumentRequest:
+    Status:
+      style: severity
+      map: { "To ask": neutral, Asked: low, Received: good, Refused: severe, "Not found": warning }
+    HolderSide:
+      style: pill
+      map: *side_pill
+    # The five-working-day date stops shouting once an answer of any kind
+    # has come back, including no.
+    DueOn:
+      style: overdue-date
+      guard: { field: Status, not: [Received, Refused, "Not found"] }
+  Artefact:
+    ArtefactType:
+      style: pill
+      map: { "Document copy": good, "Interview notes": low, "Incident export": good, "Invoice extract": good, "System export": good, Correspondence: neutral }
+    SourceSide:
+      style: pill
+      map: *side_pill
+  Interview:
+    Status:
+      style: severity
+      map: { Booked: low, Completed: good, Declined: severe, Cancelled: muted }
+    IntervieweeSide:
+      style: pill
+      map: *side_pill
+    DurationMin:
+      style: data-bar
+      max: 30
+  Incident:
+    ResolverSide:
+      style: pill
+      map: *side_pill
+    Source:
+      style: pill
+      map: { "Ticket export": good, "Recalled outage": low }
+  WeeklyUpdate:
+    RowsVerified:
+      style: data-bar
+      max: 40
+    SeamsFound:
+      style: data-bar
+      max: 20
+
+field_sets:
+  Service:
+    identity: [Title, Area, RunBySide, SupportSide, Confidence]
+  Artefact:
+    identity: [FileLeafRef, Title, ArtefactType, SourceSide, ArtefactDate]
+
+# The seam map is a query, not a drawing: first-pass rows grouped by who
+# runs them, coloured by confidence. Unknown lands in its own group, which
+# is the gutter between us and the providers.
+views:
+  Provider:
+    - title: "Active providers"
+      default: true
+      fields: [Title, ProviderType, Tier, RelationshipOwner, ServiceDeskContact, AgreementEnds, Status]
+      where:
+        - { field: Status, op: eq, value: Active }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 260
+        ProviderType: 180
+        Tier: 130
+        RelationshipOwner: 220
+        ServiceDeskContact: 280
+        AgreementEnds: 150
+        Status: 120
+    - title: "By tier"
+      fields: [Title, ProviderType, RelationshipOwner, AgreementEnds, Status]
+      group_by: { field: Tier, collapsed: false }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 260
+        ProviderType: 180
+        RelationshipOwner: 220
+        AgreementEnds: 150
+        Status: 120
+    - title: "Agreements ending"
+      fields: [Title, ProviderType, Tier, AgreementEnds, AgreementLink, RelationshipOwner, Status]
+      where:
+        - { field: Status, op: eq, value: Active }
+        - { field: AgreementEnds, op: is_not_null }
+      sort:
+        - { field: AgreementEnds, direction: asc }
+      widths:
+        Title: 260
+        ProviderType: 180
+        Tier: 130
+        AgreementEnds: 150
+        AgreementLink: 200
+        RelationshipOwner: 220
+        Status: 120
+    - title: "Retired"
+      fields: [Title, ProviderType, AgreementEnds, Status, Notes]
+      where:
+        - { field: Status, op: eq, value: Retired }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 260
+        ProviderType: 180
+        AgreementEnds: 150
+        Status: 120
+        Notes: 320
+  Service:
+    - title: "Seam map"
+      default: true
+      fields: ['@identity', RunByProvider, SupportTeam, Hosting, SinglePerson, Documentation]
+      where:
+        - { field: FirstPass, op: eq, value: true }
+      group_by: { field: RunBySide, collapsed: false }
+      sort:
+        - { field: Area, direction: asc }
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        Area: 220
+        RunBySide: 160
+        SupportSide: 160
+        Confidence: 120
+        RunByProvider: 220
+        SupportTeam: 200
+        Hosting: 200
+        SinglePerson: 120
+        Documentation: 160
+    # The same register cut by provider rather than by side, so a
+    # provider's whole footprint reads as one group.
+    # Grouped only where the side involves a provider, so a provider left
+    # hidden on a row set back to Us or Unknown does not count against it.
+    - title: "By provider"
+      fields: [Title, Area, RunBySide, RunByTeam, SupportSide, SupportProvider, Confidence]
+      where:
+        - { field: RunBySide, op: in, value: [Provider, "Third party", Shared] }
+      group_by: { field: RunByProvider, collapsed: false }
+      sort:
+        - { field: Area, direction: asc }
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        Area: 220
+        RunBySide: 160
+        RunByTeam: 200
+        SupportSide: 160
+        SupportProvider: 220
+        Confidence: 120
+    # A provider that supports a service it does not run belongs here.
+    - title: "By support provider"
+      fields: [Title, Area, SupportSide, SupportTeam, RunBySide, RunByProvider, Confidence]
+      where:
+        - { field: SupportSide, op: in, value: [Provider, "Third party", Shared] }
+      group_by: { field: SupportProvider, collapsed: false }
+      sort:
+        - { field: Area, direction: asc }
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        Area: 220
+        SupportSide: 160
+        SupportTeam: 200
+        RunBySide: 160
+        RunByProvider: 220
+        Confidence: 120
+    # A save rule cannot read a lookup, so a row whose side shows the
+    # provider column and leaves it blank is found here rather than refused.
+    - title: "Provider not named"
+      fields: [Title, Area, RunBySide, RunByProvider, SupportSide, SupportProvider]
+      where:
+        - any_of:
+            - all_of:
+                - { field: RunBySide, op: in, value: [Provider, "Third party", Shared] }
+                - { field: RunByProvider, op: is_null }
+            - all_of:
+                - { field: SupportSide, op: in, value: [Provider, "Third party", Shared] }
+                - { field: SupportProvider, op: is_null }
+      sort:
+        - { field: Area, direction: asc }
+      widths:
+        Title: 300
+        Area: 220
+        RunBySide: 160
+        RunByProvider: 220
+        SupportSide: 160
+        SupportProvider: 220
+    - title: "By area"
+      fields: ['@identity', RunByTeam, DecidedBy, FirstPass]
+      group_by: { field: Area, collapsed: false }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        Area: 220
+        RunBySide: 160
+        SupportSide: 160
+        Confidence: 120
+        RunByTeam: 200
+        DecidedBy: 220
+        FirstPass: 110
+    - title: "Assumed"
+      fields: ['@identity', Documentation, Notes]
+      where:
+        - { field: Confidence, op: eq, value: Assumed }
+        - { field: FirstPass, op: eq, value: true }
+      sort:
+        - { field: Area, direction: asc }
+      widths:
+        Title: 300
+        Area: 220
+        RunBySide: 160
+        SupportSide: 160
+        Confidence: 120
+        Documentation: 160
+        Notes: 320
+    - title: "Single person"
+      fields: [Title, Area, RunByTeam, OutOfHours, Confidence]
+      where:
+        - { field: SinglePerson, op: eq, value: true }
+      sort:
+        - { field: Area, direction: asc }
+      widths:
+        Title: 300
+        Area: 220
+        RunByTeam: 200
+        OutOfHours: 260
+        Confidence: 120
+    - title: "Undocumented"
+      fields: ['@identity', Documentation, DocumentationLink]
+      where:
+        - { field: Documentation, op: in, value: ["Not asked", "None found", "Exists, not seen"] }
+      sort:
+        - { field: Documentation, direction: asc }
+      widths:
+        Title: 300
+        Area: 220
+        RunBySide: 160
+        SupportSide: 160
+        Confidence: 120
+        Documentation: 160
+        DocumentationLink: 200
+    - title: "Failures"
+      fields: [Title, Area, LastFailureDate, LastFailure, SupportSide, SupportProvider, OutOfHours]
+      where:
+        - { field: LastFailureDate, op: is_not_null }
+      sort:
+        - { field: LastFailureDate, direction: desc }
+      widths:
+        Title: 300
+        Area: 220
+        LastFailureDate: 150
+        LastFailure: 320
+        SupportSide: 160
+        SupportProvider: 220
+        OutOfHours: 260
+    - title: "Backlog"
+      fields: ['@identity', Notes]
+      where:
+        - { field: FirstPass, op: eq, value: false }
+      sort:
+        - { field: Area, direction: asc }
+      widths:
+        Title: 300
+        Area: 220
+        RunBySide: 160
+        SupportSide: 160
+        Confidence: 120
+        Notes: 320
+  Evidence:
+    - title: "By service"
+      default: true
+      fields: [Title, EvidenceType, Source, SourceSide, SupportsField, Contradicts, EvidenceDate]
+      group_by: { field: Service, collapsed: false }
+      sort:
+        - { field: EvidenceDate, direction: desc }
+      widths:
+        Title: 300
+        EvidenceType: 130
+        Source: 260
+        SourceSide: 160
+        SupportsField: 140
+        Contradicts: 120
+        EvidenceDate: 150
+    - title: "Contradicting"
+      fields: [Title, Service, Source, SourceSide, SupportsField, Statement, EvidenceDate]
+      where:
+        - { field: Contradicts, op: eq, value: true }
+      sort:
+        - { field: EvidenceDate, direction: desc }
+      widths:
+        Title: 300
+        Service: 240
+        Source: 260
+        SourceSide: 160
+        SupportsField: 140
+        Statement: 320
+        EvidenceDate: 150
+    - title: "By source side"
+      fields: [Title, Service, EvidenceType, Source, SupportsField, EvidenceDate]
+      group_by: { field: SourceSide, collapsed: false }
+      sort:
+        - { field: EvidenceDate, direction: desc }
+      widths:
+        Title: 300
+        Service: 240
+        EvidenceType: 130
+        Source: 260
+        SupportsField: 140
+        EvidenceDate: 150
+    - title: "Recent"
+      fields: [Title, Service, EvidenceType, SourceSide, Statement, EvidenceDate, ArtefactLink, Artefact]
+      sort:
+        - { field: EvidenceDate, direction: desc }
+      widths:
+        Title: 300
+        Service: 240
+        EvidenceType: 130
+        SourceSide: 160
+        Statement: 320
+        EvidenceDate: 150
+        ArtefactLink: 180
+        Artefact: 220
+  Seam:
+    - title: "Open seams"
+      default: true
+      fields: [Title, Service, SeamType, Status, ResolveOwner, ResolveBy, RaisedOn]
+      where:
+        - { field: Status, op: in, value: [Open, "Confirmed gap", Escalated] }
+      sort:
+        - { field: RaisedOn, direction: asc }
+      widths:
+        Title: 300
+        Service: 240
+        SeamType: 200
+        Status: 140
+        ResolveOwner: 220
+        ResolveBy: 150
+        RaisedOn: 150
+    - title: "Escalated"
+      fields: [Title, Service, SeamType, Status, ResolveOwner, ResolveBy, Description]
+      where:
+        - { field: Status, op: eq, value: Escalated }
+      sort:
+        - { field: ResolveBy, direction: asc }
+      widths:
+        Title: 300
+        Service: 240
+        SeamType: 200
+        Status: 140
+        ResolveOwner: 220
+        ResolveBy: 150
+        Description: 320
+    - title: "By type"
+      fields: [Title, Service, Status, ResolveOwner, RaisedOn]
+      where:
+        - { field: Status, op: neq, value: Resolved }
+      group_by: { field: SeamType, collapsed: false }
+      sort:
+        - { field: RaisedOn, direction: asc }
+      widths:
+        Title: 300
+        Service: 240
+        Status: 140
+        ResolveOwner: 220
+        RaisedOn: 150
+    - title: "Resolved"
+      fields: [Title, Service, SeamType, RaisedOn, ResolvedOn, Resolution]
+      where:
+        - { field: Status, op: eq, value: Resolved }
+      sort:
+        - { field: ResolvedOn, direction: desc }
+      widths:
+        Title: 300
+        Service: 240
+        SeamType: 200
+        RaisedOn: 150
+        ResolvedOn: 150
+        Resolution: 320
+  DocumentRequest:
+    # Split by status, so a request moved back to To ask shows no old dates.
+    - title: "Waiting"
+      default: true
+      fields: [Title, DocumentType, Holder, HolderSide, HolderProvider, Status, AskedOn, DueOn]
+      where:
+        - { field: Status, op: eq, value: Asked }
+      sort:
+        - { field: DueOn, direction: asc }
+      widths:
+        Title: 300
+        DocumentType: 160
+        Holder: 220
+        HolderSide: 160
+        HolderProvider: 220
+        Status: 120
+        AskedOn: 150
+        DueOn: 150
+    - title: "To ask"
+      fields: [Title, DocumentType, Holder, HolderSide, HolderProvider, Services]
+      where:
+        - { field: Status, op: eq, value: "To ask" }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        DocumentType: 160
+        Holder: 220
+        HolderSide: 160
+        HolderProvider: 220
+        Services: 240
+    - title: "Received"
+      fields: [Title, DocumentType, HolderSide, AnsweredOn, SignedBy, Summary, Services]
+      where:
+        - { field: Status, op: eq, value: Received }
+      sort:
+        - { field: AnsweredOn, direction: desc }
+      widths:
+        Title: 300
+        DocumentType: 160
+        HolderSide: 160
+        AnsweredOn: 150
+        SignedBy: 220
+        Summary: 320
+        Services: 240
+    - title: "Refused or not found"
+      fields: [Title, DocumentType, Holder, HolderSide, Status, AskedOn, AnsweredOn, Summary]
+      where:
+        - { field: Status, op: in, value: [Refused, "Not found"] }
+      sort:
+        - { field: AnsweredOn, direction: desc }
+      widths:
+        Title: 300
+        DocumentType: 160
+        Holder: 220
+        HolderSide: 160
+        Status: 120
+        AskedOn: 150
+        AnsweredOn: 150
+        Summary: 320
+    - title: "By holder"
+      fields: [Title, DocumentType, Holder, Status, Services]
+      group_by: { field: HolderSide, collapsed: false }
+      sort:
+        - { field: Status, direction: asc }
+      widths:
+        Title: 300
+        DocumentType: 160
+        Holder: 220
+        Status: 120
+        Services: 240
+    # The same gap the service list's view catches, for this list's lookup.
+    - title: "Provider not named"
+      fields: [Title, DocumentType, Holder, HolderSide, HolderProvider, Status]
+      where:
+        - { field: HolderSide, op: in, value: [Provider, "Third party", Shared] }
+        - { field: HolderProvider, op: is_null }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        DocumentType: 160
+        Holder: 220
+        HolderSide: 160
+        HolderProvider: 220
+        Status: 120
+  Artefact:
+    - title: "Folder View"
+      scope: default
+      fields: ['@identity', Modified]
+      sort:
+        - { field: FileLeafRef, direction: asc }
+      widths:
+        FileLeafRef: 320
+        Title: 260
+        ArtefactType: 150
+        SourceSide: 160
+        ArtefactDate: 150
+        Modified: 170
+    - title: "All artefacts"
+      default: true
+      scope: recursive
+      fields: ['@identity', Request, Services, Summary]
+      sort:
+        - { field: Modified, direction: desc }
+      widths:
+        FileLeafRef: 320
+        Title: 260
+        ArtefactType: 150
+        SourceSide: 160
+        ArtefactDate: 150
+        Request: 240
+        Services: 240
+        Summary: 320
+    # Not grouped: past 5,000 files a root-scoped group-by is refused, and
+    # the folders already group by kind.
+    - title: "By source side"
+      scope: recursive
+      fields: [FileLeafRef, Title, ArtefactType, SourceSide, ArtefactDate, Services, Summary]
+      sort:
+        - { field: SourceSide, direction: asc }
+        - { field: ArtefactDate, direction: desc }
+      widths:
+        FileLeafRef: 320
+        Title: 260
+        ArtefactType: 150
+        SourceSide: 160
+        ArtefactDate: 150
+        Services: 240
+        Summary: 320
+    - title: "Answers an ask"
+      scope: recursive
+      fields: ['@identity', Request, Summary]
+      where:
+        - { field: Request, op: is_not_null }
+      sort:
+        - { field: ArtefactDate, direction: desc }
+      widths:
+        FileLeafRef: 320
+        Title: 260
+        ArtefactType: 150
+        SourceSide: 160
+        ArtefactDate: 150
+        Request: 240
+        Summary: 320
+  Interview:
+    - title: "Booked"
+      default: true
+      fields: [Title, IntervieweeSide, IntervieweeProvider, InterviewDate, Status]
+      where:
+        - { field: Status, op: eq, value: Booked }
+      sort:
+        - { field: InterviewDate, direction: asc }
+      widths:
+        Title: 320
+        IntervieweeSide: 160
+        IntervieweeProvider: 220
+        InterviewDate: 150
+        Status: 120
+    - title: "Completed"
+      fields: [Title, IntervieweeSide, InterviewDate, DurationMin, FollowUps, NotesFile, Status]
+      where:
+        - { field: Status, op: eq, value: Completed }
+      sort:
+        - { field: InterviewDate, direction: desc }
+      widths:
+        Title: 320
+        IntervieweeSide: 160
+        InterviewDate: 150
+        DurationMin: 120
+        FollowUps: 320
+        NotesFile: 220
+        Status: 120
+    - title: "By side"
+      fields: [Title, IntervieweeProvider, InterviewDate, Status]
+      group_by: { field: IntervieweeSide, collapsed: false }
+      sort:
+        - { field: InterviewDate, direction: asc }
+      widths:
+        Title: 320
+        IntervieweeProvider: 220
+        InterviewDate: 150
+        Status: 120
+    - title: "Not held"
+      fields: [Title, IntervieweeSide, InterviewDate, Status, FollowUps]
+      where:
+        - { field: Status, op: in, value: [Declined, Cancelled] }
+      sort:
+        - { field: InterviewDate, direction: desc }
+      widths:
+        Title: 320
+        IntervieweeSide: 160
+        InterviewDate: 150
+        Status: 120
+        FollowUps: 320
+    # The same gap the service list's view catches, for this list's lookup.
+    - title: "Provider not named"
+      fields: [Title, IntervieweeSide, IntervieweeProvider, InterviewDate, Status]
+      where:
+        - { field: IntervieweeSide, op: in, value: [Provider, "Third party", Shared] }
+        - { field: IntervieweeProvider, op: is_null }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 320
+        IntervieweeSide: 160
+        IntervieweeProvider: 220
+        InterviewDate: 150
+        Status: 120
+  Incident:
+    - title: "By resolver"
+      default: true
+      fields: [Title, Service, IncidentDate, Category, ResolverProvider, ResolverTeam, Source]
+      group_by: { field: ResolverSide, collapsed: false }
+      sort:
+        - { field: IncidentDate, direction: desc }
+      widths:
+        Title: 240
+        Service: 240
+        IncidentDate: 150
+        Category: 180
+        ResolverProvider: 220
+        ResolverTeam: 220
+        Source: 150
+    - title: "By service"
+      fields: [Title, IncidentDate, Category, ResolverSide, ResolverTeam, Summary]
+      group_by: { field: Service, collapsed: false }
+      sort:
+        - { field: IncidentDate, direction: desc }
+      widths:
+        Title: 240
+        IncidentDate: 150
+        Category: 180
+        ResolverSide: 160
+        ResolverTeam: 220
+        Summary: 320
+    - title: "Remembered outages"
+      fields: [Title, Service, IncidentDate, Summary, ResolverSide, SourceDetail]
+      where:
+        - { field: Source, op: eq, value: "Recalled outage" }
+      sort:
+        - { field: IncidentDate, direction: desc }
+      widths:
+        Title: 240
+        Service: 240
+        IncidentDate: 150
+        Summary: 320
+        ResolverSide: 160
+        SourceDetail: 220
+    - title: "Unassigned"
+      fields: [Title, IncidentDate, Category, ResolverSide, ResolverTeam, Summary]
+      where:
+        - { field: Service, op: is_null }
+      sort:
+        - { field: IncidentDate, direction: desc }
+      widths:
+        Title: 240
+        IncidentDate: 150
+        Category: 180
+        ResolverSide: 160
+        ResolverTeam: 220
+        Summary: 320
+    # The same gap the service list's view catches, for this list's lookup.
+    - title: "Provider not named"
+      fields: [Title, Service, IncidentDate, ResolverSide, ResolverProvider, ResolverTeam]
+      where:
+        - { field: ResolverSide, op: in, value: [Provider, "Third party", Shared] }
+        - { field: ResolverProvider, op: is_null }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 240
+        Service: 240
+        IncidentDate: 150
+        ResolverSide: 160
+        ResolverProvider: 220
+        ResolverTeam: 220
+  WeeklyUpdate:
+    - title: "Weekly log"
+      default: true
+      fields: [Title, WeekNo, WeekEnding, RowsVerified, SeamsFound, Blocked, Next, Surprise]
+      sort:
+        - { field: WeekNo, direction: asc }
+      widths:
+        Title: 120
+        WeekNo: 100
+        WeekEnding: 150
+        RowsVerified: 140
+        SeamsFound: 140
+        Blocked: 300
+        Next: 300
+        Surprise: 300
+    - title: "Latest first"
+      fields: [Title, WeekNo, WeekEnding, RowsVerified, SeamsFound, Surprise]
+      sort:
+        - { field: WeekNo, direction: desc }
+      widths:
+        Title: 120
+        WeekNo: 100
+        WeekEnding: 150
+        RowsVerified: 140
+        SeamsFound: 140
+        Surprise: 320
+
+form_formatting:
+  Provider:
+    header: formatting/provider-form-header.json
+    body: formatting/provider-form-body.json
+  Service:
+    header: formatting/service-form-header.json
+    body: formatting/service-form-body.json
+  Evidence:
+    header: formatting/evidence-form-header.json
+    body: formatting/evidence-form-body.json
+  Seam:
+    header: formatting/seam-form-header.json
+    body: formatting/seam-form-body.json
+  DocumentRequest:
+    header: formatting/document-request-form-header.json
+    body: formatting/document-request-form-body.json
+  Artefact:
+    header: formatting/artefact-form-header.json
+    body: formatting/artefact-form-body.json
+  Interview:
+    header: formatting/interview-form-header.json
+    body: formatting/interview-form-body.json
+  Incident:
+    header: formatting/incident-form-header.json
+    body: formatting/incident-form-body.json
+  WeeklyUpdate:
+    header: formatting/weekly-update-form-header.json
+    body: formatting/weekly-update-form-body.json
+
+# Fields appear once the row has reached them, and a provider column once
+# the side says a provider or third party is involved. A field hidden again
+# keeps its value, which is harmless: no save rule forbids a value on a
+# hidden field, so the row still saves, and reporting filters by status.
+form_visibility:
+  Service:
+    reconcile: exact
+    columns:
+      RunByProvider:
+        when:
+          - { field: RunBySide, op: in, value: [Provider, "Third party", Shared] }
+      SupportProvider:
+        when:
+          - { field: SupportSide, op: in, value: [Provider, "Third party", Shared] }
+  Seam:
+    reconcile: exact
+    columns:
+      ResolvedOn:
+        when:
+          - { field: Status, op: eq, value: Resolved }
+      Resolution:
+        when:
+          - { field: Status, op: eq, value: Resolved }
+  DocumentRequest:
+    reconcile: exact
+    columns:
+      HolderProvider:
+        when:
+          - { field: HolderSide, op: in, value: [Provider, "Third party", Shared] }
+      AskedOn:
+        when:
+          - { field: Status, op: in, value: [Asked, Received, Refused, "Not found"] }
+      DueOn:
+        when:
+          - { field: Status, op: in, value: [Asked, Received, Refused, "Not found"] }
+      AnsweredOn:
+        when:
+          - { field: Status, op: in, value: [Received, Refused, "Not found"] }
+      SignedBy:
+        when:
+          - { field: Status, op: eq, value: Received }
+  # Everything the conversation produces shares one rule, anchored once.
+  Interview:
+    reconcile: exact
+    columns:
+      IntervieweeProvider:
+        when:
+          - { field: IntervieweeSide, op: in, value: [Provider, "Third party", Shared] }
+      DurationMin: &after_the_conversation
+        new: false
+        when:
+          - { field: Status, op: eq, value: Completed }
+      Q1Runs: *after_the_conversation
+      Q2Uses: *after_the_conversation
+      Q3Call: *after_the_conversation
+      Q4Decides: *after_the_conversation
+      Q5AskProvider: *after_the_conversation
+      Q6AskedProvider: *after_the_conversation
+      Q7Auditor: *after_the_conversation
+      Q8Saturday: *after_the_conversation
+      RecordingLink: *after_the_conversation
+      NotesFile: *after_the_conversation
+      # A declined or cancelled conversation still leaves something to chase.
+      FollowUps:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Completed, Declined, Cancelled] }
+  Incident:
+    reconcile: exact
+    columns:
+      ResolverProvider:
+        when:
+          - { field: ResolverSide, op: in, value: [Provider, "Third party", Shared] }
+
+# Every date here records something that has happened, so none may be in
+# the future; the today rules are hoisted onto each list rule at build time.
+column_validation:
+  Service:
+    reconcile: exact
+    columns:
+      LastFailureDate:
+        when:
+          any_of:
+            - { field: LastFailureDate, op: is_null }
+            - { field: LastFailureDate, op: leq, value: today }
+        message: "A failure is dated when it happened; it cannot be in the future."
+  Evidence:
+    reconcile: exact
+    columns:
+      EvidenceDate:
+        when:
+          - { field: EvidenceDate, op: leq, value: today }
+        message: "Evidence is dated when the statement was made or the document was issued; it cannot be in the future."
+  Seam:
+    reconcile: exact
+    columns:
+      RaisedOn:
+        when:
+          - { field: RaisedOn, op: leq, value: today }
+        message: "A seam is raised on the day it is seen; the date cannot be in the future."
+      ResolvedOn:
+        when:
+          any_of:
+            - { field: ResolvedOn, op: is_null }
+            - { field: ResolvedOn, op: leq, value: today }
+        message: "Use the date the seam actually closed; it cannot be in the future."
+  DocumentRequest:
+    reconcile: exact
+    columns:
+      AskedOn:
+        when:
+          any_of:
+            - { field: AskedOn, op: is_null }
+            - { field: AskedOn, op: leq, value: today }
+        message: "Asked on is the date the ask went out; it cannot be in the future."
+      AnsweredOn:
+        when:
+          any_of:
+            - { field: AnsweredOn, op: is_null }
+            - { field: AnsweredOn, op: leq, value: today }
+        message: "Answered on is the date the answer came back; it cannot be in the future."
+  Artefact:
+    reconcile: exact
+    columns:
+      ArtefactDate:
+        when:
+          any_of:
+            - { field: ArtefactDate, op: is_null }
+            - { field: ArtefactDate, op: leq, value: today }
+        message: "The date on an artefact cannot be in the future."
+  Interview:
+    reconcile: exact
+    columns:
+      DurationMin:
+        when:
+          any_of:
+            - { field: DurationMin, op: is_null }
+            - all_of:
+                - { field: DurationMin, op: geq, value: 1 }
+                - { field: DurationMin, op: leq, value: 30 }
+        message: "Thirty minutes is the ceiling. If it ran over, record thirty and note the overrun in the follow-ups."
+  Incident:
+    reconcile: exact
+    columns:
+      IncidentDate:
+        when:
+          - { field: IncidentDate, op: leq, value: today }
+        message: "An incident is dated when it happened; it cannot be in the future."
+  WeeklyUpdate:
+    reconcile: exact
+    columns:
+      WeekNo:
+        when:
+          all_of:
+            - { field: WeekNo, op: geq, value: 1 }
+            - { field: WeekNo, op: leq, value: 6 }
+        message: "The exercise is six weeks. Week is 1 to 6."
+      RowsVerified:
+        when:
+          - { field: RowsVerified, op: geq, value: 0 }
+        message: "A count of rows cannot be negative."
+      SeamsFound:
+        when:
+          - { field: SeamsFound, op: geq, value: 0 }
+        message: "A count of seams cannot be negative."
+      WeekEnding:
+        when:
+          - { field: WeekEnding, op: leq, value: today }
+        message: "The five lines are written at the end of the week, not before it."
+
+# Cross-column implications, `if A then B` as `any_of[not A, B]`; the rules
+# a formula cannot hold are tabulated in 50-govern/governance.md.
+list_validation:
+  Service:
+    when:
+      # A claimed operator or supporter names a team. Unknown may stay blank.
+      - any_of:
+          - { field: RunBySide, op: eq, value: Unknown }
+          - { field: RunByTeam, op: is_not_null }
+      - any_of:
+          - { field: SupportSide, op: eq, value: Unknown }
+          - { field: SupportTeam, op: is_not_null }
+      # Question 8 is the whole point of the single-person flag.
+      - any_of:
+          - { field: SinglePerson, op: eq, value: false }
+          - { field: OutOfHours, op: is_not_null }
+    message: "Naming a side that runs or supports this service needs the team or role beside it. A single-person service needs the out-of-hours answer."
+  Seam:
+    when:
+      - any_of:
+          - { field: Status, op: neq, value: Escalated }
+          - all_of:
+              - { field: ResolveOwner, op: is_not_null }
+              - { field: ResolveBy, op: is_not_null }
+      - any_of:
+          - { field: Status, op: neq, value: Resolved }
+          - { field: ResolvedOn, op: is_not_null }
+    message: "Escalating a seam names who will resolve it and by when. Resolving it needs the resolved date."
+  DocumentRequest:
+    when:
+      - any_of:
+          - { field: Status, op: eq, value: "To ask" }
+          - all_of:
+              - { field: AskedOn, op: is_not_null }
+              - { field: DueOn, op: is_not_null }
+              - { field: Holder, op: is_not_null }
+              - { field: HolderSide, op: neq, value: Unknown }
+      - any_of:
+          - { field: Status, op: in, value: ["To ask", Asked] }
+          - { field: AnsweredOn, op: is_not_null }
+      - any_of:
+          - { field: Status, op: neq, value: Received }
+          - { field: DocumentType, op: not_in, value: ["Services agreement", "Services schedule", Attestation] }
+          - { field: SignedBy, op: is_not_null }
+    message: "Once asked, a document says who was asked and on which side, with an asked-on date and a due date. Received, refused and not found each need the date the answer came back. A received agreement, schedule or attestation says who signed it, or Unsigned."
+  Interview:
+    when:
+      - any_of:
+          - { field: Status, op: neq, value: Completed }
+          - all_of:
+              - { field: DurationMin, op: is_not_null }
+              - { field: InterviewDate, op: leq, value: today }
+    message: "A completed interview has its duration, and its date cannot be in the future."
+
+# Emitted only under --seed, in lookup order: providers, services, then
+# evidence, then the seams and files that cite them. Links name seeded files
+# on an example host.
+demo_items:
+  Provider:
+    - key: prov-shared
+      values:
+        Title: "[DEMO] Regional shared ICT service"
+        ProviderType: "Shared-services body"
+        Tier: Strategic
+        RelationshipOwner: "ICT manager"
+        ServiceDeskContact: "Service desk portal; the service desk phone line out of hours"
+        AgreementEnds: "today+400"
+        Status: Active
+        Notes: "Demo row. Runs backup, the network and the virtual desktop for several member organisations. Subcontracts its data centre."
+    - key: prov-cloud
+      values:
+        Title: "[DEMO] Cloud productivity platform"
+        ProviderType: "Cloud platform"
+        Tier: Strategic
+        RelationshipOwner: "M365 project team lead"
+        ServiceDeskContact: "Support cases opened in the admin centre"
+        Status: Active
+    - key: prov-telephony
+      values:
+        Title: "[DEMO] Telephony managed service"
+        ProviderType: "Managed service"
+        Tier: Operational
+        RelationshipOwner: "ICT manager"
+        ServiceDeskContact: "Shared mailbox, next business day"
+        AgreementEnds: "today+45"
+        Status: Active
+    - key: prov-old-backup
+      values:
+        Title: "[DEMO] Previous backup vendor"
+        ProviderType: Vendor
+        Tier: Commodity
+        AgreementEnds: "today-200"
+        Status: Retired
+        Notes: "Demo row. Replaced when the shared ICT service took over backup. Kept because old tickets name it."
+  Service:
+    - key: svc-accounts
+      values:
+        Title: "[DEMO] Account creation script"
+        Area: "Identity and access"
+        Description: "Demo row. A scheduled script that creates directory accounts for new starters from the HR feed."
+        RunBySide: Us
+        RunByTeam: "ICT technician"
+        SupportSide: Us
+        SupportTeam: "ICT technician (L2)"
+        DecidedBy: "ICT manager, own organisation"
+        Hosting: "Own on-site data centre"
+        Dependency: "The provider's directory sync must run before a new account can sign in anywhere."
+        SinglePerson: true
+        Documentation: "None found"
+        LastFailureDate: "today-60"
+        LastFailure: "No accounts were created for a week while the technician was on leave. Noticed when three new starters could not sign in."
+        Confidence: Verified
+        FirstPass: true
+        OutOfHours: "Nobody; it waits until Monday"
+    - key: svc-backup
+      values:
+        Title: "[DEMO] Server backup"
+        Area: "Backup, retention and records"
+        Description: "Demo row. Nightly backup of the file and application servers, with off-site copies."
+        RunBySide: Provider
+        RunByProvider: { demo_ref: prov-shared }
+        RunByTeam: "Provider infrastructure team"
+        SupportSide: Provider
+        SupportProvider: { demo_ref: prov-shared }
+        SupportTeam: "Provider service desk (L1)"
+        DecidedBy: "Provider infrastructure manager"
+        Hosting: "Provider data centre"
+        Dependency: "Restores are requested through the provider's service desk; nobody here can start one."
+        SinglePerson: false
+        Documentation: "Exists, not seen"
+        Confidence: Claimed
+        FirstPass: true
+    - key: svc-citrix
+      values:
+        Title: "[DEMO] Virtual desktop"
+        Area: "Infrastructure and devices"
+        Description: "Demo row. The published desktop most staff sign in to."
+        RunBySide: Shared
+        RunByProvider: { demo_ref: prov-shared }
+        RunByTeam: "The provider hosts it; our ICT team maintains the image"
+        SupportSide: Unknown
+        Hosting: "Provider data centre"
+        SinglePerson: false
+        Documentation: "Not asked"
+        Confidence: Assumed
+        FirstPass: true
+        Notes: "Three people named three different support routes."
+    - key: svc-m365
+      values:
+        Title: "[DEMO] M365 tenant administration"
+        Area: "M365 tenant"
+        Description: "Demo row. Global administration of the Microsoft 365 tenant: licences, policies, tenant settings."
+        RunBySide: Us
+        RunByTeam: "M365 project team"
+        SupportSide: "Third party"
+        SupportProvider: { demo_ref: prov-cloud }
+        SupportTeam: "Vendor support, opened through the shared ICT service"
+        DecidedBy: "Director digital systems, own organisation"
+        Hosting: "Microsoft cloud"
+        Dependency: "Vendor support cases are opened through the shared ICT service; nobody here can open one."
+        SinglePerson: false
+        Documentation: Held
+        DocumentationLink:
+          url: "https://example.sharepoint.com/sites/seams/SEAM_Artefact/Documents/%5BDEMO%5D%20M365%20admin%20guide.txt"
+          description: "[DEMO] M365 admin guide.txt"
+        Confidence: Claimed
+        FirstPass: false
+    - key: svc-sso
+      values:
+        Title: "[DEMO] Tap-on single sign-on"
+        Area: "Identity and access"
+        Description: "Demo row. Badge tap-on to shared workstations."
+        RunBySide: Unknown
+        SupportSide: Unknown
+        SinglePerson: false
+        Documentation: "Not asked"
+        Confidence: Assumed
+        FirstPass: true
+    - key: svc-phones
+      values:
+        Title: "[DEMO] Desk phones"
+        Area: "Infrastructure and devices"
+        Description: "Demo row. Desk handsets and the call manager behind them."
+        RunBySide: Provider
+        RunByProvider: { demo_ref: prov-telephony }
+        RunByTeam: "Telephony provider network team"
+        SupportSide: Provider
+        SupportTeam: "Provider service desk (L1)"
+        Hosting: "Provider data centre"
+        SinglePerson: false
+        Documentation: Held
+        DocumentationLink:
+          url: "https://example.sharepoint.com/sites/seams/SEAM_Artefact/Documents/%5BDEMO%5D%20Telephony%20runbook.txt"
+          description: "[DEMO] Telephony runbook.txt"
+        Confidence: Claimed
+        FirstPass: false
+        Notes: "Second pass. One document says who runs it; nobody has checked it against a second source yet."
+    # A backlog row that owes a provider on its run-by side, so the run-by
+    # provider check has something to show.
+    - key: svc-badges
+      values:
+        Title: "[DEMO] Visitor badge printing"
+        Area: "Infrastructure and devices"
+        Description: "Demo row. Printing visitor badges at reception."
+        RunBySide: "Third party"
+        RunByTeam: "The badge printer's vendor"
+        SupportSide: Unknown
+        SinglePerson: false
+        Documentation: "Not asked"
+        Confidence: Assumed
+        FirstPass: false
+        Notes: "Demo row. One interview said a vendor runs it; nobody has said which."
+  Evidence:
+    - key: evd-accounts-interview
+      values:
+        Title: "[DEMO] ICT technician interview on the accounts script"
+        Artefact: { demo_ref: art-interview-accounts }
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: Interview
+        Source: "ICT technician (accounts script), interview"
+        SourceSide: Us
+        Statement: "Demo row. I wrote the script and I run it; the ICT team's server is where it lives."
+        SupportsField: "Run by"
+        Contradicts: false
+        EvidenceDate: "today-20"
+    - key: evd-accounts-single
+      values:
+        Title: "[DEMO] ICT technician interview: nobody else can run the script"
+        Artefact: { demo_ref: art-interview-accounts }
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: Interview
+        Source: "ICT technician (accounts script), interview"
+        SourceSide: Us
+        Statement: "Demo row. I am the only one who knows where it runs. If I am away it does not run."
+        SupportsField: "Single person"
+        Contradicts: false
+        EvidenceDate: "today-20"
+    - key: evd-accounts-support
+      values:
+        Title: "[DEMO] ICT technician interview: who fixes the script"
+        Artefact: { demo_ref: art-interview-accounts }
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: Interview
+        Source: "ICT technician (accounts script), interview"
+        SourceSide: Us
+        Statement: "Demo row. Nobody. When the script breaks I fix it myself."
+        SupportsField: "Support"
+        Contradicts: false
+        EvidenceDate: "today-20"
+    - key: evd-accounts-decides
+      values:
+        Title: "[DEMO] ICT technician interview: who decides changes"
+        Artefact: { demo_ref: art-interview-accounts }
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: Interview
+        Source: "ICT technician (accounts script), interview"
+        SourceSide: Us
+        Statement: "Demo row. The ICT manager."
+        SupportsField: "Decided by"
+        Contradicts: false
+        EvidenceDate: "today-20"
+    - key: evd-accounts-saturday
+      values:
+        Title: "[DEMO] ICT technician interview: the Saturday-night call"
+        Artefact: { demo_ref: art-interview-accounts }
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: Interview
+        Source: "ICT technician (accounts script), interview"
+        SourceSide: Us
+        Statement: "Demo row. Nobody. It waits until Monday."
+        SupportsField: "Out of hours"
+        Contradicts: false
+        EvidenceDate: "today-20"
+    - key: evd-accounts-dependency
+      values:
+        Title: "[DEMO] ICT technician interview: the directory sync comes first"
+        Artefact: { demo_ref: art-interview-accounts }
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: Interview
+        Source: "ICT technician (accounts script), interview"
+        SourceSide: Us
+        Statement: "Demo row. The provider's directory sync; the script waits for it before a new account can sign in."
+        SupportsField: "Dependency"
+        Contradicts: false
+        EvidenceDate: "today-20"
+    - key: evd-accounts-hosting
+      values:
+        Title: "[DEMO] ICT technician interview: where the script runs"
+        Artefact: { demo_ref: art-interview-accounts }
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: Interview
+        Source: "ICT technician (accounts script), interview"
+        SourceSide: Us
+        Statement: "Demo row. Nothing for the script; it runs on our own server."
+        SupportsField: "Runs where"
+        Contradicts: false
+        EvidenceDate: "today-20"
+    - key: evd-accounts-docs
+      values:
+        Title: "[DEMO] ICT technician interview: nothing is written down"
+        Artefact: { demo_ref: art-interview-accounts }
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: Interview
+        Source: "ICT technician (accounts script), interview"
+        SourceSide: Us
+        Statement: "Demo row. The script. Nobody else could run it and there is no document."
+        SupportsField: "Documentation"
+        Contradicts: false
+        EvidenceDate: "today-20"
+    - key: evd-accounts-outage
+      values:
+        Title: "[DEMO] ICT manager on the week no accounts were created"
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: Interview
+        Source: "ICT manager, own organisation, recalled outage"
+        SourceSide: Us
+        Statement: "Demo row. No accounts were created for a week while the technician was on leave. Three new starters could not sign in."
+        SupportsField: "Last failure"
+        Contradicts: false
+        EvidenceDate: "today-18"
+    - key: evd-accounts-tickets-support
+      values:
+        Title: "[DEMO] Ticket export: who resolves account tickets"
+        Artefact: { demo_ref: art-ticket-export }
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: "Incident data"
+        Source: "Ticket export, twelve months"
+        SourceSide: Provider
+        Statement: "Demo row. Every account ticket was routed to and closed by the own-organisation ICT technician queue."
+        SupportsField: "Support"
+        Contradicts: false
+        EvidenceDate: "today-15"
+    - key: evd-accounts-tickets
+      values:
+        Title: "[DEMO] Ticket export, accounts category"
+        Artefact: { demo_ref: art-ticket-export }
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: "Incident data"
+        Source: "Ticket export, twelve months"
+        SourceSide: Provider
+        Statement: "Demo row. Fourteen account tickets in twelve months, all resolved by the own-organisation ICT technician queue."
+        SupportsField: "Run by"
+        Contradicts: false
+        EvidenceDate: "today-15"
+        ArtefactLink:
+          url: "https://example.sharepoint.com/sites/seams/SEAM_Artefact/Incidents/%5BDEMO%5D%20Ticket%20export%2C%20twelve%20months.txt"
+          description: "[DEMO] Ticket export, twelve months.txt"
+    - key: evd-backup-own
+      values:
+        Title: "[DEMO] ICT manager on who to call for a restore"
+        Service: { demo_ref: svc-backup }
+        EvidenceType: Interview
+        Source: "ICT manager, own organisation, interview"
+        SourceSide: Us
+        Statement: "Demo row. For a restore we ring the provider's infrastructure team directly; the service desk does not know the backup system."
+        SupportsField: Support
+        Contradicts: true
+        EvidenceDate: "today-10"
+    - key: evd-backup-provider
+      values:
+        Title: "[DEMO] Provider support lead on restore requests"
+        Service: { demo_ref: svc-backup }
+        EvidenceType: Email
+        Artefact: { demo_ref: art-backup-email }
+        Source: "Provider small-sites support lead, email"
+        SourceSide: Provider
+        Statement: "Demo row. All restore requests must go through the service desk as a ticket; the infrastructure team does not take calls."
+        SupportsField: Support
+        Contradicts: true
+        EvidenceDate: "today-8"
+        ArtefactLink:
+          url: "https://example.sharepoint.com/sites/seams/SEAM_Artefact/Correspondence/%5BDEMO%5D%20Email%2C%20provider%20support%20lead%20on%20restores.txt"
+          description: "[DEMO] Email, provider support lead on restores.txt"
+    - key: evd-m365-invoice
+      values:
+        Title: "[DEMO] Provider invoice, tenant support line"
+        Artefact: { demo_ref: art-invoices }
+        Service: { demo_ref: svc-m365 }
+        EvidenceType: Invoice
+        Source: "Provider invoice, May, line 4"
+        SourceSide: Provider
+        Statement: "Demo row. Line 4 charges for Microsoft support case handling, which is how vendor support is reached."
+        SupportsField: Dependency
+        Contradicts: false
+        EvidenceDate: "today-30"
+        ArtefactLink:
+          url: "https://example.sharepoint.com/sites/seams/SEAM_Artefact/Invoices/%5BDEMO%5D%20Provider%20invoices%2C%20twelve%20months.txt"
+          description: "[DEMO] Provider invoices, twelve months.txt"
+    - key: evd-phones-runbook
+      values:
+        Title: "[DEMO] Telephony runbook on who runs the call manager"
+        Artefact: { demo_ref: art-telephony-runbook }
+        Service: { demo_ref: svc-phones }
+        EvidenceType: Document
+        Source: "Telephony runbook, provider issue"
+        SourceSide: Provider
+        Statement: "Demo row. The managed service operates the call manager and the handsets; faults go to its shared mailbox."
+        SupportsField: "Run by"
+        Contradicts: false
+        EvidenceDate: "today-25"
+        ArtefactLink:
+          url: "https://example.sharepoint.com/sites/seams/SEAM_Artefact/Documents/%5BDEMO%5D%20Telephony%20runbook.txt"
+          description: "[DEMO] Telephony runbook.txt"
+  Seam:
+    - key: seam-backup-support
+      values:
+        Title: "[DEMO] Two routes to a restore"
+        Service: { demo_ref: svc-backup }
+        SeamType: "Disputed support"
+        Description: "Demo row. Our ICT manager rings the provider's infrastructure team directly; the provider's support lead says every restore is a service desk ticket. Out of hours the difference is a night."
+        EvidenceInConflict: [{ demo_ref: evd-backup-own }, { demo_ref: evd-backup-provider }]
+        RaisedOn: "today-8"
+        Status: Open
+    - key: seam-accounts-single
+      values:
+        Title: "[DEMO] One person can create accounts"
+        Service: { demo_ref: svc-accounts }
+        SeamType: "Single person"
+        Description: "Demo row. The account script has one author and one operator. A week of no new accounts has already happened once."
+        EvidenceInConflict: [{ demo_ref: evd-accounts-single }]
+        RaisedOn: "today-20"
+        Status: Escalated
+        ResolveOwner: "Director digital systems"
+        ResolveBy: "today+10"
+    - key: seam-desktop-owner
+      values:
+        Title: "[DEMO] Nobody owns the virtual desktop"
+        Service: { demo_ref: svc-citrix }
+        SeamType: "No owner"
+        Description: "Demo row. Asked who owns it end to end, we point at the provider and the provider points at us. Both agree nobody has the whole thing."
+        RaisedOn: "today-5"
+        Status: "Confirmed gap"
+        ResolveOwner: "Provider small-sites support lead"
+        ResolveBy: "today-2"
+    - key: seam-m365-resolved
+      values:
+        Title: "[DEMO] Vendor support reached only through the provider"
+        Service: { demo_ref: svc-m365 }
+        SeamType: "Undocumented dependency"
+        Description: "Demo row. Vendor support cases could only be opened by the shared ICT service, and nothing said so."
+        EvidenceInConflict: [{ demo_ref: evd-m365-invoice }]
+        RaisedOn: "today-19"
+        Status: Resolved
+        ResolveOwner: "ICT manager"
+        ResolveBy: "today-12"
+        ResolvedOn: "today-15"
+        Resolution: "Demo row. The invoice line confirmed it. Recorded on the service row as the dependency and the support route."
+  DocumentRequest:
+    - key: doc-agreement
+      values:
+        Title: "[DEMO] Services agreement and schedule"
+        DocumentType: "Services agreement"
+        Holder: "Legal counsel"
+        HolderSide: Us
+        Status: Asked
+        AskedOn: "today-6"
+        DueOn: "today-1"
+        Services: [{ demo_ref: svc-accounts }, { demo_ref: svc-backup }]
+    - key: doc-invoices
+      values:
+        Title: "[DEMO] Twelve months of provider invoices"
+        DocumentType: Invoice
+        Holder: "Finance manager"
+        HolderSide: Us
+        Status: Received
+        AskedOn: "today-14"
+        DueOn: "today-7"
+        AnsweredOn: "today-9"
+        Summary: "Demo row. Twelve monthly invoices with charge lines by service. Silent on anything the provider supplies without charging."
+        Services: [{ demo_ref: svc-m365 }, { demo_ref: svc-backup }]
+    - key: doc-dr-plan
+      values:
+        Title: "[DEMO] Disaster recovery plan"
+        DocumentType: "DR plan"
+        Holder: "ICT manager"
+        HolderSide: Us
+        Status: "Not found"
+        AskedOn: "today-12"
+        DueOn: "today-5"
+        AnsweredOn: "today-4"
+        Summary: "Demo row. Asked twice. The last one anyone remembers predates the provider arrangement."
+        Services: [{ demo_ref: svc-backup }]
+    - key: doc-attestation
+      values:
+        Title: "[DEMO] Most recent cyber attestation"
+        DocumentType: Attestation
+        Holder: "Vendor account manager"
+        HolderSide: "Third party"
+        Status: "To ask"
+    - key: doc-runbook
+      values:
+        Title: "[DEMO] Backup runbook"
+        DocumentType: Runbook
+        Holder: "Provider infrastructure team"
+        HolderSide: Provider
+        HolderProvider: { demo_ref: prov-shared }
+        Status: Refused
+        AskedOn: "today-10"
+        DueOn: "today-3"
+        AnsweredOn: "today-5"
+        Summary: "Demo row. Refused as commercially confidential; a walkthrough was offered instead."
+        Services: [{ demo_ref: svc-backup }]
+  Artefact:
+    - key: art-invoices
+      file:
+        name: "[DEMO] Provider invoices, twelve months.txt"
+        folder: Invoices
+        content: "Demo placeholder for the twelve monthly invoices."
+      values:
+        Title: "[DEMO] Provider invoices, twelve months"
+        ArtefactType: "Invoice extract"
+        SourceSide: Provider
+        ArtefactDate: "today-9"
+        Request: { demo_ref: doc-invoices }
+        Services: [{ demo_ref: svc-m365 }, { demo_ref: svc-backup }]
+        Summary: "Demo row. Line 4 of each invoice is the tenant support charge."
+    - key: art-interview-accounts
+      file:
+        name: "[DEMO] Interview notes, ICT technician, accounts script.txt"
+        folder: Interviews
+        content: "Demo placeholder for interview notes."
+      values:
+        Title: "[DEMO] Interview notes, ICT technician, accounts script"
+        ArtefactType: "Interview notes"
+        SourceSide: Us
+        ArtefactDate: "today-20"
+        Services: [{ demo_ref: svc-accounts }]
+        Summary: "Demo row. Thirty minutes. Question 7 produced the single-person finding."
+    - key: art-ticket-export
+      file:
+        name: "[DEMO] Ticket export, twelve months.txt"
+        folder: Incidents
+        content: "Demo placeholder for the ticketing system export."
+      values:
+        Title: "[DEMO] Ticket export, twelve months"
+        ArtefactType: "Incident export"
+        SourceSide: Provider
+        ArtefactDate: "today-15"
+        Services: [{ demo_ref: svc-accounts }, { demo_ref: svc-backup }, { demo_ref: svc-citrix }]
+        Summary: "Demo row. Grouped by resolver queue. Accounts resolved here, backup and desktop resolved by the provider."
+    - key: art-backup-email
+      file:
+        name: "[DEMO] Email, provider support lead on restores.txt"
+        folder: Correspondence
+        content: "Demo placeholder for an email."
+      values:
+        Title: "[DEMO] Email, provider support lead on restores"
+        ArtefactType: Correspondence
+        SourceSide: Provider
+        ArtefactDate: "today-8"
+        Services: [{ demo_ref: svc-backup }]
+        Summary: "Demo row. States that every restore is a service desk ticket."
+    - key: art-m365-guide
+      file:
+        name: "[DEMO] M365 admin guide.txt"
+        folder: Documents
+        content: "Demo placeholder for a held document."
+      values:
+        Title: "[DEMO] M365 admin guide"
+        ArtefactType: "Document copy"
+        SourceSide: Us
+        ArtefactDate: "today-30"
+        Services: [{ demo_ref: svc-m365 }]
+        Summary: "Demo row. Tenant settings and who may change them."
+    - key: art-telephony-runbook
+      file:
+        name: "[DEMO] Telephony runbook.txt"
+        folder: Documents
+        content: "Demo placeholder for a runbook held from a provider."
+      values:
+        Title: "[DEMO] Telephony runbook"
+        ArtefactType: "Document copy"
+        SourceSide: Provider
+        ArtefactDate: "today-25"
+        Services: [{ demo_ref: svc-phones }]
+        Summary: "Demo row. Section 2 says the managed service runs the call manager and the handsets."
+    - key: art-signin-export
+      file:
+        name: "[DEMO] Sign-in export, tap-on workstations.txt"
+        folder: System exports
+        content: "Demo placeholder for a console export."
+      values:
+        Title: "[DEMO] Sign-in export, tap-on workstations"
+        ArtefactType: "System export"
+        SourceSide: Us
+        ArtefactDate: "today-4"
+        Services: [{ demo_ref: svc-sso }]
+        Summary: "Demo row. Console view of the tap-on service, exported by us."
+  Interview:
+    - key: int-technician
+      values:
+        Title: "[DEMO] ICT technician (accounts script), own organisation"
+        NotesFile: { demo_ref: art-interview-accounts }
+        IntervieweeSide: Us
+        Status: Completed
+        InterviewDate: "today-20"
+        DurationMin: 30
+        Q1Runs: "Demo row. The account creation script."
+        Q2Uses: "Demo row. The provider's directory sync; the script waits for it before a new account can sign in."
+        Q3Call: "Demo row. Nobody. When the script breaks I fix it myself."
+        Q4Decides: "Demo row. The ICT manager."
+        Q5AskProvider: "Demo row. Nothing for the script; it runs on our own server."
+        Q6AskedProvider: "Demo row. Nothing about the script."
+        Q7Auditor: "Demo row. The script. Nobody else could run it and there is no document."
+        Q8Saturday: "Demo row. Nobody. It waits until Monday."
+        FollowUps: "Demo row. Send the script location and the last run log by Friday."
+    - key: int-provider-lead
+      values:
+        Title: "[DEMO] Small-sites support lead, shared ICT service"
+        IntervieweeSide: Provider
+        IntervieweeProvider: { demo_ref: prov-shared }
+        Status: Booked
+        InterviewDate: "today+4"
+    - key: int-records
+      values:
+        Title: "[DEMO] Records manager, own organisation"
+        IntervieweeSide: Us
+        Status: Booked
+        InterviewDate: "today+9"
+    - key: int-declined
+      values:
+        Title: "[DEMO] Infrastructure manager, provider not recorded at booking"
+        IntervieweeSide: Provider
+        Status: Declined
+        InterviewDate: "today-3"
+        FollowUps: "Demo row. Declined and referred us to the nominated channel. Recorded as evidence."
+  Incident:
+    - key: inc-accounts-1
+      values:
+        Title: "[DEMO] INC0041237"
+        Service: { demo_ref: svc-accounts }
+        IncidentDate: "today-60"
+        Category: "Accounts"
+        Summary: "Demo row. New starter cannot sign in."
+        ResolverSide: Us
+        ResolverTeam: "ICT technician queue"
+        Source: "Ticket export"
+        SourceDetail: "Twelve-month export"
+    - key: inc-backup-1
+      values:
+        Title: "[DEMO] INC0042990"
+        Service: { demo_ref: svc-backup }
+        IncidentDate: "today-45"
+        Category: "Backup"
+        Summary: "Demo row. Restore of a shared folder deleted by mistake."
+        ResolverSide: Provider
+        ResolverProvider: { demo_ref: prov-shared }
+        ResolverTeam: "Provider infrastructure"
+        Source: "Ticket export"
+        SourceDetail: "Twelve-month export"
+    - key: inc-desktop-1
+      values:
+        Title: "[DEMO] INC0043511"
+        Service: { demo_ref: svc-citrix }
+        IncidentDate: "today-30"
+        Category: "Virtual desktop"
+        Summary: "Demo row. Published desktop slow for a whole floor all morning. The export names the queue, not the provider behind it."
+        ResolverSide: Provider
+        ResolverTeam: "Provider service desk"
+        Source: "Ticket export"
+        SourceDetail: "Twelve-month export"
+    - key: inc-accounts-outage
+      values:
+        Title: "[DEMO] The week no accounts were created"
+        Service: { demo_ref: svc-accounts }
+        IncidentDate: "today-62"
+        Category: "Accounts"
+        Summary: "Demo row. Nobody noticed for a week; three new starters started without a login."
+        ResolverSide: Us
+        ResolverTeam: "ICT technician"
+        Source: "Recalled outage"
+        SourceDetail: "Recalled by the ICT manager"
+    - key: inc-unassigned
+      values:
+        Title: "[DEMO] INC0044120"
+        IncidentDate: "today-12"
+        Category: "Telephony"
+        Summary: "Demo row. Handset in a meeting room dead. Not yet assigned to a service row."
+        ResolverSide: Unknown
+        Source: "Ticket export"
+        SourceDetail: "Twelve-month export"
+  WeeklyUpdate:
+    - key: week-1
+      values:
+        Title: "[DEMO] Week 1"
+        WeekNo: 1
+        WeekEnding: "today-14"
+        RowsVerified: 1
+        SeamsFound: 2
+        Blocked: "Demo row. Legal has not found the services agreement yet."
+        Next: "Demo row. Backup and records: ICT manager questions out Monday, provider channel confirmed."
+        Surprise: "Demo row. The account script has one author and no document."
+    - key: week-2
+      values:
+        Title: "[DEMO] Week 2"
+        WeekNo: 2
+        WeekEnding: "today-7"
+        RowsVerified: 0
+        SeamsFound: 1
+        Blocked: "Demo row. The backup runbook was refused; a walkthrough is offered instead."
+        Next: "Demo row. Risk note to the chief executive's office; start infrastructure and devices."
+        Surprise: "Demo row. The invoices are the nearest thing to a service catalogue anyone has."

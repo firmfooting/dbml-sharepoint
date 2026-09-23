@@ -1,0 +1,30 @@
+{
+  "sections": [
+    {
+      "displayname": "The claim",
+      "fields": [
+        "Title",
+        "Service",
+        "Statement",
+        "SupportsField"
+      ]
+    },
+    {
+      "displayname": "The source",
+      "fields": [
+        "EvidenceType",
+        "Source",
+        "SourceSide",
+        "EvidenceDate",
+        "ArtefactLink",
+        "Artefact"
+      ]
+    },
+    {
+      "displayname": "Agreement",
+      "fields": [
+        "Contradicts"
+      ]
+    }
+  ]
+}

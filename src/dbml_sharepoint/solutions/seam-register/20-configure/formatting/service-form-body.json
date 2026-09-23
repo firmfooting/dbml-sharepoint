@@ -1,0 +1,45 @@
+{
+  "sections": [
+    {
+      "displayname": "The service",
+      "fields": [
+        "Title",
+        "Area",
+        "Description",
+        "Hosting"
+      ]
+    },
+    {
+      "displayname": "Who runs it and who to call",
+      "fields": [
+        "RunBySide",
+        "RunByProvider",
+        "RunByTeam",
+        "SupportSide",
+        "SupportProvider",
+        "SupportTeam",
+        "DecidedBy",
+        "Dependency",
+        "SinglePerson",
+        "OutOfHours"
+      ]
+    },
+    {
+      "displayname": "Documentation and failures",
+      "fields": [
+        "Documentation",
+        "DocumentationLink",
+        "LastFailureDate",
+        "LastFailure"
+      ]
+    },
+    {
+      "displayname": "Confidence and scope",
+      "fields": [
+        "Confidence",
+        "FirstPass",
+        "Notes"
+      ]
+    }
+  ]
+}
