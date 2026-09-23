@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHAT A BREAK LEAVES, AND WHETHER REMOVING IT STICKS
  *
- * REVISION: d54ee6cb
+ * REVISION: 589f66ba
  *
  * THE CLAIM UNDER TEST. `deploy/_lists.js.j2` says, beside the early
  * isolation break, that "copyRoleAssignments=false leaves only SharePoint's
@@ -111,14 +111,15 @@
  * would reuse it and rewrite its permissions.
  *
  * The marker is not enough on its own, because a replacement can carry a
- * copied Description, and every endpoint here is addressed by title with no
- * by-Id form documented. So the list's Id is captured where it is claimed or
- * created, and every destructive write is bracketed by an identity and marker
- * recheck immediately before and immediately after it, the way `withOwnedList`
- * brackets the deploy's own role-assignment writes in `deploy/_acls.js.j2`. A
- * title rebound mid-run produces a failed run, never a break, a removal or a
- * reset applied to a stranger, and the restore reports the Id rather than the
- * title so a repair by hand goes to the right list.
+ * copied Description. So the list's Id is captured where it is claimed or
+ * created, the CLEANUP recycle addresses that Id rather than the title, and
+ * every write that has no documented by-Id form is bracketed by an identity
+ * and marker recheck immediately before and immediately after it, the way
+ * `withOwnedList` brackets the deploy's role-assignment writes in
+ * `deploy/_acls.js.j2`. A title rebound mid-run produces a failed run, never
+ * a break, a removal or a reset applied to a stranger, and the restore
+ * reports the Id rather than the title so a repair by hand goes to the right
+ * list.
  *
  * RUN AS A SITE COLLECTION ADMINISTRATOR, and the probe checks rather than
  * trusts. It breaks role inheritance with copyRoleAssignments=false and then
@@ -277,15 +278,44 @@
   // ---- Pre-run reset --------------------------------------------------
   // Call this before bootstrapping. A no-op unless CLEANUP is on, so the
   // probe body reads the same either way.
-  const resetList = async (title) => {
+  //
+  // expectedId is OPTIONAL because most callers have no claimed Id to bracket
+  // with, and the behaviour without one is unchanged. Supply one and every
+  // request below addresses that list Id instead of the title, so a title
+  // rebound mid-run cannot redirect the deletes or the recycle onto a list
+  // this run never owned. Microsoft documents `web/lists(guid'<id>')` as the
+  // list resource, with items and other members hanging off it the way they
+  // hang off `getbytitle` (Working with lists and list items with REST, and
+  // the CSOM/REST API index, both checked 2026-09-23).
+  const resetList = async (title, expectedId = null) => {
     if (!CLEANUP) return false;
     if (!ALLOW_WRITES) {
       log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
       return false;
     }
-    const found = await spGet(`web/lists/getbytitle('${title}')`);
+    // An Id that is not a GUID would be spliced into a URL that addresses
+    // something else, so it fails closed instead of being sent.
+    const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (expectedId !== null && !GUID.test(String(expectedId))) {
+      log('FAIL', `CLEANUP: '${expectedId}' is not a list Id, so nothing was deleted or `
+                  + `recycled under '${title}'.`);
+      return false;
+    }
+    const listPath = expectedId === null
+      ? `web/lists/getbytitle('${title}')`
+      : `web/lists(guid'${expectedId}')`;
+    const found = await spGet(expectedId === null ? listPath : `${listPath}?$select=Id`);
     if (!found.ok) {
       log('INFO', `CLEANUP: no list named '${title}' to remove.`);
+      return false;
+    }
+    // Addressing by Id still gets read back, because every destructive
+    // request below rests on this one answer.
+    const answeredId = found.body && found.body.Id
+      ? String(found.body.Id).replace(/[{}]/g, '').toLowerCase() : null;
+    if (expectedId !== null && answeredId !== String(expectedId).toLowerCase()) {
+      log('FAIL', `CLEANUP: list ${expectedId} answered as ${answeredId}, so nothing was `
+                  + `deleted or recycled under '${title}'.`);
       return false;
     }
     log('INFO', `CLEANUP: removing list '${title}' and its items.`);
@@ -295,12 +325,11 @@
     // removed. A locked or no-delete list would otherwise leave rows from
     // a previous run answering this run's questions.
     let digest = await getDigest();
-    const items = await spGet(
-      `web/lists/getbytitle('${title}')/items?$select=Id&$top=5000`);
+    const items = await spGet(`${listPath}/items?$select=Id&$top=5000`);
     const rows = (items.ok && items.body && items.body.value) || [];
     for (const row of rows) {
       digest = await getDigest();
-      await spPost(`web/lists/getbytitle('${title}')/items(${row.Id})`, {}, digest,
+      await spPost(`${listPath}/items(${row.Id})`, {}, digest,
                    { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
     }
     if (rows.length) log('INFO', `CLEANUP: deleted ${rows.length} item(s).`);
@@ -309,11 +338,14 @@
     }
 
     digest = await getDigest();
-    const gone = await spPost(`web/lists/getbytitle('${title}')/recycle`, {}, digest);
+    const gone = await spPost(`${listPath}/recycle`, {}, digest);
+    // The Id is named where there is one, because a repair by hand off the
+    // title would go to whatever the title resolves to now.
+    const which = expectedId === null ? `'${title}'` : `'${title}' (list ${expectedId})`;
     if (gone.ok) {
-      log('OK', `CLEANUP: recycled list '${title}'. It is restorable from the recycle bin.`);
+      log('OK', `CLEANUP: recycled list ${which}. It is restorable from the recycle bin.`);
     } else {
-      log('FAIL', `CLEANUP: could not recycle '${title}': HTTP ${gone.status} ${gone.text.slice(0, 200)}`);
+      log('FAIL', `CLEANUP: could not recycle ${which}: HTTP ${gone.status} ${gone.text.slice(0, 200)}`);
     }
     return gone.ok;
   };
@@ -450,7 +482,7 @@
     record(id, question, row.outcome, row.evidence, row.state);
   };
 
-  log('INFO', 'probe revision d54ee6cb. Quote this when reporting results.');
+  log('INFO', 'probe revision 589f66ba. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe OperatorGrant';
   const OWNERSHIP = 'dbml-sharepoint operator-safety-grant probe list. Safe to delete.';
@@ -721,12 +753,13 @@
   );
 
   // ---- IDENTITY, which every destructive write below is bracketed by ----
-  // Every endpoint this probe writes to is addressed by TITLE, and Microsoft
-  // documents no by-Id form for breakroleinheritance, removeroleassignment,
-  // recycle or resetroleinheritance. A title is not an object: it can be
-  // rebound between two requests, and this run then deletes, breaks and
-  // rewrites the permissions of a list somebody else's work depends on. What
-  // is available is the deploy's own answer, `withOwnedList` in
+  // The role-assignment writes this probe makes are addressed by TITLE, and
+  // Microsoft documents no by-Id form for breakroleinheritance,
+  // removeroleassignment or resetroleinheritance; the CLEANUP recycle is the
+  // one write here with a documented by-Id form, and it takes it. A title is
+  // not an object: it can be rebound between two requests, and this run then
+  // breaks and rewrites the permissions of a list somebody else's work
+  // depends on. What is available is the deploy's own answer, `withOwnedList` in
   // deploy/_acls.js.j2: prove the title resolves to the claimed list
   // immediately before the write, and prove it still does immediately after.
   // A rebind can then only produce a failed run.
@@ -873,9 +906,8 @@
   // probe's exact marker, and a read that fails for any reason other than
   // absence establishes nothing and licenses neither path.
   //
-  // This read is also the CLEANUP recycle's identity bracket on the near
-  // side, which is why it takes the Id: `resetList` recycles by title, and
-  // the identity read after the create or the reuse below is the far side.
+  // This read is also what the CLEANUP recycle is addressed by, which is why
+  // it takes the Id, and its identity bracket on the near side.
   const claimed = await spGet(`${listPath}?$select=Id,Title,Description`);
   if (!readFailed(claimed) && claimed.body.Description !== OWNERSHIP) {
     record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'ABORTED',
@@ -907,11 +939,10 @@
   }
   ownedId = readFailed(claimed) ? null : guidOf(claimed.body.Id);
 
-  // The CLEANUP recycle is destructive and addressed by title like every
-  // other write here, so the claim is re-proved immediately before it. Its
-  // far side is the identity read after the create below: a recycle that
-  // worked means the title stops resolving, which `withOwnedList`'s second
-  // proof cannot express.
+  // The CLEANUP recycle is destructive and every request it makes is
+  // addressed by the claimed Id, so the claim is re-proved immediately
+  // before it: a title that no longer resolves to that list is a rebind
+  // this run stops at rather than a list it recycles by Id anyway.
   if (CLEANUP && ownedId !== null) {
     try {
       await proveOwned(`before the CLEANUP recycle of '${LIST}'`);
@@ -921,7 +952,9 @@
       return report();
     }
   }
-  await resetList(LIST);
+  // Skipped when the title was free, because there is nothing this run
+  // claimed to reset and the title alone is what resetList would fall back to.
+  if (ownedId !== null) await resetList(LIST, ownedId);
   let digest = await getDigest();
 
   // ---- fixture-scratch-list -------------------------------------------

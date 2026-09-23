@@ -9199,7 +9199,24 @@ _OPERATOR_HARNESS = textwrap.dedent("""
         ] });
       }
 
-      if (!u.includes("getbytitle('")) return jsonResponse(404, { error: 'no such endpoint' });
+      // A list addressed by its Id, which is what the CLEANUP reset does. A
+      // guid names the object, so a rebound title does not redirect it and an
+      // Id this site does not hold is a 404 rather than somebody else's list.
+      const byId = /\\/web\\/lists\\(guid'([^']*)'\\)/.exec(u);
+      if (!byId && !u.includes("getbytitle('")) {
+        return jsonResponse(404, { error: 'no such endpoint' });
+      }
+      if (byId) {
+        if (!site.listExists
+            || byId[1].toLowerCase() !== String(site.listId).toLowerCase()) {
+          return jsonResponse(404, { error: 'no such list' });
+        }
+        // The by-Id read answering as a DIFFERENT list, which is the only way
+        // the read-back inside resetList can disagree with what it asked for.
+        if (CONFIG.cleanupIdReadMismatch && u.endsWith('?$select=Id')) {
+          return jsonResponse(200, { Id: CONFIG.rebindListId });
+        }
+      }
       // Counted even where the read 404s or is refused, because a test arms a
       // rebind by counting the identity reads the probe MAKES.
       if (u.includes('$select=Id,Title,Description')) site.identityReads += 1;
@@ -9480,6 +9497,7 @@ def _run_operator_grant_probe(
         "resetRefused": False,
         "resetNeverClears": False,
         "listDescription": _OPERATOR_OWNERSHIP,
+        "cleanupIdReadMismatch": False,
         "listId": _OPERATOR_LIST_ID,
         "createdListId": _OPERATOR_CREATED_LIST_ID,
         "rebindListId": _OPERATOR_REBOUND_LIST_ID,
@@ -9530,9 +9548,10 @@ def _restored(urls: list[str]) -> bool:
 #: The read that proves the title still resolves to the list this run claimed.
 _IDENTITY_READ = "$select=Id,Title,Description"
 
-#: Every write that cannot be undone by re-running. Each one is addressed by
-#: TITLE, because SharePoint documents no by-Id form for any of them, so each
-#: has to be bracketed by an identity read on both sides.
+#: Every write that cannot be undone by re-running. All but the recycle are
+#: addressed by TITLE, because SharePoint documents no by-Id form for them, so
+#: each has to be bracketed by an identity read on both sides. The recycle is
+#: addressed by the claimed Id and is bracketed as well.
 _DESTRUCTIVE_WRITES = (
     "/recycle",
     "/breakroleinheritance(",
@@ -9545,10 +9564,10 @@ _DESTRUCTIVE_WRITES = (
 def _unbracketed(urls: list[str]) -> list[str]:
     """Destructive writes without an identity read on both sides of them.
 
-    Adjacency, except for the recycle. `resetList` in the shared harness takes
-    a title and reads the list it is about between the proof and the recycle,
-    so the rule there is that an identity read separates it from whatever
-    destructive write came before, and another from whatever comes after.
+    Adjacency, except for the recycle. `resetList` in the shared harness reads
+    the list it is about between the proof and the recycle, so the rule there
+    is that an identity read separates it from whatever destructive write came
+    before, and another from whatever comes after.
     """
     writes = [
         position for position, url in enumerate(urls)
@@ -9574,16 +9593,15 @@ def _unbracketed(urls: list[str]) -> list[str]:
 def test_every_destructive_write_is_bracketed_by_an_identity_read() -> None:
     """A title is not an object.
 
-    `breakroleinheritance`, `removeroleassignment`, `recycle` and
-    `resetroleinheritance` are all addressed by title, and Microsoft documents
-    no by-Id form for any of them. A title rebound between two requests would
-    have this run recycle, break and rewrite the permissions of somebody
-    else's list. The only guard available is the deploy's own `withOwnedList`:
-    prove the title resolves to the claimed list immediately before the write
-    and immediately after it.
+    `breakroleinheritance`, `removeroleassignment` and `resetroleinheritance`
+    are addressed by title, and Microsoft documents no by-Id form for any of
+    them. A title rebound between two requests would have this run break and
+    rewrite the permissions of somebody else's list. The only guard available
+    is the deploy's own `withOwnedList`: prove the title resolves to the
+    claimed list immediately before the write and immediately after it.
 
     CLEANUP is on over a list this probe already owns, so the recycle is one
-    of the writes counted.
+    of the writes counted; it carries the claimed Id as well.
     """
     _rows, urls, _output = _run_operator_grant_probe(cleanup=True, listExists=True)
 
@@ -9635,8 +9653,9 @@ def test_a_title_rebound_before_the_cleanup_recycle_recycles_nothing() -> None:
     the list it lands on.
 
     The claim read is its near-side proof and it is re-made immediately
-    before, because `resetList` is addressed by title and a title match is
-    exactly what an ownership marker exists to distrust.
+    before. The recycle is addressed by the claimed Id, so this abort is not
+    what keeps it off a stranger's list; it is what stops a run whose title no
+    longer resolves to the list it claimed from carrying on regardless.
     """
     rows, urls, _output = _run_operator_grant_probe(
         cleanup=True, listExists=True, rebindAfterIdentityReads=1,
@@ -9650,59 +9669,95 @@ def test_a_title_rebound_before_the_cleanup_recycle_recycles_nothing() -> None:
     assert "Nothing was recycled, reused, broken or written" in fixture["evidence"]
 
 
-@pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_a_title_rebound_after_a_write_leaves_the_restore_writing_nothing() -> None:
-    """The far side of the bracket, and the restore failing closed behind it.
+def _by_id(list_id: str) -> str:
+    """How `resetList` addresses the list it was given an Id for."""
+    return f"web/lists(guid'{list_id}')"
 
-    The title is rebound around the real removal, so the write landed on the
-    claimed list and the bracket after it is what notices. The restore then
-    cannot prove the title is still that list, and its own writes are a
-    safety grant and a reset: sent to a stranger they are the damage this
-    whole bracket exists against. It writes nothing and names the Id, because
-    an operator repairing by hand off the title would go to the wrong list.
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_cleanup_reset_addresses_every_request_by_the_claimed_id() -> None:
+    """The recycle the probe brackets is made by a shared helper, and a
+    bracket around a title-addressed call cannot say which object the call
+    reached.
+
+    Every request `resetList` issues over an Id carries it: the existence
+    read, the item enumeration and the recycle. Nothing it sends may name the
+    title.
+    """
+    _rows, urls, _output = _run_operator_grant_probe(cleanup=True, listExists=True)
+
+    recycles = [url for url in urls if "/recycle" in url]
+    assert len(recycles) == 1, recycles
+    assert _by_id(_OPERATOR_LIST_ID) in recycles[0], recycles
+    reset = [
+        url for url in urls
+        if "/recycle" in url or "/items?" in url or url.endswith("?$select=Id")
+    ]
+    assert len(reset) == 3, reset
+    assert all(_by_id(_OPERATOR_LIST_ID) in url for url in reset), reset
+    assert not [url for url in reset if "getbytitle(" in url], reset
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_recycle_names_the_claimed_id_in_a_run_whose_title_is_rebound() -> None:
+    """The window the bracket alone leaves open.
+
+    The rebind is armed on the identity read that follows the recycle, so this
+    is a run where the title does not stay bound to the list it claimed. The
+    request that recycles carries the claimed Id and is therefore the same
+    request either way, which a title-addressed one would not be.
     """
     _rows, urls, output = _run_operator_grant_probe(
-        rebindAfter=f"removeroleassignment(principalid={_OPERATOR_PRINCIPAL}",
+        cleanup=True, listExists=True, rebindAfterIdentityReads=2,
     )
 
-    # The removal itself went out: this is about what happened afterwards.
-    assert [
-        url for url in urls
-        if "/removeroleassignment(" in url and "42424242" not in url
-    ], urls
-    assert not _restored(urls), f"the reset was sent to a rebound title: {urls}"
-    assert not [
-        url for url in urls if "/addroleassignment(" in url
-    ][1:], "the restore's safety grant was sent to a rebound title"
+    recycles = [url for url in urls if "/recycle" in url]
+    assert len(recycles) == 1, recycles
+    assert _by_id(_OPERATOR_LIST_ID) in recycles[0], recycles
+    assert _OPERATOR_REBOUND_LIST_ID not in recycles[0], recycles
+    assert f"recycled list 'dbmlsp Probe OperatorGrant' (list {_OPERATOR_LIST_ID})" in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_cleanup_id_that_does_not_read_back_as_itself_deletes_nothing() -> None:
+    """Addressing by Id is still a request, and its answer is still read back.
+
+    A read that comes back as another list is the site disagreeing with what
+    was asked for, and every request after it is destructive, so it stops.
+    """
+    _rows, urls, output = _run_operator_grant_probe(
+        cleanup=True, listExists=True, cleanupIdReadMismatch=True,
+    )
+
+    assert not [url for url in urls if "/recycle" in url], urls
+    assert not [url for url in urls if "/items(" in url], urls
     assert any(
         line.startswith("[FAIL] ")
-        and f"no longer proves to be list {_OPERATOR_CREATED_LIST_ID}" in line
-        and "NOTHING was written to it" in line
-        and "going by the Id and not by the title" in line
+        and f"CLEANUP: list {_OPERATOR_LIST_ID} answered as {_OPERATOR_REBOUND_LIST_ID}" in line
+        and "nothing was deleted or recycled" in line
         for line in output.splitlines()
     ), output
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_a_list_created_under_a_title_that_was_rebound_is_not_adopted() -> None:
-    """The window the read-back alone cannot close.
+def test_a_claimed_id_that_is_not_a_guid_is_never_spliced_into_a_url() -> None:
+    """The Id is read off the site and then put in a path.
 
-    The identity every bracket compares against is read back from the title
-    after the create, so a title rebound in between would hand this run a
-    stranger's list carrying a copied marker and every bracket would then
-    agree with it. The Id the create answered with is what closes that, and
-    the run refuses rather than adopting.
+    The probe refuses a list that answers without an Id at all, and an Id that
+    is not a GUID gets past that, so the helper that builds the URL fails
+    closed rather than addressing whatever the malformed path resolves to.
     """
-    rows, urls, _output = _run_operator_grant_probe(rebindAfter="/web/lists")
+    _rows, urls, output = _run_operator_grant_probe(
+        cleanup=True, listExists=True, listId="not-a-guid",
+    )
 
-    fixture = rows["access.list-acl.fixture-scratch-list"]
-    assert fixture["outcome"] == "ABORTED", fixture
-    assert fixture["state"] == "open"
-    assert f"created list {_OPERATOR_CREATED_LIST_ID}" in fixture["evidence"]
-    assert f"now resolves to {_OPERATOR_REBOUND_LIST_ID}" in fixture["evidence"]
-    assert "A marker can be copied" in fixture["evidence"]
-    for forbidden in ("breakroleinheritance", "roleassignment(", "resetroleinheritance"):
-        assert not [url for url in urls if forbidden in url], (forbidden, urls)
+    assert not [url for url in urls if "/recycle" in url], urls
+    assert not [url for url in urls if "lists(guid'" in url], urls
+    assert any(
+        line.startswith("[FAIL] ")
+        and "'not-a-guid' is not a list Id" in line
+        for line in output.splitlines()
+    ), output
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

@@ -112,14 +112,15 @@
  * would reuse it and rewrite its permissions.
  *
  * The marker is not enough on its own, because a replacement can carry a
- * copied Description, and every endpoint here is addressed by title with no
- * by-Id form documented. So the list's Id is captured where it is claimed or
- * created, and every destructive write is bracketed by an identity and marker
- * recheck immediately before and immediately after it, the way `withOwnedList`
- * brackets the deploy's own role-assignment writes in `deploy/_acls.js.j2`. A
- * title rebound mid-run produces a failed run, never a break, a removal or a
- * reset applied to a stranger, and the restore reports the Id rather than the
- * title so a repair by hand goes to the right list.
+ * copied Description. So the list's Id is captured where it is claimed or
+ * created, the CLEANUP recycle addresses that Id rather than the title, and
+ * every write that has no documented by-Id form is bracketed by an identity
+ * and marker recheck immediately before and immediately after it, the way
+ * `withOwnedList` brackets the deploy's role-assignment writes in
+ * `deploy/_acls.js.j2`. A title rebound mid-run produces a failed run, never
+ * a break, a removal or a reset applied to a stranger, and the restore
+ * reports the Id rather than the title so a repair by hand goes to the right
+ * list.
  *
  * RUN AS A SITE COLLECTION ADMINISTRATOR, and the probe checks rather than
  * trusts. It breaks role inheritance with copyRoleAssignments=false and then
@@ -446,12 +447,13 @@
   );
 
   // ---- IDENTITY, which every destructive write below is bracketed by ----
-  // Every endpoint this probe writes to is addressed by TITLE, and Microsoft
-  // documents no by-Id form for breakroleinheritance, removeroleassignment,
-  // recycle or resetroleinheritance. A title is not an object: it can be
-  // rebound between two requests, and this run then deletes, breaks and
-  // rewrites the permissions of a list somebody else's work depends on. What
-  // is available is the deploy's own answer, `withOwnedList` in
+  // The role-assignment writes this probe makes are addressed by TITLE, and
+  // Microsoft documents no by-Id form for breakroleinheritance,
+  // removeroleassignment or resetroleinheritance; the CLEANUP recycle is the
+  // one write here with a documented by-Id form, and it takes it. A title is
+  // not an object: it can be rebound between two requests, and this run then
+  // breaks and rewrites the permissions of a list somebody else's work
+  // depends on. What is available is the deploy's own answer, `withOwnedList` in
   // deploy/_acls.js.j2: prove the title resolves to the claimed list
   // immediately before the write, and prove it still does immediately after.
   // A rebind can then only produce a failed run.
@@ -598,9 +600,8 @@
   // probe's exact marker, and a read that fails for any reason other than
   // absence establishes nothing and licenses neither path.
   //
-  // This read is also the CLEANUP recycle's identity bracket on the near
-  // side, which is why it takes the Id: `resetList` recycles by title, and
-  // the identity read after the create or the reuse below is the far side.
+  // This read is also what the CLEANUP recycle is addressed by, which is why
+  // it takes the Id, and its identity bracket on the near side.
   const claimed = await spGet(`${listPath}?$select=Id,Title,Description`);
   if (!readFailed(claimed) && claimed.body.Description !== OWNERSHIP) {
     record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'ABORTED',
@@ -632,11 +633,10 @@
   }
   ownedId = readFailed(claimed) ? null : guidOf(claimed.body.Id);
 
-  // The CLEANUP recycle is destructive and addressed by title like every
-  // other write here, so the claim is re-proved immediately before it. Its
-  // far side is the identity read after the create below: a recycle that
-  // worked means the title stops resolving, which `withOwnedList`'s second
-  // proof cannot express.
+  // The CLEANUP recycle is destructive and every request it makes is
+  // addressed by the claimed Id, so the claim is re-proved immediately
+  // before it: a title that no longer resolves to that list is a rebind
+  // this run stops at rather than a list it recycles by Id anyway.
   if (CLEANUP && ownedId !== null) {
     try {
       await proveOwned(`before the CLEANUP recycle of '${LIST}'`);
@@ -646,7 +646,9 @@
       return report();
     }
   }
-  await resetList(LIST);
+  // Skipped when the title was free, because there is nothing this run
+  // claimed to reset and the title alone is what resetList would fall back to.
+  if (ownedId !== null) await resetList(LIST, ownedId);
   let digest = await getDigest();
 
   // ---- fixture-scratch-list -------------------------------------------

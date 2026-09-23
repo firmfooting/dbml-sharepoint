@@ -8,7 +8,7 @@
  *   unmeasured. Does either one create, hold a value, project through a view
  *   and take an index the way the list-to-list shape does?
  *
- * REVISION: 9a51867b
+ * REVISION: d5c49f87
  *
  * WHY: `analysis/joins.py` counts every lookup the same way and the deploy
  * emits every lookup the same way, whichever container is at each end. A
@@ -304,15 +304,44 @@
   // ---- Pre-run reset --------------------------------------------------
   // Call this before bootstrapping. A no-op unless CLEANUP is on, so the
   // probe body reads the same either way.
-  const resetList = async (title) => {
+  //
+  // expectedId is OPTIONAL because most callers have no claimed Id to bracket
+  // with, and the behaviour without one is unchanged. Supply one and every
+  // request below addresses that list Id instead of the title, so a title
+  // rebound mid-run cannot redirect the deletes or the recycle onto a list
+  // this run never owned. Microsoft documents `web/lists(guid'<id>')` as the
+  // list resource, with items and other members hanging off it the way they
+  // hang off `getbytitle` (Working with lists and list items with REST, and
+  // the CSOM/REST API index, both checked 2026-09-23).
+  const resetList = async (title, expectedId = null) => {
     if (!CLEANUP) return false;
     if (!ALLOW_WRITES) {
       log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
       return false;
     }
-    const found = await spGet(`web/lists/getbytitle('${title}')`);
+    // An Id that is not a GUID would be spliced into a URL that addresses
+    // something else, so it fails closed instead of being sent.
+    const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (expectedId !== null && !GUID.test(String(expectedId))) {
+      log('FAIL', `CLEANUP: '${expectedId}' is not a list Id, so nothing was deleted or `
+                  + `recycled under '${title}'.`);
+      return false;
+    }
+    const listPath = expectedId === null
+      ? `web/lists/getbytitle('${title}')`
+      : `web/lists(guid'${expectedId}')`;
+    const found = await spGet(expectedId === null ? listPath : `${listPath}?$select=Id`);
     if (!found.ok) {
       log('INFO', `CLEANUP: no list named '${title}' to remove.`);
+      return false;
+    }
+    // Addressing by Id still gets read back, because every destructive
+    // request below rests on this one answer.
+    const answeredId = found.body && found.body.Id
+      ? String(found.body.Id).replace(/[{}]/g, '').toLowerCase() : null;
+    if (expectedId !== null && answeredId !== String(expectedId).toLowerCase()) {
+      log('FAIL', `CLEANUP: list ${expectedId} answered as ${answeredId}, so nothing was `
+                  + `deleted or recycled under '${title}'.`);
       return false;
     }
     log('INFO', `CLEANUP: removing list '${title}' and its items.`);
@@ -322,12 +351,11 @@
     // removed. A locked or no-delete list would otherwise leave rows from
     // a previous run answering this run's questions.
     let digest = await getDigest();
-    const items = await spGet(
-      `web/lists/getbytitle('${title}')/items?$select=Id&$top=5000`);
+    const items = await spGet(`${listPath}/items?$select=Id&$top=5000`);
     const rows = (items.ok && items.body && items.body.value) || [];
     for (const row of rows) {
       digest = await getDigest();
-      await spPost(`web/lists/getbytitle('${title}')/items(${row.Id})`, {}, digest,
+      await spPost(`${listPath}/items(${row.Id})`, {}, digest,
                    { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
     }
     if (rows.length) log('INFO', `CLEANUP: deleted ${rows.length} item(s).`);
@@ -336,11 +364,14 @@
     }
 
     digest = await getDigest();
-    const gone = await spPost(`web/lists/getbytitle('${title}')/recycle`, {}, digest);
+    const gone = await spPost(`${listPath}/recycle`, {}, digest);
+    // The Id is named where there is one, because a repair by hand off the
+    // title would go to whatever the title resolves to now.
+    const which = expectedId === null ? `'${title}'` : `'${title}' (list ${expectedId})`;
     if (gone.ok) {
-      log('OK', `CLEANUP: recycled list '${title}'. It is restorable from the recycle bin.`);
+      log('OK', `CLEANUP: recycled list ${which}. It is restorable from the recycle bin.`);
     } else {
-      log('FAIL', `CLEANUP: could not recycle '${title}': HTTP ${gone.status} ${gone.text.slice(0, 200)}`);
+      log('FAIL', `CLEANUP: could not recycle ${which}: HTTP ${gone.status} ${gone.text.slice(0, 200)}`);
     }
     return gone.ok;
   };
@@ -421,7 +452,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 9a51867b. Quote this when reporting results.');
+  log('INFO', 'probe revision d5c49f87. Quote this when reporting results.');
 
   // Three containers, never two. See the acyclic finding in the header.
   const LIB = 'dbmlsp Probe XLookup Lib';
