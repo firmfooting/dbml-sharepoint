@@ -75,11 +75,11 @@ the five lines are written. A check that a view answers names the view.
 | F13 | A received document has at least one file in **SEAM_Artefact** whose **Request** points at it | A formula cannot count rows on another list |
 | F14 | **Resolve by** and **Resolved on** are on or after **Raised on**; **Due on** and **Answered on** are on or after **Asked on** | A formula compares a column with a literal, not with another column |
 | F15 | Every completed interview answers all eight questions; a refusal or a don't-know is written as the answer | Multi-line text cannot be a formula operand |
-| F16 | Every completed interview has its notes in **SEAM_Artefact**, picked in **Notes file** | A formula cannot read a lookup |
-| F17 | Every completed interview's answers have been transcribed into evidence rows | A relationship the register does not model |
+| F16 | Every completed interview has its notes in **SEAM_Artefact**, picked in **Notes file**, and the file picked has **Type** *Interview notes* | A formula cannot read a lookup |
+| F17 | Every answer in a completed interview that makes a claim about a service has an evidence row against that service, bearing on the column the claim is about | A relationship the register does not model |
 | F18 | A weekly update's **Title** names the same week as its **Week** | A formula cannot build text from a number and compare it |
 | F19 | No row names a person | A reading check. Roles, never names |
-| F20 | A *Disputed owner* or *Disputed support* seam picks rows in **Evidence in conflict** from at least two different known **Source side** values, one for each side of the dispute | A formula cannot count a multi-value lookup |
+| F20 | A *Disputed support* seam picks rows in **Evidence in conflict** from at least two different known **Source side** values that bear on *Support*; a *Disputed owner* seam does the same on *Run by* or on *Decided by* | A formula cannot count a multi-value lookup |
 | F21 | No two files in **SEAM_Artefact** share a **Title**, because the pickers show nothing else | Uniqueness on a library column has not been measured |
 | F22 | By the week 6 hand-over, every seam not *Resolved* has a **Resolve owner**. Before then **Open seams** shows the ones without | An owner is only required once a seam is *Escalated*, and the deadline is a date in the exercise, not a status |
 

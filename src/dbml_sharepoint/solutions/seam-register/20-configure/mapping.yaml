@@ -1366,6 +1366,42 @@ demo_items:
         SupportsField: "Single person"
         Contradicts: false
         EvidenceDate: "today-20"
+    - key: evd-accounts-support
+      values:
+        Title: "[DEMO] ICT technician interview: who fixes the script"
+        Artefact: { demo_ref: art-interview-accounts }
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: Interview
+        Source: "ICT technician (accounts script), interview"
+        SourceSide: Us
+        Statement: "Demo row. Nobody. When the script breaks I fix it myself."
+        SupportsField: "Support"
+        Contradicts: false
+        EvidenceDate: "today-20"
+    - key: evd-accounts-decides
+      values:
+        Title: "[DEMO] ICT technician interview: who decides changes"
+        Artefact: { demo_ref: art-interview-accounts }
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: Interview
+        Source: "ICT technician (accounts script), interview"
+        SourceSide: Us
+        Statement: "Demo row. The ICT manager."
+        SupportsField: "Decided by"
+        Contradicts: false
+        EvidenceDate: "today-20"
+    - key: evd-accounts-saturday
+      values:
+        Title: "[DEMO] ICT technician interview: the Saturday-night call"
+        Artefact: { demo_ref: art-interview-accounts }
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: Interview
+        Source: "ICT technician (accounts script), interview"
+        SourceSide: Us
+        Statement: "Demo row. Nobody. It waits until Monday."
+        SupportsField: "Out of hours"
+        Contradicts: false
+        EvidenceDate: "today-20"
     - key: evd-accounts-tickets
       values:
         Title: "[DEMO] Ticket export, accounts category"
@@ -1632,12 +1668,12 @@ demo_items:
         InterviewDate: "today-20"
         DurationMin: 30
         Q1Runs: "Demo row. The account creation script."
-        Q2Uses: "Demo row. The HR feed the script reads, which HR runs."
+        Q2Uses: "Demo row. Nothing else; the script needs only our own server."
         Q3Call: "Demo row. Nobody. When the script breaks I fix it myself."
         Q4Decides: "Demo row. The ICT manager."
         Q5AskProvider: "Demo row. Nothing for the script; it runs on our own server."
         Q6AskedProvider: "Demo row. Nothing about the script."
-        Q7Auditor: "Demo row. The script. Nobody else could run it and there is no document."
+        Q7Auditor: "Demo row. The script. Nobody else could run it."
         Q8Saturday: "Demo row. Nobody. It waits until Monday."
         FollowUps: "Demo row. Send the script location and the last run log by Friday."
     - key: int-provider-lead

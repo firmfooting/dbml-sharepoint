@@ -222,7 +222,11 @@ def _unanswered_question(seed: Seed) -> Offenders:
 
 
 def _completed_without_notes(seed: Seed) -> Offenders:
-    return {("Interview", key) for key, i in _completed(seed).items() if _blank(i.get("NotesFile"))}
+    return {
+        ("Interview", key) for key, i in _completed(seed).items()
+        if _ref(i.get("NotesFile")) is None
+        or seed["Artefact"][_ref(i["NotesFile"]) or ""]["ArtefactType"] != "Interview notes"
+    }
 
 
 def _title_names_another_week(seed: Seed) -> Offenders:
@@ -234,14 +238,23 @@ def _title_names_another_week(seed: Seed) -> Offenders:
     return bad
 
 
+# The Bears on columns each dispute type is about.
+DISPUTED_FIELDS = {"Disputed support": {"Support"}, "Disputed owner": {"Run by", "Decided by"}}
+
+
 def _dispute_without_both_sides(seed: Seed) -> Offenders:
     bad: Offenders = set()
     for key, seam in seed["Seam"].items():
-        if seam["SeamType"] not in {"Disputed owner", "Disputed support"}:
+        fields = DISPUTED_FIELDS.get(seam["SeamType"])
+        if fields is None:
             continue
         picked = [seed["Evidence"][ref] for ref in _refs(seam.get("EvidenceInConflict"))]
         # Unknown names no side, so it cannot be one side of a dispute.
-        if len({e["SourceSide"] for e in picked} - {"Unknown"}) < 2:
+        sides = {
+            field: {e["SourceSide"] for e in picked if e["SupportsField"] == field} - {"Unknown"}
+            for field in fields
+        }
+        if not any(len(found) >= 2 for found in sides.values()):
             bad.add(("Seam", key))
     return bad
 
