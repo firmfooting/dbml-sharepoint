@@ -549,3 +549,146 @@ def test_datetime_sentinel_voids_the_time_of_day_rows_on_a_reused_date_only_colu
     assert not [r for r in sent if r["path"].endswith("/getitems") or r["path"].endswith("/views")]
     # The rows that do not rest on ProbeWhen's time of day still answer.
     assert rows["formula.validation.doubled-quote-literal-accepted"]["outcome"] == "ACCEPTED"
+
+
+#: Two document libraries, the fixture and the small shape control. The big
+#: one refuses every filter but Id with the threshold error a live run gave.
+_THRESHOLD_MOCK = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+    const BIG = 'dbmlsp Probe LibIdxThreshold';
+    const SMALL = 'dbmlsp Probe LibIdxThreshold Small';
+    const target = {
+      [BIG]: { Id: 1, Title: null, Created: '2026-09-20T01:00:00Z',
+               Modified: '2026-09-20T01:00:00Z', AuthorId: 11, EditorId: 11,
+               TidxUnindexedText: null, TidxUnindexedPersonId: null },
+      [SMALL]: { Id: 1, Title: null, Created: '2026-09-20T02:00:00Z',
+                 Modified: '2026-09-20T02:00:00Z', AuthorId: 11, EditorId: 11,
+                 TidxUnindexedText: null, TidxUnindexedPersonId: null },
+    };
+    const LIB = /web\\/lists\\/getbytitle\\('([^']+)'\\)/;
+    const refusedThreshold = () => jsonResponse(500, { 'odata.error': {
+      code: '-2147024860, Microsoft.SharePoint.SPQueryThrottledException',
+      message: { lang: 'en-US', value: 'The attempted operation is prohibited because it '
+        + 'exceeds the list view threshold.' } } });
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const method = opts.method || 'GET';
+      const verb = (opts.headers || {})['X-HTTP-Method'] || method;
+      const raw = opts.body === undefined ? '' : String(opts.body);
+      const path = decodeURIComponent(u.split('/_api/')[1] || '');
+      SENT.push({ verb, path, body: raw });
+
+      if (path.startsWith('contextinfo')) {
+        return digestResponse();
+      }
+      if (path.includes('/Files/add(')) return jsonResponse(200, { Name: 'uploaded' });
+      if (path.startsWith('web/GetFileByServerRelativeUrl')) {
+        const lib = path.includes('/LibIdxThresholdSmall/') ? SMALL : BIG;
+        return jsonResponse(200, target[lib]);
+      }
+      const lib = LIB.exec(path);
+      if (!lib) return jsonResponse(404, { 'odata.error': { message: { value: 'unexpected' } } });
+      const title = lib[1];
+      const rest = path.slice(lib.index + lib[0].length);
+      if (rest.startsWith('/fields/getbyinternalnameortitle')) {
+        return jsonResponse(200, { InternalName: 'probe', TypeAsString: 'Text',
+                                   Indexed: false, AutoIndexed: false });
+      }
+      if (rest.startsWith('/RootFolder')) {
+        return jsonResponse(200, { ServerRelativeUrl: title === BIG
+          ? '/sites/test/LibIdxThreshold' : '/sites/test/LibIdxThresholdSmall' });
+      }
+      if (rest.startsWith('/items(')) {
+        Object.assign(target[title], JSON.parse(raw));
+        return jsonResponse(204, {});
+      }
+      if (rest.startsWith('/items')) {
+        if (rest.includes('$orderby=Id desc')) {
+          if (CONFIG.resumeStatus) return throttled();
+          const newest = title === BIG ? CONFIG.newestBig : 6;
+          return jsonResponse(200, { value: [
+            { Id: newest, FileLeafRef: `dbmlsp-tidx-${String(newest).padStart(5, '0')}.txt` }] });
+        }
+        const filter = /\\$filter=(.*)$/.exec(rest);
+        if (!filter) {
+          return jsonResponse(200, { value: [1, 2, 3, 4, 5, 6].map((Id) => ({ Id })) });
+        }
+        if (title === BIG && !filter[1].startsWith('Id eq')) return refusedThreshold();
+        return jsonResponse(200, { value: / eq 0$/.test(filter[1]) ? [] : [{ Id: 1 }] });
+      }
+      if (rest.startsWith('?$select=ItemCount')) {
+        if (CONFIG.countStatus) return throttled();
+        return jsonResponse(200, { ItemCount: CONFIG.itemCount });
+      }
+      return jsonResponse(200, { Id: `list-${title}`, Title: title, BaseTemplate: 101 });
+    };
+""")
+
+_THRESHOLD_HEALTHY: dict[str, Any] = {
+    "itemCount": 5001, "newestBig": 5001, "countStatus": None, "resumeStatus": None,
+}
+_COUNT = "library.index.fixture-file-count"
+_COUNT_DEPENDENTS = {
+    "library.index.fixture-target-seeded",
+    "library.index.control-small-library-shapes",
+    "library.index.control-threshold-id-served",
+    "library.index.control-unindexed-refused",
+    "library.index.control-unindexed-person-refused",
+    "library.index.threshold-filter-title",
+    "library.index.threshold-filter-name",
+    "library.index.threshold-filter-created",
+    "library.index.threshold-filter-modified",
+    "library.index.threshold-filter-author",
+    "library.index.threshold-filter-editor",
+}
+_BUILD = ("CONFIRMED", "ALLOW_WRITES", "BUILD_FIXTURE")
+
+
+def _filters(sent: list[dict[str, str]]) -> list[dict[str, str]]:
+    return [r for r in sent if "$filter=" in r["path"]]
+
+
+@pytest.mark.parametrize("gates", [("CONFIRMED", "ALLOW_WRITES"), _BUILD], ids=["measure", "build"])
+def test_threshold_measures_on_a_count_it_read(gates: tuple[str, ...]) -> None:
+    rows, sent = _run_probe(_THRESHOLD_MOCK, _THRESHOLD_HEALTHY,
+                            "library-index-threshold-probe.js", gates)
+
+    assert rows[_COUNT]["outcome"] == "PASS", rows[_COUNT]
+    assert "ItemCount=5001" in rows[_COUNT]["evidence"]
+    assert rows["library.index.control-threshold-id-served"]["outcome"].startswith("SERVED")
+    assert rows["library.index.threshold-filter-title"]["outcome"] == "REFUSED (threshold)"
+    assert not _void_ids(rows)
+    assert _filters(sent)
+
+
+def test_threshold_counts_from_item_count_not_from_the_newest_file_name() -> None:
+    """The newest file reads 05001, but only a read count says 5,001 files are there."""
+    rows, sent = _run_probe(_THRESHOLD_MOCK, {**_THRESHOLD_HEALTHY, "itemCount": 4000},
+                            "library-index-threshold-probe.js", _BUILD)
+
+    assert rows[_COUNT]["outcome"] == "SHORT", rows[_COUNT]
+    assert "ItemCount reads 4000" in rows[_COUNT]["evidence"]
+    assert not _filters(sent)
+
+
+def test_threshold_voids_the_rows_when_the_count_read_is_throttled() -> None:
+    rows, sent = _run_probe(_THRESHOLD_MOCK, {**_THRESHOLD_HEALTHY, "countStatus": 429},
+                            "library-index-threshold-probe.js")
+
+    assert rows[_COUNT]["outcome"] == "FAIL", rows[_COUNT]
+    assert "the read was throttled (HTTP 429)" in rows[_COUNT]["evidence"]
+    assert _void_ids(rows) == _COUNT_DEPENDENTS
+    assert not _filters(sent)
+
+
+def test_threshold_voids_the_rows_when_the_resume_read_is_throttled() -> None:
+    """A throttled resume read used to fall back as if the library held nothing past it."""
+    rows, sent = _run_probe(_THRESHOLD_MOCK, {**_THRESHOLD_HEALTHY, "resumeStatus": 429},
+                            "library-index-threshold-probe.js", _BUILD)
+
+    assert rows[_COUNT]["outcome"] == "FAIL", rows[_COUNT]
+    assert "the resume read was throttled (HTTP 429)" in rows[_COUNT]["evidence"]
+    assert _void_ids(rows) == _COUNT_DEPENDENTS
+    assert not [r for r in sent if "/Files/add(" in r["path"]]
+    assert not _filters(sent)

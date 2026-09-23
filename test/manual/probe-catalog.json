@@ -3481,7 +3481,9 @@
             },
             {
               "id": "library.index.control-small-library-shapes",
-              "depends_on": []
+              "depends_on": [
+                "library.index.fixture-file-count"
+              ]
             },
             {
               "id": "library.index.control-threshold-id-served",
@@ -3574,7 +3576,8 @@
             "library.index.control-small-library-shapes",
             "library.index.control-threshold-id-served",
             "library.index.control-unindexed-refused",
-            "library.index.control-unindexed-person-refused"
+            "library.index.control-unindexed-person-refused",
+            "library.index.fixture-file-count"
           ],
           "depends_on": []
         }
