@@ -261,10 +261,7 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     // there. Exposed as the array itself so a test can arm it mid-run.
     const ABSENT_LIST_TITLES = [];
     globalThis.__absentListTitles = ABSENT_LIST_TITLES;
-    // Lists whose inheritance a list-level breakroleinheritance POST has
-    // broken. Every list starts inheriting, which is what the catch-all's
-    // empty set used to stand for; the read is an entity read, so it answers
-    // from the same store the list probe below does.
+    // Lists a breakroleinheritance POST has made unique; all start inheriting.
     const UNIQUE_ROLE_LISTS = new Set();
     let sabotageArmed = false;
     const sabotageReads = Object.create(null);

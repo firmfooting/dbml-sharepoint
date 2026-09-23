@@ -175,8 +175,9 @@ def _answer(payload: Any, url: str, *, method: str = "GET",
         + "(async () => {\n"
         f"  const r = await fetch({json.dumps(url)}, {{ method: {json.dumps(method)},\n"
         f"    headers: {{ Accept: {json.dumps(accept)} }} }});\n"
+        "  const text = await r.text();\n"
         "  console.log('ANSWER' + JSON.stringify({ ok: r.ok, status: r.status,\n"
-        "    body: JSON.parse(await r.text()) }));\n"
+        "    body: text ? JSON.parse(text) : null }));\n"
         "})();\n"
     )
     line = next(ln for ln in out.splitlines() if ln.startswith("ANSWER"))
@@ -218,8 +219,10 @@ def test_an_absent_field_or_view_by_name_answers_the_absent_400(url: str) -> Non
 
 
 def test_an_absent_group_answers_404() -> None:
-    """group-description-probe.js's control requires exactly this 404."""
-    assert _answer(_EMPTY, "/_api/web/sitegroups/getbyname('Owners')?$select=Id")["status"] == 404
+    """group-description-probe.js's control requires this 404; its body was never recorded."""
+    answer = _answer(_EMPTY, "/_api/web/sitegroups/getbyname('Owners')?$select=Id")
+    assert answer["status"] == 404
+    assert answer["body"] is None
 
 
 @pytest.mark.parametrize("url", [

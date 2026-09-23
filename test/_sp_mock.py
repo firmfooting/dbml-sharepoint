@@ -210,8 +210,8 @@ PRELUDE = r"""
     { at: /\/views\/getbytitle\('((?:[^']|'')*)'\)$/i, status: 400,
       code: '-2147024809, System.ArgumentException',
       value: () => 'The specified view is invalid.' },
-    { at: /\/sitegroups\/getbyname\('((?:[^']|'')*)'\)$/i, status: 404,
-      value: (name) => `Group '${name}' not found.` },
+    // Only the status is measured for a group, so its body stays empty rather than invented.
+    { at: /\/sitegroups\/getbyname\('((?:[^']|'')*)'\)$/i, status: 404, value: null },
   ];
   const isEmptySet = (body) => body !== null && typeof body === 'object' && (
     (Array.isArray(body.value) && body.value.length === 0)
@@ -246,12 +246,15 @@ PRELUDE = r"""
     }
     const name = decode(path.match(kind.at)[1]).replace(/''/g, "'");
     const site = path.split('/_api')[0];
-    const message = { lang: 'en-US', value: kind.value(name, site) };
-    const error = kind.code ? { code: kind.code, message } : { message };
     const headers = (opts && opts.headers) || {};
     const accept = String(headers.Accept || headers.accept || '');
-    const answer = JSON.stringify(accept.includes('odata=verbose')
-      ? { error } : { 'odata.error': error });
+    let answer = '';
+    if (kind.value) {
+      const message = { lang: 'en-US', value: kind.value(name, site) };
+      const error = kind.code ? { code: kind.code, message } : { message };
+      const verbose = accept.includes('odata=verbose');
+      answer = JSON.stringify(verbose ? { error } : { 'odata.error': error });
+    }
     return {
       ok: false, status: kind.status, url: String(url),
       headers: { get: () => null },
