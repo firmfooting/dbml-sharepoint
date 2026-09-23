@@ -653,10 +653,10 @@
 
   // ---- fixture-scratch-list -------------------------------------------
   // The Id the create answered with, when it answers with one. It is what the
-  // read-back below is CHECKED against, so a title rebound between the create
-  // and that read cannot hand this run a stranger's list carrying a copied
-  // marker. What a list POST returns is not measured here, so its absence is
-  // reported rather than fatal.
+  // read-back below is CHECKED against on the create path, so a title rebound
+  // between the create and that read cannot hand this run a stranger's list
+  // carrying a copied marker. What a list POST returns is not measured here,
+  // so its absence is reported rather than fatal.
   let createdId = null;
   const existing = await spGet(`${listPath}?$select=Title`);
   if (!existing.ok) {
@@ -687,12 +687,26 @@
            + `its writes against: HTTP ${owned.status}. Nothing was broken or written.`);
     return report();
   }
-  if (createdId !== null && guidOf(owned.body.Id) !== createdId) {
+  // The read-back has to match whichever Id THIS RUN claimed: the create's
+  // answer where it made the list, the claim read's where it reused one.
+  // Checking only the create left the reuse path overwriting its claim with
+  // whatever the title resolved to.
+  const claimedId = existing.ok ? ownedId : createdId;
+  if (claimedId !== null && guidOf(owned.body.Id) !== claimedId) {
     record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'ABORTED',
-           `this run created list ${createdId} and the title '${LIST}' now resolves to `
+           `this run claimed list ${claimedId} and the title '${LIST}' now resolves to `
            + `${guidOf(owned.body.Id)}, carrying this probe's marker. A marker can be copied, `
-           + 'so the title was rebound between the create and the read-back. Nothing was '
+           + 'so the title was rebound between the claim and the read-back. Nothing was '
            + 'broken or written.');
+    return report();
+  }
+  // Reuse means the claim read found a list, so reuse with nothing claimed is
+  // a list that appeared under a title this run read as free.
+  if (existing.ok && claimedId === null) {
+    record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'ABORTED',
+           `the title '${LIST}' was free when this run read it and now resolves to `
+           + `${guidOf(owned.body.Id)} carrying this probe's marker, so it was rebound and `
+           + 'this run claims no list under it. Nothing was broken or written.');
     return report();
   }
   ownedId = guidOf(owned.body.Id);

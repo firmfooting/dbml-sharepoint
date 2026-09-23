@@ -9226,6 +9226,12 @@ _OPERATOR_HARNESS = textwrap.dedent("""
       if (CONFIG.ownershipReadRefused && u.includes('Description')) {
         return jsonResponse(500, { error: 'list read refused' });
       }
+      // A list appearing under a title this run has already read as free,
+      // between the claim read and the reuse check that follows it.
+      if (CONFIG.listAppearsAfterClaim && !site.listExists && u.endsWith('$select=Title')) {
+        site.listExists = true;
+        site.listId = CONFIG.rebindListId;
+      }
       if (!site.listExists) return jsonResponse(404, { error: 'list not found' });
 
       const removal = REMOVE.exec(u);
@@ -9498,6 +9504,7 @@ def _run_operator_grant_probe(
         "resetNeverClears": False,
         "listDescription": _OPERATOR_OWNERSHIP,
         "cleanupIdReadMismatch": False,
+        "listAppearsAfterClaim": False,
         "listId": _OPERATOR_LIST_ID,
         "createdListId": _OPERATOR_CREATED_LIST_ID,
         "rebindListId": _OPERATOR_REBOUND_LIST_ID,
@@ -9758,6 +9765,105 @@ def test_a_claimed_id_that_is_not_a_guid_is_never_spliced_into_a_url() -> None:
         and "'not-a-guid' is not a list Id" in line
         for line in output.splitlines()
     ), output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_reused_list_rebound_before_the_read_back_is_not_adopted() -> None:
+    """The reuse path claims an Id too, and the read-back has to match it.
+
+    No list is created on this path, so the cross-check against the create
+    response is skipped, and the read-back used to overwrite the claim with
+    whatever the title resolved to. A replacement carrying a copied marker
+    would then be broken and rewritten as though this run owned it.
+    """
+    rows, urls, _output = _run_operator_grant_probe(
+        listExists=True, rebindAfterIdentityReads=1,
+    )
+
+    fixture = rows["access.list-acl.fixture-scratch-list"]
+    assert fixture["outcome"] == "ABORTED", fixture
+    assert fixture["state"] == "open"
+    assert f"claimed list {_OPERATOR_LIST_ID}" in fixture["evidence"]
+    assert f"now resolves to {_OPERATOR_REBOUND_LIST_ID}" in fixture["evidence"]
+    assert "A marker can be copied" in fixture["evidence"]
+    for forbidden in ("breakroleinheritance", "roleassignment(", "resetroleinheritance"):
+        assert not [url for url in urls if forbidden in url], (forbidden, urls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_that_appears_under_a_free_title_is_not_adopted() -> None:
+    """Reuse with nothing claimed is not reuse.
+
+    The claim read found the title free, so this run holds no Id for it, and a
+    list answering the reuse check a moment later is one that appeared in
+    between. There is nothing to compare it against, so it is refused rather
+    than adopted on its marker alone.
+    """
+    rows, urls, _output = _run_operator_grant_probe(listAppearsAfterClaim=True)
+
+    fixture = rows["access.list-acl.fixture-scratch-list"]
+    assert fixture["outcome"] == "ABORTED", fixture
+    assert fixture["state"] == "open"
+    assert "was free when this run read it" in fixture["evidence"]
+    assert f"now resolves to {_OPERATOR_REBOUND_LIST_ID}" in fixture["evidence"]
+    assert "Nothing was broken or written" in fixture["evidence"]
+    for forbidden in ("breakroleinheritance", "roleassignment(", "resetroleinheritance"):
+        assert not [url for url in urls if forbidden in url], (forbidden, urls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_title_rebound_after_a_write_leaves_the_restore_writing_nothing() -> None:
+    """The far side of the bracket, and the restore failing closed behind it.
+
+    The title is rebound around the real removal, so the write landed on the
+    claimed list and the bracket after it is what notices. The restore then
+    cannot prove the title is still that list, and its own writes are a
+    safety grant and a reset: sent to a stranger they are the damage this
+    whole bracket exists against. It writes nothing and names the Id, because
+    an operator repairing by hand off the title would go to the wrong list.
+    """
+    _rows, urls, output = _run_operator_grant_probe(
+        rebindAfter=f"removeroleassignment(principalid={_OPERATOR_PRINCIPAL}",
+    )
+
+    # The removal itself went out: this is about what happened afterwards.
+    assert [
+        url for url in urls
+        if "/removeroleassignment(" in url and "42424242" not in url
+    ], urls
+    assert not _restored(urls), f"the reset was sent to a rebound title: {urls}"
+    assert not [
+        url for url in urls if "/addroleassignment(" in url
+    ][1:], "the restore's safety grant was sent to a rebound title"
+    assert any(
+        line.startswith("[FAIL] ")
+        and f"no longer proves to be list {_OPERATOR_CREATED_LIST_ID}" in line
+        and "NOTHING was written to it" in line
+        and "going by the Id and not by the title" in line
+        for line in output.splitlines()
+    ), output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_created_under_a_title_that_was_rebound_is_not_adopted() -> None:
+    """The window the read-back alone cannot close.
+
+    The identity every bracket compares against is read back from the title
+    after the create, so a title rebound in between would hand this run a
+    stranger's list carrying a copied marker and every bracket would then
+    agree with it. The Id the create answered with is what closes that, and
+    the run refuses rather than adopting.
+    """
+    rows, urls, _output = _run_operator_grant_probe(rebindAfter="/web/lists")
+
+    fixture = rows["access.list-acl.fixture-scratch-list"]
+    assert fixture["outcome"] == "ABORTED", fixture
+    assert fixture["state"] == "open"
+    assert f"claimed list {_OPERATOR_CREATED_LIST_ID}" in fixture["evidence"]
+    assert f"now resolves to {_OPERATOR_REBOUND_LIST_ID}" in fixture["evidence"]
+    assert "A marker can be copied" in fixture["evidence"]
+    for forbidden in ("breakroleinheritance", "roleassignment(", "resetroleinheritance"):
+        assert not [url for url in urls if forbidden in url], (forbidden, urls)
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
