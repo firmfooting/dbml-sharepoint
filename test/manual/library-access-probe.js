@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY ACCESS SURFACE
  *
- * REVISION: 8127b463
+ * REVISION: 23eb6470
  *
  * ONE QUESTION:
  *   Does the permission model of a document library diverge from a generic list?
@@ -314,8 +314,64 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
+  // Shared observation vocabulary v1: how a probe says "this read did not
+  // establish what it was supposed to".
+  //
+  // This is the NOT ESTABLISHED head from _probe_harness.js.j2 reached from
+  // the READ side, not a second vocabulary beside it. Everything here ends in
+  // record(id, question, 'NOT ESTABLISHED', why), which stateFor() already
+  // classifies `open`.
+  //
+  // A SHAPE RATHER THAN A CONVENTION, because the failure it exists against is
+  // a row recorded OBSERVED from a field nothing ever read. A reading is
+  // either established, carrying a value every field of which was read, or
+  // unestablished, carrying the reason. There is no third shape and no way to
+  // the value except mustRead(), so an observation cannot reach a partial one
+  // by forgetting a check.
+  class Unestablished extends Error {}
+  const established = (value) => ({ established: true, value, why: null });
+  const unestablished = (why) => ({ established: false, value: null, why });
+  const mustRead = (reading) => {
+    if (!reading.established) throw new Unestablished(reading.why);
+    return reading.value;
+  };
+  // A field the claim RESTS on, checked where it is read rather than where it
+  // is reported.
+  const mustCarry = (ok, what) => {
+    if (!ok) throw new Unestablished(what);
+  };
+  // What came back, never what it said: a principal's Title is somebody's
+  // display name and a transcript gets pasted into a pull request.
+  const shapeOf = (value) => {
+    if (value === null) return 'null';
+    if (Array.isArray(value)) return `an array of ${value.length}`;
+    if (typeof value === 'string') return `a string of ${value.length} char(s)`;
+    return typeof value;
+  };
+  // One row, from a body that may fail to establish it at any depth. A shape
+  // nobody predicted is a measurement of this tenant and never a reason to
+  // abort the questions after it, so a throw inside `body` is RECORDED here
+  // rather than propagated. `body` returns the evidence for an OBSERVED row,
+  // or { outcome, evidence, state } for any other head.
+  const observe = async (id, question, body) => {
+    let found;
+    try {
+      found = await body();
+    } catch (err) {
+      found = {
+        outcome: 'NOT ESTABLISHED',
+        evidence: err instanceof Unestablished
+          ? err.message
+          : `the observation threw: ${String(err)}`,
+      };
+    }
+    const row = typeof found === 'string'
+      ? { outcome: 'OBSERVED', evidence: found }
+      : found;
+    record(id, question, row.outcome, row.evidence, row.state);
+  };
 
-  log('INFO', 'probe revision 8127b463. Quote this when reporting results.');
+  log('INFO', 'probe revision 23eb6470. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibAccess';
   const FILE = 'probe-access-doc.txt';
@@ -432,32 +488,52 @@
     }
     if (!res.ok) return `${where}: HTTP ${res.status}`;
     const body = await res.json().catch(() => null);
-    const rows = (body && body.d && Array.isArray(body.d.results)) ? body.d.results : null;
-    if (rows === null) return `${where}: HTTP 200 carrying no d.results array`;
-    const withId = rows.filter(
-      (r) => r.PrincipalId !== null && r.PrincipalId !== undefined);
-    // All THREE fields, because the deploy keys a binding as
-    // `${PrincipalId}:${binding.Id}` and exempts on `binding.Name`. A tenant
-    // that honours the top-level field of this $select composition and drops
-    // a nested one looks healthy on a PrincipalId count while the deploy
-    // builds undefined keys, matches no declared grant and exempts nothing.
-    // Reported, never asserted: whatever comes back is the observation.
-    const nested = rows.filter(
-      (r) => r.RoleDefinitionBindings
-        && Array.isArray(r.RoleDefinitionBindings.results)).length;
-    const expanded = rows.flatMap((r) => (
-      (r.RoleDefinitionBindings && Array.isArray(r.RoleDefinitionBindings.results))
-        ? r.RoleDefinitionBindings.results
-        : []));
-    const withBindingId = expanded.filter(
-      (b) => b.Id !== null && b.Id !== undefined);
-    const names = [...new Set(expanded.map(
-      (b) => (typeof b.Name === 'string' ? b.Name : `<${typeof b.Name}>`)))];
-    return `${where}: HTTP 200, ${rows.length} row(s), ${withId.length} of them `
-      + `carrying a non-null PrincipalId, ${nested} carrying a `
-      + `RoleDefinitionBindings.results array; ${expanded.length} expanded `
-      + `binding(s), ${withBindingId.length} with a non-null Id, name(s) `
-      + `${names.length ? names.map((nm) => `'${nm}'`).join(', ') : 'none'}`;
+    // The whole parse, inside the catch this helper's own contract asks for.
+    // It is AWAITED INLINE while the library finding is being built, so a
+    // throw in here aborted the access experiment that follows: a row nobody
+    // predicted has to be describable, which is what it claims to measure.
+    try {
+      const rows = (body && body.d && Array.isArray(body.d.results)) ? body.d.results : null;
+      if (rows === null) return `${where}: HTTP 200 carrying no d.results array`;
+      // A row that is not an object is COUNTED, never dereferenced.
+      const usable = rows.filter((r) => r !== null && typeof r === 'object');
+      const oddRows = rows.filter((r) => r === null || typeof r !== 'object');
+      const withId = usable.filter(
+        (r) => r.PrincipalId !== null && r.PrincipalId !== undefined);
+      // All THREE fields, because the deploy keys a binding as
+      // `${PrincipalId}:${binding.Id}` and exempts on `binding.Name`. A tenant
+      // that honours the top-level field of this $select composition and drops
+      // a nested one looks healthy on a PrincipalId count while the deploy
+      // builds undefined keys, matches no declared grant and exempts nothing.
+      // Reported, never asserted: whatever comes back is the observation.
+      const nested = usable.filter(
+        (r) => r.RoleDefinitionBindings
+          && Array.isArray(r.RoleDefinitionBindings.results)).length;
+      const expanded = usable.flatMap((r) => (
+        (r.RoleDefinitionBindings && Array.isArray(r.RoleDefinitionBindings.results))
+          ? r.RoleDefinitionBindings.results
+          : []));
+      const usableBindings = expanded.filter((b) => b !== null && typeof b === 'object');
+      const oddBindings = expanded.filter((b) => b === null || typeof b !== 'object');
+      const withBindingId = usableBindings.filter(
+        (b) => b.Id !== null && b.Id !== undefined);
+      const names = [...new Set(usableBindings.map(
+        (b) => (typeof b.Name === 'string' ? b.Name : `<${typeof b.Name}>`)))];
+      const odd = [...oddRows, ...oddBindings];
+      return `${where}: HTTP 200, ${rows.length} row(s), ${withId.length} of them `
+        + `carrying a non-null PrincipalId, ${nested} carrying a `
+        + `RoleDefinitionBindings.results array; ${expanded.length} expanded `
+        + `binding(s), ${withBindingId.length} with a non-null Id, name(s) `
+        + `${names.length ? names.map((nm) => `'${nm}'`).join(', ') : 'none'}`
+        + (odd.length
+          ? `; ${oddRows.length} row(s) and ${oddBindings.length} expanded binding(s) `
+            + `were not objects this read could describe `
+            + `(${[...new Set(odd.map(shapeOf))].join(', ')})`
+          : '');
+    } catch (err) {
+      return `${where}: HTTP 200 whose body established nothing about the shape `
+        + `(${String(err)})`;
+    }
   };
 
   // The restore pass. Runs on every path out of the access questions, so a

@@ -8917,20 +8917,32 @@ def test_calculated_operand_malformed_payload_is_not_a_stored_value(payload: Any
 LIBRARY_ACCESS_PROBE = MANUAL / "library-access-probe.js"
 
 
-def _deploy_shape_read_js() -> str:
-    """`DEPLOY_BINDING_QUERY` and `deployShapeRead`, lifted out of the probe.
+def _slice_of(js: str, start: str, end: str, what: str) -> str:
+    """One region of a rendered probe, with both anchors asserted.
 
-    Sliced rather than re-spelled, and both anchors are asserted, so what
-    runs here is the committed text an operator would paste. The probe has
-    no runtime module of its own, and this function is the one piece of it
-    whose output is a claim about the deploy's own query composition.
+    Sliced rather than re-spelled, so what runs here is the committed text an
+    operator would paste, and each anchor is a pin on that spelling.
+    """
+    assert js.count(start) == 1, f"the {what} start anchor is not spelled as this test expects"
+    assert js.count(end) == 1, f"the {what} end anchor is not spelled as this test expects"
+    return js[js.index(start):js.index(end)]
+
+
+def _deploy_shape_read_js() -> str:
+    """`deployShapeRead` and the shared vocabulary it describes rows with.
+
+    The probe has no runtime module of its own, and this function is the one
+    piece of it whose output is a claim about the deploy's own query
+    composition.
     """
     js = LIBRARY_ACCESS_PROBE.read_text(encoding="utf-8")
-    start = "  const DEPLOY_BINDING_QUERY =\n"
-    end = "  // The restore pass."
-    assert js.count(start) == 1, "DEPLOY_BINDING_QUERY is not spelled as this test expects"
-    assert js.count(end) == 1, "the restore-pass anchor is not spelled as this test expects"
-    return js[js.index(start):js.index(end)]
+    return _slice_of(
+        js, "  // Shared observation vocabulary v1:", "  log('INFO', 'probe revision ",
+        "observation vocabulary",
+    ) + _slice_of(
+        js, "  const DEPLOY_BINDING_QUERY =\n", "  // The restore pass.",
+        "deployShapeRead",
+    )
 
 
 def _run_deploy_shape_read(rows: object) -> str:
@@ -8999,6 +9011,49 @@ def test_a_nested_field_the_tenant_drops_is_visible_rather_than_looking_healthy(
     dropped_all = _run_deploy_shape_read([{"PrincipalId": 11}])
     assert "0 carrying a RoleDefinitionBindings.results array" in dropped_all, dropped_all
     assert "0 expanded binding(s)" in dropped_all, dropped_all
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("rows", "said"),
+    [
+        ([None, _SHAPE_ROW], "1 row(s) and 0 expanded binding(s)"),
+        ([_SHAPE_ROW, "not-a-row"], "1 row(s) and 0 expanded binding(s)"),
+        (
+            [{"PrincipalId": 11, "RoleDefinitionBindings": {"results": [None]}}],
+            "0 row(s) and 1 expanded binding(s)",
+        ),
+    ],
+)
+def test_a_malformed_row_is_described_rather_than_thrown_out_of(
+    rows: list[object], said: str,
+) -> None:
+    """This helper treats response shape as an OBSERVATION, and it is awaited
+    inline while the library finding is being built.
+
+    A null or otherwise malformed entry used to be dereferenced, so the
+    exception aborted the rest of the access experiment: the library row was
+    never recorded and the file-scope question was never asked, over a read
+    whose whole job was to describe a shape nobody predicted. Normalised into
+    the summary instead, which is the only outcome that keeps the run going
+    and keeps the measurement honest.
+    """
+    said_it = _run_deploy_shape_read(rows)
+
+    assert said in said_it, said_it
+    assert "were not objects this read could describe" in said_it, said_it
+    # And the rest of the read is still reported, rather than the malformed
+    # entry taking the whole observation with it.
+    assert f"{len(rows)} row(s)" in said_it, said_it
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_well_formed_read_says_nothing_about_malformed_entries() -> None:
+    """The clause only appears when there is something to report, so a healthy
+    tenant's line is not padded with two zeroes a reader has to discount."""
+    said = _run_deploy_shape_read([_SHAPE_ROW])
+
+    assert "were not objects" not in said, said
 
 
 OPERATOR_GRANT_PROBE = MANUAL / "operator-safety-grant-probe.js"
