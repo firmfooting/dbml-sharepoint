@@ -977,24 +977,10 @@ form_formatting:
     header: formatting/weekly-update-form-header.json
     body: formatting/weekly-update-form-body.json
 
-# The later blocks appear once the row has reached them, and a provider
-# column once the side says a provider or third party is involved. A
-# provider column that holds a value also stays shown; Provider to check is
-# what guarantees a stale one is found.
+# The later blocks appear once the row has reached them. The provider
+# columns are never hidden: a hidden lookup could keep a value nobody can
+# see to clear, and the provider-to-check views find both provider gaps.
 form_visibility:
-  Service:
-    reconcile: exact
-    columns:
-      RunByProvider:
-        when:
-          any_of:
-            - { field: RunBySide, op: in, value: [Provider, "Third party", Shared] }
-            - { field: RunByProvider, op: is_not_null }
-      SupportProvider:
-        when:
-          any_of:
-            - { field: SupportSide, op: in, value: [Provider, "Third party", Shared] }
-            - { field: SupportProvider, op: is_not_null }
   Seam:
     reconcile: exact
     columns:
@@ -1020,20 +1006,10 @@ form_visibility:
       SignedBy:
         when:
           - { field: Status, op: eq, value: Received }
-      HolderProvider:
-        when:
-          any_of:
-            - { field: HolderSide, op: in, value: [Provider, "Third party", Shared] }
-            - { field: HolderProvider, op: is_not_null }
   # Everything the conversation produces shares one rule, anchored once.
   Interview:
     reconcile: exact
     columns:
-      IntervieweeProvider:
-        when:
-          any_of:
-            - { field: IntervieweeSide, op: in, value: [Provider, "Third party", Shared] }
-            - { field: IntervieweeProvider, op: is_not_null }
       DurationMin: &after_the_conversation
         new: false
         when:
@@ -1059,11 +1035,6 @@ form_visibility:
       SourceDetail:
         when:
           - { field: Source, op: eq, value: "Recalled outage" }
-      ResolverProvider:
-        when:
-          any_of:
-            - { field: ResolverSide, op: in, value: [Provider, "Third party", Shared] }
-            - { field: ResolverProvider, op: is_not_null }
 
 # Every date here records something that has happened, so none may be in
 # the future; the today rules are hoisted onto each list rule at build time.

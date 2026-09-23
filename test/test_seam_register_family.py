@@ -67,37 +67,40 @@ def _check_branches(view: dict[str, Any]) -> dict[str, dict[str, set[str]]]:
     return found
 
 
+# Service has two, and DocumentRequest, Interview and Incident one each.
+PROVIDER_LOOKUPS = {
+    "Service": {"RunByProvider", "SupportProvider"},
+    "DocumentRequest": {"HolderProvider"},
+    "Interview": {"IntervieweeProvider"},
+    "Incident": {"ResolverProvider"},
+}
+
+
+def test_no_provider_lookup_is_ever_hidden_on_the_form() -> None:
+    """A hidden lookup can keep a value nobody can see to clear, and whether
+    a self-referencing show rule prevents that has never been measured."""
+    visibility = _mapping()["form_visibility"]
+    hidden = {
+        (entity, column)
+        for entity, columns in PROVIDER_LOOKUPS.items()
+        for column in columns
+        if column in visibility.get(entity, {}).get("columns", {})
+    }
+    assert not hidden, hidden
+
+
 def test_every_provider_lookup_has_a_check_view_for_both_gaps() -> None:
-    """Owed and none named, over the sides the form shows the lookup for;
-    and named on a side that has none. The second is what finds a stale
-    provider, since nothing has measured the form keeping one on screen."""
-    mapping = _mapping()
-    lookups = 0
-    for entity, rules in mapping["form_visibility"].items():
-        # A provider lookup is shown while its side owes one, or while it
-        # holds a value, so a side changed back never strands it.
-        shown: dict[str, set[str]] = {}
-        for column, rule in rules["columns"].items():
-            branches = rule.get("when", {})
-            if not isinstance(branches, dict) or "any_of" not in branches:
-                continue
-            side, held = branches["any_of"]
-            if side["field"].endswith("Side"):
-                assert held == {"field": column, "op": "is_not_null"}, column
-                shown[column] = set(side["value"])
-        if not shown:
-            continue
-        lookups += len(shown)
+    """Owed and none named, and named on a side that has none."""
+    views = _mapping()["views"]
+    for entity, columns in PROVIDER_LOOKUPS.items():
         checked: dict[str, dict[str, set[str]]] = {}
-        for view in mapping["views"][entity]:
+        for view in views[entity]:
             if view["title"].endswith("rovider to check"):
                 checked.update(_check_branches(view))
-        assert set(checked) == set(shown), entity
-        for column, sides in shown.items():
-            assert sides == PROVIDER_SIDES, column
-            assert checked[column] == {"is_null": sides, "is_not_null": {"Us", "Unknown"}}, column
-    # Service has two, and DocumentRequest, Interview and Incident one each.
-    assert lookups == 5
+        assert set(checked) == columns, entity
+        expected = {"is_null": PROVIDER_SIDES, "is_not_null": {"Us", "Unknown"}}
+        for column in columns:
+            assert checked[column] == expected, column
 
 
 def test_every_seeded_link_into_the_library_names_a_seeded_file() -> None:

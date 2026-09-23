@@ -98,15 +98,14 @@ Standard deployment logging is separate infrastructure; use the build's
 - [ ] **By resolver** is the default on the incident list and groups by
       **Resolved by**. The unassigned demonstration ticket appears in
       **Unassigned**.
-- [ ] Add a service. **Run by provider** is hidden while **Run by** is
-      *Unknown*, and appears when it is set to *Provider*, *Third party* or
-      *Shared*. Set *Provider* with no **Run by team** and the save rule
-      refuses it. Set **Run by** to *Unknown* and it saves.
+- [ ] Add a service. Set **Run by** to *Provider* with no **Run by team**
+      and the save rule refuses it. Set **Run by** to *Unknown* and it
+      saves. Add a second service with the same **Title** and uniqueness
+      refuses it.
 - [ ] Open the demonstration backup service, which names a provider, and set
       **Run by** to *Us* without clearing **Run by provider**. It saves, and
-      the row appears in **Run-by provider to check**. Clear the provider and
-      it leaves the view. Whether the form keeps a held provider column on
-      screen is unmeasured; the view is what the register relies on.
+      the row appears in **Run-by provider to check**. Clear the provider on
+      the same form and it leaves the view.
 - [ ] Tick **Single person** on a service with no **Out of hours call**. The
       save rule refuses it.
 - [ ] Add a seam. **Raised on** fills with today. Set **Status** to

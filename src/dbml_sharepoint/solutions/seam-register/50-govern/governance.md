@@ -47,6 +47,7 @@ express them. Run them on the Friday, before the five lines are written.
 | Every evidence row with **Contradicts** ticked appears in a seam's **Evidence in conflict**, and every row a seam picks there belongs to the seam's own **Service** | A multi-value lookup on another list; a lookup cannot be filtered by another column |
 | A *Held* or *Verified* documentation status has a **Documentation link** | A hyperlink column cannot be a formula operand |
 | A row whose side is *Provider*, *Third party* or *Shared* names the provider, and a row whose side is *Us* or *Unknown* names none. The provider-to-check views are empty: two on the service list, one each on the document request, interview and incident lists | A formula cannot read a lookup |
+| An evidence row's **Artefact file**, where set, lists the evidence row's **Service** among its **Services** | A lookup cannot be filtered by another column, and the picker offers every titled file |
 | Every file in **SEAM_Artefact** has a **Title** | A file's Title is optional on a library, and a file without one is not offered by the pickers |
 | A resolved seam has a **Resolution**; a received document has a **Summary** | Multi-line text cannot be a formula operand |
 | A received document has at least one file in **SEAM_Artefact** whose **Request** points at it | A formula cannot count rows on another list |

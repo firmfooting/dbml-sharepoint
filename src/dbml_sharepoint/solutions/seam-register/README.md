@@ -43,8 +43,8 @@ of us have read the evidence.
 A service, an incident, a document ask and an interview each say two things
 about who is involved. The **side** is a fixed choice: *Us*, *Provider*,
 *Third party*, *Shared* or *Unknown*. The **provider** is a lookup into
-`SEAM_Provider` that names which one, and appears on the form once the side
-is anything other than *Us* or *Unknown*.
+`SEAM_Provider` that names which one. It is always on the form and is filled
+when the side is *Provider*, *Third party* or *Shared*.
 
 The side carries everything a fixed value has to: the save rule that a
 claimed service names a team, the colours, the seam map's grouping and the

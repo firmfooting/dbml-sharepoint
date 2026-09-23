@@ -177,7 +177,7 @@ Table Provider {
 // to call, in role terms, so there is no person column on it.
 Table Service {
   Id                int                  [pk, increment]
-  Title             nvarchar             [not null, note: 'The name the people who run it use, for example Account creation script, not a category']
+  Title             nvarchar             [not null, unique, note: 'The name the people who run it use, for example Account creation script, not a category. One row per service, so no two share a name']
   Area              service_area         [not null, note: 'Which first-pass area the row belongs to']
   Description       longtext             [note: 'What the service does, in one or two sentences a non-ICT reader can follow']
   RunBySide         side                 [not null, default: 'Unknown', note: 'Which side operates it day to day']

@@ -78,8 +78,8 @@ does in two sentences a non-ICT reader can follow.
 **Run by** and **Support from** start as *Unknown*. Each says which side:
 *Us*, *Provider*, *Third party*, *Shared* or *Unknown*. Naming a side in
 either needs the team or role beside it; the save rule holds you to that.
-Once the side is *Provider*, *Third party* or *Shared*, **Run by provider**
-or **Support provider** appears: pick the provider. The save rule cannot
+When the side is *Provider*, *Third party* or *Shared*, pick the provider
+in **Run by provider** or **Support provider**. The save rule cannot
 check that one, so **Run-by provider to check** and **Support provider to
 check** list the rows that still owe one. If you change the side back to
 *Us* or *Unknown*, clear the provider; the same views list any row still
