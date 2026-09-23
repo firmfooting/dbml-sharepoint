@@ -958,10 +958,8 @@ def _fields_harness(
     right default and it is also why a variant is needed to make the check
     fire at all.
 
-    Each row is PROJECTED to what `$select` names, the way a live site answers.
-    Handing back every property regardless made a check that reads one the
-    script never selected pass here and read `undefined` on a real tenant,
-    which is the silence a mock is supposed to expose rather than cover.
+    `run_node`'s prelude projects each row to what `$select` names and fails
+    the run on a read of anything else, so this answers with the whole row.
 
     `next_link` puts a `d.__next` beside the rows, which is a server paging
     below the asked-for `$top` rather than the `$top` itself truncating.
@@ -974,13 +972,7 @@ def _fields_harness(
     )
     branch = (
         "  if (path.endsWith('/fields')) {\n"
-        f"    const rows = {json.dumps(fields)};\n"
-        "    const selected = ((u.split('$select=')[1] || '').split('&')[0] || '')\n"
-        "      .split(',').filter(Boolean);\n"
-        "    const projected = selected.length === 0 ? rows : rows.map((row) =>\n"
-        "      Object.fromEntries(Object.entries(row)\n"
-        "        .filter(([name]) => selected.includes(name))));\n"
-        "    const answer = { results: projected };\n"
+        f"    const answer = {{ results: {json.dumps(fields)} }};\n"
         + paged
         + "    return respond(200, { d: answer });\n"
         "  }\n"
@@ -1439,10 +1431,12 @@ def test_a_column_read_that_did_not_answer_reports_no_pending_constraints(
                                      *[{"results": [], "__next": value}
                                        for value in [False, True, 0, 1, [], {}]]])
 def test_malformed_column_collections_do_not_pass_unique_checks(payload: Any) -> None:
-    harness = _fields_harness([]).replace(
-        "const answer = { results: projected };",
+    empty = _fields_harness([])
+    harness = empty.replace(
+        "const answer = { results: [] };",
         f"const answer = {json.dumps(payload)};",
     )
+    assert harness != empty, "the malformed collection was not spliced into the harness"
     summary = _run_unique_assess(harness=harness)
     assert _levels(summary)["pending_unique:APP_Asset"] == "NOT-ASSESSABLE"
     assert "malformed column collection" in _unique_findings(summary)[0]["detail"]
