@@ -283,10 +283,13 @@ def _seam_without_its_evidence(seed: Seed) -> Offenders:
     for key, seam in seed["Seam"].items():
         if seam["SeamType"] == "No owner":
             continue
-        refs = _refs(seam.get("EvidenceInConflict"))
-        types = [seed["Evidence"][ref]["EvidenceType"] for ref in refs]
-        both = "Document" in types and any(t != "Document" for t in types)
-        if not types or (seam["SeamType"] == "Contradicts document" and not both):
+        picked = [seed["Evidence"][ref] for ref in _refs(seam.get("EvidenceInConflict"))]
+        by_field: dict[str, set[bool]] = {}
+        for e in picked:
+            by_field.setdefault(e["SupportsField"], set()).add(e["EvidenceType"] == "Document")
+        # Both a Document row and another row, about the same column.
+        both = any(kinds == {True, False} for kinds in by_field.values())
+        if not picked or (seam["SeamType"] == "Contradicts document" and not both):
             bad.add(("Seam", key))
     return bad
 

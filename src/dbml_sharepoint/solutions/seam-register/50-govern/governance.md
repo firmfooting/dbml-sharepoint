@@ -82,7 +82,7 @@ the five lines are written. A check that a view answers names the view.
 | F20 | A *Disputed support* seam picks rows in **Evidence in conflict** with **Contradicts** ticked from at least two different known **Source side** values that bear on *Support*; a *Disputed owner* seam does the same on *Run by* or on *Decided by* | A formula cannot count a multi-value lookup |
 | F21 | No two files in **SEAM_Artefact** share a **Title**, because the pickers show nothing else | Uniqueness on a library column has not been measured |
 | F22 | By the week 6 hand-over, every seam not *Resolved* has a **Resolve owner**. Before then **Open seams** shows the ones without | An owner is only required once a seam is *Escalated*, and the deadline is a date in the exercise, not a status |
-| F23 | Every seam except *No owner* picks the evidence rows it rests on in **Evidence in conflict**: at least one row, and for *Contradicts document* one *Document* row and one row of another **Type** | A formula cannot read a multi-value lookup |
+| F23 | Every seam except *No owner* picks the evidence rows it rests on in **Evidence in conflict**: at least one row, and for *Contradicts document* one *Document* row and one row of another **Type** that bear on the same **Bears on** column | A formula cannot read a multi-value lookup |
 
 ### What the register does not check
 
