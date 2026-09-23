@@ -88,11 +88,29 @@ class _Found:
     functions: set[str] = field(default_factory=set)
 
 
-def _pattern_class(node: ast.expr) -> str:
-    """The class a pattern names, bare or reached through a module alias."""
+def _import_aliases(tree: ast.Module) -> dict[str, str]:
+    """Every class name a module's `from ... import` binds, to the name it
+    was imported under.
+
+    `from ... import PermissionsConfig as PC` binds the model class under a
+    name `POSITIONAL_FIELDS` does not hold, and a lookup on `PC` alone finds
+    no positions. A plain `import` is not collected: it binds a module, and a
+    pattern reaching a class through one spells the class name itself.
+    """
+    aliases: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        for alias in node.names:
+            aliases[alias.asname or alias.name] = alias.name
+    return aliases
+
+
+def _pattern_class(node: ast.expr, aliases: dict[str, str]) -> str:
+    """The class a pattern names, aliased or reached through a module."""
     if isinstance(node, ast.Attribute):
         return node.attr
-    return node.id if isinstance(node, ast.Name) else ""
+    return aliases.get(node.id, node.id) if isinstance(node, ast.Name) else ""
 
 
 def _getattr_field(node: ast.Call) -> str | None:
@@ -111,21 +129,32 @@ def _getattr_field(node: ast.Call) -> str | None:
     return None
 
 
-def _fields_matched(node: ast.MatchClass) -> set[str]:
+def _fields_matched(node: ast.MatchClass, aliases: dict[str, str]) -> set[str]:
     """The ratcheted fields one `case Cls(...)` pattern reads.
 
     `case EntityMapping(folder_source=src)` spells the name as a plain string
     in `kwd_attrs`, which an `ast.Attribute` walk never sees. A POSITIONAL
     pattern spells it nowhere at all: `case EntityMapping(_, ..., source)`
     reads whatever `__match_args__` holds at that index, so the positions are
-    resolved against the real class.
+    resolved against the real class, through `aliases` where the module
+    imported it under another name.
+
+    A positional pattern on a class this walk cannot place is reported as
+    reading every ratcheted field, so it lands on the allowlist rather than
+    passing unseen: a ratchet that fails open is not a ratchet. A pattern
+    naming its fields as keywords needs none of this, because it spells
+    exactly what it reads.
     """
     fields = set(node.kwd_attrs) & RATCHETED
-    positions = POSITIONAL_FIELDS.get(_pattern_class(node.cls), ())
+    if not node.patterns:
+        return fields
+    positions = POSITIONAL_FIELDS.get(_pattern_class(node.cls, aliases))
+    if positions is None:
+        return fields | set(RATCHETED)
     return fields | (set(positions[: len(node.patterns)]) & RATCHETED)
 
 
-def _fields_read(node: ast.AST) -> set[str]:
+def _fields_read(node: ast.AST, aliases: dict[str, str]) -> set[str]:
     """The ratcheted fields `node` itself reads, its children aside."""
     if isinstance(node, ast.Attribute):
         # `Load` context separates a read from a keyword argument, a type
@@ -134,7 +163,7 @@ def _fields_read(node: ast.AST) -> set[str]:
             return {node.attr}
         return set()
     if isinstance(node, ast.MatchClass):
-        return _fields_matched(node)
+        return _fields_matched(node, aliases)
     if isinstance(node, ast.Call):
         name = _getattr_field(node)
         return {name} if name is not None and name in RATCHETED else set()
@@ -147,22 +176,25 @@ def _fields_read(node: ast.AST) -> set[str]:
     return set()
 
 
-def _collect(node: ast.AST, scope: tuple[str, ...], found: _Found) -> None:
+def _collect(
+    node: ast.AST, scope: tuple[str, ...], found: _Found, aliases: dict[str, str],
+) -> None:
     """Walk `node`, carrying the qualified name its children sit under."""
     qualname = ".".join(scope) if scope else MODULE_SCOPE
     for child in ast.iter_child_nodes(node):
         if isinstance(child, _SCOPES):
             nested = (*scope, child.name)
             found.functions.add(".".join(nested))
-            _collect(child, nested, found)
+            _collect(child, nested, found, aliases)
             continue
-        found.reads |= {(qualname, name) for name in _fields_read(child)}
-        _collect(child, scope, found)
+        found.reads |= {(qualname, name) for name in _fields_read(child, aliases)}
+        _collect(child, scope, found, aliases)
 
 
 def _walk(source: str) -> _Found:
+    tree = ast.parse(source)
     found = _Found()
-    _collect(ast.parse(source), (), found)
+    _collect(tree, (), found, _import_aliases(tree))
     return found
 
 

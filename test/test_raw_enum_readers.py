@@ -148,6 +148,37 @@ def test_the_walk_ignores_a_positional_pattern_that_stops_short() -> None:
     ) == set()
 
 
+def _aliased_case(cls: str, alias: str, name: str) -> str:
+    """`_positional_case`, with the class imported under another name."""
+    positions = ", ".join([*["_"] * POSITIONAL_FIELDS[cls].index(name), "wanted"])
+    return (
+        f"from dbml_sharepoint.model.mapping_types import {cls} as {alias}\n"
+        f"match obj:\n    case {alias}({positions}):\n        use(wanted)\n"
+    )
+
+
+def test_the_walk_resolves_an_imported_alias_in_a_class_pattern() -> None:
+    """`POSITIONAL_FIELDS` is keyed by the canonical class name, so a module
+    that imported the class under another one matched against no positions at
+    all and its raw read was reported nowhere.
+    """
+    assert _reads_in(_aliased_case("PermissionsConfig", "PC", "group_sources")) == {
+        (MODULE_SCOPE, "group_sources"),
+    }
+
+
+def test_a_positional_pattern_on_an_unplaceable_class_is_flagged() -> None:
+    """A class this walk cannot tie to a model class could bind any of the
+    three, so it is reported as reading all of them and has to be accounted
+    for rather than passing unseen. A keyword pattern spells exactly what it
+    reads and needs no such guess.
+    """
+    assert _reads_in("match obj:\n    case Elsewhere(a, b):\n        use(a)\n") == {
+        (MODULE_SCOPE, name) for name in RATCHETED
+    }
+    assert _reads_in("match obj:\n    case Elsewhere(levels=n):\n        use(n)\n") == set()
+
+
 def test_positional_positions_come_from_the_live_classes() -> None:
     """A written-out index shifts silently the moment a field is added, so
     the positions are the classes' own `__match_args__` and nothing else."""
