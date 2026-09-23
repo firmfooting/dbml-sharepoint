@@ -1,0 +1,16 @@
+# The org's line-ending rule; the check itself, and why it exists, live in
+# firmfooting/.github's line-endings.yml so every repository runs the same one.
+name: Line endings
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: {}
+
+jobs:
+  line-endings:
+    permissions:
+      contents: read
+    uses: firmfooting/.github/.github/workflows/line-endings.yml@34039b6cf89ec46a00d067fbc656d2d1bf85da08 # v1.0.0
