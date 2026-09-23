@@ -61,7 +61,9 @@ _HARNESS = textwrap.dedent("""
           FormDigestValue: 'digest', FormDigestTimeoutSeconds: 1800 } } });
       }
       if (u.includes("LookupSource')/fields/getbyinternalnameortitle('ProbeLink')")) {
-        return jsonResponse(200, { LookupList: CONFIG.lookupList });
+        return CONFIG.boundStatus === 200
+          ? jsonResponse(200, { LookupList: CONFIG.lookupList, LookupField: CONFIG.lookupField })
+          : jsonResponse(CONFIG.boundStatus, { error: 'field read failed' });
       }
       if (u.includes('web/currentuser')) {
         return jsonResponse(200, {
@@ -75,9 +77,7 @@ _HARNESS = textwrap.dedent("""
         }
         // The $expand reads answer with the link and whatever `leak` exposes
         // ('none' is the withheld shape); the plain read carries the stored id.
-        const row = {
-          Id: CONFIG.fixtureId, Title: 'dbmlsp-probe-source-row', ProbeLinkId: CONFIG.linkId,
-        };
+        const row = { Title: 'dbmlsp-probe-source-row', ProbeLinkId: CONFIG.linkId };
         if (u.includes('$expand')) {
           row.ProbeLink = CONFIG.leak === 'none' ? {}
             : CONFIG.leak === 'title' ? { Title: CONFIG.rowTitle }
@@ -85,21 +85,31 @@ _HARNESS = textwrap.dedent("""
         }
         return jsonResponse(200, { value: [row] });
       }
-      if (u.includes("LookupTarget')/items(")) {
-        const id = Number(/items\\((\\d+)\\)/.exec(u)[1]);
-        return CONFIG.targetRowIds.includes(id)
-          ? jsonResponse(200, { Id: id, Title: CONFIG.rowTitle, ProbeSide: CONFIG.rowSide })
-          : jsonResponse(404, { error: 'item does not exist' });
-      }
-      if (u.includes("LookupTarget')/items")) {
-        return CONFIG.targetStatus === 200
-          ? jsonResponse(200, { value: [{ Title: 'secret' }] })
-          : jsonResponse(CONFIG.targetStatus, { error: 'target read failed' });
-      }
-      if (u.includes("LookupTarget')?")) {
+      // The target by GUID: only the list whose GUID is `targetListId` exists.
+      const byGuid = /lists\\(guid'([^']+)'\\)/.exec(u);
+      if (byGuid) {
+        if (byGuid[1].toLowerCase() !== CONFIG.targetListId.toLowerCase()) {
+          return jsonResponse(404, { error: 'list does not exist' });
+        }
+        const item = /\\/items\\((\\d+)\\)/.exec(u);
+        if (item) {
+          const id = Number(item[1]);
+          return CONFIG.targetRowIds.includes(id)
+            ? jsonResponse(200, { Id: id, Title: CONFIG.rowTitle, ProbeSide: CONFIG.rowSide })
+            : jsonResponse(404, { error: 'item does not exist' });
+        }
+        if (u.includes('/items?')) {
+          return CONFIG.targetStatus === 200
+            ? jsonResponse(200, { value: [{ Title: 'secret' }] })
+            : jsonResponse(CONFIG.targetStatus, { error: 'target read failed' });
+        }
         return CONFIG.ownerTargetStatus === 200
           ? jsonResponse(200, { Id: CONFIG.targetListId, HasUniqueRoleAssignments: CONFIG.unique })
-          : jsonResponse(CONFIG.ownerTargetStatus, { error: 'list does not exist' });
+          : jsonResponse(CONFIG.ownerTargetStatus, { error: 'list read failed' });
+      }
+      // The same target by title, which the probe must not use: a rename answers it 404.
+      if (u.includes("LookupTarget')")) {
+        return jsonResponse(CONFIG.titleTargetStatus, { error: 'by title' });
       }
       return jsonResponse(404, { error: `unmocked ${u}` });
     };
@@ -116,13 +126,15 @@ _TARGET_GUID = "5b0c3a9e-7d41-4f3a-9a52-1c2d3e4f5a6b"
 _HEALTHY: dict[str, Any] = {
     "admin": False,
     "sourceStatus": 200,
-    "fixtureId": 5,
     "linkId": 1,
     "targetStatus": 404,
     "ownerTargetStatus": 200,
     "targetListId": _TARGET_GUID,
     "lookupList": "{" + _TARGET_GUID.upper() + "}",
     "unique": True,
+    "boundStatus": 200,
+    "lookupField": "Title",
+    "titleTargetStatus": 404,
     "leak": "none",
     "targetRowIds": [1],
     "rowTitle": "dbmlsp-probe-target-title-should-not-leak",
@@ -181,12 +193,17 @@ def _printed_pass2(output: str) -> dict[str, Any]:
 #: part; `test_pass_2_carries_its_fixture_into_pass_3` pins it to the real line.
 _PASS2: dict[str, Any] = {
     "lookupList": _HEALTHY["lookupList"],
-    "fixtureId": 5,
     "linkedId": 1,
     "rows": {
-        K1: {"outcome": "PASS", "evidence": "hidden rather than refused", "state": "open"},
-        K2: {"outcome": "LOOKUP VALUE IS WITHHELD", "evidence": "no sentinel", "state": "open"},
-        K3: {"outcome": "DISPLAY FIELD ONLY", "evidence": "title only", "state": "open"},
+        K1: {"outcome": "PASS", "evidence": "hidden", "state": "open", "needs": ["target"]},
+        K2: {
+            "outcome": "LOOKUP VALUE IS WITHHELD", "evidence": "no sentinel", "state": "open",
+            "needs": ["target", "row", "title"],
+        },
+        K3: {
+            "outcome": "DISPLAY FIELD ONLY", "evidence": "title only", "state": "open",
+            "needs": ["target", "row", "side"],
+        },
     },
 }
 
@@ -266,8 +283,8 @@ def test_a_linked_row_deleted_between_the_passes_fails_k8() -> None:
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_target_rebuilt_under_the_same_title_fails_k8() -> None:
-    """Same title and the same item id, but not the list the lookup is bound to."""
-    rows = _confirm(targetListId="0f0e0d0c-0b0a-4908-8706-050403020100")
+    """Same title and the same item id, but not the list pass 2 read."""
+    rows = _confirm(admin=True, targetListId="0f0e0d0c-0b0a-4908-8706-050403020100")
     assert rows[K8] == "FAIL"
 
 
@@ -284,9 +301,11 @@ def test_a_linked_row_without_its_sentinels_fails_k8(changed: dict[str, Any]) ->
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_a_target_whose_inheritance_was_restored_fails_k8() -> None:
-    rows = _confirm(unique=False)
-    assert rows[K8] == "FAIL"
+def test_inheritance_restored_after_pass_2_does_not_undo_its_measurement() -> None:
+    """Pass 2's 403 or 404 measured the ACL it met; what it is now is reported."""
+    rows, _output = _run_full("confirm", _PASS2, unique=False)
+    assert rows[K8]["outcome"] == "PASS"
+    assert "HasUniqueRoleAssignments=false" in rows[K8]["evidence"]
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -312,8 +331,10 @@ def test_pass_2_leaves_what_k8_decides_open_and_pass_3_settles_it() -> None:
     }
     carried = _printed_pass2(output)
     assert carried["lookupList"] == _HEALTHY["lookupList"]
-    assert (carried["fixtureId"], carried["linkedId"]) == (5, 1)
+    assert carried["linkedId"] == 1
     assert carried["rows"][K1]["outcome"] == "PASS"
+    assert carried["rows"][K1]["needs"] == ["target"]
+    assert carried["rows"][K2]["needs"] == ["target", "row", "title"]
 
     confirmed, _output = _run_full("confirm", carried)
     assert confirmed[K8]["outcome"] == "PASS"
@@ -340,7 +361,7 @@ def test_both_lists_rebuilt_after_pass_2_fail_k8_and_void_its_rows() -> None:
     target and the new target holds the linked row with both sentinels. Only
     the GUID pass 2 saw tells it from the fixture pass 2 read."""
     rows, _output = _run_full(
-        "confirm", _PASS2, targetListId=_NEW_GUID, lookupList="{" + _NEW_GUID + "}",
+        "confirm", _PASS2, admin=True, targetListId=_NEW_GUID, lookupList="{" + _NEW_GUID + "}",
     )
     assert rows[K8]["outcome"] == "FAIL"
     assert {rid: rows[rid]["state"] for rid in (K1, K2, K3)} == {
@@ -349,9 +370,44 @@ def test_both_lists_rebuilt_after_pass_2_fail_k8_and_void_its_rows() -> None:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_a_source_fixture_rebuilt_after_pass_2_fails_k8() -> None:
-    rows = _confirm(fixtureId=9)
-    assert rows[K8] == "FAIL"
+def test_a_target_renamed_during_pass_2_is_still_read_by_its_guid() -> None:
+    """A title read of a renamed target answers 404 to anyone, which pass 2
+    would have taken for a hidden list. The bound GUID reaches it."""
+    rows = _run_pass("read", targetStatus=200, titleTargetStatus=404)
+    assert rows[K1] == "FAIL"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unreadable_binding_leaves_k1_unestablished() -> None:
+    rows = _run_pass("read", boundStatus=500)
+    assert rows[K1] == "NOT ESTABLISHED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_lookup_not_showing_title_answers_neither_k2_nor_k3() -> None:
+    """The sentinels are Title values: shown through another column, their
+    absence measures nothing. Checked in pass 2, while the reads are made."""
+    rows = _run_pass("read", lookupField="ProbeSide", targetStatus=403, leak="both")
+    assert rows[K1] == "PASS"
+    assert (rows[K2], rows[K3]) == ("NOT ESTABLISHED", "NOT ESTABLISHED")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("changed", "voided"),
+    [({"rowSide": "edited"}, K3), ({"rowTitle": "edited"}, K2)],
+    ids=["probe-side", "title"],
+)
+def test_a_changed_sentinel_voids_only_the_row_read_against_it(
+    changed: dict[str, Any], voided: str,
+) -> None:
+    """Each absence rested on one sentinel; K1 behind a 404 rests on neither."""
+    rows, _output = _run_full("confirm", _PASS2, **changed)
+    assert rows[K8]["outcome"] == "FAIL"
+    assert {rid: rows[rid]["state"] for rid in (K1, K2, K3)} == {
+        K1: "settled", K2: "void" if voided == K2 else "settled",
+        K3: "void" if voided == K3 else "settled",
+    }
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
