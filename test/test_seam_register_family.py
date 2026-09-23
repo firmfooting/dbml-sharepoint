@@ -5,9 +5,10 @@
 SharePoint holds, and Friday checks, which it cannot. Review of the first
 pull request kept finding the seeded rows breaking a rule, or the prose
 promising one nothing held, one at a time. So every Friday check with an ID
-runs here against the seed, every save rule is evaluated on every seeded
-row, and the save-rule table must name every column a rule reads. A row
-the seed leaves undone on purpose is declared, with the view that lists it.
+runs here against the seed, and the save-rule table must name every column
+a rule reads. The library-wide test in test_template_standard.py evaluates
+every save rule on every seeded row. A row the seed leaves undone on
+purpose is declared, with the view that lists it.
 """
 
 import re
@@ -22,7 +23,6 @@ from test_template_standard import _as_date, _evaluate, _load
 
 from dbml_sharepoint.analysis.condition_rendering import normalise
 from dbml_sharepoint.analysis.conditions import leaves
-from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
 
 FAMILY = SOLUTION_TEMPLATES / "seam-register"
 MAPPING = FAMILY / "20-configure" / "mapping.yaml"
@@ -481,29 +481,6 @@ def test_every_open_row_is_listed_by_its_view() -> None:
         types = loaded.column_types(entity)
         row = seed[entity][key.split(":")[0]]
         assert _evaluate(normalise(view.where), row, types) is True, (entity, key, title)
-
-
-def test_every_seeded_row_passes_its_save_rules() -> None:
-    loaded = _load("seam-register")
-    seed = _seed()
-    refused: list[str] = []
-    for entity, rows in seed.items():
-        types = loaded.column_types(entity)
-        rule = effective_list_validation(loaded.mapping, entity, types)
-        section = loaded.mapping.column_validation.get(entity)
-        hoisted = {column for column, _ in hoisted_columns(section, types)}
-        declared = section.columns.items() if section else []
-        columns = [(c, r) for c, r in declared if c not in hoisted]
-        for key, row in rows.items():
-            if rule is not None and _evaluate(normalise(rule.when), row, types) is not True:
-                refused.append(f"{entity}/{key}: {rule.message}")
-            for column, column_rule in columns:
-                # A column rule does not fire on a blank.
-                if _blank(row.get(column)):
-                    continue
-                if _evaluate(normalise(column_rule.when), row, types) is not True:
-                    refused.append(f"{entity}/{key}: {column}")
-    assert not refused, refused
 
 
 def test_the_save_rule_table_names_every_column_a_rule_reads() -> None:

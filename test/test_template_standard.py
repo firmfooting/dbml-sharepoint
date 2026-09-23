@@ -49,6 +49,7 @@ from dbml_sharepoint.analysis.list_description import (
     note_budget,
 )
 from dbml_sharepoint.analysis.role_definition_description import level_description_budget
+from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, NOW_SENTINEL
 from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, PLACEHOLDER_TIME_ZONE
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
@@ -1154,6 +1155,71 @@ def test_every_declared_view_is_satisfied_by_a_demo_row(template: str) -> None:
     if unevaluable:
         pytest.skip(
             f"{template}: {len(unevaluable)} view(s) NOT checked (unsupported operator) -- "
+            + "; ".join(unevaluable),
+        )
+
+
+def _seeded_rows(loaded: Loaded, entity: str) -> list[tuple[str, dict[str, Any]]]:
+    """(key, values) per demo row, schema defaults filled in as SharePoint stores them."""
+    defaults: dict[str, Any] = {}
+    for table in loaded.schema.tables:
+        if table.name == entity:
+            for column in table.columns:
+                if column.default is None:
+                    continue
+                value = column.default
+                defaults[column.name] = value.strip("'") if isinstance(value, str) else value
+    return [
+        (item.key, {**defaults, **item.values})
+        for item in loaded.mapping.demo_items.get(entity, [])
+    ]
+
+
+@pytest.mark.parametrize("template", _all_templates())
+def test_every_seeded_row_passes_its_save_rules(template: str) -> None:
+    """A seeded row the list would refuse fails the --seed deploy on a live site.
+
+    Each row is evaluated against the effective list rule, hoisted clock rules
+    included, and against each remaining column rule on a non-blank value,
+    because a column rule does not fire on a blank. Only True passes.
+    """
+    loaded = _load(template)
+    refused: list[str] = []
+    unevaluable: list[str] = []
+    for entity in sorted(loaded.mapping.demo_items):
+        types = loaded.column_types(entity)
+        rule = effective_list_validation(loaded.mapping, entity, types)
+        section = loaded.mapping.column_validation.get(entity)
+        hoisted = {column for column, _ in hoisted_columns(section, types)}
+        checks: list[tuple[str | None, Condition, str]] = (
+            [(None, rule.when, rule.message)] if rule is not None else []
+        )
+        checks += [
+            (column, column_rule.when, column_rule.message)
+            for column, column_rule in (section.columns.items() if section else [])
+            if column not in hoisted
+        ]
+        for key, row in _seeded_rows(loaded, entity):
+            for column, condition, message in checks:
+                value = row.get(column) if column else None
+                blank = value is None or value == [] or (
+                    isinstance(value, str) and not value.strip()
+                )
+                if column and blank:
+                    continue
+                try:
+                    verdict = _evaluate(normalise(condition), row, types)
+                except _UnevaluableError as exc:
+                    unevaluable.append(f"{entity}/{key}: {exc}")
+                    continue
+                if verdict is not True:
+                    refused.append(f"{entity}/{key} ({verdict}): {message}")
+    assert not refused, (
+        f"{template}: seeded rows its own save rules refuse: " + "; ".join(refused)
+    )
+    if unevaluable:
+        pytest.skip(
+            f"{template}: {len(unevaluable)} rule check(s) NOT evaluated: "
             + "; ".join(unevaluable),
         )
 
@@ -2784,13 +2850,6 @@ def test_legal_library_keeps_content_in_excel_and_issuance_independent() -> None
         assert rule.when is not None
         assert _evaluate(normalise(rule.when), {"ItemType": "REG"}, types) is False
         assert _evaluate(normalise(rule.when), {"ItemType": "SAQ"}, types) is True
-
-
-def test_legal_demo_assessments_satisfy_save_rules() -> None:
-    loaded = _load("legal-compliance-register")
-    for item in loaded.mapping.demo_items["Document"]:
-        assert _legal_rule_accepts(item.values) is True, item.key
-
 
 
 def test_legal_platform_owner_workspace_keeps_unclassified_uploads_visible() -> None:
