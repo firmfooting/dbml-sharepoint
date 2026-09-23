@@ -261,6 +261,9 @@ in **Trigger**, and what it is costing the programme in **Effect**.
 - **Resolved** means it has stopped happening. **Closed** means somebody
   has confirmed that. Both need a **Resolved Date**, which appears as soon
   as you pick either, and the form will not save without it.
+- **Resolving Decision** appears beside it and is optional. Name the
+  decision the issue was resolved under when there was one, and leave it
+  blank for an ordinary fix.
 - Anything Major or Critical is on *Severe and open* the moment you save
   it. Do not wait for the fortnightly to mention it.
 

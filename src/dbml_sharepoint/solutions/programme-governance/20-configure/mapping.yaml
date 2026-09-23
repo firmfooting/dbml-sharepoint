@@ -208,6 +208,7 @@ lookup_projections:
     AuthorisingDecision: [Title]
   Issue:
     RelatedRisk: [Title]
+    ResolvingDecision: [Title]
   ServiceRequest:
     AuthorisingDecision: [Title]
   Risk:
@@ -1465,7 +1466,7 @@ views:
         RelatedRiskTitle: 220
         ResolvedDate: 160
     - title: "Resolved and closed"
-      fields: ["@issue", ResolvedDate, Resolution]
+      fields: ["@issue", ResolvedDate, Resolution, ResolvingDecisionTitle]
       where:
         - { field: Status, op: in, value: ["Resolved", "Closed"] }
       sort:
@@ -1474,6 +1475,7 @@ views:
         <<: *issue_spine
         ResolvedDate: 160
         Resolution: 260
+        ResolvingDecisionTitle: 220
     # The triage owner's queue: any new issue nobody has picked up yet.
     # Workstream and Owner are the two fields an occasional raiser cannot
     # answer, so the view surfaces wherever either is still blank.
@@ -1738,6 +1740,9 @@ form_visibility:
       Resolution:
         when:
           - { field: Status, op: in, value: ["Resolved", "Closed"] }
+      ResolvingDecision:
+        when:
+          - { field: Status, op: in, value: ["Resolved", "Closed"] }
       # Machine-owned: flow D stamps it and nothing else writes it. Rendered
       # on All Items only because watched_lists requires a watched column to
       # be rendered.
@@ -1913,9 +1918,10 @@ list_validation:
 # spanning all four rating bands and all four statuses;
 # seven actions across every status including one overdue and still open;
 # seven issues across every severity and every status, one untriaged with no
-# owner or workstream; and seven decisions, three of them programme-wide, one
-# still Proposed and old enough to be stalled, one Endorsed under delegation,
-# and one carrying the recommend-then-decide pair of forums.
+# owner or workstream and one resolved under a decision; and seven decisions,
+# three of them programme-wide, one still Proposed and old enough to be
+# stalled, one Endorsed under delegation, and one carrying the
+# recommend-then-decide pair of forums.
 # ReviewDate was one hand-set date standing for both halves of a review,
 # so moving it forward destroyed the evidence that a review had happened.
 # Split into LastReviewedDate and NextReviewDue. The column stays declared and

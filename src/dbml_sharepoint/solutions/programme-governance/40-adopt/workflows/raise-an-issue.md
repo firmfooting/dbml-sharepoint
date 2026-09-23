@@ -46,7 +46,9 @@ flowchart TD
 8. **The owner** drives the issue until it stops happening, then sets
    **Status** to **Resolved**, or to **Closed** once someone has confirmed
    it is gone. Either status needs a **Resolved Date** and the form will
-   not save without one.
+   not save without one. If a decision in the decision log settled it,
+   name that decision in **Resolving Decision**; most issues leave it
+   blank.
 
 **Related Risk** is optional and is the honest one to fill in. If the issue
 is a risk from the risk log that has actually happened, name that risk

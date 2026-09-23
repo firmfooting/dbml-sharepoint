@@ -2297,7 +2297,14 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     (IntervieweeProvider, NotesFile) and Incident (Service,
     ResolverProvider), each plus Author and Editor. The distribution is
     2 -> 12, 3 -> 31, 4 -> 27, 5 -> 5, 7 -> 1, 8 -> 2, 9 -> 2. The worst is
-    unchanged at 9."""
+    unchanged at 9.
+
+    RE-MEASURED 2026-09-24 across 38 templates / 80 entities, when
+    programme-governance/Issue gained the ResolvingDecision lookup: Issue
+    moves from 5 to 6 (Owner, the Workstream, RelatedRisk and
+    ResolvingDecision lookups, Author and Editor). The distribution is
+    2 -> 12, 3 -> 31, 4 -> 27, 5 -> 4, 6 -> 1, 7 -> 1, 8 -> 2, 9 -> 2. The
+    worst is unchanged at 9, and Issue is five clear of the warning band."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()

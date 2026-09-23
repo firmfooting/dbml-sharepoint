@@ -289,7 +289,7 @@ visible.
       `GOV_Risk`, `GOV_Issue`, `GOV_Action`. A list title is the prefix
       and the bare entity name; it is the columns that carry spaced
       display titles.
-- [ ] All six deferred lookups resolved. A lookup is deferred to Phase 2.2
+- [ ] All seven deferred lookups resolved. A lookup is deferred to Phase 2.2
       when its target's display column is not the built-in `Title`, and
       both `GOV_Risk` and `GOV_Decision` display a calculated one
       (`LiveRiskTitle`, `LiveDecisionTitle`), so every lookup into either
@@ -302,6 +302,7 @@ visible.
 | `GOV_ServiceRequest` | `AuthorisingDecision` | `GOV_Decision` |
 | `GOV_Risk` | `ToleranceDecision` | `GOV_Decision` |
 | `GOV_Issue` | `RelatedRisk` | `GOV_Risk` |
+| `GOV_Issue` | `ResolvingDecision` | `GOV_Decision` |
 | `GOV_Action` | `RelatedRisk` | `GOV_Risk` |
 | `GOV_Action` | `AuthorisingDecision` | `GOV_Decision` |
 
@@ -310,8 +311,8 @@ visible.
       test risk and confirm neither `RelatedRisk` picker offers it while it
       is `Proposed`; set it `Open` and confirm both offer it by title; then
       close or reject it and confirm it drops out. Create a decision, leave
-      it `Proposed`, and confirm none of the four `GOV_Decision` pickers
-      offer it; approve it and confirm all four do.
+      it `Proposed`, and confirm none of the five `GOV_Decision` pickers
+      offer it; approve it and confirm all five do.
 - [ ] All fifty-four declared views appear, and every Risk, Action, Issue
       and Decision view opens with the **ID** column:
       - **Workstream**: *The programme* (the default).
