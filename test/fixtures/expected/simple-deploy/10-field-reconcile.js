@@ -552,19 +552,9 @@
     return `The ${label} ownership survey proved no identity for '${listTitle}'`;
   }
 
-  // The one way a write phase reads an Id back out of a survey it ran with
-  // `allowAbsent` false. Such a survey returns a Map holding every title it
-  // was given or no Map at all, so a miss here means the caller asked about a
-  // title it never handed the survey and holds no proven identity to bind the
-  // write to. Named where the value is produced, because `Map.get` answers a
-  // miss with the same `undefined` a deliberate omission would pass.
-  //
-  // Its throw refuses one target: right for the caller bug it now describes,
-  // wrong for a short survey, which the survey refuses whole itself.
-  //
-  // The phases that legitimately run before their list exists survey with
-  // `allowAbsent` true and branch on absence themselves; they do not come
-  // through here.
+  // A miss means the caller asked about a title it never handed the survey,
+  // since `Map.get` answers that with the `undefined` a deliberate omission
+  // would also pass.
   function surveyedListId(identities, listTitle, label) {
     const listId = identities.get(listTitle);
     if (listId == null) throw new Error(unprovenIdentity(label, listTitle));
