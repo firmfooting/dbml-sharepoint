@@ -31,7 +31,8 @@ enum_sources: {}
 watched_lists: []
 
 # The two runners may delete their own mistakes; people offered rows to
-# check may edit but not delete; site members read. Site Visitors get nothing.
+# check may edit but not delete. Site Members and Visitors get nothing,
+# because the register holds notes about providers who may be members.
 groups:
   - name: "{prefix} Discovery Team"
     description: "The two people running the exercise: interviews, evidence, register hygiene and the weekly five lines."
@@ -94,8 +95,6 @@ list_permissions:
         level: "{prefix} Contribute No Delete"
       - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"
-      - principal: { kind: associated_member_group }
-        level: "Read"
       - principal: { kind: associated_owner_group }
         level: "Contribute"
       - principal: { kind: group, name: "dbml Enterprise Readers" }
@@ -113,8 +112,6 @@ list_permissions:
           level: "{prefix} Contribute No Delete"
         - principal: { kind: group, name: "dbml List Administrators" }
           level: "Full Control"
-        - principal: { kind: associated_member_group }
-          level: "Read"
         - principal: { kind: associated_owner_group }
           level: "{prefix} Contribute No Delete"
         - principal: { kind: group, name: "dbml Enterprise Readers" }
@@ -1298,7 +1295,7 @@ demo_items:
     - key: svc-sso
       values:
         Title: "[DEMO] Tap-on single sign-on"
-        Area: "Business applications"
+        Area: "Identity and access"
         Description: "Demo row. Badge tap-on to shared workstations."
         RunBySide: Unknown
         SupportSide: Unknown

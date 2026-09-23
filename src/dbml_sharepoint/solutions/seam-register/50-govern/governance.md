@@ -47,7 +47,7 @@ recorded cannot be in the future.
 | Service | **Title** is unique. **Run by** other than *Unknown* has a **Run by team**, and **Support from** other than *Unknown* has a **Support team**. **Single person** has an **Out of hours call**. **Last failure date** is recorded |
 | Evidence | **Title** is unique. **Evidence date** is recorded |
 | Seam | *Escalated* in **Status** has a **Resolve owner** and a **Resolve by**, and *Resolved* has a **Resolved on**. **Raised on** and **Resolved on** are recorded |
-| DocumentRequest | Any **Status** past *To ask* has **Asked on**, **Due on**, a **Holder** and a **Held by** other than *Unknown*. *Received*, *Refused* and *Not found* have **Answered on**. A *Received* services agreement, services schedule or attestation in **Type** has **Signed by**, which may say *Unsigned*. **Asked on** and **Answered on** are recorded |
+| DocumentRequest | **Title** is unique. Any **Status** past *To ask* has **Asked on**, **Due on**, a **Holder** and a **Held by** other than *Unknown*. *Received*, *Refused* and *Not found* have **Answered on**. A *Received* services agreement, services schedule or attestation in **Type** has **Signed by**, which may say *Unsigned*. **Asked on** and **Answered on** are recorded |
 | Artefact | **Dated** is recorded |
 | Interview | *Completed* in **Status** has **Minutes** and an **Interview date** that is not in the future. **Minutes** is 1 to 30 |
 | Incident | **Title** is unique. **Source detail** is required: the export a ticket came from, or the role who recalled an outage. **Incident date** is recorded |
@@ -97,9 +97,10 @@ the five lines are written. A check that a view answers names the view.
 - Below *Verified*, a filled service column may still be waiting for its
   evidence row. *Assumed* and *Claimed* say so, and F25 applies once a row
   is *Verified*.
-- Only the columns marked unique above are unique. Two evidence rows,
-  seams, document asks or interviews may describe the same thing, and
-  often should.
+- Only the columns marked unique above are unique. Every list a lookup
+  points at has a unique **Title**, or F21 for the library, because a
+  picker shows nothing else. Two seams or interviews may describe the same
+  thing, and often should.
 - An evidence row's **Source side** is the side that made the statement,
   and its file's **Source side** is the side that produced the file. They
   can differ, as when a provider's minutes record what our manager said,

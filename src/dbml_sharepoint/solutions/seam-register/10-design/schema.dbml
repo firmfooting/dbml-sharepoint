@@ -275,7 +275,7 @@ Table Seam {
 // a row, which is why the asks are a list and the copies are a library.
 Table DocumentRequest {
   Id             int            [pk, increment]
-  Title          nvarchar       [not null, note: 'The document as asked for, for example Services agreement and schedule']
+  Title          nvarchar       [not null, unique, note: 'The document, who holds it and when it was asked for, for example Services agreement and schedule, legal counsel, Sep. A file picks its request by this alone, so no two share one']
   DocumentType   document_type  [not null]
   Holder         nvarchar       [note: 'Who was asked for it, by role']
   HolderSide     side           [not null, default: 'Unknown', note: 'Which side holds it']

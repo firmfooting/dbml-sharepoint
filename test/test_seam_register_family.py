@@ -357,7 +357,8 @@ def _verified_fact_without_evidence(seed: Seed) -> Offenders:
     for key, service in seed["Service"].items():
         if service["Confidence"] != "Verified":
             continue
-        covered = {e["SupportsField"] for e in _evidence(seed, key)}
+        # A flagged row may be the claim that lost, so it covers nothing.
+        covered = {e["SupportsField"] for e in _evidence(seed, key) if not e["Contradicts"]}
         for field, fills in FILLS.items():
             if fills(service) and field not in covered:
                 bad.add(("Service", f"{key}:{field}"))
@@ -624,3 +625,36 @@ def test_no_view_shows_a_stale_hidden_value_unexplained() -> None:
                 if not (filtered or beside):
                     problems.append(f"{entity}/{view['title']}: {column}")
     assert not problems, problems
+
+
+# A lookup picker shows the target's Title and nothing else. The library's
+# uniqueness is unmeasured, so a Friday check holds it instead.
+PICKER_TITLES_BY_CHECK = {"Artefact": "F21"}
+
+
+def test_every_lookup_target_shows_a_unique_title() -> None:
+    loaded = _load("seam-register")
+    tables = {table.name: table for table in loaded.schema.tables}
+    targets = {
+        column.ref.target_table
+        for table in loaded.schema.tables
+        for column in table.columns
+        if column.ref is not None
+    }
+    assert targets, "no lookups found; the ref attribute has moved"
+    problems = [
+        target for target in sorted(targets)
+        if target not in PICKER_TITLES_BY_CHECK
+        and not any(c.name == "Title" and c.unique for c in tables[target].columns)
+    ]
+    assert not problems, problems
+    ids = {row[0] for row in _governance_table("Friday checks")}
+    assert set(PICKER_TITLES_BY_CHECK.values()) <= ids
+
+
+def test_a_flagged_row_covers_no_verified_fact() -> None:
+    """Direct, because flagging any seeded row also trips F4 first."""
+    seed = _seed()
+    assert ("Service", "svc-accounts:Decided by") not in _verified_fact_without_evidence(seed)
+    seed["Evidence"]["evd-accounts-decides"]["Contradicts"] = True
+    assert ("Service", "svc-accounts:Decided by") in _verified_fact_without_evidence(seed)

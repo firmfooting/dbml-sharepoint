@@ -21,9 +21,10 @@ script, then verify the lists and the library.
       exercise, who can add, edit and delete) and **SEAM Contributors** (the
       internal staff offered rows to correct, who can edit but not delete;
       never a provider's contact, because the group reads every list). Site
-      members read. Site Visitors get no access, because exact
-      reconciliation grants only what the mapping lists; add
-      `associated_visitor_group` to `list_permissions` if they should read.
+      Members and Site Visitors get no access, because exact reconciliation
+      grants only what the mapping lists and a provider's contact may be a
+      site member. Add `associated_member_group` to `list_permissions` only
+      on a site whose members are all internal.
 - [ ] Agree the site's sharing settings. The mapping uses exact permission
       reconciliation; inspect the generated manifest before deploying.
 - [ ] Plan browser-based use of the library. Microsoft's
