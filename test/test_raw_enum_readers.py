@@ -10,8 +10,8 @@ directly, re-deriving the same resolution a second way -- which is the shape
 of drift this whole piece exists to close. This is that gate.
 
 See `_raw_enum_readers.py` for the walk, why a read is recorded against its
-function rather than its module, and why `folder_policies` colliding with a
-`ResolvedMapping` field name is not a problem it needs to solve.
+function rather than its module, and how `self.folder_policies` on a
+`ResolvedMapping` is told apart from the raw field of the same name.
 """
 
 from pathlib import Path
@@ -23,6 +23,7 @@ from _raw_enum_readers import (
     PERMITTED,
     POSITIONAL_FIELDS,
     RATCHETED,
+    RESOLUTION_FIELDS,
     _reads_in,
     scan,
 )
@@ -202,6 +203,39 @@ def test_a_read_is_recorded_against_the_function_holding_it() -> None:
     ) == {("C.m", "folder_source")}
 
 
+def _resolved_and_raw(read: str) -> str:
+    """The shape `ResolvedMapping.require_folder_policies` has: one method
+    holding both a resolved read and a raw one."""
+    return (
+        "class ResolvedMapping:\n"
+        "    def require_folder_policies(self, perms):\n"
+        f"        return {read}\n"
+    )
+
+
+def test_a_resolutions_own_field_is_not_a_raw_read() -> None:
+    """Keyed by field name alone the two reads collapse into one site, so a
+    single exemption covered both and outlived whichever went first."""
+    assert _reads_in(_resolved_and_raw("self.folder_policies")) == set()
+    assert _reads_in(_resolved_and_raw("perms.folder_policies")) == {
+        ("ResolvedMapping.require_folder_policies", "folder_policies"),
+    }
+
+
+def test_the_class_that_holds_a_raw_source_reads_it_through_self_too() -> None:
+    """The receiver alone exempts nothing: `self` is a resolved answer only in
+    the class `analysis/resolve.py` declares it on."""
+    assert _reads_in(
+        "class EntityMapping:\n    def f(self):\n        return self.folder_source\n",
+    ) == {("EntityMapping.f", "folder_source")}
+
+
+def test_only_the_resolution_module_declares_a_resolved_answer() -> None:
+    """Read off the live classes, and only that module's own: `EntityMapping`
+    and `PermissionsConfig` carry the raw fields under these same names."""
+    assert {"ResolvedMapping": frozenset({"folder_policies"})} == RESOLUTION_FIELDS
+
+
 #: Raw enum-source reads outside the resolver: one entry per reading function
 #: and field, with the question that read asks. A RATCHET: entries come out
 #: when a function migrates onto `ResolvedMapping`, and one going in needs a
@@ -314,6 +348,30 @@ def test_only_the_recorded_sites_in_a_permitted_module_are_exempt(tmp_path: Path
         "dbml_sharepoint/analysis/groups.py::added_later::group_sources",
     }
     assert found.exempted == {listed}
+
+
+def test_a_permitted_entry_stops_exempting_when_its_raw_read_goes(tmp_path: Path) -> None:
+    """The entry below names the RAW read, so the currency test can retire it.
+
+    `require_folder_policies` reads the resolved field beside it, and while
+    that counted as the same site the exemption could never go stale: a new
+    raw read anywhere in the function stayed permitted by an entry written
+    for one that had gone.
+    """
+    listed = (
+        "dbml_sharepoint/analysis/resolve.py"
+        "::ResolvedMapping.require_folder_policies::folder_policies"
+    )
+    assert listed in PERMITTED
+    module = tmp_path / "dbml_sharepoint" / "analysis" / "resolve.py"
+    module.parent.mkdir(parents=True)
+    module.write_text(
+        "class ResolvedMapping:\n"
+        "    def require_folder_policies(self, entity):\n"
+        "        return self.folder_policies.get(entity)\n",
+        encoding="utf-8",
+    )
+    assert scan(tmp_path).exempted == set()
 
 
 def test_every_permitted_site_still_reads_a_raw_source() -> None:

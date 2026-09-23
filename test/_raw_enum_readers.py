@@ -5,8 +5,10 @@
 read before it resolves, so any other reader re-derives that resolution
 somewhere else. Reads and exemptions are both recorded per function, because
 a roster of modules frees every later read in a file that already holds one.
-`folder_policies` also names a `ResolvedMapping` field, and a read of that is
-reported rather than told apart by the type inference that would take.
+`folder_policies` also names a `ResolvedMapping` field, and `self.folder_policies`
+inside that class is told apart from a raw read by its receiver rather than by
+the type inference that would take, so the exemption for the raw read beside it
+retires when that read goes.
 """
 
 from __future__ import annotations
@@ -36,7 +38,9 @@ PERMITTED = frozenset({
     # The UNEXPANDED declarations, the only kind a caller holding no schema
     # can ask about, which is why the CLI calls this one directly.
     "dbml_sharepoint/analysis/groups.py::declaring_groups::group_sources",
-    # Tells an entity with no policy block apart from an unresolved one.
+    # The declared blocks, which tell an entity with no policy block apart
+    # from an unresolved one. The resolved field this function reads beside
+    # them is not this entry, so deleting the raw read retires it.
     "dbml_sharepoint/analysis/resolve.py::ResolvedMapping.require_folder_policies::folder_policies",
     # Every entity's folder source, resolved once, here.
     "dbml_sharepoint/analysis/resolve.py::resolve::folder_source",
@@ -73,6 +77,30 @@ def _positional_fields() -> dict[str, tuple[str, ...]]:
 
 #: Which field each position of a class pattern reads, by class name.
 POSITIONAL_FIELDS = _positional_fields()
+
+
+def _resolution_fields() -> dict[str, frozenset[str]]:
+    """The ratcheted names each `analysis/resolve.py` class holds ALREADY
+    resolved, by class name.
+
+    Read off the live classes, and only that module's own, so the model class
+    that actually carries a raw source is not covered by its own name.
+    """
+    found: dict[str, frozenset[str]] = {}
+    for name, obj in vars(resolve).items():
+        if not (isinstance(obj, type) and is_dataclass(obj)):
+            continue
+        if obj.__module__ != resolve.__name__:
+            continue
+        own = frozenset(obj.__dataclass_fields__) & RATCHETED
+        if own:
+            found[name] = own
+    return found
+
+
+#: Which ratcheted names are a resolution's own answer, by the class holding
+#: them. `self.folder_policies` on one of these is that answer, not a source.
+RESOLUTION_FIELDS = _resolution_fields()
 
 
 @dataclass
@@ -154,12 +182,29 @@ def _fields_matched(node: ast.MatchClass, aliases: dict[str, str]) -> set[str]:
     return fields | (set(positions[: len(node.patterns)]) & RATCHETED)
 
 
-def _fields_read(node: ast.AST, aliases: dict[str, str]) -> set[str]:
+def _reads_its_own_answer(node: ast.Attribute, owner: str) -> bool:
+    """Whether `node` is a resolution reading its OWN resolved field.
+
+    `ResolvedMapping.require_folder_policies` reads `self.folder_policies`,
+    the resolved answer, and `perms.folder_policies`, the raw source. Keyed by
+    field name alone the two collapse into one site, so a single exemption
+    covers both and outlives whichever read goes first. The receiver tells
+    them apart without the type inference the module docstring rules out.
+    """
+    return (
+        isinstance(node.value, ast.Name)
+        and node.value.id == "self"
+        and node.attr in RESOLUTION_FIELDS.get(owner, frozenset())
+    )
+
+
+def _fields_read(node: ast.AST, aliases: dict[str, str], owner: str) -> set[str]:
     """The ratcheted fields `node` itself reads, its children aside."""
     if isinstance(node, ast.Attribute):
         # `Load` context separates a read from a keyword argument, a type
         # annotation and an assignment target, none of which read a field.
-        if node.attr in RATCHETED and isinstance(node.ctx, ast.Load):
+        reads = node.attr in RATCHETED and isinstance(node.ctx, ast.Load)
+        if reads and not _reads_its_own_answer(node, owner):
             return {node.attr}
         return set()
     if isinstance(node, ast.MatchClass):
@@ -177,24 +222,30 @@ def _fields_read(node: ast.AST, aliases: dict[str, str]) -> set[str]:
 
 
 def _collect(
-    node: ast.AST, scope: tuple[str, ...], found: _Found, aliases: dict[str, str],
+    node: ast.AST,
+    scope: tuple[str, ...],
+    found: _Found,
+    aliases: dict[str, str],
+    owner: str,
 ) -> None:
-    """Walk `node`, carrying the qualified name its children sit under."""
+    """Walk `node`, carrying the qualified name its children sit under and the
+    class they are declared in."""
     qualname = ".".join(scope) if scope else MODULE_SCOPE
     for child in ast.iter_child_nodes(node):
         if isinstance(child, _SCOPES):
             nested = (*scope, child.name)
             found.functions.add(".".join(nested))
-            _collect(child, nested, found, aliases)
+            holder = child.name if isinstance(child, ast.ClassDef) else owner
+            _collect(child, nested, found, aliases, holder)
             continue
-        found.reads |= {(qualname, name) for name in _fields_read(child, aliases)}
-        _collect(child, scope, found, aliases)
+        found.reads |= {(qualname, name) for name in _fields_read(child, aliases, owner)}
+        _collect(child, scope, found, aliases, owner)
 
 
 def _walk(source: str) -> _Found:
     tree = ast.parse(source)
     found = _Found()
-    _collect(tree, (), found, _import_aliases(tree))
+    _collect(tree, (), found, _import_aliases(tree), "")
     return found
 
 
