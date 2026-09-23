@@ -541,14 +541,8 @@ def _acl_scopes(
             table_name, entity.folder_source, bundle.mapping.permissions, enum_members,
         ):
             if not folder.strip():
-                # The contract is that `folder` is ABSENT for a list scope,
-                # not falsy: Jinja tests `defined`, JavaScript tests
-                # truthiness, and an empty string satisfies one and not the
-                # other. validate_against_mapping reports an empty or
-                # whitespace-only folder name as FOLDER_NAME_INVALID first;
-                # guard defensively in case it is bypassed, since
-                # build_schema_json is public API and does not require a
-                # prior validation pass.
+                # Guarded here too because build_schema_json is public API:
+                # validate_against_mapping reports FOLDER_NAME_INVALID first.
                 raise ValueError(
                     f"{table_name}: folder policy names an empty or "
                     "whitespace-only folder",
