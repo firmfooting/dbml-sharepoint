@@ -504,36 +504,57 @@ def _principal_json(principal: Any) -> dict[str, Any]:
     return out
 
 
-def _folder_assignments(
+def _acl_scopes(
     bundle: MappingBundle,
     creation_order: Sequence[str],
     site_role: str,
     enum_members: dict[str, list[str]],
 ) -> list[dict[str, Any]]:
-    """Folder-scoped ACLs, one entry per declared folder of every entity
-    `list_permissions.folders` names.
+    """Every securable this bundle writes role assignments to, list scopes and
+    folder scopes in one collection.
 
-    Emitted beside the list assignments and consumed by the same phase,
-    because that phase's descendant-scope guard has to know which folder
-    scopes this bundle means to create. A folder scope it has not been told
-    about is still an abort.
+    One collection because a consumer reading list scopes and not folder
+    scopes still type-checks, still passes its tests, and answers a narrower
+    question than its name claims. A row carries `folder` only when it is a
+    folder scope, so a consumer meaning one kind states that in its filter.
     """
     out: list[dict[str, Any]] = []
     for table_name in creation_order:
         entity = bundle.mapping.entities.get(table_name)
         if entity is None or entity.site_role != site_role:
             continue
-        for folder, policy in folder_policies(
-            table_name, entity.folder_source, bundle.mapping.permissions, enum_members,
-        ):
+        list_title = bundle.mapping.list_title(table_name)
+        policy = bundle.mapping.permissions_for_entity(table_name)
+        if policy is not None:
             out.append({
-                "list": bundle.mapping.list_title(table_name),
-                "folder": folder,
+                "list": list_title,
                 "break_inheritance": policy.break_inheritance,
                 "reconcile_mode": policy.reconcile_mode,
                 "assignments": [
                     {"principal": _principal_json(a.principal), "level": a.level}
                     for a in policy.assignments
+                ],
+            })
+        # A folder policy on a list with no policy of its own emits folder
+        # rows and no list row, which is why no consumer may assume a pair.
+        for folder, folder_policy in folder_policies(
+            table_name, entity.folder_source, bundle.mapping.permissions, enum_members,
+        ):
+            if not folder.strip():
+                # Guarded here too because build_schema_json is public API:
+                # validate_against_mapping reports FOLDER_NAME_INVALID first.
+                raise ValueError(
+                    f"{table_name}: folder policy names an empty or "
+                    "whitespace-only folder",
+                )
+            out.append({
+                "list": list_title,
+                "folder": folder,
+                "break_inheritance": folder_policy.break_inheritance,
+                "reconcile_mode": folder_policy.reconcile_mode,
+                "assignments": [
+                    {"principal": _principal_json(a.principal), "level": a.level}
+                    for a in folder_policy.assignments
                 ],
             })
     return out
@@ -1049,12 +1070,11 @@ def build_schema_json(
     # === Permissions (R5) ===
     permission_levels_out: list[dict[str, Any]] = []
     groups_out: list[dict[str, Any]] = []
-    list_assignments_out: list[dict[str, Any]] = []
     # Initialised beside the others rather than inside the block below.
     # `Mapping.permissions` is optional, so a caller composing a Mapping
     # through the public API can leave it None, and the schema dict reads
     # this key unconditionally.
-    folder_assignments_out: list[dict[str, Any]] = []
+    acl_scopes_out: list[dict[str, Any]] = []
 
     mapping_perms = bundle.mapping.permissions
     if mapping_perms is not None:
@@ -1114,28 +1134,7 @@ def build_schema_json(
                 "enroll_enterprise_reader": grp.enroll_enterprise_reader,
             })
 
-        # Build list_assignments for every list in this site role.
-        prefix = bundle.mapping.prefix
-        for table_name in plan.list_creation_order:
-            acl_entity = bundle.mapping.entities.get(table_name)
-            if acl_entity is None or acl_entity.site_role != site_role:
-                continue
-            policy = bundle.mapping.permissions_for_entity(table_name)
-            if policy is None:
-                continue
-            list_title = bundle.mapping.list_title(table_name)
-            assignments_out: list[dict[str, Any]] = [
-                {"principal": _principal_json(a.principal), "level": a.level}
-                for a in policy.assignments
-            ]
-            list_assignments_out.append({
-                "list": list_title,
-                "break_inheritance": policy.break_inheritance,
-                "reconcile_mode": policy.reconcile_mode,
-                "assignments": assignments_out,
-            })
-
-        folder_assignments_out += _folder_assignments(
+        acl_scopes_out += _acl_scopes(
             bundle, plan.list_creation_order, site_role, enum_members,
         )
 
@@ -1160,8 +1159,7 @@ def build_schema_json(
         "field_defaults": field_defaults_out,
         "permission_levels": permission_levels_out,
         "groups": groups_out,
-        "list_assignments": list_assignments_out,
-        "folder_assignments": folder_assignments_out,
+        "acl_scopes": acl_scopes_out,
         # The single boolean the manifest and deploy.js's own preflight
         # abort both key off, instead of each re-deriving "declares levels /
         # groups / a per-list policy" independently -- see

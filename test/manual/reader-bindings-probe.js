@@ -419,7 +419,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not
   // work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 1a126933. Quote this when reporting results.');
+  log('INFO', 'probe revision a8cf6571. Quote this when reporting results.');
 
 
   // R3 reads ONE field and says so. The comment here used to claim it compared
@@ -619,7 +619,7 @@
         + `the other ${visible.length - unique.length} inherit from the web, so their bindings are R4's, not their own`
         + `${unreadable ? `, and ${unreadable} unique list(s) had an ACL this caller could not read` : ''}. `
         + (held.length
-          ? `${held.join('; ')}. Any of these on a list OUTSIDE a deployed bundle is inherited permanently by an account enrolled into that group: deploy/_acls.js.j2 iterates SCHEMA.list_assignments only.`
+          ? `${held.join('; ')}. Any of these on a list OUTSIDE a deployed bundle is inherited permanently by an account enrolled into that group: deploy/_acls.js.j2 reconciles only the scopes SCHEMA.acl_scopes names.`
           : 'no site group holds an explicit binding on any list with unique permissions.'));
     }
   }

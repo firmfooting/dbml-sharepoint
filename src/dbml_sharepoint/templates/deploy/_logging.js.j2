@@ -951,15 +951,17 @@
     } else if (changeLogReady) {
 {% if enterprise_reader %}
       const readerGroup = SCHEMA.groups.find((g) => g.enroll_enterprise_reader);
-      // Both collections. A reader granted only inside a library's folders
-      // holds a real grant, and reading the list ones alone left the change
-      // log with no role assignments while reporting that as a finding of
-      // fact rather than a gap in what was searched.
+      // Prefer a list-scope grant: the change log is a list with no folders,
+      // so a list-scope grant is the closer analogue. The folder fallback is
+      // what leaves a reader granted only inside a library's folders with a
+      // grant mirrored rather than none.
+      const findGrant = (scopes) => scopes
+        .map((s) => s.assignments.find((a) => a.principal.kind === 'group'
+                && a.principal.name === readerGroup.name))
+        .find((a) => a);
       const readerGrant = readerGroup
-        && [...SCHEMA.list_assignments, ...SCHEMA.folder_assignments]
-          .map((la) => la.assignments.find((a) => a.principal.kind === 'group'
-                  && a.principal.name === readerGroup.name))
-          .find((a) => a);
+        && (findGrant(SCHEMA.acl_scopes.filter((s) => !s.folder))
+          || findGrant(SCHEMA.acl_scopes.filter((s) => s.folder)));
       const levelName = readerGrant ? readerGrant.level : null;
       if (!readerGroup || !levelName) {
         log('INFO', 'Change log: no reader group grant found to mirror; leaving it with no role assignments.');

@@ -529,11 +529,13 @@ paginated after settings reconciliation
 and owner verification. Any existing member aborts Phase {{ phase_num['security'] }} before list creation;
 the deployer never removes membership automatically.
 
+{% set list_scopes = schema_json.acl_scopes | selectattr('folder', 'undefined') | list %}
+{% set folder_scopes = schema_json.acl_scopes | selectattr('folder', 'defined') | list %}
 ### Per-list assignments (inheritance broken)
-{% if schema_json.list_assignments %}
+{% if list_scopes %}
 | List | Reconcile | Principal | Level |
 |------|-----------|-----------|-------|
-{% for la in schema_json.list_assignments %}
+{% for la in list_scopes %}
 {% for a in la.assignments %}
 | {{ la.list | markdown_cell }} | `{{ la.reconcile_mode }}` | {% if a.principal.kind == 'group' %}{{ a.principal.name | markdown_cell }} (group){% elif a.principal.kind == 'associated_owner_group' %}Site Owners (associated owner){% elif a.principal.kind == 'associated_member_group' %}Site Members (associated member){% else %}Site Visitors (associated visitor){% endif %} | {{ a.level | markdown_cell }} |
 {% endfor %}
@@ -553,10 +555,10 @@ the declared grants and leaves other principals alone; `exact` additionally
 removes every direct grant on that scope this mapping does not declare.
 
 ### Per-folder assignments
-{% if schema_json.get('folder_assignments') %}
+{% if folder_scopes %}
 | Folder | Inheritance | Reconcile | Principal | Level |
 |--------|-------------|-----------|-----------|-------|
-{% for fa in schema_json.get('folder_assignments') %}
+{% for fa in folder_scopes %}
 {% if not fa.assignments %}
 | {{ (fa.list ~ '/' ~ fa.folder) | markdown_cell }} | {% if fa.break_inheritance %}broken{% else %}not broken here{% endif %} | `{{ fa.reconcile_mode }}` | _none declared_ | {% if fa.break_inheritance and fa.reconcile_mode == 'exact' %}every direct grant on this folder is removed{% else %}nothing is granted{% endif %} |
 {% endif %}

@@ -5,13 +5,13 @@
   invalidateFieldShapes();  // probes reflect phase-start state
   let digest = await getDigest();
   const listGuids = Object.create(null);
-  // `list_assignments` only, and deliberately: early isolation breaks the
-  // LIST's inheritance, and a folder policy breaks the folder's. A library
-  // whose folders are exact while the library itself is not has nothing to
-  // isolate here.
-  const earlyIsolationLists = new Set(SCHEMA.list_assignments
-    .filter(la => la.break_inheritance && la.reconcile_mode === 'exact')
-    .map(la => la.list));
+  // List scopes only, and the filter says so rather than the collection
+  // name: early isolation breaks the LIST's inheritance, and a folder policy
+  // breaks the folder's. A library whose folders are exact while the library
+  // itself is not has nothing to isolate here.
+  const earlyIsolationLists = new Set(SCHEMA.acl_scopes
+    .filter(s => !s.folder && s.break_inheritance && s.reconcile_mode === 'exact')
+    .map(s => s.list));
 
   // Wave 1 is sequential, in dependency order: list existence, declared
   // list shape, GUID capture, early ACL isolation. Sequential because
