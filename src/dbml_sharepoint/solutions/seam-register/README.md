@@ -43,8 +43,14 @@ of us have read the evidence.
 A service, an incident, a document ask and an interview each say two things
 about who is involved. The **side** is a fixed choice: *Us*, *Provider*,
 *Third party*, *Shared* or *Unknown*. The **provider** is a lookup into
-`SEAM_Provider` that names which one. It is always on the form and is filled
-when the side is *Provider*, *Third party* or *Shared*.
+`SEAM_Provider` that names which one, and appears on the form once the side
+is *Provider*, *Third party* or *Shared*.
+
+Each form shows a field once the row has reached it: the resolution once a
+seam is resolved, the eight answers once an interview is completed. A field
+hidden again by a later change keeps its old value, and the row still
+saves. Views and reporting filter on status and side, so the old value
+does not surface.
 
 The side carries everything a fixed value has to: the save rule that a
 claimed service names a team, the colours, the seam map's grouping and the
@@ -80,8 +86,7 @@ talking about first.
 | Service | Seam map | First-pass rows grouped by which side runs them, coloured by confidence. The default |
 | Service | By provider | Every row grouped by the provider that runs it |
 | Service | By support provider | Every row grouped by the provider you call, including rows another side runs |
-| Service | Run-by provider to check | Rows whose run-by side owes a provider and names none, or is Us or Unknown and still names one |
-| Service | Support provider to check | The same, for the support side |
+| Service | Provider not named | Rows whose run-by or support side owes a provider and names none |
 | Service | By area | Every row grouped by first-pass area |
 | Service | Assumed | First-pass rows nobody has told us about yet |
 | Service | Single person | Rows only one named individual can operate or repair, with the Saturday-night answer |
@@ -100,7 +105,7 @@ talking about first.
 | DocumentRequest | Received | Copies held, with what each is silent on |
 | DocumentRequest | Refused or not found | The results that are themselves findings |
 | DocumentRequest | By holder | Every ask grouped by which side holds the document |
-| DocumentRequest | Provider to check | Asks whose holder side owes a provider and names none, or names one it should not |
+| DocumentRequest | Provider not named | Asks whose holder side owes a provider and names none |
 | Artefact | Folder View | The six folders |
 | Artefact | All artefacts | Every file across folders, recently modified first. The default |
 | Artefact | By source side | Every file sorted by which side produced it, newest first within each |
@@ -109,12 +114,12 @@ talking about first.
 | Interview | Completed | Conversations held, with their follow-ups |
 | Interview | By side | Every conversation grouped by side |
 | Interview | Not held | Declined and cancelled, which are evidence too |
-| Interview | Provider to check | Conversations whose side owes a provider and names none, or names one it should not |
+| Interview | Provider not named | Conversations whose side owes a provider and names none |
 | Incident | By resolver | Twelve months of tickets grouped by which side closed them. The default |
 | Incident | By service | Tickets grouped by the service row assigned |
 | Incident | Remembered outages | The ones nobody logged |
 | Incident | Unassigned | Tickets not yet matched to a service row |
-| Incident | Provider to check | Tickets whose resolver side owes a provider and names none, or names one it should not |
+| Incident | Provider not named | Tickets whose resolver side owes a provider and names none |
 | WeeklyUpdate | Weekly log | Week 1 to 6. The default |
 | WeeklyUpdate | Latest first | The most recent five lines |
 
@@ -126,18 +131,18 @@ The rules SharePoint holds:
   beside it. Unknown may stay blank.
 - A single-person service needs the out-of-hours answer.
 - Escalating a seam names who will resolve it and by when. Resolving it
-  needs the resolved date, and only a resolved seam carries one.
+  needs the resolved date.
 - Once asked, a document has an asked-on date and a due date. Received,
-  refused and not found each need the date the answer came back.
+  refused and not found each need the date the answer came back. A received
+  agreement, schedule or attestation says who signed it, or *Unsigned*.
 - A completed interview has its duration, at most thirty minutes.
 - A remembered outage says who remembered it.
 - No recorded date is in the future. Week is 1 to 6, and the weekly counts
   are not negative.
 
 Naming the provider is not a save rule, because a formula cannot read a
-lookup; a **provider to check** view on each of the four lists with a
-provider column (two on the service list) finds the rows that owe one and
-the rows still naming one after the side changed. The two-source Verified
+lookup; **Provider not named**, on each of the four lists with a provider
+column, finds the rows that owe one. The two-source Verified
 rule is a governance check too: a formula cannot count evidence rows on
 another list. See [governance](50-govern/governance.md) for the
 checks the register cannot make on its own.

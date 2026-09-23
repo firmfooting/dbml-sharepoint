@@ -413,18 +413,18 @@ views:
     # rather than refused: a side that owes a provider with none named, and
     # a provider left behind on a side that has none. The second does not
     # rest on the form keeping a held lookup visible, which is unmeasured.
-    # Split in two: one view over both lookups renders 14 comparisons, past
-    # the 10 the filter editor can show.
-    - title: "Run-by provider to check"
-      fields: [Title, Area, RunBySide, RunByProvider, RunByTeam]
+    # A save rule cannot read a lookup, so a row whose side shows the
+    # provider column and leaves it blank is found here rather than refused.
+    - title: "Provider not named"
+      fields: [Title, Area, RunBySide, RunByProvider, SupportSide, SupportProvider]
       where:
         - any_of:
             - all_of:
                 - { field: RunBySide, op: in, value: [Provider, "Third party", Shared] }
                 - { field: RunByProvider, op: is_null }
             - all_of:
-                - { field: RunBySide, op: in, value: [Us, Unknown] }
-                - { field: RunByProvider, op: is_not_null }
+                - { field: SupportSide, op: in, value: [Provider, "Third party", Shared] }
+                - { field: SupportProvider, op: is_null }
       sort:
         - { field: Area, direction: asc }
       widths:
@@ -432,25 +432,8 @@ views:
         Area: 220
         RunBySide: 160
         RunByProvider: 220
-        RunByTeam: 200
-    - title: "Support provider to check"
-      fields: [Title, Area, SupportSide, SupportProvider, SupportTeam]
-      where:
-        - any_of:
-            - all_of:
-                - { field: SupportSide, op: in, value: [Provider, "Third party", Shared] }
-                - { field: SupportProvider, op: is_null }
-            - all_of:
-                - { field: SupportSide, op: in, value: [Us, Unknown] }
-                - { field: SupportProvider, op: is_not_null }
-      sort:
-        - { field: Area, direction: asc }
-      widths:
-        Title: 300
-        Area: 220
         SupportSide: 160
         SupportProvider: 220
-        SupportTeam: 200
     - title: "By area"
       fields: ['@identity', RunByTeam, DecidedBy, FirstPass]
       group_by: { field: Area, collapsed: false }
@@ -701,17 +684,12 @@ views:
         Status: 120
         DueOn: 150
         Services: 240
-    # The same two gaps the service list's view catches, for this list's lookup.
-    - title: "Provider to check"
+    # The same gap the service list's view catches, for this list's lookup.
+    - title: "Provider not named"
       fields: [Title, DocumentType, Holder, HolderSide, HolderProvider, Status]
       where:
-        - any_of:
-            - all_of:
-                - { field: HolderSide, op: in, value: [Provider, "Third party", Shared] }
-                - { field: HolderProvider, op: is_null }
-            - all_of:
-                - { field: HolderSide, op: in, value: [Us, Unknown] }
-                - { field: HolderProvider, op: is_not_null }
+        - { field: HolderSide, op: in, value: [Provider, "Third party", Shared] }
+        - { field: HolderProvider, op: is_null }
       sort:
         - { field: Title, direction: asc }
       widths:
@@ -831,17 +809,12 @@ views:
         InterviewDate: 150
         Status: 120
         FollowUps: 320
-    # The same two gaps the service list's view catches, for this list's lookup.
-    - title: "Provider to check"
+    # The same gap the service list's view catches, for this list's lookup.
+    - title: "Provider not named"
       fields: [Title, IntervieweeSide, IntervieweeProvider, InterviewDate, Status]
       where:
-        - any_of:
-            - all_of:
-                - { field: IntervieweeSide, op: in, value: [Provider, "Third party", Shared] }
-                - { field: IntervieweeProvider, op: is_null }
-            - all_of:
-                - { field: IntervieweeSide, op: in, value: [Us, Unknown] }
-                - { field: IntervieweeProvider, op: is_not_null }
+        - { field: IntervieweeSide, op: in, value: [Provider, "Third party", Shared] }
+        - { field: IntervieweeProvider, op: is_null }
       sort:
         - { field: Title, direction: asc }
       widths:
@@ -903,17 +876,12 @@ views:
         ResolverSide: 160
         ResolverTeam: 220
         Summary: 320
-    # The same two gaps the service list's view catches, for this list's lookup.
-    - title: "Provider to check"
+    # The same gap the service list's view catches, for this list's lookup.
+    - title: "Provider not named"
       fields: [Title, Service, IncidentDate, ResolverSide, ResolverProvider, ResolverTeam]
       where:
-        - any_of:
-            - all_of:
-                - { field: ResolverSide, op: in, value: [Provider, "Third party", Shared] }
-                - { field: ResolverProvider, op: is_null }
-            - all_of:
-                - { field: ResolverSide, op: in, value: [Us, Unknown] }
-                - { field: ResolverProvider, op: is_not_null }
+        - { field: ResolverSide, op: in, value: [Provider, "Third party", Shared] }
+        - { field: ResolverProvider, op: is_null }
       sort:
         - { field: Title, direction: asc }
       widths:
@@ -926,11 +894,12 @@ views:
   WeeklyUpdate:
     - title: "Weekly log"
       default: true
-      fields: [Title, WeekEnding, RowsVerified, SeamsFound, Blocked, Next, Surprise]
+      fields: [Title, WeekNo, WeekEnding, RowsVerified, SeamsFound, Blocked, Next, Surprise]
       sort:
         - { field: WeekNo, direction: asc }
       widths:
         Title: 120
+        WeekNo: 100
         WeekEnding: 150
         RowsVerified: 140
         SeamsFound: 140
@@ -938,11 +907,12 @@ views:
         Next: 300
         Surprise: 300
     - title: "Latest first"
-      fields: [Title, WeekEnding, RowsVerified, SeamsFound, Surprise]
+      fields: [Title, WeekNo, WeekEnding, RowsVerified, SeamsFound, Surprise]
       sort:
         - { field: WeekNo, direction: desc }
       widths:
         Title: 120
+        WeekNo: 100
         WeekEnding: 150
         RowsVerified: 140
         SeamsFound: 140
@@ -977,32 +947,44 @@ form_formatting:
     header: formatting/weekly-update-form-header.json
     body: formatting/weekly-update-form-body.json
 
-# The later blocks appear once the row has reached them. The provider
-# columns are never hidden: a hidden lookup could keep a value nobody can
-# see to clear, and the provider-to-check views find both provider gaps.
+# Fields appear once the row has reached them, and a provider column once
+# the side says a provider or third party is involved. A field hidden again
+# keeps its value, which is harmless: no save rule forbids a value on a
+# hidden field, so the row still saves, and reporting filters by status.
 form_visibility:
+  Service:
+    reconcile: exact
+    columns:
+      RunByProvider:
+        when:
+          - { field: RunBySide, op: in, value: [Provider, "Third party", Shared] }
+      SupportProvider:
+        when:
+          - { field: SupportSide, op: in, value: [Provider, "Third party", Shared] }
   Seam:
     reconcile: exact
     columns:
-      # On every existing seam, so a status set back can have its date
-      # cleared; a self-referencing formula is unmeasured.
       ResolvedOn:
-        new: false
+        when:
+          - { field: Status, op: eq, value: Resolved }
       Resolution:
         when:
           - { field: Status, op: eq, value: Resolved }
   DocumentRequest:
     reconcile: exact
     columns:
+      HolderProvider:
+        when:
+          - { field: HolderSide, op: in, value: [Provider, "Third party", Shared] }
       AskedOn:
         when:
           - { field: Status, op: in, value: [Asked, Received, Refused, "Not found"] }
       DueOn:
         when:
           - { field: Status, op: in, value: [Asked, Received, Refused, "Not found"] }
-      # On every existing ask, for the same reason as a seam's Resolved on.
       AnsweredOn:
-        new: false
+        when:
+          - { field: Status, op: in, value: [Received, Refused, "Not found"] }
       SignedBy:
         when:
           - { field: Status, op: eq, value: Received }
@@ -1010,6 +992,9 @@ form_visibility:
   Interview:
     reconcile: exact
     columns:
+      IntervieweeProvider:
+        when:
+          - { field: IntervieweeSide, op: in, value: [Provider, "Third party", Shared] }
       DurationMin: &after_the_conversation
         new: false
         when:
@@ -1029,6 +1014,12 @@ form_visibility:
         new: false
         when:
           - { field: Status, op: in, value: [Completed, Declined, Cancelled] }
+  Incident:
+    reconcile: exact
+    columns:
+      ResolverProvider:
+        when:
+          - { field: ResolverSide, op: in, value: [Provider, "Third party", Shared] }
 
 # Every date here records something that has happened, so none may be in
 # the future; the today rules are hoisted onto each list rule at build time.
@@ -1153,10 +1144,7 @@ list_validation:
       - any_of:
           - { field: Status, op: neq, value: Resolved }
           - { field: ResolvedOn, op: is_not_null }
-      - any_of:
-          - { field: ResolvedOn, op: is_null }
-          - { field: Status, op: eq, value: Resolved }
-    message: "Escalating a seam names who will resolve it and by when. Resolving it needs the resolved date, and only a resolved seam carries one."
+    message: "Escalating a seam names who will resolve it and by when. Resolving it needs the resolved date."
   DocumentRequest:
     when:
       - any_of:
@@ -1168,9 +1156,10 @@ list_validation:
           - { field: Status, op: in, value: ["To ask", Asked] }
           - { field: AnsweredOn, op: is_not_null }
       - any_of:
-          - { field: AnsweredOn, op: is_null }
-          - { field: Status, op: in, value: [Received, Refused, "Not found"] }
-    message: "Once asked, a document has an asked-on date and a due date. Received, refused and not found each need the date the answer came back, and only an answered document carries one."
+          - { field: Status, op: neq, value: Received }
+          - { field: DocumentType, op: not_in, value: ["Services agreement", "Services schedule", Attestation] }
+          - { field: SignedBy, op: is_not_null }
+    message: "Once asked, a document has an asked-on date and a due date. Received, refused and not found each need the date the answer came back. A received agreement, schedule or attestation says who signed it, or Unsigned."
   Interview:
     when:
       - any_of:
@@ -1634,12 +1623,12 @@ demo_items:
         Status: Completed
         InterviewDate: "today-20"
         DurationMin: 30
-        Q1Runs: "Demo row. The account creation script and the print servers."
-        Q2Uses: "Demo row. Backup, the virtual desktop and the network, all run by the shared ICT service."
-        Q3Call: "Demo row. The provider's service desk, except for restores, where we ring infrastructure."
-        Q4Decides: "Demo row. The ICT manager for the script; the provider for everything else."
-        Q5AskProvider: "Demo row. A restore, a firewall change, a new virtual desktop image."
-        Q6AskedProvider: "Demo row. Two firewall changes and one restore."
+        Q1Runs: "Demo row. The account creation script."
+        Q2Uses: "Demo row. The HR feed the script reads, which HR runs."
+        Q3Call: "Demo row. Nobody. When the script breaks I fix it myself."
+        Q4Decides: "Demo row. The ICT manager."
+        Q5AskProvider: "Demo row. Nothing for the script; it runs on our own server."
+        Q6AskedProvider: "Demo row. Nothing about the script."
         Q7Auditor: "Demo row. The script. Nobody else could run it and there is no document."
         Q8Saturday: "Demo row. Nobody. It waits until Monday."
         FollowUps: "Demo row. Send the script location and the last run log by Friday."

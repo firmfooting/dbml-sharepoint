@@ -84,12 +84,12 @@ Standard deployment logging is separate infrastructure; use the build's
 - [ ] **By provider** groups the services by **Run by provider**: the
       shared ICT service runs two, the telephony managed service one, and
       the rest sit in the blank group. **By support provider** puts the M365
-      tenant row under the cloud platform although we run it. **Run-by
-      provider to check** shows the visitor badge row and **Support provider
-      to check** the desk phones row, each on a side that owes a provider
-      nobody has named. **Provider to check** shows one row on each of the
-      document request, interview and incident lists: the attestation ask,
-      the declined interview and the slow-desktop ticket.
+      tenant row under the cloud platform although we run it. **Provider
+      not named** on the service list shows the visitor badge and desk
+      phones rows, each on a side that owes a provider nobody has named. The
+      same view shows one row on each of the document request, interview
+      and incident lists: the attestation ask, the declined interview and
+      the slow-desktop ticket.
 - [ ] On the provider list, **Active providers** is the default and shows
       three. **Agreements ending** shows two, the telephony service first.
       **Retired** shows the previous backup vendor, and its past
@@ -98,30 +98,29 @@ Standard deployment logging is separate infrastructure; use the build's
 - [ ] **By resolver** is the default on the incident list and groups by
       **Resolved by**. The unassigned demonstration ticket appears in
       **Unassigned**.
-- [ ] Add a service. Set **Run by** to *Provider* with no **Run by team**
-      and the save rule refuses it. Set **Run by** to *Unknown* and it
-      saves. Add a second service with the same **Title** and uniqueness
-      refuses it.
-- [ ] Open the demonstration backup service, which names a provider, and set
-      **Run by** to *Us* without clearing **Run by provider**. It saves, and
-      the row appears in **Run-by provider to check**. Clear the provider on
-      the same form and it leaves the view.
+- [ ] Add a service. **Run by provider** is hidden while **Run by** is
+      *Unknown*, and appears when it is set to *Provider*, *Third party* or
+      *Shared*. Set *Provider* with no **Run by team** and the save rule
+      refuses it. Set **Run by** to *Unknown* and it saves. Add a second
+      service with the same **Title** and uniqueness refuses it.
 - [ ] Tick **Single person** on a service with no **Out of hours call**. The
       save rule refuses it.
 - [ ] Add a seam. **Raised on** fills with today. Set **Status** to
       *Escalated* without a **Resolve owner**. The save rule refuses it.
       Set *Resolved* without a **Resolved on** date. The save rule refuses
-      that too. **Resolution** appears only once the status is *Resolved*;
-      **Resolved on** is on every existing seam, so a seam set back to
-      *Open* can have its date cleared and then saves.
+      that too, and **Resolved on** and **Resolution** appear only once the
+      status is *Resolved*. Set a resolved seam back to *Open* and it saves,
+      keeping the hidden date.
 - [ ] On a seam, **Evidence in conflict** accepts more than one evidence
       row.
 - [ ] Add a document ask. **Asked on** and **Due on** appear once the status
-      leaves *To ask*, and the save rule refuses *Asked* without both.
+      leaves *To ask*, and the save rule refuses *Asked* without both. Set
+      a received *Attestation* with no **Signed by** and the save rule
+      refuses it.
       **Due on** turns red once it has passed and the status is still
       *Asked*, and stops once the status is *Received*, *Refused* or *Not
-      found*. **Answered on** is on every existing ask, and the save rule
-      refuses those three without it and the other two with it.
+      found*. **Answered on** appears for those three, and the save rule
+      refuses any of them without it.
 - [ ] Upload a file into the library's Interviews folder. Its **Type**
       defaults to *Document copy*; set it to *Interview notes*. **Services**
       accepts more than one service row. It appears in **All artefacts** and

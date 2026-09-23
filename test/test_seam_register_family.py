@@ -3,10 +3,11 @@
 
 The confidence rule is a governance check, not a save rule, so nothing
 stops the demonstration rows modelling a *Verified* service with no
-evidence behind it. And a "provider to check" view is the only thing that
-stands in for a save rule on each provider lookup, so every lookup needs
-one covering both gaps, and must never be hidden on the form. All of it
-was found in review of the family's first pull request.
+evidence behind it. A "Provider not named" view is the only thing that
+stands in for a save rule on each provider lookup. And fields that appear
+with a status keep their value when hidden again, so no save rule may
+forbid one. All of it was found in review of the family's first pull
+request.
 """
 
 from typing import Any
@@ -61,15 +62,6 @@ def test_no_seeded_service_claims_more_confidence_than_its_evidence() -> None:
     assert not problems, problems
 
 
-def _check_branches(view: dict[str, Any]) -> dict[str, dict[str, set[str]]]:
-    """{provider column: {null test: sides}} from a provider-to-check filter."""
-    found: dict[str, dict[str, set[str]]] = {}
-    for branch in view["where"][0]["any_of"]:
-        side, provider = branch["all_of"]
-        found.setdefault(provider["field"], {})[provider["op"]] = set(side["value"])
-    return found
-
-
 # Service has two, and DocumentRequest, Interview and Incident one each.
 PROVIDER_LOOKUPS = {
     "Service": {"RunByProvider", "SupportProvider"},
@@ -79,31 +71,52 @@ PROVIDER_LOOKUPS = {
 }
 
 
-def test_no_provider_lookup_is_ever_hidden_on_the_form() -> None:
-    """A hidden lookup can keep a value nobody can see to clear, and whether
-    a self-referencing show rule prevents that has never been measured."""
-    visibility = _mapping()["form_visibility"]
-    hidden = {
-        (entity, column)
-        for entity, columns in PROVIDER_LOOKUPS.items()
-        for column in columns
-        if column in visibility.get(entity, {}).get("columns", {})
-    }
-    assert not hidden, hidden
+def _not_named_branches(view: dict[str, Any]) -> dict[str, set[str]]:
+    """{provider column: sides} from a Provider not named view's filter."""
+    where = view["where"]
+    branches = where[0].get("any_of", [{"all_of": where}])
+    found: dict[str, set[str]] = {}
+    for branch in branches:
+        side, provider = branch["all_of"]
+        assert provider["op"] == "is_null", provider
+        found[provider["field"]] = set(side["value"])
+    return found
 
 
-def test_every_provider_lookup_has_a_check_view_for_both_gaps() -> None:
-    """Owed and none named, and named on a side that has none."""
-    views = _mapping()["views"]
+def test_every_provider_lookup_has_a_not_named_view_over_its_shown_sides() -> None:
+    mapping = _mapping()
     for entity, columns in PROVIDER_LOOKUPS.items():
-        checked: dict[str, dict[str, set[str]]] = {}
-        for view in views[entity]:
-            if view["title"].endswith("rovider to check"):
-                checked.update(_check_branches(view))
-        assert set(checked) == columns, entity
-        expected = {"is_null": PROVIDER_SIDES, "is_not_null": {"Us", "Unknown"}}
-        for column in columns:
-            assert checked[column] == expected, column
+        rules = mapping["form_visibility"][entity]["columns"]
+        shown = {column: set(rules[column]["when"][0]["value"]) for column in columns}
+        views = [v for v in mapping["views"][entity] if v["title"] == "Provider not named"]
+        assert len(views) == 1, f"{entity} has no Provider not named view"
+        assert _not_named_branches(views[0]) == shown == dict.fromkeys(columns, PROVIDER_SIDES)
+
+
+def _leaves(node: Any) -> list[dict[str, Any]]:
+    if isinstance(node, list):
+        return [leaf for item in node for leaf in _leaves(item)]
+    if isinstance(node, dict) and "field" in node:
+        return [node]
+    if isinstance(node, dict):
+        return [leaf for group in node.values() for leaf in _leaves(group)]
+    return []
+
+
+def test_no_save_rule_requires_a_hidden_field_to_be_empty() -> None:
+    """A field a status or side hides keeps its old value when the row moves
+    back, by design: the form stays uncluttered and reporting filters by
+    status. So no save rule may test such a field for blank, or that row
+    could never be saved again."""
+    mapping = _mapping()
+    problems: list[str] = []
+    for entity, rules in mapping["form_visibility"].items():
+        hidden = {c for c, r in rules["columns"].items() if isinstance(r, dict) and "when" in r}
+        rule = mapping.get("list_validation", {}).get(entity)
+        for leaf in _leaves(rule["when"] if rule else []):
+            if leaf["field"] in hidden and leaf["op"] == "is_null":
+                problems.append(f"{entity}.{leaf['field']}")
+    assert not problems, problems
 
 
 def test_every_seeded_link_into_the_library_names_a_seeded_file() -> None:
@@ -123,3 +136,4 @@ def test_every_seeded_link_into_the_library_names_a_seeded_file() -> None:
     assert links, "no seeded row links into the library"
     missing = [u for u in links if unquote(u.split(marker, 1)[1]) not in seeded]
     assert not missing, missing
+

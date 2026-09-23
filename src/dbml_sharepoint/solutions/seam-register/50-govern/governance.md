@@ -46,14 +46,16 @@ express them. Run them on the Friday, before the five lines are written.
 | No first-pass service has zero evidence rows | Same. A service with no evidence rows is *Assumed* by definition, whatever its confidence says |
 | Every evidence row with **Contradicts** ticked appears in a seam's **Evidence in conflict**, and every row a seam picks there belongs to the seam's own **Service** | A multi-value lookup on another list; a lookup cannot be filtered by another column |
 | A *Held* or *Verified* documentation status has a **Documentation link** | A hyperlink column cannot be a formula operand |
-| A row whose side is *Provider*, *Third party* or *Shared* names the provider, and a row whose side is *Us* or *Unknown* names none. The provider-to-check views are empty: two on the service list, one each on the document request, interview and incident lists | A formula cannot read a lookup |
+| A row whose side is *Provider*, *Third party* or *Shared* names the provider. **Provider not named** is empty on the service, document request, interview and incident lists | A formula cannot read a lookup |
 | An evidence row's **Artefact file**, where set, lists the evidence row's **Service** among its **Services** | A lookup cannot be filtered by another column, and the picker offers every titled file |
 | Every file in **SEAM_Artefact** has a **Title** | A file's Title is optional on a library, and a file without one is not offered by the pickers |
-| A resolved seam has a **Resolution**; a received document has a **Summary** | Multi-line text cannot be a formula operand |
+| A resolved seam has a **Resolution**; a received, refused or not-found document has a **Summary** saying what came back or who said no | Multi-line text cannot be a formula operand |
+| **Last failure date** and **Last failure** are filled together or not at all | Multi-line text cannot be a formula operand |
 | A received document has at least one file in **SEAM_Artefact** whose **Request** points at it | A formula cannot count rows on another list |
 | **Resolve by** and **Resolved on** are on or after **Raised on**; **Due on** and **Answered on** are on or after **Asked on** | A formula compares a column with a literal, not with another column |
 | Every completed interview answers all eight questions; a refusal or a don't-know is written as the answer | Multi-line text cannot be a formula operand |
 | Every completed interview's answers have been transcribed into evidence rows | A relationship the register does not model |
+| A weekly update's **Title** names the same week as its **Week** | A formula cannot build text from a number and compare it |
 | No row names a person | A reading check. Roles, never names |
 
 ## Confidence

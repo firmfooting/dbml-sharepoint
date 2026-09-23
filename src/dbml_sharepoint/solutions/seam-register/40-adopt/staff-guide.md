@@ -79,12 +79,9 @@ does in two sentences a non-ICT reader can follow.
 **Run by** and **Support from** start as *Unknown*. Each says which side:
 *Us*, *Provider*, *Third party*, *Shared* or *Unknown*. Naming a side in
 either needs the team or role beside it; the save rule holds you to that.
-When the side is *Provider*, *Third party* or *Shared*, pick the provider
-in **Run by provider** or **Support provider**. The save rule cannot
-check that one, so **Run-by provider to check** and **Support provider to
-check** list the rows that still owe one. If you change the side back to
-*Us* or *Unknown*, clear the provider; the same views list any row still
-naming one.
+Once the side is *Provider*, *Third party* or *Shared*, **Run by provider**
+or **Support provider** appears: pick the provider. The save rule cannot
+check that one, so **Provider not named** lists the rows that still owe it.
 **Decided by** is who can change it. **Hosting** is where it runs.
 **Dependency** is what inside this service we cannot do without a
 provider, stated plainly. Blank means none known, not none.
@@ -140,8 +137,9 @@ not. Start at *To ask*. Move to *Asked* with **Asked on** and **Due on**;
 the save rule needs both. When a copy arrives, set *Received*, date it in
 **Answered on**, upload the file to the library's Documents folder and set
 **Request** on the file to this row. Say in **Summary** what it covers and
-what it is silent on, and for an attestation or agreement, who signed it and
-when.
+what it is silent on. For an agreement, a schedule or an attestation, put
+who signed it and when in **Signed by**, or *Unsigned*; the save rule needs
+one or the other.
 
 *Refused* and *Not found* are results. Date the answer in **Answered on**,
 say in **Summary** who was asked and what they said, and raise a seam if the
