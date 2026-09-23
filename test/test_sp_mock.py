@@ -97,6 +97,13 @@ def test_a_nometadata_scalar_value_is_left_alone() -> None:
     assert keys == sorted(wrapper)
 
 
+@pytest.mark.parametrize("link", ["odata.nextLink", "@odata.nextLink"])
+def test_a_collection_keeps_its_continuation_annotation(link: str) -> None:
+    body = {"value": [{"Id": 1, "Hidden": False}], link: "/_api/next"}
+    keys = _keys(body, "/_api/web/lists?$select=Id", "j", accept=_NOMETADATA)
+    assert keys == sorted(["value", link])
+
+
 def test_an_entity_on_a_navigation_route_is_projected() -> None:
     """`…/ListItemAllFields` is an entity route that does not end in `)`."""
     keys = _keys({"value": "x"}, "/_api/web/GetFileByServerRelativeUrl('/f')/ListItemAllFields"

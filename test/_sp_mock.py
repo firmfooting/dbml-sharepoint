@@ -20,10 +20,10 @@ its `text()` projected, since that is the body a batch envelope carries.
 
 Projection follows the spike measured in #574: decode `$select`; keep the
 first segment of each selected name, every `$expand` name, `__metadata` and
-`odata.*` annotations; ignore case; pass `*` through; apply to a verbose `d`,
-`d.results[]`, `value[]`, and a bare entity answered to an `odata=nometadata`
-Accept (#634). A nometadata `{ "value": <scalar> }` is a single-property read
-and is left alone, as are error answers and requests with no `$select`.
+`odata.*` or `@odata.*` annotations; ignore case; pass `*` through; apply to a
+verbose `d`, `d.results[]`, `value[]`, and a bare entity answered to an
+`odata=nometadata` Accept (#634). Error answers and requests with no `$select`,
+which includes every single-property read, are left alone.
 
 The tripwire does not throw inside the script, because a script's own
 try/catch could swallow it and the test would pass. Each projected row is a
@@ -137,12 +137,15 @@ PRELUDE = r"""
     if (!recorded.has(key)) recorded.set(key, { prop, url, line });
   };
 
+  // Both OData annotation spellings: `odata.nextLink` and `@odata.nextLink`.
+  const isAnnotation = (key) => key.startsWith('odata.') || key.startsWith('@odata.');
+
   const projectRow = (row, keep, url, trip) => {
     if (row === null || typeof row !== 'object' || Array.isArray(row)) return row;
     const copy = {};
     for (const [name, value] of Object.entries(row)) {
       const lower = name.toLowerCase();
-      if (keep.has(lower) || lower.startsWith('odata.')) copy[name] = value;
+      if (keep.has(lower) || isAnnotation(lower)) copy[name] = value;
     }
     if (!trip) return copy;
     const assigned = new Set();
@@ -171,8 +174,9 @@ PRELUDE = r"""
   const projectBody = (body, keep, url, trip, bare) => {
     if (body === null || typeof body !== 'object' || Array.isArray(body)) return body;
     // A nometadata envelope is `value` alone, beside annotations; any other key makes it an entity.
-    const own = Object.keys(body).filter((k) => !k.startsWith('odata.'));
+    const own = Object.keys(body).filter((k) => !isAnnotation(k.toLowerCase()));
     const envelope = own.length === 1 && own[0] === 'value';
+    // `{value: [...]}` is the collection envelope, even if an item's only field were named value.
     if (Array.isArray(body.value) && (envelope || !bare)) {
       return { ...body, value: body.value.map((r) => projectRow(r, keep, url, trip)) };
     }
