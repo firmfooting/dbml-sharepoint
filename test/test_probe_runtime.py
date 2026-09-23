@@ -9067,6 +9067,10 @@ _OPERATOR_HARNESS = textwrap.dedent("""
       unique: CONFIG.alreadyUnique,
       bindings: CONFIG.alreadyUnique ? CONFIG.leftBindings.map((b) => ({ ...b })) : [],
       uniqueReads: 0,
+      // Counted from the break rather than from the run's first request, so a
+      // test naming the restore's own diagnostic read does not have to know
+      // how many reads the measurement pass took before it.
+      uniqueReadsSinceBreak: 0,
       // What the last accepted removal took away, and how many enumerations
       // have been served since. `reappearOnRead` needs both.
       removed: null,
@@ -9224,6 +9228,15 @@ _OPERATOR_HARNESS = textwrap.dedent("""
       }
       if (u.includes('$select=HasUniqueRoleAssignments')) {
         site.uniqueReads += 1;
+        // A read that THROWS rather than answering, on a scope this run has
+        // already broken. The restore's own diagnostic read is the one that
+        // used to take the safety grant and the reset with it.
+        if (CONFIG.uniqueReadThrowsAfterBreak != null && site.unique) {
+          site.uniqueReadsSinceBreak += 1;
+          if (site.uniqueReadsSinceBreak > CONFIG.uniqueReadThrowsAfterBreak) {
+            throw new Error('mock transport failure reading HasUniqueRoleAssignments');
+          }
+        }
         if (CONFIG.uniqueReadShape && site.uniqueReads > CONFIG.uniqueReadShapeAfter) {
           // A 2xx body that simply lacks the field, and a read that fails.
           // Both are UNKNOWN, and neither may read as 'inherits'.
@@ -9313,6 +9326,7 @@ def _run_operator_grant_probe(
         "uniqueLagsOnRead": None,
         "uniqueReadShape": None,
         "uniqueReadShapeAfter": 1,
+        "uniqueReadThrowsAfterBreak": None,
         "ownerGroupUnreadable": False,
         "siteAdmin": True,
         "throwOn": None,
@@ -10136,23 +10150,75 @@ def test_a_break_the_server_applied_and_then_refused_is_still_restored() -> None
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_a_restore_that_throws_says_which_list_to_check() -> None:
-    """`restoreInheritance`'s own catch is a branch that runs only when a run
-    has already gone wrong, which is the class #454 shipped.
+def test_a_diagnostic_read_that_throws_does_not_cancel_the_restore() -> None:
+    """The restore opens with a GET that only decides whether a reset is
+    needed. A throw in it used to jump past the owner-group safety grant and
+    past `resetroleinheritance`, so a transient failure of a read that
+    diagnoses the damage left a live scratch list holding unique permissions.
 
-    The throw is at the reset itself. It used to be at
-    `web/associatedownergroup`, but the safety grant has its own catch now,
-    precisely so a throw there cannot reach this one and take the reset with
-    it. `test_a_safety_grant_that_throws_does_not_take_the_reset_with_it`
-    pins that, and the measurement pass's own catch is pinned by
+    Thrown on the SECOND HasUniqueRoleAssignments read after the break, which
+    is the restore's own: the measurement pass keeps its confirmation read,
+    so this run answers every question and then fails only where the finding
+    is.
+    """
+    rows, urls, output = _run_operator_grant_probe(uniqueReadThrowsAfterBreak=1)
+
+    assert _restored(urls), (
+        f"a thrown diagnostic read took the reset with it: {urls}"
+    )
+    assert any("/addroleassignment(" in url for url in urls), (
+        f"the safety grant was skipped by the read that preceded it: {urls}"
+    )
+    failures = _fail_lines(output)
+    # The step says what threw, and the branch after it says the read
+    # established nothing. UNKNOWN is never 'inherits', so the reset went out.
+    assert any(
+        f"reading whether '{_OPERATOR_LIST_TITLE}' holds unique permissions threw" in line
+        for line in failures
+    ), output
+    assert any(
+        f"Could not read whether '{_OPERATOR_LIST_TITLE}' holds unique permissions" in line
+        and "Resetting anyway" in line
+        for line in failures
+    ), output
+    assert any(
+        line.startswith("[OK] ") and "restored to inherited permissions" in line
+        for line in output.splitlines()
+    ), output
+    # The measurements were taken before the restore, so a failure in it
+    # neither invalidates them nor licenses a row the run did not establish.
+    assert not [row for row in rows.values() if row["state"] != "settled"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_restore_that_throws_says_which_list_to_check() -> None:
+    """`restoreStep`'s catch is a branch that runs only when a run has
+    already gone wrong, which is the class #454 shipped.
+
+    The throw is at the reset itself, the one step whose failure an operator
+    has to act on. Every step of the restore now runs through one helper that
+    reports a throw and carries on, so the same branch also covers the safety
+    grant (`test_a_safety_grant_that_throws_does_not_take_the_reset_with_it`)
+    and the diagnostic read
+    (`test_a_diagnostic_read_that_throws_does_not_cancel_the_restore`). The
+    measurement pass's own catch is pinned by
     `test_a_failure_after_the_break_still_restores_the_list`.
     """
     rows, urls, output = _run_operator_grant_probe(throwOn="resetroleinheritance")
 
+    failures = _fail_lines(output)
     assert any(
-        line.startswith("[FAIL] ") and "restore pass failed" in line
+        f"the reset of '{_OPERATOR_LIST_TITLE}' threw" in line
         and f"Check '{_OPERATOR_LIST_TITLE}' by hand" in line
-        for line in output.splitlines()
+        for line in failures
+    ), output
+    # The throw did not end the pass: the step after it read the failed reset
+    # and printed the sentence the operator repairs from.
+    assert any(
+        f"Could not restore '{_OPERATOR_LIST_TITLE}'" in line
+        and "The list still holds unique permissions" in line
+        and "Fix or delete it by hand" in line
+        for line in failures
     ), output
     # It got far enough to break the scope, which is why the failure matters.
     assert any("/breakroleinheritance(" in url for url in urls)

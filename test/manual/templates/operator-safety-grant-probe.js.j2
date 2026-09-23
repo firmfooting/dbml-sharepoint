@@ -347,68 +347,83 @@
       )).join('; ')
   );
 
+  // One step of the restore, attempted and REPORTED rather than propagated.
+  // Every step goes through here, including the pass itself, because a throw
+  // anywhere in it used to jump to a catch further out and cancel the steps
+  // after it: a transient failure of a diagnostic GET would then leave a live
+  // list with unique permissions. Expressed once, so the next step added
+  // cannot reintroduce that.
+  const restoreStep = async (what, step, whenItThrows) => {
+    try {
+      return await step();
+    } catch (err) {
+      log('FAIL', `${what} threw: ${String(err)}. `
+                  + `Check '${LIST}' by hand if nothing below says it was restored.`);
+      return whenItThrows;
+    }
+  };
+
   // Runs on every path out of the questions, so a scope that is unique is
   // always put back. The owner group is granted full control FIRST and
   // deliberately after every measurement: the run may have removed this
   // account's own binding, and a scope nobody can write is a scope nobody can
   // restore.
   const restoreInheritance = async () => {
-    try {
-      // The UNION of the two, never one of them, and UNKNOWN resets. The flag
-      // alone misses a break the server applied and answered non-2xx, or one
-      // whose fetch threw after the write landed. The property alone misses a
-      // break that took and has not surfaced: MEASURED 2026-09-09,
-      // `library.access.unique-permissions-library`, where
-      // HasUniqueRoleAssignments read FALSE on the first read after a
-      // successful break and TRUE on the second, within 10 s. So a false read
-      // is not permission to walk away from a break that was accepted, and an
-      // unreadable one is not either. The costs are not symmetric: resetting
-      // an inheriting list is a no-op write, and leaving a production list
-      // broken is not. Only two falses skip.
-      const unique = await readsUnique();
-      if (!breakAttempted && unique === false) {
-        log('OK', `'${LIST}' reads as inheriting and this run broke nothing; nothing to restore.`);
-        return;
-      }
-      if (unique === null) {
-        log('FAIL', `Could not read whether '${LIST}' holds unique permissions`
-                    + `${listBroken ? ' after this run broke it' : ''}. Resetting anyway, `
-                    + 'because leaving a list broken is the worse error.');
-      } else if (unique === false) {
-        log('INFO', `'${LIST}' reads as inheriting, and this run sent a break to it. `
-                    + 'Resetting anyway: the property is measured to lag the break, and a '
-                    + 'break the server applied and then threw on never sets a 2xx flag.');
-      }
-      // Its own catch. A transport throw here would otherwise land in the
-      // outer one and skip the reset below, which is the single write this
-      // pass exists to make.
-      let grant;
-      try {
-        grant = await grantOwnersFullControl();
-      } catch (err) {
-        grant = { ok: false, why: `resolving or adding the safety grant threw: ${String(err)}` };
-      }
-      log(grant.ok ? 'OK' : 'FAIL',
-          grant.ok
-            ? `owner-group safety grant ('${grant.levelName}') before the reset.`
-            : `No safety grant was made before the reset: ${grant.why}. If the reset below `
-              + `fails, fix '${LIST}' by hand.`);
-      const digest = await getDigest();
-      const reset = await spPost(`${listPath}/resetroleinheritance`, {}, digest);
-      if (!reset.ok) {
-        log('FAIL', `Could not restore '${LIST}': HTTP ${reset.status} ${reset.text.slice(0, 200)}. `
-                    + 'The list still holds unique permissions. Fix or delete it by hand.');
-        return;
-      }
-      const after = await readUnique(false);
-      log(after.reached ? 'OK' : 'FAIL',
-          after.reached
-            ? `'${LIST}' restored to inherited permissions.`
-            : `'${LIST}' still does not read as inheriting after a successful reset. `
-              + `Verify by hand. ${after.text}`);
-    } catch (err) {
-      log('FAIL', `restore pass failed: ${String(err)}. Check '${LIST}' by hand.`);
+    // The UNION of the two, never one of them, and UNKNOWN resets. The flag
+    // alone misses a break the server applied and answered non-2xx, or one
+    // whose fetch threw after the write landed. The property alone misses a
+    // break that took and has not surfaced: MEASURED 2026-09-09,
+    // `library.access.unique-permissions-library`, where
+    // HasUniqueRoleAssignments read FALSE on the first read after a
+    // successful break and TRUE on the second, within 10 s. So a false read
+    // is not permission to walk away from a break that was accepted, and an
+    // unreadable one is not either. The costs are not symmetric: resetting
+    // an inheriting list is a no-op write, and leaving a production list
+    // broken is not. Only two falses skip. A read that THREW is UNKNOWN by
+    // the same argument, which is what the step's fallback says.
+    const unique = await restoreStep(
+      `reading whether '${LIST}' holds unique permissions`, readsUnique, null);
+    if (!breakAttempted && unique === false) {
+      log('OK', `'${LIST}' reads as inheriting and this run broke nothing; nothing to restore.`);
+      return;
     }
+    if (unique === null) {
+      log('FAIL', `Could not read whether '${LIST}' holds unique permissions`
+                  + `${listBroken ? ' after this run broke it' : ''}. Resetting anyway, `
+                  + 'because leaving a list broken is the worse error.');
+    } else if (unique === false) {
+      log('INFO', `'${LIST}' reads as inheriting, and this run sent a break to it. `
+                  + 'Resetting anyway: the property is measured to lag the break, and a '
+                  + 'break the server applied and then threw on never sets a 2xx flag.');
+    }
+    const grant = await restoreStep(
+      'the owner-group safety grant', grantOwnersFullControl,
+      { ok: false, why: 'resolving or adding it threw, as the line above says' });
+    log(grant.ok ? 'OK' : 'FAIL',
+        grant.ok
+          ? `owner-group safety grant ('${grant.levelName}') before the reset.`
+          : `No safety grant was made before the reset: ${grant.why}. If the reset below `
+            + `fails, fix '${LIST}' by hand.`);
+    const digest = await restoreStep('taking a digest for the reset', getDigest, null);
+    // A thrown reset reads as a refusal, so the operator gets the same
+    // sentence naming the list either way.
+    const reset = await restoreStep(
+      `the reset of '${LIST}'`,
+      () => spPost(`${listPath}/resetroleinheritance`, {}, digest),
+      { ok: false, status: 0, text: 'the request threw' });
+    if (!reset.ok) {
+      log('FAIL', `Could not restore '${LIST}': HTTP ${reset.status} ${reset.text.slice(0, 200)}. `
+                  + 'The list still holds unique permissions. Fix or delete it by hand.');
+      return;
+    }
+    const after = await restoreStep(
+      `the read-back of '${LIST}'`, () => readUnique(false),
+      { reached: false, text: 'the read-back threw.' });
+    log(after.reached ? 'OK' : 'FAIL',
+        after.reached
+          ? `'${LIST}' restored to inherited permissions.`
+          : `'${LIST}' still does not read as inheriting after a successful reset. `
+            + `Verify by hand. ${after.text}`);
   };
 
   // ---- OWNERSHIP, before either path touches the title ----------------
@@ -741,7 +756,10 @@
   } catch (err) {
     log('FAIL', `the access pass aborted: ${err && err.message ? err.message : String(err)}`);
   } finally {
-    await restoreInheritance();
+    // The pass is a step like the ones inside it. It runs from a `finally`,
+    // so a throw between its steps would replace the failure that brought the
+    // run here and lose the RESULTS block the operator is asked to paste back.
+    await restoreStep(`the restore pass for '${LIST}'`, restoreInheritance, null);
   }
 
   // Once, and after the restore, so the block the operator is told to copy
