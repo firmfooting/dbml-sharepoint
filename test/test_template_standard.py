@@ -34,7 +34,12 @@ import pytest
 from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
-from dbml_sharepoint.analysis.condition_rendering import _NULL_INCLUSIVE_NEGATIVES, normalise
+from dbml_sharepoint.analysis.condition_rendering import (
+    _FALSY,
+    _NULL_INCLUSIVE_NEGATIVES,
+    _TRUTHY,
+    normalise,
+)
 from dbml_sharepoint.analysis.group_description import (
     TOOL_OWNED_GROUP_NAMES,
     description_budget,
@@ -1485,7 +1490,7 @@ def _evaluate_leaf(leaf: Leaf, row: dict[str, Any], types: dict[str, str]) -> bo
     if column_type == "person" and leaf.value == "me":
         return None  # the current user is a deploy-time fact
     if row.get(leaf.field) is _FORMULA_DEFAULT:
-        raise _UnevaluableError(f"{leaf.field}: filled by a default formula the row leaves unset")
+        return None  # SharePoint fills it from a formula on create, as for a calculated column
     # The renderer reads `today` and ISO text as dates only on a date column.
     dates = column_type in DATE_TYPES
     if leaf.measure == "length":
@@ -1508,9 +1513,10 @@ def _evaluate_leaf(leaf: Leaf, row: dict[str, Any], types: dict[str, str]) -> bo
         # comparison excludes it. `not_includes` is there on probe C9,
         # 2026-08-10, which returned the empty row.
         return leaf.op in _NULL_INCLUSIVE_NEGATIVES
-    if column_type == "datetime" and isinstance(leaf.value, str) and NOW_SENTINEL.match(leaf.value):
-        # Only a DATETIME column reads `now` as the instant, as `_is_now` renders it.
-        return _compare_with_now(leaf.field, leaf.op, raw)
+    if column_type == "datetime" and leaf.op in _ORDERING_OPS:
+        return _compare_instants(leaf.field, leaf.op, raw, leaf.value)
+    if column_type == "boolean":
+        return _compare_booleans(leaf.field, leaf.op, raw, leaf.value)
     if leaf.op in ("includes", "not_includes"):
         if not isinstance(raw, list):
             # DEMO_MULTI_VALUE_NOT_A_LIST refuses a scalar on such a column, so
@@ -1527,21 +1533,65 @@ def _evaluate_leaf(leaf: Leaf, row: dict[str, Any], types: dict[str, str]) -> bo
     return _compare(leaf.op, raw, leaf.value, dates=dates)
 
 
-def _compare_with_now(field: str, op: str, raw: Any) -> bool:
-    """A seeded instant against the save instant, known only to the day.
+_ORDERING_OPS = frozenset({"eq", "neq", "lt", "leq", "gt", "geq"})
 
-    A seed on another day is decided by the day. A same-day seed is written
-    before the row is saved, so it is no later than `now`: that decides `leq`
-    and `gt`, and every other operator turns on the clock, which is unknown.
+
+def _compare_instants(field: str, op: str, raw: Any, value: Any) -> bool:
+    """Two datetime operands, known only to the day.
+
+    Operands on different days are decided by the day. On one day the time
+    of day decides, and only these cases are known:
+    - two midnights (a `today±N` literal or a bare ISO date) are equal;
+    - a seeded `today±N` is written as `Date.now()` plus N days, an instant
+      no earlier than midnight, and `today` renders as midnight (TODAY() in
+      a formula, `<Today/>` without IncludeTimeValue in CAML, measured in
+      condition_rendering.py), which decides `geq` and `lt`;
+    - a same-day seed is written before the row is saved, so it is no later
+      than `now`, which decides `leq` and `gt`. `now` is the instant only on
+      a DATETIME column, as `_is_now` renders it.
     """
+    is_now = isinstance(value, str) and NOW_SENTINEL.match(value) is not None
     seeded = _as_date(raw)
-    if seeded is None or op not in ("eq", "neq", "lt", "leq", "gt", "geq"):
-        raise _UnevaluableError(f"{field}: {op} now against {raw!r}")
-    if seeded != REFERENCE_DATE:
-        return _compare(op, seeded, REFERENCE_DATE)
-    if op in ("leq", "gt"):
+    literal = REFERENCE_DATE if is_now else _as_date(value)
+    if seeded is None or literal is None:
+        raise _UnevaluableError(f"{field}: {op} {value!r} against {raw!r}")
+    if seeded != literal:
+        return _compare(op, seeded, literal)
+    if is_now and op in ("leq", "gt"):
         return op == "leq"
-    raise _UnevaluableError(f"{field}: {op} now on a same-day instant depends on the clock")
+    if not is_now and _is_midnight(value):
+        if _is_midnight(raw) and not _is_seeded_instant(raw):
+            return _compare(op, seeded, literal)
+        if _is_seeded_instant(raw) and op in ("geq", "lt"):
+            return op == "geq"
+    raise _UnevaluableError(f"{field}: {op} {value!r} on the same day turns on the time of day")
+
+
+def _is_seeded_instant(value: Any) -> bool:
+    """A `today±N` demo value, which the seeder writes as the current instant plus N days."""
+    return isinstance(value, str) and _TODAY.match(value.strip()) is not None
+
+
+def _is_midnight(value: Any) -> bool:
+    """A `today±N` literal or a bare ISO date: the start of that day."""
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    return _TODAY.match(text) is not None or (len(text) == 10 and _as_date(text) is not None)
+
+
+def _compare_booleans(field: str, op: str, raw: Any, value: Any) -> bool:
+    """Yes/No operands through the renderer's own alias sets, so `yes` equals True."""
+    def truth(operand: Any) -> bool:
+        if isinstance(operand, (bool, int, str)) and operand in _TRUTHY:
+            return True
+        if isinstance(operand, (bool, int, str)) and operand in _FALSY:
+            return False
+        raise _UnevaluableError(f"{field}: {operand!r} is not a boolean")
+
+    if op not in ("eq", "neq"):
+        raise _UnevaluableError(f"{field}: {op} on a boolean")
+    return (truth(raw) == truth(value)) is (op == "eq")
 
 
 def _compare(op: str, left: Any, right: Any, *, dates: bool = True) -> bool:
@@ -1710,11 +1760,73 @@ def test_date_text_is_a_literal_word_off_a_date_column() -> None:
     assert _evaluate(leaf, {"Note": "today"}, _CLOCK_TYPES) is False
 
 
-def test_a_default_formula_field_left_unset_is_unevaluable() -> None:
+def test_a_default_formula_field_left_unset_is_unknown() -> None:
     """SharePoint fills it on create, so it is not blank and its value is unknown."""
     leaf = Leaf(field="Note", op="neq", value="Closed")
+    assert _evaluate(leaf, {"Note": _FORMULA_DEFAULT}, _CLOCK_TYPES) is None
+
+
+def test_a_decisive_branch_settles_a_rule_over_an_unknown_default() -> None:
+    rule = Group(kind="any_of", children=(
+        Leaf(field="Status", op="eq", value="Draft"),
+        Leaf(field="Note", op="eq", value="X"),
+    ))
+    row = {"Status": "Draft", "Note": _FORMULA_DEFAULT}
+    assert _evaluate(rule, row, {**_CLOCK_TYPES, "Status": "choice"}) is True
+
+
+@pytest.mark.parametrize(("seeded", "literal", "op", "expected"), [
+    ("today-1", "2026-07-01T12:00:00Z", "lt", True),
+    ("2026-07-02", "2026-07-01T12:00:00Z", "geq", True),
+])
+def test_datetimes_on_different_days_are_decided_by_the_day(
+    seeded: str, literal: str, op: str, expected: bool,
+) -> None:
+    leaf = Leaf(field="StampAt", op=op, value=literal)
+    assert _evaluate(leaf, {"StampAt": seeded}, _CLOCK_TYPES) is expected
+
+
+@pytest.mark.parametrize(("seeded", "literal", "op"), [
+    ("2026-07-01", "2026-07-01T12:00:00Z", "geq"),
+    ("today", "today", "leq"),
+    ("today", "today", "eq"),
+    ("today", "2026-07-01", "gt"),
+])
+def test_datetimes_on_the_same_day_are_unevaluable(seeded: str, literal: str, op: str) -> None:
+    """Midnight against noon, or an instant after midnight under these operators, turns on
+    the time of day."""
+    leaf = Leaf(field="StampAt", op=op, value=literal)
     with pytest.raises(_UnevaluableError):
-        _evaluate(leaf, {"Note": _FORMULA_DEFAULT}, _CLOCK_TYPES)
+        _evaluate(leaf, {"StampAt": seeded}, _CLOCK_TYPES)
+
+
+@pytest.mark.parametrize(("seeded", "literal", "op", "expected"), [
+    # A seeded instant is never before that day's midnight.
+    ("today", "today", "geq", True),
+    ("today", "today", "lt", False),
+    ("today-1", "2026-06-30", "geq", True),
+    # Two midnights compare exactly.
+    ("2026-07-01", "today", "eq", True),
+    ("2026-07-01", "today", "gt", False),
+])
+def test_a_same_day_instant_or_midnight_against_midnight_is_decided(
+    seeded: str, literal: str, op: str, expected: bool,
+) -> None:
+    leaf = Leaf(field="StampAt", op=op, value=literal)
+    assert _evaluate(leaf, {"StampAt": seeded}, _CLOCK_TYPES) is expected
+
+
+@pytest.mark.parametrize(("seeded", "literal", "op", "expected"), [
+    (True, "yes", "eq", True),
+    (True, "yes", "neq", False),
+    (False, 1, "eq", False),
+    ("No", "false", "eq", True),
+])
+def test_booleans_compare_through_the_renderer_aliases(
+    seeded: object, literal: object, op: str, expected: bool,
+) -> None:
+    leaf = Leaf(field="Active", op=op, value=literal)
+    assert _evaluate(leaf, {"Active": seeded}, {"Active": "boolean"}) is expected
 
 
 def test_now_is_a_literal_word_off_a_datetime_column() -> None:
