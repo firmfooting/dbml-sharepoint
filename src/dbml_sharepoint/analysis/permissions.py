@@ -321,16 +321,12 @@ def requires_manage_permissions(
     # `table_names` like a per-list policy and not as a mapping-wide fact. A
     # policy on a library this build does not deploy must not make the build
     # demand a right it never exercises.
+    # The DECLARED folder policy block, not the resolved per-folder pairs: the
+    # block is the same for every folder it expands to, and this question must
+    # stay answerable when the enum does not resolve (see the reader gate).
     for name in table_names:
-        at_list = mapping.permissions_for_entity(name)
-        if at_list is not None and _policy_writes(at_list):
-            return True
-        # The RESOLVED folder policies, the same accessor `lists_granting_group`
-        # uses, so the two cannot answer from different expansions.
-        entity = mapping.entities.get(name)
-        if entity is not None and any(
-            _policy_writes(policy) for _folder, policy in resolved.folder_policies[name]
-        ):
+        policies = (mapping.permissions_for_entity(name), perms.folder_policies.get(name))
+        if any(policy is not None and _policy_writes(policy) for policy in policies):
             return True
     return False
 
