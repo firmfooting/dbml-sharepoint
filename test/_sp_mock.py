@@ -246,10 +246,13 @@ PRELUDE = r"""
       });
     }
     const name = decode(path.match(kind.at)[1]).replace(/''/g, "'");
-    const site = path.split('/_api')[0];
+    // Server-relative and non-root only: the recorded message carries a /sites/ path.
+    const site = path.replace(/^[a-z]+:\/\/[^/]+/i, '').split('/_api')[0];
     const headers = (opts && opts.headers) || {};
     const accept = String(headers.Accept || headers.accept || '');
-    const envelope = accept.includes('odata=verbose') ? 'verbose' : 'nometadata';
+    const wanted = accept.toLowerCase();
+    const envelope = wanted.includes('odata=verbose') ? 'verbose'
+      : wanted.includes('odata=nometadata') ? 'nometadata' : null;
     const text = kind.envelope === envelope && kind.value ? kind.value(name, site) : '';
     let answer = '';
     if (text) {

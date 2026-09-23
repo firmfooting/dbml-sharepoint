@@ -188,6 +188,12 @@ def _answer(payload: Any, url: str, *, method: str = "GET",
 _EMPTY: dict[str, Any] = {"d": {"results": []}}
 
 
+def test_an_absolute_subsite_url_keeps_only_its_server_relative_path() -> None:
+    answer = _answer({"value": []}, "https://example.sharepoint.com/sites/t/_api/web/lists/getbytitle('X')",
+                     accept="application/json;odata=NoMetadata")
+    assert answer["body"]["odata.error"]["message"]["value"].endswith("URL '/sites/t'.")
+
+
 def test_an_absent_list_answers_the_measured_404() -> None:
     """Status and nometadata body as recorded in the search-discovery findings, 2026-08-28."""
     answer = _answer({"value": []}, "/sites/t/_api/web/lists/getbytitle('My%20List')?$select=Id",
@@ -206,6 +212,11 @@ def test_an_absent_list_answers_the_measured_404() -> None:
     ("/sites/t/_api/web/lists/getbytitle('X')", "application/json;odata=verbose"),
     # Nor the tenant-root web, whose site URL the recorded message would have to invent.
     ("/_api/web/lists/getbytitle('X')", "application/json;odata=nometadata"),
+    ("https://example.sharepoint.com/_api/web/lists/getbytitle('X')",
+     "application/json;odata=nometadata"),
+    # Nor any representation but nometadata and verbose.
+    ("/sites/t/_api/web/lists/getbytitle('X')", "application/json;odata=minimalmetadata"),
+    ("/sites/t/_api/web/lists/getbytitle('X')", ""),
 ])
 def test_an_unrecorded_list_representation_gets_the_status_and_no_body(
     url: str, accept: str,
