@@ -23,6 +23,7 @@ from _paths import FIXTURES, SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis.findings import Finding, FindingCode
 from dbml_sharepoint.analysis.reporting.plan import build_plans, report_column_names
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.validator import validate_against_mapping
 from dbml_sharepoint.generators.report_m import generate_powerquery
 from dbml_sharepoint.generators.report_md import generate_data_dictionary
@@ -692,7 +693,9 @@ def test_the_dictionary_says_a_derived_column_is_not_on_the_list() -> None:
             description="Whether the risk is still open.",
         ),
     ])
-    md = generate_data_dictionary(_schema(), bundle, "default")
+    md = generate_data_dictionary(
+        _schema(), bundle, "default", resolved=resolve(_schema(), bundle.mapping),
+    )
     assert "| IsOpen | Reporting only (computed per row) |" in md
     assert "Whether the risk is still open." in md
     assert "## Reporting-only columns" in md

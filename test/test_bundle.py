@@ -6,6 +6,7 @@ from pathlib import Path
 
 from _paths import FIXTURES, PACKAGE
 
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.bundle import (
     ASSESS_SCRIPT,
     DEMO_SCRIPT,
@@ -345,6 +346,7 @@ def _emit(tmp_path: Path, schema: object, bundle: object) -> Path:
     (out / "deploy-manifest.md").write_text("manifest", encoding="utf-8")
     emit_bundle(
         out, schema=schema, mapping_bundle=bundle,  # type: ignore[arg-type]
+        resolved=resolve(schema, bundle.mapping),  # type: ignore[arg-type,attr-defined]
         release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test", site_role="default",
         schema_name="s.dbml", mapping_name="m.yaml", source_mtime="2026-05-04T00:00:00Z",

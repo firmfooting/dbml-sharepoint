@@ -16,6 +16,7 @@ from _packs import blocks, entities, write_mapping
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.form_rendering import compose_visibility
 from dbml_sharepoint.analysis.forms import validate_form_visibility
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.model.conditions import Condition, parse_condition
 from dbml_sharepoint.model.errors import (
     MappingShapeError,
@@ -567,7 +568,7 @@ def _schema_json(**sections: Unpack[MappingSections]) -> dict[str, object]:
     schema, bundle = _escalation(**sections)
     return build_schema_json(
         schema, bundle, "default",
-        site_url="https://example.sharepoint.com/sites/t",
+        site_url="https://example.sharepoint.com/sites/t", resolved=resolve(schema, bundle.mapping),
     )
 
 
@@ -620,7 +621,9 @@ def test_the_sentinel_never_reaches_a_formula_position() -> None:
         release=load_release(Path("test/fixtures") / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/t",
         site_role="default", source_dbml="s.dbml",
-        source_mtime="2026-05-04T00:00:00Z", generated_at="2026-05-04T00:00:00Z",
+        source_mtime="2026-05-04T00:00:00Z", generated_at="2026-05-04T00:00:00Z", resolved=resolve(
+            schema, bundle.mapping,
+        ),
     )
     # It appears as the comparison constant and as data, never assigned into
     # ClientValidationFormula or ValidationFormula.
@@ -655,7 +658,7 @@ def test_manifest_shows_the_composed_formula_and_reconcile_mode() -> None:
     schema_json = _schema_json(**declared)
     schema, bundle = _escalation(**declared)
     manifest = generate_manifest(
-        enum_members={e.name: e.members for e in schema.enums},
+        resolved=resolve(schema, bundle.mapping),
         schema_json=schema_json,
         bundle=bundle,
         release=load_release(Path("test/fixtures") / "release.yaml"),
@@ -771,9 +774,11 @@ def _calculated_schema_json(**sections: Unpack[MappingSections]) -> dict[str, ob
         "calculated_formulas": {"Escalation": {"Band": '=IF([Note]="","low","high")'}},
     }
     declared.update(sections)
+    bundle = make_bundle(entities=["Escalation"], **declared)
     return build_schema_json(
-        schema, make_bundle(entities=["Escalation"], **declared), "default",
+        schema, bundle, "default",
         site_url="https://example.sharepoint.com/sites/t",
+        resolved=resolve(schema, bundle.mapping),
     )
 
 

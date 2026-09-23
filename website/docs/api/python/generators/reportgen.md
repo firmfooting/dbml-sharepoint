@@ -1,6 +1,6 @@
 ---
 title: reportgen
-sidebar_position: 46
+sidebar_position: 47
 ---
 
 # `dbml_sharepoint.generators.reportgen`
@@ -28,7 +28,7 @@ own write policy (#171).
 ### `render_reporting`
 
 ```python
-def render_reporting(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None, generated_at: str, source_schema: str, source_mapping: str, site_url: str | None = None, time_zone: str | None = None) -> dict[str, str]
+def render_reporting(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, release: dbml_sharepoint.model.release.Release | None, generated_at: str, source_schema: str, source_mapping: str, site_url: str | None = None, time_zone: str | None = None) -> dict[str, str]
 ```
 
 The whole reporting pack as {relative path: content}, nothing written.
@@ -58,7 +58,7 @@ text.
 ### `emit_reporting`
 
 ```python
-def emit_reporting(out: pathlib.Path, schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None, generated_at: str, source_schema: str, source_mapping: str, site_url: str | None = None, time_zone: str | None = None) -> list[str]
+def emit_reporting(out: pathlib.Path, schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, release: dbml_sharepoint.model.release.Release | None, generated_at: str, source_schema: str, source_mapping: str, site_url: str | None = None, time_zone: str | None = None) -> list[str]
 ```
 
 Write the reporting pack under ``out/reporting/`` and return the

@@ -22,9 +22,10 @@ import typer
 from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.folders import UnknownFolderEnumError
-from dbml_sharepoint.analysis.groups import declaring_groups, resolvable_groups
+from dbml_sharepoint.analysis.groups import declaring_groups
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.permissions import lists_granting_group
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.sidecars import (
     CENTRAL_LOG_SITE_DEFAULT,
     CHANGE_LOG_TITLE,
@@ -190,9 +191,15 @@ def execute_build(
     parsed_schema, bundle, release_obj = load_config(schema, mapping, release)
     if release_obj is None:  # unreachable: --release is a required option
         raise typer.BadParameter("--release is required for `build`.")
-    # Derived once: the reader gate and the manifest both resolve enum
-    # sources, and two derivations of the same fact could disagree.
-    enum_members = {enum.name: enum.members for enum in parsed_schema.enums}
+    # Threaded everywhere below rather than rebuilt: the reader gate, the
+    # schema view and the manifest all resolve enum sources, and a generator
+    # that built its own could build a different one from another. Not once
+    # per build, though -- `ValidationContext.build` resolves again from the
+    # same inputs. `resolve` is pure, so the two cannot disagree, and the
+    # duplicate is accepted rather than removed by an optional pre-built
+    # parameter, which would let a caller validate a DIFFERENT resolution
+    # from the one deployed.
+    resolved = resolve(parsed_schema, bundle.mapping)
     ext = resolve_extension_or_refuse(extension, bundle, mapping)
 
     if ext.requires_project_cli:
@@ -298,7 +305,7 @@ def execute_build(
         # "Which lists grant it" needs the RESOLVED name, because a
         # `from_enum` group's template spelling matches no assignment.
         targets = [
-            g for g in resolvable_groups(perms, enum_members)
+            g for g in resolved.groups
             if g.enroll_enterprise_reader
         ]
         if not declared_readers:
@@ -337,9 +344,7 @@ def execute_build(
             granted_anywhere_here = any(
                 reach.granted or reach.folder_only
                 for reach in (
-                    lists_granting_group(
-                        bundle.mapping, g.name, deployed_here, enum_members,
-                    )
+                    lists_granting_group(resolved, g.name, deployed_here)
                     for g in targets
                 )
             )
@@ -406,6 +411,7 @@ def execute_build(
             parsed_schema,
             bundle,
             site_role,
+            resolved=resolved,
             site_url=site_url,
             release=release_obj,
             extension=ext,
@@ -426,7 +432,7 @@ def execute_build(
 
     manifest_md = generate_manifest(
         schema_json=schema_json,
-        enum_members=enum_members,
+        resolved=resolved,
         findings=findings,
         bundle=bundle,
         release=release_obj,
@@ -474,6 +480,7 @@ def execute_build(
             out,
             schema=parsed_schema,
             mapping_bundle=bundle,
+            resolved=resolved,
             release=release_obj,
             site_url=site_url,
             site_role=site_role,
@@ -665,6 +672,10 @@ def execute_report(
 
     parsed_schema, bundle, release_obj = load_config(schema, mapping, release)
     require_known_site_role(bundle, site_role)
+    # Resolved once for this report: `report` runs no validation pass of its
+    # own, so `generate_data_dictionary` below is where an unresolved enum
+    # actually gets caught.
+    resolved = resolve(parsed_schema, bundle.mapping)
 
     generated_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
 
@@ -682,6 +693,7 @@ def execute_report(
     try:
         pack = render_reporting(
             parsed_schema, bundle, site_role,
+            resolved=resolved,
             release=release_obj, generated_at=generated_at,
             source_schema=schema.name, source_mapping=mapping.name,
             time_zone=time_zone,

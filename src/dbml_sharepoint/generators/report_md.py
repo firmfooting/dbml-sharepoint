@@ -15,7 +15,6 @@ in ``guide.md``.
 """
 
 from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN
-from dbml_sharepoint.analysis.folders import declared_folders
 from dbml_sharepoint.analysis.lookups import lookup_display_columns
 from dbml_sharepoint.analysis.report_columns import (
     DATE_ZONE_RESOLVED_COLUMN,
@@ -32,6 +31,7 @@ from dbml_sharepoint.analysis.reporting.dictionary import (
 )
 from dbml_sharepoint.analysis.reporting.names import query_name
 from dbml_sharepoint.analysis.reporting.plan import ListPlan, build_plans, tables_for_role
+from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.analysis.timezones import WINDOW_END, WINDOW_START, zone_table
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
 from dbml_sharepoint.generators._indexes import deployable_index_columns
@@ -444,11 +444,13 @@ def _date_zone_dictionary_row(time_zone: str | None) -> str:
     )
 
 
+@guards_resolution
 def generate_data_dictionary(
     schema: Schema,
     bundle: MappingBundle,
     site_role: str,
     *,
+    resolved: ResolvedMapping,
     release: Release | None = None,
     generated_at: str = "",
     source_schema: str = "",
@@ -459,7 +461,22 @@ def generate_data_dictionary(
     column as deployed, including choices, lookup targets, calculated
     formulas, indexing, versioning and the query-layer helper columns.
     ``time_zone`` is the site's zone the pack was built with, named in the
-    `DateZoneResolved` row."""
+    `DateZoneResolved` row.
+
+    No `resolved.require_resolved()` call here, unlike `jsgen` and
+    `assessgen`, which do widen to the whole mapping and say why. This one
+    writes documentation and touches no site, so the reason to fail closed
+    across roles does not apply, and `report` runs no validation pass of its
+    own: it must still describe site role A correctly when an entity that
+    belongs to an unrelated site role B carries the mapping's only bad
+    `from_enum`. `require_folders` below is read only for entities
+    `tables_for_role` already scoped to THIS role, the same scope
+    `declared_folders` was called at before, so a reachable defect there
+    surfaces as `UnknownFolderEnumError` rather than a silent omission.
+    Named rather than a `KeyError` because `pipeline.execute_report` catches
+    `ValueError` to clear a previously generated pack, and a `KeyError`
+    walks through that handler and leaves the stale pack looking current.
+    """
     tables = tables_for_role(schema, bundle, site_role)
     enum_names = {e.name for e in schema.enums}
     enum_members = {e.name: e.members for e in schema.enums}
@@ -548,10 +565,7 @@ def generate_data_dictionary(
         else:
             details.append("Versioning: off.")
         if entity.is_library:
-            entity_folders = declared_folders(
-                entity.folder_source,
-                {enum.name: enum.members for enum in schema.enums},
-            )
+            entity_folders = resolved.require_folders(table.name)
             # A reader of this page decides what a row IS before reading its
             # columns; on a library that is a file, and Title is not its name.
             details.append(

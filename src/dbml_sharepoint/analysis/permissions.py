@@ -1,18 +1,12 @@
 # src/dbml_sharepoint/analysis/permissions.py
 """SP base permissions bitmask + permission-level / group / role-assignment helpers."""
 
-from collections.abc import Iterable, Sequence
-from collections.abc import Mapping as MappingABC
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import NamedTuple
 
-from dbml_sharepoint.analysis.folders import folder_policies
-from dbml_sharepoint.analysis.groups import resolvable_groups
-from dbml_sharepoint.model.mapping_types import (
-    ListPermissionPolicy,
-    Mapping,
-    RoleAssignment,
-)
+from dbml_sharepoint.analysis.resolve import ResolvedMapping, require_current_resolution
+from dbml_sharepoint.model.mapping_types import ListPermissionPolicy, RoleAssignment
 
 # Per Microsoft.SharePoint.SPBasePermissions (64-bit unsigned). All bit
 # positions below 32 land in Low; positions 32..62 land in High. Values
@@ -278,9 +272,8 @@ def _policy_writes(policy: ListPermissionPolicy) -> bool:
 
 
 def requires_manage_permissions(
-    mapping: Mapping,
+    resolved: ResolvedMapping,
     table_names: Iterable[str],
-    enum_members: MappingABC[str, Sequence[str]],
 ) -> bool:
     """True when deploying `table_names` performs ANY ACL work, and so needs
     the ManagePermissions site right.
@@ -309,20 +302,29 @@ def requires_manage_permissions(
     `table_names` should be the entity names actually in this build
     (`analysis.ordering.site_tables_in_order`'s output), not every entity in
     the mapping -- a policy scoped to a site_role this build does not deploy
-    must not demand a right the build never exercises. `groups` is resolved
-    through `analysis/groups.py` for the same reason.
+    must not demand a right the build never exercises. `groups` is
+    `resolved.groups`, for the same reason -- and no `require_resolved()`
+    call precedes reading it: an unresolved source is reported by its own
+    validator rule, and this function must stay exactly as lenient as
+    `resolved.groups` already is rather than fail closed on a mapping-wide
+    check a `table_names`-scoped question never asked.
     """
+    require_current_resolution(resolved)
+    mapping = resolved.mapping
     perms = mapping.permissions
     if perms is None:
         return False
     # The RESOLVED groups, because a `from_enum` source over an empty enum
     # declares none and this build would then demand a right it never uses.
-    if perms.levels or resolvable_groups(perms, enum_members):
+    if perms.levels or resolved.groups:
         return True
     # A folder policy is keyed by entity, so it is counted through
     # `table_names` like a per-list policy and not as a mapping-wide fact. A
     # policy on a library this build does not deploy must not make the build
     # demand a right it never exercises.
+    # The DECLARED folder policy block, not the resolved per-folder pairs: the
+    # block is the same for every folder it expands to, and this question must
+    # stay answerable when the enum does not resolve (see the reader gate).
     for name in table_names:
         policies = (mapping.permissions_for_entity(name), perms.folder_policies.get(name))
         if any(policy is not None and _policy_writes(policy) for policy in policies):
@@ -347,10 +349,9 @@ class GroupReach(NamedTuple):
 
 
 def lists_granting_group(
-    mapping: Mapping,
+    resolved: ResolvedMapping,
     group_name: str,
     table_names: Iterable[str],
-    enum_members: MappingABC[str, Sequence[str]],
 ) -> GroupReach:
     """Split `table_names` by where `group_name` is granted, if anywhere.
 
@@ -366,15 +367,31 @@ def lists_granting_group(
     differ. The manifest needs the opposite question, asked per list.
 
     The manifest said the enterprise reader "can read every list this bundle"
-    creates, unconditionally, and later said it of a list whose only grant was
-    on the declared folders inside it. For a valid custom mapping that grants the
+    creates, unconditionally, and later said it of a list whose only grant
+    was on the declared folders inside it. For a valid custom mapping that grants the
     reader on the default policy and omits it from one override, that told an
     operator the reporting account had fleet-wide access while one list was
     silently unreadable. The shipped families are pinned separately by
     `test_the_reader_group_is_granted_read_on_every_policy_block`; nothing
     constrains a custom one.
+
+    Folder policies are read through `require_folder_policies`, which keeps
+    the scope `analysis/folders.py::folder_policies` had: an entity with no
+    `list_permissions.folders` entry answers `()` whatever its folder source
+    resolves to, and one whose policy's folders depend on an enum that did
+    not resolve raises `UnknownFolderEnumError`. Subscripting
+    `resolved.folder_policies` instead raised for every unresolved entity,
+    including the ones with no folder policy, and raised `KeyError`:
+    `pipeline` calls this at the reader gate BEFORE `validate_all`, so a
+    mapping whose only defect is a misspelled `folders.from_enum` died on a
+    bare traceback instead of reporting `folder_enum_unknown` with its
+    findings manifest. No `require_resolved()` call precedes this either --
+    `table_names` is scoped to one build's site role, and this must judge
+    exactly that scope rather than fail the whole mapping over an entity
+    this call was never asked about.
     """
-    perms = mapping.permissions
+    require_current_resolution(resolved)
+    mapping = resolved.mapping
 
     def holds(assignments: Iterable[RoleAssignment]) -> bool:
         return any(
@@ -393,9 +410,7 @@ def lists_granting_group(
         entity = mapping.entities.get(name)
         in_folders = entity is not None and any(
             holds(folder_policy.assignments)
-            for _folder, folder_policy in folder_policies(
-                name, entity.folder_source, perms, enum_members,
-            )
+            for _folder, folder_policy in resolved.require_folder_policies(name)
         )
         if at_list:
             reach.granted.append(name)

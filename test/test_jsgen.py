@@ -33,6 +33,7 @@ from dbml_sharepoint.analysis.rendered_columns import (
     rendered_columns,
     system_columns_for,
 )
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.extension import BaseExtension
 from dbml_sharepoint.generators.jsgen import build_schema_json, generate_deploy_js
 from dbml_sharepoint.model.env_file import ENV_SETTINGS, EnvProvenance, EnvValue
@@ -53,7 +54,13 @@ def _generate_simple_js() -> str:
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     release = load_release(FIXTURES / "release.yaml")
-    return generate_deploy_js(schema=schema, bundle=bundle, release=release, **_FIXED_ARGS)
+    return generate_deploy_js(
+        schema=schema,
+        bundle=bundle,
+        release=release,
+        **_FIXED_ARGS,
+        resolved=resolve(schema, bundle.mapping),
+    )
 
 
 def test_generated_deploy_js_contains_lifecycle_markers() -> None:
@@ -87,7 +94,8 @@ def test_deploy_js_logs_the_env_file_path_digest_and_keys_used() -> None:
         ),
     )
     js = generate_deploy_js(
-        schema=schema, bundle=bundle, release=release, env_provenance=provenance, **_FIXED_ARGS,
+        schema=schema, bundle=bundle, release=release, env_provenance=provenance,
+        resolved=resolve(schema, bundle.mapping), **_FIXED_ARGS,
     )
     log_line = next(line for line in js.splitlines() if line.strip().startswith("log('INFO',"))
     assert "dbml-sharepoint.env" in log_line
@@ -181,7 +189,7 @@ def test_tojson_escapes_injection_chars(tmp_path: Path) -> None:
         schema=schema, bundle=bundle, release=release,
         site_url="https://example.sharepoint.com/sites/t", site_role="default",
         source_dbml="s.dbml", source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     assert "</script>" not in js  # literal breakout sequence absent
     assert "\\u003c/script\\u003e" in js  # tojson htmlsafe escaped it
@@ -203,7 +211,7 @@ def _schema_json_for(solution_id: str) -> dict[str, Any]:
     root = SOLUTION_TEMPLATES / solution_id
     schema = parse_dbml(root / "10-design" / "schema.dbml")
     bundle = load_mapping(root / "20-configure" / "mapping.yaml")
-    return build_schema_json(schema, bundle, "default")
+    return build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
 
 
 def _generate_views_js(tmp_path: Path) -> str:
@@ -238,7 +246,7 @@ def _generate_views_js(tmp_path: Path) -> str:
         site_role="default",
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
 
 
@@ -336,6 +344,7 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
     # already defined earlier in this module.
     schema_json = build_schema_json(
         schema, bundle, "default", extension=_CrossSiteExpansion(),
+        resolved=resolve(schema, bundle.mapping),
     )
     generated = next(
         v for v in schema_json["views"]

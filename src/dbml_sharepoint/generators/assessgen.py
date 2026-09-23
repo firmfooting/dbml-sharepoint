@@ -12,9 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from dbml_sharepoint.analysis.clock_usage import clock_usage
-from dbml_sharepoint.analysis.folders import declared_folders
 from dbml_sharepoint.analysis.group_description import marker_for_group
-from dbml_sharepoint.analysis.groups import declared_groups
 from dbml_sharepoint.analysis.limits import (
     INDEX_CHANGE_CEILING,
     LIST_VIEW_THRESHOLD,
@@ -23,6 +21,7 @@ from dbml_sharepoint.analysis.list_description import family_for, marker_for
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.permissions import requires_manage_permissions
 from dbml_sharepoint.analysis.rendered_columns import rendered_columns
+from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.analysis.role_definition_description import marker_for_level
 from dbml_sharepoint.analysis.typemap import map_column
 from dbml_sharepoint.model.mapping_types import MappingBundle
@@ -66,8 +65,9 @@ def _declared_unique_columns(
     return names
 
 
+@guards_resolution
 def assess_targets(
-    schema: Schema, bundle: MappingBundle, site_role: str,
+    schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping,
 ) -> dict[str, Any]:
     """The data-driven inputs the assess.js probes loop over.
 
@@ -86,6 +86,10 @@ def assess_targets(
     for the same reason: the emitted script quotes both numbers to the
     operator and reads them from `analysis.limits` rather than spelling them.
     """
+    # assess.js must never silently omit a group or folder it should probe
+    # for, and it runs against a live site, so a bad `from_enum` anywhere in
+    # the mapping refuses every role rather than only its own.
+    resolved.require_resolved()
     m = bundle.mapping
     by_name = {table.name: table for table in schema.tables}
     cross_site_keys = m.cross_site_keys()
@@ -121,11 +125,10 @@ def assess_targets(
     # same reason `markers` is.
     unique_columns: list[list[Any]] = []
     enum_names = {enum.name for enum in schema.enums}
-    enum_members = {enum.name: enum.members for enum in schema.enums}
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):
         entity = bundle.mapping.entities[table_name]
         titles.append(bundle.mapping.list_title(table_name))
-        entity_folders = declared_folders(entity.folder_source, enum_members)
+        entity_folders = resolved.require_folders(table_name)
         if entity.is_library and entity_folders:
             library_folders.append(
                 [bundle.mapping.list_title(table_name), list(entity_folders)],
@@ -168,7 +171,7 @@ def assess_targets(
                 unique_columns.append([bundle.mapping.list_title(table_name), unique])
     m = bundle.mapping
     perms = m.permissions
-    site_groups = declared_groups(perms, enum_members)
+    site_groups = resolved.groups
     # [[current name, [[previous name, previous marker], ...]], ...] for
     # every level and group that has previous names, the same shape as
     # `renames` above so one assessment loop serves all three.
@@ -227,16 +230,17 @@ def assess_targets(
         # live preflight, so the three cannot independently drift again --
         # see requires_manage_permissions's docstring and #166 item 5.
         "requires_manage_permissions": requires_manage_permissions(
-            m, table_names, enum_members,
+            resolved, table_names,
         ),
     }
 
 
+@guards_resolution
 def derive_requirements(
-    schema: Schema, bundle: MappingBundle, site_role: str,
+    schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping,
 ) -> list[Requirement]:
     """The pack's site requirements, worst-case severity on probe failure."""
-    t = assess_targets(schema, bundle, site_role)
+    t = assess_targets(schema, bundle, site_role, resolved=resolved)
     reqs: list[Requirement] = [
         Requirement("manage_lists_bit",
                     "Operator holds ManageLists on the site", "BLOCKED"),
@@ -393,10 +397,12 @@ def _render(template_name: str, **context: Any) -> str:
     return script_env().get_template(template_name).render(**context)
 
 
+@guards_resolution
 def generate_assess_js(
     *,
     schema: Schema,
     bundle: MappingBundle,
+    resolved: ResolvedMapping,
     release: Release,
     site_url: str,
     site_role: str,
@@ -405,7 +411,7 @@ def generate_assess_js(
 ) -> str:
     requirements = [
         {"key": r.key, "description": r.description, "level_on_fail": r.level_on_fail}
-        for r in derive_requirements(schema, bundle, site_role)
+        for r in derive_requirements(schema, bundle, site_role, resolved=resolved)
     ]
     return _render(
         "assess.js.j2",
@@ -414,16 +420,18 @@ def generate_assess_js(
         release=release,
         source_dbml=source_dbml,
         generated_at=generated_at,
-        targets=assess_targets(schema, bundle, site_role),
+        targets=assess_targets(schema, bundle, site_role, resolved=resolved),
         requirements=requirements,
         not_assessable=list(NOT_ASSESSABLE),
     )
 
 
+@guards_resolution
 def generate_assess_manifest(
     *,
     schema: Schema,
     bundle: MappingBundle,
+    resolved: ResolvedMapping,
     site_url: str,
     site_role: str,
 ) -> str:
@@ -431,7 +439,7 @@ def generate_assess_manifest(
         "assess-manifest.md.j2",
         site_url=site_url,
         prefix=bundle.mapping.prefix,
-        requirements=derive_requirements(schema, bundle, site_role),
-        targets=assess_targets(schema, bundle, site_role),
+        requirements=derive_requirements(schema, bundle, site_role, resolved=resolved),
+        targets=assess_targets(schema, bundle, site_role, resolved=resolved),
         not_assessable=list(NOT_ASSESSABLE),
     )

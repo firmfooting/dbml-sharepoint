@@ -5,11 +5,7 @@ from collections.abc import Callable, Iterator
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
-from dbml_sharepoint.analysis.folders import (
-    UnknownFolderEnumError,
-    declared_folders,
-    policy_for_folder,
-)
+from dbml_sharepoint.analysis.folders import policy_for_folder
 from dbml_sharepoint.analysis.group_description import (
     AUTOMATION_GROUP_NAME,
     description_budget,
@@ -133,9 +129,8 @@ def _expanded_folder_policies(
             # `folder_permissions_on_a_list` and the unknown-entity rule in
             # `_library.py` own that sentence; nothing to expand against.
             continue
-        try:
-            folders = declared_folders(entity.folder_source, vc.enum_members_by_name)
-        except UnknownFolderEnumError:
+        folders = vc.resolved.folders.get(entity_name)
+        if folders is None:
             continue
         for folder in folders:
             yield entity_name, folder, policy_for_folder(folder_policy, folder)

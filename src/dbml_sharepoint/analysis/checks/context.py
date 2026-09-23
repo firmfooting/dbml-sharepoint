@@ -14,13 +14,17 @@ tested one at a time.
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
-from dbml_sharepoint.analysis.groups import resolvable_groups
 from dbml_sharepoint.analysis.list_description import family_for
 from dbml_sharepoint.analysis.lookups import lookup_display_columns, lookup_target_entities
 from dbml_sharepoint.analysis.reporting.plan import (
     VALIDATION_TIME_ZONE,
     ListPlan,
     build_plans,
+)
+from dbml_sharepoint.analysis.resolve import (
+    ResolvedMapping,
+    require_matching_resolution,
+    resolve,
 )
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, supports_unique
 from dbml_sharepoint.model.mapping_types import EntityKind, MappingBundle, SiteGroup
@@ -46,6 +50,13 @@ class ValidationContext:
 
     schema: Schema
     bundle: MappingBundle
+    # Every enum source in the mapping, resolved once against `schema`.
+    # `_library.py` walks `resolved.unresolved` to report
+    # `folder_enum_unknown` itself, rather than calling a raising resolver
+    # and catching its error. `_permissions.py` still tests `group_enum_unknown`
+    # against `enum_members_by_name` directly, and reads `resolved.folders`
+    # only to skip the entities that did not resolve.
+    resolved: ResolvedMapping
     # The family the emitter stamps into every list Description, resolved
     # once from the same helper `generators.jsgen` uses.
     family: str = ""
@@ -109,6 +120,12 @@ class ValidationContext:
     report_plans_by_role: dict[str, dict[str, ListPlan] | None] = field(
         default_factory=dict,
     )
+
+    def __post_init__(self) -> None:
+        # `build` resolves from its own arguments, but this is a plain
+        # dataclass and a hand-built one could pair another pack's resolution
+        # with this bundle, judging a mapping that is not the one deployed.
+        require_matching_resolution(self.resolved, self.bundle, self.schema)
 
     @classmethod
     def build(cls, schema: Schema, bundle: MappingBundle) -> "ValidationContext":
@@ -178,14 +195,19 @@ class ValidationContext:
         display_columns = lookup_display_columns(
             schema, bundle.mapping.entities, calculated_by_entity, cross_site_pairs,
         )
-        enum_members_by_name = {enum.name: tuple(enum.members) for enum in schema.enums}
-        perms = bundle.mapping.permissions
         # Resolves every source it can and leaves out only the ones naming an
         # enum that does not exist, which `group_enum_unknown` reports on its
         # own. The old fallback dropped every generated group as soon as one
         # source was misspelled, so the checks below silently stopped judging
         # groups that had resolved.
-        site_groups = resolvable_groups(perms, enum_members_by_name)
+        #
+        # `build` resolves a second time in `pipeline`, for the generators.
+        # `resolve` is pure, so the two agree; taking one in as a parameter
+        # would let a caller validate a different resolution from the one
+        # that is deployed, so the duplicate work is the accepted cost.
+        resolved = resolve(schema, bundle.mapping)
+        enum_members_by_name = dict(resolved.enum_members)
+        site_groups = resolved.groups
         report_plans_by_role: dict[str, dict[str, ListPlan] | None] = {}
         for role in sorted({e.site_role for e in bundle.mapping.entities.values()}):
             try:
@@ -197,6 +219,7 @@ class ValidationContext:
         return cls(
             schema=schema,
             bundle=bundle,
+            resolved=resolved,
             family=family,
             table_names={t.name for t in schema.tables},
             tables_by_name={t.name: t for t in schema.tables},

@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 from _paths import FIXTURES
 
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.validator import validate_against_mapping
 from dbml_sharepoint.generators.demogen import generate_demo_js
 from dbml_sharepoint.generators.jsgen import build_schema_json, generate_deploy_js
@@ -41,7 +42,9 @@ def inputs() -> tuple[Schema, MappingBundle]:
 
 
 def _matter_field(schema: Schema, bundle: MappingBundle, title: str) -> dict[str, Any]:
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     matter = next(
         item for item in schema_json["lists"] if item["title"] == "APP_Matter"
     )
@@ -116,7 +119,7 @@ def test_the_emitted_schema_xml_carries_mult_true(
         site_role="default",
         source_dbml="multilookup.dbml",
         source_mtime="2026-09-02T00:00:00Z",
-        generated_at="2026-09-02T00:00:00Z",
+        generated_at="2026-09-02T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     helper = js.split("function declaredFieldCreateOp", 1)[1]
     helper = helper.split("\n  }", 1)[0]
@@ -198,7 +201,7 @@ def test_the_data_dictionary_says_the_cell_holds_ids(
     row = next(
         line
         for line in generate_data_dictionary(
-            schema, bundle, "default",
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
         ).splitlines()
         if line.startswith("| Parties |")
     )

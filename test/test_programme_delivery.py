@@ -7,6 +7,7 @@ import pytest
 from _node import NODE, run_node
 from _paths import SOLUTION_TEMPLATES
 
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.parser import parse_dbml
@@ -16,10 +17,10 @@ ROOT = SOLUTION_TEMPLATES / "programme-governance"
 
 @pytest.fixture(scope="module")
 def declaration() -> dict[str, Any]:
+    schema = parse_dbml(ROOT / "10-design/schema.dbml")
+    bundle = load_mapping(ROOT / "20-configure/mapping.yaml")
     return build_schema_json(
-        parse_dbml(ROOT / "10-design/schema.dbml"),
-        load_mapping(ROOT / "20-configure/mapping.yaml"),
-        "default",
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
     )
 
 

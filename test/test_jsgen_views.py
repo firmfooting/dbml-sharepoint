@@ -17,6 +17,7 @@ from test_jsgen import _generate_simple_js, _generate_views_js, _schema_json_for
 
 from dbml_sharepoint.analysis.condition_rendering import CAML_VIEW_FILTER_GUARD
 from dbml_sharepoint.analysis.phases import phase_number as pn
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.typemap import TOTAL_FUNCTIONS
 from dbml_sharepoint.generators.jsgen import (
     UNMANAGED,
@@ -160,7 +161,9 @@ def test_schema_json_carries_declared_views(tmp_path: Path) -> None:
                   row_limit: 100
         """),
     )
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     assert [view["title"] for view in schema_json["views"]] == [
         "Open risks", "All Items",
     ]
@@ -218,7 +221,9 @@ def test_view_widths_emitted_by_display_name(tmp_path: Path) -> None:
                     DueDate: 150
         """),
     )
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     sized = next(view for view in schema_json["views"] if view["title"] == "Sized")
     assert sized["widths"] == {"Title": 240, "Due Date": 150}
 
@@ -226,7 +231,9 @@ def test_view_widths_emitted_by_display_name(tmp_path: Path) -> None:
 def test_schema_json_adds_unfiltered_all_items_with_every_supported_column() -> None:
     schema = parse_dbml(FIXTURES / "calculated.dbml")
     bundle = load_mapping(FIXTURES / "calculated-mapping.yaml")
-    assert build_schema_json(schema, bundle, "default")["views"] == [{
+    assert build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )["views"] == [{
         "list": "APP_Risk",
         "title": "All Items",
         "view_fields": [
@@ -366,7 +373,9 @@ def test_retired_columns_leave_views_but_stay_deployed() -> None:
     schema = parse_dbml(FIXTURES / "retired.dbml")
     bundle = load_mapping(FIXTURES / "retired-mapping.yaml")
 
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
 
     board = next(lst for lst in schema_json["lists"] if lst["title"] == "APP_Board")
     ops = next(f for f in board["fields_phase1"] if f["title"] == "OperationsStatus")
@@ -409,7 +418,9 @@ def test_view_fields_reach_jsgen_flat_and_resolved(tmp_path: Path) -> None:
                   fields: ["@header", "@statuses", BoardDate]
         """),
     )
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     view_fields = next(
         view for view in schema_json["views"] if view["title"] == "Heat grid"
     )["view_fields"]
@@ -545,8 +556,10 @@ def _hide_fixture(tmp_path: Path, hide_line: str) -> Path:
 
 
 def _all_items_fields(tmp_path: Path) -> list[str]:
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
     schema_json = build_schema_json(
-        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"), "default",
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
     )
     view = next(v for v in schema_json["views"] if v["title"] == "All Items")
     fields: list[str] = view["view_fields"]
@@ -572,8 +585,10 @@ def test_all_items_omits_hidden_columns_and_nothing_else(tmp_path: Path) -> None
 def test_a_declared_view_keeps_a_hidden_column(tmp_path: Path) -> None:
     """hide_from_all_items affects ONLY the generated view."""
     _hide_fixture(tmp_path, "    hide_from_all_items: [Author, Editor, Owner]\n")
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
     schema_json = build_schema_json(
-        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"), "default",
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
     )
     mine = next(v for v in schema_json["views"] if v["title"] == "Mine")
     assert mine["view_fields"] == ["Title", "Owner", "Reviewer"]
@@ -600,7 +615,9 @@ def test_an_entity_declaring_no_views_still_gets_all_items(tmp_path: Path) -> No
         dbml=table("Risk", ID_PK, TITLE, "DueDate date"),
         mapping=entities("Risk"),  # no `views:` section whatsoever
     )
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
 
     assert [view["title"] for view in schema_json["views"]] == ["All Items"]
     all_items = schema_json["views"][0]
@@ -730,7 +747,9 @@ def test_only_a_librarys_generated_all_items_may_adopt_the_view_on_its_url(
                 entities(entity("Doc", kind=kind, base_template=template)), declared,
             ),
         )
-        views: list[dict[str, Any]] = build_schema_json(schema, bundle, "default")["views"]
+        views: list[dict[str, Any]] = build_schema_json(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )["views"]
         return views
 
     library = views_of("DocumentLibrary", 101, tmp_path / "library")

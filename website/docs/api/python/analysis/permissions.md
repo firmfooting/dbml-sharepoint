@@ -98,7 +98,7 @@ ASSOCIATED_GROUP_ALIASES = {'site owners': 'associated_owner_group', 'site membe
 ### `requires_manage_permissions`
 
 ```python
-def requires_manage_permissions(mapping: dbml_sharepoint.model.mapping_types.Mapping, table_names: collections.abc.Iterable[str], enum_members: collections.abc.Mapping[str, collections.abc.Sequence[str]]) -> bool
+def requires_manage_permissions(resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, table_names: collections.abc.Iterable[str]) -> bool
 ```
 
 True when deploying `table_names` performs ANY ACL work, and so needs
@@ -128,8 +128,12 @@ asks the effective question for both scopes.
 `table_names` should be the entity names actually in this build
 (`analysis.ordering.site_tables_in_order`'s output), not every entity in
 the mapping -- a policy scoped to a site_role this build does not deploy
-must not demand a right the build never exercises. `groups` is resolved
-through `analysis/groups.py` for the same reason.
+must not demand a right the build never exercises. `groups` is
+`resolved.groups`, for the same reason -- and no `require_resolved()`
+call precedes reading it: an unresolved source is reported by its own
+validator rule, and this function must stay exactly as lenient as
+`resolved.groups` already is rather than fail closed on a mapping-wide
+check a `table_names`-scoped question never asked.
 
 ### `GroupReach`
 
@@ -142,7 +146,7 @@ access to a whole library the deploy never binds.
 ### `lists_granting_group`
 
 ```python
-def lists_granting_group(mapping: dbml_sharepoint.model.mapping_types.Mapping, group_name: str, table_names: collections.abc.Iterable[str], enum_members: collections.abc.Mapping[str, collections.abc.Sequence[str]]) -> dbml_sharepoint.analysis.permissions.GroupReach
+def lists_granting_group(resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, group_name: str, table_names: collections.abc.Iterable[str]) -> dbml_sharepoint.analysis.permissions.GroupReach
 ```
 
 Split `table_names` by where `group_name` is granted, if anywhere.
@@ -159,11 +163,26 @@ exclude the group from one list ON PURPOSE, because an override exists to
 differ. The manifest needs the opposite question, asked per list.
 
 The manifest said the enterprise reader "can read every list this bundle"
-creates, unconditionally, and later said it of a list whose only grant was
-on the declared folders inside it. For a valid custom mapping that grants the
+creates, unconditionally, and later said it of a list whose only grant
+was on the declared folders inside it. For a valid custom mapping that grants the
 reader on the default policy and omits it from one override, that told an
 operator the reporting account had fleet-wide access while one list was
 silently unreadable. The shipped families are pinned separately by
 `test_the_reader_group_is_granted_read_on_every_policy_block`; nothing
 constrains a custom one.
+
+Folder policies are read through `require_folder_policies`, which keeps
+the scope `analysis/folders.py::folder_policies` had: an entity with no
+`list_permissions.folders` entry answers `()` whatever its folder source
+resolves to, and one whose policy's folders depend on an enum that did
+not resolve raises `UnknownFolderEnumError`. Subscripting
+`resolved.folder_policies` instead raised for every unresolved entity,
+including the ones with no folder policy, and raised `KeyError`:
+`pipeline` calls this at the reader gate BEFORE `validate_all`, so a
+mapping whose only defect is a misspelled `folders.from_enum` died on a
+bare traceback instead of reporting `folder_enum_unknown` with its
+findings manifest. No `require_resolved()` call precedes this either --
+`table_names` is scoped to one build's site role, and this must judge
+exactly that scope rather than fail the whole mapping over an entity
+this call was never asked about.
 

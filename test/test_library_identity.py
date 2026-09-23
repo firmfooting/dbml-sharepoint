@@ -7,6 +7,7 @@ from _packs import pack
 from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis.reporting.plan import build_plans
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.catalogue import load_solution
 from dbml_sharepoint.generators.assessgen import assess_targets
 from dbml_sharepoint.generators.demogen import generate_demo_js
@@ -25,7 +26,7 @@ def test_legal_library_identity_and_navigation_are_consistent() -> None:
     schema = parse_dbml(root / "10-design/schema.dbml")
     bundle = load_mapping(root / "20-configure/mapping.yaml")
     release = load_release(root / "20-configure/release.yaml")
-    built = build_schema_json(schema, bundle, "default")
+    built = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     title = "Legislative Compliance"
     assert built["lists"][0]["title"] == title
     assert built["lists"][0]["internal_name"] == "LegislativeCompliance"
@@ -38,7 +39,8 @@ def test_legal_library_identity_and_navigation_are_consistent() -> None:
     assert committee["body"]["Choices"]["results"] == [
         "Audit and Risk Committee", "Clinical Governance Committee", "Executive Committee",
     ]
-    assert list(dict(assess_targets(schema, bundle, "default")["list_markers"])) == [title]
+    targets = assess_targets(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
+    assert list(dict(targets["list_markers"])) == [title]
     assert all(v["list"] == title and v["view_fields"][0] == "DocIcon" for v in built["views"])
     folder = next(v for v in built["views"] if v["title"] == "Folder View")
     assert folder["scope"] == 0
@@ -56,7 +58,7 @@ def test_legal_library_identity_and_navigation_are_consistent() -> None:
         assert title in emitted
         assert "LC_Document" not in emitted
     manifest = generate_manifest(
-        enum_members={e.name: e.members for e in schema.enums},
+        resolved=resolve(schema, bundle.mapping),
         schema_json=built, findings=[], bundle=bundle,
         source_mtime="2026-09-15T00:00:00Z", **args,
     )
@@ -164,7 +166,9 @@ def test_library_view_emits_one_native_icon(tmp_path: Path, fields: str) -> None
             - title: Files
               fields: [{fields}]
     """)
-    views = build_schema_json(schema, bundle, "default")["views"]
+    views = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )["views"]
     view = next(v for v in views if v["title"] == "Files")
     assert view["view_fields"].count("DocIcon") == 1
     assert view["view_fields"].count("FileLeafRef") == 1

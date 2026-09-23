@@ -2,7 +2,6 @@
 """Render deploy-manifest.md."""
 
 import json
-from collections.abc import Mapping, Sequence
 from typing import Any
 
 from dbml_sharepoint.analysis.condition_description import describe
@@ -10,6 +9,7 @@ from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.limits import MAX_VALIDATION_FORMULA, MAX_VALIDATION_MESSAGE
 from dbml_sharepoint.analysis.permissions import lists_granting_group
 from dbml_sharepoint.analysis.phases import phase_numbers
+from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.extension import ManifestExtras
 from dbml_sharepoint.generators.jsgen import UNMANAGED
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
@@ -18,10 +18,11 @@ from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
 
 
+@guards_resolution
 def generate_manifest(
     *,
     schema_json: dict[str, Any],
-    enum_members: Mapping[str, Sequence[str]],
+    resolved: ResolvedMapping,
     findings: list[Finding],
     bundle: MappingBundle,
     release: Release,
@@ -59,6 +60,16 @@ def generate_manifest(
     promising two log lists the deploy script it documents never emits. The
     manifest describes what was built, so the default has to be the built
     default and not the module's idea of a title.
+
+    No `resolved.require_resolved()` call here: this function still renders
+    a findings-only manifest on a build that failed validation (that is the
+    whole point of writing one), and a mapping with a genuinely unresolved
+    enum is exactly the shape such a build has. `lists_granting_group` below
+    reads folder policies through `require_folder_policies`, which answers
+    `()` for an entity that declares none and raises the named
+    `UnknownFolderEnumError` only where the answer actually depends on an
+    enum that did not resolve, so a reachable defect there is neither a
+    bare `KeyError` nor a silent omission.
     """
     template = script_env().get_template("manifest.md.j2")
 
@@ -119,10 +130,13 @@ def generate_manifest(
     # list excludes the group, the excluded half is every list, and a template
     # that only ever sees "excluded" has no way to say "nothing" instead of
     # "everything except everything".
+    #
+    # What keeps an unresolved folder enum out of this loop on a
+    # findings-only manifest is `pipeline`'s `_EMPTY_SCHEMA_JSON`: a build
+    # that failed validation passes it, so both lists above are empty and
+    # nothing is asked. A valid build has nothing unresolved to ask about.
     _reader_split = [
-        lists_granting_group(
-            bundle.mapping, name, _deployed_entities, enum_members,
-        )
+        lists_granting_group(resolved, name, _deployed_entities)
         for name in _reader_groups
     ]
     def _titles(scope: str) -> list[str]:

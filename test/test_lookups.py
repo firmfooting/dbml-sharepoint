@@ -31,6 +31,7 @@ from dbml_sharepoint.analysis.lookups import (
     lookup_display_columns,
     lookup_target_entities,
 )
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.extension import NullExtension
 from dbml_sharepoint.generators.jsgen import generate_deploy_js
@@ -334,7 +335,7 @@ def _every_lookup_route(tmp_path: Path) -> str:
         site_role="default",
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
 
 

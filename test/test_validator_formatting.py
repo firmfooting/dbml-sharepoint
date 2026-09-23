@@ -14,6 +14,7 @@ from _paths import FIXTURES
 from _validator_helpers import _project_errors, _project_inputs
 
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.styles import STYLES
 from dbml_sharepoint.analysis.validator import (
     validate,
@@ -1060,7 +1061,9 @@ def test_implicit_docicon_is_readable_only_in_library_formatters(
         FindingCode.FORMATTER_FIELD_NOT_DISPLAYED, FindingCode.FORMATTER_FIELD_NOT_RENDERED,
     }]
     assert bool(errors) == (kind == "List")
-    generated = build_schema_json(schema, bundle, "default")
+    generated = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     for view in generated["views"]:
         assert ("DocIcon" in view["view_fields"]) == (kind == "DocumentLibrary")
     if surface == "column":

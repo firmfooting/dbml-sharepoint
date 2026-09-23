@@ -21,6 +21,7 @@ from _paths import FIXTURES
 from test_deploy_runtime import _summary_of, _view_guard_harness, _without_assessment
 
 from dbml_sharepoint.analysis.phases import phase_number
+from dbml_sharepoint.analysis.resolve import resolve
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
@@ -402,7 +403,7 @@ def _library_deploy_js(
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
-        enterprise_reader=enterprise_reader,
+        enterprise_reader=enterprise_reader, resolved=resolve(schema, bundle.mapping),
     ))
 
 

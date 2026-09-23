@@ -27,6 +27,7 @@ from typer.testing import CliRunner, Result
 from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis import sidecars
 from dbml_sharepoint.analysis.findings import Finding
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.catalogue import (
     RELEASE_RELPATH,
     SCHEMA_RELPATH,
@@ -774,15 +775,13 @@ def test_an_unknown_reader_group_enum_is_reported_by_validation(
 def test_an_unknown_folder_enum_is_reported_by_validation_not_by_the_reader_gate(
     tmp_path: Path,
 ) -> None:
-    """The gate asks what each list grants, and a folder policy whose enum
-    does not resolve cannot answer.
+    """The other half: a library that DOES declare a folder policy.
 
-    `folder_enum_unknown` is an error, so validation aborts this build in any
-    case. What the gate raising first destroyed was the finding and the
-    findings manifest: the operator got a traceback naming the enum and
-    nothing telling them which rule they broke. The `list_permissions.folders`
-    entry is what makes the gate reach the unresolved source at all, so a
-    mapping without one proves nothing about this path.
+    The accessor answers `()` for an entity with no `list_permissions.folders`
+    entry, so the run above never reaches the unresolved source. With an entry
+    it does, and the gate raised `UnknownFolderEnumError` out of `build`
+    before `validate_all`: the operator got a traceback naming the enum, no
+    `folder_enum_unknown` and no findings manifest.
     """
     schema = write_dbml(tmp_path, blocks("""
         Enum division {
@@ -833,7 +832,7 @@ def test_an_unknown_folder_enum_is_reported_by_validation_not_by_the_reader_gate
                   level: "Read"
     """))
     out = tmp_path / "build"
-    result = runner.invoke(app, [
+    result = _cli(
         "build",
         "--schema", str(schema),
         "--mapping", str(mapping),
@@ -843,15 +842,79 @@ def test_an_unknown_folder_enum_is_reported_by_validation_not_by_the_reader_gate
         "--site-role", "default",
         "--out", str(out),
         "--enterprise-reader", "svc-reporting@example.org",
-    ])
-
-    assert result.exit_code != 0, result.output
-    assert result.exception is None or isinstance(result.exception, SystemExit), (
-        result.exception
     )
-    assert "folder_enum_unknown" in result.output, result.output
+
+    assert result.returncode != 0
+    assert "Traceback" not in result.stderr, result.stderr
+    assert "folder_enum_unknown" in result.stdout + result.stderr, result.stdout
     assert (out / "deploy-manifest.md").exists(), sorted(p.name for p in out.iterdir())
     assert not (out / "deploy.js.txt").exists()
+
+
+def test_the_reader_gate_does_not_raise_for_a_library_with_no_folder_policy(
+    tmp_path: Path,
+) -> None:
+    """The reader gate runs BEFORE `validate_all`, so it must not raise here.
+
+    `lists_granting_group` reads each entity's folder policies. The resolver
+    it replaced answered `()` for an entity with no `list_permissions.folders`
+    entry before it resolved anything, so a library whose `folders.from_enum`
+    is misspelled and which declares no folder policy never reached it. Read
+    through a plain dict subscript instead, every unresolved entity raises,
+    and the mistake arrives as a bare `KeyError` at the gate rather than as
+    `folder_enum_unknown` with the findings manifest beside it.
+    """
+    schema = write_dbml(tmp_path, blocks("""
+        Enum division {
+          "Clinical services"
+        }
+
+        Table Docs {
+          Id int [pk, increment]
+          Title nvarchar [not null]
+          Division division
+        }
+    """))
+    mapping = write_mapping(tmp_path, blocks("""
+        prefix: XX
+
+        entities:
+          Docs:
+            kind: DocumentLibrary
+            base_template: 101
+            site_role: default
+            folders: {from_enum: divison}
+
+        groups:
+          - name: "XX Readers"
+            description: "The reporting account's group."
+            owner_group: "Site Owners"
+            enroll_enterprise_reader: true
+
+        list_permissions:
+          default:
+            break_inheritance: true
+            reconcile: configured
+            assignments:
+              - principal: { kind: group, name: "XX Readers" }
+                level: "Read"
+    """))
+    out = tmp_path / "build"
+    result = _cli(
+        "build",
+        "--schema", str(schema),
+        "--mapping", str(mapping),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
+        "--site-role", "default",
+        "--out", str(out),
+        "--enterprise-reader", "svc-reporting@example.org",
+    )
+
+    assert result.returncode != 0
+    assert "Traceback" not in result.stderr, result.stderr
+    assert "folder_enum_unknown" in result.stdout + result.stderr, result.stdout
 
 
 def test_a_multi_member_reader_enum_is_reported_by_validation_not_by_the_gate(
@@ -2222,13 +2285,13 @@ def test_report_writes_the_pack_render_reporting_renders(tmp_path: Path) -> None
         "--out", str(out),
     ])
     assert result.exit_code == 0, result.output
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     pack = render_reporting(
-        parse_dbml(FIXTURES / "simple.dbml"),
-        load_mapping(FIXTURES / "sharepoint-mapping.yaml"),
-        "default",
+        schema, bundle, "default",
         release=None, generated_at="STAMP",
         source_schema="simple.dbml", source_mapping="sharepoint-mapping.yaml",
-        time_zone="UTC",
+        time_zone="UTC", resolved=resolve(schema, bundle.mapping),
     )
     written = {
         path.relative_to(out).as_posix(): path.read_text(encoding="utf-8")
@@ -2366,6 +2429,64 @@ def test_report_refusal_clears_previous_generated_outputs(tmp_path: Path) -> Non
     assert not (out / "guide.md").exists()
     assert not (out / "data-dictionary.md").exists()
     assert (out / "operator-notes.txt").read_text(encoding="utf-8") == "preserve me"
+
+
+def test_report_refusal_over_an_unknown_folder_enum_clears_the_stale_pack(
+    tmp_path: Path,
+) -> None:
+    """The named error has to stay a `ValueError`, not become a `KeyError`.
+
+    `report` runs no validation, so a misspelled `folders.from_enum` meets
+    the data dictionary first. `UnknownFolderEnumError` is a `ValueError` so
+    `execute_report` catches it, clears the previously generated pack and
+    exits 1 with the enum named. Read through a plain dict subscript instead
+    it is a `KeyError`, which is a `LookupError` and not a `ValueError`, so
+    it walks through that handler: the operator gets a traceback and the
+    last run's pack stays on disk describing a schema that no longer exists.
+    """
+    dbml = blocks("""
+        Enum division {
+          "Clinical services"
+          "Corporate services"
+        }
+
+        Table Docs {
+          Id int [pk, increment]
+          Title nvarchar [not null]
+          Division division
+        }
+    """)
+    library = """
+        entities:
+          Docs:
+            kind: DocumentLibrary
+            base_template: 101
+            site_role: default
+            folders: {from_enum: %s}
+    """
+    schema = write_dbml(tmp_path, dbml)
+    mapping = write_mapping(tmp_path, library % "division")
+    out = tmp_path / "reports"
+    first = _cli(
+        "report", "--time-zone", "UTC", "--schema", str(schema),
+        "--mapping", str(mapping), "--out", str(out),
+    )
+    assert first.returncode == 0, first.stderr
+    assert (out / "data-dictionary.md").is_file()
+
+    mapping = write_mapping(tmp_path, library % "divison")
+    failed = _cli(
+        "report", "--time-zone", "UTC", "--schema", str(schema),
+        "--mapping", str(mapping), "--out", str(out),
+    )
+
+    assert failed.returncode == 1, failed.stderr
+    assert "Traceback" not in failed.stderr, failed.stderr
+    assert "divison" in failed.stderr, failed.stderr
+    assert not (out / "data-dictionary.md").exists()
+    assert not (out / "guide.md").exists()
+    assert not (out / "sql").exists()
+    assert not (out / "powerquery").exists()
 
 
 def test_report_never_clears_output_before_it_reads_the_schema(tmp_path: Path) -> None:

@@ -28,6 +28,7 @@ from dbml_sharepoint.analysis.list_description import (
     marker_for,
     note_budget,
 )
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.generators.assessgen import assess_targets
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.model.mapping_loader import load_mapping
@@ -38,9 +39,10 @@ from dbml_sharepoint.model.parser import parse_dbml
 def test_each_list_emits_one_exact_adoption_marker() -> None:
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
-    built = build_schema_json(schema, bundle, "default")
+    built = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     markers = {entry["title"]: entry["expected_marker"] for entry in built["lists"]}
-    assessed = dict(assess_targets(schema, bundle, "default")["list_markers"])
+    targets = assess_targets(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
+    assessed = dict(targets["list_markers"])
 
     assert markers == assessed
     assert all(
@@ -55,7 +57,7 @@ def test_list_creation_applies_enable_minor_versions() -> None:
     entry and the rendered SP.List creation body."""
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
-    sj = build_schema_json(schema, bundle, "default")
+    sj = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     assert sj["lists"]
     assert all("enable_minor_versions" in lst for lst in sj["lists"])
 
@@ -67,7 +69,9 @@ def test_schema_declares_content_type_setting_for_shape_reconciliation() -> None
     """The resume gate needs an explicit desired value, not a JS default."""
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
 
     assert schema_json["lists"]
     assert all(lst["content_types_enabled"] is False for lst in schema_json["lists"])
@@ -85,7 +89,9 @@ def test_document_library_template_101_reaches_shape_gate() -> None:
     )
 
     project = next(
-        lst for lst in build_schema_json(schema, bundle, "default")["lists"]
+        lst for lst in build_schema_json(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )["lists"]
         if lst["title"] == "APP_Project"
     )
     assert project["base_template"] == 101
@@ -108,7 +114,7 @@ def _library_schema_json(
                 {tail}
         """,
     )
-    return build_schema_json(schema, bundle, "default")
+    return build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
 
 
 def test_a_library_list_carries_its_folders_and_kind_flag(tmp_path: Path) -> None:
@@ -151,7 +157,9 @@ def test_a_library_takes_its_folders_from_the_named_enum(tmp_path: Path) -> None
                 folders: {from_enum: division}
         """,
     )
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     doc = next(lst for lst in schema_json["lists"] if lst["title"] == "APP_Doc")
     members = next(e.members for e in schema.enums if e.name == "division")
     assert doc["folders"] == list(members) == [
@@ -280,7 +288,9 @@ def test_the_emitted_list_description_names_the_family_from_the_dbml_project(
         mapping=entities("CheckPoint"),
         preamble=False,
     )
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
 
     assert schema_json["lists"][0]["description"] == (
         "Scheduled checks. Provisioned by dbml-sharepoint from routine-checks for list CheckPoint."
@@ -307,7 +317,9 @@ def test_a_list_from_a_schema_with_no_project_still_carries_a_marker(
         preamble=False,
         notes=False,
     )
-    schema_json = build_schema_json(schema, bundle, "default")
+    schema_json = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
 
     assert schema_json["lists"][0]["description"] == (
         f"Provisioned by dbml-sharepoint from {UNNAMED_FAMILY} for list Risk."
@@ -381,7 +393,7 @@ def test_each_list_carries_its_previous_titles_and_their_markers() -> None:
             renamed_from=("ProgramRisk", "ProjectRisk"),
         ),
     })
-    built = build_schema_json(schema, bundle, "default")
+    built = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     family = family_for(schema)
     assert built["lists"][0]["renamed_from"] == [
         {"title": "APP_ProgramRisk", "expected_marker": marker_for(family, "ProgramRisk")},
@@ -403,7 +415,7 @@ def test_previous_prefixes_multiply_the_previous_titles_of_every_list() -> None:
             ),
         },
     )
-    built = build_schema_json(schema, bundle, "default")
+    built = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     family = family_for(schema)
     risk, program = marker_for(family, "Risk"), marker_for(family, "ProgramRisk")
     assert built["lists"][0]["renamed_from"] == [

@@ -36,6 +36,7 @@ from dbml_sharepoint.analysis.reporting.plan import (
     build_plans,
     report_column_names,
 )
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.timezones import (
     WINDOW_END,
     WINDOW_START,
@@ -610,7 +611,9 @@ def test_the_guide_and_the_dictionary_say_what_the_flag_now_means() -> None:
     assert "mapping declares the site's zone" not in guide
     assert "100 rows" in guide
     assert "`AsSiteDate`" in guide
-    dictionary = generate_data_dictionary(schema, bundle, "default", time_zone=MELBOURNE)
+    dictionary = generate_data_dictionary(
+        schema, bundle, "default", time_zone=MELBOURNE, resolved=resolve(schema, bundle.mapping),
+    )
     assert "agrees with the declared `Australia/Melbourne`" in dictionary
     plain_guide = generate_reporting_md(schema, bundle, "default")
     assert "A list with a date-only column also carries **DateZoneResolved**" in plain_guide

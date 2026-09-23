@@ -16,6 +16,7 @@ from _paths import FIXTURES
 from test_jsgen import _generate_views_js
 
 from dbml_sharepoint.analysis.phases import phase_number as pn
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.generators.jsgen import UNMANAGED, build_schema_json, generate_deploy_js
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import MappingBundle
@@ -66,7 +67,9 @@ def test_fields_carry_display_titles_and_create_with_internal_name(
     over the auto split; with the feature off display_title == title."""
     schema, bundle = _display_names_inputs(tmp_path)
     risk = next(
-        lst for lst in build_schema_json(schema, bundle, "default")["lists"]
+        lst for lst in build_schema_json(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )["lists"]
         if lst["title"] == "APP_Risk"
     )
     by_title = {f["title"]: f for f in risk["fields_phase1"]}
@@ -79,7 +82,9 @@ def test_fields_carry_display_titles_and_create_with_internal_name(
     off = parse_dbml(FIXTURES / "calculated.dbml")
     off_bundle = load_mapping(FIXTURES / "calculated-mapping.yaml")
     off_risk = next(
-        lst for lst in build_schema_json(off, off_bundle, "default")["lists"]
+        lst for lst in build_schema_json(
+            off, off_bundle, "default", resolved=resolve(off, off_bundle.mapping),
+        )["lists"]
     )
     assert all(f["display_title"] == f["title"] for f in off_risk["fields_phase1"])
 
@@ -92,7 +97,9 @@ def test_formula_references_rewritten_to_display_names(tmp_path: Path) -> None:
     (bracket text inside a quoted constant is data)."""
     schema, bundle = _display_names_inputs(tmp_path)
     risk = next(
-        lst for lst in build_schema_json(schema, bundle, "default")["lists"]
+        lst for lst in build_schema_json(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )["lists"]
         if lst["title"] == "APP_Risk"
     )
     formula = next(
@@ -150,7 +157,9 @@ def _formatting_inputs(tmp_path: Path) -> tuple[Schema, MappingBundle]:
 def test_fields_carry_compact_custom_formatter(tmp_path: Path) -> None:
     schema, bundle = _formatting_inputs(tmp_path)
     risk = next(
-        lst for lst in build_schema_json(schema, bundle, "default")["lists"]
+        lst for lst in build_schema_json(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )["lists"]
         if lst["title"] == "APP_Risk"
     )
     by_title = {f["title"]: f for f in risk["fields_phase1"]}
@@ -178,7 +187,7 @@ def test_template_reconciles_custom_formatter(tmp_path: Path) -> None:
         site_role="default",
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     assert "const canonicalJson = " in js
     assert "'ReadOnlyField', 'Sealed', 'DefaultValue', 'DefaultFormula', 'CustomFormatter'" in js
@@ -213,7 +222,9 @@ def test_view_rows_carry_formatting_and_template_reconciles_it(tmp_path: Path) -
     schema = parse_dbml(tmp_path / "s.dbml")
     bundle = load_mapping(tmp_path / "m.yaml")
     row = next(
-        view for view in build_schema_json(schema, bundle, "default")["views"]
+        view for view in build_schema_json(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )["views"]
         if view["title"] == "Hot"
     )
     assert row["formatting"] == (
@@ -226,7 +237,7 @@ def test_view_rows_carry_formatting_and_template_reconciles_it(tmp_path: Path) -
         site_role="default",
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     assert (
         "$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter"
@@ -285,7 +296,7 @@ def test_required_date_default_and_validation_reach_the_field(tmp_path: Path) ->
                     message: Review date cannot be in the future.
         """),
     )
-    out = build_schema_json(schema, bundle, "default")
+    out = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     defaults = {
         (d["list"], d["field"]): d["default_value"] for d in out["field_defaults"]
     }
@@ -343,7 +354,7 @@ def test_a_hoisted_date_rule_joins_the_declared_list_rule(tmp_path: Path) -> Non
                     message: Not after now.
         """),
     )
-    out = build_schema_json(schema, bundle, "default")
+    out = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     lst = out["lists"][0]
     assert lst["validation_formula"] == (
         '=AND(OR([Status]<>"Done",NOT(ISBLANK([CompletedDate]))),'
@@ -386,7 +397,7 @@ def test_exact_column_validation_skips_unsupported_field_types(tmp_path: Path) -
                     message: Use a different summary.
         """),
     )
-    out = build_schema_json(schema, bundle, "default")
+    out = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     fields = {
         field["title"]: field
         for field in out["lists"][0]["fields_phase1"]
@@ -434,7 +445,9 @@ def test_exact_column_validation_skips_a_multi_value_column(tmp_path: Path) -> N
     )
     fields = {
         field["title"]: field
-        for field in build_schema_json(schema, bundle, "default")["lists"][0][
+        for field in build_schema_json(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )["lists"][0][
             "fields_phase1"
         ]
     }
@@ -454,7 +467,9 @@ def test_form_formatting_composed_with_display_rewrite(tmp_path: Path) -> None:
     matches by DISPLAY name, so they are rewritten through the display
     map; only declared parts appear."""
     schema, bundle = _form_formatting_inputs(tmp_path)
-    rows = build_schema_json(schema, bundle, "default")["form_formatting"]
+    rows = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )["form_formatting"]
     assert [row["list"] for row in rows] == ["APP_Risk"]
     outer = jsonlib.loads(rows[0]["client_form_custom_formatter"])
     assert set(outer) == {"bodyJSONFormatter"}
@@ -476,7 +491,7 @@ def test_template_phase_3d_compare_is_encoding_agnostic(tmp_path: Path) -> None:
         site_role="default",
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     idx = js.index("const canonicalFormFormatter")
     block = js[idx:idx + 800]
@@ -493,7 +508,7 @@ def test_template_phase_3d_reconciles_form_formatting(tmp_path: Path) -> None:
         site_role="default",
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     assert f"Starting Phase {pn('forms')}: form formatting" in js
     assert "for (const form of SCHEMA.form_formatting)" in js
@@ -539,7 +554,9 @@ def test_list_validation_flows_to_schema_and_template(tmp_path: Path) -> None:
         """),
     )
     risk = next(
-        lst for lst in build_schema_json(schema, bundle, "default")["lists"]
+        lst for lst in build_schema_json(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )["lists"]
         if lst["title"] == "APP_Risk"
     )
     # The implication "if closed then a closure note" as the grammar spells
@@ -558,7 +575,7 @@ def test_list_validation_flows_to_schema_and_template(tmp_path: Path) -> None:
         site_role="default",
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     assert (
         "'EnableVersioning', 'EnableMinorVersions', 'MajorVersionLimit', "
@@ -614,7 +631,9 @@ def test_a_url_column_is_never_sent_a_validation_formula(tmp_path: Path) -> None
                     message: "Needed."
         """),
     )
-    schema_json = build_schema_json(schema=schema, bundle=bundle, site_role="default")
+    schema_json = build_schema_json(
+        schema=schema, bundle=bundle, site_role="default", resolved=resolve(schema, bundle.mapping),
+    )
     fields = {
         f["title"]: f
         for lst in schema_json["lists"]

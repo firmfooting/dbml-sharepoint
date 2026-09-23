@@ -1,6 +1,6 @@
 ---
 title: manifestgen
-sidebar_position: 42
+sidebar_position: 43
 ---
 
 # `dbml_sharepoint.generators.manifestgen`
@@ -12,7 +12,7 @@ Render deploy-manifest.md.
 ### `generate_manifest`
 
 ```python
-def generate_manifest(*, schema_json: dict[str, typing.Any], enum_members: collections.abc.Mapping[str, collections.abc.Sequence[str]], findings: list[dbml_sharepoint.analysis.findings.Finding], bundle: dbml_sharepoint.model.mapping_types.MappingBundle, release: dbml_sharepoint.model.release.Release, site_url: str, site_role: str, source_dbml: str, source_mtime: str, generated_at: str, manifest_extras: dbml_sharepoint.extension.ManifestExtras | None = None, enterprise_reader: str | None = None, env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=()), sidecar_run_log_title: str | None = None, sidecar_change_log_title: str | None = None, deployment_log_list: str = '', deployment_log_change_list: str = '', deployment_log_site: str = '') -> str
+def generate_manifest(*, schema_json: dict[str, typing.Any], resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, findings: list[dbml_sharepoint.analysis.findings.Finding], bundle: dbml_sharepoint.model.mapping_types.MappingBundle, release: dbml_sharepoint.model.release.Release, site_url: str, site_role: str, source_dbml: str, source_mtime: str, generated_at: str, manifest_extras: dbml_sharepoint.extension.ManifestExtras | None = None, enterprise_reader: str | None = None, env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=()), sidecar_run_log_title: str | None = None, sidecar_change_log_title: str | None = None, deployment_log_list: str = '', deployment_log_change_list: str = '', deployment_log_site: str = '') -> str
 ```
 
 Render the deploy manifest for ONE build.
@@ -35,4 +35,14 @@ titles, so a caller that passed neither to either function got a manifest
 promising two log lists the deploy script it documents never emits. The
 manifest describes what was built, so the default has to be the built
 default and not the module's idea of a title.
+
+No `resolved.require_resolved()` call here: this function still renders
+a findings-only manifest on a build that failed validation (that is the
+whole point of writing one), and a mapping with a genuinely unresolved
+enum is exactly the shape such a build has. `lists_granting_group` below
+reads folder policies through `require_folder_policies`, which answers
+`()` for an entity that declares none and raises the named
+`UnknownFolderEnumError` only where the answer actually depends on an
+enum that did not resolve, so a reachable defect there is neither a
+bare `KeyError` nor a silent omission.
 

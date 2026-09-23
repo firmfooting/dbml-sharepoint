@@ -22,6 +22,7 @@ from dbml_sharepoint.analysis.reporting.plan import (
     build_plans,
     is_expand_queryable,
 )
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.typemap import FieldKind, SPField, map_column
 from dbml_sharepoint.generators import report_sql
 from dbml_sharepoint.generators.report_m import (
@@ -643,7 +644,7 @@ def test_emit_reporting_bakes_the_build_site_into_the_whole_pack(
         tmp_path, schema, bundle, "default",
         release=None, generated_at="2026-08-11T00:00:00Z",
         source_schema="simple.dbml", source_mapping="sharepoint-mapping.yaml",
-        site_url=_BAKED,
+        site_url=_BAKED, resolved=resolve(schema, bundle.mapping),
     )
 
     pq = sorted((tmp_path / "reporting" / "powerquery").glob("*.pq"))
@@ -703,7 +704,9 @@ def test_sql_views_add_itemurl_helper_column() -> None:
 
 def test_data_dictionary_documents_every_list_and_column() -> None:
     schema, bundle = _simple()
-    md = generate_data_dictionary(schema, bundle, "default")
+    md = generate_data_dictionary(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     assert "## APP_Task" in md
     assert "| DueDate |" in md
     # Choice members come from the authoritative DBML enum.
@@ -719,12 +722,16 @@ def test_data_dictionary_rejects_composite_indexes() -> None:
     task = next(table for table in schema.tables if table.name == "Task")
     task.indexes = [TableIndex(("Project", "DueDate"))]
     with pytest.raises(ValueError, match="composite DBML indexes"):
-        generate_data_dictionary(schema, bundle, "default")
+        generate_data_dictionary(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )
 
 
 def test_data_dictionary_includes_calculated_formulas() -> None:
     schema, bundle = _calculated()
-    md = generate_data_dictionary(schema, bundle, "default")
+    md = generate_data_dictionary(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     assert '=IF([Severity]="High",10,1)' in md
 
 
@@ -737,7 +744,9 @@ def test_data_dictionary_includes_lookup_projections() -> None:
         entities=["Risk", "Person"],
         lookup_projections={"Risk": {"Owner": ["Title"]}},
     )
-    md = generate_data_dictionary(schema, bundle, "default")
+    md = generate_data_dictionary(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     assert "OwnerTitle" in md
     assert "read-only dependent" in md
 
@@ -750,7 +759,7 @@ def test_data_dictionary_includes_deployment_metadata() -> None:
         release=release,
         generated_at="2026-07-22T00:00:00+00:00",
         source_schema="simple.dbml",
-        source_mapping="sharepoint-mapping.yaml",
+        source_mapping="sharepoint-mapping.yaml", resolved=resolve(schema, bundle.mapping),
     )
     assert "0.1.0-test" in md       # release tag
     assert "0.8" in md              # schema version
@@ -913,7 +922,9 @@ def test_dictionary_choice_members_carry_ordinals() -> None:
     build sort-by-column mappings without hand-made lookup tables."""
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
-    md = generate_data_dictionary(schema, bundle, "default")
+    md = generate_data_dictionary(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     assert "Choice: 1. Open, 2. Closed" in md
 
 
@@ -922,7 +933,9 @@ def test_dictionary_flags_rich_text_as_html() -> None:
         make_table("Risk", column("Title", required=True), column("Detail", "richtext")),
     )
     bundle = make_bundle(entities=["Risk"])
-    md = generate_data_dictionary(schema, bundle, "default")
+    md = generate_data_dictionary(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     assert "HTML over OData" in md
     assert "strip markup" in md
 
@@ -1000,13 +1013,13 @@ def test_emit_reporting_writes_exactly_what_render_reporting_renders(
         schema, bundle, "default",
         release=None, generated_at="2026-05-04T00:00:00Z",
         source_schema="simple.dbml", source_mapping="sharepoint-mapping.yaml",
-        site_url=_BAKED,
+        site_url=_BAKED, resolved=resolve(schema, bundle.mapping),
     )
     relpaths = emit_reporting(
         tmp_path, schema, bundle, "default",
         release=None, generated_at="2026-05-04T00:00:00Z",
         source_schema="simple.dbml", source_mapping="sharepoint-mapping.yaml",
-        site_url=_BAKED,
+        site_url=_BAKED, resolved=resolve(schema, bundle.mapping),
     )
 
     assert relpaths == [f"reporting/{relpath}" for relpath in pack]
@@ -1027,7 +1040,9 @@ def test_emit_reporting_writes_bundle_and_returns_relpaths(tmp_path: Path) -> No
     relpaths = emit_reporting(
         tmp_path, schema, bundle, "default",
         release=release, generated_at="2026-05-04T00:00:00Z",
-        source_schema="simple.dbml", source_mapping="sharepoint-mapping.yaml",
+        source_schema="simple.dbml", source_mapping="sharepoint-mapping.yaml", resolved=resolve(
+            schema, bundle.mapping,
+        ),
     )
 
     for fixed in ("reporting/sql/views.sql", "reporting/guide.md",
@@ -1117,7 +1132,9 @@ def _declared() -> tuple[Schema, MappingBundle]:
 
 def test_data_dictionary_reports_form_visibility_and_save_rules() -> None:
     schema, bundle = _declared()
-    doc = generate_data_dictionary(schema, bundle, "default")
+    doc = generate_data_dictionary(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     assert "Populated when" in doc
     assert "Save rule" in doc
     # Described, never target syntax: `[$ID] != ''` means nothing to a
@@ -1158,7 +1175,9 @@ def test_undeclared_columns_read_as_dashes_not_blanks() -> None:
     analyst cannot tell "no rule declared" from "the generator did not
     know", which is the same ambiguity this whole change exists to remove."""
     schema, bundle = _declared()
-    doc = generate_data_dictionary(schema, bundle, "default")
+    doc = generate_data_dictionary(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
 
     def cells(column: str) -> list[str]:
         row = next(ln for ln in doc.splitlines() if ln.startswith(f"| {column} |"))
@@ -1181,7 +1200,9 @@ def _retired() -> tuple[Schema, MappingBundle]:
 
 def test_data_dictionary_documents_retirement() -> None:
     schema, bundle = _retired()
-    md = generate_data_dictionary(schema, bundle, "default")
+    md = generate_data_dictionary(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     assert "| Retired | Superseded by |" in md
     assert "| 2026-09-01 | SiteServicesStatus |" in md
     # A live column carries the em-dash placeholder, not a blank cell.
@@ -1443,7 +1464,9 @@ def test_the_dictionary_refuses_a_field_kind_it_has_no_arm_for(
     _kind_swapped(monkeypatch, "Title", "Uncharted")
 
     with pytest.raises(ValueError, match="Uncharted") as err:
-        generate_data_dictionary(schema, bundle, "default")
+        generate_data_dictionary(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )
 
     assert "_sp_type_cell" in str(err.value)
 
@@ -1553,7 +1576,9 @@ def test_dictionary_describes_a_multi_value_column_in_human_words() -> None:
     The dictionary is read by report authors, so it says what the column is
     and how the export spells a set."""
     schema, bundle = _multi_value()
-    md = generate_data_dictionary(schema, bundle, "default")
+    md = generate_data_dictionary(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
 
     assert "Choice (multiple): 1. View, 2. Edit, 3. Permission change" in md
     assert '"; "' in md
@@ -1630,9 +1655,16 @@ def test_a_member_containing_the_separator_is_refused(
     value of the error, so it is asserted.
     """
     schema, bundle = _ambiguous()
+    # Only generate_data_dictionary takes `resolved`; the others reject an
+    # unexpected keyword, so it is passed conditionally rather than always.
+    kwargs = (
+        {"resolved": resolve(schema, bundle.mapping)}
+        if generate is generate_data_dictionary
+        else {}
+    )
 
     with pytest.raises(ValueError, match="AuditEvents") as err:
-        generate(schema, bundle, "default")  # type: ignore[operator]
+        generate(schema, bundle, "default", **kwargs)  # type: ignore[operator]
 
     assert "Permission change; revoked" in str(err.value)
     assert '"; "' in str(err.value)
@@ -1918,7 +1950,9 @@ def test_system_columns_land_in_the_sql_view_and_its_audit() -> None:
 
 def test_system_columns_are_in_the_dictionary_when_on() -> None:
     schema, bundle = _system_columns_on()
-    md = generate_data_dictionary(schema, bundle, "default")
+    md = generate_data_dictionary(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     for row in (
         "| Author | Person (system: Created By) |",
         "| Created | Date and time (system) |",
@@ -1927,7 +1961,9 @@ def test_system_columns_are_in_the_dictionary_when_on() -> None:
     ):
         assert row in md, row
     schema, bundle = _expanding()
-    assert "(system" not in generate_data_dictionary(schema, bundle, "default")
+    assert "(system" not in generate_data_dictionary(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
 
 
 def test_the_guide_names_the_system_columns_and_their_landing_contract() -> None:
@@ -1985,7 +2021,9 @@ def test_the_users_table_is_off_unless_the_mapping_asks() -> None:
     assert "_Users.pq" not in queries
     assert '"Owner Key"' not in queries["APP_Task.pq"]
     assert "_Users" not in generate_reporting_md(schema, bundle, "default")
-    assert "_Users" not in generate_data_dictionary(schema, bundle, "default")
+    assert "_Users" not in generate_data_dictionary(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
 
 
 def test_the_users_query_reads_the_site_user_list_keyed_like_every_table() -> None:
@@ -2063,7 +2101,9 @@ def test_the_guide_lists_every_person_relationship_and_the_one_active_rule() -> 
 
 def test_the_users_table_is_in_the_dictionary() -> None:
     schema, bundle = _users_on()
-    md = generate_data_dictionary(schema, bundle, "default")
+    md = generate_data_dictionary(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     assert "## _Users" in md
     for name in (
         "Name", "Email", "Account", "Department", "Job Title", "Office",
@@ -2513,7 +2553,9 @@ def test_a_document_library_query_carries_the_file_name_and_path() -> None:
 
 def test_a_document_library_dictionary_says_a_row_is_a_file() -> None:
     schema, bundle = _with_task_as_library(folders=("Clinical services", "Corporate"))
-    dictionary = generate_data_dictionary(schema, bundle, "default")
+    dictionary = generate_data_dictionary(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     assert "each row is a file, named by FileLeafRef" in dictionary
     assert "filed in one of: Clinical services, Corporate." in dictionary
 
@@ -2707,7 +2749,9 @@ def test_the_sql_views_omit_a_projection_their_target_view_lacks() -> None:
 def test_the_data_dictionary_and_the_query_agree_on_the_projected_name() -> None:
     """The whole defect was these two disagreeing in silence."""
     schema, bundle = _projecting(projections=["Status"])
-    md = generate_data_dictionary(schema, bundle, "default")
+    md = generate_data_dictionary(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     query = generate_powerquery(schema, bundle, "default")["APP_Involvement.pq"]
     assert "| StakeholderStatus |" in md
     assert '"StakeholderStatus"' in query
@@ -2837,7 +2881,9 @@ def test_the_dictionary_says_what_a_blank_required_column_means() -> None:
     Required cell alone says the opposite, and the pack passes the blanks
     through, so a report cannot tell one from a cleared value."""
     schema, bundle = _simple()
-    md = generate_data_dictionary(schema, bundle, "default")
+    md = generate_data_dictionary(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
     assert "Blank in a column marked required" in md
     assert "NEW items only" in md
     assert "ItemURLResolved" in md

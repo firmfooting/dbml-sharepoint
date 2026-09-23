@@ -1,6 +1,6 @@
 ---
 title: save_rules
-sidebar_position: 30
+sidebar_position: 31
 ---
 
 # `dbml_sharepoint.analysis.save_rules`
