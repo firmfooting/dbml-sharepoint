@@ -445,6 +445,16 @@ def test_every_list_write_region_uses_the_adoptability_wrapper() -> None:
     # two parts of one envelope has no next write to abort at.
     assert _call_count(js, "ownedListIdentity") == 17
     assert _call_count(js, "ownedFieldIdentity") == 2
+    # Every place a phase reads an Id back out of a survey it ran with
+    # `allowAbsent` false: the seven pre-write lookups, one per such phase,
+    # the form phase's re-comparison of its own survey Id after the layouts
+    # land, and the index and form read-back surveys. A `Map.get` in place of
+    # any of them answers `undefined` on a miss, and the signature check in
+    # `ownedListIdentity` would then abort naming the list but not the reason;
+    # this helper is what says the survey never proved the title. The unseal
+    # phase surveys with `allowAbsent` true and branches on absence itself, so
+    # it is not among them.
+    assert _call_count(js, "surveyedListId") == 10
     code = _without_line_comments(js)
     # The index read-back, the form phase's two (its content-type resolution
     # and its layout read-back), and the assessment's own `probeMany`, which

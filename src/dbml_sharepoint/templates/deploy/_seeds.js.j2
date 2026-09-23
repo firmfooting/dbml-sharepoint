@@ -96,7 +96,7 @@
       // per-operation getDigest pattern).
       const digest5 = await getDigest();
       try {
-        const seedListId = seedOwned.get(seed.title);
+        const seedListId = surveyedListId(seedOwned, seed.title, 'Seed');
         // Before the probe as well as the insert: skip_if_has_rows decides
         // whether to write at all from what it reads here, so reading a
         // stranger's rows can suppress a real seed as easily as it can permit

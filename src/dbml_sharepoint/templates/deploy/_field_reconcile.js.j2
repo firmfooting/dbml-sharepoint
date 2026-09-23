@@ -498,10 +498,16 @@
   // The marker alone cannot see a same-titled replacement, since a
   // replacement can carry a copied Description; the list Id is what separates
   // them.
-  async function ownedListIdentity(listName, expectedId = null, when = 'before a write') {
+  //
+  // `expectedId` takes no default, because one would fire on the `undefined`
+  // a survey miss returns and silently skip the comparison below.
+  async function ownedListIdentity(listName, expectedId, when = 'before a write') {
+    if (expectedId == null) {
+      throw new Error(`No proven identity was captured for list '${listName}' ${when}`);
+    }
     const actual = await assertDeclaredListOwnedNow(listName);
     const listId = sharePointGuid(actual.Id, 'list');
-    if (expectedId != null && listId !== sharePointGuid(expectedId, 'list')) {
+    if (listId !== sharePointGuid(expectedId, 'list')) {
       throw new Error(`List '${listName}' changed identity ${when}`);
     }
     return actual;
@@ -509,12 +515,14 @@
 
   // The ownership survey for a whole write batch, run before ANY list in it
   // is mutated: one list's failure must not leave the lists surveyed ahead of
-  // it written and the ones behind it refused. Returns title -> live Id, or
-  // null when any list failed, which is the caller's signal to abort the
-  // phase. `allowAbsent` is for the phases that legitimately run before a
-  // list exists (a clean first provision); absence is not a failure there.
+  // it written and the ones behind it refused. Returns title -> live Id for
+  // every title it was given, or null when any of them failed, which is the
+  // caller's signal to abort the phase. `allowAbsent` is for the phases that
+  // legitimately run before a list exists; absence is not a failure there,
+  // and those callers get a Map that may be short.
   async function surveyOwnedListsForWrites(listTitles, phaseNumber, label, allowAbsent = false) {
     const identities = new Map();
+    const reported = new Set();
     let failed = false;
     await mapLanes([...new Set(listTitles)], title => title, async (listTitle) => {
       try {
@@ -530,11 +538,38 @@
         identities.set(listTitle, actual.Id);
       } catch (err) {
         failed = true;
+        reported.add(listTitle);
         log('ERROR', `${label} ownership survey '${listTitle}': ${err.message}`);
         summary.errors.push({ phase: phaseNumber, list: listTitle, error: err.message });
       }
     }, 4);
+    // Settled here, not at `surveyedListId`: its throw lands in a per-target
+    // catch that drops one target and writes the rest. `reported` holds the
+    // titles the lane already explained, so one incident is one error.
+    if (!allowAbsent) {
+      for (const listTitle of new Set(listTitles)) {
+        if (identities.get(listTitle) != null || reported.has(listTitle)) continue;
+        const message = unprovenIdentity(label, listTitle);
+        failed = true;
+        log('ERROR', message);
+        summary.errors.push({ phase: phaseNumber, list: listTitle, error: message });
+      }
+    }
     return failed ? null : identities;
+  }
+
+  // One sentence for both refusals, so they cannot name one fault two ways.
+  function unprovenIdentity(label, listTitle) {
+    return `The ${label} ownership survey proved no identity for '${listTitle}'`;
+  }
+
+  // A miss means the caller asked about a title it never handed the survey,
+  // since `Map.get` answers that with the `undefined` a deliberate omission
+  // would also pass.
+  function surveyedListId(identities, listTitle, label) {
+    const listId = identities.get(listTitle);
+    if (listId == null) throw new Error(unprovenIdentity(label, listTitle));
+    return listId;
   }
 
   // The live field a MERGE is addressed by, bound to both identities: the

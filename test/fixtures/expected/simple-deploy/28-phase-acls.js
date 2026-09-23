@@ -602,7 +602,7 @@
         const la = SCHEMA.acl_scopes.find(s => s.list === listTitle && !s.folder);
         const folderAssignments = SCHEMA.acl_scopes.filter(s => s.list === listTitle && s.folder);
         const wantedFolders = folderAssignments.map(fa => fa.folder);
-        const aclListId = aclOwned.get(listTitle);
+        const aclListId = surveyedListId(aclOwned, listTitle, 'ACL');
         // Before the first READ, not just the first write: exact mode turns
         // the enumeration below into a removal list, so a snapshot taken from
         // the wrong object is as dangerous as a write to it.
