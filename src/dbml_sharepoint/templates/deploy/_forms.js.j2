@@ -55,10 +55,10 @@
       try {
         const ctReader = new BatchReader({ getDigest, fetchWithRetry, apiUrl, log });
         for (const form of SCHEMA.form_formatting) {
-          // `$top=500` for the same reason every other enumeration carries
+          // `$top` for the same reason every other enumeration carries
           // it: no explicit page size means the server's, and a truncated
           // read here reads as "this list has no such content type".
-          await ctReader.add(`${formListPath(form.list)}/contenttypes?$select=Name,StringId,ClientFormCustomFormatter&$top=500`);
+          await ctReader.add(`${formListPath(form.list)}/contenttypes?$select=Name,StringId,ClientFormCustomFormatter&$top=${CONTENT_TYPE_PAGE_SIZE}`);
         }
         contentTypes = await ctReader.done();
       } catch (err) {
@@ -72,8 +72,14 @@
           if (!contentTypes) {
             throw new Error('the batched content-type read did not answer, so this list was not formatted');
           }
+          const next = validatedNextPage(contentTypes[position], `Content-type read for '${form.list}'`);
           const listed = (contentTypes[position] && contentTypes[position].results) || [];
           const target = listed.find((ct) => ct.StringId && ct.StringId.startsWith('0x01') && !ct.StringId.startsWith('0x0120'));
+          // A missing target authorises no write, so only the message changes on a truncated page (#577).
+          if (!target && pageTruncated(listed, next, CONTENT_TYPE_PAGE_SIZE)) {
+            throw new Error(`no default item content type on the first page of ${CONTENT_TYPE_PAGE_SIZE}`
+              + ' content types, and the page may be truncated, so it may be past the page rather than missing');
+          }
           if (!target) throw new Error('no default item content type found on the list');
           // The survey above cannot see a same-titled replacement that copied
           // the marker; only a second live read compared against the Id the

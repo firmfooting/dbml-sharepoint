@@ -80,10 +80,10 @@
   };
   async function listViewShapes(listPath) {
     if (!(listPath in viewShapesByList)) {
-      // `$top=500`: a read with no explicit page size takes the server's,
+      // `$top`: a read with no explicit page size takes the server's,
       // and a truncated enumeration reads as "that view does not exist",
       // which is the one answer this function must never get wrong.
-      const r = await fetchWithRetry(apiUrl(`${listPath}/views?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields&$top=500`), {
+      const r = await fetchWithRetry(apiUrl(`${listPath}/views?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields&$top=${VIEW_PAGE_SIZE}`), {
         headers: { 'Accept': 'application/json;odata=verbose' },
       });
       if (!r.ok) {
@@ -91,7 +91,15 @@
         throw new Error(`view enumeration failed: HTTP ${r.status} ${text}`);
       }
       const j = await r.json();
-      viewShapesByList[listPath] = (j && j.d && j.d.results) || [];
+      const next = validatedNextPage(j && j.d, `View enumeration of ${listPath}`);
+      const rows = (j && j.d && j.d.results) || [];
+      // Thrown, not cached: a later read of this list must not trust the page either (#577).
+      if (pageTruncated(rows, next, VIEW_PAGE_SIZE)) {
+        throw new Error(`the view enumeration of ${listPath} may be truncated (a full page of`
+          + ` ${VIEW_PAGE_SIZE}, or a continuation), so a view missing from it may still exist;`
+          + ' no view is created or changed on that read');
+      }
+      viewShapesByList[listPath] = rows;
     }
     return viewShapesByList[listPath];
   }
