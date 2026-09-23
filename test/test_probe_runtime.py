@@ -9213,6 +9213,12 @@ _OPERATOR_HARNESS = textwrap.dedent("""
         // the stored bindings, because that is the layer it showed at.
         // Counted once per logical read, so paging does not advance it.
         if (site.removed && !continued) site.readsSinceRemoval += 1;
+        // A transient failure INSIDE the settle window, after the removal has
+        // already been seen. Keyed off the same counter as `reappearOnRead`,
+        // so a test names a read of the sequence rather than a request index.
+        if (site.removed && CONFIG.unreadableOnRead === site.readsSinceRemoval) {
+          return jsonResponse(429, { error: 'throttled' });
+        }
         const visible = (site.removed && site.readsSinceRemoval === CONFIG.reappearOnRead)
           ? [...site.bindings, site.removed]
           : site.bindings;
@@ -9359,6 +9365,7 @@ def _run_operator_grant_probe(
         "removalRefused": False,
         "removalReDerives": False,
         "reappearOnRead": None,
+        "unreadableOnRead": None,
         "paged": False,
         "continuationRefused": False,
         "continuationUnfollowable": False,
@@ -9682,6 +9689,55 @@ def test_a_removal_the_enumeration_never_reflected_answers_no_monotonic_question
     assert monotonic["outcome"] == "NOT ESTABLISHED", monotonic
     assert monotonic["state"] == "open"
     assert "never reflected the removal" in monotonic["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_read_that_never_answered_after_the_removal_leaves_monotonicity_open(
+) -> None:
+    """"Every later read reflected it" is a claim about all of them.
+
+    The removal reads gone on read 1 and a read inside the window is then
+    throttled, so one point of the sequence was never observed. `reversed`
+    staying -1 recorded OBSERVED off exactly that, and the caveat appended to
+    the prose did not change the settled outcome: a transient 429 in the
+    five-read window certified the enumeration this probe measured to flap.
+    """
+    rows, _urls, _output = _run_operator_grant_probe(unreadableOnRead=3)
+
+    # The removal row is unaffected: its verdict is the last read, and that
+    # one answered.
+    assert rows["access.list-acl.operator-binding-removal-sticks"]["outcome"] == (
+        "REMOVED"
+    )
+    monotonic = rows["access.list-acl.enumeration-is-monotonic"]
+    assert monotonic["outcome"] == "NOT ESTABLISHED", monotonic
+    assert monotonic["state"] == "open"
+    assert "1 of the 4 read(s) after it could not be read" in monotonic["evidence"]
+    # The sequence is still carried, so what did answer is not thrown away.
+    assert "binding unreadable" in monotonic["evidence"]
+    assert monotonic["evidence"].count("read ") >= 5, monotonic["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_reversal_that_was_seen_is_established_whatever_the_reads_around_it_did(
+) -> None:
+    """The other side of the same ordering, and the reason the gap is tested
+    after the reversal rather than before it.
+
+    A read that came back PRESENT after the removal had been seen gone
+    ESTABLISHES that the enumeration is not monotonic here. A later read that
+    did not answer cannot unmake an observation already made, and treating the
+    gap first would have thrown away the finding the probe exists to produce.
+    """
+    rows, _urls, _output = _run_operator_grant_probe(
+        reappearOnRead=4, unreadableOnRead=5,
+    )
+
+    monotonic = rows["access.list-acl.enumeration-is-monotonic"]
+    assert monotonic["outcome"] == "OBSERVED", monotonic
+    assert monotonic["state"] == "settled"
+    assert "NOT MONOTONIC on this tenant" in monotonic["evidence"]
+    assert "gone at read 1 and PRESENT again at read 4" in monotonic["evidence"]
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

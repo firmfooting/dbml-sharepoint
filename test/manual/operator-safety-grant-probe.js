@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHAT A BREAK LEAVES, AND WHETHER REMOVING IT STICKS
  *
- * REVISION: 79c07b46
+ * REVISION: 544e3bac
  *
  * THE CLAIM UNDER TEST. `deploy/_lists.js.j2` says, beside the early
  * isolation break, that "copyRoleAssignments=false leaves only SharePoint's
@@ -440,7 +440,7 @@
     record(id, question, row.outcome, row.evidence, row.state);
   };
 
-  log('INFO', 'probe revision 79c07b46. Quote this when reporting results.');
+  log('INFO', 'probe revision 544e3bac. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe OperatorGrant';
   const OWNERSHIP = 'dbml-sharepoint operator-safety-grant probe list. Safe to delete.';
@@ -986,38 +986,56 @@
     // enumeration: a fresh sequence would answer for a different moment. The
     // question is whether a read that has once reflected the removal keeps
     // reflecting it, so the reversal to look for is a PRESENT after a gone.
-    const recordMonotonic = (settled, removalAccepted) => {
-      const firstGone = settled.states.indexOf(false);
-      const reversed = firstGone === -1
-        ? -1
-        : settled.states.findIndex((state, i) => i > firstGone && state === true);
-      const unreadable = settled.states.filter((state) => state === null).length;
-      const sequence = `Over ${(SETTLE_READS - 1) * SETTLE_MS} ms: `
-        + `${settled.reads.join('; ')}.`
-        + (unreadable
-          ? ` ${unreadable} read(s) could not be read, so a reversal inside them would `
-            + 'not be visible here.'
-          : '');
-      if (!removalAccepted) {
-        record('access.list-acl.enumeration-is-monotonic', Q_MONOTONIC, 'NOT ESTABLISHED',
-               `no removal was accepted, so this sequence is not about one. ${sequence}`);
-      } else if (firstGone === -1) {
-        record('access.list-acl.enumeration-is-monotonic', Q_MONOTONIC, 'NOT ESTABLISHED',
-               'no read reported the binding gone, so the enumeration never reflected the '
-               + `removal and there was no transition for a later read to reverse. ${sequence}`);
-      } else if (reversed === -1) {
-        record('access.list-acl.enumeration-is-monotonic', Q_MONOTONIC, 'OBSERVED',
-               `the binding read gone at read ${firstGone + 1} and on every read after it. `
-               + sequence);
-      } else {
-        record('access.list-acl.enumeration-is-monotonic', Q_MONOTONIC, 'OBSERVED',
-               `NOT MONOTONIC on this tenant: the binding read gone at read ${firstGone + 1} `
-               + `and PRESENT again at read ${reversed + 1}, on the same scope with nothing `
-               + 'written between the two. A single read-back that had landed on read '
-               + `${reversed + 1} would have reported a removal that had in fact taken. `
-               + sequence);
-      }
-    };
+    const recordMonotonic = (settled, removalAccepted) => observe(
+      'access.list-acl.enumeration-is-monotonic', Q_MONOTONIC, () => {
+        const firstGone = settled.states.indexOf(false);
+        const reversed = firstGone === -1
+          ? -1
+          : settled.states.findIndex((state, i) => i > firstGone && state === true);
+        const unreadable = settled.states.filter((state) => state === null).length;
+        // The reads AFTER the transition, separately, because they are the
+        // ones this question is answered off.
+        const blindAfter = firstGone === -1
+          ? 0
+          : settled.states.slice(firstGone + 1).filter((state) => state === null).length;
+        const sequence = `Over ${(SETTLE_READS - 1) * SETTLE_MS} ms: `
+          + `${settled.reads.join('; ')}.`
+          + (unreadable
+            ? ` ${unreadable} read(s) could not be read, so a reversal inside them would `
+              + 'not be visible here.'
+            : '');
+        if (!removalAccepted) {
+          return { outcome: 'NOT ESTABLISHED',
+                   evidence: `no removal was accepted, so this sequence is not about one. ${sequence}` };
+        }
+        if (firstGone === -1) {
+          return { outcome: 'NOT ESTABLISHED',
+                   evidence: 'no read reported the binding gone, so the enumeration never reflected '
+                     + `the removal and there was no transition for a later read to reverse. ${sequence}` };
+        }
+        // A reversal that WAS seen establishes the answer whatever the reads
+        // around it did, so it is tested before the gap below.
+        if (reversed !== -1) {
+          return `NOT MONOTONIC on this tenant: the binding read gone at read ${firstGone + 1} `
+            + `and PRESENT again at read ${reversed + 1}, on the same scope with nothing `
+            + 'written between the two. A single read-back that had landed on read '
+            + `${reversed + 1} would have reported a removal that had in fact taken. `
+            + sequence;
+        }
+        // "No read after the transition reversed it" is a claim about every
+        // one of them, so a read that did not answer leaves it unmade. A
+        // transient 429 inside the window used to certify the enumeration.
+        if (blindAfter) {
+          return { outcome: 'NOT ESTABLISHED',
+                   evidence: `the binding read gone at read ${firstGone + 1}, and ${blindAfter} of `
+                     + `the ${SETTLE_READS - firstGone - 1} read(s) after it could not be read. `
+                     + 'Whether every later read reflected the removal is a claim about all of '
+                     + `them, and this run did not observe them all. ${sequence}` };
+        }
+        return `the binding read gone at read ${firstGone + 1} and on every read after it. `
+          + sequence;
+      },
+    );
 
     // ---- operator-binding-removal-sticks ------------------------------
     // NOT gated on the control. The control tells a re-derivation from a call
@@ -1110,7 +1128,7 @@
                  + 'accepted, so the reads below are what the scope reported and not an '
                  + 'answer about whether an accepted removal persists. ')
                + `Over ${(SETTLE_READS - 1) * SETTLE_MS} ms: ${settled.reads.join('; ')}.${cause}`);
-        recordMonotonic(settled, accepted);
+        await recordMonotonic(settled, accepted);
       }
     }
   };
