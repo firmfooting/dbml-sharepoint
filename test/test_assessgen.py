@@ -1573,6 +1573,21 @@ def test_unique_checks_account_for_previous_list_titles(
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_previous_title_answering_404_is_nothing_to_rename() -> None:
+    """With no enumeration to filter on, the rename check reads a 404 as absence (#632)."""
+    schema, bundle = _unique_pack()
+    bundle.mapping.entities["Asset"] = replace(
+        bundle.mapping.entities["Asset"], renamed_from=("OldAsset",),
+    )
+    summary = _run_assess(
+        {}, js=_unique_assess_js((schema, bundle)), harness=_no_enumeration_harness(),
+    )
+    rename = next(f for f in summary["findings"] if f["key"] == "rename:APP_Asset")
+    assert rename["level"] == "PASS", rename
+    assert "No previous title of 'APP_Asset' exists" in rename["detail"], rename
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_column_reporting_no_enforce_unique_values_settles_nothing() -> None:
     """A property the site did not report is not a false one.
 
