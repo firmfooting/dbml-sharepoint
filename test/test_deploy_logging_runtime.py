@@ -1333,6 +1333,36 @@ def test_a_central_log_site_with_no_changes_list_yet_still_takes_the_stamps() ->
     assert "change event(s) were counted and dropped" in run["output"]
 
 
+def test_a_central_site_with_no_deployments_list_records_the_run_on_the_site() -> None:
+    """The Deployments list decides the mode, so its 404 sends the run LOCAL (#632).
+
+    Answered with an empty set, which the prelude turns into the recorded 404.
+    """
+    overlay = textwrap.dedent(f"""
+        const noDeploymentsFetch = globalThis.fetch;
+        globalThis.fetch = async (url, opts = {{}}) => {{
+          const u = decodeURIComponent(String(url));
+          const probe = "getbytitle('{EXTERNAL_LOG_DEFAULT}')"
+            + '?$select=Id,ListItemEntityTypeFullName';
+          if (!u.endsWith(probe) || (opts.method || 'GET') !== 'GET') {{
+            return noDeploymentsFetch(url, opts);
+          }}
+          const empty = {{ d: {{ results: [] }} }};
+          return {{ ok: true, status: 200, headers: {{ get: () => null }},
+                   json: async () => empty, text: async () => JSON.stringify(empty) }};
+        }};
+    """)
+    run = _run_deploy(overlay=overlay)
+    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert f"has no list '{EXTERNAL_LOG_DEFAULT}'" in run["output"], run["output"][-4000:]
+    # A clean absence, not a probe that failed reading a body the 404 never had.
+    assert f"'{EXTERNAL_LOG_DEFAULT}' probe failed" not in run["output"], run["output"][-4000:]
+    assert run["state"]["central"] == []
+    assert run["state"]["centralChanges"] == []
+    assert RUN_LOG_TITLE in run["state"]["lists"], sorted(run["state"]["lists"])
+    assert not run["summary"]["loggingFailures"], run["summary"]["loggingFailures"]
+
+
 def test_every_central_row_names_the_application_that_wrote_it(
     central_run: dict[str, Any],
 ) -> None:

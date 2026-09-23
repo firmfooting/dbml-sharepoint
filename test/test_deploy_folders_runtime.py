@@ -25,6 +25,8 @@ _ROOT = "/sites/test/APP_Doc"
 
 #: The helpers the partial reads from the deploy's enclosing scope, and a
 #: fetch that answers folder reads from `STATE` and records every request.
+#: The deploy's own transport (`_http.js.j2`) goes between them, so its reads
+#: reach `globalThis.fetch` and the `run_node` prelude sees every one.
 _HARNESS = textwrap.dedent(r"""
     const calls = [];
     const changes = [];
@@ -32,8 +34,6 @@ _HARNESS = textwrap.dedent(r"""
     const apiUrl = (suffix) => `https://example.sharepoint.com/sites/test/_api/${suffix}`;
     const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
     const getDigest = async () => 'digest';
-    const spError = (text) => text;
-    const isAbsent400 = () => false;
     const logChange = (change) => { changes.push(change); };
     const created = new Set(STATE.existing);
     const createdByRun = new Set();
@@ -61,6 +61,10 @@ _HARNESS = textwrap.dedent(r"""
         const quoted = url.split("GetFolderByServerRelativeUrl('")[1];
         const path = decodeURIComponent(quoted.split("')")[0]);
         const name = path.slice(STATE.root.length + 1);
+        // An absent folder answered as a status instead of `Exists: false`; see _ABSENT_READS.
+        if (STATE.absentReadAs && !url.includes('/ListItemAllFields') && !created.has(name)) {
+          return STATE.absentReadAs;
+        }
         if (url.includes('/ListItemAllFields')) {
           if (STATE.refuseShapeRead) return [500, {}];
           if (Object.hasOwn(STATE, 'itemPayload')) return [200, { d: STATE.itemPayload }];
@@ -91,14 +95,17 @@ _HARNESS = textwrap.dedent(r"""
       }
       return [200, { d: { results: [] } }];
     };
-    const fetchWithRetry = async (url, opts = {}) => {
+    globalThis.fetch = async (url, opts = {}) => {
       const method = opts.method || 'GET';
       calls.push({ method, url: String(url) });
       const [status, body] = answer(String(url), method);
+      // A body of null is a status with nothing recorded to send with it.
+      const text = body === null ? '' : JSON.stringify(body);
       return {
-        ok: status < 400, status,
-        json: async () => body,
-        text: async () => JSON.stringify(body),
+        ok: status < 400, status, url: String(url),
+        headers: { get: () => null },
+        json: async () => JSON.parse(text),
+        text: async () => text,
       };
     };
     async function postJson(url, body, digest) {
@@ -174,6 +181,7 @@ def _run_phase(state: dict[str, Any], lists: list[dict[str, Any]]) -> dict[str, 
         f"const STATE = {json.dumps(state)};\n"
         f"const SCHEMA = {json.dumps({'lists': lists})};\n"
         + _HARNESS
+        + script_env().get_template("_http.js.j2").render()
         + "(async () => {\n" + _render_phase() + "\n})().then(() => console.log("
         "'__RESULT__' + JSON.stringify({ summary, changes, "
         "posts: calls.filter((c) => c.method === 'POST').map((c) => c.url), "
@@ -231,6 +239,27 @@ def test_a_declared_folder_is_created_under_the_root_and_read_back() -> None:
     assert [c["key"] for c in result["changes"]] == [
         "folder: APP_Doc/Clinical services", "folder: APP_Doc/Corporate",
     ]
+
+
+#: The absence answers `readFolder` guards besides `Exists: false`, which is the
+#: one measured. Neither was recorded for a folder read: the 404 goes without a
+#: body, and the 400 carries only the code `isAbsent400` keys on.
+_ABSENT_READS = {
+    "404": [404, None],
+    "absent-400": [400, {"error": {"code": "-2147024809, System.ArgumentException"}}],
+}
+
+
+@pytest.mark.parametrize("absence", sorted(_ABSENT_READS))
+def test_a_folder_read_answering_absent_creates_the_folder(absence: str) -> None:
+    """`readFolder` takes a 404 or an absent-400 as "no folder", so it is created (#632)."""
+    result = _run_phase(
+        _state(absentReadAs=_ABSENT_READS[absence]), [_library("Clinical services")],
+    )
+    assert result["summary"]["errors"] == []
+    assert result["summary"]["foldersCreated"] == ["APP_Doc/Clinical services"]
+    (post,) = result["posts"]
+    assert "folders/add(url='Clinical services')" in post
 
 
 def test_an_existing_folder_is_verified_and_not_recreated() -> None:

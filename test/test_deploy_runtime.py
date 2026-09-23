@@ -2810,6 +2810,46 @@ def test_a_list_that_does_not_exist_is_silent_in_preflight() -> None:
     assert [e for e in summary["errors"] if e.get("phase") == "preflight"] == []
 
 
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(("status", "text"), [
+    (404, ""),
+    (400, json.dumps({"error": {"code": "-2147024809, System.ArgumentException"}})),
+], ids=["404", "absent-400"])
+def test_a_field_enumeration_answering_absent_reads_as_a_list_with_no_fields(
+    status: int, text: str,
+) -> None:
+    """A list gone between its probe and its field read has no fields, not a failure (#632).
+
+    The 404 is the one a first deploy paid per column before the absence was
+    cached (`_shape_probes.js.j2`); only its status was recorded, so it has no
+    body. No absent-400 was recorded for an enumeration, so that one carries
+    only the code `isAbsent400` keys on.
+    """
+    enumeration = "getbytitle('APP_Task')/fields?"
+    overlay = textwrap.dedent(f"""
+        const goneFieldsFetch = globalThis.fetch;
+        globalThis.fetch = async (url, opts = {{}}) => {{
+          const u = String(url);
+          if (mockPhase !== {json.dumps(pn("preflight"))} || !u.includes({json.dumps(enumeration)})
+              || (opts.method || 'GET') !== 'GET') return goneFieldsFetch(url, opts);
+          calls.push({{ url: u, method: 'GET', phase: mockPhase, body: null }});
+          const text = {json.dumps(text)};
+          return {{ ok: false, status: {status}, headers: {{ get: () => null }},
+                   json: async () => JSON.parse(text), text: async () => text }};
+        }};
+    """)
+    summary, calls, output = _run_capturing_calls(_ADOPTED_HARNESS + overlay, _deploy_js())
+    reads = [
+        c for c in calls
+        if enumeration in c["url"] and c.get("phase") == pn("preflight")
+    ]
+    # One read: the absence is cached, so the list's other columns do not ask again.
+    assert len(reads) == 1, [c["url"] for c in reads]
+    assert "Field enumeration for 'APP_Task' failed" not in output, output[-4000:]
+    assert [e for e in summary["errors"] if e.get("phase") == "preflight"] == [], summary["errors"]
+    assert summary.get("aborted") != "existing-schema-shape-errors", summary
+
+
 # An adopted lookup that resolves cleanly, carrying a delete behaviour on its
 # body, which is what the mock's by-name GET answers a `$select` naming none of
 # the shape columns with. `raw` is spliced as JavaScript, so a number and a
@@ -3198,8 +3238,16 @@ def _paged_fields_harness(
         globalThis.fetch = async (url, opts = {{}}) => {{
           const u = String(url);
           const method = opts.method || 'GET';
+          // Absent until created, and no body: none was ever recorded for a by-name 404.
+          const probingCode = method === 'GET' && u.includes({json.dumps(_CODE_PROBE)});
+          if (CODE_PROBE_STATUS === 404 && probingCode) {{
+            if (created['APP_Escalation Code']) return _passThrough(url, opts);
+            calls.push({{ url: u, method, phase: mockPhase, body: null }});
+            const status = answer(404, null);
+            return {{ ...status, json: async () => JSON.parse(''), text: async () => '' }};
+          }}
           if (CODE_PROBE_STATUS && method === 'GET' && u.includes({json.dumps(_CODE_PROBE)})) {{
-            calls.push({{ url: u, method, body: null }});
+            calls.push({{ url: u, method, phase: mockPhase, body: null }});
             const refused = {{ error: {{ message: {{ value: 'probe failed' }} }} }};
             return answer(CODE_PROBE_STATUS, refused);
           }}
@@ -3337,6 +3385,22 @@ def test_a_column_absent_by_name_past_a_full_page_is_still_created(
     assert _probed_code_by_name(calls), output[-4000:]
     assert len(_code_creates(calls)) == 1, _code_creates(calls)
     assert _NEWLY_UNIQUE_HEADING not in output, output[-4000:]
+    assert not summary.get("aborted"), summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_by_name_404_past_a_full_page_reads_as_absent(tmp_path: Path) -> None:
+    """`readFieldShape` takes a 404 as absence, as it takes the absent-400 (#632)."""
+    summary, calls, output = _run_capturing_calls(
+        _paged_fields_harness(
+            rows=_FIELD_PAGE_SIZE, holds_code=False, site_holds_code=False,
+            code_probe_status=404,
+        ),
+        _unique_column_deploy_js(tmp_path),
+    )
+    assert _probed_code_by_name(calls), output[-4000:]
+    assert "shape probe failed: HTTP 404" not in json.dumps(summary["errors"])
+    assert len(_code_creates(calls)) == 1, _code_creates(calls)
     assert not summary.get("aborted"), summary
 
 
@@ -4306,6 +4370,44 @@ def test_the_views_phase_batches_a_view_s_field_writes(tmp_path: Path) -> None:
                         "NoteFirst": ["Note", "Title"]}, (
         f"the parts did not leave in each view's declared order: {ordered}"
     )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("absence", ["404", "absent-400"])
+def test_a_view_that_reads_back_absent_is_reported_by_name(
+    tmp_path: Path, absence: str,
+) -> None:
+    """`readViewShape` answers an absent view with null, and the lane names it gone (#632).
+
+    The absent-400 is the prelude's recorded one, reached by answering the read
+    with an empty set; the 404 has no recorded body, so it is sent without one.
+    """
+    answer = (
+        "{ ok: false, status: 404, headers: { get: () => null },"
+        " json: async () => JSON.parse(''), text: async () => '' }"
+        if absence == "404" else
+        "{ ok: true, status: 200, headers: { get: () => null },"
+        " json: async () => ({ d: { results: [] } }),"
+        " text: async () => JSON.stringify({ d: { results: [] } }) }"
+    )
+    overlay = textwrap.dedent(f"""
+        const goneViewFetch = globalThis.fetch;
+        globalThis.fetch = async (url, opts = {{}}) => {{
+          const u = String(url);
+          if (mockPhase !== {json.dumps(pn("views"))}
+              || !u.includes("/views/getbytitle('TitleFirst')?$select=Id,")
+              || (opts.method || 'GET') !== 'GET') return goneViewFetch(url, opts);
+          return {answer};
+        }};
+    """)
+    summary, _calls, output = _run_capturing_calls(
+        _view_guard_harness({}) + overlay, _declared_deploy_js(tmp_path, _TWO_VIEW_ORDERS),
+    )
+    lanes = [e for e in summary["errors"] if e.get("view")]
+    assert [(e["view"], e["error"]) for e in lanes] == [
+        ("TitleFirst", "view disappeared during reconciliation"),
+    ], summary["errors"]
+    assert "view shape probe failed" not in output, output[-4000:]
 
 
 # Two lists with a declared layout, so a ChangeSet that coalesces them is
