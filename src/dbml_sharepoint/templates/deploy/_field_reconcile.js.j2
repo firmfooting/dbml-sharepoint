@@ -499,12 +499,8 @@
   // replacement can carry a copied Description; the list Id is what separates
   // them.
   //
-  // `expectedId` takes no default and may not be nullish. A default fires on
-  // `undefined`, so `ownedListIdentity(title, owned.get(title))` for a title
-  // the survey never covered bound the default and skipped the comparison
-  // entirely, leaving the marker-only check the comment above says is not
-  // enough. The two cases are indistinguishable from inside the function, so
-  // absence is refused here rather than told apart.
+  // `expectedId` takes no default, because one would fire on the `undefined`
+  // a survey miss returns and silently skip the comparison below.
   async function ownedListIdentity(listName, expectedId, when = 'before a write') {
     if (expectedId == null) {
       throw new Error(`No proven identity was captured for list '${listName}' ${when}`);
