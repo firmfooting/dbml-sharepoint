@@ -8,7 +8,7 @@
  *   unmeasured. Does either one create, hold a value, project through a view
  *   and take an index the way the list-to-list shape does?
  *
- * REVISION: d5c49f87
+ * REVISION: 40f72f1b
  *
  * WHY: `analysis/joins.py` counts every lookup the same way and the deploy
  * emits every lookup the same way, whichever container is at each end. A
@@ -309,10 +309,15 @@
   // with, and the behaviour without one is unchanged. Supply one and every
   // request below addresses that list Id instead of the title, so a title
   // rebound mid-run cannot redirect the deletes or the recycle onto a list
-  // this run never owned. Microsoft documents `web/lists(guid'<id>')` as the
-  // list resource, with items and other members hanging off it the way they
-  // hang off `getbytitle` (Working with lists and list items with REST, and
-  // the CSOM/REST API index, both checked 2026-09-23).
+  // this run never owned.
+  //
+  // DOCUMENTED: `web/lists(guid'<id>')` is the list resource, and `/items`
+  // and `/items(<id>)` hang off it (Working with lists and list items with
+  // REST, and the CSOM/REST API index, both checked 2026-09-23).
+  // NOT DOCUMENTED: `/recycle` on the by-Id form appears on no Learn page.
+  // It is the call this project has live evidence for with only the
+  // addressing changed, and an unsupported URL fails visibly here rather
+  // than losing somebody's list. One CLEANUP run settles it; see issue #611.
   const resetList = async (title, expectedId = null) => {
     if (!CLEANUP) return false;
     if (!ALLOW_WRITES) {
@@ -452,7 +457,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision d5c49f87. Quote this when reporting results.');
+  log('INFO', 'probe revision 40f72f1b. Quote this when reporting results.');
 
   // Three containers, never two. See the acyclic finding in the header.
   const LIB = 'dbmlsp Probe XLookup Lib';

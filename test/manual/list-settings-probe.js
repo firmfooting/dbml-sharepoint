@@ -6,7 +6,7 @@
  *   through the ordinary MERGE path actually change the container, on a
  *   GENERIC LIST and on a DOCUMENT LIBRARY, which may not answer the same?
  *
- * REVISION: da28559b
+ * REVISION: 58582214
  *
  * WHY: attachments are disabled on every list before go-live as a MANUAL
  * step, on ten lists in programme-governance alone, because there is no
@@ -236,10 +236,15 @@
   // with, and the behaviour without one is unchanged. Supply one and every
   // request below addresses that list Id instead of the title, so a title
   // rebound mid-run cannot redirect the deletes or the recycle onto a list
-  // this run never owned. Microsoft documents `web/lists(guid'<id>')` as the
-  // list resource, with items and other members hanging off it the way they
-  // hang off `getbytitle` (Working with lists and list items with REST, and
-  // the CSOM/REST API index, both checked 2026-09-23).
+  // this run never owned.
+  //
+  // DOCUMENTED: `web/lists(guid'<id>')` is the list resource, and `/items`
+  // and `/items(<id>)` hang off it (Working with lists and list items with
+  // REST, and the CSOM/REST API index, both checked 2026-09-23).
+  // NOT DOCUMENTED: `/recycle` on the by-Id form appears on no Learn page.
+  // It is the call this project has live evidence for with only the
+  // addressing changed, and an unsupported URL fails visibly here rather
+  // than losing somebody's list. One CLEANUP run settles it; see issue #611.
   const resetList = async (title, expectedId = null) => {
     if (!CLEANUP) return false;
     if (!ALLOW_WRITES) {
@@ -383,7 +388,7 @@
   // up. Destructive, so it ships false like every other guard.
   const CLEANUP_AT_END = false;
 
-  log('INFO', 'probe revision da28559b. Quote this when reporting results.');
+  log('INFO', 'probe revision 58582214. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe ListSettings';
   const LIB = 'dbmlsp Probe ListSettings Lib';

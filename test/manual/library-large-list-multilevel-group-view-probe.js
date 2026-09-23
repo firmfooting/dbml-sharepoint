@@ -13,7 +13,7 @@
  *   serving at the same moment the group-by is refused, and is that refusal
  *   still the threshold rather than something else?
  *
- * REVISION: f3bdbffb
+ * REVISION: 3a3b7d99
  *
  * THE FIXTURE IS READ, NEVER REBUILT. `library-large-list-fixture-probe.js`
  * builds and owns 'dbmlsp Probe LargeLib': about 5,500 files named
@@ -472,10 +472,15 @@
   // with, and the behaviour without one is unchanged. Supply one and every
   // request below addresses that list Id instead of the title, so a title
   // rebound mid-run cannot redirect the deletes or the recycle onto a list
-  // this run never owned. Microsoft documents `web/lists(guid'<id>')` as the
-  // list resource, with items and other members hanging off it the way they
-  // hang off `getbytitle` (Working with lists and list items with REST, and
-  // the CSOM/REST API index, both checked 2026-09-23).
+  // this run never owned.
+  //
+  // DOCUMENTED: `web/lists(guid'<id>')` is the list resource, and `/items`
+  // and `/items(<id>)` hang off it (Working with lists and list items with
+  // REST, and the CSOM/REST API index, both checked 2026-09-23).
+  // NOT DOCUMENTED: `/recycle` on the by-Id form appears on no Learn page.
+  // It is the call this project has live evidence for with only the
+  // addressing changed, and an unsupported URL fails visibly here rather
+  // than losing somebody's list. One CLEANUP run settles it; see issue #611.
   const resetList = async (title, expectedId = null) => {
     if (!CLEANUP) return false;
     if (!ALLOW_WRITES) {
@@ -615,7 +620,7 @@
     console.log('Copy this whole block back verbatim.');
   };
  
-  log('INFO', 'probe revision f3bdbffb. Quote this when reporting results.');
+  log('INFO', 'probe revision 3a3b7d99. Quote this when reporting results.');
 
   // ---- The fixture contract, restated ----------------------------------
   // Owned by library-large-list-fixture-probe.js. Read, never rebuilt.
