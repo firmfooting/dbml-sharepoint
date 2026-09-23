@@ -34,7 +34,12 @@ import pytest
 from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis.column_projection import SYSTEM_COLUMN_TYPES
-from dbml_sharepoint.analysis.condition_rendering import _NULL_INCLUSIVE_NEGATIVES, normalise
+from dbml_sharepoint.analysis.condition_rendering import (
+    _FALSY,
+    _NULL_INCLUSIVE_NEGATIVES,
+    _TRUTHY,
+    normalise,
+)
 from dbml_sharepoint.analysis.group_description import (
     TOOL_OWNED_GROUP_NAMES,
     description_budget,
@@ -49,7 +54,8 @@ from dbml_sharepoint.analysis.list_description import (
     note_budget,
 )
 from dbml_sharepoint.analysis.role_definition_description import level_description_budget
-from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
+from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
+from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, NOW_SENTINEL
 from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, PLACEHOLDER_TIME_ZONE
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
 from dbml_sharepoint.model.mapping_loader import load_mapping
@@ -1158,6 +1164,88 @@ def test_every_declared_view_is_satisfied_by_a_demo_row(template: str) -> None:
         )
 
 
+# A field SharePoint fills from a default formula this evaluator does not compute.
+_FORMULA_DEFAULT = object()
+
+
+def _stored_default(value: str | int | bool, column_type: str) -> str | int | bool:
+    """A schema default as the row stores it. `[today]` is the create date on a date
+    column; a Text column stores the token literally (pinned in test_probe_runtime.py)."""
+    if not isinstance(value, str):
+        return value
+    text = value.strip("'")
+    return "today" if text == "[today]" and column_type in DATE_TYPES else text
+
+
+def _seeded_rows(loaded: Loaded, entity: str) -> list[tuple[str, dict[str, Any]]]:
+    """(key, values) per demo row, schema defaults filled in as SharePoint stores them."""
+    defaults: dict[str, Any] = {}
+    types = loaded.column_types(entity)
+    for table in loaded.schema.tables:
+        if table.name == entity:
+            for column in table.columns:
+                if column.default is not None:
+                    column_type = types.get(column.name, "")
+                    defaults[column.name] = _stored_default(column.default, column_type)
+    for column_name in loaded.mapping.default_formulas.get(entity, {}):
+        defaults[column_name] = _FORMULA_DEFAULT
+    return [
+        (item.key, {**defaults, **item.values})
+        for item in loaded.mapping.demo_items.get(entity, [])
+    ]
+
+
+@pytest.mark.parametrize("template", _all_templates())
+def test_every_seeded_row_passes_its_save_rules(template: str) -> None:
+    """A seeded row the list would refuse fails the --seed deploy on a live site.
+
+    Each row is evaluated against the effective list rule, hoisted clock rules
+    included, and against each remaining column rule on a non-blank value,
+    because a column rule does not fire on a blank. Only True passes, and a
+    rule this evaluator cannot decide fails too: a skip would keep CI green
+    over a seed the deploy might refuse.
+    """
+    loaded = _load(template)
+    refused: list[str] = []
+    unevaluable: list[str] = []
+    for entity in sorted(loaded.mapping.demo_items):
+        types = loaded.column_types(entity)
+        rule = effective_list_validation(loaded.mapping, entity, types)
+        section = loaded.mapping.column_validation.get(entity)
+        hoisted = {column for column, _ in hoisted_columns(section, types)}
+        checks: list[tuple[str | None, Condition, str]] = (
+            [(None, rule.when, rule.message)] if rule is not None else []
+        )
+        checks += [
+            (column, column_rule.when, column_rule.message)
+            for column, column_rule in (section.columns.items() if section else [])
+            if column not in hoisted
+        ]
+        for key, row in _seeded_rows(loaded, entity):
+            for column, condition, message in checks:
+                value = row.get(column) if column else None
+                blank = value is None or value == [] or (
+                    isinstance(value, str) and not value.strip()
+                )
+                if column and blank:
+                    continue
+                try:
+                    verdict = _evaluate(normalise(condition), row, types)
+                except _UnevaluableError as exc:
+                    unevaluable.append(f"{entity}/{key}: {exc}")
+                    continue
+                if verdict is not True:
+                    refused.append(f"{entity}/{key} ({verdict}): {message}")
+    assert not refused, (
+        f"{template}: seeded rows its own save rules refuse: " + "; ".join(refused)
+    )
+    assert not unevaluable, (
+        f"{template}: rule checks this evaluator cannot decide, so the seed is unproven "
+        "(give the row a value it can decide, or teach the evaluator the rule): "
+        + "; ".join(unevaluable)
+    )
+
+
 @pytest.mark.parametrize("template", _uplifted())
 def test_every_formatted_column_is_exercised_by_a_demo_row(
     template: str, capsys: pytest.CaptureFixture[str],
@@ -1395,7 +1483,7 @@ def _evaluate(node: Condition, row: dict[str, Any], types: dict[str, str]) -> bo
 
 
 def _evaluate_leaf(leaf: Leaf, row: dict[str, Any], types: dict[str, str]) -> bool | None:
-    if leaf.property or leaf.measure:
+    if leaf.property or (leaf.measure and leaf.measure != "length"):
         raise _UnevaluableError(f"{leaf.field}: 'property'/'measure' comparisons are not evaluated")
     if leaf.op not in SUPPORTED_OPS:
         raise _UnevaluableError(f"operator {leaf.op!r} on {leaf.field!r}")
@@ -1404,6 +1492,15 @@ def _evaluate_leaf(leaf: Leaf, row: dict[str, Any], types: dict[str, str]) -> bo
         return None  # SharePoint computes it; a demo `values` dict cannot
     if column_type == "person" and leaf.value == "me":
         return None  # the current user is a deploy-time fact
+    if row.get(leaf.field) is _FORMULA_DEFAULT:
+        return None  # SharePoint fills it from a formula on create, as for a calculated column
+    # The renderer reads `today` and ISO text as dates only on a date column.
+    dates = column_type in DATE_TYPES
+    if leaf.measure == "length":
+        # Rendered as LEN([X]), and LEN of a blank is 0, so a measure is never null.
+        raw = row.get(leaf.field)
+        length = 0 if raw is None or raw == [] else len(str(raw))
+        return _compare(leaf.op, length, leaf.value)
     raw = row.get(leaf.field)
     # `[]` counts as empty because the emitter omits an empty multi-value field
     # from the payload and M4 measured that column reading back `null`.
@@ -1419,24 +1516,116 @@ def _evaluate_leaf(leaf: Leaf, row: dict[str, Any], types: dict[str, str]) -> bo
         # comparison excludes it. `not_includes` is there on probe C9,
         # 2026-08-10, which returned the empty row.
         return leaf.op in _NULL_INCLUSIVE_NEGATIVES
+    if column_type == "datetime" and leaf.op in _ORDERING_OPS:
+        return _compare_instants(leaf.field, leaf.op, raw, leaf.value)
+    if column_type == "boolean" and leaf.op in _ORDERING_OPS:
+        return _compare_booleans(leaf.field, leaf.op, raw, leaf.value)
     if leaf.op in ("includes", "not_includes"):
         if not isinstance(raw, list):
             # DEMO_MULTI_VALUE_NOT_A_LIST refuses a scalar on such a column, so
             # this is the two readers having drifted, not an authored shape.
             raise _UnevaluableError(f"{leaf.field}: {leaf.op} against a non-list")
         members = raw
-        hit = any(_compare("eq", member, leaf.value) for member in members)
+        hit = any(_compare("eq", member, leaf.value, dates=dates) for member in members)
         return hit if leaf.op == "includes" else not hit
     if leaf.op in ("in", "not_in"):
         if not isinstance(leaf.value, list):
             raise _UnevaluableError(f"{leaf.field}: {leaf.op} value is not a list")
-        member = any(_compare("eq", raw, candidate) for candidate in leaf.value)
+        # The renderer expands a set into `eq` per member, so each takes the typed equality.
+        member = _any_member(leaf.field, column_type, raw, leaf.value, dates=dates)
         return member if leaf.op == "in" else not member
-    return _compare(leaf.op, raw, leaf.value)
+    return _compare(leaf.op, raw, leaf.value, dates=dates)
 
 
-def _compare(op: str, left: Any, right: Any) -> bool:
-    lhs, rhs = _align(left, right)
+_ORDERING_OPS = frozenset({"eq", "neq", "lt", "leq", "gt", "geq"})
+
+
+def _any_member(field: str, column_type: str, raw: Any, members: list[Any], *, dates: bool) -> bool:
+    """True if any member equals `raw`; unevaluable if none does and one could not be decided."""
+    undecided: _UnevaluableError | None = None
+    for candidate in members:
+        try:
+            if column_type == "datetime":
+                hit = _compare_instants(field, "eq", raw, candidate)
+            elif column_type == "boolean":
+                hit = _compare_booleans(field, "eq", raw, candidate)
+            else:
+                hit = _compare("eq", raw, candidate, dates=dates)
+        except _UnevaluableError as exc:
+            undecided = exc
+            continue
+        if hit:
+            return True
+    if undecided is not None:
+        raise undecided
+    return False
+
+
+def _compare_instants(field: str, op: str, raw: Any, value: Any) -> bool:
+    """Two datetime operands, known only to the day.
+
+    Operands on different days are decided by the day. On one day the time
+    of day decides, and only these cases are known:
+    - two midnights (a `today±N` literal or a bare ISO date) are equal;
+    - a seeded `today±N` is written as `Date.now()` plus N days, an instant
+      no earlier than midnight, and `today` renders as midnight (TODAY() in
+      a formula, `<Today/>` without IncludeTimeValue in CAML, measured in
+      condition_rendering.py), which decides `geq` and `lt`;
+    - a same-day seed is written before the row is saved, so it is no later
+      than `now`, which decides `leq` and `gt`. `now` is the instant only on
+      a DATETIME column, as `_is_now` renders it.
+    """
+    is_now = isinstance(value, str) and NOW_SENTINEL.match(value) is not None
+    seeded = _as_date(raw)
+    literal = REFERENCE_DATE if is_now else _as_date(value)
+    if seeded is None or literal is None:
+        raise _UnevaluableError(f"{field}: {op} {value!r} against {raw!r}")
+    if _is_seeded_instant(raw) != (is_now or _is_seeded_instant(value)):
+        # REFERENCE_DATE stands in for the deploy date, which a fixed date is not relative to.
+        raise _UnevaluableError(
+            f"{field}: {op} {value!r} against {raw!r} depends on the deploy date",
+        )
+    if seeded != literal:
+        return _compare(op, seeded, literal)
+    if is_now and op in ("leq", "gt"):
+        return op == "leq"
+    if not is_now and _is_midnight(value):
+        if _is_midnight(raw) and not _is_seeded_instant(raw):
+            return _compare(op, seeded, literal)
+        if _is_seeded_instant(raw) and op in ("geq", "lt"):
+            return op == "geq"
+    raise _UnevaluableError(f"{field}: {op} {value!r} on the same day turns on the time of day")
+
+
+def _is_seeded_instant(value: Any) -> bool:
+    """A `today±N` demo value, which the seeder writes as the current instant plus N days."""
+    return isinstance(value, str) and _TODAY.match(value.strip()) is not None
+
+
+def _is_midnight(value: Any) -> bool:
+    """A `today±N` literal or a bare ISO date: the start of that day."""
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    return _TODAY.match(text) is not None or (len(text) == 10 and _as_date(text) is not None)
+
+
+def _compare_booleans(field: str, op: str, raw: Any, value: Any) -> bool:
+    """Yes/No operands through the renderer's own alias sets, so `yes` equals True."""
+    def truth(operand: Any) -> bool:
+        if isinstance(operand, (bool, int, str)) and operand in _TRUTHY:
+            return True
+        if isinstance(operand, (bool, int, str)) and operand in _FALSY:
+            return False
+        raise _UnevaluableError(f"{field}: {operand!r} is not a boolean")
+
+    if op not in ("eq", "neq"):
+        raise _UnevaluableError(f"{field}: {op} on a boolean")
+    return (truth(raw) == truth(value)) is (op == "eq")
+
+
+def _compare(op: str, left: Any, right: Any, *, dates: bool = True) -> bool:
+    lhs, rhs = _align(left, right, dates=dates)
     match op:
         case "eq":
             return bool(lhs == rhs)
@@ -1454,11 +1643,11 @@ def _compare(op: str, left: Any, right: Any) -> bool:
             raise _UnevaluableError(f"operator {op!r}")
 
 
-def _align(left: Any, right: Any) -> tuple[Any, Any]:
+def _align(left: Any, right: Any, *, dates: bool = True) -> tuple[Any, Any]:
     """Compare like with like: dates if both sides are dates, numbers if both
     are numeric, strings otherwise. Mixed pairs fall to string comparison,
     which is what a choice member against a literal wants anyway."""
-    left_date, right_date = _as_date(left), _as_date(right)
+    left_date, right_date = (_as_date(left), _as_date(right)) if dates else (None, None)
     if left_date is not None and right_date is not None:
         return left_date, right_date
     left_number, right_number = _as_number(left), _as_number(right)
@@ -1568,6 +1757,173 @@ def test_a_formatted_multi_value_column_counts_as_exercised() -> None:
     """
     rows: list[dict[str, Any]] = [{"Events": ["View", "Edit"]}, {"Events": "Delete"}, {}]
     assert _seen_values(rows, "Events") == {"View", "Edit", "Delete"}
+
+
+_CLOCK_TYPES = {"StampAt": "datetime", "Note": "longtext"}
+
+
+@pytest.mark.parametrize(("seeded", "op", "expected"), [
+    ("today-2", "leq", True),
+    ("today", "leq", True),
+    ("today+1", "leq", False),
+    ("today-1", "lt", True),
+    ("today+1", "geq", True),
+    # A same-day seed is written before the save, so it is never after now.
+    ("today", "gt", False),
+])
+def test_now_resolves_to_the_reference_day(seeded: str, op: str, expected: bool) -> None:
+    leaf = Leaf(field="StampAt", op=op, value="now")
+    assert _evaluate(leaf, {"StampAt": seeded}, _CLOCK_TYPES) is expected
+
+
+@pytest.mark.parametrize("op", ["lt", "geq", "eq", "neq"])
+def test_a_same_day_instant_against_now_is_unevaluable(op: str) -> None:
+    """Day granularity cannot order two instants on one day; the clock decides."""
+    leaf = Leaf(field="StampAt", op=op, value="now")
+    with pytest.raises(_UnevaluableError):
+        _evaluate(leaf, {"StampAt": "today"}, _CLOCK_TYPES)
+
+
+def test_date_text_is_a_literal_word_off_a_date_column() -> None:
+    """`[Note]="2026-07-01"` is a text comparison, so `today` does not equal it."""
+    leaf = Leaf(field="Note", op="eq", value="2026-07-01")
+    assert _evaluate(leaf, {"Note": "today"}, _CLOCK_TYPES) is False
+
+
+def test_a_default_formula_field_left_unset_is_unknown() -> None:
+    """SharePoint fills it on create, so it is not blank and its value is unknown."""
+    leaf = Leaf(field="Note", op="neq", value="Closed")
+    assert _evaluate(leaf, {"Note": _FORMULA_DEFAULT}, _CLOCK_TYPES) is None
+
+
+def test_a_decisive_branch_settles_a_rule_over_an_unknown_default() -> None:
+    rule = Group(kind="any_of", children=(
+        Leaf(field="Status", op="eq", value="Draft"),
+        Leaf(field="Note", op="eq", value="X"),
+    ))
+    row = {"Status": "Draft", "Note": _FORMULA_DEFAULT}
+    assert _evaluate(rule, row, {**_CLOCK_TYPES, "Status": "choice"}) is True
+
+
+@pytest.mark.parametrize(("seeded", "literal", "op", "expected"), [
+    ("2026-06-30", "2026-07-01T12:00:00Z", "lt", True),
+    ("2026-07-02", "2026-07-01T12:00:00Z", "geq", True),
+])
+def test_datetimes_on_different_days_are_decided_by_the_day(
+    seeded: str, literal: str, op: str, expected: bool,
+) -> None:
+    leaf = Leaf(field="StampAt", op=op, value=literal)
+    assert _evaluate(leaf, {"StampAt": seeded}, _CLOCK_TYPES) is expected
+
+
+@pytest.mark.parametrize(("seeded", "literal", "op"), [
+    ("2026-07-01", "2026-07-01T12:00:00Z", "geq"),
+    ("today", "today", "leq"),
+    ("today", "today", "eq"),
+    ("today", "today", "gt"),
+])
+def test_datetimes_on_the_same_day_are_unevaluable(seeded: str, literal: str, op: str) -> None:
+    """Midnight against noon, or an instant after midnight under these operators, turns on
+    the time of day."""
+    leaf = Leaf(field="StampAt", op=op, value=literal)
+    with pytest.raises(_UnevaluableError):
+        _evaluate(leaf, {"StampAt": seeded}, _CLOCK_TYPES)
+
+
+@pytest.mark.parametrize(("seeded", "literal", "op", "expected"), [
+    # A seeded instant is never before that day's midnight.
+    ("today", "today", "geq", True),
+    ("today", "today", "lt", False),
+    ("today-1", "today-1", "geq", True),
+    # Two midnights compare exactly.
+    ("2026-07-01", "2026-07-01", "eq", True),
+    ("2026-07-01", "2026-07-01", "gt", False),
+])
+def test_a_same_day_instant_or_midnight_against_midnight_is_decided(
+    seeded: str, literal: str, op: str, expected: bool,
+) -> None:
+    leaf = Leaf(field="StampAt", op=op, value=literal)
+    assert _evaluate(leaf, {"StampAt": seeded}, _CLOCK_TYPES) is expected
+
+
+@pytest.mark.parametrize(("seeded", "literal", "op"), [
+    ("2026-07-02T00:00:00Z", "now", "geq"),
+    ("2026-06-01", "today", "lt"),
+    ("today-1", "2026-06-01", "gt"),
+])
+def test_an_absolute_date_against_a_relative_one_is_unevaluable(
+    seeded: str, literal: str, op: str,
+) -> None:
+    """Whether a fixed date is before today depends on the deploy date, not REFERENCE_DATE."""
+    leaf = Leaf(field="StampAt", op=op, value=literal)
+    with pytest.raises(_UnevaluableError):
+        _evaluate(leaf, {"StampAt": seeded}, _CLOCK_TYPES)
+
+
+def test_datetime_set_members_keep_the_time_of_day() -> None:
+    leaf = Leaf(field="StampAt", op="in", value=["2026-07-01T12:00:00Z"])
+    with pytest.raises(_UnevaluableError):
+        _evaluate(leaf, {"StampAt": "2026-07-01"}, _CLOCK_TYPES)
+
+
+@pytest.mark.parametrize(("op", "expected"), [("in", True), ("not_in", False)])
+def test_boolean_set_members_use_the_renderer_aliases(op: str, expected: bool) -> None:
+    leaf = Leaf(field="Active", op=op, value=["yes"])
+    assert _evaluate(leaf, {"Active": True}, {"Active": "boolean"}) is expected
+
+
+@pytest.mark.parametrize(("seeded", "literal", "op", "expected"), [
+    (True, "yes", "eq", True),
+    (True, "yes", "neq", False),
+    (False, 1, "eq", False),
+    ("No", "false", "eq", True),
+])
+def test_booleans_compare_through_the_renderer_aliases(
+    seeded: object, literal: object, op: str, expected: bool,
+) -> None:
+    leaf = Leaf(field="Active", op=op, value=literal)
+    assert _evaluate(leaf, {"Active": seeded}, {"Active": "boolean"}) is expected
+
+
+def test_now_is_a_literal_word_off_a_datetime_column() -> None:
+    """The renderer reads `now` as the instant only on a DATETIME column."""
+    leaf = Leaf(field="Note", op="neq", value="now")
+    assert _evaluate(leaf, {"Note": "today"}, _CLOCK_TYPES) is True
+
+
+@pytest.mark.parametrize(("default", "column_type", "stored"), [
+    ("'[today]'", "date", "today"),
+    ("'[today]'", "text", "[today]"),
+    ("'Open'", "choice", "Open"),
+    (3, "int", 3),
+])
+def test_a_schema_default_is_stored_resolved(
+    default: str | int, column_type: str, stored: str | int,
+) -> None:
+    assert _stored_default(default, column_type) == stored
+
+
+@pytest.mark.parametrize(("value", "expected"), [
+    ("four", False),
+    ("a longer note", True),
+    (None, False),
+    ("", False),
+])
+def test_measure_length_compares_the_text_length(value: str | None, expected: bool) -> None:
+    leaf = Leaf(field="Note", op="gt", value=4, measure="length")
+    assert _evaluate(leaf, {"Note": value}, _CLOCK_TYPES) is expected
+
+
+def test_a_measure_of_a_blank_is_zero_not_null() -> None:
+    """LEN of a blank is 0, so `leq` holds where a plain comparison would not."""
+    leaf = Leaf(field="Note", op="leq", value=0, measure="length")
+    assert _evaluate(leaf, {"Note": None}, _CLOCK_TYPES) is True
+
+
+def test_an_unknown_measure_stays_unevaluable() -> None:
+    leaf = Leaf(field="Note", op="gt", value=4, measure="words")
+    with pytest.raises(_UnevaluableError):
+        _evaluate(leaf, {"Note": "text"}, _CLOCK_TYPES)
 
 
 # Entities deliberately outside the standard. EMPTY: templates/README.md
@@ -2738,13 +3094,6 @@ def test_legal_library_keeps_content_in_excel_and_issuance_independent() -> None
         assert rule.when is not None
         assert _evaluate(normalise(rule.when), {"ItemType": "REG"}, types) is False
         assert _evaluate(normalise(rule.when), {"ItemType": "SAQ"}, types) is True
-
-
-def test_legal_demo_assessments_satisfy_save_rules() -> None:
-    loaded = _load("legal-compliance-register")
-    for item in loaded.mapping.demo_items["Document"]:
-        assert _legal_rule_accepts(item.values) is True, item.key
-
 
 
 def test_legal_platform_owner_workspace_keeps_unclassified_uploads_visible() -> None:
