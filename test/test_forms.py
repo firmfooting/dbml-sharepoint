@@ -774,11 +774,11 @@ def _calculated_schema_json(**sections: Unpack[MappingSections]) -> dict[str, ob
         "calculated_formulas": {"Escalation": {"Band": '=IF([Note]="","low","high")'}},
     }
     declared.update(sections)
+    bundle = make_bundle(entities=["Escalation"], **declared)
     return build_schema_json(
-        schema, make_bundle(entities=["Escalation"], **declared), "default",
-        site_url="https://example.sharepoint.com/sites/t", resolved=resolve(
-            schema, make_bundle(entities=["Escalation"], **declared).mapping,
-        ),
+        schema, bundle, "default",
+        site_url="https://example.sharepoint.com/sites/t",
+        resolved=resolve(schema, bundle.mapping),
     )
 
 

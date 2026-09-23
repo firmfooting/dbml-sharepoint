@@ -21,7 +21,7 @@ from dbml_sharepoint.analysis.list_description import family_for, marker_for
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.permissions import requires_manage_permissions
 from dbml_sharepoint.analysis.rendered_columns import rendered_columns
-from dbml_sharepoint.analysis.resolve import ResolvedMapping
+from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.analysis.role_definition_description import marker_for_level
 from dbml_sharepoint.analysis.typemap import map_column
 from dbml_sharepoint.model.mapping_types import MappingBundle
@@ -65,6 +65,7 @@ def _declared_unique_columns(
     return names
 
 
+@guards_resolution
 def assess_targets(
     schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping,
 ) -> dict[str, Any]:
@@ -240,6 +241,7 @@ def assess_targets(
     }
 
 
+@guards_resolution
 def derive_requirements(
     schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping,
 ) -> list[Requirement]:
@@ -401,6 +403,7 @@ def _render(template_name: str, **context: Any) -> str:
     return script_env().get_template(template_name).render(**context)
 
 
+@guards_resolution
 def generate_assess_js(
     *,
     schema: Schema,
@@ -429,6 +432,7 @@ def generate_assess_js(
     )
 
 
+@guards_resolution
 def generate_assess_manifest(
     *,
     schema: Schema,

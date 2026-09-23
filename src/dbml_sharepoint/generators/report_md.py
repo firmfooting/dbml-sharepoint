@@ -31,7 +31,7 @@ from dbml_sharepoint.analysis.reporting.dictionary import (
 )
 from dbml_sharepoint.analysis.reporting.names import query_name
 from dbml_sharepoint.analysis.reporting.plan import ListPlan, build_plans, tables_for_role
-from dbml_sharepoint.analysis.resolve import ResolvedMapping
+from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.analysis.timezones import WINDOW_END, WINDOW_START, zone_table
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
 from dbml_sharepoint.generators._indexes import deployable_index_columns
@@ -444,6 +444,7 @@ def _date_zone_dictionary_row(time_zone: str | None) -> str:
     )
 
 
+@guards_resolution
 def generate_data_dictionary(
     schema: Schema,
     bundle: MappingBundle,

@@ -66,18 +66,18 @@ def _transport() -> str:
     the BatchWriter takes it as a constructor argument, and the tests supply
     their own.
     """
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     js = generate_deploy_js(
-        schema=parse_dbml(FIXTURES / "simple.dbml"),
-        bundle=load_mapping(FIXTURES / "sharepoint-mapping.yaml"),
+        schema=schema,
+        bundle=bundle,
         release=load_release(FIXTURES / "release.yaml"),
         site_url=f"{ORIGIN}{WEB}",
         site_role="default",
         source_dbml="x.dbml",
         source_mtime="2026-09-04T00:00:00Z",
-        generated_at="2026-09-04T00:00:00Z", resolved=resolve(
-            parse_dbml(FIXTURES / "simple.dbml"),
-            load_mapping(FIXTURES / "sharepoint-mapping.yaml").mapping,
-        ),
+        generated_at="2026-09-04T00:00:00Z",
+        resolved=resolve(schema, bundle.mapping),
     )
     start = js.index("  const DEBUG = false;")
     end = js.index("  let cachedDigest = null;")

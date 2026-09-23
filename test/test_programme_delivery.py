@@ -17,13 +17,10 @@ ROOT = SOLUTION_TEMPLATES / "programme-governance"
 
 @pytest.fixture(scope="module")
 def declaration() -> dict[str, Any]:
+    schema = parse_dbml(ROOT / "10-design/schema.dbml")
+    bundle = load_mapping(ROOT / "20-configure/mapping.yaml")
     return build_schema_json(
-        parse_dbml(ROOT / "10-design/schema.dbml"),
-        load_mapping(ROOT / "20-configure/mapping.yaml"),
-        "default", resolved=resolve(
-            parse_dbml(ROOT / "10-design/schema.dbml"),
-            load_mapping(ROOT / "20-configure/mapping.yaml").mapping,
-        ),
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
     )
 
 

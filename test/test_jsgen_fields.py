@@ -560,11 +560,9 @@ def test_a_library_gets_no_title_patch_when_it_would_only_clear_required(
         dbml=table("Attendance", ID_PK, "Notes nvarchar"),
         mapping=entities("Attendance"),
     )
+    library = as_library(bundle, "Attendance")
     sj = build_schema_json(
-        schema,
-        as_library(bundle, "Attendance"),
-        "default",
-        resolved=resolve(schema, as_library(bundle, "Attendance").mapping),
+        schema, library, "default", resolved=resolve(schema, library.mapping),
     )
     att = next(lst for lst in sj["lists"] if lst["title"] == "APP_Attendance")
     assert att["title_patch"] is None
@@ -588,11 +586,9 @@ def test_a_library_still_patches_title_for_a_declared_rename(
             "      Title: 'Session'",
         ])),
     )
+    library = as_library(bundle, "Attendance")
     sj = build_schema_json(
-        schema,
-        as_library(bundle, "Attendance"),
-        "default",
-        resolved=resolve(schema, as_library(bundle, "Attendance").mapping),
+        schema, library, "default", resolved=resolve(schema, library.mapping),
     )
     att = next(lst for lst in sj["lists"] if lst["title"] == "APP_Attendance")
     assert att["title_patch"]["Title"] == "Session"
@@ -991,13 +987,10 @@ def test_a_declared_default_formula_rides_the_create_body_and_the_defaults_phase
 
 
 def test_a_column_without_a_default_formula_carries_no_such_key() -> None:
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     schema_json = build_schema_json(
-        parse_dbml(FIXTURES / "simple.dbml"),
-        load_mapping(FIXTURES / "sharepoint-mapping.yaml"),
-        "default", resolved=resolve(
-            parse_dbml(FIXTURES / "simple.dbml"),
-            load_mapping(FIXTURES / "sharepoint-mapping.yaml").mapping,
-        ),
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
     )
     assert all(
         "DefaultFormula" not in f["body"]

@@ -20,8 +20,11 @@ the strict resolvers raise today.
 Nothing here imports a check, so a generator can read it.
 """
 
+from collections.abc import Callable, Iterable
 from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass
+from functools import wraps
+from inspect import signature
 
 from dbml_sharepoint.analysis.folders import (
     UnknownFolderEnumError,
@@ -29,8 +32,39 @@ from dbml_sharepoint.analysis.folders import (
     folder_policies,
 )
 from dbml_sharepoint.analysis.groups import UnknownGroupEnumError, resolvable_groups
-from dbml_sharepoint.model.mapping_types import ListPermissionPolicy, Mapping, SiteGroup
+from dbml_sharepoint.model.mapping_types import (
+    ListPermissionPolicy,
+    Mapping,
+    MappingBundle,
+    SiteGroup,
+)
 from dbml_sharepoint.model.parser import Schema
+
+
+class MismatchedResolutionError(ValueError):
+    """A `ResolvedMapping` that was not built from the inputs it arrived with.
+
+    Every consumer of a resolution also takes the schema and bundle it is
+    meant to describe, then combines the two: lists and columns from the
+    schema, folders, groups and ACL policies from the resolution. A
+    resolution built from a DIFFERENT mapping answers every one of those
+    reads, so the build emits a deploy script that provisions one mapping's
+    lists with another's permissions, passes every phase and reads back
+    clean. Nothing downstream can see it, which is why this refuses rather
+    than reconciles.
+
+    `ValueError` because that is what `pipeline.execute_report` catches, so
+    a refusal here clears a previously generated pack instead of leaving a
+    stale one looking current behind a traceback.
+    """
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(
+            "this ResolvedMapping was not built from the inputs it was passed "
+            f"with: {detail}. Build one for these inputs with "
+            "analysis.resolve.resolve().",
+        )
+        self.detail = detail
 
 
 @dataclass(frozen=True)
@@ -174,7 +208,7 @@ def resolve(schema: Schema, mapping: Mapping) -> ResolvedMapping:
     resolve, and `mapping.permissions.group_sources` is then walked once more
     to name which of those, if any, that was.
     """
-    enum_members = {enum.name: tuple(enum.members) for enum in schema.enums}
+    enum_members = enum_members_of(schema)
     unresolved: list[UnresolvedEnum] = []
 
     folders: dict[str, tuple[str, ...]] = {}
@@ -206,3 +240,82 @@ def resolve(schema: Schema, mapping: Mapping) -> ResolvedMapping:
         groups=groups,
         unresolved=tuple(unresolved),
     )
+
+
+def enum_members_of(schema: Schema) -> dict[str, tuple[str, ...]]:
+    """`schema`'s enums as `ResolvedMapping.enum_members`, one derivation.
+
+    Public because the guard below compares a resolution's copy against a
+    freshly derived one, and a second spelling of this projection is exactly
+    the drift that comparison exists to catch.
+    """
+    return {enum.name: tuple(enum.members) for enum in schema.enums}
+
+
+def require_matching_resolution(
+    resolved: ResolvedMapping,
+    bundle: MappingBundle,
+    schema: Schema | None = None,
+) -> None:
+    """Refuse a resolution that was not built from these same inputs.
+
+    The mapping is compared by IDENTITY, because `ResolvedMapping.mapping`
+    is the very object `resolve()` read: the comparison is exact, costs one
+    pointer compare, and cannot drift as `Mapping` grows fields. A deep
+    comparison would be a second implementation of equality over a model
+    that is not frozen, and it could disagree with the resolution it is
+    meant to describe.
+
+    The schema is compared on `enum_members`, which is the whole of what a
+    resolution takes from a schema, so two schemas differing only in ways
+    the resolution cannot see are correctly accepted.
+
+    It does NOT catch a `Mapping` edited after `resolve()` returned, because
+    `Mapping` is not frozen and the identity check still holds.
+    """
+    if resolved.mapping is not bundle.mapping:
+        raise MismatchedResolutionError("its mapping is a different object")
+    if schema is not None and resolved.enum_members != enum_members_of(schema):
+        raise MismatchedResolutionError("its enum members are not this schema's")
+
+
+def _argument_of[T](supplied: Iterable[object], kind: type[T]) -> T | None:
+    """The first argument that IS a `kind`, or None."""
+    return next((value for value in supplied if isinstance(value, kind)), None)
+
+
+def guards_resolution[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
+    """Run `require_matching_resolution` before every call of `fn`.
+
+    A decorator rather than a line inside each consumer: eleven public
+    functions take a resolution alongside the bundle it must describe, under
+    four different parameter names, and a guard written out at each would be
+    eleven copies of the same two comparisons with eleven chances to be left
+    out. Arguments are matched by TYPE, so `bundle.emit_bundle`'s
+    `mapping_bundle` is covered without this module naming it.
+
+    Fails closed when a decorated call supplies no bundle at all, rather
+    than passing the call through unchecked: a guard that silently stops
+    guarding is the defect class this repository exists to close.
+    `test_resolve.py::test_every_consumer_taking_both_is_guarded` covers the
+    other half, a consumer added without the decorator.
+    """
+    sig = signature(fn)
+
+    @wraps(fn)
+    def guarded(*args: P.args, **kwargs: P.kwargs) -> R:
+        supplied = list(sig.bind(*args, **kwargs).arguments.values())
+        resolved = _argument_of(supplied, ResolvedMapping)
+        bundle = _argument_of(supplied, MappingBundle)
+        if resolved is None or bundle is None:
+            raise MismatchedResolutionError(
+                f"{fn.__qualname__} was called with no MappingBundle to check "
+                "it against",
+            )
+        require_matching_resolution(resolved, bundle, _argument_of(supplied, Schema))
+        return fn(*args, **kwargs)
+
+    # Read by the static test above; a plain function object carries no such
+    # attribute, so mypy has to be told.
+    guarded.__resolution_guarded__ = True  # type: ignore[attr-defined]
+    return guarded

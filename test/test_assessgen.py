@@ -1228,11 +1228,9 @@ def test_declared_unique_columns_are_named_in_declaration_order() -> None:
         column("Tag", required=True, unique=True),
         note="Assets.",
     ))
+    bundle = make_bundle(entities=["Asset"])
     targets = assess_targets(
-        schema,
-        make_bundle(entities=["Asset"]),
-        "default",
-        resolved=resolve(schema, make_bundle(entities=["Asset"]).mapping),
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
     )
     assert targets["list_unique_columns"] == [
         ["APP_Asset", ["Title", "Reference", "Tag"]],

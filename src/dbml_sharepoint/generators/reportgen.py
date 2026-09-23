@@ -20,7 +20,7 @@ own write policy (#171).
 
 from pathlib import Path
 
-from dbml_sharepoint.analysis.resolve import ResolvedMapping
+from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.bundle import (
     REPORT_DICTIONARY,
     REPORT_DIR,
@@ -47,6 +47,7 @@ from dbml_sharepoint.model.parser import Schema
 from dbml_sharepoint.model.release import Release
 
 
+@guards_resolution
 def render_reporting(
     schema: Schema,
     bundle: MappingBundle,
@@ -121,6 +122,7 @@ def render_reporting(
     return pack
 
 
+@guards_resolution
 def emit_reporting(
     out: Path,
     schema: Schema,

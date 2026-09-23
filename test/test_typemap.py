@@ -576,18 +576,18 @@ def test_the_deploy_script_map_covers_every_field_kind() -> None:
     `undefined` in the operator's browser, part-way through a deploy, on a
     customer site.
     """
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     js = generate_deploy_js(
-        schema=parse_dbml(FIXTURES / "simple.dbml"),
-        bundle=load_mapping(FIXTURES / "sharepoint-mapping.yaml"),
+        schema=schema,
+        bundle=bundle,
         release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test",
         site_role="default",
         source_dbml="simple.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z", resolved=resolve(
-            parse_dbml(FIXTURES / "simple.dbml"),
-            load_mapping(FIXTURES / "sharepoint-mapping.yaml").mapping,
-        ),
+        generated_at="2026-05-04T00:00:00Z",
+        resolved=resolve(schema, bundle.mapping),
     )
     rendered = _rendered_type_as_string_map(js)
     rendered_multi = _rendered_type_as_string_map(js, "MULTI_TYPE_AS_STRING_BY_KIND")

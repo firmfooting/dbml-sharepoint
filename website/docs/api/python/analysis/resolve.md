@@ -27,6 +27,23 @@ the strict resolvers raise today.
 
 Nothing here imports a check, so a generator can read it.
 
+### `MismatchedResolutionError`
+
+A `ResolvedMapping` that was not built from the inputs it arrived with.
+
+Every consumer of a resolution also takes the schema and bundle it is
+meant to describe, then combines the two: lists and columns from the
+schema, folders, groups and ACL policies from the resolution. A
+resolution built from a DIFFERENT mapping answers every one of those
+reads, so the build emits a deploy script that provisions one mapping's
+lists with another's permissions, passes every phase and reads back
+clean. Nothing downstream can see it, which is why this refuses rather
+than reconciles.
+
+`ValueError` because that is what `pipeline.execute_report` catches, so
+a refusal here clears a previously generated pack instead of leaving a
+stale one looking current behind a traceback.
+
 ### `UnresolvedEnum`
 
 ```python
@@ -156,4 +173,59 @@ entity, in `mapping.entities` order; groups are resolved once via
 `resolvable_groups`, which already leaves out only the sources it cannot
 resolve, and `mapping.permissions.group_sources` is then walked once more
 to name which of those, if any, that was.
+
+### `enum_members_of`
+
+```python
+def enum_members_of(schema: dbml_sharepoint.model.parser.Schema) -> dict[str, tuple[str, ...]]
+```
+
+`schema`'s enums as `ResolvedMapping.enum_members`, one derivation.
+
+Public because the guard below compares a resolution's copy against a
+freshly derived one, and a second spelling of this projection is exactly
+the drift that comparison exists to catch.
+
+### `require_matching_resolution`
+
+```python
+def require_matching_resolution(resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, schema: dbml_sharepoint.model.parser.Schema | None = None) -> None
+```
+
+Refuse a resolution that was not built from these same inputs.
+
+The mapping is compared by IDENTITY, because `ResolvedMapping.mapping`
+is the very object `resolve()` read: the comparison is exact, costs one
+pointer compare, and cannot drift as `Mapping` grows fields. A deep
+comparison would be a second implementation of equality over a model
+that is not frozen, and it could disagree with the resolution it is
+meant to describe.
+
+The schema is compared on `enum_members`, which is the whole of what a
+resolution takes from a schema, so two schemas differing only in ways
+the resolution cannot see are correctly accepted.
+
+It does NOT catch a `Mapping` edited after `resolve()` returned, because
+`Mapping` is not frozen and the identity check still holds.
+
+### `guards_resolution`
+
+```python
+def guards_resolution(fn: collections.abc.Callable[P, R]) -> collections.abc.Callable[P, R]
+```
+
+Run `require_matching_resolution` before every call of `fn`.
+
+A decorator rather than a line inside each consumer: eleven public
+functions take a resolution alongside the bundle it must describe, under
+four different parameter names, and a guard written out at each would be
+eleven copies of the same two comparisons with eleven chances to be left
+out. Arguments are matched by TYPE, so `bundle.emit_bundle`'s
+`mapping_bundle` is covered without this module naming it.
+
+Fails closed when a decorated call supplies no bundle at all, rather
+than passing the call through unchecked: a guard that silently stops
+guarding is the defect class this repository exists to close.
+`test_resolve.py::test_every_consumer_taking_both_is_guarded` covers the
+other half, a consumer added without the decorator.
 

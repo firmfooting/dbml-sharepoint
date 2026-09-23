@@ -21,7 +21,11 @@ from dbml_sharepoint.analysis.reporting.plan import (
     ListPlan,
     build_plans,
 )
-from dbml_sharepoint.analysis.resolve import ResolvedMapping, resolve
+from dbml_sharepoint.analysis.resolve import (
+    ResolvedMapping,
+    require_matching_resolution,
+    resolve,
+)
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, supports_unique
 from dbml_sharepoint.model.mapping_types import EntityKind, MappingBundle, SiteGroup
 from dbml_sharepoint.model.parser import EnumDef, Schema, Table
@@ -116,6 +120,12 @@ class ValidationContext:
     report_plans_by_role: dict[str, dict[str, ListPlan] | None] = field(
         default_factory=dict,
     )
+
+    def __post_init__(self) -> None:
+        # `build` resolves from its own arguments, but this is a plain
+        # dataclass and a hand-built one could pair another pack's resolution
+        # with this bundle, judging a mapping that is not the one deployed.
+        require_matching_resolution(self.resolved, self.bundle, self.schema)
 
     @classmethod
     def build(cls, schema: Schema, bundle: MappingBundle) -> "ValidationContext":

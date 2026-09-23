@@ -7,25 +7,47 @@ needed, plus `require_resolved()` for the generator side that must not
 silently omit a declared group or folder.
 """
 
+import importlib
+import inspect
+import pkgutil
+from collections.abc import Callable
+from pathlib import Path
+
 import pytest
+from _builders import ID_PK, TITLE, table
 from _model import enum as make_enum
 from _model import mapping as make_mapping
 from _model import schema as make_schema
 from _model import table as make_table
+from _packs import blocks, pack
+from _paths import FIXTURES
 
+import dbml_sharepoint
+from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.folders import UnknownFolderEnumError
 from dbml_sharepoint.analysis.groups import UnknownGroupEnumError
-from dbml_sharepoint.analysis.resolve import UnresolvedEnum, resolve
+from dbml_sharepoint.analysis.resolve import (
+    MismatchedResolutionError,
+    ResolvedMapping,
+    UnresolvedEnum,
+    guards_resolution,
+    resolve,
+)
+from dbml_sharepoint.generators.jsgen import build_schema_json
+from dbml_sharepoint.generators.manifestgen import generate_manifest
 from dbml_sharepoint.model.mapping_types import (
     EntityMapping,
     FoldersFromEnum,
     GroupsFromEnum,
     ListPermissionPolicy,
+    MappingBundle,
     PermissionsConfig,
     Principal,
     RoleAssignment,
     SiteGroup,
 )
+from dbml_sharepoint.model.parser import Schema
+from dbml_sharepoint.model.release import load_release
 
 
 def _group(name: str, owner_group: str = "Site Owners") -> SiteGroup:
@@ -268,3 +290,172 @@ def test_require_folder_policies_keeps_the_scope_the_old_resolver_had() -> None:
     with pytest.raises(UnknownFolderEnumError) as excinfo:
         resolved.require_folder_policies("Docs")
     assert excinfo.value.enum == "divison"
+
+
+def _pair(tmp_path: Path, folder: str, member: str) -> tuple[Schema, MappingBundle]:
+    """One self-consistent pack: `folder` is its library's only root folder.
+
+    Both packs name the SAME entity, deliberately. Two packs naming different
+    entities answer a stale resolution with a `KeyError`, and a test built on
+    that pair would pass for a reason that has nothing to do with the defect:
+    a stale resolution whose entity names all match answers every read.
+    """
+    return pack(
+        tmp_path,
+        dbml=blocks(
+            f'Enum division {{\n  "{member}"\n}}',
+            table("Risk", ID_PK, TITLE, "Division division"),
+        ),
+        mapping=f'''
+            entities:
+              Risk:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: ["{folder}"]
+        ''',
+        dbml_name=f"{folder}-{member}.dbml",
+        mapping_name=f"{folder}-{member}.yaml",
+    )
+
+
+def test_a_resolution_built_from_another_pack_is_refused_by_name(tmp_path: Path) -> None:
+    """`require_resolved()` asks only whether anything was unresolved.
+
+    A resolution of an UNRELATED mapping has nothing unresolved, so it walked
+    straight through that gate, and the build then combined this schema's
+    lists and fields with that mapping's folders, groups and ACL policies. It
+    would deploy clean and read back clean, which is why the guard has to be
+    a refusal rather than a warning.
+    """
+    schema_a, bundle_a = _pair(tmp_path, "North", "Shared")
+    schema_b, bundle_b = _pair(tmp_path, "South", "Shared")
+    foreign = resolve(schema_a, bundle_a.mapping)
+    # Nothing unresolved, and every read pack B would make is answered -- with
+    # pack A's folder. This is what nothing downstream could have seen.
+    assert foreign.unresolved == ()
+    assert foreign.require_folders("Risk") == ("North",)
+
+    with pytest.raises(MismatchedResolutionError) as excinfo:
+        build_schema_json(schema_b, bundle_b, "default", resolved=foreign)
+    assert excinfo.value.detail == "its mapping is a different object"
+
+    # The same refusal at the other public entry point, which takes the
+    # bundle under the same name but the schema only as rendered JSON.
+    with pytest.raises(MismatchedResolutionError):
+        generate_manifest(
+            schema_json=build_schema_json(
+                schema_b, bundle_b, "default",
+                resolved=resolve(schema_b, bundle_b.mapping),
+            ),
+            resolved=foreign,
+            findings=[],
+            bundle=bundle_b,
+            release=load_release(FIXTURES / "release.yaml"),
+            site_url="https://example.sharepoint.com/sites/test",
+            site_role="default",
+            source_dbml="b.dbml",
+            source_mtime="2026-05-04T00:00:00Z",
+            generated_at="2026-05-04T00:00:00Z",
+        )
+
+
+def test_a_resolution_of_this_mapping_against_another_schema_is_refused(
+    tmp_path: Path,
+) -> None:
+    """Identity on the mapping alone would pass this one.
+
+    `ResolvedMapping` carries no schema, so the schema is checked on
+    `enum_members`, which is the whole of what a resolution takes from one.
+    """
+    other_schema, _other_bundle = _pair(tmp_path, "North", "Clinical")
+    schema, bundle = _pair(tmp_path, "North", "Corporate")
+
+    with pytest.raises(MismatchedResolutionError) as excinfo:
+        build_schema_json(
+            schema, bundle, "default",
+            resolved=resolve(other_schema, bundle.mapping),
+        )
+    assert excinfo.value.detail == "its enum members are not this schema's"
+
+
+def test_a_hand_built_validation_context_is_refused_the_same_way(tmp_path: Path) -> None:
+    """`ValidationContext.build` resolves its own, but the class is a dataclass.
+
+    A hand-built one pairing another pack's resolution with this bundle would
+    judge a mapping that is not the one deployed, and report its findings
+    against this one's locations.
+    """
+    schema_a, bundle_a = _pair(tmp_path, "North", "Shared")
+    schema_b, bundle_b = _pair(tmp_path, "South", "Shared")
+
+    with pytest.raises(MismatchedResolutionError):
+        ValidationContext(
+            schema=schema_b, bundle=bundle_b,
+            resolved=resolve(schema_a, bundle_a.mapping),
+        )
+    # The supported constructor still works, and resolves from its own inputs.
+    assert ValidationContext.build(schema_b, bundle_b).resolved.mapping is bundle_b.mapping
+
+
+def test_a_guarded_call_with_no_bundle_fails_closed(tmp_path: Path) -> None:
+    """A guard that quietly stops guarding is worse than no guard.
+
+    The decorator matches its arguments by type, so a consumer that takes a
+    resolution and no bundle has nothing to check it against. That is a
+    decoration mistake, and it refuses rather than passing the call through.
+    """
+    schema, bundle = _pair(tmp_path, "North", "Shared")
+
+    @guards_resolution
+    def takes_no_bundle(resolved: ResolvedMapping) -> int:
+        return len(resolved.groups)
+
+    with pytest.raises(MismatchedResolutionError) as excinfo:
+        takes_no_bundle(resolve(schema, bundle.mapping))
+    assert "takes_no_bundle" in str(excinfo.value)
+
+
+def _public_consumers() -> list[tuple[str, Callable[..., object]]]:
+    """Every public function in the package taking a resolution AND a bundle.
+
+    Annotations are compared as TEXT because `bundle.py` quotes its own
+    (`ResolvedMapping` is a TYPE_CHECKING import there), and `typing`'s
+    resolvers cannot evaluate those at runtime.
+    """
+    found: list[tuple[str, Callable[..., object]]] = []
+    for info in pkgutil.walk_packages(dbml_sharepoint.__path__, "dbml_sharepoint."):
+        # Its own guard takes both and is what everything else calls.
+        if info.name == "dbml_sharepoint.analysis.resolve":
+            continue
+        module = importlib.import_module(info.name)
+        for name, fn in vars(module).items():
+            if name.startswith("_") or not inspect.isfunction(fn):
+                continue
+            if fn.__module__ != info.name:
+                continue
+            annotations = [
+                str(p.annotation) for p in inspect.signature(fn).parameters.values()
+            ]
+            if any("ResolvedMapping" in a for a in annotations) and any(
+                "MappingBundle" in a for a in annotations
+            ):
+                found.append((f"{info.name}.{name}", fn))
+    return found
+
+
+def test_every_public_consumer_taking_both_is_guarded() -> None:
+    """A new consumer must not be able to skip the guard by being added.
+
+    Private helpers are left out: they are reached only through a public
+    entry point that has already refused a foreign resolution.
+    """
+    consumers = _public_consumers()
+    # The eleven this piece threads a resolution through. A bare `> 0` would
+    # pass on an import failure that found nothing at all.
+    assert len(consumers) >= 11, [name for name, _fn in consumers]
+    unguarded = [
+        name for name, fn in consumers
+        if not getattr(fn, "__resolution_guarded__", False)
+    ]
+    assert unguarded == []

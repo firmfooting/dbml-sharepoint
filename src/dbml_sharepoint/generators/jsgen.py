@@ -35,7 +35,7 @@ from dbml_sharepoint.analysis.permissions import (
 )
 from dbml_sharepoint.analysis.phases import phases_context
 from dbml_sharepoint.analysis.rendered_columns import effective_view_fields
-from dbml_sharepoint.analysis.resolve import ResolvedMapping
+from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.analysis.role_definition_description import (
     level_description,
     marker_for_level,
@@ -101,6 +101,7 @@ def _resolve_site_context(
     )
 
 
+@guards_resolution
 def generate_deploy_js(
     *,
     schema: Schema,
@@ -559,6 +560,7 @@ def _acl_scopes(
     return out
 
 
+@guards_resolution
 def build_schema_json(
     schema: Schema,
     bundle: MappingBundle,

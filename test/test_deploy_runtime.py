@@ -48,18 +48,18 @@ def _deploy_js_with_assessment() -> str:
     from dbml_sharepoint.model.parser import parse_dbml
     from dbml_sharepoint.model.release import load_release
 
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     return generate_deploy_js(
-        schema=parse_dbml(FIXTURES / "simple.dbml"),
-        bundle=load_mapping(FIXTURES / "sharepoint-mapping.yaml"),
+        schema=schema,
+        bundle=bundle,
         release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test",
         site_role="default",
         source_dbml="simple.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z", resolved=resolve(
-            parse_dbml(FIXTURES / "simple.dbml"),
-            load_mapping(FIXTURES / "sharepoint-mapping.yaml").mapping,
-        ),
+        generated_at="2026-05-04T00:00:00Z",
+        resolved=resolve(schema, bundle.mapping),
     )
 
 
@@ -4791,9 +4791,11 @@ def _reader_deploy_js(
         "sidecar_change_log_marker": change_log_marker(),
         "sidecar_change_fields": list(CHANGE_FIELDS),
     }
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping-with-reader.yaml")
     return _without_assessment(generate_deploy_js(
-        schema=parse_dbml(FIXTURES / "simple.dbml"),
-        bundle=load_mapping(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
+        schema=schema,
+        bundle=bundle,
         release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test",
         site_role="default",
@@ -4801,10 +4803,8 @@ def _reader_deploy_js(
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
         enterprise_reader=enterprise_reader,
-        **sidecar_args, resolved=resolve(
-            parse_dbml(FIXTURES / "simple.dbml"),
-            load_mapping(FIXTURES / "sharepoint-mapping-with-reader.yaml").mapping,
-        ),
+        **sidecar_args,
+        resolved=resolve(schema, bundle.mapping),
     ))
 
 

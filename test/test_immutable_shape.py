@@ -63,18 +63,18 @@ def test_the_immutable_list_properties_are_the_ones_the_deploy_asserts() -> None
 
 
 def _deploy_js() -> str:
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     return generate_deploy_js(
-        schema=parse_dbml(FIXTURES / "simple.dbml"),
-        bundle=load_mapping(FIXTURES / "sharepoint-mapping.yaml"),
+        schema=schema,
+        bundle=bundle,
         release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test",
         site_role="default",
         source_dbml="simple.dbml",
         source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z", resolved=resolve(
-            parse_dbml(FIXTURES / "simple.dbml"),
-            load_mapping(FIXTURES / "sharepoint-mapping.yaml").mapping,
-        ),
+        generated_at="2026-05-04T00:00:00Z",
+        resolved=resolve(schema, bundle.mapping),
     )
 
 

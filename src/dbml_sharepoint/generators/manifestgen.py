@@ -9,7 +9,7 @@ from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.limits import MAX_VALIDATION_FORMULA, MAX_VALIDATION_MESSAGE
 from dbml_sharepoint.analysis.permissions import lists_granting_group
 from dbml_sharepoint.analysis.phases import phase_numbers
-from dbml_sharepoint.analysis.resolve import ResolvedMapping
+from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.extension import ManifestExtras
 from dbml_sharepoint.generators.jsgen import UNMANAGED
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
@@ -18,6 +18,7 @@ from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
 
 
+@guards_resolution
 def generate_manifest(
     *,
     schema_json: dict[str, Any],

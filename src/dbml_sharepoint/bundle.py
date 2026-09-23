@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
+from dbml_sharepoint.analysis.resolve import guards_resolution
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
 
 if TYPE_CHECKING:
@@ -313,6 +314,7 @@ def write_index(
     write_artifact(out / "index.md", "\n".join(lines) + "\n")
 
 
+@guards_resolution
 def emit_bundle(
     out: Path,
     *,

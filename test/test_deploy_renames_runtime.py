@@ -402,16 +402,16 @@ def _run_lookup_deploy(
     *,
     display_column: bool = False,
 ) -> dict[str, Any]:
+    schema = _lookup_schema(display_column=display_column)
+    bundle = _lookup_bundle(display_column=display_column)
     js = generate_deploy_js(
-        schema=_lookup_schema(display_column=display_column),
-        bundle=_lookup_bundle(display_column=display_column),
+        schema=schema,
+        bundle=bundle,
         release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test", site_role="default",
         source_dbml="x.dbml", source_mtime="2026-09-03T00:00:00Z",
-        generated_at="2026-09-03T00:00:00Z", resolved=resolve(
-            _lookup_schema(display_column=display_column),
-            _lookup_bundle(display_column=display_column).mapping,
-        ),
+        generated_at="2026-09-03T00:00:00Z",
+        resolved=resolve(schema, bundle.mapping),
     )
     body = js.replace(
         "    assessment = await assessSite({",
