@@ -5418,29 +5418,16 @@ def test_an_accepted_change_log_grant_that_is_not_observed_is_recorded() -> None
 
 
 # === The change log's grant picks a scope kind, not just a level ===
-#
-# `readerGrant` in _logging.js.j2 chooses ONE grant to mirror onto the change
-# log from every scope the reader group holds across SCHEMA.acl_scopes list
-# and folder scopes alike. The two tests below run a bespoke two-entity
-# schema rather than the fixed reader fixture, because the fixed fixture
-# grants the reader only at list scope and cannot distinguish the two
-# emission orders a merged collection makes possible. Logging is phase 1.6,
-# in PREPARE, before list creation (2.1), folder creation (2.2) and ACL
-# reconciliation (4.2), so neither entity's list nor its folder has to exist
-# on the mock site for phase 1.6 to be observed -- exactly as the note above
-# records for the fixed fixture's own later abort.
+# A bespoke schema, because the fixed reader fixture grants only at list
+# scope and cannot distinguish the two emission orders a merged
+# `SCHEMA.acl_scopes` makes possible.
 
-#: 'Docs', created first, secured ONLY at folder scope with a level that is
-#: Read plus two elevated bits -- the concrete shape a folder policy takes
-#: when it grants more than reading. 'Policies', created second, secured at
-#: list scope with the built-in Read. Both grant the SAME reader group, so
-#: the winner is decided by scope kind and creation order, not by which
-#: level is stronger.
-#: `folders:` on a `kind: List` is refused by FOLDERS_ON_A_LIST, and is
-#: deliberate here: the logging phase runs before any list or folder is
-#: created, so only the SHAPE of SCHEMA.acl_scopes reaches the code under
-#: test. Do not "correct" these to DocumentLibrary; this file's harness does
-#: not carry the library endpoints.
+#: 'Docs' is secured only at folder scope and 'Policies' only at list scope,
+#: both granting the same reader group, so scope kind and creation order
+#: decide the winner rather than which level is stronger.
+#: `folders:` on a `kind: List` is deliberate, because phase 1.6 runs before
+#: any list or folder exists and only the SHAPE of `acl_scopes` reaches the
+#: code under test; this file's harness carries no library endpoints.
 _FOLDER_AND_LIST_READER_MAPPING = """
 entities:
   Docs:
