@@ -112,14 +112,9 @@ _HARNESS = textwrap.dedent(r"""
       return notFound('field');
     };
     const fieldById = (id) => state.fields.find((f) => f.Id === id);
-    // field-sealed-probe.js measured a Text column only (2026-09-19 and
-    // 2026-09-20, #381): sealing reads CanBeDeleted false, unsealing restores
-    // true, a write of it is accepted and ignored, and a sealed DELETE is
-    // refused. Only a Text column is held to that; other types keep the
-    // fixture's stored value and the mock's older, unmeasured behaviour.
+    // field-sealed-probe.js measured the seal on a Text column only (#381).
     const sealMeasured = (f) => f.TypeAsString === 'Text';
-    // A Text column's CanBeDeleted is derived from the CURRENT seal, and a
-    // stored one wins, so a MERGE that wrongly stored it is visible on read.
+    // A stored CanBeDeleted wins over the derived one, so a MERGE that stores it shows.
     const fieldView = (f) => {
       const { deleted, lookupList, refusesDeleteUnsealed, ...rest } = f;
       if ('CanBeDeleted' in rest) return rest;
@@ -195,17 +190,14 @@ _HARNESS = textwrap.dedent(r"""
           state.fieldMerges += 1;
           const takes = state.fieldMerges <= (FLAGS.discardFieldMergeAfter || 0);
           if (!FLAGS.discardFieldMerge || takes) {
-            // CanBeDeleted is read-only on a Text column: SharePoint answers
-            // 204 to a write of it in either seal state and changes nothing (#381).
+            // Read-only on a Text column: a write of it answers 204 and changes nothing (#381).
             const { CanBeDeleted, ...writable } = body || {};
             Object.assign(f, sealMeasured(f) ? writable : body || {}, { __metadata: undefined });
           }
           return reply(204, {});
         }
         if (method === 'POST' && headers['X-HTTP-Method'] === 'DELETE') {
-          // A sealed column refuses the delete and survives it, with this
-          // exact answer (measured 2026-09-19 and 2026-09-20, #381). A mock
-          // that deleted it would pass a script that skipped the unseal.
+          // A sealed Text column refuses the delete with this answer and survives (#381).
           if (f.Sealed === true && sealMeasured(f)) {
             return reply(400, { error: {
               code: '-1, System.InvalidOperationException',
@@ -726,53 +718,60 @@ def test_an_empty_sealed_column_is_unsealed_and_read_back_before_the_delete() ->
 _SEAL_WALK = textwrap.dedent("""
     (async () => {
       const f = `https://example.sharepoint.com/sites/test/_api/web/lists(guid'__LIST__')/fields(guid'__FIELD__')`;
-      const read = async () => (await (await fetch(f)).json()).d.CanBeDeleted;
+      const read = async () => {
+        const d = (await (await fetch(f)).json()).d;
+        return `Sealed=${d.Sealed} CanBeDeleted=${d.CanBeDeleted}`;
+      };
       const write = async (verb, body) => (await fetch(f, {
         method: 'POST', headers: { 'X-HTTP-Method': verb },
         body: body ? JSON.stringify(body) : undefined,
       })).status;
+      const merge = async (body) => [await write('MERGE', body), await read()];
       const out = {};
-      out.sealed = await read();
-      out.writeWhileSealed = await write('MERGE', { CanBeDeleted: true });
-      out.afterWriteWhileSealed = await read();
-      out.deleteWhileSealed = await write('DELETE');
-      out.afterDeleteWhileSealed = (await fetch(f)).status;
-      out.unseal = await write('MERGE', { Sealed: false });
-      out.unsealed = await read();
-      out.writeWhileUnsealed = await write('MERGE', { CanBeDeleted: false });
-      out.afterWriteWhileUnsealed = await read();
-      out.deleteWhileUnsealed = await write('DELETE');
-      out.afterDeleteWhileUnsealed = (await fetch(f)).status;
+      out.start = await read();
+      out.seal = await merge({ Sealed: true });
+      out.unseal = await merge({ Sealed: false });
+      out.writeWhileUnsealed = await merge({ CanBeDeleted: false });
+      out.reseal = await merge({ Sealed: true });
+      out.writeWhileSealed = await merge({ CanBeDeleted: true });
+      out.bothAtOnce = await merge({ Sealed: false, CanBeDeleted: false });
+      out.sealForDelete = await merge({ Sealed: true });
+      out.deleteWhileSealed = [await write('DELETE'), (await fetch(f)).status];
+      out.unsealForDelete = await merge({ Sealed: false });
+      out.deleteWhileUnsealed = [await write('DELETE'), (await fetch(f)).status];
       return out;
     })();
 """)
+
+F_SUBJECT = "aaaaaaaa-0000-0000-0000-000000000016"
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_the_mock_seals_a_column_the_way_the_probe_measured() -> None:
     """Every script test in this file is only as strict as this mock.
 
-    `field-sealed-probe.js`, 2026-09-19 and 2026-09-20 (#381), both runs
-    identical: sealing reads CanBeDeleted false and unsealing restores true;
-    a MERGE of CanBeDeleted answers 204 and changes nothing in either state;
-    a DELETE on a sealed column answers 400 and the column survives; after
-    unsealing the DELETE takes. A mock looser than that passes a script that
-    skips the unseal, which is the class #574 describes.
+    `field-sealed-probe.js`'s own sequence, on an unsealed Text column, with
+    the readbacks its two runs recorded (2026-09-19 and 2026-09-20, #381,
+    identical). A mock looser than that passes a script that skips the
+    unseal, which is the class #574 describes.
     """
-    body = _SEAL_WALK.replace("__LIST__", LIST_ID).replace("__FIELD__", F_ONE)
-    walk = _run_script(body, _config(), [])[0]
+    fields = [*_fields(), _field("Subject", field_id=F_SUBJECT)]
+    body = _SEAL_WALK.replace("__LIST__", LIST_ID).replace("__FIELD__", F_SUBJECT)
+    walk = _run_script(body, _config(fields=fields), [])[0]
+    sealed, unsealed = "Sealed=true CanBeDeleted=false", "Sealed=false CanBeDeleted=true"
     assert walk == {
-        "sealed": False,
-        "writeWhileSealed": 204,
-        "afterWriteWhileSealed": False,
-        "deleteWhileSealed": 400,
-        "afterDeleteWhileSealed": 200,
-        "unseal": 204,
-        "unsealed": True,
-        "writeWhileUnsealed": 204,
-        "afterWriteWhileUnsealed": True,
-        "deleteWhileUnsealed": 200,
-        "afterDeleteWhileUnsealed": 404,
+        "start": unsealed,
+        "seal": [204, sealed],
+        "unseal": [204, unsealed],
+        "writeWhileUnsealed": [204, unsealed],
+        "reseal": [204, sealed],
+        "writeWhileSealed": [204, sealed],
+        # The writable half of the pair lands; the read-only half is dropped.
+        "bothAtOnce": [204, unsealed],
+        "sealForDelete": [204, sealed],
+        "deleteWhileSealed": [400, 200],
+        "unsealForDelete": [204, unsealed],
+        "deleteWhileUnsealed": [200, 404],
     }
 
 
