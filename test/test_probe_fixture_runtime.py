@@ -413,3 +413,139 @@ def test_list_modified_clock_voids_the_update_rows_when_the_seed_does_not_read_b
     assert "throttled (HTTP 429)" in rows[_SEED]["evidence"]
     assert _void_ids(rows) == set(_LIST_UPDATE)
     assert rows["formula.validation.fixture-list-rule-cleared"]["outcome"] == "PASS"
+
+
+#: The datetime-sentinel probe's list, answering every call the probe sends.
+#: Saves are accepted and CAML answers every row, which a live site can do.
+_SENTINEL_MOCK = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+    const fields = new Map(Object.entries(CONFIG.fields));
+    const items = new Map();
+    const views = new Map();
+    let nextItem = 1;
+    const FIELD = /\\/fields\\/getbyinternalnameortitle\\('([^']+)'\\)/;
+    const VIEW = /\\/views\\/getbytitle\\('([^']+)'\\)/;
+    const ITEM = /\\/items\\((\\d+)\\)/;
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const method = opts.method || 'GET';
+      const verb = (opts.headers || {})['X-HTTP-Method'] || method;
+      const raw = opts.body === undefined ? '' : String(opts.body);
+      const sent = raw ? JSON.parse(raw) : {};
+      const path = decodeURIComponent(u.split('/_api/')[1] || '');
+      SENT.push({ verb, path, body: raw });
+
+      if (path.startsWith('contextinfo')) {
+        return digestResponse();
+      }
+      if (path.startsWith('web/RegionalSettings/TimeZone')) {
+        return jsonResponse(200, { Description: '(UTC) Coordinated Universal Time',
+          Information: { Bias: 0, StandardBias: 0, DaylightBias: 0 } });
+      }
+      if (path.endsWith('/fields/createfieldasxml')) {
+        const xml = sent.parameters.SchemaXml;
+        const name = /Name="([^"]+)"/.exec(xml)[1];
+        const type = /Type="([^"]+)"/.exec(xml)[1];
+        fields.set(name, { TypeAsString: type,
+          DisplayFormat: /Format="DateTime"/.test(xml) ? 1 : 0, ValidationFormula: '' });
+        return jsonResponse(201, { Id: `field-${name}`, InternalName: name });
+      }
+      const named = FIELD.exec(path);
+      if (named) {
+        const held = fields.get(named[1]);
+        if (!held) return noSuchField();
+        if (verb === 'MERGE') {
+          if (String(sent.ValidationFormula || '').includes('NoSuchColumnHere')) {
+            return jsonResponse(500, { 'odata.error': { message: {
+              value: 'The formula refers to a column that does not exist.' } } });
+          }
+          Object.assign(held, sent);
+          return jsonResponse(204, {});
+        }
+        return jsonResponse(200, { InternalName: named[1], Title: named[1], ...held });
+      }
+      const view = VIEW.exec(path);
+      if (view) {
+        if (path.includes('/viewfields/addviewfield')) return jsonResponse(200, {});
+        return jsonResponse(200, { Title: view[1], ViewQuery: views.get(view[1]) });
+      }
+      if (path.endsWith('/views')) {
+        views.set(sent.Title, sent.ViewQuery);
+        return jsonResponse(201, { Title: sent.Title });
+      }
+      if (path.endsWith('/getitems')) {
+        const results = [...items.values()].map((row) => ({ Title: row.Title }));
+        return jsonResponse(200, { d: { results } });
+      }
+      const item = ITEM.exec(path);
+      if (item) {
+        items.delete(Number(item[1]));
+        return jsonResponse(200, {});
+      }
+      if (path.endsWith('/items')) {
+        const id = nextItem;
+        nextItem += 1;
+        items.set(id, { Id: id, ...sent });
+        return jsonResponse(201, { Id: id, ...sent });
+      }
+      return jsonResponse(200, { Id: 'list-1', Title: 'dbmlsp Probe DateTimeSentinel' });
+    };
+""")
+
+_PROBE_WHEN = "formula.datetime.fixture-probewhen-date-time-column"
+_TIME_OF_DAY = {
+    "formula.datetime.now-function-accepted",
+    "formula.datetime.now-function-rejects-future",
+    "formula.datetime.control-now-function-allows-past",
+    "formula.datetime.today-rejects-earlier-today",
+    "formula.datetime.control-today-allows-yesterday",
+    "formula.datetime.today-plus-one-allows-later-today",
+    "formula.datetime.today-plus-one-rejects-two-days-out",
+    "formula.datetime.today-plus-one-ceiling-tomorrow-night",
+    "query.caml.control-real-element-selects",
+    "query.caml.bogus-element-accepted",
+    "query.caml-adhoc.now-element-inert",
+    "query.view-query.now-element-roundtrip",
+    "query.caml-adhoc.now-element-discriminates",
+    "query.caml-adhoc.now-element-include-time-discriminates",
+    "query.caml-adhoc.today-element-include-time-discriminates",
+    "query.caml-adhoc.today-element-date-granular",
+    "query.view-query.today-include-time-roundtrip",
+    "query.view-query.today-include-time-selects",
+}
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [{}, {"ProbeWhen": {"TypeAsString": "DateTime", "DisplayFormat": 1, "ValidationFormula": ""}}],
+    ids=["created", "reused"],
+)
+def test_datetime_sentinel_measures_on_a_date_time_column_it_read_back(
+    fields: dict[str, Any],
+) -> None:
+    rows, sent = _run_probe(_SENTINEL_MOCK, {"fields": fields}, "datetime-sentinel-probe.js")
+
+    assert rows[_PROBE_WHEN]["outcome"] == "PASS", rows[_PROBE_WHEN]
+    assert rows["formula.datetime.now-function-accepted"]["outcome"] == "ACCEPTED"
+    assert not _void_ids(rows)
+    assert _item_writes(sent)
+
+
+def test_datetime_sentinel_voids_the_time_of_day_rows_on_a_reused_date_only_column() -> None:
+    """A reused ProbeWhen with no time portion makes every time-of-day row vacuous."""
+    fields = {"ProbeWhen": {
+        "TypeAsString": "DateTime", "DisplayFormat": 0, "ValidationFormula": "",
+    }}
+    rows, sent = _run_probe(_SENTINEL_MOCK, {"fields": fields}, "datetime-sentinel-probe.js")
+
+    fixture = rows[_PROBE_WHEN]
+    assert fixture["outcome"] == "FAIL", fixture
+    assert "DisplayFormat differs: read 0, declared 1" in fixture["evidence"]
+    assert _void_ids(rows) == _TIME_OF_DAY
+    assert all(_PROBE_WHEN in rows[row_id]["evidence"] for row_id in _TIME_OF_DAY)
+    probe_when_saves = [r for r in _item_writes(sent) if "ProbeWhen" in r["body"]]
+    assert probe_when_saves == []
+    assert not [r for r in sent if r["path"].endswith("/getitems") or r["path"].endswith("/views")]
+    # The rows that do not rest on ProbeWhen's time of day still answer.
+    assert rows["formula.validation.doubled-quote-literal-accepted"]["outcome"] == "ACCEPTED"
