@@ -200,18 +200,19 @@ PRELUDE = r"""
   });
 
   // Absent-entity answers, measured live only; test_sp_mock.py cites each one.
+  // `envelope` is the one representation recorded; any other request gets the status and no body.
   const ABSENT = [
-    { at: /\/lists\/getbytitle\('((?:[^']|'')*)'\)$/i, status: 404,
+    { at: /\/lists\/getbytitle\('((?:[^']|'')*)'\)$/i, status: 404, envelope: 'nometadata',
       code: '-1, System.ArgumentException',
-      value: (name, site) => `List '${name}' does not exist at site with URL '${site}'.` },
+      value: (name, site) => site && `List '${name}' does not exist at site with URL '${site}'.` },
     { at: /\/fields\/getbyinternalnameortitle\('((?:[^']|'')*)'\)$/i, status: 400,
-      code: '-2147024809, System.ArgumentException',
+      envelope: 'verbose', code: '-2147024809, System.ArgumentException',
       value: (name) => `Column '${name}' does not exist.` },
     { at: /\/views\/getbytitle\('((?:[^']|'')*)'\)$/i, status: 400,
-      code: '-2147024809, System.ArgumentException',
+      envelope: 'verbose', code: '-2147024809, System.ArgumentException',
       value: () => 'The specified view is invalid.' },
-    // Only the status is measured for a group, so its body stays empty rather than invented.
-    { at: /\/sitegroups\/getbyname\('((?:[^']|'')*)'\)$/i, status: 404, value: null },
+    { at: /\/sitegroups\/getbyname\('((?:[^']|'')*)'\)$/i, status: 404,
+      envelope: null, value: null },
   ];
   const isEmptySet = (body) => body !== null && typeof body === 'object' && (
     (Array.isArray(body.value) && body.value.length === 0)
@@ -248,12 +249,12 @@ PRELUDE = r"""
     const site = path.split('/_api')[0];
     const headers = (opts && opts.headers) || {};
     const accept = String(headers.Accept || headers.accept || '');
+    const envelope = accept.includes('odata=verbose') ? 'verbose' : 'nometadata';
+    const text = kind.envelope === envelope && kind.value ? kind.value(name, site) : '';
     let answer = '';
-    if (kind.value) {
-      const message = { lang: 'en-US', value: kind.value(name, site) };
-      const error = kind.code ? { code: kind.code, message } : { message };
-      const verbose = accept.includes('odata=verbose');
-      answer = JSON.stringify(verbose ? { error } : { 'odata.error': error });
+    if (text) {
+      const error = { code: kind.code, message: { lang: 'en-US', value: text } };
+      answer = JSON.stringify(envelope === 'verbose' ? { error } : { 'odata.error': error });
     }
     return {
       ok: false, status: kind.status, url: String(url),

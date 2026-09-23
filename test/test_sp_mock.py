@@ -189,22 +189,30 @@ _EMPTY: dict[str, Any] = {"d": {"results": []}}
 
 
 def test_an_absent_list_answers_the_measured_404() -> None:
-    """Status and body as measured live in the search-discovery findings, 2026-08-28."""
-    answer = _answer(_EMPTY, "/sites/t/_api/web/lists/getbytitle('My%20List')?$select=Id")
+    """Status and nometadata body as recorded in the search-discovery findings, 2026-08-28."""
+    answer = _answer({"value": []}, "/sites/t/_api/web/lists/getbytitle('My%20List')?$select=Id",
+                     accept="application/json;odata=nometadata")
     assert answer["status"] == 404
     assert answer["ok"] is False
-    assert answer["body"] == {"error": {
+    assert answer["body"] == {"odata.error": {
         "code": "-1, System.ArgumentException",
         "message": {"lang": "en-US",
                     "value": "List 'My List' does not exist at site with URL '/sites/t'."},
     }}
 
 
-def test_a_nometadata_request_gets_the_nometadata_error_key() -> None:
-    answer = _answer({"value": []}, "/_api/web/lists/getbytitle('X')",
-                     accept="application/json;odata=nometadata")
+@pytest.mark.parametrize(("url", "accept"), [
+    # Verbose was never recorded for a missing list.
+    ("/sites/t/_api/web/lists/getbytitle('X')", "application/json;odata=verbose"),
+    # Nor the tenant-root web, whose site URL the recorded message would have to invent.
+    ("/_api/web/lists/getbytitle('X')", "application/json;odata=nometadata"),
+])
+def test_an_unrecorded_list_representation_gets_the_status_and_no_body(
+    url: str, accept: str,
+) -> None:
+    answer = _answer(_EMPTY, url, accept=accept)
     assert answer["status"] == 404
-    assert set(answer["body"]) == {"odata.error"}
+    assert answer["body"] is None
 
 
 @pytest.mark.parametrize("url", [
