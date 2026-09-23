@@ -538,7 +538,7 @@ def _acl_scopes(
             })
         # A folder policy on a list with no policy of its own emits folder
         # rows and no list row, which is why no consumer may assume a pair.
-        for folder, folder_policy in resolved.folder_policies[table_name]:
+        for folder, folder_policy in resolved.require_folder_policies(table_name):
             if not folder.strip():
                 # Guarded here too because build_schema_json is public API:
                 # validate_against_mapping reports FOLDER_NAME_INVALID first.
@@ -860,7 +860,7 @@ def build_schema_json(
             # than on the kind string, so a third kind cannot be mistaken for
             # a library by a string test in JavaScript.
             "is_library": entity.is_library,
-            "folders": list(resolved.folders[table_name]),
+            "folders": list(resolved.require_folders(table_name)),
             "description": list_description(
                 table.note, family=family, entity=table_name,
             ),

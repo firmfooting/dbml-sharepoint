@@ -133,7 +133,7 @@ def assess_targets(
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):
         entity = bundle.mapping.entities[table_name]
         titles.append(bundle.mapping.list_title(table_name))
-        entity_folders = resolved.folders[table_name]
+        entity_folders = resolved.require_folders(table_name)
         if entity.is_library and entity_folders:
             library_folders.append(
                 [bundle.mapping.list_title(table_name), list(entity_folders)],
