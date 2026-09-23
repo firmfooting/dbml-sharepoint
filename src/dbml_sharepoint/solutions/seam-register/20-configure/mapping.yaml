@@ -1397,6 +1397,18 @@ demo_items:
         SupportsField: "Out of hours"
         Contradicts: false
         EvidenceDate: "today-20"
+    - key: evd-accounts-dependency
+      values:
+        Title: "[DEMO] ICT technician interview: the directory sync comes first"
+        Artefact: { demo_ref: art-interview-accounts }
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: Interview
+        Source: "ICT technician (accounts script), interview"
+        SourceSide: Us
+        Statement: "Demo row. The provider's directory sync; the script waits for it before a new account can sign in."
+        SupportsField: "Dependency"
+        Contradicts: false
+        EvidenceDate: "today-20"
     - key: evd-accounts-tickets
       values:
         Title: "[DEMO] Ticket export, accounts category"
@@ -1506,11 +1518,11 @@ demo_items:
         SeamType: "Undocumented dependency"
         Description: "Demo row. Vendor support cases could only be opened by the shared ICT service, and nothing said so."
         EvidenceInConflict: [{ demo_ref: evd-m365-invoice }]
-        RaisedOn: "today-40"
+        RaisedOn: "today-19"
         Status: Resolved
         ResolveOwner: "ICT manager"
-        ResolveBy: "today-20"
-        ResolvedOn: "today-22"
+        ResolveBy: "today-12"
+        ResolvedOn: "today-15"
         Resolution: "Demo row. The invoice line confirmed it. Recorded on the service row as the dependency and the support route."
   DocumentRequest:
     - key: doc-agreement
@@ -1663,7 +1675,7 @@ demo_items:
         InterviewDate: "today-20"
         DurationMin: 30
         Q1Runs: "Demo row. The account creation script."
-        Q2Uses: "Demo row. Nothing else; the script needs only our own server."
+        Q2Uses: "Demo row. The provider's directory sync; the script waits for it before a new account can sign in."
         Q3Call: "Demo row. Nobody. When the script breaks I fix it myself."
         Q4Decides: "Demo row. The ICT manager."
         Q5AskProvider: "Demo row. Nothing for the script; it runs on our own server."
@@ -1762,7 +1774,7 @@ demo_items:
         Title: "[DEMO] Week 2"
         WeekNo: 2
         WeekEnding: "today-7"
-        RowsVerified: 2
+        RowsVerified: 0
         SeamsFound: 1
         Blocked: "Demo row. The backup runbook was refused; a walkthrough is offered instead."
         Next: "Demo row. Risk note to the chief executive's office; start infrastructure and devices."

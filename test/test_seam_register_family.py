@@ -71,7 +71,11 @@ def _blank(value: Any) -> bool:
 
 
 def _evidence(seed: Seed, service: str) -> list[Row]:
-    return [e for e in seed["Evidence"].values() if _ref(e["Service"]) == service]
+    return [e for _, e in _evidence_items(seed, service)]
+
+
+def _evidence_items(seed: Seed, service: str) -> list[tuple[str, Row]]:
+    return [(k, e) for k, e in seed["Evidence"].items() if _ref(e["Service"]) == service]
 
 
 # === The Friday checks, one predicate per ID in the governance table =========
@@ -90,10 +94,18 @@ def _verified_without_two_sources(seed: Seed) -> Offenders:
         system = any(e["EvidenceType"] == "System data" for e in rows)
         sides: dict[str, set[str]] = {}
         for e in rows:
-            # Unknown names no source, so it corroborates nothing.
-            if e["SourceSide"] != "Unknown":
+            # Unknown names no source, and a contradicting row agrees with nothing.
+            if e["SourceSide"] != "Unknown" and not e["Contradicts"]:
                 sides.setdefault(e["SupportsField"], set()).add(e["SourceSide"])
-        contradicted = any(e["Contradicts"] for e in rows) or any(
+        settled = {
+            ref for seam in seed["Seam"].values() if seam["Status"] == "Resolved"
+            for ref in _refs(seam.get("EvidenceInConflict"))
+        }
+        # A contradiction a resolved seam closed no longer blocks Verified.
+        open_flags = any(
+            e["Contradicts"] and k not in settled for k, e in _evidence_items(seed, key)
+        )
+        contradicted = open_flags or any(
             _ref(seam["Service"]) == key and seam["Status"] != "Resolved"
             and seam["SeamType"] in DISPUTE_TYPES
             for seam in seed["Seam"].values()
@@ -281,16 +293,29 @@ def _file_titles_repeat(seed: Seed) -> Offenders:
 def _seam_without_its_evidence(seed: Seed) -> Offenders:
     bad: Offenders = set()
     for key, seam in seed["Seam"].items():
-        if seam["SeamType"] == "No owner":
+        if seam["SeamType"] == "No owner" and seam["Status"] != "Resolved":
             continue
         picked = [seed["Evidence"][ref] for ref in _refs(seam.get("EvidenceInConflict"))]
         by_field: dict[str, set[bool]] = {}
         for e in picked:
-            by_field.setdefault(e["SupportsField"], set()).add(e["EvidenceType"] == "Document")
+            if e["Contradicts"]:
+                by_field.setdefault(e["SupportsField"], set()).add(e["EvidenceType"] == "Document")
         # Both a Document row and another row, about the same column.
         both = any(kinds == {True, False} for kinds in by_field.values())
         if not picked or (seam["SeamType"] == "Contradicts document" and not both):
             bad.add(("Seam", key))
+    return bad
+
+
+def _seams_found_miscounted(seed: Seed) -> Offenders:
+    bad: Offenders = set()
+    raised = [_as_date(seam["RaisedOn"]) for seam in seed["Seam"].values()]
+    for key, week in seed["WeeklyUpdate"].items():
+        end = _as_date(week["WeekEnding"])
+        assert end is not None, key
+        found = sum(1 for day in raised if day is not None and 0 <= (end - day).days < 7)
+        if found != week["SeamsFound"]:
+            bad.add(("WeeklyUpdate", key))
     return bad
 
 
@@ -323,6 +348,7 @@ CHECKS: dict[str, Callable[[Seed], Offenders]] = {
     "F21": _file_titles_repeat,
     "F22": _open_seam_without_an_owner,
     "F23": _seam_without_its_evidence,
+    "F24": _seams_found_miscounted,
 }
 
 # Checks no predicate can make over the seed, and why.

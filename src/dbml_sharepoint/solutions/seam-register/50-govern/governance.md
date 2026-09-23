@@ -60,7 +60,7 @@ the five lines are written. A check that a view answers names the view.
 
 | ID | Check | Why the register cannot enforce it |
 | --- | --- | --- |
-| F1 | A *Verified* service has two evidence rows that agree about the same **Bears on** column from two different known source sides, or one *System data* row, no evidence row with **Contradicts** ticked, and no unresolved *Disputed owner*, *Disputed support* or *Contradicts document* seam | A formula cannot count rows on another list |
+| F1 | A *Verified* service has two evidence rows without **Contradicts** ticked that agree about the same **Bears on** column from two different known source sides, or one *System data* row, no evidence row with **Contradicts** ticked unless a *Resolved* seam picks it, and no unresolved *Disputed owner*, *Disputed support* or *Contradicts document* seam | A formula cannot count rows on another list |
 | F2 | No service above *Assumed* has zero evidence rows | Same. A service with no evidence rows is *Assumed* by definition, whatever its confidence says |
 | F3 | By the end of week 5, no first-pass service has zero evidence rows. Before then **Assumed** lists them as the week's work | Same |
 | F4 | Every evidence row with **Contradicts** ticked appears in a seam's **Evidence in conflict** | A multi-value lookup on another list |
@@ -82,7 +82,8 @@ the five lines are written. A check that a view answers names the view.
 | F20 | A *Disputed support* seam picks rows in **Evidence in conflict** with **Contradicts** ticked from at least two different known **Source side** values that bear on *Support*; a *Disputed owner* seam does the same on *Run by* or on *Decided by* | A formula cannot count a multi-value lookup |
 | F21 | No two files in **SEAM_Artefact** share a **Title**, because the pickers show nothing else | Uniqueness on a library column has not been measured |
 | F22 | By the week 6 hand-over, every seam not *Resolved* has a **Resolve owner**. Before then **Open seams** shows the ones without | An owner is only required once a seam is *Escalated*, and the deadline is a date in the exercise, not a status |
-| F23 | Every seam except *No owner* picks the evidence rows it rests on in **Evidence in conflict**: at least one row, and for *Contradicts document* one *Document* row and one row of another **Type** that bear on the same **Bears on** column | A formula cannot read a multi-value lookup |
+| F23 | Every seam except an unresolved *No owner* picks the evidence rows it rests on in **Evidence in conflict**: at least one row, and for *Contradicts document* one *Document* row and one row of another **Type**, both with **Contradicts** ticked, that bear on the same **Bears on** column | A formula cannot read a multi-value lookup |
+| F24 | A weekly update's **Seams found** is the number of seams whose **Raised on** falls in the seven days ending on its **Week ending** | A formula cannot count rows on another list |
 
 ### What the register does not check
 
