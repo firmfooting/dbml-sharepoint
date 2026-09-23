@@ -101,12 +101,15 @@
   // unconstrained, by list title. Null-prototype for the same reason
   // listOutcomes is, and written once per list by the lane that owns it.
   const newlyUniqueColumns = Object.create(null);
+  // Adopted lookups whose delete behaviour is not None or could not be read, by list title.
+  const adoptedDeleteBehaviours = Object.create(null);
 
   await mapLanes(
     SCHEMA.lists.filter((list) => preflightListShapes[list.title]),
     (list) => list.title,
     async (list) => {
     const newlyUnique = [];
+    const deleteBehaviours = [];
     for (const field of declaredFieldsForList(list)) {
       try {
         const actual = await readFieldShape(probeTitleFor(list), field.title, field);
@@ -119,6 +122,8 @@
         if (field.body.EnforceUniqueValues === true && !actual.EnforceUniqueValues) {
           newlyUnique.push(field.title);
         }
+        const behaviour = actual.deleteBehavior;
+        if (behaviour && behaviour.value !== 'None') deleteBehaviours.push({ column: field.title, behaviour });
         const targetGuid = field.target_list
           ? preflightListShapes[field.target_list]?.Id
           : null;
@@ -142,7 +147,28 @@
       }
     }
     if (newlyUnique.length > 0) newlyUniqueColumns[list.title] = newlyUnique;
+    if (deleteBehaviours.length > 0) adoptedDeleteBehaviours[list.title] = deleteBehaviours;
   }, 4);
+
+  // #576: an adopted lookup keeps whatever delete behaviour it was given, since
+  // nothing here writes it. Reported, not fatal, so it goes to warnings.
+  const listsWithDeleteBehaviour = SCHEMA.lists.filter((list) => adoptedDeleteBehaviours[list.title]);
+  if (listsWithDeleteBehaviour.length > 0) {
+    log('WARN', 'Adopted lookups whose delete behaviour is not None:');
+    for (const list of listsWithDeleteBehaviour) {
+      for (const { column, behaviour } of adoptedDeleteBehaviours[list.title]) {
+        const warning = behaviour.value
+          ? `${list.title}.${column}: ${behaviour.property} ${behaviour.value}; ${behaviour.consequence}.`
+          : `${list.title}.${column}: ${behaviour.property} could not be read (${behaviour.why}).`;
+        log('WARN', `  ${warning}`);
+        summary.warnings.push({
+          phase: 'preflight', list: list.title, column,
+          deleteBehavior: behaviour.value, warning,
+        });
+      }
+    }
+    log('WARN', 'This deploy neither sets nor clears delete behaviour, so each column keeps the value shown.');
+  }
 
   // #550 made a declared `unique` actually deploy its constraint, so a list
   // provisioned before that fix holds the column unconstrained and the field

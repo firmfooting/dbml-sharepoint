@@ -234,6 +234,41 @@
   const fieldShapePath = (listName, columnName) =>
     `web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(columnName)}')`;
 
+  // Read, never written (#576); its own GET so a refused $select cannot fail the lookup target checks.
+  // test_lookups.py pins that every spelling of the property and its values stays inside this function.
+  async function readLookupDeleteBehaviour(fieldPath, listName, declaredField) {
+    // Learn: None 0, Cascade 1, Restrict 2. Number or name over verbose REST is unmeasured, so both.
+    const behaviours = new Map([
+      [0, 'None'], ['None', 'None'],
+      [1, 'Cascade'], ['Cascade', 'Cascade'],
+      [2, 'Restrict'], ['Restrict', 'Restrict'],
+    ]);
+    // The meaning each name gives the setting; not measured by this tool on a live list.
+    const consequences = {
+      Cascade: `deleting a row in '${declaredField.target_list}' also deletes the rows in '${listName}' that point at it`,
+      Restrict: `it blocks deleting a row in '${declaredField.target_list}' while rows in '${listName}' point at it`,
+    };
+    const property = 'RelationshipDeleteBehavior';
+    let why;
+    try {
+      const r = await fetchWithRetry(apiUrl(`${fieldPath}?$select=${property}`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (r.ok) {
+        const j = await r.json();
+        const raw = j && j.d ? j.d[property] : undefined;
+        const value = behaviours.get(raw);
+        if (value) return { property, value, consequence: consequences[value] || null, why: null };
+        why = raw === undefined ? `the response carried no ${property}` : `unexpected value ${JSON.stringify(raw)}`;
+      } else {
+        why = `HTTP ${r.status} ${(await r.text()).slice(0, 200)}`;
+      }
+    } catch (err) {
+      why = err.message;
+    }
+    return { property, value: null, consequence: null, why };
+  }
+
   async function readFieldShape(listName, columnName, declaredField = null, fresh = false) {
     const fieldPath = fieldShapePath(listName, columnName);
     let shape;
@@ -292,6 +327,7 @@
       }
       shape.LookupList = lookupShape.LookupList;
       shape.LookupField = lookupShape.LookupField;
+      shape.deleteBehavior = await readLookupDeleteBehaviour(fieldPath, listName, declaredField);
     }
 
     // Derived field properties are not safely selectable from every SP.Field

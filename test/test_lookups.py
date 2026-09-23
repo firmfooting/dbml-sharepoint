@@ -339,29 +339,58 @@ def _every_lookup_route(tmp_path: Path) -> str:
     )
 
 
-def test_the_deploy_script_sets_no_delete_behaviour_or_relationship_flag(
+#: The one function allowed to name a knob: it reads an adopted lookup's
+#: delete behaviour to report it (#576) and never writes it.
+_DELETE_BEHAVIOUR_READER = "async function readLookupDeleteBehaviour("
+
+
+def _reader_span(js: str) -> tuple[int, int]:
+    """Where the delete-behaviour reader starts and ends in the emitted script.
+
+    It ends at the first line after its signature that closes a block at the
+    signature's own indentation, which is how the template lays it out.
+    """
+    assert js.count(_DELETE_BEHAVIOUR_READER) == 1
+    start = js.index(_DELETE_BEHAVIOUR_READER)
+    indent = start - js.rindex("\n", 0, start) - 1
+    end = js.index("\n" + " " * indent + "}\n", start) + indent + 2
+    return start, end
+
+
+def test_the_deploy_script_never_writes_a_delete_behaviour_or_relationship_flag(
     tmp_path: Path,
 ) -> None:
     """A lookup this script CREATES is at SharePoint's default for every knob.
 
-    The assertion is over the emitted text, so what it establishes is that
-    the deploy writes none of them. A lookup that already exists is adopted
-    by `reconcileDeclaredField`, which neither reads nor writes these
-    properties, so this says nothing about the value on one.
+    Since #576 the deploy reads `RelationshipDeleteBehavior` on an adopted
+    lookup and reports it, so the knob names appear in the script. What must
+    still hold is that no write carries them. A write body is built from one
+    of two places: the SCHEMA payload (every field body, the AddField
+    parameters, and the schema XML a multi-value lookup is created by), or a
+    literal in the script, such as a MERGE. The first is asserted over the
+    parsed payload. The second is asserted over the script with the one
+    reader excised, and that reader is pinned to a GET with no method or body.
 
     Microsoft documents each of `_RELATIONSHIP_KNOBS` on the [`Field`
-    element](https://learn.microsoft.com/sharepoint/dev/schema/field-element-field);
-    this tool writes none of them, and `docs/concepts/relationships.md` says
-    so. `Cascade` and `Restrict` are the two non-default values of
+    element](https://learn.microsoft.com/sharepoint/dev/schema/field-element-field).
+    `Cascade` and `Restrict` are the two non-default values of
     `RelationshipDeleteBehavior` and are matched as bare words, so a knob
-    arriving by any spelling is caught.
-
-    Read the emitted text rather than the field bodies: the knob could arrive
-    on the AddField parameters, in the schema XML a multi-value lookup is
-    created by, or in a later MERGE, and only the script sees all three.
+    arriving by any spelling is caught. The runtime tests in
+    `test_deploy_runtime.py` also check every request body of an adopted run.
     """
     js = _every_lookup_route(tmp_path)
-    assert [knob for knob in _RELATIONSHIP_KNOBS if knob in js] == []
+    payload = json.dumps(_schema_payload(js))
+    assert [knob for knob in _RELATIONSHIP_KNOBS if knob in payload] == []
+
+    start, end = _reader_span(js)
+    reader = js[start:end]
+    rest = js[:start] + js[end:]
+    assert [knob for knob in _RELATIONSHIP_KNOBS if knob in rest] == []
+    # The reader is a read: one fetch, no method, no body.
+    assert reader.count("fetchWithRetry(") == 1, reader
+    assert "method" not in reader, reader
+    assert "body:" not in reader, reader
+    assert "$select=${property}" in reader, reader
 
 
 def _schema_payload(js: str) -> dict[str, Any]:

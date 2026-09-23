@@ -2797,6 +2797,165 @@ def test_a_list_that_does_not_exist_is_silent_in_preflight() -> None:
     assert [e for e in summary["errors"] if e.get("phase") == "preflight"] == []
 
 
+# An adopted lookup that resolves cleanly, carrying a delete behaviour on its
+# body, which is what the mock's by-name GET answers a `$select` naming none of
+# the shape columns with. `raw` is spliced as JavaScript, so a number and a
+# quoted name are both expressible.
+def _delete_behaviour_harness(raw: str, *, refuse: bool = False) -> str:
+    harness = _ADOPTED_HARNESS + textwrap.dedent(f"""
+        created['APP_Task Project'] = fieldShape('APP_Task', 'Project', {{
+          FieldTypeKind: 7, Title: 'Project', Required: true,
+          AllowMultipleValues: false,
+          LookupList: '22222222-2222-2222-2222-222222222222', LookupField: 'Title',
+          RelationshipDeleteBehavior: {raw},
+        }});
+    """)
+    if not refuse:
+        return harness
+    return harness + textwrap.dedent(r"""
+        const _passThrough = globalThis.fetch;
+        globalThis.fetch = async (url, opts = {}) => {
+          const u = String(url);
+          if (!u.includes('$select=RelationshipDeleteBehavior')) return _passThrough(url, opts);
+          calls.push({ url: u, method: opts.method || 'GET', body: null });
+          const payload = { error: { message: { value: 'The query is not valid.' } } };
+          return {
+            ok: false, status: 400,
+            headers: { get: () => null },
+            json: async () => payload,
+            text: async () => JSON.stringify(payload),
+          };
+        };
+    """)
+
+
+_DELETE_BEHAVIOUR_HEADING = "Adopted lookups whose delete behaviour is not None:"
+
+
+def _delete_behaviour_run(
+    raw: str, *, refuse: bool = False,
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    return _run_capturing_calls(
+        _delete_behaviour_harness(raw, refuse=refuse), _deploy_js(),
+    )
+
+
+def _delete_behaviour_line(output: str) -> str:
+    line = next(
+        (
+            ln for ln in output.splitlines()
+            if "APP_Task.Project: RelationshipDeleteBehavior" in ln
+        ),
+        None,
+    )
+    assert line is not None, output[-3000:]
+    return line
+
+
+def _assert_preflight_passed(summary: dict[str, Any]) -> None:
+    """Not a reason to stop: preflight passes and records no error for it.
+
+    The simple fixture's run later stops at 2.1 on list validation the adopted
+    mock does not retain, which is unrelated, so only the preflight is pinned.
+    """
+    assert summary.get("aborted") != "existing-schema-shape-errors", summary
+    assert [e for e in summary["errors"] if e.get("phase") == "preflight"] == []
+
+
+def _assert_reported_and_not_written(
+    summary: dict[str, Any], calls: list[dict[str, Any]], output: str, named: str,
+) -> None:
+    """One WARN line naming the value, one warnings entry, no abort, no write."""
+    assert _DELETE_BEHAVIOUR_HEADING in output, output[-3000:]
+    line = _delete_behaviour_line(output)
+    assert "WARN" in line, line
+    assert named in line, line
+    first_write = f"Starting Phase {pn('renames')}"
+    assert first_write in output, output[-3000:]
+    assert output.index(_DELETE_BEHAVIOUR_HEADING) < output.index(first_write)
+    warnings = [w for w in summary.get("warnings", []) if w.get("column") == "Project"]
+    assert [(w["list"], w["deleteBehavior"]) for w in warnings] == [
+        ("APP_Task", named),
+    ], summary
+    _assert_preflight_passed(summary)
+    assert [e for e in summary["errors"] if e.get("column") == "Project"] == []
+    carrying = [
+        c for c in calls if c["body"] and "RelationshipDeleteBehavior" in c["body"]
+    ]
+    assert carrying == [], carrying
+    # The read was made, and on its own GET rather than the shared lookup one.
+    assert any(
+        c["method"] == "GET" and c["url"].endswith("$select=RelationshipDeleteBehavior")
+        for c in calls
+    ), [c["url"] for c in calls if "Project" in c["url"]]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_adopted_cascade_lookup_is_warned_about_and_left_alone() -> None:
+    """#576: a lookup somebody set to Cascade deletes child rows with the parent.
+
+    The deploy adopts it without writing the property, so the operator is
+    told in preflight rather than finding out from a deleted row.
+    """
+    summary, calls, output = _delete_behaviour_run("1")
+    _assert_reported_and_not_written(summary, calls, output, "Cascade")
+    assert "also deletes the rows in 'APP_Task'" in output, output[-3000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_adopted_restrict_lookup_is_warned_about_and_left_alone() -> None:
+    """Restrict blocks deleting the parent row, the other non-default value."""
+    summary, calls, output = _delete_behaviour_run("2")
+    _assert_reported_and_not_written(summary, calls, output, "Restrict")
+    assert "blocks deleting a row in 'APP_Project'" in output, output[-3000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_delete_behaviour_read_back_as_a_name_is_read_as_its_number() -> None:
+    """How verbose REST serialises the enum is not measured, so both forms count."""
+    summary, calls, output = _delete_behaviour_run("'Cascade'")
+    _assert_reported_and_not_written(summary, calls, output, "Cascade")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_adopted_lookup_at_the_default_delete_behaviour_is_silent() -> None:
+    """The over-firing control: None is what a lookup this tool creates carries."""
+    summary, calls, output = _delete_behaviour_run("0")
+    assert _DELETE_BEHAVIOUR_HEADING not in output, output[-3000:]
+    logged = "\n".join(ln for ln in output.splitlines() if ln.startswith("[SP-DEPLOY]"))
+    assert "RelationshipDeleteBehavior" not in logged, logged[-3000:]
+    assert summary.get("warnings") == [], summary
+    _assert_preflight_passed(summary)
+    # Silent because it read None, not because it never asked.
+    assert any(
+        c["url"].endswith("$select=RelationshipDeleteBehavior") for c in calls
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unreadable_delete_behaviour_is_reported_and_the_deploy_continues() -> None:
+    """A refused `$select` is reported as unreadable, never as None, and is not fatal.
+
+    It is on its own GET, so the lookup target checks on the other per-field
+    read still ran, and the run reaches its write phases.
+    """
+    summary, calls, output = _delete_behaviour_run("1", refuse=True)
+    line = _delete_behaviour_line(output)
+    assert "WARN" in line, line
+    assert "could not be read" in line, line
+    assert "HTTP 400" in line, line
+    assert "Cascade" not in line, line
+    warnings = [w for w in summary.get("warnings", []) if w.get("column") == "Project"]
+    assert [(w["list"], w["deleteBehavior"]) for w in warnings] == [
+        ("APP_Task", None),
+    ], summary
+    _assert_preflight_passed(summary)
+    assert f"Starting Phase {pn('renames')}" in output, output[-3000:]
+    assert not [
+        c for c in calls if c["body"] and "RelationshipDeleteBehavior" in c["body"]
+    ]
+
+
 _NEWLY_UNIQUE_HEADING = "Declared unique constraints this site does not carry yet:"
 
 
@@ -9037,9 +9196,12 @@ def test_no_path_through_the_guard_check_can_report_a_clean_run() -> None:
     start = script.index("async function confirmEditorRefusesTheGuard")
     block = script[start:script.index("await confirmEditorRefusesTheGuard();")]
 
-    # Nothing under this check warns any more, anywhere in the script: a
-    # second warn-only path is the shape this regressed as the first time.
-    assert "summary.warnings" not in script
+    # Nothing under this check warns any more: a warn-only path is the shape
+    # this regressed as the first time. The script's one warnings writer is
+    # the #576 delete-behaviour report, pinned by count so a second one fails.
+    assert "summary.warnings" not in block
+    assert script.count("summary.warnings.push(") == 1
+    assert "adoptedDeleteBehaviours[list.title]) {" in script
 
     # Every path that could not answer routes through one helper, and each
     # one stops there rather than falling through to the success line.

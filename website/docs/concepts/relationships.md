@@ -251,17 +251,19 @@ lookup this deploy creates therefore carries the platform default.
 
 | Knob | What SharePoint calls it | State here |
 | --- | --- | --- |
-| delete behaviour (cascade / restrict) | `RelationshipDeleteBehavior` | never written; `None` on a lookup this deploy creates |
+| delete behaviour (cascade / restrict) | `RelationshipDeleteBehavior` | never written; `None` on a lookup this deploy creates; read and reported on an adopted lookup |
 | relationship discovery flag | `IsRelationship` | never written |
 | primary-key marker | `PrimaryKey` | never written |
 | a target list in another web | `LookupWebId` | never written; refused at build time |
 
-**What that rests on.** For the first three, the code: the names appear
-nowhere in `src/`, and `test/test_lookups.py` generates a deploy script
-covering all four routes a lookup is created by (deferred self-reference,
-`[unique]` single-value, multi-value, and a projection) and asserts that
-none of them, nor `Cascade` or `Restrict`, appears anywhere in the emitted
-text. Microsoft's side is the [`Field`
+**What that rests on.** For the first three, the code:
+`test/test_lookups.py` generates a deploy script covering all four routes
+a lookup is created by (deferred self-reference, `[unique]` single-value,
+multi-value, and a projection) and asserts that none of them, nor `Cascade`
+or `Restrict`, appears in the SCHEMA payload every write body is built
+from, or anywhere in the script outside the one function that reads an
+adopted lookup's delete behaviour. That function is pinned to a GET with no
+method or body. Microsoft's side is the [`Field`
 element](https://learn.microsoft.com/sharepoint/dev/schema/field-element-field),
 which documents `RelationshipDeleteBehavior` as "Optional Text. Specifies a
 deletion constraint for a lookup field ... It can be **None** (the default),
@@ -281,9 +283,14 @@ patches only the mutable settings it owns: `Title`, `Description`,
 `Required`, `EnforceUniqueValues`, `Indexed`, `DefaultValue`,
 `DefaultFormula`, `CustomFormatter` and the declared derived properties
 (`DERIVED_FIELD_PROPERTIES` in `analysis/typemap.py`). None of the knobs
-above is in that set, and none is in `_FIELD_SHAPE_SELECT` either, so a
-delete behaviour somebody put on an adopted lookup is not read, not
-reported and not cleared. Sealing narrows the window rather than closing
+above is in that set, so a delete behaviour somebody put on an adopted
+lookup is not cleared. It is read and reported: preflight reads
+`RelationshipDeleteBehavior` on its own GET for each existing declared
+lookup, and one that is `Cascade`, `Restrict` or unreadable is logged as a
+WARN and recorded in the run summary's `warnings`. It does not stop the
+deploy. Whether verbose REST returns the value as a number or a name has
+not been measured, so both are accepted and anything else is reported as
+unreadable. Sealing narrows the window rather than closing
 it: `seal_columns: true` is the default and [blocks UI schema
 edits](../reference/mapping.md#protection), but a mapping running
 `seal_columns: false` has no such cover. So what this section guarantees is
