@@ -98,6 +98,13 @@ def test_a_nometadata_scalar_value_is_left_alone() -> None:
     assert keys == sorted(wrapper)
 
 
+def test_an_entity_holding_only_a_value_property_is_projected() -> None:
+    """At an entity address, `{value}` is the entity's field and not a scalar wrapper."""
+    keys = _keys({"value": "x"}, "/_api/web/lists/getbytitle('X')/items(1)?$select=Id",
+                 "j", accept=_NOMETADATA)
+    assert keys == []
+
+
 @pytest.mark.parametrize("field", ["value", "d"])
 def test_an_entity_with_a_value_or_d_property_is_still_projected(field: str) -> None:
     """Only `value` alone is an envelope; beside other properties it is an ordinary field."""

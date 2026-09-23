@@ -176,7 +176,9 @@ PRELUDE = r"""
     if (Array.isArray(body.value) && (envelope || !bare)) {
       return { ...body, value: body.value.map((r) => projectRow(r, keep, url, trip)) };
     }
-    if (bare) return envelope ? body : projectRow(body, keep, url, trip);
+    // A scalar wrapper answers a property path like `/Title`; an entity address ends in `)`.
+    const entityAddress = /\)$/.test(String(url).split('?')[0]);
+    if (bare) return envelope && !entityAddress ? body : projectRow(body, keep, url, trip);
     const d = body.d;
     if (d === null || typeof d !== 'object') return body;
     if (Array.isArray(d.results)) {
