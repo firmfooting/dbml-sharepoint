@@ -492,7 +492,7 @@ def _library_harness(
     *, scope_sticks: bool = True, unique_after: int | None = None,
     unique_fail: bool = False, declared_folder: bool = False,
     builtin_view_title: str | None = None, builtin_is_default: bool = True,
-    extra_views: dict[str, str] | None = None,
+    extra_views: dict[str, str] | None = None, seeded_scope: int | None = None,
 ) -> str:
     """The view-guard harness (per-view identity, view creates) with the one
     list answering as a library and the level marker carrying this pack's
@@ -511,6 +511,7 @@ def _library_harness(
     `builtin_is_default` clears DefaultView on the seeded view, which is the
     shape a foreign view on a freed AllItems.aspx has. `extra_views` maps a
     title to a .aspx basename and seeds each one beside the built-in.
+    `seeded_scope` gives every seeded view that Scope, as a re-run finds it.
     """
     harness = _view_guard_harness({}).replace("simple-test", "t")
     for what, old, new in (
@@ -532,6 +533,8 @@ def _library_harness(
          "Title: title, DefaultView: true,", "Title: title, DefaultView: false,"),
         ("extra views", "    viewState(listTitle);\n",
          _SEED_EXTRA_VIEWS_JS.replace("__EXTRA_VIEWS__", json.dumps(extra_views or {}))),
+        ("seeded scope", "Hidden: false, PersonalView: false,",
+         f"Hidden: false, Scope: {json.dumps(seeded_scope)}, PersonalView: false,"),
     ):
         if what == "scope write" and not scope_sticks:
             continue
@@ -540,6 +543,8 @@ def _library_harness(
         if what == "built-in default flag" and builtin_is_default:
             continue
         if what == "extra views" and not extra_views:
+            continue
+        if what == "seeded scope" and seeded_scope is None:
             continue
         spliced = harness.replace(old, new)
         assert spliced != harness, f"{what} was not spliced into the harness"
@@ -643,6 +648,21 @@ def test_a_scope_write_that_does_not_stick_is_reported_as_drift(tmp_path: Path) 
     )
     drift = [e for e in summary["errors"] if "Scope (declared 1" in str(e)]
     assert drift, summary["errors"]
+
+
+def test_a_re_run_over_a_matching_scope_sends_no_scope_merge(tmp_path: Path) -> None:
+    """The drift check compares the view ENUMERATION's Scope with the
+    declaration. An enumeration that did not select Scope read `undefined`,
+    so every re-run MERGEd Scope onto every view declaring one (#574)."""
+    summary, calls, _reads = _run(
+        _library_harness(seeded_scope=1, extra_views={"Flat": "Flat.aspx"}),
+        _library_deploy_js(tmp_path, _RECURSIVE_VIEW),
+    )
+    assert summary["errors"] == [], summary["errors"]
+    assert _scope_writes(calls, "Flat") == [], "a view already recursive was written again"
+    assert _scope_writes(calls, "All Items") == [], (
+        "a built-in view already recursive was written again"
+    )
 
 
 def test_breaking_inheritance_on_a_library_waits_for_the_flag(tmp_path: Path) -> None:

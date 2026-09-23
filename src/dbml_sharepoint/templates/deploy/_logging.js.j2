@@ -463,7 +463,7 @@
       const readPresent = async () => {
         const resp = await fetchWithRetry(apiUrl(
           `web/lists/getbytitle('${odataName(title)}')/fields`
-          + `?$select=Id,InternalName,Indexed&$top=${FIELD_PAGE_SIZE}`
+          + `?$select=Id,InternalName,Indexed,Sealed&$top=${FIELD_PAGE_SIZE}`
           + `&$filter=Hidden eq false and ReadOnlyField eq false`
         ), { headers: { 'Accept': 'application/json;odata=verbose' } });
         if (!resp.ok) {
