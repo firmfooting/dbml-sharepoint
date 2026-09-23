@@ -329,7 +329,7 @@ Phase body: extension-provided seed rows for singleton lists. Idempotent: existi
 
 Included by: `deploy.js.j2`
 
-Shared read-only shape probes: readListShape / readFieldShape with per-list caching and invalidateFieldShapes(listName?) so concurrent lanes never thrash each other's caches. Absence answers (404 and the documented absent-field 400) return null rather than throwing. listFieldShapes(list).truncated says whether the one enumeration may have ended before the list did; readFieldShape then asks a missed column by name, so its null always means the list does not hold that column (#577).
+Shared read-only shape probes: readListShape / readFieldShape with per-list caching and invalidateFieldShapes(listName?) so concurrent lanes never thrash each other's caches. Absence answers (404 and the documented absent-field 400) return null rather than throwing. listFieldShapes(list).truncated says whether the one enumeration may have ended before the list did; readFieldShape then asks a missed column by name, so its null always means the list does not hold that column (#577). pageTruncated(rows, next, size) is the same test for every other single-page read whose missing row would be taken as absent.
 
 ### `deploy/_views.js.j2`
 

@@ -190,3 +190,93 @@ def test_paged_role_existence_probe_does_not_authorize_principal_writes() -> Non
     assert "returned an incomplete response" in output
     assert summary["aborted"] == "phase-0-security-errors"
     assert not _security_writes(calls)
+
+
+# A whole `$top=500` page is the tell that a read may have stopped early.
+def _full_page_overlay(phase: str, url_part: str) -> str:
+    return f"""
+const fullPageFetch = globalThis.fetch;
+globalThis.fetch = async (url, opts = {{}}) => {{
+  const response = await fullPageFetch(url, opts);
+  if (mockPhase !== {json.dumps(phase_number(phase))}
+      || !String(url).includes({json.dumps(url_part)})
+      || (opts.method || 'GET') !== 'GET') return response;
+  const payload = await response.json();
+  const rows = payload.d.results;
+  while (rows.length < 500) {{
+    rows.push({{ Id: `pad-${{rows.length}}`, Title: `Pad ${{rows.length}}` }});
+  }}
+  console.log('CONTINUATION_INJECTED');
+  return {{ ...response, json: async () => payload, text: async () => JSON.stringify(payload) }};
+}};
+"""
+
+
+@pytest.mark.parametrize("truncation", ["continuation", "full_page"])
+def test_a_truncated_view_enumeration_creates_no_view(
+    tmp_path: Path, truncation: str,
+) -> None:
+    from test_deploy_runtime import (
+        _GUARDED_VIEWS,
+        _declared_deploy_js,
+        _refusal_errors,
+        _view_guard_harness,
+    )
+
+    overlay = (
+        _continuation_overlay("views", "/views?", "https://example.sharepoint.com/next")
+        if truncation == "continuation" else _full_page_overlay("views", "/views?")
+    )
+    summary, calls, output = _run_capturing_calls(
+        _view_guard_harness({"All Items": "editable"}) + overlay,
+        _declared_deploy_js(tmp_path, _GUARDED_VIEWS),
+    )
+    assert "CONTINUATION_INJECTED" in output, output[-4000:]
+    view_posts = [
+        c["url"] for c in calls
+        if c["method"] == "POST" and "/views" in c["url"]
+        and c.get("phase") == phase_number("views")
+    ]
+    assert not view_posts, view_posts
+    missing = "a view missing from it may still exist"
+    lanes = [e for e in summary["errors"] if e.get("view") and not e.get("check")]
+    assert {e["view"] for e in lanes} == {"All Items", "Open", "Recent"}, summary["errors"]
+    assert all(missing in e["error"] for e in lanes), lanes
+    refusals = _refusal_errors(summary)
+    assert refusals, summary["errors"]
+    assert all(missing in e["error"] for e in refusals), refusals
+
+
+_ONE_FORM_LAYOUT = """
+form_formatting:
+  Escalation:
+    body:
+      sections:
+        - { displayname: Main, fields: [Title, Note] }
+"""
+
+
+def test_a_truncated_content_type_page_is_not_reported_missing(tmp_path: Path) -> None:
+    from test_deploy_runtime import _declared_deploy_js
+
+    # Emptied as well as continued: the mock's own content type would be found.
+    overlay = f"""
+const contentTypeFetch = globalThis.fetch;
+globalThis.fetch = async (url, opts = {{}}) => {{
+  const response = await contentTypeFetch(url, opts);
+  if (mockPhase !== {json.dumps(phase_number("forms"))}
+      || !String(url).includes('/contenttypes?')
+      || (opts.method || 'GET') !== 'GET') return response;
+  const payload = {{ d: {{ results: [], __next: 'https://example.sharepoint.com/next' }} }};
+  console.log('CONTINUATION_INJECTED');
+  return {{ ...response, json: async () => payload, text: async () => JSON.stringify(payload) }};
+}};
+"""
+    summary, calls, output = _run_capturing_calls(
+        _ADOPTED_HARNESS + overlay, _declared_deploy_js(tmp_path, _ONE_FORM_LAYOUT),
+    )
+    assert "CONTINUATION_INJECTED" in output, output[-4000:]
+    errors = json.dumps(summary["errors"])
+    assert "may be past the page" in errors, summary["errors"]
+    assert "no default item content type found" not in errors, summary["errors"]
+    assert not any("ClientFormCustomFormatter" in (c["body"] or "") for c in calls)

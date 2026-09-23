@@ -520,6 +520,7 @@ def _run_deploy(
     seeded_central_rows: bool = False,
     seeded_foreign_application: bool = False,
     protect: bool = False,
+    overlay: str = "",
 ) -> dict[str, Any]:
     harness = _HARNESS
     # Substituted BEFORE the placeholder titles, because the entity type is
@@ -650,7 +651,7 @@ def _run_deploy(
     body = _deploy_js(protect=protect).rstrip()
     assert body.endswith("})();")
     script = (
-        f"{harness}\n({body[:-1]}).then((r) => {{\n"
+        f"{harness}\n{overlay}\n({body[:-1]}).then((r) => {{\n"
         "  console.log('__RESULT__' + JSON.stringify(r));\n"
         "  console.log('__CALLS__' + JSON.stringify(calls));\n"
         "  console.log('__STATE__' + JSON.stringify(state));\n"
@@ -1511,3 +1512,127 @@ def test_protecting_the_sidecars_records_no_failure_of_its_own() -> None:
     blamed = [f for f in failures if "sealing" in str(f) or "locking" in str(f)]
     assert blamed == [], f"protecting the sidecars failed: {blamed}"
     assert run["unhandled"] == []
+
+
+#: The two single-page field reads this phase draws absence from (#577).
+_CENTRAL_FIELDS_READ = "$select=InternalName&$top="
+_SIDECAR_FIELDS_READ = "$select=Id,InternalName,Indexed"
+
+
+def _truncation(title: str, read: str, mode: str, from_read: int = 1) -> str:
+    """An overlay that answers one list's field read as a possibly truncated page.
+
+    `continuation` adds a `__next`; `full_page` pads the page to the 500 the
+    read asked for. `from_read` leaves the reads before it untouched, so a
+    read-back can be truncated without the probe ahead of it.
+    """
+    return f"""
+{{
+  const truncatingFetch = globalThis.fetch;
+  let truncatableReads = 0;
+  globalThis.fetch = async (url, opts = {{}}) => {{
+    const response = await truncatingFetch(url, opts);
+    const u = decodeURIComponent(String(url));
+    if ((opts.method || 'GET') !== 'GET'
+        || !u.includes({json.dumps(f"getbytitle('{title}')/fields?")})
+        || !u.includes({json.dumps(read)})) return response;
+    truncatableReads += 1;
+    if (truncatableReads < {from_read}) return response;
+    const rows = (await response.json()).d.results.slice();
+    const payload = {{ d: {{ results: rows }} }};
+    if ({json.dumps(mode)} === 'continuation') {{
+      payload.d.__next = 'https://example.sharepoint.com/next';
+    }} else {{
+      while (rows.length < 500) {{
+        rows.push({{ Id: `pad-${{rows.length}}`, InternalName: `Pad${{rows.length}}` }});
+      }}
+    }}
+    console.log('TRUNCATION_INJECTED');
+    return {{ ...response, json: async () => payload, text: async () => JSON.stringify(payload) }};
+  }};
+}}
+"""
+
+
+@pytest.mark.parametrize("mode", ["continuation", "full_page"])
+@pytest.mark.parametrize(("title", "where"), [
+    (EXTERNAL_LOG_DEFAULT, f"central log '{EXTERNAL_LOG_DEFAULT}' field probe"),
+    (EXTERNAL_CHANGE_LOG_DEFAULT,
+     f"central change log '{EXTERNAL_CHANGE_LOG_DEFAULT}' field probe"),
+])
+def test_a_central_column_missing_from_a_truncated_page_is_a_logging_failure(
+    mode: str, title: str, where: str,
+) -> None:
+    """Missing from a page that may have stopped early is not missing.
+
+    The degrade still happens, because nothing proves the columns are there,
+    but it is recorded rather than announced as the list's ordinary shape.
+    """
+    run = _run_deploy(
+        central_columns=title != EXTERNAL_LOG_DEFAULT,
+        central_change_columns=title != EXTERNAL_CHANGE_LOG_DEFAULT,
+        overlay=_truncation(title, _CENTRAL_FIELDS_READ, mode),
+    )
+    assert "TRUNCATION_INJECTED" in run["output"]
+    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    failures = [f for f in run["summary"]["loggingFailures"] if f["where"] == where]
+    assert len(failures) == 1, run["summary"]["loggingFailures"]
+    assert "may be truncated" in failures[0]["error"], failures
+
+
+@pytest.mark.parametrize("mode", ["continuation", "full_page"])
+def test_central_columns_present_on_a_truncated_page_are_used(mode: str) -> None:
+    """The over-firing control: a full page holding every column is complete enough."""
+    overlay = "".join(
+        _truncation(title, _CENTRAL_FIELDS_READ, mode)
+        for title in (EXTERNAL_LOG_DEFAULT, EXTERNAL_CHANGE_LOG_DEFAULT)
+    )
+    run = _run_deploy(overlay=overlay)
+    assert "TRUNCATION_INJECTED" in run["output"]
+    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert run["summary"]["loggingFailures"] == [], run["summary"]["loggingFailures"]
+    central = run["state"]["central"]
+    assert central, "no stamp reached the central log"
+    assert all(row.get("StampKind") for row in central), central
+    assert run["state"]["centralChanges"], "the change feed was dropped"
+
+
+@pytest.mark.parametrize("mode", ["continuation", "full_page"])
+@pytest.mark.parametrize(("title", "where"), [
+    (CHANGE_LOG_TITLE, f"columns on '{CHANGE_LOG_TITLE}'"),
+    (RUN_LOG_TITLE, f"stamp columns on '{RUN_LOG_TITLE}'"),
+])
+def test_a_stamp_column_missing_from_a_truncated_page_is_not_created(
+    mode: str, title: str, where: str,
+) -> None:
+    run = _run_deploy(
+        central_absent=True, overlay=_truncation(title, _SIDECAR_FIELDS_READ, mode),
+    )
+    assert "TRUNCATION_INJECTED" in run["output"]
+    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    creates = [
+        c for c in run["calls"]
+        if c["method"] == "POST" and c["url"].endswith(f"getbytitle('{title}')/fields")
+    ]
+    assert creates == [], [c["body"] for c in creates]
+    failures = [f for f in run["summary"]["loggingFailures"] if f["where"] == where]
+    assert len(failures) == 1, run["summary"]["loggingFailures"]
+    assert "may be truncated" in failures[0]["error"], failures
+
+
+@pytest.mark.parametrize("title", [CHANGE_LOG_TITLE, RUN_LOG_TITLE])
+def test_a_read_back_holding_every_column_on_a_full_page_passes(title: str) -> None:
+    """The over-firing control for the sidecars: the probe is whole, the read-back full."""
+    run = _run_deploy(
+        central_absent=True,
+        overlay=_truncation(title, _SIDECAR_FIELDS_READ, "full_page", from_read=2),
+    )
+    assert "TRUNCATION_INJECTED" in run["output"]
+    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert not [
+        f for f in run["summary"]["loggingFailures"] if title in json.dumps(f)
+    ], run["summary"]["loggingFailures"]
+    assert any(
+        c["method"] == "POST" and c["url"].endswith(f"getbytitle('{title}')/fields")
+        for c in run["calls"]
+    ), "the probe was not whole, so the read-back was never reached"

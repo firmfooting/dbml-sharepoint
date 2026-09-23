@@ -137,8 +137,13 @@
   // absent `__next` under a `$top` says nothing at all. The same page
   // documents the other direction, a server paging BELOW the asked-for size,
   // which does return one; both are read here and neither is followed.
-  const fieldPageTruncated = (rows, next) => rows.length >= FIELD_PAGE_SIZE
+  const pageTruncated = (rows, next, size) => rows.length >= size
     || (typeof next === 'string' && next !== '');
+  const fieldPageTruncated = (rows, next) => pageTruncated(rows, next, FIELD_PAGE_SIZE);
+  // Named here rather than in _views, which is unwrapped: a name clash there
+  // would be a SyntaxError for the whole script.
+  const VIEW_PAGE_SIZE = 500;
+  const CONTENT_TYPE_PAGE_SIZE = 500;
   // What an absent list and a refused-as-absent enumeration both answer. No
   // fields, and nothing unread: a list that is not there hid nothing.
   const emptyFieldShapes = () => ({ get: () => undefined, size: 0, truncated: false });
