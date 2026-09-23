@@ -8025,6 +8025,56 @@ def test_a_binding_row_missing_a_field_fails_the_scope_closed(
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_title_rebound_before_the_exact_read_back_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The read-back that certifies an exact scope is addressed by title,
+    and every write around it is bracketed by identity.
+
+    A replacement carrying a copied ownership marker and the desired ACL
+    answers that read exactly as the surveyed list would, so the phase
+    reports success while the list it actually pruned still holds the removal
+    that did not take. The descendant survey after it is title-based too, so
+    nothing later recovers the original identity.
+
+    Armed by the REMOVAL rather than by a read count: the removal's own
+    post-check must still see the surveyed list, so that the read this test
+    is about is the first one after it.
+    """
+    seeded = _ownership_harness(tmp_path, ("Escalation",))
+    # Two spaces and four, for the dedent the tests above name.
+    rebound = seeded.replace(
+        "  const payload = body(u, opts);\n",
+        "  if ((opts.method || 'GET') === 'POST'"
+        " && u.includes('removeroleassignment(')) {\n"
+        "    globalThis.__sinceRemoval = 0;\n"
+        "  }\n"
+        "  const payload = body(u, opts);\n",
+    ).replace(
+        "    const sabotage = sabotageFor(probeTitle);\n",
+        "    if (globalThis.__sinceRemoval != null) globalThis.__sinceRemoval += 1;\n"
+        "    const sabotage = globalThis.__sinceRemoval > 1\n"
+        "      ? 'rebind' : sabotageFor(probeTitle);\n",
+    )
+    assert rebound.count("__sinceRemoval") == 4, "the rebind splices did not apply"
+    summary, calls, output = _run_ownership_deploy(
+        tmp_path, harness=_FAST_TIMERS_JS + rebound,
+    )
+
+    log = _phase_log(output, pn("acls"))
+    assert any("changed identity" in line for line in log), log
+    # And it did not certify the replacement it was handed.
+    assert not [line for line in log if "reports exactly" in line], log
+    assert any(
+        err.get("phase") == pn("acls") and "changed identity" in err["error"]
+        for err in summary["errors"]
+    ), summary["errors"]
+    # The removal itself went out and its own bracket passed, which is what
+    # makes this about the read AFTER it.
+    assert [c for c in calls if "removeroleassignment" in c["url"]], calls
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_list_that_never_reports_a_declared_grant_is_refused(
     tmp_path: Path,
 ) -> None:

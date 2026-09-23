@@ -295,15 +295,25 @@
     // satisfying read, so a stray genuinely re-derived later goes unseen.
     // Closing it needs a live measurement of how long a removal can come
     // back, not a stricter rule here, which the flap above would break.
+    //
+    // Bracketed by identity, in the same `withOwnedList` the writes use.
+    // Every read-back this phase acts on goes through here, and a read
+    // addressed by title alone would verify a REPLACEMENT if the title were
+    // rebound after the last write: one carrying a copied ownership marker
+    // and the desired ACL makes a reconciliation report success while the
+    // surveyed list still holds the removal that did not take. The survey
+    // that follows is title-based too, so nothing later could recover it.
     const settleBindings = async (scope, judge) => {
       const SCOPE_BINDING_SETTLE_MS = 2000;
-      let complaint = null;
-      for (let attempt = 0; attempt < 5; attempt += 1) {
-        if (attempt > 0) await sleep(SCOPE_BINDING_SETTLE_MS);
-        complaint = judge(await scopeBindings(scope));
-        if (complaint === null) return null;
-      }
-      return complaint;
+      return withOwnedList(scope.listTitle, scope.listId, `settling role assignments on '${scope.label}'`, async () => {
+        let complaint = null;
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          if (attempt > 0) await sleep(SCOPE_BINDING_SETTLE_MS);
+          complaint = judge(await scopeBindings(scope));
+          if (complaint === null) return null;
+        }
+        return complaint;
+      });
     };
 
     // One securable at a time: a list, or one folder's list item. Every
@@ -528,13 +538,15 @@
       // access and this phase never writes it.
       //
       // A check must be as wide as its own claim: in direction, in inputs,
-      // in set, and in time. SET EQUALITY is the direction half, because the
-      // log line below claims the scope reports EXACTLY the declared set. A
-      // declared grant that vanishes between the presence check and this
-      // read, through a concurrent edit or a removal broader than this
-      // policy asked for, leaves a snapshot with no strays at all, and a
-      // judge that tested only for strays would certify a scope that had
-      // just lost its administrator grant.
+      // in set, in time, and in the object it read. The last of those is
+      // `settleBindings`' own identity bracket, which is why this call takes
+      // no further guard of its own. SET EQUALITY is the direction half,
+      // because the log line below claims the scope reports EXACTLY the
+      // declared set. A declared grant that vanishes between the presence
+      // check and this read, through a concurrent edit or a removal broader
+      // than this policy asked for, leaves a snapshot with no strays at all,
+      // and a judge that tested only for strays would certify a scope that
+      // had just lost its administrator grant.
       //
       // The wider judge is no new source of false aborts: MEASURED
       // 2026-09-22, `access.list-acl.enumeration-is-monotonic`, a read of
