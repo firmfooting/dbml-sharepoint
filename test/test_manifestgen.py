@@ -1340,6 +1340,90 @@ def test_manifest_inventories_folder_assignments(tmp_path: Path) -> None:
     assert "_(no per-folder assignments configured)_" not in md
 
 
+def _acl_manifest(tmp_path: Path, mode: str) -> str:
+    """One library whose list and folder policies both reconcile `mode`."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping=f"""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {{from_enum: division}}
+
+            permission_levels:
+              - name: "Folder Editor"
+                description: "Edit inside one folder."
+                base_permissions: [ViewListItems, AddListItems, EditListItems]
+
+            groups:
+              - from_enum: division
+                name: "{{member}} Editors"
+                description: "Editors for {{member}}."
+                owner_group: "Site Owners"
+
+            list_permissions:
+              default:
+                site_role: default
+                break_inheritance: true
+                reconcile: {mode}
+                assignments:
+                  - principal: {{ kind: associated_owner_group }}
+                    level: "Folder Editor"
+              folders:
+                Docs:
+                  break_inheritance: true
+                  reconcile: {mode}
+                  assignments:
+                    - principal: {{ kind: group, name: "{{member}} Editors" }}
+                      level: "Folder Editor"
+        """,
+    )
+    return generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="docs.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+
+def _assignment_rows(md: str) -> list[str]:
+    """The data rows of both ACL tables, list scopes and folder scopes."""
+    return [line for line in md.splitlines() if line.startswith("| APP_Docs")]
+
+
+def test_the_manifest_tells_an_exact_policy_from_a_configured_one(
+    tmp_path: Path,
+) -> None:
+    """Same principals, same levels, and one of the two deletes everything
+    else on the scope.
+
+    Rendered identically, they gave the operator reading the manifest before
+    pasting nothing to tell a policy that asserts its grants from one that
+    strips every other direct grant off the list or the folder. Both tables,
+    because the distinction is the same one at either scope.
+    """
+    exact = _assignment_rows(_acl_manifest(tmp_path / "exact", "exact"))
+    configured = _assignment_rows(_acl_manifest(tmp_path / "configured", "configured"))
+
+    assert len(exact) == 2, exact
+    assert exact != configured
+    assert all("`exact`" in row for row in exact), exact
+    assert all("`configured`" in row for row in configured), configured
+
+
 def test_a_folder_policy_granting_nothing_still_names_its_folder(
     tmp_path: Path,
 ) -> None:
