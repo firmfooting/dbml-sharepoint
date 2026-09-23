@@ -1918,10 +1918,9 @@ list_validation:
 # spanning all four rating bands and all four statuses;
 # seven actions across every status including one overdue and still open;
 # seven issues across every severity and every status, one untriaged with no
-# owner or workstream and one resolved under a decision; and seven decisions,
-# three of them programme-wide, one still Proposed and old enough to be
-# stalled, one Endorsed under delegation, and one carrying the
-# recommend-then-decide pair of forums.
+# owner or workstream; and seven decisions, three of them programme-wide, one
+# still Proposed and old enough to be stalled, one Endorsed under delegation,
+# and one carrying the recommend-then-decide pair of forums.
 # ReviewDate was one hand-set date standing for both halves of a review,
 # so moving it forward destroyed the evidence that a review had happened.
 # Split into LastReviewedDate and NextReviewDue. The column stays declared and
