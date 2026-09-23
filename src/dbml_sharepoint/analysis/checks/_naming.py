@@ -4,7 +4,7 @@
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
-from dbml_sharepoint.analysis.lookups import display_column_for
+from dbml_sharepoint.analysis.lookups import display_column_for, displays_library_name
 from dbml_sharepoint.analysis.rendered_columns import rendered_columns
 from dbml_sharepoint.analysis.report_columns import (
     report_columns_for,
@@ -304,9 +304,26 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # A display_column IS declared: it must name a real column of the
                 # target table (checked regardless of whether Title also exists,
                 # since jsgen prefers display_column). A typo'd / removed value
-                # would emit LookupField=<bad name> and fail at deploy time
-                #.
-                if not any(c.name == display for c in target_table.columns):
+                # would emit LookupField=<bad name> and fail at deploy time.
+                # A library's file Name binds and then cannot be read back:
+                # see `analysis.lookups.LIBRARY_NAME_COLUMN` for the run.
+                if displays_library_name(target_entity):
+                    findings.append(Finding(
+                        FindingCode.LIBRARY_NAME_DISPLAY_COLUMN_UNREADABLE,
+                        f"{table.name}.{col.name}: lookup target "
+                        f"{col.ref.target_table} declares display_column "
+                        f"'FileLeafRef'. The lookup is created bound to it and "
+                        f"its picker lists every file by name, and then a row "
+                        f"holding a value answers HTTP 500 to the read the "
+                        f"deploy verifies every write with, views render "
+                        f"the value as \"2_.000\", and while the column exists "
+                        f"the list's whole-item read fails with no value set "
+                        f"(measured 2026-09-18, library-lookup-write-probe.js, "
+                        f"four runs). Bind to Title, and give each file a "
+                        f"Title, or use a hyperlink column.",
+                        location=at_column,
+                    ))
+                elif not any(c.name == display for c in target_table.columns):
                     findings.append(Finding(
                         FindingCode.LOOKUP_DISPLAY_COLUMN_UNKNOWN,
                         f"{table.name}.{col.name}: lookup target "

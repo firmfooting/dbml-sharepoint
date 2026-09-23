@@ -228,6 +228,10 @@ class FindingCode(StrEnum):
     INDEX_SETTINGS_UNSUPPORTED = "index_settings_unsupported", "error"
     JOIN_THRESHOLD_APPROACHED = "join_threshold_approached", "warning"
     JOIN_THRESHOLD_EXCEEDED = "join_threshold_exceeded", "error"
+    # MEASURED 2026-09-18, library-lookup-write-probe.js: a lookup bound to a
+    # library's FileLeafRef creates, and a row holding a value then answers
+    # HTTP 500 to the deploy's readback and renders as "2_.000" in a view.
+    LIBRARY_NAME_DISPLAY_COLUMN_UNREADABLE = "library_name_display_column_unreadable", "error"
     LOOKUP_CROSSES_SITE_ROLE = "lookup_crosses_site_role", "error"
     LOOKUP_DISPLAY_COLUMN_UNKNOWN = "lookup_display_column_unknown", "error"
     LOOKUP_WOULD_RENDER_BLANK = "lookup_would_render_blank", "error"

@@ -512,8 +512,8 @@ def _resolve_derived(
                 picks=((target_column, out, m_type),),
                 description=(
                     f"{target_column} read from the matching {target} row. "
-                    f"SharePoint will not project a column of this type "
-                    f"through a lookup, so the report joins for it."
+                    f"The lookup's $expand is not used for a column of this "
+                    f"type, so the report joins for it."
                 ),
             ))
         for entry in bundle.mapping.derived_for(plan.entity):

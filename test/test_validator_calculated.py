@@ -1,6 +1,7 @@
 """Validator: calculated columns, and a lookup target's display column."""
 import pytest
 from _findings import by_severity, none_of, only
+from _model import as_library
 from _model import bundle as make_bundle
 from _model import column as make_column
 from _model import enum as make_enum
@@ -693,3 +694,30 @@ def test_an_acceptance_on_an_unlooked_up_calculated_column_states_the_truth() ->
     assert "nothing looks this entity up" in f.message
     # 'Label' IS calculated. Saying otherwise is simply untrue.
     assert "is not calculated" not in f.message
+
+
+def test_a_library_formula_naming_the_file_name_is_refused_as_unknown() -> None:
+    """A library's FileLeafRef renders but is not a formula operand.
+
+    MEASURED 2026-09-18, library-lookup-write-probe.js
+    `library.formula.calc-name-operand`: a Calculated column `=[Name]` on a
+    library was refused at creation, "The formula refers to a column that
+    does not exist". The check compares against the plain rendered set, so
+    the name is refused at build; this pins that the kind-aware set is not
+    substituted, which would let the formula through to that HTTP 500.
+    """
+    schema = make_schema(make_table(
+        "Docs",
+        make_column("Title", required=True),
+        make_column("NameCopy", "calculated_text"),
+    ))
+    bundle = as_library(make_bundle(
+        entities=["Docs"],
+        calculated_formulas={"Docs": {"NameCopy": "=[FileLeafRef]"}},
+    ), "Docs")
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.CALCULATED_FORMULA_UNKNOWN_COLUMN,
+    )
+    assert f.severity == "error"
+    assert "[FileLeafRef]" in f.message

@@ -1,6 +1,6 @@
 """Validator: the shared fixtures, cross-cutting checks and the extension hook."""
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 import pytest
 from _builders import ID_PK, TITLE, table
@@ -1498,6 +1498,52 @@ def test_lookup_display_column_must_name_a_real_target_column() -> None:
     ok = validate_against_mapping(schema, _bundle("DisplayName"))
     none_of(ok, FindingCode.LOOKUP_DISPLAY_COLUMN_UNKNOWN)
     none_of(ok, FindingCode.LOOKUP_WOULD_RENDER_BLANK)
+
+def test_a_library_file_name_display_column_is_refused_with_the_measurement() -> None:
+    """`FileLeafRef` is declared by no table: it is the Name column every
+    library has and no list has. A lookup bound to it creates and its picker
+    lists every file, and then a row holding a value answers HTTP 500 to the
+    deploy's readback and renders as "2_.000" in a view (measured 2026-09-18,
+    library-lookup-write-probe.js). A library gets that finding; a list gets
+    the ordinary unknown-column error, because a list has no such field."""
+    def _bundle(
+        kind: Literal["List", "DocumentLibrary"], base_template: int,
+    ) -> MappingBundle:
+        return make_bundle(entities={
+            "Evidence": EntityMapping(
+                name="Evidence", kind="List", base_template=100, site_role="default",
+            ),
+            "Artefact": EntityMapping(
+                name="Artefact", kind=kind, base_template=base_template,
+                site_role="default", display_column="FileLeafRef",
+            ),
+        })
+
+    schema = make_schema(
+        make_table(
+            "Evidence",
+            make_column("Title", required=True),
+            make_ref("Artefact", "Artefact.Id"),
+        ),
+        make_table("Artefact", make_column("Summary")),
+    )
+
+    library = validate_against_mapping(schema, _bundle("DocumentLibrary", 101))
+    refused = only(library, FindingCode.LIBRARY_NAME_DISPLAY_COLUMN_UNREADABLE)
+    assert refused.severity == "error"
+    assert refused.location == Location(Section.SCHEMA, entity="Evidence", column="Artefact")
+    assert "2_.000" in refused.message
+    none_of(library, FindingCode.LOOKUP_DISPLAY_COLUMN_UNKNOWN)
+    bad = only(
+        validate_against_mapping(schema, _bundle("List", 100)),
+        FindingCode.LOOKUP_DISPLAY_COLUMN_UNKNOWN,
+    )
+    assert bad.location == Location(Section.SCHEMA, entity="Evidence", column="Artefact")
+    none_of(
+        validate_against_mapping(schema, _bundle("List", 100)),
+        FindingCode.LIBRARY_NAME_DISPLAY_COLUMN_UNREADABLE,
+    )
+
 
 def test_cross_site_role_lookup_is_error() -> None:
     """A7: a plain lookup whose source and target map to different site_roles

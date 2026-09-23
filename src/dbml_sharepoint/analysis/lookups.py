@@ -34,6 +34,42 @@ from dbml_sharepoint.model.parser import Schema
 # displays when the mapping declares nothing else.
 DEFAULT_DISPLAY_COLUMN = "Title"
 
+# The Name column a document library has and a generic list does not. A
+# lookup bound to it CREATES (MEASURED 2026-09-07 and 2026-09-18, by
+# createfieldasxml and by the deploy's addfield route alike) and its picker
+# offers every file by name, and then the value is unusable: MEASURED
+# 2026-09-18, library-lookup-write-probe.js revision d466172a, a row holding
+# one answered HTTP 500 "Cannot complete this action." to `$select=<name>Id`
+# and to the collection read naming the column, and RenderListDataAsStream
+# projected the value as "2_.000" rather than the file name. The deploy
+# reads every write back through that $select, so `analysis.checks._naming`
+# refuses the declaration. Its index could never have been created either:
+# `library.index.name-column-indexed` REFUSED and `title-column-indexed`
+# INDEXED, 2026-09-07, so a library's Title takes the picker index a list's
+# does. The fourth run (revision 8027e148, same day) created the column last:
+# with it present and no value set, `items(id)` with no $select answered
+# HTTP 500 on the host list, and on a fresh list without it the deploy's
+# seed POST and the bare item MERGE, refused in the three earlier runs, both
+# held for a list-to-list and a Title-bound lookup alike. A calculated copy
+# of the name cannot stand in: `=[Name]` on the library was refused at
+# creation, "The formula refers to a column that does not exist", so a
+# lookup into a library shows its Title or nothing.
+LIBRARY_NAME_COLUMN = "FileLeafRef"
+
+
+def displays_library_name(entity: EntityMapping | None) -> bool:
+    """Whether a mapping asks a lookup into this entity to show the file Name.
+
+    True only for a document library whose mapping names `FileLeafRef` as
+    its display column. `analysis.checks._naming` refuses it with the
+    measurement above; on a list the name is refused as undeclared.
+    """
+    return (
+        entity is not None
+        and entity.is_library
+        and entity.display_column == LIBRARY_NAME_COLUMN
+    )
+
 
 def display_column_for(entity: EntityMapping | None) -> str:
     """The column a lookup INTO this entity displays (SP `LookupField`).
