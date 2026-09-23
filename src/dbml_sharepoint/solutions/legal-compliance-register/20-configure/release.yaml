@@ -16,4 +16,6 @@ notes: |
   Add optional Oversight Committee choices and preserve cancelled portal-recording history.
   Take the library's folders from the division enum instead of a second list.
   Create one group per division, owned by the coordinators, and give each
-  division folder its own permissions so a division edits only its own files.
+  division folder its own permissions, so a division's own group edits only
+  that division's files. Coordinators, assessment owners and the register's
+  administrators keep edit rights across every folder.
