@@ -124,12 +124,12 @@ def declared_groups(
     """Every group the mapping declares, in the order it declares them.
 
     Generated groups sit where their `from_enum` entry was written rather
-    than after every literal group. The deploy creates groups in this order
-    and resolves a custom `owner_group` immediately after creating the group
-    that names it, so an author who declares the owner first has to keep that
-    position. Within one source the groups follow enum order, which is the
-    order the DBML writes the members in and therefore the order the folders
-    are created in.
+    than after every literal group. The deploy creates groups in this order,
+    then reconciles every custom `owner_group` in a second pass, so an owner
+    declared after the group that names it is no longer a broken deployment.
+    Within one source the groups follow enum order, which is the order the
+    DBML writes the members in and therefore the order the folders are
+    created in.
     """
     if perms is None:
         return ()

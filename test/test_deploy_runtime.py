@@ -6274,12 +6274,16 @@ def test_a_reconciled_group_setting_the_tenant_did_not_store_fails_closed() -> N
 # into two so the adopted one names the about-to-be-created one as its owner.
 
 
-def _owner_pending_groups_deploy_js() -> str:
+def _owner_pending_groups_deploy_js(*, owner_first: bool = True) -> str:
     """`_deploy_js()` with the fixture's one declared group ('List
     Maintainer') split into two: it now declares owner_group 'Group B', a
     second custom group this same declaration also creates. Mutates the
     generated JSON directly, the same way `test_auto_accept_is_compared_...`
     does, rather than adding a second group to the shared mapping fixture.
+
+    `owner_first=False` declares the owner AFTER the group that names it,
+    which is the order `SCHEMA.groups` carries straight from the mapping and
+    the one a fresh site cannot satisfy group by group.
     """
     js = _deploy_js()
     match = re.search(r'"groups": (\[.*?\n  \])', js, re.DOTALL)
@@ -6294,7 +6298,8 @@ def _owner_pending_groups_deploy_js() -> str:
     group_b["description"] = "Group B."
     group_b["owner_group"] = "Site Owners"
     group_b["require_empty_at_deploy"] = False
-    new_groups = json.dumps([group_b, list_maintainer], indent=2).replace("\n", "\n  ")
+    ordered = [group_b, list_maintainer] if owner_first else [list_maintainer, group_b]
+    new_groups = json.dumps(ordered, indent=2).replace("\n", "\n  ")
     return js[: match.start(1)] + new_groups + js[match.end(1):]
 
 
@@ -6346,6 +6351,57 @@ def test_an_adopted_group_owned_by_a_group_pending_creation_still_deploys() -> N
     assert min(owner_resolve_indices) > create_indices[0], (
         "the owner resolve for 'List Maintainer' ran before Group B was created: "
         f"resolve at {owner_resolve_indices}, create at {create_indices[0]}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_group_owned_by_one_declared_after_it_deploys_on_a_fresh_site() -> None:
+    """Both groups absent, and the owner declared SECOND.
+
+    `SCHEMA.groups` carries the mapping's own declaration order, and the
+    phase used to resolve each group's owner the moment that group was
+    created, so on a fresh site 'List Maintainer' asked for 'Group B' before
+    'Group B' existed: HTTP 404, the phase aborted before list creation, and
+    the second run succeeded because the first had created the owner anyway.
+    Owners are reconciled in a second pass now, so the declaration order
+    stops being a deployment constraint. Verified by mutation: resolving the
+    owner inside applyGroupDecision again reproduces the abort.
+    """
+    js = _owner_pending_groups_deploy_js(owner_first=False)
+    harness = _ADOPTED_HARNESS.replace(
+        "const GROUP_IDS = {};",
+        f"const GROUP_IDS = {json.dumps({'List Maintainer': 101, 'Group B': 102})};",
+    ).replace(
+        "const GROUP_CURRENT_OWNER = { 9: { Id: 3, Title: 'Site Owners', PrincipalType: 8 } };",
+        "const GROUP_CURRENT_OWNER = { 9: { Id: 3, Title: 'Site Owners', PrincipalType: 8 }, "
+        "101: { Id: 102, Title: 'Group B', PrincipalType: 8 } };",
+    )
+    summary, calls, output = _run_group_verify_deploy(js, harness)
+    assert not _security_errors(summary), summary
+    assert summary.get("aborted") != "phase-0-security-errors", summary
+    created = [
+        json.loads(c["body"]).get("Title") for c in calls
+        if c["method"] == "POST" and c["url"].endswith("/sitegroups") and c["body"]
+    ]
+    assert created == ["List Maintainer", "Group B"], (
+        f"both groups must be created, owner last:\n{output[-3000:]}"
+    )
+    group_b_created = next(
+        i for i, c in enumerate(calls)
+        if c["method"] == "POST" and c["url"].endswith("/sitegroups") and c["body"]
+        and json.loads(c["body"]).get("Title") == "Group B"
+    )
+    owner_resolves = [
+        i for i, c in enumerate(calls)
+        if c["method"] == "GET" and "sitegroups/getbyname('Group%20B')" in c["url"]
+    ]
+    assert owner_resolves, f"'List Maintainer's owner was never resolved:\n{output[-3000:]}"
+    assert min(owner_resolves) > group_b_created, (
+        "the owner resolve for 'List Maintainer' ran before Group B was created: "
+        f"resolve at {owner_resolves}, create at {group_b_created}"
+    )
+    assert "Site group 'List Maintainer' owner verified as 'Group B'." in output, (
+        output[-3000:]
     )
 
 

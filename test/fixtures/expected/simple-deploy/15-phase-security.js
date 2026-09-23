@@ -674,8 +674,8 @@
     // has already run the empty-membership gate: both need the group to
     // exist, which on an adopt decision it already does. A create decision
     // does neither; owner resolution and the empty check 404 for a group
-    // that is not there yet, so they are owed to applyGroupDecision, after
-    // the create.
+    // that is not there yet, so the empty check is owed to
+    // applyGroupDecision and the owner to reconcileGroupOwner after it.
     async function surveyGroup(grp, decidedCreates) {
       // decidedCreates covers a name this same pass already decided to
       // create, which the one-time enumeration in knownGroupNames cannot
@@ -774,9 +774,9 @@
       // for a group this deploy is about to create anyway: the same class
       // as decidedCreates above, one level deeper. Resolve now only when
       // the owner group is a built-in or is already known to exist from
-      // the one-time enumeration; otherwise defer to
-      // applyGroupDecision, which runs after every create in this phase has
-      // applied. Do not "tidy" this back to an unconditional resolve.
+      // the one-time enumeration; otherwise defer to reconcileGroupOwner,
+      // which runs after every create in this phase has applied. Do not
+      // "tidy" this back to an unconditional resolve.
       const ownerGroupKnownToExist = BUILTIN_OWNER_GROUPS.has(grp.owner_group)
         || (knownGroupNames !== null && hasName(knownGroupNames, grp.owner_group));
       const ownerState = ownerGroupKnownToExist ? await resolveGroupOwner(grp) : null;
@@ -801,10 +801,6 @@
         log('INFO', `Site group '${grp.name}' created.`);
         await verifyGroupSettings(grp);
 
-        // Owed to here from the survey: both need the group to exist, and
-        // before this line it did not.
-        const ownerState = await resolveGroupOwner(grp);
-        await correctGroupOwner(grp, ownerState);
         await ensureGroupEmptyIfRequired(grp);
         if (grp.require_empty_at_deploy) {
           log('INFO', `Site group '${grp.name}' is empty as required for deployment.`);
@@ -833,23 +829,30 @@
         log('INFO', `Site group '${grp.name}' already exists; declared membership controls reconciled.`);
         await verifyGroupSettings(grp);
 
-        // decision.ownerState is null when the survey deferred the resolve
-        // (see surveyGroup): grp.owner_group named a custom group not yet
-        // known to exist, most likely because this same pass decided to
-        // create it. Every create in the phase has applied by the time this
-        // line runs, so the resolve is safe here. When ownerState WAS read
-        // by the survey, it was read before every other object in this
-        // phase was written, so on the no-mismatch path below the 'owner
-        // verified' log reports evidence that may have aged by the time
-        // this line runs. The mismatch path is unaffected either way: it
-        // re-reads the owner after its own CSOM write, rather than trusting
-        // this state.
-        const ownerState = decision.ownerState || await resolveGroupOwner(grp);
-        await correctGroupOwner(grp, ownerState);
         if (grp.require_empty_at_deploy) {
           log('INFO', `Site group '${grp.name}' is empty as required for deployment.`);
         }
       }
+    }
+
+    // Owed to a SECOND pass, after every group above has been created or
+    // adopted. A declared owner_group may name another declared group, and
+    // `SCHEMA.groups` is emitted in the mapping's own declaration order, so
+    // resolving an owner the moment its group is written 404s on a fresh
+    // site whenever the owner is declared later: the phase aborts, the owner
+    // is created anyway, and the deployment needs a second run to look
+    // valid. Resolving here removes the ordering constraint rather than
+    // policing it. Do not "tidy" this back into applyGroupDecision.
+    async function reconcileGroupOwner(decision) {
+      const grp = decision.grp;
+      // decision.ownerState is set only when the survey resolved it (see
+      // surveyGroup), and it was read before every other object in this
+      // phase was written, so on the no-mismatch path the 'owner verified'
+      // log reports evidence that may have aged by the time this line runs.
+      // The mismatch path is unaffected: it re-reads the owner after its own
+      // CSOM write rather than trusting this state.
+      const ownerState = decision.ownerState || await resolveGroupOwner(grp);
+      await correctGroupOwner(grp, ownerState);
     }
 
     // decidedCreates: the write-side knownGroupNames.add() this replaces
@@ -914,6 +917,10 @@
       digest0 = await phaseDigest();
     }
     // Re-tested after that fetch: a refused digest is recorded rather than thrown, and there is nothing to write with.
+    // Only a group that applied is owed an owner: resolving one for a group
+    // whose create failed would report a second error for one cause.
+    const ownersPending = [];
+    let digestLost = false;
     if (summary.errors.length === 0) {
       for (const decision of decisions) {
         try {
@@ -921,6 +928,7 @@
             await applyLevelDecision(decision);
           } else {
             await applyGroupDecision(decision);
+            ownersPending.push(decision);
           }
         } catch (err) {
           // Continue after object errors, but a digest failure makes every later write unsafe.
@@ -931,6 +939,18 @@
           } else {
             summary.errors.push({ phase: '1.4', group: decision.name, error: err.message });
           }
+          if (err && err.digestFailure) { digestLost = true; break; }
+        }
+      }
+    }
+    // Every group exists by here, whatever order the mapping declares them in.
+    if (!digestLost) {
+      for (const decision of ownersPending) {
+        try {
+          await reconcileGroupOwner(decision);
+        } catch (err) {
+          log('ERROR', `Phase 1.4 site group '${decision.name}': ${err.message}`);
+          summary.errors.push({ phase: '1.4', group: decision.name, error: err.message });
           if (err && err.digestFailure) break;
         }
       }
