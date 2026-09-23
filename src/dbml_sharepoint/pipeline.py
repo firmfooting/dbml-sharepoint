@@ -21,6 +21,7 @@ import typer
 
 from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
 from dbml_sharepoint.analysis.findings import Finding
+from dbml_sharepoint.analysis.folders import UnknownFolderEnumError
 from dbml_sharepoint.analysis.groups import declaring_groups, resolvable_groups
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.permissions import lists_granting_group
@@ -330,10 +331,19 @@ def execute_build(
         deployed_here = site_tables_in_order(
             parsed_schema, bundle.mapping.entities, site_role,
         )
-        granted_anywhere_here = any(
-            lists_granting_group(bundle.mapping, g.name, deployed_here, enum_members)[0]
-            for g in targets
-        )
+        try:
+            granted_anywhere_here = any(
+                lists_granting_group(
+                    bundle.mapping, g.name, deployed_here, enum_members,
+                )[0]
+                for g in targets
+            )
+        except UnknownFolderEnumError:
+            # Deferred, not swallowed: `folder_enum_unknown` is an error, so
+            # validation below refuses this build with the finding and the
+            # manifest this gate was replacing with a traceback. `True` skips
+            # only this gate's own refusal, which would name the wrong cause.
+            granted_anywhere_here = True
         # `targets` empty while `declared_readers` is not means every reader
         # source named an enum the schema does not declare. There is no name
         # to ask about, and validation below says so by its own code.
