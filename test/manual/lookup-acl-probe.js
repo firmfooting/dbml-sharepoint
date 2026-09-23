@@ -46,6 +46,10 @@
  *   access.lookup-acl.control-target-denied           (K1)
  *        CONTROL: is the second account actually denied the TARGET list?
  *        If it can still open the target, every row below means nothing.
+ *        A 401 or 403 is a denial. A 404 is also one on a tenant that
+ *        hides a list the caller may not read (measured 2026-09-19, #592),
+ *        but a DELETED target answers 404 too, so the 404 reading holds
+ *        only once K8 has confirmed the target was still there.
  *   access.lookup-acl.display-value-to-denied-reader  (K2)
  *        THE ONE THAT MATTERS. Reading the SOURCE item as the denied
  *        account, does the lookup's display value come back?
@@ -56,6 +60,15 @@
  *   access.lookup-acl.control-source-readable         (K4)
  *        CONTROL: can the denied account read the SOURCE list at all? If
  *        not, K2 and K3 are silent for the wrong reason.
+ *   access.lookup-acl.control-target-present-after-read  (K8)
+ *        CONTROL, pass 3, as the site owner: does the target pass 2 read
+ *        (by the GUID it carries) still exist, holding the linked row with
+ *        both sentinel values? It reports those four facts separately, and
+ *        each row pass 2 left open names the ones it rests on: a 404-derived
+ *        K1 needs the target, a withheld K2 the row and its Title, a
+ *        display-field-only K3 the row and ProbeSide. A sighting after a 403
+ *        is settled in pass 2 and needs nothing. Only a site collection
+ *        administrator can read a 404 here as an absence.
  *
  *   -- Question B, answered by the site owner ----------------------------
  *   field.lookup.calculated-display-field             (K5)
@@ -77,10 +90,11 @@
  * type. They are asked here because question A already needs the pair of
  * lists, and nothing about them is an access result.
  *
- * READ K1 AND K4 FIRST. K2 is evidence only when the account is provably
- * denied the target AND provably allowed the source.
+ * READ K1, K4 AND K8 FIRST. K2 is evidence only when the account is
+ * provably denied the target AND provably allowed the source, and the
+ * target provably existed while it was denied.
  *
- * TWO ACCOUNTS, TWO PASTES (question A only). No probe here has needed a
+ * TWO ACCOUNTS, THREE PASTES (question A only). No probe here has needed a
  * second identity before, and a site collection administrator cannot deny
  * themselves, so running it all as one person would answer a question
  * nobody asked.
@@ -92,6 +106,12 @@
  *   PASS 2: as a SECOND, NON-PRIVILEGED account, a member or visitor of
  *            this site who is NOT a site owner, site collection admin or
  *            tenant admin. MODE = 'read'. Writes NOTHING.
+ *   PASS 3: as the SITE OWNER again. MODE = 'confirm', with the PASS2
+ *            line pass 2 printed. Writes NOTHING. Answers K8 against the
+ *            fixture pass 2 read, then settles pass 2's K1 to K3, which pass
+ *            2 leaves open. Run it as a site collection administrator if you
+ *            can: only one can read a missing target as deleted rather than
+ *            hidden.
  *
  * If the second account turns out to be an administrator, K1 says so
  * rather than letting the run look successful.
@@ -104,7 +124,10 @@
  *   4. Sign in as the second account (a private window is easiest), open
  *      the same settings page, set MODE = 'read', paste. CONFIRMED alone is
  *      enough for pass 2; it never writes.
- *   5. Copy BOTH results blocks back, and the eyes-on lines.
+ *   5. Back as the site owner, set MODE = 'confirm', paste the
+ *      `const PASS2 = ...;` line pass 2 printed over `const PASS2 = null;`,
+ *      paste. CONFIRMED alone is enough; it never writes.
+ *   6. Copy ALL THREE results blocks back, and the eyes-on lines.
  *
  * WHEN FINISHED: delete both lists as the site owner.
  */
@@ -369,9 +392,13 @@
   };
 
   // 'setup' writes and needs a site owner; 'read' only reads and is the
-  // pass that answers question A. Committed as 'setup' so a stray paste by
-  // an owner is the harmless half.
+  // pass that answers question A; 'confirm' only reads, as the owner, and
+  // proves the target was still there. Committed as 'setup' so a stray
+  // paste by an owner is the harmless half.
   const MODE = 'setup';
+  // Pass 3 only: the `const PASS2 = ...;` line pass 2 prints, pasted over this
+  // one. It carries what pass 2 saw, so pass 3 confirms that fixture and not a later one.
+  const PASS2 = null;
 
   const TARGET = 'dbmlsp Probe LookupTarget';
   const SOURCE = 'dbmlsp Probe LookupSource';
@@ -384,10 +411,20 @@
   const SIDE = 'dbmlsp-probe-target-second-column';
   const CLOSED_TITLE = 'dbmlsp-probe-closed-row';
 
+  const guidOf = (value) => String(value || '').replace(/[{}]/g, '').toLowerCase();
+
+  // The pass-2 rows K8 decides, carried to pass 3 in PASS2 and settled there.
+  const PASS2_ROWS = [
+    'access.lookup-acl.control-target-denied',
+    'access.lookup-acl.display-value-to-denied-reader',
+    'access.lookup-acl.expand-reaches-other-columns',
+  ];
+
   expect('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?');
   expect('access.lookup-acl.display-value-to-denied-reader', 'Reading the SOURCE item as the denied account, does the lookup display value come back?');
   expect('access.lookup-acl.expand-reaches-other-columns', 'Does $expand on the lookup reach the target row\'s other columns?');
   expect('access.lookup-acl.control-source-readable', 'CONTROL: can the denied account read the SOURCE list at all?');
+  expect('access.lookup-acl.control-target-present-after-read', 'CONTROL: after pass 2, does the target pass 2 read still hold the linked row and its sentinels?');
   expect('field.lookup.calculated-display-field', 'Does SharePoint accept a CALCULATED column as a lookup display field?');
   expect('field.lookup.empty-label-linked-readback', 'With the label empty, what does an ALREADY LINKED item read back as?');
   expect('field.lookup.picker-omits-empty-label', 'EYES-ON: does the picker omit the row whose calculated label is empty?');
@@ -404,6 +441,9 @@
       if (CLEANUP) {
         log('INFO', `CLEANUP is ON: '${TARGET}' and '${SOURCE}' would be RECYCLED first.`);
       }
+    } else if (MODE === 'confirm') {
+      log('INFO', `Would only READ '${TARGET}' and '${SOURCE}', as the site owner.`);
+      log('INFO', 'Run this pass AFTER pass 2, signed in as the site owner again.');
     } else {
       log('INFO', 'Would only READ, as the account you are signed in as now.');
       log('INFO', 'Run this pass as a NON-PRIVILEGED account, not the site owner.');
@@ -423,13 +463,40 @@
     // K1 is the control. A site collection admin is never denied anything,
     // so an admin running this pass invalidates the run and must be told,
     // not quietly passed.
-    const target = await spGet(`web/lists/getbytitle('${TARGET}')/items?$select=Title&$top=5`);
+    // The source is read before K1 is judged, because a 404 on the target is
+    // a denial only if the target provably existed: the fixture row linking
+    // into it is the part of that proof this account can see. K8, run by
+    // the owner after this pass, is the rest.
+    const source = await spGet(
+      `web/lists/getbytitle('${SOURCE}')/items?$select=Title,${LOOKUP}Id&$top=10`);
+    const rows = (source.ok && source.body && source.body.value) || [];
+    // The list the lookup is bound to and the column it shows, read while this pass measures.
+    const bound = await spGet(
+      `web/lists/getbytitle('${SOURCE}')/fields/getbyinternalnameortitle('${LOOKUP}')?$select=LookupList,LookupField`);
+    const boundList = (!readFailed(bound) && bound.body.LookupList) || null;
+    // K2 and K3 look for SECRET as the display value; shown through any other column its absence measures nothing.
+    const showsTitle = !readFailed(bound) && bound.body.LookupField === 'Title';
+    // Reading the list is not enough. K2 concludes "withheld" from the
+    // ABSENCE of a string, so the row that would carry it has to be proven
+    // present and linked first. Otherwise a deleted fixture, or one past
+    // the page limit, reads as a clean security result.
+    const fixture = rows.find((r) => r.Title === 'dbmlsp-probe-source-row');
+    const fixtureLinked = Boolean(fixture && fixture[`${LOOKUP}Id`]);
+
+    // By the bound GUID, not the title: a renamed target answers a title read with 404 whoever asks.
+    const target = boundList
+      ? await spGet(`web/lists(guid'${guidOf(boundList)}')/items?$select=Title&$top=5`)
+      : null;
     const isAdmin = me.ok && me.body && me.body.IsSiteAdmin === true;
-    // Only 401/403 is a DENIAL. A 429 or a 500 also fails, and reading
-    // either as "denied" would let K2 run believing a premise it has not
-    // established. The throttled case would then report the lookup value
-    // withheld from an account that was never actually refused anything.
-    const deniedTarget = target.status === 401 || target.status === 403;
+    // Only 401/403 is a DENIAL on its face. A 429 or a 500 also fails, and
+    // reading either as "denied" would let K2 run believing a premise it has
+    // not established. A 404 is a denial on a tenant that hides a list the
+    // caller may not read (measured 2026-09-19 on a title read, #592), and it
+    // is also what a deleted list answers, so it counts only with the linked
+    // fixture in hand here and K8 confirming the target from the owner's side.
+    const refusedTarget = Boolean(target) && (target.status === 401 || target.status === 403);
+    const hiddenTarget = Boolean(target) && target.status === 404 && fixtureLinked;
+    const deniedTarget = refusedTarget || hiddenTarget;
     if (!me.ok) {
       record('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
              'NOT ESTABLISHED',
@@ -441,17 +508,36 @@
              `this account is a site collection administrator (${who}). SharePoint `
              + 'does not apply broken inheritance to one, so nothing below can be '
              + 'read as evidence. Re-run pass 2 as a non-privileged account.');
+    } else if (!target) {
+      record('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
+             'NOT ESTABLISHED',
+             `could not read the list '${LOOKUP}' is bound to (HTTP ${bound.status}), so there `
+             + 'is no target to ask about. Re-run.');
     } else if (target.ok) {
       record('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
              'FAIL',
              `the account READ ${TARGET} (HTTP ${target.status}), so inheritance was `
              + 'not broken as intended and K2/K3 prove nothing about a denied reader');
+    } else if (target.status === 404 && !fixtureLinked) {
+      record('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
+             'NOT ESTABLISHED',
+             'the target read answered HTTP 404, which a hidden list and a deleted one '
+             + 'both answer, and the source fixture row that would show the target '
+             + 'existed is not linked (see K4). Re-run the setup pass.');
     } else if (!deniedTarget) {
       record('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
              'NOT ESTABLISHED',
              `the target read failed with HTTP ${target.status}, which is not an access `
              + 'denial. A throttled or erroring request is not evidence that the ACL '
              + 'holds. Re-run.');
+    } else if (hiddenTarget) {
+      // Open, not settled: a deleted target answers the same 404, so pass 3 settles it.
+      record('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
+             'PASS',
+             'hidden rather than refused: HTTP 404 for a list the linked source row '
+             + `(${LOOKUP}Id=${fixture[`${LOOKUP}Id`]}) shows existed. This reading holds `
+             + 'only if pass 3 (access.lookup-acl.control-target-present-after-read) finds '
+             + `the target still there. Running as: ${who}`, 'open');
     } else {
       record('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
              'PASS',
@@ -461,15 +547,6 @@
 
     // K4 is the other control, asked before K2 so the read-out order is the
     // order a reader needs them in.
-    const source = await spGet(
-      `web/lists/getbytitle('${SOURCE}')/items?$select=Title,${LOOKUP}Id&$top=10`);
-    const rows = (source.ok && source.body && source.body.value) || [];
-    // Reading the list is not enough. K2 concludes "withheld" from the
-    // ABSENCE of a string, so the row that would carry it has to be proven
-    // present and linked first. Otherwise a deleted fixture, or one past
-    // the page limit, reads as a clean security result.
-    const fixture = rows.find((r) => r.Title === 'dbmlsp-probe-source-row');
-    const fixtureLinked = Boolean(fixture && fixture[`${LOOKUP}Id`]);
     record('access.lookup-acl.control-source-readable', 'CONTROL: can the denied account read the SOURCE list at all?',
            !source.ok ? 'FAIL' : fixtureLinked ? 'PASS' : 'NOT ESTABLISHED',
            !source.ok
@@ -484,11 +561,16 @@
                  + 'be reading the absence of a string that was never going to be there. '
                  + 'Re-run the setup pass.');
 
-    if (!me.ok || !source.ok || !fixtureLinked || isAdmin || target.ok || !deniedTarget) {
+    if (!me.ok || !source.ok || !fixtureLinked || isAdmin || !target || target.ok || !deniedTarget
+        || !showsTitle) {
+      const why = !showsTitle && !readFailed(bound)
+        ? `'${LOOKUP}' shows ${JSON.stringify(bound.body.LookupField)}, not Title, so the `
+          + 'sentinels are not the display value it carries. Re-run the setup pass.'
+        : 'a control above did not hold (see K1 and K4)';
       record('access.lookup-acl.display-value-to-denied-reader', 'Reading the SOURCE item as the denied account, does the lookup display value come back?',
-             'NOT ESTABLISHED', 'a control above did not hold (see K1 and K4)');
+             'NOT ESTABLISHED', why);
       record('access.lookup-acl.expand-reaches-other-columns', 'Does $expand on the lookup reach the target row\'s other columns?',
-             'NOT ESTABLISHED', 'a control above did not hold (see K1 and K4)');
+             'NOT ESTABLISHED', why);
     } else {
       const expanded = await spGet(
         `web/lists/getbytitle('${SOURCE}')/items?$select=Title,${LOOKUP}/Title`
@@ -502,6 +584,7 @@
                + 'a denial nor an answer');
       } else {
         const leaked = raw.includes(SECRET);
+        // A sighting stands on its own once the denial is settled; an absence waits for K8's sentinels.
         record('access.lookup-acl.display-value-to-denied-reader', 'Reading the SOURCE item as the denied account, does the lookup display value come back?',
                leaked ? 'LOOKUP VALUE IS VISIBLE' : 'LOOKUP VALUE IS WITHHELD',
                leaked
@@ -510,7 +593,8 @@
                    + 'respect the target list ACL, and any register relying on one to '
                    + 'hide a title is relying on nothing.'
                  : `HTTP ${expanded.status}; the response does not contain `
-                   + `${JSON.stringify(SECRET)}. Body: ${JSON.stringify(raw.slice(0, 300))}`);
+                   + `${JSON.stringify(SECRET)}. Body: ${JSON.stringify(raw.slice(0, 300))}`,
+               leaked && !hiddenTarget ? undefined : 'open');
       }
 
       const side = await spGet(
@@ -522,6 +606,7 @@
       // an ACL result, which K1 and K2 above already avoid.
       const sideRefused = isRefusal(side.status)
         || side.status === 401 || side.status === 403;
+      const sideObserved = side.ok ? sideRaw.includes(SIDE) : sideRefused;
       record('access.lookup-acl.expand-reaches-other-columns', 'Does $expand on the lookup reach the target row\'s other columns?',
              side.ok
                ? sideRaw.includes(SIDE) ? 'OTHER COLUMNS ALSO VISIBLE'
@@ -541,8 +626,36 @@
                  ? '$expand naming a second target column was refused with HTTP '
                    + `${side.status}: ${JSON.stringify(String(side.body).slice(0, 200))}`
                  : `the $expand request failed with HTTP ${side.status}, which is `
-                   + 'neither a refusal nor an answer');
+                   + 'neither a refusal nor an answer',
+             sideObserved && !hiddenTarget ? undefined : 'open');
     }
+
+    // K8 is answered by pass 3, not here. Said on the row rather than left as
+    // "the run did not reach this question", which reads as a probe that stopped.
+    record('access.lookup-acl.control-target-present-after-read', 'CONTROL: after pass 2, does the target pass 2 read still hold the linked row and its sentinels?',
+           'NOT ESTABLISHED',
+           "answered by pass 3 (MODE = 'confirm', as the owner, with the PASS2 line below). "
+           + 'Until it passes, the rows above marked open stay open.');
+    // What each open row rests on, so pass 3 voids a row only for a change that row depends on:
+    // the target behind a 404, and the one sentinel an absence was read against.
+    const behind404 = hiddenTarget ? ['target'] : [];
+    const outcomeOf = (id) => RESULTS.find((r) => r.id === id).outcome;
+    const needs = {
+      'access.lookup-acl.control-target-denied': behind404,
+      'access.lookup-acl.display-value-to-denied-reader': [...behind404,
+        ...(outcomeOf('access.lookup-acl.display-value-to-denied-reader') === 'LOOKUP VALUE IS WITHHELD' ? ['row', 'title'] : [])],
+      'access.lookup-acl.expand-reaches-other-columns': [...behind404,
+        ...(outcomeOf('access.lookup-acl.expand-reaches-other-columns') === 'DISPLAY FIELD ONLY' ? ['row', 'side'] : [])],
+    };
+    const carried = Object.fromEntries(PASS2_ROWS.map((id) => {
+      const row = RESULTS.find((r) => r.id === id);
+      return [id, { outcome: row.outcome, evidence: row.evidence, state: row.state, needs: needs[id] }];
+    }));
+    const pass2 = {
+      lookupList: boundList,
+      linkedId: fixtureLinked ? fixture[`${LOOKUP}Id`] : null,
+      rows: carried,
+    };
 
     report();
     console.log('\n============ EYES-ON, PASS 2 ============');
@@ -553,6 +666,84 @@
     console.log('     there an error?');
     console.log('     what you see: ______________________________________');
     console.log('==========================================');
+    log('INFO', 'Read-only pass complete. Nothing was written.');
+    log('INFO', "Now run pass 3 as the site owner: MODE = 'confirm', with this line pasted over `const PASS2 = null;`:");
+    console.log(`const PASS2 = ${JSON.stringify(pass2)};`);
+    return;
+  }
+
+  // ---- PASS 3: confirm, as the site owner, after pass 2 ---------------
+  // Reads, as the owner, the target pass 2 read (by the GUID it carried) and
+  // the linked row, and reports each fact on its own. Pass 2 said which facts
+  // each open row rests on, so a change voids only the rows that depend on it.
+  if (MODE === 'confirm') {
+    const K8 = 'access.lookup-acl.control-target-present-after-read';
+    const K8Q = 'CONTROL: after pass 2, does the target pass 2 read still hold the linked row and its sentinels?';
+    const NE = 'NOT ESTABLISHED';
+    const FACTS = ['target', 'row', 'title', 'side'];
+    const facts = {};
+    const settleRest = (verdict, why) => {
+      for (const k of FACTS) if (!facts[k]) facts[k] = [verdict, why];
+    };
+    const establish = async () => {
+      if (!PASS2 || !PASS2.rows) {
+        return settleRest(NE, 'no PASS2 line: paste the `const PASS2 = ...;` line pass 2 printed over `const PASS2 = null;`');
+      }
+      if (!PASS2.lookupList || !PASS2.linkedId) {
+        return settleRest(NE, `pass 2 recorded no bound list (${JSON.stringify(PASS2.lookupList)}) or no linked row (${JSON.stringify(PASS2.linkedId)}). Re-run pass 2.`);
+      }
+      // A 404 means "absent" only to an account the target's ACL does not bind.
+      const me = await spGet('web/currentuser?$select=Title,LoginName,IsSiteAdmin');
+      if (readFailed(me)) return settleRest(NE, `could not read web/currentuser (HTTP ${me.status})`);
+      const isAdmin = me.body.IsSiteAdmin === true;
+      const who = `${me.body.Title} (${me.body.LoginName}), IsSiteAdmin=${me.body.IsSiteAdmin}`;
+      const listPath = `web/lists(guid'${guidOf(PASS2.lookupList)}')`;
+      const list = await spGet(`${listPath}?$select=Id,HasUniqueRoleAssignments`);
+      if (list.status === 404) {
+        return isAdmin
+          ? settleRest('FAIL', `a site collection administrator reads list ${PASS2.lookupList} as HTTP 404: the target pass 2 read is gone`)
+          : settleRest(NE, `list ${PASS2.lookupList} reads as HTTP 404 to an account that is not a site collection administrator, which a deleted list and a hidden one both answer. Re-run pass 3 as one. Running as: ${who}`);
+      }
+      if (readFailed(list)) return settleRest(NE, `reading list ${PASS2.lookupList} answered HTTP ${list.status}`);
+      // Inheritance now is reported, not required: pass 2's 403 or 404 measured the ACL it met.
+      facts.target = ['PASS', `list ${PASS2.lookupList} still exists (HasUniqueRoleAssignments=${JSON.stringify(list.body.HasUniqueRoleAssignments)})`];
+      const id = Number(PASS2.linkedId);
+      const row = await spGet(`${listPath}/items(${id})?$select=Id,Title,ProbeSide`);
+      if (row.status === 404) return settleRest('FAIL', `item ${id}, the row the source fixture linked to, is gone`);
+      if (readFailed(row) || row.body.Id !== id) return settleRest(NE, `reading item ${id} answered HTTP ${row.status}`);
+      facts.row = ['PASS', `item ${id} is still there`];
+      facts.title = row.body.Title === SECRET
+        ? ['PASS', 'Title is still the sentinel'] : ['FAIL', `Title now reads ${JSON.stringify(row.body.Title)}`];
+      facts.side = row.body.ProbeSide === SIDE
+        ? ['PASS', 'ProbeSide is still the sentinel'] : ['FAIL', `ProbeSide now reads ${JSON.stringify(row.body.ProbeSide)}`];
+      return undefined;
+    };
+    await establish();
+    const verdicts = FACTS.map((k) => facts[k][0]);
+    record(K8, K8Q,
+           verdicts.includes('FAIL') ? 'FAIL' : verdicts.every((v) => v === 'PASS') ? 'PASS' : NE,
+           FACTS.map((k) => `${k}: ${facts[k][0]} (${facts[k][1]})`).join('; '));
+    // Pass 2's OPEN rows, each against the facts it named. A row pass 2 settled needs nothing here.
+    for (const rid of PASS2_ROWS) {
+      const carried = PASS2 && PASS2.rows && PASS2.rows[rid];
+      if (!carried || carried.state !== 'open') continue;
+      const question = RESULTS.find((r) => r.id === rid).question;
+      if (!Array.isArray(carried.needs)) {
+        record(rid, question, carried.outcome, `${carried.evidence} PASS2 names no facts for it, so it stays open.`, 'open');
+        continue;
+      }
+      const failed = carried.needs.filter((k) => facts[k][0] === 'FAIL');
+      const unmet = carried.needs.filter((k) => facts[k][0] !== 'PASS');
+      if (failed.length > 0) {
+        record(rid, question, carried.outcome, `${carried.evidence} Void: ${failed.join(', ')} changed since pass 2.`, 'void');
+      } else if (unmet.length > 0) {
+        record(rid, question, carried.outcome, `${carried.evidence} Still open: ${unmet.join(', ')} not established.`, 'open');
+      } else {
+        record(rid, question, carried.outcome,
+               `${carried.evidence} Confirmed by pass 3${carried.needs.length ? ` (${carried.needs.join(', ')})` : ''}.`);
+      }
+    }
+    report();
     log('INFO', 'Read-only pass complete. Nothing was written.');
     return;
   }
@@ -850,7 +1041,9 @@
   console.log('  2. Sign in as that account (a private window is easiest) and');
   console.log(`     open ${WEB}/_layouts/15/settings.aspx`);
   console.log("  3. Paste this same file with MODE = 'read' and CONFIRMED = true.");
-  console.log('  4. Copy back BOTH results blocks and the eyes-on lines.');
+  console.log("  4. Back as the site owner, paste with MODE = 'confirm', CONFIRMED = true and");
+  console.log('     the PASS2 line pass 2 prints.');
+  console.log('  5. Copy back ALL THREE results blocks and the eyes-on lines.');
   console.log('==========================================');
   log('INFO', `Delete '${SOURCE}' and '${TARGET}' when you have finished.`);
 })();
