@@ -92,7 +92,8 @@ def _verified_without_two_sources(seed: Seed) -> Offenders:
             continue
         rows = _evidence(seed, key)
         system = any(
-            e["EvidenceType"] == "System data" and _ref(e.get("Artefact")) is not None
+            e["EvidenceType"] == "System data" and not e["Contradicts"]
+            and _ref(e.get("Artefact")) is not None
             and seed["Artefact"][_ref(e["Artefact"]) or ""]["ArtefactType"] == "System export"
             for e in rows
         )
@@ -204,11 +205,17 @@ def _failure_half_recorded(seed: Seed) -> Offenders:
 
 
 def _received_without_a_file(seed: Seed) -> Offenders:
-    answered = {_ref(a.get("Request")) for a in seed["Artefact"].values()}
-    return {
-        ("DocumentRequest", key) for key, d in seed["DocumentRequest"].items()
-        if d["Status"] == "Received" and key not in answered
-    }
+    bad: Offenders = set()
+    for key, d in seed["DocumentRequest"].items():
+        if d["Status"] != "Received":
+            continue
+        wanted = "Invoice extract" if d["DocumentType"] == "Invoice" else "Document copy"
+        if not any(
+            _ref(a.get("Request")) == key and a["ArtefactType"] == wanted
+            for a in seed["Artefact"].values()
+        ):
+            bad.add(("DocumentRequest", key))
+    return bad
 
 
 def _before(row: Row, later: str, earlier: str) -> bool:
@@ -349,6 +356,13 @@ def _verified_fact_without_evidence(seed: Seed) -> Offenders:
     return bad
 
 
+def _fractional_rows_verified(seed: Seed) -> Offenders:
+    return {
+        ("WeeklyUpdate", key) for key, w in seed["WeeklyUpdate"].items()
+        if float(w["RowsVerified"]) != int(w["RowsVerified"])
+    }
+
+
 def _open_seam_without_an_owner(seed: Seed) -> Offenders:
     return {
         ("Seam", key) for key, seam in seed["Seam"].items()
@@ -380,6 +394,7 @@ CHECKS: dict[str, Callable[[Seed], Offenders]] = {
     "F23": _seam_without_its_evidence,
     "F24": _seams_found_miscounted,
     "F25": _verified_fact_without_evidence,
+    "F26": _fractional_rows_verified,
 }
 
 # Checks no predicate can make over the seed, and why.
@@ -569,3 +584,35 @@ def test_every_seeded_link_into_the_library_names_a_seeded_file() -> None:
     missing = [u for u in links if unquote(u.split(marker, 1)[1]) not in seeded]
     assert not missing, missing
 
+
+
+def _values(leaf: dict[str, Any]) -> set[Any]:
+    value = leaf["value"]
+    return set(value) if isinstance(value, list) else {value}
+
+
+def test_no_view_shows_a_stale_hidden_value_unexplained() -> None:
+    """A field hidden by status keeps its old value, so a view showing it
+    must list only the statuses that show it. A provider hidden by side may
+    instead sit beside its side, which is the current answer."""
+    mapping = _mapping()
+    problems: list[str] = []
+    for entity, rules in mapping["form_visibility"].items():
+        shown = {
+            column: rule["when"][0] for column, rule in rules["columns"].items()
+            if isinstance(rule, dict) and "when" in rule
+        }
+        for view in mapping["views"].get(entity, []):
+            where = [leaf for leaf in view.get("where") or [] if "field" in leaf]
+            displayed = set(view["fields"]) | {view.get("group_by", {}).get("field")}
+            for column in set(view["fields"]) & set(shown):
+                condition = shown[column]
+                filtered = any(
+                    leaf["field"] == condition["field"] and leaf["op"] in ("eq", "in")
+                    and _values(leaf) <= _values(condition)
+                    for leaf in where
+                )
+                beside = condition["field"] != "Status" and condition["field"] in displayed
+                if not (filtered or beside):
+                    problems.append(f"{entity}/{view['title']}: {column}")
+    assert not problems, problems

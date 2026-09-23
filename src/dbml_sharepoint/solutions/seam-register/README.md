@@ -49,8 +49,9 @@ is *Provider*, *Third party* or *Shared*.
 Each form shows a field once the row has reached it: the resolution once a
 seam is resolved, the eight answers once an interview is completed. A field
 hidden again by a later change keeps its old value, and the row still
-saves. Views and reporting filter on status and side, so the old value
-does not surface.
+saves. A view shows a field that a status hides only for the statuses
+that show it, and shows a provider column beside its side, which is the
+current answer. Reporting filters on status and side.
 
 The side carries everything a fixed value has to: the save rule that a
 claimed service names a team, the colours, the seam map's grouping and the
@@ -101,7 +102,8 @@ talking about first.
 | Seam | Escalated | Seams handed to a decision-maker, by the date agreed |
 | Seam | By type | Unresolved seams grouped by type |
 | Seam | Resolved | How each seam closed |
-| DocumentRequest | To ask and waiting | Asks not yet answered, by due date. The default |
+| DocumentRequest | Waiting | Asks sent and not yet answered, by due date. The default |
+| DocumentRequest | To ask | Asks not yet sent |
 | DocumentRequest | Received | Copies held, with what each is silent on |
 | DocumentRequest | Refused or not found | The results that are themselves findings |
 | DocumentRequest | By holder | Every ask grouped by which side holds the document |

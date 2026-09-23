@@ -380,7 +380,7 @@ views:
     # Grouped only where the side involves a provider, so a provider left
     # hidden on a row set back to Us or Unknown does not count against it.
     - title: "By provider"
-      fields: [Title, Area, RunBySide, RunByTeam, SupportProvider, Confidence]
+      fields: [Title, Area, RunBySide, RunByTeam, SupportSide, SupportProvider, Confidence]
       where:
         - { field: RunBySide, op: in, value: [Provider, "Third party", Shared] }
       group_by: { field: RunByProvider, collapsed: false }
@@ -392,11 +392,12 @@ views:
         Area: 220
         RunBySide: 160
         RunByTeam: 200
+        SupportSide: 160
         SupportProvider: 220
         Confidence: 120
     # A provider that supports a service it does not run belongs here.
     - title: "By support provider"
-      fields: [Title, Area, SupportSide, SupportTeam, RunByProvider, Confidence]
+      fields: [Title, Area, SupportSide, SupportTeam, RunBySide, RunByProvider, Confidence]
       where:
         - { field: SupportSide, op: in, value: [Provider, "Third party", Shared] }
       group_by: { field: SupportProvider, collapsed: false }
@@ -408,12 +409,9 @@ views:
         Area: 220
         SupportSide: 160
         SupportTeam: 200
+        RunBySide: 160
         RunByProvider: 220
         Confidence: 120
-    # A save rule cannot read a lookup, so both provider gaps are found here
-    # rather than refused: a side that owes a provider with none named, and
-    # a provider left behind on a side that has none. The second does not
-    # rest on the form keeping a held lookup visible, which is unmeasured.
     # A save rule cannot read a lookup, so a row whose side shows the
     # provider column and leaves it blank is found here rather than refused.
     - title: "Provider not named"
@@ -628,11 +626,12 @@ views:
         ResolvedOn: 150
         Resolution: 320
   DocumentRequest:
-    - title: "To ask and waiting"
+    # Split by status, so a request moved back to To ask shows no old dates.
+    - title: "Waiting"
       default: true
       fields: [Title, DocumentType, Holder, HolderSide, HolderProvider, Status, AskedOn, DueOn]
       where:
-        - { field: Status, op: in, value: ["To ask", Asked] }
+        - { field: Status, op: eq, value: Asked }
       sort:
         - { field: DueOn, direction: asc }
       widths:
@@ -644,6 +643,19 @@ views:
         Status: 120
         AskedOn: 150
         DueOn: 150
+    - title: "To ask"
+      fields: [Title, DocumentType, Holder, HolderSide, HolderProvider, Services]
+      where:
+        - { field: Status, op: eq, value: "To ask" }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        DocumentType: 160
+        Holder: 220
+        HolderSide: 160
+        HolderProvider: 220
+        Services: 240
     - title: "Received"
       fields: [Title, DocumentType, HolderSide, AnsweredOn, SignedBy, Summary, Services]
       where:
@@ -674,7 +686,7 @@ views:
         AnsweredOn: 150
         Summary: 320
     - title: "By holder"
-      fields: [Title, DocumentType, Holder, Status, DueOn, Services]
+      fields: [Title, DocumentType, Holder, Status, Services]
       group_by: { field: HolderSide, collapsed: false }
       sort:
         - { field: Status, direction: asc }
@@ -683,7 +695,6 @@ views:
         DocumentType: 160
         Holder: 220
         Status: 120
-        DueOn: 150
         Services: 240
     # The same gap the service list's view catches, for this list's lookup.
     - title: "Provider not named"
@@ -788,7 +799,7 @@ views:
         NotesFile: 220
         Status: 120
     - title: "By side"
-      fields: [Title, IntervieweeProvider, InterviewDate, DurationMin, Status]
+      fields: [Title, IntervieweeProvider, InterviewDate, Status]
       group_by: { field: IntervieweeSide, collapsed: false }
       sort:
         - { field: InterviewDate, direction: asc }
@@ -796,7 +807,6 @@ views:
         Title: 320
         IntervieweeProvider: 220
         InterviewDate: 150
-        DurationMin: 120
         Status: 120
     - title: "Not held"
       fields: [Title, IntervieweeSide, InterviewDate, Status, FollowUps]

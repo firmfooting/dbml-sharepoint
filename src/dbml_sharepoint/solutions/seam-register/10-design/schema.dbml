@@ -220,7 +220,7 @@ Table Service {
 // Assumed by definition. Who recorded it and when are the system columns.
 Table Evidence {
   Id            int            [pk, increment]
-  Title         nvarchar       [not null, note: 'A short label: the source and the date, for example Provider support lead interview, 22 Sep']
+  Title         nvarchar       [not null, unique, note: 'A short label: the source, the date and what it is about, for example Provider support lead interview on restores, 22 Sep. Seam pickers show nothing else, so no two rows share one']
   Service       int            [not null, ref: > Service.Id, note: 'The service row this evidence supports or contradicts']
   EvidenceType  evidence_type  [not null]
   Source        nvarchar       [not null, note: 'Who or what: a role for a person, a title for a document, the export date for data']

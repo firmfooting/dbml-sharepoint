@@ -45,7 +45,7 @@ recorded cannot be in the future.
 | --- | --- |
 | Provider | **Provider** is unique |
 | Service | **Title** is unique. **Run by** other than *Unknown* has a **Run by team**, and **Support from** other than *Unknown* has a **Support team**. **Single person** has an **Out of hours call**. **Last failure date** is recorded |
-| Evidence | **Evidence date** is recorded |
+| Evidence | **Title** is unique. **Evidence date** is recorded |
 | Seam | *Escalated* in **Status** has a **Resolve owner** and a **Resolve by**, and *Resolved* has a **Resolved on**. **Raised on** and **Resolved on** are recorded |
 | DocumentRequest | Any **Status** past *To ask* has **Asked on**, **Due on**, a **Holder** and a **Held by** other than *Unknown*. *Received*, *Refused* and *Not found* have **Answered on**. A *Received* services agreement, services schedule or attestation in **Type** has **Signed by**, which may say *Unsigned*. **Asked on** and **Answered on** are recorded |
 | Artefact | **Dated** is recorded |
@@ -60,7 +60,7 @@ the five lines are written. A check that a view answers names the view.
 
 | ID | Check | Why the register cannot enforce it |
 | --- | --- | --- |
-| F1 | A *Verified* service has two evidence rows without **Contradicts** ticked that agree about the same **Bears on** column from two different known source sides, or one *System data* row that picks a *System export* file, no evidence row with **Contradicts** ticked unless a *Resolved* seam picks it, and no unresolved *Disputed owner*, *Disputed support* or *Contradicts document* seam | A formula cannot count rows on another list |
+| F1 | A *Verified* service has two evidence rows without **Contradicts** ticked that agree about the same **Bears on** column from two different known source sides, or one *System data* row without **Contradicts** ticked that picks a *System export* file, no evidence row with **Contradicts** ticked unless a *Resolved* seam picks it, and no unresolved *Disputed owner*, *Disputed support* or *Contradicts document* seam | A formula cannot count rows on another list |
 | F2 | No service above *Assumed* has zero evidence rows | Same. A service with no evidence rows is *Assumed* by definition, whatever its confidence says |
 | F3 | By the end of week 5, no first-pass service has zero evidence rows. Before then **Assumed** lists them as the week's work | Same |
 | F4 | Every evidence row with **Contradicts** ticked appears in a seam's **Evidence in conflict** | A multi-value lookup on another list |
@@ -72,7 +72,7 @@ the five lines are written. A check that a view answers names the view.
 | F10 | A resolved seam has a **Resolution** | Multi-line text cannot be a formula operand |
 | F11 | A received, refused or not-found document has a **Summary** saying what came back or who said no | Multi-line text cannot be a formula operand |
 | F12 | **Last failure date** and **Last failure** are filled together or not at all | Multi-line text cannot be a formula operand |
-| F13 | A received document has at least one file in **SEAM_Artefact** whose **Request** points at it | A formula cannot count rows on another list |
+| F13 | A received document has at least one file in **SEAM_Artefact** whose **Request** points at it and whose **Type** is *Document copy*, or *Invoice extract* for an invoice | A formula cannot count rows on another list |
 | F14 | **Resolve by** and **Resolved on** are on or after **Raised on**; **Due on** and **Answered on** are on or after **Asked on** | A formula compares a column with a literal, not with another column |
 | F15 | Every completed interview answers all eight questions; a refusal or a don't-know is written as the answer | Multi-line text cannot be a formula operand |
 | F16 | Every completed interview has its notes in **SEAM_Artefact**, picked in **Notes file**, and the file picked has **Type** *Interview notes* | A formula cannot read a lookup |
@@ -85,13 +85,15 @@ the five lines are written. A check that a view answers names the view.
 | F23 | Every seam except an unresolved *No owner* picks the evidence rows it rests on in **Evidence in conflict**: at least one row, and for *Contradicts document* one *Document* row and one row of another **Type**, both with **Contradicts** ticked, that bear on the same **Bears on** column | A formula cannot read a multi-value lookup |
 | F24 | A weekly update's **Seams found** is the number of seams whose **Raised on** falls in the seven days ending on its **Week ending** | A formula cannot count rows on another list |
 | F25 | A *Verified* service has an evidence row bearing on every service column it fills: each **Bears on** value whose column is set | A formula cannot count rows on another list |
+| F26 | **Rows verified** is a whole number | A number column accepts fractions, and a formula here cannot test for one |
 
 ### What the register does not check
 
 - A field the form hides for the row's status or side keeps its value when
-  the row moves back, and the row still saves. The form stays uncluttered;
-  views and reporting filter on status and side, so the old value does not
-  surface. No rule forbids it.
+  the row moves back, and the row still saves. The form stays uncluttered.
+  A view shows a status-hidden field only for the statuses that show it,
+  and a provider column only beside its side; the family test holds both.
+  Reporting filters on status and side. No rule forbids the old value.
 - Below *Verified*, a filled service column may still be waiting for its
   evidence row. *Assumed* and *Claimed* say so, and F25 applies once a row
   is *Verified*.

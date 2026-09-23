@@ -106,8 +106,9 @@ Leave **Confidence** at *Assumed* until evidence says otherwise. Untick
 
 ## Recording evidence
 
-Every fact traces to a **SEAM_Evidence** row. **Title** is the source and
-the date in a few words. **Service** is the row it supports or contradicts.
+Every fact traces to a **SEAM_Evidence** row. **Title** is the source, the
+date and what it is about, in a few words; it must be unique, because the
+seam picker shows nothing else. **Service** is the row it supports or contradicts.
 **Type** says what kind of source it is; **Source** says who or what, as a
 role for a person, a title for a document, an export date for data.
 **Source side** is which organisation it came from, which the two-source
