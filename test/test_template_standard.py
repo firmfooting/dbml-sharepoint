@@ -1038,7 +1038,7 @@ def test_every_header_has_an_icon_a_title_line_and_a_strapline(template: str) ->
             problems.append(f"{entity}: no form header declared")
             continue
         nodes = list(_walk(header))
-        identities = _header_identity_tokens(loaded, entity)
+        identities = _header_identity_tokens(loaded, template, entity)
         missing = [
             part for part, present in (
                 ("icon", any(_is_icon(node) for node in nodes)),
@@ -1267,25 +1267,28 @@ def _is_icon(node: dict[str, Any]) -> bool:
     return isinstance(icon, str) and bool(icon) and "ms-fontSize-42" in _classes(node)
 
 
-def _header_identity_tokens(loaded: Loaded, entity: str) -> frozenset[str]:
+# A custom text column on a library header, accepted by name only: this one
+# shipped before the header probe existed, and `library-header-token-probe.js`
+# has no text column in its typed battery, so round five settles it. A new
+# entry needs that measurement first, not a precedent.
+_UNMEASURED_SHIPPED_LIBRARY_TOKENS = {
+    ("legal-compliance-register", "Document"): "[$TopicName]",
+}
+
+
+def _header_identity_tokens(loaded: Loaded, template: str, entity: str) -> frozenset[str]:
     """The tokens a header's title line may identify the row by.
 
     A list reads `[$Title]`. A library reads an ORDINARY item field, never a
     file token: the 2026-09-13 header probe (sp-dev-docs#11026) found every
     file-identity spelling rendering empty while `[$Title]`, Choice and
-    Number resolved. Beyond `[$Title]`, only a text column the library
-    DECLARES as identity in `field_sets` is accepted, so a header naming a
-    summary or description cannot pass. That covers
-    legal-compliance-register's shipped `[$TopicName]` on the strength of the
-    shipped header rather than a measurement: `library-header-token-probe.js`
-    has no text column in its typed battery, so round five settles it.
+    Number resolved. So a library gets `[$Title]` and nothing else unmeasured,
+    apart from the one grandfathered token above.
     """
     if loaded.mapping.entities[entity].kind != "DocumentLibrary":
         return frozenset({"[$Title]"})
-    declared = loaded.mapping.field_sets.get(entity, {}).get("identity", [])
-    types = loaded.column_types(entity)
-    text_identity = {name for name in declared if types.get(name) == "nvarchar"}
-    return frozenset({"[$Title]"} | {f"[${name}]" for name in text_identity})
+    shipped = _UNMEASURED_SHIPPED_LIBRARY_TOKENS.get((template, entity))
+    return frozenset({"[$Title]"} | ({shipped} if shipped else set()))
 
 
 def _is_title_line(node: dict[str, Any], identities: frozenset[str]) -> bool:
