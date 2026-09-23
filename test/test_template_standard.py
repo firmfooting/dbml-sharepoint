@@ -49,7 +49,7 @@ from dbml_sharepoint.analysis.list_description import (
     note_budget,
 )
 from dbml_sharepoint.analysis.role_definition_description import level_description_budget
-from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
+from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, NOW_SENTINEL
 from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, PLACEHOLDER_TIME_ZONE
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
 from dbml_sharepoint.model.mapping_loader import load_mapping
@@ -1395,7 +1395,7 @@ def _evaluate(node: Condition, row: dict[str, Any], types: dict[str, str]) -> bo
 
 
 def _evaluate_leaf(leaf: Leaf, row: dict[str, Any], types: dict[str, str]) -> bool | None:
-    if leaf.property or leaf.measure:
+    if leaf.property or (leaf.measure and leaf.measure != "length"):
         raise _UnevaluableError(f"{leaf.field}: 'property'/'measure' comparisons are not evaluated")
     if leaf.op not in SUPPORTED_OPS:
         raise _UnevaluableError(f"operator {leaf.op!r} on {leaf.field!r}")
@@ -1404,6 +1404,11 @@ def _evaluate_leaf(leaf: Leaf, row: dict[str, Any], types: dict[str, str]) -> bo
         return None  # SharePoint computes it; a demo `values` dict cannot
     if column_type == "person" and leaf.value == "me":
         return None  # the current user is a deploy-time fact
+    if leaf.measure == "length":
+        # Rendered as LEN([X]), and LEN of a blank is 0, so a measure is never null.
+        raw = row.get(leaf.field)
+        length = 0 if raw is None or raw == [] else len(str(raw))
+        return _compare(leaf.op, length, leaf.value)
     raw = row.get(leaf.field)
     # `[]` counts as empty because the emitter omits an empty multi-value field
     # from the payload and M4 measured that column reading back `null`.
@@ -1482,6 +1487,9 @@ def _as_date(value: Any) -> dt.date | None:
     if match is not None:
         offset = int(match.group(2) or 0)
         return REFERENCE_DATE + dt.timedelta(days=-offset if match.group(1) == "-" else offset)
+    if NOW_SENTINEL.match(text):
+        # The save instant; demo offsets resolve to the same day, so compare by day.
+        return REFERENCE_DATE
     if "-" not in text:
         return None
     try:
@@ -1568,6 +1576,44 @@ def test_a_formatted_multi_value_column_counts_as_exercised() -> None:
     """
     rows: list[dict[str, Any]] = [{"Events": ["View", "Edit"]}, {"Events": "Delete"}, {}]
     assert _seen_values(rows, "Events") == {"View", "Edit", "Delete"}
+
+
+_CLOCK_TYPES = {"StampAt": "datetime", "Note": "longtext"}
+
+
+@pytest.mark.parametrize(("seeded", "op", "expected"), [
+    ("today-2", "leq", True),
+    ("today", "leq", True),
+    ("today+1", "leq", False),
+    # Day granularity: a same-day instant is not strictly before now.
+    ("today", "lt", False),
+])
+def test_now_resolves_to_the_reference_day(seeded: str, op: str, expected: bool) -> None:
+    leaf = Leaf(field="StampAt", op=op, value="now")
+    assert _evaluate(leaf, {"StampAt": seeded}, _CLOCK_TYPES) is expected
+
+
+@pytest.mark.parametrize(("value", "expected"), [
+    ("four", False),
+    ("a longer note", True),
+    (None, False),
+    ("", False),
+])
+def test_measure_length_compares_the_text_length(value: str | None, expected: bool) -> None:
+    leaf = Leaf(field="Note", op="gt", value=4, measure="length")
+    assert _evaluate(leaf, {"Note": value}, _CLOCK_TYPES) is expected
+
+
+def test_a_measure_of_a_blank_is_zero_not_null() -> None:
+    """LEN of a blank is 0, so `leq` holds where a plain comparison would not."""
+    leaf = Leaf(field="Note", op="leq", value=0, measure="length")
+    assert _evaluate(leaf, {"Note": None}, _CLOCK_TYPES) is True
+
+
+def test_an_unknown_measure_stays_unevaluable() -> None:
+    leaf = Leaf(field="Note", op="gt", value=4, measure="words")
+    with pytest.raises(_UnevaluableError):
+        _evaluate(leaf, {"Note": "text"}, _CLOCK_TYPES)
 
 
 # Entities deliberately outside the standard. EMPTY: templates/README.md
