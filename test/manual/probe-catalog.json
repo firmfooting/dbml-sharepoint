@@ -5442,7 +5442,9 @@
           "findings": [
             {
               "id": "access.lookup-acl.control-target-denied",
-              "depends_on": []
+              "depends_on": [
+                "access.lookup-acl.control-target-present-after-read"
+              ]
             },
             {
               "id": "access.lookup-acl.display-value-to-denied-reader",

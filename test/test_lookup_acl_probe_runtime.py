@@ -11,7 +11,10 @@ two cannot be told apart. Accepting it therefore needs two things the tests
 below hold the probe to: pass 2 takes it only with the linked source fixture
 in hand, and pass 3, run by the owner afterwards, confirms the target was
 still there (K8, `control-target-present-after-read`). The catalogue makes
-K2 and K3 depend on K8, so a missing or failed pass 3 voids them.
+K1, K2 and K3 depend on K8, so a failed pass 3 voids them. Pass 3 is judged
+by what its account can see, so it establishes that it runs as the owner, that
+the target is the list the lookup is bound to, and that the linked row still
+carries the sentinels pass 2 looked for.
 """
 
 import json
@@ -55,6 +58,9 @@ _HARNESS = textwrap.dedent("""
         return jsonResponse(200, { d: { GetContextWebInformation: {
           FormDigestValue: 'digest', FormDigestTimeoutSeconds: 1800 } } });
       }
+      if (u.includes("LookupSource')/fields/getbyinternalnameortitle('ProbeLink')")) {
+        return jsonResponse(200, { LookupList: CONFIG.lookupList });
+      }
       if (u.includes('web/currentuser')) {
         return jsonResponse(200, {
           Title: 'Reader', LoginName: 'i:0#.f|membership|reader@example.com',
@@ -74,7 +80,7 @@ _HARNESS = textwrap.dedent("""
       if (u.includes("LookupTarget')/items(")) {
         const id = Number(/items\\((\\d+)\\)/.exec(u)[1]);
         return CONFIG.targetRowIds.includes(id)
-          ? jsonResponse(200, { Id: id, Title: 'row' })
+          ? jsonResponse(200, { Id: id, Title: CONFIG.rowTitle, ProbeSide: CONFIG.rowSide })
           : jsonResponse(404, { error: 'item does not exist' });
       }
       if (u.includes("LookupTarget')/items")) {
@@ -84,24 +90,33 @@ _HARNESS = textwrap.dedent("""
       }
       if (u.includes("LookupTarget')?")) {
         return CONFIG.ownerTargetStatus === 200
-          ? jsonResponse(200, { Id: 'list-1', HasUniqueRoleAssignments: CONFIG.unique })
+          ? jsonResponse(200, { Id: CONFIG.targetListId, HasUniqueRoleAssignments: CONFIG.unique })
           : jsonResponse(CONFIG.ownerTargetStatus, { error: 'list does not exist' });
       }
       return jsonResponse(404, { error: `unmocked ${u}` });
     };
 """)
 
+_TARGET_GUID = "5b0c3a9e-7d41-4f3a-9a52-1c2d3e4f5a6b"
+
 #: The healthy three-pass run on a tenant that HIDES the target: the reader
-#: gets 404, the source fixture is linked to target row 1, and the owner finds
-#: the target afterwards with its own permissions and that row in it.
+#: gets 404, the source fixture is linked to target row 1, and the owner, not
+#: a site collection administrator, finds afterwards the list the lookup is
+#: bound to, with its own permissions and that row in it, sentinels intact. The
+#: bound id is braced and the list id is not, so the comparison is on the
+#: GUID rather than its spelling.
 _HEALTHY: dict[str, Any] = {
     "admin": False,
     "sourceStatus": 200,
     "linkId": 1,
     "targetStatus": 404,
     "ownerTargetStatus": 200,
+    "targetListId": _TARGET_GUID,
+    "lookupList": "{" + _TARGET_GUID.upper() + "}",
     "unique": True,
     "targetRowIds": [1],
+    "rowTitle": "dbmlsp-probe-target-title-should-not-leak",
+    "rowSide": "dbmlsp-probe-target-second-column",
 }
 
 
@@ -177,15 +192,48 @@ def test_the_owner_confirms_a_target_that_is_still_there() -> None:
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_target_deleted_between_the_passes_fails_k8() -> None:
-    """The case the 404 reading cannot see from the reader's side."""
-    rows = _run_pass("confirm", ownerTargetStatus=404)
+    """The case the 404 reading cannot see from the reader's side.
+
+    Read by a site collection administrator, whom the target's ACL does not
+    bind, so the 404 is an absence.
+    """
+    rows = _run_pass("confirm", admin=True, ownerTargetStatus=404)
     assert rows[K8] == "FAIL"
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_a_target_rebuilt_between_the_passes_fails_k8() -> None:
-    """Same title, but not the row the source fixture links to."""
+def test_a_404_to_an_account_that_is_not_an_administrator_is_not_an_absence() -> None:
+    """The denied account running pass 3 by mistake gets exactly this 404.
+
+    So does a Site Owners member whose grant from pass 1 did not take, so
+    neither can tell a deleted target from a hidden one.
+    """
+    rows = _run_pass("confirm", ownerTargetStatus=404)
+    assert rows[K8] == "NOT ESTABLISHED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_linked_row_deleted_between_the_passes_fails_k8() -> None:
     rows = _run_pass("confirm", targetRowIds=[2])
+    assert rows[K8] == "FAIL"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_target_rebuilt_under_the_same_title_fails_k8() -> None:
+    """Same title and the same item id, but not the list the lookup is bound to."""
+    rows = _run_pass("confirm", targetListId="0f0e0d0c-0b0a-4908-8706-050403020100")
+    assert rows[K8] == "FAIL"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    "changed",
+    [{"rowTitle": "renamed"}, {"rowSide": None}],
+    ids=["title", "second-column"],
+)
+def test_a_linked_row_without_its_sentinels_fails_k8(changed: dict[str, Any]) -> None:
+    """K2 and K3 read the absence of these values, so they must still be there."""
+    rows = _run_pass("confirm", **changed)
     assert rows[K8] == "FAIL"
 
 
@@ -201,11 +249,15 @@ def test_an_unreadable_owner_read_is_not_recorded_as_either_answer() -> None:
     assert rows[K8] == "NOT ESTABLISHED"
 
 
-def test_k2_and_k3_depend_on_the_owner_confirmation() -> None:
-    """The catalogue edge is what voids K2 and K3 when pass 3 is missing."""
+def test_k1_k2_and_k3_depend_on_the_owner_confirmation() -> None:
+    """The catalogue edge is what voids them when pass 3 fails.
+
+    K1 is on it too: its 404 reading is a denial only if the target existed,
+    which pass 2 cannot see.
+    """
     catalog = json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
     probe = next(p for p in catalog["probes"] if p["file"] == PROBE.name)
     findings = {f["id"]: f["depends_on"] for f in probe["scenarios"][0]["findings"]}
     assert K8 in probe["scenarios"][0]["controls"]
-    for dependent in (K2, "access.lookup-acl.expand-reaches-other-columns"):
+    for dependent in (K1, K2, "access.lookup-acl.expand-reaches-other-columns"):
         assert K8 in findings[dependent], dependent
