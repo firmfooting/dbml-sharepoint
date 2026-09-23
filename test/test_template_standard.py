@@ -1159,6 +1159,10 @@ def test_every_declared_view_is_satisfied_by_a_demo_row(template: str) -> None:
         )
 
 
+# A field SharePoint fills from a default formula this evaluator does not compute.
+_FORMULA_DEFAULT = object()
+
+
 def _stored_default(value: str | int | bool) -> str | int | bool:
     """A schema default as the row stores it; `[today]` is the create date, not the token."""
     if not isinstance(value, str):
@@ -1175,6 +1179,8 @@ def _seeded_rows(loaded: Loaded, entity: str) -> list[tuple[str, dict[str, Any]]
             for column in table.columns:
                 if column.default is not None:
                     defaults[column.name] = _stored_default(column.default)
+    for column_name in loaded.mapping.default_formulas.get(entity, {}):
+        defaults[column_name] = _FORMULA_DEFAULT
     return [
         (item.key, {**defaults, **item.values})
         for item in loaded.mapping.demo_items.get(entity, [])
@@ -1187,7 +1193,9 @@ def test_every_seeded_row_passes_its_save_rules(template: str) -> None:
 
     Each row is evaluated against the effective list rule, hoisted clock rules
     included, and against each remaining column rule on a non-blank value,
-    because a column rule does not fire on a blank. Only True passes.
+    because a column rule does not fire on a blank. Only True passes, and a
+    rule this evaluator cannot decide fails too: a skip would keep CI green
+    over a seed the deploy might refuse.
     """
     loaded = _load(template)
     refused: list[str] = []
@@ -1223,11 +1231,11 @@ def test_every_seeded_row_passes_its_save_rules(template: str) -> None:
     assert not refused, (
         f"{template}: seeded rows its own save rules refuse: " + "; ".join(refused)
     )
-    if unevaluable:
-        pytest.skip(
-            f"{template}: {len(unevaluable)} rule check(s) NOT evaluated: "
-            + "; ".join(unevaluable),
-        )
+    assert not unevaluable, (
+        f"{template}: rule checks this evaluator cannot decide, so the seed is unproven "
+        "(give the row a value it can decide, or teach the evaluator the rule): "
+        + "; ".join(unevaluable)
+    )
 
 
 @pytest.mark.parametrize("template", _uplifted())
@@ -1476,6 +1484,10 @@ def _evaluate_leaf(leaf: Leaf, row: dict[str, Any], types: dict[str, str]) -> bo
         return None  # SharePoint computes it; a demo `values` dict cannot
     if column_type == "person" and leaf.value == "me":
         return None  # the current user is a deploy-time fact
+    if row.get(leaf.field) is _FORMULA_DEFAULT:
+        raise _UnevaluableError(f"{leaf.field}: filled by a default formula the row leaves unset")
+    # The renderer reads `today` and ISO text as dates only on a date column.
+    dates = column_type in DATE_TYPES
     if leaf.measure == "length":
         # Rendered as LEN([X]), and LEN of a blank is 0, so a measure is never null.
         raw = row.get(leaf.field)
@@ -1505,14 +1517,14 @@ def _evaluate_leaf(leaf: Leaf, row: dict[str, Any], types: dict[str, str]) -> bo
             # this is the two readers having drifted, not an authored shape.
             raise _UnevaluableError(f"{leaf.field}: {leaf.op} against a non-list")
         members = raw
-        hit = any(_compare("eq", member, leaf.value) for member in members)
+        hit = any(_compare("eq", member, leaf.value, dates=dates) for member in members)
         return hit if leaf.op == "includes" else not hit
     if leaf.op in ("in", "not_in"):
         if not isinstance(leaf.value, list):
             raise _UnevaluableError(f"{leaf.field}: {leaf.op} value is not a list")
-        member = any(_compare("eq", raw, candidate) for candidate in leaf.value)
+        member = any(_compare("eq", raw, candidate, dates=dates) for candidate in leaf.value)
         return member if leaf.op == "in" else not member
-    return _compare(leaf.op, raw, leaf.value)
+    return _compare(leaf.op, raw, leaf.value, dates=dates)
 
 
 def _compare_with_now(field: str, op: str, raw: Any) -> bool:
@@ -1532,8 +1544,8 @@ def _compare_with_now(field: str, op: str, raw: Any) -> bool:
     raise _UnevaluableError(f"{field}: {op} now on a same-day instant depends on the clock")
 
 
-def _compare(op: str, left: Any, right: Any) -> bool:
-    lhs, rhs = _align(left, right)
+def _compare(op: str, left: Any, right: Any, *, dates: bool = True) -> bool:
+    lhs, rhs = _align(left, right, dates=dates)
     match op:
         case "eq":
             return bool(lhs == rhs)
@@ -1551,11 +1563,11 @@ def _compare(op: str, left: Any, right: Any) -> bool:
             raise _UnevaluableError(f"operator {op!r}")
 
 
-def _align(left: Any, right: Any) -> tuple[Any, Any]:
+def _align(left: Any, right: Any, *, dates: bool = True) -> tuple[Any, Any]:
     """Compare like with like: dates if both sides are dates, numbers if both
     are numeric, strings otherwise. Mixed pairs fall to string comparison,
     which is what a choice member against a literal wants anyway."""
-    left_date, right_date = _as_date(left), _as_date(right)
+    left_date, right_date = (_as_date(left), _as_date(right)) if dates else (None, None)
     if left_date is not None and right_date is not None:
         return left_date, right_date
     left_number, right_number = _as_number(left), _as_number(right)
@@ -1690,6 +1702,19 @@ def test_a_same_day_instant_against_now_is_unevaluable(op: str) -> None:
     leaf = Leaf(field="StampAt", op=op, value="now")
     with pytest.raises(_UnevaluableError):
         _evaluate(leaf, {"StampAt": "today"}, _CLOCK_TYPES)
+
+
+def test_date_text_is_a_literal_word_off_a_date_column() -> None:
+    """`[Note]="2026-07-01"` is a text comparison, so `today` does not equal it."""
+    leaf = Leaf(field="Note", op="eq", value="2026-07-01")
+    assert _evaluate(leaf, {"Note": "today"}, _CLOCK_TYPES) is False
+
+
+def test_a_default_formula_field_left_unset_is_unevaluable() -> None:
+    """SharePoint fills it on create, so it is not blank and its value is unknown."""
+    leaf = Leaf(field="Note", op="neq", value="Closed")
+    with pytest.raises(_UnevaluableError):
+        _evaluate(leaf, {"Note": _FORMULA_DEFAULT}, _CLOCK_TYPES)
 
 
 def test_now_is_a_literal_word_off_a_datetime_column() -> None:
