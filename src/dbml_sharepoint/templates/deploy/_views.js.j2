@@ -84,7 +84,7 @@
       // `$top`: a read with no explicit page size takes the server's,
       // and a truncated enumeration reads as "that view does not exist",
       // which is the one answer this function must never get wrong.
-      const r = await fetchWithRetry(apiUrl(`${listPath}/views?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields&$top=${VIEW_PAGE_SIZE}`), {
+      const r = await fetchWithRetry(apiUrl(`${listPath}/views?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,Scope,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields&$top=${VIEW_PAGE_SIZE}`), {
         headers: { 'Accept': 'application/json;odata=verbose' },
       });
       if (!r.ok) {

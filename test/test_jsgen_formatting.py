@@ -240,7 +240,7 @@ def test_view_rows_carry_formatting_and_template_reconciles_it(tmp_path: Path) -
         generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
     assert (
-        "$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter"
+        "$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,Scope,PersonalView,CustomFormatter"
         in js
     )
     assert "view.formatting != null" in js

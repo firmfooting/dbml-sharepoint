@@ -521,7 +521,10 @@ def _run_deploy(
     seeded_foreign_application: bool = False,
     protect: bool = False,
     overlay: str = "",
+    rerun: bool = False,
 ) -> dict[str, Any]:
+    """`rerun` deploys a second time over the state the first run left, and
+    `rerun_from` in the result is the index of the second run's first call."""
     harness = _HARNESS
     # Substituted BEFORE the placeholder titles, because the entity type is
     # spelled from the list title and would otherwise be rewritten twice.
@@ -650,9 +653,15 @@ def _run_deploy(
         )
     body = _deploy_js(protect=protect).rstrip()
     assert body.endswith("})();")
+    deploy = body[:-3]
+    second = (
+        f".then(() => {{ globalThis.__rerunFrom = calls.length; return ({deploy})(); }})"
+        if rerun else ""
+    )
     script = (
-        f"{harness}\n{overlay}\n({body[:-1]}).then((r) => {{\n"
+        f"{harness}\n{overlay}\n({deploy})(){second}.then((r) => {{\n"
         "  console.log('__RESULT__' + JSON.stringify(r));\n"
+        "  console.log('__RERUN__' + JSON.stringify(globalThis.__rerunFrom ?? null));\n"
         "  console.log('__CALLS__' + JSON.stringify(calls));\n"
         "  console.log('__STATE__' + JSON.stringify(state));\n"
         "  console.log('__UNHANDLED__' + JSON.stringify(unhandled));\n"
@@ -667,9 +676,11 @@ def _run_deploy(
     summary, calls, state, unhandled = (
         json.loads((found[m] or "").removeprefix(m)) for m in markers
     )
+    rerun_line = next(ln for ln in lines if ln.startswith("__RERUN__"))
     return {
         "summary": summary, "calls": calls, "state": state,
         "unhandled": unhandled, "output": output,
+        "rerun_from": json.loads(rerun_line.removeprefix("__RERUN__")),
     }
 
 
@@ -1487,6 +1498,24 @@ def test_the_seal_is_read_back_rather_than_assumed() -> None:
         if "$select=Sealed" in c["url"] and RUN_LOG_TITLE in c["url"]
     ]
     assert readbacks, "the run log's seal was written and never read back"
+
+
+def test_a_re_run_over_sealed_sidecars_seals_nothing_again() -> None:
+    """The skip on `Sealed === true` reads the sidecar field map. A map that
+    did not select Sealed read `undefined`, so every re-run MERGEd a seal
+    onto every sidecar column that already had one (#574)."""
+    run = _run_deploy(central_absent=True, protect=True, rerun=True)
+    first, second = run["calls"][:run["rerun_from"]], run["calls"][run["rerun_from"]:]
+
+    def seals(calls: list[dict[str, Any]]) -> list[str]:
+        return [
+            c["url"] for c in calls
+            if c["method"] == "POST" and (c["body"] or {}).get("Sealed") is True
+        ]
+
+    assert seals(first), "the first run sealed nothing, so the re-run proves nothing"
+    assert second, "the re-run made no calls at all"
+    assert seals(second) == [], f"the re-run sealed already sealed columns: {seals(second)}"
 
 
 def test_the_deletion_lock_is_read_back_rather_than_assumed() -> None:
