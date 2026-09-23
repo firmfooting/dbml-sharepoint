@@ -1100,6 +1100,39 @@ def test_a_generated_group_name_sharepoint_refuses_is_caught_at_build(
     assert "'&'" not in f.message
 
 
+def test_member_safe_varies_a_name_as_the_uniqueness_rule_requires(
+    tmp_path: Path,
+) -> None:
+    """Two members, so `group_enum_name_not_unique` is live.
+
+    The single-member run below cannot say this: with one member the rule is
+    skipped whatever the name carries. It matters because the help for that
+    finding sends an author whose member holds a refused character to
+    `{member_safe}`, and `{member}` alone would trade the finding for
+    `group_name_invalid`.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum region {\n  "Alpha, Beta & Gamma"\n  "Delta"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Region region")
+        ),
+        mapping="""
+            entities:
+              Docs: { kind: List, base_template: 100, site_role: default }
+
+            groups:
+              - from_enum: region
+                name: "{member_safe} Editors"
+                description: "Editors."
+                owner_group: "Site Owners"
+        """,
+    )
+    findings = validate_against_mapping(schema, bundle)
+    none_of(findings, FindingCode.GROUP_ENUM_NAME_NOT_UNIQUE)
+    none_of(findings, FindingCode.GROUP_NAME_INVALID)
+
+
 def test_member_safe_makes_a_refused_member_usable(tmp_path: Path) -> None:
     """`{member_safe}` replaces each refused character with a space and
     collapses the run, so the comma case becomes a name SharePoint accepts
@@ -1123,9 +1156,6 @@ def test_member_safe_makes_a_refused_member_usable(tmp_path: Path) -> None:
     )
     findings = validate_against_mapping(schema, bundle)
     none_of(findings, FindingCode.GROUP_NAME_INVALID)
-    # Still one group per member: {member_safe} varies the name exactly as
-    # {member} does, so it must not trip the collapse rule either.
-    none_of(findings, FindingCode.GROUP_ENUM_NAME_NOT_UNIQUE)
 
     from dbml_sharepoint.analysis.groups import declared_groups
 

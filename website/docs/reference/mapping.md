@@ -1946,15 +1946,18 @@ Five refusals, all at build time:
 
 - `group_enum_unknown` and `folder_enum_unknown`, for an enum the schema does
   not declare.
-- `group_enum_name_not_unique`, for a generated name carrying no `{member}`
-  where the enum has more than one member. They would all resolve to one
-  name, and one group would be created, written, read back byte-identical and
-  reported clean while every grant meant for a particular member landed on
-  it. A single-member enum is left alone, because one name cannot collapse
-  onto another.
+- `group_enum_name_not_unique`, for a generated name carrying neither
+  `{member}` nor `{member_safe}` where the enum has more than one member.
+  They would all resolve to one name, and one group would be created,
+  written, read back byte-identical and reported clean while every grant
+  meant for a particular member landed on it. A single-member enum is left
+  alone, because one name cannot collapse onto another.
 - `group_enum_enrols_an_identity`, for `from_enum` combined with
-  `enroll_enterprise_reader` or `enroll_operator_during_deploy`. Each enrols
-  one identity and there would be one group per member to enrol it into.
+  `enroll_enterprise_reader` or `enroll_operator_during_deploy` where the
+  enum does not have exactly one member. Each flag enrols one identity: more
+  members leave every group after the first empty, and none generates no
+  group at all. A single-member enum is accepted, because there is exactly
+  one group for the identity to land in.
 - `folder_permissions_on_a_list` and `folder_permissions_without_folders`,
   for a policy attached to something with no folders to secure.
 - `group_name_invalid`, for a resolved group name carrying a character

@@ -753,7 +753,8 @@ FINDING_HELP: dict[FindingCode, str] = {
         "member, so the identity would land in one of them and the rest "
         "would stay empty. An enum with no members generates no group at "
         "all, so the identity would land nowhere. Put the flag on a group "
-        "declared on its own."
+        "declared on its own. An enum with exactly one member is not "
+        "reported: there is one group and the identity lands in it."
     ),
     FindingCode.GROUP_NAME_INVALID: (
         "A declared group's name carries a character SharePoint refuses in a "
@@ -776,9 +777,11 @@ FINDING_HELP: dict[FindingCode, str] = {
         "and one group is created instead of one per member. Nothing fails "
         "at deploy time: the single group is written, read back "
         "byte-identical and reported clean, while every grant meant for a "
-        "particular member lands on it. Put `{member}` in the name. An enum "
-        "with a single member is not reported, because one name cannot collapse "
-        "onto another."
+        "particular member lands on it. Put `{member}` in the name, or "
+        "`{member_safe}` where a member carries a character SharePoint refuses "
+        "in a group name: both satisfy this rule, and `{member}` alone would "
+        "trade this finding for `group_name_invalid`. An enum with a single "
+        "member is not reported, because one name cannot collapse onto another."
     ),
     FindingCode.GROUP_ENUM_UNKNOWN: (
         "A `groups` entry's `from_enum` names an enum the DBML does not "
