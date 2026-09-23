@@ -14,15 +14,21 @@ function rather than its module, and why `folder_policies` colliding with a
 `ResolvedMapping` field name is not a problem it needs to solve.
 """
 
+from pathlib import Path
+
 from _paths import PACKAGE
 from _ratchet import Ratchet
 from _raw_enum_readers import (
     MODULE_SCOPE,
     PERMITTED,
+    POSITIONAL_FIELDS,
     RATCHETED,
     _reads_in,
     scan,
 )
+
+from dbml_sharepoint.analysis.resolve import ResolvedMapping
+from dbml_sharepoint.model.mapping_types import EntityMapping, PermissionsConfig
 
 #: `src/`, not `src/dbml_sharepoint/`: the universe the ratchet checks
 #: recorded entries against, and what `PERMITTED`'s paths are spelled
@@ -51,6 +57,34 @@ def test_the_walk_ignores_an_assignment_to_the_field() -> None:
     assert _reads_in("obj.folder_source = src") == set()
 
 
+def test_the_walk_sees_an_augmented_assignment() -> None:
+    """`+=` reads the field before it writes it, and the plain `=` does not.
+
+    Both spell the target with `Store` context, so the `Load` test that keeps
+    a constructor keyword out of the reads was dropping this one with it.
+    """
+    assert _reads_in("perms.group_sources += extra") == {
+        (MODULE_SCOPE, "group_sources"),
+    }
+
+
+def test_the_walk_sees_a_literal_getattr() -> None:
+    """The same field access, held in the AST as a `Call` and not an
+    `Attribute`, so the attribute walk never sees it."""
+    assert _reads_in('x = getattr(perms, "group_sources")') == {
+        (MODULE_SCOPE, "group_sources"),
+    }
+    assert _reads_in('x = getattr(perms, "folder_policies", {})') == {
+        (MODULE_SCOPE, "folder_policies"),
+    }
+
+
+def test_the_walk_cannot_see_a_computed_getattr() -> None:
+    """Pinned as the limit it is: a name assembled at runtime is invisible to
+    any static walk, so only the literal spelling above is claimed."""
+    assert _reads_in("x = getattr(perms, field_name)") == set()
+
+
 def test_the_walk_sees_a_read_through_a_chain() -> None:
     assert _reads_in("n = bundle.mapping.permissions.group_sources") == {
         (MODULE_SCOPE, "group_sources"),
@@ -71,6 +105,55 @@ def test_the_walk_sees_a_class_pattern_read() -> None:
         "    case EntityMapping(folder_source=src):\n"
         "        use(src)\n",
     ) == {(MODULE_SCOPE, "folder_source")}
+
+
+def _positional_case(cls: str, name: str) -> str:
+    """A `match` whose positional pattern reaches `name` on `cls`.
+
+    The run of `_` is built from the live `__match_args__` rather than
+    written out, so a field added to the class moves this source too.
+    """
+    positions = ", ".join([*["_"] * POSITIONAL_FIELDS[cls].index(name), "wanted"])
+    return f"match obj:\n    case {cls}({positions}):\n        use(wanted)\n"
+
+
+def test_the_walk_sees_a_positional_class_pattern_read() -> None:
+    """A positional pattern spells the field name nowhere at all.
+
+    `case EntityMapping(_, ..., source)` reads `folder_source` through the
+    dataclass's `__match_args__`, leaving `kwd_attrs` empty, so the keyword
+    handling above reported nothing for it and the same hole was open on
+    `PermissionsConfig.group_sources` and `folder_policies`.
+    """
+    for cls, name in (
+        ("EntityMapping", "folder_source"),
+        ("PermissionsConfig", "group_sources"),
+        ("PermissionsConfig", "folder_policies"),
+    ):
+        reads = _reads_in(_positional_case(cls, name))
+        assert (MODULE_SCOPE, name) in reads, (cls, name, reads)
+
+
+def test_the_walk_ignores_a_positional_pattern_that_stops_short() -> None:
+    """Which position was reached is resolved against the real class.
+
+    `case EntityMapping(name, kind)` binds two fields that are not ratcheted
+    and reads no enum source, so reporting it would put a module on the
+    allowlist for pattern-matching an entity at all.
+    """
+    assert _reads_in(
+        "match e:\n"
+        "    case EntityMapping(name, kind):\n"
+        "        use(name)\n",
+    ) == set()
+
+
+def test_positional_positions_come_from_the_live_classes() -> None:
+    """A written-out index shifts silently the moment a field is added, so
+    the positions are the classes' own `__match_args__` and nothing else."""
+    assert POSITIONAL_FIELDS["EntityMapping"] == EntityMapping.__match_args__
+    assert POSITIONAL_FIELDS["PermissionsConfig"] == PermissionsConfig.__match_args__
+    assert POSITIONAL_FIELDS["ResolvedMapping"] == ResolvedMapping.__match_args__
 
 
 def test_the_walk_ignores_an_unrelated_attribute() -> None:
@@ -119,7 +202,7 @@ _RATCHET = Ratchet(
     name="RAW_ENUM_SOURCE_READS",
     subject="read site",
     resolved="now reading only through ResolvedMapping",
-    violation="read a raw enum source outside the resolver",
+    violation="read a raw enum source outside the sites PERMITTED records",
 )
 
 
@@ -168,14 +251,48 @@ def test_an_entry_naming_a_function_that_no_longer_exists_is_stale() -> None:
     assert any("name no declared read site" in problem for problem in problems), problems
 
 
-def test_no_recorded_read_sits_in_a_permitted_module() -> None:
-    """A module listed twice would silently exempt itself from the ratchet
-    turning: `PERMITTED` is excluded before the reads are ever compared, so
-    an entry under one of those paths could never show up as resolved."""
-    assert not {
-        entry for entry in RAW_ENUM_SOURCE_READS
-        if entry.split("::")[0] in PERMITTED
+def test_no_site_is_both_recorded_and_permitted() -> None:
+    """A site listed twice would silently exempt itself from the ratchet
+    turning: `PERMITTED` is subtracted before the reads are ever compared, so
+    an entry that is also permitted could never show up as resolved."""
+    assert not (RAW_ENUM_SOURCE_READS & PERMITTED)
+
+
+def test_only_the_recorded_sites_in_a_permitted_module_are_exempt(tmp_path: Path) -> None:
+    """The hole a roster of MODULES had on the resolver's own side.
+
+    `groups.py::declaring_groups` reads `group_sources` and is called
+    straight from `pipeline.py` and `wizard.py`, so neither it nor
+    `folders.py` is exclusively resolver internals. While the exemption was
+    the whole file, a function added to either could re-resolve a raw source
+    and never enter `found.reads` at all.
+    """
+    listed = "dbml_sharepoint/analysis/groups.py::declaring_groups::group_sources"
+    assert listed in PERMITTED
+    module = tmp_path / "dbml_sharepoint" / "analysis" / "groups.py"
+    module.parent.mkdir(parents=True)
+    module.write_text(
+        "def declaring_groups(perms):\n"
+        "    return perms.group_sources\n"
+        "def added_later(perms):\n"
+        "    return perms.group_sources\n",
+        encoding="utf-8",
+    )
+    found = scan(tmp_path)
+    assert found.reads == {
+        "dbml_sharepoint/analysis/groups.py::added_later::group_sources",
     }
+    assert found.exempted == {listed}
+
+
+def test_every_permitted_site_still_reads_a_raw_source() -> None:
+    """An exemption for a read that no longer happens guards nothing, and is
+    the same dead-entry failure `Ratchet` asks its first question about."""
+    stale = PERMITTED - scan(SRC).exempted
+    assert not stale, (
+        "these PERMITTED entries read no raw enum source and must be deleted:\n  "
+        + "\n  ".join(sorted(stale))
+    )
 
 
 def test_ratcheted_names_are_what_the_docstring_claims() -> None:
