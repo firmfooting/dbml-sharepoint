@@ -92,9 +92,19 @@ def test_an_unselected_read_of_a_bare_entity_fails_the_run() -> None:
 
 def test_a_nometadata_scalar_value_is_left_alone() -> None:
     """A single-property read such as `/Title`; it has no $select to project."""
-    keys = _keys({"value": "t", "Extra": 1}, "/_api/web/lists/getbytitle('X')/Title?$select=Id",
+    wrapper = {"value": "t", "odata.metadata": "…/$metadata#Edm.String"}
+    keys = _keys(wrapper, "/_api/web/lists/getbytitle('X')/Title?$select=Id",
                  "j", accept=_NOMETADATA)
-    assert keys == ["Extra", "value"]
+    assert keys == sorted(wrapper)
+
+
+@pytest.mark.parametrize("field", ["value", "d"])
+def test_an_entity_with_a_value_or_d_property_is_still_projected(field: str) -> None:
+    """Only `value` alone is an envelope; beside other properties it is an ordinary field."""
+    item = {"Id": 1, field: "x", "Hidden": False}
+    keys = _keys(item, f"/_api/web/lists/getbytitle('X')/items(1)?$select=Id,{field}",
+                 "j", accept=_NOMETADATA)
+    assert keys == sorted(["Id", field])
 
 
 def test_a_verbose_entity_is_not_read_as_a_bare_one() -> None:

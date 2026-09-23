@@ -170,11 +170,14 @@ PRELUDE = r"""
   // collection `value[]`, or a bare nometadata entity. Anything else passes through.
   const projectBody = (body, keep, url, trip, bare) => {
     if (body === null || typeof body !== 'object' || Array.isArray(body)) return body;
-    if (Array.isArray(body.value)) {
+    // A nometadata envelope is `value` alone, beside annotations; any other key makes it an entity.
+    const own = Object.keys(body).filter((k) => !k.startsWith('odata.'));
+    const envelope = own.length === 1 && own[0] === 'value';
+    if (Array.isArray(body.value) && (envelope || !bare)) {
       return { ...body, value: body.value.map((r) => projectRow(r, keep, url, trip)) };
     }
+    if (bare) return envelope ? body : projectRow(body, keep, url, trip);
     const d = body.d;
-    if (bare && !('d' in body) && !('value' in body)) return projectRow(body, keep, url, trip);
     if (d === null || typeof d !== 'object') return body;
     if (Array.isArray(d.results)) {
       const results = d.results.map((r) => projectRow(r, keep, url, trip));
