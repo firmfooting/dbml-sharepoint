@@ -106,8 +106,10 @@
  *   PASS 2: as a SECOND, NON-PRIVILEGED account, a member or visitor of
  *            this site who is NOT a site owner, site collection admin or
  *            tenant admin. MODE = 'read'. Writes NOTHING.
- *   PASS 3: as the SITE OWNER again. MODE = 'confirm'. Writes NOTHING.
- *            Answers K8. Run it as a site collection administrator if you
+ *   PASS 3: as the SITE OWNER again. MODE = 'confirm', with the PASS2
+ *            line pass 2 printed. Writes NOTHING. Answers K8 against the
+ *            fixture pass 2 read, then settles pass 2's K1 to K3, which pass
+ *            2 leaves open. Run it as a site collection administrator if you
  *            can: only one can read a missing target as deleted rather than
  *            hidden.
  *
@@ -122,8 +124,9 @@
  *   4. Sign in as the second account (a private window is easiest), open
  *      the same settings page, set MODE = 'read', paste. CONFIRMED alone is
  *      enough for pass 2; it never writes.
- *   5. Back as the site owner, set MODE = 'confirm', paste. CONFIRMED alone
- *      is enough; it never writes.
+ *   5. Back as the site owner, set MODE = 'confirm', paste the
+ *      `const PASS2 = ...;` line pass 2 printed over `const PASS2 = null;`,
+ *      paste. CONFIRMED alone is enough; it never writes.
  *   6. Copy ALL THREE results blocks back, and the eyes-on lines.
  *
  * WHEN FINISHED: delete both lists as the site owner.
@@ -136,6 +139,9 @@
   // proves the target was still there. Committed as 'setup' so a stray
   // paste by an owner is the harmless half.
   const MODE = 'setup';
+  // Pass 3 only: the `const PASS2 = ...;` line pass 2 prints, pasted over this
+  // one. It carries what pass 2 saw, so pass 3 confirms that fixture and not a later one.
+  const PASS2 = null;
 
   const TARGET = 'dbmlsp Probe LookupTarget';
   const SOURCE = 'dbmlsp Probe LookupSource';
@@ -147,6 +153,13 @@
   const SECRET = 'dbmlsp-probe-target-title-should-not-leak';
   const SIDE = 'dbmlsp-probe-target-second-column';
   const CLOSED_TITLE = 'dbmlsp-probe-closed-row';
+
+  // The pass-2 rows K8 decides, carried to pass 3 in PASS2 and settled there.
+  const PASS2_ROWS = [
+    'access.lookup-acl.control-target-denied',
+    'access.lookup-acl.display-value-to-denied-reader',
+    'access.lookup-acl.expand-reaches-other-columns',
+  ];
 
   expect('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?');
   expect('access.lookup-acl.display-value-to-denied-reader', 'Reading the SOURCE item as the denied account, does the lookup display value come back?');
@@ -196,8 +209,11 @@
     // into it is the part of that proof this account can see. K8, run by
     // the owner after this pass, is the rest.
     const source = await spGet(
-      `web/lists/getbytitle('${SOURCE}')/items?$select=Title,${LOOKUP}Id&$top=10`);
+      `web/lists/getbytitle('${SOURCE}')/items?$select=Id,Title,${LOOKUP}Id&$top=10`);
     const rows = (source.ok && source.body && source.body.value) || [];
+    // The list the lookup is bound to, as this pass sees it; pass 3 requires the same one.
+    const bound = await spGet(
+      `web/lists/getbytitle('${SOURCE}')/fields/getbyinternalnameortitle('${LOOKUP}')?$select=LookupList`);
     // Reading the list is not enough. K2 concludes "withheld" from the
     // ABSENCE of a string, so the row that would carry it has to be proven
     // present and linked first. Otherwise a deleted fixture, or one past
@@ -245,12 +261,13 @@
              + 'denial. A throttled or erroring request is not evidence that the ACL '
              + 'holds. Re-run.');
     } else if (hiddenTarget) {
+      // Open, not settled: a deleted target answers the same 404, so pass 3 settles it.
       record('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
              'PASS',
              'hidden rather than refused: HTTP 404 for a list the linked source row '
              + `(${LOOKUP}Id=${fixture[`${LOOKUP}Id`]}) shows existed. This reading holds `
              + 'only if pass 3 (access.lookup-acl.control-target-present-after-read) finds '
-             + `the target still there. Running as: ${who}`);
+             + `the target still there. Running as: ${who}`, 'open');
     } else {
       record('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
              'PASS',
@@ -300,7 +317,8 @@
                    + 'respect the target list ACL, and any register relying on one to '
                    + 'hide a title is relying on nothing.'
                  : `HTTP ${expanded.status}; the response does not contain `
-                   + `${JSON.stringify(SECRET)}. Body: ${JSON.stringify(raw.slice(0, 300))}`);
+                   + `${JSON.stringify(SECRET)}. Body: ${JSON.stringify(raw.slice(0, 300))}`,
+               'open');
       }
 
       const side = await spGet(
@@ -331,15 +349,26 @@
                  ? '$expand naming a second target column was refused with HTTP '
                    + `${side.status}: ${JSON.stringify(String(side.body).slice(0, 200))}`
                  : `the $expand request failed with HTTP ${side.status}, which is `
-                   + 'neither a refusal nor an answer');
+                   + 'neither a refusal nor an answer',
+             'open');
     }
 
     // K8 is answered by pass 3, not here. Said on the row rather than left as
     // "the run did not reach this question", which reads as a probe that stopped.
     record('access.lookup-acl.control-target-present-after-read', 'CONTROL: after pass 2, is the target still there, still broken, still holding the linked row?',
            'NOT ESTABLISHED',
-           "answered by pass 3 (MODE = 'confirm', as the owner). Until it passes, K1, K2 "
-           + 'and K3 from this pass are provisional.');
+           "answered by pass 3 (MODE = 'confirm', as the owner, with the PASS2 line below). "
+           + 'Until it passes, the rows above marked open stay open.');
+    const carried = Object.fromEntries(PASS2_ROWS.map((id) => {
+      const row = RESULTS.find((r) => r.id === id);
+      return [id, { outcome: row.outcome, evidence: row.evidence }];
+    }));
+    const pass2 = {
+      lookupList: (!readFailed(bound) && bound.body.LookupList) || null,
+      fixtureId: fixture ? fixture.Id : null,
+      linkedId: fixtureLinked ? fixture[`${LOOKUP}Id`] : null,
+      rows: carried,
+    };
 
     report();
     console.log('\n============ EYES-ON, PASS 2 ============');
@@ -351,7 +380,8 @@
     console.log('     what you see: ______________________________________');
     console.log('==========================================');
     log('INFO', 'Read-only pass complete. Nothing was written.');
-    log('INFO', "Now run pass 3 as the site owner: MODE = 'confirm'.");
+    log('INFO', "Now run pass 3 as the site owner: MODE = 'confirm', with this line pasted over `const PASS2 = null;`:");
+    console.log(`const PASS2 = ${JSON.stringify(pass2)};`);
     return;
   }
 
@@ -366,6 +396,12 @@
     const K8Q = 'CONTROL: after pass 2, is the target still there, still broken, still holding the linked row?';
     const guid = (value) => String(value || '').replace(/[{}]/g, '').toLowerCase();
     const confirm = async () => {
+      if (!PASS2 || !PASS2.rows) {
+        return ['NOT ESTABLISHED', 'no PASS2 line: paste the `const PASS2 = ...;` line pass 2 printed over `const PASS2 = null;`, so this pass confirms the fixture pass 2 read rather than whatever is there now.'];
+      }
+      if (!PASS2.lookupList || !PASS2.linkedId) {
+        return ['NOT ESTABLISHED', `pass 2 recorded no bound list (${JSON.stringify(PASS2.lookupList)}) or no linked row (${JSON.stringify(PASS2.linkedId)}), so there is nothing of its fixture to confirm. Re-run pass 2.`];
+      }
       // Every read below is judged by what THIS account can see, and the
       // denied account sees the target as absent, so who is asking decides
       // what a 404 can mean.
@@ -388,24 +424,25 @@
       const field = await spGet(
         `web/lists/getbytitle('${SOURCE}')/fields/getbyinternalnameortitle('${LOOKUP}')?$select=LookupList`);
       const source = await spGet(
-        `web/lists/getbytitle('${SOURCE}')/items?$select=Title,${LOOKUP}Id&$top=10`);
+        `web/lists/getbytitle('${SOURCE}')/items?$select=Id,Title,${LOOKUP}Id&$top=10`);
       if (readFailed(list) || readFailed(field) || readFailed(source)) {
         return ['NOT ESTABLISHED', `the owner's reads answered HTTP ${list.status} (target), HTTP ${field.status} (lookup field) and HTTP ${source.status} (source), so neither presence nor absence was observed. Re-run.`];
       }
-      // A list recreated under the same title can hold an item with the same
-      // list-local id; the lookup stays bound to the original list's GUID.
-      if (!field.body.LookupList || guid(field.body.LookupList) !== guid(list.body.Id)) {
-        return ['FAIL', `'${LOOKUP}' is bound to list ${JSON.stringify(field.body.LookupList)}, and ${TARGET} is now ${JSON.stringify(list.body.Id)}: the target was rebuilt, so the list pass 2 met is not this one.`];
+      // A same-titled rebuild can reuse the item id, and a rebuilt pair is
+      // consistent with itself, so the GUID pass 2 saw is the reference.
+      if (guid(PASS2.lookupList) !== guid(field.body.LookupList)
+          || guid(field.body.LookupList) !== guid(list.body.Id)) {
+        return ['FAIL', `pass 2's lookup was bound to ${JSON.stringify(PASS2.lookupList)}, it is now bound to ${JSON.stringify(field.body.LookupList)}, and ${TARGET} is ${JSON.stringify(list.body.Id)}: the target was rebuilt, so the list pass 2 met is not this one.`];
       }
       if (list.body.HasUniqueRoleAssignments !== true) {
         return ['FAIL', `${TARGET} exists but HasUniqueRoleAssignments reads ${JSON.stringify(list.body.HasUniqueRoleAssignments)}, so the ACL pass 2 was meant to meet is not the one on the list now.`];
       }
       const rows = source.body.value || [];
       const fixture = rows.find((r) => r.Title === 'dbmlsp-probe-source-row');
-      const linkedId = fixture ? fixture[`${LOOKUP}Id`] : null;
-      if (!linkedId) {
-        return ['NOT ESTABLISHED', `the source fixture row is ${fixture ? 'present without a lookup id' : 'missing'}, so there is no linked row to look for in the target. Re-run the setup pass.`];
+      if (!fixture || fixture.Id !== PASS2.fixtureId || fixture[`${LOOKUP}Id`] !== PASS2.linkedId) {
+        return ['FAIL', `the source fixture now reads ${fixture ? `Id=${fixture.Id}, ${LOOKUP}Id=${fixture[`${LOOKUP}Id`]}` : 'as missing'}, not Id=${PASS2.fixtureId}, ${LOOKUP}Id=${PASS2.linkedId} as pass 2 read it: the fixture changed between the passes.`];
       }
+      const linkedId = PASS2.linkedId;
       const row = await spGet(`web/lists/getbytitle('${TARGET}')/items(${Number(linkedId)})?$select=Id,Title,ProbeSide`);
       if (row.status === 404) {
         return ['FAIL', `${TARGET} exists but item ${linkedId}, the row the source fixture links to, does not: it was deleted between the passes.`];
@@ -422,6 +459,19 @@
     };
     const [outcome, evidence] = await confirm();
     record(K8, K8Q, outcome, evidence);
+    // Pass 2's rows, settled by this control: void when it failed, still open when it was not answered.
+    for (const id of PASS2_ROWS) {
+      const carried = PASS2 && PASS2.rows && PASS2.rows[id];
+      if (!carried) continue;
+      const question = RESULTS.find((r) => r.id === id).question;
+      if (outcome === 'PASS') {
+        record(id, question, carried.outcome, `${carried.evidence} Confirmed by pass 3.`);
+      } else {
+        record(id, question, carried.outcome,
+               `${carried.evidence} Pass 3 answered K8 ${outcome}.`,
+               outcome === 'FAIL' ? 'void' : 'open');
+      }
+    }
     report();
     log('INFO', 'Read-only pass complete. Nothing was written.');
     return;
@@ -720,7 +770,8 @@
   console.log('  2. Sign in as that account (a private window is easiest) and');
   console.log(`     open ${WEB}/_layouts/15/settings.aspx`);
   console.log("  3. Paste this same file with MODE = 'read' and CONFIRMED = true.");
-  console.log("  4. Back as the site owner, paste with MODE = 'confirm' and CONFIRMED = true.");
+  console.log("  4. Back as the site owner, paste with MODE = 'confirm', CONFIRMED = true and");
+  console.log('     the PASS2 line pass 2 prints.');
   console.log('  5. Copy back ALL THREE results blocks and the eyes-on lines.');
   console.log('==========================================');
   log('INFO', `Delete '${SOURCE}' and '${TARGET}' when you have finished.`);

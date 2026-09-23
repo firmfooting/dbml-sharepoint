@@ -11,10 +11,11 @@ two cannot be told apart. Accepting it therefore needs two things the tests
 below hold the probe to: pass 2 takes it only with the linked source fixture
 in hand, and pass 3, run by the owner afterwards, confirms the target was
 still there (K8, `control-target-present-after-read`). The catalogue makes
-K1, K2 and K3 depend on K8, so a failed pass 3 voids them. Pass 3 is judged
-by what its account can see, so it establishes that it runs as the owner, that
-the target is the list the lookup is bound to, and that the linked row still
-carries the sentinels pass 2 looked for.
+K1, K2 and K3 depend on K8. Pass 2 leaves the rows K8 decides open and prints
+a PASS2 line carrying them with the fixture it read; pass 3 confirms THAT
+fixture (the bound list GUID, the fixture ids, the sentinels), then settles the
+rows, voids them when K8 fails, or leaves them open when K8 is unanswered. A
+404 is an absence only to a site collection administrator.
 """
 
 import json
@@ -30,6 +31,7 @@ PROBE = MANUAL / "lookup-acl-probe.js"
 
 K1 = "access.lookup-acl.control-target-denied"
 K2 = "access.lookup-acl.display-value-to-denied-reader"
+K3 = "access.lookup-acl.expand-reaches-other-columns"
 K4 = "access.lookup-acl.control-source-readable"
 K8 = "access.lookup-acl.control-target-present-after-read"
 
@@ -73,7 +75,9 @@ _HARNESS = textwrap.dedent("""
         }
         // The $expand reads answer with the link but no target values, which
         // is the withheld shape; the plain read carries the stored id.
-        const row = { Title: 'dbmlsp-probe-source-row', ProbeLinkId: CONFIG.linkId };
+        const row = {
+          Id: CONFIG.fixtureId, Title: 'dbmlsp-probe-source-row', ProbeLinkId: CONFIG.linkId,
+        };
         if (u.includes('$expand')) row.ProbeLink = {};
         return jsonResponse(200, { value: [row] });
       }
@@ -108,6 +112,7 @@ _TARGET_GUID = "5b0c3a9e-7d41-4f3a-9a52-1c2d3e4f5a6b"
 _HEALTHY: dict[str, Any] = {
     "admin": False,
     "sourceStatus": 200,
+    "fixtureId": 5,
     "linkId": 1,
     "targetStatus": 404,
     "ownerTargetStatus": 200,
@@ -120,7 +125,7 @@ _HEALTHY: dict[str, Any] = {
 }
 
 
-def _probe_js(mode: str) -> str:
+def _probe_js(mode: str, pass2: dict[str, Any] | None = None) -> str:
     """The committed probe, gates opened, MODE set, result table exposed.
 
     The file is edited rather than re-rendered, so what runs is what an
@@ -130,6 +135,7 @@ def _probe_js(mode: str) -> str:
     edits = (
         ("  const CONFIRMED = false;", "  const CONFIRMED = true;"),
         ("  const MODE = 'setup';", f"  const MODE = '{mode}';"),
+        ("  const PASS2 = null;", f"  const PASS2 = {json.dumps(pass2)};"),
     )
     for old, new in edits:
         assert js.count(old) == 1, f"{old!r} is not spelled as this test expects"
@@ -140,13 +146,48 @@ def _probe_js(mode: str) -> str:
     return exposed
 
 
-def _run_pass(mode: str, **changes: Any) -> dict[str, str]:
+def _run_full(
+    mode: str, pass2: dict[str, Any] | None = None, **changes: Any,
+) -> tuple[dict[str, dict[str, str]], str]:
+    """(rows by id, output) for one pass."""
     config = {**_HEALTHY, **changes}
-    script = _HARNESS.replace("__CONFIG__", json.dumps(config)) + "\n" + _probe_js(mode)
+    script = _HARNESS.replace("__CONFIG__", json.dumps(config)) + "\n" + _probe_js(mode, pass2)
     output = _run(script)
     line = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
     assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
-    return {row["id"]: row["outcome"] for row in json.loads(line.removeprefix("__ROWS__"))}
+    return {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}, output
+
+
+def _run_pass(mode: str, pass2: dict[str, Any] | None = None, **changes: Any) -> dict[str, str]:
+    rows, _output = _run_full(mode, pass2, **changes)
+    return {rid: row["outcome"] for rid, row in rows.items()}
+
+
+def _printed_pass2(output: str) -> dict[str, Any]:
+    """The PASS2 line pass 2 prints for the operator to carry into pass 3."""
+    prefix = "const PASS2 = "
+    line = next((ln for ln in output.splitlines() if ln.startswith(prefix)), None)
+    assert line is not None, f"pass 2 printed no PASS2 line:\n{output[-3000:]}"
+    carried: dict[str, Any] = json.loads(line.removeprefix(prefix).removesuffix(";"))
+    return carried
+
+
+#: What healthy pass 2 carries, built by hand so each confirm test can vary one
+#: part; `test_pass_2_carries_its_fixture_into_pass_3` pins it to the real line.
+_PASS2: dict[str, Any] = {
+    "lookupList": _HEALTHY["lookupList"],
+    "fixtureId": 5,
+    "linkedId": 1,
+    "rows": {
+        K1: {"outcome": "PASS", "evidence": "hidden rather than refused"},
+        K2: {"outcome": "LOOKUP VALUE IS WITHHELD", "evidence": "no sentinel"},
+        K3: {"outcome": "DISPLAY FIELD ONLY", "evidence": "title only"},
+    },
+}
+
+
+def _confirm(pass2: dict[str, Any] | None = None, **changes: Any) -> dict[str, str]:
+    return _run_pass("confirm", _PASS2 if pass2 is None else pass2, **changes)
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -186,7 +227,7 @@ def test_a_server_error_on_the_target_is_still_not_a_denial() -> None:
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_the_owner_confirms_a_target_that_is_still_there() -> None:
-    rows = _run_pass("confirm")
+    rows = _confirm()
     assert rows[K8] == "PASS"
 
 
@@ -197,7 +238,7 @@ def test_a_target_deleted_between_the_passes_fails_k8() -> None:
     Read by a site collection administrator, whom the target's ACL does not
     bind, so the 404 is an absence.
     """
-    rows = _run_pass("confirm", admin=True, ownerTargetStatus=404)
+    rows = _confirm(admin=True, ownerTargetStatus=404)
     assert rows[K8] == "FAIL"
 
 
@@ -208,20 +249,20 @@ def test_a_404_to_an_account_that_is_not_an_administrator_is_not_an_absence() ->
     So does a Site Owners member whose grant from pass 1 did not take, so
     neither can tell a deleted target from a hidden one.
     """
-    rows = _run_pass("confirm", ownerTargetStatus=404)
+    rows = _confirm(ownerTargetStatus=404)
     assert rows[K8] == "NOT ESTABLISHED"
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_linked_row_deleted_between_the_passes_fails_k8() -> None:
-    rows = _run_pass("confirm", targetRowIds=[2])
+    rows = _confirm(targetRowIds=[2])
     assert rows[K8] == "FAIL"
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_target_rebuilt_under_the_same_title_fails_k8() -> None:
     """Same title and the same item id, but not the list the lookup is bound to."""
-    rows = _run_pass("confirm", targetListId="0f0e0d0c-0b0a-4908-8706-050403020100")
+    rows = _confirm(targetListId="0f0e0d0c-0b0a-4908-8706-050403020100")
     assert rows[K8] == "FAIL"
 
 
@@ -233,20 +274,95 @@ def test_a_target_rebuilt_under_the_same_title_fails_k8() -> None:
 )
 def test_a_linked_row_without_its_sentinels_fails_k8(changed: dict[str, Any]) -> None:
     """K2 and K3 read the absence of these values, so they must still be there."""
-    rows = _run_pass("confirm", **changed)
+    rows = _confirm(**changed)
     assert rows[K8] == "FAIL"
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_target_whose_inheritance_was_restored_fails_k8() -> None:
-    rows = _run_pass("confirm", unique=False)
+    rows = _confirm(unique=False)
     assert rows[K8] == "FAIL"
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_an_unreadable_owner_read_is_not_recorded_as_either_answer() -> None:
-    rows = _run_pass("confirm", ownerTargetStatus=429)
+    rows = _confirm(ownerTargetStatus=429)
     assert rows[K8] == "NOT ESTABLISHED"
+
+
+_NEW_GUID = "0f0e0d0c-0b0a-4908-8706-050403020100"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_pass_2_leaves_what_k8_decides_open_and_pass_3_settles_it() -> None:
+    """The whole relay, through the line an operator actually copies.
+
+    `depends_on` voids a row only when its control FAILS, so a pass 3 that
+    never ran would otherwise leave pass 2's hidden-target K1 and its K2 and
+    K3 standing as settled answers.
+    """
+    read, output = _run_full("read")
+    assert {rid: read[rid]["state"] for rid in (K1, K2, K3)} == {
+        K1: "open", K2: "open", K3: "open",
+    }
+    carried = _printed_pass2(output)
+    assert carried["lookupList"] == _HEALTHY["lookupList"]
+    assert (carried["fixtureId"], carried["linkedId"]) == (5, 1)
+    assert carried["rows"][K1]["outcome"] == "PASS"
+
+    confirmed, _output = _run_full("confirm", carried)
+    assert confirmed[K8]["outcome"] == "PASS"
+    assert confirmed[K1]["outcome"] == "PASS"
+    assert confirmed[K2]["outcome"] == "LOOKUP VALUE IS WITHHELD"
+    assert (confirmed[K1]["state"], confirmed[K2]["state"]) == ("settled", "settled")
+    # The mock withholds both fields, so K3 was never answered; confirming the
+    # fixture does not turn that into an answer.
+    assert confirmed[K3]["outcome"] == read[K3]["outcome"] == "NOT ESTABLISHED"
+    assert confirmed[K3]["state"] == "open"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_target_is_settled_by_pass_2_alone() -> None:
+    """A 403 needs no existence proof: a missing list answers 404."""
+    read, _output = _run_full("read", targetStatus=403)
+    assert read[K1]["state"] == "settled"
+    assert read[K2]["state"] == "open"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_both_lists_rebuilt_after_pass_2_fail_k8_and_void_its_rows() -> None:
+    """A fresh setup is consistent with itself: the lookup is bound to the new
+    target and the new target holds the linked row with both sentinels. Only
+    the GUID pass 2 saw tells it from the fixture pass 2 read."""
+    rows, _output = _run_full(
+        "confirm", _PASS2, targetListId=_NEW_GUID, lookupList="{" + _NEW_GUID + "}",
+    )
+    assert rows[K8]["outcome"] == "FAIL"
+    assert {rid: rows[rid]["state"] for rid in (K1, K2, K3)} == {
+        K1: "void", K2: "void", K3: "void",
+    }
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_source_fixture_rebuilt_after_pass_2_fails_k8() -> None:
+    rows = _confirm(fixtureId=9)
+    assert rows[K8] == "FAIL"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_confirm_pass_without_pass_2s_line_answers_nothing() -> None:
+    rows, _output = _run_full("confirm", None)
+    assert rows[K8]["outcome"] == "NOT ESTABLISHED"
+    assert rows[K1]["evidence"] == "the run did not reach this question"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unanswered_k8_leaves_pass_2s_rows_open() -> None:
+    rows, _output = _run_full("confirm", _PASS2, ownerTargetStatus=429)
+    assert rows[K8]["outcome"] == "NOT ESTABLISHED"
+    assert {rid: rows[rid]["state"] for rid in (K1, K2, K3)} == {
+        K1: "open", K2: "open", K3: "open",
+    }
 
 
 def test_k1_k2_and_k3_depend_on_the_owner_confirmation() -> None:
