@@ -198,14 +198,7 @@ PRELUDE = r"""
     },
   });
 
-  // A GET of one entity that is not there, and the status SharePoint answers
-  // it with. Only kinds with a recorded answer are listed: the list 404 and
-  // its body were measured (docs/reference/findings, search-discovery
-  // 2026-08-28), the field and view 400s are the live findings `isAbsent400`
-  // exists for, the group 404 is group-description-probe.js's control and the
-  // item 404 is projected-lookup-probe.js's. A folder read is left out on
-  // purpose: an empty path answers 200 with Exists false (folder-shape-probe
-  // 2026-09-13), and a field read by id answered 400 once and 404 elsewhere.
+  // Absent-entity answers, measured live only; test_sp_mock.py cites each one.
   const ABSENT = [
     { at: /\/lists\/getbytitle\('((?:[^']|'')*)'\)$/i, status: 404,
       code: '-1, System.ArgumentException',
@@ -218,18 +211,12 @@ PRELUDE = r"""
       value: () => 'The specified view is invalid.' },
     { at: /\/sitegroups\/getbyname\('((?:[^']|'')*)'\)$/i, status: 404,
       value: (name) => `Group '${name}' not found.` },
-    { at: /\/items\((\d+)\)$/i, status: 404,
-      value: (id) => `Item ${id} does not exist.` },
   ];
   const isEmptySet = (body) => body !== null && typeof body === 'object' && (
     (Array.isArray(body.value) && body.value.length === 0)
     || (body.d !== null && typeof body.d === 'object' && Array.isArray(body.d.results)
       && body.d.results.length === 0));
-  // An empty set is never an entity, so a harness answering one to an entity
-  // address is answering "not there" the way SharePoint does not. The body is
-  // read once, through whichever of json() and text() the harness has, and
-  // that accessor then serves the copy; the other is left as the harness
-  // wrote it, since some harnesses deliberately make the two disagree.
+  // Read via the harness's own accessor only; some make json() and text() disagree.
   const answerAbsence = async (response, url, opts) => {
     const path = String(url).split('?')[0];
     const kind = ABSENT.find((k) => k.at.test(path));

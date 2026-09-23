@@ -188,6 +188,7 @@ _EMPTY: dict[str, Any] = {"d": {"results": []}}
 
 
 def test_an_absent_list_answers_the_measured_404() -> None:
+    """Status and body as measured live in the search-discovery findings, 2026-08-28."""
     answer = _answer(_EMPTY, "/sites/t/_api/web/lists/getbytitle('My%20List')?$select=Id")
     assert answer["status"] == 404
     assert answer["ok"] is False
@@ -216,12 +217,9 @@ def test_an_absent_field_or_view_by_name_answers_the_absent_400(url: str) -> Non
     assert answer["body"]["error"]["code"] == "-2147024809, System.ArgumentException"
 
 
-@pytest.mark.parametrize("url", [
-    "/_api/web/sitegroups/getbyname('Owners')?$select=Id",
-    "/_api/web/lists/getbytitle('L')/items(7)?$select=Id",
-])
-def test_an_absent_group_or_item_answers_404(url: str) -> None:
-    assert _answer(_EMPTY, url)["status"] == 404
+def test_an_absent_group_answers_404() -> None:
+    """group-description-probe.js's control requires exactly this 404."""
+    assert _answer(_EMPTY, "/_api/web/sitegroups/getbyname('Owners')?$select=Id")["status"] == 404
 
 
 @pytest.mark.parametrize("url", [
@@ -231,6 +229,10 @@ def test_an_absent_group_or_item_answers_404(url: str) -> None:
     "/_api/web/lists?$select=Title",
     # An empty folder path answers 200 with Exists false on a live site.
     "/_api/web/GetFolderByServerRelativeUrl('/sites/t/L/F')?$select=Exists",
+    # An absent item id is unmeasured: projected-lookup-probe's absent-id arm has never run.
+    "/_api/web/lists/getbytitle('L')/items(7)?$select=Id",
+    # A field by id answered 400 once and 404 elsewhere, so neither is encoded.
+    "/_api/web/lists/getbytitle('L')/fields(guid'00000000-0000-0000-0000-000000000001')?$select=Id",
 ])
 def test_an_empty_collection_and_an_unrecorded_kind_stay_200(url: str) -> None:
     assert _answer(_EMPTY, url) == {"ok": True, "status": 200, "body": _EMPTY}
