@@ -26,7 +26,7 @@ of us have read the evidence.
 
 ## The lists
 
-| List | One row per | What it is for |
+| List | Each row is | What it is for |
 | --- | --- | --- |
 | `SEAM_Provider` | Provider | Every organisation we depend on, once: its type, its tier, the role that manages the relationship, how to reach it and the agreement it works under. Retired, never deleted |
 | `SEAM_Service` | Service or capability | The register. Which side runs it and which provider, who to call, who decides, where it runs, how confident we are. Roles, never names |
@@ -123,30 +123,13 @@ talking about first.
 | WeeklyUpdate | Weekly log | Week 1 to 6. The default |
 | WeeklyUpdate | Latest first | The most recent five lines |
 
-## Save rules
+## Rules
 
-The rules SharePoint holds:
-
-- Naming a side that runs or supports a service needs the team or role
-  beside it. Unknown may stay blank.
-- A single-person service needs the out-of-hours answer.
-- Escalating a seam names who will resolve it and by when. Resolving it
-  needs the resolved date.
-- Once asked, a document names who was asked and on which side, with an
-  asked-on date and a due date. Received,
-  refused and not found each need the date the answer came back. A received
-  agreement, schedule or attestation says who signed it, or *Unsigned*.
-- A completed interview has its duration, at most thirty minutes.
-- A remembered outage says who remembered it.
-- No recorded date is in the future. Week is 1 to 6, and the weekly counts
-  are not negative.
-
-Naming the provider is not a save rule, because a formula cannot read a
-lookup; **Provider not named**, on each of the four lists with a provider
-column, finds the rows that owe one. The two-source Verified
-rule is a governance check too: a formula cannot count evidence rows on
-another list. See [governance](50-govern/governance.md) for the
-checks the register cannot make on its own.
+[Governance](50-govern/governance.md) holds the whole rule set: the save
+rules SharePoint enforces, the Friday checks it cannot, each with an ID,
+and what the register deliberately does not check. Where this README or the
+guide describes something as required, the rule is there. The family test
+runs each Friday check a program can make against the demonstration rows.
 
 ## Customisation points
 

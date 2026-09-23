@@ -7,6 +7,10 @@ for, and where are the joins? Eight lists and a library hold the answer. Nothing
 is known until it is a row in **SEAM_Service** with an evidence row against
 it.
 
+This guide is how the exercise is run. The rules the register holds, and
+the Friday checks it cannot hold, are listed in
+[governance](../50-govern/governance.md).
+
 ## Principles
 
 **Facts about services, never about people.** A service row says who runs
@@ -26,7 +30,7 @@ cannot check that for you.
 
 **Boundaries.** About thirty rows in the first pass, the rest in the
 backlog. No designing, no recommending tools, no interview over thirty
-minutes, no row without evidence.
+minutes, and no first-pass row without evidence once week 5 ends.
 
 ## The weekly rhythm
 
@@ -47,13 +51,14 @@ each evidence row. The pickers list titled files only. Keep **Artefact
 link** beside it.
 
 **Friday, two hours.** Update the register. Move rows to *Verified* only
-where two evidence rows from different sides agree, or one *System data* row
-shows it. Raise a **SEAM_Seam**
-row for every disagreement, with the evidence rows in conflict picked in
-**Evidence in conflict**. Then write the five lines as a **SEAM_WeeklyUpdate**
-row: rows verified, seams found, what is blocked, what is next, one
-surprise. All five are required; write zero or *None* rather than leaving
-one blank.
+where two evidence rows from different sides agree about the same
+**Bears on** column, or one *System data* row shows it, and none
+contradicts. Governance lists every Friday check by ID; run them before the
+five lines. Raise a **SEAM_Seam** row for every disagreement, with the
+evidence rows in conflict picked in **Evidence in conflict**. Then write
+the five lines as a **SEAM_WeeklyUpdate** row: rows verified, seams found,
+what is blocked, what is next, one surprise. All five are required; write
+zero or *None* rather than leaving one blank.
 
 ## Recording a provider
 
@@ -178,6 +183,6 @@ rather than interviews. Where it disagrees with **Seam map**, start there.
 ## Stop rules
 
 No designing. No tools recommended. No business application beyond its one
-question until the first pass is closed. No row without an evidence row. No
-interview past thirty minutes. If the register passes forty first-pass rows,
-stop adding and start verifying.
+question until the first pass is closed. No first-pass row without an
+evidence row once week 5 ends. No interview past thirty minutes. If the
+register passes forty first-pass rows, stop adding and start verifying.

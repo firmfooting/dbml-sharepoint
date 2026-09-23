@@ -28,43 +28,76 @@ run in parallel: documents, incidents and people.
 | 5 | Consolidate: every row gets a final confidence, every seam gets a type and a status, the backlog is sized |
 | 6 | The one-page seam map and the hand-over |
 
-## Data quality
+## Rules
 
-The save rules hold what a formula can hold: a named operator or supporter
-has a team beside it, a single-person service has its out-of-hours answer,
-an escalated seam has an owner and a date, a resolved seam has its date, an
-asked document has its dates, a completed interview has its duration within
-thirty minutes, a remembered outage says who remembered it, and no recorded
-date is in the future.
+This section is the register's whole rule set. The README and the guide
+describe how the exercise is run; where either says something is required,
+the rule is here. Anything they describe that is not here is working
+practice, and the register does not hold it.
 
-The following are governance checks, because SharePoint validation cannot
-express them. Run them on the Friday, before the five lines are written.
+### Save rules
 
-| Check | Why the register cannot enforce it |
+SharePoint refuses a save that breaks one of these. Every required column
+on a form is required as well, and a date the table below marks as
+recorded cannot be in the future.
+
+| List | A save is refused unless |
 | --- | --- |
-| A *Verified* service has at least two evidence rows from different source sides that agree, or one *System data* row | A formula cannot count rows on another list |
-| No service above *Assumed* has zero evidence rows, and by the end of week 5 no first-pass service has zero. Before then an *Assumed* row with none is the week's work, and **Assumed** lists it | Same. A service with no evidence rows is *Assumed* by definition, whatever its confidence says |
-| Every evidence row with **Contradicts** ticked appears in a seam's **Evidence in conflict**, and every row a seam picks there belongs to the seam's own **Service** | A multi-value lookup on another list; a lookup cannot be filtered by another column |
-| A *Held* or *Verified* documentation status has a **Documentation link** | A hyperlink column cannot be a formula operand |
-| A row whose side is *Provider*, *Third party* or *Shared* names the provider. **Provider not named** is empty on the service, document request, interview and incident lists | A formula cannot read a lookup |
-| An evidence row's **Artefact file**, where set, lists the evidence row's **Service** among its **Services** | A lookup cannot be filtered by another column, and the picker offers every titled file |
-| Every file in **SEAM_Artefact** has a **Title** | A file's Title is optional on a library, and a file without one is not offered by the pickers |
-| A resolved seam has a **Resolution**; a received, refused or not-found document has a **Summary** saying what came back or who said no | Multi-line text cannot be a formula operand |
-| **Last failure date** and **Last failure** are filled together or not at all | Multi-line text cannot be a formula operand |
-| A received document has at least one file in **SEAM_Artefact** whose **Request** points at it | A formula cannot count rows on another list |
-| **Resolve by** and **Resolved on** are on or after **Raised on**; **Due on** and **Answered on** are on or after **Asked on** | A formula compares a column with a literal, not with another column |
-| Every completed interview answers all eight questions; a refusal or a don't-know is written as the answer | Multi-line text cannot be a formula operand |
-| Every completed interview has its notes in **SEAM_Artefact**, picked in **Notes file** | A formula cannot read a lookup |
-| Every completed interview's answers have been transcribed into evidence rows | A relationship the register does not model |
-| A weekly update's **Title** names the same week as its **Week** | A formula cannot build text from a number and compare it |
-| No row names a person | A reading check. Roles, never names |
+| Provider | **Provider** is unique |
+| Service | **Title** is unique. **Run by** other than *Unknown* has a **Run by team**, and **Support from** other than *Unknown* has a **Support team**. **Single person** has an **Out of hours call**. **Last failure date** is recorded |
+| Evidence | **Evidence date** is recorded |
+| Seam | *Escalated* in **Status** has a **Resolve owner** and a **Resolve by**, and *Resolved* has a **Resolved on**. **Raised on** and **Resolved on** are recorded |
+| DocumentRequest | Any **Status** past *To ask* has **Asked on**, **Due on**, a **Holder** and a **Held by** other than *Unknown*. *Received*, *Refused* and *Not found* have **Answered on**. A *Received* services agreement, services schedule or attestation in **Type** has **Signed by**, which may say *Unsigned*. **Asked on** and **Answered on** are recorded |
+| Artefact | **Dated** is recorded |
+| Interview | *Completed* in **Status** has **Minutes** and an **Interview date** that is not in the future. **Minutes** is 1 to 30 |
+| Incident | **Title** is unique. A *Recalled outage* in **Source** has a **Source detail**. **Incident date** is recorded |
+| WeeklyUpdate | **Week** is unique and 1 to 6. **Rows verified** and **Seams found** are not negative. **Week ending** is recorded |
+
+### Friday checks
+
+SharePoint validation cannot express these. Run them on the Friday, before
+the five lines are written. A check that a view answers names the view.
+
+| ID | Check | Why the register cannot enforce it |
+| --- | --- | --- |
+| F1 | A *Verified* service has two evidence rows that agree about the same **Bears on** column from two different known source sides, or one *System data* row, and no evidence row with **Contradicts** ticked | A formula cannot count rows on another list |
+| F2 | No service above *Assumed* has zero evidence rows | Same. A service with no evidence rows is *Assumed* by definition, whatever its confidence says |
+| F3 | By the end of week 5, no first-pass service has zero evidence rows. Before then **Assumed** lists them as the week's work | Same |
+| F4 | Every evidence row with **Contradicts** ticked appears in a seam's **Evidence in conflict** | A multi-value lookup on another list |
+| F5 | Every row a seam picks in **Evidence in conflict** belongs to the seam's own **Service** | A lookup cannot be filtered by another column |
+| F6 | A *Held* or *Verified* documentation status has a **Documentation link** | A hyperlink column cannot be a formula operand |
+| F7 | A row whose side is *Provider*, *Third party* or *Shared* names the provider. **Provider not named** on the service, document request, interview and incident lists shows the rows that do not | A formula cannot read a lookup |
+| F8 | An evidence row's **Artefact file**, where set, lists the evidence row's **Service** among its **Services** | A lookup cannot be filtered by another column, and the picker offers every titled file |
+| F9 | Every file in **SEAM_Artefact** has a **Title** | A file's Title is optional on a library, and a file without one is not offered by the pickers |
+| F10 | A resolved seam has a **Resolution** | Multi-line text cannot be a formula operand |
+| F11 | A received, refused or not-found document has a **Summary** saying what came back or who said no | Multi-line text cannot be a formula operand |
+| F12 | **Last failure date** and **Last failure** are filled together or not at all | Multi-line text cannot be a formula operand |
+| F13 | A received document has at least one file in **SEAM_Artefact** whose **Request** points at it | A formula cannot count rows on another list |
+| F14 | **Resolve by** and **Resolved on** are on or after **Raised on**; **Due on** and **Answered on** are on or after **Asked on** | A formula compares a column with a literal, not with another column |
+| F15 | Every completed interview answers all eight questions; a refusal or a don't-know is written as the answer | Multi-line text cannot be a formula operand |
+| F16 | Every completed interview has its notes in **SEAM_Artefact**, picked in **Notes file** | A formula cannot read a lookup |
+| F17 | Every completed interview's answers have been transcribed into evidence rows | A relationship the register does not model |
+| F18 | A weekly update's **Title** names the same week as its **Week** | A formula cannot build text from a number and compare it |
+| F19 | No row names a person | A reading check. Roles, never names |
+
+### What the register does not check
+
+- A field the form hides for the row's status or side keeps its value when
+  the row moves back, and the row still saves. The form stays uncluttered;
+  views and reporting filter on status and side, so the old value does not
+  surface. No rule forbids it.
+- Only the columns marked unique above are unique. Two evidence rows,
+  seams, document asks or interviews may describe the same thing, and
+  often should.
+- The weekly rhythm, the stop rules, the size of the first pass and who has
+  read which evidence are working practice in the guide.
 
 ## Confidence
 
-*Verified* is the only value with a rule, and the rule is the two-source
-rule above. A row does not move to *Verified* because it feels settled. A
-row does move back to *Claimed* when a second source disagrees, and the
-disagreement becomes a seam.
+*Verified* is the only value with a rule, and the rule is F1. A row does
+not move to *Verified* because it feels settled. A row does move back to
+*Claimed* when a second source disagrees, and the disagreement becomes a
+seam.
 
 ## Seams
 
