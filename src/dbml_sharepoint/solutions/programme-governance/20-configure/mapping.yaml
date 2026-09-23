@@ -208,6 +208,7 @@ lookup_projections:
     AuthorisingDecision: [Title]
   Issue:
     RelatedRisk: [Title]
+    ResolvingDecision: [Title]
   ServiceRequest:
     AuthorisingDecision: [Title]
   Risk:
@@ -1465,7 +1466,7 @@ views:
         RelatedRiskTitle: 220
         ResolvedDate: 160
     - title: "Resolved and closed"
-      fields: ["@issue", ResolvedDate, Resolution]
+      fields: ["@issue", ResolvedDate, Resolution, ResolvingDecisionTitle]
       where:
         - { field: Status, op: in, value: ["Resolved", "Closed"] }
       sort:
@@ -1474,6 +1475,7 @@ views:
         <<: *issue_spine
         ResolvedDate: 160
         Resolution: 260
+        ResolvingDecisionTitle: 220
     # The triage owner's queue: any new issue nobody has picked up yet.
     # Workstream and Owner are the two fields an occasional raiser cannot
     # answer, so the view surfaces wherever either is still blank.
@@ -1736,6 +1738,9 @@ form_visibility:
         when:
           - { field: Status, op: in, value: ["Resolved", "Closed"] }
       Resolution:
+        when:
+          - { field: Status, op: in, value: ["Resolved", "Closed"] }
+      ResolvingDecision:
         when:
           - { field: Status, op: in, value: ["Resolved", "Closed"] }
       # Machine-owned: flow D stamps it and nothing else writes it. Rendered

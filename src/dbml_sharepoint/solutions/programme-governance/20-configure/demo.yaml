@@ -729,7 +729,8 @@ demo_items:
         Situation: "Demo row. Eleven links on six intranet pages point at the retired forms library."
         Trigger: "The library was retired before the page owners were told."
         Effect: "Each link returns an access denied page, which staff read as the new forms being broken."
-        Resolution: "Demo row. All eleven links repointed and the old library set to read-only. The page owners now publish from a single link list, so the next move follows automatically."
+        Resolution: "Demo row. All eleven links repointed and the old library set to read-only. The page owners now publish from the programme site's single link list, which the one-site decision provides, so the next move follows automatically."
+        ResolvingDecision: { demo_ref: dec-one-site }
     - key: iss-fax-referrals
       values:
         Title: "[DEMO] Two clinics kept sending referrals to the retired fax number"

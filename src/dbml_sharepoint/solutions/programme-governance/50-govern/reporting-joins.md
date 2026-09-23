@@ -24,6 +24,7 @@ lists every relationship, and `Id` repeats across sites and lists.
 | `Action.AuthorisingDecision` | `Decision.Id` |
 | `Issue.Workstream` | `Workstream.Id` |
 | `Issue.RelatedRisk` | `Risk.Id` |
+| `Issue.ResolvingDecision` | `Decision.Id` |
 | `Decision.Workstream` | `Workstream.Id` |
 | `Decision.Activity` | `Activity.Id` |
 | `Decision.SupersedesDecision` | `Decision.Id` |

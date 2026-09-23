@@ -504,6 +504,8 @@ Table Issue {
   Effect       richtext            [note: 'What it is costing the programme right now, in time, money or confidence']
   Detail       richtext            [note: 'Retired, superseded by Situation, Trigger and Effect. Kept declared so the deploy still manages it; transfer the values, then delete the column with the columns sidecar']
   Resolution   richtext            [note: 'What was done, and what would stop it recurring']
+  // Optional, like Action.AuthorisingDecision: most issues are fixed without a forum.
+  ResolvingDecision int            [ref: > Decision.Id, note: 'The decision this issue was resolved under. Leave blank when it was resolved without a recorded decision, which is the ordinary case']
   // Machine-owned: the phase-2 escalation flow stamps this when it notifies
   // the owner, so a repeat notify is distinguishable from a first one. Hidden
   // from both forms and left rendered on All Items, because watched_lists
@@ -517,6 +519,7 @@ Table Issue {
     Owner
     RaisedDate
     RelatedRisk
+    ResolvingDecision
   }
 
   Note: 'Things that have already gone wrong, recorded as facts rather than as possibilities, each owned by somebody until it is resolved.'

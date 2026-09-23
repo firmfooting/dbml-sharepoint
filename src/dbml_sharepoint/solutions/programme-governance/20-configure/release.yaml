@@ -1,8 +1,16 @@
-release: "5.0.0"
-date: "2026-09-18"
+release: "5.1.0"
+date: "2026-09-24"
 deployer_version: "dbml-sharepoint/0.1.0"
-schema_version: "5.0.0"
+schema_version: "5.1.0"
 notes: |
+  5.1.0 adds Resolving Decision to Issue: an optional lookup to the decision
+  log, shown on the form with Resolved Date and Resolution and on the
+  Resolved and closed view. Its picker offers only Approved and Endorsed
+  decisions, like Authorising Decision on an action. It is additive and
+  optional, so existing issues are unaffected and nothing refuses a save
+  without it. Expect columns +2 on GOV_Issue: the lookup and its projected
+  Resolving Decision Title. Reporting gains HasResolvingDecision on Issue.
+
   5.0.0 changes what a risk is when it arrives, how a risk and an issue are
   described, and what every delivery view leads with. Risk Status contains
   Proposed, Open, Closed and Rejected and a new risk starts Proposed; the

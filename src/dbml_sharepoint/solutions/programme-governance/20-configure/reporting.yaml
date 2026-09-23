@@ -231,6 +231,10 @@ derived_columns:
       type: logical
       m: '[RelatedRisk Key] <> null'
     - kind: expr
+      name: HasResolvingDecision
+      type: logical
+      m: '[ResolvingDecision Key] <> null'
+    - kind: expr
       name: WarningLeadDays
       type: Int64
       m: 'if [RiskCreatedDate] = null then null else Duration.Days([RaisedDate] - [RiskCreatedDate])'
