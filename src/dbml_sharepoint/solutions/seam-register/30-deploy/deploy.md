@@ -44,7 +44,7 @@ dbml-sharepoint build \
 Paste `assess.js.txt`, review `deploy-manifest.md`, then paste
 `deploy.js.txt`. For a demonstration, paste `demo-data.js.txt` afterwards.
 It creates four providers (one retired), six services across the five
-side values, five evidence
+side values, six evidence
 rows including a contradicting pair, four seams in every status, five
 document asks in every status, six files across the six folders, four
 interviews, five incidents and two weekly updates. Nothing in it names a
@@ -108,7 +108,8 @@ Standard deployment logging is separate infrastructure; use the build's
       leaves *To ask*, and the save rule refuses *Asked* without both.
       **Due on** turns red once it has passed and the status is still
       *Asked*, and stops once the status is *Received*, *Refused* or *Not
-      found*.
+      found*. **Answered on** appears for those three, and the save rule
+      refuses any of them without it.
 - [ ] Upload a file into the library's Interviews folder. Its **Type**
       defaults to *Document copy*; set it to *Interview notes*. **Services**
       accepts more than one service row. It appears in **All artefacts** and
@@ -124,7 +125,8 @@ Standard deployment logging is separate infrastructure; use the build's
       eight questions and the follow-ups are hidden on the new form and
       appear once the status is *Completed*. Set *Completed* with the future
       date and the save rule refuses it. Enter 45 minutes and the duration
-      rule refuses it.
+      rule refuses it. Set *Declined* instead: **Follow-ups** appears and
+      the eight questions stay hidden.
 - [ ] Add an incident with **Source** set to *Recalled outage*. **Source
       detail** appears, and the save rule refuses the row until it is
       filled.

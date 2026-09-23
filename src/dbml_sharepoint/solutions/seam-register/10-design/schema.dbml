@@ -9,7 +9,7 @@ Project seam_register { database_type: 'SharePoint Online Lists' }
 Enum side {
   "Us"          [note: 'This organisation, including its own ICT team']
   "Provider"    [note: 'A provider that delivers the service under an agreement, such as a shared-services body or a managed service. Name it in the provider column']
-  "Third party" [note: 'Anyone else reached directly, such as a software vendor or a cloud platform. Name it in the provider column if it is listed']
+  "Third party" [note: 'Anyone else reached directly, such as a software vendor or a cloud platform. Name it in the provider column']
   "Shared"      [note: 'Genuinely split between us and a provider; the split is described in the row']
   "Unknown"     [note: 'Nobody has claimed it yet']
 }
@@ -282,7 +282,7 @@ Table DocumentRequest {
   Status         request_status [not null, default: 'To ask']
   AskedOn        date           [note: 'When the ask went out']
   DueOn          date           [note: 'The date given for an answer, five working days by default']
-  ReceivedOn     date           [note: 'When a copy arrived']
+  AnsweredOn     date           [note: 'When the answer came back: the copy, the refusal or the word that it cannot be found']
   SignedBy       nvarchar       [note: 'For attestations and agreements: the signatory role and date']
   Summary        longtext       [note: 'What it covers and what it is silent on']
   Services       int[]          [ref: > Service.Id, note: 'The services this document touches']

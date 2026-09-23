@@ -46,10 +46,10 @@ express them. Run them on the Friday, before the five lines are written.
 | No first-pass service has zero evidence rows | Same. A service with no evidence rows is *Assumed* by definition, whatever its confidence says |
 | Every evidence row with **Contradicts** ticked appears in a seam's **Evidence in conflict** | A multi-value lookup on another list |
 | A *Held* or *Verified* documentation status has a **Documentation link** | A hyperlink column cannot be a formula operand |
-| A service run or supported by a provider, or shared with one, names it in **Run by provider** or **Support provider**. **Provider not named** is empty | A formula cannot read a lookup |
-| Every file in **SEAM_Artefact** has a **Title** | A file's Title is optional on a library, and a file without one is not offered by the pickers. A re-uploaded Office file takes the Title its document properties carry |
+| A service whose run-by or support side is *Provider*, *Third party* or *Shared* names it in **Run by provider** or **Support provider**. **Provider not named** is empty | A formula cannot read a lookup |
+| Every file in **SEAM_Artefact** has a **Title** | A file's Title is optional on a library, and a file without one is not offered by the pickers |
 | A resolved seam has a **Resolution**; a received document has a **Summary** | Multi-line text cannot be a formula operand |
-| **Resolve by** is on or after **Raised on**; **Received on** is on or after **Asked on** | A formula compares a column with a literal, not with another column |
+| **Resolve by** is on or after **Raised on**; **Answered on** is on or after **Asked on** | A formula compares a column with a literal, not with another column |
 | Every completed interview's answers have been transcribed into evidence rows | A relationship the register does not model |
 | No row names a person | A reading check. Roles, never names |
 

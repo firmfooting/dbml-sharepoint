@@ -79,7 +79,7 @@ talking about first.
 | Provider | Retired | Providers no longer used, kept because rows still point at them |
 | Service | Seam map | First-pass rows grouped by which side runs them, coloured by confidence. The default |
 | Service | By provider | Every row grouped by the provider that runs it |
-| Service | Provider not named | Rows run or supported by a provider, or shared with one, where the provider column is blank |
+| Service | Provider not named | Rows whose run-by or support side is Provider, Third party or Shared, with the provider column beside it blank |
 | Service | By area | Every row grouped by first-pass area |
 | Service | Assumed | First-pass rows nobody has told us about yet |
 | Service | Single person | Rows only one named individual can operate or repair, with the Saturday-night answer |
@@ -122,8 +122,8 @@ The rules SharePoint holds:
 - A single-person service needs the out-of-hours answer.
 - Escalating a seam names who will resolve it and by when. Resolving it
   needs the resolved date, and only a resolved seam carries one.
-- Once asked, a document has an asked-on date and a due date. Received
-  needs the received date.
+- Once asked, a document has an asked-on date and a due date. Received,
+  refused and not found each need the date the answer came back.
 - A completed interview has its duration, at most thirty minutes.
 - A remembered outage says who remembered it.
 - No recorded date is in the future. Week is 1 to 6.

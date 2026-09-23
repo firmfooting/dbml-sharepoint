@@ -132,13 +132,15 @@ quietly editing the service row.
 
 Every document asked for gets a **SEAM_DocumentRequest** row, found or
 not. Start at *To ask*. Move to *Asked* with **Asked on** and **Due on**;
-the save rule needs both. When a copy arrives, set *Received*, date it,
-upload the file to the library's Documents folder and set **Request** on the
-file to this row. Say in **Summary** what it covers and what it is silent
-on, and for an attestation or agreement, who signed it and when.
+the save rule needs both. When a copy arrives, set *Received*, date it in
+**Answered on**, upload the file to the library's Documents folder and set
+**Request** on the file to this row. Say in **Summary** what it covers and
+what it is silent on, and for an attestation or agreement, who signed it and
+when.
 
-*Refused* and *Not found* are results. Record the date, who was asked, and
-what they said, and raise a seam if the absence matters.
+*Refused* and *Not found* are results. Date the answer in **Answered on**,
+say in **Summary** who was asked and what they said, and raise a seam if the
+absence matters.
 
 ## Filing artefacts
 
@@ -147,11 +149,9 @@ matches its kind: a copy received into Documents, interview notes into
 Interviews, a ticket export into Incidents, invoice lines into Invoices, a
 console export into System exports, an email into Correspondence. Then
 select the file, open its details pane, and type a **Title**: the pickers
-on evidence and interview rows list titled files only. A Word, Excel or
-PowerPoint file may arrive with a Title from its own document properties;
-check it says what the file is. A PDF, an export or an email never brings
-one. Uploading a new version of an Office file replaces the Title with
-whatever the file carries, so check it again after a re-upload. Set
+on evidence and interview rows list titled files only. Check the
+**Title** after every upload, including a new version of a file already
+there, because it is what the pickers show. Set
 **Type** and **Source side**, date it, and pick the **Services** it bears
 on. Say in **Summary** which section or line matters.
 
