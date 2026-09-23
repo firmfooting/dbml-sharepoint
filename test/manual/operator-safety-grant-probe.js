@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHAT A BREAK LEAVES, AND WHETHER REMOVING IT STICKS
  *
- * REVISION: 544e3bac
+ * REVISION: d54ee6cb
  *
  * THE CLAIM UNDER TEST. `deploy/_lists.js.j2` says, beside the early
  * isolation break, that "copyRoleAssignments=false leaves only SharePoint's
@@ -109,6 +109,16 @@
  * recycled or reused, and so is a title whose occupancy cannot be read,
  * because CLEANUP would recycle a title match and a run without CLEANUP
  * would reuse it and rewrite its permissions.
+ *
+ * The marker is not enough on its own, because a replacement can carry a
+ * copied Description, and every endpoint here is addressed by title with no
+ * by-Id form documented. So the list's Id is captured where it is claimed or
+ * created, and every destructive write is bracketed by an identity and marker
+ * recheck immediately before and immediately after it, the way `withOwnedList`
+ * brackets the deploy's own role-assignment writes in `deploy/_acls.js.j2`. A
+ * title rebound mid-run produces a failed run, never a break, a removal or a
+ * reset applied to a stranger, and the restore reports the Id rather than the
+ * title so a repair by hand goes to the right list.
  *
  * RUN AS A SITE COLLECTION ADMINISTRATOR, and the probe checks rather than
  * trusts. It breaks role inheritance with copyRoleAssignments=false and then
@@ -440,7 +450,7 @@
     record(id, question, row.outcome, row.evidence, row.state);
   };
 
-  log('INFO', 'probe revision 544e3bac. Quote this when reporting results.');
+  log('INFO', 'probe revision d54ee6cb. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe OperatorGrant';
   const OWNERSHIP = 'dbml-sharepoint operator-safety-grant probe list. Safe to delete.';
@@ -686,9 +696,11 @@
       return { ok: false, why: 'could not resolve the owner group or a full-control level' };
     }
     const digest = await getDigest();
-    const granted = await spPost(
-      `${listPath}/roleassignments/addroleassignment(principalid=${owners.body.Id},roleDefId=${full.Id})`,
-      {}, digest);
+    const granted = await withOwnedList(
+      `addroleassignment(principalid=${owners.body.Id}) on '${LIST}'`,
+      () => spPost(
+        `${listPath}/roleassignments/addroleassignment(principalid=${owners.body.Id},roleDefId=${full.Id})`,
+        {}, digest));
     return {
       ok: granted.ok,
       principalId: Number(owners.body.Id),
@@ -707,6 +719,54 @@
         + `-> level ${r.levelId} '${r.levelName}'`
       )).join('; ')
   );
+
+  // ---- IDENTITY, which every destructive write below is bracketed by ----
+  // Every endpoint this probe writes to is addressed by TITLE, and Microsoft
+  // documents no by-Id form for breakroleinheritance, removeroleassignment,
+  // recycle or resetroleinheritance. A title is not an object: it can be
+  // rebound between two requests, and this run then deletes, breaks and
+  // rewrites the permissions of a list somebody else's work depends on. What
+  // is available is the deploy's own answer, `withOwnedList` in
+  // deploy/_acls.js.j2: prove the title resolves to the claimed list
+  // immediately before the write, and prove it still does immediately after.
+  // A rebind can then only produce a failed run.
+  const guidOf = (value) => (
+    value == null ? null : String(value).replace(/[{}]/g, '').toLowerCase());
+
+  // The list Id this run claimed, captured where the list is claimed or
+  // created. The marker alone cannot see a same-titled replacement, because a
+  // replacement can carry a copied Description; the Id is what separates them
+  // (deploy/_field_reconcile.js.j2).
+  let ownedId = null;
+
+  const proveOwned = async (when) => {
+    const res = await spGet(`${listPath}?$select=Id,Title,Description`);
+    if (readFailed(res)) {
+      throw new Error(`the identity of '${LIST}' could not be read ${when} (HTTP ${res.status}), `
+        + 'so the write it brackets was not made');
+    }
+    const now = guidOf(res.body.Id);
+    if (now === null) {
+      throw new Error(`'${LIST}' answered ${when} without an Id, so the write it brackets `
+        + 'was not made');
+    }
+    if (ownedId !== null && now !== ownedId) {
+      throw new Error(`the title '${LIST}' resolves to list ${now} ${when} and this run `
+        + `claimed ${ownedId}, so the write it brackets was not made`);
+    }
+    if (res.body.Description !== OWNERSHIP) {
+      throw new Error(`'${LIST}' no longer carries this probe's ownership marker ${when}, `
+        + 'so the write it brackets was not made');
+    }
+    return now;
+  };
+
+  const withOwnedList = async (what, request) => {
+    await proveOwned(`before ${what}`);
+    const result = await request();
+    await proveOwned(`after ${what}`);
+    return result;
+  };
 
   // One step of the restore, attempted and REPORTED rather than propagated.
   // Every step goes through here, including the pass itself, because a throw
@@ -757,6 +817,22 @@
                   + 'Resetting anyway: the property is measured to lag the break, and a '
                   + 'break the server applied and then threw on never sets a 2xx flag.');
     }
+    // Fail closed on IDENTITY before any write, and name the Id rather than
+    // the title, because a rebound title points an operator repairing by hand
+    // at a stranger's list. The asymmetry with the flag above is deliberate:
+    // an unreadable HasUniqueRoleAssignments resets anyway, since resetting an
+    // inheriting list is a no-op write, while an unprovable identity does not,
+    // since the write would land somewhere this run never claimed.
+    const stillOurs = await restoreStep(
+      `re-proving that '${LIST}' is the list this run claimed`,
+      () => proveOwned('before the restore'), null);
+    if (stillOurs === null) {
+      log('FAIL', `The title '${LIST}' no longer proves to be list ${ownedId}, which this run `
+                  + 'claimed, so NOTHING was written to it. If list ' + `${ownedId} still holds `
+                  + 'unique permissions, reset its inheritance by hand, going by the Id and not '
+                  + 'by the title.');
+      return;
+    }
     const grant = await restoreStep(
       'the owner-group safety grant', grantOwnersFullControl,
       { ok: false, why: 'resolving or adding it threw, as the line above says' });
@@ -770,10 +846,12 @@
     // sentence naming the list either way.
     const reset = await restoreStep(
       `the reset of '${LIST}'`,
-      () => spPost(`${listPath}/resetroleinheritance`, {}, digest),
+      () => withOwnedList(`resetroleinheritance on '${LIST}'`,
+                          () => spPost(`${listPath}/resetroleinheritance`, {}, digest)),
       { ok: false, status: 0, text: 'the request threw' });
     if (!reset.ok) {
-      log('FAIL', `Could not restore '${LIST}': HTTP ${reset.status} ${reset.text.slice(0, 200)}. `
+      log('FAIL', `Could not restore '${LIST}' (list ${ownedId}): HTTP ${reset.status} `
+                  + `${reset.text.slice(0, 200)}. `
                   + 'The list still holds unique permissions. Fix or delete it by hand.');
       return;
     }
@@ -794,7 +872,11 @@
   // and rewrites its permissions. So the Description has to carry this
   // probe's exact marker, and a read that fails for any reason other than
   // absence establishes nothing and licenses neither path.
-  const claimed = await spGet(`${listPath}?$select=Title,Description`);
+  //
+  // This read is also the CLEANUP recycle's identity bracket on the near
+  // side, which is why it takes the Id: `resetList` recycles by title, and
+  // the identity read after the create or the reuse below is the far side.
+  const claimed = await spGet(`${listPath}?$select=Id,Title,Description`);
   if (!readFailed(claimed) && claimed.body.Description !== OWNERSHIP) {
     record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'ABORTED',
            `a list titled '${LIST}' already exists on this site and its Description is `
@@ -813,11 +895,42 @@
            + 'reused or written.');
     return report();
   }
+  // A title that carries the marker and no Id cannot be bracketed, so the
+  // recycle below would be the title-addressed write this guard exists
+  // against.
+  if (!readFailed(claimed) && guidOf(claimed.body.Id) === null) {
+    record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'ABORTED',
+           `a list titled '${LIST}' carries this probe's ownership marker but answered `
+           + 'without an Id, so no write to it could be bracketed by identity. Nothing was '
+           + 'recycled, reused, broken or written.');
+    return report();
+  }
+  ownedId = readFailed(claimed) ? null : guidOf(claimed.body.Id);
 
+  // The CLEANUP recycle is destructive and addressed by title like every
+  // other write here, so the claim is re-proved immediately before it. Its
+  // far side is the identity read after the create below: a recycle that
+  // worked means the title stops resolving, which `withOwnedList`'s second
+  // proof cannot express.
+  if (CLEANUP && ownedId !== null) {
+    try {
+      await proveOwned(`before the CLEANUP recycle of '${LIST}'`);
+    } catch (err) {
+      record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'ABORTED',
+             `${String(err)}. Nothing was recycled, reused, broken or written.`);
+      return report();
+    }
+  }
   await resetList(LIST);
   let digest = await getDigest();
 
   // ---- fixture-scratch-list -------------------------------------------
+  // The Id the create answered with, when it answers with one. It is what the
+  // read-back below is CHECKED against, so a title rebound between the create
+  // and that read cannot hand this run a stranger's list carrying a copied
+  // marker. What a list POST returns is not measured here, so its absence is
+  // reported rather than fatal.
+  let createdId = null;
   const existing = await spGet(`${listPath}?$select=Title`);
   if (!existing.ok) {
     digest = await getDigest();
@@ -826,11 +939,39 @@
       BaseTemplate: 100,
       Description: OWNERSHIP,
     }, digest);
+    createdId = made.ok ? guidOf(made.body && made.body.Id) : null;
     if (!made.ok) {
       record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'ABORTED',
              `could not create '${LIST}': HTTP ${made.status} ${made.text.slice(0, 260)}`);
       return report();
     }
+  }
+
+  // The identity every write below is bracketed against, READ back rather
+  // than taken from the create response: the brackets compare against what
+  // this endpoint answers, and what a list POST returns is not measured here.
+  // It is also the far side of the recycle's bracket, since a run with
+  // CLEANUP on is looking at a list it made after the claim read.
+  const owned = await spGet(`${listPath}?$select=Id,Title,Description`);
+  if (readFailed(owned) || guidOf(owned.body.Id) === null
+      || owned.body.Description !== OWNERSHIP) {
+    record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'ABORTED',
+           `'${LIST}' did not read back as a list this run owns carrying an Id to bracket `
+           + `its writes against: HTTP ${owned.status}. Nothing was broken or written.`);
+    return report();
+  }
+  if (createdId !== null && guidOf(owned.body.Id) !== createdId) {
+    record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'ABORTED',
+           `this run created list ${createdId} and the title '${LIST}' now resolves to `
+           + `${guidOf(owned.body.Id)}, carrying this probe's marker. A marker can be copied, `
+           + 'so the title was rebound between the create and the read-back. Nothing was '
+           + 'broken or written.');
+    return report();
+  }
+  ownedId = guidOf(owned.body.Id);
+  if (createdId === null && !existing.ok) {
+    log('INFO', `the list create did not answer with an Id, so '${LIST}' is claimed as list `
+                + `${ownedId} from the read-back alone.`);
   }
 
   // A list an earlier run left broken cannot answer what a break leaves, and
@@ -915,12 +1056,15 @@
     // holds unique permissions, so a break that was refused or never took
     // leaves nothing to observe rather than something to report.
     digest = await getDigest();
-    // Before the write, because a fetch that throws after the server applied
-    // the break is the case this flag exists for.
-    breakAttempted = true;
-    const broke = await spPost(
-      `${listPath}/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)`,
-      {}, digest);
+    const broke = await withOwnedList(`breakroleinheritance on '${LIST}'`, () => {
+      // Inside the bracket and before the write, because a fetch that throws
+      // after the server applied the break is the case this flag exists for,
+      // and a bracket that refused never sent one.
+      breakAttempted = true;
+      return spPost(
+        `${listPath}/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)`,
+        {}, digest);
+    });
     if (broke.ok) listBroken = true;
     const unique = broke.ok ? await readUnique(true) : null;
     if (!broke.ok || !unique.reached) {
@@ -967,9 +1111,11 @@
     // tenant. If the server accepts it, a removal answering HTTP 200 below
     // proves nothing and the removal row is void.
     digest = await getDigest();
-    const bogus = await spPost(
-      `${listPath}/roleassignments/removeroleassignment(principalid=42424242,roleDefId=42424242)`,
-      {}, digest);
+    const bogus = await withOwnedList(
+      `the negative control's removeroleassignment on '${LIST}'`,
+      () => spPost(
+        `${listPath}/roleassignments/removeroleassignment(principalid=42424242,roleDefId=42424242)`,
+        {}, digest));
     const controlHeld = !bogus.ok && isRefusal(bogus.status);
     record('access.list-acl.control-unknown-principal-refused', Q_CONTROL,
            bogus.ok ? 'FAIL' : controlHeld ? 'PASS' : 'NOT ESTABLISHED',
@@ -1087,9 +1233,11 @@
         const writes = [];
         for (const target of prunable) {
           digest = await getDigest();
-          const removed = await spPost(
-            `${listPath}/roleassignments/removeroleassignment(principalid=${target.principalId},roleDefId=${target.levelId})`,
-            {}, digest);
+          const removed = await withOwnedList(
+            `removeroleassignment(principalid=${target.principalId}) on '${LIST}'`,
+            () => spPost(
+              `${listPath}/roleassignments/removeroleassignment(principalid=${target.principalId},roleDefId=${target.levelId})`,
+              {}, digest));
           writes.push({ target, removed });
         }
         // Every read, not the first agreement: the deploy's verdict is

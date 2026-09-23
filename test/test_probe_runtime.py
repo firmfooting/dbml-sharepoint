@@ -9063,6 +9063,14 @@ OPERATOR_GRANT_PROBE = MANUAL / "operator-safety-grant-probe.js"
 #: splice assertion below fails rather than the suite quietly sleeping for it.
 _OPERATOR_TEST_WAIT_MS = 1
 
+#: The list Ids the mock's title resolves to. Three, because the three cases
+#: are different: what the title held before this run, the list this run made,
+#: and a replacement the title was rebound to mid-run. A marker can be copied
+#: onto the third, so only the Id separates it from the second.
+_OPERATOR_LIST_ID = "11111111-1111-1111-1111-111111111111"
+_OPERATOR_CREATED_LIST_ID = "22222222-2222-2222-2222-222222222222"
+_OPERATOR_REBOUND_LIST_ID = "33333333-3333-3333-3333-333333333333"
+
 #: The mock's principal ids. The operator is a user (PrincipalType 1) and the
 #: other row a group (8), so `break-leaves-operator-binding` has to pick by id
 #: rather than by being the only row there.
@@ -9119,6 +9127,13 @@ _OPERATOR_HARNESS = textwrap.dedent("""
     // is how _acls.js.j2 keys one.
     const site = {
       listExists: CONFIG.listExists,
+      // The Id the title resolves to, and how many identity reads have been
+      // served: every destructive write is bracketed by one of those reads,
+      // so a test arms a rebind by counting them rather than by counting
+      // requests.
+      listId: CONFIG.listId,
+      identityReads: 0,
+      rebound: false,
       unique: CONFIG.alreadyUnique,
       bindings: CONFIG.alreadyUnique ? CONFIG.leftBindings.map((b) => ({ ...b })) : [],
       uniqueReads: 0,
@@ -9139,6 +9154,9 @@ _OPERATOR_HARNESS = textwrap.dedent("""
       const u = String(url);
       const method = opts.method || 'GET';
       globalThis.__calls.push({ url: u, method });
+      // A rebind armed on a REQUEST rather than on a count, for the cases
+      // where a test names the write the title was rebound around.
+      if (CONFIG.rebindAfter && u.includes(CONFIG.rebindAfter)) site.rebound = true;
 
       // A read that throws rather than answering, which is how a run reaches
       // the catch and therefore the finally with a break already made.
@@ -9152,7 +9170,16 @@ _OPERATOR_HARNESS = textwrap.dedent("""
       if (u.endsWith('/web/lists') && method === 'POST') {
         if (CONFIG.createRefused) return jsonResponse(500, { error: 'list create refused' });
         site.listExists = true;
-        return jsonResponse(201, { Title: JSON.parse(String(opts.body)).Title });
+        // A list this run made is a DIFFERENT object from whatever the title
+        // resolved to before, which is why the identity is re-read after the
+        // create rather than carried over the recycle.
+        site.listId = CONFIG.createdListId;
+        return jsonResponse(201, {
+          Title: JSON.parse(String(opts.body)).Title,
+          // Not every tenant is measured to answer a list POST with the new
+          // list's Id, so the probe has to work with and without it.
+          ...(CONFIG.createOmitsId ? {} : { Id: site.listId }),
+        });
       }
       if (u.includes('/web/currentuser')) {
         return jsonResponse(200, {
@@ -9173,6 +9200,9 @@ _OPERATOR_HARNESS = textwrap.dedent("""
       }
 
       if (!u.includes("getbytitle('")) return jsonResponse(404, { error: 'no such endpoint' });
+      // Counted even where the read 404s or is refused, because a test arms a
+      // rebind by counting the identity reads the probe MAKES.
+      if (u.includes('$select=Id,Title,Description')) site.identityReads += 1;
       // A read that fails for a reason that is not "absent". The title may or
       // may not be occupied and this run cannot tell, which is the whole
       // point of the branch it exercises.
@@ -9353,22 +9383,44 @@ _OPERATOR_HARNESS = textwrap.dedent("""
         }
         return jsonResponse(200, { HasUniqueRoleAssignments: site.unique });
       }
-      return jsonResponse(200, { Title: 'dbmlsp Probe OperatorGrant',
+      if (u.includes('/recycle')) {
+        site.listExists = false;
+        site.unique = false;
+        site.bindings = [];
+        return jsonResponse(200, {});
+      }
+      if (u.includes('$select=Id,Title,Description')) {
+        // The title rebound to another list, carrying a COPIED marker: the
+        // Description alone cannot see this, which is why the Id is captured.
+        const rebound = site.rebound
+          || (CONFIG.rebindAfterIdentityReads !== null
+            && site.identityReads > CONFIG.rebindAfterIdentityReads);
+        return jsonResponse(200, {
+          Id: rebound ? CONFIG.rebindListId : site.listId,
+          Title: 'dbmlsp Probe OperatorGrant',
+          Description: CONFIG.listDescription,
+        });
+      }
+      return jsonResponse(200, { Id: site.listId,
+                                 Title: 'dbmlsp Probe OperatorGrant',
                                  Description: CONFIG.listDescription });
     };
 """)
 
 
-def _operator_grant_probe_js() -> str:
+def _operator_grant_probe_js(cleanup: bool = False) -> str:
     """The rendered probe with its gates open, its waits shortened and its
     result table exposed.
 
     Edited by replacement rather than re-rendered, so what runs here is the
     committed file an operator would paste. Each splice is asserted, which
     makes every one of them a pin on the shipped spelling.
+
+    CLEANUP is opened only where a test is about the recycle, because that is
+    the one destructive write a run without it never makes.
     """
     js = OPERATOR_GRANT_PROBE.read_text(encoding="utf-8")
-    for gate in ("CONFIRMED", "ALLOW_WRITES"):
+    for gate in (*(("CLEANUP",) if cleanup else ()), "CONFIRMED", "ALLOW_WRITES"):
         opened = js.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
         assert opened != js, f"the {gate} gate is not spelled as this test expects"
         js = opened
@@ -9395,7 +9447,7 @@ def _operator_grant_probe_js() -> str:
 
 
 def _run_operator_grant_probe(
-    **config: Any,
+    cleanup: bool = False, **config: Any,
 ) -> tuple[dict[str, dict[str, str]], list[str], str]:
     """Run the probe and return the rows by id, the request urls and the
     whole transcript.
@@ -9428,6 +9480,12 @@ def _run_operator_grant_probe(
         "resetRefused": False,
         "resetNeverClears": False,
         "listDescription": _OPERATOR_OWNERSHIP,
+        "listId": _OPERATOR_LIST_ID,
+        "createdListId": _OPERATOR_CREATED_LIST_ID,
+        "rebindListId": _OPERATOR_REBOUND_LIST_ID,
+        "rebindAfterIdentityReads": None,
+        "rebindAfter": None,
+        "createOmitsId": False,
         "ownershipReadRefused": False,
         "uniqueLagsOnRead": None,
         "uniqueReadShape": None,
@@ -9446,7 +9504,7 @@ def _run_operator_grant_probe(
     script = (
         _OPERATOR_HARNESS.replace("__CONFIG__", json.dumps(settings))
         + "\n"
-        + _operator_grant_probe_js()
+        + _operator_grant_probe_js(cleanup)
     )
     output = _run(script)
     rows = next(
@@ -9467,6 +9525,201 @@ def _run_operator_grant_probe(
 def _restored(urls: list[str]) -> bool:
     """Did the restore pass reset the scratch list's inheritance."""
     return any("/resetroleinheritance" in url for url in urls)
+
+
+#: The read that proves the title still resolves to the list this run claimed.
+_IDENTITY_READ = "$select=Id,Title,Description"
+
+#: Every write that cannot be undone by re-running. Each one is addressed by
+#: TITLE, because SharePoint documents no by-Id form for any of them, so each
+#: has to be bracketed by an identity read on both sides.
+_DESTRUCTIVE_WRITES = (
+    "/recycle",
+    "/breakroleinheritance(",
+    "/roleassignments/removeroleassignment(",
+    "/roleassignments/addroleassignment(",
+    "/resetroleinheritance",
+)
+
+
+def _unbracketed(urls: list[str]) -> list[str]:
+    """Destructive writes without an identity read on both sides of them.
+
+    Adjacency, except for the recycle. `resetList` in the shared harness takes
+    a title and reads the list it is about between the proof and the recycle,
+    so the rule there is that an identity read separates it from whatever
+    destructive write came before, and another from whatever comes after.
+    """
+    writes = [
+        position for position, url in enumerate(urls)
+        if any(write in url for write in _DESTRUCTIVE_WRITES)
+    ]
+    loose = []
+    for order, position in enumerate(writes):
+        url = urls[position]
+        if "/recycle" in url:
+            previous = writes[order - 1] + 1 if order else 0
+            following = writes[order + 1] if order + 1 < len(writes) else len(urls)
+            before = any(_IDENTITY_READ in u for u in urls[previous:position])
+            after = any(_IDENTITY_READ in u for u in urls[position + 1:following])
+        else:
+            before = bool(position) and _IDENTITY_READ in urls[position - 1]
+            after = position + 1 < len(urls) and _IDENTITY_READ in urls[position + 1]
+        if not (before and after):
+            loose.append(f"{url} (identity read before: {before}, after: {after})")
+    return loose
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_every_destructive_write_is_bracketed_by_an_identity_read() -> None:
+    """A title is not an object.
+
+    `breakroleinheritance`, `removeroleassignment`, `recycle` and
+    `resetroleinheritance` are all addressed by title, and Microsoft documents
+    no by-Id form for any of them. A title rebound between two requests would
+    have this run recycle, break and rewrite the permissions of somebody
+    else's list. The only guard available is the deploy's own `withOwnedList`:
+    prove the title resolves to the claimed list immediately before the write
+    and immediately after it.
+
+    CLEANUP is on over a list this probe already owns, so the recycle is one
+    of the writes counted.
+    """
+    _rows, urls, _output = _run_operator_grant_probe(cleanup=True, listExists=True)
+
+    written = [
+        url for url in urls
+        if any(write in url for write in _DESTRUCTIVE_WRITES)
+    ]
+    assert len(written) >= 5, f"too few destructive writes to pin anything: {written}"
+    assert any("/recycle" in url for url in written), written
+    assert not _unbracketed(urls), _unbracketed(urls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_title_rebound_before_a_write_stops_the_write() -> None:
+    """The near side of the bracket, on the write that matters most.
+
+    The rebind is armed on the identity read the break's own bracket makes,
+    counted off a healthy run so that adding a bracket moves the test rather
+    than breaking it. The title then carries a COPIED marker on a different
+    list, which is the case the Description alone cannot see.
+    """
+    _healthy_rows, healthy, _healthy_output = _run_operator_grant_probe()
+    breaks = next(
+        i for i, url in enumerate(healthy) if "/breakroleinheritance(" in url
+    )
+    reads_first = len([url for url in healthy[:breaks] if _IDENTITY_READ in url])
+
+    rows, urls, output = _run_operator_grant_probe(
+        rebindAfterIdentityReads=reads_first - 1,
+    )
+
+    assert not [url for url in urls if "/breakroleinheritance(" in url], urls
+    assert any(
+        line.startswith("[FAIL] ")
+        and "the access pass aborted" in line
+        and f"resolves to list {_OPERATOR_REBOUND_LIST_ID}" in line
+        and f"claimed {_OPERATOR_CREATED_LIST_ID}" in line
+        for line in output.splitlines()
+    ), output
+    # Nothing past the break was reached, so nothing past it may claim one.
+    for question in _OPERATOR_BREAK_GATED:
+        assert rows[question]["evidence"] == "the run did not reach this question"
+    assert not _restored(urls), "a run that broke nothing reset a list"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_title_rebound_before_the_cleanup_recycle_recycles_nothing() -> None:
+    """The recycle is the destructive write with no way back for whoever owns
+    the list it lands on.
+
+    The claim read is its near-side proof and it is re-made immediately
+    before, because `resetList` is addressed by title and a title match is
+    exactly what an ownership marker exists to distrust.
+    """
+    rows, urls, _output = _run_operator_grant_probe(
+        cleanup=True, listExists=True, rebindAfterIdentityReads=1,
+    )
+
+    assert not [url for url in urls if "/recycle" in url], urls
+    fixture = rows["access.list-acl.fixture-scratch-list"]
+    assert fixture["outcome"] == "ABORTED", fixture
+    assert f"resolves to list {_OPERATOR_REBOUND_LIST_ID}" in fixture["evidence"]
+    assert "before the CLEANUP recycle" in fixture["evidence"]
+    assert "Nothing was recycled, reused, broken or written" in fixture["evidence"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_title_rebound_after_a_write_leaves_the_restore_writing_nothing() -> None:
+    """The far side of the bracket, and the restore failing closed behind it.
+
+    The title is rebound around the real removal, so the write landed on the
+    claimed list and the bracket after it is what notices. The restore then
+    cannot prove the title is still that list, and its own writes are a
+    safety grant and a reset: sent to a stranger they are the damage this
+    whole bracket exists against. It writes nothing and names the Id, because
+    an operator repairing by hand off the title would go to the wrong list.
+    """
+    _rows, urls, output = _run_operator_grant_probe(
+        rebindAfter=f"removeroleassignment(principalid={_OPERATOR_PRINCIPAL}",
+    )
+
+    # The removal itself went out: this is about what happened afterwards.
+    assert [
+        url for url in urls
+        if "/removeroleassignment(" in url and "42424242" not in url
+    ], urls
+    assert not _restored(urls), f"the reset was sent to a rebound title: {urls}"
+    assert not [
+        url for url in urls if "/addroleassignment(" in url
+    ][1:], "the restore's safety grant was sent to a rebound title"
+    assert any(
+        line.startswith("[FAIL] ")
+        and f"no longer proves to be list {_OPERATOR_CREATED_LIST_ID}" in line
+        and "NOTHING was written to it" in line
+        and "going by the Id and not by the title" in line
+        for line in output.splitlines()
+    ), output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_created_under_a_title_that_was_rebound_is_not_adopted() -> None:
+    """The window the read-back alone cannot close.
+
+    The identity every bracket compares against is read back from the title
+    after the create, so a title rebound in between would hand this run a
+    stranger's list carrying a copied marker and every bracket would then
+    agree with it. The Id the create answered with is what closes that, and
+    the run refuses rather than adopting.
+    """
+    rows, urls, _output = _run_operator_grant_probe(rebindAfter="/web/lists")
+
+    fixture = rows["access.list-acl.fixture-scratch-list"]
+    assert fixture["outcome"] == "ABORTED", fixture
+    assert fixture["state"] == "open"
+    assert f"created list {_OPERATOR_CREATED_LIST_ID}" in fixture["evidence"]
+    assert f"now resolves to {_OPERATOR_REBOUND_LIST_ID}" in fixture["evidence"]
+    assert "A marker can be copied" in fixture["evidence"]
+    for forbidden in ("breakroleinheritance", "roleassignment(", "resetroleinheritance"):
+        assert not [url for url in urls if forbidden in url], (forbidden, urls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_create_that_answers_without_an_id_still_claims_the_list() -> None:
+    """What a list POST returns is not measured on a live tenant, so the
+    cross-check above cannot be a prerequisite. The run says which evidence it
+    claimed the list on and carries on."""
+    rows, urls, output = _run_operator_grant_probe(createOmitsId=True)
+
+    assert rows["access.list-acl.fixture-scratch-list"]["outcome"] == "PASS"
+    assert any(
+        line.startswith("[INFO] ")
+        and "the list create did not answer with an Id" in line
+        and f"claimed as list {_OPERATOR_CREATED_LIST_ID}" in line
+        for line in output.splitlines()
+    ), output
+    assert not _unbracketed(urls), _unbracketed(urls)
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
