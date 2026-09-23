@@ -214,7 +214,9 @@
     // missing, which undeclared ones an exact policy prunes, and what the
     // scope reports once both have been written. Paginated because a capped
     // read is a PARTIAL view, and an allowlist pruned against one removes
-    // bindings it never saw.
+    // bindings it never saw. One read serving every decision is also why the
+    // shape is checked here: a field this enumeration drops is wrong for all
+    // of them at once.
     const scopeBindings = async (scope) => {
       const rows = [];
       let url = apiUrl(`web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}/roleassignments?$expand=RoleDefinitionBindings&$select=PrincipalId,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`);
@@ -232,7 +234,26 @@
           if (row.PrincipalId == null) {
             throw new Error(`role assignment enumeration for '${scope.label}' returned an entry without PrincipalId`);
           }
-          for (const binding of ((row.RoleDefinitionBindings && row.RoleDefinitionBindings.results) || [])) {
+          // The fallback this replaces read a malformed row as a principal
+          // holding nothing, which is silent in both directions: an exact
+          // policy issues no removal for a grant it cannot see and then
+          // certifies the scope, and a binding whose Name is absent stops
+          // matching 'Limited Access' and is pruned. `deployShapeRead` in
+          // library-access-probe.js OBSERVES these three fields on a live
+          // tenant, and production fails closed rather than assuming them.
+          const bindings = row.RoleDefinitionBindings && row.RoleDefinitionBindings.results;
+          if (!Array.isArray(bindings)) {
+            throw new Error(`role assignment enumeration for '${scope.label}' returned principal ${row.PrincipalId} without a RoleDefinitionBindings.results array`);
+          }
+          for (const binding of bindings) {
+            if (binding == null || binding.Id == null) {
+              throw new Error(`role assignment enumeration for '${scope.label}' returned a binding for principal ${row.PrincipalId} without RoleDefinitionBindings/Id`);
+            }
+            // Presence is typeof, exactly as the probe measures it, so this
+            // rule is never stronger than the observation behind it.
+            if (typeof binding.Name !== 'string') {
+              throw new Error(`role assignment enumeration for '${scope.label}' returned binding ${binding.Id} for principal ${row.PrincipalId} without RoleDefinitionBindings/Name`);
+            }
             rows.push({
               principalId: row.PrincipalId, roleDefId: binding.Id,
               key: `${row.PrincipalId}:${binding.Id}`, name: binding.Name,

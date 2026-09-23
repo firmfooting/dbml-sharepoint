@@ -7953,6 +7953,77 @@ _FAST_TIMERS_JS = (
 )
 
 
+#: One enumeration row per field the phase reads off this query, answered
+#: with that field missing. `deployShapeRead` in library-access-probe.js
+#: OBSERVES all three on a live tenant, which is what makes them a shape the
+#: deploy must refuse rather than assume: a tenant that honours the top-level
+#: `$select` and drops a nested one reads as healthy on a PrincipalId count.
+_MALFORMED_BINDING_ROWS = {
+    "results": (
+        "{ PrincipalId: 7, RoleDefinitionBindings: {} }",
+        "without a RoleDefinitionBindings.results array",
+    ),
+    "id": (
+        "{ PrincipalId: 7, RoleDefinitionBindings: { results: [{ Name: 'Read' }] } }",
+        "without RoleDefinitionBindings/Id",
+    ),
+    "name": (
+        "{ PrincipalId: 7, RoleDefinitionBindings: { results: [{ Id: 4 }] } }",
+        "without RoleDefinitionBindings/Name",
+    ),
+}
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("dropped", sorted(_MALFORMED_BINDING_ROWS))
+def test_a_binding_row_missing_a_field_fails_the_scope_closed(
+    tmp_path: Path, dropped: str,
+) -> None:
+    """ONE read drives the diff, the prune and both judges, so a field it
+    drops is wrong for all of them at once, and silently.
+
+    The fallback this replaces read a malformed row as a principal holding
+    nothing. With nothing declared, an exact policy then issues no removal
+    and certifies a scope that still carries the undeclared grant. A binding
+    with no Name is the other direction: it stops matching 'Limited Access',
+    which SharePoint derives to support lower-scope access, and the prune
+    removes it. Run with an EMPTY declared set, the policy whose removals
+    matter most.
+    """
+    row, complaint = _MALFORMED_BINDING_ROWS[dropped]
+    seeded = _ownership_harness(tmp_path, ("Escalation",))
+    # Two spaces, for the dedent the refused-enumeration test above names.
+    # ENUMERATIONS only: this branch also answers the addroleassignment and
+    # removeroleassignment POSTs, and a malformed answer to those would be a
+    # different fiction from the one under test.
+    malformed = seeded.replace(
+        "  if (url.includes('/roleassignments')) {\n",
+        "  if (url.includes('/roleassignments')"
+        " && !url.includes('roleassignment(')) {\n"
+        f"    return {{ d: {{ results: [{row}] }} }};\n"
+        "  }\n"
+        "  if (url.includes('/roleassignments')) {\n",
+    )
+    assert malformed != seeded, "the malformed-row splice did not apply"
+    summary, calls, output = _run_ownership_deploy(
+        tmp_path, harness=_FAST_TIMERS_JS + malformed, declare_assignments=False,
+    )
+
+    named = [
+        err["error"] for err in summary["errors"]
+        if complaint in err["error"] and "principal 7" in err["error"]
+    ]
+    assert named, summary["errors"]
+    # Nothing was written off a read the phase could not understand, and in
+    # particular no binding whose level it could not name was pruned.
+    assert not [c for c in calls if "removeroleassignment" in c["url"]], (
+        "a scope was pruned against an enumeration that failed its own shape "
+        "check"
+    )
+    log = _phase_log(output, pn("acls"))
+    assert not [line for line in log if "reports exactly" in line], log
+
+
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_list_that_never_reports_a_declared_grant_is_refused(
     tmp_path: Path,
