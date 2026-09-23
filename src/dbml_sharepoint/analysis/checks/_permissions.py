@@ -1,8 +1,15 @@
 # src/dbml_sharepoint/analysis/checks/_permissions.py
 """Permission levels, groups, and per-list policies."""
 
+from collections.abc import Callable, Iterator
+
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
+from dbml_sharepoint.analysis.folders import (
+    UnknownFolderEnumError,
+    declared_folders,
+    policy_for_folder,
+)
 from dbml_sharepoint.analysis.group_description import (
     AUTOMATION_GROUP_NAME,
     description_budget,
@@ -25,6 +32,11 @@ from dbml_sharepoint.analysis.role_definition_description import (
     marker_for_level,
 )
 from dbml_sharepoint.model.mapping_types import ListPermissionPolicy, PermissionsConfig
+from dbml_sharepoint.model.prefix import (
+    MEMBER_PLACEHOLDER,
+    MEMBER_SAFE_PLACEHOLDER,
+    refused_group_name_characters,
+)
 
 # These messages spell the level or group name with `!r`, so the quotes are
 # inside the bracket -- `permission_levels['Reader']`. A Location holding
@@ -38,6 +50,7 @@ _GROUPS = Location(Section.GROUPS)
 #: paths are `list_permissions.default...` and `list_permissions.overrides`.
 _DEFAULT_POLICY = Location(Section.LIST_PERMISSIONS, sub="default")
 _OVERRIDES = Location(Section.LIST_PERMISSIONS, sub="overrides")
+_FOLDERS = Location(Section.LIST_PERMISSIONS, sub="folders")
 
 #: Matched case-insensitively, the same way the duplicate-name rule below
 #: treats level names -- one stance, not two. A case variant is refused for
@@ -54,7 +67,7 @@ _DERIVED_LEVEL_KEYS: frozenset[str] = frozenset(
 
 
 def _levels_granted_to_group(
-    perms: PermissionsConfig, name: str,
+    vc: ValidationContext, perms: PermissionsConfig, name: str,
 ) -> list[tuple[str, Location]]:
     """Every (level, origin) grant to `name` across all policy blocks.
 
@@ -85,6 +98,16 @@ def _levels_granted_to_group(
     policies: list[tuple[ListPermissionPolicy | None, Location]] = [
         (perms.default_policy, _DEFAULT_POLICY),
         *((policy, _OVERRIDES) for policy in perms.overrides.values()),
+        # A folder policy is a policy block like any other. Left out, a
+        # reader granted Read on the folders alone would read as granted
+        # nothing anywhere. EXPANDED, because a `{member}` principal is not
+        # necessarily a per-member group: `dbml Enterprise {member}` over a
+        # folder named Readers resolves to a protected group these rules are
+        # about, and the template spelling would never match it.
+        *(
+            (policy, _FOLDERS)
+            for _entity, _folder, policy in _expanded_folder_policies(vc, perms)
+        ),
     ]
     return [
         (a.level, origin)
@@ -93,6 +116,173 @@ def _levels_granted_to_group(
         for a in policy.assignments
         if a.principal.kind == "group" and a.principal.name == name
     ]
+
+
+def _expanded_folder_policies(
+    vc: ValidationContext, perms: PermissionsConfig,
+) -> Iterator[tuple[str, str, ListPermissionPolicy]]:
+    """(entity, folder, policy) for every folder policy, `{member}` resolved.
+
+    An unknown enum is skipped rather than raised: `folder_enum_unknown`
+    owns that sentence, and a rule that raised here would replace it with a
+    traceback.
+    """
+    for entity_name, folder_policy in sorted(perms.folder_policies.items()):
+        entity = vc.bundle.mapping.entities.get(entity_name)
+        if entity is None:
+            # `folder_permissions_on_a_list` and the unknown-entity rule in
+            # `_library.py` own that sentence; nothing to expand against.
+            continue
+        try:
+            folders = declared_folders(entity.folder_source, vc.enum_members_by_name)
+        except UnknownFolderEnumError:
+            continue
+        for folder in folders:
+            yield entity_name, folder, policy_for_folder(folder_policy, folder)
+
+
+def _folder_policy_assignments(
+    vc: ValidationContext,
+    perms: PermissionsConfig,
+    check_policy: Callable[[ListPermissionPolicy, str, Location], None],
+) -> None:
+    """Run the policy-block assignment checks over every folder policy.
+
+    Expanded per folder, so a `{member}` principal or level is judged as the
+    name it actually resolves to rather than as the template. Without this a
+    misspelled level or group in a folder policy survived the build and
+    failed at the ACL phase, after the earlier phases had already written to
+    the site.
+
+    Takes the check as a callable because it is a closure over `check`'s
+    findings list, and lives out here because `check` is at the complexity
+    ceiling the ratchet pins.
+    """
+    # Once per folder, and the finding names the folder. One policy is many
+    # resolved policies: a `{member}` principal is a different group for
+    # every member, and only some of them may be wrong. A mapping error
+    # shared by every folder therefore reports once per folder, which is
+    # repetitive but never misleading; collapsing it would mean choosing one
+    # folder's resolution to speak for the others.
+    for entity_name, folder, policy in _expanded_folder_policies(vc, perms):
+        check_policy(
+            policy,
+            f"list_permissions.folders[{entity_name!r}][{folder!r}]",
+            _FOLDERS,
+        )
+
+
+def _group_name_characters(vc: ValidationContext) -> list[Finding]:
+    """No declared group name may carry a character SharePoint refuses.
+
+    Judged over the RESOLVED names, which is the whole point: a template
+    reading `{prefix} {member} Division` carries nothing refused, and the
+    name it generates for a member holding a comma does. Found at build time
+    here because the alternative is where it was found once already, at
+    deploy phase 1.4, after the run had created the groups ahead of it in
+    the list and then stopped.
+    """
+    findings: list[Finding] = []
+    for grp in vc.site_groups:
+        # The measured error refuses an EMPTY name in the same sentence as
+        # the character list, and sanitisation can produce one: a member of
+        # only refused characters leaves nothing behind, so a template of
+        # `{member_safe}` alone passes the character test with no name.
+        if not grp.name.strip():
+            findings.append(Finding(
+                FindingCode.GROUP_NAME_INVALID,
+                f"groups[{grp.name!r}]: SharePoint refuses an empty group "
+                f"name. A name built only from "
+                f"{MEMBER_SAFE_PLACEHOLDER} is empty when the member holds "
+                f"nothing SharePoint allows; give the name a literal part, "
+                f"or rename the enum member.",
+                location=_GROUPS,
+            ))
+            continue
+        refused = refused_group_name_characters(grp.name)
+        if not refused:
+            continue
+        findings.append(Finding(
+            FindingCode.GROUP_NAME_INVALID,
+            f"groups[{grp.name!r}]: SharePoint refuses "
+            f"{', '.join(repr(c) for c in refused)} in a group name. If the "
+            f"name is generated from an enum, {MEMBER_SAFE_PLACEHOLDER} "
+            f"expands to the member with those characters replaced by "
+            f"spaces; otherwise rename the group.",
+            location=_GROUPS,
+        ))
+    return findings
+
+
+def _enum_groups(vc: ValidationContext, perms: PermissionsConfig) -> list[Finding]:
+    """`groups[].from_enum`: the enum must exist and the name must vary.
+
+    A separate function rather than two more arms in `check`, for the reason
+    `_library.py` gives: that function is already near the complexity
+    ceiling this repository pins.
+    """
+    findings: list[Finding] = []
+    for source in perms.group_sources:
+        if source.enum not in vc.enum_members_by_name:
+            findings.append(Finding(
+                FindingCode.GROUP_ENUM_UNKNOWN,
+                f"groups[{source.template.name!r}]: from_enum names "
+                f"{source.enum!r}, which the schema does not declare. Declared "
+                f"enums are: "
+                f"{', '.join(sorted(vc.enum_members_by_name)) or 'none'}.",
+                location=_GROUPS,
+            ))
+            continue
+        # Without the token every member resolves to ONE name. That builds,
+        # deploys, reads back byte-identical and leaves a single group where
+        # the folder grants expect one per member, so it has to be refused
+        # here rather than discovered on a site.
+        members = vc.enum_members_by_name[source.enum]
+        varies = any(
+            token in source.template.name
+            for token in (MEMBER_PLACEHOLDER, MEMBER_SAFE_PLACEHOLDER)
+        )
+        # One member cannot collapse onto anything, so a fixed name there is
+        # the author's choice rather than the mistake this rule names.
+        if not varies and len(members) > 1:
+            findings.append(Finding(
+                FindingCode.GROUP_ENUM_NAME_NOT_UNIQUE,
+                f"groups[{source.template.name!r}]: from_enum generates one "
+                f"group per member of {source.enum!r} "
+                f"({len(members)} of them), but "
+                f"the name carries neither {MEMBER_PLACEHOLDER} nor "
+                f"{MEMBER_SAFE_PLACEHOLDER}, so "
+                f"they would all be the same group.",
+                location=_GROUPS,
+            ))
+        # Each enrolment flag names ONE identity, and exactly one member is
+        # the only count that gives it one group to land in: more leave every
+        # group after the first empty, and none generates no group at all.
+        enrolments = [] if len(members) == 1 else [
+            flag for flag, on in (
+                ("enroll_enterprise_reader", source.template.enroll_enterprise_reader),
+                (
+                    "enroll_operator_during_deploy",
+                    source.template.enroll_operator_during_deploy,
+                ),
+            ) if on
+        ]
+        if enrolments:
+            target = (
+                f"there would be one group per member of {source.enum!r} to "
+                f"enrol it into"
+                if members
+                else f"{source.enum!r} has no members, so no group would be "
+                f"generated to enrol it into"
+            )
+            findings.append(Finding(
+                FindingCode.GROUP_ENUM_ENROLS_AN_IDENTITY,
+                f"groups[{source.template.name!r}]: from_enum cannot be "
+                f"combined with {' or '.join(enrolments)}; each enrols one "
+                f"identity, and {target}.",
+                location=_GROUPS,
+            ))
+    return findings
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -225,8 +415,8 @@ def check(vc: ValidationContext) -> list[Finding]:
         # groups[*].name must be unique, case-insensitively, for the same
         # reason as the levels above.
         seen_group_names: dict[str, str] = {}
-        custom_group_names = {g.name for g in perms.groups}
-        for grp in perms.groups:
+        custom_group_names = {g.name for g in vc.site_groups}
+        for grp in vc.site_groups:
             key = grp.name.casefold()
             if key in seen_group_names:
                 findings.append(Finding(
@@ -289,8 +479,11 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=_GROUPS,
                 ))
 
+        findings += _group_name_characters(vc)
+        findings += _enum_groups(vc, perms)
+
         # groups[*].owner_group must be a built-in SP group or a declared custom group.
-        for grp in perms.groups:
+        for grp in vc.site_groups:
             owner_ok = (
                 grp.owner_group in BUILTIN_SP_GROUPS
                 or grp.owner_group in custom_group_names
@@ -380,7 +573,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # The flagged group is the target of `build --enterprise-reader`.
         # Every rule here refuses a mapping that would deploy green and
         # leave the reporting account seeing nothing.
-        reader_groups = [g for g in perms.groups if g.enroll_enterprise_reader]
+        reader_groups = [g for g in vc.site_groups if g.enroll_enterprise_reader]
 
         if len(reader_groups) > 1:
             findings.append(Finding(
@@ -429,7 +622,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=_GROUPS,
                 ))
 
-            grants = _levels_granted_to_group(perms, grp.name)
+            grants = _levels_granted_to_group(vc, perms, grp.name)
             if not grants:
                 findings.append(Finding(
                     FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED,
@@ -511,7 +704,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             {
                 origin
                 for level, origin in _levels_granted_to_group(
-                    perms, AUTOMATION_GROUP_NAME,
+                    vc, perms, AUTOMATION_GROUP_NAME,
                 )
                 if level == "Full Control"
             },
@@ -546,5 +739,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 ))
             ctx_key = f"list_permissions.overrides[{entity_name!r}]"
             _check_policy_assignments(override_policy, ctx_key, _OVERRIDES)
+
+        _folder_policy_assignments(vc, perms, _check_policy_assignments)
 
     return findings

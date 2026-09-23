@@ -951,10 +951,15 @@
     } else if (changeLogReady) {
 {% if enterprise_reader %}
       const readerGroup = SCHEMA.groups.find((g) => g.enroll_enterprise_reader);
-      const readerGrant = readerGroup && SCHEMA.list_assignments
-        .map((la) => la.assignments.find((a) => a.principal.kind === 'group'
-                && a.principal.name === readerGroup.name))
-        .find((a) => a);
+      // Both collections. A reader granted only inside a library's folders
+      // holds a real grant, and reading the list ones alone left the change
+      // log with no role assignments while reporting that as a finding of
+      // fact rather than a gap in what was searched.
+      const readerGrant = readerGroup
+        && [...SCHEMA.list_assignments, ...SCHEMA.folder_assignments]
+          .map((la) => la.assignments.find((a) => a.principal.kind === 'group'
+                  && a.principal.name === readerGroup.name))
+          .find((a) => a);
       const levelName = readerGrant ? readerGrant.level : null;
       if (!readerGroup || !levelName) {
         log('INFO', 'Change log: no reader group grant found to mirror; leaving it with no role assignments.');
@@ -1007,6 +1012,35 @@
           ), { method: 'POST', headers: spHeaders(await getDigest()) });
           if (!grantResp.ok) {
             throw new Error(`addroleassignment: HTTP ${grantResp.status} ${await grantResp.text()}`);
+          }
+          // HTTP 200 is evidence the request was accepted, not that the
+          // binding exists, and an accepted add that did not take leaves the
+          // reader unable to collect the change feed while this run reports
+          // the grant. Read back by principal, the shape `_acls.js.j2` uses
+          // for the same question, so no page can be missed. The
+          // settle-and-retry loop there is NOT reused: it is a const inside
+          // the ACL phase's own block, which runs after this one, so it is
+          // out of scope here and a second copy is the drift this stack
+          // exists to close.
+          const backResp = await fetchWithRetry(apiUrl(
+            `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')`
+            + `/roleassignments/getbyprincipalid(${groupId})`
+            + `?$expand=RoleDefinitionBindings&$select=RoleDefinitionBindings/Id`
+          ), { headers: { 'Accept': 'application/json;odata=verbose' } });
+          let observed = [];
+          if (backResp.ok) {
+            const back = (await backResp.json()).d || {};
+            observed = (back.RoleDefinitionBindings && back.RoleDefinitionBindings.results) || [];
+          } else if (backResp.status !== 404) {
+            throw new Error(`role assignment read-back: HTTP ${backResp.status} ${await backResp.text()}`);
+          }
+          if (!observed.some((binding) => binding.Id === roleId)) {
+            throw new Error(
+              `addroleassignment was accepted and '${CHANGE_LOG_TITLE}' does not report `
+              + `'${readerGroup.name}' holding the '${levelName}' level (binding ${roleId}). `
+              + `The write was accepted and the binding was not observed, so this is either a `
+              + `list that has not caught up or a write that did not take; nothing else was `
+              + `changed and rerunning reads the bindings again.`);
           }
           log('INFO', `Change log '${CHANGE_LOG_TITLE}': granted '${readerGroup.name}' the '${levelName}' level for the enterprise reader.`);
           await writeChange({

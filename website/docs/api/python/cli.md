@@ -1,6 +1,6 @@
 ---
 title: cli
-sidebar_position: 51
+sidebar_position: 52
 ---
 
 # `dbml_sharepoint.cli`

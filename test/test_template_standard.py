@@ -39,6 +39,7 @@ from dbml_sharepoint.analysis.group_description import (
     TOOL_OWNED_GROUP_NAMES,
     description_budget,
 )
+from dbml_sharepoint.analysis.groups import declared_groups
 from dbml_sharepoint.analysis.icons import FLEET_ICONS
 from dbml_sharepoint.analysis.list_description import (
     DESCRIPTION_LIMIT,
@@ -2008,7 +2009,13 @@ def test_the_reader_group_is_granted_read_on_every_policy_block(
     perms = mapping.permissions
     reader = next(g for g in perms.groups if g.enroll_enterprise_reader)
     trims = mapping.declares_item_read_trimming()
-    policies = [perms.default_policy, *perms.overrides.values()]
+    # A folder policy carries its own complete assignment list exactly as an
+    # override does, so leaving it out here would let a family secure its
+    # folders and quietly cut fleet reporting off from the documents, which
+    # in a library is where every row actually lives.
+    policies = [
+        perms.default_policy, *perms.overrides.values(), *perms.folder_policies.values(),
+    ]
     for policy in policies:
         assert policy is not None
         granted = {
@@ -2045,7 +2052,11 @@ def test_the_administrators_group_holds_full_control_everywhere(
     mapping = _load(template).mapping
     assert mapping.permissions is not None
     perms = mapping.permissions
-    blocks = [("default", perms.default_policy), *perms.overrides.items()]
+    blocks = [
+        ("default", perms.default_policy),
+        *perms.overrides.items(),
+        *((f"folders.{e}", pol) for e, pol in perms.folder_policies.items()),
+    ]
     for block_name, policy in blocks:
         assert policy is not None
         granted = {
@@ -2444,7 +2455,13 @@ def test_no_shipped_group_description_eats_into_the_marker_reserve() -> None:
         loaded = _load(template)
         family = family_for(loaded.schema)
         assert loaded.mapping.permissions is not None
-        for grp in loaded.mapping.permissions.groups:
+        # RESOLVED, not declared: a `from_enum` group's budget is spent by the
+        # longest member's expanded name and description, and the template
+        # carrying `{member}` is shorter than every group it generates.
+        for grp in declared_groups(
+            loaded.mapping.permissions,
+            {enum.name: enum.members for enum in loaded.schema.enums},
+        ):
             groups_checked += 1
             budget = description_budget(grp.name, family)
             if len(grp.description) > budget:

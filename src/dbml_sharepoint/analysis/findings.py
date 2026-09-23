@@ -301,6 +301,8 @@ class FindingCode(StrEnum):
     FOLDERS_ON_A_LIST = "folders_on_a_list", "error"
     FOLDER_NAME_INVALID = "folder_name_invalid", "error"
     FOLDER_ENUM_UNKNOWN = "folder_enum_unknown", "error"
+    FOLDER_PERMISSIONS_ON_A_LIST = "folder_permissions_on_a_list", "error"
+    FOLDER_PERMISSIONS_WITHOUT_FOLDERS = "folder_permissions_without_folders", "error"
     VIEW_SCOPE_ON_A_LIST = "view_scope_on_a_list", "error"
     # Warning severity: the view renders and answers correctly below the
     # threshold; what changes past it is measured, and the author may accept it.
@@ -413,6 +415,10 @@ class FindingCode(StrEnum):
     GROUP_AUTO_ACCEPT_WITHOUT_REQUESTS = (
         "group_auto_accept_without_requests", "error")
     GROUP_DESCRIPTION_TOO_LONG = "group_description_too_long", "error"
+    GROUP_ENUM_ENROLS_AN_IDENTITY = "group_enum_enrols_an_identity", "error"
+    GROUP_ENUM_NAME_NOT_UNIQUE = "group_enum_name_not_unique", "error"
+    GROUP_ENUM_UNKNOWN = "group_enum_unknown", "error"
+    GROUP_NAME_INVALID = "group_name_invalid", "error"
     GROUP_DESCRIPTION_TOO_LONG_FOR_MARKER = (
         "group_description_too_long_for_marker", "error")
     MARKER_LONGER_THAN_THE_FIELD = (

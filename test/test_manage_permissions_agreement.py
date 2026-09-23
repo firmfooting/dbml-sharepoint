@@ -16,8 +16,8 @@ a future edit to either call site that reintroduces a second definition is
 caught here rather than by a customer's aborted deploy.
 """
 
+from _model import as_library, column
 from _model import bundle as make_bundle
-from _model import column
 from _model import schema as make_schema
 from _model import table as make_table
 
@@ -118,3 +118,76 @@ def test_break_inheritance_false_still_needs_manage_permissions() -> None:
         ),
     )
     _agree(bundle, expected=True)
+
+
+def _folder_policy_bundle(policy: ListPermissionPolicy) -> MappingBundle:
+    """A library with one folder and `policy` as the only permission
+    declaration, so the verdict can only come from the folder arm."""
+    return as_library(
+        make_bundle(
+            entities=["Risk"],
+            permissions=PermissionsConfig(
+                levels=[],
+                groups=[],
+                default_policy=None,
+                overrides={},
+                folder_policies={"Risk": policy},
+            ),
+        ),
+        "Risk",
+        folders=("Alpha",),
+    )
+
+
+def test_a_folder_policy_that_writes_nothing_needs_no_manage_permissions() -> None:
+    """Membership in `folder_policies` was a proxy for "this build writes an
+    ACL". `reconcileScope` breaks no inheritance here, has no assignment to
+    add and prunes nothing in `configured` mode, so the whole policy is
+    reads, and demanding the right made both the assessment and deploy.js's
+    preflight reject an operator holding every right the deploy uses."""
+    _agree(
+        _folder_policy_bundle(ListPermissionPolicy(
+            break_inheritance=False, assignments=[], reconcile_mode="configured",
+        )),
+        expected=False,
+    )
+
+
+def test_a_folder_policy_that_breaks_inheritance_needs_manage_permissions() -> None:
+    """breakroleinheritance is a write whether or not anything is granted
+    afterwards."""
+    _agree(
+        _folder_policy_bundle(ListPermissionPolicy(
+            break_inheritance=True, assignments=[], reconcile_mode="configured",
+        )),
+        expected=True,
+    )
+
+
+def test_a_folder_policy_with_an_assignment_needs_manage_permissions() -> None:
+    """The grant is bound on the inherited folder, exactly as the per-list
+    arm binds one on an inherited list."""
+    _agree(
+        _folder_policy_bundle(ListPermissionPolicy(
+            break_inheritance=False,
+            assignments=[
+                RoleAssignment(
+                    principal=Principal(kind="associated_member_group"),
+                    level="Contribute",
+                ),
+            ],
+            reconcile_mode="configured",
+        )),
+        expected=True,
+    )
+
+
+def test_an_exact_folder_policy_needs_manage_permissions_with_nothing_declared() -> None:
+    """Exact mode is an allowlist, so an empty declared set is the policy
+    that removes every binding rather than the policy that does nothing."""
+    _agree(
+        _folder_policy_bundle(ListPermissionPolicy(
+            break_inheritance=False, assignments=[], reconcile_mode="exact",
+        )),
+        expected=True,
+    )

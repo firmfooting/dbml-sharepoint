@@ -655,6 +655,261 @@ def test_the_reader_flag_needs_a_group_to_enrol_into(tmp_path: Path) -> None:
     assert not (out / "deploy.js.txt").exists()
 
 
+def test_the_reader_flag_accepts_a_group_generated_from_a_one_member_enum(
+    tmp_path: Path,
+) -> None:
+    """The gate reads the name, so it has to read the RESOLVED one.
+
+    A one-member `from_enum` group may carry the flag, and the emitted schema
+    names the group it generates. Asked through the template spelling the
+    gate searched for a principal called `{member} Editors`, found no grant,
+    and refused a build whose deploy grants the reader on every folder.
+    """
+    schema = write_dbml(tmp_path, blocks("""
+        Enum division {
+          "Clinical services"
+        }
+
+        Table Docs {
+          Id int [pk, increment]
+          Title nvarchar [not null]
+          Division division
+        }
+    """))
+    mapping = write_mapping(tmp_path, blocks("""
+        prefix: XX
+
+        entities:
+          Docs:
+            kind: DocumentLibrary
+            base_template: 101
+            site_role: default
+            folders: {from_enum: division}
+
+        groups:
+          - from_enum: division
+            name: "XX {member} Readers"
+            description: "Readers for {member}."
+            owner_group: "Site Owners"
+            enroll_enterprise_reader: true
+
+        list_permissions:
+          folders:
+            Docs:
+              break_inheritance: true
+              reconcile: configured
+              assignments:
+                - principal: { kind: group, name: "XX {member} Readers" }
+                  level: "Read"
+    """))
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(schema),
+        "--mapping", str(mapping),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
+        "--site-role", "default",
+        "--out", str(out),
+        "--enterprise-reader", "svc-reporting@example.org",
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert (out / "deploy.js.txt").exists()
+
+
+def test_an_unknown_reader_group_enum_is_reported_by_validation(
+    tmp_path: Path,
+) -> None:
+    """The finding that names the real mistake has to survive the gate.
+
+    Resolving the reader targets dropped a source whose enum is misspelled,
+    left the list empty and raised "declares no group" first, which sends
+    the author to add a flag that is already there and takes the manifest
+    and every other finding with it.
+    """
+    schema = write_dbml(tmp_path, blocks("""
+        Enum division {
+          "Clinical services"
+        }
+
+        Table Docs {
+          Id int [pk, increment]
+          Title nvarchar [not null]
+          Division division
+        }
+    """))
+    mapping = write_mapping(tmp_path, blocks("""
+        prefix: XX
+
+        entities:
+          Docs: { kind: List, base_template: 100, site_role: default }
+
+        groups:
+          - from_enum: divison
+            name: "XX {member} Readers"
+            description: "Readers for {member}."
+            owner_group: "Site Owners"
+            enroll_enterprise_reader: true
+    """))
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(schema),
+        "--mapping", str(mapping),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
+        "--site-role", "default",
+        "--out", str(out),
+        "--enterprise-reader", "svc-reporting@example.org",
+    ])
+
+    assert result.exit_code != 0, result.output
+    assert "group_enum_unknown" in result.output, result.output
+    assert "declares no group" not in result.output, result.output
+
+
+def test_an_unknown_folder_enum_is_reported_by_validation_not_by_the_reader_gate(
+    tmp_path: Path,
+) -> None:
+    """The gate asks what each list grants, and a folder policy whose enum
+    does not resolve cannot answer.
+
+    `folder_enum_unknown` is an error, so validation aborts this build in any
+    case. What the gate raising first destroyed was the finding and the
+    findings manifest: the operator got a traceback naming the enum and
+    nothing telling them which rule they broke. The `list_permissions.folders`
+    entry is what makes the gate reach the unresolved source at all, so a
+    mapping without one proves nothing about this path.
+    """
+    schema = write_dbml(tmp_path, blocks("""
+        Enum division {
+          "Clinical services"
+        }
+
+        Table Docs {
+          Id int [pk, increment]
+          Title nvarchar [not null]
+          Division division
+        }
+    """))
+    mapping = write_mapping(tmp_path, blocks("""
+        prefix: XX
+
+        entities:
+          Docs:
+            kind: DocumentLibrary
+            base_template: 101
+            site_role: default
+            folders: {from_enum: divison}
+
+        permission_levels:
+          - name: "Folder Editor"
+            description: "Edit inside one folder."
+            base_permissions: [ViewListItems, AddListItems, EditListItems]
+
+        groups:
+          - name: "XX Enterprise Readers"
+            description: "Reporting account."
+            owner_group: "Site Owners"
+            enroll_enterprise_reader: true
+
+        list_permissions:
+          default:
+            site_role: default
+            break_inheritance: true
+            reconcile: exact
+            assignments:
+              - principal: { kind: group, name: "XX Enterprise Readers" }
+                level: "Read"
+          folders:
+            Docs:
+              break_inheritance: true
+              reconcile: exact
+              assignments:
+                - principal: { kind: group, name: "XX Enterprise Readers" }
+                  level: "Read"
+    """))
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(schema),
+        "--mapping", str(mapping),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
+        "--site-role", "default",
+        "--out", str(out),
+        "--enterprise-reader", "svc-reporting@example.org",
+    ])
+
+    assert result.exit_code != 0, result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit), (
+        result.exception
+    )
+    assert "folder_enum_unknown" in result.output, result.output
+    assert (out / "deploy-manifest.md").exists(), sorted(p.name for p in out.iterdir())
+    assert not (out / "deploy.js.txt").exists()
+
+
+def test_a_multi_member_reader_enum_is_reported_by_validation_not_by_the_gate(
+    tmp_path: Path,
+) -> None:
+    """One identity cannot be enrolled into a group per enum member, and
+    `group_enum_enrols_an_identity` is the rule that says so.
+
+    The gate below it asks whether the reader is granted anything in this
+    role, and nothing grants a group that should never have been generated,
+    so it refused first and took the finding, every other finding and the
+    manifest with it.
+    """
+    schema = write_dbml(tmp_path, blocks("""
+        Enum division {
+          "Clinical services"
+          "Corporate services"
+        }
+
+        Table Docs {
+          Id int [pk, increment]
+          Title nvarchar [not null]
+          Division division
+        }
+    """))
+    mapping = write_mapping(tmp_path, blocks("""
+        prefix: XX
+
+        entities:
+          Docs: { kind: List, base_template: 100, site_role: default }
+
+        groups:
+          - from_enum: division
+            name: "XX {member} Readers"
+            description: "Readers for {member}."
+            owner_group: "Site Owners"
+            enroll_enterprise_reader: true
+    """))
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(schema),
+        "--mapping", str(mapping),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
+        "--site-role", "default",
+        "--out", str(out),
+        "--enterprise-reader", "svc-reporting@example.org",
+    ])
+
+    assert result.exit_code != 0, result.output
+    assert "group_enum_enrols_an_identity" in result.output, result.output
+    assert "granted no permission level" not in result.output, result.output
+    assert (out / "deploy-manifest.md").exists(), sorted(p.name for p in out.iterdir())
+    assert not (out / "deploy.js.txt").exists()
+
+
 def test_the_reader_flag_needs_a_grant_in_the_role_being_built(
     tmp_path: Path,
 ) -> None:

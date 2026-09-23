@@ -59,6 +59,7 @@ KNOWN_CONTEXT = {
     "enterprise_reader_required_bits",
     "reader_granted_lists",
     "reader_excluded_lists",
+    "reader_folder_only_lists",
     # The marker distinguishing "clear this value" from "not managed here".
     # Passed in rather than hard-coded on both sides so the two can never
     # disagree about what unmanaged looks like.

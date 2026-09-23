@@ -1858,6 +1858,29 @@ list_permissions:
       assignments:
         - principal: { kind: associated_member_group }
           level: "Read"
+  folders:                    # per entity; one policy for ALL its folders
+    Document:
+      break_inheritance: true
+      reconcile: exact
+      assignments:
+        - principal: { kind: group, name: "{prefix} {member} Division" }
+          level: "{prefix} Contribute No Delete"
+        - principal: { kind: associated_member_group }
+          level: "Read"
+```
+
+A group may be generated from an enum instead of written out, one per member:
+
+```yaml
+groups:
+  - from_enum: division
+    name: "{prefix} {member} Division"
+    description: "Staff who maintain the {member} division's obligations."
+    owner_group: "{prefix} Compliance Coordinators"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
 ```
 
 A `principal` is `{kind: group, name: "..."}`, or one of the three
@@ -1875,6 +1898,102 @@ cannot express it.
 `site_role:` is read on `list_permissions.default` only. Setting it inside
 an `overrides:` entry is accepted by the loader and then discarded. An
 override applies to its entity wherever that entity deploys.
+
+### `folders:` and `{member}`
+
+`list_permissions.folders` is keyed by entity, never by folder name, and its
+one policy applies to every folder that entity declares. The folders are
+already declared on the entity, so naming them a second time here could only
+disagree with the first; this is the same argument
+`folders: {from_enum: ...}` was introduced for one level down.
+
+`{member}` expands to the folder's own name, wherever it appears in a
+principal's name or a level's. With `groups[].from_enum` naming the same
+enum, one group declaration and one folder policy together secure every
+division without either list being written out.
+
+Unlike `{prefix}`, which must appear once and at the start, `{member}` may
+appear anywhere and more than once. It is expanded late, when the schema is
+available: the mapping loader never sees the DBML, so a `from_enum` group is
+carried unresolved until `analysis/groups.py` resolves it.
+
+**`{member_safe}` is the same member with the characters SharePoint refuses
+in a group name replaced by spaces**, runs of whitespace collapsed. Use it
+wherever a member reaches a group NAME, in the group's own declaration and in
+any principal that refers to it; a description is free to carry `{member}`
+and read better for it.
+
+The refused set was measured on a live tenant on **2026-09-21**, from
+SharePoint's own refusal: creating a group whose name carried a comma
+answered *"The group name is empty, or you are using one or more of the
+following invalid characters:"* followed by
+`" / \ [ ] : | < > + = ; , ? * ' @`. Microsoft Learn publishes no equivalent
+list for a group name, so that error is the source, character for character.
+`&` is not in it, and sibling groups whose names carried one were created in
+the same run without complaint, which is what stops the rule being widened to
+punctuation on plausibility.
+
+`group_name_invalid` judges every group name **after** expansion, because a
+template reading `{prefix} {member} Division` carries nothing refused while
+one of the seven names it generates does. That run created six groups and
+stopped at phase 1.4 on the seventh; the rule exists so the next one stops at
+build time instead.
+
+Two members can collapse onto one safe name. That is not special-cased:
+`duplicate_group_name` already judges the resolved names and says so.
+
+Five refusals, all at build time:
+
+- `group_enum_unknown` and `folder_enum_unknown`, for an enum the schema does
+  not declare.
+- `group_enum_name_not_unique`, for a generated name carrying neither
+  `{member}` nor `{member_safe}` where the enum has more than one member.
+  They would all resolve to one name, and one group would be created,
+  written, read back byte-identical and reported clean while every grant
+  meant for a particular member landed on it. A single-member enum is left
+  alone, because one name cannot collapse onto another.
+- `group_enum_enrols_an_identity`, for `from_enum` combined with
+  `enroll_enterprise_reader` or `enroll_operator_during_deploy` where the
+  enum does not have exactly one member. Each flag enrols one identity: more
+  members leave every group after the first empty, and none generates no
+  group at all. A single-member enum is accepted, because there is exactly
+  one group for the identity to land in.
+- `folder_permissions_on_a_list` and `folder_permissions_without_folders`,
+  for a policy attached to something with no folders to secure.
+- `group_name_invalid`, for a resolved group name carrying a character
+  SharePoint refuses. See `{member_safe}` below.
+
+**A folder is secured as its own list item.** Microsoft Learn derives
+`SecurableObject` as `List`, `ListItem` and `Web`; a folder is not one, so
+the grant goes on the folder's list item through
+`web/lists/getbytitle(...)/items(<id>)`, inside the bracket that proves the
+title still resolves to the surveyed list.
+
+Where that id comes from depends on the mode. Under `exact` it is read out of
+the descendant-scope enumeration the guard already runs, matched on the full
+server-relative path, so no folder name is quoted into a URL. Under
+`configured` there is no enumeration, and paging every document to learn a
+handful of ids would make a redeploy scale with the library's size, so each
+declared folder is fetched by path through `GetFolderByServerRelativeUrl`,
+quoted the way the folder phase quotes the same path when it creates the
+folder. Either way the object has to read back as a folder, at the path asked
+for, with a usable item id, before anything is written to it, and it is
+re-read inside the ownership bracket immediately before the write: proving
+the title still resolves to the surveyed list does not prove that a number
+resolved earlier still names the folder it was resolved from.
+
+**The descendant-scope guard now allows what the mapping declares.** Under
+`exact`, a unique scope on an item or folder that `list_permissions.folders`
+does not declare still aborts the phase, named by its path. A folder this
+bundle secures is excluded, because it is a scope this phase is about to
+write; without that exclusion the first redeploy after enabling folder ACLs
+would fail forever on the phase's own work. Nothing is erased either way.
+
+**Rollback does not restore folder inheritance,** because it deletes the
+library outright and the folders go with it. The case worth planning for is a
+folder that stops being declared while the library survives, such as a member
+removed from the enum: the next deploy fails closed naming that folder, and
+resolving it is an operator's decision rather than a script's.
 
 **The permission-level adoption gate.** Every level this tool writes now
 carries `Provisioned by dbml-sharepoint from <family>.` in its description,
@@ -1986,7 +2105,10 @@ facts rule that out, together:
   Under `exact`, that same ACL phase detects a leftover item or folder scope
   and **fails closed** for operator review rather than erasing it. So an
   item share does not merely get revoked. It aborts every subsequent deploy
-  of that site until an operator resolves it by hand.
+  of that site until an operator resolves it by hand. A folder the mapping
+  secures through `list_permissions.folders` is the one exception, and it is
+  not a loophole: that scope is declared, so the phase writes it rather than
+  finding it, and a scope nobody declared still aborts.
 - A grant made at **site or list scope** is a different thing and is handled
   differently. It is a role assignment at that scope, not an item scope, so
   it is caught by the bullet above rather than this one: `exact` treats the

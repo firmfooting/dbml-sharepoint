@@ -21,6 +21,45 @@ in a public module rather than in either of them.
 PREFIX_PLACEHOLDER = '{prefix}'
 ```
 
+### `MEMBER_PLACEHOLDER`
+
+```python
+MEMBER_PLACEHOLDER = '{member}'
+```
+
+### `MEMBER_SAFE_PLACEHOLDER`
+
+```python
+MEMBER_SAFE_PLACEHOLDER = '{member_safe}'
+```
+
+### `GROUP_NAME_REFUSED_CHARACTERS`
+
+```python
+GROUP_NAME_REFUSED_CHARACTERS = frozenset({"'", '"', '*', '+', ',', '/', ':', ';', '<', '=', '>', '?', '@', '[', '\\', ']', '|'})
+```
+
+### `refused_group_name_characters`
+
+```python
+def refused_group_name_characters(name: str) -> tuple[str, ...]
+```
+
+The refused characters `name` carries, in the order they appear.
+
+### `safe_member`
+
+```python
+def safe_member(member: str) -> str
+```
+
+`member` as a group name may carry it.
+
+Each refused character becomes a space rather than being deleted, so
+`A, B` reads `A B` rather than `AB`; runs of whitespace then collapse to
+one. Two members can collapse onto one name, which is not special-cased
+here: `duplicate_group_name` already judges the resolved names and says so.
+
 ### `prefix_stem`
 
 ```python
@@ -28,6 +67,22 @@ def prefix_stem(prefix: str) -> str
 ```
 
 `RR_` names lists `RR_Risk` and groups `RR Risk Managers`: the stem.
+
+### `expand_member`
+
+```python
+def expand_member(value: str, member: str) -> str
+```
+
+Replace every `{member}` and `{member_safe}` with the enum member.
+
+No placement rule and no refusal for absence: where the token has to
+appear is a validator's question, and a name that omits it collapses
+every member onto one object rather than failing to load.
+
+`{member_safe}` is expanded first. It would survive a naive `{member}`
+pass anyway, since that token needs its closing brace, but depending on
+that is depending on a spelling rather than on an order.
 
 ### `expand_prefix`
 

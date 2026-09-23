@@ -1,10 +1,18 @@
 # src/dbml_sharepoint/analysis/permissions.py
 """SP base permissions bitmask + permission-level / group / role-assignment helpers."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass
+from typing import NamedTuple
 
-from dbml_sharepoint.model.mapping_types import Mapping
+from dbml_sharepoint.analysis.folders import folder_policies
+from dbml_sharepoint.analysis.groups import resolvable_groups
+from dbml_sharepoint.model.mapping_types import (
+    ListPermissionPolicy,
+    Mapping,
+    RoleAssignment,
+)
 
 # Per Microsoft.SharePoint.SPBasePermissions (64-bit unsigned). All bit
 # positions below 32 land in Low; positions 32..62 land in High. Values
@@ -251,7 +259,29 @@ ASSOCIATED_GROUP_ALIASES = {
 }
 
 
-def requires_manage_permissions(mapping: Mapping, table_names: Iterable[str]) -> bool:
+def _policy_writes(policy: ListPermissionPolicy) -> bool:
+    """True when applying `policy` performs at least one ACL WRITE.
+
+    Read off the one body both scopes go through,
+    `templates/deploy/_acls.js.j2::reconcileScope`: it POSTs
+    `breakroleinheritance` only when the policy breaks inheritance,
+    `addroleassignment` only for a declared assignment it does not already
+    find, and `removeroleassignment` only in exact mode, where an empty
+    declared set is the allowlist that strips the scope. Every other request
+    it makes is a read, so those three are the whole of the write set.
+    """
+    return (
+        policy.break_inheritance
+        or bool(policy.assignments)
+        or policy.reconcile_mode == "exact"
+    )
+
+
+def requires_manage_permissions(
+    mapping: Mapping,
+    table_names: Iterable[str],
+    enum_members: MappingABC[str, Sequence[str]],
+) -> bool:
     """True when deploying `table_names` performs ANY ACL work, and so needs
     the ManagePermissions site right.
 
@@ -268,23 +298,61 @@ def requires_manage_permissions(mapping: Mapping, table_names: Iterable[str]) ->
 
     A per-list policy counts even with `break_inheritance: false`: deploy.js
     still binds the declared role assignments on the (inherited) list, which
-    still needs the bit. `table_names` should be the entity names actually in
-    this build (`analysis.ordering.site_tables_in_order`'s output), not every
-    entity in the mapping -- a policy scoped to a site_role this build does
-    not deploy must not demand a right the build never exercises.
+    still needs the bit. What it does NOT do is count the policy's existence,
+    which was a proxy for the ACL work it performs: a policy that breaks no
+    inheritance, declares no assignment and reconciles `configured` makes
+    `reconcileScope` read and write nothing, and demanding the right for it
+    made both the assessment and deploy.js's live preflight reject an
+    operator holding every right the deployment exercises. `_policy_writes`
+    asks the effective question for both scopes.
+
+    `table_names` should be the entity names actually in this build
+    (`analysis.ordering.site_tables_in_order`'s output), not every entity in
+    the mapping -- a policy scoped to a site_role this build does not deploy
+    must not demand a right the build never exercises. `groups` is resolved
+    through `analysis/groups.py` for the same reason.
     """
     perms = mapping.permissions
     if perms is None:
         return False
-    if perms.levels or perms.groups:
+    # The RESOLVED groups, because a `from_enum` source over an empty enum
+    # declares none and this build would then demand a right it never uses.
+    if perms.levels or resolvable_groups(perms, enum_members):
         return True
-    return any(mapping.permissions_for_entity(name) is not None for name in table_names)
+    # A folder policy is keyed by entity, so it is counted through
+    # `table_names` like a per-list policy and not as a mapping-wide fact. A
+    # policy on a library this build does not deploy must not make the build
+    # demand a right it never exercises.
+    for name in table_names:
+        policies = (mapping.permissions_for_entity(name), perms.folder_policies.get(name))
+        if any(policy is not None and _policy_writes(policy) for policy in policies):
+            return True
+    return False
+
+
+class GroupReach(NamedTuple):
+    """Where a group is granted across the lists a caller asked about.
+
+    Three ways, not two: a folder grant binds inside the declared folders and
+    nowhere else, so a caller that cannot tell it from a list grant reports
+    access to a whole library the deploy never binds.
+    """
+
+    #: Granted by the list's own policy, so the whole list is readable.
+    granted: list[str]
+    #: Granted only inside one or more declared folders of that list.
+    folder_only: list[str]
+    #: Granted at neither scope.
+    excluded: list[str]
 
 
 def lists_granting_group(
-    mapping: Mapping, group_name: str, table_names: Iterable[str],
-) -> tuple[list[str], list[str]]:
-    """Split `table_names` into those `group_name` is granted on, and those not.
+    mapping: Mapping,
+    group_name: str,
+    table_names: Iterable[str],
+    enum_members: MappingABC[str, Sequence[str]],
+) -> GroupReach:
+    """Split `table_names` by where `group_name` is granted, if anywhere.
 
     Resolved per entity through `Mapping.permissions_for_entity`, which is the
     same resolution `jsgen` uses to bind the live role assignments -- so this
@@ -298,23 +366,41 @@ def lists_granting_group(
     differ. The manifest needs the opposite question, asked per list.
 
     The manifest said the enterprise reader "can read every list this bundle"
-    creates, unconditionally. For a valid custom mapping that grants the
+    creates, unconditionally, and later said it of a list whose only grant was
+    on the declared folders inside it. For a valid custom mapping that grants the
     reader on the default policy and omits it from one override, that told an
     operator the reporting account had fleet-wide access while one list was
     silently unreadable. The shipped families are pinned separately by
     `test_the_reader_group_is_granted_read_on_every_policy_block`; nothing
     constrains a custom one.
     """
-    granted: list[str] = []
-    excluded: list[str] = []
-    for name in table_names:
-        policy = mapping.permissions_for_entity(name)
-        assignments = policy.assignments if policy is not None else []
-        if any(
+    perms = mapping.permissions
+
+    def holds(assignments: Iterable[RoleAssignment]) -> bool:
+        return any(
             a.principal.kind == "group" and a.principal.name == group_name
             for a in assignments
-        ):
-            granted.append(name)
+        )
+
+    reach = GroupReach(granted=[], folder_only=[], excluded=[])
+    for name in table_names:
+        policy = mapping.permissions_for_entity(name)
+        at_list = holds(policy.assignments if policy is not None else [])
+        # Expanded per folder, because a `{member}` principal is not
+        # necessarily a per-member group: `dbml Enterprise {member}` over a
+        # folder named Automation resolves to a literal group somebody may be
+        # asking about.
+        entity = mapping.entities.get(name)
+        in_folders = entity is not None and any(
+            holds(folder_policy.assignments)
+            for _folder, folder_policy in folder_policies(
+                name, entity.folder_source, perms, enum_members,
+            )
+        )
+        if at_list:
+            reach.granted.append(name)
+        elif in_folders:
+            reach.folder_only.append(name)
         else:
-            excluded.append(name)
-    return granted, excluded
+            reach.excluded.append(name)
+    return reach

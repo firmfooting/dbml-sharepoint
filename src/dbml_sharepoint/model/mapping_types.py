@@ -550,6 +550,33 @@ class SiteGroup:
 
 
 @dataclass(frozen=True)
+class GroupsFromEnum:
+    """`groups: [{from_enum: division, name: '{prefix} {member} Division'}]`:
+    one site group per member of the named enum.
+
+    The same argument as `FoldersFromEnum`, one level along. A library whose
+    folders are an enum's members needs a group per folder to hold that
+    folder's grant, and writing both lists out invites the drift naming the
+    enum exists to remove.
+
+    `template` is an ordinary `SiteGroup` whose name, description and
+    previous names still carry `{member}`; `analysis/groups.py` expands them,
+    because the schema is not loaded with the mapping.
+    """
+
+    enum: str
+    template: SiteGroup
+    #: How many literal groups were declared before this source, so the
+    #: generated groups can be spliced back into declaration order. The
+    #: deploy creates groups in the order it is given them and resolves a
+    #: custom `owner_group` right after creating the group that names it, so
+    #: an author who declares the owner first has to keep that position.
+    #: None means "after every literal group", which is what a caller
+    #: composing this type without a loader gets.
+    after: int | None = None
+
+
+@dataclass(frozen=True)
 class Principal:
     """A role-assignment target.
 
@@ -586,6 +613,9 @@ class ListPermissionPolicy:
 
 @dataclass
 class PermissionsConfig:
+    # The groups written out. Enum-generated ones are in `group_sources`
+    # until resolved, so a caller wanting EVERY declared group must go
+    # through `analysis/groups.py::declared_groups`.
     levels: list[CustomPermissionLevel]
     groups: list[SiteGroup]
     default_policy: ListPermissionPolicy | None
@@ -595,6 +625,14 @@ class PermissionsConfig:
     # to entities of that site_role; None means every entity. Overrides are
     # explicit per-entity and are never scope-filtered.
     default_policy_site_role: str | None = None
+    # Unresolved `groups[].from_enum` declarations, in declaration order.
+    group_sources: tuple[GroupsFromEnum, ...] = ()
+    # `list_permissions.folders.<entity>`: one policy applied to EVERY folder
+    # that entity declares, with `{member}` expanded to the folder's name.
+    # Deliberately not keyed by folder: the entity already declares which
+    # folders exist, so naming them again here is the drift `FoldersFromEnum`
+    # was introduced to remove.
+    folder_policies: dict[str, ListPermissionPolicy] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

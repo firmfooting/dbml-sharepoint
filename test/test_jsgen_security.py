@@ -8,6 +8,7 @@ allowlists and enrol the operator, and every one of them is a write against
 somebody's live site.
 """
 
+import dataclasses
 from pathlib import Path
 from typing import Any
 
@@ -16,13 +17,19 @@ from _paths import FIXTURES
 from test_jsgen import _generate_simple_js, _schema_json_for
 
 from dbml_sharepoint.analysis.group_description import marker_for_group
+from dbml_sharepoint.analysis.groups import declared_groups
 from dbml_sharepoint.analysis.list_description import family_for
 from dbml_sharepoint.analysis.phases import phase_number as pn
 from dbml_sharepoint.analysis.provenance import MARKER_PREFIX
 from dbml_sharepoint.analysis.role_definition_description import marker_for_level
 from dbml_sharepoint.generators.jsgen import build_schema_json, generate_deploy_js
 from dbml_sharepoint.model.mapping_loader import load_mapping
-from dbml_sharepoint.model.mapping_types import EntityMapping
+from dbml_sharepoint.model.mapping_types import (
+    EntityMapping,
+    GroupsFromEnum,
+    PermissionsConfig,
+    SiteGroup,
+)
 from dbml_sharepoint.model.parser import parse_dbml
 from dbml_sharepoint.model.release import load_release
 
@@ -329,11 +336,17 @@ def test_exact_acl_reconciliation_detects_descendant_unique_scopes() -> None:
     """
     js = _generate_simple_js()
 
-    assert "$select=Id,HasUniqueRoleAssignments&$top=5000" in js
+    # FileSystemObjectType and FileRef ride along so the one enumeration also
+    # resolves each DECLARED folder to its item id; see
+    # test_declared_folder_scopes_are_excluded_from_the_guard below.
+    assert (
+        "$select=Id,HasUniqueRoleAssignments,FileSystemObjectType,FileRef&$top=5000"
+        in js
+    )
     assert "while (itemsUrl)" in js
     assert "const next = validatedNextPage(itemsJson.d," in js
     assert "itemsUrl = next;" in js
-    assert "item/folder unique permission scope(s) remain" in js
+    assert "undeclared item/folder unique permission scope(s) remain" in js
     assert "never erase" in js
     assert (
         "breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)" in js
@@ -341,11 +354,64 @@ def test_exact_acl_reconciliation_detects_descendant_unique_scopes() -> None:
     assert (
         "breakroleinheritance(copyRoleAssignments=false,clearSubscopes=true)" not in js
     )
-    descendant_probe = "await findDescendantUniqueScopeIds(la.list)"
-    assert js.count(descendant_probe) == 2
-    break_call = "breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)"
+    descendant_probe = "await surveyDescendants(listTitle, wantedFolders)"
+    assert js.count(descendant_probe) == 2, "survey once before the writes, once after"
+
+    # Asserted over the DRIVER, not over the whole phase. The reconciliation
+    # body is a function now, so it is defined above the loop and the break
+    # call appears earlier in the text than the survey while still running
+    # after it. Position in the driver is what actually orders the two.
     phase4 = js.split(f"Starting Phase {pn('acls')}")[1].split(f"Starting Phase {pn('seeds')}")[0]
-    assert phase4.index(descendant_probe) < phase4.index(break_call)
+    driver = phase4.split("for (const listTitle of aclListTitles)")[1]
+    assert driver.index("assertNoUndeclaredScopes(listTitle, before.undeclared)") < \
+        driver.index("await reconcileScope("), \
+        "the guard must run before the first securable is written"
+
+
+def test_folder_acls_address_the_folder_as_a_list_item() -> None:
+    """A folder is not itself a SecurableObject; its list item is, which is why
+    every folder endpoint is the list's own base plus `/items(<id>)`.
+
+    Addressed by id rather than by server-relative path deliberately. The id
+    comes from the same enumeration the descendant-scope guard already runs,
+    so it costs no request, it keeps every folder write inside the
+    `withOwnedList` bracket that proves the title still resolves to the
+    surveyed list, and it sidesteps path-literal quoting for folder names
+    carrying `&` or a comma, which the shipped division folders do.
+    """
+    js = _generate_simple_js()
+    phase4 = js.split(f"Starting Phase {pn('acls')}")[1].split(f"Starting Phase {pn('seeds')}")[0]
+    assert "suffix: `/items(${before.folderIds.get(fa.folder)})`" in phase4
+    # One literal base for both securables, so the endpoint inventory in
+    # test_template_lint.py sees one family rather than an opaque variable.
+    assert (
+        "web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}"
+        "/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)"
+    ) in phase4
+    assert "${scope.base}" not in phase4
+
+
+def test_declared_folder_scopes_are_excluded_from_the_guard() -> None:
+    """The guard aborts on an UNDECLARED descendant scope only.
+
+    Without this, a deliberate folder ACL would abort every redeploy after the
+    one that created it: the phase would find the scope it had just written
+    and refuse to continue. The exclusion is computed from the folder ids the
+    same survey resolved, never from a second lookup, because a guard and a
+    writer that disagreed about which folders are declared would either erase
+    nothing and abort forever or wave through a scope nobody declared.
+    """
+    js = _generate_simple_js()
+    assert "const declared = new Set(folderIds.values());" in js
+    assert (
+        "undeclared: rows.filter(r => r.HasUniqueRoleAssignments "
+        "&& !declared.has(r.Id))" in js
+    )
+    # Matched on the full path, never the leaf: a subfolder may share a leaf
+    # name with a root folder and securing the wrong one reads back clean.
+    assert "r.FileSystemObjectType === ACL_FOLDER_OBJECT_TYPE && r.FileRef === wanted" in js
+    # Own constant: the folder phase's is another phase body's scope (#454).
+    assert "const ACL_FOLDER_OBJECT_TYPE = 1;" in js
 
 
 def test_other_role_build_does_not_apply_scoped_default_policy() -> None:
@@ -497,3 +563,301 @@ def test_groups_and_levels_carry_their_previous_names_and_markers(tmp_path: Path
         {"name": name, "expected_marker": marker_for_group(name, family)}
         for name in ("ADOPT Programme Leads", "GOV Program Governance", "ADOPT Program Governance")
     ]
+
+
+def _group(name: str, owner_group: str = "Site Owners") -> SiteGroup:
+    """A SiteGroup with the membership controls every declaration must set."""
+
+    return SiteGroup(
+        name=name,
+        description="Declared by a test.",
+        owner_group=owner_group,
+        allow_members_edit_membership=False,
+        allow_request_to_join_leave=False,
+        auto_accept_request_to_join_leave=False,
+        only_allow_members_view_membership=False,
+    )
+
+
+def test_a_mapping_with_no_permissions_still_emits_folder_assignments() -> None:
+    """`Mapping.permissions` is optional and the schema key is not.
+
+    `folder_assignments` was only ever assigned inside the `permissions is
+    not None` branch while the returned dict read it unconditionally, so a
+    Mapping composed through the public Python API with no permissions raised
+    `UnboundLocalError` from a generator that used to work.
+    """
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    stripped = dataclasses.replace(
+        bundle, mapping=dataclasses.replace(bundle.mapping, permissions=None),
+    )
+
+    schema_json = build_schema_json(schema, stripped, "default")
+
+    assert schema_json["folder_assignments"] == []
+    assert schema_json["groups"] == []
+
+
+def test_generated_groups_keep_the_position_they_were_declared_in() -> None:
+    """The deploy creates groups in this order and resolves a custom
+    `owner_group` right after creating the group that names it, so a
+    generated group declared before the literal group that names it as owner
+    has to stay there. Sorting every literal group to the front moved it.
+    """
+
+    owner = _group("{member} Owners")
+    literal = _group("Coordinators", owner_group="Clinical Owners")
+    perms = PermissionsConfig(
+        levels=[], default_policy=None, overrides={},
+        groups=[literal],
+        # Declared BEFORE the literal group, which is what `after=0` records.
+        group_sources=(GroupsFromEnum(enum="division", template=owner, after=0),),
+    )
+
+    names = [g.name for g in declared_groups(perms, {"division": ("Clinical",)})]
+
+    assert names == ["Clinical Owners", "Coordinators"], names
+
+
+def test_a_group_source_with_no_recorded_position_still_follows_the_literals() -> None:
+    """`after=None` is what a caller composing the type by hand gets, and it
+    has to keep the order those callers already relied on."""
+
+    perms = PermissionsConfig(
+        levels=[], default_policy=None, overrides={},
+        groups=[_group("Coordinators")],
+        group_sources=(
+            GroupsFromEnum(enum="division", template=_group("{member} Owners")),
+        ),
+    )
+
+    names = [g.name for g in declared_groups(perms, {"division": ("Clinical",)})]
+
+    assert names == ["Coordinators", "Clinical Owners"], names
+
+
+def test_the_descendant_survey_only_runs_when_its_answer_is_read() -> None:
+    """The survey pages every item in the list.
+
+    Exact mode is the only mode that reads `undeclared`, and reading it costs
+    a full enumeration. Running it unconditionally meant a `reconcile:
+    configured` library enumerated every document to learn the ids of a
+    handful of declared folders, which can meet the list view threshold
+    before any ACL work begins.
+    """
+    js = _generate_simple_js()
+    region = js[js.index("const aclListTitles"):]
+    guard = region.index("const before = exact")
+    survey = region.index("await surveyDescendants(listTitle, wantedFolders)")
+    cheap = region.index("await declaredFolderIds(listTitle, wantedFolders)")
+
+    assert guard < survey, "the enumeration must sit behind the exact test"
+    assert guard < cheap, "so must the per-folder lookup that replaces it"
+
+
+def test_a_folder_grant_counts_as_a_grant_on_that_entity(tmp_path: Path) -> None:
+    """`lists_granting_group` reports what the deploy will bind, and where.
+
+    The deploy binds an entity's folder assignments exactly as it binds its
+    list ones, so a group granted only there does hold a grant on that
+    entity. Counted as no grant at all it contradicted the validator, which
+    counts a folder policy when deciding whether a group has any grant: the
+    build passed validation and the CLI then refused the same reader for
+    holding none. Reported as `folder_only` rather than `granted`, because
+    the deploy binds it to the declared folders and not to the library, and
+    the manifest said "Read on every list here" of exactly this case.
+    """
+    from dbml_sharepoint.analysis.permissions import lists_granting_group
+    from dbml_sharepoint.model.mapping_types import (
+        ListPermissionPolicy,
+        Principal,
+        RoleAssignment,
+    )
+
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    folder_only = ListPermissionPolicy(
+        break_inheritance=True, reconcile_mode="exact",
+        assignments=[RoleAssignment(
+            principal=Principal(kind="group", name="dbml Enterprise Readers"),
+            level="Read",
+        )],
+    )
+    entity = next(iter(bundle.mapping.entities))
+    perms = bundle.mapping.permissions
+    assert perms is not None
+    # The entity has to DECLARE folders: a policy on a library with none
+    # binds nothing, which is `folder_permissions_without_folders`.
+    patched = dataclasses.replace(
+        bundle.mapping,
+        entities={
+            **bundle.mapping.entities,
+            entity: dataclasses.replace(
+                bundle.mapping.entities[entity], folder_source=("Cases",),
+            ),
+        },
+        permissions=dataclasses.replace(
+            perms, overrides={}, default_policy=None,
+            folder_policies={entity: folder_only},
+        ),
+    )
+
+    reach = lists_granting_group(patched, "dbml Enterprise Readers", [entity], {})
+
+    assert reach.folder_only == [entity], reach
+    assert reach.granted == [], reach
+    assert reach.excluded == [], reach
+
+
+def test_a_folder_principal_template_resolving_to_the_reader_counts() -> None:
+    """A `{member}` principal is not necessarily a per-member group.
+
+    `dbml Enterprise {member}` over a folder named Automation resolves to a
+    literal group, and the deploy binds it. Compared unexpanded, the CLI
+    refused the enrolment and the manifest called the list excluded while the
+    emitted script granted the reader on every folder of it.
+    """
+    from dbml_sharepoint.analysis.permissions import lists_granting_group
+    from dbml_sharepoint.model.mapping_types import (
+        FoldersFromEnum,
+        ListPermissionPolicy,
+        Principal,
+        RoleAssignment,
+    )
+
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    entity = next(iter(bundle.mapping.entities))
+    perms = bundle.mapping.permissions
+    assert perms is not None
+    patched = dataclasses.replace(
+        bundle.mapping,
+        entities={
+            **bundle.mapping.entities,
+            entity: dataclasses.replace(
+                bundle.mapping.entities[entity],
+                folder_source=FoldersFromEnum(enum="area"),
+            ),
+        },
+        permissions=dataclasses.replace(
+            perms, overrides={}, default_policy=None,
+            folder_policies={entity: ListPermissionPolicy(
+                break_inheritance=True, reconcile_mode="exact",
+                assignments=[RoleAssignment(
+                    principal=Principal(kind="group", name="dbml Enterprise {member}"),
+                    level="Read",
+                )],
+            )},
+        ),
+    )
+
+    reach = lists_granting_group(
+        patched, "dbml Enterprise Readers", [entity], {"area": ["Readers"]},
+    )
+
+    assert (reach.granted, reach.folder_only, reach.excluded) == ([], [entity], [])
+
+
+def test_a_folder_policy_over_an_entity_with_no_folders_grants_nothing() -> None:
+    """`lists_granting_group` reports what the deploy BINDS, and a policy on
+    an entity declaring no folders binds nothing: there is no folder to write
+    it to. `folder_permissions_without_folders` is the finding for it."""
+    from dbml_sharepoint.analysis.permissions import lists_granting_group
+    from dbml_sharepoint.model.mapping_types import (
+        ListPermissionPolicy,
+        Principal,
+        RoleAssignment,
+    )
+
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    entity = next(iter(bundle.mapping.entities))
+    perms = bundle.mapping.permissions
+    assert perms is not None
+    patched = dataclasses.replace(
+        bundle.mapping,
+        permissions=dataclasses.replace(
+            perms, overrides={}, default_policy=None,
+            folder_policies={entity: ListPermissionPolicy(
+                break_inheritance=True, reconcile_mode="exact",
+                assignments=[RoleAssignment(
+                    principal=Principal(kind="group", name="dbml Enterprise Readers"),
+                    level="Read",
+                )],
+            )},
+        ),
+    )
+
+    reach = lists_granting_group(patched, "dbml Enterprise Readers", [entity], {})
+
+    assert (reach.granted, reach.folder_only, reach.excluded) == ([], [], [entity])
+
+
+def test_a_folder_policy_off_this_build_does_not_demand_manage_permissions(
+) -> None:
+    """`requires_manage_permissions` is scoped by the entities in THIS build.
+
+    A folder policy is keyed by entity, so counting it as a mapping-wide fact
+    made a site_role that deploys none of those entities advertise a right it
+    never exercises, and deploy.js then aborts an operator who correctly
+    lacks it.
+    """
+    from dbml_sharepoint.analysis.permissions import requires_manage_permissions
+    from dbml_sharepoint.model.mapping_types import (
+        ListPermissionPolicy,
+        Principal,
+        RoleAssignment,
+    )
+
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    perms = bundle.mapping.permissions
+    assert perms is not None
+    policy = ListPermissionPolicy(
+        break_inheritance=True, reconcile_mode="exact",
+        assignments=[RoleAssignment(
+            principal=Principal(kind="associated_owner_group", name=None),
+            level="Read",
+        )],
+    )
+    bare = dataclasses.replace(
+        bundle.mapping,
+        permissions=dataclasses.replace(
+            perms, levels=[], groups=[], group_sources=(),
+            default_policy=None, overrides={},
+            folder_policies={"ElsewhereOnly": policy},
+        ),
+    )
+
+    assert requires_manage_permissions(bare, ["ElsewhereOnly"], {}) is True
+    assert requires_manage_permissions(bare, ["SomethingElse"], {}) is False
+
+
+def test_a_group_source_over_an_empty_enum_does_not_demand_manage_permissions(
+) -> None:
+    """An empty enum is a warning, not a refusal, so a mapping whose only
+    permission declaration is a `from_enum` source over one generates no
+    groups and writes no ACL. Demanding the right anyway aborts an operator
+    who correctly lacks it, which is the #166 item 5 failure again."""
+    from dbml_sharepoint.analysis.permissions import requires_manage_permissions
+    from dbml_sharepoint.model.mapping_types import GroupsFromEnum, SiteGroup
+
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    perms = bundle.mapping.permissions
+    assert perms is not None
+    source = GroupsFromEnum(
+        enum="division",
+        template=SiteGroup(
+            name="{member} Editors", description="", owner_group="Site Owners",
+            allow_members_edit_membership=False, allow_request_to_join_leave=False,
+            auto_accept_request_to_join_leave=False,
+            only_allow_members_view_membership=False,
+        ),
+    )
+    bare = dataclasses.replace(
+        bundle.mapping,
+        permissions=dataclasses.replace(
+            perms, levels=[], groups=[], group_sources=(source,),
+            default_policy=None, overrides={}, folder_policies={},
+        ),
+    )
+
+    assert requires_manage_permissions(bare, [], {"division": []}) is False
+    assert requires_manage_permissions(bare, [], {"division": ["Clinical"]}) is True

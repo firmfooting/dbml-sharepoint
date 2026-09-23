@@ -36,7 +36,7 @@ def check(vc: ValidationContext) -> list[Finding]:
     if perms is not None:
         findings += _findings(
             "group",
-            [(g.name, g.previous_names) for g in perms.groups],
+            [(g.name, g.previous_names) for g in vc.site_groups],
             lambda _name: Location(Section.GROUPS),
         )
         findings += _findings(

@@ -21,6 +21,8 @@ import typer
 
 from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
 from dbml_sharepoint.analysis.findings import Finding
+from dbml_sharepoint.analysis.folders import UnknownFolderEnumError
+from dbml_sharepoint.analysis.groups import declaring_groups, resolvable_groups
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.permissions import lists_granting_group
 from dbml_sharepoint.analysis.sidecars import (
@@ -188,6 +190,9 @@ def execute_build(
     parsed_schema, bundle, release_obj = load_config(schema, mapping, release)
     if release_obj is None:  # unreachable: --release is a required option
         raise typer.BadParameter("--release is required for `build`.")
+    # Derived once: the reader gate and the manifest both resolve enum
+    # sources, and two derivations of the same fact could disagree.
+    enum_members = {enum.name: enum.members for enum in parsed_schema.enums}
     ext = resolve_extension_or_refuse(extension, bundle, mapping)
 
     if ext.requires_project_cli:
@@ -281,11 +286,22 @@ def execute_build(
     if isinstance(enterprise_reader, str):
         validate_enterprise_reader(enterprise_reader)
         perms = bundle.mapping.permissions
+        # Two questions, two resolutions. "Does a reader group exist at all"
+        # is answered over the DECLARATIONS, because a source whose enum is
+        # misspelled still declares one and `group_enum_unknown` is the
+        # finding for it; resolving here instead reported "declares no
+        # group", sent the author to add a flag that is already there, and
+        # took the manifest and every other finding with it.
+        declared_readers = [
+            g for g in declaring_groups(perms) if g.enroll_enterprise_reader
+        ]
+        # "Which lists grant it" needs the RESOLVED name, because a
+        # `from_enum` group's template spelling matches no assignment.
         targets = [
-            g for g in (perms.groups if perms else [])
+            g for g in resolvable_groups(perms, enum_members)
             if g.enroll_enterprise_reader
         ]
-        if not targets:
+        if not declared_readers:
             # Fail closed rather than emitting a bundle that quietly enrols
             # nobody. The operator would not find out until a report came
             # back short, weeks later. `MULTIPLE_ENTERPRISE_READER_GROUPS`
@@ -315,11 +331,32 @@ def execute_build(
         deployed_here = site_tables_in_order(
             parsed_schema, bundle.mapping.entities, site_role,
         )
-        granted_anywhere_here = any(
-            lists_granting_group(bundle.mapping, g.name, deployed_here)[0]
-            for g in targets
-        )
-        if not granted_anywhere_here:
+        try:
+            # Both scopes: a reader granted only inside a library's folders
+            # can still read something here, which is what this gate asks.
+            granted_anywhere_here = any(
+                reach.granted or reach.folder_only
+                for reach in (
+                    lists_granting_group(
+                        bundle.mapping, g.name, deployed_here, enum_members,
+                    )
+                    for g in targets
+                )
+            )
+        except UnknownFolderEnumError:
+            # Deferred, not swallowed: `folder_enum_unknown` is an error, so
+            # validation below refuses this build with the finding and the
+            # manifest this gate was replacing with a traceback. `True` skips
+            # only this gate's own refusal, which would name the wrong cause.
+            granted_anywhere_here = True
+        # Exactly one, for two reasons. No target at all means every reader
+        # source named an enum the schema does not declare, leaving no name
+        # to ask about. More than one means a source resolved to a group per
+        # member, which cannot hold one identity: deferred, not swallowed,
+        # like the `UnknownFolderEnumError` arm above, so
+        # `group_enum_enrols_an_identity` names the fault and the manifest
+        # still gets written.
+        if len(targets) == 1 and not granted_anywhere_here:
             names = ", ".join(repr(g.name) for g in targets)
             raise typer.BadParameter(
                 f"--enterprise-reader names an account to enrol into "
@@ -389,6 +426,7 @@ def execute_build(
 
     manifest_md = generate_manifest(
         schema_json=schema_json,
+        enum_members=enum_members,
         findings=findings,
         bundle=bundle,
         release=release_obj,

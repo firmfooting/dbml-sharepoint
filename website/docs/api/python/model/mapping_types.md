@@ -467,6 +467,28 @@ class SiteGroup:
 
 A SharePoint site group to create at the site.
 
+### `GroupsFromEnum`
+
+```python
+@dataclass(frozen=True)
+class GroupsFromEnum:
+    enum: str
+    template: SiteGroup
+    after: int | None = None
+```
+
+`groups: [{from_enum: division, name: '{prefix} {member} Division'}]`:
+one site group per member of the named enum.
+
+The same argument as `FoldersFromEnum`, one level along. A library whose
+folders are an enum's members needs a group per folder to hold that
+folder's grant, and writing both lists out invites the drift naming the
+enum exists to remove.
+
+`template` is an ordinary `SiteGroup` whose name, description and
+previous names still carry `{member}`; `analysis/groups.py` expands them,
+because the schema is not loaded with the mapping.
+
 ### `Principal`
 
 ```python
@@ -520,9 +542,11 @@ class PermissionsConfig:
     default_policy: dbml_sharepoint.model.mapping_types.ListPermissionPolicy | None
     overrides: dict[str, dbml_sharepoint.model.mapping_types.ListPermissionPolicy]
     default_policy_site_role: str | None = None
+    group_sources: tuple[dbml_sharepoint.model.mapping_types.GroupsFromEnum, ...] = ()
+    folder_policies: dict[str, dbml_sharepoint.model.mapping_types.ListPermissionPolicy] = field(default_factory=dict)
 ```
 
-PermissionsConfig(levels: list[dbml_sharepoint.model.mapping_types.CustomPermissionLevel], groups: list[dbml_sharepoint.model.mapping_types.SiteGroup], default_policy: dbml_sharepoint.model.mapping_types.ListPermissionPolicy | None, overrides: dict[str, dbml_sharepoint.model.mapping_types.ListPermissionPolicy], default_policy_site_role: str | None = None)
+PermissionsConfig(levels: list[dbml_sharepoint.model.mapping_types.CustomPermissionLevel], groups: list[dbml_sharepoint.model.mapping_types.SiteGroup], default_policy: dbml_sharepoint.model.mapping_types.ListPermissionPolicy | None, overrides: dict[str, dbml_sharepoint.model.mapping_types.ListPermissionPolicy], default_policy_site_role: str | None = None, group_sources: tuple[dbml_sharepoint.model.mapping_types.GroupsFromEnum, ...] = (), folder_policies: dict[str, dbml_sharepoint.model.mapping_types.ListPermissionPolicy] = &lt;factory>)
 
 ### `ReportingOptions`
 

@@ -8,6 +8,7 @@ order, and expands every name under the current prefix and each previous
 one.
 """
 
+from collections.abc import Sequence
 from typing import Any, cast
 
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
@@ -16,6 +17,7 @@ from dbml_sharepoint.model.mapping_types import (
     PRINCIPAL_KIND_LIST,
     PRINCIPAL_KINDS,
     CustomPermissionLevel,
+    GroupsFromEnum,
     ListPermissionPolicy,
     PermissionsConfig,
     Principal,
@@ -24,7 +26,12 @@ from dbml_sharepoint.model.mapping_types import (
     RoleAssignment,
     SiteGroup,
 )
-from dbml_sharepoint.model.prefix import expand_prefix, previous_object_names
+from dbml_sharepoint.model.prefix import (
+    MEMBER_PLACEHOLDER,
+    MEMBER_SAFE_PLACEHOLDER,
+    expand_prefix,
+    previous_object_names,
+)
 from dbml_sharepoint.model.reading import (
     optional_bool,
     optional_str,
@@ -40,6 +47,11 @@ _GROUP_KEYS = frozenset({
     "allow_request_to_join_leave", "auto_accept_request_to_join_leave",
     "only_allow_members_view_membership", "require_empty_at_deploy",
     "enroll_operator_during_deploy", "enroll_enterprise_reader", "renamed_from",
+    # `from_enum` turns one declaration into one group per enum member. At
+    # the same key as the rest of the group, the way `entities.*.folders`
+    # takes both spellings at one key, so a group cannot be declared twice
+    # over and leave the loader to pick.
+    "from_enum",
 })
 # `site_role` scopes the DEFAULT policy (which entities it applies to) and
 # is read only there. On an override it was parsed and silently discarded,
@@ -59,7 +71,9 @@ def read(sc: SectionContext) -> dict[str, Any]:
     raw_levels = sc.block("permission_levels", [])
     raw_groups = sc.block("groups", [])
     raw_list_perms = _require_mapping(sc.block("list_permissions"), "list_permissions")
-    _reject_unknown_keys(raw_list_perms, {"default", "overrides"}, "list_permissions")
+    _reject_unknown_keys(
+        raw_list_perms, {"default", "overrides", "folders"}, "list_permissions",
+    )
 
     for i, lvl in enumerate(raw_levels):
         _reject_unknown_keys(
@@ -91,48 +105,22 @@ def read(sc: SectionContext) -> dict[str, Any]:
         for i, lvl in enumerate(raw_levels)
     ]
 
-    groups = [
-        SiteGroup(
-            name=expand_prefix(
-                require_str(grp, "name", f"groups[{i}]"), prefix, f"groups[{i}].name",
-            ),
-            description=optional_str(grp, "description", f"groups[{i}]") or "",
-            # `owner_group:` with nothing after it reached `expand_prefix` as
-            # None and raised TypeError, which the CLI does not catch.
-            owner_group=expand_prefix(
-                strict_str(grp, "owner_group", f"groups[{i}]", default="Site Owners"),
-                prefix, f"groups[{i}].owner_group",
-            ),
-            allow_members_edit_membership=optional_bool(
-                grp, "allow_members_edit_membership", f"groups[{i}]",
-            ),
-            allow_request_to_join_leave=optional_bool(
-                grp, "allow_request_to_join_leave", f"groups[{i}]",
-            ),
-            auto_accept_request_to_join_leave=optional_bool(
-                grp, "auto_accept_request_to_join_leave", f"groups[{i}]",
-            ),
-            only_allow_members_view_membership=optional_bool(
-                grp, "only_allow_members_view_membership", f"groups[{i}]",
-            ),
-            require_empty_at_deploy=optional_bool(
-                grp, "require_empty_at_deploy", f"groups[{i}]",
-            ),
-            enroll_operator_during_deploy=optional_bool(
-                grp, "enroll_operator_during_deploy", f"groups[{i}]",
-            ),
-            enroll_enterprise_reader=optional_bool(
-                grp, "enroll_enterprise_reader", f"groups[{i}]",
-            ),
-            renamed_from=optional_str_list(grp, "renamed_from", f"groups[{i}]"),
-            previous_names=previous_object_names(
-                require_str(grp, "name", f"groups[{i}]"),
-                optional_str_list(grp, "renamed_from", f"groups[{i}]"),
-                prefix, previous_prefixes, f"groups[{i}].renamed_from",
-            ),
-        )
-        for i, grp in enumerate(raw_groups)
-    ]
+    groups: list[SiteGroup] = []
+    group_sources: list[GroupsFromEnum] = []
+    for i, grp in enumerate(raw_groups):
+        group = _parse_group(grp, f"groups[{i}]", prefix, previous_prefixes)
+        # Presence, not truthiness: `from_enum:` with no value is a mistake
+        # worth reporting, and `.get()` would read it as an absent key and
+        # deploy the template verbatim, leaving `{member}` in a live group
+        # name while the folder policy naming that group expanded it.
+        if "from_enum" not in grp:
+            _reject_member_placeholders(group, f"groups[{i}]")
+            groups.append(group)
+            continue
+        group_sources.append(GroupsFromEnum(
+            enum=require_str(grp, "from_enum", f"groups[{i}]"), template=group,
+            after=len(groups),
+        ))
 
     default_policy: ListPermissionPolicy | None = None
     default_policy_site_role: str | None = None
@@ -151,6 +139,16 @@ def read(sc: SectionContext) -> dict[str, Any]:
         ctx = f"list_permissions.overrides.{entity_name}"
         overrides[entity_name] = _parse_policy(raw_policy, ctx, prefix=prefix)
 
+    # One policy per entity, applied to every folder that entity declares.
+    # Not keyed by folder name on purpose: the folders are already declared
+    # on the entity, so a second list here could disagree with the first.
+    folder_policies: dict[str, ListPermissionPolicy] = {}
+    for entity_name, raw_policy in _require_mapping(
+        raw_list_perms.get("folders"), "list_permissions.folders",
+    ).items():
+        ctx = f"list_permissions.folders.{entity_name}"
+        folder_policies[entity_name] = _parse_policy(raw_policy, ctx, prefix=prefix)
+
     return {
         "permissions": PermissionsConfig(
             levels=levels,
@@ -158,8 +156,85 @@ def read(sc: SectionContext) -> dict[str, Any]:
             default_policy=default_policy,
             overrides=overrides,
             default_policy_site_role=default_policy_site_role,
+            group_sources=tuple(group_sources),
+            folder_policies=folder_policies,
         ),
     }
+
+
+def _reject_member_placeholders(group: SiteGroup, context: str) -> None:
+    """A member placeholder on a group with no `from_enum` to expand it.
+
+    Nothing downstream expands one, and a brace is not a character
+    SharePoint refuses in a group name, so the deploy would create a group
+    called `{member}` and read it back byte-identical. Only the fields
+    `analysis.groups.group_for_member` expands are checked, because those
+    are the only ones a `from_enum` would have changed.
+    """
+    fields: list[tuple[str, str]] = [
+        ("name", group.name),
+        ("description", group.description),
+        ("owner_group", group.owner_group),
+        *(
+            (f"renamed_from[{i}]", name)
+            for i, name in enumerate(group.renamed_from)
+        ),
+    ]
+    for key, value in fields:
+        for placeholder in (MEMBER_SAFE_PLACEHOLDER, MEMBER_PLACEHOLDER):
+            if placeholder in value:
+                raise MappingValueError(
+                    f"{context}.{key}: {placeholder} is expanded only on a "
+                    f"group declaring 'from_enum'; got {value!r}",
+                )
+
+
+def _parse_group(
+    grp: dict[str, Any], context: str, prefix: str, previous_prefixes: Sequence[str],
+) -> SiteGroup:
+    """One `groups[i]` entry, whether it names itself or an enum.
+
+    A `{member}` placeholder in the name or description is left alone here.
+    The loader never sees the schema, so which members exist is
+    `analysis/groups.py`'s answer, not this family's.
+    """
+    return SiteGroup(
+        name=expand_prefix(
+            require_str(grp, "name", context), prefix, f"{context}.name",
+        ),
+        description=optional_str(grp, "description", context) or "",
+        # `owner_group:` with nothing after it reached `expand_prefix` as
+        # None and raised TypeError, which the CLI does not catch.
+        owner_group=expand_prefix(
+            strict_str(grp, "owner_group", context, default="Site Owners"),
+            prefix, f"{context}.owner_group",
+        ),
+        allow_members_edit_membership=optional_bool(
+            grp, "allow_members_edit_membership", context,
+        ),
+        allow_request_to_join_leave=optional_bool(
+            grp, "allow_request_to_join_leave", context,
+        ),
+        auto_accept_request_to_join_leave=optional_bool(
+            grp, "auto_accept_request_to_join_leave", context,
+        ),
+        only_allow_members_view_membership=optional_bool(
+            grp, "only_allow_members_view_membership", context,
+        ),
+        require_empty_at_deploy=optional_bool(grp, "require_empty_at_deploy", context),
+        enroll_operator_during_deploy=optional_bool(
+            grp, "enroll_operator_during_deploy", context,
+        ),
+        enroll_enterprise_reader=optional_bool(
+            grp, "enroll_enterprise_reader", context,
+        ),
+        renamed_from=optional_str_list(grp, "renamed_from", context),
+        previous_names=previous_object_names(
+            require_str(grp, "name", context),
+            optional_str_list(grp, "renamed_from", context),
+            prefix, previous_prefixes, f"{context}.renamed_from",
+        ),
+    )
 
 
 def _parse_principal(raw_principal: Any, context: str, prefix: str = "") -> Principal:

@@ -1,6 +1,6 @@
 ---
 title: pipeline
-sidebar_position: 50
+sidebar_position: 51
 ---
 
 # `dbml_sharepoint.pipeline`

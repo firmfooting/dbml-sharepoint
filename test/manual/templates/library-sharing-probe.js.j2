@@ -13,6 +13,13 @@
  *    if available. None of these test accounts should be site administrators.
  *    Record each division group's numeric SharePoint ID as administrator.
  *    Exclude administration, platform-owner and other division memberships.
+ * 3a. FOR THE DELEGATION QUESTION ONLY, and optional. Create a leads group,
+ *    put A in it, and set it as the Owner of A's division group. Leave "Who
+ *    can edit the membership of the group" on Group Owner, so membership
+ *    editing can only come from ownership. Record the leads group's numeric
+ *    ID. A is then in exactly two groups, its division and the leads group,
+ *    and still holds no Full Control anywhere. Leave the prompt blank to skip
+ *    this question and keep the one-group actor the other findings assume.
  * 4. Paste on a page in this SharePoint web. Confirm the printed site by setting
  *    CONFIRMED=true, then run as administrator, A and B in separate sessions.
  *    Enter the same library title and decoded server-relative paths each time:
@@ -31,7 +38,10 @@
  *    the administrator and B snapshots. Keep folder/file attempts separate:
  *    remove any test grant in Manage access and verify B loses access before
  *    the next attempt. Repeat with the actual staff permission level if varied.
- * 8. Return the RESULTS JSON and observed edit/share/open outcomes. Remove the
+ * 8. Return the RESULTS JSON and observed edit/share/open outcomes. When the
+ *    delegation fixture was built, also confirm in the UI, as A, whether the
+ *    division group offers Add and Remove, and say whether that agrees with
+ *    the reported CanCurrentUserEditMembership. Remove the
  *    disposable library when finished. Do not change site sharing settings.
  *
  * Permission masks and ACLs are observations, not a sharing verdict. A denied
@@ -58,7 +68,9 @@
 
 {% include "_probe_results_v1.js.j2" %}
   expect('access.effective-perms.control-current-identity', 'the current account and its site-administrator status are readable');
-  expect('access.effective-perms.control-ordinary-actor', 'the non-administrator belongs only to the prepared division group, which is not associated Owners');
+  expect('access.effective-perms.control-ordinary-actor', 'the non-administrator belongs only to the prepared division group and, when delegation is under test, the prepared leads group; neither is associated Owners');
+  expect('access.group.control-non-owner-cannot-edit', 'NEGATIVE CONTROL: for a group the actor neither owns nor belongs to, does SharePoint report membership editing as refused?');
+  expect('access.group.owner-edits-membership', 'can an account that owns a group through a leads group, and holds no Full Control, edit that group\'s membership?');
   expect('library.access.permission-snapshot', 'library, folder and file ACL and effective-permission responses are captured');
   expect('library.access.control-own-file-edit', 'the ordinary division account opens, edits and saves its own test file');
   expect('library.access.control-recipient-denied', 'the intended recipient cannot open the test object before each sharing attempt');
@@ -99,6 +111,9 @@
     const divisionInput = window.prompt('Intended division SharePoint group ID, confirmed by the administrator (blank for snapshot only):')?.trim() ?? '';
     report.expectedDivisionGroupId = /^[1-9]\d*$/.test(divisionInput) && Number.isSafeInteger(Number(divisionInput))
       ? Number(divisionInput) : null;
+    const leadsInput = window.prompt('Leads SharePoint group ID that OWNS the division group, for the delegation question (blank to skip):')?.trim() ?? '';
+    report.leadsGroupId = /^[1-9]\d*$/.test(leadsInput) && Number.isSafeInteger(Number(leadsInput))
+      ? Number(leadsInput) : null;
     const literal = value => "'" + encodeURIComponent(value.replace(/'/g, "''")).replace(/'/g, '%27') + "'";
     const read = async path => {
       try {
@@ -160,25 +175,132 @@
       !groupBody['odata.nextLink'] && !groupBody['@odata.nextLink'] && !groupBody.__next;
     const ownersId = entries[3].body?.Id;
     const ownersKnown = entries[3].ok && validId(ownersId);
+    // The actor's groups must be EXACTLY the prepared ones. With no leads
+    // group that is the single division group, unchanged; with one it is the
+    // division group and the leads group, because owning a group is a
+    // membership and the delegation question cannot be asked without it.
+    // Any third group voids the findings, as it always did.
+    const preparedGroupIds = new Set([report.expectedDivisionGroupId, report.leadsGroupId].filter(validId));
     const onlyDivision = groupsKnown && validId(report.expectedDivisionGroupId) &&
-      groups.length === 1 && groups[0].Id === report.expectedDivisionGroupId;
+      groups.length === preparedGroupIds.size &&
+      groups.every(group => preparedGroupIds.has(group.Id));
     const ordinary = identityKnown && entries[0].body.IsSiteAdmin === false &&
-      onlyDivision && ownersKnown && report.expectedDivisionGroupId !== ownersId;
+      onlyDivision && ownersKnown && !preparedGroupIds.has(ownersId);
     record('access.effective-perms.control-current-identity', 'current identity', identityKnown ? 'PASS' : 'FAIL', JSON.stringify(entries[0]));
     if (!identityKnown) {
       voidDependants('access.effective-perms.control-current-identity');
     } else {
       record('access.effective-perms.control-ordinary-actor', 'ordinary observer', ordinary ? 'PASS' : 'FAIL',
         JSON.stringify({ IsSiteAdmin: entries[0].body.IsSiteAdmin, groupsKnown, ownersKnown, ownersId,
-          expectedDivisionGroupId: report.expectedDivisionGroupId, onlyDivision }));
+          expectedDivisionGroupId: report.expectedDivisionGroupId,
+          leadsGroupId: report.leadsGroupId, onlyDivision }));
       if (!ordinary) {
         for (const row of results) {
           if (row.id === 'library.access.permission-snapshot' || row.state !== 'open') continue;
           row.observed = 'VOID';
           row.state = 'void';
-          row.detail = 'ordinary actor not established: requires non-administrator belonging only to the prepared division group, not associated Owners';
+          row.detail = 'ordinary actor not established: requires a non-administrator belonging only to the prepared division group, and the leads group when one is given, neither being associated Owners';
         }
       }
+    }
+
+    // Group membership delegation. Asked here because the fixture already has
+    // the identity the question is about: a non-administrator holding no Full
+    // Control anywhere. `CanCurrentUserEditMembership` is SharePoint's own
+    // answer for the running account, so this writes nothing and changes no
+    // membership.
+    //
+    // The Owner and AllowMembersEditMembership settings are what the
+    // experiment DEPENDS on and are reported as read. The Can* values are
+    // what it OBSERVES, and neither answer is asserted over: a platform that
+    // refuses delegation is a finding, not a failed probe.
+    if (ordinary && validId(report.leadsGroupId)) {
+      const groupState = async (id, key) => {
+        // No $select: the Can* properties are the thing being looked for, and
+        // selecting one the platform does not carry fails the whole request
+        // instead of reporting its absence.
+        const [entity, owner] = await Promise.all([
+          read('web/sitegroups(' + id + ')'),
+          read('web/sitegroups(' + id + ')/owner?$select=Id,Title,PrincipalType'),
+        ]);
+        report.reads[key] = { entity, owner };
+        const editable = entity.ok ? entity.body?.CanCurrentUserEditMembership : undefined;
+        return {
+          editable: typeof editable === 'boolean' ? editable : null,
+          summary: {
+            groupId: id,
+            Owner: owner.ok ? owner.body?.Title ?? null : null,
+            OwnerId: owner.ok ? owner.body?.Id ?? null : null,
+            OwnerPrincipalType: owner.ok ? owner.body?.PrincipalType ?? null : null,
+            AllowMembersEditMembership: entity.body?.AllowMembersEditMembership ?? null,
+            CanCurrentUserEditMembership: entity.body?.CanCurrentUserEditMembership ?? null,
+            CanCurrentUserManageGroup: entity.body?.CanCurrentUserManageGroup ?? null,
+            CanCurrentUserViewMembership: entity.body?.CanCurrentUserViewMembership ?? null,
+          },
+        };
+      };
+      const owned = await groupState(report.expectedDivisionGroupId, 'divisionGroupState');
+      const foreign = await groupState(ownersId, 'associatedOwnersGroupState');
+      const observedAs = (value) => (value ? 'EDIT REPORTED ALLOWED' : 'EDIT REPORTED REFUSED');
+      // The control is a fixture this DEPENDS on, so its owner is checked
+      // before its reading is allowed to mean anything. A control the actor
+      // owns, directly or through a prepared group, reports ALLOWED, and
+      // that is indistinguishable from a platform that does not discriminate.
+      const controlOwnerId = foreign.summary.OwnerId;
+      const controlIndependent = validId(controlOwnerId) && validId(entries[0].body.Id)
+        && controlOwnerId !== entries[0].body.Id && !preparedGroupIds.has(controlOwnerId);
+      const notIndependent = 'control group owner is ' + JSON.stringify(controlOwnerId)
+        + ', which is the actor or a prepared group rather than a third party,'
+        + ' so it is not a non-owner control';
+      let controlOutcome = observedAs(foreign.editable);
+      if (!controlIndependent) {
+        controlOutcome = 'NOT ESTABLISHED (control group is not owned by a third party)';
+      } else if (foreign.editable === null) {
+        controlOutcome = 'NOT ESTABLISHED (CanCurrentUserEditMembership absent or not a boolean)';
+      }
+      record('access.group.control-non-owner-cannot-edit', 'non-owner membership editing',
+        controlOutcome, JSON.stringify(foreign.summary));
+      // Only this probe's own dependant is voided. voidDependants() would
+      // take every other open row with it, and the sharing questions do not
+      // depend on group delegation.
+      if (!controlIndependent) {
+        record('access.group.owner-edits-membership', 'owner membership editing', 'VOID',
+          notIndependent, 'void');
+      } else if (foreign.editable !== false) {
+        record('access.group.owner-edits-membership', 'owner membership editing', 'VOID',
+          foreign.editable === null
+            ? 'control could not read a boolean CanCurrentUserEditMembership, so the property cannot answer this either'
+            : 'control reported editing ALLOWED on a group the actor neither owns nor belongs to, so the property does not discriminate on this site',
+          'void');
+      } else if (owned.summary.OwnerId !== report.leadsGroupId) {
+        // The fixture is what the measurement DEPENDS on, so it is checked
+        // before the observation is allowed to mean anything. An allow read
+        // off a group the leads do not own says nothing about delegation.
+        record('access.group.owner-edits-membership', 'owner membership editing', 'VOID',
+          'division group owner is ' + JSON.stringify(owned.summary.OwnerId)
+            + ', not the leads group ' + JSON.stringify(report.leadsGroupId)
+            + '; the fixture does not set up the question this asks',
+          'void');
+      } else if (owned.summary.AllowMembersEditMembership !== false) {
+        record('access.group.owner-edits-membership', 'owner membership editing', 'VOID',
+          'division group has AllowMembersEditMembership '
+            + JSON.stringify(owned.summary.AllowMembersEditMembership)
+            + ', so an allow could come from plain membership rather than ownership',
+          'void');
+      } else if (owned.editable === null) {
+        record('access.group.owner-edits-membership', 'owner membership editing',
+          'NOT ESTABLISHED (CanCurrentUserEditMembership absent or not a boolean)',
+          JSON.stringify(owned.summary));
+      } else {
+        record('access.group.owner-edits-membership', 'owner membership editing',
+          observedAs(owned.editable),
+          JSON.stringify(owned.summary)
+            + '; corroborate in the UI before relying on it, because the flag is what SharePoint reports rather than a completed add or remove');
+      }
+    } else if (ordinary) {
+      const why = 'no leads group ID given, so the delegation fixture in preparation step 3a was not built';
+      record('access.group.control-non-owner-cannot-edit', 'non-owner membership editing', 'NOT REACHED', why);
+      record('access.group.owner-edits-membership', 'owner membership editing', 'NOT REACHED', why);
     }
     report.reads.libraryScope = await scope(library);
     const root = entries[4].body?.RootFolder?.ServerRelativeUrl;

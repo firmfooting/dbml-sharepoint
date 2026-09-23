@@ -11,6 +11,10 @@
   invalidateFieldShapes();  // probes reflect phase-start state
   let digest = await getDigest();
   const listGuids = Object.create(null);
+  // `list_assignments` only, and deliberately: early isolation breaks the
+  // LIST's inheritance, and a folder policy breaks the folder's. A library
+  // whose folders are exact while the library itself is not has nothing to
+  // isolate here.
   const earlyIsolationLists = new Set(SCHEMA.list_assignments
     .filter(la => la.break_inheritance && la.reconcile_mode === 'exact')
     .map(la => la.list));

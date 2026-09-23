@@ -18,10 +18,77 @@ from dbml_sharepoint.model.errors import MappingValueError
 #: marker is computed from the expanded name; provenance never sees this.
 PREFIX_PLACEHOLDER = "{prefix}"
 
+#: The placeholder a name generated from an enum member carries. Unlike
+#: `{prefix}` it may appear anywhere and more than once, because a group's
+#: name and its description both want the member. It survives loading: the
+#: loader never sees the schema, so the member is only known once
+#: `analysis/groups.py` resolves the enum.
+MEMBER_PLACEHOLDER = "{member}"
+
+#: The same member with the characters SharePoint refuses in a group name
+#: taken out. Expanded identically wherever it appears, which is what lets a
+#: generated group and the folder policy naming that group agree without a
+#: second list to keep in step.
+MEMBER_SAFE_PLACEHOLDER = "{member_safe}"
+
+#: MEASURED 2026-09-21 on a live tenant. Creating a site group whose name
+#: carried a comma was refused by SharePoint Online with: "The group name is
+#: empty, or you are using one or more of the following invalid characters:
+#: \" / \\ [ ] : | < > + = ; , ? * ' @". Microsoft Learn publishes no
+#: equivalent list for a group name (it publishes one for files and folders,
+#: which `analysis/file_names.py` carries), so this set is the error's own,
+#: character for character.
+#:
+#: Note `&` is NOT in it: sibling groups whose names carried one were created
+#: without complaint in the same run, which is the observation that stops this
+#: being widened to "punctuation" on plausibility.
+GROUP_NAME_REFUSED_CHARACTERS = frozenset('"/\\[]:|<>+=;,?*\'@')
+
+
+def refused_group_name_characters(name: str) -> tuple[str, ...]:
+    """The refused characters `name` carries, in the order they appear."""
+    seen: list[str] = []
+    for char in name:
+        if char in GROUP_NAME_REFUSED_CHARACTERS and char not in seen:
+            seen.append(char)
+    return tuple(seen)
+
+
+def safe_member(member: str) -> str:
+    """`member` as a group name may carry it.
+
+    Each refused character becomes a space rather than being deleted, so
+    `A, B` reads `A B` rather than `AB`; runs of whitespace then collapse to
+    one. Two members can collapse onto one name, which is not special-cased
+    here: `duplicate_group_name` already judges the resolved names and says so.
+    """
+    swapped = "".join(
+        " " if char in GROUP_NAME_REFUSED_CHARACTERS else char for char in member
+    )
+    return " ".join(swapped.split())
+
 
 def prefix_stem(prefix: str) -> str:
     """`RR_` names lists `RR_Risk` and groups `RR Risk Managers`: the stem."""
     return prefix.removesuffix("_")
+
+
+def expand_member(value: str, member: str) -> str:
+    """Replace every `{member}` and `{member_safe}` with the enum member.
+
+    No placement rule and no refusal for absence: where the token has to
+    appear is a validator's question, and a name that omits it collapses
+    every member onto one object rather than failing to load.
+
+    `{member_safe}` is expanded first. It would survive a naive `{member}`
+    pass anyway, since that token needs its closing brace, but depending on
+    that is depending on a spelling rather than on an order.
+    """
+    return (
+        value
+        .replace(MEMBER_SAFE_PLACEHOLDER, safe_member(member))
+        .replace(MEMBER_PLACEHOLDER, member)
+    )
 
 
 def expand_prefix(value: str, prefix: str, context: str) -> str:

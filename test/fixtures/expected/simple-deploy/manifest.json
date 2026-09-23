@@ -1,6 +1,6 @@
 {
-  "bytes": 448239,
-  "sha256": "545c5f40bc30dce161e59881e2988d715c332fefe85eadb5ac9b1e82be6a6739",
+  "bytes": 466109,
+  "sha256": "24ff7ce43ed90391a74f4bd5d7ac5913d1f5d97e8fb0ea90a5c2972cd136a53c",
   "segments": [
     "00-header.js",
     "01-site-guard.js",

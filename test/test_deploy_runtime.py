@@ -4740,6 +4740,7 @@ def _reader_harness(
     web_binding_status: int | None = None,
     web_binding_shape: str = "verbose",
     unreadable_binding_levels: list[int] | None = None,
+    drop_change_log_grant: bool = False,
 ) -> str:
     """`_ADOPTED_HARNESS` plus the two surfaces the reader phase touches.
 
@@ -4788,7 +4789,15 @@ def _reader_harness(
     the `{results: [...]}` odata=verbose renders. `unreadable_binding_levels`
     answers the by-Id read for those level Ids HTTP 500, which is a binding
     whose bitmap this run cannot judge.
+
+    The change log's own role assignments are real state: the logging phase's
+    grant POST records the binding and the read-back reads it, so a run
+    cannot satisfy its own verification. `drop_change_log_grant` answers that
+    POST 200 and stores nothing, which is what an accepted but ineffective
+    add looks like from the script's side.
     """
+    from dbml_sharepoint.analysis.sidecars import CHANGE_LOG_TITLE
+
     pages = [list(members or [])] if member_pages is None else [
         list(page) for page in member_pages
     ]
@@ -4805,6 +4814,9 @@ def _reader_harness(
         const WEB_BINDING_SHAPE = __WEB_BINDING_SHAPE__;
         const UNREADABLE_BINDING_LEVELS = __UNREADABLE_BINDING_LEVELS__;
         const READER_PHASE = __READER_PHASE__;
+        const CHANGE_LOG_LIST = __CHANGE_LOG_TITLE__;
+        const DROP_CHANGE_LOG_GRANT = __DROP_CHANGE_LOG_GRANT__;
+        const CHANGE_LOG_BINDINGS = [];
         const _beforeReader = globalThis.fetch;
         globalThis.fetch = async (url, opts = {}) => {
           const u = String(url);
@@ -4942,6 +4954,39 @@ def _reader_harness(
             }
             return answer;
           }
+          // The change log's own role assignments. Kept here rather than in
+          // the adopted harness underneath, whose /roleassignments mock is
+          // static state shared by every list and answers the collection
+          // shape, not the by-principal one this read asks for.
+          const changeLogScope = `getbytitle('${CHANGE_LOG_LIST}')/roleassignments`;
+          const granted = u.includes(`${changeLogScope}/addroleassignment(`)
+            ? /addroleassignment\(principalid=(\d+),roleDefId=(\d+)\)/.exec(u)
+            : null;
+          if (granted && method === 'POST') {
+            if (!DROP_CHANGE_LOG_GRANT) {
+              CHANGE_LOG_BINDINGS.push(
+                { principalId: Number(granted[1]), roleDefId: Number(granted[2]) });
+            }
+            return respond({ d: null });
+          }
+          const heldBy = u.includes(`${changeLogScope}/getbyprincipalid(`)
+            ? /getbyprincipalid\((\d+)\)/.exec(u)
+            : null;
+          if (heldBy && method === 'GET') {
+            const held = CHANGE_LOG_BINDINGS.filter(
+              (b) => b.principalId === Number(heldBy[1]));
+            // MEASURED and recorded in _acls.js.j2: getbyprincipalid answers
+            // 404 for a principal holding no assignment on the list.
+            if (held.length === 0) {
+              calls.push({ url: u, method, body: null });
+              const payload = { error: { code: '-2147024809, System.ArgumentException' } };
+              return { ok: false, status: 404, headers: { get: () => null },
+                       json: async () => payload,
+                       text: async () => JSON.stringify(payload) };
+            }
+            return respond({ d: { RoleDefinitionBindings: {
+              results: held.map((b) => ({ Id: b.roleDefId })) } } });
+          }
           return _beforeReader(url, opts);
         };
     """).replace(
@@ -4968,6 +5013,10 @@ def _reader_harness(
         "__UNREADABLE_BINDING_LEVELS__", json.dumps(unreadable_binding_levels or []),
     ).replace(
         "__READER_PHASE__", json.dumps(pn("reader_enrolment")),
+    ).replace(
+        "__CHANGE_LOG_TITLE__", json.dumps(CHANGE_LOG_TITLE),
+    ).replace(
+        "__DROP_CHANGE_LOG_GRANT__", "true" if drop_change_log_grant else "false",
     )
 
 
@@ -5008,6 +5057,7 @@ def _run_reader_deploy(
     web_binding_shape: str = "verbose",
     unreadable_binding_levels: list[int] | None = None,
     sidecars: bool = False,
+    drop_change_log_grant: bool = False,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     """Run the emitted deploy against the reader harness.
 
@@ -5017,7 +5067,8 @@ def _run_reader_deploy(
 
     `sidecars` emits the run and change logs and seeds their markers into the
     harness's descriptions, so both are adopted and the logging phase reaches
-    the change log's reader grant.
+    the change log's reader grant. `drop_change_log_grant` then accepts that
+    grant's POST and stores nothing.
     """
     script = _reader_harness(
         ensure_user, members=members, member_pages=member_pages,
@@ -5026,6 +5077,7 @@ def _run_reader_deploy(
         web_bindings=web_bindings, web_binding_status=web_binding_status,
         web_binding_shape=web_binding_shape,
         unreadable_binding_levels=unreadable_binding_levels,
+        drop_change_log_grant=drop_change_log_grant,
     )
     if sidecars:
         script = _with_sidecar_descriptions(script)
@@ -5204,6 +5256,50 @@ def test_the_change_logs_reader_grant_resolves_the_level_the_enrolment_phase_did
     )
     # Group Id 9 is what the adopted harness resolves every group name to.
     assert f"principalid=9,roleDefId={_READ_LEVEL_ID}" in granted[0]["url"], granted[0]
+    # And the binding is READ BACK, not taken from the POST's own answer.
+    posted = calls.index(granted[0])
+    assert any(
+        c["method"] == "GET"
+        and f"getbytitle('{CHANGE_LOG_TITLE}')" in c["url"]
+        and "roleassignments/getbyprincipalid(9)" in c["url"]
+        for c in calls[posted + 1:]
+    ), f"the grant was never read back: {[c['url'] for c in calls[posted + 1:]][:10]}"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_accepted_change_log_grant_that_is_not_observed_is_recorded() -> None:
+    """`grantResp.ok` says the request was accepted, not that the binding
+    exists.
+
+    An add SharePoint answers 200 and discards leaves the reader unable to
+    collect the change feed while the run logs the grant as successful, which
+    is the silent class this repository exists to catch. The harness models
+    exactly that: the POST is accepted and stores nothing.
+
+    The failure says the write was accepted and the binding was not observed,
+    rather than claiming the write was lost, because a list that has not
+    caught up looks identical from here.
+    """
+    from dbml_sharepoint.analysis.sidecars import CHANGE_LOG_TITLE
+
+    summary, calls, output = _run_reader_deploy(
+        _RESOLVED_USER, sidecars=True, drop_change_log_grant=True,
+    )
+    failures = [
+        f for f in (summary.get("loggingFailures") or [])
+        if "reader grant" in str(f.get("where", ""))
+    ]
+    assert failures, summary.get("loggingFailures")
+    message = str(failures[0].get("error", ""))
+    assert "was accepted" in message, message
+    assert "not observed" in message, message
+    assert CHANGE_LOG_TITLE in message, message
+    # Neither the success line nor the change row it writes beside it.
+    assert f"Change log '{CHANGE_LOG_TITLE}': granted" not in output, output[-3000:]
+    assert not [
+        c for c in calls
+        if c.get("body") and "enterprise reader grant" in str(c["body"])
+    ], "a change row claimed a grant the list does not report"
 
 
 # === Step 0: the grant is judged by its bitmap, not by its name (#199) ===
@@ -6274,12 +6370,16 @@ def test_a_reconciled_group_setting_the_tenant_did_not_store_fails_closed() -> N
 # into two so the adopted one names the about-to-be-created one as its owner.
 
 
-def _owner_pending_groups_deploy_js() -> str:
+def _owner_pending_groups_deploy_js(*, owner_first: bool = True) -> str:
     """`_deploy_js()` with the fixture's one declared group ('List
     Maintainer') split into two: it now declares owner_group 'Group B', a
     second custom group this same declaration also creates. Mutates the
     generated JSON directly, the same way `test_auto_accept_is_compared_...`
     does, rather than adding a second group to the shared mapping fixture.
+
+    `owner_first=False` declares the owner AFTER the group that names it,
+    which is the order `SCHEMA.groups` carries straight from the mapping and
+    the one a fresh site cannot satisfy group by group.
     """
     js = _deploy_js()
     match = re.search(r'"groups": (\[.*?\n  \])', js, re.DOTALL)
@@ -6294,7 +6394,8 @@ def _owner_pending_groups_deploy_js() -> str:
     group_b["description"] = "Group B."
     group_b["owner_group"] = "Site Owners"
     group_b["require_empty_at_deploy"] = False
-    new_groups = json.dumps([group_b, list_maintainer], indent=2).replace("\n", "\n  ")
+    ordered = [group_b, list_maintainer] if owner_first else [list_maintainer, group_b]
+    new_groups = json.dumps(ordered, indent=2).replace("\n", "\n  ")
     return js[: match.start(1)] + new_groups + js[match.end(1):]
 
 
@@ -6346,6 +6447,57 @@ def test_an_adopted_group_owned_by_a_group_pending_creation_still_deploys() -> N
     assert min(owner_resolve_indices) > create_indices[0], (
         "the owner resolve for 'List Maintainer' ran before Group B was created: "
         f"resolve at {owner_resolve_indices}, create at {create_indices[0]}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_group_owned_by_one_declared_after_it_deploys_on_a_fresh_site() -> None:
+    """Both groups absent, and the owner declared SECOND.
+
+    `SCHEMA.groups` carries the mapping's own declaration order, and the
+    phase used to resolve each group's owner the moment that group was
+    created, so on a fresh site 'List Maintainer' asked for 'Group B' before
+    'Group B' existed: HTTP 404, the phase aborted before list creation, and
+    the second run succeeded because the first had created the owner anyway.
+    Owners are reconciled in a second pass now, so the declaration order
+    stops being a deployment constraint. Verified by mutation: resolving the
+    owner inside applyGroupDecision again reproduces the abort.
+    """
+    js = _owner_pending_groups_deploy_js(owner_first=False)
+    harness = _ADOPTED_HARNESS.replace(
+        "const GROUP_IDS = {};",
+        f"const GROUP_IDS = {json.dumps({'List Maintainer': 101, 'Group B': 102})};",
+    ).replace(
+        "const GROUP_CURRENT_OWNER = { 9: { Id: 3, Title: 'Site Owners', PrincipalType: 8 } };",
+        "const GROUP_CURRENT_OWNER = { 9: { Id: 3, Title: 'Site Owners', PrincipalType: 8 }, "
+        "101: { Id: 102, Title: 'Group B', PrincipalType: 8 } };",
+    )
+    summary, calls, output = _run_group_verify_deploy(js, harness)
+    assert not _security_errors(summary), summary
+    assert summary.get("aborted") != "phase-0-security-errors", summary
+    created = [
+        json.loads(c["body"]).get("Title") for c in calls
+        if c["method"] == "POST" and c["url"].endswith("/sitegroups") and c["body"]
+    ]
+    assert created == ["List Maintainer", "Group B"], (
+        f"both groups must be created, owner last:\n{output[-3000:]}"
+    )
+    group_b_created = next(
+        i for i, c in enumerate(calls)
+        if c["method"] == "POST" and c["url"].endswith("/sitegroups") and c["body"]
+        and json.loads(c["body"]).get("Title") == "Group B"
+    )
+    owner_resolves = [
+        i for i, c in enumerate(calls)
+        if c["method"] == "GET" and "sitegroups/getbyname('Group%20B')" in c["url"]
+    ]
+    assert owner_resolves, f"'List Maintainer's owner was never resolved:\n{output[-3000:]}"
+    assert min(owner_resolves) > group_b_created, (
+        "the owner resolve for 'List Maintainer' ran before Group B was created: "
+        f"resolve at {owner_resolves}, create at {group_b_created}"
+    )
+    assert "Site group 'List Maintainer' owner verified as 'Group B'." in output, (
+        output[-3000:]
     )
 
 

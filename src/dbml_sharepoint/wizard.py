@@ -53,6 +53,7 @@ from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
+from dbml_sharepoint.analysis.groups import declaring_groups
 from dbml_sharepoint.analysis.timezones import local_zone_name
 from dbml_sharepoint.bundle import (
     ASSESS_SCRIPT,
@@ -1217,7 +1218,7 @@ def _read_facts(solution: Solution) -> _TemplateFacts:
         ),
         reader_group=any(
             g.enroll_enterprise_reader
-            for g in (permissions.groups if permissions else [])
+            for g in declaring_groups(permissions)
         ),
     )
 

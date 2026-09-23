@@ -2,6 +2,7 @@
 """Render deploy-manifest.md."""
 
 import json
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from dbml_sharepoint.analysis.condition_description import describe
@@ -20,6 +21,7 @@ from dbml_sharepoint.templating import script_env
 def generate_manifest(
     *,
     schema_json: dict[str, Any],
+    enum_members: Mapping[str, Sequence[str]],
     findings: list[Finding],
     bundle: MappingBundle,
     release: Release,
@@ -105,8 +107,12 @@ def generate_manifest(
     # lists this build deploys -- an exclusion on a list another site role
     # owns is not something this operator can act on.
     _perms = bundle.mapping.permissions
+    # From `schema_json`, whose groups are already resolved: a `from_enum`
+    # group's name reaches `lists_granting_group` below, and the template
+    # spelling matches no assignment.
     _reader_groups = [
-        g.name for g in (_perms.groups if _perms else []) if g.enroll_enterprise_reader
+        g["name"] for g in schema_json.get("groups", [])
+        if g.get("enroll_enterprise_reader")
     ]
     _deployed_entities = [e for e in bundle.mapping.entities if _deployed(e)]
     # The granted half is passed too, not just discarded: when every deployed
@@ -114,19 +120,24 @@ def generate_manifest(
     # that only ever sees "excluded" has no way to say "nothing" instead of
     # "everything except everything".
     _reader_split = [
-        lists_granting_group(bundle.mapping, name, _deployed_entities)
+        lists_granting_group(
+            bundle.mapping, name, _deployed_entities, enum_members,
+        )
         for name in _reader_groups
     ]
-    reader_granted_lists = sorted({
-        bundle.mapping.list_title(entity)
-        for granted, _ in _reader_split
-        for entity in granted
-    })
-    reader_excluded_lists = sorted({
-        bundle.mapping.list_title(entity)
-        for _, excluded in _reader_split
-        for entity in excluded
-    })
+    def _titles(scope: str) -> list[str]:
+        return sorted({
+            bundle.mapping.list_title(entity)
+            for reach in _reader_split
+            for entity in getattr(reach, scope)
+        })
+
+    reader_granted_lists = _titles("granted")
+    # Named apart from the granted half: a folder grant binds inside the
+    # declared folders and not on the library, so saying "Read on every list
+    # here" of one would overstate what the deploy writes.
+    reader_folder_only_lists = _titles("folder_only")
+    reader_excluded_lists = _titles("excluded")
 
     # Every field the deploy actually writes, per list. Iterating
     # fields_phase1 alone made the manifest blind to deferred lookups:
@@ -352,6 +363,7 @@ def generate_manifest(
         extra_warnings=extras.warnings,
         enterprise_reader=enterprise_reader,
         reader_granted_lists=reader_granted_lists,
+        reader_folder_only_lists=reader_folder_only_lists,
         reader_excluded_lists=reader_excluded_lists,
         env_file_line=describe_env_provenance(env_provenance),
         # The sidecar lists the logging phase keeps, named here so the

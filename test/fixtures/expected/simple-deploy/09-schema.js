@@ -16,6 +16,7 @@
       "metadata_type": "SP.FieldNumber"
     }
   ],
+  "folder_assignments": [],
   "form_formatting": [
     {
       "client_form_custom_formatter": "{\"bodyJSONFormatter\":{\"sections\":[{\"displayname\":\"Project\",\"fields\":[\"Title\",\"Status\",\"Sort Order\"]}]}}",

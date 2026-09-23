@@ -1236,7 +1236,7 @@
         "policy": "manual"
       },
       "prerequisites": [
-        "site time 04:00\u201320:00"
+        "site time 04:00–20:00"
       ],
       "scenarios": [
         {
@@ -10403,7 +10403,8 @@
         "Administrator-confirmed division group IDs and accounts belonging only to their own division group",
         "No nested privileged memberships or direct grants outside the prepared division",
         "Successful complete actor-group and associated Owners-group reads before sharing observations",
-        "Manual edit/share/recipient-open observations before and after each attempt"
+        "Manual edit/share/recipient-open observations before and after each attempt",
+        "Optional delegation fixture: a leads group owning the division group, the actor in both and in no others, and membership editing left on Group Owner"
       ],
       "scenarios": [
         {
@@ -10536,6 +10537,34 @@
                 "site sharing settings remain unchanged"
               ]
             }
+          ]
+        },
+        {
+          "id": "group-membership-delegation",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "access.group.control-non-owner-cannot-edit",
+              "depends_on": [
+                "access.effective-perms.control-current-identity",
+                "access.effective-perms.control-ordinary-actor"
+              ]
+            },
+            {
+              "id": "access.group.owner-edits-membership",
+              "depends_on": [
+                "access.effective-perms.control-current-identity",
+                "access.effective-perms.control-ordinary-actor",
+                "access.group.control-non-owner-cannot-edit"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "access.effective-perms.control-current-identity",
+            "access.effective-perms.control-ordinary-actor",
+            "access.group.control-non-owner-cannot-edit"
           ]
         }
       ]

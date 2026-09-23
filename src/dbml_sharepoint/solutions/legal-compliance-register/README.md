@@ -54,11 +54,36 @@ the SAQ being answered; two files sharing a topic need not share an issue.
 ## Division folders
 
 The four example folders are **Clinical services**, **Corporate services**,
-**Community services** and **Executive and governance**. Customise these to
-the organisation's executive divisions in both the DBML enum and mapping.
-The platform owner assigns the executive according to the folder. The
-bundle does not automate that person assignment or delegation. These folders
-currently inherit library permissions; they do not yet isolate division access.
+**Community services** and **Executive and governance**. Customise them in the
+DBML `division` enum alone: the folders are its members and the mapping keeps
+no second list. The platform owner assigns the executive according to the
+folder. The bundle does not automate that person assignment or delegation.
+
+Each folder has its own permissions. The deploy creates one
+`{prefix} <division> Division` group per member and breaks the folder's
+inheritance, so edit inside a division folder belongs to that division's
+group, **{prefix} Compliance Coordinators** and **{prefix} Assessment
+Owners**, with **dbml List Administrators** at Full Control and site members,
+site owners and **dbml Enterprise Readers** keeping Read. The division groups
+add per-division delegation; they do not remove the register-wide roles this
+family already declares.
+
+A grant made at library scope no longer reaches files inside a division
+folder, so any role that needs to edit there has to appear in the folder
+policy as well. That is why Assessment Owners is listed above.
+
+Each division group is declared with the coordinators as its `owner_group`.
+The intent is that coordinators can move people between divisions without
+holding site Full Control. **That delegation is not yet verified.** Whether a
+group owner who is not a site administrator can actually edit that group's
+membership is the question `test/manual/library-sharing-probe.js` asks, and
+the probe has not been run against a live site. Until it has, plan on a site
+administrator maintaining the division groups.
+
+Sharing a file directly out of a folder is also **not characterised**. The
+same probe asks what a direct share changes at file and folder scope and has
+not answered it, so treat what a recipient of a shared file can do as unknown
+rather than as governed by the groups above.
 
 ## Worklists
 

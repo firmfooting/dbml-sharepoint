@@ -38,6 +38,93 @@ entities:
     folders: ["Clinical services"]
 """
 
+#: A library whose one folder carries its own ACL. The folder policy names
+#: its principal through `{member}`, which is what lets one declaration cover
+#: every folder and is how `groups[].from_enum` names the same object without
+#: either list being written twice. Only DECLARED levels are used: the mock
+#: knows the levels this pack creates and nothing about SharePoint's built-ins.
+_FOLDER_ACL_LIBRARY = _FOLDERED_LIBRARY + """
+permission_levels:
+  - name: "Folder Editor"
+    description: "Edit inside one folder."
+    base_permissions:
+      - ViewListItems
+      - AddListItems
+      - EditListItems
+
+groups:
+  - name: "List Maintainer"
+    description: "Test group."
+    owner_group: "Site Owners"
+  - name: "Clinical services Editors"
+    description: "One folder's editors."
+    owner_group: "Site Owners"
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "List Maintainer" }
+        level: "Folder Editor"
+  folders:
+    Escalation:
+      break_inheritance: true
+      reconcile: exact
+      assignments:
+        - principal: { kind: group, name: "{member} Editors" }
+          level: "Folder Editor"
+"""
+
+#: The same library in `configured` mode, with ONE principal declared at TWO
+#: levels. That is the shape the per-assignment prune got wrong: each pass
+#: treated its own level as the principal's whole desired state, so the pass
+#: for one level removed the other and the pass for the other removed the
+#: first, off the same pre-write snapshot.
+_TWO_LEVEL_CONFIGURED_LIBRARY = _FOLDERED_LIBRARY + """
+permission_levels:
+  - name: "Folder Editor"
+    description: "Edit inside one folder."
+    base_permissions:
+      - ViewListItems
+      - AddListItems
+      - EditListItems
+  - name: "Folder Approver"
+    description: "Approve inside one folder."
+    base_permissions:
+      - ViewListItems
+      - ApproveItems
+
+groups:
+  - name: "List Maintainer"
+    description: "Test group."
+    owner_group: "Site Owners"
+  - name: "Clinical services Editors"
+    description: "One folder's editors."
+    owner_group: "Site Owners"
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: configured
+    assignments:
+      - principal: { kind: group, name: "List Maintainer" }
+        level: "Folder Editor"
+      - principal: { kind: group, name: "List Maintainer" }
+        level: "Folder Approver"
+  folders:
+    Escalation:
+      break_inheritance: true
+      reconcile: configured
+      assignments:
+        - principal: { kind: group, name: "{member} Editors" }
+          level: "Folder Editor"
+        - principal: { kind: group, name: "{member} Editors" }
+          level: "Folder Approver"
+"""
+
 #: A declared view whose previous title is the one a bare library ships on
 #: AllItems.aspx. Nothing refuses this at build time: 'All Documents' is not
 #: another declared title, so the checks in `_views.py` have nothing to see.
@@ -143,7 +230,7 @@ _INHERITANCE_JS = """globalThis.fetch = async (url, opts = {}) => {
 #: Answers the folder phase's reads for the one folder `_FOLDERED_LIBRARY`
 #: declares. `__folderCreated` turns on at the create POST, after which the
 #: folder reads back as existing and its item as FileSystemObjectType 1.
-_FOLDER_JS = """globalThis.fetch = async (url, opts = {}) => {
+_FOLDER_JS = r"""globalThis.fetch = async (url, opts = {}) => {
   const requested = String(url);
   const folderAnswer = (payload) => ({
     ok: true, status: 200, headers: { get: () => null },
@@ -160,8 +247,11 @@ _FOLDER_JS = """globalThis.fetch = async (url, opts = {}) => {
     return folderAnswer({ d: { Name: 'Clinical services' } });
   }
   if (requested.includes('/ListItemAllFields')) {
+    // Id is what the ACL phase addresses the folder by; __folderIdMissing
+    // models a tenant that answers the read without it.
     const item = { FileSystemObjectType: 1,
       FileRef: '/sites/test/APP_Escalation/Clinical services' };
+    if (!globalThis.__folderIdMissing) item.Id = 1;
     return folderAnswer({ d: item });
   }
   if (requested.includes('GetFolderByServerRelativeUrl(')) {
@@ -170,16 +260,102 @@ _FOLDER_JS = """globalThis.fetch = async (url, opts = {}) => {
       ServerRelativeUrl: '/sites/test/APP_Escalation/Clinical services',
     } });
   }
+  // ONE item, re-read inside the ownership bracket before the folder is
+  // written to. Ahead of the enumeration below because that matches any URL
+  // naming the field, and answering this read with a results array is what
+  // made the re-read see `undefined`.
+  if (requested.includes('/items(') && requested.includes('FileSystemObjectType')) {
+    globalThis.__calls.push({ url: requested, method: opts.method || 'GET', body: null });
+    return folderAnswer({ d: globalThis.__folderIdentity || {
+      FileSystemObjectType: 1,
+      FileRef: '/sites/test/APP_Escalation/Clinical services',
+    } });
+  }
   if (requested.includes('FileSystemObjectType')) {
-    const rows = globalThis.__folderCreated
+    globalThis.__calls.push({ url: requested, method: opts.method || 'GET', body: null });
+    const rows = (globalThis.__folderCreated && !globalThis.__folderMissing)
       ? [{ Id: 1, FileSystemObjectType: 1, FileLeafRef: 'Clinical services',
-          FileRef: '/sites/test/APP_Escalation/Clinical services' }] : [];
+          FileRef: '/sites/test/APP_Escalation/Clinical services',
+          HasUniqueRoleAssignments: Boolean(globalThis.__folderScoped) }] : [];
+    // A file somebody shared by hand: a descendant scope this bundle never
+    // declared, which the ACL phase must still refuse to run past.
+    if (globalThis.__strayScope) {
+      rows.push({ Id: 99, FileSystemObjectType: 0, FileLeafRef: 'stray.docx',
+        FileRef: '/sites/test/APP_Escalation/stray.docx',
+        HasUniqueRoleAssignments: true });
+    }
+    return folderAnswer({ d: { results: rows } });
+  }
+  // The folder's OWN inheritance flag. The shared inheritance mock tracks one
+  // global `__broke`, which would make the folder read as already unique the
+  // moment the list's break landed and skip the branch under test.
+  if (requested.includes('/items(')
+      && requested.endsWith('$select=HasUniqueRoleAssignments')) {
+    return folderAnswer({
+      d: { HasUniqueRoleAssignments: Boolean(globalThis.__folderScoped) },
+    });
+  }
+  if (requested.includes('/items(') && requested.includes('/breakroleinheritance')) {
+    globalThis.__folderScoped = true;
+  }
+  // Role assignments at FOLDER scope as state, so the phase's read-back sees
+  // what it wrote rather than a fixed empty snapshot. `__folderBindingsBlind`
+  // accepts every write and reports none, which is what a scope that never
+  // catches up looks like from the script's side.
+  globalThis.__folderBindings = globalThis.__folderBindings || new Set();
+  if (requested.includes('/items(') && requested.includes('/roleassignments/addroleassignment(')) {
+    const m = /principalid=(\d+),roleDefId=(\d+)/.exec(requested);
+    if (m) globalThis.__folderBindings.add(m[1] + ':' + m[2]);
+  }
+  if (requested.includes('/items(')
+      && requested.includes('/roleassignments/removeroleassignment(')) {
+    const m = /principalid=(\d+),roleDefId=(\d+)/.exec(requested);
+    // __folderRemovalsIgnored answers the delete and keeps the binding,
+    // which is what an accepted but ineffective removal looks like.
+    if (m && !globalThis.__folderRemovalsIgnored) {
+      globalThis.__folderBindings.delete(m[1] + ':' + m[2]);
+    }
+  }
+  if (requested.includes('/items(') && /\/roleassignments\?/.test(requested)) {
+    globalThis.__calls.push({ url: requested, method: opts.method || 'GET', body: null });
+    const byPrincipal = new Map();
+    if (!globalThis.__folderBindingsBlind) {
+      const pairs = [...globalThis.__folderBindings];
+      // A binding nobody declared, left behind by an earlier run or a hand
+      // edit: what an exact policy has to prune and then prove it pruned.
+      if (globalThis.__folderStrayBinding) pairs.push('777:888');
+      for (const pair of pairs) {
+        const [principalId, roleDefId] = pair.split(':').map(Number);
+        if (!byPrincipal.has(principalId)) byPrincipal.set(principalId, []);
+        byPrincipal.get(principalId).push({ Id: roleDefId, Name: 'Level ' + roleDefId });
+      }
+    }
+    // Both shapes: the exact-mode allowlist enumeration selects Member/Id
+    // and the read-back selects PrincipalId, off the same endpoint.
+    const rows = [...byPrincipal].map(([PrincipalId, bindings]) => ({
+      PrincipalId,
+      Member: { Id: PrincipalId, Title: 'Principal ' + PrincipalId },
+      RoleDefinitionBindings: { results: bindings },
+    }));
+    // One row per page, so a declared binding sits behind a __next the
+    // read-back has to follow.
+    if (globalThis.__folderBindingsPaged && rows.length > 0) {
+      const page = Number((/[?&]fpage=(\d+)/.exec(requested) || [])[1] || 0);
+      const payload = { d: { results: rows.slice(page, page + 1) } };
+      if (page + 1 < rows.length) {
+        payload.d.__next = requested.replace(/&fpage=\d+/, '') + '&fpage=' + (page + 1);
+      }
+      return folderAnswer(payload);
+    }
     return folderAnswer({ d: { results: rows } });
   }
 """
 
 
-def _library_deploy_js(tmp_path: Path, mapping: str, *, titled: bool = True) -> str:
+def _library_deploy_js(
+    tmp_path: Path, mapping: str, *, titled: bool = True,
+    enterprise_reader: str | None = None,
+) -> str:
     """`titled` declares a Title column, which is what puts a `title_patch` on
     the list. A library naming its files through FileLeafRef declares none, and
     the shipped legal-compliance-register library is one, so `titled=False` is
@@ -200,6 +376,7 @@ def _library_deploy_js(tmp_path: Path, mapping: str, *, titled: bool = True) -> 
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
+        enterprise_reader=enterprise_reader,
     ))
 
 
@@ -974,3 +1151,322 @@ def test_declared_library_url_is_created_and_verified(
     else:
         assert "LIBRARY_INTERNAL_NAME_MISMATCH" in str(summary["errors"])
         assert not any(c["method"] == "POST" and "/fields" in c["url"] for c in calls)
+
+
+def _folder_acl_run(
+    tmp_path: Path, *, stray: bool = False, missing: bool = False,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """The whole deploy against a library whose one folder carries an ACL."""
+    # `unique_after=1` is what makes the mock answer the inheritance flag
+    # at all; both securables read it, the list for its settle loop and
+    # the folder for the same wait.
+    harness = _library_harness(declared_folder=True, unique_after=1)
+    flags = ""
+    if stray:
+        flags += "globalThis.__strayScope = true;\n"
+    if missing:
+        flags += "globalThis.__folderMissing = true;\n"
+    summary, calls, _ = _run(
+        flags + harness,
+        _library_deploy_js(tmp_path, _FOLDER_ACL_LIBRARY, titled=False),
+    )
+    return summary, calls
+
+
+def test_configured_mode_keeps_every_level_one_principal_is_declared_with(
+    tmp_path: Path,
+) -> None:
+    """Two levels for one principal survive a redeploy that already has both.
+
+    `configured` mode prunes the levels a DECLARED principal holds that the
+    mapping does not. Asked per assignment, each pass treated its own level
+    as that principal's whole desired state: the pass for the first removed
+    the second, the pass for the second removed the first, both off the same
+    pre-write snapshot, and the principal ended with neither. The deploy read
+    back clean because the snapshot it pruned against was never re-read.
+    """
+    # Principal 9 is what the mock resolves any group to; 2 and 3 are the two
+    # declared levels, in declaration order.
+    both = json.dumps({"APP_Escalation": [[{
+        "Member": {"Id": 9, "Title": "List Maintainer", "PrincipalType": 8},
+        "RoleDefinitionBindings": {"results": [
+            {"Id": 2, "Name": "Folder Editor"},
+            {"Id": 3, "Name": "Folder Approver"},
+        ]},
+    }]]})
+    harness = _library_harness(declared_folder=True, unique_after=1).replace(
+        "const ROLE_ASSIGNMENT_PAGES = {};",
+        f"const ROLE_ASSIGNMENT_PAGES = {both};",
+    )
+    summary, calls, _ = _run(
+        harness,
+        _library_deploy_js(tmp_path, _TWO_LEVEL_CONFIGURED_LIBRARY, titled=False),
+    )
+
+    assert summary["errors"] == [], summary["errors"]
+    removals = [
+        c["url"] for c in calls if "removeroleassignment" in c.get("url", "")
+    ]
+    assert removals == [], removals
+
+
+def test_a_folder_lookup_without_an_id_is_refused(tmp_path: Path) -> None:
+    """A folder read that answers without an Id must abort, not proceed.
+
+    The id is the whole point of the lookup, and it is the only thing that
+    addresses the folder afterwards. Left unchecked the map carried
+    `undefined`, every folder endpoint became `items(undefined)`, SharePoint
+    answered it, and the phase reported a clean run having secured nothing.
+    Found exactly that way: the mock answered the read without an Id.
+    """
+    harness = _library_harness(declared_folder=True, unique_after=1)
+    summary, calls, _ = _run(
+        "globalThis.__folderIdMissing = true;\n" + harness,
+        _library_deploy_js(tmp_path, _TWO_LEVEL_CONFIGURED_LIBRARY, titled=False),
+    )
+
+    assert summary["errors"], "a folder with no addressable id must fail the phase"
+    assert any(
+        "no usable list item Id" in e["error"] for e in summary["errors"]
+    ), summary["errors"]
+    assert not any("items(undefined)" in c.get("url", "") for c in calls)
+
+
+def test_a_declared_folder_gets_its_own_acl(tmp_path: Path) -> None:
+    """The folder is secured as its own list item, addressed by id.
+
+    A folder is not itself a SecurableObject -- Microsoft Learn derives
+    SecurableObject as List, ListItem and Web -- so the grant goes on the
+    folder's list item. Addressed by `items(<id>)` rather than by
+    server-relative path, which keeps the write inside the ownership bracket
+    that proves the title still resolves to the surveyed list. In exact mode
+    the id falls out of the descendant-scope enumeration the phase already
+    runs; configured mode has no enumeration and resolves it by path.
+    """
+    summary, calls = _folder_acl_run(tmp_path)
+    assert summary["errors"] == [], summary["errors"]
+    urls = [c["url"] for c in calls]
+    assert any(
+        "/items(1)/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)"
+        in u for u in urls
+    ), "the folder's inheritance was never broken"
+    assert any(
+        "/items(1)/roleassignments/addroleassignment(" in u for u in urls
+    ), "the folder grant was never written"
+    # The list's own ACL is untouched by the folder pass: two securables, one
+    # rule, and neither addressed through the other.
+    assert any(
+        u.endswith("/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)")
+        and "/items(" not in u for u in urls
+    ), "the list's own inheritance break went missing"
+
+    # The guard runs again AFTER the folder pass, by which point the folder
+    # reads HasUniqueRoleAssignments=true because this run just broke it. A
+    # clean summary is therefore the assertion that matters most in this
+    # module: without the declared-scope exclusion, the very next deploy
+    # would abort forever on the phase's own work.
+    surveys = [
+        u for u in urls if "FileSystemObjectType" in u and "/items(" not in u
+    ]
+    assert len(surveys) >= 2, surveys
+
+
+def test_a_folder_that_no_longer_reads_back_at_its_path_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The id is resolved before the write bracket, so it is re-proved inside it.
+
+    `withOwnedList` proves the LIST's identity and nothing below it. A title
+    rebound between the lookup and the write could hand back an id from a
+    replacement library, and restoring the title afterwards leaves that
+    numeric suffix addressing an unrelated item of the intended one, whose
+    ACL would then be rewritten. Nothing further down can see that, so the
+    item is re-read inside the bracket and the phase fails closed.
+    """
+    harness = _library_harness(declared_folder=True, unique_after=1)
+    summary, calls, _ = _run(
+        "globalThis.__folderIdentity = { FileSystemObjectType: 0,"
+        " FileRef: '/sites/test/APP_Escalation/stray.docx' };\n" + harness,
+        _library_deploy_js(tmp_path, _TWO_LEVEL_CONFIGURED_LIBRARY, titled=False),
+    )
+
+    messages = [e["error"] for e in summary["errors"]]
+    assert any("no longer reads back as a folder" in m for m in messages), messages
+    assert any("nothing was written to it" in m for m in messages), messages
+    # Fails closed: the refusal comes before any write to that item.
+    assert not any(
+        "/items(" in c.get("url", "")
+        and ("roleassignment" in c.get("url", "") or "breakroleinheritance" in c.get("url", ""))
+        for c in calls
+    ), [c.get("url") for c in calls]
+
+
+#: The folder group carries the reader flag and is granted NOTHING at list
+#: scope, which is the shape that made the enrolment preflight read an empty
+#: level list and enrol the account without judging any bitmap.
+_FOLDER_ONLY_READER_LIBRARY = _TWO_LEVEL_CONFIGURED_LIBRARY.replace(
+    '  - name: "Clinical services Editors"\n'
+    "    description: \"One folder's editors.\"\n"
+    '    owner_group: "Site Owners"\n',
+    '  - name: "Clinical services Editors"\n'
+    "    description: \"One folder's editors.\"\n"
+    '    owner_group: "Site Owners"\n'
+    "    enroll_enterprise_reader: true\n",
+)
+
+
+def test_a_reader_granted_only_inside_the_folders_has_its_level_judged(
+    tmp_path: Path,
+) -> None:
+    """The enrolment preflight reads the folder grants, not the list ones alone.
+
+    `ENTERPRISE_READER_GROUP_NOT_GRANTED` counts a folder grant, so a mapping
+    granting the reader only inside the folders builds. The preflight read
+    `list_assignments` alone, found nothing, took the branch that says the
+    group grants nothing here, skipped the bitmap check and enrolled the
+    account permanently into a level nothing had judged.
+
+    'Folder Editor' carries neither ViewFormPages nor Open, so a preflight
+    that looks at it has to abort. A clean run is this test failing.
+    """
+    js = _library_deploy_js(
+        tmp_path, _FOLDER_ONLY_READER_LIBRARY, titled=False,
+        enterprise_reader="reader@example.com",
+    )
+    output = _run_output(_library_harness(declared_folder=True, unique_after=1), js)
+
+    assert "Folder Editor' on this site does not grant" in output, output[-3000:]
+    assert "granted no permission level" not in output, (
+        "the preflight took the no-grant branch although the folders grant the reader"
+    )
+    summary = _summary_of(output)
+    assert [e for e in summary["errors"] if str(e.get("phase")) == "1.6"], summary["errors"]
+    # Nothing was created: the abort comes before list creation, so the
+    # account is not left holding a level this run never judged.
+    assert summary["listsCreated"] == []
+
+
+def test_a_folder_that_never_reports_its_bindings_is_refused(tmp_path: Path) -> None:
+    """HTTP 200 on the write is evidence the request was accepted, not that
+    the folder holds the grant.
+
+    Nothing downstream would catch it: verify.js reads lists, columns and
+    views and never role assignments, so a write that did not take left an
+    operator with a green run and a folder the division cannot reach. The
+    mock accepts every write and reports none, which is what that looks like
+    from the script's side.
+    """
+    harness = _library_harness(declared_folder=True, unique_after=1)
+    summary, calls, _ = _run(
+        "globalThis.__folderBindingsBlind = true;\n" + harness,
+        _library_deploy_js(tmp_path, _TWO_LEVEL_CONFIGURED_LIBRARY, titled=False),
+    )
+
+    messages = [e["error"] for e in summary["errors"]]
+    assert any("does not report" in m for m in messages), messages
+    assert any("nothing was removed" in m for m in messages), messages
+    # The read-back is a read: it must not have pruned anything on its way to
+    # deciding the grant is missing.
+    assert not any("removeroleassignment" in c.get("url", "") for c in calls)
+
+
+def test_a_folder_removal_that_did_not_take_is_refused(tmp_path: Path) -> None:
+    """An exact policy has to prove what it REMOVED, not only what it added.
+
+    `removeroleassignment` answering HTTP 200 is evidence the request was
+    accepted. A stale principal that survives it keeps access to the folder
+    on a run that reports success, which is the half a presence-only
+    read-back could not see.
+    """
+    harness = _library_harness(declared_folder=True, unique_after=1)
+    summary, calls, _ = _run(
+        "globalThis.__folderStrayBinding = true;\n"
+        "globalThis.__folderRemovalsIgnored = true;\n" + harness,
+        _library_deploy_js(tmp_path, _FOLDER_ACL_LIBRARY, titled=False),
+    )
+
+    messages = [e["error"] for e in summary["errors"]]
+    assert any("does not declare" in m for m in messages), messages
+    assert any("777:888" in m for m in messages), messages
+    # It tried: the refusal is about the removal not taking, not about
+    # never having been attempted.
+    assert any("removeroleassignment" in c.get("url", "") for c in calls)
+
+
+def test_a_folder_binding_on_a_later_page_is_found(tmp_path: Path) -> None:
+    """The read-back pages to the end, like the allowlist enumeration.
+
+    A capped read is a PARTIAL view. Treating a second page as absence fails
+    a folder whose declared bindings are all present, and it fails it after
+    the ACL has already been modified, so every retry does the same.
+    """
+    harness = _library_harness(declared_folder=True, unique_after=1)
+    summary, calls, _ = _run(
+        "globalThis.__folderBindingsPaged = true;\n"
+        "globalThis.__folderStrayBinding = true;\n" + harness,
+        _library_deploy_js(tmp_path, _TWO_LEVEL_CONFIGURED_LIBRARY, titled=False),
+    )
+
+    assert summary["errors"] == [], summary["errors"]
+    followed = [c["url"] for c in calls if "fpage=" in c.get("url", "")]
+    assert followed, "the read-back never followed a next-page link"
+
+
+def test_a_folder_that_never_reports_its_grants_is_refused_before_pruning(
+    tmp_path: Path,
+) -> None:
+    """Order matters, because breaking inheritance with
+    copyRoleAssignments=false can leave the operator's own binding as the
+    only way back in.
+
+    Pruning first and finding out afterwards that the declared
+    administrators never landed is how a folder gets locked with nobody in
+    it. Verified first, the phase aborts with every existing binding still
+    in place.
+    """
+    harness = _library_harness(declared_folder=True, unique_after=1)
+    summary, calls, _ = _run(
+        "globalThis.__folderBindingsBlind = true;\n"
+        "globalThis.__folderStrayBinding = true;\n" + harness,
+        _library_deploy_js(tmp_path, _FOLDER_ACL_LIBRARY, titled=False),
+    )
+
+    messages = [e["error"] for e in summary["errors"]]
+    assert any("does not report" in m for m in messages), messages
+    folder_removals = [
+        c["url"] for c in calls
+        if "/items(" in c.get("url", "") and "removeroleassignment" in c.get("url", "")
+    ]
+    assert folder_removals == [], folder_removals
+
+
+def test_an_undeclared_descendant_scope_still_aborts(tmp_path: Path) -> None:
+    """Declaring folder ACLs must not blunt the guard.
+
+    The whole risk of teaching this phase to create descendant scopes is that
+    it stops noticing the ones nobody asked for -- a file somebody shared by
+    hand, which is how SharePoint breaks inheritance behind an operator's
+    back. The scope is named by path, and nothing is erased.
+    """
+    summary, calls = _folder_acl_run(tmp_path, stray=True)
+    messages = [e["error"] for e in summary["errors"]]
+    assert any("undeclared item/folder unique permission scope" in m for m in messages), \
+        messages
+    assert any("stray.docx" in m for m in messages), messages
+    # Never erased, only reported.
+    assert not any("removeroleassignment" in c["url"] for c in calls)
+
+
+def test_a_declared_folder_that_does_not_exist_is_refused(tmp_path: Path) -> None:
+    """The branch that only runs when the folder phase has not done its job.
+
+    Without it the folder id reads `undefined`, the phase writes to
+    `items(undefined)`, and what the operator gets is a REST parse error
+    rather than the sentence naming the folder (#454 is the same shape: an
+    abort path whose own diagnosis threw).
+    """
+    summary, calls = _folder_acl_run(tmp_path, missing=True)
+    messages = [e["error"] for e in summary["errors"]]
+    assert any("declared folder 'Clinical services' was not found" in m for m in messages), \
+        messages
+    assert not any("items(undefined)" in c["url"] for c in calls)

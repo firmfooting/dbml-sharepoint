@@ -197,6 +197,77 @@ def test_site_group_empty_gate_requires_boolean(tmp_path: Path) -> None:
     )
 
 
+def test_a_group_source_with_no_enum_named_is_refused(tmp_path: Path) -> None:
+    """`from_enum:` with nothing after it is a mistake, not a literal group.
+
+    Read by presence rather than truthiness. Treating an explicit null as an
+    absent key deployed the template verbatim, which put a literal
+    `{member}` in a live group name while the folder policy naming that group
+    expanded it to something else and then could not resolve its principal.
+    """
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        groups:
+          - from_enum:
+            name: "{member} Editors"
+    """), name="mapping.yaml")
+
+    _refuses(
+        tmp_path / "mapping.yaml", MappingShapeError,
+        "from_enum must be a string",
+    )
+
+
+def test_a_member_placeholder_on_a_literal_group_is_refused(tmp_path: Path) -> None:
+    """`{member}` with no `from_enum` to expand it, which is what an omitted
+    or misspelled `from_enum` key leaves behind.
+
+    Nothing downstream expands it and a brace is not a refused group name
+    character, so the deploy would create a group called `{member} Editors`
+    and read it back byte-identical while the folder policy naming the
+    expanded group found no principal.
+    """
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        groups:
+          - name: "{member} Editors"
+    """), name="mapping.yaml")
+
+    _refuses(tmp_path / "mapping.yaml", MappingValueError, r"groups\[0\]\.name")
+
+
+def test_a_member_placeholder_in_a_literal_group_description_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The description is expanded per member too, and it carries the
+    provenance marker a later run adopts by, so a literal one is the same
+    mistake somewhere quieter."""
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        groups:
+          - name: "XX Editors"
+            description: "Editors for {member_safe}."
+    """), name="mapping.yaml")
+
+    _refuses(
+        tmp_path / "mapping.yaml", MappingValueError, r"groups\[0\]\.description",
+    )
+
+
+def test_a_member_placeholder_on_a_group_source_is_kept(tmp_path: Path) -> None:
+    """The refusal is about the declaration having no enum, not about the
+    placeholder, so the `from_enum` spelling still loads unexpanded."""
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        groups:
+          - from_enum: division
+            name: "{member} Editors"
+            owner_group: "{member} Owners"
+    """), name="mapping.yaml")
+
+    bundle = load_mapping(tmp_path / "mapping.yaml")
+    assert bundle.mapping.permissions is not None
+    source = bundle.mapping.permissions.group_sources[0]
+    assert source.template.name == "{member} Editors"
+    assert source.template.owner_group == "{member} Owners"
+
+
 def test_a_group_can_declare_itself_the_enterprise_reader_target(
     tmp_path: Path,
 ) -> None:
