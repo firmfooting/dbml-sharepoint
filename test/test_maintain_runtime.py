@@ -112,13 +112,17 @@ _HARNESS = textwrap.dedent(r"""
       return notFound('field');
     };
     const fieldById = (id) => state.fields.find((f) => f.Id === id);
-    // CanBeDeleted is DERIVED at every read, never stored: it follows the
-    // seal. Measured 2026-09-19 and 2026-09-20 (field-sealed-probe.js, #381):
-    // sealing reads it false, unsealing restores true, and a write of it is
-    // accepted and ignored. A stored value let an unseal leave a column
-    // reading undeletable, which no tenant does.
+    // field-sealed-probe.js measured a Text column only (2026-09-19 and
+    // 2026-09-20, #381): sealing reads CanBeDeleted false, unsealing restores
+    // true, a write of it is accepted and ignored, and a sealed DELETE is
+    // refused. Only a Text column is held to that; other types keep the
+    // fixture's stored value and the mock's older, unmeasured behaviour.
+    const sealMeasured = (f) => f.TypeAsString === 'Text';
+    // A Text column's CanBeDeleted is derived from the CURRENT seal, and a
+    // stored one wins, so a MERGE that wrongly stored it is visible on read.
     const fieldView = (f) => {
       const { deleted, lookupList, refusesDeleteUnsealed, ...rest } = f;
+      if ('CanBeDeleted' in rest) return rest;
       return { ...rest, CanBeDeleted: !f.Sealed && !refusesDeleteUnsealed };
     };
 
@@ -191,10 +195,10 @@ _HARNESS = textwrap.dedent(r"""
           state.fieldMerges += 1;
           const takes = state.fieldMerges <= (FLAGS.discardFieldMergeAfter || 0);
           if (!FLAGS.discardFieldMerge || takes) {
-            // CanBeDeleted is read-only: SharePoint answers 204 to a write of
-            // it in either seal state and changes nothing (#381).
+            // CanBeDeleted is read-only on a Text column: SharePoint answers
+            // 204 to a write of it in either seal state and changes nothing (#381).
             const { CanBeDeleted, ...writable } = body || {};
-            Object.assign(f, writable, { __metadata: undefined });
+            Object.assign(f, sealMeasured(f) ? writable : body || {}, { __metadata: undefined });
           }
           return reply(204, {});
         }
@@ -202,7 +206,7 @@ _HARNESS = textwrap.dedent(r"""
           // A sealed column refuses the delete and survives it, with this
           // exact answer (measured 2026-09-19 and 2026-09-20, #381). A mock
           // that deleted it would pass a script that skipped the unseal.
-          if (f.Sealed === true) {
+          if (f.Sealed === true && sealMeasured(f)) {
             return reply(400, { error: {
               code: '-1, System.InvalidOperationException',
               message: { value: 'Operation is not valid due to the current state of the object.' },
@@ -318,14 +322,19 @@ def _field(
     `CanBeDeleted: true` describes a list no tenant can produce, and that
     pairing is what let the sidecars ship unable to see a sealed column.
 
-    The mock derives `CanBeDeleted` from the CURRENT seal on every read, so an
-    unseal is visible the way it is live. `can_delete=False` on an unsealed
-    column is the one case the seal cannot express: a column SharePoint
-    refuses to delete for its own reasons.
+    Only the Text measurement is enforced. A Text column stores no
+    `CanBeDeleted`: the mock derives it from the CURRENT seal on every read,
+    so an unseal is visible the way it is live. Other types store the value
+    below, from the 2026-09-03 observation, and are not held to the rest.
+    `can_delete=False` on an unsealed column is the one case the seal cannot
+    express: a column SharePoint refuses to delete for its own reasons.
     """
     if can_delete is None:
         can_delete = not sealed
-    assert not (sealed and can_delete), "no tenant reports a sealed column as deletable"
+    measured = kind == "Text"
+    if measured:
+        assert not (sealed and can_delete), "no tenant reports a sealed Text column as deletable"
+    stored = {} if measured else {"CanBeDeleted": can_delete}
     return {
         "Id": field_id,
         "InternalName": internal,
@@ -335,8 +344,8 @@ def _field(
         "ReadOnlyField": False,
         "Sealed": sealed,
         "FromBaseType": from_base,
-        "CanBeDeleted": can_delete,
-        "refusesDeleteUnsealed": not sealed and not can_delete,
+        **stored,
+        "refusesDeleteUnsealed": measured and not sealed and not can_delete,
         "lookupList": lookup_list,
     }
 
@@ -765,6 +774,24 @@ def test_the_mock_seals_a_column_the_way_the_probe_measured() -> None:
         "deleteWhileUnsealed": 200,
         "afterDeleteWhileUnsealed": 404,
     }
+
+
+def test_the_seal_contract_is_held_to_the_type_it_was_measured_on() -> None:
+    """`field-sealed-probe.js` sealed a Text column and nothing else (#381).
+
+    Holding a Lookup to the same contract would certify scripts against
+    behaviour no run has observed, so only Text is refused the impossible
+    pairing and only Text has its `CanBeDeleted` derived.
+    """
+    with pytest.raises(AssertionError, match="sealed Text column"):
+        _field("Measured", field_id=F_ONE, sealed=True, can_delete=True)
+    text = _field("Measured", field_id=F_ONE, sealed=True)
+    assert "CanBeDeleted" not in text
+    lookup = _field("Unmeasured", field_id=F_LOOKUP, kind="Lookup", sealed=True)
+    assert lookup["CanBeDeleted"] is False
+    assert _field(
+        "Unmeasured", field_id=F_LOOKUP, kind="Lookup", sealed=True, can_delete=True,
+    )["CanBeDeleted"] is True
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
