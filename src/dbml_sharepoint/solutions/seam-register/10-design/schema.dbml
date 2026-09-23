@@ -253,7 +253,7 @@ Table Seam {
   SeamType           seam_type   [not null]
   Description        longtext    [not null, note: 'The disagreement or gap in one paragraph, naming the sources by role']
   EvidenceInConflict int[]       [ref: > Evidence.Id, note: 'The evidence rows that disagree, or the single row nobody can back up']
-  RaisedOn           date        [not null, note: 'Filled with today when the seam is raised']
+  RaisedOn           date        [not null, default: '[today]', note: 'Filled with the site\'s date when the seam is raised']
   Status             seam_status [not null, default: 'Open']
   ResolveOwner       nvarchar    [note: 'Role asked to resolve it; blank until someone accepts']
   ResolveBy          date        [note: 'Date agreed, if any']

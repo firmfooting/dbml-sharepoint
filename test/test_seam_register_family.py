@@ -77,6 +77,10 @@ def _evidence(seed: Seed, service: str) -> list[Row]:
 # === The Friday checks, one predicate per ID in the governance table =========
 
 
+# An unresolved seam of one of these types is a disagreement, so F1 fails.
+DISPUTE_TYPES = {"Disputed owner", "Disputed support", "Contradicts document"}
+
+
 def _verified_without_two_sources(seed: Seed) -> Offenders:
     bad: Offenders = set()
     for key, service in seed["Service"].items():
@@ -89,7 +93,11 @@ def _verified_without_two_sources(seed: Seed) -> Offenders:
             # Unknown names no source, so it corroborates nothing.
             if e["SourceSide"] != "Unknown":
                 sides.setdefault(e["SupportsField"], set()).add(e["SourceSide"])
-        contradicted = any(e["Contradicts"] for e in rows)
+        contradicted = any(e["Contradicts"] for e in rows) or any(
+            _ref(seam["Service"]) == key and seam["Status"] != "Resolved"
+            and seam["SeamType"] in DISPUTE_TYPES
+            for seam in seed["Seam"].values()
+        )
         if contradicted or not (system or any(len(s) >= 2 for s in sides.values())):
             bad.add(("Service", key))
     return bad
@@ -248,7 +256,10 @@ def _dispute_without_both_sides(seed: Seed) -> Offenders:
         fields = DISPUTED_FIELDS.get(seam["SeamType"])
         if fields is None:
             continue
-        picked = [seed["Evidence"][ref] for ref in _refs(seam.get("EvidenceInConflict"))]
+        picked = [
+            seed["Evidence"][ref] for ref in _refs(seam.get("EvidenceInConflict"))
+            if seed["Evidence"][ref]["Contradicts"]
+        ]
         # Unknown names no side, so it cannot be one side of a dispute.
         sides = {
             field: {e["SourceSide"] for e in picked if e["SupportsField"] == field} - {"Unknown"}
@@ -265,6 +276,19 @@ def _file_titles_repeat(seed: Seed) -> Offenders:
         ("Artefact", key) for key, a in seed["Artefact"].items()
         if titles.count(a.get("Title")) > 1
     }
+
+
+def _seam_without_its_evidence(seed: Seed) -> Offenders:
+    bad: Offenders = set()
+    for key, seam in seed["Seam"].items():
+        if seam["SeamType"] == "No owner":
+            continue
+        refs = _refs(seam.get("EvidenceInConflict"))
+        types = [seed["Evidence"][ref]["EvidenceType"] for ref in refs]
+        both = "Document" in types and any(t != "Document" for t in types)
+        if not types or (seam["SeamType"] == "Contradicts document" and not both):
+            bad.add(("Seam", key))
+    return bad
 
 
 def _open_seam_without_an_owner(seed: Seed) -> Offenders:
@@ -295,6 +319,7 @@ CHECKS: dict[str, Callable[[Seed], Offenders]] = {
     "F20": _dispute_without_both_sides,
     "F21": _file_titles_repeat,
     "F22": _open_seam_without_an_owner,
+    "F23": _seam_without_its_evidence,
 }
 
 # Checks no predicate can make over the seed, and why.

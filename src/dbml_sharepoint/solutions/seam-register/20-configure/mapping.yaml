@@ -30,11 +30,6 @@ versioning:
 enum_sources: {}
 watched_lists: []
 
-# A seam is raised on the day it is seen; the date fills itself.
-default_formulas:
-  Seam:
-    RaisedOn: "=TODAY()"
-
 # The two runners may delete their own mistakes; people offered rows to
 # check may edit but not delete; site members read. Site Visitors get nothing.
 groups:
