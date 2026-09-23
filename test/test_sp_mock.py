@@ -91,11 +91,17 @@ def test_an_unselected_read_of_a_bare_entity_fails_the_run() -> None:
 
 
 def test_a_nometadata_scalar_value_is_left_alone() -> None:
-    """A single-property read such as `/Title`; it has no $select to project."""
+    """A single-property read such as `/Title` carries no $select, so nothing is projected."""
     wrapper = {"value": "t", "odata.metadata": "…/$metadata#Edm.String"}
-    keys = _keys(wrapper, "/_api/web/lists/getbytitle('X')/Title?$select=Id",
-                 "j", accept=_NOMETADATA)
+    keys = _keys(wrapper, "/_api/web/lists/getbytitle('X')/Title", "j", accept=_NOMETADATA)
     assert keys == sorted(wrapper)
+
+
+def test_an_entity_on_a_navigation_route_is_projected() -> None:
+    """`…/ListItemAllFields` is an entity route that does not end in `)`."""
+    keys = _keys({"value": "x"}, "/_api/web/GetFileByServerRelativeUrl('/f')/ListItemAllFields"
+                 "?$select=Id", "j", accept=_NOMETADATA)
+    assert keys == []
 
 
 def test_an_entity_holding_only_a_value_property_is_projected() -> None:
