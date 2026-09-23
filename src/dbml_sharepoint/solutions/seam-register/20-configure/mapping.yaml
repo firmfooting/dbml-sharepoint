@@ -41,7 +41,7 @@ groups:
     auto_accept_request_to_join_leave: false
     only_allow_members_view_membership: false
   - name: "{prefix} Contributors"
-    description: "People offered rows to correct, such as an ICT manager or a provider's nominated contact. Edit without delete."
+    description: "Internal staff offered rows to correct, such as an ICT manager. Never a provider's contact: this group reads every list and file. Edit without delete."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
     allow_request_to_join_leave: false
@@ -1294,7 +1294,7 @@ demo_items:
           url: "https://example.sharepoint.com/sites/seams/SEAM_Artefact/Documents/%5BDEMO%5D%20M365%20admin%20guide.txt"
           description: "[DEMO] M365 admin guide.txt"
         Confidence: Claimed
-        FirstPass: true
+        FirstPass: false
     - key: svc-sso
       values:
         Title: "[DEMO] Tap-on single sign-on"
@@ -1448,6 +1448,18 @@ demo_items:
         SupportsField: "Last failure"
         Contradicts: false
         EvidenceDate: "today-18"
+    - key: evd-accounts-tickets-support
+      values:
+        Title: "[DEMO] Ticket export: who resolves account tickets"
+        Artefact: { demo_ref: art-ticket-export }
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: "Incident data"
+        Source: "Ticket export, twelve months"
+        SourceSide: Provider
+        Statement: "Demo row. Every account ticket was routed to and closed by the own-organisation ICT technician queue."
+        SupportsField: "Support"
+        Contradicts: false
+        EvidenceDate: "today-15"
     - key: evd-accounts-tickets
       values:
         Title: "[DEMO] Ticket export, accounts category"

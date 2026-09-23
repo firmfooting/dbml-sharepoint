@@ -19,7 +19,8 @@ script, then verify the lists and the library.
       `artefact_type` enum. Add a folder and a type together.
 - [ ] Decide who is in **SEAM Discovery Team** (the two people running the
       exercise, who can add, edit and delete) and **SEAM Contributors** (the
-      people offered rows to correct, who can edit but not delete). Site
+      internal staff offered rows to correct, who can edit but not delete;
+      never a provider's contact, because the group reads every list). Site
       members read. Site Visitors get no access, because exact
       reconciliation grants only what the mapping lists; add
       `associated_visitor_group` to `list_permissions` if they should read.
@@ -46,7 +47,7 @@ dbml-sharepoint build \
 Paste `assess.js.txt`, review `deploy-manifest.md`, then paste
 `deploy.js.txt`. For a demonstration, paste `demo-data.js.txt` afterwards.
 It creates four providers (one retired), seven services across the five
-side values, fourteen evidence
+side values, fifteen evidence
 rows including a contradicting pair, four seams in every status, five
 document asks in every status, seven files across the six folders, four
 interviews, five incidents and two weekly updates. Nothing in it names a
@@ -63,7 +64,7 @@ and the picker lists titled files only, which is why every seeded file
 carries a Title and the staff guide asks for one on upload. Binding to the
 file name instead was measured and refused: its picker lists every file,
 and then the row cannot be read back. A calculated copy of the name was
-refused at creation, so there is no binding that shows the name. Twelve
+refused at creation, so there is no binding that shows the name. Thirteen
 seeded evidence rows and the completed interview pick their seeded file;
 the hyperlink columns beside them stay as the direct link.
 
@@ -130,7 +131,7 @@ Standard deployment logging is separate infrastructure; use the build's
       **By source side**, and in **Answers an ask** only once **Request**
       is set.
 - [ ] On the demonstration evidence rows, **Artefact file** shows the
-      seeded file's Title on the twelve rows that link one, and the
+      seeded file's Title on the thirteen rows that link one, and the
       completed interview's **Notes file** shows the interview notes. Open a
       new evidence row: the **Artefact file** picker lists the seven seeded
       files by Title. Upload a file without typing a Title and it is not

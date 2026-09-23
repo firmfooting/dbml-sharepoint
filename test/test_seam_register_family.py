@@ -85,23 +85,31 @@ def _evidence_items(seed: Seed, service: str) -> list[tuple[str, Row]]:
 DISPUTE_TYPES = {"Disputed owner", "Disputed support", "Contradicts document"}
 
 
+# The two columns the seam map draws, which Verified corroborates.
+CORROBORATED = ("Run by", "Support")
+
+
+def _corroborated(seed: Seed, rows: list[Row]) -> bool:
+    """Two known sides, or one System data row with its export, none flagged."""
+    agreeing = [e for e in rows if not e["Contradicts"]]
+    system = any(
+        e["EvidenceType"] == "System data" and _ref(e.get("Artefact")) is not None
+        and seed["Artefact"][_ref(e["Artefact"]) or ""]["ArtefactType"] == "System export"
+        for e in agreeing
+    )
+    return system or len({e["SourceSide"] for e in agreeing} - {"Unknown"}) >= 2
+
+
 def _verified_without_two_sources(seed: Seed) -> Offenders:
     bad: Offenders = set()
     for key, service in seed["Service"].items():
         if service["Confidence"] != "Verified":
             continue
         rows = _evidence(seed, key)
-        system = any(
-            e["EvidenceType"] == "System data" and not e["Contradicts"]
-            and _ref(e.get("Artefact")) is not None
-            and seed["Artefact"][_ref(e["Artefact"]) or ""]["ArtefactType"] == "System export"
-            for e in rows
-        )
-        sides: dict[str, set[str]] = {}
-        for e in rows:
-            # Unknown names no source, and a contradicting row agrees with nothing.
-            if e["SourceSide"] != "Unknown" and not e["Contradicts"]:
-                sides.setdefault(e["SupportsField"], set()).add(e["SourceSide"])
+        corroborated = {
+            field: _corroborated(seed, [e for e in rows if e["SupportsField"] == field])
+            for field in CORROBORATED if FILLS[field](service)
+        }
         settled = {
             ref for seam in seed["Seam"].values() if seam["Status"] == "Resolved"
             for ref in _refs(seam.get("EvidenceInConflict"))
@@ -115,7 +123,7 @@ def _verified_without_two_sources(seed: Seed) -> Offenders:
             and seam["SeamType"] in DISPUTE_TYPES
             for seam in seed["Seam"].values()
         )
-        if contradicted or not (system or any(len(s) >= 2 for s in sides.values())):
+        if contradicted or not all(corroborated.values()):
             bad.add(("Service", key))
     return bad
 

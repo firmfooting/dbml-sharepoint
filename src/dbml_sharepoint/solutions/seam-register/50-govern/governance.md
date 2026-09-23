@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | Interviewer | SEAM Discovery Team group | Runs the interviews and owns the evidence: every evidence row, every artefact, every seam raised |
 | Register owner | SEAM Discovery Team group | Owns the register's hygiene, the one-page seam map, and the order in which people are asked, because sequencing is politics |
-| Contributor | SEAM Contributors group | A person offered rows to correct, such as the ICT manager or a provider's nominated contact. Edits without deleting |
+| Contributor | SEAM Contributors group | Internal staff offered rows to correct, such as the ICT manager. Edits without deleting. Never a provider's contact: the group reads every list and file, including notes about other providers. A provider checks its rows in the week 4 session |
 
 Both members of the discovery team read every evidence row before a service
 moves to *Verified*. That is a working rule, not a permission: the register
@@ -60,7 +60,7 @@ the five lines are written. A check that a view answers names the view.
 
 | ID | Check | Why the register cannot enforce it |
 | --- | --- | --- |
-| F1 | A *Verified* service has two evidence rows without **Contradicts** ticked that agree about the same **Bears on** column from two different known source sides, or one *System data* row without **Contradicts** ticked that picks a *System export* file, no evidence row with **Contradicts** ticked unless a *Resolved* seam picks it, and no unresolved *Disputed owner*, *Disputed support* or *Contradicts document* seam | A formula cannot count rows on another list |
+| F1 | A *Verified* service is corroborated on each of *Run by* and *Support* that it fills: two evidence rows without **Contradicts** ticked, bearing on that column, from two different known source sides, or one such *System data* row that picks a *System export* file. It also has no evidence row with **Contradicts** ticked unless a *Resolved* seam picks it, and no unresolved *Disputed owner*, *Disputed support* or *Contradicts document* seam | A formula cannot count rows on another list |
 | F2 | No service above *Assumed* has zero evidence rows | Same. A service with no evidence rows is *Assumed* by definition, whatever its confidence says |
 | F3 | By the end of week 5, no first-pass service has zero evidence rows. Before then **Assumed** lists them as the week's work | Same |
 | F4 | Every evidence row with **Contradicts** ticked appears in a seam's **Evidence in conflict** | A multi-value lookup on another list |
@@ -104,8 +104,11 @@ the five lines are written. A check that a view answers names the view.
   and its file's **Source side** is the side that produced the file. They
   can differ, as when a provider's minutes record what our manager said,
   so no check compares them. F1 counts statements, not files.
-- The weekly rhythm, the stop rules, the size of the first pass and who has
-  read which evidence are working practice in the guide.
+- The weekly rhythm, the stop rules, the size and areas of the first pass
+  and who has read which evidence are working practice in the guide.
+- *Verified* corroborates *Run by* and *Support*, the two columns the seam
+  map draws. Every other column a *Verified* row fills needs an evidence
+  row (F25), not a second side.
 
 ## Confidence
 
