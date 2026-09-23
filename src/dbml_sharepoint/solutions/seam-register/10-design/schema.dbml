@@ -380,12 +380,12 @@ Table Incident {
   Note: 'Twelve months of exported tickets plus remembered outages. Grouping by resolver draws the seam map on its own.'
 }
 
-// Five lines every Friday. The audit trail of the exercise.
+// Five lines at the end of every week. The audit trail of the exercise.
 Table WeeklyUpdate {
   Id           int      [pk, increment]
   Title        nvarchar [not null, note: 'Week 1 to Week 6']
   WeekNo       int      [not null, note: '1 to 6']
-  WeekEnding   date     [not null, note: 'The Friday']
+  WeekEnding   date     [not null, note: 'The day the five lines were written, normally the Friday. Not checked: a formula cannot hold a weekday']
   RowsVerified int      [note: 'Count of service rows that moved to Verified this week']
   SeamsFound   int      [note: 'Seams raised this week']
   Blocked      longtext [note: 'What did not move and why, in a line']
@@ -397,5 +397,5 @@ Table WeeklyUpdate {
     WeekEnding
   }
 
-  Note: 'Five lines every Friday. The audit trail of the exercise.'
+  Note: 'Five lines at the end of every week. The audit trail of the exercise.'
 }

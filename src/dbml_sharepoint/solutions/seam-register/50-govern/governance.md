@@ -24,7 +24,7 @@ run in parallel: documents, incidents and people.
 | 1 | The provider list filled in. Document asks out. Interviews booked. The identity anchor session. Backup questions to the ICT manager with a five-working-day date |
 | 2 | Backup, retention and records: answers or silence, each provider's own description through its channel, and whoever touches backups and records |
 | 3 | The risk note to the chief executive's office, fed by the identity and backup rows that are Verified or visibly Assumed. Start infrastructure and devices |
-| 4 | Triangulate with each provider: the rows **By provider** lists against it go in front of it row by row |
+| 4 | Triangulate with each provider: the rows **By provider** and **By support provider** list against it go in front of it row by row |
 | 5 | Consolidate: every row gets a final confidence, every seam gets a type and a status, the backlog is sized |
 | 6 | The one-page seam map and the hand-over |
 
@@ -46,7 +46,7 @@ express them. Run them on the Friday, before the five lines are written.
 | No first-pass service has zero evidence rows | Same. A service with no evidence rows is *Assumed* by definition, whatever its confidence says |
 | Every evidence row with **Contradicts** ticked appears in a seam's **Evidence in conflict** | A multi-value lookup on another list |
 | A *Held* or *Verified* documentation status has a **Documentation link** | A hyperlink column cannot be a formula operand |
-| A service whose run-by or support side is *Provider*, *Third party* or *Shared* names it in **Run by provider** or **Support provider**. **Provider not named** is empty | A formula cannot read a lookup |
+| A row whose side is *Provider*, *Third party* or *Shared* names the provider. **Provider not named** is empty on the service, document request, interview and incident lists | A formula cannot read a lookup |
 | Every file in **SEAM_Artefact** has a **Title** | A file's Title is optional on a library, and a file without one is not offered by the pickers |
 | A resolved seam has a **Resolution**; a received document has a **Summary** | Multi-line text cannot be a formula operand |
 | **Resolve by** is on or after **Raised on**; **Answered on** is on or after **Asked on** | A formula compares a column with a literal, not with another column |

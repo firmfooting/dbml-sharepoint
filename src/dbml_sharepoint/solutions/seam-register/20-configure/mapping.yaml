@@ -395,6 +395,20 @@ views:
         RunByTeam: 200
         SupportProvider: 220
         Confidence: 120
+    # A provider that supports a service it does not run belongs here.
+    - title: "By support provider"
+      fields: [Title, Area, SupportSide, SupportTeam, RunByProvider, Confidence]
+      group_by: { field: SupportProvider, collapsed: false }
+      sort:
+        - { field: Area, direction: asc }
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        Area: 220
+        SupportSide: 160
+        SupportTeam: 200
+        RunByProvider: 220
+        Confidence: 120
     # A save rule cannot read a lookup, so a row whose side shows the
     # provider column and leaves it blank is found here rather than refused.
     # The sides are the ones form_visibility shows the column for.
@@ -667,6 +681,21 @@ views:
         Status: 120
         DueOn: 150
         Services: 240
+    # The same gap the service list's view catches, for this list's lookup.
+    - title: "Provider not named"
+      fields: [Title, DocumentType, Holder, HolderSide, HolderProvider, Status]
+      where:
+        - { field: HolderSide, op: in, value: [Provider, "Third party", Shared] }
+        - { field: HolderProvider, op: is_null }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        DocumentType: 160
+        Holder: 220
+        HolderSide: 160
+        HolderProvider: 220
+        Status: 120
   Artefact:
     - title: "Folder View"
       scope: default
@@ -777,6 +806,20 @@ views:
         InterviewDate: 150
         Status: 120
         FollowUps: 320
+    # The same gap the service list's view catches, for this list's lookup.
+    - title: "Provider not named"
+      fields: [Title, IntervieweeSide, IntervieweeProvider, InterviewDate, Status]
+      where:
+        - { field: IntervieweeSide, op: in, value: [Provider, "Third party", Shared] }
+        - { field: IntervieweeProvider, op: is_null }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 320
+        IntervieweeSide: 160
+        IntervieweeProvider: 220
+        InterviewDate: 150
+        Status: 120
   Incident:
     - title: "By resolver"
       default: true
@@ -830,6 +873,21 @@ views:
         ResolverSide: 160
         ResolverTeam: 220
         Summary: 320
+    # The same gap the service list's view catches, for this list's lookup.
+    - title: "Provider not named"
+      fields: [Title, Service, IncidentDate, ResolverSide, ResolverProvider, ResolverTeam]
+      where:
+        - { field: ResolverSide, op: in, value: [Provider, "Third party", Shared] }
+        - { field: ResolverProvider, op: is_null }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 240
+        Service: 240
+        IncidentDate: 150
+        ResolverSide: 160
+        ResolverProvider: 220
+        ResolverTeam: 220
   WeeklyUpdate:
     - title: "Weekly log"
       default: true
@@ -1042,10 +1100,22 @@ column_validation:
             - { field: WeekNo, op: geq, value: 1 }
             - { field: WeekNo, op: leq, value: 6 }
         message: "The exercise is six weeks. Week is 1 to 6."
+      RowsVerified:
+        when:
+          any_of:
+            - { field: RowsVerified, op: is_null }
+            - { field: RowsVerified, op: geq, value: 0 }
+        message: "A count of rows cannot be negative."
+      SeamsFound:
+        when:
+          any_of:
+            - { field: SeamsFound, op: is_null }
+            - { field: SeamsFound, op: geq, value: 0 }
+        message: "A count of seams cannot be negative."
       WeekEnding:
         when:
           - { field: WeekEnding, op: leq, value: today }
-        message: "The five lines are written on the Friday, not before it."
+        message: "The five lines are written at the end of the week, not before it."
 
 # Cross-column implications, `if A then B` as `any_of[not A, B]`; the rules
 # a formula cannot hold are tabulated in 50-govern/governance.md.
@@ -1212,6 +1282,7 @@ demo_items:
         SupportTeam: "Vendor support, opened through the shared ICT service"
         DecidedBy: "Director digital systems, own organisation"
         Hosting: "Microsoft cloud"
+        Dependency: "Vendor support cases are opened through the shared ICT service; nobody here can open one."
         SinglePerson: false
         Documentation: Held
         DocumentationLink:
@@ -1271,7 +1342,7 @@ demo_items:
         Source: "Ticket export, twelve months"
         SourceSide: Provider
         Statement: "Demo row. Fourteen account tickets in twelve months, all resolved by the own-organisation ICT technician queue."
-        SupportsField: "Last failure"
+        SupportsField: "Run by"
         Contradicts: false
         EvidenceDate: "today-15"
         ArtefactLink:
@@ -1293,12 +1364,16 @@ demo_items:
         Title: "[DEMO] Provider support lead on restore requests"
         Service: { demo_ref: svc-backup }
         EvidenceType: Email
+        Artefact: { demo_ref: art-backup-email }
         Source: "Provider small-sites support lead, email"
         SourceSide: Provider
         Statement: "Demo row. All restore requests must go through the service desk as a ticket; the infrastructure team does not take calls."
         SupportsField: Support
         Contradicts: true
         EvidenceDate: "today-8"
+        ArtefactLink:
+          url: "https://example.sharepoint.com/sites/seams/SEAM_Artefact/Correspondence/%5BDEMO%5D%20Email%2C%20provider%20support%20lead%20on%20restores.txt"
+          description: "[DEMO] Email, provider support lead on restores.txt"
     - key: evd-m365-invoice
       values:
         Title: "[DEMO] Provider invoice, tenant support line"
@@ -1408,8 +1483,8 @@ demo_items:
       values:
         Title: "[DEMO] Most recent cyber attestation"
         DocumentType: Attestation
-        Holder: "Chief executive's office"
-        HolderSide: Us
+        Holder: "Vendor account manager"
+        HolderSide: "Third party"
         Status: "To ask"
     - key: doc-runbook
       values:
@@ -1531,9 +1606,8 @@ demo_items:
         InterviewDate: "today+9"
     - key: int-declined
       values:
-        Title: "[DEMO] Infrastructure manager, shared ICT service"
+        Title: "[DEMO] Infrastructure manager, provider not recorded at booking"
         IntervieweeSide: Provider
-        IntervieweeProvider: { demo_ref: prov-shared }
         Status: Declined
         InterviewDate: "today-3"
         FollowUps: "Demo row. Declined and referred us to the nominated channel. Recorded as evidence."
@@ -1565,9 +1639,8 @@ demo_items:
         Service: { demo_ref: svc-citrix }
         IncidentDate: "today-30"
         Category: "Virtual desktop"
-        Summary: "Demo row. Published desktop slow for a whole floor all morning."
+        Summary: "Demo row. Published desktop slow for a whole floor all morning. The export names the queue, not the provider behind it."
         ResolverSide: Provider
-        ResolverProvider: { demo_ref: prov-shared }
         ResolverTeam: "Provider service desk"
         Source: "Ticket export"
     - key: inc-accounts-outage

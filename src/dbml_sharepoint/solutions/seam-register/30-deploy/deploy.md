@@ -61,7 +61,7 @@ and the picker lists titled files only, which is why every seeded file
 carries a Title and the staff guide asks for one on upload. Binding to the
 file name instead was measured and refused: its picker lists every file,
 and then the row cannot be read back. A calculated copy of the name was
-refused at creation, so there is no binding that shows the name. Three
+refused at creation, so there is no binding that shows the name. Four
 seeded evidence rows and the completed interview pick their seeded file;
 the hyperlink columns beside them stay as the direct link.
 
@@ -81,8 +81,12 @@ Standard deployment logging is separate infrastructure; use the build's
       virtual desktop rows.
 - [ ] **By provider** groups the services by **Run by provider**: the
       shared ICT service runs two, the telephony managed service one, and
-      the rest sit in the blank group. **Provider not named** shows the desk
-      phones row, supported by a provider nobody has named yet.
+      the rest sit in the blank group. **By support provider** puts the M365
+      tenant row under the cloud platform although we run it. **Provider not
+      named** shows the desk phones row, supported by a provider nobody has
+      named yet. The same view shows one row on each of the document
+      request, interview and incident lists: the attestation ask, the
+      declined interview and the slow-desktop ticket.
 - [ ] On the provider list, **Active providers** is the default and shows
       three. **Agreements ending** shows two, the telephony service first.
       **Retired** shows the previous backup vendor, and its past
@@ -116,7 +120,7 @@ Standard deployment logging is separate infrastructure; use the build's
       **By source side**, and in **Answers an ask** only once **Request**
       is set.
 - [ ] On the demonstration evidence rows, **Artefact file** shows the
-      seeded file's Title on the three rows that link one, and the
+      seeded file's Title on the four rows that link one, and the
       completed interview's **Notes file** shows the interview notes. Open a
       new evidence row: the **Artefact file** picker lists the six seeded
       files by Title. Upload a file without typing a Title and it is not
@@ -131,6 +135,7 @@ Standard deployment logging is separate infrastructure; use the build's
       detail** appears, and the save rule refuses the row until it is
       filled.
 - [ ] Add a weekly update with **Week** set to 7. The save rule refuses it.
+      Set **Rows verified** to -1 and the count rule refuses that too.
 - [ ] Sealed columns and list deletion protection are enabled. Verify with
       the generated verification script after the deploy.
 

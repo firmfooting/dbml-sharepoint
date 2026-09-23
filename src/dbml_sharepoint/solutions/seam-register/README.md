@@ -79,6 +79,7 @@ talking about first.
 | Provider | Retired | Providers no longer used, kept because rows still point at them |
 | Service | Seam map | First-pass rows grouped by which side runs them, coloured by confidence. The default |
 | Service | By provider | Every row grouped by the provider that runs it |
+| Service | By support provider | Every row grouped by the provider you call, including rows another side runs |
 | Service | Provider not named | Rows whose run-by or support side is Provider, Third party or Shared, with the provider column beside it blank |
 | Service | By area | Every row grouped by first-pass area |
 | Service | Assumed | First-pass rows nobody has told us about yet |
@@ -98,6 +99,7 @@ talking about first.
 | DocumentRequest | Received | Copies held, with what each is silent on |
 | DocumentRequest | Refused or not found | The results that are themselves findings |
 | DocumentRequest | By holder | Every ask grouped by which side holds the document |
+| DocumentRequest | Provider not named | Asks held on a provider or third-party side with no provider named |
 | Artefact | Folder View | The six folders |
 | Artefact | All artefacts | Every file across folders, recently modified first. The default |
 | Artefact | By source side | Every file sorted by which side produced it, newest first within each |
@@ -106,10 +108,12 @@ talking about first.
 | Interview | Completed | Conversations held, with their follow-ups |
 | Interview | By side | Every conversation grouped by side |
 | Interview | Not held | Declined and cancelled, which are evidence too |
+| Interview | Provider not named | Conversations on a provider or third-party side with no provider named |
 | Incident | By resolver | Twelve months of tickets grouped by which side closed them. The default |
 | Incident | By service | Tickets grouped by the service row assigned |
 | Incident | Remembered outages | The ones nobody logged |
 | Incident | Unassigned | Tickets not yet matched to a service row |
+| Incident | Provider not named | Tickets closed on a provider or third-party side with no provider named |
 | WeeklyUpdate | Weekly log | Week 1 to 6. The default |
 | WeeklyUpdate | Latest first | The most recent five lines |
 
@@ -126,10 +130,12 @@ The rules SharePoint holds:
   refused and not found each need the date the answer came back.
 - A completed interview has its duration, at most thirty minutes.
 - A remembered outage says who remembered it.
-- No recorded date is in the future. Week is 1 to 6.
+- No recorded date is in the future. Week is 1 to 6, and the weekly counts
+  are not negative.
 
 Naming the provider is not a save rule, because a formula cannot read a
-lookup; **Provider not named** finds the rows that owe one. The two-source
+lookup; **Provider not named**, on each of the four lists with a provider
+column, finds the rows that owe one. The two-source
 Verified rule is a governance check too: a formula cannot count evidence
 rows on another list. See [governance](50-govern/governance.md) for the
 checks the register cannot make on its own.
