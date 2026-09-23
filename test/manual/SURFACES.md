@@ -226,10 +226,10 @@ be sealed at all, by three spellings of the write, and its subject is that one
 column. `field-sealed-probe.js` asks what sealing DOES to an ordinary custom
 column: whether `CanBeDeleted` follows the flag, whether unsealing restores it,
 and what SharePoint answers to a delete in each state. The maintenance scripts
-rest on the second question and nothing had measured it:
-`_maintain_list.js.j2` filters its column menu on
-`(f.CanBeDeleted !== false || f.Sealed === true)` and its delete path unseals,
-reads back and then deletes, both on the strength of one live observation.
+rest on the second question: `_maintain_list.js.j2` filters its column menu
+on `(f.CanBeDeleted !== false || f.Sealed === true)` and its delete path
+unseals, reads back and then deletes. The probe measured both on 2026-09-19 and
+2026-09-20 for a Text column. Other column types are not yet measured (#381).
 
 `cross-web` is separate from `lookup` because the two ask about different
 objects. `lookup` is about a column and the list it points at, and every
