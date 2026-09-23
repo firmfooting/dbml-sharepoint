@@ -79,7 +79,7 @@ the five lines are written. A check that a view answers names the view.
 | F17 | Every completed interview's answers have been transcribed into evidence rows | A relationship the register does not model |
 | F18 | A weekly update's **Title** names the same week as its **Week** | A formula cannot build text from a number and compare it |
 | F19 | No row names a person | A reading check. Roles, never names |
-| F20 | A *Disputed owner* or *Disputed support* seam picks at least two rows in **Evidence in conflict**, one for each side of the dispute | A formula cannot count a multi-value lookup |
+| F20 | A *Disputed owner* or *Disputed support* seam picks rows in **Evidence in conflict** from at least two different known **Source side** values, one for each side of the dispute | A formula cannot count a multi-value lookup |
 | F21 | No two files in **SEAM_Artefact** share a **Title**, because the pickers show nothing else | Uniqueness on a library column has not been measured |
 | F22 | By the week 6 hand-over, every seam not *Resolved* has a **Resolve owner**. Before then **Open seams** shows the ones without | An owner is only required once a seam is *Escalated*, and the deadline is a date in the exercise, not a status |
 

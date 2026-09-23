@@ -235,11 +235,15 @@ def _title_names_another_week(seed: Seed) -> Offenders:
 
 
 def _dispute_without_both_sides(seed: Seed) -> Offenders:
-    return {
-        ("Seam", key) for key, seam in seed["Seam"].items()
-        if seam["SeamType"] in {"Disputed owner", "Disputed support"}
-        and len(_refs(seam.get("EvidenceInConflict"))) < 2
-    }
+    bad: Offenders = set()
+    for key, seam in seed["Seam"].items():
+        if seam["SeamType"] not in {"Disputed owner", "Disputed support"}:
+            continue
+        picked = [seed["Evidence"][ref] for ref in _refs(seam.get("EvidenceInConflict"))]
+        # Unknown names no side, so it cannot be one side of a dispute.
+        if len({e["SourceSide"] for e in picked} - {"Unknown"}) < 2:
+            bad.add(("Seam", key))
+    return bad
 
 
 def _file_titles_repeat(seed: Seed) -> Offenders:
