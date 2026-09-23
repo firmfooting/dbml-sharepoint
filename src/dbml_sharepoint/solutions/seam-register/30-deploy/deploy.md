@@ -46,7 +46,7 @@ dbml-sharepoint build \
 Paste `assess.js.txt`, review `deploy-manifest.md`, then paste
 `deploy.js.txt`. For a demonstration, paste `demo-data.js.txt` afterwards.
 It creates four providers (one retired), seven services across the five
-side values, six evidence
+side values, seven evidence
 rows including a contradicting pair, four seams in every status, five
 document asks in every status, seven files across the six folders, four
 interviews, five incidents and two weekly updates. Nothing in it names a
@@ -63,7 +63,7 @@ and the picker lists titled files only, which is why every seeded file
 carries a Title and the staff guide asks for one on upload. Binding to the
 file name instead was measured and refused: its picker lists every file,
 and then the row cannot be read back. A calculated copy of the name was
-refused at creation, so there is no binding that shows the name. Five
+refused at creation, so there is no binding that shows the name. Six
 seeded evidence rows and the completed interview pick their seeded file;
 the hyperlink columns beside them stay as the direct link.
 
@@ -128,7 +128,7 @@ Standard deployment logging is separate infrastructure; use the build's
       **By source side**, and in **Answers an ask** only once **Request**
       is set.
 - [ ] On the demonstration evidence rows, **Artefact file** shows the
-      seeded file's Title on the five rows that link one, and the
+      seeded file's Title on the six rows that link one, and the
       completed interview's **Notes file** shows the interview notes. Open a
       new evidence row: the **Artefact file** picker lists the seven seeded
       files by Title. Upload a file without typing a Title and it is not
@@ -139,13 +139,15 @@ Standard deployment logging is separate infrastructure; use the build's
       date and the save rule refuses it. Enter 45 minutes and the duration
       rule refuses it. Set *Declined* instead: **Follow-ups** appears and
       the eight questions stay hidden.
-- [ ] Add an incident with **Source** set to *Recalled outage*. **Source
-      detail** appears, and the save rule refuses the row until it is
-      filled.
+- [ ] Add an incident with **Source** set to *Recalled outage* and no
+      **Source detail**. The save rule refuses the row until it is filled.
+      **Source detail** is on the form for a ticket export too, for the
+      export it came from.
 - [ ] Add a weekly update with **Week** set to 7. The save rule refuses it.
       Add a second row for a week that already has one, and uniqueness
       refuses it.
-      Set **Rows verified** to -1 and the count rule refuses that too.
+      Set **Rows verified** to -1 and the count rule refuses that too. All
+      five lines are required; zero and *None* are answers.
 - [ ] Sealed columns and list deletion protection are enabled. Verify with
       the generated verification script after the deploy.
 

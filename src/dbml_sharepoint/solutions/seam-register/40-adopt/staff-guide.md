@@ -52,7 +52,8 @@ shows it. Raise a **SEAM_Seam**
 row for every disagreement, with the evidence rows in conflict picked in
 **Evidence in conflict**. Then write the five lines as a **SEAM_WeeklyUpdate**
 row: rows verified, seams found, what is blocked, what is next, one
-surprise.
+surprise. All five are required; write zero or *None* rather than leaving
+one blank.
 
 ## Recording a provider
 
@@ -164,8 +165,9 @@ on. Say in **Summary** which section or line matters.
 Ask for twelve months of tickets and service requests, grouped by category
 and by who resolved them. Each becomes a **SEAM_Incident** row with the
 ticket reference as its **Title**, **Resolved by** as the side that closed
-it, **Resolving provider** as the provider where there is one, and
-**Source** as *Ticket export*. Assign each to a service row as you
+it, **Resolving provider** as the provider where there is one,
+**Source** as *Ticket export* and **Source detail** as the export it came
+from. Assign each to a service row as you
 go; **Unassigned** shows the ones still to match.
 
 Add the outages people remember with **Source** set to *Recalled outage*

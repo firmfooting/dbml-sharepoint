@@ -3,11 +3,10 @@
 
 The confidence rule is a governance check, not a save rule, so nothing
 stops the demonstration rows modelling a *Verified* service with no
-evidence behind it. And a "Provider not named" view is the only thing that
+evidence behind it. And a "provider to check" view is the only thing that
 stands in for a save rule on each provider lookup, so every lookup needs
-one, over exactly the sides the form shows it for, or a row that owes a
-provider drops out of sight. Both were found in review of the family's
-first pull request.
+one covering both gaps, and must never be hidden on the form. All of it
+was found in review of the family's first pull request.
 """
 
 from typing import Any
@@ -35,8 +34,9 @@ def _evidence_by_service() -> dict[str, list[dict[str, Any]]]:
 
 def test_no_seeded_service_claims_more_confidence_than_its_evidence() -> None:
     """A service with no evidence rows is Assumed by definition; Verified
-    needs two agreeing rows from different sides about the same column, or
-    one System data row (50-govern/governance.md)."""
+    needs two agreeing rows from different known sides about the same
+    column, or one System data row, and no row that contradicts
+    (50-govern/governance.md: a disagreement moves it back to Claimed)."""
     evidence = _evidence_by_service()
     problems: list[str] = []
     for row in _mapping()["demo_items"]["Service"]:
@@ -45,11 +45,14 @@ def test_no_seeded_service_claims_more_confidence_than_its_evidence() -> None:
         if confidence != "Assumed" and not rows:
             problems.append(f"{key} is {confidence} with no evidence row")
         if confidence == "Verified":
+            if any(e.get("Contradicts", False) for e in rows):
+                problems.append(f"{key} is Verified with contradicting evidence")
             agreeing = [e for e in rows if not e.get("Contradicts", False)]
             system = any(e["EvidenceType"] == "System data" for e in agreeing)
             sides_by_field: dict[str, set[str]] = {}
             for e in agreeing:
-                if e.get("SupportsField"):
+                # Unknown names no source, so it corroborates nothing.
+                if e.get("SupportsField") and e["SourceSide"] != "Unknown":
                     sides_by_field.setdefault(e["SupportsField"], set()).add(e["SourceSide"])
             if not system and not any(len(s) >= 2 for s in sides_by_field.values()):
                 problems.append(

@@ -86,6 +86,7 @@ Enum supports_field {
   "Last failure"
   "Dependency"
   "Out of hours"
+  "Single person"
 }
 
 Enum seam_type {
@@ -386,11 +387,11 @@ Table WeeklyUpdate {
   Title        nvarchar [not null, note: 'Week 1 to Week 6']
   WeekNo       int      [not null, unique, note: '1 to 6, one row per week']
   WeekEnding   date     [not null, note: 'The day the five lines were written, normally the Friday. Not checked: a formula cannot hold a weekday']
-  RowsVerified int      [note: 'Count of service rows that moved to Verified this week']
-  SeamsFound   int      [note: 'Seams raised this week']
-  Blocked      longtext [note: 'What did not move and why, in a line']
-  Next         longtext [note: 'Rows and conversations planned for next week']
-  Surprise     longtext [note: 'The one thing that surprised us. Often the most useful line six weeks later']
+  RowsVerified int      [not null, note: 'Count of service rows that moved to Verified this week. Zero is an answer']
+  SeamsFound   int      [not null, note: 'Seams raised this week. Zero is an answer']
+  Blocked      longtext [not null, note: 'What did not move and why, in a line. Write None if nothing was blocked']
+  Next         longtext [not null, note: 'Rows and conversations planned for next week']
+  Surprise     longtext [not null, note: 'The one thing that surprised us. Often the most useful line six weeks later. Write None if nothing did']
 
   indexes {
     WeekEnding

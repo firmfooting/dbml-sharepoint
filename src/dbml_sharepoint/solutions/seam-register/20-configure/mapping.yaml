@@ -1029,12 +1029,6 @@ form_visibility:
         new: false
         when:
           - { field: Status, op: in, value: [Completed, Declined, Cancelled] }
-  Incident:
-    reconcile: exact
-    columns:
-      SourceDetail:
-        when:
-          - { field: Source, op: eq, value: "Recalled outage" }
 
 # Every date here records something that has happened, so none may be in
 # the future; the today rules are hoisted onto each list rule at build time.
@@ -1121,15 +1115,11 @@ column_validation:
         message: "The exercise is six weeks. Week is 1 to 6."
       RowsVerified:
         when:
-          any_of:
-            - { field: RowsVerified, op: is_null }
-            - { field: RowsVerified, op: geq, value: 0 }
+          - { field: RowsVerified, op: geq, value: 0 }
         message: "A count of rows cannot be negative."
       SeamsFound:
         when:
-          any_of:
-            - { field: SeamsFound, op: is_null }
-            - { field: SeamsFound, op: geq, value: 0 }
+          - { field: SeamsFound, op: geq, value: 0 }
         message: "A count of seams cannot be negative."
       WeekEnding:
         when:
@@ -1363,8 +1353,20 @@ demo_items:
         EvidenceType: Interview
         Source: "ICT technician (accounts script), interview"
         SourceSide: Us
-        Statement: "Demo row. I wrote the script and I am the only one who knows where it runs. If I am away it does not run."
+        Statement: "Demo row. I wrote the script and I run it; the ICT team's server is where it lives."
         SupportsField: "Run by"
+        Contradicts: false
+        EvidenceDate: "today-20"
+    - key: evd-accounts-single
+      values:
+        Title: "[DEMO] ICT technician interview: nobody else can run the script"
+        Artefact: { demo_ref: art-interview-accounts }
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: Interview
+        Source: "ICT technician (accounts script), interview"
+        SourceSide: Us
+        Statement: "Demo row. I am the only one who knows where it runs. If I am away it does not run."
+        SupportsField: "Single person"
         Contradicts: false
         EvidenceDate: "today-20"
     - key: evd-accounts-tickets
@@ -1454,7 +1456,7 @@ demo_items:
         Service: { demo_ref: svc-accounts }
         SeamType: "Single person"
         Description: "Demo row. The account script has one author and one operator. A week of no new accounts has already happened once."
-        EvidenceInConflict: [{ demo_ref: evd-accounts-interview }]
+        EvidenceInConflict: [{ demo_ref: evd-accounts-single }]
         RaisedOn: "today-20"
         Status: Escalated
         ResolveOwner: "Director digital systems"
@@ -1672,6 +1674,7 @@ demo_items:
         ResolverSide: Us
         ResolverTeam: "ICT technician queue"
         Source: "Ticket export"
+        SourceDetail: "Twelve-month export"
     - key: inc-backup-1
       values:
         Title: "[DEMO] INC0042990"
@@ -1683,6 +1686,7 @@ demo_items:
         ResolverProvider: { demo_ref: prov-shared }
         ResolverTeam: "Provider infrastructure"
         Source: "Ticket export"
+        SourceDetail: "Twelve-month export"
     - key: inc-desktop-1
       values:
         Title: "[DEMO] INC0043511"
@@ -1693,6 +1697,7 @@ demo_items:
         ResolverSide: Provider
         ResolverTeam: "Provider service desk"
         Source: "Ticket export"
+        SourceDetail: "Twelve-month export"
     - key: inc-accounts-outage
       values:
         Title: "[DEMO] The week no accounts were created"
@@ -1712,6 +1717,7 @@ demo_items:
         Summary: "Demo row. Handset in a meeting room dead. Not yet assigned to a service row."
         ResolverSide: Unknown
         Source: "Ticket export"
+        SourceDetail: "Twelve-month export"
   WeeklyUpdate:
     - key: week-1
       values:
