@@ -125,16 +125,19 @@ def generate_manifest(
         )
         for name in _reader_groups
     ]
-    reader_granted_lists = sorted({
-        bundle.mapping.list_title(entity)
-        for granted, _ in _reader_split
-        for entity in granted
-    })
-    reader_excluded_lists = sorted({
-        bundle.mapping.list_title(entity)
-        for _, excluded in _reader_split
-        for entity in excluded
-    })
+    def _titles(scope: str) -> list[str]:
+        return sorted({
+            bundle.mapping.list_title(entity)
+            for reach in _reader_split
+            for entity in getattr(reach, scope)
+        })
+
+    reader_granted_lists = _titles("granted")
+    # Named apart from the granted half: a folder grant binds inside the
+    # declared folders and not on the library, so saying "Read on every list
+    # here" of one would overstate what the deploy writes.
+    reader_folder_only_lists = _titles("folder_only")
+    reader_excluded_lists = _titles("excluded")
 
     # Every field the deploy actually writes, per list. Iterating
     # fields_phase1 alone made the manifest blind to deferred lookups:
@@ -360,6 +363,7 @@ def generate_manifest(
         extra_warnings=extras.warnings,
         enterprise_reader=enterprise_reader,
         reader_granted_lists=reader_granted_lists,
+        reader_folder_only_lists=reader_folder_only_lists,
         reader_excluded_lists=reader_excluded_lists,
         env_file_line=describe_env_provenance(env_provenance),
         # The sidecar lists the logging phase keeps, named here so the

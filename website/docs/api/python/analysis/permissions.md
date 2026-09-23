@@ -123,13 +123,21 @@ entity in the mapping -- a policy scoped to a site_role this build does
 not deploy must not demand a right the build never exercises. `groups`
 is resolved through `analysis/groups.py` for the same reason.
 
+### `GroupReach`
+
+Where a group is granted across the lists a caller asked about.
+
+Three ways, not two: a folder grant binds inside the declared folders and
+nowhere else, so a caller that cannot tell it from a list grant reports
+access to a whole library the deploy never binds.
+
 ### `lists_granting_group`
 
 ```python
-def lists_granting_group(mapping: dbml_sharepoint.model.mapping_types.Mapping, group_name: str, table_names: collections.abc.Iterable[str], enum_members: collections.abc.Mapping[str, collections.abc.Sequence[str]]) -> tuple[list[str], list[str]]
+def lists_granting_group(mapping: dbml_sharepoint.model.mapping_types.Mapping, group_name: str, table_names: collections.abc.Iterable[str], enum_members: collections.abc.Mapping[str, collections.abc.Sequence[str]]) -> dbml_sharepoint.analysis.permissions.GroupReach
 ```
 
-Split `table_names` into those `group_name` is granted on, and those not.
+Split `table_names` by where `group_name` is granted, if anywhere.
 
 Resolved per entity through `Mapping.permissions_for_entity`, which is the
 same resolution `jsgen` uses to bind the live role assignments -- so this
@@ -143,7 +151,8 @@ exclude the group from one list ON PURPOSE, because an override exists to
 differ. The manifest needs the opposite question, asked per list.
 
 The manifest said the enterprise reader "can read every list this bundle"
-creates, unconditionally. For a valid custom mapping that grants the
+creates, unconditionally, and later said it of a list whose only grant was
+on the declared folders inside it. For a valid custom mapping that grants the
 reader on the default policy and omits it from one override, that told an
 operator the reporting account had fleet-wide access while one list was
 silently unreadable. The shipped families are pinned separately by

@@ -657,13 +657,16 @@ def test_the_descendant_survey_only_runs_when_its_answer_is_read() -> None:
 
 
 def test_a_folder_grant_counts_as_a_grant_on_that_entity(tmp_path: Path) -> None:
-    """`lists_granting_group` reports what the deploy will bind.
+    """`lists_granting_group` reports what the deploy will bind, and where.
 
     The deploy binds an entity's folder assignments exactly as it binds its
-    list ones, so a group granted only there is granted on that entity. Left
-    at list scope it contradicted the validator, which counts a folder policy
-    when deciding whether a group has any grant at all: the build passed
-    validation and the CLI then refused the same reader for holding none.
+    list ones, so a group granted only there does hold a grant on that
+    entity. Counted as no grant at all it contradicted the validator, which
+    counts a folder policy when deciding whether a group has any grant: the
+    build passed validation and the CLI then refused the same reader for
+    holding none. Reported as `folder_only` rather than `granted`, because
+    the deploy binds it to the declared folders and not to the library, and
+    the manifest said "Read on every list here" of exactly this case.
     """
     from dbml_sharepoint.analysis.permissions import lists_granting_group
     from dbml_sharepoint.model.mapping_types import (
@@ -699,11 +702,11 @@ def test_a_folder_grant_counts_as_a_grant_on_that_entity(tmp_path: Path) -> None
         ),
     )
 
-    granted, excluded = lists_granting_group(
-        patched, "dbml Enterprise Readers", [entity], {},
-    )
+    reach = lists_granting_group(patched, "dbml Enterprise Readers", [entity], {})
 
-    assert granted == [entity], (granted, excluded)
+    assert reach.folder_only == [entity], reach
+    assert reach.granted == [], reach
+    assert reach.excluded == [], reach
 
 
 def test_a_folder_principal_template_resolving_to_the_reader_counts() -> None:
@@ -747,11 +750,11 @@ def test_a_folder_principal_template_resolving_to_the_reader_counts() -> None:
         ),
     )
 
-    granted, excluded = lists_granting_group(
+    reach = lists_granting_group(
         patched, "dbml Enterprise Readers", [entity], {"area": ["Readers"]},
     )
 
-    assert (granted, excluded) == ([entity], [])
+    assert (reach.granted, reach.folder_only, reach.excluded) == ([], [entity], [])
 
 
 def test_a_folder_policy_over_an_entity_with_no_folders_grants_nothing() -> None:
@@ -783,11 +786,9 @@ def test_a_folder_policy_over_an_entity_with_no_folders_grants_nothing() -> None
         ),
     )
 
-    granted, excluded = lists_granting_group(
-        patched, "dbml Enterprise Readers", [entity], {},
-    )
+    reach = lists_granting_group(patched, "dbml Enterprise Readers", [entity], {})
 
-    assert (granted, excluded) == ([], [entity])
+    assert (reach.granted, reach.folder_only, reach.excluded) == ([], [], [entity])
 
 
 def test_a_folder_policy_off_this_build_does_not_demand_manage_permissions(

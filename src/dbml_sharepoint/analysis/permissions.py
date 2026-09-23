@@ -4,10 +4,11 @@
 from collections.abc import Iterable, Sequence
 from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass
+from typing import NamedTuple
 
 from dbml_sharepoint.analysis.folders import folder_policies
 from dbml_sharepoint.analysis.groups import resolvable_groups
-from dbml_sharepoint.model.mapping_types import Mapping
+from dbml_sharepoint.model.mapping_types import Mapping, RoleAssignment
 
 # Per Microsoft.SharePoint.SPBasePermissions (64-bit unsigned). All bit
 # positions below 32 land in Low; positions 32..62 land in High. Values
@@ -299,13 +300,29 @@ def requires_manage_permissions(
     )
 
 
+class GroupReach(NamedTuple):
+    """Where a group is granted across the lists a caller asked about.
+
+    Three ways, not two: a folder grant binds inside the declared folders and
+    nowhere else, so a caller that cannot tell it from a list grant reports
+    access to a whole library the deploy never binds.
+    """
+
+    #: Granted by the list's own policy, so the whole list is readable.
+    granted: list[str]
+    #: Granted only inside one or more declared folders of that list.
+    folder_only: list[str]
+    #: Granted at neither scope.
+    excluded: list[str]
+
+
 def lists_granting_group(
     mapping: Mapping,
     group_name: str,
     table_names: Iterable[str],
     enum_members: MappingABC[str, Sequence[str]],
-) -> tuple[list[str], list[str]]:
-    """Split `table_names` into those `group_name` is granted on, and those not.
+) -> GroupReach:
+    """Split `table_names` by where `group_name` is granted, if anywhere.
 
     Resolved per entity through `Mapping.permissions_for_entity`, which is the
     same resolution `jsgen` uses to bind the live role assignments -- so this
@@ -319,7 +336,8 @@ def lists_granting_group(
     differ. The manifest needs the opposite question, asked per list.
 
     The manifest said the enterprise reader "can read every list this bundle"
-    creates, unconditionally. For a valid custom mapping that grants the
+    creates, unconditionally, and later said it of a list whose only grant was
+    on the declared folders inside it. For a valid custom mapping that grants the
     reader on the default policy and omits it from one override, that told an
     operator the reporting account had fleet-wide access while one list was
     silently unreadable. The shipped families are pinned separately by
@@ -327,33 +345,32 @@ def lists_granting_group(
     constrains a custom one.
     """
     perms = mapping.permissions
-    granted: list[str] = []
-    excluded: list[str] = []
-    for name in table_names:
-        policy = mapping.permissions_for_entity(name)
-        assignments = list(policy.assignments if policy is not None else [])
-        # The entity's folder policy counts too. This function reports what
-        # the deploy will actually bind, and the deploy binds a folder
-        # assignment for this entity just as it binds a list one; a group
-        # granted only there was reported as excluded while the validator's
-        # own union called it granted. Expanded per folder, because a
-        # `{member}` principal is not necessarily a per-member group:
-        # `dbml Enterprise {member}` over a folder named Automation resolves
-        # to a literal group somebody may be asking about.
-        entity = mapping.entities.get(name)
-        if entity is not None:
-            assignments += [
-                assignment
-                for _folder, policy in folder_policies(
-                    name, entity.folder_source, perms, enum_members,
-                )
-                for assignment in policy.assignments
-            ]
-        if any(
+
+    def holds(assignments: Iterable[RoleAssignment]) -> bool:
+        return any(
             a.principal.kind == "group" and a.principal.name == group_name
             for a in assignments
-        ):
-            granted.append(name)
+        )
+
+    reach = GroupReach(granted=[], folder_only=[], excluded=[])
+    for name in table_names:
+        policy = mapping.permissions_for_entity(name)
+        at_list = holds(policy.assignments if policy is not None else [])
+        # Expanded per folder, because a `{member}` principal is not
+        # necessarily a per-member group: `dbml Enterprise {member}` over a
+        # folder named Automation resolves to a literal group somebody may be
+        # asking about.
+        entity = mapping.entities.get(name)
+        in_folders = entity is not None and any(
+            holds(folder_policy.assignments)
+            for _folder, folder_policy in folder_policies(
+                name, entity.folder_source, perms, enum_members,
+            )
+        )
+        if at_list:
+            reach.granted.append(name)
+        elif in_folders:
+            reach.folder_only.append(name)
         else:
-            excluded.append(name)
-    return granted, excluded
+            reach.excluded.append(name)
+    return reach

@@ -332,11 +332,16 @@ def execute_build(
             parsed_schema, bundle.mapping.entities, site_role,
         )
         try:
+            # Both scopes: a reader granted only inside a library's folders
+            # can still read something here, which is what this gate asks.
             granted_anywhere_here = any(
-                lists_granting_group(
-                    bundle.mapping, g.name, deployed_here, enum_members,
-                )[0]
-                for g in targets
+                reach.granted or reach.folder_only
+                for reach in (
+                    lists_granting_group(
+                        bundle.mapping, g.name, deployed_here, enum_members,
+                    )
+                    for g in targets
+                )
             )
         except UnknownFolderEnumError:
             # Deferred, not swallowed: `folder_enum_unknown` is an error, so

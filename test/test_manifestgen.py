@@ -381,6 +381,73 @@ def test_the_with_flag_manifest_claims_every_list_when_every_block_grants_the_re
     assert "all but" not in manifest
 
 
+def test_the_manifest_says_a_reader_grant_is_folder_scoped(tmp_path: Path) -> None:
+    """A grant bound to declared folders is not a grant on the library.
+
+    `lists_granting_group` counted a folder grant as a grant on the entity,
+    which is right for the build gate and wrong for this paragraph: the
+    manifest told the operator the account held **Read** on every list here
+    while the deploy binds it to the folder items and to nothing else in the
+    library.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping="""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: division}
+
+            groups:
+              - name: "Reporting Readers"
+                description: "The reporting account's group."
+                owner_group: "Site Owners"
+                enroll_enterprise_reader: true
+
+            list_permissions:
+              default:
+                site_role: default
+                break_inheritance: true
+                reconcile: configured
+                assignments:
+                  - principal: { kind: associated_owner_group }
+                    level: "Full Control"
+              folders:
+                Docs:
+                  break_inheritance: true
+                  reconcile: configured
+                  assignments:
+                    - principal: { kind: group, name: "Reporting Readers" }
+                      level: "Read"
+        """,
+    )
+    md = generate_manifest(
+        enum_members={e.name: e.members for e in schema.enums},
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="docs.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+        enterprise_reader="svc-reporting@example.org",
+    )
+
+    manifest = " ".join(md.split())
+    assert "bound to the declared folders only" in manifest, manifest
+    assert bundle.mapping.list_title("Docs") in manifest, manifest
+    assert "Read** on every list here" not in manifest, manifest
+    assert "Read** on no list this bundle provisions" not in manifest, manifest
+
+
 def test_manifest_warns_that_the_reader_enrolment_is_permanent() -> None:
     """The manifest is what an operator reads BEFORE pasting anything, so it
     is the only place this warning can do its work.
