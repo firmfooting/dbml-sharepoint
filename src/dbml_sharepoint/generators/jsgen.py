@@ -572,19 +572,9 @@ def build_schema_json(
     extension: DeploymentExtension | None = None,
     site_context: SiteContext | None = None,
 ) -> dict[str, Any]:
-    # Fails closed as `declared_folders`/`declared_groups` did before this
-    # read anything: a build must never silently omit a declared group or
-    # folder. `resolve()` itself stays lenient, so this call is the one place
-    # in this function's own path that turns "unresolved" into a raise.
-    #
-    # Wider than those resolvers were, on purpose: they were reached per
-    # entity and judged only THIS site role, and this judges the whole
-    # mapping, so a bad `from_enum` on an `admin` entity refuses a `default`
-    # build. One mapping provisions every role from one file and this script
-    # is pasted into a live site, so a misspelling anywhere in it is evidence
-    # about the file rather than about the role. `report_md` stays
-    # role-scoped and says why. Reachable through this public API, which
-    # requires no prior validation pass, and not through `build`.
+    # A build must never silently omit a declared group or folder, and this
+    # script is pasted into a live site, so a bad `from_enum` anywhere in the
+    # mapping refuses every role rather than only its own (`report_md` differs).
     resolved.require_resolved()
     by_name = {t.name: t for t in schema.tables}
     plan = compute_phases(schema, bundle.mapping.entities)

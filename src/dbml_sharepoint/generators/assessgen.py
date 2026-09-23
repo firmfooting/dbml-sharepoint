@@ -86,15 +86,9 @@ def assess_targets(
     for the same reason: the emitted script quotes both numbers to the
     operator and reads them from `analysis.limits` rather than spelling them.
     """
-    # Fails closed as the strict `declared_folders`/`declared_groups` did
-    # before this read anything: assess.js must never silently omit a
-    # declared group or folder it should be probing for.
-    #
-    # Mapping-wide rather than scoped to this site role, which is wider than
-    # those resolvers were, for the reason `jsgen.build_schema_json` gives at
-    # its own call: the emitted script runs against a live site, and a
-    # misspelled `from_enum` anywhere in the file is evidence about the file.
-    # `report_md` stays role-scoped because it only writes documentation.
+    # assess.js must never silently omit a group or folder it should probe
+    # for, and it runs against a live site, so a bad `from_enum` anywhere in
+    # the mapping refuses every role rather than only its own.
     resolved.require_resolved()
     m = bundle.mapping
     by_name = {table.name: table for table in schema.tables}
