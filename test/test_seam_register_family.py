@@ -11,6 +11,7 @@ first pull request.
 """
 
 from typing import Any
+from urllib.parse import unquote
 
 import yaml
 from _paths import SOLUTION_TEMPLATES
@@ -68,12 +69,17 @@ def test_every_provider_lookup_has_a_not_named_view_over_its_shown_sides() -> No
     mapping = _mapping()
     lookups = 0
     for entity, rules in mapping["form_visibility"].items():
-        # A provider lookup is the column whose visibility reads a side.
-        shown = {
-            column: set(rule["when"][0]["value"])
-            for column, rule in rules["columns"].items()
-            if rule["when"][0]["field"].endswith("Side")
-        }
+        # A provider lookup is shown while its side owes one, or while it
+        # holds a value, so a side changed back never strands it.
+        shown: dict[str, set[str]] = {}
+        for column, rule in rules["columns"].items():
+            branches = rule.get("when", {})
+            if not isinstance(branches, dict) or "any_of" not in branches:
+                continue
+            side, held = branches["any_of"]
+            if side["field"].endswith("Side"):
+                assert held == {"field": column, "op": "is_not_null"}, column
+                shown[column] = set(side["value"])
         if not shown:
             continue
         lookups += len(shown)
@@ -83,3 +89,22 @@ def test_every_provider_lookup_has_a_not_named_view_over_its_shown_sides() -> No
         assert all(sides == PROVIDER_SIDES for sides in shown.values()), entity
     # Service has two, and DocumentRequest, Interview and Incident one each.
     assert lookups == 5
+
+
+def test_every_seeded_link_into_the_library_names_a_seeded_file() -> None:
+    """A link to a file the seed never uploads made a row look Held."""
+    demo = _mapping()["demo_items"]
+    seeded = {
+        f"{row['file']['folder']}/{row['file']['name']}" for row in demo["Artefact"]
+    }
+    marker = "/SEAM_Artefact/"
+    links = [
+        value["url"]
+        for rows in demo.values()
+        for row in rows
+        for value in row["values"].values()
+        if isinstance(value, dict) and marker in value.get("url", "")
+    ]
+    assert links, "no seeded row links into the library"
+    missing = [u for u in links if unquote(u.split(marker, 1)[1]) not in seeded]
+    assert not missing, missing

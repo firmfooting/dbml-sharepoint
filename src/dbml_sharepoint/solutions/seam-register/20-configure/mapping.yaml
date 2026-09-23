@@ -943,23 +943,31 @@ form_formatting:
     body: formatting/weekly-update-form-body.json
 
 # The later blocks appear once the row has reached them, and a provider
-# column once the side says a provider or third party is involved.
+# column once the side says a provider or third party is involved. A column
+# that already holds a value stays shown, so a status or side changed back
+# never leaves a value on the row that the form cannot reach.
 form_visibility:
   Service:
     reconcile: exact
     columns:
       RunByProvider:
         when:
-          - { field: RunBySide, op: in, value: [Provider, "Third party", Shared] }
+          any_of:
+            - { field: RunBySide, op: in, value: [Provider, "Third party", Shared] }
+            - { field: RunByProvider, op: is_not_null }
       SupportProvider:
         when:
-          - { field: SupportSide, op: in, value: [Provider, "Third party", Shared] }
+          any_of:
+            - { field: SupportSide, op: in, value: [Provider, "Third party", Shared] }
+            - { field: SupportProvider, op: is_not_null }
   Seam:
     reconcile: exact
     columns:
       ResolvedOn:
         when:
-          - { field: Status, op: eq, value: Resolved }
+          any_of:
+            - { field: Status, op: eq, value: Resolved }
+            - { field: ResolvedOn, op: is_not_null }
       Resolution:
         when:
           - { field: Status, op: eq, value: Resolved }
@@ -974,20 +982,26 @@ form_visibility:
           - { field: Status, op: in, value: [Asked, Received, Refused, "Not found"] }
       AnsweredOn:
         when:
-          - { field: Status, op: in, value: [Received, Refused, "Not found"] }
+          any_of:
+            - { field: Status, op: in, value: [Received, Refused, "Not found"] }
+            - { field: AnsweredOn, op: is_not_null }
       SignedBy:
         when:
           - { field: Status, op: eq, value: Received }
       HolderProvider:
         when:
-          - { field: HolderSide, op: in, value: [Provider, "Third party", Shared] }
+          any_of:
+            - { field: HolderSide, op: in, value: [Provider, "Third party", Shared] }
+            - { field: HolderProvider, op: is_not_null }
   # Everything the conversation produces shares one rule, anchored once.
   Interview:
     reconcile: exact
     columns:
       IntervieweeProvider:
         when:
-          - { field: IntervieweeSide, op: in, value: [Provider, "Third party", Shared] }
+          any_of:
+            - { field: IntervieweeSide, op: in, value: [Provider, "Third party", Shared] }
+            - { field: IntervieweeProvider, op: is_not_null }
       DurationMin: &after_the_conversation
         new: false
         when:
@@ -1015,7 +1029,9 @@ form_visibility:
           - { field: Source, op: eq, value: "Recalled outage" }
       ResolverProvider:
         when:
-          - { field: ResolverSide, op: in, value: [Provider, "Third party", Shared] }
+          any_of:
+            - { field: ResolverSide, op: in, value: [Provider, "Third party", Shared] }
+            - { field: ResolverProvider, op: is_not_null }
 
 # Every date here records something that has happened, so none may be in
 # the future; the today rules are hoisted onto each list rule at build time.
@@ -1315,8 +1331,8 @@ demo_items:
         SinglePerson: false
         Documentation: Held
         DocumentationLink:
-          url: "https://example.sharepoint.com/sites/seams/SEAM_Artefact/Documents/telephony-runbook.txt"
-          description: "Telephony runbook (no seeded file; second-pass row)"
+          url: "https://example.sharepoint.com/sites/seams/SEAM_Artefact/Documents/%5BDEMO%5D%20Telephony%20runbook.txt"
+          description: "[DEMO] Telephony runbook.txt"
         Confidence: Claimed
         FirstPass: false
         Notes: "Second pass. One document says who runs it; nobody has checked it against a second source yet."
@@ -1392,6 +1408,7 @@ demo_items:
     - key: evd-phones-runbook
       values:
         Title: "[DEMO] Telephony runbook on who runs the call manager"
+        Artefact: { demo_ref: art-telephony-runbook }
         Service: { demo_ref: svc-phones }
         EvidenceType: Document
         Source: "Telephony runbook, provider issue"
@@ -1400,6 +1417,9 @@ demo_items:
         SupportsField: "Run by"
         Contradicts: false
         EvidenceDate: "today-25"
+        ArtefactLink:
+          url: "https://example.sharepoint.com/sites/seams/SEAM_Artefact/Documents/%5BDEMO%5D%20Telephony%20runbook.txt"
+          description: "[DEMO] Telephony runbook.txt"
   Seam:
     - key: seam-backup-support
       values:
@@ -1426,7 +1446,7 @@ demo_items:
         Title: "[DEMO] Nobody owns the virtual desktop"
         Service: { demo_ref: svc-citrix }
         SeamType: "No owner"
-        Description: "Demo row. Three people named three different owners. We and the provider agree nobody has the whole thing."
+        Description: "Demo row. Asked who owns it end to end, we point at the provider and the provider points at us. Both agree nobody has the whole thing."
         RaisedOn: "today-5"
         Status: "Confirmed gap"
         ResolveOwner: "Provider small-sites support lead"
@@ -1561,6 +1581,18 @@ demo_items:
         ArtefactDate: "today-30"
         Services: [{ demo_ref: svc-m365 }]
         Summary: "Demo row. Tenant settings and who may change them."
+    - key: art-telephony-runbook
+      file:
+        name: "[DEMO] Telephony runbook.txt"
+        folder: Documents
+        content: "Demo placeholder for a runbook held from a provider."
+      values:
+        Title: "[DEMO] Telephony runbook"
+        ArtefactType: "Document copy"
+        SourceSide: Provider
+        ArtefactDate: "today-25"
+        Services: [{ demo_ref: svc-phones }]
+        Summary: "Demo row. Section 2 says the managed service runs the call manager and the handsets."
     - key: art-signin-export
       file:
         name: "[DEMO] Sign-in export, tap-on workstations.txt"

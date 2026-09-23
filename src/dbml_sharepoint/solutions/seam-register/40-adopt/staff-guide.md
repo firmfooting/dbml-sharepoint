@@ -47,7 +47,8 @@ each evidence row. The pickers list titled files only. Keep **Artefact
 link** beside it.
 
 **Friday, two hours.** Update the register. Move rows to *Verified* only
-where two evidence rows from different sides agree. Raise a **SEAM_Seam**
+where two evidence rows from different sides agree, or one *System data* row
+shows it. Raise a **SEAM_Seam**
 row for every disagreement, with the evidence rows in conflict picked in
 **Evidence in conflict**. Then write the five lines as a **SEAM_WeeklyUpdate**
 row: rows verified, seams found, what is blocked, what is next, one

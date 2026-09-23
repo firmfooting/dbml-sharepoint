@@ -46,7 +46,7 @@ Paste `assess.js.txt`, review `deploy-manifest.md`, then paste
 It creates four providers (one retired), six services across the five
 side values, six evidence
 rows including a contradicting pair, four seams in every status, five
-document asks in every status, six files across the six folders, four
+document asks in every status, seven files across the six folders, four
 interviews, five incidents and two weekly updates. Nothing in it names a
 real organisation or person. The seeded links name the seeded files but
 point at an example host, so they are placeholders rather than working
@@ -61,7 +61,7 @@ and the picker lists titled files only, which is why every seeded file
 carries a Title and the staff guide asks for one on upload. Binding to the
 file name instead was measured and refused: its picker lists every file,
 and then the row cannot be read back. A calculated copy of the name was
-refused at creation, so there is no binding that shows the name. Four
+refused at creation, so there is no binding that shows the name. Five
 seeded evidence rows and the completed interview pick their seeded file;
 the hyperlink columns beside them stay as the direct link.
 
@@ -99,6 +99,12 @@ Standard deployment logging is separate infrastructure; use the build's
       *Unknown*, and appears when it is set to *Provider*, *Third party* or
       *Shared*. Set *Provider* with no **Run by team** and the save rule
       refuses it. Set **Run by** to *Unknown* and it saves.
+- [ ] Open the demonstration backup service, which names a provider, and set
+      **Run by** to *Us*. **Run by provider** stays on the form because it
+      holds a value; clear it and it disappears. Do the same with a resolved
+      seam set back to *Open*: **Resolved on** stays until it is cleared,
+      and the row then saves. No probe has measured a blank lookup or date
+      in a form formula, so this is the check that it reads as empty.
 - [ ] Tick **Single person** on a service with no **Out of hours call**. The
       save rule refuses it.
 - [ ] Add a seam. **Raised on** fills with today. Set **Status** to
@@ -120,9 +126,9 @@ Standard deployment logging is separate infrastructure; use the build's
       **By source side**, and in **Answers an ask** only once **Request**
       is set.
 - [ ] On the demonstration evidence rows, **Artefact file** shows the
-      seeded file's Title on the four rows that link one, and the
+      seeded file's Title on the five rows that link one, and the
       completed interview's **Notes file** shows the interview notes. Open a
-      new evidence row: the **Artefact file** picker lists the six seeded
+      new evidence row: the **Artefact file** picker lists the seven seeded
       files by Title. Upload a file without typing a Title and it is not
       offered until it has one.
 - [ ] Add an interview with **Status** *Booked* and a date next week. The
