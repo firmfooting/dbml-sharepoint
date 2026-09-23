@@ -234,6 +234,19 @@ def test_no_orphan_templates(env: Environment) -> None:
     assert not orphans, f"templates nothing references: {orphans}"
 
 
+def test_no_template_names_a_merged_acl_collection() -> None:
+    """`SCHEMA.list_assignments` and `SCHEMA.folder_assignments` became one
+    `SCHEMA.acl_scopes`, so a template still naming either reads `undefined`
+    and silently reconciles nothing."""
+    offenders = {
+        rel: name
+        for rel in ALL_TEMPLATES
+        for name in ("list_assignments", "folder_assignments")
+        if name in _source(rel)
+    }
+    assert not offenders, offenders
+
+
 def test_generated_api_docs_are_current(tmp_path: Path) -> None:
     """The generator is deterministic by design, so a committed page that
     differs from a fresh run means someone changed the code and did not
