@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHAT A BREAK LEAVES, AND WHETHER REMOVING IT STICKS
  *
- * REVISION: fd553949
+ * REVISION: 79c07b46
  *
  * THE CLAIM UNDER TEST. `deploy/_lists.js.j2` says, beside the early
  * isolation break, that "copyRoleAssignments=false leaves only SharePoint's
@@ -39,6 +39,14 @@
  * that asserted "the break leaves one binding" would report FAIL on a tenant
  * that leaves two, which is a measurement, and it would report PASS on a
  * tenant that leaves one belonging to somebody else.
+ *
+ * READING every page of the role-assignment collection, and every field a row
+ * is placed by, is depended on rather than observed, for the same reason. A
+ * capped read and a row whose PrincipalId never parsed both end in a
+ * confident sentence about bindings nobody enumerated. Everything that could
+ * fail to establish a row goes through the one vocabulary in
+ * `_probe_observation_v1.js.j2` and comes out NOT ESTABLISHED, naming the
+ * field, rather than as a count.
  *
  * WHAT IT ASKS. Ids follow the grammar in `test/manual/SURFACES.md`:
  * `<surface>.<scope>.<question>`.
@@ -375,8 +383,64 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
+  // Shared observation vocabulary v1: how a probe says "this read did not
+  // establish what it was supposed to".
+  //
+  // This is the NOT ESTABLISHED head from _probe_harness.js.j2 reached from
+  // the READ side, not a second vocabulary beside it. Everything here ends in
+  // record(id, question, 'NOT ESTABLISHED', why), which stateFor() already
+  // classifies `open`.
+  //
+  // A SHAPE RATHER THAN A CONVENTION, because the failure it exists against is
+  // a row recorded OBSERVED from a field nothing ever read. A reading is
+  // either established, carrying a value every field of which was read, or
+  // unestablished, carrying the reason. There is no third shape and no way to
+  // the value except mustRead(), so an observation cannot reach a partial one
+  // by forgetting a check.
+  class Unestablished extends Error {}
+  const established = (value) => ({ established: true, value, why: null });
+  const unestablished = (why) => ({ established: false, value: null, why });
+  const mustRead = (reading) => {
+    if (!reading.established) throw new Unestablished(reading.why);
+    return reading.value;
+  };
+  // A field the claim RESTS on, checked where it is read rather than where it
+  // is reported.
+  const mustCarry = (ok, what) => {
+    if (!ok) throw new Unestablished(what);
+  };
+  // What came back, never what it said: a principal's Title is somebody's
+  // display name and a transcript gets pasted into a pull request.
+  const shapeOf = (value) => {
+    if (value === null) return 'null';
+    if (Array.isArray(value)) return `an array of ${value.length}`;
+    if (typeof value === 'string') return `a string of ${value.length} char(s)`;
+    return typeof value;
+  };
+  // One row, from a body that may fail to establish it at any depth. A shape
+  // nobody predicted is a measurement of this tenant and never a reason to
+  // abort the questions after it, so a throw inside `body` is RECORDED here
+  // rather than propagated. `body` returns the evidence for an OBSERVED row,
+  // or { outcome, evidence, state } for any other head.
+  const observe = async (id, question, body) => {
+    let found;
+    try {
+      found = await body();
+    } catch (err) {
+      found = {
+        outcome: 'NOT ESTABLISHED',
+        evidence: err instanceof Unestablished
+          ? err.message
+          : `the observation threw: ${String(err)}`,
+      };
+    }
+    const row = typeof found === 'string'
+      ? { outcome: 'OBSERVED', evidence: found }
+      : found;
+    record(id, question, row.outcome, row.evidence, row.state);
+  };
 
-  log('INFO', 'probe revision fd553949. Quote this when reporting results.');
+  log('INFO', 'probe revision 79c07b46. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe OperatorGrant';
   const OWNERSHIP = 'dbml-sharepoint operator-safety-grant probe list. Safe to delete.';
@@ -460,28 +524,104 @@
   // reconciles in. The login name is deliberately NOT carried out of here: the
   // only question about identity is whether a row is THIS account, and a
   // principal id answers it without putting a UPN in a transcript.
+  //
+  // EVERY PAGE, never the first one, the way `scopeBindings` in
+  // deploy/_acls.js.j2 reads the same collection. A capped read is a PARTIAL
+  // view, and recording one as what the break left is the failure the
+  // vocabulary above exists against: this account's own binding may be on the
+  // page nobody asked for, and the removal row would then report NOT REACHED
+  // over a prunable binding that is really there.
+  //
+  // A row whose fields are not there is the same failure one step down. A
+  // missing RoleDefinitionBindings read as "no bindings" and a PrincipalId
+  // that coerced to NaN both let a row be recorded OBSERVED from something
+  // nothing read, so the three fields every question below rests on are
+  // prerequisites here: `_acls.js.j2` fails closed on exactly these, citing
+  // `deployShapeRead` in library-access-probe.js, which measures the shape.
+  const BINDING_PAGE_LIMIT = 50;
   const bindings = async () => {
-    const res = await spGet(`${listPath}/roleassignments?$expand=Member,RoleDefinitionBindings&$top=200`);
-    if (readFailed(res) || !Array.isArray(res.body.value)) {
-      return { ok: false, status: res.status, rows: [] };
+    const first = await spGet(`${listPath}/roleassignments?$expand=Member,RoleDefinitionBindings&$top=200`);
+    if (readFailed(first)) {
+      return unestablished(
+        `the role-assignment enumeration answered HTTP ${first.status}`);
     }
-    const rows = [];
-    for (const row of res.body.value) {
-      const member = row.Member || {};
-      for (const level of (row.RoleDefinitionBindings || [])) {
-        rows.push({
-          principalId: Number(row.PrincipalId),
-          // The LENGTH, never the text. On a live run a principal's Title is
-          // the operator's display name or a group name carrying the site's,
-          // and a transcript gets pasted into a pull request.
-          titleLength: member.Title == null ? null : String(member.Title).length,
-          principalType: member.PrincipalType,
-          levelId: Number(level.Id),
-          levelName: level.Name,
-        });
+    const entities = [];
+    let body = first.body;
+    let pages = 0;
+    for (;;) {
+      if (!body || !Array.isArray(body.value)) {
+        return unestablished(`page ${pages + 1} of the role-assignment enumeration carried `
+          + `${shapeOf(body && body.value)} where its rows belong`);
       }
+      entities.push(...body.value);
+      pages += 1;
+      // Both spellings: `d.__next` is a verbose construct and `odata.nextLink`
+      // is what a nometadata endpoint answers with, which is what spGet asks
+      // for. Which one this tenant sends here is not measured.
+      const next = body['odata.nextLink'] || body.__next;
+      if (!next) break;
+      if (typeof next !== 'string') {
+        return unestablished('the role-assignment enumeration carried a continuation of '
+          + `${shapeOf(next)}, which cannot be followed, so the ${entities.length} `
+          + `entit(ies) read over ${pages} page(s) are a partial view`);
+      }
+      if (pages >= BINDING_PAGE_LIMIT) {
+        return unestablished(`the role-assignment enumeration was still handing back a `
+          + `continuation after ${pages} page(s), so this read stopped short of the end`);
+      }
+      // A continuation link is absolute, so it does not go through spGet.
+      const more = await fetch(next, { headers: { Accept: 'application/json;odata=nometadata' } });
+      if (!more.ok) {
+        return unestablished(`following the role-assignment continuation answered HTTP `
+          + `${more.status} after ${pages} page(s), so the set read is partial`);
+      }
+      body = await more.json().catch(() => null);
     }
-    return { ok: true, status: res.status, rows };
+    try {
+      const rows = [];
+      for (const entity of entities) {
+        mustCarry(entity !== null && typeof entity === 'object',
+          `the role-assignment enumeration returned ${shapeOf(entity)} where an entity `
+          + 'belongs, so what the break left cannot be read off it');
+        const principalId = Number(entity.PrincipalId);
+        mustCarry(Number.isFinite(principalId) && principalId > 0,
+          'a role assignment came back with a PrincipalId this run cannot match against '
+          + `(${shapeOf(entity.PrincipalId)}), so no row could be attributed to any account`);
+        const member = entity.Member || {};
+        const levels = entity.RoleDefinitionBindings;
+        mustCarry(Array.isArray(levels),
+          `principal ${principalId} carried ${shapeOf(levels)} where its expanded `
+          + 'RoleDefinitionBindings belong, so "the break left this principal nothing" and "a '
+          + 'binding nobody read" cannot be told apart');
+        for (const level of levels) {
+          mustCarry(level !== null && typeof level === 'object',
+            `principal ${principalId} carried ${shapeOf(level)} where a role definition belongs`);
+          const levelId = Number(level.Id);
+          mustCarry(Number.isFinite(levelId) && levelId > 0,
+            `a binding for principal ${principalId} came back with a role definition Id of `
+            + `${shapeOf(level.Id)}, which is what a removal has to name`);
+          mustCarry(typeof level.Name === 'string',
+            `a binding for principal ${principalId} came back with a level Name of `
+            + `${shapeOf(level.Name)}, and 'Limited Access' is the English literal exact mode `
+            + 'exempts on, so this row cannot be placed as prunable or as derived');
+          rows.push({
+            principalId,
+            // The LENGTH, never the text. On a live run a principal's Title is
+            // the operator's display name or a group name carrying the site's,
+            // and a transcript gets pasted into a pull request.
+            titleLength: member.Title == null ? null : String(member.Title).length,
+            principalType: member.PrincipalType,
+            levelId,
+            levelName: level.Name,
+          });
+        }
+      }
+      return established({ status: first.status, pages, rows });
+    } catch (err) {
+      return unestablished(err instanceof Unestablished
+        ? err.message
+        : `the role-assignment enumeration could not be parsed: ${String(err)}`);
+    }
   };
 
   // The window settleBindings uses in the deploy: five reads, 2000 ms apart.
@@ -504,12 +644,13 @@
     for (let attempt = 0; attempt < SETTLE_READS; attempt += 1) {
       if (attempt > 0) await sleep(SETTLE_MS);
       const now = await bindings();
-      const held = now.ok
-        ? targets.filter((t) => now.rows.some(
+      const held = now.established
+        ? targets.filter((t) => now.value.rows.some(
           (r) => r.principalId === t.principalId && r.levelId === t.levelId)).length
         : null;
       present = held === null ? null : held > 0;
-      reads.push(`read ${attempt + 1}: HTTP ${now.status}, ${now.ok ? `${now.rows.length} row(s), ` : ''}`
+      reads.push(`read ${attempt + 1}: `
+                 + (now.established ? `HTTP ${now.value.status}, ${now.value.rows.length} row(s), ` : `${now.why}, `)
                  + `binding ${present === null ? 'unreadable' : present ? 'PRESENT' : 'gone'}`
                  + (targets.length > 1 && held !== null ? ` (${held} of ${targets.length})` : ''));
       states.push(present);
@@ -794,29 +935,32 @@
     // ---- break-leaves-bindings, derived-level-names -------------------
     // OBSERVED. Whatever came back is the answer, including nothing.
     const left = await bindings();
-    if (!left.ok) {
-      const why = `the role-assignment enumeration answered HTTP ${left.status}, so what the `
-        + 'break left was never read. A refused read here may itself be the answer: this '
-        + 'account may no longer be able to read the scope it just broke.';
+    if (!left.established) {
+      const why = `${left.why}, so what the break left was never read. A refused read here may `
+        + 'itself be the answer: this account may no longer be able to read the scope it just '
+        + 'broke.';
       // All five open, matching the row they depend on: a refused read is a
       // read that can be made again.
       closeEveryGatedQuestion('NOT ESTABLISHED', why);
       return;
     }
-    record('access.list-acl.break-leaves-bindings', Q_LEFT, 'OBSERVED',
-           `${left.rows.length} binding(s) after the break: ${describe(left.rows)}`);
-    const levelNames = [...new Set(left.rows.map((r) => r.levelName))];
-    record('access.list-acl.derived-level-names', Q_LEVELS, 'OBSERVED',
-           `level name(s) this scope reports: ${levelNames.length ? levelNames.map((n) => `'${n}'`).join(', ') : 'none'}. `
-           + `_acls.js.j2 exempts the literal 'Limited Access' and matches no other name.`);
+    const leftRows = left.value.rows;
+    await observe('access.list-acl.break-leaves-bindings', Q_LEFT, () => (
+      `${leftRows.length} binding(s) after the break, read over ${left.value.pages} page(s): `
+      + describe(leftRows)));
+    await observe('access.list-acl.derived-level-names', Q_LEVELS, () => {
+      const levelNames = [...new Set(leftRows.map((r) => r.levelName))];
+      return `level name(s) this scope reports: ${levelNames.length ? levelNames.map((n) => `'${n}'`).join(', ') : 'none'}. `
+        + `_acls.js.j2 exempts the literal 'Limited Access' and matches no other name.`;
+    });
 
     // ---- break-leaves-operator-binding --------------------------------
-    const mine = left.rows.filter((r) => r.principalId === myId);
-    record('access.list-acl.break-leaves-operator-binding', Q_OPERATOR, 'OBSERVED',
-           mine.length
-             ? `principal ${myId} is this account and holds ${mine.length} binding(s) here: ${describe(mine)}`
-             : `principal ${myId} is this account and holds NO direct binding here. The `
-               + `${left.rows.length} row(s) the break left name other principals.`);
+    const mine = leftRows.filter((r) => r.principalId === myId);
+    await observe('access.list-acl.break-leaves-operator-binding', Q_OPERATOR, () => (
+      mine.length
+        ? `principal ${myId} is this account and holds ${mine.length} binding(s) here: ${describe(mine)}`
+        : `principal ${myId} is this account and holds NO direct binding here. The `
+          + `${leftRows.length} row(s) the break left name other principals.`));
 
     // ---- control-unknown-principal-refused ----------------------------
     // 42424242 is far above any real principal or role definition id on a

@@ -9201,11 +9201,18 @@ _OPERATOR_HARNESS = textwrap.dedent("""
       }
       if (u.includes('/roleassignments?')) {
         if (CONFIG.enumerationRefused) return jsonResponse(500, { error: 'refused' });
+        // The second page of one logical read, reached by following the
+        // continuation link page one carried.
+        const continued = u.includes('$skiptoken=');
+        if (continued && CONFIG.continuationRefused) {
+          return jsonResponse(500, { error: 'the continuation was refused' });
+        }
         // MEASURED 2026-09-22: a removed binding read gone on reads 1 to 3,
         // PRESENT again on read 4 and gone on read 5, over 8000 ms with
         // nothing written between them. Modelled on the READ rather than on
         // the stored bindings, because that is the layer it showed at.
-        if (site.removed) site.readsSinceRemoval += 1;
+        // Counted once per logical read, so paging does not advance it.
+        if (site.removed && !continued) site.readsSinceRemoval += 1;
         const visible = (site.removed && site.readsSinceRemoval === CONFIG.reappearOnRead)
           ? [...site.bindings, site.removed]
           : site.bindings;
@@ -9224,7 +9231,40 @@ _OPERATOR_HARNESS = textwrap.dedent("""
           byPrincipal.get(binding.principalId).RoleDefinitionBindings.push(
             { Id: binding.levelId, Name: binding.levelName });
         }
-        return jsonResponse(200, { value: [...byPrincipal.values()] });
+        const entities = [...byPrincipal.values()];
+        // One row the probe cannot place, in each of the ways a successful
+        // response can carry one. Applied to the first entity of the first
+        // page, which is the one every question below would be read off.
+        const first = entities[0];
+        if (CONFIG.malformedBinding && first && !continued) {
+          if (CONFIG.malformedBinding === 'null-entity') entities[0] = null;
+          if (CONFIG.malformedBinding === 'no-principal') delete first.PrincipalId;
+          if (CONFIG.malformedBinding === 'bindings-absent') delete first.RoleDefinitionBindings;
+          // The VERBOSE shape arriving where the nometadata array belongs,
+          // which `(row.RoleDefinitionBindings || [])` read as no bindings.
+          if (CONFIG.malformedBinding === 'bindings-not-array') {
+            first.RoleDefinitionBindings = { results: first.RoleDefinitionBindings };
+          }
+          if (CONFIG.malformedBinding === 'null-binding') {
+            first.RoleDefinitionBindings = [null];
+          }
+          if (CONFIG.malformedBinding === 'no-binding-id') {
+            delete first.RoleDefinitionBindings[0].Id;
+          }
+          if (CONFIG.malformedBinding === 'no-binding-name') {
+            delete first.RoleDefinitionBindings[0].Name;
+          }
+        }
+        if (!CONFIG.paged) return jsonResponse(200, { value: entities });
+        if (continued) return jsonResponse(200, { value: entities.slice(1) });
+        // odata=nometadata names the continuation 'odata.nextLink' and sends
+        // it absolute, which is why the probe cannot put it through spGet.
+        return jsonResponse(200, {
+          value: entities.slice(0, 1),
+          'odata.nextLink': CONFIG.continuationUnfollowable
+            ? { uri: `${u}&$skiptoken=1` }
+            : `${u}&$skiptoken=1`,
+        });
       }
       if (u.includes('$select=HasUniqueRoleAssignments')) {
         site.uniqueReads += 1;
@@ -9319,6 +9359,10 @@ def _run_operator_grant_probe(
         "removalRefused": False,
         "removalReDerives": False,
         "reappearOnRead": None,
+        "paged": False,
+        "continuationRefused": False,
+        "continuationUnfollowable": False,
+        "malformedBinding": None,
         "resetRefused": False,
         "resetNeverClears": False,
         "listDescription": _OPERATOR_OWNERSHIP,
@@ -10119,6 +10163,120 @@ def test_an_unreadable_enumeration_may_itself_be_the_answer() -> None:
         assert rows[question]["state"] == "open", question
     assert not [url for url in urls if "/removeroleassignment(" in url]
     # The break happened, so the restore still has to run.
+    assert _restored(urls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_role_assignment_collection_served_in_pages_is_read_to_the_end() -> None:
+    """One `$top=200` read truncates silently, and the row it drops is the one
+    the experiment is about.
+
+    This account's own binding is on page two here. A probe that stopped at
+    page one would record that the break left it NO direct binding, report the
+    removal question NOT REACHED, and never issue a removal at all, while a
+    prunable binding sat on the page nobody asked for.
+    """
+    rows, urls, _output = _run_operator_grant_probe(
+        paged=True,
+        leftBindings=[_OPERATOR_LEFT_BINDINGS[1], _OPERATOR_LEFT_BINDINGS[0]],
+    )
+
+    assert [url for url in urls if "$skiptoken=" in url], (
+        f"the continuation was never followed: {urls}"
+    )
+    left = rows["access.list-acl.break-leaves-bindings"]
+    assert left["outcome"] == "OBSERVED", left
+    assert "2 binding(s) after the break, read over 2 page(s)" in left["evidence"]
+    operator = rows["access.list-acl.break-leaves-operator-binding"]
+    assert f"principal {_OPERATOR_PRINCIPAL} is this account and holds 1 binding(s)" in (
+        operator["evidence"]
+    )
+    # And the removal really was issued, off a row only page two carried.
+    assert [
+        url for url in urls
+        if "/removeroleassignment(" in url and "42424242" not in url
+    ], urls
+    assert rows["access.list-acl.operator-binding-removal-sticks"]["outcome"] == "REMOVED"
+    assert not [row for row in rows.values() if row["state"] != "settled"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("config", "said"),
+    [
+        ({"continuationUnfollowable": True},
+         "carried a continuation of object"),
+        ({"continuationRefused": True},
+         "following the role-assignment continuation answered HTTP 500"),
+    ],
+)
+def test_a_continuation_that_cannot_be_followed_is_not_a_finished_enumeration(
+    config: dict[str, bool], said: str,
+) -> None:
+    """A link this run could not follow leaves the set partial, and a partial
+    set is not what the break left. The rows say that rather than reporting
+    the first page as everything."""
+    rows, urls, output = _run_operator_grant_probe(paged=True, **config)
+
+    for question in _OPERATOR_BREAK_GATED:
+        assert rows[question]["outcome"] == "NOT ESTABLISHED", question
+        assert rows[question]["state"] == "open", question
+        assert said in rows[question]["evidence"], rows[question]["evidence"]
+    assert not [
+        url for url in urls
+        if "/removeroleassignment(" in url and "42424242" not in url
+    ], urls
+    # Recorded, not thrown: the run reached its restore through the ordinary
+    # path rather than through the measurement pass's catch.
+    assert not [
+        line for line in output.splitlines() if "the access pass aborted" in line
+    ], output
+    assert _restored(urls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("malformed", "said"),
+    [
+        ("null-entity", "returned null where an entity belongs"),
+        ("no-principal", "PrincipalId this run cannot match against (undefined)"),
+        ("bindings-absent", "carried undefined where its expanded"),
+        ("bindings-not-array", "carried object where its expanded"),
+        ("null-binding", "carried null where a role definition belongs"),
+        ("no-binding-id", "role definition Id of undefined"),
+        ("no-binding-name", "level Name of undefined"),
+    ],
+)
+def test_a_binding_row_the_probe_cannot_place_establishes_nothing(
+    malformed: str, said: str,
+) -> None:
+    """A successful response carrying a row this run cannot read is the
+    failure the whole vocabulary exists against.
+
+    `(row.RoleDefinitionBindings || [])` read a missing collection as the
+    principal holding nothing, and `Number(row.PrincipalId)` turned an
+    unusable id into NaN, so the probe could record OBSERVED that the break
+    left no operator binding from fields it never read. NOT ESTABLISHED and
+    the field named, never a count, and never a throw either: the rows after
+    it still have to be reported.
+    """
+    rows, urls, output = _run_operator_grant_probe(malformedBinding=malformed)
+
+    for question in _OPERATOR_BREAK_GATED:
+        assert rows[question]["outcome"] == "NOT ESTABLISHED", question
+        assert rows[question]["state"] == "open", question
+        assert rows[question]["evidence"] != "the run did not reach this question", (
+            f"{question} was never recorded, so the read threw rather than "
+            f"reporting:\n{output[-2000:]}"
+        )
+        assert said in rows[question]["evidence"], rows[question]["evidence"]
+    assert not [
+        url for url in urls
+        if "/removeroleassignment(" in url and "42424242" not in url
+    ], urls
+    assert not [
+        line for line in output.splitlines() if "the access pass aborted" in line
+    ], output
     assert _restored(urls)
 
 

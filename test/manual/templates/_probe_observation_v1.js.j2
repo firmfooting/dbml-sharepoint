@@ -1,0 +1,60 @@
+{# test/manual/templates/_probe_observation_v1.js.j2 #}
+{# The one vocabulary for a read that established nothing. Included AFTER
+   _probe_harness.js.j2, whose record() and NOT ESTABLISHED head it is
+   expressed in. #}
+  // Shared observation vocabulary v1: how a probe says "this read did not
+  // establish what it was supposed to".
+  //
+  // This is the NOT ESTABLISHED head from _probe_harness.js.j2 reached from
+  // the READ side, not a second vocabulary beside it. Everything here ends in
+  // record(id, question, 'NOT ESTABLISHED', why), which stateFor() already
+  // classifies `open`.
+  //
+  // A SHAPE RATHER THAN A CONVENTION, because the failure it exists against is
+  // a row recorded OBSERVED from a field nothing ever read. A reading is
+  // either established, carrying a value every field of which was read, or
+  // unestablished, carrying the reason. There is no third shape and no way to
+  // the value except mustRead(), so an observation cannot reach a partial one
+  // by forgetting a check.
+  class Unestablished extends Error {}
+  const established = (value) => ({ established: true, value, why: null });
+  const unestablished = (why) => ({ established: false, value: null, why });
+  const mustRead = (reading) => {
+    if (!reading.established) throw new Unestablished(reading.why);
+    return reading.value;
+  };
+  // A field the claim RESTS on, checked where it is read rather than where it
+  // is reported.
+  const mustCarry = (ok, what) => {
+    if (!ok) throw new Unestablished(what);
+  };
+  // What came back, never what it said: a principal's Title is somebody's
+  // display name and a transcript gets pasted into a pull request.
+  const shapeOf = (value) => {
+    if (value === null) return 'null';
+    if (Array.isArray(value)) return `an array of ${value.length}`;
+    if (typeof value === 'string') return `a string of ${value.length} char(s)`;
+    return typeof value;
+  };
+  // One row, from a body that may fail to establish it at any depth. A shape
+  // nobody predicted is a measurement of this tenant and never a reason to
+  // abort the questions after it, so a throw inside `body` is RECORDED here
+  // rather than propagated. `body` returns the evidence for an OBSERVED row,
+  // or { outcome, evidence, state } for any other head.
+  const observe = async (id, question, body) => {
+    let found;
+    try {
+      found = await body();
+    } catch (err) {
+      found = {
+        outcome: 'NOT ESTABLISHED',
+        evidence: err instanceof Unestablished
+          ? err.message
+          : `the observation threw: ${String(err)}`,
+      };
+    }
+    const row = typeof found === 'string'
+      ? { outcome: 'OBSERVED', evidence: found }
+      : found;
+    record(id, question, row.outcome, row.evidence, row.state);
+  };
