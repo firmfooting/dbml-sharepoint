@@ -1163,3 +1163,57 @@ def test_member_safe_makes_a_refused_member_usable(tmp_path: Path) -> None:
         bundle.mapping.permissions,
         {e.name: e.members for e in schema.enums},
     )] == ["Clinical community & aged services Division"]
+
+
+def test_a_previous_name_that_expands_onto_the_current_one_is_dropped(
+    tmp_path: Path,
+) -> None:
+    """Moving a generated group from `{member}` to `{member_safe}` renames
+    only the members carrying a refused character.
+
+    Every other member expands both templates to one string, so the group
+    would declare itself as its own previous name and
+    `renamed_from_is_a_declared_entity` would reject the whole migration,
+    including the member whose name genuinely does need sanitising. The
+    filter runs after expansion because that is where the two templates
+    collide.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical, community & aged services"\n'
+            '  "Corporate services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping="""
+            entities:
+              Docs: { kind: List, base_template: 100, site_role: default }
+
+            groups:
+              - from_enum: division
+                name: "{member_safe} Editors"
+                renamed_from: ["{member} Editors"]
+                description: "Editors."
+                owner_group: "Site Owners"
+        """,
+    )
+    none_of(
+        validate_against_mapping(schema, bundle),
+        FindingCode.RENAMED_FROM_IS_A_DECLARED_ENTITY,
+    )
+
+    from dbml_sharepoint.analysis.groups import declared_groups
+
+    assert [
+        (g.name, g.previous_names)
+        for g in declared_groups(
+            bundle.mapping.permissions,
+            {e.name: e.members for e in schema.enums},
+        )
+    ] == [
+        (
+            "Clinical community & aged services Editors",
+            ("Clinical, community & aged services Editors",),
+        ),
+        ("Corporate services Editors", ()),
+    ]

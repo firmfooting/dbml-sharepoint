@@ -43,16 +43,33 @@ def group_for_member(source: GroupsFromEnum, member: str) -> SiteGroup:
     three are the group's identity on a site: the description carries the
     provenance marker a later run adopts by, and the previous names are what
     a rename is found under.
+
+    A previous name that expands onto this group's own current name is
+    dropped here, AFTER expansion, because that is where the collision
+    appears: `{member}` and `{member_safe}` differ only for a member carrying
+    a character SharePoint refuses, so a template renamed from the one to the
+    other expands both to the same string for every other member and
+    `renamed_from_is_a_declared_entity` then rejects the whole migration.
+    Folded, and the survivors deduplicated folded, because `_renames.py`
+    compares that way and a narrower filter would leave the rule it protects
+    firing.
     """
     template = source.template
+    name = expand_member(template.name, member)
+    previous: list[str] = []
+    seen = {name.casefold()}
+    for raw in template.previous_names:
+        expanded = expand_member(raw, member)
+        if expanded.casefold() in seen:
+            continue
+        seen.add(expanded.casefold())
+        previous.append(expanded)
     return replace(
         template,
-        name=expand_member(template.name, member),
+        name=name,
         description=expand_member(template.description, member),
         owner_group=expand_member(template.owner_group, member),
-        previous_names=tuple(
-            expand_member(name, member) for name in template.previous_names
-        ),
+        previous_names=tuple(previous),
     )
 
 

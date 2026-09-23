@@ -44,6 +44,16 @@ three are the group's identity on a site: the description carries the
 provenance marker a later run adopts by, and the previous names are what
 a rename is found under.
 
+A previous name that expands onto this group's own current name is
+dropped here, AFTER expansion, because that is where the collision
+appears: `{member}` and `{member_safe}` differ only for a member carrying
+a character SharePoint refuses, so a template renamed from the one to the
+other expands both to the same string for every other member and
+`renamed_from_is_a_declared_entity` then rejects the whole migration.
+Folded, and the survivors deduplicated folded, because `_renames.py`
+compares that way and a narrower filter would leave the rule it protects
+firing.
+
 ### `declaring_groups`
 
 ```python
