@@ -29,6 +29,14 @@ Proxy that RECORDS a read of a PascalCase property that was neither selected
 nor assigned by the script; camelCase names are the script's own. At exit the
 prelude prints the record after `SENTINEL`, and `run_node` fails the test
 naming the property, the request URL and the script line that read it.
+
+A GET of one entity that a harness answers with an empty set is answered
+instead with the status SharePoint was measured giving an absent entity of
+that kind: 404 for a list or a site group, the absent-400 for a field or view
+by name. Other kinds, an item by id among them, keep the harness's answer
+until one is measured. An empty set is never an entity, and a catch-all that
+answered one made "absent" and "present with nothing in it" the same
+observation (#574).
 """
 
 import json
@@ -191,12 +199,83 @@ PRELUDE = r"""
     },
   });
 
+  // Absent-entity answers, measured live only; test_sp_mock.py cites each one.
+  // `envelope` is the one representation recorded; any other request gets the status and no body.
+  const ABSENT = [
+    { at: /\/lists\/getbytitle\('((?:[^']|'')*)'\)$/i, status: 404, envelope: 'nometadata',
+      code: '-1, System.ArgumentException',
+      value: (name, site) => site && `List '${name}' does not exist at site with URL '${site}'.` },
+    { at: /\/fields\/getbyinternalnameortitle\('((?:[^']|'')*)'\)$/i, status: 400,
+      envelope: 'verbose', code: '-2147024809, System.ArgumentException',
+      value: (name) => `Column '${name}' does not exist.` },
+    { at: /\/views\/getbytitle\('((?:[^']|'')*)'\)$/i, status: 400,
+      envelope: 'verbose', code: '-2147024809, System.ArgumentException',
+      value: () => 'The specified view is invalid.' },
+    { at: /\/sitegroups\/getbyname\('((?:[^']|'')*)'\)$/i, status: 404,
+      envelope: null, value: null },
+  ];
+  const isEmptySet = (body) => body !== null && typeof body === 'object' && (
+    (Array.isArray(body.value) && body.value.length === 0)
+    || (body.d !== null && typeof body.d === 'object' && Array.isArray(body.d.results)
+      && body.d.results.length === 0));
+  // Read via the harness's own accessor only; some make json() and text() disagree.
+  const answerAbsence = async (response, url, opts) => {
+    const path = String(url).split('?')[0];
+    const kind = ABSENT.find((k) => k.at.test(path));
+    if (!kind) return response;
+    const via = typeof response.json === 'function' ? 'json' : 'text';
+    let body;
+    let failure = null;
+    try { body = await response[via](); } catch (err) { failure = err; }
+    let parsed = body;
+    if (via === 'text' && failure === null) {
+      try { parsed = JSON.parse(body); } catch { parsed = undefined; }
+    }
+    if (failure !== null || !isEmptySet(parsed)) {
+      return new Proxy(response, {
+        get(target, prop) {
+          if (prop === via) {
+            return async () => {
+              if (failure !== null) throw failure;
+              return body;
+            };
+          }
+          const value = Reflect.get(target, prop, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+    }
+    const name = decode(path.match(kind.at)[1]).replace(/''/g, "'");
+    // Server-relative and non-root only: the recorded message carries a /sites/ path.
+    const site = path.replace(/^[a-z]+:\/\/[^/]+/i, '').split('/_api')[0];
+    const headers = (opts && opts.headers) || {};
+    const accept = String(headers.Accept || headers.accept || '');
+    const wanted = accept.toLowerCase();
+    const envelope = wanted.includes('odata=verbose') ? 'verbose'
+      : wanted.includes('odata=nometadata') ? 'nometadata' : null;
+    const text = kind.envelope === envelope && kind.value ? kind.value(name, site) : '';
+    let answer = '';
+    if (text) {
+      const error = { code: kind.code, message: { lang: 'en-US', value: text } };
+      answer = JSON.stringify(envelope === 'verbose' ? { error } : { 'odata.error': error });
+    }
+    return {
+      ok: false, status: kind.status, url: String(url),
+      headers: { get: () => null },
+      json: async () => JSON.parse(answer),
+      text: async () => answer,
+    };
+  };
+
   const wrap = (raw) => {
     if (typeof raw !== 'function') return raw;
     return async function projectedFetch(url, opts) {
       const nested = inner.getStore() === true;
-      const response = await inner.run(true, () => raw.call(this, url, opts));
       const method = String((opts && opts.method) || 'GET').toUpperCase();
+      let response = await inner.run(true, () => raw.call(this, url, opts));
+      if (method === 'GET' && response && typeof response === 'object' && response.ok) {
+        response = await answerAbsence(response, url, opts);
+      }
       if (method !== 'GET' || !response || typeof response !== 'object' || !response.ok) {
         return response;
       }

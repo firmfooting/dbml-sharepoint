@@ -38,7 +38,9 @@ def run_node(script: str) -> str:
 
     Every script runs behind `_sp_mock.PRELUDE`, which projects each mock GET
     to its `$select`; a read of a property the request never selected raises
-    `UnselectedReadError` here rather than passing on `undefined` (#574).
+    `UnselectedReadError` here rather than passing on `undefined` (#574). It
+    also answers an empty set returned for a single entity with the absent
+    status SharePoint gives that entity.
     """
     assert NODE is not None
     with tempfile.TemporaryDirectory() as tmp:

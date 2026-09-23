@@ -165,3 +165,141 @@ def test_a_nested_read_has_its_text_projected() -> None:
         "})();\n"
     )
     assert 'PART {"d":{"results":[{"Title":"t","__metadata":{"type":"SP.List"}}]}}' in out
+
+
+def _answer(payload: Any, url: str, *, method: str = "GET",
+            accept: str = "application/json;odata=verbose") -> dict[str, Any]:
+    """The status and body the script sees for `url` when the harness answers `payload`."""
+    out = run_node(
+        _mock(payload)
+        + "(async () => {\n"
+        f"  const r = await fetch({json.dumps(url)}, {{ method: {json.dumps(method)},\n"
+        f"    headers: {{ Accept: {json.dumps(accept)} }} }});\n"
+        "  const text = await r.text();\n"
+        "  console.log('ANSWER' + JSON.stringify({ ok: r.ok, status: r.status,\n"
+        "    body: text ? JSON.parse(text) : null }));\n"
+        "})();\n"
+    )
+    line = next(ln for ln in out.splitlines() if ln.startswith("ANSWER"))
+    answer: dict[str, Any] = json.loads(line.removeprefix("ANSWER"))
+    return answer
+
+
+_EMPTY: dict[str, Any] = {"d": {"results": []}}
+
+
+def test_an_absolute_subsite_url_keeps_only_its_server_relative_path() -> None:
+    answer = _answer({"value": []}, "https://example.sharepoint.com/sites/t/_api/web/lists/getbytitle('X')",
+                     accept="application/json;odata=NoMetadata")
+    assert answer["body"]["odata.error"]["message"]["value"].endswith("URL '/sites/t'.")
+
+
+def test_an_absent_list_answers_the_measured_404() -> None:
+    """Status and nometadata body as recorded in the search-discovery findings, 2026-08-28."""
+    answer = _answer({"value": []}, "/sites/t/_api/web/lists/getbytitle('My%20List')?$select=Id",
+                     accept="application/json;odata=nometadata")
+    assert answer["status"] == 404
+    assert answer["ok"] is False
+    assert answer["body"] == {"odata.error": {
+        "code": "-1, System.ArgumentException",
+        "message": {"lang": "en-US",
+                    "value": "List 'My List' does not exist at site with URL '/sites/t'."},
+    }}
+
+
+@pytest.mark.parametrize(("url", "accept"), [
+    # Verbose was never recorded for a missing list.
+    ("/sites/t/_api/web/lists/getbytitle('X')", "application/json;odata=verbose"),
+    # Nor the tenant-root web, whose site URL the recorded message would have to invent.
+    ("/_api/web/lists/getbytitle('X')", "application/json;odata=nometadata"),
+    ("https://example.sharepoint.com/_api/web/lists/getbytitle('X')",
+     "application/json;odata=nometadata"),
+    # Nor any representation but nometadata and verbose.
+    ("/sites/t/_api/web/lists/getbytitle('X')", "application/json;odata=minimalmetadata"),
+    ("/sites/t/_api/web/lists/getbytitle('X')", ""),
+])
+def test_an_unrecorded_list_representation_gets_the_status_and_no_body(
+    url: str, accept: str,
+) -> None:
+    answer = _answer(_EMPTY, url, accept=accept)
+    assert answer["status"] == 404
+    assert answer["body"] is None
+
+
+@pytest.mark.parametrize("url", [
+    "/_api/web/lists/getbytitle('L')/fields/getbyinternalnameortitle('F')?$select=Id",
+    "/_api/web/lists/getbytitle('L')/views/getbytitle('All%20Items')?$select=Id",
+])
+def test_an_absent_field_or_view_by_name_answers_the_absent_400(url: str) -> None:
+    """The shape `isAbsent400` recognises, which is what a live site answered."""
+    answer = _answer(_EMPTY, url)
+    assert answer["status"] == 400
+    assert answer["body"]["error"]["code"] == "-2147024809, System.ArgumentException"
+
+
+def test_an_absent_group_answers_404() -> None:
+    """group-description-probe.js's control requires this 404; its body was never recorded."""
+    answer = _answer(_EMPTY, "/_api/web/sitegroups/getbyname('Owners')?$select=Id")
+    assert answer["status"] == 404
+    assert answer["body"] is None
+
+
+@pytest.mark.parametrize("url", [
+    # A collection under an entity: empty is a real answer for a present list.
+    "/_api/web/lists/getbytitle('L')/fields?$select=Id",
+    "/_api/web/lists/getbytitle('L')/items?$select=Id",
+    "/_api/web/lists?$select=Title",
+    # An empty folder path answers 200 with Exists false on a live site.
+    "/_api/web/GetFolderByServerRelativeUrl('/sites/t/L/F')?$select=Exists",
+    # An absent item id is unmeasured: projected-lookup-probe's absent-id arm has never run.
+    "/_api/web/lists/getbytitle('L')/items(7)?$select=Id",
+    # A field by id answered 400 once and 404 elsewhere, so neither is encoded.
+    "/_api/web/lists/getbytitle('L')/fields(guid'00000000-0000-0000-0000-000000000001')?$select=Id",
+])
+def test_an_empty_collection_and_an_unrecorded_kind_stay_200(url: str) -> None:
+    assert _answer(_EMPTY, url) == {"ok": True, "status": 200, "body": _EMPTY}
+
+
+def test_a_write_and_a_present_entity_pass_through() -> None:
+    url = "/_api/web/lists/getbytitle('L')"
+    assert _answer(_EMPTY, url, method="POST")["status"] == 200
+    present = {"d": {"Id": "g", "Title": "L"}}
+    assert _answer(present, url) == {"ok": True, "status": 200, "body": present}
+
+
+def test_a_harness_whose_json_and_text_disagree_keeps_both() -> None:
+    """Some harnesses answer text() with '' on purpose; reading json() to
+    inspect the body must not replace the text() the harness wrote."""
+    out = run_node(
+        "globalThis.fetch = async () => ({ ok: true, status: 200,\n"
+        "  json: async () => ({ d: { HasUniqueRoleAssignments: true } }),\n"
+        "  text: async () => '' });\n"
+        "(async () => {\n"
+        "  const r = await fetch(\"/_api/web/lists/getbytitle('L')\");\n"
+        "  console.log('TEXT[' + await r.text() + ']',\n"
+        "    'JSON', (await r.json()).d.HasUniqueRoleAssignments);\n"
+        "})();\n"
+    )
+    assert "TEXT[] JSON true" in out
+
+
+def test_a_wrapper_sees_the_absence_too() -> None:
+    """A sabotage wrapper stands between the script and SharePoint, so what
+    it reads from beneath has to be what SharePoint would answer."""
+    out = run_node(
+        _mock(_EMPTY)
+        + "{\n"
+        "  const under = globalThis.fetch;\n"
+        "  globalThis.fetch = async (url, opts) => {\n"
+        "    const r = await under(url, opts);\n"
+        "    console.log('WRAPPER', r.status);\n"
+        "    return r;\n"
+        "  };\n"
+        "}\n"
+        "(async () => {\n"
+        "  const r = await fetch(\"/_api/web/lists/getbytitle('L')\");\n"
+        "  console.log('SCRIPT', r.status);\n"
+        "})();\n"
+    )
+    assert "WRAPPER 404" in out
+    assert "SCRIPT 404" in out
