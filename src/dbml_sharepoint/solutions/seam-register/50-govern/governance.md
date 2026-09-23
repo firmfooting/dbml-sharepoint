@@ -50,7 +50,7 @@ recorded cannot be in the future.
 | DocumentRequest | Any **Status** past *To ask* has **Asked on**, **Due on**, a **Holder** and a **Held by** other than *Unknown*. *Received*, *Refused* and *Not found* have **Answered on**. A *Received* services agreement, services schedule or attestation in **Type** has **Signed by**, which may say *Unsigned*. **Asked on** and **Answered on** are recorded |
 | Artefact | **Dated** is recorded |
 | Interview | *Completed* in **Status** has **Minutes** and an **Interview date** that is not in the future. **Minutes** is 1 to 30 |
-| Incident | **Title** is unique. A *Recalled outage* in **Source** has a **Source detail**. **Incident date** is recorded |
+| Incident | **Title** is unique. **Source detail** is required: the export a ticket came from, or the role who recalled an outage. **Incident date** is recorded |
 | WeeklyUpdate | **Week** is unique and 1 to 6. **Rows verified** and **Seams found** are not negative. **Week ending** is recorded |
 
 ### Friday checks
@@ -60,7 +60,7 @@ the five lines are written. A check that a view answers names the view.
 
 | ID | Check | Why the register cannot enforce it |
 | --- | --- | --- |
-| F1 | A *Verified* service has two evidence rows without **Contradicts** ticked that agree about the same **Bears on** column from two different known source sides, or one *System data* row, no evidence row with **Contradicts** ticked unless a *Resolved* seam picks it, and no unresolved *Disputed owner*, *Disputed support* or *Contradicts document* seam | A formula cannot count rows on another list |
+| F1 | A *Verified* service has two evidence rows without **Contradicts** ticked that agree about the same **Bears on** column from two different known source sides, or one *System data* row that picks a *System export* file, no evidence row with **Contradicts** ticked unless a *Resolved* seam picks it, and no unresolved *Disputed owner*, *Disputed support* or *Contradicts document* seam | A formula cannot count rows on another list |
 | F2 | No service above *Assumed* has zero evidence rows | Same. A service with no evidence rows is *Assumed* by definition, whatever its confidence says |
 | F3 | By the end of week 5, no first-pass service has zero evidence rows. Before then **Assumed** lists them as the week's work | Same |
 | F4 | Every evidence row with **Contradicts** ticked appears in a seam's **Evidence in conflict** | A multi-value lookup on another list |
@@ -84,6 +84,7 @@ the five lines are written. A check that a view answers names the view.
 | F22 | By the week 6 hand-over, every seam not *Resolved* has a **Resolve owner**. Before then **Open seams** shows the ones without | An owner is only required once a seam is *Escalated*, and the deadline is a date in the exercise, not a status |
 | F23 | Every seam except an unresolved *No owner* picks the evidence rows it rests on in **Evidence in conflict**: at least one row, and for *Contradicts document* one *Document* row and one row of another **Type**, both with **Contradicts** ticked, that bear on the same **Bears on** column | A formula cannot read a multi-value lookup |
 | F24 | A weekly update's **Seams found** is the number of seams whose **Raised on** falls in the seven days ending on its **Week ending** | A formula cannot count rows on another list |
+| F25 | A *Verified* service has an evidence row bearing on every service column it fills: each **Bears on** value whose column is set | A formula cannot count rows on another list |
 
 ### What the register does not check
 
@@ -91,6 +92,9 @@ the five lines are written. A check that a view answers names the view.
   the row moves back, and the row still saves. The form stays uncluttered;
   views and reporting filter on status and side, so the old value does not
   surface. No rule forbids it.
+- Below *Verified*, a filled service column may still be waiting for its
+  evidence row. *Assumed* and *Claimed* say so, and F25 applies once a row
+  is *Verified*.
 - Only the columns marked unique above are unique. Two evidence rows,
   seams, document asks or interviews may describe the same thing, and
   often should.

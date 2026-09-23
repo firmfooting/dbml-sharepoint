@@ -368,7 +368,7 @@ Table Incident {
   ResolverProvider int             [ref: > Provider.Id, note: 'Which provider closed it, when that is not us']
   ResolverTeam     nvarchar        [note: 'The resolving team or queue, as exported']
   Source           incident_source [not null, note: 'A row from the ticket export, or an outage somebody remembered']
-  SourceDetail     nvarchar        [note: 'The export date, or the role who recalled it']
+  SourceDetail     nvarchar        [not null, note: 'The export a ticket came from, or the role who recalled the outage']
 
   indexes {
     Service

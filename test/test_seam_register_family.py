@@ -91,7 +91,11 @@ def _verified_without_two_sources(seed: Seed) -> Offenders:
         if service["Confidence"] != "Verified":
             continue
         rows = _evidence(seed, key)
-        system = any(e["EvidenceType"] == "System data" for e in rows)
+        system = any(
+            e["EvidenceType"] == "System data" and _ref(e.get("Artefact")) is not None
+            and seed["Artefact"][_ref(e["Artefact"]) or ""]["ArtefactType"] == "System export"
+            for e in rows
+        )
         sides: dict[str, set[str]] = {}
         for e in rows:
             # Unknown names no source, and a contradicting row agrees with nothing.
@@ -319,6 +323,32 @@ def _seams_found_miscounted(seed: Seed) -> Offenders:
     return bad
 
 
+# {Bears on value: whether the service row fills that column}.
+FILLS: dict[str, Callable[[Row], bool]] = {
+    "Run by": lambda s: s["RunBySide"] != "Unknown",
+    "Support": lambda s: s["SupportSide"] != "Unknown",
+    "Decided by": lambda s: not _blank(s.get("DecidedBy")),
+    "Runs where": lambda s: not _blank(s.get("Hosting")),
+    "Documentation": lambda s: s["Documentation"] != "Not asked",
+    "Last failure": lambda s: not _blank(s.get("LastFailureDate")),
+    "Dependency": lambda s: not _blank(s.get("Dependency")),
+    "Out of hours": lambda s: not _blank(s.get("OutOfHours")),
+    "Single person": lambda s: bool(s.get("SinglePerson")),
+}
+
+
+def _verified_fact_without_evidence(seed: Seed) -> Offenders:
+    bad: Offenders = set()
+    for key, service in seed["Service"].items():
+        if service["Confidence"] != "Verified":
+            continue
+        covered = {e["SupportsField"] for e in _evidence(seed, key)}
+        for field, fills in FILLS.items():
+            if fills(service) and field not in covered:
+                bad.add(("Service", f"{key}:{field}"))
+    return bad
+
+
 def _open_seam_without_an_owner(seed: Seed) -> Offenders:
     return {
         ("Seam", key) for key, seam in seed["Seam"].items()
@@ -349,6 +379,7 @@ CHECKS: dict[str, Callable[[Seed], Offenders]] = {
     "F22": _open_seam_without_an_owner,
     "F23": _seam_without_its_evidence,
     "F24": _seams_found_miscounted,
+    "F25": _verified_fact_without_evidence,
 }
 
 # Checks no predicate can make over the seed, and why.

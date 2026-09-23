@@ -1171,12 +1171,6 @@ list_validation:
               - { field: DurationMin, op: is_not_null }
               - { field: InterviewDate, op: leq, value: today }
     message: "A completed interview has its duration, and its date cannot be in the future."
-  Incident:
-    when:
-      - any_of:
-          - { field: Source, op: neq, value: "Recalled outage" }
-          - { field: SourceDetail, op: is_not_null }
-    message: "A remembered outage says who remembered it, by role, in Source detail."
 
 # Emitted only under --seed, in lookup order: providers, services, then
 # evidence, then the seams and files that cite them. Links name seeded files
@@ -1409,6 +1403,41 @@ demo_items:
         SupportsField: "Dependency"
         Contradicts: false
         EvidenceDate: "today-20"
+    - key: evd-accounts-hosting
+      values:
+        Title: "[DEMO] ICT technician interview: where the script runs"
+        Artefact: { demo_ref: art-interview-accounts }
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: Interview
+        Source: "ICT technician (accounts script), interview"
+        SourceSide: Us
+        Statement: "Demo row. Nothing for the script; it runs on our own server."
+        SupportsField: "Runs where"
+        Contradicts: false
+        EvidenceDate: "today-20"
+    - key: evd-accounts-docs
+      values:
+        Title: "[DEMO] ICT technician interview: nothing is written down"
+        Artefact: { demo_ref: art-interview-accounts }
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: Interview
+        Source: "ICT technician (accounts script), interview"
+        SourceSide: Us
+        Statement: "Demo row. The script. Nobody else could run it and there is no document."
+        SupportsField: "Documentation"
+        Contradicts: false
+        EvidenceDate: "today-20"
+    - key: evd-accounts-outage
+      values:
+        Title: "[DEMO] ICT manager on the week no accounts were created"
+        Service: { demo_ref: svc-accounts }
+        EvidenceType: Interview
+        Source: "ICT manager, own organisation, recalled outage"
+        SourceSide: Us
+        Statement: "Demo row. No accounts were created for a week while the technician was on leave. Three new starters could not sign in."
+        SupportsField: "Last failure"
+        Contradicts: false
+        EvidenceDate: "today-18"
     - key: evd-accounts-tickets
       values:
         Title: "[DEMO] Ticket export, accounts category"
@@ -1680,7 +1709,7 @@ demo_items:
         Q4Decides: "Demo row. The ICT manager."
         Q5AskProvider: "Demo row. Nothing for the script; it runs on our own server."
         Q6AskedProvider: "Demo row. Nothing about the script."
-        Q7Auditor: "Demo row. The script. Nobody else could run it."
+        Q7Auditor: "Demo row. The script. Nobody else could run it and there is no document."
         Q8Saturday: "Demo row. Nobody. It waits until Monday."
         FollowUps: "Demo row. Send the script location and the last run log by Friday."
     - key: int-provider-lead
