@@ -1,10 +1,10 @@
 {# Shared read-only shape probes: readListShape / readFieldShape with
    per-list caching and invalidateFieldShapes(listName?) so concurrent
    lanes never thrash each other's caches. Absence answers (404 and the
-   documented absent-field 400) return null rather than throwing, and
-   listFieldShapes(list).truncated says whether the one enumeration behind
-   those nulls may have ended before the list did, so a caller can tell a
-   column the list does not hold from one this read never saw. #}
+   documented absent-field 400) return null rather than throwing.
+   listFieldShapes(list).truncated says whether the one enumeration may have
+   ended before the list did; readFieldShape then asks a missed column by
+   name, so its null always means the list does not hold that column (#577). #}
   // SharePoint resolves a list title, a field name and a site group name
   // CASE-INSENSITIVELY, and enforces their uniqueness the same way. Every
   // local index of those names must therefore match the same way: a
@@ -240,7 +240,11 @@
     const fieldPath = fieldShapePath(listName, columnName);
     let shape;
     if (!fresh) {
-      shape = (await listFieldShapes(listName)).get(columnName) || null;
+      const shapes = await listFieldShapes(listName);
+      shape = shapes.get(columnName) || null;
+      // Missing from a page that may have ended early is not missing from the
+      // list, and a caller creates what this reports absent (#577).
+      if (!shape && shapes.truncated) return readFieldShape(listName, columnName, declaredField, true);
       if (!shape) return null;
       // Cached entries were validated at enumeration time by the same checks
       // below; re-validate anyway, one shared gate for both paths.

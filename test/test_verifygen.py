@@ -247,6 +247,10 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
     const HIDDEN_READBACK = true;
     const ACCEPT_ALL = false;
     const LAG_DAYS = 0;
+    const FIELD_STATUS = 200;
+    const FIELD_ROWS = 0;
+    const FIELD_NEXT = undefined;
+    const FORBID_FIELD_WRITES = false;
     Date.prototype.getTimezoneOffset = () => -BROWSER_OFFSET;
     const DAY = 86400000;
     const STORED = { rule: null };
@@ -335,7 +339,14 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
       if (u.includes('ListItemEntityTypeFullName')) {
         return respond(200, { d: { ListItemEntityTypeFullName: 'SP.Data.VerifyListItem' } });
       }
-      if (path.endsWith('/fields') && method === 'GET') return respond(200, { d: { results: [] } });
+      if (path.endsWith('/fields') && method === 'GET') {
+        if (FIELD_STATUS !== 200) {
+          return respond(FIELD_STATUS, { error: { message: { value: 'fields read failed' } } });
+        }
+        const results = Array.from(
+          { length: FIELD_ROWS }, (_, n) => ({ InternalName: `Other${n}` }));
+        return respond(200, { d: { results, __next: FIELD_NEXT } });
+      }
       if (path.endsWith('/fields') && method === 'POST') {
         if (body.DefaultValue) defaults.set(body.Title, body.DefaultValue);
         if (body.DefaultFormula) defaults.set(body.Title, body.DefaultFormula);
@@ -385,6 +396,9 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
       const writes = calls.filter((c) => c.method !== 'GET' && !c.url.includes('contextinfo'));
       if (EXPECT_NO_WRITES && writes.length) {
         throw new Error('unexpected write with an incomplete list inventory');
+      }
+      if (FORBID_FIELD_WRITES && writes.some((c) => c.url.split('?')[0].endsWith('/fields'))) {
+        throw new Error('a column was created from a field read that did not see every column');
       }
     };
 """)
@@ -442,6 +456,31 @@ def test_a_site_that_accepts_tomorrow_is_a_mismatch() -> None:
     assert summary["verdict"] == "MISMATCH"
     assert levels["validation_date_today.tomorrow"] == "FAIL"
     assert levels["validation_date_today.today"] == "PASS"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("knobs", "aborted"),
+    [
+        ({"FIELD_ROWS": "500"}, "field-page-truncated"),
+        ({"FIELD_ROWS": "1", "FIELD_NEXT": "'https://example.sharepoint.com/next'"},
+         "field-page-truncated"),
+        ({"FIELD_STATUS": "500"}, "field-page-unreadable"),
+    ],
+    ids=["full-page", "next-link", "failed-read"],
+)
+def test_a_column_read_that_may_be_incomplete_creates_no_column(
+    knobs: dict[str, str], aborted: str,
+) -> None:
+    """A column missing from this read is one the script creates (#577).
+
+    The healthy run above is the control: its read is short, carries no next
+    link, and goes on to create every column.
+    """
+    summary = _run_verify(FORBID_FIELD_WRITES="true", **knobs)
+    assert summary["verdict"] == "NOT-VERIFIED", summary
+    assert summary["aborted"] == aborted, summary
+    assert _levels(summary)["scratch_list"] == "NOT-ASSESSABLE", summary
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
