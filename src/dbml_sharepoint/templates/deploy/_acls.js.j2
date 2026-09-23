@@ -606,10 +606,8 @@
       }
     };
 
-    // Folder policies may name a list whose own policy is absent, so this
-    // reads every acl_scopes row for the list rather than filtering to list
-    // scopes alone -- which is why `la` below can be undefined, and why
-    // `if (la)` further down is not dead code.
+    // A folder policy may name a list with no list policy of its own, so
+    // every row counts here and `la` below can legitimately be undefined.
     const aclListTitles = [...new Set(SCHEMA.acl_scopes.map(s => s.list))];
 
     for (const listTitle of aclListTitles) {
