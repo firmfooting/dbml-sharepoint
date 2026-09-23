@@ -11,6 +11,7 @@ import importlib
 import inspect
 import pkgutil
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -31,6 +32,7 @@ from dbml_sharepoint.analysis.resolve import (
     ResolvedMapping,
     UnresolvedEnum,
     guards_resolution,
+    require_matching_resolution,
     resolve,
 )
 from dbml_sharepoint.generators.jsgen import build_schema_json
@@ -377,6 +379,79 @@ def test_a_resolution_of_this_mapping_against_another_schema_is_refused(
             resolved=resolve(other_schema, bundle.mapping),
         )
     assert excinfo.value.detail == "its enum members are not this schema's"
+
+
+def test_a_mapping_edited_after_it_was_resolved_is_refused(tmp_path: Path) -> None:
+    """Identity survives an edit, because `Mapping` is not frozen.
+
+    A caller that resolves, edits the same object and then builds passes the
+    pointer compare while `folders`, `folder_policies` and `groups` still
+    answer with the pre-edit values, so the deploy would provision this
+    mapping's lists with the folders the resolution took before the edit.
+    """
+    schema, bundle = _pair(tmp_path, "North", "Shared")
+    resolved = resolve(schema, bundle.mapping)
+    bundle.mapping.entities["Risk"] = replace(
+        bundle.mapping.entities["Risk"], folder_source=("Restricted",),
+    )
+    # The edit is invisible to every comparison the guard made before this.
+    assert resolved.mapping is bundle.mapping
+    assert resolved.require_folders("Risk") == ("North",)
+
+    with pytest.raises(MismatchedResolutionError) as excinfo:
+        build_schema_json(schema, bundle, "default", resolved=resolved)
+    assert excinfo.value.detail == "its folder sources changed after it was resolved"
+
+
+def test_a_permissions_edit_after_resolution_is_refused_by_name() -> None:
+    """The stale half a build would otherwise pair with current lists.
+
+    `resolve()` reads `folder_policies` through `folders.py`, so a block
+    edited afterwards leaves `resolved.folder_policies` holding the ACLs as
+    they were while every other field the generator reads is current.
+    """
+    schema = make_schema(make_table("Risk", "Title"))
+    policy = ListPermissionPolicy(
+        break_inheritance=True,
+        assignments=[RoleAssignment(
+            principal=Principal(kind="group", name="Librarians"), level="Read",
+        )],
+    )
+    perms = PermissionsConfig(
+        levels=[], groups=[], default_policy=None, overrides={},
+        folder_policies={"Risk": policy},
+    )
+    mapping = make_mapping(
+        entities={"Risk": EntityMapping(
+            name="Risk", kind="DocumentLibrary", base_template=101,
+            site_role="default", folder_source=("Shared",),
+        )},
+        permissions=perms,
+    )
+    bundle = MappingBundle(
+        mapping=mapping, enum_choices={}, retention_policies={},
+        retention_list_defaults={},
+    )
+    resolved = resolve(schema, mapping)
+    perms.folder_policies["Risk"] = replace(policy, break_inheritance=False)
+
+    with pytest.raises(MismatchedResolutionError) as excinfo:
+        require_matching_resolution(resolved, bundle, schema)
+    assert excinfo.value.detail == "its folder policies changed after it was resolved"
+
+
+def test_an_edit_the_resolution_cannot_see_is_not_refused(tmp_path: Path) -> None:
+    """A guard that refuses edits it has no view of gets suppressed instead.
+
+    `seal_columns` is not an enum source and no resolved field derives from
+    one, so a resolution taken before it changed still describes this
+    mapping exactly.
+    """
+    schema, bundle = _pair(tmp_path, "North", "Shared")
+    resolved = resolve(schema, bundle.mapping)
+    bundle.mapping.seal_columns = not bundle.mapping.seal_columns
+
+    build_schema_json(schema, bundle, "default", resolved=resolved)
 
 
 def test_a_hand_built_validation_context_is_refused_the_same_way(tmp_path: Path) -> None:

@@ -22,7 +22,7 @@ Nothing here imports a check, so a generator can read it.
 
 from collections.abc import Callable, Iterable
 from collections.abc import Mapping as MappingABC
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import wraps
 from inspect import signature
 
@@ -128,6 +128,17 @@ class ResolvedMapping:
     #: order -- `analysis/groups.py::_ordered`'s order, not re-derived here.
     groups: tuple[SiteGroup, ...]
     unresolved: tuple[UnresolvedEnum, ...] = ()
+    #: What `resolve()` read off `mapping`, snapshotted at construction, so
+    #: a later edit to that same mutable object is a difference and not one
+    #: pointer. Compared by `require_matching_resolution`.
+    consumed: MappingABC[str, str] = field(
+        default_factory=dict, init=False, repr=False,
+    )
+
+    def __post_init__(self) -> None:
+        # Taken here rather than in `resolve()`, so a hand-built resolution
+        # carries one too and the guard has something to compare.
+        object.__setattr__(self, "consumed", _consumed_inputs(self.mapping))
 
     def require_resolved(self) -> None:
         """Raise what the strict resolvers raise today, for a generator.
@@ -252,6 +263,33 @@ def enum_members_of(schema: Schema) -> dict[str, tuple[str, ...]]:
     return {enum.name: tuple(enum.members) for enum in schema.enums}
 
 
+def _consumed_inputs(mapping: Mapping) -> dict[str, str]:
+    """Exactly the mapping fields `resolve()` reads, as comparable text.
+
+    Scoped to what the resolution consumes rather than to the whole
+    `Mapping`, because a guard that refuses edits the resolution cannot see
+    gets suppressed by its callers. Held as `repr` because `Mapping` and
+    `PermissionsConfig` are both mutable, so keeping the objects themselves
+    would compare a later edit against itself.
+    """
+    perms = mapping.permissions
+    if perms is None:
+        blocks = groups = sources = repr(None)
+    else:
+        # Read by key, so the order the author wrote the blocks in is not a
+        # change this resolution can see.
+        ordered = {name: perms.folder_policies[name] for name in sorted(perms.folder_policies)}
+        blocks, groups, sources = repr(ordered), repr(list(perms.groups)), repr(perms.group_sources)
+    return {
+        "folder sources": repr(
+            [(name, entity.folder_source) for name, entity in mapping.entities.items()],
+        ),
+        "folder policies": blocks,
+        "groups": groups,
+        "group sources": sources,
+    }
+
+
 def require_matching_resolution(
     resolved: ResolvedMapping,
     bundle: MappingBundle,
@@ -259,22 +297,27 @@ def require_matching_resolution(
 ) -> None:
     """Refuse a resolution that was not built from these same inputs.
 
-    The mapping is compared by IDENTITY, because `ResolvedMapping.mapping`
-    is the very object `resolve()` read: the comparison is exact, costs one
-    pointer compare, and cannot drift as `Mapping` grows fields. A deep
-    comparison would be a second implementation of equality over a model
-    that is not frozen, and it could disagree with the resolution it is
-    meant to describe.
+    The mapping is compared first by IDENTITY, because `ResolvedMapping.mapping`
+    is the very object `resolve()` read, and then on `consumed`, the snapshot
+    of what that read took. `Mapping` is not frozen, so a caller that resolves,
+    edits the same object and then builds holds the pointer while `folders`,
+    `folder_policies` and `groups` still answer with the pre-edit values, and
+    the build combines the current bundle with stale permissions.
 
     The schema is compared on `enum_members`, which is the whole of what a
     resolution takes from a schema, so two schemas differing only in ways
     the resolution cannot see are correctly accepted.
-
-    It does NOT catch a `Mapping` edited after `resolve()` returned, because
-    `Mapping` is not frozen and the identity check still holds.
     """
     if resolved.mapping is not bundle.mapping:
         raise MismatchedResolutionError("its mapping is a different object")
+    current = _consumed_inputs(bundle.mapping)
+    changed = sorted(
+        name for name, value in current.items() if value != resolved.consumed.get(name)
+    )
+    if changed:
+        raise MismatchedResolutionError(
+            f"its {', '.join(changed)} changed after it was resolved",
+        )
     if schema is not None and resolved.enum_members != enum_members_of(schema):
         raise MismatchedResolutionError("its enum members are not this schema's")
 

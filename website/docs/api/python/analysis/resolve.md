@@ -75,6 +75,7 @@ class ResolvedMapping:
     folder_policies: collections.abc.Mapping[str, tuple[tuple[str, dbml_sharepoint.model.mapping_types.ListPermissionPolicy], ...]]
     groups: tuple[dbml_sharepoint.model.mapping_types.SiteGroup, ...]
     unresolved: tuple[dbml_sharepoint.analysis.resolve.UnresolvedEnum, ...] = ()
+    consumed: collections.abc.Mapping[str, str] = field(default_factory=dict)
 ```
 
 Every enum source in a mapping, resolved once against a schema.
@@ -194,19 +195,16 @@ def require_matching_resolution(resolved: dbml_sharepoint.analysis.resolve.Resol
 
 Refuse a resolution that was not built from these same inputs.
 
-The mapping is compared by IDENTITY, because `ResolvedMapping.mapping`
-is the very object `resolve()` read: the comparison is exact, costs one
-pointer compare, and cannot drift as `Mapping` grows fields. A deep
-comparison would be a second implementation of equality over a model
-that is not frozen, and it could disagree with the resolution it is
-meant to describe.
+The mapping is compared first by IDENTITY, because `ResolvedMapping.mapping`
+is the very object `resolve()` read, and then on `consumed`, the snapshot
+of what that read took. `Mapping` is not frozen, so a caller that resolves,
+edits the same object and then builds holds the pointer while `folders`,
+`folder_policies` and `groups` still answer with the pre-edit values, and
+the build combines the current bundle with stale permissions.
 
 The schema is compared on `enum_members`, which is the whole of what a
 resolution takes from a schema, so two schemas differing only in ways
 the resolution cannot see are correctly accepted.
-
-It does NOT catch a `Mapping` edited after `resolve()` returned, because
-`Mapping` is not frozen and the identity check still holds.
 
 ### `guards_resolution`
 
