@@ -509,12 +509,13 @@
   // The ownership survey for a whole write batch, run before ANY list in it
   // is mutated: one list's failure must not leave the lists surveyed ahead of
   // it written and the ones behind it refused. Returns title -> live Id for
-  // EVERY title it was given, or null when any of them failed, which is the
+  // every title it was given, or null when any of them failed, which is the
   // caller's signal to abort the phase. `allowAbsent` is for the phases that
-  // legitimately run before a list exists (a clean first provision); absence
-  // is not a failure there, so those callers get a Map that may be short.
+  // legitimately run before a list exists; absence is not a failure there,
+  // and those callers get a Map that may be short.
   async function surveyOwnedListsForWrites(listTitles, phaseNumber, label, allowAbsent = false) {
     const identities = new Map();
+    const reported = new Set();
     let failed = false;
     await mapLanes([...new Set(listTitles)], title => title, async (listTitle) => {
       try {
@@ -530,17 +531,17 @@
         identities.set(listTitle, actual.Id);
       } catch (err) {
         failed = true;
+        reported.add(listTitle);
         log('ERROR', `${label} ownership survey '${listTitle}': ${err.message}`);
         summary.errors.push({ phase: phaseNumber, list: listTitle, error: err.message });
       }
     }, 4);
-    // Completeness is settled where the Map is built, not where it is read: a
-    // `surveyedListId` throw lands in the caller's per-target catch, which
-    // drops that one target and writes the rest, and a partial write is the
-    // thing this survey exists to prevent.
+    // Settled here, not at `surveyedListId`: its throw lands in a per-target
+    // catch that drops one target and writes the rest. `reported` holds the
+    // titles the lane already explained, so one incident is one error.
     if (!allowAbsent) {
       for (const listTitle of new Set(listTitles)) {
-        if (identities.get(listTitle) != null) continue;
+        if (identities.get(listTitle) != null || reported.has(listTitle)) continue;
         const message = unprovenIdentity(label, listTitle);
         failed = true;
         log('ERROR', message);
@@ -550,8 +551,7 @@
     return failed ? null : identities;
   }
 
-  // The one sentence a phase-wide refusal and a per-read refusal both use, so
-  // the two cannot drift into naming the same fault two different ways.
+  // One sentence for both refusals, so they cannot name one fault two ways.
   function unprovenIdentity(label, listTitle) {
     return `The ${label} ownership survey proved no identity for '${listTitle}'`;
   }
@@ -563,9 +563,8 @@
   // write to. Named where the value is produced, because `Map.get` answers a
   // miss with the same `undefined` a deliberate omission would pass.
   //
-  // This throw reaches the caller's per-target catch and refuses one target.
-  // That is right for the caller bug it now describes and wrong for a short
-  // survey, which is why the survey refuses the whole batch itself.
+  // Its throw refuses one target: right for the caller bug it now describes,
+  // wrong for a short survey, which the survey refuses whole itself.
   //
   // The phases that legitimately run before their list exists survey with
   // `allowAbsent` true and branch on absence themselves; they do not come

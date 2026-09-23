@@ -8109,6 +8109,11 @@ def test_losing_a_marker_stops_a_write_phase_before_its_first_write(
     to the SECOND one either. Every one of these phases loops over its
     targets, so the failure has to be found by the survey that runs before
     the loop, not by the target's own turn in it.
+
+    One incident, one error. The survey reports a title it holds no Id for,
+    and a title whose own lane already threw has no Id either, so without the
+    survey remembering which ones it has explained the operator reads two
+    failures for one list and one of them names no cause.
     """
     summary, calls, output = _run_ownership_deploy(
         tmp_path,
@@ -8125,6 +8130,13 @@ def test_losing_a_marker_stops_a_write_phase_before_its_first_write(
     assert not _writes_in_phase(calls, pn(phase.key)), (
         f"phase {phase.key} wrote after its ownership survey failed: "
         f"{_writes_in_phase(calls, pn(phase.key))}"
+    )
+    reported = [
+        error for error in summary["errors"]
+        if error.get("phase") == pn(phase.key) and error.get("list") == _OWNED_TITLE
+    ]
+    assert len(reported) == 1, (
+        f"phase {phase.key} reported one incident {len(reported)} times: {reported}"
     )
 
 
@@ -8185,7 +8197,7 @@ _SURVEYED_WRITE_PHASES = (
 #: write to. Anchored here rather than on the return: the check is what these
 #: runs are about, and a splice landing after it would leave them passing
 #: while proving nothing.
-_SURVEY_COMPLETENESS = "\n    // Completeness is settled where the Map is built"
+_SURVEY_COMPLETENESS = "\n    // Settled here, not at `surveyedListId`"
 
 
 def _survey_drops(label: str, title: str) -> Callable[[str], str]:
