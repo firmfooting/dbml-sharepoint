@@ -110,6 +110,8 @@ def _verified_without_two_sources(seed: Seed) -> Offenders:
             field: _corroborated(seed, [e for e in rows if e["SupportsField"] == field])
             for field in CORROBORATED if FILLS[field](service)
         }
+        # Both sides Unknown leaves nothing corroborated, which is not Verified.
+        corroborated = corroborated or {"none filled": False}
         settled = {
             ref for seam in seed["Seam"].values() if seam["Status"] == "Resolved"
             for ref in _refs(seam.get("EvidenceInConflict"))
@@ -309,6 +311,14 @@ def _file_titles_repeat(seed: Seed) -> Offenders:
     }
 
 
+# The Bears on columns each seam type is about; types absent here take any.
+SEAM_FIELDS = {
+    "Single person": {"Single person", "Out of hours"},
+    "Undocumented dependency": {"Dependency", "Documentation"},
+    "No owner": {"Run by", "Decided by"},
+}
+
+
 def _seam_without_its_evidence(seed: Seed) -> Offenders:
     bad: Offenders = set()
     for key, seam in seed["Seam"].items():
@@ -321,7 +331,9 @@ def _seam_without_its_evidence(seed: Seed) -> Offenders:
                 by_field.setdefault(e["SupportsField"], set()).add(e["EvidenceType"] == "Document")
         # Both a Document row and another row, about the same column.
         both = any(kinds == {True, False} for kinds in by_field.values())
-        if not picked or (seam["SeamType"] == "Contradicts document" and not both):
+        fields = SEAM_FIELDS.get(seam["SeamType"])
+        off_topic = fields is not None and not any(e["SupportsField"] in fields for e in picked)
+        if not picked or off_topic or (seam["SeamType"] == "Contradicts document" and not both):
             bad.add(("Seam", key))
     return bad
 
@@ -658,3 +670,11 @@ def test_a_flagged_row_covers_no_verified_fact() -> None:
     assert ("Service", "svc-accounts:Decided by") not in _verified_fact_without_evidence(seed)
     seed["Evidence"]["evd-accounts-decides"]["Contradicts"] = True
     assert ("Service", "svc-accounts:Decided by") in _verified_fact_without_evidence(seed)
+
+
+def test_verified_needs_a_filled_core_column() -> None:
+    """Direct, because the seed has no Verified service with both sides Unknown."""
+    seed = _seed()
+    assert ("Service", "svc-sso") not in _verified_without_two_sources(seed)
+    seed["Service"]["svc-sso"]["Confidence"] = "Verified"
+    assert ("Service", "svc-sso") in _verified_without_two_sources(seed)

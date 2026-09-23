@@ -134,7 +134,6 @@ Enum artefact_type {
   "Invoice extract"
   "System export"
   "Correspondence"
-  "Other"
 }
 
 Enum interview_status {

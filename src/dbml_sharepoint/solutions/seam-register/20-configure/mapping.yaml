@@ -258,7 +258,7 @@ column_formatting:
   Artefact:
     ArtefactType:
       style: pill
-      map: { "Document copy": good, "Interview notes": low, "Incident export": good, "Invoice extract": good, "System export": good, Correspondence: neutral, Other: neutral }
+      map: { "Document copy": good, "Interview notes": low, "Incident export": good, "Invoice extract": good, "System export": good, Correspondence: neutral }
     SourceSide:
       style: pill
       map: *side_pill
