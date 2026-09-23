@@ -79,6 +79,9 @@ the five lines are written. A check that a view answers names the view.
 | F17 | Every completed interview's answers have been transcribed into evidence rows | A relationship the register does not model |
 | F18 | A weekly update's **Title** names the same week as its **Week** | A formula cannot build text from a number and compare it |
 | F19 | No row names a person | A reading check. Roles, never names |
+| F20 | A *Disputed owner* or *Disputed support* seam picks at least two rows in **Evidence in conflict**, one for each side of the dispute | A formula cannot count a multi-value lookup |
+| F21 | No two files in **SEAM_Artefact** share a **Title**, because the pickers show nothing else | Uniqueness on a library column has not been measured |
+| F22 | By the week 6 hand-over, every seam not *Resolved* has a **Resolve owner**. Before then **Open seams** shows the ones without | An owner is only required once a seam is *Escalated*, and the deadline is a date in the exercise, not a status |
 
 ### What the register does not check
 
@@ -89,6 +92,10 @@ the five lines are written. A check that a view answers names the view.
 - Only the columns marked unique above are unique. Two evidence rows,
   seams, document asks or interviews may describe the same thing, and
   often should.
+- An evidence row's **Source side** is the side that made the statement,
+  and its file's **Source side** is the side that produced the file. They
+  can differ, as when a provider's minutes record what our manager said,
+  so no check compares them. F1 counts statements, not files.
 - The weekly rhythm, the stop rules, the size of the first pass and who has
   read which evidence are working practice in the guide.
 
@@ -125,5 +132,5 @@ of record that policy usually covers. Never use rollback to clean up.
 The outputs are the register, which nobody senior needs to read; the
 one-page seam map, which is **Seam map** read alongside **By resolver**;
 the six weekly updates; and the seam list itself with an owner against
-every entry. Hand over to whoever will run the second pass, with
+every seam still open (F22). Hand over to whoever will run the second pass, with
 **Backlog** as their starting list.

@@ -234,6 +234,29 @@ def _title_names_another_week(seed: Seed) -> Offenders:
     return bad
 
 
+def _dispute_without_both_sides(seed: Seed) -> Offenders:
+    return {
+        ("Seam", key) for key, seam in seed["Seam"].items()
+        if seam["SeamType"] in {"Disputed owner", "Disputed support"}
+        and len(_refs(seam.get("EvidenceInConflict"))) < 2
+    }
+
+
+def _file_titles_repeat(seed: Seed) -> Offenders:
+    titles = [a.get("Title") for a in seed["Artefact"].values()]
+    return {
+        ("Artefact", key) for key, a in seed["Artefact"].items()
+        if titles.count(a.get("Title")) > 1
+    }
+
+
+def _open_seam_without_an_owner(seed: Seed) -> Offenders:
+    return {
+        ("Seam", key) for key, seam in seed["Seam"].items()
+        if seam["Status"] != "Resolved" and _blank(seam.get("ResolveOwner"))
+    }
+
+
 CHECKS: dict[str, Callable[[Seed], Offenders]] = {
     "F1": _verified_without_two_sources,
     "F2": _above_assumed_without_evidence,
@@ -252,6 +275,9 @@ CHECKS: dict[str, Callable[[Seed], Offenders]] = {
     "F15": _unanswered_question,
     "F16": _completed_without_notes,
     "F18": _title_names_another_week,
+    "F20": _dispute_without_both_sides,
+    "F21": _file_titles_repeat,
+    "F22": _open_seam_without_an_owner,
 }
 
 # Checks no predicate can make over the seed, and why.
@@ -273,6 +299,9 @@ OPEN_WORK: dict[str, dict[tuple[str, str], str]] = {
         ("DocumentRequest", "doc-attestation:HolderProvider"): "Provider not named",
         ("Interview", "int-declined:IntervieweeProvider"): "Provider not named",
         ("Incident", "inc-desktop-1:ResolverProvider"): "Provider not named",
+    },
+    "F22": {
+        ("Seam", "seam-backup-support"): "Open seams",
     },
 }
 

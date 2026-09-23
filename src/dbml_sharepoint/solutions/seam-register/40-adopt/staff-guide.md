@@ -125,7 +125,8 @@ A seam is a place two sources disagree or nobody answers. Open
 **Type**: no owner, disputed owner, disputed support, undocumented
 dependency, single person, no evidence, or contradicts document. Write the
 disagreement in one paragraph naming the sources by role, and pick the
-evidence rows in conflict.
+evidence rows in conflict: for a disputed owner or disputed support, at
+least one row for each side.
 
 A seam stays *Open* until we and the provider agree the gap is real, which
 is *Confirmed gap*, or it is handed to a decision-maker with a date, which
@@ -156,8 +157,9 @@ absence matters.
 matches its kind: a copy received into Documents, interview notes into
 Interviews, a ticket export into Incidents, invoice lines into Invoices, a
 console export into System exports, an email into Correspondence. Then
-select the file, open its details pane, and type a **Title**: the pickers
-on evidence and interview rows list titled files only. Check the
+select the file, open its details pane, and type a **Title** no other file
+has: the pickers on evidence and interview rows list titled files only, by
+Title alone. Check the
 **Title** after every upload, including a new version of a file already
 there, because it is what the pickers show. Set
 **Type** and **Source side**, date it, and pick the **Services** it bears
