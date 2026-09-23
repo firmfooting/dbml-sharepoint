@@ -359,7 +359,7 @@ Table Interview {
 // ticket is the strongest single signal of who really runs a service.
 Table Incident {
   Id               int             [pk, increment]
-  Title            nvarchar        [not null, note: 'Ticket reference where one exists, otherwise a short hand key']
+  Title            nvarchar        [not null, unique, note: 'Ticket reference where one exists, otherwise a short hand key. One row per ticket; prefix the system name if two systems share a reference']
   Service          int             [ref: > Service.Id, note: 'Which service it belongs to, assigned by us. Blank until assigned']
   IncidentDate     date            [not null]
   Category         nvarchar        [note: 'The ticketing system category, as exported']

@@ -116,7 +116,8 @@ Standard deployment logging is separate infrastructure; use the build's
 - [ ] On a seam, **Evidence in conflict** accepts more than one evidence
       row.
 - [ ] Add a document ask. **Asked on** and **Due on** appear once the status
-      leaves *To ask*, and the save rule refuses *Asked* without both. Set
+      leaves *To ask*, and the save rule refuses *Asked* without both, or
+      without a **Holder** and a **Held by** other than *Unknown*. Set
       a received *Attestation* with no **Signed by** and the save rule
       refuses it.
       **Due on** turns red once it has passed and the status is still
@@ -142,6 +143,8 @@ Standard deployment logging is separate infrastructure; use the build's
       the eight questions stay hidden.
 - [ ] Add an incident with **Source** set to *Recalled outage* and no
       **Source detail**. The save rule refuses the row until it is filled.
+      Add a second incident with an existing ticket reference as its
+      **Title** and uniqueness refuses it.
       **Source detail** is on the form for a ticket export too, for the
       export it came from.
 - [ ] Add a weekly update with **Week** set to 7. The save rule refuses it.

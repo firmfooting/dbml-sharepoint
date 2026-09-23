@@ -132,7 +132,8 @@ The rules SharePoint holds:
 - A single-person service needs the out-of-hours answer.
 - Escalating a seam names who will resolve it and by when. Resolving it
   needs the resolved date.
-- Once asked, a document has an asked-on date and a due date. Received,
+- Once asked, a document names who was asked and on which side, with an
+  asked-on date and a due date. Received,
   refused and not found each need the date the answer came back. A received
   agreement, schedule or attestation says who signed it, or *Unsigned*.
 - A completed interview has its duration, at most thirty minutes.

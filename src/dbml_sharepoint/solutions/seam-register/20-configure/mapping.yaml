@@ -1158,6 +1158,8 @@ list_validation:
           - all_of:
               - { field: AskedOn, op: is_not_null }
               - { field: DueOn, op: is_not_null }
+              - { field: Holder, op: is_not_null }
+              - { field: HolderSide, op: neq, value: Unknown }
       - any_of:
           - { field: Status, op: in, value: ["To ask", Asked] }
           - { field: AnsweredOn, op: is_not_null }
@@ -1165,7 +1167,7 @@ list_validation:
           - { field: Status, op: neq, value: Received }
           - { field: DocumentType, op: not_in, value: ["Services agreement", "Services schedule", Attestation] }
           - { field: SignedBy, op: is_not_null }
-    message: "Once asked, a document has an asked-on date and a due date. Received, refused and not found each need the date the answer came back. A received agreement, schedule or attestation says who signed it, or Unsigned."
+    message: "Once asked, a document says who was asked and on which side, with an asked-on date and a due date. Received, refused and not found each need the date the answer came back. A received agreement, schedule or attestation says who signed it, or Unsigned."
   Interview:
     when:
       - any_of:
