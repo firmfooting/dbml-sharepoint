@@ -1,8 +1,8 @@
 """The comment-run ratchet: paragraph-length comments may not grow (#610).
 
 `AGENTS.md` asks for one-line comments. Existing prose is grandfathered by a
-per-file pin in `_comment_run_pins.PINNED`, so a new run fails and a removed
-one must lower its pin in the same change.
+per-run fingerprint in `_comment_run_pins.PINNED`, so a new or edited run
+fails and a removed one must drop its pin in the same change.
 """
 
 import pytest
@@ -69,6 +69,59 @@ def test_js_comment_syntax_is_not_read_in_a_markdown_template() -> None:
     assert comment_runs("// not a comment\n" * 9, "a.md.j2") == []
 
 
+@pytest.mark.parametrize(
+    ("prefix", "name"),
+    [("#", "mapping.yaml"), ("#", "a.yml"), ("//", "schema.dbml")],
+)
+def test_yaml_and_dbml_comment_runs_are_flagged(prefix: str, name: str) -> None:
+    seven = "a: 1\n" + _lines(prefix, MIN_RUN) + "b: 2\n"
+
+    assert [(run.first_line, run.length) for run in _flagged(seven, name)] == [(2, 7)]
+
+
+def test_a_dbml_block_comment_counts() -> None:
+    block = "/*\n" + " * why\n" * 5 + " */\nTable t {}\n"
+
+    assert [run.length for run in _flagged(block, "schema.dbml")] == [7]
+
+
+@pytest.mark.parametrize("name", ["a.js", "a.js.j2"])
+def test_comment_shaped_lines_in_a_template_literal_are_not_comments(name: str) -> None:
+    text = "const body = `\n" + "// in the string\n" * MIN_RUN + "`;\n"
+
+    assert comment_runs(text, name) == []
+
+
+def test_an_escaped_backtick_does_not_close_a_template_literal() -> None:
+    text = "const body = `a \\` b\n" + "/* in the string */\n" * MIN_RUN + "`;\n"
+
+    assert comment_runs(text, "a.js") == []
+
+
+def test_comments_after_a_closed_template_literal_count() -> None:
+    text = "const a = `one`, b = '`';\n" + _lines("//", MIN_RUN)
+
+    assert [run.length for run in _flagged(text, "a.js")] == [7]
+
+
+def test_a_nested_template_in_an_interpolation_does_not_close_the_outer_one() -> None:
+    text = "const a = `x ${ok ? `y` : `z`}\n" + "// in the string\n" * MIN_RUN + "`;\n"
+
+    assert comment_runs(text, "a.js") == []
+
+
+def test_a_quote_in_a_regex_literal_does_not_hide_the_comments_after_it() -> None:
+    text = "const q = `'${name.replace(/'/g, \"''\")}'`;\n" + _lines("//", MIN_RUN)
+
+    assert [run.length for run in _flagged(text, "a.js")] == [7]
+
+
+def test_a_backtick_in_a_jinja_comment_does_not_open_a_template_literal() -> None:
+    text = "{# see `name` #}\nrun();\n" + _lines("//", MIN_RUN)
+
+    assert [run.length for run in _flagged(text, "a.js.j2")] == [7]
+
+
 def test_a_blank_line_breaks_a_run() -> None:
     text = _lines("#", 4) + "\n" + _lines("#", 4)
 
@@ -133,29 +186,61 @@ def test_generated_files_are_excluded_and_their_templates_are_not() -> None:
     assert not excluded("test/manual/handwritten.js", tracked)
 
 
-def test_a_count_above_the_pin_names_the_file_and_the_run() -> None:
-    runs = {"a.py": [Run(first_line=12, length=7, text="# why", exemption=None)]}
+def _measured(text: str, name: str = "a.py") -> dict[str, list[Run]]:
+    return {name: comment_runs(text, name)}
 
-    [found] = problems(runs, pinned={})
 
-    assert "a.py:12" in found
+def _pins(text: str, name: str = "a.py") -> dict[str, list[str]]:
+    return {name: [run.fingerprint for run in _flagged(text, name)]}
+
+
+def test_an_unpinned_run_names_the_file_and_the_run() -> None:
+    [found] = problems(_measured("x = 1\n" + _lines("#", MIN_RUN)), pinned={})
+
+    assert "a.py:2" in found
     assert "# why" in found
 
 
-def test_a_count_below_the_pin_asks_for_the_pin_to_come_down() -> None:
-    runs = {"a.py": [Run(first_line=12, length=7, text="# why", exemption=None)]}
+def test_a_pinned_run_that_moves_still_matches_its_pin() -> None:
+    old = _lines("#", MIN_RUN)
+    moved = "x = 1\n" * 20 + "    " + old.replace("\n#", "\n    #")
 
-    [found] = problems(runs, pinned={"a.py": 2})
-
-    assert "lower" in found
-    assert "'a.py': 1" in found
+    assert problems(_measured(moved), pinned=_pins(old)) == []
 
 
-def test_a_pin_on_a_file_with_no_runs_must_be_deleted() -> None:
-    [found] = problems({}, pinned={"gone.py": 1})
+def test_editing_a_pinned_run_fails() -> None:
+    old = _lines("#", MIN_RUN)
+    edited = old.replace("more", "changed", 1)
+
+    found = problems(_measured(edited), pinned=_pins(old))
+
+    assert any("fix the lines you are already touching" in item for item in found)
+
+
+def test_replacing_a_pinned_run_with_a_new_one_of_the_same_count_fails() -> None:
+    """The count was equal, so the per-file pin #636 first shipped let this through."""
+    old = _lines("#", MIN_RUN, "old reason")
+    new = _lines("#", MIN_RUN, "new reason")
+
+    found = problems(_measured(new), pinned=_pins(old))
+
+    assert any("a.py:1" in item and "new reason" in item for item in found)
+    assert any("remove" in item for item in found)
+
+
+def test_identical_runs_are_pinned_with_multiplicity() -> None:
+    one = _lines("#", MIN_RUN)
+    two = one + "x = 1\n" + one
+
+    assert problems(_measured(two), pinned=_pins(two)) == []
+    assert problems(_measured(two), pinned=_pins(one)) != []
+
+
+def test_a_pin_with_no_run_left_must_be_removed() -> None:
+    [found] = problems({}, pinned={"gone.py": ["0123456789ab"]})
 
     assert "gone.py" in found
-    assert "delete" in found
+    assert "remove" in found
 
 
 def test_the_scan_reads_tracked_files_only() -> None:

@@ -75,9 +75,9 @@ you need `--pdb`, deterministic ordering, or readable output from one test:
 - Do not build to a turn of phrase. State the claim directly.
 - Technical documentation, not marketing copy.
 - Comments explain why, in one line. No paragraph-length comments.
-  `test/test_comment_runs.py` pins each file's runs of seven or more comment
-  lines, so lower that file's entry in `test/_comment_run_pins.py` when you
-  remove one.
+  `test/test_comment_runs.py` pins each existing run of seven or more comment
+  lines by a fingerprint of its text, so remove its entry in
+  `test/_comment_run_pins.py` when you remove or edit one.
 - Write no new documentation unless explicitly asked. Regenerating a committed
   reference, and correcting a page the change has made wrong, are part of the
   change rather than new documentation.
