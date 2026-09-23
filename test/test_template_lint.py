@@ -236,13 +236,8 @@ def test_no_orphan_templates(env: Environment) -> None:
 
 def test_no_template_names_a_merged_acl_collection() -> None:
     """`SCHEMA.list_assignments` and `SCHEMA.folder_assignments` became one
-    `SCHEMA.acl_scopes`, and a template still naming either would read
-    `undefined` and silently reconcile nothing.
-
-    A string gate rather than a parse: these names appear in Jinja
-    expressions, in emitted JavaScript and in comments, and all three are
-    wrong now.
-    """
+    `SCHEMA.acl_scopes`, so a template still naming either reads `undefined`
+    and silently reconciles nothing."""
     offenders = {
         rel: name
         for rel in ALL_TEMPLATES
