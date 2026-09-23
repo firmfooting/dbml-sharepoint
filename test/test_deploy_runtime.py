@@ -8174,6 +8174,88 @@ def test_a_configured_list_reports_only_a_read_back_it_made(tmp_path: Path) -> N
     assert not [line for line in silent if "reports all" in line], silent
 
 
+#: The declared principal holding a level the configured policy does not
+#: name, so the prune has exactly one 'stale' removal to make. Id 9 is what
+#: the harness resolves every unconfigured group name to, and 'Schema
+#: Manager' is the one level it seeds.
+_CONFIGURED_STALE_BINDING = [[{
+    "Member": {"Id": 9, "Title": "Configured Reader", "PrincipalType": 8},
+    "RoleDefinitionBindings": {"results": [{"Id": 1, "Name": "Schema Manager"}]},
+}]]
+
+
+def _configured_stale_run(
+    tmp_path: Path, *, removal_takes: bool,
+) -> tuple[dict[str, Any], str]:
+    """Phase 4.2 over a configured list whose declared principal holds a
+    level the policy no longer names."""
+    js = _declared_deploy_js(
+        tmp_path, _CONFIGURED_ACL_SECTION.format(assignments=_CONFIGURED_ACL_GRANT),
+    )
+    harness = _READER_ACL_HARNESS.replace(
+        "const ROLE_ASSIGNMENT_PAGES = {};",
+        "const ROLE_ASSIGNMENT_PAGES = "
+        f"{json.dumps({_OWNED_TITLE: _CONFIGURED_STALE_BINDING})};",
+    )
+    assert "Configured Reader" in _CONFIGURED_ACL_GRANT, (
+        "the mapping no longer declares the principal this seed holds stale"
+    )
+    if not removal_takes:
+        # Four spaces, for the dedent the blind-write test above names.
+        ignored = harness.replace(
+            "    } else if (binding) {\n", "    } else if (false) {\n",
+        )
+        assert ignored != harness, "the ignored-removal splice did not apply"
+        harness = _FAST_TIMERS_JS + ignored
+    script = harness + "\n" + js.replace(
+        "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+    return _summary_of(output), output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_configured_list_reads_back_the_stale_level_it_removed(
+    tmp_path: Path,
+) -> None:
+    """The removal takes, and the phase says so rather than only that the
+    declared set is present.
+
+    Without this run the refusal below would look equally correct if the
+    check refused every configured list that pruned.
+    """
+    summary, output = _configured_stale_run(tmp_path, removal_takes=True)
+    assert summary.get("errors") == [], summary["errors"]
+    log = _phase_log(output, pn("acls"))
+    assert any("removed stale binding" in line for line in log), log
+    assert any("none of the 1 it removed" in line for line in log), log
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_configured_list_removal_that_did_not_take_is_refused(
+    tmp_path: Path,
+) -> None:
+    """Configured mode prunes too, and an accepted removal is not a removal
+    that took.
+
+    The presence check runs BEFORE the prune, so it cannot see this: the
+    declared grant is there either way, and the run used to log that the
+    declared set was in place while the principal still held the level the
+    policy had just removed. MEASURED 2026-09-22 in
+    operator-safety-grant-probe.js: removeroleassignment answered HTTP 200
+    for a principal and a level the tenant does not have, so the 200 is not
+    evidence of anything.
+    """
+    summary, _output = _configured_stale_run(tmp_path, removal_takes=False)
+    complaint = [
+        err["error"] for err in summary["errors"]
+        if "still reports" in err["error"] and "removed as stale" in err["error"]
+    ]
+    assert complaint, summary
+    assert "9:1" in complaint[0], complaint[0]
+    assert "1 removal(s) were accepted" in complaint[0], complaint[0]
+
+
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_an_exact_list_declaring_nothing_strips_it_and_reads_it_back(
     tmp_path: Path,

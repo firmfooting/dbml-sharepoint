@@ -412,10 +412,11 @@
       // The one irreversible operation in this phase, so it carries the
       // strictest bracket: nothing is removed unless the title still
       // resolves to the surveyed list at the moment of the request.
-      // Counted so the completeness failure below can say what was tried. The
-      // prune runs off a snapshot taken before the adds, so a binding that
-      // entered afterwards is reported with no removal ever attempted for it.
-      let removalsIssued = 0;
+      // Recorded by key, because the check below both counts what was tried
+      // and, in configured mode, judges exactly these bindings. The prune
+      // runs off a snapshot taken before the adds, so a binding that entered
+      // afterwards is reported with no removal ever attempted for it.
+      const removed = new Set();
       const removeBinding = async (principalId, roleDefId, reason) => {
         await withOwnedList(scope.listTitle, scope.listId, `removeroleassignment (${reason}) on '${scope.label}'`, async () => {
           digest4 = await getDigest();
@@ -428,7 +429,7 @@
             throw new Error(`removeroleassignment (${reason}, principal ${principalId}, binding ${roleDefId}) failed: HTTP ${rmResp.status} ${text}`);
           }
         });
-        removalsIssued += 1;
+        removed.add(`${principalId}:${roleDefId}`);
         log('INFO', `[Phase 4.2] '${scope.label}' removed ${reason} binding ${roleDefId} for principal ${principalId}.`);
       };
 
@@ -525,8 +526,16 @@
         }
       }
 
-      // After the pruning, the complete resulting set. Presence alone was
-      // half the question: `removeroleassignment` answering HTTP 200 is
+      // After the pruning, in BOTH modes. Configured mode issues removals
+      // too, and the presence check above ran before them, so without this
+      // an accepted removal that did not take left a declared principal
+      // holding a level the policy no longer names, under a log line saying
+      // the declared set was in place. Exact mode judges every undeclared
+      // binding; configured mode judges the ones this run removed, which is
+      // the whole of what it claims.
+      //
+      // Presence alone was half the question: `removeroleassignment`
+      // answering HTTP 200 is
       // evidence the request was accepted, and a scope whose removal did not
       // take leaves a stale principal with access on a run that reports
       // success. MEASURED 2026-09-22, operator-safety-grant-probe.js: that
@@ -556,22 +565,28 @@
       // after the first clean read, because nothing observes the rest of the
       // window. Closing that needs a live measurement over a longer window
       // rather than a stricter rule written here from plausibility.
-      if (scope.reconcile_mode === 'exact') {
+      const exactMode = scope.reconcile_mode === 'exact';
+      if (exactMode || removed.size > 0) {
         const complaint = await settleBindings(scope, (rows) => {
           // 'Limited Access' is the English name; a localized tenant is unverified.
           const strays = rows.filter(
-            row => row.name !== 'Limited Access' && !desired.has(row.key),
+            row => row.name !== 'Limited Access'
+              && !desired.has(row.key)
+              && (exactMode || removed.has(row.key)),
           );
           const reported = new Set(rows.map(row => row.key));
           const missing = [...desired].filter(key => !reported.has(key));
           return (strays.length === 0 && missing.length === 0) ? null : { strays, missing };
         });
         if (complaint !== null) {
-          const stray = complaint.strays.length === 0 ? '' : `'${scope.label}' still reports ${complaint.strays.length} role assignment(s) this exact policy does not declare (${complaint.strays.map(row => row.key).join(', ')}). ${removalsIssued === 0 ? 'This scope issued no removals, so the binding entered it after the snapshot the prune ran from' : `${removalsIssued} removal(s) were accepted, so either the scope has not caught up or they did not take`}. `;
+          const kind = exactMode ? 'this exact policy does not declare' : 'this run removed as stale';
+          const stray = complaint.strays.length === 0 ? '' : `'${scope.label}' still reports ${complaint.strays.length} role assignment(s) ${kind} (${complaint.strays.map(row => row.key).join(', ')}). ${removed.size === 0 ? 'This scope issued no removals, so the binding entered it after the snapshot the prune ran from' : `${removed.size} removal(s) were accepted, so either the scope has not caught up or they did not take`}. `;
           const lost = complaint.missing.length === 0 ? '' : `'${scope.label}' no longer reports ${complaint.missing.length} DECLARED role assignment(s) (${complaint.missing.join(', ')}), which read back before the pruning. A concurrent edit or a removal broader than this policy asked for both look like this, and the scope may have lost an administrator or a reader grant. `;
           throw new Error(`${stray}${lost}Nothing further was written and rerunning reads the bindings again.`);
         }
-        log('INFO', `[Phase 4.2] '${scope.label}' reports exactly the ${desired.size} declared role assignment(s).`);
+        log('INFO', exactMode
+          ? `[Phase 4.2] '${scope.label}' reports exactly the ${desired.size} declared role assignment(s).`
+          : `[Phase 4.2] '${scope.label}' reports all ${resolvedAssignments.length} declared role assignment(s) and none of the ${removed.size} it removed.`);
       } else if (hasDeclaredAssignments) {
         log('INFO', `[Phase 4.2] '${scope.label}' reports all ${resolvedAssignments.length} declared role assignment(s).`);
       }
