@@ -31,11 +31,12 @@ prelude prints the record after `SENTINEL`, and `run_node` fails the test
 naming the property, the request URL and the script line that read it.
 
 A GET of one entity that a harness answers with an empty set is answered
-instead with the status SharePoint gives an absent entity of that kind (404
-for a list, group or item; the absent-400 for a field or view by name). An
-empty set is never an entity, and a catch-all that answered one made
-"absent" and "present with nothing in it" the same observation, so no
-absence guard could be mutation-checked (#574).
+instead with the status SharePoint was measured giving an absent entity of
+that kind: 404 for a list or a site group, the absent-400 for a field or view
+by name. Other kinds, an item by id among them, keep the harness's answer
+until one is measured. An empty set is never an entity, and a catch-all that
+answered one made "absent" and "present with nothing in it" the same
+observation (#574).
 """
 
 import json
