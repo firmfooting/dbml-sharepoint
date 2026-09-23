@@ -4740,6 +4740,7 @@ def _reader_harness(
     web_binding_status: int | None = None,
     web_binding_shape: str = "verbose",
     unreadable_binding_levels: list[int] | None = None,
+    drop_change_log_grant: bool = False,
 ) -> str:
     """`_ADOPTED_HARNESS` plus the two surfaces the reader phase touches.
 
@@ -4788,7 +4789,15 @@ def _reader_harness(
     the `{results: [...]}` odata=verbose renders. `unreadable_binding_levels`
     answers the by-Id read for those level Ids HTTP 500, which is a binding
     whose bitmap this run cannot judge.
+
+    The change log's own role assignments are real state: the logging phase's
+    grant POST records the binding and the read-back reads it, so a run
+    cannot satisfy its own verification. `drop_change_log_grant` answers that
+    POST 200 and stores nothing, which is what an accepted but ineffective
+    add looks like from the script's side.
     """
+    from dbml_sharepoint.analysis.sidecars import CHANGE_LOG_TITLE
+
     pages = [list(members or [])] if member_pages is None else [
         list(page) for page in member_pages
     ]
@@ -4805,6 +4814,9 @@ def _reader_harness(
         const WEB_BINDING_SHAPE = __WEB_BINDING_SHAPE__;
         const UNREADABLE_BINDING_LEVELS = __UNREADABLE_BINDING_LEVELS__;
         const READER_PHASE = __READER_PHASE__;
+        const CHANGE_LOG_LIST = __CHANGE_LOG_TITLE__;
+        const DROP_CHANGE_LOG_GRANT = __DROP_CHANGE_LOG_GRANT__;
+        const CHANGE_LOG_BINDINGS = [];
         const _beforeReader = globalThis.fetch;
         globalThis.fetch = async (url, opts = {}) => {
           const u = String(url);
@@ -4942,6 +4954,39 @@ def _reader_harness(
             }
             return answer;
           }
+          // The change log's own role assignments. Kept here rather than in
+          // the adopted harness underneath, whose /roleassignments mock is
+          // static state shared by every list and answers the collection
+          // shape, not the by-principal one this read asks for.
+          const changeLogScope = `getbytitle('${CHANGE_LOG_LIST}')/roleassignments`;
+          const granted = u.includes(`${changeLogScope}/addroleassignment(`)
+            ? /addroleassignment\(principalid=(\d+),roleDefId=(\d+)\)/.exec(u)
+            : null;
+          if (granted && method === 'POST') {
+            if (!DROP_CHANGE_LOG_GRANT) {
+              CHANGE_LOG_BINDINGS.push(
+                { principalId: Number(granted[1]), roleDefId: Number(granted[2]) });
+            }
+            return respond({ d: null });
+          }
+          const heldBy = u.includes(`${changeLogScope}/getbyprincipalid(`)
+            ? /getbyprincipalid\((\d+)\)/.exec(u)
+            : null;
+          if (heldBy && method === 'GET') {
+            const held = CHANGE_LOG_BINDINGS.filter(
+              (b) => b.principalId === Number(heldBy[1]));
+            // MEASURED and recorded in _acls.js.j2: getbyprincipalid answers
+            // 404 for a principal holding no assignment on the list.
+            if (held.length === 0) {
+              calls.push({ url: u, method, body: null });
+              const payload = { error: { code: '-2147024809, System.ArgumentException' } };
+              return { ok: false, status: 404, headers: { get: () => null },
+                       json: async () => payload,
+                       text: async () => JSON.stringify(payload) };
+            }
+            return respond({ d: { RoleDefinitionBindings: {
+              results: held.map((b) => ({ Id: b.roleDefId })) } } });
+          }
           return _beforeReader(url, opts);
         };
     """).replace(
@@ -4968,6 +5013,10 @@ def _reader_harness(
         "__UNREADABLE_BINDING_LEVELS__", json.dumps(unreadable_binding_levels or []),
     ).replace(
         "__READER_PHASE__", json.dumps(pn("reader_enrolment")),
+    ).replace(
+        "__CHANGE_LOG_TITLE__", json.dumps(CHANGE_LOG_TITLE),
+    ).replace(
+        "__DROP_CHANGE_LOG_GRANT__", "true" if drop_change_log_grant else "false",
     )
 
 
@@ -5008,6 +5057,7 @@ def _run_reader_deploy(
     web_binding_shape: str = "verbose",
     unreadable_binding_levels: list[int] | None = None,
     sidecars: bool = False,
+    drop_change_log_grant: bool = False,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     """Run the emitted deploy against the reader harness.
 
@@ -5017,7 +5067,8 @@ def _run_reader_deploy(
 
     `sidecars` emits the run and change logs and seeds their markers into the
     harness's descriptions, so both are adopted and the logging phase reaches
-    the change log's reader grant.
+    the change log's reader grant. `drop_change_log_grant` then accepts that
+    grant's POST and stores nothing.
     """
     script = _reader_harness(
         ensure_user, members=members, member_pages=member_pages,
@@ -5026,6 +5077,7 @@ def _run_reader_deploy(
         web_bindings=web_bindings, web_binding_status=web_binding_status,
         web_binding_shape=web_binding_shape,
         unreadable_binding_levels=unreadable_binding_levels,
+        drop_change_log_grant=drop_change_log_grant,
     )
     if sidecars:
         script = _with_sidecar_descriptions(script)
@@ -5204,6 +5256,50 @@ def test_the_change_logs_reader_grant_resolves_the_level_the_enrolment_phase_did
     )
     # Group Id 9 is what the adopted harness resolves every group name to.
     assert f"principalid=9,roleDefId={_READ_LEVEL_ID}" in granted[0]["url"], granted[0]
+    # And the binding is READ BACK, not taken from the POST's own answer.
+    posted = calls.index(granted[0])
+    assert any(
+        c["method"] == "GET"
+        and f"getbytitle('{CHANGE_LOG_TITLE}')" in c["url"]
+        and "roleassignments/getbyprincipalid(9)" in c["url"]
+        for c in calls[posted + 1:]
+    ), f"the grant was never read back: {[c['url'] for c in calls[posted + 1:]][:10]}"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_accepted_change_log_grant_that_is_not_observed_is_recorded() -> None:
+    """`grantResp.ok` says the request was accepted, not that the binding
+    exists.
+
+    An add SharePoint answers 200 and discards leaves the reader unable to
+    collect the change feed while the run logs the grant as successful, which
+    is the silent class this repository exists to catch. The harness models
+    exactly that: the POST is accepted and stores nothing.
+
+    The failure says the write was accepted and the binding was not observed,
+    rather than claiming the write was lost, because a list that has not
+    caught up looks identical from here.
+    """
+    from dbml_sharepoint.analysis.sidecars import CHANGE_LOG_TITLE
+
+    summary, calls, output = _run_reader_deploy(
+        _RESOLVED_USER, sidecars=True, drop_change_log_grant=True,
+    )
+    failures = [
+        f for f in (summary.get("loggingFailures") or [])
+        if "reader grant" in str(f.get("where", ""))
+    ]
+    assert failures, summary.get("loggingFailures")
+    message = str(failures[0].get("error", ""))
+    assert "was accepted" in message, message
+    assert "not observed" in message, message
+    assert CHANGE_LOG_TITLE in message, message
+    # Neither the success line nor the change row it writes beside it.
+    assert f"Change log '{CHANGE_LOG_TITLE}': granted" not in output, output[-3000:]
+    assert not [
+        c for c in calls
+        if c.get("body") and "enterprise reader grant" in str(c["body"])
+    ], "a change row claimed a grant the list does not report"
 
 
 # === Step 0: the grant is judged by its bitmap, not by its name (#199) ===
