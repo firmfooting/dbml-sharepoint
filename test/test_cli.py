@@ -854,6 +854,62 @@ def test_an_unknown_folder_enum_is_reported_by_validation_not_by_the_reader_gate
     assert not (out / "deploy.js.txt").exists()
 
 
+def test_a_multi_member_reader_enum_is_reported_by_validation_not_by_the_gate(
+    tmp_path: Path,
+) -> None:
+    """One identity cannot be enrolled into a group per enum member, and
+    `group_enum_enrols_an_identity` is the rule that says so.
+
+    The gate below it asks whether the reader is granted anything in this
+    role, and nothing grants a group that should never have been generated,
+    so it refused first and took the finding, every other finding and the
+    manifest with it.
+    """
+    schema = write_dbml(tmp_path, blocks("""
+        Enum division {
+          "Clinical services"
+          "Corporate services"
+        }
+
+        Table Docs {
+          Id int [pk, increment]
+          Title nvarchar [not null]
+          Division division
+        }
+    """))
+    mapping = write_mapping(tmp_path, blocks("""
+        prefix: XX
+
+        entities:
+          Docs: { kind: List, base_template: 100, site_role: default }
+
+        groups:
+          - from_enum: division
+            name: "XX {member} Readers"
+            description: "Readers for {member}."
+            owner_group: "Site Owners"
+            enroll_enterprise_reader: true
+    """))
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(schema),
+        "--mapping", str(mapping),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
+        "--site-role", "default",
+        "--out", str(out),
+        "--enterprise-reader", "svc-reporting@example.org",
+    ])
+
+    assert result.exit_code != 0, result.output
+    assert "group_enum_enrols_an_identity" in result.output, result.output
+    assert "granted no permission level" not in result.output, result.output
+    assert (out / "deploy-manifest.md").exists(), sorted(p.name for p in out.iterdir())
+    assert not (out / "deploy.js.txt").exists()
+
+
 def test_the_reader_flag_needs_a_grant_in_the_role_being_built(
     tmp_path: Path,
 ) -> None:

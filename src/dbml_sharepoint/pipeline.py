@@ -349,10 +349,14 @@ def execute_build(
             # manifest this gate was replacing with a traceback. `True` skips
             # only this gate's own refusal, which would name the wrong cause.
             granted_anywhere_here = True
-        # `targets` empty while `declared_readers` is not means every reader
-        # source named an enum the schema does not declare. There is no name
-        # to ask about, and validation below says so by its own code.
-        if targets and not granted_anywhere_here:
+        # Exactly one, for two reasons. No target at all means every reader
+        # source named an enum the schema does not declare, leaving no name
+        # to ask about. More than one means a source resolved to a group per
+        # member, which cannot hold one identity: deferred, not swallowed,
+        # like the `UnknownFolderEnumError` arm above, so
+        # `group_enum_enrols_an_identity` names the fault and the manifest
+        # still gets written.
+        if len(targets) == 1 and not granted_anywhere_here:
             names = ", ".join(repr(g.name) for g in targets)
             raise typer.BadParameter(
                 f"--enterprise-reader names an account to enrol into "
