@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import NamedTuple
 
-from dbml_sharepoint.analysis.resolve import ResolvedMapping
+from dbml_sharepoint.analysis.resolve import ResolvedMapping, require_current_resolution
 from dbml_sharepoint.model.mapping_types import ListPermissionPolicy, RoleAssignment
 
 # Per Microsoft.SharePoint.SPBasePermissions (64-bit unsigned). All bit
@@ -309,6 +309,7 @@ def requires_manage_permissions(
     `resolved.groups` already is rather than fail closed on a mapping-wide
     check a `table_names`-scoped question never asked.
     """
+    require_current_resolution(resolved)
     mapping = resolved.mapping
     perms = mapping.permissions
     if perms is None:
@@ -389,6 +390,7 @@ def lists_granting_group(
     exactly that scope rather than fail the whole mapping over an entity
     this call was never asked about.
     """
+    require_current_resolution(resolved)
     mapping = resolved.mapping
 
     def holds(assignments: Iterable[RoleAssignment]) -> bool:

@@ -206,6 +206,22 @@ The schema is compared on `enum_members`, which is the whole of what a
 resolution takes from a schema, so two schemas differing only in ways
 the resolution cannot see are correctly accepted.
 
+### `require_current_resolution`
+
+```python
+def require_current_resolution(resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping) -> None
+```
+
+Refuse a resolution whose mapping was edited after it was taken.
+
+The half of `require_matching_resolution` that needs no bundle, so the
+public helpers taking a resolution ALONE can run it. `guards_resolution`
+cannot reach those: it matches arguments by type and fails closed when no
+bundle is supplied, so decorating them would refuse every legitimate call.
+Without this they mix a caller's current `mapping.permissions` with the
+cached `resolved.groups`, which is the staleness the snapshot exists to
+catch.
+
 ### `guards_resolution`
 
 ```python

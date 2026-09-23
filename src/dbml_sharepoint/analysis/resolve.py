@@ -310,7 +310,23 @@ def require_matching_resolution(
     """
     if resolved.mapping is not bundle.mapping:
         raise MismatchedResolutionError("its mapping is a different object")
-    current = _consumed_inputs(bundle.mapping)
+    require_current_resolution(resolved)
+    if schema is not None and resolved.enum_members != enum_members_of(schema):
+        raise MismatchedResolutionError("its enum members are not this schema's")
+
+
+def require_current_resolution(resolved: ResolvedMapping) -> None:
+    """Refuse a resolution whose mapping was edited after it was taken.
+
+    The half of `require_matching_resolution` that needs no bundle, so the
+    public helpers taking a resolution ALONE can run it. `guards_resolution`
+    cannot reach those: it matches arguments by type and fails closed when no
+    bundle is supplied, so decorating them would refuse every legitimate call.
+    Without this they mix a caller's current `mapping.permissions` with the
+    cached `resolved.groups`, which is the staleness the snapshot exists to
+    catch.
+    """
+    current = _consumed_inputs(resolved.mapping)
     changed = sorted(
         name for name, value in current.items() if value != resolved.consumed.get(name)
     )
@@ -318,8 +334,6 @@ def require_matching_resolution(
         raise MismatchedResolutionError(
             f"its {', '.join(changed)} changed after it was resolved",
         )
-    if schema is not None and resolved.enum_members != enum_members_of(schema):
-        raise MismatchedResolutionError("its enum members are not this schema's")
 
 
 def _argument_of[T](supplied: Iterable[object], kind: type[T]) -> T | None:

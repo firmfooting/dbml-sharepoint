@@ -27,6 +27,10 @@ import dbml_sharepoint
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.folders import UnknownFolderEnumError
 from dbml_sharepoint.analysis.groups import UnknownGroupEnumError
+from dbml_sharepoint.analysis.permissions import (
+    lists_granting_group,
+    requires_manage_permissions,
+)
 from dbml_sharepoint.analysis.resolve import (
     MismatchedResolutionError,
     ResolvedMapping,
@@ -491,8 +495,9 @@ def test_a_guarded_call_with_no_bundle_fails_closed(tmp_path: Path) -> None:
     assert "takes_no_bundle" in str(excinfo.value)
 
 
-def _public_consumers() -> list[tuple[str, Callable[..., object]]]:
-    """Every public function in the package taking a resolution AND a bundle.
+def _public_consumers(*, with_bundle: bool = True) -> list[tuple[str, Callable[..., object]]]:
+    """Every public function in the package taking a resolution, with or
+    without a bundle beside it.
 
     Annotations are compared as TEXT because `bundle.py` quotes its own
     (`ResolvedMapping` is a TYPE_CHECKING import there), and `typing`'s
@@ -512,9 +517,8 @@ def _public_consumers() -> list[tuple[str, Callable[..., object]]]:
             annotations = [
                 str(p.annotation) for p in inspect.signature(fn).parameters.values()
             ]
-            if any("ResolvedMapping" in a for a in annotations) and any(
-                "MappingBundle" in a for a in annotations
-            ):
+            takes_bundle = any("MappingBundle" in a for a in annotations)
+            if any("ResolvedMapping" in a for a in annotations) and takes_bundle == with_bundle:
                 found.append((f"{info.name}.{name}", fn))
     return found
 
@@ -534,3 +538,54 @@ def test_every_public_consumer_taking_both_is_guarded() -> None:
         if not getattr(fn, "__resolution_guarded__", False)
     ]
     assert unguarded == []
+
+
+def test_every_public_consumer_taking_a_resolution_alone_checks_it_is_current() -> None:
+    """`guards_resolution` cannot reach these, so they must check for
+    themselves.
+
+    It matches arguments by type and fails closed with no bundle, so
+    decorating a helper that takes a resolution alone would refuse every
+    legitimate call. Without the check they mix a caller's current mapping
+    with the cached resolution, which is the staleness the snapshot exists
+    to catch. The sibling test above walks the consumers that DO take a
+    bundle; between them no public consumer is unwatched.
+    """
+    consumers = _public_consumers(with_bundle=False)
+    # `requires_manage_permissions` and `lists_granting_group`. A bare `> 0`
+    # would pass on an import failure that found nothing at all.
+    assert len(consumers) >= 2, [name for name, _fn in consumers]
+    unchecked = [
+        name for name, fn in consumers
+        if "require_current_resolution" not in inspect.getsource(fn)
+    ]
+    assert unchecked == []
+
+
+def test_an_edit_after_resolution_is_refused_by_a_helper_taking_no_bundle() -> None:
+    """The defect the test above only gates against, in the helper itself.
+
+    A literal group appended after `resolve()` leaves `resolved.groups`
+    empty, so a mapping with no levels and no policy answered False and the
+    deploy would have created that group without ManagePermissions.
+    """
+    schema = make_schema(make_table("Risk", "Title"))
+    perms = PermissionsConfig(
+        levels=[], groups=[], default_policy=None, overrides={}, folder_policies={},
+    )
+    mapping = make_mapping(
+        entities={"Risk": EntityMapping(
+            name="Risk", kind="List", base_template=100, site_role="default",
+        )},
+        permissions=perms,
+    )
+    resolved = resolve(schema, mapping)
+    assert requires_manage_permissions(resolved, ["Risk"]) is False
+
+    perms.groups.append(_group("Late Arrivals"))
+
+    with pytest.raises(MismatchedResolutionError) as excinfo:
+        requires_manage_permissions(resolved, ["Risk"])
+    assert excinfo.value.detail == "its groups changed after it was resolved"
+    with pytest.raises(MismatchedResolutionError):
+        lists_granting_group(resolved, "Late Arrivals", ["Risk"])
