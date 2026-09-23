@@ -431,6 +431,93 @@ def test_question_call_detector_ignores_comments_and_strings() -> None:
     assert EXPECT_CALL.findall(text) == ["REAL"]
 
 
+# === A fixture row may not be a literal PASS (#559) ========================
+RECORD_HEAD = re.compile(r"^[ \t]*record\(", re.MULTILINE)
+
+#: A ratchet: each literal PASS here follows a guard in its own template.
+#: Entries come out when the row moves onto establishFixture, and none go in.
+LITERAL_FIXTURE_PASSES = {
+    ("batch-field-create-probe.js.j2", "transport.batch.fixture-scratch-list"):
+        "reached only after the create and an Id read-back both answered",
+    ("boolean-field-probe.js.j2", "field.boolean.fixture-scratch-list"):
+        "reached only after the create and an Id read-back both answered",
+    ("folder-create-refusal-probe.js.j2", "library.doc-lib.fixture-library-created"):
+        "reuses both libraries by title; BaseTemplate is printed and not yet declared",
+    ("list-identity-cache-probe.js.j2", "transport.cache.fixture-list-created"):
+        "reached only after the create and an Id read-back both answered",
+    ("operator-safety-grant-probe.js.j2", "access.list-acl.fixture-scratch-list"):
+        "reached only after an ownership claim and an inheritance read both held",
+    ("throttle-batch-probe.js.j2", "transport.throttle.fixture-scratch-list"):
+        "reached only after the create and an Id read-back both answered",
+}
+
+
+def _arguments(text: str, after_paren: int, wanted: int) -> list[str]:
+    """The first `wanted` top-level arguments of a call, scanned as `_first_argument` is."""
+    found: list[str] = []
+    start = after_paren
+    while len(found) < wanted:
+        argument = _first_argument(text, start)
+        found.append(argument)
+        start += len(argument)
+        if start >= len(text) or text[start] != ",":
+            break
+        start += 1
+    return found
+
+
+def _literal_fixture_passes(text: str) -> list[str]:
+    """Fixture ids this source records with the outcome written as the literal 'PASS'."""
+    ids = []
+    for call in RECORD_HEAD.finditer(text):
+        arguments = _arguments(text, call.end(), 3)
+        if len(arguments) < 3:
+            continue
+        literal = re.fullmatch(r"\s*'([^']*)'\s*", arguments[0])
+        if literal and "fixture" in literal.group(1) and arguments[2].strip() == "'PASS'":
+            ids.append(literal.group(1))
+    return ids
+
+
+def test_no_fixture_row_is_recorded_as_a_literal_pass() -> None:
+    """A literal cannot fail, so a fixture recorded that way establishes nothing.
+
+    `establishFixture` in the shared harness reads the declared properties back
+    and voids the dependents when one does not hold.
+    """
+    offenders = []
+    allowed = set()
+    templates = sorted(TEMPLATES.glob("*.js.j2"))
+    assert len(templates) >= _MIN_TEMPLATES, f"only {len(templates)} templates scanned"
+    for path in templates:
+        for fixture in _literal_fixture_passes(path.read_text(encoding="utf-8")):
+            if (path.name, fixture) in LITERAL_FIXTURE_PASSES:
+                allowed.add((path.name, fixture))
+            else:
+                offenders.append(f"{path.name}: {fixture}")
+    assert not offenders, (
+        f"Fixture row(s) recorded as a literal 'PASS': {offenders}. Read the fixture back "
+        f"through establishFixture, which records PASS only when every declared property holds."
+    )
+    assert allowed == set(LITERAL_FIXTURE_PASSES), (
+        f"Stale LITERAL_FIXTURE_PASSES entries, remove them: "
+        f"{sorted(set(LITERAL_FIXTURE_PASSES) - allowed)}"
+    )
+
+
+def test_the_literal_pass_detector_reads_the_shapes_it_claims_to() -> None:
+    text = """\
+      record('a.b.fixture-one', 'q', 'PASS', 'e');
+      record('a.b.fixture-two', `q ${x}`,
+             'PASS', `built from ${y}, with a comma`);
+      record('a.b.fixture-three', 'q', held ? 'PASS' : 'FAIL', 'e');
+      record('a.b.control-four', 'q', 'PASS', 'e');
+      record(id, 'q', 'PASS', 'e');
+      // record('a.b.fixture-five', 'q', 'PASS', 'e');
+    """
+    assert _literal_fixture_passes(text) == ["a.b.fixture-one", "a.b.fixture-two"]
+
+
 def test_probes_carry_no_control_characters() -> None:
     """A NUL byte reached generated deploy.js on this branch and was
     invisible to ruff, mypy, j2lint, the golden comparison and the whole
