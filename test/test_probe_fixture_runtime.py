@@ -335,6 +335,12 @@ _SCRATCH_COLUMNS = {"DM": _DATE, "DC": _DATE, "WM": _DATE_TIME}
 _COLUMN_DM = ("formula.validation.column-modified-allows-yesterday",
               "formula.validation.column-modified-allows-today",
               "formula.validation.column-modified-rejects-tomorrow")
+_COLUMN_ALL = {*_COLUMN_DM,
+               "formula.validation.column-created-allows-today",
+               "formula.validation.column-created-rejects-tomorrow",
+               "formula.validation.column-modified-allows-hour-ago",
+               "formula.validation.column-modified-rejects-hour-ahead",
+               "formula.validation.column-modified-update-sees-own-save"}
 _FIXTURE_DM = "formula.validation.fixture-dm-date-only-column"
 _FIXTURE_WM = "formula.validation.fixture-wm-date-time-column"
 
@@ -364,10 +370,22 @@ def test_modified_clock_voids_the_rows_on_a_reused_column_of_the_wrong_shape() -
     fixture = rows[_FIXTURE_DM]
     assert fixture["outcome"] == "FAIL", fixture
     assert "DisplayFormat differs: read 1, declared 0" in fixture["evidence"]
-    assert _void_ids(rows) == {"formula.validation.column-rule-cross-column-accepted", *_COLUMN_DM}
-    assert all(_FIXTURE_DM in rows[row_id]["evidence"] for row_id in _COLUMN_DM)
+    # One shared rule covers all three columns, so every row is blocked, not only DM's.
+    assert _void_ids(rows) == {"formula.validation.column-rule-cross-column-accepted", *_COLUMN_ALL}
+    assert all(_FIXTURE_DM in rows[row_id]["evidence"] for row_id in _COLUMN_ALL)
     assert not _item_writes(sent)
     assert not [r for r in sent if r["verb"] == "MERGE"]
+
+
+def test_modified_clock_voids_the_rows_on_a_column_renamed_to_a_probe_title() -> None:
+    """Payloads name DM as an internal name, so a field only titled DM is the wrong fixture."""
+    columns = {**_SCRATCH_COLUMNS, "DM": {**_DATE, "InternalName": "OldName"}}
+    rows, sent = _run_probe(_SCRATCH_MOCK, {"fields": columns}, "modified-clock-probe.js")
+
+    assert rows[_FIXTURE_DM]["outcome"] == "FAIL"
+    assert 'InternalName differs: read "OldName", declared "DM"' in rows[_FIXTURE_DM]["evidence"]
+    assert _void_ids(rows) == {"formula.validation.column-rule-cross-column-accepted", *_COLUMN_ALL}
+    assert not _item_writes(sent)
 
 
 _LIST_DM = ("formula.validation.list-modified-allows-yesterday",
@@ -379,6 +397,13 @@ _LIST_RULE = ("formula.validation.list-modified-rule-accepted",
 _LIST_UPDATE = ("formula.validation.list-modified-update-sees-own-save",
                 "formula.validation.control-list-modified-update-rejects-hour-ahead")
 _SEED = "formula.validation.fixture-update-seed-created"
+_LIST_ALL = {*_LIST_RULE, *_LIST_DM, *_LIST_UPDATE, _SEED,
+             "formula.validation.list-created-allows-today",
+             "formula.validation.list-created-rejects-tomorrow",
+             "formula.validation.list-modified-allows-20h-ago",
+             "formula.validation.list-modified-allows-hour-ago",
+             "formula.validation.list-modified-rejects-hour-ahead",
+             "formula.validation.list-modified-rejects-20h-ahead"}
 
 
 def test_list_modified_clock_measures_on_date_columns_it_read_back() -> None:
@@ -399,7 +424,7 @@ def test_list_modified_clock_voids_the_rows_on_a_reused_column_of_the_wrong_shap
 
     assert rows[_FIXTURE_DM]["outcome"] == "FAIL"
     assert "TypeAsString differs" in rows[_FIXTURE_DM]["evidence"]
-    assert _void_ids(rows) == {*_LIST_RULE, *_LIST_DM}
+    assert _void_ids(rows) == _LIST_ALL
     assert not _item_writes(sent)
     assert not [r for r in sent if r["verb"] == "MERGE"]
 
@@ -530,6 +555,19 @@ def test_datetime_sentinel_measures_on_a_date_time_column_it_read_back(
     assert rows["formula.datetime.now-function-accepted"]["outcome"] == "ACCEPTED"
     assert not _void_ids(rows)
     assert _item_writes(sent)
+
+
+def test_datetime_sentinel_voids_on_a_column_renamed_to_probe_when() -> None:
+    """Saves and CAML name ProbeWhen as an internal name, which a title match does not prove."""
+    fields = {"ProbeWhen": {
+        "InternalName": "Renamed", "TypeAsString": "DateTime", "DisplayFormat": 1,
+        "ValidationFormula": "",
+    }}
+    rows, _ = _run_probe(_SENTINEL_MOCK, {"fields": fields}, "datetime-sentinel-probe.js")
+
+    assert rows[_PROBE_WHEN]["outcome"] == "FAIL", rows[_PROBE_WHEN]
+    assert "InternalName differs" in rows[_PROBE_WHEN]["evidence"]
+    assert _void_ids(rows) == _TIME_OF_DAY
 
 
 def test_datetime_sentinel_voids_the_time_of_day_rows_on_a_reused_date_only_column() -> None:

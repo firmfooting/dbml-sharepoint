@@ -402,12 +402,14 @@
   const have = new Set(((await spGet(`${fields}?$select=Title&$top=500`)).body?.value || []).map((f) => f.Title));
   // Each column is reused by Title, so its shape is read back before any rule or save rests on it.
   const COLUMNS = [
-    ['DM', 0, 'formula.validation.fixture-dm-date-only-column', DM_ROWS],
-    ['DC', 0, 'formula.validation.fixture-dc-date-only-column', DC_ROWS],
-    ['WM', 1, 'formula.validation.fixture-wm-date-time-column', WM_ROWS],
+    ['DM', 0, 'formula.validation.fixture-dm-date-only-column'],
+    ['DC', 0, 'formula.validation.fixture-dc-date-only-column'],
+    ['WM', 1, 'formula.validation.fixture-wm-date-time-column'],
   ];
+  // One shared rule covers all three, so any column that fails blocks every row.
+  const ALL_ROWS = [...DM_ROWS, ...DC_ROWS, ...WM_ROWS];
   let shaped = true;
-  for (const [title, displayFormat, fixture, rows] of COLUMNS) {
+  for (const [title, displayFormat, fixture] of COLUMNS) {
     if (!have.has(title)) {
       const made = await post(fields, { __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4, Title: title, DisplayFormat: displayFormat });
       log(made.ok ? 'OK' : 'FAIL', `${title} create answered HTTP ${made.status}${made.ok ? '' : ` ${reason(made)}`}`);
@@ -415,8 +417,8 @@
     // The whole field is read: a $select naming a property the entity lacks answers 400.
     const held = await establishFixture(fixture,
       () => spGet(`${fields}/getbyinternalnameortitle('${enc(title)}')`),
-      { TypeAsString: 'DateTime', DisplayFormat: displayFormat },
-      ['formula.validation.column-rule-cross-column-accepted', ...rows]);
+      { InternalName: title, TypeAsString: 'DateTime', DisplayFormat: displayFormat },
+      ['formula.validation.column-rule-cross-column-accepted', ...ALL_ROWS]);
     shaped = held && shaped;
   }
   if (!shaped) return report();

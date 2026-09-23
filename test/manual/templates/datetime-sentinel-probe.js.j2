@@ -468,7 +468,7 @@
   const dateTimeHeld = await establishFixture(
     'formula.datetime.fixture-probewhen-date-time-column',
     () => spGet(`${fieldsPath}/getbyinternalnameortitle('${FIELD}')`),
-    { TypeAsString: 'DateTime', DisplayFormat: 1 }, TIME_OF_DAY_ROWS);
+    { InternalName: FIELD, TypeAsString: 'DateTime', DisplayFormat: 1 }, TIME_OF_DAY_ROWS);
 
   // ---- Timestamps -----------------------------------------------------
   // Written as UTC ISO, which is how SharePoint stores and how REST wants

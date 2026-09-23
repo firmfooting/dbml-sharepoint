@@ -95,15 +95,17 @@
   const itemType = list.body.ListItemEntityTypeFullName;
   const items = `${listPath}/items`;
   // DM, DC and WM are left by the modified-clock probe and reused by Title, so each shape is read back first.
+  // The run stops on any failed column, so each fixture blocks every row.
+  const ALL_ROWS = [...RULE_ROWS, ...DM_ROWS, ...DC_ROWS, ...WM_ROWS];
   let shaped = true;
-  for (const [title, displayFormat, fixture, rows] of [
-    ['DM', 0, 'formula.validation.fixture-dm-date-only-column', DM_ROWS],
-    ['DC', 0, 'formula.validation.fixture-dc-date-only-column', DC_ROWS],
-    ['WM', 1, 'formula.validation.fixture-wm-date-time-column', WM_ROWS],
+  for (const [title, displayFormat, fixture] of [
+    ['DM', 0, 'formula.validation.fixture-dm-date-only-column'],
+    ['DC', 0, 'formula.validation.fixture-dc-date-only-column'],
+    ['WM', 1, 'formula.validation.fixture-wm-date-time-column'],
   ]) {
     const held = await establishFixture(fixture,
       () => spGet(`${listPath}/fields/getbyinternalnameortitle('${enc(title)}')`),
-      { TypeAsString: 'DateTime', DisplayFormat: displayFormat }, [...RULE_ROWS, ...rows]);
+      { InternalName: title, TypeAsString: 'DateTime', DisplayFormat: displayFormat }, ALL_ROWS);
     shaped = held && shaped;
   }
   if (!shaped) return report();

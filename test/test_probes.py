@@ -329,12 +329,15 @@ def _first_argument(text: str, after_paren: int) -> str:
     """
     depth = 0
     quote: str | None = None
+    escaped = False
     for position in range(after_paren, len(text)):
         char = text[position]
         if quote is not None:
-            if char == "\\":
-                continue
-            if char == quote:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True  # the next character is content, even a quote
+            elif char == quote:
                 quote = None
             continue
         if char in "'\"`":
@@ -514,8 +517,11 @@ def test_the_literal_pass_detector_reads_the_shapes_it_claims_to() -> None:
       record('a.b.control-four', 'q', 'PASS', 'e');
       record(id, 'q', 'PASS', 'e');
       // record('a.b.fixture-five', 'q', 'PASS', 'e');
+      record('a.b.fixture-six', 'the owner\\'s fixture', 'PASS', 'e');
     """
-    assert _literal_fixture_passes(text) == ["a.b.fixture-one", "a.b.fixture-two"]
+    assert _literal_fixture_passes(text) == [
+        "a.b.fixture-one", "a.b.fixture-two", "a.b.fixture-six",
+    ]
 
 
 def test_probes_carry_no_control_characters() -> None:
