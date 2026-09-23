@@ -8,7 +8,11 @@ from typing import NamedTuple
 
 from dbml_sharepoint.analysis.folders import folder_policies
 from dbml_sharepoint.analysis.groups import resolvable_groups
-from dbml_sharepoint.model.mapping_types import Mapping, RoleAssignment
+from dbml_sharepoint.model.mapping_types import (
+    ListPermissionPolicy,
+    Mapping,
+    RoleAssignment,
+)
 
 # Per Microsoft.SharePoint.SPBasePermissions (64-bit unsigned). All bit
 # positions below 32 land in Low; positions 32..62 land in High. Values
@@ -255,6 +259,24 @@ ASSOCIATED_GROUP_ALIASES = {
 }
 
 
+def _policy_writes(policy: ListPermissionPolicy) -> bool:
+    """True when applying `policy` performs at least one ACL WRITE.
+
+    Read off the one body both scopes go through,
+    `templates/deploy/_acls.js.j2::reconcileScope`: it POSTs
+    `breakroleinheritance` only when the policy breaks inheritance,
+    `addroleassignment` only for a declared assignment it does not already
+    find, and `removeroleassignment` only in exact mode, where an empty
+    declared set is the allowlist that strips the scope. Every other request
+    it makes is a read, so those three are the whole of the write set.
+    """
+    return (
+        policy.break_inheritance
+        or bool(policy.assignments)
+        or policy.reconcile_mode == "exact"
+    )
+
+
 def requires_manage_permissions(
     mapping: Mapping,
     table_names: Iterable[str],
@@ -276,11 +298,19 @@ def requires_manage_permissions(
 
     A per-list policy counts even with `break_inheritance: false`: deploy.js
     still binds the declared role assignments on the (inherited) list, which
-    still needs the bit. `table_names` should be the entity names actually in
-    this build (`analysis.ordering.site_tables_in_order`'s output), not every
-    entity in the mapping -- a policy scoped to a site_role this build does
-    not deploy must not demand a right the build never exercises. `groups`
-    is resolved through `analysis/groups.py` for the same reason.
+    still needs the bit. What it does NOT do is count the policy's existence,
+    which was a proxy for the ACL work it performs: a policy that breaks no
+    inheritance, declares no assignment and reconciles `configured` makes
+    `reconcileScope` read and write nothing, and demanding the right for it
+    made both the assessment and deploy.js's live preflight reject an
+    operator holding every right the deployment exercises. `_policy_writes`
+    asks the effective question for both scopes.
+
+    `table_names` should be the entity names actually in this build
+    (`analysis.ordering.site_tables_in_order`'s output), not every entity in
+    the mapping -- a policy scoped to a site_role this build does not deploy
+    must not demand a right the build never exercises. `groups` is resolved
+    through `analysis/groups.py` for the same reason.
     """
     perms = mapping.permissions
     if perms is None:
@@ -293,11 +323,11 @@ def requires_manage_permissions(
     # `table_names` like a per-list policy and not as a mapping-wide fact. A
     # policy on a library this build does not deploy must not make the build
     # demand a right it never exercises.
-    return any(
-        mapping.permissions_for_entity(name) is not None
-        or name in perms.folder_policies
-        for name in table_names
-    )
+    for name in table_names:
+        policies = (mapping.permissions_for_entity(name), perms.folder_policies.get(name))
+        if any(policy is not None and _policy_writes(policy) for policy in policies):
+            return True
+    return False
 
 
 class GroupReach(NamedTuple):

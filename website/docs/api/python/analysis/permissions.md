@@ -117,11 +117,19 @@ validator findings.
 
 A per-list policy counts even with `break_inheritance: false`: deploy.js
 still binds the declared role assignments on the (inherited) list, which
-still needs the bit. `table_names` should be the entity names actually in
-this build (`analysis.ordering.site_tables_in_order`'s output), not every
-entity in the mapping -- a policy scoped to a site_role this build does
-not deploy must not demand a right the build never exercises. `groups`
-is resolved through `analysis/groups.py` for the same reason.
+still needs the bit. What it does NOT do is count the policy's existence,
+which was a proxy for the ACL work it performs: a policy that breaks no
+inheritance, declares no assignment and reconciles `configured` makes
+`reconcileScope` read and write nothing, and demanding the right for it
+made both the assessment and deploy.js's live preflight reject an
+operator holding every right the deployment exercises. `_policy_writes`
+asks the effective question for both scopes.
+
+`table_names` should be the entity names actually in this build
+(`analysis.ordering.site_tables_in_order`'s output), not every entity in
+the mapping -- a policy scoped to a site_role this build does not deploy
+must not demand a right the build never exercises. `groups` is resolved
+through `analysis/groups.py` for the same reason.
 
 ### `GroupReach`
 
