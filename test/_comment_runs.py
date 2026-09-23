@@ -16,16 +16,13 @@ import re
 import subprocess
 import tokenize
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 
 #: The threshold #610 measured at; six lines of why is already generous.
 MIN_RUN = 7
-
-#: The trees whose tracked files are scanned.
-ROOTS = ("src", "test", "scripts", "website/scripts")
 
 #: Generated output, excluded for the reason markdownlint excludes it.
 GENERATED = ("test/fixtures/expected/", "website/docs/api/")
@@ -40,12 +37,20 @@ HASH_STYLE = frozenset({".yaml", ".yml"})
 #: A `/` after one of these (or at a line's start) opens a regex, not a division.
 REGEX_AFTER = frozenset("(,=:[!&|?{};+-*%<>~^") | {""}
 
+#: A `/` after one of these words also opens a regex.
+REGEX_KEYWORD = re.compile(
+    r"\b(?:return|typeof|instanceof|in|of|new|delete|void|throw|case|do|else|yield|await)$",
+)
+
+#: A key or sequence entry whose value is a `|` or `>` block scalar.
+BLOCK_SCALAR = re.compile(r"(?:^\s*-|:)\s+[|>][1-9+-]*\s*(?:#.*)?$")
+
 #: Stripped from each end of a comment line before it is fingerprinted.
 MARKERS = re.compile(r"^(?:\{#|/\*+|//+|#+:?|\*+)|(?:#\}|\*+/)$")
 
 #: Checked in order against a run's first line; the first match names it.
 EXEMPTIONS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("MEASURED", re.compile(r"MEASURED")),
+    ("MEASURED", re.compile(r"(?<![\w-])MEASURED\b")),
     ("dated", re.compile(r"\b\d{4}-\d{2}-\d{2}\b")),
     ("attribute", re.compile(r"^#:")),
     ("banner", re.compile(r"-{4,}")),
@@ -78,22 +83,44 @@ def _python_comment_lines(text: str) -> set[int]:
     return found
 
 
-def _block_comment_lines(
-    lines: list[str], line_marker: str | None, opener: str, closer: str,
-) -> set[int]:
-    """Lines inside `opener`...`closer` blocks or led by `line_marker`."""
+def _jinja_opens(text: str) -> bool:
+    """Whether `text` leaves a Jinja comment open."""
+    opener = text.rfind("{#")
+    return opener >= 0 and "#}" not in text[opener + 2 :]
+
+
+def _jinja_comment_lines(lines: list[str]) -> set[int]:
+    """Lines led by `{#` or inside a `{# #}` block; a block opened after code counts on."""
     found: set[int] = set()
     inside = False
     for number, line in enumerate(lines, start=1):
         stripped = line.strip()
         if inside:
             found.add(number)
-            inside = closer not in stripped
-        elif line_marker is not None and stripped.startswith(line_marker):
+            closer = stripped.find("#}")
+            inside = closer < 0 or _jinja_opens(stripped[closer + 2 :])
+        else:
+            if stripped.startswith("{#"):
+                found.add(number)
+            inside = _jinja_opens(stripped)
+    return found
+
+
+def _yaml_comment_lines(lines: list[str]) -> set[int]:
+    """`#` lines, skipping block scalar content, where a `#` is text."""
+    found: set[int] = set()
+    scalar_indent: int | None = None
+    for number, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        indent = len(line) - len(line.lstrip())
+        if scalar_indent is not None:
+            if not stripped or indent > scalar_indent:
+                continue
+            scalar_indent = None
+        if stripped.startswith("#"):
             found.add(number)
-        elif stripped.startswith(opener):
-            found.add(number)
-            inside = closer not in stripped[len(opener):]
+        elif BLOCK_SCALAR.search(line):
+            scalar_indent = indent
     return found
 
 
@@ -113,50 +140,83 @@ def _regex_end(line: str, index: int) -> int:
     return index
 
 
-def _template_state(line: str, stack: list[int]) -> list[int]:
-    """The template nesting after a JS line: -1 is a literal, n is `${` brace depth."""
-    stack = list(stack)
+def _starts_regex(before: str) -> bool:
+    """Whether a `/` after `before` on its line opens a regex rather than divides."""
+    before = before.rstrip()
+    return before[-1:] in REGEX_AFTER or REGEX_KEYWORD.search(before) is not None
+
+
+@dataclass
+class _CState:
+    """Lexer state carried across lines: an open block comment and template frames."""
+
+    block: bool = False
+    #: -1 is a template literal, n >= 0 the brace depth of a `${` inside one.
+    stack: list[int] = field(default_factory=list)
+
+
+def _lex_c_line(line: str, state: _CState, quotes: str, js: bool) -> bool:
+    """Advance `state` over one line; whether the line is a comment line."""
+    # A regex after `)` or a name reads as division, so a quote or backtick in it misleads.
+    comment = state.block
+    code = False
     quote = ""
     index = 0
     while index < len(line):
         char = line[index]
-        if char == "\\":
-            index += 2
-            continue
-        if stack and stack[-1] < 0:
-            if char == "`":
-                stack.pop()
+        step = 1
+        if state.stack and state.stack[-1] < 0:
+            if char == "\\":
+                step = 2
+            elif char == "`":
+                state.stack.pop()
             elif line.startswith("${", index):
-                stack.append(0)
-                index += 1
+                state.stack.append(0)
+                step = 2
+        elif state.block:
+            if line.startswith("*/", index):
+                state.block = False
+                step = 2
+        elif char.isspace():
+            pass
         elif quote:
+            step = 2 if char == "\\" else 1
             quote = "" if char == quote else quote
-        elif char in "'\"":
-            quote = char
-        elif char == "`":
-            stack.append(-1)
         elif line.startswith("//", index):
+            comment = comment or not code
             break
-        elif char == "/" and line[:index].rstrip()[-1:] in REGEX_AFTER:
-            index = _regex_end(line, index)
-        elif stack and char in "{}":
-            stack[-1] += 1 if char == "{" else -1
-            if stack[-1] < 0:
-                stack.pop()
-        index += 1
-    return stack
+        elif line.startswith("/*", index):
+            comment = comment or not code
+            state.block = True
+            step = 2
+        else:
+            code = True
+            if char in quotes:
+                quote = char
+            elif js and char == "`":
+                state.stack.append(-1)
+            elif js and char == "/" and _starts_regex(line[:index]):
+                step = _regex_end(line, index) - index + 1
+            elif state.stack and char in "{}":
+                state.stack[-1] += 1 if char == "{" else -1
+                if state.stack[-1] < 0:
+                    state.stack.pop()
+        index += step
+    return comment
 
 
-def _template_lines(lines: list[str], comments: set[int]) -> set[int]:
-    """Lines that open inside a JS template literal, where `//` is string content."""
-    # A regex after `)` or a name reads as division, so a quote or backtick in it misleads.
+def _c_comment_lines(lines: list[str], skip: set[int], suffix: str) -> set[int]:
+    """`//` lines and `/* */` blocks, not counting either inside a JS string."""
     found: set[int] = set()
-    stack: list[int] = []
+    state = _CState()
+    js = suffix == ".js"
+    quotes = '"' if suffix == ".pq" else "'\""
     for number, line in enumerate(lines, start=1):
-        if stack:
+        in_literal = bool(state.stack) and state.stack[-1] < 0
+        if number in skip and not in_literal:
+            continue
+        if _lex_c_line(line, state, quotes, js) and not in_literal:
             found.add(number)
-        if stack or number not in comments:
-            stack = _template_state(line, stack)
     return found
 
 
@@ -168,14 +228,11 @@ def _comment_lines(text: str, name: str) -> set[int]:
     inner = name.removesuffix(".j2")
     suffix = Path(inner).suffix
     if inner != name:
-        found |= _block_comment_lines(lines, None, "{#", "#}")
+        found |= _jinja_comment_lines(lines)
     if suffix in HASH_STYLE:
-        found |= {n for n, line in enumerate(lines, start=1) if line.lstrip().startswith("#")}
+        found |= _yaml_comment_lines(lines)
     if suffix in C_STYLE:
-        c_style = _block_comment_lines(lines, "//", "/*", "*/")
-        if suffix == ".js":
-            c_style -= _template_lines(lines, found | c_style)
-        found |= c_style
+        found |= _c_comment_lines(lines, set(found), suffix)
     return found
 
 
@@ -219,9 +276,9 @@ def _scanned_syntax(name: str) -> bool:
 
 
 def scanned_files(root: Path) -> list[str]:
-    """Tracked files in scope, so untracked scratch can never move a count."""
+    """Every tracked file in a scanned syntax, so untracked scratch never counts."""
     result = subprocess.run(
-        ["git", "ls-files", "-z", "--", *ROOTS],
+        ["git", "ls-files", "-z"],
         cwd=root, capture_output=True, text=True, check=False,
     )
     if result.returncode != 0:

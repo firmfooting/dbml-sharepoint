@@ -160,6 +160,52 @@ def test_an_evidence_shaped_first_line_exempts_the_run(first: str, exemption: st
     assert [run.exemption for run in runs] == [exemption]
 
 
+@pytest.mark.parametrize("first", ["UNMEASURED assumption", "UN-MEASURED guess"])
+def test_unmeasured_does_not_exempt_a_run(first: str) -> None:
+    runs = comment_runs(_lines("#", MIN_RUN, first), "a.py")
+
+    assert [run.exemption for run in runs] == [None]
+
+
+@pytest.mark.parametrize(
+    ("name", "opener", "closer"),
+    [("a.js", "run(); /* why", " */"), ("s.dbml", "Table t { /* why", " */"),
+     ("a.md.j2", "{{ x }} {# why", "#}")],
+)
+def test_a_block_opened_after_code_counts_its_lines_but_not_the_code_line(
+    name: str, opener: str, closer: str,
+) -> None:
+    text = opener + "\n" + "   more\n" * (MIN_RUN - 1) + closer + "\nafter\n"
+
+    assert [(run.first_line, run.length) for run in _flagged(text, name)] == [(2, 7)]
+
+
+@pytest.mark.parametrize("indicator", ["|", ">", "|-", ">+", "|2"])
+def test_hash_lines_in_a_yaml_block_scalar_are_content(indicator: str) -> None:
+    text = f"notes: {indicator}\n" + "  # A heading\n" * MIN_RUN + "next: 1\n"
+
+    assert comment_runs(text, "release.yaml") == []
+
+
+def test_a_yaml_comment_run_after_a_block_scalar_counts() -> None:
+    text = "- notes: |\n    text\n" + _lines("#", MIN_RUN)
+
+    assert [(run.first_line, run.length) for run in _flagged(text, "a.yaml")] == [(3, 7)]
+
+
+def test_comments_inside_a_template_interpolation_count() -> None:
+    text = "const a = `x ${\n" + "  // why\n" * MIN_RUN + "  value\n}`;\n"
+
+    assert [(run.first_line, run.length) for run in _flagged(text, "a.js")] == [(2, 7)]
+
+
+@pytest.mark.parametrize("keyword", ["return", "typeof", "case", "yield", "await", "else"])
+def test_a_regex_after_a_keyword_does_not_open_a_template(keyword: str) -> None:
+    text = f"function f() {{\n  {keyword} /`/;\n}}\n" + _lines("//", MIN_RUN)
+
+    assert [run.length for run in _flagged(text, "a.js")] == [7]
+
+
 def test_an_attribute_docstring_exempts_the_run() -> None:
     text = "#: why\n" * MIN_RUN + "LIMIT = 3\n"
 
@@ -248,6 +294,9 @@ def test_the_scan_reads_tracked_files_only() -> None:
     names = scanned_files(REPO_ROOT)
 
     assert "test/_comment_runs.py" in names
+    assert "examples/minimal/mapping.yaml" in names
+    assert "examples/project-tracker/schema.dbml" in names
+    assert ".github/workflows/ci.yml" in names
     assert all(not name.startswith("test/fixtures/expected/") for name in names)
 
 

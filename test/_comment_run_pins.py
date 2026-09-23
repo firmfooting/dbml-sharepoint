@@ -5,6 +5,34 @@ pinned; adding one needs a reason in the pull request.
 """
 
 PINNED: dict[str, list[str]] = {
+    ".coderabbit.yaml": [
+        "9eade70eab24",
+    ],
+    ".github/workflows/ci.yml": [
+        "22a9938dfbc0",
+        "3b57d9338deb",
+        "4d69f8a4afa4",
+    ],
+    ".github/workflows/pr-title.yml": [
+        "3f9f2fc5f0fc",
+    ],
+    ".github/workflows/publish.yml": [
+        "ef250451bb63",
+    ],
+    ".markdownlint-cli2.yaml": [
+        "af7685e9fa36",
+    ],
+    ".pre-commit-config.yaml": [
+        "abb4f9485902",
+        "b2786d1ef117",
+        "f3315e06d334",
+    ],
+    "examples/project-tracker/mapping.yaml": [
+        "e96437a0f4ba",
+    ],
+    "examples/project-tracker/schema.dbml": [
+        "1d634e98f700",
+    ],
     "src/dbml_sharepoint/analysis/checks/_demo.py": [
         "c22e6ed05127",
     ],
