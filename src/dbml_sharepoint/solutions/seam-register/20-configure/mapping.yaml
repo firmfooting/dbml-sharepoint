@@ -36,7 +36,7 @@ default_formulas:
     RaisedOn: "=TODAY()"
 
 # The two runners may delete their own mistakes; people offered rows to
-# check may edit but not delete; everyone else on the site reads.
+# check may edit but not delete; site members read. Site Visitors get nothing.
 groups:
   - name: "{prefix} Discovery Team"
     description: "The two people running the exercise: interviews, evidence, register hygiene and the weekly five lines."
@@ -105,8 +105,8 @@ list_permissions:
         level: "Contribute"
       - principal: { kind: group, name: "dbml Enterprise Readers" }
         level: "Read"
-  # Rows on four lists point at a provider, so the team retires one by
-  # Status rather than deleting it.
+  # Rows on four lists point at a provider, so it is retired by Status and
+  # only dbml List Administrators can delete one.
   overrides:
     Provider:
       break_inheritance: true
@@ -121,7 +121,7 @@ list_permissions:
         - principal: { kind: associated_member_group }
           level: "Read"
         - principal: { kind: associated_owner_group }
-          level: "Contribute"
+          level: "{prefix} Contribute No Delete"
         - principal: { kind: group, name: "dbml Enterprise Readers" }
           level: "Read"
 
@@ -409,19 +409,22 @@ views:
         SupportTeam: 200
         RunByProvider: 220
         Confidence: 120
-    # A save rule cannot read a lookup, so a row whose side shows the
-    # provider column and leaves it blank is found here rather than refused.
-    # The sides are the ones form_visibility shows the column for.
-    - title: "Provider not named"
-      fields: [Title, Area, RunBySide, RunByProvider, SupportSide, SupportProvider]
+    # A save rule cannot read a lookup, so both provider gaps are found here
+    # rather than refused: a side that owes a provider with none named, and
+    # a provider left behind on a side that has none. The second does not
+    # rest on the form keeping a held lookup visible, which is unmeasured.
+    # Split in two: one view over both lookups renders 14 comparisons, past
+    # the 10 the filter editor can show.
+    - title: "Run-by provider to check"
+      fields: [Title, Area, RunBySide, RunByProvider, RunByTeam]
       where:
         - any_of:
             - all_of:
                 - { field: RunBySide, op: in, value: [Provider, "Third party", Shared] }
                 - { field: RunByProvider, op: is_null }
             - all_of:
-                - { field: SupportSide, op: in, value: [Provider, "Third party", Shared] }
-                - { field: SupportProvider, op: is_null }
+                - { field: RunBySide, op: in, value: [Us, Unknown] }
+                - { field: RunByProvider, op: is_not_null }
       sort:
         - { field: Area, direction: asc }
       widths:
@@ -429,8 +432,25 @@ views:
         Area: 220
         RunBySide: 160
         RunByProvider: 220
+        RunByTeam: 200
+    - title: "Support provider to check"
+      fields: [Title, Area, SupportSide, SupportProvider, SupportTeam]
+      where:
+        - any_of:
+            - all_of:
+                - { field: SupportSide, op: in, value: [Provider, "Third party", Shared] }
+                - { field: SupportProvider, op: is_null }
+            - all_of:
+                - { field: SupportSide, op: in, value: [Us, Unknown] }
+                - { field: SupportProvider, op: is_not_null }
+      sort:
+        - { field: Area, direction: asc }
+      widths:
+        Title: 300
+        Area: 220
         SupportSide: 160
         SupportProvider: 220
+        SupportTeam: 200
     - title: "By area"
       fields: ['@identity', RunByTeam, DecidedBy, FirstPass]
       group_by: { field: Area, collapsed: false }
@@ -681,12 +701,17 @@ views:
         Status: 120
         DueOn: 150
         Services: 240
-    # The same gap the service list's view catches, for this list's lookup.
-    - title: "Provider not named"
+    # The same two gaps the service list's view catches, for this list's lookup.
+    - title: "Provider to check"
       fields: [Title, DocumentType, Holder, HolderSide, HolderProvider, Status]
       where:
-        - { field: HolderSide, op: in, value: [Provider, "Third party", Shared] }
-        - { field: HolderProvider, op: is_null }
+        - any_of:
+            - all_of:
+                - { field: HolderSide, op: in, value: [Provider, "Third party", Shared] }
+                - { field: HolderProvider, op: is_null }
+            - all_of:
+                - { field: HolderSide, op: in, value: [Us, Unknown] }
+                - { field: HolderProvider, op: is_not_null }
       sort:
         - { field: Title, direction: asc }
       widths:
@@ -806,12 +831,17 @@ views:
         InterviewDate: 150
         Status: 120
         FollowUps: 320
-    # The same gap the service list's view catches, for this list's lookup.
-    - title: "Provider not named"
+    # The same two gaps the service list's view catches, for this list's lookup.
+    - title: "Provider to check"
       fields: [Title, IntervieweeSide, IntervieweeProvider, InterviewDate, Status]
       where:
-        - { field: IntervieweeSide, op: in, value: [Provider, "Third party", Shared] }
-        - { field: IntervieweeProvider, op: is_null }
+        - any_of:
+            - all_of:
+                - { field: IntervieweeSide, op: in, value: [Provider, "Third party", Shared] }
+                - { field: IntervieweeProvider, op: is_null }
+            - all_of:
+                - { field: IntervieweeSide, op: in, value: [Us, Unknown] }
+                - { field: IntervieweeProvider, op: is_not_null }
       sort:
         - { field: Title, direction: asc }
       widths:
@@ -873,12 +903,17 @@ views:
         ResolverSide: 160
         ResolverTeam: 220
         Summary: 320
-    # The same gap the service list's view catches, for this list's lookup.
-    - title: "Provider not named"
+    # The same two gaps the service list's view catches, for this list's lookup.
+    - title: "Provider to check"
       fields: [Title, Service, IncidentDate, ResolverSide, ResolverProvider, ResolverTeam]
       where:
-        - { field: ResolverSide, op: in, value: [Provider, "Third party", Shared] }
-        - { field: ResolverProvider, op: is_null }
+        - any_of:
+            - all_of:
+                - { field: ResolverSide, op: in, value: [Provider, "Third party", Shared] }
+                - { field: ResolverProvider, op: is_null }
+            - all_of:
+                - { field: ResolverSide, op: in, value: [Us, Unknown] }
+                - { field: ResolverProvider, op: is_not_null }
       sort:
         - { field: Title, direction: asc }
       widths:
@@ -943,9 +978,9 @@ form_formatting:
     body: formatting/weekly-update-form-body.json
 
 # The later blocks appear once the row has reached them, and a provider
-# column once the side says a provider or third party is involved. A column
-# that already holds a value stays shown, so a status or side changed back
-# never leaves a value on the row that the form cannot reach.
+# column once the side says a provider or third party is involved. A
+# provider column that holds a value also stays shown; Provider to check is
+# what guarantees a stale one is found.
 form_visibility:
   Service:
     reconcile: exact
@@ -963,11 +998,10 @@ form_visibility:
   Seam:
     reconcile: exact
     columns:
+      # On every existing seam, so a status set back can have its date
+      # cleared; a self-referencing formula is unmeasured.
       ResolvedOn:
-        when:
-          any_of:
-            - { field: Status, op: eq, value: Resolved }
-            - { field: ResolvedOn, op: is_not_null }
+        new: false
       Resolution:
         when:
           - { field: Status, op: eq, value: Resolved }
@@ -980,11 +1014,9 @@ form_visibility:
       DueOn:
         when:
           - { field: Status, op: in, value: [Asked, Received, Refused, "Not found"] }
+      # On every existing ask, for the same reason as a seam's Resolved on.
       AnsweredOn:
-        when:
-          any_of:
-            - { field: Status, op: in, value: [Received, Refused, "Not found"] }
-            - { field: AnsweredOn, op: is_not_null }
+        new: false
       SignedBy:
         when:
           - { field: Status, op: eq, value: Received }
@@ -1336,6 +1368,21 @@ demo_items:
         Confidence: Claimed
         FirstPass: false
         Notes: "Second pass. One document says who runs it; nobody has checked it against a second source yet."
+    # A backlog row that owes a provider on its run-by side, so the run-by
+    # provider check has something to show.
+    - key: svc-badges
+      values:
+        Title: "[DEMO] Visitor badge printing"
+        Area: "Infrastructure and devices"
+        Description: "Demo row. Printing visitor badges at reception."
+        RunBySide: "Third party"
+        RunByTeam: "The badge printer's vendor"
+        SupportSide: Unknown
+        SinglePerson: false
+        Documentation: "Not asked"
+        Confidence: Assumed
+        FirstPass: false
+        Notes: "Demo row. One interview said a vendor runs it; nobody has said which."
   Evidence:
     - key: evd-accounts-interview
       values:

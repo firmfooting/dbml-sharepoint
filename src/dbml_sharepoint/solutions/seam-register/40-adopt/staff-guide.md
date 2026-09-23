@@ -80,7 +80,10 @@ does in two sentences a non-ICT reader can follow.
 either needs the team or role beside it; the save rule holds you to that.
 Once the side is *Provider*, *Third party* or *Shared*, **Run by provider**
 or **Support provider** appears: pick the provider. The save rule cannot
-check that one, so **Provider not named** lists the rows that still owe it.
+check that one, so **Run-by provider to check** and **Support provider to
+check** list the rows that still owe one. If you change the side back to
+*Us* or *Unknown*, clear the provider; the same views list any row still
+naming one.
 **Decided by** is who can change it. **Hosting** is where it runs.
 **Dependency** is what inside this service we cannot do without a
 provider, stated plainly. Blank means none known, not none.

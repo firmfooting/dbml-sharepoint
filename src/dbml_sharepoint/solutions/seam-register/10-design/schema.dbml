@@ -384,7 +384,7 @@ Table Incident {
 Table WeeklyUpdate {
   Id           int      [pk, increment]
   Title        nvarchar [not null, note: 'Week 1 to Week 6']
-  WeekNo       int      [not null, note: '1 to 6']
+  WeekNo       int      [not null, unique, note: '1 to 6, one row per week']
   WeekEnding   date     [not null, note: 'The day the five lines were written, normally the Friday. Not checked: a formula cannot hold a weekday']
   RowsVerified int      [note: 'Count of service rows that moved to Verified this week']
   SeamsFound   int      [note: 'Seams raised this week']
@@ -393,7 +393,6 @@ Table WeeklyUpdate {
   Surprise     longtext [note: 'The one thing that surprised us. Often the most useful line six weeks later']
 
   indexes {
-    WeekNo
     WeekEnding
   }
 

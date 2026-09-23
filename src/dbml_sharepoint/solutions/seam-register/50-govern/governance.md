@@ -44,12 +44,14 @@ express them. Run them on the Friday, before the five lines are written.
 | --- | --- |
 | A *Verified* service has at least two evidence rows from different source sides that agree, or one *System data* row | A formula cannot count rows on another list |
 | No first-pass service has zero evidence rows | Same. A service with no evidence rows is *Assumed* by definition, whatever its confidence says |
-| Every evidence row with **Contradicts** ticked appears in a seam's **Evidence in conflict** | A multi-value lookup on another list |
+| Every evidence row with **Contradicts** ticked appears in a seam's **Evidence in conflict**, and every row a seam picks there belongs to the seam's own **Service** | A multi-value lookup on another list; a lookup cannot be filtered by another column |
 | A *Held* or *Verified* documentation status has a **Documentation link** | A hyperlink column cannot be a formula operand |
-| A row whose side is *Provider*, *Third party* or *Shared* names the provider. **Provider not named** is empty on the service, document request, interview and incident lists | A formula cannot read a lookup |
+| A row whose side is *Provider*, *Third party* or *Shared* names the provider, and a row whose side is *Us* or *Unknown* names none. The provider-to-check views are empty: two on the service list, one each on the document request, interview and incident lists | A formula cannot read a lookup |
 | Every file in **SEAM_Artefact** has a **Title** | A file's Title is optional on a library, and a file without one is not offered by the pickers |
 | A resolved seam has a **Resolution**; a received document has a **Summary** | Multi-line text cannot be a formula operand |
-| **Resolve by** is on or after **Raised on**; **Answered on** is on or after **Asked on** | A formula compares a column with a literal, not with another column |
+| A received document has at least one file in **SEAM_Artefact** whose **Request** points at it | A formula cannot count rows on another list |
+| **Resolve by** and **Resolved on** are on or after **Raised on**; **Due on** and **Answered on** are on or after **Asked on** | A formula compares a column with a literal, not with another column |
+| Every completed interview answers all eight questions; a refusal or a don't-know is written as the answer | Multi-line text cannot be a formula operand |
 | Every completed interview's answers have been transcribed into evidence rows | A relationship the register does not model |
 | No row names a person | A reading check. Roles, never names |
 

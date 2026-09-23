@@ -58,14 +58,19 @@ def test_no_seeded_service_claims_more_confidence_than_its_evidence() -> None:
     assert not problems, problems
 
 
-def _not_named_branches(view: dict[str, Any]) -> dict[str, set[str]]:
-    """{provider column: sides} from a Provider not named view's filter."""
-    where = view["where"]
-    branches = where[0].get("any_of", [{"all_of": where}])
-    return {b["all_of"][1]["field"]: set(b["all_of"][0]["value"]) for b in branches}
+def _check_branches(view: dict[str, Any]) -> dict[str, dict[str, set[str]]]:
+    """{provider column: {null test: sides}} from a provider-to-check filter."""
+    found: dict[str, dict[str, set[str]]] = {}
+    for branch in view["where"][0]["any_of"]:
+        side, provider = branch["all_of"]
+        found.setdefault(provider["field"], {})[provider["op"]] = set(side["value"])
+    return found
 
 
-def test_every_provider_lookup_has_a_not_named_view_over_its_shown_sides() -> None:
+def test_every_provider_lookup_has_a_check_view_for_both_gaps() -> None:
+    """Owed and none named, over the sides the form shows the lookup for;
+    and named on a side that has none. The second is what finds a stale
+    provider, since nothing has measured the form keeping one on screen."""
     mapping = _mapping()
     lookups = 0
     for entity, rules in mapping["form_visibility"].items():
@@ -83,10 +88,14 @@ def test_every_provider_lookup_has_a_not_named_view_over_its_shown_sides() -> No
         if not shown:
             continue
         lookups += len(shown)
-        views = [v for v in mapping["views"][entity] if v["title"] == "Provider not named"]
-        assert len(views) == 1, f"{entity} has no Provider not named view"
-        assert _not_named_branches(views[0]) == shown, entity
-        assert all(sides == PROVIDER_SIDES for sides in shown.values()), entity
+        checked: dict[str, dict[str, set[str]]] = {}
+        for view in mapping["views"][entity]:
+            if view["title"].endswith("rovider to check"):
+                checked.update(_check_branches(view))
+        assert set(checked) == set(shown), entity
+        for column, sides in shown.items():
+            assert sides == PROVIDER_SIDES, column
+            assert checked[column] == {"is_null": sides, "is_not_null": {"Us", "Unknown"}}, column
     # Service has two, and DocumentRequest, Interview and Incident one each.
     assert lookups == 5
 

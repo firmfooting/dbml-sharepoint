@@ -19,8 +19,10 @@ script, then verify the lists and the library.
       `artefact_type` enum. Add a folder and a type together.
 - [ ] Decide who is in **SEAM Discovery Team** (the two people running the
       exercise, who can add, edit and delete) and **SEAM Contributors** (the
-      people offered rows to correct, who can edit but not delete). Everyone
-      else on the site reads.
+      people offered rows to correct, who can edit but not delete). Site
+      members read. Site Visitors get no access, because exact
+      reconciliation grants only what the mapping lists; add
+      `associated_visitor_group` to `list_permissions` if they should read.
 - [ ] Agree the site's sharing settings. The mapping uses exact permission
       reconciliation; inspect the generated manifest before deploying.
 - [ ] Plan browser-based use of the library. Microsoft's
@@ -43,7 +45,7 @@ dbml-sharepoint build \
 
 Paste `assess.js.txt`, review `deploy-manifest.md`, then paste
 `deploy.js.txt`. For a demonstration, paste `demo-data.js.txt` afterwards.
-It creates four providers (one retired), six services across the five
+It creates four providers (one retired), seven services across the five
 side values, six evidence
 rows including a contradicting pair, four seams in every status, five
 document asks in every status, seven files across the six folders, four
@@ -82,11 +84,12 @@ Standard deployment logging is separate infrastructure; use the build's
 - [ ] **By provider** groups the services by **Run by provider**: the
       shared ICT service runs two, the telephony managed service one, and
       the rest sit in the blank group. **By support provider** puts the M365
-      tenant row under the cloud platform although we run it. **Provider not
-      named** shows the desk phones row, supported by a provider nobody has
-      named yet. The same view shows one row on each of the document
-      request, interview and incident lists: the attestation ask, the
-      declined interview and the slow-desktop ticket.
+      tenant row under the cloud platform although we run it. **Run-by
+      provider to check** shows the visitor badge row and **Support provider
+      to check** the desk phones row, each on a side that owes a provider
+      nobody has named. **Provider to check** shows one row on each of the
+      document request, interview and incident lists: the attestation ask,
+      the declined interview and the slow-desktop ticket.
 - [ ] On the provider list, **Active providers** is the default and shows
       three. **Agreements ending** shows two, the telephony service first.
       **Retired** shows the previous backup vendor, and its past
@@ -100,26 +103,26 @@ Standard deployment logging is separate infrastructure; use the build's
       *Shared*. Set *Provider* with no **Run by team** and the save rule
       refuses it. Set **Run by** to *Unknown* and it saves.
 - [ ] Open the demonstration backup service, which names a provider, and set
-      **Run by** to *Us*. **Run by provider** stays on the form because it
-      holds a value; clear it and it disappears. Do the same with a resolved
-      seam set back to *Open*: **Resolved on** stays until it is cleared,
-      and the row then saves. No probe has measured a blank lookup or date
-      in a form formula, so this is the check that it reads as empty.
+      **Run by** to *Us* without clearing **Run by provider**. It saves, and
+      the row appears in **Run-by provider to check**. Clear the provider and
+      it leaves the view. Whether the form keeps a held provider column on
+      screen is unmeasured; the view is what the register relies on.
 - [ ] Tick **Single person** on a service with no **Out of hours call**. The
       save rule refuses it.
 - [ ] Add a seam. **Raised on** fills with today. Set **Status** to
       *Escalated* without a **Resolve owner**. The save rule refuses it.
       Set *Resolved* without a **Resolved on** date. The save rule refuses
-      that too, and **Resolved on** and **Resolution** appear only once the
-      status is *Resolved*.
+      that too. **Resolution** appears only once the status is *Resolved*;
+      **Resolved on** is on every existing seam, so a seam set back to
+      *Open* can have its date cleared and then saves.
 - [ ] On a seam, **Evidence in conflict** accepts more than one evidence
       row.
 - [ ] Add a document ask. **Asked on** and **Due on** appear once the status
       leaves *To ask*, and the save rule refuses *Asked* without both.
       **Due on** turns red once it has passed and the status is still
       *Asked*, and stops once the status is *Received*, *Refused* or *Not
-      found*. **Answered on** appears for those three, and the save rule
-      refuses any of them without it.
+      found*. **Answered on** is on every existing ask, and the save rule
+      refuses those three without it and the other two with it.
 - [ ] Upload a file into the library's Interviews folder. Its **Type**
       defaults to *Document copy*; set it to *Interview notes*. **Services**
       accepts more than one service row. It appears in **All artefacts** and
@@ -141,6 +144,8 @@ Standard deployment logging is separate infrastructure; use the build's
       detail** appears, and the save rule refuses the row until it is
       filled.
 - [ ] Add a weekly update with **Week** set to 7. The save rule refuses it.
+      Add a second row for a week that already has one, and uniqueness
+      refuses it.
       Set **Rows verified** to -1 and the count rule refuses that too.
 - [ ] Sealed columns and list deletion protection are enabled. Verify with
       the generated verification script after the deploy.
