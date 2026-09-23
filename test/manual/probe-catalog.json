@@ -5442,24 +5442,20 @@
           "findings": [
             {
               "id": "access.lookup-acl.control-target-denied",
-              "depends_on": [
-                "access.lookup-acl.control-target-present-after-read"
-              ]
+              "depends_on": []
             },
             {
               "id": "access.lookup-acl.display-value-to-denied-reader",
               "depends_on": [
                 "access.lookup-acl.control-target-denied",
-                "access.lookup-acl.control-source-readable",
-                "access.lookup-acl.control-target-present-after-read"
+                "access.lookup-acl.control-source-readable"
               ]
             },
             {
               "id": "access.lookup-acl.expand-reaches-other-columns",
               "depends_on": [
                 "access.lookup-acl.control-target-denied",
-                "access.lookup-acl.control-source-readable",
-                "access.lookup-acl.control-target-present-after-read"
+                "access.lookup-acl.control-source-readable"
               ]
             },
             {

@@ -73,12 +73,16 @@ _HARNESS = textwrap.dedent("""
         if (CONFIG.sourceStatus !== 200) {
           return jsonResponse(CONFIG.sourceStatus, { error: 'source read failed' });
         }
-        // The $expand reads answer with the link but no target values, which
-        // is the withheld shape; the plain read carries the stored id.
+        // The $expand reads answer with the link and whatever `leak` exposes
+        // ('none' is the withheld shape); the plain read carries the stored id.
         const row = {
           Id: CONFIG.fixtureId, Title: 'dbmlsp-probe-source-row', ProbeLinkId: CONFIG.linkId,
         };
-        if (u.includes('$expand')) row.ProbeLink = {};
+        if (u.includes('$expand')) {
+          row.ProbeLink = CONFIG.leak === 'none' ? {}
+            : CONFIG.leak === 'title' ? { Title: CONFIG.rowTitle }
+            : { Title: CONFIG.rowTitle, ProbeSide: CONFIG.rowSide };
+        }
         return jsonResponse(200, { value: [row] });
       }
       if (u.includes("LookupTarget')/items(")) {
@@ -119,6 +123,7 @@ _HEALTHY: dict[str, Any] = {
     "targetListId": _TARGET_GUID,
     "lookupList": "{" + _TARGET_GUID.upper() + "}",
     "unique": True,
+    "leak": "none",
     "targetRowIds": [1],
     "rowTitle": "dbmlsp-probe-target-title-should-not-leak",
     "rowSide": "dbmlsp-probe-target-second-column",
@@ -179,9 +184,9 @@ _PASS2: dict[str, Any] = {
     "fixtureId": 5,
     "linkedId": 1,
     "rows": {
-        K1: {"outcome": "PASS", "evidence": "hidden rather than refused"},
-        K2: {"outcome": "LOOKUP VALUE IS WITHHELD", "evidence": "no sentinel"},
-        K3: {"outcome": "DISPLAY FIELD ONLY", "evidence": "title only"},
+        K1: {"outcome": "PASS", "evidence": "hidden rather than refused", "state": "open"},
+        K2: {"outcome": "LOOKUP VALUE IS WITHHELD", "evidence": "no sentinel", "state": "open"},
+        K3: {"outcome": "DISPLAY FIELD ONLY", "evidence": "title only", "state": "open"},
     },
 }
 
@@ -365,15 +370,59 @@ def test_an_unanswered_k8_leaves_pass_2s_rows_open() -> None:
     }
 
 
-def test_k1_k2_and_k3_depend_on_the_owner_confirmation() -> None:
-    """The catalogue edge is what voids them when pass 3 fails.
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_leak_seen_after_a_refusal_is_settled_in_pass_2() -> None:
+    """The sentinel came back to a reader the ACL provably refused: nothing
+    pass 3 can find about the fixture afterwards changes what was seen."""
+    read, _output = _run_full("read", targetStatus=403, leak="both")
+    assert read[K2]["outcome"] == "LOOKUP VALUE IS VISIBLE"
+    assert read[K3]["outcome"] == "OTHER COLUMNS ALSO VISIBLE"
+    assert (read[K2]["state"], read[K3]["state"]) == ("settled", "settled")
 
-    K1 is on it too: its 404 reading is a denial only if the target existed,
-    which pass 2 cannot see.
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_absence_after_a_refusal_waits_for_k8() -> None:
+    """DISPLAY FIELD ONLY reads the second sentinel's absence."""
+    read, _output = _run_full("read", targetStatus=403, leak="title")
+    assert read[K3]["outcome"] == "DISPLAY FIELD ONLY"
+    assert read[K3]["state"] == "open"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_leak_seen_behind_a_404_still_waits_for_k8() -> None:
+    """Behind a 404 the denial itself is pending, so even a sighting is."""
+    read, _output = _run_full("read", leak="both")
+    assert read[K2]["outcome"] == "LOOKUP VALUE IS VISIBLE"
+    assert read[K2]["state"] == "open"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_failed_k8_voids_only_what_pass_2_left_open() -> None:
+    """Pass 2 through the printed line, then a fixture edited before pass 3."""
+    _read, output = _run_full("read", targetStatus=403, leak="title")
+    carried = _printed_pass2(output)
+    rows, _output = _run_full("confirm", carried, rowSide="edited")
+    assert rows[K8]["outcome"] == "FAIL"
+    assert rows[K3]["state"] == "void"
+    # K1 (a 403) and K2 (a sighting) were settled by pass 2 and are not re-recorded.
+    assert rows[K1]["evidence"] == "the run did not reach this question"
+    assert rows[K2]["evidence"] == "the run did not reach this question"
+
+
+def test_k8_is_a_control_the_probe_applies_per_outcome() -> None:
+    """K8 is registered as a control, and deliberately NOT a static dependency.
+
+    `depends_on` voids every outcome of a finding when its control fails, and
+    K8 decides only some of them: a 404-derived K1, and a K2 or K3 read from
+    an ABSENCE. A leak pass 2 saw after a 403 must survive a fixture edited
+    afterwards, so the probe carries each row's state through PASS2 and pass 3
+    settles or voids only the rows pass 2 left open.
     """
     catalog = json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
     probe = next(p for p in catalog["probes"] if p["file"] == PROBE.name)
     findings = {f["id"]: f["depends_on"] for f in probe["scenarios"][0]["findings"]}
     assert K8 in probe["scenarios"][0]["controls"]
-    for dependent in (K1, K2, "access.lookup-acl.expand-reaches-other-columns"):
-        assert K8 in findings[dependent], dependent
+    for finding in (K1, K2, K3):
+        assert K8 not in findings[finding], finding
+    for dependent in (K2, K3):
+        assert K1 in findings[dependent], dependent

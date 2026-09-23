@@ -67,8 +67,11 @@
  *        broken inheritance, holding the linked row with both sentinel
  *        values? Without it a target deleted, rebuilt or edited between the
  *        passes reads as a working ACL, and K2 reports a withheld value that
- *        was never there to withhold. K1, K2 and K3 all depend on it. Only a
- *        site collection administrator can read a 404 here as an absence.
+ *        was never there to withhold. It settles the pass-2 rows left open:
+ *        a 404-derived K1, and any K2 or K3 read from an ABSENCE. A sighting
+ *        of a sentinel after a 403 is settled in pass 2 and needs nothing
+ *        from it. Only a site collection administrator can read a 404 here
+ *        as an absence.
  *
  *   -- Question B, answered by the site owner ----------------------------
  *   field.lookup.calculated-display-field             (K5)
@@ -309,6 +312,7 @@
                + 'a denial nor an answer');
       } else {
         const leaked = raw.includes(SECRET);
+        // A sighting stands on its own once the denial is settled; an absence waits for K8's sentinels.
         record('access.lookup-acl.display-value-to-denied-reader', 'Reading the SOURCE item as the denied account, does the lookup display value come back?',
                leaked ? 'LOOKUP VALUE IS VISIBLE' : 'LOOKUP VALUE IS WITHHELD',
                leaked
@@ -318,7 +322,7 @@
                    + 'hide a title is relying on nothing.'
                  : `HTTP ${expanded.status}; the response does not contain `
                    + `${JSON.stringify(SECRET)}. Body: ${JSON.stringify(raw.slice(0, 300))}`,
-               'open');
+               leaked && !hiddenTarget ? undefined : 'open');
       }
 
       const side = await spGet(
@@ -330,6 +334,7 @@
       // an ACL result, which K1 and K2 above already avoid.
       const sideRefused = isRefusal(side.status)
         || side.status === 401 || side.status === 403;
+      const sideObserved = side.ok ? sideRaw.includes(SIDE) : sideRefused;
       record('access.lookup-acl.expand-reaches-other-columns', 'Does $expand on the lookup reach the target row\'s other columns?',
              side.ok
                ? sideRaw.includes(SIDE) ? 'OTHER COLUMNS ALSO VISIBLE'
@@ -350,7 +355,7 @@
                    + `${side.status}: ${JSON.stringify(String(side.body).slice(0, 200))}`
                  : `the $expand request failed with HTTP ${side.status}, which is `
                    + 'neither a refusal nor an answer',
-             'open');
+             sideObserved && !hiddenTarget ? undefined : 'open');
     }
 
     // K8 is answered by pass 3, not here. Said on the row rather than left as
@@ -361,7 +366,7 @@
            + 'Until it passes, the rows above marked open stay open.');
     const carried = Object.fromEntries(PASS2_ROWS.map((id) => {
       const row = RESULTS.find((r) => r.id === id);
-      return [id, { outcome: row.outcome, evidence: row.evidence }];
+      return [id, { outcome: row.outcome, evidence: row.evidence, state: row.state }];
     }));
     const pass2 = {
       lookupList: (!readFailed(bound) && bound.body.LookupList) || null,
@@ -459,10 +464,11 @@
     };
     const [outcome, evidence] = await confirm();
     record(K8, K8Q, outcome, evidence);
-    // Pass 2's rows, settled by this control: void when it failed, still open when it was not answered.
+    // Pass 2's OPEN rows, settled by this control: void when it failed, still open when it
+    // was not answered. A row pass 2 settled (a 403, or a direct sighting) needs nothing from K8.
     for (const id of PASS2_ROWS) {
       const carried = PASS2 && PASS2.rows && PASS2.rows[id];
-      if (!carried) continue;
+      if (!carried || carried.state !== 'open') continue;
       const question = RESULTS.find((r) => r.id === id).question;
       if (outcome === 'PASS') {
         record(id, question, carried.outcome, `${carried.evidence} Confirmed by pass 3.`);
