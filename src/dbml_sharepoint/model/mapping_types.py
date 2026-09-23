@@ -80,6 +80,36 @@ def view_url_slug(title: str) -> str:
 
 
 @dataclass(frozen=True)
+class FoldersFromEnum:
+    """`folders: {from_enum: division}`: the folders ARE the enum's members.
+
+    A library whose folders name the values of one of its own Choice columns
+    used to declare both, and nothing compared them. The shipped legislative
+    compliance register drifted exactly that way: the `division` enum was
+    edited, the folder list was not, and the deploy created four folders no
+    Division value could match. Naming the enum removes the second copy, so
+    there is nothing left to disagree.
+
+    Resolved by `analysis/folders.py`, not here, because the schema is not
+    loaded with the mapping.
+    """
+
+    enum: str
+
+
+#: What `entities.<name>.folders` parses into. Contract in the docstring below.
+type FolderSource = tuple[str, ...] | FoldersFromEnum
+"""A library's declared root folders: the names, or the enum to take them from.
+
+Held as DECLARED rather than resolved, because the mapping loader never sees
+the schema. The deploy creates each folder through the folder endpoint, reads
+it back and refuses a file standing where a folder was declared; a redeploy
+verifies and skips. Library only: the validator refuses the key on a list.
+Read it through `analysis/folders.py::declared_folders`, never directly.
+"""
+
+
+@dataclass(frozen=True)
 class EntityMapping:
     """SP physical mapping for one entity (kind, base template, site role)."""
 
@@ -113,11 +143,8 @@ class EntityMapping:
     # A previous title without that marker, or present beside the current
     # one, is refused at assessment and at preflight.
     renamed_from: tuple[str, ...] = ()
-    # Root-level folders a document library declares. The deploy creates each
-    # one through the folder endpoint, reads it back and refuses a file
-    # standing where a folder was declared; a redeploy verifies and skips.
-    # Library only: the validator refuses the key on a list.
-    folders: tuple[str, ...] = ()
+    # Unresolved: read it through `analysis/folders.py::declared_folders`.
+    folder_source: FolderSource = ()
     title: str | None = None
     internal_name: str | None = None
 

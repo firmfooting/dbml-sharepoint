@@ -125,6 +125,40 @@ def test_a_library_list_carries_its_folders_and_kind_flag(tmp_path: Path) -> Non
     assert plain["folders"] == []
 
 
+def test_a_library_takes_its_folders_from_the_named_enum(tmp_path: Path) -> None:
+    """`folders: {from_enum: division}` reaches the deploy as the enum's
+    members, in declaration order, so the folders the script creates and the
+    choices the Division column offers cannot disagree.
+
+    Pinned at the emitted JSON and not at the mapping, because the drift
+    this closes was invisible everywhere upstream of here: the old mapping
+    validated clean, built clean and deployed clean while creating four
+    folders no Division value could match.
+    """
+    tmp_path.mkdir(exist_ok=True)
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n  "Corporate & community services"\n}\n'
+            + table("Doc", ID_PK, TITLE, "Division division")
+        ),
+        mapping="""
+            entities:
+              Doc:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: division}
+        """,
+    )
+    schema_json = build_schema_json(schema, bundle, "default")
+    doc = next(lst for lst in schema_json["lists"] if lst["title"] == "APP_Doc")
+    members = next(e.members for e in schema.enums if e.name == "division")
+    assert doc["folders"] == list(members) == [
+        "Clinical services", "Corporate & community services",
+    ]
+
+
 def test_a_library_all_items_leads_with_the_file_name_and_flattens_folders(
     tmp_path: Path,
 ) -> None:

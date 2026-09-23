@@ -1,6 +1,6 @@
 ---
 title: condition_description
-sidebar_position: 24
+sidebar_position: 25
 ---
 
 # `dbml_sharepoint.analysis.condition_description`

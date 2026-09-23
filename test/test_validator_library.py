@@ -19,7 +19,8 @@ from _packs import pack
 
 from dbml_sharepoint.analysis.checks._structure import TEMPLATE_BY_KIND
 from dbml_sharepoint.analysis.findings import Finding, FindingCode
-from dbml_sharepoint.analysis.validator import validate_against_mapping
+from dbml_sharepoint.analysis.validator import validate_against_mapping, validate_all
+from dbml_sharepoint.extension import NullExtension
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.mapping_types import (
     ENTITY_KINDS,
@@ -174,6 +175,246 @@ def test_a_duplicate_folder_is_refused_case_insensitively(tmp_path: Path) -> Non
         FindingCode.DUPLICATE_FOLDER,
     )
     assert "clinical" in f.message
+
+
+def _folders_from_enum(
+    tmp_path: Path, kind: str, template: int, members: str, named: str = "division",
+) -> list[Finding]:
+    """The same library, declaring its folders as one enum's members."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            f"Enum division {{\n{members}\n}}\n"
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping=f"""
+            entities:
+              Docs:
+                kind: {kind}
+                base_template: {template}
+                site_role: default
+                folders: {{from_enum: {named}}}
+        """,
+    )
+    return validate_against_mapping(schema, bundle)
+
+
+def test_folders_from_enum_are_the_enums_members(tmp_path: Path) -> None:
+    """The shipped legislative compliance register declared its divisions
+    twice, once as an enum and once as a folder list, and an edit to the
+    enum left the deploy creating the four retired folders. Naming the enum
+    removes the second copy."""
+    findings = _folders_from_enum(
+        tmp_path, "DocumentLibrary", 101,
+        '  "Clinical services"\n  "Corporate & community services"',
+    )
+    none_of(findings, FindingCode.FOLDER_ENUM_UNKNOWN)
+    none_of(findings, FindingCode.FOLDER_NAME_INVALID)
+    none_of(findings, FindingCode.DUPLICATE_FOLDER)
+
+
+def test_folders_from_an_unknown_enum_are_refused(tmp_path: Path) -> None:
+    """The folders ARE the members, so an enum that does not exist leaves
+    the library with none. Silently creating nothing is the failure this
+    spelling exists to prevent, so it is an error and names what is
+    declared."""
+    f = only(
+        _folders_from_enum(
+            tmp_path, "DocumentLibrary", 101, '  "Clinical services"',
+            named="divison",
+        ),
+        FindingCode.FOLDER_ENUM_UNKNOWN,
+    )
+    assert "divison" in f.message
+    assert "division" in f.message, "the message must name the enums that DO exist"
+
+
+def test_folders_from_an_enum_no_column_uses_are_flagged(tmp_path: Path) -> None:
+    """A schema holds many enums and `from_enum` takes any of them.
+
+    Naming the wrong one resolves, passes every rule and creates a full set
+    of the wrong folders, which nothing downstream can see because both
+    declarations are individually valid. A warning and not an error: folders
+    keyed by something the library does not store are a legitimate design.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n}\n'
+            'Enum region {\n  "North"\n  "South"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping="""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: region}
+        """,
+    )
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.FOLDER_ENUM_NOT_A_COLUMN_TYPE,
+    )
+    assert "region" in f.message
+    assert "division" in f.message, "the message must name what the columns DO carry"
+
+
+def test_a_multichoice_column_of_the_enum_counts_as_using_it(
+    tmp_path: Path,
+) -> None:
+    """`Division division[]` is a MultiChoice of the same enum.
+
+    Compared raw, `division[]` never equals `division`, so a library that
+    files by a multi-value column got told its folders came from an enum it
+    does not use, which is the opposite of true.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division[]")
+        ),
+        mapping="""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: division}
+        """,
+    )
+    none_of(
+        validate_against_mapping(schema, bundle),
+        FindingCode.FOLDER_ENUM_NOT_A_COLUMN_TYPE,
+    )
+
+
+def test_a_list_declaring_folders_from_an_unknown_enum_is_told_both(
+    tmp_path: Path,
+) -> None:
+    """Two independent errors, reported together.
+
+    Whether a list may hold folders at all does not depend on how many names
+    resolved. Reporting only the spelling meant the author fixed it, rebuilt,
+    and met a second error that had been true all along.
+    """
+    findings = _folders_from_enum(
+        tmp_path, "List", 100, '  "Clinical services"', named="divison",
+    )
+    only(findings, FindingCode.FOLDER_ENUM_UNKNOWN)
+    only(findings, FindingCode.FOLDERS_ON_A_LIST)
+
+
+def test_an_enum_used_only_for_folders_is_not_called_an_orphan(
+    tmp_path: Path,
+) -> None:
+    """The mapping can be the only thing that uses an enum.
+
+    `orphan_enum` is a schema-only rule and cannot see a mapping, but
+    `folders: {from_enum: <name>}` turns an enum's members into a library's
+    folders without any column naming it. The remedy the finding invites is
+    deleting the enum, which would take the deploy's folders with it.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum shelf {\n  "Ground floor"\n}\n'
+            + table("Docs", ID_PK, TITLE)
+        ),
+        mapping="""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: shelf}
+        """,
+    )
+    none_of(validate_all(schema, bundle, NullExtension()), FindingCode.ORPHAN_ENUM)
+    # Still reported when nothing uses it at all, or the rule is gone.
+    unused = tmp_path / "unused"
+    unused.mkdir()
+    schema2, bundle2 = pack(
+        unused,
+        dbml=('Enum shelf {\n  "Ground floor"\n}\n' + table("Docs", ID_PK, TITLE)),
+        mapping="""
+            entities:
+              Docs: { kind: DocumentLibrary, base_template: 101, site_role: default }
+        """,
+    )
+    only(validate_all(schema2, bundle2, NullExtension()), FindingCode.ORPHAN_ENUM)
+
+
+def test_folders_from_the_entitys_own_enum_are_not_flagged(tmp_path: Path) -> None:
+    """The ordinary shape stays quiet, or the warning is noise."""
+    none_of(
+        _folders_from_enum(
+            tmp_path, "DocumentLibrary", 101, '  "Clinical services"',
+        ),
+        FindingCode.FOLDER_ENUM_NOT_A_COLUMN_TYPE,
+    )
+
+
+def test_an_unresolved_folder_enum_does_not_condemn_every_demo_file(
+    tmp_path: Path,
+) -> None:
+    """One actionable finding, not one per row.
+
+    The folders are unresolved, which is not the same answer as "this library
+    declares none". Treating the failure as an empty declaration made every
+    demo row report a folder the library does not declare, so the finding an
+    author can act on arrived buried under a cascade caused by it.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping="""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: divison}
+            demo_items:
+              Docs:
+                - key: d1
+                  values: { Division: "Clinical services" }
+                  file: { name: "[DEMO] Privacy.txt", folder: "Clinical services" }
+                - key: d2
+                  values: { Division: "Clinical services" }
+                  file: { name: "[DEMO] Records.txt", folder: "Clinical services" }
+        """,
+    )
+    findings = validate_against_mapping(schema, bundle)
+    only(findings, FindingCode.FOLDER_ENUM_UNKNOWN)
+    none_of(findings, FindingCode.DEMO_FILE_FOLDER_UNDECLARED)
+
+
+def test_an_enum_member_that_cannot_be_a_folder_is_refused(tmp_path: Path) -> None:
+    """The folder name rules apply to the resolved names. An enum is free
+    to carry a `/` where a folder name is not, and the build has to say so
+    rather than let the folder phase fail on a live site."""
+    f = only(
+        _folders_from_enum(
+            tmp_path, "DocumentLibrary", 101, '  "Clinical/services"',
+        ),
+        FindingCode.FOLDER_NAME_INVALID,
+    )
+    assert "/" in f.message
+
+
+def test_folders_from_enum_are_refused_on_a_list(tmp_path: Path) -> None:
+    """Whichever way the folders are spelled, only a library holds them."""
+    f = only(
+        _folders_from_enum(tmp_path, "List", 100, '  "Clinical services"'),
+        FindingCode.FOLDERS_ON_A_LIST,
+    )
+    assert "Docs" in f.message
 
 
 def _scoped_view(

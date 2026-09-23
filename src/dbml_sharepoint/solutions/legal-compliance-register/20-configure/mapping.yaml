@@ -2,7 +2,7 @@
 
 prefix: LC_
 
-# Division folders and the DBML enum must be customised together.
+# The division folders ARE the schema's division enum; customise it alone.
 
 entities:
   Document:
@@ -11,7 +11,7 @@ entities:
     kind: DocumentLibrary
     base_template: 101
     site_role: default
-    folders: [Clinical services, Corporate services, Community services, Executive and governance]
+    folders: {from_enum: division}
 
 cross_site_reference_columns: []
 

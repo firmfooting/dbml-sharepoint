@@ -300,10 +300,13 @@ class FindingCode(StrEnum):
     DUPLICATE_FOLDER = "duplicate_folder", "error"
     FOLDERS_ON_A_LIST = "folders_on_a_list", "error"
     FOLDER_NAME_INVALID = "folder_name_invalid", "error"
+    FOLDER_ENUM_UNKNOWN = "folder_enum_unknown", "error"
     VIEW_SCOPE_ON_A_LIST = "view_scope_on_a_list", "error"
     # Warning severity: the view renders and answers correctly below the
     # threshold; what changes past it is measured, and the author may accept it.
     LIBRARY_GROUP_BY_FOLDER_SCOPED = "library_group_by_folder_scoped", "warning"
+    # Warning: folders keyed by something the library does not store are legal.
+    FOLDER_ENUM_NOT_A_COLUMN_TYPE = "folder_enum_not_a_column_type", "warning"
     # A library row IS a file, so these five are about the file a demo row
     # uploads. The row's values are `_demo.py`'s, on either container.
     DEMO_FILE_REQUIRED_ON_LIBRARY = "demo_file_required_on_library", "error"

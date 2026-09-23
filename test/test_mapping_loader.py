@@ -23,6 +23,7 @@ from dbml_sharepoint.model.errors import (
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     DEMO_FILE_CONTENT,
+    FoldersFromEnum,
     FormVisibility,
     ItemSecurity,
     ListPermissionPolicy,
@@ -2480,6 +2481,62 @@ def test_hide_from_all_items_refuses_a_non_string_member(tmp_path: Path) -> None
             hide_from_all_items: [Author, 7]
     """)
     _refuses(tmp_path / "m.yaml", MappingShapeError, r"hide_from_all_items.*got 7")
+
+
+def test_folders_parse_as_a_list_or_as_an_enum_reference(tmp_path: Path) -> None:
+    """Both spellings land at the same key, so an entity cannot declare its
+    folders twice over and leave the loader to pick. Which enums exist is the
+    validator's question; this family never sees the schema."""
+    write_mapping(tmp_path, """
+        entities:
+          Plain: { kind: List, base_template: 100, site_role: default }
+          Named:
+            kind: DocumentLibrary
+            base_template: 101
+            site_role: default
+            folders: [Clinical services, Corporate & community services]
+          Derived:
+            kind: DocumentLibrary
+            base_template: 101
+            site_role: default
+            folders: {from_enum: division}
+    """)
+    mapping = load_mapping(tmp_path / "m.yaml").mapping
+    assert mapping.entities["Plain"].folder_source == ()
+    assert mapping.entities["Named"].folder_source == (
+        "Clinical services", "Corporate & community services",
+    )
+    assert mapping.entities["Derived"].folder_source == FoldersFromEnum(enum="division")
+
+
+def test_folders_refuse_an_unknown_key_beside_from_enum(tmp_path: Path) -> None:
+    """The near-miss is a second key alongside it. Passed through, the
+    library would take its folders from the enum and ignore the rest in
+    silence."""
+    write_mapping(tmp_path, """
+        entities:
+          Derived:
+            kind: DocumentLibrary
+            base_template: 101
+            site_role: default
+            folders: {from_enum: division, except: [Chief Executive]}
+    """)
+    _refuses(
+        tmp_path / "m.yaml", UnknownMappingKeyError,
+        r"entities\.Derived\.folders: unknown key\(s\)",
+    )
+
+
+def test_folders_refuse_an_enum_reference_with_no_name(tmp_path: Path) -> None:
+    write_mapping(tmp_path, """
+        entities:
+          Derived:
+            kind: DocumentLibrary
+            base_template: 101
+            site_role: default
+            folders: {from_enum: 7}
+    """)
+    _refuses(tmp_path / "m.yaml", MappingShapeError, r"folders\.from_enum")
 
 
 def test_a_misspelt_entity_key_is_still_refused(tmp_path: Path) -> None:

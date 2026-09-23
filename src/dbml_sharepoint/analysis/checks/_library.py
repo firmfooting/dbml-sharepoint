@@ -11,22 +11,90 @@ from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
+from dbml_sharepoint.analysis.folders import UnknownFolderEnumError, declared_folders
 from dbml_sharepoint.analysis.limits import LIST_VIEW_THRESHOLD
-from dbml_sharepoint.model.mapping_types import DemoItem, EntityMapping, ViewDef
+from dbml_sharepoint.analysis.typemap import element_type
+from dbml_sharepoint.model.mapping_types import (
+    DemoItem,
+    EntityMapping,
+    FoldersFromEnum,
+    ViewDef,
+)
 
 
 def check(vc: ValidationContext) -> list[Finding]:
     findings: list[Finding] = []
     for entity_name, entity in vc.bundle.mapping.entities.items():
-        findings += _folders(entity_name, entity)
+        at = Location(Section.ENTITIES, entity=entity_name, sub="folders")
+        try:
+            folders = declared_folders(
+                entity.folder_source, vc.enum_members_by_name,
+            )
+        except UnknownFolderEnumError as err:
+            # Caught rather than re-tested here, so the message and the deploy's tuple agree.
+            findings.append(Finding(
+                FindingCode.FOLDER_ENUM_UNKNOWN,
+                f"entities[{entity_name}].folders: from_enum names "
+                f"{err.enum!r}, which the schema does not declare. Declared "
+                f"enums are: "
+                f"{', '.join(sorted(vc.enum_members_by_name)) or 'none'}.",
+                location=at,
+            ))
+            # Unresolved, which is not the same answer as "declares none".
+            folders = None
+        findings += _folder_enum_is_this_entity_s(vc, entity_name, entity)
+        findings += _folders(
+            entity_name, entity, folders or (),
+            declared=bool(entity.folder_source),
+        )
         for view in vc.bundle.mapping.views.get(entity_name, []):
             findings += _view_scope(entity_name, entity, view)
         for row in vc.bundle.mapping.demo_items.get(entity_name, []):
-            findings += _demo_file(entity_name, entity, row)
+            findings += _demo_file(entity_name, entity, row, folders)
     return findings
 
 
-def _demo_file(entity_name: str, entity: EntityMapping, row: DemoItem) -> list[Finding]:
+def _folder_enum_is_this_entity_s(
+    vc: ValidationContext, entity_name: str, entity: EntityMapping,
+) -> list[Finding]:
+    """`folders.from_enum` usually names an enum this entity has a column of.
+
+    A schema holds many enums and `from_enum` accepts any of them, so a name
+    that matches a DIFFERENT enum resolves, passes every rule, and creates a
+    full set of the wrong folders. Nothing downstream can see it: both
+    declarations are individually valid, which is the same shape as the drift
+    this spelling exists to remove.
+
+    A warning rather than an error, because folders keyed by something the
+    library does not store are a legitimate design and an enforced rule must
+    not be stronger than what a reference implementation has to satisfy.
+    """
+    source = entity.folder_source
+    if not isinstance(source, FoldersFromEnum):
+        return []
+    if source.enum not in vc.enum_members_by_name:
+        return []  # folder_enum_unknown owns that sentence
+    table = vc.tables_by_name.get(entity_name)
+    if table is None:
+        return []
+    # `division[]` is a MultiChoice of the same enum, so compare elements.
+    if any(element_type(column.type) == source.enum for column in table.columns):
+        return []
+    return [Finding(
+        FindingCode.FOLDER_ENUM_NOT_A_COLUMN_TYPE,
+        f"entities[{entity_name}].folders: from_enum names {source.enum!r}, "
+        f"which no column on {entity_name} uses. That is legal, but it is "
+        f"also what naming the wrong enum looks like: the folders resolve "
+        f"and every one of them is wrong. Columns on {entity_name} carry: "
+        f"{', '.join(sorted({element_type(c.type) for c in table.columns})) or 'nothing'}.",
+        location=Location(Section.ENTITIES, entity=entity_name, sub="folders"),
+    )]
+
+
+def _demo_file(
+    entity_name: str, entity: EntityMapping, row: DemoItem,
+    folders: tuple[str, ...] | None,
+) -> list[Finding]:
     """`demo_items[].file`: required on a library, refused on a list, and a
     legal, marked name filed in a declared folder.
 
@@ -74,12 +142,17 @@ def _demo_file(entity_name: str, entity: EntityMapping, row: DemoItem) -> list[F
             f"{ctx}: {row.file.name!r} cannot be a file name: {reason}.",
             location=at,
         ))
-    if row.file.folder is not None and row.file.folder not in entity.folders:
+    # None means unresolved, so membership is unanswerable rather than false.
+    if (
+        row.file.folder is not None
+        and folders is not None
+        and row.file.folder not in folders
+    ):
         findings.append(Finding(
             FindingCode.DEMO_FILE_FOLDER_UNDECLARED,
             f"{ctx}: file.folder {row.file.folder!r} is not one of "
             f"{entity_name}'s declared folders "
-            f"({', '.join(entity.folders) or 'none declared'}).",
+            f"({', '.join(folders) or 'none declared'}).",
             location=at,
         ))
     return findings
@@ -123,8 +196,16 @@ def _view_scope(entity_name: str, entity: EntityMapping, view: ViewDef) -> list[
     return []
 
 
-def _folders(entity_name: str, entity: EntityMapping) -> list[Finding]:
+def _folders(
+    entity_name: str, entity: EntityMapping, folders: tuple[str, ...],
+    *, declared: bool,
+) -> list[Finding]:
     """Declared folders: library only, legal names, no duplicates.
+
+    Judged over the RESOLVED names, so an enum member that cannot be a
+    folder name fails the build here rather than at the folder phase. That
+    is the whole value of naming the enum: the schema's choices and the
+    library's folders are one list, held to the folder rules.
 
     MEASURED 2026-09-03, `library.folder.creation-path` in folder-probe.js:
     POST web/GetFolderByServerRelativeUrl('<root>')/folders/add(url='<name>')
@@ -132,10 +213,9 @@ def _folders(entity_name: str, entity: EntityMapping) -> list[Finding]:
     the site as one URL segment under the library root. The name rules are
     Microsoft's (analysis/file_names.py).
     """
-    if not entity.folders:
-        return []
     at = Location(Section.ENTITIES, entity=entity_name, sub="folders")
-    if not entity.is_library:
+    # Before the empty return: the container question is independent.
+    if declared and not entity.is_library:
         return [Finding(
             FindingCode.FOLDERS_ON_A_LIST,
             f"entities[{entity_name}].folders: {entity_name} is a {entity.kind}, "
@@ -148,7 +228,7 @@ def _folders(entity_name: str, entity: EntityMapping) -> list[Finding]:
     # resolves without regard to case: two names differing only in case are
     # one folder declared twice.
     seen: dict[str, str] = {}
-    for name in entity.folders:
+    for name in folders:
         reason = invalid_file_name_reason(name)
         if reason is not None:
             findings.append(Finding(

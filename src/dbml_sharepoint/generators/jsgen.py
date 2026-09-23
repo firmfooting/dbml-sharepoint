@@ -16,6 +16,7 @@ from dbml_sharepoint.analysis.column_refs import (
 )
 from dbml_sharepoint.analysis.condition_description import describe
 from dbml_sharepoint.analysis.condition_rendering import to_caml_protected, to_validation
+from dbml_sharepoint.analysis.folders import declared_folders
 from dbml_sharepoint.analysis.form_rendering import compose_visibility
 from dbml_sharepoint.analysis.group_description import group_description, marker_for_group
 from dbml_sharepoint.analysis.joins import all_items_hidden
@@ -778,7 +779,10 @@ def build_schema_json(
             # than on the kind string, so a third kind cannot be mistaken for
             # a library by a string test in JavaScript.
             "is_library": entity.is_library,
-            "folders": list(entity.folders),
+            "folders": list(declared_folders(
+                entity.folder_source,
+                {name: e.members for name, e in enums_by_name.items()},
+            )),
             "description": list_description(
                 table.note, family=family, entity=table_name,
             ),
