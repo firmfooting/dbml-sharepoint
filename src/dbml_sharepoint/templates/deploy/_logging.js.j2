@@ -223,18 +223,32 @@
       }
       return { ok: true, canAdd, canEdit, entityType };
     };
-    // The internal names ONE central list carries, or null if the read
-    // itself failed. `$top=500` for the same reason _verify_body.js.j2:141
-    // carries it: an unfiltered /fields read takes the server's own page
-    // size, and a truncated field map reads exactly like a list that is
-    // missing columns.
+    // The internal names ONE central list carries and whether the page may
+    // be truncated, or null if the read itself failed. `$top` for the same
+    // reason _verify_body.js.j2:141 carries it: an unfiltered /fields read
+    // takes the server's own page size, and a truncated field map reads
+    // exactly like a list that is missing columns.
     const centralColumnNames = async (title) => {
       const fieldsResp = await fetchWithRetry(
-        externalApi(`lists/getbytitle('${odataName(title)}')/fields?$select=InternalName&$top=500`),
+        externalApi(`lists/getbytitle('${odataName(title)}')/fields?$select=InternalName&$top=${FIELD_PAGE_SIZE}`),
         { headers: { 'Accept': 'application/json;odata=verbose' } },
       );
       if (!fieldsResp.ok) return null;
-      return new Set((((await fieldsResp.json()).d || {}).results || []).map((f) => f.InternalName));
+      const page = (await fieldsResp.json()).d || {};
+      const next = validatedNextPage(page, `Central field read for '${title}'`);
+      const rows = page.results || [];
+      return { names: new Set(rows.map((f) => f.InternalName)), truncated: fieldPageTruncated(rows, next) };
+    };
+    // Whether ONE central list carries every column. Absence is concluded only
+    // from a page that holds the whole list (#577).
+    const centralColumnsComplete = (title, present, columns) => {
+      const missing = columns.filter((name) => !present.names.has(name));
+      if (missing.length > 0 && present.truncated) {
+        throw new Error(`the field read of '${title}' may be truncated (a full page of ${FIELD_PAGE_SIZE},`
+          + ` or a continuation) and does not hold ${missing.join(', ')}, so those columns may exist`
+          + ' past the page; this run cannot use them and treats them as missing');
+      }
+      return missing.length === 0;
     };
     if (EXTERNAL_LOG_SITE) {
       let siteOk = false;
@@ -280,7 +294,9 @@
           // generic list can always accept.
           try {
             const present = await centralColumnNames(EXTERNAL_LOG_TITLE);
-            if (present) externalStructured = EXTERNAL_LOG_COLUMNS.every((name) => present.has(name));
+            if (present) {
+              externalStructured = centralColumnsComplete(EXTERNAL_LOG_TITLE, present, EXTERNAL_LOG_COLUMNS);
+            }
           } catch (err) {
             recordFailure(`central log '${EXTERNAL_LOG_TITLE}' field probe`, err);
           }
@@ -317,7 +333,10 @@
             changeListReady = true;
             try {
               const present = await centralColumnNames(EXTERNAL_CHANGE_LOG_TITLE);
-              if (present) centralChangeReady = EXTERNAL_CHANGE_COLUMNS.every((name) => present.has(name));
+              if (present) {
+                centralChangeReady = centralColumnsComplete(
+                  EXTERNAL_CHANGE_LOG_TITLE, present, EXTERNAL_CHANGE_COLUMNS);
+              }
             } catch (err) {
               recordFailure(`central change log '${EXTERNAL_CHANGE_LOG_TITLE}' field probe`, err);
             }
@@ -434,22 +453,33 @@
     // exist on type 'SP.Data.Dbml_x0020_Local_x0020_LogListItem'" (live
     // 2026-09-05).
     //
-    // `$top=500` for the same reason _verify_body.js.j2:141 carries it: a
+    // `$top` for the same reason _verify_body.js.j2:141 carries it: a
     // /fields read with no explicit page size is a read whose page size is
     // the server's, and a truncated field map reads exactly like a list
     // that is missing columns.
     const ensureFields = async (title, fields) => {
+      // Throws when a declared column is missing from a page that may be
+      // truncated, at the probe and the read-back alike (#577).
       const readPresent = async () => {
         const resp = await fetchWithRetry(apiUrl(
           `web/lists/getbytitle('${odataName(title)}')/fields`
-          + `?$select=Id,InternalName,Indexed&$top=500`
+          + `?$select=Id,InternalName,Indexed&$top=${FIELD_PAGE_SIZE}`
           + `&$filter=Hidden eq false and ReadOnlyField eq false`
         ), { headers: { 'Accept': 'application/json;odata=verbose' } });
         if (!resp.ok) {
           throw new Error(`HTTP ${resp.status} ${await resp.text()}`);
         }
-        return new Map((((await resp.json()).d || {}).results || [])
-          .map((f) => [f.InternalName, f]));
+        const page = (await resp.json()).d || {};
+        const next = validatedNextPage(page, `Field read for '${title}'`);
+        const rows = page.results || [];
+        const present = new Map(rows.map((f) => [f.InternalName, f]));
+        const missing = fields.filter((f) => !present.has(f.Title)).map((f) => f.Title);
+        if (missing.length > 0 && fieldPageTruncated(rows, next)) {
+          throw new Error(`the field read of '${title}' may be truncated (a full page of ${FIELD_PAGE_SIZE},`
+            + ` or a continuation) and does not hold ${missing.join(', ')}, so those columns may exist`
+            + ' past the page; none is created on that read');
+        }
+        return present;
       };
       const present = await readPresent();
       // Every column is attempted, and the refusals are collected rather than
