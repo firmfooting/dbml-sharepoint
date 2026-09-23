@@ -1,31 +1,12 @@
 # test/_raw_enum_readers.py
 """The AST walk behind the ratchet in `test_raw_enum_readers.py`.
 
-`analysis/resolve.py::resolve()` is meant to be the one place that reads a
-`folders.from_enum` or `groups[].from_enum` source before it has been
-resolved against the schema. A module that reads `entity.folder_source`,
-`perms.group_sources` or `perms.folder_policies` directly re-derives that
-resolution somewhere else, which is exactly how the two ACL collections
-Pieces 1-3 merged drifted apart in the first place.
-
-A read is recorded against the function holding it, not against its module.
-A roster of modules exempts every later read in a file the moment one read in
-it is justified, and `checks/_permissions.py` and `checks/_library.py` each
-already hold justified reads, so the two files most likely to grow another
-one were the two the gate had stopped watching. `PERMITTED` names sites for
-the same reason, because `groups.py::declaring_groups` is called straight
-from `pipeline.py` and `wizard.py` and its module is no more exclusively
-resolver internals than `checks/_library.py` is exclusively debt.
-
-`folder_policies` also names a field on `ResolvedMapping` itself
-(`resolved.folder_policies`), so a walk keyed on attribute name alone cannot
-tell that read apart from the raw `perms.folder_policies` without type
-inference. It does not need to: nothing outside `analysis/resolve.py` reads
-`resolved.folder_policies` on this branch, because Piece 3 moved every
-consumer onto the `require_folder_policies` accessor. A future function that
-reaches for the field directly, whichever object it hangs off, is exactly
-what this walk should name, so it is named rather than resolved by teaching
-the walk to tell the two apart.
+`analysis/resolve.py` is meant to be the only place a `from_enum` source is
+read before it resolves, so any other reader re-derives that resolution
+somewhere else. Reads and exemptions are both recorded per function, because
+a roster of modules frees every later read in a file that already holds one.
+`folder_policies` also names a `ResolvedMapping` field, and a read of that is
+reported rather than told apart by the type inference that would take.
 """
 
 from __future__ import annotations
