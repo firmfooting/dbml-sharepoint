@@ -1273,19 +1273,19 @@ def _header_identity_tokens(loaded: Loaded, entity: str) -> frozenset[str]:
     A list reads `[$Title]`. A library reads an ORDINARY item field, never a
     file token: the 2026-09-13 header probe (sp-dev-docs#11026) found every
     file-identity spelling rendering empty while `[$Title]`, Choice and
-    Number resolved, which is what seam-register's library reads. A custom
-    single-line text column is accepted too, on the strength of
-    legal-compliance-register's shipped `[$TopicName]` header rather than a
-    measurement: `library-header-token-probe.js` has no text column in its
-    typed battery, so round five is where that gets settled.
+    Number resolved. Beyond `[$Title]`, only a text column the library
+    DECLARES as identity in `field_sets` is accepted, so a header naming a
+    summary or description cannot pass. That covers
+    legal-compliance-register's shipped `[$TopicName]` on the strength of the
+    shipped header rather than a measurement: `library-header-token-probe.js`
+    has no text column in its typed battery, so round five settles it.
     """
     if loaded.mapping.entities[entity].kind != "DocumentLibrary":
         return frozenset({"[$Title]"})
-    text_columns = {
-        name for name, col_type in loaded.column_types(entity).items()
-        if col_type == "nvarchar"
-    }
-    return frozenset({"[$Title]"} | {f"[${name}]" for name in text_columns})
+    declared = loaded.mapping.field_sets.get(entity, {}).get("identity", [])
+    types = loaded.column_types(entity)
+    text_identity = {name for name in declared if types.get(name) == "nvarchar"}
+    return frozenset({"[$Title]"} | {f"[${name}]" for name in text_identity})
 
 
 def _is_title_line(node: dict[str, Any], identities: frozenset[str]) -> bool:
