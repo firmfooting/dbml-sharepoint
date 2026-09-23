@@ -9,11 +9,11 @@ sidebar_position: 90
 
 Every finding below is derived from an evidence package committed under `evidence/probes`, and every surface below is declared upstream in `SURFACES.md` whether or not anything has probed it yet. One row is one check: where a probe result and a reviewed capture answer the same check, they merge into a single row naming both lanes. A check is listed while it is still open, failed, void or referred to a human; settled checks are counted under their surface, not listed. Each row links to that check's own page, which carries the question it answers and the evidence behind it.
 
-Runs: 71. Findings: 170. Captures superseded: 1.
+Runs: 76. Findings: 170. Captures superseded: 1.
 
-Probes: 60. Probed: 54. Not yet probed: 6.
+Probes: 77. Probed: 59. Not yet probed: 18.
 
-Checks with a probe result, not settled: 168 of 924. Checks with a reviewed capture, not settled: 9 of 48.
+Checks with a probe result, not settled: 168 of 966. Checks with a reviewed capture, not settled: 9 of 48.
 
 ## formula — 9 of 10 probes with evidence, 64 findings
 
@@ -129,9 +129,9 @@ Not yet probed: `expression-text-operators-probe.js`, `form-visibility-evidence-
 
 9 further checks in this surface are settled.
 
-Not yet probed: `form-visibility-interactive.js`, `form-visibility-storage-probe.js`.
+Not yet probed: `form-visibility-storage-probe.js`, `form-visibility-interactive.js`.
 
-## field — 3 of 3 probes with evidence, 9 findings
+## field — 6 of 13 probes with evidence, 9 findings
 
 | Finding | Lanes | State | Run | Observed as |
 | --- | --- | --- | --- | --- |
@@ -145,7 +145,9 @@ Not yet probed: `form-visibility-interactive.js`, `form-visibility-storage-probe
 | [query.view-query.multichoice-chain-selects](findings/multi-value-20260828-initial-query-view-query-multichoice-chain-selects) | machine | open | multi-value/20260828-initial | — |
 | [query.view-query.multichoice-membership-selects](findings/multi-value-20260828-initial-query-view-query-multichoice-membership-selects) | machine | open | multi-value/20260828-initial | — |
 
-36 further checks in this surface are settled.
+68 further checks in this surface are settled.
+
+Not yet probed: `multilookup-probe.js`, `list-settings-probe.js`, `lookup-showfield-probe.js`, `boolean-field-probe.js`, `title-rename-probe.js`, `title-seal-probe.js`, `site-zone-transitions-probe.js`.
 
 ## text — 4 of 4 probes with evidence, 2 findings
 
@@ -156,7 +158,7 @@ Not yet probed: `form-visibility-interactive.js`, `form-visibility-storage-probe
 
 64 further checks in this surface are settled.
 
-## access — 4 of 4 probes with evidence, 15 findings
+## access — 4 of 5 probes with evidence, 15 findings
 
 | Finding | Lanes | State | Run | Observed as |
 | --- | --- | --- | --- | --- |
@@ -177,6 +179,8 @@ Not yet probed: `form-visibility-interactive.js`, `form-visibility-storage-probe
 | [access.principal.person-column-ids-resolve](findings/siteuserinfolist-20260902-initial-access-principal-person-column-ids-resolve) | machine | open | siteuserinfolist/20260902-initial | — |
 
 29 further checks in this surface are settled.
+
+Not yet probed: `built-in-levels-probe.js`.
 
 ## scale — 2 of 2 probes with evidence, 17 findings
 
@@ -214,7 +218,7 @@ Not yet probed: `form-visibility-interactive.js`, `form-visibility-storage-probe
 
 9 further checks in this surface are settled.
 
-## library — 26 of 27 probes with evidence, 42 findings
+## library — 28 of 32 probes with evidence, 42 findings
 
 | Finding | Lanes | State | Run | Observed as |
 | --- | --- | --- | --- | --- |
@@ -261,12 +265,14 @@ Not yet probed: `form-visibility-interactive.js`, `form-visibility-storage-probe
 | [library.large-list.preindex-group-by-unindexed-column](findings/library-large-list-preindex-group-view-20260908-sandbox-run2-library-large-list-preindex-group-by-unindexed-column) | machine | void | library-large-list-preindex-group-view/20260908-sandbox-run2 | — |
 | [library.search.discovery-on-library](findings/library-view-search-20260904-sandbox-library-search-discovery-on-library) | machine | open | library-view-search/20260904-sandbox | — |
 
-295 further checks in this surface are settled.
+305 further checks in this surface are settled.
 
-Not yet probed: `library-large-list-foldered-fixture-probe.js`.
+Not yet probed: `library-large-list-fixture-probe.js`, `library-large-list-preindex-fixture-probe.js`, `library-large-list-foldered-fixture-probe.js`, `library-guards-probe.js`.
 
-## transport — 1 of 1 probes with evidence, 0 findings
+## transport — 1 of 2 probes with evidence, 0 findings
 
 No findings in this surface.
 
 5 further checks in this surface are settled.
+
+Not yet probed: `batch-field-create-probe.js`.
