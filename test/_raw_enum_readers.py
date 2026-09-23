@@ -42,6 +42,11 @@ PERMITTED = frozenset({
     # from an unresolved one. The resolved field this function reads beside
     # them is not this entry, so deleting the raw read retires it.
     "dbml_sharepoint/analysis/resolve.py::ResolvedMapping.require_folder_policies::folder_policies",
+    # The same three sources snapshotted as text, so an edit to the mapping
+    # after it was resolved is a difference rather than one pointer compare.
+    "dbml_sharepoint/analysis/resolve.py::_consumed_inputs::folder_policies",
+    "dbml_sharepoint/analysis/resolve.py::_consumed_inputs::folder_source",
+    "dbml_sharepoint/analysis/resolve.py::_consumed_inputs::group_sources",
     # Every entity's folder source, resolved once, here.
     "dbml_sharepoint/analysis/resolve.py::resolve::folder_source",
     # The group sources walked a second time, to name the ones that did not
