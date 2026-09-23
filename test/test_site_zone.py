@@ -723,4 +723,4 @@ def test_the_probe_samples_are_rows_of_the_shipped_table() -> None:
             assert (at, int(after)) in table.transitions, (zone, at_text)
             assert table.offset_at(at - dt.timedelta(minutes=1)) == int(before), (zone, at_text)
             checked += 1
-    assert checked == 12
+    assert checked == 15
