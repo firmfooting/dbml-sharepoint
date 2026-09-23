@@ -33,12 +33,13 @@ def _mock(payload: Any, *, status: int = 200) -> str:
 
 
 def _keys(payload: Any, url: str, pick: str, *, method: str = "GET",
-          status: int = 200) -> list[str]:
+          status: int = 200, accept: str = "application/json;odata=verbose") -> list[str]:
     """The keys the script sees on the row `pick` selects from the answer."""
     out = run_node(
         _mock(payload, status=status)
         + "(async () => {\n"
-        f"  const r = await fetch({json.dumps(url)}, {{ method: {json.dumps(method)} }});\n"
+        f"  const r = await fetch({json.dumps(url)}, {{ method: {json.dumps(method)},\n"
+        f"    headers: {{ Accept: {json.dumps(accept)} }} }});\n"
         "  const j = await r.json();\n"
         f"  console.log('KEYS' + JSON.stringify(Object.keys({pick}).sort()));\n"
         "})();\n"
@@ -61,6 +62,80 @@ def test_a_verbose_entity_is_projected() -> None:
 def test_a_nometadata_collection_is_projected() -> None:
     keys = _keys({"value": [_ROW]}, "/_api/web/lists?$select=Title", "j.value[0]")
     assert keys == ["Title", "__metadata"]
+
+
+_NOMETADATA = "application/json;odata=NoMetadata"
+_BARE = {"Id": 1, "Title": "t", "Hidden": False, "odata.editLink": "Web/Lists(1)"}
+
+
+def test_a_bare_nometadata_entity_is_projected() -> None:
+    keys = _keys(_BARE, "/_api/web/lists/getbytitle('X')?$select=Title", "j",
+                 accept=_NOMETADATA)
+    assert keys == ["Title", "odata.editLink"]
+
+
+def test_an_unselected_read_of_a_bare_entity_fails_the_run() -> None:
+    with pytest.raises(UnselectedReadError) as caught:
+        run_node(
+            _mock(_BARE)
+            + "(async () => {\n"
+            "  const r = await fetch(\"/_api/web/lists/getbytitle('X')?$select=Id\",\n"
+            f"    {{ headers: {{ Accept: {json.dumps(_NOMETADATA)} }} }});\n"
+            "  const j = await r.json();\n"
+            "  console.log(j.Id, j.Hidden);\n"
+            "})();\n"
+        )
+    [read] = caught.value.reads
+    assert read.prop == "Hidden"
+    assert "j.Hidden" in read.source
+
+
+def test_a_nometadata_scalar_value_is_left_alone() -> None:
+    """A single-property read such as `/Title` carries no $select, so nothing is projected."""
+    wrapper = {"value": "t", "odata.metadata": "…/$metadata#Edm.String"}
+    keys = _keys(wrapper, "/_api/web/lists/getbytitle('X')/Title", "j", accept=_NOMETADATA)
+    assert keys == sorted(wrapper)
+
+
+@pytest.mark.parametrize("link", ["odata.nextLink", "@odata.nextLink"])
+def test_a_collection_keeps_its_continuation_annotation(link: str) -> None:
+    body = {"value": [{"Id": 1, "Hidden": False}], link: "/_api/next"}
+    keys = _keys(body, "/_api/web/lists?$select=Id", "j", accept=_NOMETADATA)
+    assert keys == sorted(["value", link])
+
+
+def test_an_entity_on_a_navigation_route_is_projected() -> None:
+    """`…/ListItemAllFields` is an entity route that does not end in `)`."""
+    keys = _keys({"value": "x"}, "/_api/web/GetFileByServerRelativeUrl('/f')/ListItemAllFields"
+                 "?$select=Id", "j", accept=_NOMETADATA)
+    assert keys == []
+
+
+def test_an_entity_holding_only_a_value_property_is_projected() -> None:
+    """At an entity address, `{value}` is the entity's field and not a scalar wrapper."""
+    keys = _keys({"value": "x"}, "/_api/web/lists/getbytitle('X')/items(1)?$select=Id",
+                 "j", accept=_NOMETADATA)
+    assert keys == []
+
+
+@pytest.mark.parametrize("field", ["value", "d"])
+def test_an_entity_with_a_value_or_d_property_is_still_projected(field: str) -> None:
+    """Only `value` alone is an envelope; beside other properties it is an ordinary field."""
+    item = {"Id": 1, field: "x", "Hidden": False}
+    keys = _keys(item, f"/_api/web/lists/getbytitle('X')/items(1)?$select=Id,{field}",
+                 "j", accept=_NOMETADATA)
+    assert keys == sorted(["Id", field])
+
+
+def test_a_verbose_entity_is_not_read_as_a_bare_one() -> None:
+    keys = _keys({"d": _ROW, "Extra": 1}, "/_api/web/lists/getbytitle('X')?$select=Hidden", "j")
+    assert keys == ["Extra", "d"]
+
+
+def test_a_bare_entity_needs_the_nometadata_accept() -> None:
+    """Without it the body is not one SharePoint answers bare, so nothing is assumed."""
+    keys = _keys(_BARE, "/_api/web/lists/getbytitle('X')?$select=Title", "j")
+    assert keys == sorted(_BARE)
 
 
 def test_expanded_names_and_first_segments_are_kept() -> None:
