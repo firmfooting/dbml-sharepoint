@@ -8180,13 +8180,16 @@ _SURVEYED_WRITE_PHASES = (
     _SurveyedPhase("seeds", "Seed"),
 )
 
-#: The last line of `surveyOwnedListsForWrites`, spliced to make one phase's
-#: survey come back without the title the phase is about to write to.
-_SURVEY_RETURN = "    return failed ? null : identities;"
+#: The head of `surveyOwnedListsForWrites`'s completeness check, spliced ahead
+#: of so one phase's survey reaches it without the title the phase is about to
+#: write to. Anchored here rather than on the return: the check is what these
+#: runs are about, and a splice landing after it would leave them passing
+#: while proving nothing.
+_SURVEY_COMPLETENESS = "\n    // Completeness is settled where the Map is built"
 
 
 def _survey_drops(label: str, title: str) -> Callable[[str], str]:
-    """Make the survey labelled `label` return a Map missing `title`.
+    """Make the survey labelled `label` lose `title` before it checks itself.
 
     No caller can produce that Map today: each one looks its Ids up from the
     same collection it handed the survey, so every lookup hits. What this
@@ -8196,11 +8199,13 @@ def _survey_drops(label: str, title: str) -> Callable[[str], str]:
     requests and this is a fault in the run's own bookkeeping.
     """
     def edit(js: str) -> str:
-        assert js.count(_SURVEY_RETURN) == 1, "the survey's return moved"
+        assert js.count(_SURVEY_COMPLETENESS) == 1, (
+            "the survey's completeness check moved"
+        )
         return js.replace(
-            _SURVEY_RETURN,
-            f"    if (label === {json.dumps(label)}) "
-            f"identities.delete({json.dumps(title)});\n" + _SURVEY_RETURN,
+            _SURVEY_COMPLETENESS,
+            f"\n    if (label === {json.dumps(label)}) "
+            f"identities.delete({json.dumps(title)});" + _SURVEY_COMPLETENESS,
         )
     return edit
 
@@ -8212,20 +8217,21 @@ def _survey_drops(label: str, title: str) -> Callable[[str], str]:
 def test_a_write_phase_refuses_a_list_its_survey_never_proved(
     tmp_path: Path, phase: _SurveyedPhase,
 ) -> None:
-    """A survey Map with no entry for the title, and the write must not go.
+    """A survey short of the title, and the write must not go.
 
-    `Map.get` answers a miss with `undefined`, and a default parameter fires
-    on `undefined`, so `ownedListIdentity(title, owned.get(title))` used to
-    bind the default and skip the identity comparison altogether. The list
-    here is genuinely owned and carries its marker, so the marker check the
-    guard degraded to passes and the phase wrote: the one case the Id
-    comparison exists for, a same-titled replacement carrying a copied
-    Description, would have been written to in the same silence.
+    The list here is genuinely owned and carries its marker, so nothing the
+    phase reads off the live site says no. What says no is the survey finding
+    it holds no Id for a title it was given, which is the one signal left when
+    a same-titled replacement carrying a copied Description would satisfy
+    every other check.
 
     One list, so "this phase wrote nothing" is the whole claim. Several of
     these phases address their writes by list GUID, and the mock answers every
     title with one Id, so a per-list filter over the call log could not
-    separate them.
+    separate them. `ownedListIdentity`'s own refusal of a nullish expected Id
+    is reached directly in
+    `test_the_identity_guard_refuses_an_expected_id_it_was_never_given`,
+    because no phase can reach it once the survey refuses first.
     """
     summary, calls, output = _run_ownership_deploy(
         tmp_path, deploy_edit=_survey_drops(phase.label, _OWNED_TITLE),
@@ -8238,6 +8244,37 @@ def test_a_write_phase_refuses_a_list_its_survey_never_proved(
     assert not _writes_in_phase(calls, pn(phase.key)), (
         f"phase {phase.key} wrote to a list its survey never proved: "
         f"{_writes_in_phase(calls, pn(phase.key))}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    "phase", _SURVEYED_WRITE_PHASES, ids=[p.key for p in _SURVEYED_WRITE_PHASES],
+)
+def test_one_unproven_list_stops_a_phase_writing_to_the_others(
+    tmp_path: Path, phase: _SurveyedPhase,
+) -> None:
+    """Two lists, one of them missing from the survey, and neither is written.
+
+    Every one of these phases loops over its targets inside a per-target
+    catch, so a refusal raised on one target's turn drops that target and
+    writes the rest. That is a partial deployment wearing the look of a
+    guard that held. The survey has to refuse the whole batch, which is why
+    it settles completeness itself instead of leaving it to `surveyedListId`.
+    """
+    summary, calls, output = _run_ownership_deploy(
+        tmp_path,
+        table_names=("Escalation", "Other"),
+        deploy_edit=_survey_drops(phase.label, _OWNED_TITLE),
+    )
+    assert any(
+        f"ownership survey proved no identity for '{_OWNED_TITLE}'" in line
+        for line in _phase_log(output, pn(phase.key))
+    ), f"phase {phase.key} did not name the unproven list:\n{output[-3000:]}"
+    assert summary["errors"], summary
+    assert not _writes_in_phase(calls, pn(phase.key)), (
+        f"phase {phase.key} wrote to the rest of a batch holding an unproven "
+        f"list: {_writes_in_phase(calls, pn(phase.key))}"
     )
 
 
