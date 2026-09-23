@@ -1159,16 +1159,22 @@ def test_every_declared_view_is_satisfied_by_a_demo_row(template: str) -> None:
         )
 
 
+def _stored_default(value: str | int | bool) -> str | int | bool:
+    """A schema default as the row stores it; `[today]` is the create date, not the token."""
+    if not isinstance(value, str):
+        return value
+    text = value.strip("'")
+    return "today" if text == "[today]" else text
+
+
 def _seeded_rows(loaded: Loaded, entity: str) -> list[tuple[str, dict[str, Any]]]:
     """(key, values) per demo row, schema defaults filled in as SharePoint stores them."""
     defaults: dict[str, Any] = {}
     for table in loaded.schema.tables:
         if table.name == entity:
             for column in table.columns:
-                if column.default is None:
-                    continue
-                value = column.default
-                defaults[column.name] = value.strip("'") if isinstance(value, str) else value
+                if column.default is not None:
+                    defaults[column.name] = _stored_default(column.default)
     return [
         (item.key, {**defaults, **item.values})
         for item in loaded.mapping.demo_items.get(entity, [])
@@ -1490,6 +1496,9 @@ def _evaluate_leaf(leaf: Leaf, row: dict[str, Any], types: dict[str, str]) -> bo
         # comparison excludes it. `not_includes` is there on probe C9,
         # 2026-08-10, which returned the empty row.
         return leaf.op in _NULL_INCLUSIVE_NEGATIVES
+    if column_type == "datetime" and isinstance(leaf.value, str) and NOW_SENTINEL.match(leaf.value):
+        # Only a DATETIME column reads `now` as the instant, as `_is_now` renders it.
+        return _compare_with_now(leaf.field, leaf.op, raw)
     if leaf.op in ("includes", "not_includes"):
         if not isinstance(raw, list):
             # DEMO_MULTI_VALUE_NOT_A_LIST refuses a scalar on such a column, so
@@ -1504,6 +1513,23 @@ def _evaluate_leaf(leaf: Leaf, row: dict[str, Any], types: dict[str, str]) -> bo
         member = any(_compare("eq", raw, candidate) for candidate in leaf.value)
         return member if leaf.op == "in" else not member
     return _compare(leaf.op, raw, leaf.value)
+
+
+def _compare_with_now(field: str, op: str, raw: Any) -> bool:
+    """A seeded instant against the save instant, known only to the day.
+
+    A seed on another day is decided by the day. A same-day seed is written
+    before the row is saved, so it is no later than `now`: that decides `leq`
+    and `gt`, and every other operator turns on the clock, which is unknown.
+    """
+    seeded = _as_date(raw)
+    if seeded is None or op not in ("eq", "neq", "lt", "leq", "gt", "geq"):
+        raise _UnevaluableError(f"{field}: {op} now against {raw!r}")
+    if seeded != REFERENCE_DATE:
+        return _compare(op, seeded, REFERENCE_DATE)
+    if op in ("leq", "gt"):
+        return op == "leq"
+    raise _UnevaluableError(f"{field}: {op} now on a same-day instant depends on the clock")
 
 
 def _compare(op: str, left: Any, right: Any) -> bool:
@@ -1553,9 +1579,6 @@ def _as_date(value: Any) -> dt.date | None:
     if match is not None:
         offset = int(match.group(2) or 0)
         return REFERENCE_DATE + dt.timedelta(days=-offset if match.group(1) == "-" else offset)
-    if NOW_SENTINEL.match(text):
-        # The save instant; demo offsets resolve to the same day, so compare by day.
-        return REFERENCE_DATE
     if "-" not in text:
         return None
     try:
@@ -1651,12 +1674,37 @@ _CLOCK_TYPES = {"StampAt": "datetime", "Note": "longtext"}
     ("today-2", "leq", True),
     ("today", "leq", True),
     ("today+1", "leq", False),
-    # Day granularity: a same-day instant is not strictly before now.
-    ("today", "lt", False),
+    ("today-1", "lt", True),
+    ("today+1", "geq", True),
+    # A same-day seed is written before the save, so it is never after now.
+    ("today", "gt", False),
 ])
 def test_now_resolves_to_the_reference_day(seeded: str, op: str, expected: bool) -> None:
     leaf = Leaf(field="StampAt", op=op, value="now")
     assert _evaluate(leaf, {"StampAt": seeded}, _CLOCK_TYPES) is expected
+
+
+@pytest.mark.parametrize("op", ["lt", "geq", "eq", "neq"])
+def test_a_same_day_instant_against_now_is_unevaluable(op: str) -> None:
+    """Day granularity cannot order two instants on one day; the clock decides."""
+    leaf = Leaf(field="StampAt", op=op, value="now")
+    with pytest.raises(_UnevaluableError):
+        _evaluate(leaf, {"StampAt": "today"}, _CLOCK_TYPES)
+
+
+def test_now_is_a_literal_word_off_a_datetime_column() -> None:
+    """The renderer reads `now` as the instant only on a DATETIME column."""
+    leaf = Leaf(field="Note", op="neq", value="now")
+    assert _evaluate(leaf, {"Note": "today"}, _CLOCK_TYPES) is True
+
+
+@pytest.mark.parametrize(("default", "stored"), [
+    ("'[today]'", "today"),
+    ("'Open'", "Open"),
+    (3, 3),
+])
+def test_a_schema_default_is_stored_resolved(default: str | int, stored: str | int) -> None:
+    assert _stored_default(default) == stored
 
 
 @pytest.mark.parametrize(("value", "expected"), [
