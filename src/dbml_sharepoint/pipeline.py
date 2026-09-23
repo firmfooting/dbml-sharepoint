@@ -191,10 +191,14 @@ def execute_build(
     parsed_schema, bundle, release_obj = load_config(schema, mapping, release)
     if release_obj is None:  # unreachable: --release is a required option
         raise typer.BadParameter("--release is required for `build`.")
-    # Resolved ONCE for this build and threaded everywhere below: the reader
-    # gate, the schema view and the manifest all resolve enum sources, and a
-    # generator that built its own ResolvedMapping could build a different
-    # one from another.
+    # Threaded everywhere below rather than rebuilt: the reader gate, the
+    # schema view and the manifest all resolve enum sources, and a generator
+    # that built its own could build a different one from another. Not once
+    # per build, though -- `ValidationContext.build` resolves again from the
+    # same inputs. `resolve` is pure, so the two cannot disagree, and the
+    # duplicate is accepted rather than removed by an optional pre-built
+    # parameter, which would let a caller validate a DIFFERENT resolution
+    # from the one deployed.
     resolved = resolve(parsed_schema, bundle.mapping)
     ext = resolve_extension_or_refuse(extension, bundle, mapping)
 

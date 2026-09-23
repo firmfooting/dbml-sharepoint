@@ -105,7 +105,7 @@ Held as DECLARED rather than resolved, because the mapping loader never sees
 the schema. The deploy creates each folder through the folder endpoint, reads
 it back and refuses a file standing where a folder was declared; a redeploy
 verifies and skips. Library only: the validator refuses the key on a list.
-Read it through `analysis/folders.py::declared_folders`, never directly.
+Read it through `analysis/resolve.py::resolve`, never directly.
 """
 
 
@@ -143,7 +143,7 @@ class EntityMapping:
     # A previous title without that marker, or present beside the current
     # one, is refused at assessment and at preflight.
     renamed_from: tuple[str, ...] = ()
-    # Unresolved: read it through `analysis/folders.py::declared_folders`.
+    # Unresolved: read it through `analysis/resolve.py::resolve`.
     folder_source: FolderSource = ()
     title: str | None = None
     internal_name: str | None = None
@@ -615,7 +615,7 @@ class ListPermissionPolicy:
 class PermissionsConfig:
     # The groups written out. Enum-generated ones are in `group_sources`
     # until resolved, so a caller wanting EVERY declared group must go
-    # through `analysis/groups.py::declared_groups`.
+    # through `analysis/resolve.py::resolve` and read `ResolvedMapping.groups`.
     levels: list[CustomPermissionLevel]
     groups: list[SiteGroup]
     default_policy: ListPermissionPolicy | None

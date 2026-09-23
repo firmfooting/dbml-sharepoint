@@ -47,9 +47,11 @@ class ValidationContext:
     schema: Schema
     bundle: MappingBundle
     # Every enum source in the mapping, resolved once against `schema`.
-    # `_library.py` and `_permissions.py` walk `resolved.unresolved` to
-    # report `folder_enum_unknown` and `group_enum_unknown` themselves,
-    # rather than calling a raising resolver and catching its error.
+    # `_library.py` walks `resolved.unresolved` to report
+    # `folder_enum_unknown` itself, rather than calling a raising resolver
+    # and catching its error. `_permissions.py` still tests `group_enum_unknown`
+    # against `enum_members_by_name` directly, and reads `resolved.folders`
+    # only to skip the entities that did not resolve.
     resolved: ResolvedMapping
     # The family the emitter stamps into every list Description, resolved
     # once from the same helper `generators.jsgen` uses.
@@ -188,6 +190,11 @@ class ValidationContext:
         # own. The old fallback dropped every generated group as soon as one
         # source was misspelled, so the checks below silently stopped judging
         # groups that had resolved.
+        #
+        # `build` resolves a second time in `pipeline`, for the generators.
+        # `resolve` is pure, so the two agree; taking one in as a parameter
+        # would let a caller validate a different resolution from the one
+        # that is deployed, so the duplicate work is the accepted cost.
         resolved = resolve(schema, bundle.mapping)
         enum_members_by_name = dict(resolved.enum_members)
         site_groups = resolved.groups
