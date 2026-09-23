@@ -132,33 +132,42 @@ def test_each_level_carries_its_own_expected_marker() -> None:
         assert lvl["expected_marker"] == marker_for_level("change-register", lvl["name"])
 
 
+def _acl_phase(js: str) -> str:
+    """Phase 4.2's own text, from its banner to the next phase's.
+
+    A search over the whole script answers for templates this one has nothing
+    to do with: `_reader_enrolment.js.j2` names `roleassignments/getbyprincipalid`
+    in a comment, and the simple fixture omits it only for want of an
+    enterprise reader.
+    """
+    return js.split(f"Starting Phase {pn('acls')}")[1].split(
+        f"Starting Phase {pn('seeds')}")[0]
+
+
 def test_exact_acl_reconciliation_removes_unlisted_principals() -> None:
     """Exact mode is a real allowlist, not just stale-level cleanup for the
     principals that happen to be declared in the mapping."""
     js = _generate_simple_js()
     assert "reconcile_mode" in js
-    assert "roleassignments?$expand=Member,RoleDefinitionBindings" in js
-    assert "const expected = new Set" in js
-    assert "removeBinding(principalId, binding.Id, 'unlisted')" in js
-    assert "binding.Name === 'Limited Access'" in js
-    assert "while (assignmentsUrl)" in js
-    assert "const next = validatedNextPage(allJson.d," in js
-    assert "assignmentsUrl = next;" in js
+    assert "roleassignments?$expand=RoleDefinitionBindings" in js
+    assert "const desired = new Set" in js
+    assert "removeBinding(row.principalId, row.roleDefId, 'unlisted')" in js
+    assert "row.name === 'Limited Access'" in js
+    assert "const next = validatedNextPage(json.d," in js
     assert "cannot resolve desired assignment" in js
     assert js.index("addroleassignment") < js.index(
         "Exact mode treats the mapping as an allowlist",
     )
     assert "failed before reconciliation" in js
-    assert "desiredPresent" in js
 
 
-def test_role_assignment_reads_use_positional_getbyprincipalid() -> None:
-    """SharePoint's REST read method is positional; add/remove remain named."""
+def test_role_assignment_writes_keep_their_named_parameters() -> None:
+    """SharePoint's add and remove methods take named parameters. The
+    positional read method they were paired against is gone: every read now
+    goes through the one collection enumeration."""
     js = _generate_simple_js()
 
-    positional = "getbyprincipalid(${resolved.principalId})"
-    assert js.count(positional) == 2
-    assert "getbyprincipalid(principalid=" not in js
+    assert "roleassignments/getbyprincipalid" not in _acl_phase(js)
     assert "addroleassignment(principalid=${resolved.principalId}" in js
     assert "removeroleassignment(principalid=${principalId}" in js
 
@@ -509,27 +518,22 @@ def test_operator_effective_rights_diagnostic_after_cleanup() -> None:
     assert diagnostic < js.index("Deployment complete.")
 
 
-def test_role_assignments_are_enumerated_before_any_principal_probe() -> None:
-    """A list's roleassignments/getbyprincipalid answers 404 for a principal
-    with no assignment yet (every declared principal, on a first deploy),
-    and the browser paints that red whatever the script does with it.
+def test_one_enumeration_answers_every_role_assignment_question() -> None:
+    """Three reads of a scope's bindings drifted apart once already: the
+    read-back added days after the allowlist enumeration did not paginate,
+    did not verify removals, and ran after the pruning. One read cannot.
 
-    Asserted on the generated source rather than by running it: the mock in
-    test_deploy_runtime never resolves a principal Id, so its run never
-    reaches these calls, and a runtime assertion would pass while testing
-    nothing.
+    Asserted on the generated source rather than by running it: a shape that
+    only the exact-mode branch reaches is invisible to a run whose fixture
+    declares no exact policy. Over Phase 4.2's own text rather than the whole
+    script, for the reason `_acl_phase` gives.
     """
     js = _generate_simple_js()
-    enumerate_at = js.index("roleassignments?$expand=Member,RoleDefinitionBindings")
-    probe_at = js.index("roleassignments/getbyprincipalid")
-    assert enumerate_at < probe_at, (
-        "the one-shot enumeration must come before any per-principal probe, "
-        "or the probe is what an operator sees painted red"
+    assert js.count("roleassignments?$expand=RoleDefinitionBindings") == 1, (
+        "every read of a scope's bindings must go through scopeBindings"
     )
-    # Every probe site must be reachable only when the enumeration failed.
-    assert js.count("bindingsFor(resolved.principalId)") == 2, (
-        "both the add check and the stale-level pass must consult the "
-        "enumeration first and fall back to probing only when it is null"
+    assert "getbyprincipalid" not in _acl_phase(js), (
+        "a per-principal probe is a second way to read the same thing"
     )
 
 

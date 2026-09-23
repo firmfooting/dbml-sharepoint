@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY ACCESS SURFACE
  *
- * REVISION: a3f34f2c
+ * REVISION: be3879b3
  *
  * ONE QUESTION:
  *   Does the permission model of a document library diverge from a generic list?
@@ -37,7 +37,9 @@
  *     attach to a document library and read back, the way it does on a list?
  *     Uses the same roleassignments/addroleassignment attach and expanded
  *     read-back shape lookup-acl-probe.js and reader-bindings-probe.js use
- *     at list scope.
+ *     at list scope. It also OBSERVES, at library and at item scope, what the
+ *     deploy's own $select composition returns, because the deploy now decides
+ *     removals off that read rather than only verifying against it.
  *   library.access.file-scoped-unique-permission
  *     A library's security-scoped objects are files and folders, not list
  *     items. Does a unique permission set on a single file inside the
@@ -196,15 +198,49 @@
   // ---- Pre-run reset --------------------------------------------------
   // Call this before bootstrapping. A no-op unless CLEANUP is on, so the
   // probe body reads the same either way.
-  const resetList = async (title) => {
+  //
+  // expectedId is OPTIONAL because most callers have no claimed Id to bracket
+  // with, and the behaviour without one is unchanged. Supply one and every
+  // request below addresses that list Id instead of the title, so a title
+  // rebound mid-run cannot redirect the deletes or the recycle onto a list
+  // this run never owned.
+  //
+  // DOCUMENTED: `web/lists(guid'<id>')` is the list resource, and `/items`
+  // and `/items(<id>)` hang off it (Working with lists and list items with
+  // REST, and the CSOM/REST API index, both checked 2026-09-23).
+  // NOT DOCUMENTED: `/recycle` on the by-Id form appears on no Learn page.
+  // It is the call this project has live evidence for with only the
+  // addressing changed, and an unsupported URL fails visibly here rather
+  // than losing somebody's list. One CLEANUP run settles it; see issue #611.
+  const resetList = async (title, expectedId = null) => {
     if (!CLEANUP) return false;
     if (!ALLOW_WRITES) {
       log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
       return false;
     }
-    const found = await spGet(`web/lists/getbytitle('${title}')`);
+    // An Id that is not a GUID would be spliced into a URL that addresses
+    // something else, so it fails closed instead of being sent.
+    const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (expectedId !== null && !GUID.test(String(expectedId))) {
+      log('FAIL', `CLEANUP: '${expectedId}' is not a list Id, so nothing was deleted or `
+                  + `recycled under '${title}'.`);
+      return false;
+    }
+    const listPath = expectedId === null
+      ? `web/lists/getbytitle('${title}')`
+      : `web/lists(guid'${expectedId}')`;
+    const found = await spGet(expectedId === null ? listPath : `${listPath}?$select=Id`);
     if (!found.ok) {
       log('INFO', `CLEANUP: no list named '${title}' to remove.`);
+      return false;
+    }
+    // Addressing by Id still gets read back, because every destructive
+    // request below rests on this one answer.
+    const answeredId = found.body && found.body.Id
+      ? String(found.body.Id).replace(/[{}]/g, '').toLowerCase() : null;
+    if (expectedId !== null && answeredId !== String(expectedId).toLowerCase()) {
+      log('FAIL', `CLEANUP: list ${expectedId} answered as ${answeredId}, so nothing was `
+                  + `deleted or recycled under '${title}'.`);
       return false;
     }
     log('INFO', `CLEANUP: removing list '${title}' and its items.`);
@@ -214,12 +250,11 @@
     // removed. A locked or no-delete list would otherwise leave rows from
     // a previous run answering this run's questions.
     let digest = await getDigest();
-    const items = await spGet(
-      `web/lists/getbytitle('${title}')/items?$select=Id&$top=5000`);
+    const items = await spGet(`${listPath}/items?$select=Id&$top=5000`);
     const rows = (items.ok && items.body && items.body.value) || [];
     for (const row of rows) {
       digest = await getDigest();
-      await spPost(`web/lists/getbytitle('${title}')/items(${row.Id})`, {}, digest,
+      await spPost(`${listPath}/items(${row.Id})`, {}, digest,
                    { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
     }
     if (rows.length) log('INFO', `CLEANUP: deleted ${rows.length} item(s).`);
@@ -228,11 +263,14 @@
     }
 
     digest = await getDigest();
-    const gone = await spPost(`web/lists/getbytitle('${title}')/recycle`, {}, digest);
+    const gone = await spPost(`${listPath}/recycle`, {}, digest);
+    // The Id is named where there is one, because a repair by hand off the
+    // title would go to whatever the title resolves to now.
+    const which = expectedId === null ? `'${title}'` : `'${title}' (list ${expectedId})`;
     if (gone.ok) {
-      log('OK', `CLEANUP: recycled list '${title}'. It is restorable from the recycle bin.`);
+      log('OK', `CLEANUP: recycled list ${which}. It is restorable from the recycle bin.`);
     } else {
-      log('FAIL', `CLEANUP: could not recycle '${title}': HTTP ${gone.status} ${gone.text.slice(0, 200)}`);
+      log('FAIL', `CLEANUP: could not recycle ${which}: HTTP ${gone.status} ${gone.text.slice(0, 200)}`);
     }
     return gone.ok;
   };
@@ -312,8 +350,64 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
+  // Shared observation vocabulary v1: how a probe says "this read did not
+  // establish what it was supposed to".
+  //
+  // This is the NOT ESTABLISHED head from _probe_harness.js.j2 reached from
+  // the READ side, not a second vocabulary beside it. Everything here ends in
+  // record(id, question, 'NOT ESTABLISHED', why), which stateFor() already
+  // classifies `open`.
+  //
+  // A SHAPE RATHER THAN A CONVENTION, because the failure it exists against is
+  // a row recorded OBSERVED from a field nothing ever read. A reading is
+  // either established, carrying a value every field of which was read, or
+  // unestablished, carrying the reason. There is no third shape and no way to
+  // the value except mustRead(), so an observation cannot reach a partial one
+  // by forgetting a check.
+  class Unestablished extends Error {}
+  const established = (value) => ({ established: true, value, why: null });
+  const unestablished = (why) => ({ established: false, value: null, why });
+  const mustRead = (reading) => {
+    if (!reading.established) throw new Unestablished(reading.why);
+    return reading.value;
+  };
+  // A field the claim RESTS on, checked where it is read rather than where it
+  // is reported.
+  const mustCarry = (ok, what) => {
+    if (!ok) throw new Unestablished(what);
+  };
+  // What came back, never what it said: a principal's Title is somebody's
+  // display name and a transcript gets pasted into a pull request.
+  const shapeOf = (value) => {
+    if (value === null) return 'null';
+    if (Array.isArray(value)) return `an array of ${value.length}`;
+    if (typeof value === 'string') return `a string of ${value.length} char(s)`;
+    return typeof value;
+  };
+  // One row, from a body that may fail to establish it at any depth. A shape
+  // nobody predicted is a measurement of this tenant and never a reason to
+  // abort the questions after it, so a throw inside `body` is RECORDED here
+  // rather than propagated. `body` returns the evidence for an OBSERVED row,
+  // or { outcome, evidence, state } for any other head.
+  const observe = async (id, question, body) => {
+    let found;
+    try {
+      found = await body();
+    } catch (err) {
+      found = {
+        outcome: 'NOT ESTABLISHED',
+        evidence: err instanceof Unestablished
+          ? err.message
+          : `the observation threw: ${String(err)}`,
+      };
+    }
+    const row = typeof found === 'string'
+      ? { outcome: 'OBSERVED', evidence: found }
+      : found;
+    record(id, question, row.outcome, row.evidence, row.state);
+  };
 
-  log('INFO', 'probe revision a3f34f2c. Quote this when reporting results.');
+  log('INFO', 'probe revision be3879b3. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibAccess';
   const FILE = 'probe-access-doc.txt';
@@ -405,6 +499,77 @@
       text: `${attempts.length} read(s) waiting for ${String(wanted)}, over up to `
         + `${(UNIQUE_TRIES - 1) * UNIQUE_WAIT_MS} ms: ${attempts.join('; ')}`,
     };
+  };
+
+  // The deploy reads a scope's bindings through ONE url, and since the
+  // reconcile unification that read decides which bindings are REMOVED rather
+  // than only which are verified. The plainer shape read below does not answer
+  // whether SharePoint honours PrincipalId in a $select that also names
+  // expanded sub-properties, so the deploy's own url is read here as it sends
+  // it. OBSERVED and never asserted: the row count is reported beside the
+  // count carrying an id, so a read that returned nothing is legible as that
+  // rather than as agreement, and a shape this probe did not predict is a
+  // measurement instead of a failure.
+  const DEPLOY_BINDING_QUERY =
+    'roleassignments?$expand=RoleDefinitionBindings'
+    + '&$select=PrincipalId,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name';
+  const deployShapeRead = async (scopePath, where) => {
+    let res = null;
+    try {
+      res = await fetch(`${WEB}/_api/${scopePath}/${DEPLOY_BINDING_QUERY}`, {
+        headers: { Accept: 'application/json;odata=verbose' },
+      });
+    } catch (err) {
+      return `${where}: the read threw (${String(err)})`;
+    }
+    if (!res.ok) return `${where}: HTTP ${res.status}`;
+    const body = await res.json().catch(() => null);
+    // The whole parse, inside the catch this helper's own contract asks for.
+    // It is AWAITED INLINE while the library finding is being built, so a
+    // throw in here aborted the access experiment that follows: a row nobody
+    // predicted has to be describable, which is what it claims to measure.
+    try {
+      const rows = (body && body.d && Array.isArray(body.d.results)) ? body.d.results : null;
+      if (rows === null) return `${where}: HTTP 200 carrying no d.results array`;
+      // A row that is not an object is COUNTED, never dereferenced.
+      const usable = rows.filter((r) => r !== null && typeof r === 'object');
+      const oddRows = rows.filter((r) => r === null || typeof r !== 'object');
+      const withId = usable.filter(
+        (r) => r.PrincipalId !== null && r.PrincipalId !== undefined);
+      // All THREE fields, because the deploy keys a binding as
+      // `${PrincipalId}:${binding.Id}` and exempts on `binding.Name`. A tenant
+      // that honours the top-level field of this $select composition and drops
+      // a nested one looks healthy on a PrincipalId count while the deploy
+      // builds undefined keys, matches no declared grant and exempts nothing.
+      // Reported, never asserted: whatever comes back is the observation.
+      const nested = usable.filter(
+        (r) => r.RoleDefinitionBindings
+          && Array.isArray(r.RoleDefinitionBindings.results)).length;
+      const expanded = usable.flatMap((r) => (
+        (r.RoleDefinitionBindings && Array.isArray(r.RoleDefinitionBindings.results))
+          ? r.RoleDefinitionBindings.results
+          : []));
+      const usableBindings = expanded.filter((b) => b !== null && typeof b === 'object');
+      const oddBindings = expanded.filter((b) => b === null || typeof b !== 'object');
+      const withBindingId = usableBindings.filter(
+        (b) => b.Id !== null && b.Id !== undefined);
+      const names = [...new Set(usableBindings.map(
+        (b) => (typeof b.Name === 'string' ? b.Name : `<${typeof b.Name}>`)))];
+      const odd = [...oddRows, ...oddBindings];
+      return `${where}: HTTP 200, ${rows.length} row(s), ${withId.length} of them `
+        + `carrying a non-null PrincipalId, ${nested} carrying a `
+        + `RoleDefinitionBindings.results array; ${expanded.length} expanded `
+        + `binding(s), ${withBindingId.length} with a non-null Id, name(s) `
+        + `${names.length ? names.map((nm) => `'${nm}'`).join(', ') : 'none'}`
+        + (odd.length
+          ? `; ${oddRows.length} row(s) and ${oddBindings.length} expanded binding(s) `
+            + `were not objects this read could describe `
+            + `(${[...new Set(odd.map(shapeOf))].join(', ')})`
+          : '');
+    } catch (err) {
+      return `${where}: HTTP 200 whose body established nothing about the shape `
+        + `(${String(err)})`;
+    }
   };
 
   // The restore pass. Runs on every path out of the access questions, so a
@@ -653,9 +818,18 @@
               if (ownersRow) break;
             }
             const bindingElapsed = Date.now() - bindingStarted;
+            // Both scopes, at this point in the run: the library holds the
+            // grant above and the file item inherits it, so neither read is
+            // vacuous. Nothing here changes the outcome.
+            const deployShape =
+              ' The deploy\'s own $select composition read '
+              + await deployShapeRead(listPath, 'at library scope') + '; '
+              + await deployShapeRead(
+                `${listPath}/items(${fileItem.Id})`,
+                'at item scope, the file still inheriting') + '.';
             record('library.access.role-assignment-library', Q_ROLE_ATTACH,
                    ownersRow ? 'SAME AS LIST' : 'ASSIGNMENT NOT READ BACK',
-                   ownersRow
+                   (ownersRow
                      ? `addroleassignment(principalid=${owners.body.Id},roledefid=1073741829) succeeded `
                        + `on '${LIB}' and the library's roleassignments read back ${rows.length} row(s) `
                        + `including the owners group bound to Full Control, exactly as a generic list `
@@ -666,7 +840,8 @@
                      : `the library roleassignments read answered HTTP ${assignResp.status} with `
                        + `${rows.length} row(s) after ${bindingReads} read(s) over ${bindingElapsed} ms, `
                        + `but none bound principal ${owners.body.Id} to Full Control. `
-                       + 'A list would have read the assignment back; this is a divergence.');
+                       + 'A list would have read the assignment back; this is a divergence.')
+                   + deployShape);
 
             // ---- file-scoped-unique-permission --------------------------
             // The file is the library's item analogue. Break inheritance on

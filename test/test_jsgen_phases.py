@@ -231,7 +231,7 @@ def test_deploy_js_phase1_reliability_hardening() -> None:
     # (c) per-field guard marker
     assert f"Phase {pn('lists')} field" in js
     # (d) Phase 4.2 reconcile
-    assert "getbyprincipalid" in js
+    assert "roleassignments?$expand=RoleDefinitionBindings" in js
     assert "removeroleassignment" in js
 
 

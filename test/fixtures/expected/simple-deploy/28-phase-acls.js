@@ -209,10 +209,14 @@
       return result;
     };
 
-    // Every direct binding a scope holds, as `principalId:roleDefId`, paged
-    // to the end. Paginated for the reason the allowlist enumeration above
-    // is: a capped read is a PARTIAL view, and a verification that treats a
-    // second page as absence fails a folder whose bindings are all present.
+    // Every direct binding a scope holds, paged to the end. ONE read answers
+    // every question this phase asks about a scope: which declared grants are
+    // missing, which undeclared ones an exact policy prunes, and what the
+    // scope reports once both have been written. Paginated because a capped
+    // read is a PARTIAL view, and an allowlist pruned against one removes
+    // bindings it never saw. One read serving every decision is also why the
+    // shape is checked here: a field this enumeration drops is wrong for all
+    // of them at once.
     const scopeBindings = async (scope) => {
       const rows = [];
       let url = apiUrl(`web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}/roleassignments?$expand=RoleDefinitionBindings&$select=PrincipalId,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`);
@@ -222,13 +226,38 @@
         });
         if (!resp.ok) {
           const text = await resp.text();
-          throw new Error(`role assignment read-back failed for '${scope.label}': HTTP ${resp.status} ${text}`);
+          throw new Error(`role assignment enumeration failed for '${scope.label}': HTTP ${resp.status} ${text}`);
         }
         const json = await resp.json();
-        const next = validatedNextPage(json.d, `Role assignment read-back for '${scope.label}'`);
+        const next = validatedNextPage(json.d, `Role assignment enumeration for '${scope.label}'`);
         for (const row of ((json.d && json.d.results) || [])) {
-          for (const binding of ((row.RoleDefinitionBindings && row.RoleDefinitionBindings.results) || [])) {
-            rows.push({ key: `${row.PrincipalId}:${binding.Id}`, name: binding.Name });
+          if (row.PrincipalId == null) {
+            throw new Error(`role assignment enumeration for '${scope.label}' returned an entry without PrincipalId`);
+          }
+          // The fallback this replaces read a malformed row as a principal
+          // holding nothing, which is silent in both directions: an exact
+          // policy issues no removal for a grant it cannot see and then
+          // certifies the scope, and a binding whose Name is absent stops
+          // matching 'Limited Access' and is pruned. `deployShapeRead` in
+          // library-access-probe.js OBSERVES these three fields on a live
+          // tenant, and production fails closed rather than assuming them.
+          const bindings = row.RoleDefinitionBindings && row.RoleDefinitionBindings.results;
+          if (!Array.isArray(bindings)) {
+            throw new Error(`role assignment enumeration for '${scope.label}' returned principal ${row.PrincipalId} without a RoleDefinitionBindings.results array`);
+          }
+          for (const binding of bindings) {
+            if (binding == null || binding.Id == null) {
+              throw new Error(`role assignment enumeration for '${scope.label}' returned a binding for principal ${row.PrincipalId} without RoleDefinitionBindings/Id`);
+            }
+            // Presence is typeof, exactly as the probe measures it, so this
+            // rule is never stronger than the observation behind it.
+            if (typeof binding.Name !== 'string') {
+              throw new Error(`role assignment enumeration for '${scope.label}' returned binding ${binding.Id} for principal ${row.PrincipalId} without RoleDefinitionBindings/Name`);
+            }
+            rows.push({
+              principalId: row.PrincipalId, roleDefId: binding.Id,
+              key: `${row.PrincipalId}:${binding.Id}`, name: binding.Name,
+            });
           }
         }
         url = next;
@@ -237,22 +266,54 @@
     };
 
     // Re-read until `judge` is satisfied or the window runs out, and hand
-    // back its last complaint. The window is BORROWED, not measured for this
-    // surface: MEASURED 2026-09-09, `library.access.unique-permissions-library`,
-    // a library's HasUniqueRoleAssignments read false on the first read after
+    // back its last complaint. Half the window is now measured and half is
+    // still borrowed, and they are different halves.
+    //
+    // REMOVAL visibility at list scope is MEASURED 2026-09-22,
+    // `access.list-acl.enumeration-is-monotonic` in
+    // operator-safety-grant-probe.js: a removed binding read gone on reads 1
+    // to 3, PRESENT again on read 4 and gone on read 5, over 8000 ms with
+    // nothing written between them. A single read-back landing on that fourth
+    // read would abort a scope whose removal had in fact taken, and this loop
+    // is why this phase does not.
+    //
+    // ADD visibility is still BORROWED: MEASURED 2026-09-09,
+    // `library.access.unique-permissions-library`, a library's
+    // HasUniqueRoleAssignments read false on the first read after
     // breakroleinheritance and true on the second, within 10 s. Whether a
     // binding written inside a batched ChangeSet is any slower is not
     // measured; `library.access.role-assignment-library` in the manual probe
-    // now counts the reads one takes to appear, and that number replaces this.
+    // counts the reads one takes to appear, and that number replaces this
+    // half.
+    //
+    // Both judges stop at the FIRST satisfying read rather than requiring
+    // consecutive agreement, which is the correct design against an
+    // enumeration measured to flap: a check demanding N consecutive reads
+    // would fail on exactly the sequence above.
+    //
+    // What that does NOT catch: nothing observes the window after the first
+    // satisfying read, so a stray genuinely re-derived later goes unseen.
+    // Closing it needs a live measurement of how long a removal can come
+    // back, not a stricter rule here, which the flap above would break.
+    //
+    // Bracketed by identity, in the same `withOwnedList` the writes use.
+    // Every read-back this phase acts on goes through here, and a read
+    // addressed by title alone would verify a REPLACEMENT if the title were
+    // rebound after the last write: one carrying a copied ownership marker
+    // and the desired ACL makes a reconciliation report success while the
+    // surveyed list still holds the removal that did not take. The survey
+    // that follows is title-based too, so nothing later could recover it.
     const settleBindings = async (scope, judge) => {
-      const FOLDER_BINDING_SETTLE_MS = 2000;
-      let complaint = null;
-      for (let attempt = 0; attempt < 5; attempt += 1) {
-        if (attempt > 0) await sleep(FOLDER_BINDING_SETTLE_MS);
-        complaint = judge(await scopeBindings(scope));
-        if (complaint === null) return null;
-      }
-      return complaint;
+      const SCOPE_BINDING_SETTLE_MS = 2000;
+      return withOwnedList(scope.listTitle, scope.listId, `settling role assignments on '${scope.label}'`, async () => {
+        let complaint = null;
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          if (attempt > 0) await sleep(SCOPE_BINDING_SETTLE_MS);
+          complaint = judge(await scopeBindings(scope));
+          if (complaint === null) return null;
+        }
+        return complaint;
+      });
     };
 
     // One securable at a time: a list, or one folder's list item. Every
@@ -351,6 +412,11 @@
       // The one irreversible operation in this phase, so it carries the
       // strictest bracket: nothing is removed unless the title still
       // resolves to the surveyed list at the moment of the request.
+      // Recorded by key, because the check below both counts what was tried
+      // and, in configured mode, judges exactly these bindings. The prune
+      // runs off a snapshot taken before the adds, so a binding that entered
+      // afterwards is reported with no removal ever attempted for it.
+      const removed = new Set();
       const removeBinding = async (principalId, roleDefId, reason) => {
         await withOwnedList(scope.listTitle, scope.listId, `removeroleassignment (${reason}) on '${scope.label}'`, async () => {
           digest4 = await getDigest();
@@ -363,78 +429,30 @@
             throw new Error(`removeroleassignment (${reason}, principal ${principalId}, binding ${roleDefId}) failed: HTTP ${rmResp.status} ${text}`);
           }
         });
+        removed.add(`${principalId}:${roleDefId}`);
         log('INFO', `[Phase 4.2] '${scope.label}' removed ${reason} binding ${roleDefId} for principal ${principalId}.`);
       };
 
       // Establish every desired grant before pruning. This keeps at least the
       // declared owner path in place when breakroleinheritance(false) has
       // temporarily granted the current operator direct Full Control. Any add
-      // failure aborts the list before exact mode removes a single binding.
-      // GetByPrincipalId is positional in SharePoint REST; add/remove role
-      // assignment methods below use their documented named parameters.
-      // ONE enumeration answers every question below. getbyprincipalid
-      // answers 404 for a principal that has no assignment on this list
-      // yet (which every declared principal is on a first deploy), and
-      // the browser paints that red whether or not the script handles it.
-      // Same treatment lists, views and site groups already get.
+      // failure aborts the list before a single binding is removed.
       //
-      // Deliberately not fatal: if the enumeration is refused we fall
-      // back to per-principal probing, which is noisier and still
-      // correct. Exact mode below reuses this same snapshot; it was
-      // taken BEFORE the adds, which changes no removal because a
-      // binding this run adds is by definition declared, and exact mode
-      // only removes bindings that are not.
-      let existingAssignments = null;
-      {
-        const collected = [];
-        let pageUrl = apiUrl(`web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}/roleassignments?$expand=Member,RoleDefinitionBindings&$select=Member/Id,Member/Title,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`);
-        let ok = true;
-        while (pageUrl && ok) {
-          const pageResp = await fetchWithRetry(pageUrl, {
-            headers: { 'Accept': 'application/json;odata=verbose' },
-          });
-          if (!pageResp.ok) { ok = false; break; }
-          const pageJson = await pageResp.json();
-          const next = validatedNextPage(pageJson.d, `Role assignment enumeration for '${scope.label}'`);
-          collected.push(...((pageJson.d && pageJson.d.results) || []));
-          pageUrl = next;
-        }
-        if (ok) existingAssignments = collected;
-      }
-      const bindingsFor = (principalId) => {
-        if (!existingAssignments) return null;
-        const hit = existingAssignments.find(
-          (a) => a.Member && a.Member.Id === principalId,
-        );
-        return (hit && hit.RoleDefinitionBindings && hit.RoleDefinitionBindings.results) || [];
-      };
-
-      // Which grants are missing is a question of reads, and it is settled
-      // for every declared assignment before the first add: the adds are
-      // independent of one another, so they go out as ONE $batch rather
-      // than one POST each. breakroleinheritance above and every removal
-      // below stay single, because those are ordered against the reads
-      // around them.
-      const missingGrants = [];
-      for (const resolved of resolvedAssignments) {
-        let desiredBindings = bindingsFor(resolved.principalId);
-        if (desiredBindings === null) {
-          const desiredResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}/roleassignments/getbyprincipalid(${resolved.principalId})?$expand=RoleDefinitionBindings&$select=RoleDefinitionBindings/Id`), {
-            headers: { 'Accept': 'application/json;odata=verbose' },
-          });
-          if (desiredResp.ok) {
-            const desiredJson = await desiredResp.json();
-            desiredBindings = (desiredJson.d && desiredJson.d.RoleDefinitionBindings && desiredJson.d.RoleDefinitionBindings.results) || [];
-          } else if (desiredResp.status === 404) {
-            desiredBindings = [];
-          } else {
-            const text = await desiredResp.text();
-            throw new Error(`desired binding probe failed: HTTP ${desiredResp.status} ${text}`);
-          }
-        }
-        const desiredPresent = desiredBindings.some(binding => binding.Id === resolved.roleDefId);
-        if (!desiredPresent) missingGrants.push(resolved);
-      }
+      // ONE enumeration answers every question below, in one shape. It is
+      // taken BEFORE the adds, which changes no removal: a binding this run
+      // adds is by definition declared, and neither mode removes a declared
+      // one.
+      const desired = new Set(resolvedAssignments.map(
+        x => `${x.principalId}:${x.roleDefId}`,
+      ));
+      const existing = await scopeBindings(scope);
+      const held = new Set(existing.map(row => row.key));
+      const missingGrants = resolvedAssignments.filter(
+        x => !held.has(`${x.principalId}:${x.roleDefId}`),
+      );
+      // The adds are independent of one another, so they go out as ONE $batch.
+      // The break above and every removal below stay single POSTs, because those
+      // are ordered against the reads around them.
       if (missingGrants.length > 0) {
         // The bracket is no weaker for holding a batch, only wider: the
         // title is proved to be the surveyed list immediately before the
@@ -461,19 +479,20 @@
         });
       }
 
-      // BEFORE a single removal, not after. Breaking inheritance with
-      // copyRoleAssignments=false can leave the operator's own binding as
-      // the only way back into the folder, so pruning first and discovering
-      // afterwards that the declared administrators never landed is how a
-      // folder gets locked. Verified here, the phase aborts with every
-      // existing binding still in place.
-      if (scope.folderPath && resolvedAssignments.length > 0) {
+      // BEFORE a single removal, not after, and on a list as well as a
+      // folder. Breaking inheritance with copyRoleAssignments=false can
+      // leave the operator's own binding as the only way back in, so pruning
+      // first and discovering afterwards that the declared administrators
+      // never landed is how a scope gets locked. Verified here, the phase
+      // aborts with every existing binding still in place.
+      const hasDeclaredAssignments = resolvedAssignments.length > 0;
+      if (hasDeclaredAssignments) {
         const wanted = resolvedAssignments.map(
           x => ({ key: `${x.principalId}:${x.roleDefId}`, at: x }),
         );
         const complaint = await settleBindings(scope, (rows) => {
-          const held = new Set(rows.map(row => row.key));
-          const missing = wanted.filter(w => !held.has(w.key));
+          const reported = new Set(rows.map(row => row.key));
+          const missing = wanted.filter(w => !reported.has(w.key));
           return missing.length === 0 ? null : missing;
         });
         if (complaint !== null) {
@@ -481,121 +500,94 @@
         }
       }
 
-      if (scope.reconcile_mode === 'exact') {
-        // Exact mode treats the mapping as an allowlist. Enumerate every
-        // direct role binding, including principals absent from the mapping,
-        // and remove all non-declared pairs. SharePoint's derived "Limited
-        // Access" binding is protected: it is created to support lower-scope
-        // access and is not a direct permission grant at this list scope.
-        const expected = new Set(resolvedAssignments.map(
-          x => `${x.principalId}:${x.roleDefId}`,
-        ));
-        // Reuses the snapshot taken above when it succeeded. Exact mode
-        // is an allowlist, so it must never run on a PARTIAL view of the
-        // bindings: if that enumeration was refused, this one repeats it
-        // and stays fatal on failure rather than pruning against
-        // whatever it managed to read.
-        let allAssignments = existingAssignments;
-        if (allAssignments === null) {
-          allAssignments = [];
-          let assignmentsUrl = apiUrl(`web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}/roleassignments?$expand=Member,RoleDefinitionBindings&$select=Member/Id,Member/Title,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`);
-          while (assignmentsUrl) {
-            const allResp = await fetchWithRetry(assignmentsUrl, {
-              headers: { 'Accept': 'application/json;odata=verbose' },
-            });
-            if (!allResp.ok) {
-              const text = await allResp.text();
-              throw new Error(`role assignment enumeration failed: HTTP ${allResp.status} ${text}`);
-            }
-            const allJson = await allResp.json();
-            const next = validatedNextPage(allJson.d, `Role assignment enumeration for '${scope.label}'`);
-            allAssignments.push(...((allJson.d && allJson.d.results) || []));
-            assignmentsUrl = next;
-          }
-        }
-        // The snapshot above may have been taken before the adds; either
-        // way it is the allowlist this loop prunes against, so the title it
-        // was read through has to still be the surveyed list.
-        await ownedListIdentity(scope.listTitle, scope.listId, `before exact-mode pruning on '${scope.label}'`);
-        for (const existing of allAssignments) {
-          const principalId = existing.Member && existing.Member.Id;
-          if (principalId == null) {
-            throw new Error('role assignment enumeration returned an entry without Member.Id');
-          }
-          const bindings = (existing.RoleDefinitionBindings && existing.RoleDefinitionBindings.results) || [];
-          for (const binding of bindings) {
-            if (binding.Name === 'Limited Access') {
-              continue;
-            }
-            if (!expected.has(`${principalId}:${binding.Id}`)) {
-              await removeBinding(principalId, binding.Id, 'unlisted');
-            }
-          }
-        }
-      } else {
-        // Backward-compatible configured-principal mode: remove stale levels
-        // for declared principals but leave unrelated principals untouched.
-        //
-        // Grouped by principal, because one principal may be declared with
-        // more than one level. Per assignment, each pass treated its own
-        // level as the principal's whole desired state: the pass for level A
-        // removed B as stale and the pass for B removed A, off the same
-        // pre-write snapshot, leaving the principal with neither.
-        const desiredByPrincipal = new Map();
-        for (const resolved of resolvedAssignments) {
-          if (!desiredByPrincipal.has(resolved.principalId)) {
-            desiredByPrincipal.set(resolved.principalId, new Set());
-          }
-          desiredByPrincipal.get(resolved.principalId).add(resolved.roleDefId);
-        }
-        for (const [principalId, wanted] of desiredByPrincipal) {
-          const resolved = { principalId };
-          let bindings = bindingsFor(resolved.principalId);
-          if (bindings === null) {
-            const raResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}/roleassignments/getbyprincipalid(${resolved.principalId})?$expand=RoleDefinitionBindings&$select=RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`), {
-              headers: { 'Accept': 'application/json;odata=verbose' },
-            });
-            if (raResp.ok) {
-              const raJson = await raResp.json();
-              bindings = (raJson.d && raJson.d.RoleDefinitionBindings && raJson.d.RoleDefinitionBindings.results) || [];
-            } else if (raResp.status === 404) {
-              bindings = [];
-            } else {
-              const text = await raResp.text();
-              throw new Error(`role assignment probe failed: HTTP ${raResp.status} ${text}`);
-            }
-          }
-          for (const binding of bindings) {
-            if (binding.Name !== 'Limited Access' && !wanted.has(binding.Id)) {
-              await removeBinding(principalId, binding.Id, 'stale');
-            }
-          }
+      // The snapshot above was taken before the adds, and it is the list this
+      // loop prunes against, so the title it was read through has to still be
+      // the surveyed list. Both modes, because both now prune off one
+      // snapshot rather than one probe per principal.
+      await ownedListIdentity(scope.listTitle, scope.listId, `before pruning role assignments on '${scope.label}'`);
+      for (const row of existing) {
+        // SharePoint derives 'Limited Access' to support lower-scope access.
+        // It is not a direct grant at this scope and this phase never writes
+        // it, so neither mode removes it.
+        // This matches the English name, so a localized tenant's derived binding is removed.
+        if (row.name === 'Limited Access') continue;
+        if (desired.has(row.key)) continue;
+        if (scope.reconcile_mode === 'exact') {
+          // Exact mode treats the mapping as an allowlist: a direct binding
+          // the mapping does not declare goes, whoever holds it.
+          await removeBinding(row.principalId, row.roleDefId, 'unlisted');
+        } else if (resolvedAssignments.some(x => x.principalId === row.principalId)) {
+          // Configured mode leaves a principal the mapping never names alone
+          // and removes only a level a DECLARED principal no longer holds.
+          // Judged against the principal's whole desired set, because one
+          // principal may be declared with more than one level and a pass
+          // that judged per assignment removed the other pass's level.
+          await removeBinding(row.principalId, row.roleDefId, 'stale');
         }
       }
 
-      // After the pruning, the complete resulting set. Presence alone was
-      // half the question: `removeroleassignment` answering HTTP 200 is
-      // evidence the request was accepted, and an exact-mode folder whose
-      // removal did not take leaves a stale principal with access on a run
-      // that reports success. Runs with an EMPTY declared set too, which is
-      // the policy that strips a folder and therefore the one whose removals
-      // matter most. Only 'Limited Access' is exempt: SharePoint derives it
-      // to support lower-scope access and this phase never writes it.
-      if (scope.folderPath && scope.reconcile_mode === 'exact') {
-        const desired = new Set(resolvedAssignments.map(
-          x => `${x.principalId}:${x.roleDefId}`,
-        ));
+      // After the pruning, in BOTH modes. Configured mode issues removals
+      // too, and the presence check above ran before them, so without this
+      // an accepted removal that did not take left a declared principal
+      // holding a level the policy no longer names, under a log line saying
+      // the declared set was in place. Exact mode judges every undeclared
+      // binding; configured mode judges the ones this run removed, which is
+      // the whole of what it claims.
+      //
+      // Presence alone was half the question: `removeroleassignment`
+      // answering HTTP 200 is
+      // evidence the request was accepted, and a scope whose removal did not
+      // take leaves a stale principal with access on a run that reports
+      // success. MEASURED 2026-09-22, operator-safety-grant-probe.js: that
+      // endpoint answered 200 for a principal id and a role definition id
+      // the tenant does not have, so a 200 is not even that much. Runs with
+      // an EMPTY declared set too, which is the policy that strips a scope
+      // and therefore the one whose removals matter most. Only 'Limited
+      // Access' is exempt: SharePoint derives it to support lower-scope
+      // access and this phase never writes it.
+      //
+      // A check must be as wide as its own claim: in direction, in inputs,
+      // in set, in time, and in the object it read. The last of those is
+      // `settleBindings`' own identity bracket, which is why this call takes
+      // no further guard of its own. SET EQUALITY is the direction half,
+      // because the log line below claims the scope reports EXACTLY the
+      // declared set. A declared grant that vanishes between the presence
+      // check and this read, through a concurrent edit or a removal broader
+      // than this policy asked for, leaves a snapshot with no strays at all,
+      // and a judge that tested only for strays would certify a scope that
+      // had just lost its administrator grant.
+      //
+      // The wider judge is no new source of false aborts: MEASURED
+      // 2026-09-22, `access.list-acl.enumeration-is-monotonic`, a read of
+      // this enumeration can omit a row that is there, so a transient miss
+      // complains, `settleBindings` re-reads, and the window resolves it.
+      // What the early exit does NOT catch is a stray that genuinely returns
+      // after the first clean read, because nothing observes the rest of the
+      // window. Closing that needs a live measurement over a longer window
+      // rather than a stricter rule written here from plausibility.
+      const exactMode = scope.reconcile_mode === 'exact';
+      if (exactMode || removed.size > 0) {
         const complaint = await settleBindings(scope, (rows) => {
+          // 'Limited Access' is the English name; a localized tenant is unverified.
           const strays = rows.filter(
-            row => row.name !== 'Limited Access' && !desired.has(row.key),
+            row => row.name !== 'Limited Access'
+              && !desired.has(row.key)
+              && (exactMode || removed.has(row.key)),
           );
-          return strays.length === 0 ? null : strays;
+          const reported = new Set(rows.map(row => row.key));
+          const missing = [...desired].filter(key => !reported.has(key));
+          return (strays.length === 0 && missing.length === 0) ? null : { strays, missing };
         });
         if (complaint !== null) {
-          throw new Error(`'${scope.label}' still reports ${complaint.length} role assignment(s) this exact policy does not declare (${complaint.map(row => row.key).join(', ')}). The removals were accepted, so either the scope has not caught up or they did not take; the declared grants are in place and rerunning reads the bindings again.`);
+          const kind = exactMode ? 'this exact policy does not declare' : 'this run removed as stale';
+          const stray = complaint.strays.length === 0 ? '' : `'${scope.label}' still reports ${complaint.strays.length} role assignment(s) ${kind} (${complaint.strays.map(row => row.key).join(', ')}). ${removed.size === 0 ? 'This scope issued no removals, so the binding entered it after the snapshot the prune ran from' : `${removed.size} removal(s) were accepted, so either the scope has not caught up or they did not take`}. `;
+          const lost = complaint.missing.length === 0 ? '' : `'${scope.label}' no longer reports ${complaint.missing.length} DECLARED role assignment(s) (${complaint.missing.join(', ')}), which read back before the pruning. A concurrent edit or a removal broader than this policy asked for both look like this, and the scope may have lost an administrator or a reader grant. `;
+          throw new Error(`${stray}${lost}Nothing further was written and rerunning reads the bindings again.`);
         }
-        log('INFO', `[Phase 4.2] '${scope.label}' reports exactly the ${desired.size} declared role assignment(s).`);
-      } else if (scope.folderPath) {
+        log('INFO', exactMode
+          ? `[Phase 4.2] '${scope.label}' reports exactly the ${desired.size} declared role assignment(s).`
+          : `[Phase 4.2] '${scope.label}' reports all ${resolvedAssignments.length} declared role assignment(s) and none of the ${removed.size} it removed.`);
+      } else if (hasDeclaredAssignments) {
         log('INFO', `[Phase 4.2] '${scope.label}' reports all ${resolvedAssignments.length} declared role assignment(s).`);
       }
     };

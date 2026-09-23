@@ -24,19 +24,14 @@ from dbml_sharepoint.analysis.phases import phase_number
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
 
-def _continuation_overlay(phase: str, url_part: str, marker: Any, *, fallback: bool = False) -> str:
+def _continuation_overlay(phase: str, url_part: str, marker: Any) -> str:
     return f"""
 const continuationFetch = globalThis.fetch;
-let continuationReads = 0;
 globalThis.fetch = async (url, opts = {{}}) => {{
   const response = await continuationFetch(url, opts);
   if (mockPhase !== {json.dumps(phase_number(phase))}
       || !String(url).includes({json.dumps(url_part)})
       || (opts.method || 'GET') !== 'GET') return response;
-  continuationReads += 1;
-  if ({json.dumps(fallback)} && continuationReads === 1) {{
-    return {{ ok: false, status: 403, text: async () => 'refused' }};
-  }}
   const payload = await response.json();
   payload.d.__next = {json.dumps(marker)};
   console.log('CONTINUATION_INJECTED');
@@ -48,7 +43,7 @@ globalThis.fetch = async (url, opts = {{}}) => {{
 @pytest.mark.parametrize("marker", [False, 0, True, 7, [], {}, None, ""])
 @pytest.mark.parametrize("surface", [
     "group_members", "role_usage", "role_existence", "reader_members", "reader_roles",
-    "fields", "acl", "acl_fallback", "seeds",
+    "fields", "acl", "seeds",
 ])
 def test_deploy_reads_validate_continuation_markers(
     tmp_path: Path, surface: str, marker: Any,
@@ -58,7 +53,7 @@ def test_deploy_reads_validate_continuation_markers(
         harness = _reader_harness(_RESOLVED_USER)
         phase = "reader_enrolment"
         part = "/users?" if surface == "reader_members" else "web/roleassignments?"
-    elif surface in {"acl", "acl_fallback", "seeds"}:
+    elif surface in {"acl", "seeds"}:
         js = _ownership_deploy_js(tmp_path, ("Escalation",))
         descriptions = _ownership_list_descriptions(tmp_path, ("Escalation",))
         harness = _READER_ACL_HARNESS.replace(
@@ -88,9 +83,7 @@ def test_deploy_reads_validate_continuation_markers(
                 'const ROLE_DEF_DESCRIPTION_OVERRIDE = "Unmarked level";',
             )
     summary, calls, output = _run_capturing_calls(
-        harness + _continuation_overlay(
-            phase, part, marker, fallback=surface == "acl_fallback",
-        ), js,
+        harness + _continuation_overlay(phase, part, marker), js,
     )
     assert "CONTINUATION_INJECTED" in output, output[-4000:]
     if marker is None or marker == "":
@@ -103,7 +96,7 @@ def test_deploy_reads_validate_continuation_markers(
     assert summary.get("aborted"), summary
     if surface.startswith("reader"):
         assert not _membership_writes(calls)
-    if surface in {"acl", "acl_fallback"}:
+    if surface == "acl":
         assert not any("removeroleassignment" in c["url"] for c in calls)
     if surface == "seeds":
         assert not any(c["method"] == "POST" and c["url"].endswith("/items") for c in calls)

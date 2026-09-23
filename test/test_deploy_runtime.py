@@ -417,7 +417,31 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     // probe's brand-new-site fiction ('nothing bound yet') so an
     // unconfigured run only ever adds.
     const ROLE_ASSIGNMENT_PAGES = {};
-    const roleAssignmentPages = (listTitle) => ROLE_ASSIGNMENT_PAGES[listTitle] || [[]];
+    // Role assignments are STATE, because Phase 4.2 reads a scope's bindings
+    // back after writing them. ROLE_ASSIGNMENT_PAGES stays the seed a test
+    // configures, and the pages keep their shape so a continuation link
+    // still has a second page to point at.
+    const ROLE_ASSIGNMENT_STATE = {};
+    const roleAssignmentPages = (listTitle) => (
+      ROLE_ASSIGNMENT_STATE[listTitle] ||= (ROLE_ASSIGNMENT_PAGES[listTitle] || [[]])
+        .map((page) => page.map((row) => ({
+          ...row,
+          // Both shapes off one endpoint: the phase selects PrincipalId and
+          // a seed written before it expands Member.
+          PrincipalId: row.PrincipalId == null ? row.Member && row.Member.Id : row.PrincipalId,
+          RoleDefinitionBindings: { results: [...row.RoleDefinitionBindings.results] },
+        })))
+    );
+    // A binding's NAME is what exact mode exempts 'Limited Access' by, so a
+    // binding this mock invents needs the name its role definition holds.
+    const roleDefNameById = (id) => (
+      Object.entries(ROLE_DEF_STATE).find(([, s]) => Number(s.Id) === Number(id))
+      || [`Level ${id}`]
+    )[0];
+    const roleAssignmentBinding = (url) => {
+      const m = /roleassignment\(principalid=(\d+),roleDefId=(\d+)\)/.exec(url);
+      return m ? { principalId: Number(m[1]), roleDefId: Number(m[2]) } : null;
+    };
     // Per-list Title state, mutated by MERGEs exactly as SharePoint would.
     const titles = Object.create(null);
     // Indexed is state, not a constant: a lookup's TARGET carries the
@@ -660,7 +684,9 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
         const pages = roleAssignmentPages(listTitle);
         const marked = /[?&]page=(\d+)/.exec(url);
         const page = marked ? Number(marked[1]) : 0;
-        const payload = { d: { results: pages[page] || [] } };
+        const payload = { d: { results: (pages[page] || []).filter(
+          (row) => row.RoleDefinitionBindings.results.length > 0,
+        ) } };
         if (page + 1 < pages.length) {
           payload.d.__next =
             `https://example.sharepoint.com/_api/web/lists/getbytitle('${encodeURIComponent(listTitle)}')`
@@ -937,6 +963,37 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
           }
         }
       }
+      // addroleassignment and removeroleassignment take their arguments in
+      // the URL and carry no body, so they are applied from the URL rather
+      // than from a parsed payload. A batched ChangeSet part arrives here
+      // too: BATCH_MOCK redispatches each part through globalThis.fetch.
+      if ((opts.method || 'GET') === 'POST' && u.includes('roleassignment(')) {
+        const binding = roleAssignmentBinding(u);
+        const pages = roleAssignmentPages(listOf(u));
+        if (binding && u.includes('/addroleassignment(')) {
+          let row = pages.flat().find((r) => r.PrincipalId === binding.principalId);
+          if (!row) {
+            row = {
+              PrincipalId: binding.principalId,
+              Member: { Id: binding.principalId, Title: `Principal ${binding.principalId}`,
+                        PrincipalType: 8 },
+              RoleDefinitionBindings: { results: [] },
+            };
+            pages[pages.length - 1].push(row);
+          }
+          if (!row.RoleDefinitionBindings.results.some((b) => b.Id === binding.roleDefId)) {
+            row.RoleDefinitionBindings.results.push({
+              Id: binding.roleDefId, Name: roleDefNameById(binding.roleDefId),
+            });
+          }
+        } else if (binding) {
+          for (const row of pages.flat()) {
+            if (row.PrincipalId !== binding.principalId) continue;
+            row.RoleDefinitionBindings.results =
+              row.RoleDefinitionBindings.results.filter((b) => b.Id !== binding.roleDefId);
+          }
+        }
+      }
       const payload = body(u, opts);
       const absent = payload && payload.error;
       // Most absence mocks in this file don't carry a measured status and
@@ -952,6 +1009,64 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     };
     globalThis.__calls = calls;
 """) + BATCH_MOCK
+
+
+_ACL_STATE_BASE = (
+    "https://example.sharepoint.com/_api/web/lists/getbytitle('Escalation')"
+)
+_ACL_STATE_READ = (
+    "/roleassignments?$expand=RoleDefinitionBindings"
+    "&$select=PrincipalId,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name"
+)
+
+
+def _acl_write(method_url: str) -> str:
+    """One JS statement POSTing `method_url` against the Escalation list."""
+    return (
+        f"await fetch({json.dumps(_ACL_STATE_BASE + method_url)},"
+        " { method: 'POST' });\n"
+    )
+
+
+def _acl_state_rows(script: str) -> list[tuple[int, list[int]]]:
+    """The mock's role assignments after `script` has run against it, as
+    (principalId, [roleDefId]) pairs."""
+    read = json.dumps(_ACL_STATE_BASE + _ACL_STATE_READ)
+    output = _run(
+        _ADOPTED_HARNESS
+        + "\n(async () => {\n"
+        + script
+        + f"  const payload = await (await fetch({read})).json();\n"
+        "  console.log('__ROWS__' + JSON.stringify(payload.d.results));\n"
+        "})();\n",
+    )
+    line = next(ln for ln in output.splitlines() if ln.startswith("__ROWS__"))
+    return [
+        (row["PrincipalId"],
+         [b["Id"] for b in row["RoleDefinitionBindings"]["results"]])
+        for row in json.loads(line.removeprefix("__ROWS__"))
+    ]
+
+
+_ADD_42 = "/roleassignments/addroleassignment(principalid=42,roleDefId=1073741826)"
+_REMOVE_42 = "/roleassignments/removeroleassignment(principalid=42,roleDefId=1073741826)"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_mock_reports_a_list_binding_a_run_wrote() -> None:
+    """Phase 4.2 is about to read a list's bindings back after writing them.
+    A mock answering a fixed snapshot reports none of them, so every
+    list-scope deploy test would fail for a reason that is not the deploy's.
+    """
+    assert _acl_state_rows(_acl_write(_ADD_42)) == [(42, [1073741826])]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_mock_drops_a_list_binding_a_run_removed() -> None:
+    """The mirror. An exact-mode removal that the mock keeps answering looks
+    identical to a removal SharePoint accepted and did not apply, which is
+    the branch the completeness check exists to catch."""
+    assert _acl_state_rows(_acl_write(_ADD_42) + _acl_write(_REMOVE_42)) == []
 
 
 def _run_deploy(harness: str, tail: str) -> str:
@@ -7405,7 +7520,9 @@ class _OwnershipSeedExtension(BaseExtension):
         return {title: {"Title": "seeded"} for title in self._titles}
 
 
-def _ownership_section(table_names: tuple[str, ...]) -> str:
+def _ownership_section(
+    table_names: tuple[str, ...], *, declare_assignments: bool = True,
+) -> str:
     """Mapping that gives every guarded write phase something to write.
 
     `_declared_pack`'s schema reaches the end of the run but declares no
@@ -7434,16 +7551,20 @@ def _ownership_section(table_names: tuple[str, ...]) -> str:
         "    site_role: default\n"
         "    break_inheritance: true\n"
         "    reconcile: exact\n"
-        "    assignments:\n"
-        '      - principal: { kind: group, name: "Ownership Reader" }\n'
-        '        level: "Read"\n'
-        "\n"
+        # An exact policy declaring NOTHING is the phase's most destructive
+        # path: every direct binding goes, and the completeness check is the
+        # only thing between a removal that did not apply and a clean run.
+        + ("    assignments:\n"
+           '      - principal: { kind: group, name: "Ownership Reader" }\n'
+           '        level: "Read"\n' if declare_assignments else "")
+        + "\n"
         f"form_formatting:\n{forms}"
     )
 
 
 def _ownership_pack(
-    tmp_path: Path, table_names: tuple[str, ...],
+    tmp_path: Path, table_names: tuple[str, ...], *,
+    declare_assignments: bool = True,
 ) -> tuple[Any, Any]:
     """The (schema, bundle) the ownership runs deploy.
 
@@ -7461,15 +7582,23 @@ def _ownership_pack(
             )
             for name in table_names
         ),
-        mapping=blocks(entities(*table_names), _ownership_section(table_names)),
+        mapping=blocks(
+            entities(*table_names),
+            _ownership_section(table_names, declare_assignments=declare_assignments),
+        ),
     )
 
 
-def _ownership_deploy_js(tmp_path: Path, table_names: tuple[str, ...]) -> str:
+def _ownership_deploy_js(
+    tmp_path: Path, table_names: tuple[str, ...], *,
+    declare_assignments: bool = True,
+) -> str:
     from dbml_sharepoint.generators.jsgen import build_schema_json, generate_deploy_js
     from dbml_sharepoint.model.release import load_release
 
-    schema, bundle = _ownership_pack(tmp_path, table_names)
+    schema, bundle = _ownership_pack(
+        tmp_path, table_names, declare_assignments=declare_assignments,
+    )
     titles = tuple(
         entry["title"] for entry in build_schema_json(schema, bundle, "default")["lists"]
     )
@@ -7514,14 +7643,35 @@ _STRAY_BINDING = [[{
 }]]
 
 
+def _ownership_harness(tmp_path: Path, table_names: tuple[str, ...]) -> str:
+    """`_READER_ACL_HARNESS` with this pack's list descriptions and the stray
+    binding seeded.
+
+    A test that splices its own mutation in starts here rather than from the
+    bare harness, so the splice is the only thing that differs from an
+    ordinary run. Without the seed an exact-mode run has nothing to prune.
+    """
+    descriptions = _ownership_list_descriptions(tmp_path, table_names)
+    return _READER_ACL_HARNESS.replace(
+        "const LIST_DESCRIPTIONS = new Map([]);",
+        f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(descriptions.items()))});",
+    ).replace(
+        "const ROLE_ASSIGNMENT_PAGES = {};",
+        "const ROLE_ASSIGNMENT_PAGES = "
+        f"{json.dumps(dict.fromkeys(descriptions, _STRAY_BINDING))};",
+    )
+
+
 def _run_ownership_deploy(
     tmp_path: Path,
     *,
+    harness: str | None = None,
     table_names: tuple[str, ...] = ("Escalation",),
     sabotage_phase: str | None = None,
     sabotage_titles: tuple[str, ...] = (),
     sabotage_mode: str = "marker",
     sabotage_after_reads: int = 0,
+    declare_assignments: bool = True,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     """Run the ownership pack against the adopted-site mock.
 
@@ -7530,28 +7680,25 @@ def _run_ownership_deploy(
     level ('Read'), which the plain harness's role-definition state does not
     carry.
     """
-    descriptions = _ownership_list_descriptions(tmp_path, table_names)
-    harness = _READER_ACL_HARNESS.replace(
-        "const LIST_DESCRIPTIONS = new Map([]);",
-        f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(descriptions.items()))});",
+    # Built only when it is going to be used. Rendering the pack to throw
+    # the result away is what hid the seed a `harness=` caller loses.
+    if harness is None:
+        harness = _ownership_harness(tmp_path, table_names).replace(
+            "const SABOTAGE_FROM_PHASE = null;",
+            f"const SABOTAGE_FROM_PHASE = {json.dumps(sabotage_phase)};",
+        ).replace(
+            "const SABOTAGE_TITLES = [];",
+            f"const SABOTAGE_TITLES = {json.dumps(list(sabotage_titles))};",
+        ).replace(
+            "const SABOTAGE_MODE = 'marker';",
+            f"const SABOTAGE_MODE = {json.dumps(sabotage_mode)};",
+        ).replace(
+            "const SABOTAGE_AFTER_READS = 0;",
+            f"const SABOTAGE_AFTER_READS = {json.dumps(sabotage_after_reads)};",
+        )
+    script = harness + "\n" + _ownership_deploy_js(
+        tmp_path, table_names, declare_assignments=declare_assignments,
     ).replace(
-        "const ROLE_ASSIGNMENT_PAGES = {};",
-        "const ROLE_ASSIGNMENT_PAGES = "
-        f"{json.dumps(dict.fromkeys(descriptions, _STRAY_BINDING))};",
-    ).replace(
-        "const SABOTAGE_FROM_PHASE = null;",
-        f"const SABOTAGE_FROM_PHASE = {json.dumps(sabotage_phase)};",
-    ).replace(
-        "const SABOTAGE_TITLES = [];",
-        f"const SABOTAGE_TITLES = {json.dumps(list(sabotage_titles))};",
-    ).replace(
-        "const SABOTAGE_MODE = 'marker';",
-        f"const SABOTAGE_MODE = {json.dumps(sabotage_mode)};",
-    ).replace(
-        "const SABOTAGE_AFTER_READS = 0;",
-        f"const SABOTAGE_AFTER_READS = {json.dumps(sabotage_after_reads)};",
-    )
-    script = harness + "\n" + _ownership_deploy_js(tmp_path, table_names).replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
         " console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); })",
@@ -7669,15 +7816,7 @@ def test_the_ownership_guard_costs_one_request_per_call(tmp_path: Path) -> None:
     replaces is unchanged: the absent list still produces the same message,
     for the same one request.
     """
-    descriptions = _ownership_list_descriptions(tmp_path, ("Escalation", "Other"))
-    harness = _READER_ACL_HARNESS.replace(
-        "const LIST_DESCRIPTIONS = new Map([]);",
-        f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(descriptions.items()))});",
-    ).replace(
-        "const ROLE_ASSIGNMENT_PAGES = {};",
-        "const ROLE_ASSIGNMENT_PAGES = "
-        f"{json.dumps(dict.fromkeys(descriptions, _STRAY_BINDING))};",
-    )
+    harness = _ownership_harness(tmp_path, ("Escalation", "Other"))
     js = _ownership_deploy_js(tmp_path, ("Escalation", "Other"))
     exported = js.replace(
         _GUARD_EXPORT_ANCHOR,
@@ -7777,6 +7916,530 @@ def test_a_same_titled_replacement_stops_a_write_phase(
     assert not _writes_in_phase(calls, pn(phase.key)), (
         f"phase {phase.key} wrote to a replaced list: "
         f"{_writes_in_phase(calls, pn(phase.key))}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_whose_role_assignments_cannot_be_read_is_refused(
+    tmp_path: Path,
+) -> None:
+    """Reconciliation runs off ONE enumeration, so a refused read is a
+    partial view of the bindings and not a reason to probe principal by
+    principal. Exact mode already failed closed here; configured mode fell
+    back, which is the path that no longer exists."""
+    # Two spaces, not the six the source file shows: the harness is a
+    # dedented literal, so this is the branch's opening line as it exists.
+    sabotaged = _READER_ACL_HARNESS.replace(
+        "  if (url.includes('/roleassignments')) {\n",
+        "  if (url.includes('/roleassignments')"
+        " && !url.includes('roleassignment(')) {\n"
+        "    return { error: { message: { value: 'refused' }, status: 500 } };\n"
+        "  }\n"
+        "  if (false) {\n",
+    )
+    assert sabotaged != _READER_ACL_HARNESS, "the refusal did not splice in"
+    summary, _calls, _output = _run_ownership_deploy(tmp_path, harness=sabotaged)
+    assert any(
+        "role assignment enumeration failed" in err["error"]
+        for err in summary["errors"]
+    ), summary
+
+
+# A failing verification re-reads five times at 2000 ms, which is real time
+# the mock needs none of. The library harness already shortens its own.
+_FAST_TIMERS_JS = (
+    "{ const real = globalThis.setTimeout;"
+    " globalThis.setTimeout = (fn, _ms, ...a) => real(fn, 0, ...a); }\n"
+)
+
+
+#: One enumeration row per field the phase reads off this query, answered
+#: with that field missing. `deployShapeRead` in library-access-probe.js
+#: OBSERVES all three on a live tenant, which is what makes them a shape the
+#: deploy must refuse rather than assume: a tenant that honours the top-level
+#: `$select` and drops a nested one reads as healthy on a PrincipalId count.
+_MALFORMED_BINDING_ROWS = {
+    "results": (
+        "{ PrincipalId: 7, RoleDefinitionBindings: {} }",
+        "without a RoleDefinitionBindings.results array",
+    ),
+    "id": (
+        "{ PrincipalId: 7, RoleDefinitionBindings: { results: [{ Name: 'Read' }] } }",
+        "without RoleDefinitionBindings/Id",
+    ),
+    "name": (
+        "{ PrincipalId: 7, RoleDefinitionBindings: { results: [{ Id: 4 }] } }",
+        "without RoleDefinitionBindings/Name",
+    ),
+}
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("dropped", sorted(_MALFORMED_BINDING_ROWS))
+def test_a_binding_row_missing_a_field_fails_the_scope_closed(
+    tmp_path: Path, dropped: str,
+) -> None:
+    """ONE read drives the diff, the prune and both judges, so a field it
+    drops is wrong for all of them at once, and silently.
+
+    The fallback this replaces read a malformed row as a principal holding
+    nothing. With nothing declared, an exact policy then issues no removal
+    and certifies a scope that still carries the undeclared grant. A binding
+    with no Name is the other direction: it stops matching 'Limited Access',
+    which SharePoint derives to support lower-scope access, and the prune
+    removes it. Run with an EMPTY declared set, the policy whose removals
+    matter most.
+    """
+    row, complaint = _MALFORMED_BINDING_ROWS[dropped]
+    seeded = _ownership_harness(tmp_path, ("Escalation",))
+    # Two spaces, for the dedent the refused-enumeration test above names.
+    # ENUMERATIONS only: this branch also answers the addroleassignment and
+    # removeroleassignment POSTs, and a malformed answer to those would be a
+    # different fiction from the one under test.
+    malformed = seeded.replace(
+        "  if (url.includes('/roleassignments')) {\n",
+        "  if (url.includes('/roleassignments')"
+        " && !url.includes('roleassignment(')) {\n"
+        f"    return {{ d: {{ results: [{row}] }} }};\n"
+        "  }\n"
+        "  if (url.includes('/roleassignments')) {\n",
+    )
+    assert malformed != seeded, "the malformed-row splice did not apply"
+    summary, calls, output = _run_ownership_deploy(
+        tmp_path, harness=_FAST_TIMERS_JS + malformed, declare_assignments=False,
+    )
+
+    named = [
+        err["error"] for err in summary["errors"]
+        if complaint in err["error"] and "principal 7" in err["error"]
+    ]
+    assert named, summary["errors"]
+    # Nothing was written off a read the phase could not understand, and in
+    # particular no binding whose level it could not name was pruned.
+    assert not [c for c in calls if "removeroleassignment" in c["url"]], (
+        "a scope was pruned against an enumeration that failed its own shape "
+        "check"
+    )
+    log = _phase_log(output, pn("acls"))
+    assert not [line for line in log if "reports exactly" in line], log
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_title_rebound_before_the_exact_read_back_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The read-back that certifies an exact scope is addressed by title,
+    and every write around it is bracketed by identity.
+
+    A replacement carrying a copied ownership marker and the desired ACL
+    answers that read exactly as the surveyed list would, so the phase
+    reports success while the list it actually pruned still holds the removal
+    that did not take. The descendant survey after it is title-based too, so
+    nothing later recovers the original identity.
+
+    Armed by the REMOVAL rather than by a read count: the removal's own
+    post-check must still see the surveyed list, so that the read this test
+    is about is the first one after it.
+    """
+    seeded = _ownership_harness(tmp_path, ("Escalation",))
+    # Two spaces and four, for the dedent the tests above name.
+    rebound = seeded.replace(
+        "  const payload = body(u, opts);\n",
+        "  if ((opts.method || 'GET') === 'POST'"
+        " && u.includes('removeroleassignment(')) {\n"
+        "    globalThis.__sinceRemoval = 0;\n"
+        "  }\n"
+        "  const payload = body(u, opts);\n",
+    ).replace(
+        "    const sabotage = sabotageFor(probeTitle);\n",
+        "    if (globalThis.__sinceRemoval != null) globalThis.__sinceRemoval += 1;\n"
+        "    const sabotage = globalThis.__sinceRemoval > 1\n"
+        "      ? 'rebind' : sabotageFor(probeTitle);\n",
+    )
+    assert rebound.count("__sinceRemoval") == 4, "the rebind splices did not apply"
+    summary, calls, output = _run_ownership_deploy(
+        tmp_path, harness=_FAST_TIMERS_JS + rebound,
+    )
+
+    log = _phase_log(output, pn("acls"))
+    assert any("changed identity" in line for line in log), log
+    # And it did not certify the replacement it was handed.
+    assert not [line for line in log if "reports exactly" in line], log
+    assert any(
+        err.get("phase") == pn("acls") and "changed identity" in err["error"]
+        for err in summary["errors"]
+    ), summary["errors"]
+    # The removal itself went out and its own bracket passed, which is what
+    # makes this about the read AFTER it.
+    assert [c for c in calls if "removeroleassignment" in c["url"]], calls
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_that_never_reports_a_declared_grant_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The write was accepted and the binding is not there. Refused before a
+    single removal, so the phase aborts with every existing binding in place
+    rather than pruning against a desired state it failed to establish."""
+    seeded = _ownership_harness(tmp_path, ("Escalation",))
+    # Two spaces, not the six the source file shows: the harness is a
+    # dedented literal, so this is the branch's opening line as it exists.
+    blinded = seeded.replace(
+        "  if ((opts.method || 'GET') === 'POST' && u.includes('roleassignment(')) {\n",
+        "  if (false) {\n",
+    )
+    assert blinded != seeded, "the blind-write splice did not apply"
+    harness = _FAST_TIMERS_JS + blinded
+    summary, calls, _output = _run_ownership_deploy(tmp_path, harness=harness)
+    assert any(
+        "does not report" in err["error"] and "declared role assignment" in err["error"]
+        for err in summary["errors"]
+    ), summary
+    # The seeded stray is removable, so an unordered check would prune it.
+    assert not [c for c in calls if "removeroleassignment" in c["url"]], (
+        "the phase pruned against a desired state it failed to establish"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_removal_that_did_not_take_is_refused(tmp_path: Path) -> None:
+    """removeroleassignment answering HTTP 200 is evidence the request was
+    accepted and nothing more. An exact-mode list whose removal did not apply
+    leaves a stale principal with access on a run that reports success."""
+    seeded = _ownership_harness(tmp_path, ("Escalation",))
+    # Four spaces, for the dedent the blind-write test above names.
+    ignored = seeded.replace(
+        "    } else if (binding) {\n",
+        "    } else if (false) {\n",
+    )
+    assert ignored != seeded, "the ignored-removal splice did not apply"
+    harness = _FAST_TIMERS_JS + ignored
+    summary, _calls, _output = _run_ownership_deploy(tmp_path, harness=harness)
+    assert any(
+        "still reports" in err["error"] and "does not declare" in err["error"]
+        for err in summary["errors"]
+    ), summary
+
+
+# Configured mode with an empty `assignments` is reachable: `_permissions.py`
+# defaults the key to `[]`, and the present check is skipped when nothing is
+# declared, so the line beneath it has nothing behind it.
+_CONFIGURED_ACL_SECTION = """
+    groups:
+      - name: "Configured Reader"
+        description: "Read-only grant target for the configured-mode tests."
+        owner_group: "Site Owners"
+        allow_members_edit_membership: false
+        allow_request_to_join_leave: false
+        auto_accept_request_to_join_leave: false
+        only_allow_members_view_membership: false
+
+    list_permissions:
+      default:
+        site_role: default
+        break_inheritance: true
+        reconcile: configured
+{assignments}
+"""
+
+_CONFIGURED_ACL_GRANT = """        assignments:
+          - principal: { kind: group, name: "Configured Reader" }
+            level: "Read"
+"""
+
+
+def _configured_acl_log(tmp_path: Path, assignments: str) -> list[str]:
+    """Phase 4.2's log lines for one configured-mode list."""
+    js = _declared_deploy_js(
+        tmp_path, _CONFIGURED_ACL_SECTION.format(assignments=assignments),
+    )
+    script = _READER_ACL_HARNESS + "\n" + js.replace(
+        "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+    # A log read off a broken run says nothing about which branch it took.
+    assert _summary_of(output).get("errors") == [], output[-3000:]
+    return _phase_log(output, pn("acls"))
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_configured_list_reports_only_a_read_back_it_made(tmp_path: Path) -> None:
+    """Both halves, because the absence on its own passes just as happily
+    against a phase that stopped logging altogether."""
+    granted = _configured_acl_log(tmp_path, _CONFIGURED_ACL_GRANT)
+    assert any("reports all 1 declared role assignment(s)" in line for line in granted), (
+        granted
+    )
+    silent = _configured_acl_log(tmp_path, "")
+    assert not [line for line in silent if "reports all" in line], silent
+
+
+#: The declared principal holding a level the configured policy does not
+#: name, so the prune has exactly one 'stale' removal to make. Id 9 is what
+#: the harness resolves every unconfigured group name to, and 'Schema
+#: Manager' is the one level it seeds.
+_CONFIGURED_STALE_BINDING = [[{
+    "Member": {"Id": 9, "Title": "Configured Reader", "PrincipalType": 8},
+    "RoleDefinitionBindings": {"results": [{"Id": 1, "Name": "Schema Manager"}]},
+}]]
+
+
+def _configured_stale_run(
+    tmp_path: Path, *, removal_takes: bool,
+) -> tuple[dict[str, Any], str]:
+    """Phase 4.2 over a configured list whose declared principal holds a
+    level the policy no longer names."""
+    js = _declared_deploy_js(
+        tmp_path, _CONFIGURED_ACL_SECTION.format(assignments=_CONFIGURED_ACL_GRANT),
+    )
+    harness = _READER_ACL_HARNESS.replace(
+        "const ROLE_ASSIGNMENT_PAGES = {};",
+        "const ROLE_ASSIGNMENT_PAGES = "
+        f"{json.dumps({_OWNED_TITLE: _CONFIGURED_STALE_BINDING})};",
+    )
+    assert "Configured Reader" in _CONFIGURED_ACL_GRANT, (
+        "the mapping no longer declares the principal this seed holds stale"
+    )
+    if not removal_takes:
+        # Four spaces, for the dedent the blind-write test above names.
+        ignored = harness.replace(
+            "    } else if (binding) {\n", "    } else if (false) {\n",
+        )
+        assert ignored != harness, "the ignored-removal splice did not apply"
+        harness = _FAST_TIMERS_JS + ignored
+    script = harness + "\n" + js.replace(
+        "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+    return _summary_of(output), output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_configured_list_reads_back_the_stale_level_it_removed(
+    tmp_path: Path,
+) -> None:
+    """The removal takes, and the phase says so rather than only that the
+    declared set is present.
+
+    Without this run the refusal below would look equally correct if the
+    check refused every configured list that pruned.
+    """
+    summary, output = _configured_stale_run(tmp_path, removal_takes=True)
+    assert summary.get("errors") == [], summary["errors"]
+    log = _phase_log(output, pn("acls"))
+    assert any("removed stale binding" in line for line in log), log
+    assert any("none of the 1 it removed" in line for line in log), log
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_configured_list_removal_that_did_not_take_is_refused(
+    tmp_path: Path,
+) -> None:
+    """Configured mode prunes too, and an accepted removal is not a removal
+    that took.
+
+    The presence check runs BEFORE the prune, so it cannot see this: the
+    declared grant is there either way, and the run used to log that the
+    declared set was in place while the principal still held the level the
+    policy had just removed. MEASURED 2026-09-22 in
+    operator-safety-grant-probe.js: removeroleassignment answered HTTP 200
+    for a principal and a level the tenant does not have, so the 200 is not
+    evidence of anything.
+    """
+    summary, _output = _configured_stale_run(tmp_path, removal_takes=False)
+    complaint = [
+        err["error"] for err in summary["errors"]
+        if "still reports" in err["error"] and "removed as stale" in err["error"]
+    ]
+    assert complaint, summary
+    assert "9:1" in complaint[0], complaint[0]
+    assert "1 removal(s) were accepted" in complaint[0], complaint[0]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_exact_list_declaring_nothing_strips_it_and_reads_it_back(
+    tmp_path: Path,
+) -> None:
+    """The phase's most destructive path, and the one its own comment calls
+    the policy whose removals matter most.
+
+    With nothing declared the presence check is skipped, so every direct
+    binding is removed and the completeness check is the only thing standing
+    between a removal that did not apply and a run reporting success.
+    """
+    summary, calls, output = _run_ownership_deploy(tmp_path, declare_assignments=False)
+
+    assert summary.get("aborted") is None, summary
+    assert summary.get("errors") == [], summary["errors"]
+    # The seeded stray is the only binding there, and it goes.
+    removals = [c for c in calls if "removeroleassignment" in c["url"]]
+    assert len(removals) == 1, removals
+    stray_principal = _STRAY_BINDING[0][0]["Member"]["Id"]  # type: ignore[index]
+    assert f"principalid={stray_principal}" in removals[0]["url"]
+    log = _phase_log(output, pn("acls"))
+    assert any(
+        "reports exactly the 0 declared role assignment(s)" in line for line in log
+    ), log
+    # Nothing was declared, so nothing could have been verified present.
+    assert not [line for line in log if "reports all" in line], log
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_exact_list_declaring_nothing_whose_removal_did_not_take_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The completeness check carrying the whole weight. The declared set is
+    empty, so no earlier check runs at all, and a removal SharePoint accepted
+    and did not apply would otherwise leave a stray principal with access on
+    a run that reported success."""
+    seeded = _ownership_harness(tmp_path, ("Escalation",))
+    # Four spaces, for the dedent the blind-write test above names.
+    ignored = seeded.replace(
+        "    } else if (binding) {\n",
+        "    } else if (false) {\n",
+    )
+    assert ignored != seeded, "the ignored-removal splice did not apply"
+    summary, _calls, _output = _run_ownership_deploy(
+        tmp_path, harness=_FAST_TIMERS_JS + ignored, declare_assignments=False,
+    )
+    complaint = [
+        err["error"] for err in summary["errors"]
+        if "still reports" in err["error"] and "does not declare" in err["error"]
+    ]
+    assert complaint, summary
+    # The other half of the count: one removal WAS issued for this binding.
+    assert "1 removal(s) were accepted" in complaint[0], complaint[0]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_binding_that_arrived_after_the_snapshot_is_not_blamed_on_a_removal(
+    tmp_path: Path,
+) -> None:
+    """The prune iterates the snapshot taken before the adds, so a binding
+    that entered afterwards is reported by the completeness check with no
+    removal ever attempted for it.
+
+    The message used to say "The removals were accepted", pointing the
+    operator at requests this scope never made. It now counts what it issued.
+    """
+    seeded = _ownership_harness(tmp_path, ("Escalation",))
+    # Two spaces, for the dedent the blind-write test above names. The stray
+    # is invisible to the FIRST scope enumeration, which is the snapshot the
+    # prune runs from, and present on every read after it.
+    late = seeded.replace(
+        "  if (url.includes('/roleassignments')) {\n",
+        "  if (url.includes('/roleassignments')) {\n"
+        "    globalThis.__scopeReads = (globalThis.__scopeReads || 0) + 1;\n"
+        "    if (globalThis.__scopeReads === 1) return { d: { results: [] } };\n",
+    )
+    assert late != seeded, "the late-binding splice did not apply"
+    summary, calls, _output = _run_ownership_deploy(
+        tmp_path, harness=_FAST_TIMERS_JS + late, declare_assignments=False,
+    )
+    assert not [c for c in calls if "removeroleassignment" in c["url"]], (
+        "the prune had an empty snapshot, so it cannot have removed anything"
+    )
+    complaint = [
+        err["error"] for err in summary["errors"] if "still reports" in err["error"]
+    ]
+    assert complaint, summary
+    assert "issued no removals" in complaint[0], complaint[0]
+    assert "entered it after the snapshot" in complaint[0], complaint[0]
+    assert "removal(s) were accepted" not in complaint[0], complaint[0]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_exact_list_that_lost_a_declared_grant_during_the_prune_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The log line says the scope reports EXACTLY the declared set, so the
+    judge behind it has to test set equality.
+
+    A declared grant that vanishes between the presence check and the final
+    read leaves a snapshot with no strays. A one-directional judge returns
+    success on it and the phase certifies a scope that has just lost its
+    reader grant.
+    """
+    seeded = _ownership_harness(tmp_path, ("Escalation",))
+    # Two spaces, for the dedent the refused-enumeration test above names.
+    # ENUMERATIONS are counted, not every URL this branch serves: it answers
+    # the addroleassignment POST too, and counting that moved the presence
+    # check onto the read meant for the completeness check. Reads 1 and 2 are
+    # the prune's snapshot and the presence check; every read after them
+    # reports an empty scope, which is a lost declared grant and no stray.
+    vanished = seeded.replace(
+        "  if (url.includes('/roleassignments')) {\n",
+        "  if (url.includes('/roleassignments')"
+        " && !url.includes('roleassignment(')) {\n"
+        "    globalThis.__scopeReads = (globalThis.__scopeReads || 0) + 1;\n"
+        "    if (globalThis.__scopeReads > 2) return { d: { results: [] } };\n"
+        "  }\n"
+        "  if (url.includes('/roleassignments')) {\n",
+    )
+    assert vanished != seeded, "the vanishing-grant splice did not apply"
+    summary, _calls, _output = _run_ownership_deploy(
+        tmp_path, harness=_FAST_TIMERS_JS + vanished,
+    )
+
+    complaint = [
+        err["error"] for err in summary["errors"]
+        if "DECLARED role assignment(s)" in err["error"]
+    ]
+    assert complaint, [err["error"] for err in summary["errors"]]
+    # Named as its own kind, so an operator can tell a binding that should
+    # not be there from a grant that should be and is gone.
+    assert "no longer reports 1 DECLARED" in complaint[0], complaint[0]
+    assert "may have lost an administrator or a reader grant" in complaint[0], (
+        complaint[0]
+    )
+    # And it does not report the other kind, because there is no stray here.
+    assert "does not declare" not in complaint[0], complaint[0]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_read_that_transiently_omits_a_declared_grant_is_re_read_not_aborted(
+    tmp_path: Path,
+) -> None:
+    """Why testing both directions is not a new source of false aborts.
+
+    MEASURED 2026-09-22, `access.list-acl.enumeration-is-monotonic`: this
+    enumeration can omit a row that is there. The wider judge complains,
+    `settleBindings` re-reads, and the window resolves it. Only the third
+    read is short here, which is the read the completeness check starts on.
+    """
+    seeded = _ownership_harness(tmp_path, ("Escalation",))
+    flapping = seeded.replace(
+        "  if (url.includes('/roleassignments')) {\n",
+        "  if (url.includes('/roleassignments')"
+        " && !url.includes('roleassignment(')) {\n"
+        "    globalThis.__scopeReads = (globalThis.__scopeReads || 0) + 1;\n"
+        "    if (globalThis.__scopeReads === 3) return { d: { results: [] } };\n"
+        "  }\n"
+        "  if (url.includes('/roleassignments')) {\n",
+    )
+    assert flapping != seeded, "the flapping-read splice did not apply"
+    summary, calls, output = _run_ownership_deploy(
+        tmp_path, harness=_FAST_TIMERS_JS + flapping,
+    )
+
+    assert summary.get("errors") == [], summary["errors"]
+    log = _phase_log(output, pn("acls"))
+    assert any(
+        "reports exactly the 1 declared role assignment(s)" in line for line in log
+    ), log
+    # Counted from the last removal, which is where the completeness check
+    # begins. Counting every read of the scope passes against a judge that
+    # never looked again, because earlier phases read it too.
+    pruned = max(
+        i for i, c in enumerate(calls) if "removeroleassignment" in c["url"]
+    )
+    settling = [
+        c for c in calls[pruned:]
+        if "/roleassignments" in c["url"] and "roleassignment(" not in c["url"]
+    ]
+    assert len(settling) >= 2, (
+        "the short read was accepted as the final state rather than re-read: "
+        f"{len(settling)} completeness read(s)"
     )
 
 

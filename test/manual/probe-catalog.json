@@ -6250,6 +6250,81 @@
       ]
     },
     {
+      "file": "operator-safety-grant-probe.js",
+      "surface": "access",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch list, its broken role inheritance, an owner-group full-control grant on it, the removal of this account's own binding, and the reset that restores inheritance"
+      ],
+      "cleanup": {
+        "policy": "before"
+      },
+      "prerequisites": [
+        "site collection administrator, checked rather than trusted: when web/currentuser does not report IsSiteAdmin=true the BREAK is refused, so the run writes nothing past its scratch list and all six questions the break gates are recorded NOT REACHED",
+        "the scratch title must be free or already carry this probe's exact ownership Description: a same-title list without it, and a title whose occupancy cannot be read, are both refused before anything is recycled or reused"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "access",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "access.list-acl.fixture-scratch-list",
+              "depends_on": []
+            },
+            {
+              "id": "access.list-acl.control-unknown-principal-refused",
+              "depends_on": [
+                "access.list-acl.fixture-scratch-list"
+              ]
+            },
+            {
+              "id": "access.list-acl.break-leaves-bindings",
+              "depends_on": [
+                "access.list-acl.fixture-scratch-list"
+              ]
+            },
+            {
+              "id": "access.list-acl.break-leaves-operator-binding",
+              "depends_on": [
+                "access.list-acl.fixture-scratch-list",
+                "access.list-acl.break-leaves-bindings"
+              ]
+            },
+            {
+              "id": "access.list-acl.operator-binding-removal-sticks",
+              "depends_on": [
+                "access.list-acl.fixture-scratch-list",
+                "access.list-acl.break-leaves-operator-binding"
+              ]
+            },
+            {
+              "id": "access.list-acl.enumeration-is-monotonic",
+              "depends_on": [
+                "access.list-acl.fixture-scratch-list",
+                "access.list-acl.break-leaves-operator-binding"
+              ]
+            },
+            {
+              "id": "access.list-acl.derived-level-names",
+              "depends_on": [
+                "access.list-acl.fixture-scratch-list",
+                "access.list-acl.break-leaves-bindings"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "access.list-acl.fixture-scratch-list",
+            "access.list-acl.control-unknown-principal-refused"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "projected-lookup-probe.js",
       "surface": "field",
       "harness": "shared-v1",
