@@ -354,6 +354,12 @@
   expect('formula.validation.column-modified-allows-hour-ago', 'WM = now - 1 h');
   expect('formula.validation.column-modified-rejects-hour-ahead', 'WM = now + 1 h');
   expect('formula.validation.column-modified-update-sees-own-save', 'an update to WM = five seconds ago saves against this save\'s Modified');
+  expect('formula.validation.fixture-dm-date-only-column', 'DM reads back as a date-only DateTime column');
+  expect('formula.validation.fixture-dc-date-only-column', 'DC reads back as a date-only DateTime column');
+  expect('formula.validation.fixture-wm-date-time-column', 'WM reads back as a date-and-time DateTime column');
+  const DM_ROWS = ['formula.validation.column-modified-allows-yesterday', 'formula.validation.column-modified-allows-today', 'formula.validation.column-modified-rejects-tomorrow'];
+  const DC_ROWS = ['formula.validation.column-created-allows-today', 'formula.validation.column-created-rejects-tomorrow'];
+  const WM_ROWS = ['formula.validation.column-modified-allows-hour-ago', 'formula.validation.column-modified-rejects-hour-ahead', 'formula.validation.column-modified-update-sees-own-save'];
 
   if (!CONFIRMED) {
     log('INFO', `Would add three columns with validation rules to '${LIST}' on ${WEB} and save nine items.`);
@@ -394,20 +400,36 @@
   const fields = `${listPath}/fields`;
   const items = `${listPath}/items`;
   const have = new Set(((await spGet(`${fields}?$select=Title&$top=500`)).body?.value || []).map((f) => f.Title));
-  const ensure = async (title, displayFormat, formula, message) => {
+  // Each column is reused by Title, so its shape is read back before any rule or save rests on it.
+  const COLUMNS = [
+    ['DM', 0, 'formula.validation.fixture-dm-date-only-column', DM_ROWS],
+    ['DC', 0, 'formula.validation.fixture-dc-date-only-column', DC_ROWS],
+    ['WM', 1, 'formula.validation.fixture-wm-date-time-column', WM_ROWS],
+  ];
+  let shaped = true;
+  for (const [title, displayFormat, fixture, rows] of COLUMNS) {
     if (!have.has(title)) {
       const made = await post(fields, { __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4, Title: title, DisplayFormat: displayFormat });
-      if (!made.ok) return { ok: false, detail: `${title} create ${made.status} ${reason(made)}` };
+      log(made.ok ? 'OK' : 'FAIL', `${title} create answered HTTP ${made.status}${made.ok ? '' : ` ${reason(made)}`}`);
     }
+    // The whole field is read: a $select naming a property the entity lacks answers 400.
+    const held = await establishFixture(fixture,
+      () => spGet(`${fields}/getbyinternalnameortitle('${enc(title)}')`),
+      { TypeAsString: 'DateTime', DisplayFormat: displayFormat },
+      ['formula.validation.column-rule-cross-column-accepted', ...rows]);
+    shaped = held && shaped;
+  }
+  if (!shaped) return report();
+  const ensure = async (title, formula, message) => {
     const set = await post(`${fields}/getbytitle('${enc(title)}')`, {
       __metadata: { type: 'SP.FieldDateTime' }, ValidationFormula: formula, ValidationMessage: message,
     }, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
     return { ok: set.ok, detail: `${title} ${set.ok ? 'rule accepted' : `rule refused ${set.status} ${reason(set)}`}` };
   };
   const rules = [
-    await ensure('DM', 0, '=[DM]<=[Modified]', 'DM after Modified'),
-    await ensure('DC', 0, '=[DC]<=[Created]', 'DC after Created'),
-    await ensure('WM', 1, '=[WM]<=[Modified]', 'WM after Modified'),
+    await ensure('DM', '=[DM]<=[Modified]', 'DM after Modified'),
+    await ensure('DC', '=[DC]<=[Created]', 'DC after Created'),
+    await ensure('WM', '=[WM]<=[Modified]', 'WM after Modified'),
   ];
   const accepted = rules.every((r) => r.ok);
   record('formula.validation.column-rule-cross-column-accepted', 'column rules against [Modified] and [Created] are accepted', accepted ? 'ACCEPTED' : 'REFUSED', rules.map((r) => r.detail).join('; '));
