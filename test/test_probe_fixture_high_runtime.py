@@ -79,7 +79,8 @@ _TODAY_MOCK = textwrap.dedent("""
         const midnight = new Date();
         midnight.setHours(0, 0, 0, 0);
         items.set(id, { Id: id, Created: new Date(now).toISOString(),
-          T: CONFIG.defaultFires ? midnight.toISOString() : null });
+          T: !CONFIG.defaultFires ? null
+            : ('tValue' in CONFIG ? CONFIG.tValue : midnight.toISOString()) });
         return jsonResponse(201, { d: { Id: id } });
       }
       return jsonResponse(200, { ListItemEntityTypeFullName: 'SP.Data.ProbeListItem' });
@@ -149,6 +150,13 @@ def test_today_semantics_does_not_report_a_default_that_never_fired() -> None:
     assert rows[_DEFAULT]["outcome"] == "NOT ESTABLISHED", rows[_DEFAULT]
     assert "T stored as null" in rows[_DEFAULT]["evidence"]
     assert rows[_RULES]["outcome"] == "PASS"
+
+
+@pytest.mark.parametrize("value", ["", "not a date"], ids=["empty", "unparseable"])
+def test_today_semantics_does_not_report_a_default_that_is_not_a_date(value: str) -> None:
+    rows, _ = _run_probe(_TODAY_MOCK, {"defaultFires": True, "tValue": value}, _TODAY)
+
+    assert rows[_DEFAULT]["outcome"] == "NOT ESTABLISHED", rows[_DEFAULT]
 
 
 # --------------------------------------------------------------------------
@@ -289,7 +297,8 @@ _LIBRARY_MOCK = textwrap.dedent("""
         return jsonResponse(201, { Id: item.Id });
       }
       if (rest.startsWith('/items')) {
-        return jsonResponse(200, { value: list.items.map((i) => rowOf(list, i)) });
+        const listed = list.items.filter((i) => !(CONFIG.unlisted || []).includes(i.FileLeafRef));
+        return jsonResponse(200, { value: listed.map((i) => rowOf(list, i)) });
       }
       if (rest === '/RenderListDataAsStream') {
         const xml = (sent.parameters && sent.parameters.ViewXml) || '';
@@ -388,3 +397,12 @@ def test_library_view_voids_the_folder_row_when_the_folder_was_not_created() -> 
     assert "the upload of 'subfolder-doc.txt' answered HTTP 404" in evidence
     assert not _grouping_queries(sent, "Folder")
     assert rows[_BY_METADATA]["outcome"] == "SAME AS LIST"
+
+
+def test_library_view_voids_the_folder_row_when_the_subfile_is_not_served() -> None:
+    """An accepted upload that no item read shows cannot stand for a partitioned folder."""
+    rows, sent = _run_probe(_LIBRARY_MOCK, {"unlisted": ["subfolder-doc.txt"]}, _VIEW)
+
+    assert _BY_FOLDER in _void_ids(rows)
+    assert "no item was served for 'subfolder-doc.txt'" in rows[_BY_FOLDER]["evidence"]
+    assert not _grouping_queries(sent, "Folder")

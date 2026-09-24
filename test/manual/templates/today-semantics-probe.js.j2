@@ -151,8 +151,9 @@
   const bareId = bare.ok && bare.body && bare.body.d ? bare.body.d.Id : null;
   if (bareId !== null && bareId !== undefined) {
     const back = await spGet(`${items}(${bareId})?$select=Id,T,Created`);
-    // A blank T says the default never fired, so no resolved TODAY() was observed.
-    const filled = !readFailed(back) && back.body.T !== null && back.body.T !== undefined;
+    // A blank or unparseable T says no resolved TODAY() was observed.
+    const filled = !readFailed(back) && typeof back.body.T === 'string'
+      && back.body.T !== '' && !Number.isNaN(Date.parse(back.body.T));
     record('formula.datetime.today-function-default-value', 'what TODAY() resolves to, through a =TODAY() default',
       filled ? 'PASS' : 'NOT ESTABLISHED',
       readFailed(back)

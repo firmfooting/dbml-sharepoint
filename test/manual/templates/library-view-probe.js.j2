@@ -234,6 +234,10 @@
     if (why && row) failed[row].push(why);
     if (why && !row) log('WARN', why);
   }
+  // The subfile's MERGE decides nothing, but the folder row rests on the file existing.
+  if (!items.some((i) => i.FileLeafRef === SUBFILE)) {
+    failed.folder.push(`no item was served for '${SUBFILE}' (items read HTTP ${itemsResp.status})`);
+  }
   // A MERGE answers 204 whether or not the value was kept, so the values are read back.
   if (!failed.metadata.length) {
     const back = await spGet(`${listPath}/items?$select=Id,FileLeafRef,${COL}&$top=50`);

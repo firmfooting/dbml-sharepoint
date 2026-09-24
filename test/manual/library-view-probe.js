@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY VIEW GROUPING
  *
- * REVISION: 67b7b9ef
+ * REVISION: 6830c342
  *
  * ONE QUESTION:
  *   How does view grouping behave on a document library, and does it diverge from generic lists?
@@ -379,7 +379,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 67b7b9ef. Quote this when reporting results.');
+  log('INFO', 'probe revision 6830c342. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibView';
   const FOLDER = 'FolderAlpha';
@@ -555,6 +555,10 @@
     }
     if (why && row) failed[row].push(why);
     if (why && !row) log('WARN', why);
+  }
+  // The subfile's MERGE decides nothing, but the folder row rests on the file existing.
+  if (!items.some((i) => i.FileLeafRef === SUBFILE)) {
+    failed.folder.push(`no item was served for '${SUBFILE}' (items read HTTP ${itemsResp.status})`);
   }
   // A MERGE answers 204 whether or not the value was kept, so the values are read back.
   if (!failed.metadata.length) {
