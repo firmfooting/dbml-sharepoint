@@ -3,7 +3,7 @@
  * SERVE IT INSIDE A LIBRARY OVER 5,000, AND DOES A THREE-LEVEL GROUP-BY WORK
  * WHERE NOTHING IS NEAR THE THRESHOLD?
  *
- * REVISION: 9928191b
+ * REVISION: 286f74f0
  *
  * TWO QUESTIONS, AND THEY ARE DELIBERATELY ASKED IN ONE RUN. Every large-list
  * probe before this one measured a group-by refused past 5,000 and could not
@@ -812,7 +812,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not work
   // produce identical transcripts otherwise.
-  log('INFO', 'probe revision 9928191b. Quote this when reporting results.');
+  log('INFO', 'probe revision 286f74f0. Quote this when reporting results.');
 
   // ---- Operator settings -------------------------------------------------
   // Which leg of the run this paste is. One paste answers one state, because a
@@ -1450,7 +1450,8 @@
   expect('library.large-list.control-ui-foldered-fixture-readable-after-view-writes', "CONTROL: is the newest file name the same after the view writes as before them, so the fixture's owner can still resume and verify it");
   expect('library.large-list.control-ui-foldered-default-view-unchanged', "CONTROL: is each library's default view the one it was before this probe wrote anything");
   expect('library.large-list.control-ui-modern-renders-below-threshold', 'CONTROL: does this browser render a modern document library page at all, on a library UNDER the threshold');
-  expect('library.large-list.control-ui-foldered-page-identity', 'CONTROL: does the rendered page say, in its own JavaScript context, which fixture library it belongs to');
+  expect('library.large-list.control-ui-foldered-page-identity', `CONTROL: does the page STATE 2 reads say, in its own JavaScript context, that it is the large library '${LIB}'`);
+  expect('library.large-list.control-ui-multilevel-page-identity', `CONTROL: does the page STATE 3 reads say, in its own JavaScript context, that it is the small library '${SMALL}'`);
   expect('library.large-list.control-ui-folder-scope-rendered', 'CONTROL: is the rendered page showing ONE folder, read from the file names it rendered rather than from its address');
   expect('library.large-list.ui-group-by-indexed-column-folder-scoped', `THE RENDERED CRUX: does the modern page render a grouped view scoped to a folder under ${THRESHOLD} files inside a library over ${THRESHOLD}`);
   expect('library.large-list.ui-group-by-multilevel-renders', 'Does the modern page render three group levels on the small library');
@@ -1466,6 +1467,7 @@
     'library.large-list.control-foldered-group-by-narrowed-honoured',
     'library.large-list.foldered-group-by-root-scoped', 'library.large-list.foldered-group-by-folder-scoped',
     'library.large-list.foldered-group-by-folder-scoped-counts',
+    'library.large-list.control-ui-foldered-page-identity',
     'library.large-list.control-ui-folder-scope-rendered',
     'library.large-list.ui-group-by-indexed-column-folder-scoped',
   ];
@@ -1473,13 +1475,14 @@
     'library.large-list.fixture-multilevel-file-count', 'library.large-list.fixture-multilevel-under-threshold',
     'library.large-list.control-multilevel-single-level-honoured',
     'library.large-list.multilevel-group-by-two-levels', 'library.large-list.multilevel-group-by-three-levels',
+    'library.large-list.control-ui-multilevel-page-identity',
     'library.large-list.ui-group-by-multilevel-renders',
   ];
   const SHARED_ROWS = [
     'library.large-list.foldered-group-by-refusal-signature', 'library.large-list.fixture-foldered-ui-views-created',
     'library.large-list.control-ui-foldered-fixture-readable-after-view-writes',
     'library.large-list.control-ui-foldered-default-view-unchanged',
-    'library.large-list.control-ui-foldered-page-identity', 'library.large-list.ui-threshold-banner-text',
+    'library.large-list.ui-threshold-banner-text',
   ];
 
   // Every row still carrying the harness sentinel, stamped with one reason. A
@@ -2588,6 +2591,10 @@
     ? 'library.large-list.fixture-foldered-document-library'
     : 'library.large-list.fixture-multilevel-document-library';
   const wantedRows = [...(STATE === 2 ? FOLDERED_ROWS : MULTILEVEL_ROWS), ...SHARED_ROWS];
+  // One identity row per state, so each rests only on the library that state selects (#644).
+  const identityRow = STATE === 2
+    ? 'library.large-list.control-ui-foldered-page-identity'
+    : 'library.large-list.control-ui-multilevel-page-identity';
   const wantedRead = await spGet(`${wantedPath}?$select=Id,BaseTemplate`);
   // Each paste finds the library by title afresh, so a generic list put under it since STATE 0 would match by Id (#559).
   if (!await establishFixture(wantedFixture, async () => wantedRead, { BaseTemplate: 101 }, wantedRows)) {
@@ -2596,8 +2603,7 @@
   }
   const wantedId = guid(wantedRead.body.Id);
   const matched = identity.ids.includes(wantedId);
-  record('library.large-list.control-ui-foldered-page-identity',
-         'CONTROL: does the rendered page say, in its own JavaScript context, which fixture library it belongs to',
+  record(identityRow, RESULTS.find((r) => r.id === identityRow).question,
          matched ? 'MATCHES' : 'DOES NOT MATCH',
          `STATE ${STATE} expects '${wanted}', which reads list Id ${show(wantedId)} over REST. `
          + `${identity.detail}. experience ${experience.verdict}: ${experience.detail}. `

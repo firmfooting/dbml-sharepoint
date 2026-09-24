@@ -9027,9 +9027,14 @@
             {
               "id": "library.large-list.control-ui-foldered-page-identity",
               "depends_on": [
-                "library.large-list.fixture-multilevel-document-library",
                 "library.large-list.fixture-foldered-document-library",
-                "library.large-list.fixture-foldered-file-count",
+                "library.large-list.fixture-foldered-file-count"
+              ]
+            },
+            {
+              "id": "library.large-list.control-ui-multilevel-page-identity",
+              "depends_on": [
+                "library.large-list.fixture-multilevel-document-library",
                 "library.large-list.fixture-multilevel-file-count"
               ]
             },
@@ -9058,7 +9063,7 @@
               "depends_on": [
                 "library.large-list.fixture-multilevel-document-library",
                 "library.large-list.control-ui-modern-renders-below-threshold",
-                "library.large-list.control-ui-foldered-page-identity",
+                "library.large-list.control-ui-multilevel-page-identity",
                 "library.large-list.fixture-foldered-ui-views-created",
                 "library.large-list.fixture-multilevel-under-threshold"
               ]
@@ -9069,7 +9074,8 @@
                 "library.large-list.fixture-multilevel-document-library",
                 "library.large-list.fixture-foldered-document-library",
                 "library.large-list.control-ui-modern-renders-below-threshold",
-                "library.large-list.control-ui-foldered-page-identity"
+                "library.large-list.control-ui-foldered-page-identity",
+                "library.large-list.control-ui-multilevel-page-identity"
               ]
             }
           ],
@@ -9102,6 +9108,7 @@
             "library.large-list.fixture-foldered-document-library",
             "library.large-list.control-ui-modern-renders-below-threshold",
             "library.large-list.control-ui-foldered-page-identity",
+            "library.large-list.control-ui-multilevel-page-identity",
             "library.large-list.control-ui-folder-scope-rendered",
             "library.large-list.fixture-foldered-ui-views-created"
           ],
