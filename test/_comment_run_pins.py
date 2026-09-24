@@ -33,6 +33,14 @@ PINNED: dict[str, list[str]] = {
     "examples/project-tracker/schema.dbml": [
         "1d634e98f700",
     ],
+    "pyproject.toml": [
+        "1f77f373407a",
+        "3f703a5d43a0",
+        "7c3188e5030c",
+        "a664cee8e30e",
+        "e365415b7088",
+        "e7ca83021f84",
+    ],
     "src/dbml_sharepoint/analysis/checks/_demo.py": [
         "c22e6ed05127",
     ],

@@ -1,7 +1,7 @@
 """Find paragraph-length comment runs, for the ratchet in `test_comment_runs.py`.
 
-A run is `MIN_RUN` or more consecutive comment lines in one file: Python
-and YAML `#` lines, JS, Power Query and DBML `//` lines, and every line of a
+A run is `MIN_RUN` or more consecutive comment lines in one file: Python,
+YAML and TOML `#` lines, JS, Power Query and DBML `//` lines, and every line of a
 `/* */` or Jinja `{# #}` block. Docstrings are out of scope, being where long
 prose belongs. A run whose first line has one of the evidence forms
 `AGENTS.md` asks for is exempt. Every other run is pinned by a fingerprint of
@@ -33,6 +33,8 @@ PROBES = "test/manual/"
 C_STYLE = frozenset({".js", ".pq", ".dbml"})
 
 HASH_STYLE = frozenset({".yaml", ".yml"})
+
+TOML = ".toml"
 
 #: A `/` after one of these (or at a line's start) opens a regex, not a division.
 REGEX_AFTER = frozenset("(,=:[!&|?{};+-*%<>~^") | {""}
@@ -121,6 +123,46 @@ def _yaml_comment_lines(lines: list[str]) -> set[int]:
             found.add(number)
         elif BLOCK_SCALAR.search(line):
             scalar_indent = indent
+    return found
+
+
+def _toml_string_end(line: str, index: int, delimiter: str) -> int:
+    """The index just past the `delimiter` closing a TOML string, or -1 if it stays open."""
+    while index < len(line):
+        if delimiter.startswith('"') and line[index] == "\\":
+            index += 2
+        elif line.startswith(delimiter, index):
+            return index + len(delimiter)
+        else:
+            index += 1
+    return -1
+
+
+def _toml_comment_lines(lines: list[str]) -> set[int]:
+    """`#` lines, skipping multi-line string content, where a `#` is text."""
+    found: set[int] = set()
+    open_multi = ""
+    for number, line in enumerate(lines, start=1):
+        index = 0
+        if not open_multi and line.lstrip().startswith("#"):
+            found.add(number)
+            continue
+        while index < len(line):
+            if open_multi:
+                index = _toml_string_end(line, index, open_multi)
+                if index < 0:
+                    break
+                open_multi = ""
+            elif line[index] == "#":
+                break
+            elif line.startswith(('"""', "'''"), index):
+                open_multi = line[index : index + 3]
+                index += 3
+            elif line[index] in "\"'":
+                end = _toml_string_end(line, index + 1, line[index])
+                index = len(line) if end < 0 else end
+            else:
+                index += 1
     return found
 
 
@@ -231,6 +273,8 @@ def _comment_lines(text: str, name: str) -> set[int]:
         found |= _jinja_comment_lines(lines)
     if suffix in HASH_STYLE:
         found |= _yaml_comment_lines(lines)
+    if suffix == TOML:
+        found |= _toml_comment_lines(lines)
     if suffix in C_STYLE:
         found |= _c_comment_lines(lines, set(found), suffix)
     return found
@@ -272,7 +316,7 @@ def excluded(name: str, tracked: set[str]) -> bool:
 
 
 def _scanned_syntax(name: str) -> bool:
-    return name.endswith((".py", ".j2")) or Path(name).suffix in C_STYLE | HASH_STYLE
+    return name.endswith((".py", ".j2")) or Path(name).suffix in C_STYLE | HASH_STYLE | {TOML}
 
 
 def scanned_files(root: Path) -> list[str]:

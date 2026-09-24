@@ -79,6 +79,27 @@ def test_yaml_and_dbml_comment_runs_are_flagged(prefix: str, name: str) -> None:
     assert [(run.first_line, run.length) for run in _flagged(seven, name)] == [(2, 7)]
 
 
+def test_toml_comment_runs_are_flagged() -> None:
+    """#637: `pyproject.toml` was not scanned, so a new run there bypassed the ratchet."""
+    seven = "[tool.x]\n" + _lines("#", MIN_RUN) + "a = 1\n"
+
+    assert [(run.first_line, run.length) for run in _flagged(seven, "pyproject.toml")] == [(2, 7)]
+    assert _flagged("[tool.x]\n" + _lines("#", MIN_RUN - 1), "pyproject.toml") == []
+
+
+@pytest.mark.parametrize("quote", ['"""', "'''"])
+def test_hash_lines_in_a_toml_multiline_string_are_content(quote: str) -> None:
+    text = f"notes = {quote}\n" + "# A heading\n" * MIN_RUN + f"{quote}\n" + _lines("#", 3)
+
+    assert comment_runs(text, "pyproject.toml") == []
+
+
+def test_a_quote_in_a_toml_comment_or_string_does_not_open_a_multiline_string() -> None:
+    text = "a = \"'''\"  # say \"\"\"\n" + _lines("#", MIN_RUN)
+
+    assert [(run.first_line, run.length) for run in _flagged(text, "a.toml")] == [(2, 7)]
+
+
 def test_a_dbml_block_comment_counts() -> None:
     block = "/*\n" + " * why\n" * 5 + " */\nTable t {}\n"
 
@@ -297,6 +318,7 @@ def test_the_scan_reads_tracked_files_only() -> None:
     assert "examples/minimal/mapping.yaml" in names
     assert "examples/project-tracker/schema.dbml" in names
     assert ".github/workflows/ci.yml" in names
+    assert "pyproject.toml" in names
     assert all(not name.startswith("test/fixtures/expected/") for name in names)
 
 
