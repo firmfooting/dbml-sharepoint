@@ -14,6 +14,7 @@ const config = {
   organizationName: 'firmfooting',
   projectName: 'dbml-sharepoint',
   onBrokenLinks: 'throw',
+  favicon: 'img/favicon.ico',
 
   // .md renders as CommonMark, .mdx as MDX. Generated pages reproduce
   // docstrings and template comments verbatim; CommonMark keeps their
@@ -36,6 +37,9 @@ const config = {
         },
         blog: false,
         pages: false,
+        theme: {
+          customCss: './src/css/custom.css',
+        },
       }),
     ],
   ],
@@ -45,6 +49,10 @@ const config = {
     ({
       navbar: {
         title: 'dbml-sharepoint',
+        logo: {
+          alt: 'firmfooting',
+          src: 'img/icon.svg',
+        },
         items: [
           {
             type: 'docSidebar',
