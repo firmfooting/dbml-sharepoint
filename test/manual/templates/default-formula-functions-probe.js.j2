@@ -149,6 +149,7 @@
   const Q = {
     fixture: 'A generic list is created (BaseTemplate 100)',
     control: 'NEGATIVE CONTROL: an item POST naming a column that does not exist is refused',
+    columns: 'Every probe column reads back as its declared type, and a reused one carries the formula this probe sends',
     textProp: 'Does DefaultFormula on a single-line Text column read back as sent',
     textFill: 'Does ="Y"&YEAR(TODAY()) on a single-line Text column fill on a bare item create',
   };
@@ -173,6 +174,7 @@
 
   expect('field.default-formula.fixture-list-created', Q.fixture);
   expect('field.default-formula.control-missing-column-refused', Q.control);
+  expect('field.default-formula.fixture-columns-typed', Q.columns);
   expect('field.default-formula.function-day-fills', ROWS[0].question);
   expect('field.default-formula.function-rounddown-fills', ROWS[1].question);
   expect('field.default-formula.function-mod-fills', ROWS[2].question);
@@ -219,7 +221,7 @@
   };
   const ensureField = async (row) => {
     const have = await readField(row.col);
-    if (have.ok) return { ok: true, status: have.status, text: 'already present' };
+    if (have.ok) return { ok: true, status: have.status, text: 'already present', reused: true };
     const digest = await getDigest();
     return spPost(`${listPath}/fields`, bodyFor(row), digest, VERBOSE);
   };
@@ -234,21 +236,22 @@
 
   let digest = await getDigest();
   const haveList = await spGet(listPath);
-  if (haveList.ok) {
-    record('field.default-formula.fixture-list-created', Q.fixture, 'ALREADY PRESENT',
-           `reusing an existing list '${LIST}'. Set CLEANUP = true for a clean answer`);
-  } else {
-    const made = await spPost('web/lists', {
-      Title: LIST, BaseTemplate: 100,
-      Description: 'dbml-sharepoint default-formula functions probe list. Safe to delete.',
-    }, digest);
-    record('field.default-formula.fixture-list-created', Q.fixture,
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIST}'` : short(made));
-    if (!made.ok) {
-      voidAll(DEPENDANTS, `fixture incomplete: list creation failed (HTTP ${made.status})`);
-      return report();
-    }
+  const madeList = haveList.ok ? null : await spPost('web/lists', {
+    Title: LIST, BaseTemplate: 100,
+    Description: 'dbml-sharepoint default-formula functions probe list. Safe to delete.',
+  }, digest);
+  if (madeList !== null && !madeList.ok) {
+    record('field.default-formula.fixture-list-created', Q.fixture, 'FAIL', short(madeList));
+    voidAll(DEPENDANTS, `fixture incomplete: list creation failed (HTTP ${madeList.status})`);
+    return report();
+  }
+  log('INFO', madeList === null
+    ? `reusing an existing list '${LIST}'. Set CLEANUP = true for a clean answer.`
+    : `created '${LIST}'`);
+  // Read back on reuse as well as on create, because a list found by title may be a library.
+  if (!await establishFixture('field.default-formula.fixture-list-created',
+    () => spGet(`${listPath}?$select=BaseTemplate`), { BaseTemplate: 100 }, DEPENDANTS)) {
+    return report();
   }
 
   // ---- NEGATIVE CONTROL: an item POST naming a missing column -----------
@@ -280,6 +283,27 @@
       back,
       stored: !readFailed(back) && back.body.DefaultFormula === row.formula,
     };
+  }
+  // A reused column's formula was not sent by this run, so there it is a precondition, not the observation.
+  const TYPES = { number: 'Number', choice: 'Choice', text: 'Text', datetime: 'DateTime' };
+  const declared = {};
+  for (const row of [...ROWS, textRow]) {
+    const m = made[row.col];
+    if (!m.create.ok) continue;
+    declared[`${row.col}.TypeAsString`] = TYPES[row.type];
+    if (row.type === 'datetime') declared[`${row.col}.DisplayFormat`] = 1;
+    if (m.create.reused) declared[`${row.col}.DefaultFormula`] = row.formula;
+  }
+  if (!await establishFixture('field.default-formula.fixture-columns-typed', async () => {
+    const body = {};
+    for (const key of Object.keys(declared)) {
+      const [col, name] = key.split('.');
+      if (unanswered(made[col].back) !== null) return made[col].back;
+      body[key] = made[col].back.body[name];
+    }
+    return { ok: true, status: 200, body };
+  }, declared, DEPENDANTS.slice(2))) {
+    return report();
   }
   const textMade = made[TEXT_COL];
   if (readFailed(textMade.back)) {

@@ -65,7 +65,7 @@ def _run_probe(*, mutate: bool = False, **config: Any) -> dict[str, dict[str, st
         1,
     )
     if mutate:
-        guard = "if (typeFault) columnFaults.push(`'${column.name}': ${typeFault}`);"
+        guard = "declared[`${column.name}.TypeAsString`] = column.name === NOTE ? 'Note' : 'Text';"
         assert guard in script
         script = script.replace(guard, '')
     output = run_node(_HARNESS.replace('__CONFIG__', json.dumps(config)) + script)

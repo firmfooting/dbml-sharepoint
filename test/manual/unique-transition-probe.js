@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: IS ENFORCEUNIQUEVALUES REFUSED ON EXISTING DUPLICATES
  *
- * REVISION: 9b9d54de
+ * REVISION: c5996b2e
  *
  * ONE QUESTION:
  *   A single-line text column already holds items, and two of them carry the
@@ -429,7 +429,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 9b9d54de. Quote this when reporting results.');
+  log('INFO', 'probe revision c5996b2e. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Unique Transition';
   const listPath = `web/lists/getbytitle('${LIST}')`;
@@ -510,21 +510,6 @@
   const readField = async (name) =>
     spGet(`${listPath}/fields/getbyinternalnameortitle('${name}')?$select=Title,TypeAsString,EnforceUniqueValues,Indexed`);
 
-  // A readback answers only when the request succeeded AND the payload
-  // carries the property, because a body without it reads as undefined and
-  // compares unequal to everything, which looks exactly like a wrong value.
-  const propertyFault = (read, name, want) => {
-    if (readFailed(read)) return `${name} could not be read (HTTP ${read.status})`;
-    if (typeof read.body !== 'object' || Array.isArray(read.body)) {
-      return `${name} readback payload is not an object`;
-    }
-    if (!(name in read.body)) return `the readback payload carries no ${name}`;
-    if (read.body[name] !== want) {
-      return `${name} reads back ${JSON.stringify(read.body[name])}, not ${JSON.stringify(want)}`;
-    }
-    return null;
-  };
-
   // The OBSERVED half: what the column carries after a write. No expected
   // value, because that is the thing being measured.
   const constraintAfter = (read) => {
@@ -574,27 +559,21 @@
 
   let digest = await getDigest();
   const haveList = await spGet(listPath);
-  if (haveList.ok) {
-    record('field.unique.fixture-transition-list', Q.fixture, 'ALREADY PRESENT',
-           `reusing an existing list '${LIST}'. Set CLEANUP = true for a clean answer`);
-  } else {
-    const made = await spPost('web/lists', {
-      Title: LIST, BaseTemplate: 100,
-      Description: 'dbml-sharepoint unique-transition probe list. Safe to delete.',
-    }, digest);
-    record('field.unique.fixture-transition-list', Q.fixture,
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIST}'` : short(made));
-    if (!made.ok) {
-      voidAll(IDS, `fixture incomplete: list creation failed (HTTP ${made.status})`);
-      return report();
-    }
+  const madeList = haveList.ok ? null : await spPost('web/lists', {
+    Title: LIST, BaseTemplate: 100,
+    Description: 'dbml-sharepoint unique-transition probe list. Safe to delete.',
+  }, digest);
+  if (madeList !== null && !madeList.ok) {
+    record('field.unique.fixture-transition-list', Q.fixture, 'FAIL', short(madeList));
+    voidAll(IDS, `fixture incomplete: list creation failed (HTTP ${madeList.status})`);
+    return report();
   }
-
-  const listFault = propertyFault(await spGet(listPath), 'BaseTemplate', 100);
-  if (listFault) {
-    record('field.unique.fixture-transition-list', Q.fixture, 'FAIL', listFault);
-    voidAll(IDS, 'the generic-list fixture could not be established');
+  log('INFO', madeList === null
+    ? `reusing an existing list '${LIST}'. Set CLEANUP = true for a clean answer.`
+    : `created '${LIST}'`);
+  // Read back on reuse as well as on create, because a list found by title may be a library.
+  if (!await establishFixture('field.unique.fixture-transition-list',
+    () => spGet(`${listPath}?$select=BaseTemplate`), { BaseTemplate: 100 }, IDS)) {
     return report();
   }
 
@@ -618,25 +597,25 @@
     }, digest, VERBOSE);
     creates.push(`'${column.name}' create answered ${made.ok ? `HTTP ${made.status}` : short(made)}`);
   }
-  const columnFaults = [];
+  log('INFO', `${creates.join('; ')}.`);
+  const declared = {};
   for (const column of COLUMNS) {
-    const back = await readField(column.name);
-    const typeFault = propertyFault(back, 'TypeAsString', column.name === NOTE ? 'Note' : 'Text');
-    if (typeFault) columnFaults.push(`'${column.name}': ${typeFault}`);
+    declared[`${column.name}.TypeAsString`] = column.name === NOTE ? 'Note' : 'Text';
     if (column.name === NOTE) continue;
-    for (const [property, want] of [['EnforceUniqueValues', false], ['Indexed', false]]) {
-      const fault = propertyFault(back, property, want);
-      if (fault) columnFaults.push(`'${column.name}': ${fault}`);
-    }
+    declared[`${column.name}.EnforceUniqueValues`] = false;
+    declared[`${column.name}.Indexed`] = false;
   }
-  record('field.unique.fixture-unconstrained-columns', Q.columns,
-         columnFaults.length === 0 ? 'PASS' : 'FAIL',
-         `${creates.join('; ')}. `
-         + (columnFaults.length === 0
-           ? 'All four column types match; the Text columns read back EnforceUniqueValues false and Indexed false'
-           : `${columnFaults.join('; ')}. The column fixture does not match the experiment: set CLEANUP = true`));
-  if (columnFaults.length > 0) {
-    voidAll(IDS.slice(1), 'the column types or starting constraints could not be established');
+  if (!await establishFixture('field.unique.fixture-unconstrained-columns', async () => {
+    const body = {};
+    for (const column of COLUMNS) {
+      const back = await readField(column.name);
+      if (unanswered(back) !== null) return back;
+      for (const name of ['TypeAsString', 'EnforceUniqueValues', 'Indexed']) {
+        body[`${column.name}.${name}`] = back.body[name];
+      }
+    }
+    return { ok: true, status: 200, body };
+  }, declared, IDS.slice(1))) {
     return report();
   }
 

@@ -416,6 +416,7 @@
   }
 
   expect('BOOT', 'target + source lists, Status choice, LiveTitle calc and two target rows exist');
+  expect('field.lookup.fixture-lists-created', 'the target and source lists read back as generic lists (BaseTemplate 100)');
   expect('field.lookup.control-primary-lookup-created', 'primary RelatedRisk lookup created (ShowField=LiveTitle)');
   expect('field.lookup.dependent-fieldref-accepted', 'dependent field with FieldRef -> primary accepted by createfieldasxml');
   expect('field.lookup.isdependentlookup-readback', 'the created field reads back IsDependentLookup=true');
@@ -457,6 +458,24 @@
   if (!target.id || !source.id) {
     record('BOOT', 'create the two probe lists', 'FAIL',
            `target=${target.id || `HTTP ${target.text.slice(0, 160)}`} source=${source.id || `HTTP ${source.text.slice(0, 160)}`}`);
+    return report();
+  }
+  // Read back on reuse as well as on create, because a list found by title may be a library.
+  const LISTS_ROW = 'field.lookup.fixture-lists-created';
+  const kinds = [];
+  let generic = true;
+  for (const title of [TARGET, SOURCE]) {
+    const read = await spGet(`web/lists/getbytitle('${title}')?$select=BaseTemplate`);
+    const served = !readFailed(read) && typeof read.body === 'object' && read.body.BaseTemplate !== undefined;
+    kinds.push(served ? `'${title}' BaseTemplate=${JSON.stringify(read.body.BaseTemplate)}`
+      : `'${title}' served no BaseTemplate (HTTP ${read.status})`);
+    generic = generic && served && read.body.BaseTemplate === 100;
+  }
+  record(LISTS_ROW, RESULTS.find((r) => r.id === LISTS_ROW).question, generic ? 'PASS' : 'FAIL',
+         `${kinds.join('; ')}, declared 100`);
+  if (!generic) {
+    voidAll(RESULTS.map((r) => r.id).filter((id) => id !== LISTS_ROW && id !== 'BOOT'),
+            `the fixture ${LISTS_ROW} did not hold: ${kinds.join('; ')}`);
     return report();
   }
 

@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOES A UNIQUE TEXT COLUMN ACCEPT MORE THAN ONE BLANK
  *
- * REVISION: 4a4da75d
+ * REVISION: 513f271b
  *
  * ONE QUESTION:
  *   On a single-line text column with EnforceUniqueValues, do two items that
@@ -395,7 +395,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 4a4da75d. Quote this when reporting results.');
+  log('INFO', 'probe revision 513f271b. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Unique List';
   const listPath = `web/lists/getbytitle('${LIST}')`;
@@ -484,21 +484,22 @@
 
   let digest = await getDigest();
   const haveList = await spGet(listPath);
-  if (haveList.ok) {
-    record('field.unique.fixture-list-created', Q.fixture, 'ALREADY PRESENT',
-           `reusing an existing list '${LIST}'. Set CLEANUP = true for a clean answer`);
-  } else {
-    const made = await spPost('web/lists', {
-      Title: LIST, BaseTemplate: 100,
-      Description: 'dbml-sharepoint unique-blanks probe list. Safe to delete.',
-    }, digest);
-    record('field.unique.fixture-list-created', Q.fixture,
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIST}'` : short(made));
-    if (!made.ok) {
-      voidAll(IDS, `fixture incomplete: list creation failed (HTTP ${made.status})`);
-      return report();
-    }
+  const madeList = haveList.ok ? null : await spPost('web/lists', {
+    Title: LIST, BaseTemplate: 100,
+    Description: 'dbml-sharepoint unique-blanks probe list. Safe to delete.',
+  }, digest);
+  if (madeList !== null && !madeList.ok) {
+    record('field.unique.fixture-list-created', Q.fixture, 'FAIL', short(madeList));
+    voidAll(IDS, `fixture incomplete: list creation failed (HTTP ${madeList.status})`);
+    return report();
+  }
+  log('INFO', madeList === null
+    ? `reusing an existing list '${LIST}'. Set CLEANUP = true for a clean answer.`
+    : `created '${LIST}'`);
+  // Read back on reuse as well as on create, because a list found by title may be a library.
+  if (!await establishFixture('field.unique.fixture-list-created',
+    () => spGet(`${listPath}?$select=BaseTemplate`), { BaseTemplate: 100 }, IDS)) {
+    return report();
   }
 
   // ---- NEGATIVE CONTROL: an item POST naming a missing column -----------
@@ -529,16 +530,9 @@
       EnforceUniqueValues: true, Indexed: true,
     }, digest, VERBOSE);
   }
-  const back = await readField(COL);
-  const constrained = !readFailed(back) && back.body.EnforceUniqueValues === true && back.body.Indexed === true;
-  record('field.unique.fixture-unique-text-column', Q.column,
-         constrained ? 'PASS' : 'FAIL',
-         `POST fields with EnforceUniqueValues:true and Indexed:true answered ${short(made)}; `
-         + (readFailed(back)
-           ? `the column did not read back (HTTP ${back.status})`
-           : `reads back TypeAsString=${back.body.TypeAsString}, EnforceUniqueValues=${back.body.EnforceUniqueValues}, Indexed=${back.body.Indexed}`));
-  if (!constrained) {
-    voidAll(IDS.slice(2), 'the column does not carry the constraint, so nothing below is about it');
+  log('INFO', `POST fields with EnforceUniqueValues:true and Indexed:true answered ${short(made)}`);
+  if (!await establishFixture('field.unique.fixture-unique-text-column', () => readField(COL),
+    { TypeAsString: 'Text', EnforceUniqueValues: true, Indexed: true }, IDS.slice(2))) {
     return report();
   }
 

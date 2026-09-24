@@ -342,20 +342,22 @@
   await resetList(LIST);
 
   const haveList = await spGet(listPath);
-  if (haveList.ok) {
-    record('field.sealed.fixture-list-created', Q.fixture, 'ALREADY PRESENT',
-           `reusing an existing list '${LIST}'. Set CLEANUP = true for a clean answer`);
-  } else {
-    const made = await spPost('web/lists', {
-      Title: LIST, BaseTemplate: 100,
-      Description: 'dbml-sharepoint field-sealed probe list. Safe to delete.',
-    }, await getDigest());
-    record('field.sealed.fixture-list-created', Q.fixture, made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIST}'` : short(made));
-    if (!made.ok) {
-      voidAll(AFTER_LIST, `fixture incomplete: list creation failed (HTTP ${made.status})`);
-      return report();
-    }
+  const madeList = haveList.ok ? null : await spPost('web/lists', {
+    Title: LIST, BaseTemplate: 100,
+    Description: 'dbml-sharepoint field-sealed probe list. Safe to delete.',
+  }, await getDigest());
+  if (madeList !== null && !madeList.ok) {
+    record('field.sealed.fixture-list-created', Q.fixture, 'FAIL', short(madeList));
+    voidAll(AFTER_LIST, `fixture incomplete: list creation failed (HTTP ${madeList.status})`);
+    return report();
+  }
+  log('INFO', madeList === null
+    ? `reusing an existing list '${LIST}'. Set CLEANUP = true for a clean answer.`
+    : `created '${LIST}'`);
+  // Read back on reuse as well as on create, because a list found by title may be a library.
+  if (!await establishFixture('field.sealed.fixture-list-created',
+    () => spGet(`${listPath}?$select=BaseTemplate`), { BaseTemplate: 100 }, AFTER_LIST)) {
+    return report();
   }
 
   // ---- The subject column, unsealed and custom --------------------------
@@ -365,10 +367,12 @@
     madeSubject = await createTextColumn(SUBJECT);
   }
   const subject = await readField(SUBJECT);
-  const usable = subject !== null && subject.Sealed === false
+  // The seal was measured on a Text column, so a reused column of another type is not the subject.
+  const usable = subject !== null && subject.TypeAsString === 'Text' && subject.Sealed === false
     && subject.Hidden === false && subject.FromBaseType === false;
   record('field.sealed.fixture-subject-column', Q.subject, usable ? 'PASS' : 'FAIL',
-         `POST fields answered ${short(madeSubject)}; the field reads ${describeField(subject)}`
+         `POST fields answered ${short(madeSubject)}; the field reads `
+         + `TypeAsString=${show(subject === null ? undefined : subject.TypeAsString)}, ${describeField(subject)}`
          + (subject !== null && subject.Sealed === true
            ? '. A previous run left it SEALED: set CLEANUP = true and run again'
            : ''));

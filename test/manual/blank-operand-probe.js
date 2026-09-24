@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOES A BLANK NUMBER OPERAND REFUSE THE SAVE
  *
- * REVISION: d4eb2182
+ * REVISION: 82890be5
  *
  * ONE QUESTION:
  *   A save rule comparing a NULLABLE Number column against a limit is stored
@@ -455,7 +455,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision d4eb2182. Quote this when reporting results.');
+  log('INFO', 'probe revision 82890be5. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Blank Operand';
   const listPath = `web/lists/getbytitle('${LIST}')`;
@@ -707,22 +707,23 @@
   await resetList(LIST);
 
   const haveList = await spGet(listPath);
-  if (haveList.ok) {
-    record('formula.validation.fixture-list-created', Q.fixture, 'ALREADY PRESENT',
-           `reusing an existing list '${LIST}'. Set CLEANUP = true for a clean answer`);
-  } else {
-    const made = await spPost('web/lists', {
-      Title: LIST, BaseTemplate: 100,
-      Description: 'dbml-sharepoint blank-operand probe list. Safe to delete.',
-    }, await getDigest());
-    record('formula.validation.fixture-list-created', Q.fixture,
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIST}'` : short(made));
-    if (!made.ok) {
-      voidAll([...AFTER_LIST, ...COLUMN_CELL_IDS, ...CLEAR_AND_LIST_IDS],
-              `fixture incomplete: list creation failed (HTTP ${made.status})`);
-      return report();
-    }
+  const LIST_DEPENDANTS = [...AFTER_LIST, ...COLUMN_CELL_IDS, ...CLEAR_AND_LIST_IDS];
+  const madeList = haveList.ok ? null : await spPost('web/lists', {
+    Title: LIST, BaseTemplate: 100,
+    Description: 'dbml-sharepoint blank-operand probe list. Safe to delete.',
+  }, await getDigest());
+  if (madeList !== null && !madeList.ok) {
+    record('formula.validation.fixture-list-created', Q.fixture, 'FAIL', short(madeList));
+    voidAll(LIST_DEPENDANTS, `fixture incomplete: list creation failed (HTTP ${madeList.status})`);
+    return report();
+  }
+  log('INFO', madeList === null
+    ? `reusing an existing list '${LIST}'. Set CLEANUP = true for a clean answer.`
+    : `created '${LIST}'`);
+  // Read back on reuse as well as on create, because a list found by title may be a library.
+  if (!await establishFixture('formula.validation.fixture-list-created',
+    () => spGet(`${listPath}?$select=BaseTemplate`), { BaseTemplate: 100 }, LIST_DEPENDANTS)) {
+    return report();
   }
 
   // ---- The nullable Number column, in the deploy's create shape ----------

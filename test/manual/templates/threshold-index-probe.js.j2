@@ -519,6 +519,8 @@
   // Enough headroom to COUNT the matches rather than just prove one exists.
   const PAGE = 200;
 
+  expect('scale.threshold.fixture-lists-created', 'Both probe lists are generic lists (BaseTemplate 100)');
+  expect('scale.index.fixture-columns-typed', 'Every probe column reads back as its declared type, and Parent looks up the parent list');
   expect('scale.threshold.fixture-item-count', 'Live ItemCount matches a declared checkpoint');
   expect('scale.index.fixture-indexes-set', 'The intended indexes are set and the controls are not');
   expect('scale.index.negative-control-clearable', 'Can the negative control be un-indexed again?');
@@ -704,6 +706,22 @@
     report();
     return;
   }
+  const LISTS_ROW = 'scale.threshold.fixture-lists-created';
+  const COLUMNS_ROW = 'scale.index.fixture-columns-typed';
+  // Read back on reuse as well as on create, because a list found by title may be a library.
+  if (!await establishFixture(LISTS_ROW, async () => {
+    const body = {};
+    for (const [key, title] of [['parent', PARENT], ['main', LIST]]) {
+      const read = await spGet(`web/lists/getbytitle('${odata(title)}')?$select=BaseTemplate`);
+      if (unanswered(read) !== null) return read;
+      body[`${key}.BaseTemplate`] = read.body.BaseTemplate;
+    }
+    return { ok: true, status: 200, body };
+  }, { 'parent.BaseTemplate': 100, 'main.BaseTemplate': 100 },
+  RESULTS.map((r) => r.id).filter((id) => id !== LISTS_ROW))) {
+    report();
+    return;
+  }
 
   // ---- Columns and indexes -------------------------------------------
   const fieldsPath = `web/lists/getbytitle('${odata(LIST)}')/fields`;
@@ -754,14 +772,35 @@
     `List="{${parent.Id}}" ShowField="Title"/>`,
   ]]);
 
-  for (const [name, indexed, schemaXml] of schemas) {
+  for (const [name, , schemaXml] of schemas) {
     if (readFailed(await readField(name))) {
       const made = await addField(schemaXml);
-      if (!made.ok) {
-        log('FAIL', `Could not create ${name}: HTTP ${made.status} ${made.text.slice(0, 300)}`);
-        continue;
-      }
+      if (!made.ok) log('FAIL', `Could not create ${name}: HTTP ${made.status} ${made.text.slice(0, 300)}`);
     }
+  }
+
+  // A column reused by name is read back before any index is set, since an earlier run may have left another type.
+  const guid = (value) => String(value || '').replace(/[{}]/g, '').toLowerCase();
+  const declaredColumns = {};
+  for (const [name, , schemaXml] of schemas) {
+    declaredColumns[`${name}.TypeAsString`] = /Type="([^"]+)"/.exec(schemaXml)[1];
+  }
+  declaredColumns['Parent.LookupList'] = (value) => guid(value) !== '' && guid(value) === guid(parent.Id);
+  if (!await establishFixture(COLUMNS_ROW, async () => {
+    const body = {};
+    for (const [name] of schemas) {
+      const read = await readField(name);
+      if (unanswered(read) !== null) return read;
+      body[`${name}.TypeAsString`] = read.body.TypeAsString;
+      if (name === 'Parent') body['Parent.LookupList'] = read.body.LookupList;
+    }
+    return { ok: true, status: 200, body };
+  }, declaredColumns, RESULTS.map((r) => r.id).filter((id) => id !== LISTS_ROW && id !== COLUMNS_ROW))) {
+    report();
+    return;
+  }
+
+  for (const [name, indexed] of schemas) {
     if (!indexed) continue;
     const flagged = await setIndexed(name);
     log(flagged.ok ? 'OK' : 'FAIL',

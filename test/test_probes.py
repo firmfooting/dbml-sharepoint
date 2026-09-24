@@ -604,15 +604,9 @@ def test_no_fixture_row_is_recorded_as_a_literal_pass() -> None:
 #: A string literal 'ALREADY PRESENT' anywhere in an outcome, a ternary branch included.
 ALREADY_PRESENT = re.compile(r"(['\"`])ALREADY PRESENT\1")
 
-#: A ratchet of fixture rows that still record a reuse by title as 'ALREADY PRESENT'.
-#: Entries come out as each moves onto establishFixture, and none go in.
-ALREADY_PRESENT_FIXTURES = frozenset({
-    ("blank-operand-probe.js.j2", "formula.validation.fixture-list-created"),
-    ("default-formula-functions-probe.js.j2", "field.default-formula.fixture-list-created"),
-    ("field-sealed-probe.js.j2", "field.sealed.fixture-list-created"),
-    ("unique-blanks-probe.js.j2", "field.unique.fixture-list-created"),
-    ("unique-transition-probe.js.j2", "field.unique.fixture-transition-list"),
-})
+#: The drained ratchet of fixture rows recording a reuse by title as 'ALREADY PRESENT'.
+#: Every fixture now reads back through establishFixture, so nothing may go in.
+ALREADY_PRESENT_FIXTURES: frozenset[tuple[str, str]] = frozenset()
 
 
 def _already_present_fixtures(text: str) -> list[str]:
@@ -630,24 +624,17 @@ def _already_present_fixtures(text: str) -> list[str]:
 
 def test_no_fixture_row_is_recorded_as_already_present() -> None:
     """A container found by title is not the container declared until it is read back (#559)."""
-    offenders = []
-    allowed = set()
+    offenders: list[str] = []
     templates = sorted(TEMPLATES.glob("*.js.j2"))
     assert len(templates) >= _MIN_TEMPLATES, f"only {len(templates)} templates scanned"
     for path in templates:
-        for fixture in _already_present_fixtures(path.read_text(encoding="utf-8")):
-            if (path.name, fixture) in ALREADY_PRESENT_FIXTURES:
-                allowed.add((path.name, fixture))
-            else:
-                offenders.append(f"{path.name}: {fixture}")
+        offenders.extend(f"{path.name}: {fixture}"
+                         for fixture in _already_present_fixtures(path.read_text(encoding="utf-8")))
     assert not offenders, (
         f"Fixture row(s) recorded as 'ALREADY PRESENT': {offenders}. Read the reused "
         f"container back through establishFixture on reuse and on create alike."
     )
-    assert allowed == ALREADY_PRESENT_FIXTURES, (
-        f"Stale ALREADY_PRESENT_FIXTURES entries, remove them: "
-        f"{sorted(ALREADY_PRESENT_FIXTURES - allowed)}"
-    )
+    assert not ALREADY_PRESENT_FIXTURES, "the ratchet is drained, so no entry may go back in"
 
 
 def test_the_already_present_detector_reads_the_shapes_it_claims_to() -> None:

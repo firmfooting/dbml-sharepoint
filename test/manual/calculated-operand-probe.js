@@ -158,6 +158,7 @@
   expect('formula.calc.operand-number', 'Number operand in a calculated formula');
   expect('formula.calc.operand-text', 'Single-line-text operand in a calculated formula');
   expect('formula.calc.operand-calculated', 'Calculated-column operand in another calculated formula');
+  expect('formula.calc.fixture-lists-created', 'The probe list and its lookup target are generic lists (BaseTemplate 100)');
 
   // Shared probe core v2: context guard, bounded transport and REST helpers.
   const log = (level, msg) => console.log(`[SP-PROBE] [${level}] ${msg}`);
@@ -178,7 +179,7 @@
   }
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
-  log('INFO', `probe revision c1e98851; core v2; results v1.`);
+  log('INFO', `probe revision 1b707fa4; core v2; results v1.`);
   log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -399,6 +400,27 @@
   const target = await ensureList(TARGET, 'BOOTTARGET');
   const main = await ensureList(LIST, 'BOOTMAIN');
   if (!target || !main) {
+    console.table(results);
+    return { results };
+  }
+  // Read back on reuse as well as on create, because a list found by title may be a library.
+  const LISTS_ROW = 'formula.calc.fixture-lists-created';
+  const kinds = [];
+  let generic = true;
+  for (const title of [TARGET, LIST]) {
+    const read = await get(`web/lists/getbytitle('${odataName(title)}')?$select=BaseTemplate`);
+    const served = read.ok && read.d !== null && typeof read.d === 'object'
+      && read.d.BaseTemplate !== undefined;
+    kinds.push(served ? `'${title}' BaseTemplate=${JSON.stringify(read.d.BaseTemplate)}`
+      : `'${title}' served no BaseTemplate (HTTP ${read.status})`);
+    generic = generic && served && read.d.BaseTemplate === 100;
+  }
+  record(LISTS_ROW, 'The probe list and its lookup target are generic lists (BaseTemplate 100)',
+         generic ? 'PASS' : 'FAIL', `${kinds.join('; ')}, declared 100`);
+  if (!generic) {
+    for (const [id, question] of QUESTIONS) {
+      record(id, question, 'NOT ESTABLISHED', `the fixture ${LISTS_ROW} did not hold: ${kinds.join('; ')}`, 'void');
+    }
     console.table(results);
     return { results };
   }
