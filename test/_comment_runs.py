@@ -91,18 +91,31 @@ def _jinja_opens(text: str) -> bool:
     return opener >= 0 and "#}" not in text[opener + 2 :]
 
 
+def _jinja_only_comments(text: str) -> bool:
+    """Whether `text` holds nothing but Jinja comments, the last possibly left open."""
+    while text:
+        if not text.startswith("{#"):
+            return False
+        closer = text.find("#}", 2)
+        if closer < 0:
+            return True
+        text = text[closer + 2 :].strip()
+    return True
+
+
 def _jinja_comment_lines(lines: list[str]) -> set[int]:
-    """Lines led by `{#` or inside a `{# #}` block; a block opened after code counts on."""
+    """Lines holding only `{# #}` comment; a block opened after code counts on."""
     found: set[int] = set()
     inside = False
     for number, line in enumerate(lines, start=1):
         stripped = line.strip()
         if inside:
-            found.add(number)
             closer = stripped.find("#}")
+            if closer < 0 or _jinja_only_comments(stripped[closer + 2 :].strip()):
+                found.add(number)
             inside = closer < 0 or _jinja_opens(stripped[closer + 2 :])
         else:
-            if stripped.startswith("{#"):
+            if stripped.startswith("{#") and _jinja_only_comments(stripped):
                 found.add(number)
             inside = _jinja_opens(stripped)
     return found
@@ -244,7 +257,7 @@ def _lex_c_line(line: str, state: _CState, quotes: str, js: bool) -> bool:
                 if state.stack[-1] < 0:
                     state.stack.pop()
         index += step
-    return comment
+    return comment and not code
 
 
 def _c_comment_lines(lines: list[str], skip: set[int], suffix: str) -> set[int]:

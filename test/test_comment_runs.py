@@ -201,6 +201,40 @@ def test_a_block_opened_after_code_counts_its_lines_but_not_the_code_line(
     assert [(run.first_line, run.length) for run in _flagged(text, name)] == [(2, 7)]
 
 
+@pytest.mark.parametrize(
+    ("name", "opener", "closer"),
+    [("a.js", "/* why", " */ run();"), ("a.pq", "/* why", "*/ Source = 1,"),
+     ("s.dbml", "/* why", "*/ Table t {}"), ("a.md.j2", "{# why", "#} {{ x }}"),
+     ("a.js.j2", "{# why", "#} run();")],
+)
+def test_code_after_a_block_closer_makes_the_line_code(
+    name: str, opener: str, closer: str,
+) -> None:
+    """#637: the mixed closing line joined two short runs into one of seven."""
+    after = "{# more #}\n" * 3 if name.endswith(".j2") else _lines("//", 3)
+    text = opener + "\n" + "   more\n" * 2 + closer + "\n" + after
+
+    assert comment_runs(text, name) == []
+
+
+@pytest.mark.parametrize(
+    ("name", "opener", "closer"),
+    [("a.js", "/* why", " */ // more"), ("a.md.j2", "{# why", "#} {# more #}")],
+)
+def test_a_comment_after_a_block_closer_keeps_the_line_a_comment(
+    name: str, opener: str, closer: str,
+) -> None:
+    text = opener + "\n" + "   more\n" * (MIN_RUN - 2) + closer + "\nafter\n"
+
+    assert [(run.first_line, run.length) for run in _flagged(text, name)] == [(1, 7)]
+
+
+def test_a_one_line_block_followed_by_code_is_a_code_line() -> None:
+    text = _lines("//", 3) + "/* why */ run();\n" + _lines("//", 3)
+
+    assert comment_runs(text, "a.js") == []
+
+
 @pytest.mark.parametrize("indicator", ["|", ">", "|-", ">+", "|2"])
 def test_hash_lines_in_a_yaml_block_scalar_are_content(indicator: str) -> None:
     text = f"notes: {indicator}\n" + "  # A heading\n" * MIN_RUN + "next: 1\n"
