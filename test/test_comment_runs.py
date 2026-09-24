@@ -296,6 +296,12 @@ def test_an_explicit_indentation_indicator_fixes_the_content_column(indicator: s
     assert comment_runs(text, "a.yaml") == []
 
 
+def test_an_indicator_in_the_header_comment_is_not_an_indentation_indicator() -> None:
+    text = "notes: | # requires >2 items\n    text\n" + _lines("  #", MIN_RUN) + "next: 1\n"
+
+    assert [(run.first_line, run.length) for run in _flagged(text, "a.yaml")] == [(3, 7)]
+
+
 def test_a_yaml_comment_run_after_a_block_scalar_counts() -> None:
     text = "- notes: |\n    text\n" + _lines("#", MIN_RUN)
 
