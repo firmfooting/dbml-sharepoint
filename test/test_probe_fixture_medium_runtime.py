@@ -236,8 +236,12 @@ def test_fixture_voids_its_rows_on_a_lookup_bound_to_another_list() -> None:
     assert not [r for r in sent if "/Files/add" in r["path"] or r["verb"] == "MERGE"]
 
 
-def test_fixture_voids_its_rows_on_a_calculated_column_of_another_output_type() -> None:
-    calc = {"TypeAsString": "Calculated", "OutputType": 2}
+@pytest.mark.parametrize("output_type", [2, "Number"])
+def test_fixture_voids_its_rows_on_a_calculated_column_of_another_output_type(
+    output_type: object,
+) -> None:
+    """Only the Learn-documented 9 is Number; an unobserved string form fails closed."""
+    calc = {"TypeAsString": "Calculated", "OutputType": output_type}
     config = {"existing": {_FIXTURE_LIB: {"template": 101, "fields": {"LVCalc": calc}}}}
     rows, _ = _run_probe(_MOCK, config, _FIXTURE, _BUILD_GATES)
 

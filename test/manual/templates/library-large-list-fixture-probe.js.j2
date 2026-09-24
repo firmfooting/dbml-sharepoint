@@ -552,10 +552,9 @@
   const columnNotes = [];
   for (const [name, schemaXml] of COLUMNS) columnNotes.push(await ensureColumn(name, schemaXml));
   log('INFO', `columns: ${columnNotes.join('; ')}`);
-  // OutputType is an SP.FieldType (Learn: FieldCalculated.OutputType), where Number is 9;
-  // the name is accepted too because this repository has not observed which form is served.
+  // SP.FieldType Number is 9 on Learn; the served form is unobserved, so any other fails closed.
   const declaredColumns = {
-    [`${CALC}.OutputType`]: (value) => value === 9 || value === 'Number',
+    [`${CALC}.OutputType`]: 9,
     // A GUID may come back braced or in either case, so both sides are normalised.
     [`${LOOKUP}.LookupList`]: (value) => typeof value === 'string'
       && bareGuid(value) === bareGuid(targetId),

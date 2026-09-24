@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: BUILD THE PERSISTENT LARGE-LIBRARY FIXTURE.
  *
- * REVISION: c36a0c87
+ * REVISION: 89a1208d
  *
  * THIS PROBE ANSWERS NO QUESTION ABOUT SHAREPOINT. It builds a document
  * library that later probes measure, and every row it records is a
@@ -536,7 +536,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision c36a0c87. Quote this when reporting results.');
+  log('INFO', 'probe revision 89a1208d. Quote this when reporting results.');
 
   // The expensive half. Off, so a paste that only wants to check an
   // already-built fixture never starts five thousand uploads.
@@ -872,10 +872,9 @@
   const columnNotes = [];
   for (const [name, schemaXml] of COLUMNS) columnNotes.push(await ensureColumn(name, schemaXml));
   log('INFO', `columns: ${columnNotes.join('; ')}`);
-  // OutputType is an SP.FieldType (Learn: FieldCalculated.OutputType), where Number is 9;
-  // the name is accepted too because this repository has not observed which form is served.
+  // SP.FieldType Number is 9 on Learn; the served form is unobserved, so any other fails closed.
   const declaredColumns = {
-    [`${CALC}.OutputType`]: (value) => value === 9 || value === 'Number',
+    [`${CALC}.OutputType`]: 9,
     // A GUID may come back braced or in either case, so both sides are normalised.
     [`${LOOKUP}.LookupList`]: (value) => typeof value === 'string'
       && bareGuid(value) === bareGuid(targetId),
