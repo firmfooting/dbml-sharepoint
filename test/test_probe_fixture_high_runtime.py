@@ -333,3 +333,58 @@ def test_guards_voids_scope_on_create_when_the_view_was_already_present() -> Non
     assert "already present" in row["evidence"]
     assert not any(_SCOPE_CREATE_VIEW in r["body"] for r in _view_creates(sent))
     assert rows["library.view.scope-on-merge-reads-back"]["outcome"] == "STICKS"
+
+
+# --------------------------------------------------------------------------
+# Item 14: library-view checks every write its grouping rows read.
+# --------------------------------------------------------------------------
+_VIEW = "library-view-probe.js"
+_BY_METADATA = "library.view.group-by-metadata-column"
+_BY_FOLDER = "library.view.group-by-folder"
+
+
+def _grouping_queries(sent: list[dict[str, str]], field: str) -> list[dict[str, str]]:
+    return [r for r in sent if r["path"].endswith("/RenderListDataAsStream")
+            and f'GroupBy Collapse=\\"FALSE\\"><FieldRef Name=\\"{field}' in r["body"]]
+
+
+def test_library_view_groups_files_it_wrote_and_read_back() -> None:
+    rows, sent = _run_probe(_LIBRARY_MOCK, {}, _VIEW)
+
+    assert rows[_BY_METADATA]["outcome"] == "SAME AS LIST", rows[_BY_METADATA]
+    assert rows[_BY_FOLDER]["outcome"] == "FOLDERS ARE NOT A REST GROUPING DIMENSION"
+    assert not _void_ids(rows)
+    assert _grouping_queries(sent, "dbmlspDocCategory")
+
+
+@pytest.mark.parametrize(
+    ("config", "named"),
+    [
+        ({"failUpload": ["doc-beta-1.txt"]}, "the upload of 'doc-beta-1.txt' answered HTTP 400"),
+        ({"failMerge": ["doc-alpha-1.txt"]},
+         "the dbmlspDocCategory MERGE on 'doc-alpha-1.txt' answered HTTP 500"),
+        ({"dropMerge": ["doc-beta-1.txt"]},
+         "'doc-beta-1.txt' reads back dbmlspDocCategory=null, not Beta"),
+    ],
+    ids=["upload", "merge", "dropped-merge"],
+)
+def test_library_view_voids_the_metadata_row_on_a_failed_write(
+    config: dict[str, Any], named: str,
+) -> None:
+    rows, sent = _run_probe(_LIBRARY_MOCK, config, _VIEW)
+
+    assert _void_ids(rows) == {_BY_METADATA}
+    assert named in rows[_BY_METADATA]["evidence"]
+    assert not _grouping_queries(sent, "dbmlspDocCategory")
+    assert rows[_BY_FOLDER]["outcome"] == "FOLDERS ARE NOT A REST GROUPING DIMENSION"
+
+
+def test_library_view_voids_the_folder_row_when_the_folder_was_not_created() -> None:
+    rows, sent = _run_probe(_LIBRARY_MOCK, {"folderStatus": 500}, _VIEW)
+
+    assert _void_ids(rows) == {_BY_FOLDER}
+    evidence = rows[_BY_FOLDER]["evidence"]
+    assert "the create of folder 'FolderAlpha' answered HTTP 500" in evidence
+    assert "the upload of 'subfolder-doc.txt' answered HTTP 404" in evidence
+    assert not _grouping_queries(sent, "Folder")
+    assert rows[_BY_METADATA]["outcome"] == "SAME AS LIST"

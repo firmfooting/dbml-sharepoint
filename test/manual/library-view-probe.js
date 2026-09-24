@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY VIEW GROUPING
  *
- * REVISION: 4510a965
+ * REVISION: 67b7b9ef
  *
  * ONE QUESTION:
  *   How does view grouping behave on a document library, and does it diverge from generic lists?
@@ -379,7 +379,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 4510a965. Quote this when reporting results.');
+  log('INFO', 'probe revision 67b7b9ef. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibView';
   const FOLDER = 'FolderAlpha';
@@ -509,42 +509,29 @@
     }
   }
 
+  // Each write is checked, and each grouping row is voided by the writes its verdict reads.
+  const failed = { metadata: [], folder: [] };
+
   // ---- Create subfolder -----------------------------------------------
   digest = await getDigest();
-  await spPost(
+  const folderMade = await spPost(
     `web/GetFolderByServerRelativeUrl('${folderUrl}')/folders/add(url='${FOLDER}')`,
     {},
     digest
   );
+  if (!folderMade.ok) failed.folder.push(`the create of folder '${FOLDER}' answered HTTP ${folderMade.status}`);
 
   // ---- Upload files ---------------------------------------------------
-  digest = await getDigest();
-  await rawPost(
-    `web/GetFolderByServerRelativeUrl('${folderUrl}')/Files/add(url='${FILE_ALPHA_1}',overwrite=true)`,
-    'dbmlsp probe file alpha 1',
-    digest
-  );
-
-  digest = await getDigest();
-  await rawPost(
-    `web/GetFolderByServerRelativeUrl('${folderUrl}')/Files/add(url='${FILE_BETA_1}',overwrite=true)`,
-    'dbmlsp probe file beta 1',
-    digest
-  );
-
-  digest = await getDigest();
-  await rawPost(
-    `web/GetFolderByServerRelativeUrl('${folderUrl}')/Files/add(url='${FILE_ALPHA_2}',overwrite=true)`,
-    'dbmlsp probe file alpha 2',
-    digest
-  );
-
-  digest = await getDigest();
-  await rawPost(
-    `web/GetFolderByServerRelativeUrl('${folderUrl}/${FOLDER}')/Files/add(url='${SUBFILE}',overwrite=true)`,
-    'dbmlsp probe subfolder file',
-    digest
-  );
+  const upload = async (row, folder, name, body) => {
+    digest = await getDigest();
+    const res = await rawPost(
+      `web/GetFolderByServerRelativeUrl('${folder}')/Files/add(url='${name}',overwrite=true)`, body, digest);
+    if (!res.ok) failed[row].push(`the upload of '${name}' answered HTTP ${res.status}`);
+  };
+  await upload('metadata', folderUrl, FILE_ALPHA_1, 'dbmlsp probe file alpha 1');
+  await upload('metadata', folderUrl, FILE_BETA_1, 'dbmlsp probe file beta 1');
+  await upload('metadata', folderUrl, FILE_ALPHA_2, 'dbmlsp probe file alpha 2');
+  await upload('folder', `${folderUrl}/${FOLDER}`, SUBFILE, 'dbmlsp probe subfolder file');
 
   // ---- Set metadata on files ------------------------------------------
   const itemsResp = await spGet(`${listPath}/items?$select=Id,FileLeafRef&$top=50`);
@@ -552,23 +539,35 @@
     ? itemsResp.body.value
     : [];
 
-  const setItemMeta = async (filename, value) => {
+  // The subfile's value decides nothing: the root files checked here already carry both groups.
+  const WANT = [[FILE_ALPHA_1, 'Alpha', 'metadata'], [FILE_BETA_1, 'Beta', 'metadata'],
+                [FILE_ALPHA_2, 'Alpha', 'metadata'], [SUBFILE, 'Alpha', null]];
+  for (const [filename, value, row] of WANT) {
     const match = items.find((i) => i.FileLeafRef === filename);
-    if (!match) return false;
-    digest = await getDigest();
-    const res = await spPost(
-      `${listPath}/items(${match.Id})`,
-      { [COL]: value },
-      digest,
-      { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' }
-    );
-    return res.ok;
-  };
-
-  await setItemMeta(FILE_ALPHA_1, 'Alpha');
-  await setItemMeta(FILE_BETA_1, 'Beta');
-  await setItemMeta(FILE_ALPHA_2, 'Alpha');
-  await setItemMeta(SUBFILE, 'Alpha');
+    let why = null;
+    if (!match) {
+      why = `no item was served for '${filename}' (items read HTTP ${itemsResp.status})`;
+    } else {
+      digest = await getDigest();
+      const res = await spPost(`${listPath}/items(${match.Id})`, { [COL]: value }, digest,
+                               { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+      if (!res.ok) why = `the ${COL} MERGE on '${filename}' answered HTTP ${res.status}`;
+    }
+    if (why && row) failed[row].push(why);
+    if (why && !row) log('WARN', why);
+  }
+  // A MERGE answers 204 whether or not the value was kept, so the values are read back.
+  if (!failed.metadata.length) {
+    const back = await spGet(`${listPath}/items?$select=Id,FileLeafRef,${COL}&$top=50`);
+    const values = (!readFailed(back) && Array.isArray(back.body.value)) ? back.body.value : null;
+    if (values === null) failed.metadata.push(`the metadata did not read back (HTTP ${back.status})`);
+    for (const [filename, value, row] of values === null ? [] : WANT) {
+      const got = values.find((i) => i.FileLeafRef === filename);
+      if (row && (!got || got[COL] !== value)) {
+        failed.metadata.push(`'${filename}' reads back ${COL}=${JSON.stringify(got ? got[COL] : null)}, not ${value}`);
+      }
+    }
+  }
 
   // ---- control-missing-column-refused: NEGATIVE CONTROL ---------------
   digest = await getDigest();
@@ -598,6 +597,9 @@
            'NOT ESTABLISHED',
            'controls not established: query negative control did not hold',
            'void');
+  } else if (failed.metadata.length) {
+    voidDependents(['library.view.group-by-metadata-column'],
+      `the files to group were not written as declared: ${failed.metadata.join('; ')}`);
   } else {
     const metaGroupXml =
       `<View><Query><GroupBy Collapse="FALSE"><FieldRef Name="${COL}"/></GroupBy></Query>`
@@ -678,6 +680,9 @@
            'NOT ESTABLISHED',
            'controls not established: query negative control did not hold',
            'void');
+  } else if (failed.folder.length) {
+    voidDependents(['library.view.group-by-folder'],
+      `the folder and its file were not written: ${failed.folder.join('; ')}`);
   } else {
     // 1. Attempt GroupBy on FieldRef Name="Folder"
     const folderGroupXml =
