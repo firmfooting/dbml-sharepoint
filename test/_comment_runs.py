@@ -47,6 +47,9 @@ REGEX_KEYWORD = re.compile(
 #: A key or sequence entry whose value is a `|` or `>` block scalar.
 BLOCK_SCALAR = re.compile(r"(?:^\s*-|:)\s+[|>][1-9+-]*\s*(?:#.*)?$")
 
+#: Indentation plus any `- ` sequence dashes, which together place a mapping key.
+SEQUENCE_LEAD = re.compile(r"^\s*(?:-\s+)*")
+
 #: Stripped from each end of a comment line before it is fingerprinted.
 MARKERS = re.compile(r"^(?:\{#|/\*+|//+|#+:?|\*+)|(?:#\}|\*+/)$")
 
@@ -127,18 +130,25 @@ def _jinja_comment_lines(lines: list[str]) -> set[int]:
 def _yaml_comment_lines(lines: list[str]) -> set[int]:
     """`#` lines, skipping block scalar content, where a `#` is text."""
     found: set[int] = set()
-    scalar_indent: int | None = None
+    floor: int | None = None
+    content: int | None = None
     for number, line in enumerate(lines, start=1):
         stripped = line.strip()
         indent = len(line) - len(line.lstrip())
-        if scalar_indent is not None:
-            if not stripped or indent > scalar_indent:
+        if floor is not None:
+            if not stripped:
                 continue
-            scalar_indent = None
+            if content is None and indent > floor:
+                content = indent
+            if content is not None and indent >= content:
+                continue
+            floor = content = None
         if stripped.startswith("#"):
             found.add(number)
-        elif BLOCK_SCALAR.search(line):
-            scalar_indent = indent
+        elif match := BLOCK_SCALAR.search(line):
+            # Content must be deeper than its key, which sits after any `- ` item dashes.
+            key = len(line) - len(SEQUENCE_LEAD.sub("", line, count=1))
+            floor = key if match.group().startswith(":") else indent
     return found
 
 
