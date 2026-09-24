@@ -790,7 +790,8 @@
   const dateTimeHeld = await establishFixture(
     'formula.datetime.fixture-probewhen-date-time-column',
     () => spGet(`${fieldsPath}/getbyinternalnameortitle('${FIELD}')`),
-    { InternalName: FIELD, TypeAsString: 'DateTime', DisplayFormat: 1 }, TIME_OF_DAY_ROWS);
+    { InternalName: FIELD, TypeAsString: 'DateTime', DisplayFormat: 1 },
+    [...TIME_OF_DAY_ROWS, 'expression.client-validation.now-sentinel-stored']);
 
   // ---- Timestamps -----------------------------------------------------
   // Written as UTC ISO, which is how SharePoint stores and how REST wants
@@ -1366,28 +1367,31 @@
   // no headless probe can see, and form-visibility-interactive.js exists
   // precisely because this project learned that the hard way. A PASS here
   // means "SharePoint kept the formula", never "the rule works".
-  const clientRule = await spPost(
-    `${fieldsPath}/getbyinternalnameortitle('${FIELD}')`,
-    { ClientValidationFormula: `=if(@now > [$${FIELD}], 'true', 'false')` },
-    await getDigest(), { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
-  if (!clientRule.ok) {
-    record('expression.client-validation.now-sentinel-stored', '@now is accepted and stored in a ClientValidationFormula',
-           'REFUSED', `HTTP ${clientRule.status}: ${clientRule.text.slice(0, 300)}`);
-  } else {
-    const back = await spGet(
-      `${fieldsPath}/getbyinternalnameortitle('${FIELD}')?$select=ClientValidationFormula`);
-    if (readFailed(back)) {
+  // The expression names ProbeWhen by internal name, so it rests on the fixture.
+  if (dateTimeHeld) {
+    const clientRule = await spPost(
+      `${fieldsPath}/getbyinternalnameortitle('${FIELD}')`,
+      { ClientValidationFormula: `=if(@now > [$${FIELD}], 'true', 'false')` },
+      await getDigest(), { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+    if (!clientRule.ok) {
       record('expression.client-validation.now-sentinel-stored', '@now is accepted and stored in a ClientValidationFormula',
-             'NOT ESTABLISHED',
-             `the MERGE returned HTTP ${clientRule.status} but the read-back failed `
-             + `(HTTP ${back.status}), so whether it was stored is unobserved.`);
+             'REFUSED', `HTTP ${clientRule.status}: ${clientRule.text.slice(0, 300)}`);
     } else {
-      const stored = back.body.ClientValidationFormula;
-      record('expression.client-validation.now-sentinel-stored', '@now is accepted and stored in a ClientValidationFormula',
-             stored && String(stored).includes('@now') ? 'STORED' : 'ACCEPTED THEN DISCARDED',
-             `reads back ${JSON.stringify(stored)}. STORAGE ONLY: whether the rule `
-             + 'actually fires needs an eyes-on check in the form designer, exactly as '
-             + 'form-visibility-interactive.js does.');
+      const back = await spGet(
+        `${fieldsPath}/getbyinternalnameortitle('${FIELD}')?$select=ClientValidationFormula`);
+      if (readFailed(back)) {
+        record('expression.client-validation.now-sentinel-stored', '@now is accepted and stored in a ClientValidationFormula',
+               'NOT ESTABLISHED',
+               `the MERGE returned HTTP ${clientRule.status} but the read-back failed `
+               + `(HTTP ${back.status}), so whether it was stored is unobserved.`);
+      } else {
+        const stored = back.body.ClientValidationFormula;
+        record('expression.client-validation.now-sentinel-stored', '@now is accepted and stored in a ClientValidationFormula',
+               stored && String(stored).includes('@now') ? 'STORED' : 'ACCEPTED THEN DISCARDED',
+               `reads back ${JSON.stringify(stored)}. STORAGE ONLY: whether the rule `
+               + 'actually fires needs an eyes-on check in the form designer, exactly as '
+               + 'form-visibility-interactive.js does.');
+      }
     }
   }
 

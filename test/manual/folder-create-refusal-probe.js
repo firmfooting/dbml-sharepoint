@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHY A DECLARED FOLDER CREATE IS REFUSED
  *
- * REVISION: a5238cf7
+ * REVISION: f03f24d3
  *
  * ONE QUESTION:
  *   folders/add(url=) is measured working. On a live deploy it answered
@@ -409,7 +409,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision a5238cf7. Quote this when reporting results.');
+  log('INFO', 'probe revision f03f24d3. Quote this when reporting results.');
 
   const LIB_DEFAULT = 'dbmlsp Probe Folder Default';
   const LIB_NOCT = 'dbmlsp Probe Folder NoCT';
@@ -504,19 +504,21 @@
 
   // Both are reused by title, so each must read back as a library, and NoCT with content types off.
   const shapeOf = (title) => spGet(`${listPath(title)}?$select=BaseTemplate,ContentTypesEnabled,EnableFolderCreation`);
-  const shapeDefault = await shapeOf(LIB_DEFAULT);
-  const shapeNoCt = await shapeOf(LIB_NOCT);
   log('INFO', `${libDefault.reused ? 'reused' : 'created'} '${LIB_DEFAULT}', `
-    + `${libNoCt.reused ? 'reused' : 'created'} '${LIB_NOCT}'. Default library shape: ${JSON.stringify(shapeDefault.body)}`);
-  const held = await establishFixture('library.doc-lib.fixture-library-created',
-    async () => (!shapeDefault.ok ? shapeDefault : !shapeNoCt.ok ? shapeNoCt : {
-      ok: true, status: 200, body: {
-        DefaultBaseTemplate: (shapeDefault.body || {}).BaseTemplate,
-        NoCtBaseTemplate: (shapeNoCt.body || {}).BaseTemplate,
-        NoCtContentTypesEnabled: (shapeNoCt.body || {}).ContentTypesEnabled,
-      },
-    }),
-    { DefaultBaseTemplate: 101, NoCtBaseTemplate: 101, NoCtContentTypesEnabled: false }, IDS);
+    + `${libNoCt.reused ? 'reused' : 'created'} '${LIB_NOCT}'.`);
+  // Both reads run inside the helper, so a read that throws is recorded rather than escaping.
+  const held = await establishFixture('library.doc-lib.fixture-library-created', async () => {
+    const shapeDefault = await shapeOf(LIB_DEFAULT);
+    if (!shapeDefault.ok) return shapeDefault;
+    const shapeNoCt = await shapeOf(LIB_NOCT);
+    if (!shapeNoCt.ok) return shapeNoCt;
+    log('INFO', `Default library shape: ${JSON.stringify(shapeDefault.body)}`);
+    return { ok: true, status: 200, body: {
+      DefaultBaseTemplate: (shapeDefault.body || {}).BaseTemplate,
+      NoCtBaseTemplate: (shapeNoCt.body || {}).BaseTemplate,
+      NoCtContentTypesEnabled: (shapeNoCt.body || {}).ContentTypesEnabled,
+    } };
+  }, { DefaultBaseTemplate: 101, NoCtBaseTemplate: 101, NoCtContentTypesEnabled: false }, IDS);
   if (!held) return report();
 
   const rootOf = async (title) => {

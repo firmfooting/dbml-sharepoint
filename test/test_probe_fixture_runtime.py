@@ -291,7 +291,7 @@ _SCRATCH_MOCK = textwrap.dedent("""
         if (method === 'POST') {
           fields.set(sent.Title, {
             TypeAsString: 'DateTime', DisplayFormat: sent.DisplayFormat,
-            ValidationFormula: '', Required: false, DefaultValue: null,
+            ValidationFormula: '', Required: false, DefaultValue: null, DefaultFormula: null,
           });
           return jsonResponse(201, { d: { Title: sent.Title, TypeAsString: 'DateTime' } });
         }
@@ -328,7 +328,7 @@ _SCRATCH_MOCK = textwrap.dedent("""
 """)
 
 _DATE = {"TypeAsString": "DateTime", "DisplayFormat": 0, "ValidationFormula": "",
-         "Required": False, "DefaultValue": None}
+         "Required": False, "DefaultValue": None, "DefaultFormula": None}
 _DATE_TIME = {**_DATE, "DisplayFormat": 1}
 _SCRATCH_COLUMNS = {"DM": _DATE, "DC": _DATE, "WM": _DATE_TIME}
 
@@ -406,8 +406,11 @@ _LIST_ALL = {*_LIST_RULE, *_LIST_DM, *_LIST_UPDATE, _SEED,
              "formula.validation.list-modified-rejects-20h-ahead"}
 
 
-@pytest.mark.parametrize("shape", [{"Required": True}, {"DefaultValue": "[today]"}],
-                         ids=["required", "defaulted"])
+@pytest.mark.parametrize(
+    "shape",
+    [{"Required": True}, {"DefaultValue": "[today]"}, {"DefaultFormula": "=TODAY()"}],
+    ids=["required", "defaulted", "formula-defaulted"],
+)
 def test_modified_clock_voids_the_rows_on_a_reused_column_that_is_not_optional(
     shape: dict[str, Any],
 ) -> None:
@@ -553,6 +556,7 @@ _TIME_OF_DAY = {
     "query.caml-adhoc.today-element-date-granular",
     "query.view-query.today-include-time-roundtrip",
     "query.view-query.today-include-time-selects",
+    "expression.client-validation.now-sentinel-stored",
 }
 
 
@@ -671,6 +675,7 @@ _THRESHOLD_MOCK = textwrap.dedent("""
         return jsonResponse(200, { value: / eq 0$/.test(filter[1]) ? [] : [{ Id: 1 }] });
       }
       if (rest.startsWith('?$select=ItemCount')) {
+        if (CONFIG.countThrows) throw new TypeError('Failed to fetch');
         if (CONFIG.countStatus) return throttled();
         return jsonResponse(200, { ItemCount: CONFIG.itemCount });
       }
@@ -780,6 +785,9 @@ _FOLDER_MOCK = textwrap.dedent("""
         return jsonResponse(200, { Exists: folders.has(read[1]), Name: read[1],
           ServerRelativeUrl: read[1] });
       }
+      if (CONFIG.shapeThrows && path.includes('$select=BaseTemplate')) {
+        throw new TypeError('Failed to fetch');
+      }
       const list = LIST.exec(path);
       if (list) {
         const held = lists.get(list[1]);
@@ -831,5 +839,25 @@ def test_folder_create_refusal_voids_the_cells_on_a_reused_list_of_the_wrong_sha
 
     assert rows[_LIBRARY]["outcome"] == "FAIL", rows[_LIBRARY]
     assert "differs" in rows[_LIBRARY]["evidence"]
+    assert _void_ids(rows) == _FOLDER_ROWS
+    assert not [r for r in sent if "folders" in r["path"].lower()]
+
+
+def test_threshold_voids_the_rows_when_the_count_read_throws() -> None:
+    """A fetch that rejects is recorded by the helper, not left to end the run unrecorded."""
+    rows, _ = _run_probe(_THRESHOLD_MOCK, {"countThrows": True}, "library-index-threshold-probe.js")
+
+    fixture = rows["library.index.fixture-file-count"]
+    assert fixture["outcome"] == "FAIL", fixture
+    assert "the read threw" in fixture["evidence"]
+    assert _void_ids(rows)
+
+
+def test_folder_create_refusal_voids_the_cells_when_a_shape_read_throws() -> None:
+    rows, sent = _run_probe(_FOLDER_MOCK, {"lists": {}, "shapeThrows": True},
+                            "folder-create-refusal-probe.js")
+
+    assert rows[_LIBRARY]["outcome"] == "FAIL", rows[_LIBRARY]
+    assert "the read threw" in rows[_LIBRARY]["evidence"]
     assert _void_ids(rows) == _FOLDER_ROWS
     assert not [r for r in sent if "folders" in r["path"].lower()]

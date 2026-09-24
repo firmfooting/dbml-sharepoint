@@ -7,7 +7,7 @@
  *   index on them? A served filter means an index answered it; a refusal means
  *   the query would have had to scan the whole library.
  *
- * REVISION: 043b5b1f
+ * REVISION: 6399bf1d
  *
  * THE COLUMNS: Title, Name (FileLeafRef), Created, Modified, Author, Editor,
  * plus ID as the positive control and two probe-owned columns as the negative
@@ -549,7 +549,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 043b5b1f. Quote this when reporting results.');
+  log('INFO', 'probe revision 6399bf1d. Quote this when reporting results.');
 
   // The expensive half. Off, so a paste that only wants to measure an
   // already-built library never starts five thousand uploads.
@@ -1012,8 +1012,11 @@
   }
   // Counted from ItemCount read after the last upload, never from a file name.
   // ItemCount can trail an upload burst, which reads short rather than complete.
-  const countRead = await spGet(`${libPath}?$select=ItemCount`);
-  const fileCount = unanswered(countRead) === null && typeof countRead.body.ItemCount === 'number'
+  // A read that throws is kept and rethrown inside establishFixture, which records it.
+  const countRead = await spGet(`${libPath}?$select=ItemCount`).catch((error) => error);
+  const countThrew = countRead instanceof Error;
+  const fileCount = !countThrew && unanswered(countRead) === null
+    && typeof countRead.body.ItemCount === 'number'
     ? countRead.body.ItemCount : null;
   if (fileCount !== null && fileCount < TARGET_FILES) {
     record('library.index.fixture-file-count', `The fixture library holds at least ${TARGET_FILES} files`,
@@ -1028,7 +1031,10 @@
            'ABORTED', why);
     return abortRemaining(why);
   }
-  const counted = await establishFixture('library.index.fixture-file-count', async () => countRead,
+  const counted = await establishFixture('library.index.fixture-file-count', async () => {
+    if (countThrew) throw countRead;
+    return countRead;
+  },
     { ItemCount: (n) => typeof n === 'number' && n >= TARGET_FILES }, FILE_COUNT_DEPENDENTS);
   if (!counted) return report();
 
