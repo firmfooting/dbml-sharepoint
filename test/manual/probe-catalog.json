@@ -8007,7 +8007,13 @@
               "depends_on": []
             },
             {
-              "id": "formula.datetime.fixture-today-now-rules-stored",
+              "id": "formula.datetime.fixture-today-rule-stored",
+              "depends_on": [
+                "formula.datetime.fixture-date-columns-created"
+              ]
+            },
+            {
+              "id": "formula.datetime.fixture-now-rule-stored",
               "depends_on": [
                 "formula.datetime.fixture-date-columns-created"
               ]
@@ -8021,67 +8027,67 @@
             {
               "id": "formula.datetime.today-allows-two-days-ago",
               "depends_on": [
-                "formula.datetime.fixture-today-now-rules-stored"
+                "formula.datetime.fixture-today-rule-stored"
               ]
             },
             {
               "id": "formula.datetime.today-allows-yesterday",
               "depends_on": [
-                "formula.datetime.fixture-today-now-rules-stored"
+                "formula.datetime.fixture-today-rule-stored"
               ]
             },
             {
               "id": "formula.datetime.today-allows-site-midnight-today",
               "depends_on": [
-                "formula.datetime.fixture-today-now-rules-stored"
+                "formula.datetime.fixture-today-rule-stored"
               ]
             },
             {
               "id": "formula.datetime.today-allows-utc-midnight-today",
               "depends_on": [
-                "formula.datetime.fixture-today-now-rules-stored"
+                "formula.datetime.fixture-today-rule-stored"
               ]
             },
             {
               "id": "formula.datetime.today-rejects-tomorrow",
               "depends_on": [
-                "formula.datetime.fixture-today-now-rules-stored"
+                "formula.datetime.fixture-today-rule-stored"
               ]
             },
             {
               "id": "formula.datetime.now-function-minus-20h",
               "depends_on": [
-                "formula.datetime.fixture-today-now-rules-stored"
+                "formula.datetime.fixture-now-rule-stored"
               ]
             },
             {
               "id": "formula.datetime.now-function-minus-12h",
               "depends_on": [
-                "formula.datetime.fixture-today-now-rules-stored"
+                "formula.datetime.fixture-now-rule-stored"
               ]
             },
             {
               "id": "formula.datetime.now-function-minus-1h",
               "depends_on": [
-                "formula.datetime.fixture-today-now-rules-stored"
+                "formula.datetime.fixture-now-rule-stored"
               ]
             },
             {
               "id": "formula.datetime.now-function-plus-1h",
               "depends_on": [
-                "formula.datetime.fixture-today-now-rules-stored"
+                "formula.datetime.fixture-now-rule-stored"
               ]
             },
             {
               "id": "formula.datetime.now-function-plus-12h",
               "depends_on": [
-                "formula.datetime.fixture-today-now-rules-stored"
+                "formula.datetime.fixture-now-rule-stored"
               ]
             },
             {
               "id": "formula.datetime.now-function-plus-20h",
               "depends_on": [
-                "formula.datetime.fixture-today-now-rules-stored"
+                "formula.datetime.fixture-now-rule-stored"
               ]
             },
             {
@@ -8090,7 +8096,10 @@
             }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "formula.datetime.fixture-today-rule-stored",
+            "formula.datetime.fixture-now-rule-stored"
+          ],
           "depends_on": [],
           "surface": "formula"
         }
