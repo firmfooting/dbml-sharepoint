@@ -79,6 +79,37 @@ def test_yaml_and_dbml_comment_runs_are_flagged(prefix: str, name: str) -> None:
     assert [(run.first_line, run.length) for run in _flagged(seven, name)] == [(2, 7)]
 
 
+def test_toml_comment_runs_are_flagged() -> None:
+    """#637: `pyproject.toml` was not scanned, so a new run there bypassed the ratchet."""
+    seven = "[tool.x]\n" + _lines("#", MIN_RUN) + "a = 1\n"
+
+    assert [(run.first_line, run.length) for run in _flagged(seven, "pyproject.toml")] == [(2, 7)]
+    assert _flagged("[tool.x]\n" + _lines("#", MIN_RUN - 1), "pyproject.toml") == []
+
+
+@pytest.mark.parametrize("quote", ['"""', "'''"])
+def test_hash_lines_in_a_toml_multiline_string_are_content(quote: str) -> None:
+    text = f"notes = {quote}\n" + "# A heading\n" * MIN_RUN + f"{quote}\n" + _lines("#", 3)
+
+    assert comment_runs(text, "pyproject.toml") == []
+
+
+def test_a_quote_in_a_toml_comment_or_string_does_not_open_a_multiline_string() -> None:
+    text = "a = \"'''\"  # say \"\"\"\n" + _lines("#", MIN_RUN)
+
+    assert [(run.first_line, run.length) for run in _flagged(text, "a.toml")] == [(2, 7)]
+
+
+@pytest.mark.parametrize("name", ["a.pq", "a.js"])
+def test_the_first_block_closer_ends_the_comment_because_comments_do_not_nest(name: str) -> None:
+    """#637 asked for nesting in `.pq`; the M spec on Learn says "Comments do not nest"."""
+    text = "/* outer\n" + "   /* inner */\n" + "   Source = 1,\n" * (MIN_RUN - 2) + "*/\n"
+
+    assert comment_runs(text, name) == []
+    nested = "/*\n" + "   /* inner\n" * (MIN_RUN - 2) + "*/\n"
+    assert [run.length for run in _flagged(nested, name)] == [MIN_RUN]
+
+
 def test_a_dbml_block_comment_counts() -> None:
     block = "/*\n" + " * why\n" * 5 + " */\nTable t {}\n"
 
@@ -150,8 +181,12 @@ def test_a_hash_inside_a_python_string_is_not_a_comment() -> None:
     ("first", "exemption"),
     [
         ("MEASURED on a live site: it held", "MEASURED"),
-        ("On 2026-09-24 the site refused it", "dated"),
+        ("MEASURED 2026-09-24: it held", "MEASURED"),
+        ("---- MEASURED 2026-09-24 ----", "MEASURED"),
+        ("2026-09-24: the site refused it", "dated"),
+        ("--- 2026-09-24 ------", "dated"),
         ("---- Operator gate ----", "banner"),
+        ("--- The wizard -------", "banner"),
     ],
 )
 def test_an_evidence_shaped_first_line_exempts_the_run(first: str, exemption: str) -> None:
@@ -160,8 +195,20 @@ def test_an_evidence_shaped_first_line_exempts_the_run(first: str, exemption: st
     assert [run.exemption for run in runs] == [exemption]
 
 
-@pytest.mark.parametrize("first", ["UNMEASURED assumption", "UN-MEASURED guess"])
-def test_unmeasured_does_not_exempt_a_run(first: str) -> None:
+@pytest.mark.parametrize(
+    "first",
+    [
+        "UNMEASURED assumption",
+        "UN-MEASURED guess",
+        "This was not MEASURED on a live site",
+        "TODO remove by 2026-12-01",
+        "On 2026-09-24 the site refused it",
+        "Measured live 2026-09-04: lower case is prose",
+        "A rule of thumb ---- not a banner ----",
+    ],
+)
+def test_a_marker_that_does_not_open_the_line_does_not_exempt_a_run(first: str) -> None:
+    """#637: a marker anywhere in the line let a negated or incidental one exempt."""
     runs = comment_runs(_lines("#", MIN_RUN, first), "a.py")
 
     assert [run.exemption for run in runs] == [None]
@@ -180,11 +227,79 @@ def test_a_block_opened_after_code_counts_its_lines_but_not_the_code_line(
     assert [(run.first_line, run.length) for run in _flagged(text, name)] == [(2, 7)]
 
 
+@pytest.mark.parametrize(
+    ("name", "opener", "closer"),
+    [("a.js", "/* why", " */ run();"), ("a.pq", "/* why", "*/ Source = 1,"),
+     ("s.dbml", "/* why", "*/ Table t {}"), ("a.md.j2", "{# why", "#} {{ x }}"),
+     ("a.js.j2", "{# why", "#} run();")],
+)
+def test_code_after_a_block_closer_makes_the_line_code(
+    name: str, opener: str, closer: str,
+) -> None:
+    """#637: the mixed closing line joined two short runs into one of seven."""
+    after = "{# more #}\n" * 3 if name.endswith(".j2") else _lines("//", 3)
+    text = opener + "\n" + "   more\n" * 2 + closer + "\n" + after
+
+    assert comment_runs(text, name) == []
+
+
+@pytest.mark.parametrize(
+    ("name", "opener", "closer"),
+    [("a.js", "/* why", " */ // more"), ("a.md.j2", "{# why", "#} {# more #}")],
+)
+def test_a_comment_after_a_block_closer_keeps_the_line_a_comment(
+    name: str, opener: str, closer: str,
+) -> None:
+    text = opener + "\n" + "   more\n" * (MIN_RUN - 2) + closer + "\nafter\n"
+
+    assert [(run.first_line, run.length) for run in _flagged(text, name)] == [(1, 7)]
+
+
+def test_a_one_line_block_followed_by_code_is_a_code_line() -> None:
+    text = _lines("//", 3) + "/* why */ run();\n" + _lines("//", 3)
+
+    assert comment_runs(text, "a.js") == []
+
+
 @pytest.mark.parametrize("indicator", ["|", ">", "|-", ">+", "|2"])
 def test_hash_lines_in_a_yaml_block_scalar_are_content(indicator: str) -> None:
     text = f"notes: {indicator}\n" + "  # A heading\n" * MIN_RUN + "next: 1\n"
 
     assert comment_runs(text, "release.yaml") == []
+
+
+def test_a_sibling_comment_run_ends_a_sequence_item_block_scalar() -> None:
+    """#637: the scalar ran on to the next `- ` item, swallowing sibling comments."""
+    text = "- notes: |\n    text\n" + _lines("  #", MIN_RUN) + "  next: 1\n"
+
+    assert [(run.first_line, run.length) for run in _flagged(text, "a.yaml")] == [(3, 7)]
+
+
+def test_hash_lines_in_a_sequence_item_block_scalar_are_content() -> None:
+    text = "- notes: |\n" + "    # A heading\n" * MIN_RUN + "  next: 1\n"
+
+    assert comment_runs(text, "a.yaml") == []
+
+
+def test_a_sequence_item_block_scalar_takes_its_first_line_indentation() -> None:
+    text = "- - notes: >\n" + "        # deep\n" * MIN_RUN + "    next: 1\n"
+
+    assert comment_runs(text, "a.yaml") == []
+    assert [run.length for run in _flagged(text + _lines("    #", MIN_RUN), "a.yaml")] == [7]
+
+
+@pytest.mark.parametrize("indicator", ["|2", ">-2", "|2+"])
+def test_an_explicit_indentation_indicator_fixes_the_content_column(indicator: str) -> None:
+    """A deeper first line does not raise the column the indicator set."""
+    text = f"notes: {indicator}\n    deeper first line\n" + "  # text\n" * MIN_RUN + "next: 1\n"
+
+    assert comment_runs(text, "a.yaml") == []
+
+
+def test_an_indicator_in_the_header_comment_is_not_an_indentation_indicator() -> None:
+    text = "notes: | # requires >2 items\n    text\n" + _lines("  #", MIN_RUN) + "next: 1\n"
+
+    assert [(run.first_line, run.length) for run in _flagged(text, "a.yaml")] == [(3, 7)]
 
 
 def test_a_yaml_comment_run_after_a_block_scalar_counts() -> None:
@@ -297,6 +412,7 @@ def test_the_scan_reads_tracked_files_only() -> None:
     assert "examples/minimal/mapping.yaml" in names
     assert "examples/project-tracker/schema.dbml" in names
     assert ".github/workflows/ci.yml" in names
+    assert "pyproject.toml" in names
     assert all(not name.startswith("test/fixtures/expected/") for name in names)
 
 

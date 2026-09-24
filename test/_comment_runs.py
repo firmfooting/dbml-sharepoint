@@ -1,7 +1,7 @@
 """Find paragraph-length comment runs, for the ratchet in `test_comment_runs.py`.
 
-A run is `MIN_RUN` or more consecutive comment lines in one file: Python
-and YAML `#` lines, JS, Power Query and DBML `//` lines, and every line of a
+A run is `MIN_RUN` or more consecutive comment lines in one file: Python,
+YAML and TOML `#` lines, JS, Power Query and DBML `//` lines, and every line of a
 `/* */` or Jinja `{# #}` block. Docstrings are out of scope, being where long
 prose belongs. A run whose first line has one of the evidence forms
 `AGENTS.md` asks for is exempt. Every other run is pinned by a fingerprint of
@@ -34,6 +34,8 @@ C_STYLE = frozenset({".js", ".pq", ".dbml"})
 
 HASH_STYLE = frozenset({".yaml", ".yml"})
 
+TOML = ".toml"
+
 #: A `/` after one of these (or at a line's start) opens a regex, not a division.
 REGEX_AFTER = frozenset("(,=:[!&|?{};+-*%<>~^") | {""}
 
@@ -45,15 +47,21 @@ REGEX_KEYWORD = re.compile(
 #: A key or sequence entry whose value is a `|` or `>` block scalar.
 BLOCK_SCALAR = re.compile(r"(?:^\s*-|:)\s+[|>][1-9+-]*\s*(?:#.*)?$")
 
+#: Indentation plus any `- ` sequence dashes, which together place a mapping key.
+SEQUENCE_LEAD = re.compile(r"^\s*(?:-\s+)*")
+
 #: Stripped from each end of a comment line before it is fingerprinted.
 MARKERS = re.compile(r"^(?:\{#|/\*+|//+|#+:?|\*+)|(?:#\}|\*+/)$")
 
+#: A comment marker and an optional `---` banner lead, before an evidence marker.
+_OPENING = r"^(?:\{#|/\*+|//+|#+:?|\*+)?\s*(?:-{3,}\s*)?"
+
 #: Checked in order against a run's first line; the first match names it.
 EXEMPTIONS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("MEASURED", re.compile(r"(?<![\w-])MEASURED\b")),
-    ("dated", re.compile(r"\b\d{4}-\d{2}-\d{2}\b")),
+    ("MEASURED", re.compile(_OPENING + r"MEASURED\b")),
+    ("dated", re.compile(_OPENING + r"\d{4}-\d{2}-\d{2}\b")),
     ("attribute", re.compile(r"^#:")),
-    ("banner", re.compile(r"-{4,}")),
+    ("banner", re.compile(r"^(?:\{#|/\*+|//+|#+:?|\*+)?\s*(?=.*-{4,})-{3,}")),
 )
 
 
@@ -89,18 +97,31 @@ def _jinja_opens(text: str) -> bool:
     return opener >= 0 and "#}" not in text[opener + 2 :]
 
 
+def _jinja_only_comments(text: str) -> bool:
+    """Whether `text` holds nothing but Jinja comments, the last possibly left open."""
+    while text:
+        if not text.startswith("{#"):
+            return False
+        closer = text.find("#}", 2)
+        if closer < 0:
+            return True
+        text = text[closer + 2 :].strip()
+    return True
+
+
 def _jinja_comment_lines(lines: list[str]) -> set[int]:
-    """Lines led by `{#` or inside a `{# #}` block; a block opened after code counts on."""
+    """Lines holding only `{# #}` comment; a block opened after code counts on."""
     found: set[int] = set()
     inside = False
     for number, line in enumerate(lines, start=1):
         stripped = line.strip()
         if inside:
-            found.add(number)
             closer = stripped.find("#}")
+            if closer < 0 or _jinja_only_comments(stripped[closer + 2 :].strip()):
+                found.add(number)
             inside = closer < 0 or _jinja_opens(stripped[closer + 2 :])
         else:
-            if stripped.startswith("{#"):
+            if stripped.startswith("{#") and _jinja_only_comments(stripped):
                 found.add(number)
             inside = _jinja_opens(stripped)
     return found
@@ -109,18 +130,68 @@ def _jinja_comment_lines(lines: list[str]) -> set[int]:
 def _yaml_comment_lines(lines: list[str]) -> set[int]:
     """`#` lines, skipping block scalar content, where a `#` is text."""
     found: set[int] = set()
-    scalar_indent: int | None = None
+    floor: int | None = None
+    content: int | None = None
     for number, line in enumerate(lines, start=1):
         stripped = line.strip()
         indent = len(line) - len(line.lstrip())
-        if scalar_indent is not None:
-            if not stripped or indent > scalar_indent:
+        if floor is not None:
+            if not stripped:
                 continue
-            scalar_indent = None
+            if content is None and indent > floor:
+                content = indent
+            if content is not None and indent >= content:
+                continue
+            floor = content = None
         if stripped.startswith("#"):
             found.add(number)
-        elif BLOCK_SCALAR.search(line):
-            scalar_indent = indent
+        elif match := BLOCK_SCALAR.search(line):
+            # Content must be deeper than its key, which sits after any `- ` item dashes.
+            key = len(line) - len(SEQUENCE_LEAD.sub("", line, count=1))
+            floor = key if match.group().startswith(":") else indent
+            # An explicit indentation indicator fixes the content column relative to the parent.
+            explicit = re.search(r"[|>][+-]?([1-9])", match.group().split("#", 1)[0])
+            content = floor + int(explicit.group(1)) if explicit else None
+    return found
+
+
+def _toml_string_end(line: str, index: int, delimiter: str) -> int:
+    """The index just past the `delimiter` closing a TOML string, or -1 if it stays open."""
+    while index < len(line):
+        if delimiter.startswith('"') and line[index] == "\\":
+            index += 2
+        elif line.startswith(delimiter, index):
+            return index + len(delimiter)
+        else:
+            index += 1
+    return -1
+
+
+def _toml_comment_lines(lines: list[str]) -> set[int]:
+    """`#` lines, skipping multi-line string content, where a `#` is text."""
+    found: set[int] = set()
+    open_multi = ""
+    for number, line in enumerate(lines, start=1):
+        index = 0
+        if not open_multi and line.lstrip().startswith("#"):
+            found.add(number)
+            continue
+        while index < len(line):
+            if open_multi:
+                index = _toml_string_end(line, index, open_multi)
+                if index < 0:
+                    break
+                open_multi = ""
+            elif line[index] == "#":
+                break
+            elif line.startswith(('"""', "'''"), index):
+                open_multi = line[index : index + 3]
+                index += 3
+            elif line[index] in "\"'":
+                end = _toml_string_end(line, index + 1, line[index])
+                index = len(line) if end < 0 else end
+            else:
+                index += 1
     return found
 
 
@@ -150,6 +221,7 @@ def _starts_regex(before: str) -> bool:
 class _CState:
     """Lexer state carried across lines: an open block comment and template frames."""
 
+    #: A flag, not a depth: neither JS nor M nests comments (Learn, m-spec-lexical-structure).
     block: bool = False
     #: -1 is a template literal, n >= 0 the brace depth of a `${` inside one.
     stack: list[int] = field(default_factory=list)
@@ -202,7 +274,7 @@ def _lex_c_line(line: str, state: _CState, quotes: str, js: bool) -> bool:
                 if state.stack[-1] < 0:
                     state.stack.pop()
         index += step
-    return comment
+    return comment and not code
 
 
 def _c_comment_lines(lines: list[str], skip: set[int], suffix: str) -> set[int]:
@@ -231,6 +303,8 @@ def _comment_lines(text: str, name: str) -> set[int]:
         found |= _jinja_comment_lines(lines)
     if suffix in HASH_STYLE:
         found |= _yaml_comment_lines(lines)
+    if suffix == TOML:
+        found |= _toml_comment_lines(lines)
     if suffix in C_STYLE:
         found |= _c_comment_lines(lines, set(found), suffix)
     return found
@@ -272,7 +346,7 @@ def excluded(name: str, tracked: set[str]) -> bool:
 
 
 def _scanned_syntax(name: str) -> bool:
-    return name.endswith((".py", ".j2")) or Path(name).suffix in C_STYLE | HASH_STYLE
+    return name.endswith((".py", ".j2")) or Path(name).suffix in C_STYLE | HASH_STYLE | {TOML}
 
 
 def scanned_files(root: Path) -> list[str]:
