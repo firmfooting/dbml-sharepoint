@@ -288,7 +288,9 @@ _SCRATCH_MOCK = textwrap.dedent("""
         const held = fields.get(named[1]);
         if (!held) return noSuchField();
         if (verb === 'MERGE') {
-          if ('ValidationFormula' in sent) held.ValidationFormula = sent.ValidationFormula;
+          if ('ValidationFormula' in sent && !CONFIG.ignoreFieldMerge) {
+            held.ValidationFormula = sent.ValidationFormula;
+          }
           return jsonResponse(204, {});
         }
         if (CONFIG.fieldReadStatus) return jsonResponse(CONFIG.fieldReadStatus, { error: 'no' });
@@ -300,7 +302,7 @@ _SCRATCH_MOCK = textwrap.dedent("""
           fields.set(sent.Title, {
             TypeAsString: 'DateTime', DisplayFormat: sent.DisplayFormat,
             ValidationFormula: '', Required: false, DefaultValue: null, DefaultFormula: null,
-            ReadOnlyField: false,
+            ReadOnlyField: false, EnforceUniqueValues: false,
           });
           return jsonResponse(201, { d: { Title: sent.Title, TypeAsString: 'DateTime' } });
         }
@@ -338,7 +340,7 @@ _SCRATCH_MOCK = textwrap.dedent("""
 
 _DATE = {"TypeAsString": "DateTime", "DisplayFormat": 0, "ValidationFormula": "",
          "Required": False, "DefaultValue": None, "DefaultFormula": None,
-         "ReadOnlyField": False}
+         "ReadOnlyField": False, "EnforceUniqueValues": False}
 _DATE_TIME = {**_DATE, "DisplayFormat": 1}
 _SCRATCH_COLUMNS = {"DM": _DATE, "DC": _DATE, "WM": _DATE_TIME}
 
@@ -420,8 +422,8 @@ _LIST_ALL = {*_LIST_RULE, *_LIST_DM, *_LIST_UPDATE, _SEED,
 @pytest.mark.parametrize(
     "shape",
     [{"Required": True}, {"DefaultValue": "[today]"}, {"DefaultFormula": "=TODAY()"},
-     {"ReadOnlyField": True}],
-    ids=["required", "defaulted", "formula-defaulted", "read-only"],
+     {"ReadOnlyField": True}, {"EnforceUniqueValues": True}],
+    ids=["required", "defaulted", "formula-defaulted", "read-only", "unique"],
 )
 def test_modified_clock_voids_the_rows_on_a_reused_column_that_is_not_optional(
     shape: dict[str, Any],
@@ -450,6 +452,28 @@ def test_list_modified_clock_measures_on_date_columns_it_read_back() -> None:
     assert _item_writes(sent)
 
 
+def test_list_modified_clock_clears_a_column_rule_left_by_modified_clock() -> None:
+    """A leftover DM rule would refuse list-rule saves, read as the list rule's refusals."""
+    columns = {**_SCRATCH_COLUMNS, "DM": {**_DATE, "ValidationFormula": "=[DM]<=[Modified]"}}
+    rows, sent = _run_probe(_SCRATCH_MOCK, {"fields": columns}, "list-modified-clock-probe.js")
+
+    assert rows[_FIXTURE_DM]["outcome"] == "PASS", rows[_FIXTURE_DM]
+    clears = [r for r in sent
+              if r["verb"] == "MERGE" and "getbyinternalnameortitle('DM')" in r["path"]]
+    assert clears and '"ValidationFormula":""' in clears[0]["body"]
+    assert not _void_ids(rows)
+
+
+def test_list_modified_clock_voids_the_rows_when_a_column_rule_does_not_clear() -> None:
+    columns = {**_SCRATCH_COLUMNS, "DM": {**_DATE, "ValidationFormula": "=[DM]<=[Modified]"}}
+    rows, _ = _run_probe(_SCRATCH_MOCK, {"fields": columns, "ignoreFieldMerge": True},
+                         "list-modified-clock-probe.js")
+
+    assert rows[_FIXTURE_DM]["outcome"] == "FAIL", rows[_FIXTURE_DM]
+    assert "ValidationFormula differs" in rows[_FIXTURE_DM]["evidence"]
+    assert _void_ids(rows) == _LIST_ALL
+
+
 def test_list_modified_clock_voids_the_rows_on_a_reused_column_of_the_wrong_shape() -> None:
     columns = {**_SCRATCH_COLUMNS, "DM": {**_DATE, "TypeAsString": "Text"}}
     rows, sent = _run_probe(_SCRATCH_MOCK, {"fields": columns}, "list-modified-clock-probe.js")
@@ -459,7 +483,8 @@ def test_list_modified_clock_voids_the_rows_on_a_reused_column_of_the_wrong_shap
     assert _void_ids(rows) == _LIST_ALL
     assert _void_ids(rows) == _catalogued_dependents("list-modified-clock-probe.js", _FIXTURE_DM)
     assert not _item_writes(sent)
-    assert not [r for r in sent if r["verb"] == "MERGE"]
+    # Only the column-rule clears are sent; the list rule is never set.
+    assert not [r for r in sent if r["verb"] == "MERGE" and "/fields/" not in r["path"]]
 
 
 def test_list_modified_clock_voids_the_update_rows_when_the_seed_does_not_read_back() -> None:

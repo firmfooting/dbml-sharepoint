@@ -425,10 +425,15 @@
     ['DC', 0, 'formula.validation.fixture-dc-date-only-column'],
     ['WM', 1, 'formula.validation.fixture-wm-date-time-column'],
   ]) {
-    const held = await establishFixture(fixture,
-      () => spGet(`${listPath}/fields/getbyinternalnameortitle('${enc(title)}')`),
+    const field = `${listPath}/fields/getbyinternalnameortitle('${enc(title)}')`;
+    // modified-clock leaves column rules on these, which would refuse saves the list rule is measured on.
+    const clear = await post(field, { __metadata: { type: 'SP.FieldDateTime' }, ValidationFormula: '', ValidationMessage: '' },
+      { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+    log(clear.ok ? 'OK' : 'WARN', `${title} column rule clear answered HTTP ${clear.status}`);
+    const held = await establishFixture(fixture, () => spGet(field),
       { InternalName: title, TypeAsString: 'DateTime', DisplayFormat: displayFormat,
-        ReadOnlyField: false,
+        ValidationFormula: (v) => v === null || v === '',
+        ReadOnlyField: false, EnforceUniqueValues: false,
         Required: false, DefaultValue: (v) => v === null || v === '',
         DefaultFormula: (v) => v === null || v === '' }, ALL_ROWS);
     shaped = held && shaped;

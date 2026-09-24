@@ -418,7 +418,7 @@
     const held = await establishFixture(fixture,
       () => spGet(`${fields}/getbyinternalnameortitle('${enc(title)}')`),
       { InternalName: title, TypeAsString: 'DateTime', DisplayFormat: displayFormat,
-        ReadOnlyField: false,
+        ReadOnlyField: false, EnforceUniqueValues: false,
         Required: false, DefaultValue: (v) => v === null || v === '',
         DefaultFormula: (v) => v === null || v === '' },
       ['formula.validation.column-rule-cross-column-accepted', ...ALL_ROWS]);
@@ -426,7 +426,7 @@
   }
   if (!shaped) return report();
   const ensure = async (title, formula, message) => {
-    const set = await post(`${fields}/getbytitle('${enc(title)}')`, {
+    const set = await post(`${fields}/getbyinternalnameortitle('${enc(title)}')`, {
       __metadata: { type: 'SP.FieldDateTime' }, ValidationFormula: formula, ValidationMessage: message,
     }, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
     return { ok: set.ok, detail: `${title} ${set.ok ? 'rule accepted' : `rule refused ${set.status} ${reason(set)}`}` };
