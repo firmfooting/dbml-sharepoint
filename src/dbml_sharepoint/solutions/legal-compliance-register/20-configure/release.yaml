@@ -6,11 +6,14 @@ notes: |
   2.3.0 simplifies permissions to the site's own groups. Site Members edit
   without delete and site Owners hold Full Control, on the library only;
   division folders inherit from it. The Compliance Coordinators, Assessment
-  Owners and per-division groups are no longer declared. A redeploy over 2.2.0
-  replaces the library's role assignments, but does not delete those groups
-  or restore inheritance on folders that already broke it: remove them by hand.
+  Owners and per-division groups are no longer declared. To upgrade a 2.2.0
+  site, first restore inheritance on every division folder (Delete Unique
+  Permissions in its advanced permission settings): the deploy refuses to run
+  while any folder keeps its own permissions, and never erases them itself.
+  Then redeploy, which replaces the library's role assignments, and delete the
+  unused groups by hand.
 
-  Breaking redesign: one Document library replaces the Topic list and SAQ library.
+  2.2.0 and earlier. Breaking redesign: one Document library replaces the Topic list and SAQ library.
   SAQs are vendor downloads; a new SAQ for the same topic has a new period.
   REGs are references. Content stays in Excel and executive review is optional.
   Deploy a new library and migrate deliberately; existing containers are not removed.
