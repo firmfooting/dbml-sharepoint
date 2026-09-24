@@ -59,31 +59,26 @@ DBML `division` enum alone: the folders are its members and the mapping keeps
 no second list. The platform owner assigns the executive according to the
 folder. The bundle does not automate that person assignment or delegation.
 
-Each folder has its own permissions. The deploy creates one
-`{prefix} <division> Division` group per member and breaks the folder's
-inheritance, so edit inside a division folder belongs to that division's
-group, **{prefix} Compliance Coordinators** and **{prefix} Assessment
-Owners**, with **dbml List Administrators** at Full Control and site members,
-site owners and **dbml Enterprise Readers** keeping Read. The division groups
-add per-division delegation; they do not remove the register-wide roles this
-family already declares.
+Permissions are set once, on the library, using the site's own groups:
 
-A grant made at library scope no longer reaches files inside a division
-folder, so any role that needs to edit there has to appear in the folder
-policy as well. That is why Assessment Owners is listed above.
+| Principal | Level |
+| --- | --- |
+| Site Members | `{prefix} Contribute No Delete`: add and edit files and metadata, no delete |
+| Site Owners | Full Control |
+| **dbml List Administrators** | Full Control, for redeploys |
+| **dbml Enterprise Readers** | Read |
 
-Each division group is declared with the coordinators as its `owner_group`.
-The intent is that coordinators can move people between divisions without
-holding site Full Control. **That delegation is not yet verified.** Whether a
-group owner who is not a site administrator can actually edit that group's
-membership is the question `test/manual/library-sharing-probe.js` asks, and
-the probe has not been run against a live site. Until it has, plan on a site
-administrator maintaining the division groups.
+The family creates no groups of its own to administer. Who can edit the
+register is whoever is in the site's Members group, so manage access there.
+Folders inherit from the library: they organise files by division and do not
+restrict who can edit them. Any member can edit every division's files, and
+the platform owner's assignment of an executive and business owner is a
+working procedure, not a permission boundary.
 
 Sharing a file directly out of a folder is also **not characterised**. The
 same probe asks what a direct share changes at file and folder scope and has
 not answered it, so treat what a recipient of a shared file can do as unknown
-rather than as governed by the groups above.
+rather than as governed by the table above.
 
 ## Worklists
 

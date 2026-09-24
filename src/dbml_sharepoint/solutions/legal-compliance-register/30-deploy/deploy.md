@@ -83,9 +83,8 @@ logging sidecars are not wanted.
 - [ ] Set the recording date on a ready SAQ. It leaves **To record in the
       portal** and appears in **Recorded assessments**.
 - [ ] Future completion, review and recording dates are refused on SAQs.
-- [ ] **LC Assessment Owners** can edit workbooks and metadata without
-      deleting files. **LC Compliance Coordinators** can maintain files;
-      ordinary site members have Read.
+- [ ] A site member can edit workbooks and metadata without deleting
+      files, in every division folder. A site owner can delete a file.
 - [ ] Sealed columns and library deletion protection are enabled. Verify
       with the generated verification script after the deploy.
 
@@ -105,7 +104,7 @@ by its records policy. Decide whether to hide the New Folder command and
 leave document opening configured for browser use. These manual settings
 are not reconciled by redeployment.
 
-Populate **LC Compliance Coordinators** and **LC Assessment Owners**. Remove
+Add everyone who files or completes SAQs to the site's Members group. Remove
 the synthetic demonstration files before filing production assessments.
 
 ## Enterprise reporting access
