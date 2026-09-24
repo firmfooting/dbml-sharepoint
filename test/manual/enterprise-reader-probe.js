@@ -449,7 +449,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -696,7 +696,7 @@
 
   // Printed FIRST, before any gate: a stale clipboard and a fix that did
   // not work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 8c379fc2. Quote this when reporting results.');
+  log('INFO', 'probe revision 6ce536fa. Quote this when reporting results.');
 
   // ---- CONFIGURATION ---------------------------------------------------
   // All three are obvious placeholders. Each group refuses to run against

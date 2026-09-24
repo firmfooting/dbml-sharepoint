@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHICH DECLARED SETTING REFUSES A FOLDER
  *
- * REVISION: 04bb6482
+ * REVISION: a8f0ba84
  *
  * ONE QUESTION:
  *   folders/add is accepted on a bare library and refused on one the deploy
@@ -193,7 +193,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -438,7 +438,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 04bb6482. Quote this when reporting results.');
+  log('INFO', 'probe revision a8f0ba84. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe Folder Schema';
   const libPath = `web/lists/getbytitle('${LIB}')`;

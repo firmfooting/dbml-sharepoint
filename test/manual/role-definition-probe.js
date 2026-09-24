@@ -321,7 +321,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -567,7 +567,7 @@
   };
 
   // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
-  log('INFO', 'probe revision 2593eb1e. Quote this when reporting results.');
+  log('INFO', 'probe revision cb8d2b01. Quote this when reporting results.');
 
   // Run-unique, and that is a safety property rather than tidiness. A fixed
   // name plus a pre-emptive delete destroys somebody else's level on the one

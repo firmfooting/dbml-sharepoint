@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOES A BY-TITLE LIST READ GO STALE
  *
- * REVISION: d6fec55e
+ * REVISION: 5159ce32
  *
  * ONE QUESTION:
  *   A list is deleted and another is created under the same title, which is
@@ -203,7 +203,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -448,7 +448,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision d6fec55e. Quote this when reporting results.');
+  log('INFO', 'probe revision 5159ce32. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Cache Identity';
   const LIB = 'dbmlsp Probe Cache Identity Library';

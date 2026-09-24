@@ -429,7 +429,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -675,7 +675,7 @@
   };
 
   // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
-  log('INFO', 'probe revision 6eb04737. Quote this when reporting results.');
+  log('INFO', 'probe revision 21129f72. Quote this when reporting results.');
 
   // Set to a PREVIOUS run's list name to drain and recycle it, then stop.
   // The harness's own CLEANUP cannot serve here: it matches by name, and this

@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHY A DECLARED FOLDER CREATE IS REFUSED
  *
- * REVISION: f03f24d3
+ * REVISION: e7c82cdb
  *
  * ONE QUESTION:
  *   folders/add(url=) is measured working. On a live deploy it answered
@@ -164,7 +164,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -409,7 +409,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision f03f24d3. Quote this when reporting results.');
+  log('INFO', 'probe revision e7c82cdb. Quote this when reporting results.');
 
   const LIB_DEFAULT = 'dbmlsp Probe Folder Default';
   const LIB_NOCT = 'dbmlsp Probe Folder NoCT';

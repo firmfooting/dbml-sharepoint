@@ -9,7 +9,7 @@
  *   library has that a list does not name the same way, `FileLeafRef` (the
  *   Name column) and `Title`?
  *
- * REVISION: 82a6b822
+ * REVISION: 6fde1861
  *
  * WHY: `templates/deploy/_indexes.js.j2` asserts `Indexed: true` on every
  * declared indexed column and verifies the write by reading the field back.
@@ -240,7 +240,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -485,7 +485,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 82a6b822. Quote this when reporting results.');
+  log('INFO', 'probe revision 6fde1861. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibIndex';
   const TARGET = 'dbmlsp Probe LibIndex Target';

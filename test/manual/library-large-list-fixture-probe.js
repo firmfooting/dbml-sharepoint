@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: BUILD THE PERSISTENT LARGE-LIBRARY FIXTURE.
  *
- * REVISION: 9384a797
+ * REVISION: bc9a88a3
  *
  * THIS PROBE ANSWERS NO QUESTION ABOUT SHAREPOINT. It builds a document
  * library that later probes measure, and every row it records is a
@@ -291,7 +291,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -536,7 +536,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 9384a797. Quote this when reporting results.');
+  log('INFO', 'probe revision bc9a88a3. Quote this when reporting results.');
 
   // The expensive half. Off, so a paste that only wants to check an
   // already-built fixture never starts five thousand uploads.

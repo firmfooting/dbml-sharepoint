@@ -7,7 +7,7 @@
  *   index on them? A served filter means an index answered it; a refusal means
  *   the query would have had to scan the whole library.
  *
- * REVISION: 6399bf1d
+ * REVISION: c1d2e982
  *
  * THE COLUMNS: Title, Name (FileLeafRef), Created, Modified, Author, Editor,
  * plus ID as the positive control and two probe-owned columns as the negative
@@ -304,7 +304,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -549,7 +549,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 6399bf1d. Quote this when reporting results.');
+  log('INFO', 'probe revision c1d2e982. Quote this when reporting results.');
 
   // The expensive half. Off, so a paste that only wants to measure an
   // already-built library never starts five thousand uploads.

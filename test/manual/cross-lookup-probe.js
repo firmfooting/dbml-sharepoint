@@ -8,7 +8,7 @@
  *   unmeasured. Does either one create, hold a value, project through a view
  *   and take an index the way the list-to-list shape does?
  *
- * REVISION: f8af0858
+ * REVISION: 65e84e9b
  *
  * WHY: `analysis/joins.py` counts every lookup the same way and the deploy
  * emits every lookup the same way, whichever container is at each end. A
@@ -278,7 +278,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -523,7 +523,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision f8af0858. Quote this when reporting results.');
+  log('INFO', 'probe revision 65e84e9b. Quote this when reporting results.');
 
   // Three containers, never two. See the acyclic finding in the header.
   const LIB = 'dbmlsp Probe XLookup Lib';

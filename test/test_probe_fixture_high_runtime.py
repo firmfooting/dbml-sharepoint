@@ -88,14 +88,20 @@ _TODAY_MOCK = textwrap.dedent("""
 """)
 
 _TODAY = "today-semantics-probe.js"
-_RULES = "formula.datetime.fixture-today-now-rules-stored"
+#: One fixture per rule, keyed by the column it is stored on.
+_RULE_FIXTURES = {
+    "D": "formula.datetime.fixture-today-rule-stored",
+    "W": "formula.datetime.fixture-now-rule-stored",
+}
 _DEFAULT = "formula.datetime.today-function-default-value"
-_SAVE_ROWS = {
+_D_ROWS = {
     "formula.datetime.today-allows-two-days-ago",
     "formula.datetime.today-allows-yesterday",
     "formula.datetime.today-allows-site-midnight-today",
     "formula.datetime.today-allows-utc-midnight-today",
     "formula.datetime.today-rejects-tomorrow",
+}
+_W_ROWS = {
     "formula.datetime.now-function-minus-20h",
     "formula.datetime.now-function-minus-12h",
     "formula.datetime.now-function-minus-1h",
@@ -103,6 +109,8 @@ _SAVE_ROWS = {
     "formula.datetime.now-function-plus-12h",
     "formula.datetime.now-function-plus-20h",
 }
+_RULE_ROWS = {"D": _D_ROWS, "W": _W_ROWS}
+_SAVE_ROWS = _D_ROWS | _W_ROWS
 _TODAY_HEALTHY: dict[str, Any] = {"defaultFires": True}
 
 
@@ -113,7 +121,8 @@ def _saves(sent: list[dict[str, str]]) -> list[dict[str, str]]:
 def test_today_semantics_measures_against_rules_it_read_back() -> None:
     rows, sent = _run_probe(_TODAY_MOCK, _TODAY_HEALTHY, _TODAY)
 
-    assert rows[_RULES]["outcome"] == "PASS", rows[_RULES]
+    for fixture in _RULE_FIXTURES.values():
+        assert rows[fixture]["outcome"] == "PASS", rows[fixture]
     assert rows[_DEFAULT]["outcome"] == "PASS", rows[_DEFAULT]
     assert rows["formula.datetime.today-allows-yesterday"]["outcome"] == "SAVED"
     assert rows["formula.datetime.today-rejects-tomorrow"]["outcome"] == "REFUSED"
@@ -126,19 +135,21 @@ def test_today_semantics_measures_against_rules_it_read_back() -> None:
 def test_today_semantics_voids_the_save_rows_when_a_rule_was_dropped(dropped: str) -> None:
     """A MERGE answered 204 for a rule never kept, and every save then read as allowed."""
     rows, sent = _run_probe(_TODAY_MOCK, {**_TODAY_HEALTHY, "dropRule": [dropped]}, _TODAY)
+    fixture = _RULE_FIXTURES[dropped]
 
-    assert rows[_RULES]["outcome"] == "FAIL", rows[_RULES]
-    assert f"{dropped}.ValidationFormula differs" in rows[_RULES]["evidence"]
-    assert _void_ids(rows) == _SAVE_ROWS
-    assert all(_RULES in rows[row_id]["evidence"] for row_id in _SAVE_ROWS)
-    assert len(_saves(sent)) == 1
+    assert rows[fixture]["outcome"] == "FAIL", rows[fixture]
+    assert "ValidationFormula differs" in rows[fixture]["evidence"]
+    assert _void_ids(rows) == _RULE_ROWS[dropped]
+    assert all(fixture in rows[row_id]["evidence"] for row_id in _RULE_ROWS[dropped])
+    assert len(_saves(sent)) == 1 + len(_SAVE_ROWS - _RULE_ROWS[dropped])
 
 
 def test_today_semantics_voids_the_save_rows_when_the_rules_do_not_read_back() -> None:
     rows, sent = _run_probe(_TODAY_MOCK, {**_TODAY_HEALTHY, "ruleReadStatus": 429}, _TODAY)
 
-    assert rows[_RULES]["outcome"] == "FAIL", rows[_RULES]
-    assert "the read was throttled (HTTP 429)" in rows[_RULES]["evidence"]
+    for fixture in _RULE_FIXTURES.values():
+        assert rows[fixture]["outcome"] == "FAIL", rows[fixture]
+        assert "the read was throttled (HTTP 429)" in rows[fixture]["evidence"]
     assert _void_ids(rows) == _SAVE_ROWS
     assert len(_saves(sent)) == 1
 
@@ -149,7 +160,7 @@ def test_today_semantics_does_not_report_a_default_that_never_fired() -> None:
 
     assert rows[_DEFAULT]["outcome"] == "NOT ESTABLISHED", rows[_DEFAULT]
     assert "T stored as null" in rows[_DEFAULT]["evidence"]
-    assert rows[_RULES]["outcome"] == "PASS"
+    assert all(rows[fixture]["outcome"] == "PASS" for fixture in _RULE_FIXTURES.values())
 
 
 @pytest.mark.parametrize("value", ["", "not a date"], ids=["empty", "unparseable"])
@@ -189,7 +200,8 @@ _LIBRARY_MOCK = textwrap.dedent("""
       }
     }
     const rowOf = (list, item) => {
-      const row = { Id: item.Id, Title: item.Title || null, FileLeafRef: item.FileLeafRef || null };
+      const row = { Id: item.Id, Title: item.Title || null, FileLeafRef: item.FileLeafRef || null,
+        FileRef: item.FileLeafRef ? `${item.folder}/${item.FileLeafRef}` : null };
       for (const name of list.fields.keys()) row[name] = item[name] ?? null;
       return row;
     };
@@ -197,7 +209,7 @@ _LIBRARY_MOCK = textwrap.dedent("""
       const list = [...lists.values()].find((l) => folder.startsWith(l.root));
       if (!list || !folders.has(folder)) return refusal(404, 'File Not Found.');
       if ((CONFIG.failUpload || []).includes(name)) return refusal(400, 'The upload was refused.');
-      if (!list.items.some((i) => i.FileLeafRef === name)) {
+      if (!list.items.some((i) => i.FileLeafRef === name && i.folder === folder)) {
         list.items.push({ Id: list.nextItem, FileLeafRef: name, folder });
         list.nextItem += 1;
       }
@@ -404,5 +416,6 @@ def test_library_view_voids_the_folder_row_when_the_subfile_is_not_served() -> N
     rows, sent = _run_probe(_LIBRARY_MOCK, {"unlisted": ["subfolder-doc.txt"]}, _VIEW)
 
     assert _BY_FOLDER in _void_ids(rows)
-    assert "no item was served for 'subfolder-doc.txt'" in rows[_BY_FOLDER]["evidence"]
+    assert "no item was served at '/sites/test/L1/FolderAlpha/subfolder-doc.txt'" in (
+        rows[_BY_FOLDER]["evidence"])
     assert not _grouping_queries(sent, "Folder")

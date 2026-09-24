@@ -12,7 +12,7 @@
  *   measured for ONE column, ONE method and ONE file shape, and a family
  *   that shipped two such columns rested on the create alone.
  *
- * REVISION: 4e7ddf06
+ * REVISION: 7ea273e8
  *
  * WHY: `analysis/checks/_naming.py` accepts `display_column: FileLeafRef` on a
  * document library because the create is measured. Whether a user can then
@@ -388,7 +388,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -633,7 +633,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 4e7ddf06. Quote this when reporting results.');
+  log('INFO', 'probe revision 7ea273e8. Quote this when reporting results.');
 
   // Three containers, never two. See the acyclic note in the header.
   const LIB = 'dbmlsp Probe LibWrite Lib';

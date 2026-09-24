@@ -7,7 +7,7 @@
  *   on any column but Id. Does adding an index to a custom column take, and
  *   does it turn that refusal into an answer?
  *
- * REVISION: 84feb440
+ * REVISION: ebfb5da3
  *
  * THE FIXTURE IS READ, NEVER REBUILT. `library-large-list-fixture-probe.js`
  * builds and owns 'dbmlsp Probe LargeLib': about 5,500 files named
@@ -337,7 +337,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -582,7 +582,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 84feb440. Quote this when reporting results.');
+  log('INFO', 'probe revision ebfb5da3. Quote this when reporting results.');
 
   // Teardown, and the only thing here that undoes anything: MERGE Indexed
   // false back onto every contract column that is indexed, whether this run

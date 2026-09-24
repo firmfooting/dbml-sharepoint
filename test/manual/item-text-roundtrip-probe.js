@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHAT A COLUMN DOES TO A STRING IT STORES
  *
- * REVISION: 4764f08b
+ * REVISION: 98c4cd6a
  *
  * ONE QUESTION:
  *   A value written to an item's column and read straight back is compared
@@ -168,7 +168,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -413,7 +413,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 4764f08b. Quote this when reporting results.');
+  log('INFO', 'probe revision 98c4cd6a. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Item Text';
   const listPath = `web/lists/getbytitle('${LIST}')`;

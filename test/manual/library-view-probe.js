@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY VIEW GROUPING
  *
- * REVISION: 6830c342
+ * REVISION: b3e9cf48
  *
  * ONE QUESTION:
  *   How does view grouping behave on a document library, and does it diverge from generic lists?
@@ -134,7 +134,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -379,7 +379,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 6830c342. Quote this when reporting results.');
+  log('INFO', 'probe revision b3e9cf48. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibView';
   const FOLDER = 'FolderAlpha';
@@ -534,7 +534,7 @@
   await upload('folder', `${folderUrl}/${FOLDER}`, SUBFILE, 'dbmlsp probe subfolder file');
 
   // ---- Set metadata on files ------------------------------------------
-  const itemsResp = await spGet(`${listPath}/items?$select=Id,FileLeafRef&$top=50`);
+  const itemsResp = await spGet(`${listPath}/items?$select=Id,FileLeafRef,FileRef&$top=50`);
   const items = (itemsResp.ok && itemsResp.body && Array.isArray(itemsResp.body.value))
     ? itemsResp.body.value
     : [];
@@ -542,11 +542,14 @@
   // The subfile's value decides nothing: the root files checked here already carry both groups.
   const WANT = [[FILE_ALPHA_1, 'Alpha', 'metadata'], [FILE_BETA_1, 'Beta', 'metadata'],
                 [FILE_ALPHA_2, 'Alpha', 'metadata'], [SUBFILE, 'Alpha', null]];
+  // A reused library can hold the same name in another folder, so a file is matched by its full path.
+  const pathOf = (filename) => `${filename === SUBFILE ? `${folderUrl}/${FOLDER}` : folderUrl}/${filename}`;
+  const itemAt = (rows, filename) => rows.find((i) => String(i.FileRef) === pathOf(filename));
   for (const [filename, value, row] of WANT) {
-    const match = items.find((i) => i.FileLeafRef === filename);
+    const match = itemAt(items, filename);
     let why = null;
     if (!match) {
-      why = `no item was served for '${filename}' (items read HTTP ${itemsResp.status})`;
+      why = `no item was served at '${pathOf(filename)}' (items read HTTP ${itemsResp.status})`;
     } else {
       digest = await getDigest();
       const res = await spPost(`${listPath}/items(${match.Id})`, { [COL]: value }, digest,
@@ -557,16 +560,16 @@
     if (why && !row) log('WARN', why);
   }
   // The subfile's MERGE decides nothing, but the folder row rests on the file existing.
-  if (!items.some((i) => i.FileLeafRef === SUBFILE)) {
-    failed.folder.push(`no item was served for '${SUBFILE}' (items read HTTP ${itemsResp.status})`);
+  if (!itemAt(items, SUBFILE)) {
+    failed.folder.push(`no item was served at '${pathOf(SUBFILE)}' (items read HTTP ${itemsResp.status})`);
   }
   // A MERGE answers 204 whether or not the value was kept, so the values are read back.
   if (!failed.metadata.length) {
-    const back = await spGet(`${listPath}/items?$select=Id,FileLeafRef,${COL}&$top=50`);
+    const back = await spGet(`${listPath}/items?$select=Id,FileLeafRef,FileRef,${COL}&$top=50`);
     const values = (!readFailed(back) && Array.isArray(back.body.value)) ? back.body.value : null;
     if (values === null) failed.metadata.push(`the metadata did not read back (HTTP ${back.status})`);
     for (const [filename, value, row] of values === null ? [] : WANT) {
-      const got = values.find((i) => i.FileLeafRef === filename);
+      const got = itemAt(values, filename);
       if (row && (!got || got[COL] !== value)) {
         failed.metadata.push(`'${filename}' reads back ${COL}=${JSON.stringify(got ? got[COL] : null)}, not ${value}`);
       }

@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY COLUMN INTERACTIONS
  *
- * REVISION: b946faa0
+ * REVISION: e019a1d5
  *
  * ONE QUESTION:
  *   How do multi-value columns and custom column formatting behave on a document library?
@@ -126,7 +126,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -371,7 +371,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision b946faa0. Quote this when reporting results.');
+  log('INFO', 'probe revision e019a1d5. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibColInteractions';
   const TARGET_LIB = 'dbmlsp Probe LibColTarget';

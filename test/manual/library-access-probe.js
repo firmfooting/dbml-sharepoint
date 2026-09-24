@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY ACCESS SURFACE
  *
- * REVISION: 00496eb9
+ * REVISION: 0f10669d
  *
  * ONE QUESTION:
  *   Does the permission model of a document library diverge from a generic list?
@@ -172,7 +172,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -473,7 +473,7 @@
     record(id, question, row.outcome, row.evidence, row.state);
   };
 
-  log('INFO', 'probe revision 00496eb9. Quote this when reporting results.');
+  log('INFO', 'probe revision 0f10669d. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibAccess';
   const FILE = 'probe-access-doc.txt';

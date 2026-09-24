@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: THE VIEW ALREADY SITTING ON AllItems.aspx
  *
- * REVISION: 68554a4f
+ * REVISION: bfdbcee3
  *
  * ONE QUESTION:
  *   A library ships with a built-in view. The deploy's generated All Items
@@ -175,7 +175,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -420,7 +420,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 68554a4f. Quote this when reporting results.');
+  log('INFO', 'probe revision bfdbcee3. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe Builtin View';
   const LIST = 'dbmlsp Probe Builtin View List';

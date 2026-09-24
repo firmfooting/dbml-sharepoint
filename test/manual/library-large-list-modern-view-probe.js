@@ -2,7 +2,7 @@
  * dbml-sharepoint PROBE: DOES THE MODERN LIBRARY PAGE RENDER A GROUPED VIEW
  * PAST 5,000 ITEMS, WHERE EVERY REST SURFACE REFUSES ONE?
  *
- * REVISION: 12139c15
+ * REVISION: befd6467
  *
  * ONE QUESTION, AND IT IS ABOUT A DIFFERENT LAYER FROM EVERY LARGE-LIST PROBE
  * BEFORE IT. #472, #478, #479, #480, #481 and #483 all measured the REST layer:
@@ -423,7 +423,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -670,7 +670,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not work
   // produce identical transcripts otherwise.
-  log('INFO', 'probe revision 12139c15. Quote this when reporting results.');
+  log('INFO', 'probe revision befd6467. Quote this when reporting results.');
 
   // ---- Operator settings -------------------------------------------------
   // Which leg of the run this paste is. One paste answers one state, because a
