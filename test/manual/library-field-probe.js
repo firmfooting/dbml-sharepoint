@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: FIELD DIVERGENCE ON A DOCUMENT LIBRARY
  *
- * REVISION: a83a1f04
+ * REVISION: 9371e2aa
  *
  * ONE QUESTION:
  *   Does the field surface of a document library diverge from a generic list?
@@ -392,7 +392,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision a83a1f04. Quote this when reporting results.');
+  log('INFO', 'probe revision 9371e2aa. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibField';
   const TARGET = 'dbmlsp Probe LibField Target';
@@ -555,31 +555,29 @@
   }
 
   // ---- Fixture: the document library ------------------------------------
+  const LIB_IDS = ['library.field.control-missing-column-refused',
+                   'library.field.dependent-lookup-on-library',
+                   'library.field.date-column-round-trip'];
   const existing = await spGet(listPath);
-  if (existing.ok) {
+  digest = await getDigest();
+  const made = existing.ok ? null : await spPost('web/lists', {
+    Title: LIB,
+    BaseTemplate: 101,
+    Description: 'dbml-sharepoint field probe library. Safe to delete.',
+  }, digest);
+  if (made !== null && !made.ok) {
     record('library.doc-lib.fixture-library-created', Q_FIXTURE,
-           'ALREADY PRESENT',
-           `reusing an existing library '${LIB}'. Set CLEANUP = true for a clean answer`);
-  } else {
-    digest = await getDigest();
-    const made = await spPost('web/lists', {
-      Title: LIB,
-      BaseTemplate: 101,
-      Description: 'dbml-sharepoint field probe library. Safe to delete.',
-    }, digest);
-    record('library.doc-lib.fixture-library-created', Q_FIXTURE,
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIB}'` : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
-    if (!made.ok) {
-      for (const id of ['library.field.control-missing-column-refused',
-                        'library.field.dependent-lookup-on-library',
-                        'library.field.date-column-round-trip']) {
-        record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED',
-               `fixture incomplete: library creation failed (HTTP ${made.status})`,
-               'void');
-      }
-      return report();
-    }
+           'FAIL', `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
+    voidDependents(LIB_IDS, `fixture incomplete: library creation failed (HTTP ${made.status})`);
+    return report();
+  }
+  log('INFO', made === null
+    ? `reusing an existing library '${LIB}'. Set CLEANUP = true for a clean answer.`
+    : `created '${LIB}'`);
+  // Read back on reuse as well as on create, because a list found by title may be a generic list.
+  if (!await establishFixture('library.doc-lib.fixture-library-created',
+    () => spGet(`${listPath}?$select=BaseTemplate`), { BaseTemplate: 101 }, LIB_IDS)) {
+    return report();
   }
 
   // ---- Fixture: the file the metadata legs write against ----------------

@@ -764,7 +764,8 @@ _THRESHOLD_MOCK = textwrap.dedent("""
       const title = lib[1];
       const rest = path.slice(lib.index + lib[0].length);
       if (rest.startsWith('/fields/getbyinternalnameortitle')) {
-        return jsonResponse(200, { InternalName: 'probe', TypeAsString: 'Text',
+        return jsonResponse(200, { InternalName: 'probe',
+                                   TypeAsString: rest.includes('Person') ? 'User' : 'Text',
                                    Indexed: false, AutoIndexed: false });
       }
       if (rest.startsWith('/RootFolder')) {

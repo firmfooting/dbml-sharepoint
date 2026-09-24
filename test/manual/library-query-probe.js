@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY QUERY SURFACE
  *
- * REVISION: 5d2668cf
+ * REVISION: c1f8acf3
  *
  * ONE QUESTION:
  *   Does the query surface of a document library diverge from a generic list?
@@ -407,7 +407,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 5d2668cf. Quote this when reporting results.');
+  log('INFO', 'probe revision c1f8acf3. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibQuery';
   const listPath = `web/lists/getbytitle('${LIB}')`;
@@ -502,21 +502,25 @@
 
   // ---- fixture-library-created: the library ---------------------------
   const existing = await spGet(`${listPath}?$select=Title`);
-  if (existing.ok) {
+  digest = await getDigest();
+  const made = existing.ok ? null : await spPost('web/lists', {
+    Title: LIB,
+    BaseTemplate: 101,
+    Description: 'dbml-sharepoint query probe library. Safe to delete.',
+  }, digest);
+  if (made !== null && !made.ok) {
     record('library.doc-lib.fixture-library-created', Q_FIXTURE,
-           'ALREADY PRESENT',
-           'reusing an existing library. Set CLEANUP = true for a clean answer');
-  } else {
-    digest = await getDigest();
-    const made = await spPost('web/lists', {
-      Title: LIB,
-      BaseTemplate: 101,
-      Description: 'dbml-sharepoint query probe library. Safe to delete.',
-    }, digest);
-    record('library.doc-lib.fixture-library-created', Q_FIXTURE,
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIB}'` : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
-    if (!made.ok) return report();
+           'FAIL', `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
+    await voidAll(`fixture incomplete: library creation failed (HTTP ${made.status})`);
+    return report();
+  }
+  log('INFO', made === null
+    ? 'reusing an existing library. Set CLEANUP = true for a clean answer.'
+    : `created '${LIB}'`);
+  // Read back on reuse as well as on create, because a list found by title may be a generic list.
+  if (!await establishFixture('library.doc-lib.fixture-library-created',
+    () => spGet(`${listPath}?$select=BaseTemplate`), { BaseTemplate: 101 }, VOIDED)) {
+    return report();
   }
 
   // ---- RootFolder path -------------------------------------------------

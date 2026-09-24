@@ -411,7 +411,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 81fec1e0. Quote this when reporting results.');
+  log('INFO', 'probe revision f2601550. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibCols';
   const TARGET_LIB = 'dbmlsp Probe LibCols Target';
@@ -508,21 +508,28 @@
   }
 
   // ---- fixture-library-created: the library ---------------------------
+  const LIB_IDS = RESULTS.map((r) => r.id)
+    .filter((id) => id !== 'library.doc-lib.fixture-library-created');
   const existing = await spGet(listPath);
-  if (existing.ok) {
-    record('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)', 'ALREADY PRESENT',
-           'reusing an existing library. Set CLEANUP = true for a clean answer');
-  } else {
-    digest = await getDigest();
-    const made = await spPost('web/lists', {
-      Title: LIB,
-      BaseTemplate: 101,
-      Description: 'dbml-sharepoint library-columns probe library. Safe to delete.',
-    }, digest);
+  digest = await getDigest();
+  const made = existing.ok ? null : await spPost('web/lists', {
+    Title: LIB,
+    BaseTemplate: 101,
+    Description: 'dbml-sharepoint library-columns probe library. Safe to delete.',
+  }, digest);
+  if (made !== null && !made.ok) {
     record('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)',
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIB}'` : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
-    if (!made.ok) return report();
+           'FAIL', `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
+    voidDependents(LIB_IDS, `fixture incomplete: library creation failed (HTTP ${made.status})`);
+    return report();
+  }
+  log('INFO', made === null
+    ? 'reusing an existing library. Set CLEANUP = true for a clean answer.'
+    : `created '${LIB}'`);
+  // Read back on reuse as well as on create, because a list found by title may be a generic list.
+  if (!await establishFixture('library.doc-lib.fixture-library-created',
+    () => spGet(`${listPath}?$select=BaseTemplate`), { BaseTemplate: 101 }, LIB_IDS)) {
+    return report();
   }
 
   const addField = async (schemaXml) => {

@@ -9,7 +9,7 @@
  *   library has that a list does not name the same way, `FileLeafRef` (the
  *   Name column) and `Title`?
  *
- * REVISION: 6fde1861
+ * REVISION: 01fc9632
  *
  * WHY: `templates/deploy/_indexes.js.j2` asserts `Indexed: true` on every
  * declared indexed column and verifies the write by reading the field back.
@@ -485,7 +485,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 6fde1861. Quote this when reporting results.');
+  log('INFO', 'probe revision 01fc9632. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibIndex';
   const TARGET = 'dbmlsp Probe LibIndex Target';
@@ -608,24 +608,16 @@
   // ---- fixture-library-created ----------------------------------------
   let digest = await getDigest();
   const existing = await spGet(listPath);
-  let libraryReady = false;
-  if (existing.ok) {
+  const made = existing.ok ? null : await spPost('web/lists', {
+    Title: LIB,
+    BaseTemplate: 101,
+    Description: 'dbml-sharepoint library-index probe library. Safe to delete.',
+  }, digest);
+  if (made !== null && !made.ok) {
     record('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)',
-           'ALREADY PRESENT',
-           `reusing an existing '${LIB}'. Its columns may carry an earlier run's `
-           + 'index flags. Set CLEANUP = true for a clean answer');
-    libraryReady = true;
-  } else {
-    const made = await spPost('web/lists', {
-      Title: LIB,
-      BaseTemplate: 101,
-      Description: 'dbml-sharepoint library-index probe library. Safe to delete.',
-    }, digest);
-    record('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)',
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIB}'` : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
-    libraryReady = made.ok;
+           'FAIL', `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
   }
+  const libraryReady = made === null || made.ok;
 
   const abortEverything = (reason) => {
     record('library.index.fixture-columns-created', 'The three columns to be indexed exist on the library',
@@ -640,6 +632,17 @@
 
   if (!libraryReady) {
     return abortEverything('the scratch library was never created, so nothing could be written to it');
+  }
+  log('INFO', made === null
+    ? `reusing an existing '${LIB}'. Its columns may carry an earlier run's `
+      + 'index flags. Set CLEANUP = true for a clean answer.'
+    : `created '${LIB}'`);
+  // Read back on reuse as well as on create, because a list found by title may be a generic list.
+  if (!await establishFixture('library.doc-lib.fixture-library-created',
+    () => spGet(`${listPath}?$select=BaseTemplate`), { BaseTemplate: 101 },
+    ['library.index.fixture-columns-created', 'library.index.control-description-sticks',
+     'library.index.control-unknown-property-refused', ...CANDIDATES.map((row) => row.id)])) {
+    return report();
   }
 
   // ---- fixture-columns-created -----------------------------------------

@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY FORMS AND FIELD ORDER
  *
- * REVISION: fae435d5
+ * REVISION: 64f13b9e
  *
  * ONE QUESTION:
  *   How do document library forms behave over REST, and can their field order be customised?
@@ -391,7 +391,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision fae435d5. Quote this when reporting results.');
+  log('INFO', 'probe revision 64f13b9e. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibForm';
   const FILE = 'dbmlsp-form-doc.txt';
@@ -456,24 +456,29 @@
   let digest = await getDigest();
 
   // ---- fixture-library-created: the library ---------------------------
+  const LIB_IDS = RESULTS.map((r) => r.id)
+    .filter((id) => id !== 'library.doc-lib.fixture-library-created');
   const existing = await spGet(listPath);
-  if (existing.ok) {
+  digest = await getDigest();
+  const made = existing.ok ? null : await spPost('web/lists', {
+    Title: LIB,
+    BaseTemplate: 101,
+    Description: 'dbml-sharepoint library-form probe library. Safe to delete.',
+  }, digest);
+  if (made !== null && !made.ok) {
     record('library.doc-lib.fixture-library-created',
            'A document library is created (BaseTemplate 101)',
-           'ALREADY PRESENT',
-           'reusing an existing library. Set CLEANUP = true for a clean answer');
-  } else {
-    digest = await getDigest();
-    const made = await spPost('web/lists', {
-      Title: LIB,
-      BaseTemplate: 101,
-      Description: 'dbml-sharepoint library-form probe library. Safe to delete.',
-    }, digest);
-    record('library.doc-lib.fixture-library-created',
-           'A document library is created (BaseTemplate 101)',
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIB}'` : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
-    if (!made.ok) return report();
+           'FAIL', `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
+    voidDependents(LIB_IDS, `fixture incomplete: library creation failed (HTTP ${made.status})`);
+    return report();
+  }
+  log('INFO', made === null
+    ? 'reusing an existing library. Set CLEANUP = true for a clean answer.'
+    : `created '${LIB}'`);
+  // Read back on reuse as well as on create, because a list found by title may be a generic list.
+  if (!await establishFixture('library.doc-lib.fixture-library-created',
+    () => spGet(`${listPath}?$select=BaseTemplate`), { BaseTemplate: 101 }, LIB_IDS)) {
+    return report();
   }
 
   // ---- Upload initial file for negative control -----------------------

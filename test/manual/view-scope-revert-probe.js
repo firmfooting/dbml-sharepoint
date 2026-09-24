@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOES A STORED VIEW'S Scope MERGE BACK TO 0
  *
- * REVISION: 6e55794d
+ * REVISION: 787cde36
  *
  * ONE QUESTION:
  *   Can the deploy put a stored view's Scope back to 0 (DefaultValue, folder
@@ -381,7 +381,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 6e55794d. Quote this when reporting results.');
+  log('INFO', 'probe revision 787cde36. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe Scope Library';
   const libPath = `web/lists/getbytitle('${LIB}')`;
@@ -454,21 +454,22 @@
 
   let digest = await getDigest();
   const haveLib = await spGet(libPath);
-  if (haveLib.ok) {
-    record('library.doc-lib.fixture-library-created', Q.fixture, 'ALREADY PRESENT',
-           `reusing an existing library '${LIB}'. Set CLEANUP = true for a clean answer`);
-  } else {
-    const made = await spPost('web/lists', {
-      Title: LIB, BaseTemplate: 101,
-      Description: 'dbml-sharepoint view scope revert probe library. Safe to delete.',
-    }, digest);
-    record('library.doc-lib.fixture-library-created', Q.fixture,
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIB}'` : short(made));
-    if (!made.ok) {
-      voidAll(IDS, `fixture incomplete: library creation failed (HTTP ${made.status})`);
-      return report();
-    }
+  const made = haveLib.ok ? null : await spPost('web/lists', {
+    Title: LIB, BaseTemplate: 101,
+    Description: 'dbml-sharepoint view scope revert probe library. Safe to delete.',
+  }, digest);
+  if (made !== null && !made.ok) {
+    record('library.doc-lib.fixture-library-created', Q.fixture, 'FAIL', short(made));
+    voidAll(IDS, `fixture incomplete: library creation failed (HTTP ${made.status})`);
+    return report();
+  }
+  log('INFO', made === null
+    ? `reusing an existing library '${LIB}'. Set CLEANUP = true for a clean answer.`
+    : `created '${LIB}'`);
+  // Read back on reuse as well as on create, because a list found by title may be a generic list.
+  if (!await establishFixture('library.doc-lib.fixture-library-created',
+    () => spGet(`${libPath}?$select=BaseTemplate`), { BaseTemplate: 101 }, IDS)) {
+    return report();
   }
 
   // ---- NEGATIVE CONTROL: a view read naming a missing view --------------

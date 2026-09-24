@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: HOW DOES A DOCUMENT LIBRARY VIEW GROUP?
  *
- * REVISION: 173bc0c8
+ * REVISION: 6deea50a
  *
  * ONE QUESTION, on the column kinds nothing has measured:
  *   `library-view-probe.js` measured group-by on a SINGLE-VALUE metadata
@@ -552,7 +552,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 173bc0c8. Quote this when reporting results.');
+  log('INFO', 'probe revision 6deea50a. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibGroup';
   const TGT = 'dbmlsp Probe LibGroup Target';
@@ -730,12 +730,6 @@
 
   const library = await ensureContainer(libPath, LIB, 101,
     'dbml-sharepoint library-grouping probe library. Safe to delete.');
-  record('library.doc-lib.fixture-library-created',
-         'A document library is created (BaseTemplate 101)',
-         library.id === null ? 'FAIL' : library.made === null ? 'ALREADY PRESENT' : 'PASS',
-         library.made === null && library.id !== null
-           ? 'reusing an existing library. Set CLEANUP = true for a clean answer'
-           : library.note);
 
   // Everything this probe measures, so an abort can report the truth about all
   // of it rather than about the rows it happened to reach.
@@ -759,6 +753,8 @@
   };
 
   if (library.id === null) {
+    record('library.doc-lib.fixture-library-created',
+           'A document library is created (BaseTemplate 101)', 'FAIL', library.note);
     record('library.view.fixture-columns-created',
            'The target list, its rows and the three grouping columns exist and read back as their asked-for types',
            'ABORTED', library.note);
@@ -769,6 +765,16 @@
            'A multi-value lookup on the library is created and holds values',
            'ABORTED', 'the library was never created');
     return abortEverything(`the scratch library was never created: ${library.note}`);
+  }
+  log('INFO', library.made === null
+    ? 'reusing an existing library. Set CLEANUP = true for a clean answer.'
+    : library.note);
+  // Read back on reuse as well as on create, because a list found by title may be a generic list.
+  if (!await establishFixture('library.doc-lib.fixture-library-created',
+    () => spGet(`${libPath}?$select=BaseTemplate`), { BaseTemplate: 101 },
+    ['library.view.fixture-columns-created', 'library.view.fixture-values-written',
+     'library.view.fixture-multi-lookup-ready', ...MEASUREMENTS.map(([id]) => id)])) {
+    return report();
   }
 
   // ---- fixture-columns-created -----------------------------------------

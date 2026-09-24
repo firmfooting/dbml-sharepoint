@@ -7,7 +7,7 @@
  *   index on them? A served filter means an index answered it; a refusal means
  *   the query would have had to scan the whole library.
  *
- * REVISION: c1d2e982
+ * REVISION: 3ca4a21e
  *
  * THE COLUMNS: Title, Name (FileLeafRef), Created, Modified, Author, Editor,
  * plus ID as the positive control and two probe-owned columns as the negative
@@ -549,7 +549,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision c1d2e982. Quote this when reporting results.');
+  log('INFO', 'probe revision 3ca4a21e. Quote this when reporting results.');
 
   // The expensive half. Off, so a paste that only wants to measure an
   // already-built library never starts five thousand uploads.
@@ -694,6 +694,8 @@
   ];
 
   expect('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)');
+  expect('library.index.fixture-probe-columns-created',
+         'The two probe-owned columns exist on the fixture library as a Text and a User column');
   expect('library.index.fixture-file-count', `The fixture library holds at least ${TARGET_FILES} files`);
   expect('library.index.fixture-target-seeded', 'The one target file carries the Title, text and person markers');
   expect('library.index.control-small-library-shapes', 'CONTROL: every filter parses and finds its target on a small library nothing throttles');
@@ -935,13 +937,16 @@
 
   // Build one library to the point where every filter has something to select:
   // the library, the two probe-owned columns, the files, and the seeded target.
-  const prepare = async (title, path, wanted, cap, note) => {
+  // `held`, when given, reads the library and then its columns back before anything is written.
+  const prepare = async (title, path, wanted, cap, note, held = null) => {
     const made = await ensureLibrary(title, note);
     if (!made.ok) {
       return { ok: false, why: `library '${title}' does not exist and could not be created `
         + `(HTTP ${made.status}: ${made.text.slice(0, 200)})` };
     }
+    if (held && !await held.library(made)) return { ok: false, voided: true };
     const columns = await ensureProbeColumns(path);
+    if (held && !await held.columns(columns)) return { ok: false, voided: true };
     if (!columns.ok) {
       return { ok: false, why: `the probe-owned columns are not on '${title}': ${columns.note}` };
     }
@@ -973,23 +978,6 @@
   };
 
   // ---- fixture-library-created ------------------------------------------
-  const big = await prepare(
-    LIB, libPath, TARGET_FILES, UPLOAD_CAP,
-    'dbml-sharepoint library index threshold probe fixture. Safe to delete.');
-  record('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)',
-         big.ok ? (big.created ? 'PASS' : 'ALREADY PRESENT') : 'FAIL',
-         big.ok
-           ? `'${LIB}' is present with the two probe-owned columns (${big.columns}).`
-           : big.why);
-  if (!big.ok) {
-    record('library.index.fixture-file-count', `The fixture library holds at least ${TARGET_FILES} files`,
-           'ABORTED', big.why);
-    record('library.index.fixture-target-seeded', 'The one target file carries the Title, text and person markers',
-           'ABORTED', big.why);
-    return abortRemaining(big.why);
-  }
-
-  // ---- fixture-file-count ------------------------------------------------
   const FILE_COUNT_DEPENDENTS = [
     'library.index.fixture-target-seeded',
     'library.index.control-small-library-shapes',
@@ -998,6 +986,50 @@
     'library.index.control-unindexed-person-refused',
     ...CANDIDATES.map((row) => row.id),
   ];
+  const COLUMNS_ROW = 'library.index.fixture-probe-columns-created';
+  const COLUMN_TYPES = { [UNINDEXED_TEXT]: 'Text', [UNINDEXED_PERSON]: 'User' };
+  const big = await prepare(
+    LIB, libPath, TARGET_FILES, UPLOAD_CAP,
+    'dbml-sharepoint library index threshold probe fixture. Safe to delete.', {
+      library: async (made) => {
+        log('INFO', made.made ? `created '${LIB}'` : `reusing an existing '${LIB}'.`);
+        // Read back on reuse as well as on create, because a list found by title may be a generic list.
+        return establishFixture('library.doc-lib.fixture-library-created',
+          () => spGet(`${libPath}?$select=BaseTemplate`), { BaseTemplate: 101 },
+          [COLUMNS_ROW, 'library.index.fixture-file-count', ...FILE_COUNT_DEPENDENTS]);
+      },
+      // A column reused by name is read back too, since an earlier run may have left another type.
+      columns: async (columns) => {
+        log('INFO', `columns: ${columns.note}`);
+        const declared = {};
+        for (const [name, type] of Object.entries(COLUMN_TYPES)) declared[`${name}.TypeAsString`] = type;
+        return establishFixture(COLUMNS_ROW, async () => {
+          const body = {};
+          for (const name of Object.keys(COLUMN_TYPES)) {
+            const read = await spGet(`${libPath}/fields/getbyinternalnameortitle('${odataName(name)}')`);
+            // A column absent by name answers 400 and leaves its property absent; anything else is the read's.
+            if (unanswered(read) !== null) {
+              if (read.status === 400 || read.status === 404) continue;
+              return read;
+            }
+            body[`${name}.TypeAsString`] = read.body.TypeAsString;
+          }
+          return { ok: true, status: 200, body };
+        }, declared, FILE_COUNT_DEPENDENTS);
+      },
+    });
+  if (big.voided) return report();
+  if (!big.ok) {
+    record('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)',
+           'FAIL', big.why);
+    record('library.index.fixture-file-count', `The fixture library holds at least ${TARGET_FILES} files`,
+           'ABORTED', big.why);
+    record('library.index.fixture-target-seeded', 'The one target file carries the Title, text and person markers',
+           'ABORTED', big.why);
+    return abortRemaining(big.why);
+  }
+
+  // ---- fixture-file-count ------------------------------------------------
   const buildNote =
     `${big.build.uploaded} file(s) uploaded this run (${big.build.reason})`
     + (big.build.stoppedAt === null ? '' : `; the pass stopped at ${fileName(big.build.stoppedAt)}`);
