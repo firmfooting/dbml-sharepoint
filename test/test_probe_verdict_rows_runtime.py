@@ -13,6 +13,8 @@ from typing import Any
 import pytest
 from _node import NODE, run_node
 from test_probe_fixture_high_runtime import (
+    _BY_FOLDER,
+    _BY_METADATA,
     _GUARDS,
     _GUARDS_LIB,
     _LIBRARY_MOCK,
@@ -21,6 +23,7 @@ from test_probe_fixture_high_runtime import (
     _TODAY,
     _TODAY_HEALTHY,
     _TODAY_MOCK,
+    _VIEW,
 )
 from test_probe_fixture_runtime import _catalogued_dependents, _run_probe, _void_ids
 from test_probe_runtime import (
@@ -237,3 +240,64 @@ def test_an_accepted_violating_write_that_did_not_read_back_is_not_inert() -> No
     assert "did not read back (HTTP 429)" in rows[_RULE]["evidence"]
 
 
+# --------------------------------------------------------------------------
+# Item 6: library-view matches each upload by its full path.
+# --------------------------------------------------------------------------
+_ROOT = "/sites/test/L1"
+_DECOY = "Decoy"
+
+
+def _with_decoys(names: list[str]) -> str:
+    """A reused library holding each of `names` in another folder, where a name match finds it."""
+    return _over(_LIBRARY_MOCK, f"""
+        if (!globalThis.decoyed && verb === 'POST' && where.includes("/Files/add(url='")) {{
+          globalThis.decoyed = true;
+          const at = (folder) => `${{String(url).split('/_api/')[0]}}/_api/web/`
+            + `GetFolderByServerRelativeUrl('${{folder}}')`;
+          const post = (body) => ({{ method: 'POST', headers: {{}}, body }});
+          await underneath(`${{at('{_ROOT}')}}/folders/add(url='{_DECOY}')`, post('{{}}'));
+          for (const name of {json.dumps(names)}) {{
+            const file = `Files/add(url='${{name}}',overwrite=true)`;
+            await underneath(`${{at('{_ROOT}/{_DECOY}')}}/${{file}}`, post('decoy'));
+          }}
+        }}
+    """)
+
+
+def _item_merges(sent: list[dict[str, str]]) -> list[dict[str, str]]:
+    return [r for r in sent if r["verb"] == "MERGE" and "/items(" in r["path"]]
+
+
+def test_library_view_writes_each_file_at_the_path_it_uploaded_to() -> None:
+    rows, sent = _run_probe(_LIBRARY_MOCK, {}, _VIEW)
+
+    assert rows[_BY_METADATA]["outcome"] == "SAME AS LIST", rows[_BY_METADATA]
+    assert rows[_BY_FOLDER]["outcome"] == "FOLDERS ARE NOT A REST GROUPING DIMENSION"
+    assert not _void_ids(rows)
+    assert len(_item_merges(sent)) == 4
+
+
+def test_library_view_does_not_write_to_a_same_named_file_in_another_folder() -> None:
+    """A name match picked the decoy, so the MERGE and its read-back landed on the wrong item."""
+    names = ["doc-alpha-1.txt", "doc-beta-1.txt", "doc-alpha-2.txt", "subfolder-doc.txt"]
+    rows, sent = _run_probe(_with_decoys(names), {}, _VIEW)
+
+    assert rows[_BY_METADATA]["outcome"] == "SAME AS LIST", rows[_BY_METADATA]
+    assert rows[_BY_FOLDER]["outcome"] == "FOLDERS ARE NOT A REST GROUPING DIMENSION"
+    assert not _void_ids(rows)
+    # The decoys are items 1 to 4; every write goes to an upload of this run.
+    assert sorted(r["path"].split("/items(")[1].split(")")[0] for r in _item_merges(sent)) == [
+        "5", "6", "7", "8"]
+
+
+def test_library_view_voids_the_folder_row_when_only_a_decoy_carries_the_subfile() -> None:
+    mock = _over(_with_decoys(["subfolder-doc.txt"]), """
+        if (verb === 'POST' && where.includes("FolderAlpha')/Files/add(")) {
+          return jsonResponse(200, { Name: 'subfolder-doc.txt' });
+        }
+    """)
+    rows, _ = _run_probe(mock, {}, _VIEW)
+
+    assert _void_ids(rows) == {_BY_FOLDER}
+    assert f"no item was served at '{_ROOT}/FolderAlpha/subfolder-doc.txt'" in (
+        rows[_BY_FOLDER]["evidence"])

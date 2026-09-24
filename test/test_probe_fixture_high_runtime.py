@@ -200,7 +200,8 @@ _LIBRARY_MOCK = textwrap.dedent("""
       }
     }
     const rowOf = (list, item) => {
-      const row = { Id: item.Id, Title: item.Title || null, FileLeafRef: item.FileLeafRef || null };
+      const row = { Id: item.Id, Title: item.Title || null, FileLeafRef: item.FileLeafRef || null,
+        FileRef: item.FileLeafRef ? `${item.folder}/${item.FileLeafRef}` : null };
       for (const name of list.fields.keys()) row[name] = item[name] ?? null;
       return row;
     };
@@ -208,7 +209,7 @@ _LIBRARY_MOCK = textwrap.dedent("""
       const list = [...lists.values()].find((l) => folder.startsWith(l.root));
       if (!list || !folders.has(folder)) return refusal(404, 'File Not Found.');
       if ((CONFIG.failUpload || []).includes(name)) return refusal(400, 'The upload was refused.');
-      if (!list.items.some((i) => i.FileLeafRef === name)) {
+      if (!list.items.some((i) => i.FileLeafRef === name && i.folder === folder)) {
         list.items.push({ Id: list.nextItem, FileLeafRef: name, folder });
         list.nextItem += 1;
       }
@@ -415,5 +416,6 @@ def test_library_view_voids_the_folder_row_when_the_subfile_is_not_served() -> N
     rows, sent = _run_probe(_LIBRARY_MOCK, {"unlisted": ["subfolder-doc.txt"]}, _VIEW)
 
     assert _BY_FOLDER in _void_ids(rows)
-    assert "no item was served for 'subfolder-doc.txt'" in rows[_BY_FOLDER]["evidence"]
+    assert "no item was served at '/sites/test/L1/FolderAlpha/subfolder-doc.txt'" in (
+        rows[_BY_FOLDER]["evidence"])
     assert not _grouping_queries(sent, "Folder")
