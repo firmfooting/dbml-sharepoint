@@ -171,8 +171,12 @@ def test_a_hash_inside_a_python_string_is_not_a_comment() -> None:
     ("first", "exemption"),
     [
         ("MEASURED on a live site: it held", "MEASURED"),
-        ("On 2026-09-24 the site refused it", "dated"),
+        ("MEASURED 2026-09-24: it held", "MEASURED"),
+        ("---- MEASURED 2026-09-24 ----", "MEASURED"),
+        ("2026-09-24: the site refused it", "dated"),
+        ("--- 2026-09-24 ------", "dated"),
         ("---- Operator gate ----", "banner"),
+        ("--- The wizard -------", "banner"),
     ],
 )
 def test_an_evidence_shaped_first_line_exempts_the_run(first: str, exemption: str) -> None:
@@ -181,8 +185,20 @@ def test_an_evidence_shaped_first_line_exempts_the_run(first: str, exemption: st
     assert [run.exemption for run in runs] == [exemption]
 
 
-@pytest.mark.parametrize("first", ["UNMEASURED assumption", "UN-MEASURED guess"])
-def test_unmeasured_does_not_exempt_a_run(first: str) -> None:
+@pytest.mark.parametrize(
+    "first",
+    [
+        "UNMEASURED assumption",
+        "UN-MEASURED guess",
+        "This was not MEASURED on a live site",
+        "TODO remove by 2026-12-01",
+        "On 2026-09-24 the site refused it",
+        "Measured live 2026-09-04: lower case is prose",
+        "A rule of thumb ---- not a banner ----",
+    ],
+)
+def test_a_marker_that_does_not_open_the_line_does_not_exempt_a_run(first: str) -> None:
+    """#637: a marker anywhere in the line let a negated or incidental one exempt."""
     runs = comment_runs(_lines("#", MIN_RUN, first), "a.py")
 
     assert [run.exemption for run in runs] == [None]

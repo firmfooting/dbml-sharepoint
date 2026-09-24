@@ -50,12 +50,15 @@ BLOCK_SCALAR = re.compile(r"(?:^\s*-|:)\s+[|>][1-9+-]*\s*(?:#.*)?$")
 #: Stripped from each end of a comment line before it is fingerprinted.
 MARKERS = re.compile(r"^(?:\{#|/\*+|//+|#+:?|\*+)|(?:#\}|\*+/)$")
 
+#: A comment marker and an optional `---` banner lead, before an evidence marker.
+_OPENING = r"^(?:\{#|/\*+|//+|#+:?|\*+)?\s*(?:-{3,}\s*)?"
+
 #: Checked in order against a run's first line; the first match names it.
 EXEMPTIONS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("MEASURED", re.compile(r"(?<![\w-])MEASURED\b")),
-    ("dated", re.compile(r"\b\d{4}-\d{2}-\d{2}\b")),
+    ("MEASURED", re.compile(_OPENING + r"MEASURED\b")),
+    ("dated", re.compile(_OPENING + r"\d{4}-\d{2}-\d{2}\b")),
     ("attribute", re.compile(r"^#:")),
-    ("banner", re.compile(r"-{4,}")),
+    ("banner", re.compile(r"^(?:\{#|/\*+|//+|#+:?|\*+)?\s*(?=.*-{4,})-{3,}")),
 )
 
 

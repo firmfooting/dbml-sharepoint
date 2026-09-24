@@ -34,6 +34,7 @@ PINNED: dict[str, list[str]] = {
         "1d634e98f700",
     ],
     "pyproject.toml": [
+        "13413a512984",
         "1f77f373407a",
         "3f703a5d43a0",
         "7c3188e5030c",
@@ -92,6 +93,7 @@ PINNED: dict[str, list[str]] = {
         "5ec080166d74",
         "8a5f2a038d7f",
         "aaf03dafcb90",
+        "b73b9940193f",
         "bea1209d9dbb",
         "c1ddd830c0b4",
         "c602082f29c0",
@@ -113,6 +115,7 @@ PINNED: dict[str, list[str]] = {
         "16b6ee92a185",
         "17b488ccf8cf",
         "3f1b6bd01447",
+        "44115eba1d7c",
         "477f157ac01c",
         "5b0d957bbdfc",
         "5e0bd03e2342",
@@ -145,6 +148,9 @@ PINNED: dict[str, list[str]] = {
         "54aba411980e",
         "6163bdd76a8c",
         "ec9502a9a239",
+    ],
+    "src/dbml_sharepoint/analysis/forms.py": [
+        "9108ec6cf11e",
     ],
     "src/dbml_sharepoint/analysis/joins.py": [
         "a3e58a625a66",
@@ -749,6 +755,7 @@ PINNED: dict[str, list[str]] = {
     ],
     "src/dbml_sharepoint/templates/demo.js.j2": [
         "2eeb6586a02a",
+        "9cf6f24d6806",
     ],
     "src/dbml_sharepoint/templates/deploy.js.j2": [
         "0c34d410b03e",
@@ -811,6 +818,9 @@ PINNED: dict[str, list[str]] = {
         "29e4342ba178",
         "9798521201e3",
         "bc185d0a28b3",
+    ],
+    "src/dbml_sharepoint/templates/deploy/_lookups.js.j2": [
+        "97d9d0453744",
     ],
     "src/dbml_sharepoint/templates/deploy/_maintenance_unseal.js.j2": [
         "01e0db739ed7",
@@ -1320,6 +1330,7 @@ PINNED: dict[str, list[str]] = {
         "af9897682e03",
         "bad9b1b0e905",
         "bd61e5ab9562",
+        "d36690c67994",
         "e46d5f0c67dc",
     ],
     "test/manual/templates/throttle-batch-probe.js.j2": [
@@ -1389,6 +1400,7 @@ PINNED: dict[str, list[str]] = {
         "3bc78e49664d",
         "a255580d1d90",
         "d36d7e3beb3f",
+        "e13da4bfb9eb",
         "fe5aa438b172",
     ],
     "test/test_emitted_practices.py": [
