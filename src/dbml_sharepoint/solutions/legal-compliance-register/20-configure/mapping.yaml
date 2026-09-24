@@ -26,32 +26,8 @@ enum_sources: {}
 
 watched_lists: []
 
+# Editing is granted to the site's own Members group; no family groups to administer.
 groups:
-  - name: '{prefix} Compliance Coordinators'
-    description: Platform owners file SAQs, assign the division executive and record completed assessments
-      in the compliance platform. Edit without delete; removing a file is a List Administrator action.
-    owner_group: Site Owners
-    allow_members_edit_membership: false
-    allow_request_to_join_leave: false
-    auto_accept_request_to_join_leave: false
-    only_allow_members_view_membership: false
-  - name: '{prefix} Assessment Owners'
-    description: Executives assign business owners and optionally review completed SAQs. Business owners
-      complete them. Edit without delete.
-    owner_group: Site Owners
-    allow_members_edit_membership: false
-    allow_request_to_join_leave: false
-    auto_accept_request_to_join_leave: false
-    only_allow_members_view_membership: false
-  - from_enum: division
-    name: '{prefix} {member_safe} Division'
-    description: Staff who maintain the {member} division's obligations. Edit without delete inside
-      that division's folder only; removing a file is a List Administrator action.
-    owner_group: '{prefix} Compliance Coordinators'
-    allow_members_edit_membership: false
-    allow_request_to_join_leave: false
-    auto_accept_request_to_join_leave: false
-    only_allow_members_view_membership: false
   - name: dbml List Administrators
     description: Full Control for schema changes and redeploys. Empty by default; the deploy script enrols
       the running operator per run.
@@ -78,7 +54,7 @@ permission_levels:
       Open, ViewPages, BrowseUserInfo, UseClientIntegration, UseRemoteAPIs, CreateAlerts, ManagePersonalViews,
       EditMyUserInfo]
 
-# Workflow roles share edit access; status transitions are not role-restricted.
+# Site Members edit without delete and site Owners manage; status transitions are not role-restricted.
 
 list_permissions:
   default:
@@ -86,49 +62,15 @@ list_permissions:
     break_inheritance: true
     reconcile: exact
     assignments:
-      - principal: {kind: group, name: '{prefix} Compliance Coordinators'}
+      - principal: {kind: associated_member_group}
         level: '{prefix} Contribute No Delete'
-      - principal: {kind: group, name: '{prefix} Assessment Owners'}
-        level: '{prefix} Contribute No Delete'
+      - principal: {kind: associated_owner_group}
+        level: Full Control
       - principal: {kind: group, name: dbml List Administrators}
         level: Full Control
-      - principal: {kind: associated_member_group}
-        level: Read
-      - principal: {kind: associated_owner_group}
-        level: Read
       - principal: {kind: group, name: dbml Enterprise Readers}
         level: Read
   overrides: {}
-  # One policy, applied to every folder the library declares, with {member}
-  # expanded to the folder's own name. Edit rights inside a division belong to
-  # that division's group and to the coordinators; everyone else on the site
-  # keeps Read, so the register stays legible across divisions without every
-  # executive being able to change another's files.
-  folders:
-    Document:
-      break_inheritance: true
-      reconcile: exact
-      assignments:
-        - principal: {kind: group, name: '{prefix} {member_safe} Division'}
-          level: '{prefix} Contribute No Delete'
-        - principal: {kind: group, name: '{prefix} Compliance Coordinators'}
-          level: '{prefix} Contribute No Delete'
-        # Assessment Owners edit at list scope, and every document lives in a
-        # folder, so omitting them here would take that away rather than
-        # scope it. The division groups add per-division delegation; they do
-        # not replace the register-wide role the family already declares.
-        - principal: {kind: group, name: '{prefix} Assessment Owners'}
-          level: '{prefix} Contribute No Delete'
-        # Full Control on every folder this deploy creates. Without it a later
-        # run cannot manage the scope it wrote, and the tool locks itself out.
-        - principal: {kind: group, name: dbml List Administrators}
-          level: Full Control
-        - principal: {kind: group, name: dbml Enterprise Readers}
-          level: Read
-        - principal: {kind: associated_member_group}
-          level: Read
-        - principal: {kind: associated_owner_group}
-          level: Read
 
 seal_columns: true
 

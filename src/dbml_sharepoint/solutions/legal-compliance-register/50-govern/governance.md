@@ -4,15 +4,15 @@
 
 | Role | Assignment | Responsibility |
 | --- | --- | --- |
-| Platform owner | LC Compliance Coordinators group | Upload a new SAQ, assign the division executive, chase progress and record the completed assessment in the compliance platform |
+| Platform owner | Site Members, named by the site owner | Upload a new SAQ, assign the division executive, chase progress and record the completed assessment in the compliance platform |
 | Executive | `Document.ExecutiveResponsible` | Assign a business owner and decide whether to review before recording |
 | Business owner | `Document.BusinessOwner` | Complete the Excel SAQ and date its completion |
 
-Platform owners belong to **LC Compliance Coordinators**. Executives and
-business owners belong to **LC Assessment Owners**. The existing group names
-are retained. Assessment Owners can edit without delete; coordinators maintain
-the library. The roles are a working procedure, not separate permissions on
-status values. Review assignments and file history when auditing handoffs.
+Everyone who takes part is a member of the site's Members group, which
+edits without delete. Site Owners hold Full Control and remove files when one
+has to go. The roles are a working procedure, not separate permissions on
+folders or status values. Review assignments and file history when auditing
+handoffs, and review the Members group itself when auditing access.
 
 ## Assessment and reference records
 

@@ -1,8 +1,15 @@
-release: "2.2.0"
-date: "2026-09-22"
+release: "2.3.0"
+date: "2026-09-24"
 deployer_version: "dbml-sharepoint/0.6.0"
-schema_version: "2.2.0"
+schema_version: "2.3.0"
 notes: |
+  2.3.0 simplifies permissions to the site's own groups. Site Members edit
+  without delete and site Owners hold Full Control, on the library only;
+  division folders inherit from it. The Compliance Coordinators, Assessment
+  Owners and per-division groups are no longer declared. A redeploy over 2.2.0
+  replaces the library's role assignments, but does not delete those groups
+  or restore inheritance on folders that already broke it: remove them by hand.
+
   Breaking redesign: one Document library replaces the Topic list and SAQ library.
   SAQs are vendor downloads; a new SAQ for the same topic has a new period.
   REGs are references. Content stays in Excel and executive review is optional.
