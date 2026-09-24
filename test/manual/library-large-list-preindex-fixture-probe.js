@@ -2,7 +2,7 @@
  * dbml-sharepoint PROBE: BUILD THE LIBRARY WHOSE INDEX WAS WRITTEN BEFORE IT
  * CROSSED 5,000 ITEMS.
  *
- * REVISION: 7afa4ca8
+ * REVISION: 55097102
  *
  * THIS PROBE ANSWERS NO QUESTION ABOUT SHAREPOINT. It builds a second document
  * library that a later probe measures, and every row it records is a
@@ -578,7 +578,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 7afa4ca8. Quote this when reporting results.');
+  log('INFO', 'probe revision 55097102. Quote this when reporting results.');
 
   // The expensive half. Off, so a paste that only wants to check an
   // already-built fixture never starts five thousand uploads.
@@ -801,16 +801,21 @@
   const library = await ensureContainer(libPath, LIB, 101,
     'dbml-sharepoint pre-index large-library fixture. Its group-by column is indexed '
     + 'below 5,000 files. Read by the beyond-5,000 probes. Do not delete.');
-  record('library.doc-lib.fixture-library-created',
-         'A document library is created (BaseTemplate 101)',
-         library.id === null ? 'FAIL' : library.made === null ? 'ALREADY PRESENT' : 'PASS',
-         library.made === null && library.id !== null
-           ? `reusing '${LIB}'. That is the intent here: the fixture is permanent and a `
-             + 'second paste resumes the build rather than starting one'
-           : library.note);
   if (library.id === null) {
+    record('library.doc-lib.fixture-library-created',
+           'A document library is created (BaseTemplate 101)', 'FAIL', library.note);
     return abortFrom('library.large-list.fixture-preindex-columns-created',
                      `the fixture library was never created: ${library.note}`);
+  }
+  log('INFO', library.made === null
+    ? `reusing '${LIB}': the fixture is permanent and a second paste resumes the build.`
+    : library.note);
+  // Read back on reuse as well as on create, because a list found by title may be a generic list.
+  // Indexed is not declared: this probe writes the index itself at INDEX_AT.
+  if (!await establishFixture('library.doc-lib.fixture-library-created',
+    () => spGet(`${libPath}?$select=BaseTemplate`), { BaseTemplate: 101 },
+    DOWNSTREAM.map(([rowId]) => rowId))) {
+    return report();
   }
 
   // ---- fixture-preindex-columns-created --------------------------------

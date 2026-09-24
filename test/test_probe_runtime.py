@@ -2166,7 +2166,8 @@ _LARGE_LIST_HARNESS = textwrap.dedent("""
 
       if (path === 'web/lists' && method === 'POST') {
         const id = `{list-${lists.size + 1}}`;
-        lists.set(payload.Title, { Id: id, Title: payload.Title });
+        lists.set(payload.Title, {
+          Id: id, Title: payload.Title, BaseTemplate: payload.BaseTemplate });
         return jsonResponse(200, { Id: id, Title: payload.Title });
       }
 
@@ -2280,7 +2281,8 @@ _LARGE_LIST_HARNESS = textwrap.dedent("""
             .map((held3) => ({ Id: held3.Id, FileLeafRef: held3.FileLeafRef }));
           return jsonResponse(200, { value: top });
         }
-        return jsonResponse(200, { Id: held.Id, Title: held.Title });
+        return jsonResponse(200, {
+          Id: held.Id, Title: held.Title, BaseTemplate: held.BaseTemplate });
       }
 
       return jsonResponse(404, { error: `unrouted ${method} ${path}` });

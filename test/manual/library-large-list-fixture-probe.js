@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: BUILD THE PERSISTENT LARGE-LIBRARY FIXTURE.
  *
- * REVISION: bc9a88a3
+ * REVISION: c36a0c87
  *
  * THIS PROBE ANSWERS NO QUESTION ABOUT SHAREPOINT. It builds a document
  * library that later probes measure, and every row it records is a
@@ -536,7 +536,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision bc9a88a3. Quote this when reporting results.');
+  log('INFO', 'probe revision c36a0c87. Quote this when reporting results.');
 
   // The expensive half. Off, so a paste that only wants to check an
   // already-built fixture never starts five thousand uploads.
@@ -760,18 +760,27 @@
     };
   };
 
+  const LIBRARY_ROW = 'library.doc-lib.fixture-library-created';
+  const TARGET_ROW = 'library.large-list.fixture-target-list-seeded';
+  const COLUMNS_ROW = 'library.large-list.fixture-columns-created';
+  // A fixture gates every row after it in DOWNSTREAM, because the run stops there.
+  const rowsAfter = (id) => DOWNSTREAM.map(([rowId]) => rowId)
+    .slice(DOWNSTREAM.findIndex(([rowId]) => rowId === id) + 1);
+  const bareGuid = (id) => String(id).replace(/[{}]/g, '').toLowerCase();
+
   const library = await ensureContainer(libPath, LIB, 101,
     'dbml-sharepoint large-library fixture. Read by the beyond-5,000 probes. Do not delete.');
-  record('library.doc-lib.fixture-library-created',
-         'A document library is created (BaseTemplate 101)',
-         library.id === null ? 'FAIL' : library.made === null ? 'ALREADY PRESENT' : 'PASS',
-         library.made === null && library.id !== null
-           ? `reusing '${LIB}'. That is the intent here: the fixture is permanent and a `
-             + 'second paste resumes the build rather than starting one'
-           : library.note);
   if (library.id === null) {
-    return abortFrom('library.large-list.fixture-target-list-seeded',
-                     `the fixture library was never created: ${library.note}`);
+    record(LIBRARY_ROW, 'A document library is created (BaseTemplate 101)', 'FAIL', library.note);
+    return abortFrom(TARGET_ROW, `the fixture library was never created: ${library.note}`);
+  }
+  log('INFO', library.made === null
+    ? `reusing '${LIB}': the fixture is permanent and a second paste resumes the build.`
+    : library.note);
+  // Read back on reuse as well as on create, because a list found by title may be a generic list.
+  if (!await establishFixture(LIBRARY_ROW, () => spGet(`${libPath}?$select=BaseTemplate`),
+    { BaseTemplate: 101 }, DOWNSTREAM.map(([rowId]) => rowId))) {
+    return report();
   }
 
   // ---- fixture-target-list-seeded --------------------------------------
@@ -779,7 +788,17 @@
     'dbml-sharepoint large-library fixture lookup target. Read by the beyond-5,000 probes. Do not delete.');
   const targetRowIds = [];
   const targetNotes = [target.note];
+  // The Id LVLookup is created against and compared with, taken from the read-back.
+  let targetId = null;
   if (target.id !== null) {
+    const targetHeld = await establishFixture(TARGET_ROW, async () => {
+      const read = await spGet(`${tgtPath}?$select=BaseTemplate,Id`);
+      if (unanswered(read) === null) targetId = read.body.Id;
+      return read;
+    }, { BaseTemplate: 100, Id: (id) => typeof id === 'string' && bareGuid(id) !== '' },
+    rowsAfter(TARGET_ROW));
+    if (!targetHeld) return report();
+    targetNotes.push(`read back BaseTemplate=100 and Id=${show(targetId)}`);
     const existing = await spGet(`${tgtPath}/items?$select=Id,Title&$top=100`);
     const rows = (!readFailed(existing) && Array.isArray(existing.body.value))
       ? existing.body.value : [];
@@ -822,23 +841,12 @@
     `<Field Type="${type}" DisplayName="${name}" Name="${name}">`
     + `<CHOICES>${CHOICES.map((choice) => `<CHOICE>${choice}</CHOICE>`).join('')}</CHOICES></Field>`;
 
-  // Create one column and read it back, returning what the row wants to print.
-  // Says nothing about whether the result is good: the caller owns the verdict.
-  const ensureColumn = async (name, schemaXml, wantedType) => {
+  // Create one column if it is missing. The verdict is the read-back below, never this.
+  const ensureColumn = async (name, schemaXml) => {
     const before = await readField(libPath, name);
     const made = before.ok ? null : await addField(libPath, schemaXml);
-    const read = before.ok ? before : await readField(libPath, name);
-    const ok = !readFailed(read) && read.body.TypeAsString === wantedType;
-    return {
-      ok,
-      note: `${name}: ` + (made === null ? 'already present' : `create HTTP ${made.status}`)
-        + (made === null || made.ok ? '' : ` ${clip(made.text, 160)}`)
-        + '; readback ' + (readFailed(read)
-          ? `failed HTTP ${read.status}`
-          : `TypeAsString=${show(read.body.TypeAsString)}`
-            + ` LookupList=${show(read.body.LookupList)}`
-            + ` OutputType=${show(read.body.OutputType)}`),
-    };
+    return `${name}: ` + (made === null ? 'already present' : `create HTTP ${made.status}`)
+      + (made === null || made.ok ? '' : ` ${clip(made.text, 160)}`);
   };
 
   // Ordered, and the order is a dependency rather than a preference: LVCalc
@@ -857,26 +865,38 @@
      'Calculated'],
     [LOOKUP,
      `<Field Type="Lookup" DisplayName="${LOOKUP}" Name="${LOOKUP}"`
-     + ` List="{${target.id}}" ShowField="Title"/>`,
+     + ` List="{${bareGuid(targetId)}}" ShowField="Title"/>`,
      'Lookup'],
   ];
 
   const columnNotes = [];
-  let columnsReady = true;
-  for (const [name, schemaXml, wantedType] of COLUMNS) {
-    const built = await ensureColumn(name, schemaXml, wantedType);
-    columnNotes.push(built.note);
-    if (!built.ok) columnsReady = false;
-  }
-  record('library.large-list.fixture-columns-created',
-         'The seven fixture columns exist on the library and read back as their asked-for types',
-         columnsReady ? 'PASS' : 'FAIL',
-         columnNotes.join('; '));
-  if (!columnsReady) {
-    return abortFrom('library.large-list.fixture-file-count',
-                     `the fixture columns are not all present, so no file could be written `
-                     + `correctly: ${columnNotes.join('; ')}`);
-  }
+  for (const [name, schemaXml] of COLUMNS) columnNotes.push(await ensureColumn(name, schemaXml));
+  log('INFO', `columns: ${columnNotes.join('; ')}`);
+  // OutputType is an SP.FieldType (Learn: FieldCalculated.OutputType), where Number is 9;
+  // the name is accepted too because this repository has not observed which form is served.
+  const declaredColumns = {
+    [`${CALC}.OutputType`]: (value) => value === 9 || value === 'Number',
+    // A GUID may come back braced or in either case, so both sides are normalised.
+    [`${LOOKUP}.LookupList`]: (value) => typeof value === 'string'
+      && bareGuid(value) === bareGuid(targetId),
+  };
+  for (const [name, , wantedType] of COLUMNS) declaredColumns[`${name}.TypeAsString`] = wantedType;
+  const columnsHeld = await establishFixture(COLUMNS_ROW, async () => {
+    const body = {};
+    for (const [name] of COLUMNS) {
+      const read = await readField(libPath, name);
+      // A column absent by name answers 400 and leaves its properties absent; anything else is the read's.
+      if (unanswered(read) !== null) {
+        if (read.status === 400 || read.status === 404) continue;
+        return read;
+      }
+      body[`${name}.TypeAsString`] = read.body.TypeAsString;
+      if (name === CALC) body[`${name}.OutputType`] = read.body.OutputType;
+      if (name === LOOKUP) body[`${name}.LookupList`] = read.body.LookupList;
+    }
+    return { ok: true, status: 200, body };
+  }, declaredColumns, rowsAfter(COLUMNS_ROW));
+  if (!columnsHeld) return report();
 
   const entityRead = await spGet(`${libPath}?$select=ListItemEntityTypeFullName`);
   itemEntityType = (!readFailed(entityRead)) ? entityRead.body.ListItemEntityTypeFullName : null;

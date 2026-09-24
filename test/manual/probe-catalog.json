@@ -3814,12 +3814,14 @@
               "id": "library.large-list.fixture-file-count",
               "depends_on": [
                 "library.doc-lib.fixture-library-created",
+                "library.large-list.fixture-target-list-seeded",
                 "library.large-list.fixture-columns-created"
               ]
             },
             {
               "id": "library.large-list.fixture-values-written",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.large-list.fixture-target-list-seeded",
                 "library.large-list.fixture-columns-created",
                 "library.large-list.fixture-file-count"
@@ -3828,6 +3830,8 @@
             {
               "id": "library.large-list.fixture-calculated-column-computes",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.large-list.fixture-target-list-seeded",
                 "library.large-list.fixture-columns-created",
                 "library.large-list.fixture-values-written"
               ]
@@ -3835,6 +3839,9 @@
             {
               "id": "library.large-list.fixture-distribution",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
+                "library.large-list.fixture-target-list-seeded",
+                "library.large-list.fixture-columns-created",
                 "library.large-list.fixture-file-count",
                 "library.large-list.fixture-values-written"
               ]
@@ -4501,18 +4508,21 @@
             {
               "id": "library.large-list.control-preindex-description-sticks",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.large-list.fixture-preindex-columns-created"
               ]
             },
             {
               "id": "library.large-list.control-preindex-unknown-property-refused",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.large-list.fixture-preindex-columns-created"
               ]
             },
             {
               "id": "library.large-list.fixture-preindex-index-written-under-threshold",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.large-list.fixture-preindex-columns-created",
                 "library.large-list.control-preindex-description-sticks",
                 "library.large-list.control-preindex-unknown-property-refused"
@@ -4521,6 +4531,7 @@
             {
               "id": "library.large-list.fixture-preindex-witness-unindexed",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.large-list.fixture-preindex-columns-created"
               ]
             },
@@ -4534,6 +4545,7 @@
             {
               "id": "library.large-list.fixture-preindex-values-written",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.large-list.fixture-preindex-columns-created",
                 "library.large-list.fixture-preindex-file-count"
               ]
@@ -4541,6 +4553,7 @@
             {
               "id": "library.large-list.fixture-preindex-distribution",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.large-list.fixture-preindex-file-count",
                 "library.large-list.fixture-preindex-values-written"
               ]
@@ -8679,6 +8692,7 @@
             {
               "id": "library.large-list.fixture-multilevel-values-written",
               "depends_on": [
+                "library.large-list.fixture-multilevel-library-created",
                 "library.large-list.fixture-multilevel-columns-created",
                 "library.large-list.fixture-multilevel-file-count"
               ]
@@ -8686,6 +8700,7 @@
             {
               "id": "library.large-list.fixture-multilevel-under-threshold",
               "depends_on": [
+                "library.large-list.fixture-multilevel-library-created",
                 "library.large-list.fixture-multilevel-file-count"
               ]
             },
@@ -8702,12 +8717,14 @@
             {
               "id": "library.large-list.control-foldered-description-sticks",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.large-list.fixture-foldered-columns-created"
               ]
             },
             {
               "id": "library.large-list.control-foldered-unknown-property-refused",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.large-list.fixture-foldered-columns-created"
               ]
             },
@@ -8720,6 +8737,7 @@
             {
               "id": "library.large-list.fixture-foldered-index-written-under-threshold",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.large-list.fixture-foldered-columns-created",
                 "library.large-list.control-foldered-description-sticks",
                 "library.large-list.control-foldered-unknown-property-refused"
@@ -8728,6 +8746,7 @@
             {
               "id": "library.large-list.fixture-foldered-witness-unindexed",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.large-list.fixture-foldered-columns-created"
               ]
             },
@@ -8742,6 +8761,7 @@
             {
               "id": "library.large-list.fixture-foldered-files-in-folders",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.large-list.fixture-foldered-folders-created",
                 "library.large-list.fixture-foldered-file-count"
               ]
@@ -8749,6 +8769,7 @@
             {
               "id": "library.large-list.fixture-foldered-folder-counts",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.large-list.fixture-foldered-file-count",
                 "library.large-list.fixture-foldered-files-in-folders"
               ]
@@ -8756,6 +8777,7 @@
             {
               "id": "library.large-list.fixture-foldered-values-written",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.large-list.fixture-foldered-columns-created",
                 "library.large-list.fixture-foldered-file-count"
               ]
@@ -8763,6 +8785,7 @@
             {
               "id": "library.large-list.fixture-foldered-distribution",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.large-list.fixture-foldered-file-count",
                 "library.large-list.fixture-foldered-values-written"
               ]
