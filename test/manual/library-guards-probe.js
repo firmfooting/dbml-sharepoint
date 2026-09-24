@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: THE THREE GUARDS LIBRARY SUPPORT HOLDS CLOSED
  *
- * REVISION: 8a1ee3a3
+ * REVISION: cee72814
  *
  * ONE QUESTION:
  *   Can the deploy open the three doors it keeps shut on a document library
@@ -448,7 +448,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 8a1ee3a3. Quote this when reporting results.');
+  log('INFO', 'probe revision cee72814. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Guards List';
   const LIB = 'dbmlsp Probe Guards Library';
@@ -882,7 +882,7 @@
   };
   const ensureView = async (title, extra) => {
     const have = await spGet(`${libPath}/views/getbytitle('${title}')?$select=Title`);
-    if (have.ok) return { ok: true, status: have.status, text: 'already present' };
+    if (have.ok) return { ok: true, already: true, status: have.status, text: 'already present' };
     digest = await getDigest();
     return spPost(`${libPath}/views`,
       { __metadata: { type: 'SP.View' }, Title: title, PersonalView: false, ...extra },
@@ -892,12 +892,19 @@
   const SCOPE_MERGE_VIEW = 'dbmlsp guards scope merge';
 
   const madeWithScope = await ensureView(SCOPE_CREATE_VIEW, { Scope: RECURSIVE });
-  const createScope = madeWithScope.ok ? await readScope(SCOPE_CREATE_VIEW) : null;
-  record('library.view.scope-on-create-reads-back', Q.scopeCreate,
-         madeWithScope.ok
-           ? (createScope === RECURSIVE ? 'STICKS' : 'ACCEPTED BUT DIFFERENT')
-           : (isRefusal(madeWithScope.status) ? 'REFUSED' : 'NOT ESTABLISHED'),
-         `POST views with Scope ${RECURSIVE} answered ${short(madeWithScope)}; Scope reads back ${JSON.stringify(createScope)}`);
+  if (madeWithScope.already) {
+    // A view an earlier run left answers for a POST this run never sent.
+    voidDependents(['library.view.scope-on-create-reads-back'],
+      `a view titled '${SCOPE_CREATE_VIEW}' was already present, so this run sent no create with Scope; `
+      + 'set CLEANUP = true to recycle the library first');
+  } else {
+    const createScope = madeWithScope.ok ? await readScope(SCOPE_CREATE_VIEW) : null;
+    record('library.view.scope-on-create-reads-back', Q.scopeCreate,
+           madeWithScope.ok
+             ? (createScope === RECURSIVE ? 'STICKS' : 'ACCEPTED BUT DIFFERENT')
+             : (isRefusal(madeWithScope.status) ? 'REFUSED' : 'NOT ESTABLISHED'),
+           `POST views with Scope ${RECURSIVE} answered ${short(madeWithScope)}; Scope reads back ${JSON.stringify(createScope)}`);
+  }
 
   const madeBare = await ensureView(SCOPE_MERGE_VIEW, {});
   if (!madeBare.ok) {
