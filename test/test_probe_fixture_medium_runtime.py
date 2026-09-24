@@ -1,4 +1,4 @@
-"""Execute the large-list builders and the document-library probes of #559 against a mock.
+"""Execute the large-list builders, the document-library and the generic-list probes of #559.
 
 Each probe reused a container found by title and recorded it 'ALREADY
 PRESENT', or took a PASS from the create's status, without reading anything
@@ -7,12 +7,28 @@ the wrong kind voids exactly the rows the catalogue says rest on it and is
 never written to.
 """
 
+import json
 import textwrap
 from typing import Any
 
 import pytest
-from _node import NODE
+from _node import NODE, run_node
+from _paths import MANUAL
 from test_probe_fixture_runtime import _catalogued_dependents, _run_probe, _void_ids
+from test_probe_library_identity_runtime import _SITE_MOCK
+from test_probe_library_identity_runtime import _run as _run_on_site
+from test_probe_runtime import (
+    _CALC_CHOICE_HARNESS,
+    _CALC_CHOICE_HEALTHY,
+    _CROSS_WEB_HARNESS,
+    _CROSS_WEB_HEALTHY,
+    _TRANSITION_HARNESS,
+    _TRANSITION_HEALTHY,
+    _fixture_probe_js,
+    _fixture_rows,
+)
+from test_probe_runtime import _HARNESS as _THRESHOLD_INDEX_HARNESS
+from test_probe_runtime import _HEALTHY as _THRESHOLD_INDEX_HEALTHY
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
@@ -505,3 +521,641 @@ def test_threshold_keeps_settled_fixtures_when_the_root_folder_read_fails() -> N
     assert rows["library.index.fixture-file-count"]["outcome"] == "ABORTED"
     assert "RootFolder" in rows["library.index.fixture-file-count"]["evidence"]
     assert not [r for r in sent if "/Files/add" in r["path"]]
+
+
+# --------------------------------------------------------------------------
+# The generic-list probes (#559 part C).
+# --------------------------------------------------------------------------
+#: Generic lists with their fields and items. A field is served with the
+#: properties SP.Field carries, projected by $select; an item POST naming a
+#: column the list lacks is refused, and so is a MERGE naming a property the
+#: entity lacks. A [today] default fills a REST create only when `fillToday`
+#: says so, since that is the question today-source asks.
+_LIST_MOCK = textwrap.dedent(r"""
+    const CONFIG = __CONFIG__;
+    globalThis._spPageContextInfo = window._spPageContextInfo;
+    const lists = new Map();
+    let nextList = 1;
+    const respond = (status, payload, verbose = false) => {
+      const body = verbose ? { d: payload } : payload;
+      return { ok: status >= 200 && status < 300, status,
+        headers: { get: () => 'Thu, 24 Sep 2026 09:00:00 GMT' },
+        json: async () => body, text: async () => JSON.stringify(body) };
+    };
+    const refusal = (status, value) => respond(status, { 'odata.error': { message: { value } } });
+    const KINDS = { 2: 'Text', 3: 'Note', 4: 'DateTime', 6: 'Choice', 7: 'Lookup', 8: 'Boolean',
+      9: 'Number', 20: 'User' };
+    const FIELD_PROPS = new Set(['Title', 'Description', 'Required', 'Hidden', 'Indexed',
+      'EnforceUniqueValues', 'ValidationFormula', 'ValidationMessage', 'Sealed', 'DefaultValue',
+      'DefaultFormula', 'ClientValidationFormula', 'DisplayFormat', 'Choices', 'FillInChoice']);
+    const LIST_PROPS = new Set(['Title', 'Description', 'ValidationFormula', 'ValidationMessage']);
+    const newField = (name, props) => ({ InternalName: name, Title: name, TypeAsString: 'Text',
+      Required: false, Hidden: false, FromBaseType: false, Sealed: false, ReadOnlyField: false,
+      CanBeDeleted: true, Indexed: false, EnforceUniqueValues: false, DefaultValue: null,
+      DefaultFormula: null, ValidationFormula: null, Description: '', ...props });
+    const newList = (title, template, description) => {
+      const n = nextList;
+      nextList += 1;
+      const list = { Id: `0000000${n}-aaaa-bbbb-cccc-00000000000${n}`, Title: title,
+        BaseTemplate: template, Description: description || '', ValidationFormula: '',
+        fields: new Map([['Title', newField('Title', { FromBaseType: true })]]),
+        items: [], nextItem: 1 };
+      lists.set(title, list);
+      return list;
+    };
+    for (const [title, shape] of Object.entries(CONFIG.existing || {})) {
+      const list = newList(title, shape.template, shape.description);
+      for (const [name, props] of Object.entries(shape.fields || {})) {
+        list.fields.set(name, newField(name, props));
+      }
+    }
+    const project = (whole, rest) => {
+      const select = /[?&]\$select=([^&]+)/.exec(rest);
+      if (!select) return whole;
+      return Object.fromEntries(select[1].split(',').filter((name) => name in whole)
+        .map((name) => [name, whole[name]]));
+    };
+    const plain = (sent) => Object.fromEntries(Object.entries(sent)
+      .filter(([key]) => key !== '__metadata'));
+    const attr = (xml, name) => {
+      const found = new RegExp(` ${name}="([^"]*)"`).exec(xml);
+      return found ? found[1] : null;
+    };
+    const LIST = /^web\/lists\/getbytitle\('((?:[^']|'')+)'\)(.*)$/;
+    const FIELD = /^\/fields\/getbyinternalnameortitle\('([^']+)'\)(.*)$/;
+    const ITEM = /^\/items\((\d+)\)(.*)$/;
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const headers = opts.headers || {};
+      const method = opts.method || 'GET';
+      const verb = headers['X-HTTP-Method'] || method;
+      const verbose = String(headers.Accept || headers.accept || '').includes('verbose');
+      const raw = opts.body === undefined ? '' : String(opts.body);
+      let sent = {};
+      try { sent = raw ? JSON.parse(raw) : {}; } catch { sent = {}; }
+      const path = decodeURIComponent(String(url).split('/_api/')[1] || '');
+      SENT.push({ verb, path, body: raw });
+
+      if (path.startsWith('contextinfo')) {
+        return respond(200, { d: { GetContextWebInformation: { FormDigestValue: 'digest' } } });
+      }
+      if (/regionalsettings\/timezone/i.test(path)) {
+        return respond(200, { Description: '(UTC) Coordinated Universal Time',
+          Information: { Bias: 0, StandardBias: 0, DaylightBias: 0 } });
+      }
+      if (path.startsWith('SP.UserProfiles.PeopleManager/GetMyProperties')) {
+        return respond(200, { UserProfileProperties: [] });
+      }
+      if (path === 'web/lists' && method === 'POST') {
+        const made = newList(sent.Title, sent.BaseTemplate, sent.Description);
+        return respond(201, { Id: made.Id, Title: made.Title }, verbose);
+      }
+      const named = LIST.exec(path);
+      if (!named) return refusal(404, `unmocked ${path}`);
+      const list = lists.get(named[1].replace(/''/g, "'"));
+      if (!list) return refusal(404, 'List does not exist.');
+      const rest = named[2];
+      if (rest === '' || rest.startsWith('?')) {
+        if (verb === 'MERGE') {
+          const props = plain(sent);
+          const unknown = Object.keys(props).find((key) => !LIST_PROPS.has(key));
+          if (unknown) return refusal(400, `The property '${unknown}' does not exist.`);
+          Object.assign(list, props);
+          return respond(204, {});
+        }
+        const { fields, items, nextItem, ...whole } = list;
+        return respond(200, project({ ...whole, ItemCount: items.length,
+          ListItemEntityTypeFullName: 'SP.Data.ProbeListItem' }, rest), verbose);
+      }
+      if (rest === '/recycle' && method === 'POST') {
+        lists.delete(list.Title);
+        return respond(200, {});
+      }
+      if (rest === '/fields' && method === 'POST') {
+        const { FieldTypeKind, ...props } = plain(sent);
+        if (list.fields.has(props.Title)) return refusal(400, 'A duplicate field name was found.');
+        list.fields.set(props.Title, newField(props.Title, { ...props,
+          TypeAsString: KINDS[FieldTypeKind] }));
+        return respond(201, { InternalName: props.Title }, verbose);
+      }
+      if (rest === '/fields/createfieldasxml' && method === 'POST') {
+        const xml = String((sent.parameters || {}).SchemaXml || '');
+        const name = attr(xml, 'Name');
+        if (list.fields.has(name)) return refusal(400, 'A duplicate field name was found.');
+        const type = attr(xml, 'Type');
+        const format = attr(xml, 'Format');
+        list.fields.set(name, newField(name, { TypeAsString: type,
+          ...(type === 'DateTime' ? { DisplayFormat: format === 'DateOnly' ? 0 : 1 } : {}),
+          ...(type === 'Lookup' ? { LookupList: attr(xml, 'List') } : {}) }));
+        return respond(201, { InternalName: name }, verbose);
+      }
+      if (rest.startsWith('/fields?') || rest === '/fields') {
+        return respond(200, { value: [...list.fields.values()].map((f) => project(f, rest)) });
+      }
+      const field = FIELD.exec(rest);
+      if (field) {
+        const held = list.fields.get(field[1]);
+        if (!held) return refusal(400, `Column '${field[1]}' does not exist.`);
+        if (verb === 'MERGE') {
+          const props = plain(sent);
+          const unknown = Object.keys(props).find((key) => !FIELD_PROPS.has(key));
+          if (unknown) return refusal(400, `The property '${unknown}' does not exist.`);
+          Object.assign(held, props);
+          return respond(204, {});
+        }
+        if (verb === 'DELETE') {
+          list.fields.delete(field[1]);
+          return respond(200, {});
+        }
+        return respond(200, project(held, field[2]), verbose);
+      }
+      if (rest === '/items' && method === 'POST') {
+        if (CONFIG.refuseItems) return refusal(400, 'List data validation failed.');
+        const props = plain(sent);
+        const unknown = Object.keys(props).find((key) => !list.fields.has(key)
+          && !(key.endsWith('Id') && list.fields.has(key.slice(0, -2))));
+        if (unknown) {
+          return refusal(400, `The property '${unknown}' does not exist on the item type.`);
+        }
+        const item = { Id: list.nextItem, ...props };
+        list.nextItem += 1;
+        for (const held of list.fields.values()) {
+          if (held.InternalName === 'Title' || item[held.InternalName] !== undefined) continue;
+          const today = CONFIG.fillToday && held.DefaultValue === '[today]';
+          item[held.InternalName] = today ? '2026-09-24T00:00:00Z' : null;
+        }
+        list.items.push(item);
+        return respond(201, item, verbose);
+      }
+      const item = ITEM.exec(rest);
+      if (item) {
+        const held = list.items.find((row) => row.Id === Number(item[1]));
+        return held ? respond(200, project(held, item[2]), verbose)
+          : refusal(404, 'Item does not exist.');
+      }
+      if (rest.startsWith('/items')) {
+        return respond(200, { value: list.items.map((row) => project(row, rest)) }, verbose);
+      }
+      if (rest === '/getitems' && method === 'POST') return respond(200, { results: [] }, true);
+      return refusal(404, `unmocked ${path}`);
+    };
+""")
+
+#: Records every request, for the mocks of other modules that keep no log of their own.
+_RECORD = textwrap.dedent("""
+    const SENT_LOG = [];
+    process.on('exit', () => console.log('__SENT__' + JSON.stringify(SENT_LOG)));
+    const mockedFetch = globalThis.fetch;
+    globalThis.fetch = async (url, opts = {}) => {
+      SENT_LOG.push({ verb: (opts.headers || {})['X-HTTP-Method'] || opts.method || 'GET',
+        path: decodeURIComponent(String(url).split('/_api/')[1] || ''),
+        body: opts.body === undefined ? '' : String(opts.body) });
+      return mockedFetch(url, opts);
+    };
+""")
+
+
+def _run_recorded(
+    mock: str, config: dict[str, Any], probe: str,
+) -> tuple[dict[str, dict[str, str]], list[dict[str, str]]]:
+    """Run `probe` on a mock of another module, with every request it sends recorded."""
+    script = (mock.replace("__CONFIG__", json.dumps(config)) + _RECORD
+              + "\n" + _fixture_probe_js(MANUAL / probe))
+    output = run_node(script)
+    line = next(ln for ln in output.splitlines() if ln.startswith("__SENT__"))
+    return _fixture_rows(output), list(json.loads(line.removeprefix("__SENT__")))
+
+
+def _healthy(base: dict[str, Any], **changes: Any) -> dict[str, Any]:
+    config: dict[str, Any] = json.loads(json.dumps(base))
+    config.update(changes)
+    return config
+
+
+def _library(*titles: str) -> dict[str, Any]:
+    return {"existing": {title: {"template": 101} for title in titles}}
+
+
+def _nothing_written(sent: list[dict[str, str]]) -> bool:
+    return not [r for r in sent if r["verb"] != "GET" and not r["path"].startswith("contextinfo")]
+
+
+def _assert_held(rows: dict[str, dict[str, str]], fixture: str) -> None:
+    assert rows[fixture]["outcome"] == "PASS", rows[fixture]
+    assert not _voided_by(rows, fixture)
+
+
+def _assert_voids_catalogued(
+    rows: dict[str, dict[str, str]], probe: str, fixture: str, named: str,
+) -> None:
+    assert rows[fixture]["outcome"] == "FAIL", rows[fixture]
+    assert named in rows[fixture]["evidence"], rows[fixture]
+    assert _voided_by(rows, fixture) == _catalogued_dependents(probe, fixture)
+
+
+#: Each generic-list probe on the generic mock: the fixture, and every title it reads back.
+_GENERIC_LIST_PROBES = {
+    "default-formula-functions-probe.js": (
+        "field.default-formula.fixture-list-created", ["dbmlsp Probe Functions List"]),
+    "blank-operand-probe.js": (
+        "formula.validation.fixture-list-created", ["dbmlsp Probe Blank Operand"]),
+    "field-sealed-probe.js": ("field.sealed.fixture-list-created", ["dbmlsp Probe Sealed Field"]),
+    "unique-blanks-probe.js": ("field.unique.fixture-list-created", ["dbmlsp Probe Unique List"]),
+    "lookup-acl-probe.js": (
+        "access.lookup-acl.fixture-lists-created",
+        ["dbmlsp Probe LookupTarget", "dbmlsp Probe LookupSource"]),
+}
+_GENERIC_CASES = [(probe, fixture, title)
+                  for probe, (fixture, titles) in _GENERIC_LIST_PROBES.items()
+                  for title in titles]
+
+
+@pytest.mark.parametrize(("probe", "fixture", "title"), _GENERIC_CASES,
+                         ids=[f"{p}:{t}" for p, _, t in _GENERIC_CASES])
+def test_a_library_under_a_generic_list_name_voids_its_rows(
+    probe: str, fixture: str, title: str,
+) -> None:
+    rows, sent = _run_probe(_LIST_MOCK, _library(title), probe)
+
+    _assert_voids_catalogued(rows, probe, fixture, "BaseTemplate differs: read 101, declared 100")
+    assert not _writes_to(sent, title, uploads=False)
+    assert not [r for r in rows.values() if r["state"] == "open"]
+
+
+@pytest.mark.parametrize("probe", list(_GENERIC_LIST_PROBES))
+@pytest.mark.parametrize("reused", [False, True], ids=["created", "reused"])
+def test_a_generic_list_that_holds_establishes(probe: str, reused: bool) -> None:
+    fixture, titles = _GENERIC_LIST_PROBES[probe]
+    config = {"existing": {t: {"template": 100} for t in titles}} if reused else {}
+    rows, _ = _run_probe(_LIST_MOCK, config, probe)
+
+    _assert_held(rows, fixture)
+    assert "BaseTemplate=100" in rows[fixture]["evidence"]
+
+
+# ---- Columns reused by name, read back as their declared shape -----------
+_FUNCTIONS = "default-formula-functions-probe.js"
+_FUNCTIONS_LIST = "dbmlsp Probe Functions List"
+_FUNCTIONS_COLUMNS = "field.default-formula.fixture-columns-typed"
+
+
+@pytest.mark.parametrize(
+    ("props", "named"),
+    [({"TypeAsString": "Text", "DefaultFormula": "=DAY(TODAY())"},
+      'FnDay.TypeAsString differs: read "Text", declared "Number"'),
+     ({"TypeAsString": "Number", "DefaultFormula": "=1"},
+      'FnDay.DefaultFormula differs: read "=1", declared "=DAY(TODAY())"')],
+    ids=["type", "formula"],
+)
+def test_functions_voids_the_fills_on_a_reused_column_of_another_shape(
+    props: dict[str, Any], named: str,
+) -> None:
+    config = {"existing": {_FUNCTIONS_LIST: {"template": 100, "fields": {"FnDay": props}}}}
+    rows, sent = _run_probe(_LIST_MOCK, config, _FUNCTIONS)
+
+    _assert_voids_catalogued(rows, _FUNCTIONS, _FUNCTIONS_COLUMNS, named)
+    # The negative control's item is the only one sent; no bare item is created.
+    items = [r for r in sent if r["verb"] == "POST" and r["path"].endswith("/items")]
+    assert len(items) == 1, items
+    assert "dbmlspNoSuchColumn" in items[0]["body"], items
+
+
+@pytest.mark.parametrize("reused", [False, True], ids=["created", "reused"])
+def test_functions_establishes_columns_of_the_declared_shape(reused: bool) -> None:
+    fields = {"FnDay": {"TypeAsString": "Number", "DefaultFormula": "=DAY(TODAY())"}}
+    config = {"existing": {_FUNCTIONS_LIST: {"template": 100, "fields": fields}}}
+    rows, _ = _run_probe(_LIST_MOCK, config if reused else {}, _FUNCTIONS)
+
+    _assert_held(rows, _FUNCTIONS_COLUMNS)
+    evidence = rows[_FUNCTIONS_COLUMNS]["evidence"]
+    assert "FnDateTime.DisplayFormat=1" in evidence
+    # A reused column's formula is a precondition; a created one's is the observation.
+    assert ("FnDay.DefaultFormula" in evidence) is reused
+
+
+_UNIQUE = "unique-blanks-probe.js"
+_UNIQUE_COLUMN = "field.unique.fixture-unique-text-column"
+
+
+def _unique(column: dict[str, Any]) -> dict[str, Any]:
+    return {"existing": {"dbmlsp Probe Unique List": {
+        "template": 100, "fields": {"UniqueRef": column}}}}
+
+
+def test_unique_blanks_voids_its_rows_on_a_reused_column_of_another_type() -> None:
+    column = {"TypeAsString": "Note", "EnforceUniqueValues": True, "Indexed": True}
+    rows, sent = _run_probe(_LIST_MOCK, _unique(column), _UNIQUE)
+
+    _assert_voids_catalogued(rows, _UNIQUE, _UNIQUE_COLUMN,
+                             'TypeAsString differs: read "Note", declared "Text"')
+    assert not [r for r in sent if r["verb"] != "GET" and "UniqueRef" in r["body"]]
+
+
+@pytest.mark.parametrize("reused", [False, True], ids=["created", "reused"])
+def test_unique_blanks_establishes_a_unique_indexed_text_column(reused: bool) -> None:
+    column = {"TypeAsString": "Text", "EnforceUniqueValues": True, "Indexed": True}
+    rows, _ = _run_probe(_LIST_MOCK, _unique(column) if reused else {}, _UNIQUE)
+
+    _assert_held(rows, _UNIQUE_COLUMN)
+
+
+_SEALED = "field-sealed-probe.js"
+_SEALED_SUBJECT = "field.sealed.fixture-subject-column"
+
+
+def _sealed(subject_type: str) -> dict[str, Any]:
+    return {"existing": {"dbmlsp Probe Sealed Field": {
+        "template": 100, "fields": {"SealSubject": {"TypeAsString": subject_type}}}}}
+
+
+def test_field_sealed_voids_its_rows_on_a_reused_subject_that_is_not_text() -> None:
+    rows, sent = _run_probe(_LIST_MOCK, _sealed("Note"), _SEALED)
+
+    subject = rows[_SEALED_SUBJECT]
+    assert subject["outcome"] == "FAIL", subject
+    assert 'TypeAsString="Note"' in subject["evidence"], subject
+    assert _void_ids(rows) == _catalogued_dependents(_SEALED, _SEALED_SUBJECT)
+    assert not [r for r in sent if r["verb"] in {"MERGE", "DELETE"}]
+
+
+@pytest.mark.parametrize("reused", [False, True], ids=["created", "reused"])
+def test_field_sealed_establishes_an_unsealed_text_subject(reused: bool) -> None:
+    rows, _ = _run_probe(_LIST_MOCK, _sealed("Text") if reused else {}, _SEALED)
+
+    assert rows[_SEALED_SUBJECT]["outcome"] == "PASS", rows[_SEALED_SUBJECT]
+
+
+# ---- today-source: DM, TD, and what the REST fill records ----------------
+_TODAY = "today-source-probe.js"
+_DM = "query.caml-adhoc.fixture-dm-column"
+_TD = "field.date.fixture-td-column"
+_FILL = "field.date.dynamic-default-rest-fill"
+_TODAY_GATES = ("CONFIRMED", "ALLOW_WRITES", "ADD_DEFAULT_COLUMN")
+_DATE = {"TypeAsString": "DateTime", "DisplayFormat": 0}
+_TD_HEALTHY = {**_DATE, "DefaultValue": "[today]"}
+
+
+def _today(fields: dict[str, Any], **changes: Any) -> dict[str, Any]:
+    return {"existing": {"dbml-probe-today-semantics": {"template": 100, "fields": fields}},
+            **changes}
+
+
+#: What a column of each name is written with: DM seeds two dated rows, TD's row is bare.
+_TODAY_WRITES = {_DM: '"DM":', _TD: '"Title":"default-today"'}
+
+
+@pytest.mark.parametrize(
+    ("fixture", "fields", "named"),
+    [(_DM, {"DM": {**_DATE, "DisplayFormat": 1}}, "DisplayFormat differs: read 1, declared 0"),
+     (_TD, {"DM": _DATE, "TD": {**_TD_HEALTHY, "DefaultValue": None}},
+      'DefaultValue differs: read null, declared "[today]"'),
+     (_TD, {"DM": _DATE, "TD": {**_TD_HEALTHY, "TypeAsString": "Text"}},
+      'TypeAsString differs: read "Text", declared "DateTime"')],
+    ids=["dm-date-and-time", "td-no-default", "td-text"],
+)
+def test_today_source_voids_the_rows_on_a_reused_column_of_another_shape(
+    fixture: str, fields: dict[str, Any], named: str,
+) -> None:
+    rows, sent = _run_probe(_LIST_MOCK, _today(fields), _TODAY, _TODAY_GATES)
+
+    _assert_voids_catalogued(rows, _TODAY, fixture, named)
+    assert not [r for r in sent if r["verb"] == "POST" and _TODAY_WRITES[fixture] in r["body"]]
+
+
+@pytest.mark.parametrize("reused", [False, True], ids=["created", "reused"])
+def test_today_source_establishes_dm_and_td_of_the_declared_shape(reused: bool) -> None:
+    fields = {"DM": _DATE, "TD": _TD_HEALTHY} if reused else {}
+    rows, _ = _run_probe(_LIST_MOCK, _today(fields), _TODAY, _TODAY_GATES)
+
+    _assert_held(rows, _DM)
+    _assert_held(rows, _TD)
+
+
+@pytest.mark.parametrize(("fill", "outcome"), [(True, "FILLED"), (False, "BLANK")])
+def test_today_source_records_the_rest_fill_from_the_item_it_read_back(
+    fill: bool, outcome: str,
+) -> None:
+    """The item carried no TD, so what TD reads back is the answer; a literal PASS said nothing."""
+    rows, _ = _run_probe(_LIST_MOCK, _today({}, fillToday=fill), _TODAY, _TODAY_GATES)
+
+    row = rows[_FILL]
+    assert row["outcome"] == outcome, row
+    assert row["state"] == "settled", row
+    assert f"TD ([today]) = {'2026-09-24T00:00:00Z' if fill else 'null'}" in row["evidence"]
+
+
+def test_today_source_leaves_the_rest_fill_open_when_the_item_is_refused() -> None:
+    """A refused create observed no fill, so it is neither FAIL nor an answer."""
+    rows, _ = _run_probe(_LIST_MOCK, _today({}, refuseItems=True), _TODAY, _TODAY_GATES)
+
+    _assert_held(rows, _TD)
+    assert rows[_FILL]["outcome"] == "NOT ESTABLISHED", rows[_FILL]
+    assert rows[_FILL]["state"] == "open", rows[_FILL]
+
+
+def test_today_source_does_not_ask_the_fill_without_add_default_column() -> None:
+    rows, sent = _run_probe(_LIST_MOCK, _today({"DM": _DATE}), _TODAY)
+
+    assert rows[_TD]["outcome"] == "NOT REACHED", rows[_TD]
+    assert rows[_FILL]["outcome"] == "NOT REACHED", rows[_FILL]
+    assert not [r for r in sent if "TD" in r["body"]]
+
+
+# ---- calculated-operand, on the shared-v2 core ---------------------------
+_OPERAND = "calculated-operand-probe.js"
+_OPERAND_ROW = "formula.calc.fixture-lists-created"
+_OPERAND_OWNER = "dbml-sharepoint calculated-operand probe. Safe to recycle."
+_OPERAND_LISTS = ("dbmlsp Probe CalcOperands", "dbmlsp Probe CalcOperands Target")
+_V2_WINDOW = (
+    "globalThis.window = { location: { origin: 'https://example.sharepoint.com' }, "
+    "_spPageContextInfo: { webServerRelativeUrl: '/sites/test', "
+    "webAbsoluteUrl: 'https://example.sharepoint.com/sites/test' } };\n"
+    "const SENT = [];\n"
+    "process.on('exit', () => console.log('__SENT__' + JSON.stringify(SENT)));\n"
+)
+
+
+def _run_operand(
+    existing: dict[str, int],
+) -> tuple[dict[str, dict[str, str]], list[dict[str, str]]]:
+    """The v2 core prints its table through console.table, so the dump is spliced there."""
+    js = (MANUAL / _OPERAND).read_text(encoding="utf-8")
+    for gate in ("CONFIRMED", "ALLOW_WRITES"):
+        opened = js.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
+        assert opened != js, f"the {gate} gate is not spelled as this test expects"
+        js = opened
+    js = js.replace("console.table(results);",
+                    "console.log('__ROWS__' + JSON.stringify(results)); console.table(results);")
+    config = {"existing": {title: {"template": template, "description": _OPERAND_OWNER}
+                           for title, template in existing.items()}}
+    output = run_node(_V2_WINDOW + _LIST_MOCK.replace("__CONFIG__", json.dumps(config))
+                      + "\n" + js)
+    table = [ln for ln in output.splitlines() if ln.startswith("__ROWS__")][-1]
+    rows = {row["id"]: {"outcome": row["observed"], "evidence": row["detail"],
+                        "state": row["state"]}
+            for row in json.loads(table.removeprefix("__ROWS__"))}
+    sent = next(ln for ln in output.splitlines() if ln.startswith("__SENT__"))
+    return rows, list(json.loads(sent.removeprefix("__SENT__")))
+
+
+@pytest.mark.parametrize("title", _OPERAND_LISTS, ids=["main", "target"])
+def test_calculated_operand_voids_every_operand_on_a_library_of_a_list_name(title: str) -> None:
+    rows, sent = _run_operand({title: 101})
+
+    row = rows[_OPERAND_ROW]
+    assert row["outcome"] == "FAIL", row
+    assert f"'{title}' BaseTemplate=101" in row["evidence"], row
+    voided = {row_id for row_id, r in rows.items() if r["state"] == "void"}
+    assert voided == _catalogued_dependents(_OPERAND, _OPERAND_ROW)
+    assert not [r for r in sent if "createfieldasxml" in r["path"]]
+
+
+@pytest.mark.parametrize("reused", [False, True], ids=["created", "reused"])
+def test_calculated_operand_establishes_two_generic_lists(reused: bool) -> None:
+    rows, _ = _run_operand(dict.fromkeys(_OPERAND_LISTS, 100) if reused else {})
+
+    assert rows[_OPERAND_ROW]["outcome"] == "PASS", rows[_OPERAND_ROW]
+    assert not [r for r in rows.values() if r["state"] == "void"]
+
+
+# ---- The probes that keep a runtime mock of their own ---------------------
+_CHOICE = "calculated-choice-operand.js"
+_CHOICE_LIST = "dbmlsp Probe CalcChoice"
+_CHOICE_ROW = "formula.choice.fixture-list-created"
+_CHOICE_TARGET_ROW = "formula.calc.fixture-target-list-created"
+
+
+@pytest.mark.parametrize(
+    ("title", "fixture"),
+    [(_CHOICE_LIST, _CHOICE_ROW), (f"{_CHOICE_LIST} Target", _CHOICE_TARGET_ROW)],
+    ids=["list", "target"],
+)
+def test_calc_choice_voids_the_rows_on_a_library_under_a_list_name(
+    title: str, fixture: str,
+) -> None:
+    config = _healthy(_CALC_CHOICE_HEALTHY, existingLists=[title], listTemplates={title: 101})
+    rows, sent = _run_recorded(_CALC_CHOICE_HARNESS, config, _CHOICE)
+
+    _assert_voids_catalogued(rows, _CHOICE, fixture, "BaseTemplate differs: read 101, declared 100")
+    assert not _writes_to(sent, title, uploads=False)
+    # Only the lookup leg rests on the target, and no lookup is pointed at it.
+    assert not [r for r in sent if _LOOKUP_CREATE in r["body"]]
+
+
+@pytest.mark.parametrize("reused", [False, True], ids=["created", "reused"])
+def test_calc_choice_establishes_its_two_generic_lists(reused: bool) -> None:
+    lists = [_CHOICE_LIST, f"{_CHOICE_LIST} Target"] if reused else []
+    rows, _ = _run_recorded(_CALC_CHOICE_HARNESS,
+                            _healthy(_CALC_CHOICE_HEALTHY, existingLists=lists), _CHOICE)
+
+    _assert_held(rows, _CHOICE_ROW)
+    _assert_held(rows, _CHOICE_TARGET_ROW)
+
+
+_TRANSITION = "unique-transition-probe.js"
+_TRANSITION_ROW = "field.unique.fixture-transition-list"
+
+
+def test_unique_transition_voids_its_rows_on_a_library_under_its_name() -> None:
+    config = _healthy(_TRANSITION_HEALTHY, listExists=True, listTemplate=101)
+    rows, sent = _run_recorded(_TRANSITION_HARNESS, config, _TRANSITION)
+
+    _assert_voids_catalogued(rows, _TRANSITION, _TRANSITION_ROW,
+                             "BaseTemplate differs: read 101, declared 100")
+    assert _nothing_written(sent)
+
+
+@pytest.mark.parametrize("reused", [False, True], ids=["created", "reused"])
+def test_unique_transition_establishes_a_generic_list(reused: bool) -> None:
+    rows, _ = _run_recorded(_TRANSITION_HARNESS,
+                            _healthy(_TRANSITION_HEALTHY, listExists=reused), _TRANSITION)
+
+    _assert_held(rows, _TRANSITION_ROW)
+    _assert_held(rows, "field.unique.fixture-unconstrained-columns")
+
+
+_PROJECTED = "projected-lookup-probe.js"
+_PROJECTED_ROW = "field.lookup.fixture-lists-created"
+
+
+@pytest.mark.parametrize("title", ["dbmlsp Probe ProjTarget", "dbmlsp Probe ProjSource"],
+                         ids=["target", "source"])
+def test_projected_lookup_voids_its_rows_on_a_library_under_a_list_name(title: str) -> None:
+    config = _healthy(_CROSS_WEB_HEALTHY, listsExist=True, listTemplates={title: 101})
+    rows, sent = _run_recorded(_CROSS_WEB_HARNESS, config, _PROJECTED)
+
+    _assert_voids_catalogued(rows, _PROJECTED, _PROJECTED_ROW, f"'{title}' BaseTemplate=101")
+    assert _nothing_written(sent)
+
+
+@pytest.mark.parametrize("reused", [False, True], ids=["created", "reused"])
+def test_projected_lookup_establishes_two_generic_lists(reused: bool) -> None:
+    rows, _ = _run_recorded(_CROSS_WEB_HARNESS,
+                            _healthy(_CROSS_WEB_HEALTHY, listsExist=reused), _PROJECTED)
+
+    _assert_held(rows, _PROJECTED_ROW)
+    assert rows["field.lookup.control-primary-lookup-created"]["outcome"] == "PASS"
+
+
+_CROSS = "cross-lookup-probe.js"
+_CROSS_ROW = "library.lookup.fixture-lists-generic"
+
+
+@pytest.mark.parametrize("title", ["dbmlsp Probe XLookup Target", "dbmlsp Probe XLookup List"],
+                         ids=["target", "source"])
+def test_cross_lookup_voids_its_rows_on_a_library_under_a_list_name(title: str) -> None:
+    rows, sent = _run_on_site(_SITE_MOCK, {"lists": {title: 101}}, _CROSS)
+
+    _assert_voids_catalogued(rows, _CROSS, _CROSS_ROW,
+                             "BaseTemplate differs: read 101, declared 100")
+    assert not _writes_to(sent, title, uploads=False)
+    assert not [r for r in sent if "createfieldasxml" in r["path"]]
+
+
+@pytest.mark.parametrize("reused", [False, True], ids=["created", "reused"])
+def test_cross_lookup_establishes_its_generic_lists(reused: bool) -> None:
+    lists = {"dbmlsp Probe XLookup Target": 100, "dbmlsp Probe XLookup List": 100}
+    rows, _ = _run_on_site(_SITE_MOCK, {"lists": lists if reused else {}}, _CROSS)
+
+    _assert_held(rows, _CROSS_ROW)
+    assert rows["library.lookup.fixture-containers-ready"]["outcome"] == "PASS"
+
+
+# ---- threshold-index: both lists, the probe columns, and Parent's target --
+_THRESHOLD_INDEX = "threshold-index-probe.js"
+_TI_LISTS = "scale.threshold.fixture-lists-created"
+_TI_COLUMNS = "scale.index.fixture-columns-typed"
+
+
+@pytest.mark.parametrize(
+    ("changes", "fixture", "named"),
+    [({"mainTemplate": 101}, _TI_LISTS, "main.BaseTemplate differs: read 101, declared 100"),
+     ({"parentTemplate": 101}, _TI_LISTS, "parent.BaseTemplate differs: read 101, declared 100"),
+     ({"fieldTypes": {"ClosedAt": "Text"}}, _TI_COLUMNS,
+      'ClosedAt.TypeAsString differs: read "Text", declared "DateTime"'),
+     ({"parentLookup": "{0000000b-0000-4000-8000-00000000000b}"}, _TI_COLUMNS,
+      "Parent.LookupList differs"),
+     ({"parentLookup": "{00000000-0000-0000-0000-000000000000}"}, _TI_COLUMNS,
+      "Parent.LookupList differs")],
+    ids=["main-library", "parent-library", "column-type", "parent-bound-to-main",
+         "parent-unbound"],
+)
+def test_threshold_index_voids_every_row_on_a_fixture_that_does_not_hold(
+    changes: dict[str, Any], fixture: str, named: str,
+) -> None:
+    rows, sent = _run_recorded(_THRESHOLD_INDEX_HARNESS,
+                               _healthy(_THRESHOLD_INDEX_HEALTHY, **changes), _THRESHOLD_INDEX)
+
+    _assert_voids_catalogued(rows, _THRESHOLD_INDEX, fixture, named)
+    assert not [r for r in sent if r["verb"] == "MERGE" or "$batch" in r["path"]
+                or (r["verb"] == "POST" and r["path"].endswith("/items"))]
+
+
+def test_threshold_index_establishes_its_lists_and_columns() -> None:
+    """Parent's LookupList is served braced, and still matches the parent list's bare Id."""
+    rows, _ = _run_recorded(_THRESHOLD_INDEX_HARNESS, _healthy(_THRESHOLD_INDEX_HEALTHY),
+                            _THRESHOLD_INDEX)
+
+    _assert_held(rows, _TI_LISTS)
+    _assert_held(rows, _TI_COLUMNS)
+    assert rows["scale.index.fixture-indexes-set"]["outcome"] == "CONFIRMED"
