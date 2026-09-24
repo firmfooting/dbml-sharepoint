@@ -75,6 +75,10 @@ _HARNESS = textwrap.dedent(r"""
       lockReads: 0,
       // Which read of the items collection this is, for the same job.
       itemReads: 0,
+      // Which Sealed readback this is: the unseal's is the first, the re-seal's the second.
+      sealReads: 0,
+      // Which read of the fields collection this is: the menu's is the first.
+      fieldReads: 0,
     };
 
     const reply = (status, payload) => ({
@@ -109,6 +113,9 @@ _HARNESS = textwrap.dedent(r"""
           message: { value: 'something this script has never seen' },
         } });
       }
+      // A readback that REJECTS settles nothing, unlike any status it could have answered.
+      if (FLAGS.absentField === 'never-answers') throw new TypeError('Failed to fetch');
+      if (FLAGS.absentField === 'body-never-arrives') return bodyFails(400);
       return notFound('field');
     };
     const fieldById = (id) => state.fields.find((f) => f.Id === id);
@@ -204,16 +211,33 @@ _HARNESS = textwrap.dedent(r"""
               message: { value: 'Operation is not valid due to the current state of the object.' },
             } });
           }
+          if (FLAGS.fieldDeleteStatus) {
+            return reply(FLAGS.fieldDeleteStatus, { error: { message: { value: 'refused' } } });
+          }
           if (!FLAGS.discardDelete) f.deleted = true;
+          // Thrown after the delete is applied, so alone it is an answer lost and
+          // with `discardDelete` a delete SharePoint never took.
+          if (FLAGS.fieldDeleteThrows) throw new TypeError('Failed to fetch');
           return reply(200, {});
         }
         if (u.includes('$select=LookupList')) {
           const lookupList = f.lookupList ? `{${f.lookupList}}` : '';
           return reply(200, { d: { LookupList: lookupList, LookupField: 'Title' } });
         }
+        // A Sealed readback that FAILS, which is not one answering the write was discarded.
+        if (method === 'GET' && u.includes('$select=Id,Sealed')) {
+          state.sealReads += 1;
+          if (FLAGS.sealReadbackFailsAt === state.sealReads) {
+            return reply(500, { error: { message: { value: 'readback failed' } } });
+          }
+        }
         return reply(200, { d: fieldView(f) });
       }
       if (u.includes('/fields?')) {
+        state.fieldReads += 1;
+        if (FLAGS.fieldsReadFailsAt === state.fieldReads) {
+          return reply(500, { error: { message: { value: 'fields refused' } } });
+        }
         if (FLAGS.pageFields && !u.includes('field_page=2')) {
           return reply(200, { d: { results: [], __next: String(url) + '&field_page=2' } });
         }
@@ -271,6 +295,14 @@ _HARNESS = textwrap.dedent(r"""
           state.list.AllowDeletion = body.AllowDeletion;
         }
         return reply(204, {});
+      }
+      // protection.js's lock readback, failed while the MERGE before it kept whatever it wrote.
+      if (method === 'GET' && /\$select=AllowDeletion$/.test(u) && FLAGS.lockReadback) {
+        if (FLAGS.lockReadback === 'never-answers') throw new TypeError('Failed to fetch');
+        if (FLAGS.lockReadback === 'body-never-arrives') {
+          return { ...bodyFails(200), json: async () => { throw new TypeError('lost'); } };
+        }
+        return reply(500, { error: { message: { value: 'readback failed' } } });
       }
       if (u.includes('$select=AllowDeletion')) {
         const d = { AllowDeletion: state.list.AllowDeletion, ItemCount: state.items.length };
@@ -582,6 +614,60 @@ def test_a_seal_that_fails_part_way_reports_the_columns_it_did_seal() -> None:
     assert _merges_of(calls, "AllowDeletion") == [], "the run must stop before the next action"
 
 
+def _protection_output(
+    config: dict[str, Any], answers: list[str], flags: dict[str, Any] | None = None,
+) -> tuple[Run, str]:
+    """A protection run's summary and its log, from one execution."""
+    js = generate_protection_js(
+        site_url=SITE, list_title=LIST_SLUG, list_path=LIST_PATH,
+        generated_at=GENERATED_AT,
+    )
+    out = _run(_wrap(js, config, answers, flags))
+    return _parse(out), out
+
+
+@pytest.mark.parametrize("failure", ["fails", "never-answers", "body-never-arrives"])
+@pytest.mark.parametrize("applied", [True, False], ids=["answer-lost", "never-applied"])
+def test_a_lock_whose_readback_fails_is_recorded_as_outcome_unknown(
+    failure: str, applied: bool,
+) -> None:
+    """#573: the MERGE may have taken, so the run says it does not know.
+
+    Whether the write took and whether its readback failed are separate
+    flags, and the report is the same either way, because the script cannot
+    tell them apart and must not claim either.
+    """
+    flags: dict[str, Any] = {"lockReadback": failure, "discardListMerge": not applied}
+    (summary, calls, prompts, _tables), out = _protection_output(
+        _config(allow_deletion=True), ["lock", "seal"], flags,
+    )
+    assert summary["aborted"] == "outcome-unknown"
+    action = summary["actions"][0]
+    assert action == {
+        "action": "lock", "list": "APP_Thing", "requested": {"AllowDeletion": False},
+        "outcome": "unknown", "readback": action["readback"], "verified": False,
+    }
+    assert len(summary["actions"]) == 1
+    expected = {
+        "fails": "HTTP 500", "never-answers": "never answered",
+        "body-never-arrives": "body never arrived",
+    }[failure]
+    assert expected in action["readback"]
+    assert "OUTCOME UNKNOWN" in summary["errors"][0]["error"]
+    assert "leave the prompt blank" in out
+    assert _merges_of(calls, "Sealed") == [], "the run must stop before the next action"
+    assert len(prompts) == 1
+
+
+def test_a_lock_readback_that_answers_the_old_state_is_a_mismatch_not_unknown() -> None:
+    """A readback that ANSWERED is evidence, unlike one that failed."""
+    summary, _calls, _prompts, _tables = _protection(
+        _config(allow_deletion=True), ["lock", ""], {"discardListMerge": True},
+    )
+    assert summary["aborted"] == "readback-mismatch"
+    assert summary["actions"] == []
+
+
 def test_the_state_table_reports_the_custom_columns_and_the_marker() -> None:
     summary, _calls, _prompts, tables = _protection(_config(ours=False), [""])
     assert summary["list"]["provisioned_by_dbml_sharepoint"] is False
@@ -806,6 +892,9 @@ def test_an_unseal_that_does_not_take_stops_before_the_delete() -> None:
     assert summary["deleted"] == []
     assert summary["aborted"] == "readback-mismatch"
     assert "Sealed=true after writing false" in summary["errors"][0]["error"]
+    # Never applied, and the readback said so: there is nothing to re-seal (#573).
+    assert _sealed_now(calls, F_ONE) == [False]
+    assert summary["resealed"] is None
 
 
 def test_a_delete_readback_that_answers_400_is_recorded_as_deleted() -> None:
@@ -918,6 +1007,149 @@ def test_a_delete_that_still_reads_back_stops_the_run() -> None:
     assert summary["aborted"] == "readback-mismatch"
     assert len(_deletes(calls)) == 1
     assert len(prompts) == 2, "the run must stop rather than offer the menu again"
+
+
+def _columns_output(
+    config: dict[str, Any], answers: list[str], flags: dict[str, Any] | None = None,
+) -> tuple[Run, str]:
+    """A columns run's summary and its log, from one execution."""
+    js = generate_columns_js(
+        site_url=SITE, list_title=LIST_SLUG, list_path=LIST_PATH,
+        generated_at=GENERATED_AT,
+    )
+    out = _run(_wrap(js, config, answers, flags))
+    return _parse(out), out
+
+
+def _sealed_now(calls: list[dict[str, Any]], field_id: str) -> list[bool]:
+    """The Sealed value of every MERGE to one field, in order."""
+    return [
+        m["body"]["Sealed"] for m in _merges_of(calls, "Sealed") if field_id in m["url"]
+    ]
+
+
+_DELETE_ONE = ["ColumnOne", "ColumnOne", ""]
+
+
+def test_a_refused_delete_re_seals_the_column_and_reads_it_back() -> None:
+    """#573: the operator asked for a deletion, not for an unsealed column."""
+    config = _config(items=[{"Id": 1, "ColumnOne": None}])
+    (summary, calls, _prompts, _tables), out = _columns_output(
+        config, _DELETE_ONE, {"fieldDeleteStatus": 500},
+    )
+    assert _sealed_now(calls, F_ONE) == [False, True]
+    last_merge = calls.index(_merges_of(calls, "Sealed")[-1])
+    assert [i for i in _readbacks_of(calls, F_ONE, "$select=Id,Sealed") if i > last_merge], (
+        "the re-seal was not read back"
+    )
+    assert summary["aborted"] == "write-failed"
+    assert summary["deleted"] == []
+    assert summary["resealed"] is True
+    assert "DELETE refused: HTTP 500" in summary["errors"][0]["error"]
+    assert "Re-sealed 'ColumnOne'" in out
+    assert "LEFT UNSEALED" not in out
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        # The re-seal is the second field MERGE; the unseal before it takes.
+        {"discardFieldMerge": True, "discardFieldMergeAfter": 1},
+        # The re-seal's readback is the second Sealed read, and it fails.
+        {"sealReadbackFailsAt": 2},
+    ],
+    ids=["re-seal-discarded", "re-seal-unreadable"],
+)
+def test_a_refused_delete_whose_re_seal_fails_names_the_column_left_unsealed(
+    flags: dict[str, Any],
+) -> None:
+    config = _config(items=[{"Id": 1, "ColumnOne": None}])
+    (summary, calls, _prompts, _tables), out = _columns_output(
+        config, _DELETE_ONE, {"fieldDeleteStatus": 500, **flags},
+    )
+    assert _sealed_now(calls, F_ONE) == [False, True]
+    assert summary["resealed"] is False
+    assert summary["aborted"] == "write-failed"
+    error = next(ln for ln in out.splitlines() if "LEFT UNSEALED" in ln)
+    assert "[ERROR]" in error
+    assert "'ColumnOne' was not deleted and is LEFT UNSEALED" in error
+    assert "Sealed property" in error
+
+
+def test_a_delete_whose_answer_is_lost_is_settled_as_deleted_by_the_id() -> None:
+    config = _config(items=[{"Id": 1, "ColumnOne": None}])
+    (summary, calls, _prompts, _tables), out = _columns_output(
+        config, _DELETE_ONE, {"fieldDeleteThrows": True},
+    )
+    assert summary["deleted"] == ["ColumnOne"]
+    assert summary["errors"] == []
+    assert "aborted" not in summary
+    assert summary["resealed"] is None
+    assert _sealed_now(calls, F_ONE) == [False], "a deleted column has nothing to re-seal"
+    assert "[WARN] The DELETE of 'ColumnOne' never answered" in out
+
+
+def test_a_delete_that_never_answered_and_never_happened_re_seals_the_column() -> None:
+    config = _config(items=[{"Id": 1, "ColumnOne": None}])
+    (summary, calls, _prompts, _tables), out = _columns_output(
+        config, _DELETE_ONE, {"fieldDeleteThrows": True, "discardDelete": True},
+    )
+    assert summary["deleted"] == []
+    assert summary["aborted"] == "readback-mismatch"
+    assert "still reads back after the delete" in summary["errors"][0]["error"]
+    assert _sealed_now(calls, F_ONE) == [False, True]
+    assert summary["resealed"] is True
+    assert "Re-sealed 'ColumnOne'" in out
+
+
+def test_a_column_delete_that_never_answered_and_cannot_be_read_back_is_unknown() -> None:
+    """Gone, still there, or unknown: this is the third, and it is said as such."""
+    config = _config(items=[{"Id": 1, "ColumnOne": None}])
+    (summary, _calls, _prompts, _tables), out = _columns_output(
+        config, _DELETE_ONE, {"fieldDeleteThrows": True, "absentField": "never-answers"},
+    )
+    assert summary["deleted"] == []
+    assert summary["aborted"] == "write-failed"
+    assert "whether 'ColumnOne' is gone is unknown" in summary["errors"][0]["error"]
+    # The column is gone, so the re-seal cannot land, and the error claims no more than it knows.
+    assert summary["resealed"] is False
+    assert "could not be confirmed deleted, and if it survived it is LEFT UNSEALED" in out
+
+
+def test_a_column_readback_whose_body_never_arrives_is_settled_by_enumeration() -> None:
+    """The status alone cannot say which 400 it is, so the collection decides."""
+    config = _config(items=[{"Id": 1, "ColumnOne": None}])
+    (summary, _calls, _prompts, _tables), out = _columns_output(
+        config, _DELETE_ONE, {"absentField": "body-never-arrives"},
+    )
+    assert summary["deleted"] == ["ColumnOne"]
+    assert summary["errors"] == []
+    assert "absent from the fields collection" in out
+
+
+def test_a_column_delete_the_fields_collection_cannot_settle_is_unknown() -> None:
+    """The first fields read is the menu's; the second would settle the delete."""
+    config = _config(items=[{"Id": 1, "ColumnOne": None}])
+    (summary, _calls, _prompts, _tables), out = _columns_output(
+        config, _DELETE_ONE, {"absentField": "other400", "fieldsReadFailsAt": 2},
+    )
+    assert summary["deleted"] == []
+    assert summary["aborted"] == "write-failed"
+    assert "whether 'ColumnOne' is gone is unknown" in summary["errors"][0]["error"]
+    assert "could not be confirmed deleted, and if it survived it is LEFT UNSEALED" in out
+
+
+def test_an_unseal_whose_readback_fails_is_sealed_again_before_the_run_stops() -> None:
+    """Accepted with the answer lost: the unseal took, so it is put back."""
+    config = _config(items=[{"Id": 1, "ColumnOne": None}])
+    (summary, calls, _prompts, _tables), out = _columns_output(
+        config, _DELETE_ONE, {"sealReadbackFailsAt": 1},
+    )
+    assert _deletes(calls) == []
+    assert _sealed_now(calls, F_ONE) == [False, True]
+    assert summary["resealed"] is True
+    assert summary["aborted"] == "write-failed"
+    assert "Re-sealed 'ColumnOne'" in out
 
 
 def test_the_menu_is_re_enumerated_after_a_delete() -> None:

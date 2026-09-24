@@ -35,7 +35,9 @@
   const LIST_SLUG = {{ list_title | tojson }};
 
   const log = (level, msg) => console.log(`[SP-COLUMNS] [${level}] ${msg}`);
-  const summary = { list: null, deleted: [], skipped: [], errors: [] };
+  // `resealed` is null until a column this run unsealed has to be sealed again,
+  // then true once the seal reads back on and false when it could not be.
+  const summary = { list: null, deleted: [], skipped: [], errors: [], resealed: null };
 
 {% include "_site_guard.js.j2" %}
 
@@ -84,6 +86,13 @@
     return fields;
   }
 
+  // FLAGGED, so the re-seal reports a column that may already be gone as unknown rather than open.
+  const unsettled = (message) => {
+    const err = new Error(message);
+    err.deletionUnknown = true;
+    return err;
+  };
+
   // The delete's readback. Strict 404 read a successful delete as a failure
   // and aborted the run (#383, live 2026-09-03): the by-GUID read of a
   // just-deleted field answered HTTP 400, and each invocation deleted one
@@ -95,16 +104,68 @@
   // has not been measured, and absence enumerated is a measurement rather
   // than a claim about an error body. A delete that really failed still
   // finds the column there and still aborts.
-  async function confirmDeleted(field) {
-    const gone = await fetchWithRetry(fieldUrl(field.Id, '?$select=Id'), verbose());
+  async function confirmDeleted(field, what) {
+    const unknown = (why) => unsettled(
+      `the delete ${what}, and ${why}; whether '${field.InternalName}' is gone is unknown`);
+    let gone;
+    try {
+      gone = await fetchWithRetry(fieldUrl(field.Id, '?$select=Id'), verbose());
+    } catch (transport) {
+      throw unknown(`the readback that would confirm it never answered (${transport.message})`);
+    }
     if (gone.status === 404) return 'HTTP 404 on readback';
-    if (isAbsent400(gone.status, await gone.text())) {
+    // A body that never arrived falls through to the enumeration, which settles it either way.
+    if (isAbsent400(gone.status, await gone.text().catch(() => ''))) {
       return 'HTTP 400 absent-field on readback';
     }
-    if ((await readFields()).some((f) => f.InternalName === field.InternalName)) {
+    let present;
+    try {
+      present = (await readFields()).some((f) => f.InternalName === field.InternalName);
+    } catch (enumErr) {
+      throw unknown(`the fields collection that would settle it could not be read (${enumErr.message})`);
+    }
+    if (present) {
       throw mismatch(`'${field.InternalName}' still reads back after the delete (HTTP ${gone.status})`);
     }
     return `absent from the fields collection; the readback answered HTTP ${gone.status}`;
+  }
+
+  // A request that never came back is settled by the id, because a connection
+  // can drop after SharePoint has accepted the delete.
+  async function deleteColumn(field) {
+    const digest = await getDigest();
+    let r;
+    try {
+      r = await fetchWithRetry(fieldUrl(field.Id), {
+        method: 'POST',
+        headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE' }),
+      });
+    } catch (transport) {
+      log('WARN', `The DELETE of '${field.InternalName}' never answered (${transport.message}); `
+        + 'reading the column back by its id to settle whether it went.');
+      return confirmDeleted(field, `never answered (${transport.message})`);
+    }
+    if (!r.ok) throw new Error(`DELETE refused: HTTP ${r.status} ${spError(await r.text())}`);
+    return confirmDeleted(field, `answered HTTP ${r.status}`);
+  }
+
+  // The operator asked for a deletion, not for an unsealed column, so a column
+  // this run unsealed and did not delete is sealed again and read back.
+  async function reseal(field, unseal, err) {
+    const stranded = err.deletionUnknown
+      ? `'${field.InternalName}' could not be confirmed deleted, and if it survived it is LEFT UNSEALED`
+      : (unseal === 'off'
+        ? `'${field.InternalName}' was not deleted and is LEFT UNSEALED`
+        : `'${field.InternalName}' was not deleted, and whether it is LEFT UNSEALED is unknown`);
+    try {
+      await setSealed(field, true);
+      summary.resealed = true;
+      log('INFO', `Re-sealed '${field.InternalName}'; it is sealed as it was before the delete (read back).`);
+    } catch (resealErr) {
+      summary.resealed = false;
+      log('ERROR', `${stranded}: ${resealErr.message}. Check the column's Sealed property; `
+        + 'protection-script reports it.');
+    }
   }
 
   const hasValue = (v) => {
@@ -199,23 +260,29 @@
       log('INFO', `Skipped '${field.InternalName}'; nothing was written.`);
       continue;
     }
+    // What this run has done to the seal: 'untouched' until it tries to unseal,
+    // 'unknown' from that moment, and 'off' once a readback proves it came off.
+    let unseal = 'untouched';
     try {
       if (field.Sealed === true) {
-        await setSealed(field, false);
+        unseal = 'unknown';
+        try {
+          await setSealed(field, false);
+        } catch (err) {
+          // The one case needing no restore: the readback answered that the unseal was discarded.
+          if (err.readbackMismatch) unseal = 'untouched';
+          throw err;
+        }
+        unseal = 'off';
         log('INFO', `Unsealed '${field.InternalName}' (read back).`);
       }
-      const digest = await getDigest();
-      const r = await fetchWithRetry(fieldUrl(field.Id), {
-        method: 'POST',
-        headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE' }),
-      });
-      if (!r.ok) throw new Error(`DELETE refused: HTTP ${r.status} ${spError(await r.text())}`);
-      const how = await confirmDeleted(field);
+      const how = await deleteColumn(field);
       summary.deleted.push(field.InternalName);
       log('INFO', `Deleted '${field.InternalName}' and confirmed it is gone (${how}).`);
     } catch (err) {
       summary.errors.push({ column: field.InternalName, error: err.message });
       log('ERROR', `'${field.InternalName}': ${err.message}`);
+      if (unseal !== 'untouched') await reseal(field, unseal, err);
       return { ...summary, aborted: err.readbackMismatch ? 'readback-mismatch' : 'write-failed' };
     }
   }

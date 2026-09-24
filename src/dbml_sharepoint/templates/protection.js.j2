@@ -79,6 +79,28 @@
     return { meta, fields };
   }
 
+  // The lock readback as a value or a failure, since a failed read says nothing about the MERGE before it.
+  async function readLock() {
+    let r;
+    try {
+      r = await fetchWithRetry(apiUrl(`${listPath}?$select=AllowDeletion`), verbose());
+    } catch (transport) {
+      return { failed: `the read never answered: ${transport.message}` };
+    }
+    try {
+      if (!r.ok) return { failed: `HTTP ${r.status} ${spError(await r.text())}` };
+      return { AllowDeletion: (((await r.json()) || {}).d || {}).AllowDeletion };
+    } catch (body) {
+      return { failed: `HTTP ${r.status}, and its body never arrived: ${body.message}` };
+    }
+  }
+
+  const outcomeUnknown = (message) => {
+    const err = new Error(message);
+    err.outcomeUnknown = true;
+    return err;
+  };
+
   for (;;) {
     const state = await printState();
     const word = String(prompt(`Type lock, unlock, seal or unseal for '${LIST_TITLE}', or leave blank to finish:`) || '')
@@ -88,7 +110,17 @@
       if (word === 'lock' || word === 'unlock') {
         const want = word === 'unlock';
         await merge(listPath, { __metadata: { type: 'SP.List' }, AllowDeletion: want }, `'${LIST_TITLE}' AllowDeletion`);
-        const back = await getOne(`${listPath}?$select=AllowDeletion`, 'AllowDeletion readback');
+        const back = await readLock();
+        if (back.failed) {
+          // Recorded, because the MERGE may have taken even though nothing read it back.
+          summary.actions.push({
+            action: word, list: LIST_TITLE, requested: { AllowDeletion: want },
+            outcome: 'unknown', readback: back.failed, verified: false,
+          });
+          throw outcomeUnknown(`OUTCOME UNKNOWN: '${LIST_TITLE}' was sent AllowDeletion=${want}, and the `
+            + `readback that would confirm it failed (${back.failed}), so the write may or may not have `
+            + 'taken. Re-run this script and leave the prompt blank to see the actual state.');
+        }
         if (back.AllowDeletion !== want) {
           throw mismatch(`AllowDeletion reads back ${back.AllowDeletion} after writing ${want}`);
         }
@@ -119,7 +151,9 @@
     } catch (err) {
       summary.errors.push({ action: word, error: err.message });
       log('ERROR', `${word}: ${err.message}`);
-      return { ...summary, aborted: err.readbackMismatch ? 'readback-mismatch' : 'write-failed' };
+      const aborted = err.readbackMismatch ? 'readback-mismatch'
+        : (err.outcomeUnknown ? 'outcome-unknown' : 'write-failed');
+      return { ...summary, aborted };
     }
   }
 
