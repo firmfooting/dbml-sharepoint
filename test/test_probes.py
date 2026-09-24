@@ -601,6 +601,97 @@ def test_no_fixture_row_is_recorded_as_a_literal_pass() -> None:
     )
 
 
+#: A string literal 'ALREADY PRESENT' anywhere in an outcome, a ternary branch included.
+ALREADY_PRESENT = re.compile(r"(['\"`])ALREADY PRESENT\1")
+
+_DOC_LIB = "library.doc-lib.fixture-library-created"
+_DEFAULT_LIST = "field.default-formula.fixture-list-created"
+#: A ratchet of fixture rows that still record a reuse by title as 'ALREADY PRESENT'.
+#: Entries come out as each moves onto establishFixture, and none go in.
+ALREADY_PRESENT_FIXTURES = frozenset({
+    ("blank-operand-probe.js.j2", "formula.validation.fixture-list-created"),
+    ("default-formula-functions-probe.js.j2", _DEFAULT_LIST),
+    ("default-formula-readback-probe.js.j2", _DEFAULT_LIST),
+    ("default-formula-readback-probe.js.j2", _DOC_LIB),
+    ("field-sealed-probe.js.j2", "field.sealed.fixture-list-created"),
+    ("file-operations-probe.js.j2", _DOC_LIB),
+    ("folder-probe.js.j2", _DOC_LIB),
+    ("folder-shape-probe.js.j2", _DOC_LIB),
+    ("folder-under-schema-probe.js.j2", _DOC_LIB),
+    ("library-builtin-view-probe.js.j2", _DOC_LIB),
+    ("library-column-interactions-probe.js.j2", _DOC_LIB),
+    ("library-columns-probe.js.j2", _DOC_LIB),
+    ("library-content-type-probe.js.j2", _DOC_LIB),
+    ("library-field-probe.js.j2", _DOC_LIB),
+    ("library-form-probe.js.j2", _DOC_LIB),
+    ("library-formula-probe.js.j2", _DOC_LIB),
+    ("library-grouping-probe.js.j2", _DOC_LIB),
+    ("library-guards-probe.js.j2", _DEFAULT_LIST),
+    ("library-guards-probe.js.j2", _DOC_LIB),
+    ("library-header-token-probe.js.j2", _DOC_LIB),
+    ("library-index-probe.js.j2", _DOC_LIB),
+    ("library-index-threshold-probe.js.j2", _DOC_LIB),
+    ("library-nesting-probe.js.j2", _DOC_LIB),
+    ("library-query-probe.js.j2", _DOC_LIB),
+    ("library-view-interaction-probe.js.j2", _DOC_LIB),
+    ("library-view-search-probe.js.j2", _DOC_LIB),
+    ("unique-blanks-probe.js.j2", "field.unique.fixture-list-created"),
+    ("unique-transition-probe.js.j2", "field.unique.fixture-transition-list"),
+    ("view-scope-revert-probe.js.j2", _DOC_LIB),
+})
+
+
+def _already_present_fixtures(text: str) -> list[str]:
+    """Fixture ids this source can record as 'ALREADY PRESENT', as a literal or a branch."""
+    ids = []
+    for call in RECORD_ANYWHERE.finditer(_code_only(text)):
+        arguments = _arguments(text, call.end(), 3)
+        if len(arguments) < 3:
+            continue
+        fixture = _string_value(arguments[0])
+        if fixture and "fixture" in fixture and ALREADY_PRESENT.search(arguments[2]):
+            ids.append(fixture)
+    return ids
+
+
+def test_no_fixture_row_is_recorded_as_already_present() -> None:
+    """A container found by title is not the container declared until it is read back (#559)."""
+    offenders = []
+    allowed = set()
+    templates = sorted(TEMPLATES.glob("*.js.j2"))
+    assert len(templates) >= _MIN_TEMPLATES, f"only {len(templates)} templates scanned"
+    for path in templates:
+        for fixture in _already_present_fixtures(path.read_text(encoding="utf-8")):
+            if (path.name, fixture) in ALREADY_PRESENT_FIXTURES:
+                allowed.add((path.name, fixture))
+            else:
+                offenders.append(f"{path.name}: {fixture}")
+    assert not offenders, (
+        f"Fixture row(s) recorded as 'ALREADY PRESENT': {offenders}. Read the reused "
+        f"container back through establishFixture on reuse and on create alike."
+    )
+    assert allowed == ALREADY_PRESENT_FIXTURES, (
+        f"Stale ALREADY_PRESENT_FIXTURES entries, remove them: "
+        f"{sorted(ALREADY_PRESENT_FIXTURES - allowed)}"
+    )
+
+
+def test_the_already_present_detector_reads_the_shapes_it_claims_to() -> None:
+    text = """\
+      record('a.b.fixture-one', 'q', 'ALREADY PRESENT', 'e');
+      record('a.b.fixture-two', 'q',
+             x === null ? 'FAIL' : made === null ? "ALREADY PRESENT" : 'PASS', 'e');
+      record('a.b.fixture-three', `q ${x}`, `ALREADY PRESENT`, 'e');
+      record('a.b.control-four', 'q', 'ALREADY PRESENT', 'e');
+      record('a.b.fixture-five', 'q', 'FAIL', 'ALREADY PRESENT');
+      // record('a.b.fixture-six', 'q', 'ALREADY PRESENT', 'e');
+      record('a.b.fixture-seven', 'q', 'ALREADY PRESENT-ish', 'e');
+    """
+    assert _already_present_fixtures(text) == [
+        "a.b.fixture-one", "a.b.fixture-two", "a.b.fixture-three",
+    ]
+
+
 def test_the_literal_pass_detector_reads_the_shapes_it_claims_to() -> None:
     text = """\
       record('a.b.fixture-one', 'q', 'PASS', 'e');

@@ -2,7 +2,7 @@
  * dbml-sharepoint PROBE: BUILD THE LARGE LIBRARY THAT HOLDS ITS FILES IN
  * FOLDERS, AND THE SMALL LIBRARY THAT PAIRS WITH IT.
  *
- * REVISION: fefe90dd
+ * REVISION: 7573a73b
  *
  * THIS PROBE ANSWERS NO QUESTION ABOUT SHAREPOINT. It builds two document
  * libraries that a later probe measures, and every row it records is a
@@ -649,7 +649,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision fefe90dd. Quote this when reporting results.');
+  log('INFO', 'probe revision 7573a73b. Quote this when reporting results.');
 
   // The expensive half. Off, so a paste that only wants to check an
   // already-built fixture never starts five thousand uploads.
@@ -1015,16 +1015,20 @@
     const container = await ensureContainer(smallPath, SMALL, 101,
       'dbml-sharepoint multilevel group-by fixture. Deliberately under 5,000 files, with '
       + 'three columns for a three-level group-by. Do not delete and do not grow.');
-    record('library.large-list.fixture-multilevel-library-created',
-           `The small pairing library '${SMALL}' exists`,
-           container.id === null ? 'FAIL' : container.made === null ? 'ALREADY PRESENT' : 'PASS',
-           container.made === null && container.id !== null
-             ? `reusing '${SMALL}'. That is the intent here: the fixture is permanent and a `
-               + 'second paste resumes the build rather than starting one'
-             : container.note);
     if (container.id === null) {
+      record('library.large-list.fixture-multilevel-library-created',
+             `The small pairing library '${SMALL}' exists`, 'FAIL', container.note);
       abortSmall('library.large-list.fixture-multilevel-columns-created',
                  `the small library was never created: ${container.note}`);
+      return;
+    }
+    log('INFO', container.made === null
+      ? `reusing '${SMALL}': the fixture is permanent and a second paste resumes the build.`
+      : container.note);
+    // Read back on reuse as well as on create, because a list found by title may be a generic list.
+    if (!await establishFixture('library.large-list.fixture-multilevel-library-created',
+      () => spGet(`${smallPath}?$select=BaseTemplate`), { BaseTemplate: 101 },
+      MULTILEVEL_ROWS.map(([rowId]) => rowId))) {
       return;
     }
 
@@ -1275,16 +1279,20 @@
   const library = await ensureContainer(libPath, LIB, 101,
     'dbml-sharepoint foldered large-library fixture. Over 5,000 files in three folders, '
     + 'each folder under 5,000, group-by column indexed below 5,000. Do not delete.');
-  record('library.doc-lib.fixture-library-created',
-         'A document library is created (BaseTemplate 101)',
-         library.id === null ? 'FAIL' : library.made === null ? 'ALREADY PRESENT' : 'PASS',
-         library.made === null && library.id !== null
-           ? `reusing '${LIB}'. That is the intent here: the fixture is permanent and a `
-             + 'second paste resumes the build rather than starting one'
-           : library.note);
   if (library.id === null) {
+    record('library.doc-lib.fixture-library-created',
+           'A document library is created (BaseTemplate 101)', 'FAIL', library.note);
     return abortFrom('library.large-list.fixture-foldered-columns-created',
                      `the fixture library was never created: ${library.note}`);
+  }
+  log('INFO', library.made === null
+    ? `reusing '${LIB}': the fixture is permanent and a second paste resumes the build.`
+    : library.note);
+  // Read back on reuse as well as on create, because a list found by title may be a generic list.
+  if (!await establishFixture('library.doc-lib.fixture-library-created',
+    () => spGet(`${libPath}?$select=BaseTemplate`), { BaseTemplate: 101 },
+    FOLDERED_ROWS.map(([rowId]) => rowId))) {
+    return report();
   }
 
   // ---- fixture-foldered-columns-created --------------------------------
