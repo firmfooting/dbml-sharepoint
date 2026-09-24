@@ -57,7 +57,7 @@ globalThis.fetch = async (url, options = {}) => {
     }
     return response(200, item);
   }
-  if (path === "web/lists/getbytitle('dbmlsp Probe LibColInteractions')") {
+  if (path.split('?')[0] === "web/lists/getbytitle('dbmlsp Probe LibColInteractions')") {
     return response(200, {Id: 'library', BaseTemplate: 101});
   }
   throw new Error(`Unexpected request: ${options.method || 'GET'} ${path}`);

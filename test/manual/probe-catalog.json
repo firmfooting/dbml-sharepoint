@@ -1830,18 +1830,21 @@
             {
               "id": "library.file.control-missing-column-refused",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.file.upload-path-files-add"
               ]
             },
             {
               "id": "library.file.file-system-object-type",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.file.upload-path-files-add"
               ]
             },
             {
               "id": "library.file.versioning-read-back",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.file.upload-path-files-add",
                 "library.file.control-missing-column-refused"
               ]
@@ -1849,6 +1852,7 @@
             {
               "id": "library.file.check-out-check-in",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.file.upload-path-files-add",
                 "library.file.control-missing-column-refused"
               ]
@@ -1856,6 +1860,7 @@
             {
               "id": "library.file.file-rename",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.file.upload-path-files-add",
                 "library.file.name-field-is-leafref",
                 "library.file.control-missing-column-refused"
@@ -1864,6 +1869,7 @@
             {
               "id": "library.file.file-delete",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.file.upload-path-files-add",
                 "library.file.control-missing-column-refused"
               ]
@@ -1909,18 +1915,21 @@
             {
               "id": "library.folder.control-missing-column-refused",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.folder.creation-path"
               ]
             },
             {
               "id": "library.folder.filesystem-object-type",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.folder.creation-path"
               ]
             },
             {
               "id": "library.folder.carries-metadata",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.folder.creation-path",
                 "library.folder.control-missing-column-refused"
               ]
@@ -1928,6 +1937,7 @@
             {
               "id": "library.folder.name-field",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.folder.creation-path",
                 "library.folder.control-missing-column-refused"
               ]
@@ -1935,6 +1945,7 @@
             {
               "id": "library.folder.delete-recycles",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.folder.creation-path",
                 "library.folder.control-missing-column-refused"
               ]
@@ -3206,6 +3217,10 @@
               "depends_on": []
             },
             {
+              "id": "library.formula.fixture-target-list-created",
+              "depends_on": []
+            },
+            {
               "id": "library.formula.control-missing-column-refused",
               "depends_on": [
                 "library.doc-lib.fixture-library-created"
@@ -3222,7 +3237,8 @@
               "id": "library.formula.calc-choice-lookup-operand",
               "depends_on": [
                 "library.doc-lib.fixture-library-created",
-                "library.formula.control-missing-column-refused"
+                "library.formula.control-missing-column-refused",
+                "library.formula.fixture-target-list-created"
               ]
             },
             {
@@ -3236,6 +3252,7 @@
           "states": [],
           "controls": [
             "library.doc-lib.fixture-library-created",
+            "library.formula.fixture-target-list-created",
             "library.formula.control-missing-column-refused"
           ],
           "depends_on": []
@@ -3287,18 +3304,21 @@
             {
               "id": "library.view.control-missing-group-column-ungrouped",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.view.fixture-values-written"
               ]
             },
             {
               "id": "library.view.control-group-by-single-value-column",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.view.fixture-values-written"
               ]
             },
             {
               "id": "library.view.group-by-multi-value-choice",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.view.fixture-values-written",
                 "library.view.control-missing-group-column-ungrouped",
                 "library.view.control-group-by-single-value-column"
@@ -3307,6 +3327,7 @@
             {
               "id": "library.view.group-by-multi-value-lookup",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.view.fixture-multi-lookup-ready",
                 "library.view.control-missing-group-column-ungrouped",
                 "library.view.control-group-by-single-value-column"
@@ -3315,6 +3336,7 @@
             {
               "id": "library.view.group-by-lookup-column",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.view.fixture-values-written",
                 "library.view.control-missing-group-column-ungrouped",
                 "library.view.control-group-by-single-value-column"
@@ -3323,6 +3345,7 @@
             {
               "id": "library.view.group-by-null-title",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.view.fixture-values-written",
                 "library.view.control-missing-group-column-ungrouped",
                 "library.view.control-group-by-single-value-column"
@@ -3331,6 +3354,7 @@
             {
               "id": "library.view.group-by-name-column",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.view.fixture-values-written",
                 "library.view.control-missing-group-column-ungrouped",
                 "library.view.control-group-by-single-value-column"
@@ -3339,6 +3363,7 @@
             {
               "id": "library.view.multi-value-group-by-stored-on-view",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.view.fixture-values-written",
                 "library.view.control-missing-group-column-ungrouped",
                 "library.view.control-group-by-single-value-column"
@@ -3483,6 +3508,12 @@
               "depends_on": []
             },
             {
+              "id": "library.index.fixture-probe-columns-created",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
               "id": "library.index.fixture-file-count",
               "depends_on": [
                 "library.doc-lib.fixture-library-created"
@@ -3492,104 +3523,126 @@
               "id": "library.index.fixture-target-seeded",
               "depends_on": [
                 "library.doc-lib.fixture-library-created",
-                "library.index.fixture-file-count"
+                "library.index.fixture-file-count",
+                "library.index.fixture-probe-columns-created"
               ]
             },
             {
               "id": "library.index.control-small-library-shapes",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.index.fixture-file-count",
-                "library.index.fixture-target-seeded"
+                "library.index.fixture-target-seeded",
+                "library.index.fixture-probe-columns-created"
               ]
             },
             {
               "id": "library.index.control-threshold-id-served",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.index.fixture-file-count",
                 "library.index.fixture-target-seeded",
-                "library.index.control-small-library-shapes"
+                "library.index.control-small-library-shapes",
+                "library.index.fixture-probe-columns-created"
               ]
             },
             {
               "id": "library.index.control-unindexed-refused",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.index.fixture-file-count",
                 "library.index.fixture-target-seeded",
-                "library.index.control-small-library-shapes"
+                "library.index.control-small-library-shapes",
+                "library.index.fixture-probe-columns-created"
               ]
             },
             {
               "id": "library.index.control-unindexed-person-refused",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.index.fixture-file-count",
                 "library.index.fixture-target-seeded",
-                "library.index.control-small-library-shapes"
+                "library.index.control-small-library-shapes",
+                "library.index.fixture-probe-columns-created"
               ]
             },
             {
               "id": "library.index.threshold-filter-title",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.index.fixture-file-count",
                 "library.index.fixture-target-seeded",
                 "library.index.control-small-library-shapes",
                 "library.index.control-threshold-id-served",
-                "library.index.control-unindexed-refused"
+                "library.index.control-unindexed-refused",
+                "library.index.fixture-probe-columns-created"
               ]
             },
             {
               "id": "library.index.threshold-filter-name",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.index.fixture-file-count",
                 "library.index.fixture-target-seeded",
                 "library.index.control-small-library-shapes",
                 "library.index.control-threshold-id-served",
-                "library.index.control-unindexed-refused"
+                "library.index.control-unindexed-refused",
+                "library.index.fixture-probe-columns-created"
               ]
             },
             {
               "id": "library.index.threshold-filter-created",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.index.fixture-file-count",
                 "library.index.fixture-target-seeded",
                 "library.index.control-small-library-shapes",
                 "library.index.control-threshold-id-served",
-                "library.index.control-unindexed-refused"
+                "library.index.control-unindexed-refused",
+                "library.index.fixture-probe-columns-created"
               ]
             },
             {
               "id": "library.index.threshold-filter-modified",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.index.fixture-file-count",
                 "library.index.fixture-target-seeded",
                 "library.index.control-small-library-shapes",
                 "library.index.control-threshold-id-served",
-                "library.index.control-unindexed-refused"
+                "library.index.control-unindexed-refused",
+                "library.index.fixture-probe-columns-created"
               ]
             },
             {
               "id": "library.index.threshold-filter-author",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.index.fixture-file-count",
                 "library.index.fixture-target-seeded",
                 "library.index.control-small-library-shapes",
                 "library.index.control-threshold-id-served",
-                "library.index.control-unindexed-person-refused"
+                "library.index.control-unindexed-person-refused",
+                "library.index.fixture-probe-columns-created"
               ]
             },
             {
               "id": "library.index.threshold-filter-editor",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.index.fixture-file-count",
                 "library.index.fixture-target-seeded",
                 "library.index.control-small-library-shapes",
                 "library.index.control-threshold-id-served",
-                "library.index.control-unindexed-person-refused"
+                "library.index.control-unindexed-person-refused",
+                "library.index.fixture-probe-columns-created"
               ]
             }
           ],
           "states": [],
           "controls": [
             "library.doc-lib.fixture-library-created",
+            "library.index.fixture-probe-columns-created",
             "library.index.control-small-library-shapes",
             "library.index.control-threshold-id-served",
             "library.index.control-unindexed-refused",
@@ -4786,12 +4839,14 @@
             {
               "id": "library.folder.fixture-files-placed",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.folder.fixture-nested-folders-created"
               ]
             },
             {
               "id": "library.folder.nesting-depth",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.folder.fixture-nested-folders-created",
                 "library.folder.control-missing-parent-refused"
               ]
@@ -4799,6 +4854,7 @@
             {
               "id": "library.folder.file-in-nested-folder",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.folder.fixture-files-placed",
                 "library.folder.control-missing-parent-refused"
               ]
@@ -4806,24 +4862,28 @@
             {
               "id": "library.folder.view-flattens-depth",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.folder.fixture-files-placed"
               ]
             },
             {
               "id": "library.view.control-missing-group-column-ungrouped",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.folder.fixture-files-placed"
               ]
             },
             {
               "id": "library.view.control-group-by-single-value-column",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.folder.fixture-files-placed"
               ]
             },
             {
               "id": "library.folder.group-by-path-depth",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.folder.fixture-files-placed",
                 "library.view.control-missing-group-column-ungrouped",
                 "library.view.control-group-by-single-value-column"
@@ -4832,6 +4892,7 @@
             {
               "id": "library.folder.nesting-with-metadata-group-by",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.folder.fixture-files-placed",
                 "library.view.control-missing-group-column-ungrouped",
                 "library.view.control-group-by-single-value-column"
@@ -4948,6 +5009,7 @@
             {
               "id": "library.view.fixture-interaction-files-placed",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.view.fixture-interaction-columns-created",
                 "library.view.fixture-interaction-folders-created"
               ]
@@ -4955,30 +5017,35 @@
             {
               "id": "library.view.control-missing-column-refused",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.view.fixture-interaction-files-placed"
               ]
             },
             {
               "id": "library.view.control-filter-single-value-column",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.view.fixture-interaction-files-placed"
               ]
             },
             {
               "id": "library.view.control-missing-group-column-ungrouped",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.view.fixture-interaction-files-placed"
               ]
             },
             {
               "id": "library.view.control-group-by-single-value-column",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.view.fixture-interaction-files-placed"
               ]
             },
             {
               "id": "library.view.filter-with-group-by",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.view.fixture-interaction-files-placed",
                 "library.view.control-filter-single-value-column",
                 "library.view.control-missing-group-column-ungrouped",
@@ -4989,6 +5056,7 @@
             {
               "id": "library.view.filter-in-folder-scope",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.view.fixture-interaction-files-placed",
                 "library.view.control-filter-single-value-column",
                 "library.view.control-missing-group-column-ungrouped",
@@ -4999,6 +5067,7 @@
             {
               "id": "library.view.filter-group-by-and-folder-scope",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.view.fixture-interaction-files-placed",
                 "library.view.control-filter-single-value-column",
                 "library.view.control-missing-group-column-ungrouped",
@@ -10094,7 +10163,9 @@
             },
             {
               "id": "library.view.control-list-builtin-occupies-allitems",
-              "depends_on": []
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
             },
             {
               "id": "library.view.create-allitems-title-on-library",

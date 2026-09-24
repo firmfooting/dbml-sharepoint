@@ -1,6 +1,6 @@
-"""Execute the three large-list builder probes of #559 against a mock SharePoint.
+"""Execute the large-list builders and the document-library probes of #559 against a mock.
 
-Each builder reused a container found by title and recorded it 'ALREADY
+Each probe reused a container found by title and recorded it 'ALREADY
 PRESENT', or took a PASS from the create's status, without reading anything
 back. Each now reads its containers back on create and on reuse, so a list of
 the wrong kind voids exactly the rows the catalogue says rest on it and is
@@ -28,12 +28,12 @@ _MOCK = textwrap.dedent("""
     const refusal = (status, value) =>
       jsonResponse(status, { 'odata.error': { message: { value } } });
     const FIELD_PROPS = new Set(['Description', 'Indexed', 'Title', 'Required']);
-    const newList = (title, template) => {
+    const newList = (title, template, contentTypes = false) => {
       const n = nextList;
       nextList += 1;
       const list = { Id: `0000000${n}-aaaa-bbbb-cccc-00000000000${n}`, Title: title,
-        BaseTemplate: template, root: `/sites/test/L${n}`, fields: new Map(), items: [],
-        nextItem: 1 };
+        BaseTemplate: template, ContentTypesEnabled: contentTypes, root: `/sites/test/L${n}`,
+        fields: new Map(), items: [], nextItem: 1 };
       folders.add(list.root);
       lists.set(title, list);
       return list;
@@ -52,7 +52,10 @@ _MOCK = textwrap.dedent("""
         OutputType: type === 'Calculated' ? { Number: 9, Text: 2 }[attr(xml, 'ResultType')] : 0 };
     };
     for (const [title, shape] of Object.entries(CONFIG.existing || {})) {
-      const list = newList(title, shape.template);
+      const list = newList(title, shape.template, shape.contentTypes === true);
+      // Failure modes a live read can produce: a payload missing Id, and a RootFolder read refused.
+      list.omitId = shape.omitId === true;
+      list.rootFolderStatus = shape.rootFolderStatus || null;
       for (const [name, props] of Object.entries(shape.fields || {})) {
         const other = props.LookupList === 'OTHER'
           ? `{${newList(`other ${name}`, 100).Id}}` : props.LookupList;
@@ -79,7 +82,7 @@ _MOCK = textwrap.dedent("""
           Information: { Bias: 0, StandardBias: 0, DaylightBias: 0 } });
       }
       if (path === 'web/lists' && method === 'POST') {
-        const list = newList(sent.Title, sent.BaseTemplate);
+        const list = newList(sent.Title, sent.BaseTemplate, sent.ContentTypesEnabled === true);
         return jsonResponse(201, { Id: list.Id, Title: list.Title });
       }
       const inFolder = FOLDER.exec(path);
@@ -89,6 +92,18 @@ _MOCK = textwrap.dedent("""
         if (sub && method === 'POST') {
           folders.add(`${folder}/${sub[1]}`);
           return jsonResponse(200, { Name: sub[1], ServerRelativeUrl: `${folder}/${sub[1]}` });
+        }
+        // A file lands in a library's root folder as an item named by FileLeafRef.
+        const file = /^\\/Files\\/add\\(url='([^']+)'/.exec(rest);
+        const library = [...lists.values()]
+          .find((held) => held.root === folder && held.BaseTemplate === 101);
+        if (file && method === 'POST' && library) {
+          const held = library.items.find((item) => item.FileLeafRef === file[1]);
+          if (!held) {
+            library.items.push({ Id: library.nextItem, FileLeafRef: file[1], Title: null });
+            library.nextItem += 1;
+          }
+          return jsonResponse(200, { Name: file[1], ServerRelativeUrl: `${folder}/${file[1]}` });
         }
         if (method !== 'GET') return refusal(404, `unmocked ${path}`);
         if (!folders.has(folder)) return refusal(404, 'File Not Found.');
@@ -103,11 +118,18 @@ _MOCK = textwrap.dedent("""
       if (!list) return refusal(404, 'List does not exist.');
       const rest = inList[2];
       if (rest === '' || rest.startsWith('?')) {
-        return jsonResponse(200, { Id: list.Id, Title: list.Title,
-          BaseTemplate: list.BaseTemplate, ItemCount: list.items.length,
-          ListItemEntityTypeFullName: 'SP.Data.LibItem' });
+        const whole = { Id: list.Id, Title: list.Title, BaseTemplate: list.BaseTemplate,
+          ContentTypesEnabled: list.ContentTypesEnabled, ItemCount: list.items.length,
+          ListItemEntityTypeFullName: 'SP.Data.LibItem' };
+        if (list.omitId) delete whole.Id;
+        // A $select is served only the properties it names, as a live read is.
+        const select = /\\$select=([^&]+)/.exec(rest);
+        if (!select) return jsonResponse(200, whole);
+        return jsonResponse(200, Object.fromEntries(select[1].split(',')
+          .filter((name) => name in whole).map((name) => [name, whole[name]])));
       }
       if (rest.startsWith('/RootFolder')) {
+        if (list.rootFolderStatus) return refusal(list.rootFolderStatus, 'Throttled.');
         return jsonResponse(200, { ServerRelativeUrl: list.root });
       }
       if (rest === '/fields/createfieldasxml') {
@@ -126,6 +148,7 @@ _MOCK = textwrap.dedent("""
         Object.assign(held, props);
         return jsonResponse(204, {});
       }
+      if (rest.startsWith('/items(')) return refusal(404, `unmocked ${path}`);
       if (rest.startsWith('/items') && method === 'POST') {
         const item = { Id: list.nextItem, Title: sent.Title };
         list.nextItem += 1;
@@ -272,3 +295,213 @@ def test_a_builder_establishes_the_containers_it_reads_back(probe: str, reused: 
         assert rows[fixture]["outcome"] == "PASS", rows[fixture]
     assert "BaseTemplate=101" in rows[_DOC_LIB]["evidence"]
     assert not _void_ids(rows)
+
+
+# --------------------------------------------------------------------------
+# The document-library probes: each library fixture, reused and created.
+# --------------------------------------------------------------------------
+_LIST_FIXTURE = "field.default-formula.fixture-list-created"
+#: Each probe's library by title.
+_LIBRARIES = {
+    "default-formula-readback-probe.js": "dbmlsp Probe Readback Library",
+    "file-operations-probe.js": "dbmlsp Probe FileOps",
+    "folder-probe.js": "dbmlsp Probe Folder",
+    "folder-shape-probe.js": "dbmlsp Probe Shape Library",
+    "folder-under-schema-probe.js": "dbmlsp Probe Folder Schema",
+    "library-builtin-view-probe.js": "dbmlsp Probe Builtin View",
+    "library-column-interactions-probe.js": "dbmlsp Probe LibColInteractions",
+    "library-columns-probe.js": "dbmlsp Probe LibCols",
+    "library-content-type-probe.js": "dbmlsp Probe ContentType",
+    "library-field-probe.js": "dbmlsp Probe LibField",
+    "library-form-probe.js": "dbmlsp Probe LibForm",
+    "library-formula-probe.js": "dbmlsp Probe LibFormula",
+    "library-grouping-probe.js": "dbmlsp Probe LibGroup",
+    "library-guards-probe.js": "dbmlsp Probe Guards Library",
+    "library-header-token-probe.js": "dbmlsp Probe Header Tokens",
+    "library-index-probe.js": "dbmlsp Probe LibIndex",
+    "library-index-threshold-probe.js": "dbmlsp Probe LibIdxThreshold",
+    "library-lookup-write-probe.js": "dbmlsp Probe LibWrite Lib",
+    "library-nesting-probe.js": "dbmlsp Probe LibNest",
+    "library-query-probe.js": "dbmlsp Probe LibQuery",
+    "library-view-interaction-probe.js": "dbmlsp Probe LibViewInt",
+    "library-view-search-probe.js": "dbmlsp Probe LibViewSearch",
+    "view-scope-revert-probe.js": "dbmlsp Probe Scope Library",
+}
+#: The two probes that also build a generic list as a comparison container.
+_GENERIC_LISTS = {
+    "default-formula-readback-probe.js": "dbmlsp Probe Readback List",
+    "library-guards-probe.js": "dbmlsp Probe Guards List",
+}
+#: The probes that create their library with content types off and declare it.
+_CONTENT_TYPES_OFF = [
+    "folder-under-schema-probe.js", "library-builtin-view-probe.js",
+    "library-header-token-probe.js",
+]
+
+
+def _voided_by(rows: dict[str, dict[str, str]], fixture: str) -> set[str]:
+    return {row_id for row_id in _void_ids(rows)
+            if f"the fixture {fixture} did not hold" in rows[row_id]["evidence"]}
+
+
+def _assert_stopped_at(
+    rows: dict[str, dict[str, str]], sent: list[dict[str, str]],
+    probe: str, title: str, named: str,
+) -> None:
+    assert rows[_DOC_LIB]["outcome"] == "FAIL", rows[_DOC_LIB]
+    assert named in rows[_DOC_LIB]["evidence"], rows[_DOC_LIB]
+    dependents = _catalogued_dependents(probe, _DOC_LIB)
+    assert _voided_by(rows, _DOC_LIB) == dependents
+    # The list half of a two-fixture probe runs first here, and voids only its own rows.
+    others = _void_ids(rows) - dependents
+    assert all(row_id.startswith("field.default-formula.") for row_id in others), others
+    assert not others or probe in _GENERIC_LISTS, others
+    assert not _writes_to(sent, title)
+
+
+@pytest.mark.parametrize(("probe", "title"), list(_LIBRARIES.items()), ids=list(_LIBRARIES))
+def test_a_generic_list_under_a_probe_library_name_voids_its_rows(probe: str, title: str) -> None:
+    rows, sent = _run_probe(_MOCK, _generic(title), probe)
+
+    _assert_stopped_at(rows, sent, probe, title, "BaseTemplate differs: read 100, declared 101")
+
+
+@pytest.mark.parametrize(
+    ("probe", "title"), list(_GENERIC_LISTS.items()), ids=list(_GENERIC_LISTS))
+def test_a_library_under_a_probe_list_name_voids_the_list_rows(probe: str, title: str) -> None:
+    rows, sent = _run_probe(_MOCK, {"existing": {title: {"template": 101}}}, probe)
+
+    assert rows[_LIST_FIXTURE]["outcome"] == "FAIL", rows[_LIST_FIXTURE]
+    assert "BaseTemplate differs: read 101, declared 100" in rows[_LIST_FIXTURE]["evidence"]
+    assert _voided_by(rows, _LIST_FIXTURE) == _catalogued_dependents(probe, _LIST_FIXTURE)
+    assert not _writes_to(sent, title, uploads=False)
+
+
+@pytest.mark.parametrize("probe", _CONTENT_TYPES_OFF)
+def test_a_library_with_content_types_on_voids_the_rows_that_rest_on_them_off(probe: str) -> None:
+    title = _LIBRARIES[probe]
+    config = {"existing": {title: {"template": 101, "contentTypes": True}}}
+    rows, sent = _run_probe(_MOCK, config, probe)
+
+    _assert_stopped_at(rows, sent, probe, title,
+                       "ContentTypesEnabled differs: read true, declared false")
+
+
+@pytest.mark.parametrize("probe", _CONTENT_TYPES_OFF)
+def test_a_content_types_off_library_is_created_and_read_back_with_them_off(probe: str) -> None:
+    rows, sent = _run_probe(_MOCK, {}, probe)
+
+    [create] = [r for r in sent if r["path"] == "web/lists" and _LIBRARIES[probe] in r["body"]]
+    assert '"ContentTypesEnabled":false' in create["body"]
+    assert "ContentTypesEnabled=false" in rows[_DOC_LIB]["evidence"], rows[_DOC_LIB]
+
+
+@pytest.mark.parametrize("probe", list(_LIBRARIES))
+@pytest.mark.parametrize("reused", [False, True], ids=["created", "reused"])
+def test_a_probe_library_that_holds_establishes(probe: str, reused: bool) -> None:
+    existing = {_LIBRARIES[probe]: {"template": 101}}
+    if probe in _GENERIC_LISTS:
+        existing[_GENERIC_LISTS[probe]] = {"template": 100}
+    rows, _ = _run_probe(_MOCK, {"existing": existing} if reused else {}, probe)
+
+    assert rows[_DOC_LIB]["outcome"] == "PASS", rows[_DOC_LIB]
+    assert "BaseTemplate=101" in rows[_DOC_LIB]["evidence"]
+    assert not _voided_by(rows, _DOC_LIB)
+    if probe in _GENERIC_LISTS:
+        assert rows[_LIST_FIXTURE]["outcome"] == "PASS", rows[_LIST_FIXTURE]
+        assert not _voided_by(rows, _LIST_FIXTURE)
+
+
+# --------------------------------------------------------------------------
+# library-formula's lookup target, and library-index-threshold's two columns.
+# --------------------------------------------------------------------------
+_FORMULA = "library-formula-probe.js"
+_FORMULA_TARGET = "dbmlsp Probe LibFormula Target"
+_TARGET_ROW = "library.formula.fixture-target-list-created"
+#: A lookup column's create, as its SchemaXml reads inside the JSON body.
+_LOOKUP_CREATE = 'Type=\\"Lookup\\"'
+
+
+def test_formula_voids_the_lookup_leg_on_a_target_that_is_not_a_generic_list() -> None:
+    rows, sent = _run_probe(_MOCK, {"existing": {_FORMULA_TARGET: {"template": 101}}}, _FORMULA)
+
+    assert rows[_TARGET_ROW]["outcome"] == "FAIL", rows[_TARGET_ROW]
+    assert "BaseTemplate differs: read 101, declared 100" in rows[_TARGET_ROW]["evidence"]
+    assert _voided_by(rows, _TARGET_ROW) == _catalogued_dependents(_FORMULA, _TARGET_ROW)
+    assert not _writes_to(sent, _FORMULA_TARGET, uploads=False)
+    # The library does not rest on the target, so it still builds, and no lookup points there.
+    assert rows[_DOC_LIB]["outcome"] == "PASS", rows[_DOC_LIB]
+    assert not [r for r in sent if _LOOKUP_CREATE in r["body"]]
+
+
+@pytest.mark.parametrize("reused", [False, True], ids=["created", "reused"])
+def test_formula_establishes_a_target_that_is_a_generic_list(reused: bool) -> None:
+    config = {"existing": {_FORMULA_TARGET: {"template": 100}}} if reused else {}
+    rows, sent = _run_probe(_MOCK, config, _FORMULA)
+
+    assert rows[_TARGET_ROW]["outcome"] == "PASS", rows[_TARGET_ROW]
+    assert "BaseTemplate=100" in rows[_TARGET_ROW]["evidence"]
+    assert not _voided_by(rows, _TARGET_ROW)
+    assert [r for r in sent if _LOOKUP_CREATE in r["body"]]
+
+
+def test_formula_voids_the_lookup_leg_on_a_target_read_that_serves_no_id() -> None:
+    """A target read without Id set targetListId to undefined and built a lookup on it."""
+    config = {"existing": {_FORMULA_TARGET: {"template": 100, "omitId": True}}}
+    rows, sent = _run_probe(_MOCK, config, _FORMULA)
+
+    assert rows[_TARGET_ROW]["outcome"] == "FAIL", rows[_TARGET_ROW]
+    assert "Id" in rows[_TARGET_ROW]["evidence"]
+    assert _voided_by(rows, _TARGET_ROW) == _catalogued_dependents(_FORMULA, _TARGET_ROW)
+    assert not [r for r in sent if _LOOKUP_CREATE in r["body"]]
+
+
+_THRESHOLD = "library-index-threshold-probe.js"
+_THRESHOLD_LIB = "dbmlsp Probe LibIdxThreshold"
+_THRESHOLD_COLUMNS = "library.index.fixture-probe-columns-created"
+
+
+@pytest.mark.parametrize(
+    ("column", "wrong"),
+    [("TidxUnindexedText", "Note"), ("TidxUnindexedPerson", "Text")],
+    ids=["text", "person"],
+)
+def test_threshold_voids_its_rows_on_a_probe_column_of_another_type(
+    column: str, wrong: str,
+) -> None:
+    config = {"existing": {_THRESHOLD_LIB: {
+        "template": 101, "fields": {column: {"TypeAsString": wrong}}}}}
+    rows, sent = _run_probe(_MOCK, config, _THRESHOLD, _BUILD_GATES)
+
+    assert rows[_DOC_LIB]["outcome"] == "PASS", rows[_DOC_LIB]
+    assert rows[_THRESHOLD_COLUMNS]["outcome"] == "FAIL", rows[_THRESHOLD_COLUMNS]
+    assert f"{column}.TypeAsString differs" in rows[_THRESHOLD_COLUMNS]["evidence"]
+    assert _void_ids(rows) == _catalogued_dependents(_THRESHOLD, _THRESHOLD_COLUMNS)
+    assert not [r for r in sent if "/Files/add" in r["path"] or r["verb"] == "MERGE"]
+
+
+@pytest.mark.parametrize("reused", [False, True], ids=["created", "reused"])
+def test_threshold_establishes_probe_columns_of_the_declared_types(reused: bool) -> None:
+    fields = {"TidxUnindexedText": {"TypeAsString": "Text"},
+              "TidxUnindexedPerson": {"TypeAsString": "User"}}
+    config = {"existing": {_THRESHOLD_LIB: {"template": 101, "fields": fields}}}
+    rows, _ = _run_probe(_MOCK, config if reused else {}, _THRESHOLD)
+
+    assert rows[_THRESHOLD_COLUMNS]["outcome"] == "PASS", rows[_THRESHOLD_COLUMNS]
+    assert 'TidxUnindexedPerson.TypeAsString="User"' in rows[_THRESHOLD_COLUMNS]["evidence"]
+    assert not _voided_by(rows, _THRESHOLD_COLUMNS)
+
+
+def test_threshold_keeps_settled_fixtures_when_the_root_folder_read_fails() -> None:
+    """A RootFolder failure after both fixtures passed was reported as the library failing."""
+    fields = {"TidxUnindexedText": {"TypeAsString": "Text"},
+              "TidxUnindexedPerson": {"TypeAsString": "User"}}
+    config = {"existing": {_THRESHOLD_LIB: {
+        "template": 101, "fields": fields, "rootFolderStatus": 503}}}
+    rows, sent = _run_probe(_MOCK, config, _THRESHOLD)
+
+    assert rows[_DOC_LIB]["outcome"] == "PASS", rows[_DOC_LIB]
+    assert rows[_THRESHOLD_COLUMNS]["outcome"] == "PASS", rows[_THRESHOLD_COLUMNS]
+    assert rows["library.index.fixture-file-count"]["outcome"] == "ABORTED"
+    assert "RootFolder" in rows["library.index.fixture-file-count"]["evidence"]
+    assert not [r for r in sent if "/Files/add" in r["path"]]

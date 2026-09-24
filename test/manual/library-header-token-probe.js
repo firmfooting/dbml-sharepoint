@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHICH TOKENS A LIBRARY FORM HEADER CAN READ
  *
- * REVISION: cd51a4bc
+ * REVISION: 983f3cba
  *
  * ONE QUESTION:
  *   A document library's form header is stored and read back byte-identical
@@ -549,7 +549,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision cd51a4bc. Quote this when reporting results.');
+  log('INFO', 'probe revision 983f3cba. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe Header Tokens';
   const libPath = `web/lists/getbytitle('${LIB}')`;
@@ -790,25 +790,26 @@
   // ---- fixture ---------------------------------------------------------
   {
     const existing = await spGet(libPath);
-    if (!existing.ok) {
-      const digest = await getDigest();
-      const made = await spPost('web/lists', {
-        Title: LIB,
-        BaseTemplate: 101,
-        Description: 'dbml-sharepoint header token probe. Safe to delete.',
-        ContentTypesEnabled: false,
-      }, digest);
-      record('library.doc-lib.fixture-library-created', Q.fixture,
-             made.ok ? 'PASS' : 'FAIL',
-             made.ok ? `created '${LIB}'` : short(made));
-      if (!made.ok) {
-        voidAll(IDS, 'the library fixture did not build, so it has no content type to set.');
-        return report();
-      }
-    } else {
-      record('library.doc-lib.fixture-library-created', Q.fixture, 'ALREADY PRESENT',
-             'reusing an existing library, whose content type may already carry a header. '
-             + 'Set CLEANUP = true for a clean answer.');
+    const made = existing.ok ? null : await spPost('web/lists', {
+      Title: LIB,
+      BaseTemplate: 101,
+      Description: 'dbml-sharepoint header token probe. Safe to delete.',
+      ContentTypesEnabled: false,
+    }, await getDigest());
+    if (made !== null && !made.ok) {
+      record('library.doc-lib.fixture-library-created', Q.fixture, 'FAIL', short(made));
+      voidAll(IDS, 'the library fixture did not build, so it has no content type to set.');
+      return report();
+    }
+    log('INFO', made === null
+      ? 'reusing an existing library, whose content type may already carry a header. '
+        + 'Set CLEANUP = true for a clean answer.'
+      : `created '${LIB}'`);
+    // The header is measured on a library shaped as the deploy creates it, content types off.
+    if (!await establishFixture('library.doc-lib.fixture-library-created',
+      () => spGet(`${libPath}?$select=BaseTemplate,ContentTypesEnabled`),
+      { BaseTemplate: 101, ContentTypesEnabled: false }, IDS)) {
+      return report();
     }
   }
 

@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY VIEW TOTALS AND SEARCH DISCOVERY
  *
- * REVISION: 433a509c
+ * REVISION: d76ee38c
  *
  * ONE QUESTION:
  *   Do a document library's view totals and its search discoverability
@@ -409,7 +409,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 433a509c. Quote this when reporting results.');
+  log('INFO', 'probe revision d76ee38c. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibViewSearch';
   const TWIN = 'dbmlsp Probe LibViewSearchRows';
@@ -493,21 +493,25 @@
 
   // ---- fixture-library-created: the library ---------------------------
   const existing = await spGet(`${listPath}?$select=Title`);
-  if (existing.ok) {
+  digest = await getDigest();
+  const made = existing.ok ? null : await spPost('web/lists', {
+    Title: LIB,
+    BaseTemplate: 101,
+    Description: 'dbml-sharepoint view-search probe library. Safe to delete.',
+  }, digest);
+  if (made !== null && !made.ok) {
     record('library.doc-lib.fixture-library-created', Q_FIXTURE,
-           'ALREADY PRESENT',
-           'reusing an existing library. Set CLEANUP = true for a clean answer');
-  } else {
-    digest = await getDigest();
-    const made = await spPost('web/lists', {
-      Title: LIB,
-      BaseTemplate: 101,
-      Description: 'dbml-sharepoint view-search probe library. Safe to delete.',
-    }, digest);
-    record('library.doc-lib.fixture-library-created', Q_FIXTURE,
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIB}'` : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
-    if (!made.ok) return report();
+           'FAIL', `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
+    await voidAll(`fixture incomplete: library creation failed (HTTP ${made.status})`);
+    return report();
+  }
+  log('INFO', made === null
+    ? 'reusing an existing library. Set CLEANUP = true for a clean answer.'
+    : `created '${LIB}'`);
+  // Read back on reuse as well as on create, because a list found by title may be a generic list.
+  if (!await establishFixture('library.doc-lib.fixture-library-created',
+    () => spGet(`${listPath}?$select=BaseTemplate`), { BaseTemplate: 101 }, VOIDED)) {
+    return report();
   }
 
   // ---- RootFolder path -------------------------------------------------

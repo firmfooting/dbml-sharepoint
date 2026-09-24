@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: HOW DO A VIEW'S FILTER, GROUP-BY AND FOLDER SCOPE INTERACT?
  *
- * REVISION: ec4a7ba6
+ * REVISION: e5f84210
  *
  * ONE QUESTION, on the composition nothing has measured:
  *   `library-view-probe.js` measured a filter on a single-value column and a
@@ -554,7 +554,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision ec4a7ba6. Quote this when reporting results.');
+  log('INFO', 'probe revision e5f84210. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibViewInt';
   // Text, so that <Value Type="Text"> is the spelling Learn documents rather
@@ -697,20 +697,15 @@
   await resetList(LIB);
 
   const found = await spGet(libPath);
-  let libraryReady = found.ok;
-  if (found.ok) {
-    record('library.doc-lib.fixture-library-created', Q.library, 'ALREADY PRESENT',
-           'reusing an existing library. Set CLEANUP = true for a clean answer');
-  } else {
-    digest = await getDigest();
-    const made = await spPost('web/lists', {
-      Title: LIB, BaseTemplate: 101,
-      Description: 'dbml-sharepoint library-view-interaction probe library. Safe to delete.',
-    }, digest);
-    libraryReady = made.ok;
+  digest = await getDigest();
+  const made = found.ok ? null : await spPost('web/lists', {
+    Title: LIB, BaseTemplate: 101,
+    Description: 'dbml-sharepoint library-view-interaction probe library. Safe to delete.',
+  }, digest);
+  const libraryReady = made === null || made.ok;
+  if (!libraryReady) {
     record('library.doc-lib.fixture-library-created', Q.library,
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIB}'` : `HTTP ${made.status}: ${clip(made.text, 300)}`);
+           'FAIL', `HTTP ${made.status}: ${clip(made.text, 300)}`);
   }
 
   // Everything this probe measures, so an abort can report the truth about all
@@ -741,6 +736,16 @@
     record('library.view.fixture-interaction-files-placed', Q.files,
            'ABORTED', 'the library was never created');
     return abortEverything('the scratch library was never created');
+  }
+  log('INFO', made === null
+    ? 'reusing an existing library. Set CLEANUP = true for a clean answer.'
+    : `created '${LIB}'`);
+  // Read back on reuse as well as on create, because a list found by title may be a generic list.
+  if (!await establishFixture('library.doc-lib.fixture-library-created',
+    () => spGet(`${libPath}?$select=BaseTemplate`), { BaseTemplate: 101 },
+    ['library.view.fixture-interaction-columns-created', 'library.view.fixture-interaction-folders-created',
+     'library.view.fixture-interaction-files-placed', ...MEASUREMENTS.map(([id]) => id)])) {
+    return report();
   }
 
   const root = await spGet(`${libPath}/RootFolder?$select=ServerRelativeUrl`);

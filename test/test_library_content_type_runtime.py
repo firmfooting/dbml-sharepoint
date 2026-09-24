@@ -36,7 +36,9 @@ globalThis.fetch = async (url, options = {}) => {
   if (path === 'contextinfo') {
     return response(200, {d: {GetContextWebInformation: {FormDigestValue: 'digest'}}});
   }
-  if (path === pathRoot) return response(post ? 204 : 200, {BaseTemplate: 101});
+  if (path === pathRoot || path === pathRoot + '?$select=BaseTemplate') {
+    return response(post ? 204 : 200, {BaseTemplate: 101});
+  }
   if (path.includes('/RootFolder/Files/add(')) return response(200, {});
   if (path.startsWith('web/contenttypes?')) return response(200, {value: [custom]});
   if (path === pathRoot + '/contenttypes/addAvailableContentType') {

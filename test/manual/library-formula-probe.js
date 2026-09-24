@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY FORMULA SURFACE
  *
- * REVISION: 1a01898b
+ * REVISION: a8ccbcba
  *
  * ONE QUESTION:
  *   Does the formula surface of a document library diverge from a generic list?
@@ -397,7 +397,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 1a01898b. Quote this when reporting results.');
+  log('INFO', 'probe revision a8ccbcba. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibFormula';
   const TARGET = 'dbmlsp Probe LibFormula Target';
@@ -458,7 +458,11 @@
     }
   };
 
+  const TARGET_ROW = 'library.formula.fixture-target-list-created';
+  const LOOKUP_ROW = 'library.formula.calc-choice-lookup-operand';
   expect('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)');
+  expect('library.formula.fixture-target-list-created',
+         'The lookup target is a generic list (BaseTemplate 100)');
   expect('library.formula.control-missing-column-refused',
          'NEGATIVE CONTROL: a MERGE naming a missing column on a library file item is refused');
   expect('library.formula.calc-datetime-sentinel',
@@ -477,23 +481,29 @@
   // The lookup leg needs a target list with one row, exactly as
   // calculated-choice-operand.js builds '${LIST} Target'.
   const existingTarget = await spGet(targetPath);
-  let targetListId = (existingTarget.ok && existingTarget.body) ? existingTarget.body.Id : null;
+  digest = await getDigest();
+  const madeTarget = existingTarget.ok ? null : await spPost('web/lists', {
+    Title: TARGET,
+    BaseTemplate: 100,
+    Description: 'dbml-sharepoint formula probe lookup target. Safe to delete.',
+  }, digest);
+  if (madeTarget !== null && !madeTarget.ok) {
+    log('WARN', `Could not create target list '${TARGET}': HTTP ${madeTarget.status}`);
+  }
+  let targetListId = null;
   let targetRowId = null;
-  if (targetListId === null) {
+  // Read back on reuse as well as on create, because a list found by title may be a library.
+  const targetHeld = await establishFixture(TARGET_ROW, async () => {
+    const read = await spGet(`${targetPath}?$select=BaseTemplate,Id`);
+    if (unanswered(read) === null) targetListId = read.body.Id;
+    return read;
+  }, { BaseTemplate: 100, Id: (id) => typeof id === 'string' && id !== '' }, [LOOKUP_ROW]);
+  if (!targetHeld) {
+    targetListId = null;
+  } else if (madeTarget !== null) {
     digest = await getDigest();
-    const madeTarget = await spPost('web/lists', {
-      Title: TARGET,
-      BaseTemplate: 100,
-      Description: 'dbml-sharepoint formula probe lookup target. Safe to delete.',
-    }, digest);
-    if (madeTarget.ok && madeTarget.body) {
-      targetListId = madeTarget.body.Id;
-      digest = await getDigest();
-      const row = await spPost(`${targetPath}/items`, { Title: 'row one' }, digest);
-      targetRowId = (row.ok && row.body) ? row.body.Id : null;
-    } else {
-      log('WARN', `Could not create target list '${TARGET}': HTTP ${madeTarget.status}`);
-    }
+    const row = await spPost(`${targetPath}/items`, { Title: 'row one' }, digest);
+    targetRowId = (row.ok && row.body) ? row.body.Id : null;
   } else {
     const rows = await spGet(`${targetPath}/items?$select=Id&$top=1`);
     targetRowId = (rows.ok && rows.body && rows.body.value && rows.body.value[0])
@@ -501,24 +511,31 @@
       : null;
   }
 
+  const LIB_IDS = ['library.formula.control-missing-column-refused',
+                   'library.formula.calc-datetime-sentinel',
+                   LOOKUP_ROW,
+                   'library.formula.validation-url-operand'];
   const existing = await spGet(listPath);
-  if (existing.ok) {
+  digest = await getDigest();
+  const made = existing.ok ? null : await spPost('web/lists', {
+    Title: LIB,
+    BaseTemplate: 101,
+    Description: 'dbml-sharepoint formula probe library. Safe to delete.',
+  }, digest);
+  if (made !== null && !made.ok) {
     record('library.doc-lib.fixture-library-created',
            'A document library is created (BaseTemplate 101)',
-           'ALREADY PRESENT',
-           'reusing an existing library. Set CLEANUP = true for a clean answer');
-  } else {
-    digest = await getDigest();
-    const made = await spPost('web/lists', {
-      Title: LIB,
-      BaseTemplate: 101,
-      Description: 'dbml-sharepoint formula probe library. Safe to delete.',
-    }, digest);
-    record('library.doc-lib.fixture-library-created',
-           'A document library is created (BaseTemplate 101)',
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIB}'` : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
-    if (!made.ok) return report();
+           'FAIL', `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
+    voidDependents(LIB_IDS, `fixture incomplete: library creation failed (HTTP ${made.status})`);
+    return report();
+  }
+  log('INFO', made === null
+    ? 'reusing an existing library. Set CLEANUP = true for a clean answer.'
+    : `created '${LIB}'`);
+  // Read back on reuse as well as on create, because a list found by title may be a generic list.
+  if (!await establishFixture('library.doc-lib.fixture-library-created',
+    () => spGet(`${listPath}?$select=BaseTemplate`), { BaseTemplate: 101 }, LIB_IDS)) {
+    return report();
   }
 
   // ---- Bootstrap columns and the fixture file -------------------------
@@ -618,7 +635,7 @@
   }
 
   digest = await getDigest();
-  const lookupReady = await fieldExists(LOOKUP);
+  const lookupReady = targetHeld && await fieldExists(LOOKUP);
 
   // ---- Q1: calculated datetime sentinel --------------------------------
   // Learn: "Lists and libraries do not support the RAND and NOW functions.
@@ -739,7 +756,9 @@
         ? (lookupCalcMade.already ? 'was already present' : `accepted with HTTP ${lookupCalcMade.status}`)
         : `refused with HTTP ${lookupCalcMade.status}: ${lookupCalcMade.text.slice(0, 220)}`}`);
 
-  if (!recalc.ok) {
+  if (!targetHeld) {
+    log('INFO', `the lookup leg stays void: ${TARGET_ROW} did not hold.`);
+  } else if (!recalc.ok) {
     record('library.formula.calc-choice-lookup-operand',
            'Calculated choice/lookup operand on a library: does a calculated column accept and resolve a Choice or Lookup operand the way a generic list does',
            'NOT ESTABLISHED',

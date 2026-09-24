@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHAT THE FOLDER STEP SEES WHEN A FILE IS IN THE WAY
  *
- * REVISION: 315f03ae
+ * REVISION: 4d4d0c88
  *
  * ONE QUESTION:
  *   When a FILE stands at the path where the deploy declared a folder, what
@@ -388,7 +388,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 315f03ae. Quote this when reporting results.');
+  log('INFO', 'probe revision 4d4d0c88. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe Shape Library';
   const libPath = `web/lists/getbytitle('${LIB}')`;
@@ -493,21 +493,22 @@
 
   let digest = await getDigest();
   const haveLib = await spGet(libPath);
-  if (haveLib.ok) {
-    record('library.doc-lib.fixture-library-created', Q.fixture, 'ALREADY PRESENT',
-           `reusing an existing library '${LIB}'. Set CLEANUP = true for a clean answer`);
-  } else {
-    const made = await spPost('web/lists', {
-      Title: LIB, BaseTemplate: 101,
-      Description: 'dbml-sharepoint folder shape probe library. Safe to delete.',
-    }, digest);
-    record('library.doc-lib.fixture-library-created', Q.fixture,
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIB}'` : short(made));
-    if (!made.ok) {
-      voidAll(IDS, `fixture incomplete: library creation failed (HTTP ${made.status})`);
-      return report();
-    }
+  const made = haveLib.ok ? null : await spPost('web/lists', {
+    Title: LIB, BaseTemplate: 101,
+    Description: 'dbml-sharepoint folder shape probe library. Safe to delete.',
+  }, digest);
+  if (made !== null && !made.ok) {
+    record('library.doc-lib.fixture-library-created', Q.fixture, 'FAIL', short(made));
+    voidAll(IDS, `fixture incomplete: library creation failed (HTTP ${made.status})`);
+    return report();
+  }
+  log('INFO', made === null
+    ? `reusing an existing library '${LIB}'. Set CLEANUP = true for a clean answer.`
+    : `created '${LIB}'`);
+  // Read back on reuse as well as on create, because a list found by title may be a generic list.
+  if (!await establishFixture('library.doc-lib.fixture-library-created',
+    () => spGet(`${libPath}?$select=BaseTemplate`), { BaseTemplate: 101 }, IDS)) {
+    return report();
   }
 
   const root = await spGet(`${libPath}/RootFolder?$select=ServerRelativeUrl`);

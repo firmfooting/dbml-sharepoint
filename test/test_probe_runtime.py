@@ -830,7 +830,7 @@ _GROUPING_HARNESS = textwrap.dedent("""
         return jsonResponse(200, { value: held.items.map((item) => ({ ...item })) });
       }
       return jsonResponse(200, {
-        Id: held.Id, Title: held.Title,
+        Id: held.Id, Title: held.Title, BaseTemplate: held.BaseTemplate,
         ListItemEntityTypeFullName: 'SP.Data.ProbeLibItem',
       });
     };
@@ -1300,7 +1300,7 @@ _NESTING_HARNESS = textwrap.dedent("""
         }
         return jsonResponse(200, { value: files.map((file) => ({ ...file })) });
       }
-      return jsonResponse(200, { Id: held.Id, Title: held.Title });
+      return jsonResponse(200, { Id: held.Id, Title: held.Title, BaseTemplate: held.BaseTemplate });
     };
 """)
 
@@ -1860,7 +1860,7 @@ _INTERACTION_HARNESS = textwrap.dedent("""
       if (rest.startsWith('/items')) {
         return jsonResponse(200, { value: files.map((file) => ({ ...file })) });
       }
-      return jsonResponse(200, { Id: held.Id, Title: held.Title });
+      return jsonResponse(200, { Id: held.Id, Title: held.Title, BaseTemplate: held.BaseTemplate });
     };
 """)
 
@@ -3138,9 +3138,10 @@ _BUILTIN_VIEW_HARNESS = textwrap.dedent("""
       return `${title}${n}.aspx`;
     };
 
-    const createList = (title, template) => {
+    const createList = (title, template, contentTypes) => {
       const held = {
         Id: `list-${nextList}`, Title: title, BaseTemplate: template,
+        ContentTypesEnabled: contentTypes === true,
         ServerRelativeUrl: `/sites/test/${nextList}`, views: [],
       };
       nextList += 1;
@@ -3164,7 +3165,8 @@ _BUILTIN_VIEW_HARNESS = textwrap.dedent("""
       }
       if (u === 'web/lists' && method === 'POST') {
         const made = sent();
-        return jsonResponse(201, { Id: createList(made.Title, made.BaseTemplate).Id });
+        return jsonResponse(201, {
+          Id: createList(made.Title, made.BaseTemplate, made.ContentTypesEnabled).Id });
       }
 
       const named = LIST.exec(u);
@@ -3173,7 +3175,10 @@ _BUILTIN_VIEW_HARNESS = textwrap.dedent("""
       if (!held) return jsonResponse(404, { error: 'list not found' });
       const rest = named[2].split('?')[0];
 
-      if (rest === '') return jsonResponse(200, { Id: held.Id, Title: held.Title });
+      if (rest === '') {
+        return jsonResponse(200, { Id: held.Id, Title: held.Title,
+          BaseTemplate: held.BaseTemplate, ContentTypesEnabled: held.ContentTypesEnabled });
+      }
 
       if (rest === '/views' && method === 'POST') {
         const made = sent();
@@ -3537,9 +3542,11 @@ _HEADER_TOKEN_HARNESS = textwrap.dedent("""
     let nextListId = 1;
     let nextItemId = 1;
 
-    const makeList = (title, template) => {
+    // A leftover library is one an earlier run created, so with content types off as it sends.
+    const makeList = (title, template, contentTypes = false) => {
       const held = {
         Id: `list-${nextListId}`, Title: title, BaseTemplate: template,
+        ContentTypesEnabled: contentTypes,
         ServerRelativeUrl: `/sites/test/${nextListId}`,
         fields: new Map(), items: [], formatter: null,
       };
@@ -3621,7 +3628,7 @@ _HEADER_TOKEN_HARNESS = textwrap.dedent("""
       if (u.startsWith('web/currentuser')) return jsonResponse(200, { Id: 11 });
       if (u === 'web/lists' && method === 'POST') {
         const made = sent();
-        const held = makeList(made.Title, made.BaseTemplate);
+        const held = makeList(made.Title, made.BaseTemplate, made.ContentTypesEnabled === true);
         return jsonResponse(201, { Id: held.Id, Title: held.Title });
       }
 
@@ -3733,7 +3740,8 @@ _HEADER_TOKEN_HARNESS = textwrap.dedent("""
         return jsonResponse(200, { value: held.items.map((item) => ({ ...item })) });
       }
       return jsonResponse(200, {
-        Id: held.Id, Title: held.Title,
+        Id: held.Id, Title: held.Title, BaseTemplate: held.BaseTemplate,
+        ContentTypesEnabled: held.ContentTypesEnabled,
         ListItemEntityTypeFullName: 'SP.Data.ProbeLibItem',
       });
     };
@@ -7233,6 +7241,7 @@ _FOLDER_SCHEMA_HARNESS = textwrap.dedent("""
     // the folder an earlier run of this probe left under that state's name.
     const folders = new Set(CONFIG.preexistingFolders);
     let listExists = false;
+    let listShape = null;
     let unique = false;
     // A guard column an earlier run left behind. CLEANUP ships false, so this
     // is the reuse path rather than an exotic one.
@@ -7288,6 +7297,9 @@ _FOLDER_SCHEMA_HARNESS = textwrap.dedent("""
 
       if (path === 'web/lists' && method === 'POST') {
         listExists = true;
+        const made = JSON.parse(String(opts.body));
+        listShape = { BaseTemplate: made.BaseTemplate,
+                      ContentTypesEnabled: made.ContentTypesEnabled === true };
         return jsonResponse(201, { Id: 'list-1' });
       }
       if (!path.startsWith('web/lists/getbytitle')) {
@@ -7356,6 +7368,7 @@ _FOLDER_SCHEMA_HARNESS = textwrap.dedent("""
       }
       return jsonResponse(200, {
         Id: 'list-1',
+        ...listShape,
         HasUniqueRoleAssignments: unique,
         ValidationFormula: listFormula,
         ListItemEntityTypeFullName: 'SP.Data.ProbeLibItem',
@@ -7970,6 +7983,7 @@ _LIB_COLS_HARNESS = textwrap.dedent("""
     });
 
     const lists = new Map();
+    const templates = new Map();
     const items = new Map();
     let nextItem = 1;
     let listFormula = '';
@@ -8010,6 +8024,7 @@ _LIB_COLS_HARNESS = textwrap.dedent("""
       }
       if (path === 'web/lists' && method === 'POST') {
         lists.set(sent.Title, new Map());
+        templates.set(sent.Title, sent.BaseTemplate);
         return jsonResponse(201, { Id: `list-${sent.Title}` });
       }
 
@@ -8112,7 +8127,8 @@ _LIB_COLS_HARNESS = textwrap.dedent("""
         return jsonResponse(204, {});
       }
       return jsonResponse(200, {
-        Id: `list-${named[1]}`, Title: named[1], ValidationFormula: listFormula,
+        Id: `list-${named[1]}`, Title: named[1], BaseTemplate: templates.get(named[1]),
+        ValidationFormula: listFormula,
       });
     };
 """)

@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: THE VIEW ALREADY SITTING ON AllItems.aspx
  *
- * REVISION: bfdbcee3
+ * REVISION: 58f3a7dd
  *
  * ONE QUESTION:
  *   A library ships with a built-in view. The deploy's generated All Items
@@ -420,7 +420,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision bfdbcee3. Quote this when reporting results.');
+  log('INFO', 'probe revision 58f3a7dd. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe Builtin View';
   const LIST = 'dbmlsp Probe Builtin View List';
@@ -546,25 +546,26 @@
   // ---- fixtures --------------------------------------------------------
   {
     const existing = await spGet(libPath);
-    if (existing.ok) {
-      record('library.doc-lib.fixture-library-created', Q.fixture, 'ALREADY PRESENT',
-             'reusing an existing library, so its built-in view may already carry a '
-             + "previous run's writes. Set CLEANUP = true for a clean answer.");
-    } else {
-      const digest = await getDigest();
-      const made = await spPost('web/lists', {
-        Title: LIB,
-        BaseTemplate: 101,
-        Description: 'dbml-sharepoint built-in view probe. Safe to delete.',
-        ContentTypesEnabled: false,
-      }, digest);
-      record('library.doc-lib.fixture-library-created', Q.fixture,
-             made.ok ? 'PASS' : 'FAIL',
-             made.ok ? `created '${LIB}'` : short(made));
-      if (!made.ok) {
-        voidAll(IDS, 'the library fixture did not build, so it has no views to read.');
-        return report();
-      }
+    const made = existing.ok ? null : await spPost('web/lists', {
+      Title: LIB,
+      BaseTemplate: 101,
+      Description: 'dbml-sharepoint built-in view probe. Safe to delete.',
+      ContentTypesEnabled: false,
+    }, await getDigest());
+    if (made !== null && !made.ok) {
+      record('library.doc-lib.fixture-library-created', Q.fixture, 'FAIL', short(made));
+      voidAll(IDS, 'the library fixture did not build, so it has no views to read.');
+      return report();
+    }
+    log('INFO', made === null
+      ? 'reusing an existing library, so its built-in view may already carry a '
+        + "previous run's writes. Set CLEANUP = true for a clean answer."
+      : `created '${LIB}'`);
+    // The rows reproduce a deploy failure, and the deploy creates a library with content types off.
+    if (!await establishFixture('library.doc-lib.fixture-library-created',
+      () => spGet(`${libPath}?$select=BaseTemplate,ContentTypesEnabled`),
+      { BaseTemplate: 101, ContentTypesEnabled: false }, IDS)) {
+      return report();
     }
   }
 

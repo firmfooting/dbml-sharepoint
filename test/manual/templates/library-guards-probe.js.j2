@@ -366,22 +366,24 @@
   // =====================================================================
   let digest = await getDigest();
   const haveList = await spGet(listPath);
-  if (haveList.ok) {
-    record('field.default-formula.fixture-list-created', Q.listFixture, 'ALREADY PRESENT',
-           `reusing an existing list '${LIST}'. Set CLEANUP = true for a clean answer`);
+  const madeList = haveList.ok ? null : await spPost('web/lists', {
+    Title: LIST, BaseTemplate: 100,
+    Description: 'dbml-sharepoint guards probe list. Safe to delete.',
+  }, digest);
+  let listHeld = false;
+  if (madeList !== null && !madeList.ok) {
+    record('field.default-formula.fixture-list-created', Q.listFixture, 'FAIL', short(madeList));
+    voidAll(LIST_IDS, `fixture incomplete: list creation failed (HTTP ${madeList.status})`);
   } else {
-    const made = await spPost('web/lists', {
-      Title: LIST, BaseTemplate: 100,
-      Description: 'dbml-sharepoint guards probe list. Safe to delete.',
-    }, digest);
-    record('field.default-formula.fixture-list-created', Q.listFixture,
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIST}'` : short(made));
-    if (!made.ok) voidAll(LIST_IDS, `fixture incomplete: list creation failed (HTTP ${made.status})`);
+    log('INFO', madeList === null
+      ? `reusing an existing list '${LIST}'. Set CLEANUP = true for a clean answer.`
+      : `created '${LIST}'`);
+    // Read back on reuse as well as on create, because a list found by title may be a library.
+    listHeld = await establishFixture('field.default-formula.fixture-list-created',
+      () => spGet(`${listPath}?$select=BaseTemplate`), { BaseTemplate: 100 }, LIST_IDS);
   }
 
-  if (RESULTS.find((r) => r.id === 'field.default-formula.fixture-list-created').state === 'settled'
-      && RESULTS.find((r) => r.id === LIST_IDS[0]).state !== 'void') {
+  if (listHeld) {
     // ---- NEGATIVE CONTROL: an item POST naming a missing column ---------
     digest = await getDigest();
     const junk = await spPost(`${listPath}/items`,
@@ -455,21 +457,22 @@
   // =====================================================================
   digest = await getDigest();
   const haveLib = await spGet(libPath);
-  if (haveLib.ok) {
-    record('library.doc-lib.fixture-library-created', Q.libFixture, 'ALREADY PRESENT',
-           `reusing an existing library '${LIB}'. Set CLEANUP = true for a clean answer`);
-  } else {
-    const made = await spPost('web/lists', {
-      Title: LIB, BaseTemplate: 101,
-      Description: 'dbml-sharepoint guards probe library. Safe to delete.',
-    }, digest);
-    record('library.doc-lib.fixture-library-created', Q.libFixture,
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIB}'` : short(made));
-    if (!made.ok) {
-      voidAll(LIB_IDS, `fixture incomplete: library creation failed (HTTP ${made.status})`);
-      return report();
-    }
+  const madeLib = haveLib.ok ? null : await spPost('web/lists', {
+    Title: LIB, BaseTemplate: 101,
+    Description: 'dbml-sharepoint guards probe library. Safe to delete.',
+  }, digest);
+  if (madeLib !== null && !madeLib.ok) {
+    record('library.doc-lib.fixture-library-created', Q.libFixture, 'FAIL', short(madeLib));
+    voidAll(LIB_IDS, `fixture incomplete: library creation failed (HTTP ${madeLib.status})`);
+    return report();
+  }
+  log('INFO', madeLib === null
+    ? `reusing an existing library '${LIB}'. Set CLEANUP = true for a clean answer.`
+    : `created '${LIB}'`);
+  // Read back on reuse as well as on create, because a list found by title may be a generic list.
+  if (!await establishFixture('library.doc-lib.fixture-library-created',
+    () => spGet(`${libPath}?$select=BaseTemplate`), { BaseTemplate: 101 }, LIB_IDS)) {
+    return report();
   }
 
   // ---- NEGATIVE CONTROL: a field read naming a missing column -----------

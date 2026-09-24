@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHICH DECLARED SETTING REFUSES A FOLDER
  *
- * REVISION: a8f0ba84
+ * REVISION: 0fa4c9ba
  *
  * ONE QUESTION:
  *   folders/add is accepted on a bare library and refused on one the deploy
@@ -438,7 +438,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision a8f0ba84. Quote this when reporting results.');
+  log('INFO', 'probe revision 0fa4c9ba. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe Folder Schema';
   const libPath = `web/lists/getbytitle('${LIB}')`;
@@ -559,25 +559,26 @@
   // ---- fixture ---------------------------------------------------------
   {
     const existing = await spGet(libPath);
-    if (existing.ok) {
-      record('library.doc-lib.fixture-library-created', Q.fixture, 'ALREADY PRESENT',
-             'reusing an existing library, so every state below may already be applied. '
-             + 'Set CLEANUP = true for a clean answer.');
-    } else {
-      const digest = await getDigest();
-      const made = await spPost('web/lists', {
-        Title: LIB,
-        BaseTemplate: 101,
-        Description: 'dbml-sharepoint folder under schema probe. Safe to delete.',
-        ContentTypesEnabled: false,
-      }, digest);
-      record('library.doc-lib.fixture-library-created', Q.fixture,
-             made.ok ? 'PASS' : 'FAIL',
-             made.ok ? `created '${LIB}'` : short(made));
-      if (!made.ok) {
-        voidAll(IDS, 'the library fixture did not build, so no state could be applied to it.');
-        return report();
-      }
+    const made = existing.ok ? null : await spPost('web/lists', {
+      Title: LIB,
+      BaseTemplate: 101,
+      Description: 'dbml-sharepoint folder under schema probe. Safe to delete.',
+      ContentTypesEnabled: false,
+    }, await getDigest());
+    if (made !== null && !made.ok) {
+      record('library.doc-lib.fixture-library-created', Q.fixture, 'FAIL', short(made));
+      voidAll(IDS, 'the library fixture did not build, so no state could be applied to it.');
+      return report();
+    }
+    log('INFO', made === null
+      ? 'reusing an existing library, so every state below may already be applied. '
+        + 'Set CLEANUP = true for a clean answer.'
+      : `created '${LIB}'`);
+    // The control repeats a measurement taken on a library created with content types off.
+    if (!await establishFixture('library.doc-lib.fixture-library-created',
+      () => spGet(`${libPath}?$select=BaseTemplate,ContentTypesEnabled`),
+      { BaseTemplate: 101, ContentTypesEnabled: false }, IDS)) {
+      return report();
     }
   }
 

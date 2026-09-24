@@ -12,7 +12,7 @@
  *   measured for ONE column, ONE method and ONE file shape, and a family
  *   that shipped two such columns rested on the create alone.
  *
- * REVISION: 7ea273e8
+ * REVISION: b8ed4396
  *
  * WHY: `analysis/checks/_naming.py` accepts `display_column: FileLeafRef` on a
  * document library because the create is measured. Whether a user can then
@@ -633,7 +633,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 7ea273e8. Quote this when reporting results.');
+  log('INFO', 'probe revision b8ed4396. Quote this when reporting results.');
 
   // Three containers, never two. See the acyclic note in the header.
   const LIB = 'dbmlsp Probe LibWrite Lib';
@@ -980,21 +980,16 @@
   // ---- fixture-library-created ---------------------------------------------
   let digest = await getDigest();
   const existingLib = await spGet(libPath);
-  let libraryReady = false;
-  if (existingLib.ok) {
-    answer('library.doc-lib.fixture-library-created', 'ALREADY PRESENT',
-           `reusing an existing '${LIB}'. Set CLEANUP = true for a clean answer`);
-    libraryReady = true;
-  } else {
-    const made = await spPost('web/lists', {
-      Title: LIB,
-      BaseTemplate: 101,
-      Description: 'dbml-sharepoint library-lookup-write probe library. Safe to delete.',
-    }, digest);
-    answer('library.doc-lib.fixture-library-created', made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIB}'` : `HTTP ${made.status}: ${clip(made.text, 300)}`);
-    libraryReady = made.ok;
+  const madeLib = existingLib.ok ? null : await spPost('web/lists', {
+    Title: LIB,
+    BaseTemplate: 101,
+    Description: 'dbml-sharepoint library-lookup-write probe library. Safe to delete.',
+  }, digest);
+  if (madeLib !== null && !madeLib.ok) {
+    answer('library.doc-lib.fixture-library-created', 'FAIL',
+           `HTTP ${madeLib.status}: ${clip(madeLib.text, 300)}`);
   }
+  const libraryReady = madeLib === null || madeLib.ok;
 
   const abortEverything = (reason) => {
     for (const id of Object.keys(QUESTIONS)) {
@@ -1009,6 +1004,15 @@
 
   if (!libraryReady) {
     return abortEverything('the scratch library was never created, so no lookup had a library to point at');
+  }
+  log('INFO', madeLib === null
+    ? `reusing an existing '${LIB}'. Set CLEANUP = true for a clean answer.`
+    : `created '${LIB}'`);
+  // Read back on reuse as well as on create, because a list found by title may be a generic list.
+  if (!await establishFixture('library.doc-lib.fixture-library-created',
+    () => spGet(`${libPath}?$select=BaseTemplate`), { BaseTemplate: 101 },
+    Object.keys(QUESTIONS).filter((id) => id !== 'library.doc-lib.fixture-library-created'))) {
+    return report();
   }
 
   // ---- fixture-write-containers-ready --------------------------------------
