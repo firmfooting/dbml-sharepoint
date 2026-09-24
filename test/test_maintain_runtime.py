@@ -296,6 +296,14 @@ _HARNESS = textwrap.dedent(r"""
         }
         return reply(204, {});
       }
+      // protection.js's lock readback, failed while the MERGE before it kept whatever it wrote.
+      if (method === 'GET' && /\$select=AllowDeletion$/.test(u) && FLAGS.lockReadback) {
+        if (FLAGS.lockReadback === 'never-answers') throw new TypeError('Failed to fetch');
+        if (FLAGS.lockReadback === 'body-never-arrives') {
+          return { ...bodyFails(200), json: async () => { throw new TypeError('lost'); } };
+        }
+        return reply(500, { error: { message: { value: 'readback failed' } } });
+      }
       if (u.includes('$select=AllowDeletion')) {
         const d = { AllowDeletion: state.list.AllowDeletion, ItemCount: state.items.length };
         return reply(200, { d });
@@ -604,6 +612,60 @@ def test_a_seal_that_fails_part_way_reports_the_columns_it_did_seal() -> None:
     assert summary["aborted"] == "readback-mismatch"
     assert summary["actions"] == [{"action": "unseal", "columns": 1, "verified": True}]
     assert _merges_of(calls, "AllowDeletion") == [], "the run must stop before the next action"
+
+
+def _protection_output(
+    config: dict[str, Any], answers: list[str], flags: dict[str, Any] | None = None,
+) -> tuple[Run, str]:
+    """A protection run's summary and its log, from one execution."""
+    js = generate_protection_js(
+        site_url=SITE, list_title=LIST_SLUG, list_path=LIST_PATH,
+        generated_at=GENERATED_AT,
+    )
+    out = _run(_wrap(js, config, answers, flags))
+    return _parse(out), out
+
+
+@pytest.mark.parametrize("failure", ["fails", "never-answers", "body-never-arrives"])
+@pytest.mark.parametrize("applied", [True, False], ids=["answer-lost", "never-applied"])
+def test_a_lock_whose_readback_fails_is_recorded_as_outcome_unknown(
+    failure: str, applied: bool,
+) -> None:
+    """#573: the MERGE may have taken, so the run says it does not know.
+
+    Whether the write took and whether its readback failed are separate
+    flags, and the report is the same either way, because the script cannot
+    tell them apart and must not claim either.
+    """
+    flags: dict[str, Any] = {"lockReadback": failure, "discardListMerge": not applied}
+    (summary, calls, prompts, _tables), out = _protection_output(
+        _config(allow_deletion=True), ["lock", "seal"], flags,
+    )
+    assert summary["aborted"] == "outcome-unknown"
+    action = summary["actions"][0]
+    assert action == {
+        "action": "lock", "list": "APP_Thing", "requested": {"AllowDeletion": False},
+        "outcome": "unknown", "readback": action["readback"], "verified": False,
+    }
+    assert len(summary["actions"]) == 1
+    expected = {
+        "fails": "HTTP 500", "never-answers": "never answered",
+        "body-never-arrives": "body never arrived",
+    }[failure]
+    assert expected in action["readback"]
+    assert "OUTCOME UNKNOWN" in summary["errors"][0]["error"]
+    assert "leave the prompt blank" in out
+    assert _merges_of(calls, "Sealed") == [], "the run must stop before the next action"
+    assert len(prompts) == 1
+
+
+def test_a_lock_readback_that_answers_the_old_state_is_a_mismatch_not_unknown() -> None:
+    """A readback that ANSWERED is evidence, unlike one that failed."""
+    summary, _calls, _prompts, _tables = _protection(
+        _config(allow_deletion=True), ["lock", ""], {"discardListMerge": True},
+    )
+    assert summary["aborted"] == "readback-mismatch"
+    assert summary["actions"] == []
 
 
 def test_the_state_table_reports_the_custom_columns_and_the_marker() -> None:
