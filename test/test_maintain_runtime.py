@@ -294,6 +294,8 @@ _HARNESS = textwrap.dedent(r"""
         if (!discarded && body && 'AllowDeletion' in body) {
           state.list.AllowDeletion = body.AllowDeletion;
         }
+        // Thrown after the write, so with `discardListMerge` it is a MERGE never applied.
+        if (FLAGS.listMergeThrows) throw new TypeError('Failed to fetch');
         return reply(204, {});
       }
       // protection.js's lock readback, failed while the MERGE before it kept whatever it wrote.
@@ -666,6 +668,55 @@ def test_a_lock_readback_that_answers_the_old_state_is_a_mismatch_not_unknown() 
     )
     assert summary["aborted"] == "readback-mismatch"
     assert summary["actions"] == []
+
+
+def test_a_lock_whose_merge_never_answered_but_took_is_settled_as_applied() -> None:
+    """#646: a rejected fetch says nothing about the write, so the readback decides."""
+    (summary, _calls, prompts, _tables), out = _protection_output(
+        _config(allow_deletion=True), ["lock", ""], {"listMergeThrows": True},
+    )
+    assert "aborted" not in summary
+    assert summary["errors"] == []
+    assert summary["actions"] == [{
+        "action": "lock", "list": "APP_Thing", "requested": {"AllowDeletion": False},
+        "outcome": "applied", "verified": True,
+    }]
+    assert summary["list"]["allow_deletion"] is False
+    assert "[WARN] The MERGE of AllowDeletion=false on 'APP_Thing' never answered" in out
+    assert len(prompts) == 2
+
+
+def test_a_lock_whose_merge_never_answered_and_never_took_is_a_mismatch() -> None:
+    (summary, _calls, prompts, _tables), out = _protection_output(
+        _config(allow_deletion=True), ["lock", ""],
+        {"listMergeThrows": True, "discardListMerge": True},
+    )
+    assert summary["aborted"] == "readback-mismatch"
+    assert summary["actions"] == []
+    assert "AllowDeletion reads back true after writing false" in summary["errors"][0]["error"]
+    assert "[WARN] The MERGE of AllowDeletion=false on 'APP_Thing' never answered" in out
+    assert len(prompts) == 1
+
+
+@pytest.mark.parametrize("applied", [True, False], ids=["took", "never-applied"])
+def test_a_lock_whose_merge_and_readback_both_fail_is_outcome_unknown(applied: bool) -> None:
+    flags = {
+        "listMergeThrows": True, "lockReadback": "never-answers", "discardListMerge": not applied,
+    }
+    (summary, calls, prompts, _tables), out = _protection_output(
+        _config(allow_deletion=True), ["lock", "seal"], flags,
+    )
+    assert summary["aborted"] == "outcome-unknown"
+    action = summary["actions"][0]
+    assert action == {
+        "action": "lock", "list": "APP_Thing", "requested": {"AllowDeletion": False},
+        "outcome": "unknown", "readback": action["readback"], "verified": False,
+    }
+    assert "never answered" in action["readback"]
+    assert "OUTCOME UNKNOWN" in summary["errors"][0]["error"]
+    assert "leave the prompt blank" in out
+    assert _merges_of(calls, "Sealed") == [], "the run must stop before the next action"
+    assert len(prompts) == 1
 
 
 def test_the_state_table_reports_the_custom_columns_and_the_marker() -> None:
