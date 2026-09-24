@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOES A BLANK NUMBER OPERAND REFUSE THE SAVE
  *
- * REVISION: 42d371b2
+ * REVISION: d4eb2182
  *
  * ONE QUESTION:
  *   A save rule comparing a NULLABLE Number column against a limit is stored
@@ -210,7 +210,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -455,7 +455,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 42d371b2. Quote this when reporting results.');
+  log('INFO', 'probe revision d4eb2182. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Blank Operand';
   const listPath = `web/lists/getbytitle('${LIST}')`;

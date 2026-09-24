@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY VIEW TOTALS AND SEARCH DISCOVERY
  *
- * REVISION: ed9a5582
+ * REVISION: 433a509c
  *
  * ONE QUESTION:
  *   Do a document library's view totals and its search discoverability
@@ -164,7 +164,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -409,7 +409,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision ed9a5582. Quote this when reporting results.');
+  log('INFO', 'probe revision 433a509c. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibViewSearch';
   const TWIN = 'dbmlsp Probe LibViewSearchRows';

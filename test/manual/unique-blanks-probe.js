@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOES A UNIQUE TEXT COLUMN ACCEPT MORE THAN ONE BLANK
  *
- * REVISION: ea795729
+ * REVISION: 4a4da75d
  *
  * ONE QUESTION:
  *   On a single-line text column with EnforceUniqueValues, do two items that
@@ -150,7 +150,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -395,7 +395,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision ea795729. Quote this when reporting results.');
+  log('INFO', 'probe revision 4a4da75d. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Unique List';
   const listPath = `web/lists/getbytitle('${LIST}')`;

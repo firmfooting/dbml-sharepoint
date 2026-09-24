@@ -93,7 +93,7 @@ def test_today_semantics_records_a_refused_save_as_refused() -> None:
         assert "REFUSED HTTP 400" in rows[row_id]["evidence"]
 
 
-@pytest.mark.parametrize("status", [401, 403, 408, 429])
+@pytest.mark.parametrize("status", [401, 403, 408, 429, 503])
 @pytest.mark.parametrize("row_id", [_TOMORROW, _PLUS_1H])
 def test_today_semantics_leaves_a_save_that_failed_without_a_refusal_open(
     row_id: str, status: int,
@@ -110,6 +110,23 @@ def test_today_semantics_leaves_a_save_that_failed_without_a_refusal_open(
     assert row["outcome"] == "NOT ESTABLISHED", row
     assert row["state"] == "open", row
     assert f"FAILED HTTP {status}" in row["evidence"]
+
+
+@pytest.mark.parametrize("status", [401, 403, 408, 429, 503])
+def test_today_semantics_leaves_a_bare_create_that_failed_without_a_refusal_open(
+    status: int,
+) -> None:
+    """A throttled bare =TODAY() create was recorded as the default failing."""
+    mock = _over(_TODAY_MOCK, f"""
+        if (verb === 'POST' && where.endsWith('/items') && body.Title === 'bare') {{
+          return jsonResponse({status}, {{ error: {{ message: {{ value: '' }} }} }});
+        }}
+    """)
+    rows, _ = _run_probe(mock, _TODAY_HEALTHY, _TODAY)
+
+    row = rows["formula.datetime.today-function-default-value"]
+    assert row["outcome"] == "NOT ESTABLISHED", row
+    assert f"bare item failed: HTTP {status}" in row["evidence"]
 
 
 # --------------------------------------------------------------------------

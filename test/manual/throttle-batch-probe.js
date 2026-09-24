@@ -6,7 +6,7 @@
  *   REQUEST or per underlying OPERATION -- and what does a throttled
  *   $batch request look like when it arrives in a browser context?
  *
- * REVISION: d0df0ae0
+ * REVISION: d4c7cc37
  *
  * WHY: issue #404. Microsoft Graph documentation says requests inside a
  * $batch are charged per operation; Microsoft Learn ("Avoid getting
@@ -183,7 +183,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -427,7 +427,7 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision d0df0ae0. Quote this when reporting results.');
+  log('INFO', 'probe revision d4c7cc37. Quote this when reporting results.');
 
   const SCRATCH = 'dbmlsp Probe ThrottleBatch';
   const listPath = `web/lists/getbytitle('${SCRATCH}')`;

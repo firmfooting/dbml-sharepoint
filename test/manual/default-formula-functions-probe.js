@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHICH FUNCTIONS A DefaultFormula EVALUATES
  *
- * REVISION: 4cb3d0ef
+ * REVISION: e9242739
  *
  * ONE QUESTION:
  *   Does a DefaultFormula calling DAY, ROUNDDOWN, MOD, TEXT, IF, AND or OR
@@ -163,7 +163,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -408,7 +408,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 4cb3d0ef. Quote this when reporting results.');
+  log('INFO', 'probe revision e9242739. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Functions List';
   const listPath = `web/lists/getbytitle('${LIST}')`;

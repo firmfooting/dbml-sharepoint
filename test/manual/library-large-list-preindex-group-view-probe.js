@@ -12,7 +12,7 @@
  * it does not matter, the two libraries answer the same way and the guidance is
  * about the index build rather than about what an aggregation is given.
  *
- * REVISION: eb48f97b
+ * REVISION: d2ad77bb
  *
  * THE FIXTURE IS READ. IT IS NEVER BUILT, WRITTEN TO, OR TORN DOWN.
  * `library-large-list-preindex-fixture-probe.js` builds and owns
@@ -404,7 +404,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -649,7 +649,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision eb48f97b. Quote this when reporting results.');
+  log('INFO', 'probe revision d2ad77bb. Quote this when reporting results.');
 
   // ---- The fixture contract, restated ----------------------------------
   // Owned by library-large-list-preindex-fixture-probe.js. Read, never built,

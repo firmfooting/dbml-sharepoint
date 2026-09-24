@@ -203,7 +203,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -527,7 +527,7 @@
   };
   const voidDependants = (why) => voidRows(DEPENDANTS, why);
 
-  log('INFO', 'probe revision e26484d3. Quote this when reporting results.');
+  log('INFO', 'probe revision 31ac9ce2. Quote this when reporting results.');
 
   if (!CONFIRMED) {
     log('INFO', `Would create lists '${TARGET}' and '${SOURCE}' on ${WEB}, add a`);

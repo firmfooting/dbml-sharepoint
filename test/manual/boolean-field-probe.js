@@ -6,7 +6,7 @@
  *   (FieldTypeKind 8), and once such a column exists, can it be indexed and
  *   given a default?
  *
- * REVISION: 042171e0
+ * REVISION: 4caa2660
  *
  * WHY: on 2026-09-06 a live deploy stopped part-way through provisioning the
  * tool-owned change log. `POST .../fields` answered HTTP 400 on the ninth of
@@ -199,7 +199,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -443,7 +443,7 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision 042171e0. Quote this when reporting results.');
+  log('INFO', 'probe revision 4caa2660. Quote this when reporting results.');
 
   const SCRATCH = 'dbmlsp Probe BooleanField';
   // Ownership is the DESCRIPTION, never the title, which is the rule

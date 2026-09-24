@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: FIELD DIVERGENCE ON A DOCUMENT LIBRARY
  *
- * REVISION: 706ca730
+ * REVISION: a83a1f04
  *
  * ONE QUESTION:
  *   Does the field surface of a document library diverge from a generic list?
@@ -147,7 +147,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -392,7 +392,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 706ca730. Quote this when reporting results.');
+  log('INFO', 'probe revision a83a1f04. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibField';
   const TARGET = 'dbmlsp Probe LibField Target';

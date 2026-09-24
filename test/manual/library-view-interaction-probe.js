@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: HOW DO A VIEW'S FILTER, GROUP-BY AND FOLDER SCOPE INTERACT?
  *
- * REVISION: ad875918
+ * REVISION: ec4a7ba6
  *
  * ONE QUESTION, on the composition nothing has measured:
  *   `library-view-probe.js` measured a filter on a single-value column and a
@@ -309,7 +309,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -554,7 +554,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision ad875918. Quote this when reporting results.');
+  log('INFO', 'probe revision ec4a7ba6. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibViewInt';
   // Text, so that <Value Type="Text"> is the spelling Learn documents rather

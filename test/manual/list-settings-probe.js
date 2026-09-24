@@ -6,7 +6,7 @@
  *   through the ordinary MERGE path actually change the container, on a
  *   GENERIC LIST and on a DOCUMENT LIBRARY, which may not answer the same?
  *
- * REVISION: 0dcac270
+ * REVISION: 7d36ee80
  *
  * WHY: attachments are disabled on every list before go-live as a MANUAL
  * step, on ten lists in programme-governance alone, because there is no
@@ -205,7 +205,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -454,7 +454,7 @@
   // up. Destructive, so it ships false like every other guard.
   const CLEANUP_AT_END = false;
 
-  log('INFO', 'probe revision 0dcac270. Quote this when reporting results.');
+  log('INFO', 'probe revision 7d36ee80. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe ListSettings';
   const LIB = 'dbmlsp Probe ListSettings Lib';

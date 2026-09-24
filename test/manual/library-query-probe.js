@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY QUERY SURFACE
  *
- * REVISION: 618ff086
+ * REVISION: 5d2668cf
  *
  * ONE QUESTION:
  *   Does the query surface of a document library diverge from a generic list?
@@ -162,7 +162,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -407,7 +407,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 618ff086. Quote this when reporting results.');
+  log('INFO', 'probe revision 5d2668cf. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibQuery';
   const listPath = `web/lists/getbytitle('${LIB}')`;

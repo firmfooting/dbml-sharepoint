@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: HOW DOES A DOCUMENT LIBRARY NEST FOLDERS?
  *
- * REVISION: dc88cbfd
+ * REVISION: ec7acd82
  *
  * ONE QUESTION, on the depth nothing has measured:
  *   `folder-probe.js` created ONE folder at the library root and settled what a
@@ -293,7 +293,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -538,7 +538,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision dc88cbfd. Quote this when reporting results.');
+  log('INFO', 'probe revision ec7acd82. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibNest';
   const COL = 'NestChoice';

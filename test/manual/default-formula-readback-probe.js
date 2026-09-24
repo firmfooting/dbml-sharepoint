@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHAT DefaultValue READS BACK BESIDE A DefaultFormula
  *
- * REVISION: 8881ddef
+ * REVISION: 49df7c55
  *
  * ONE QUESTION:
  *   When a column carries a DefaultFormula, what does its DefaultValue
@@ -170,7 +170,7 @@
   // the verdict so a reader can see which it was.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429;
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -415,7 +415,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 8881ddef. Quote this when reporting results.');
+  log('INFO', 'probe revision 49df7c55. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Readback List';
   const LIB = 'dbmlsp Probe Readback Library';
