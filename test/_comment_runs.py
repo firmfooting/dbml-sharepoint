@@ -149,6 +149,9 @@ def _yaml_comment_lines(lines: list[str]) -> set[int]:
             # Content must be deeper than its key, which sits after any `- ` item dashes.
             key = len(line) - len(SEQUENCE_LEAD.sub("", line, count=1))
             floor = key if match.group().startswith(":") else indent
+            # An explicit indentation indicator fixes the content column relative to the parent.
+            explicit = re.search(r"[|>][+-]?([1-9])", match.group())
+            content = floor + int(explicit.group(1)) if explicit else None
     return found
 
 

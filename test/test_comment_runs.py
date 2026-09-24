@@ -288,6 +288,14 @@ def test_a_sequence_item_block_scalar_takes_its_first_line_indentation() -> None
     assert [run.length for run in _flagged(text + _lines("    #", MIN_RUN), "a.yaml")] == [7]
 
 
+@pytest.mark.parametrize("indicator", ["|2", ">-2", "|2+"])
+def test_an_explicit_indentation_indicator_fixes_the_content_column(indicator: str) -> None:
+    """A deeper first line does not raise the column the indicator set."""
+    text = f"notes: {indicator}\n    deeper first line\n" + "  # text\n" * MIN_RUN + "next: 1\n"
+
+    assert comment_runs(text, "a.yaml") == []
+
+
 def test_a_yaml_comment_run_after_a_block_scalar_counts() -> None:
     text = "- notes: |\n    text\n" + _lines("#", MIN_RUN)
 
