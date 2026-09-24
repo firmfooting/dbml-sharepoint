@@ -435,7 +435,93 @@ def test_question_call_detector_ignores_comments_and_strings() -> None:
 
 
 # === A fixture row may not be a literal PASS (#559) ========================
-RECORD_HEAD = re.compile(r"^[ \t]*record\(", re.MULTILINE)
+#: A `record(` call anywhere in code, so an inline `if (x) record(...)` is seen (#644).
+RECORD_ANYWHERE = re.compile(r"(?<![\w$.])record\(")
+#: After one of these, a `/` opens a regex literal rather than dividing.
+_REGEX_PRECEDERS = set("(,=:[!&|?{};+-*%<>~^")
+_WORD = re.compile(r"[\w$]+")
+_REGEX_KEYWORDS = {"return", "typeof", "case", "in", "of", "delete", "void", "throw", "new",
+                   "else", "do", "yield", "await"}
+
+
+def _code_only(text: str) -> str:
+    """`text` with comment and string bodies blanked, offsets kept, so a scan sees only code."""
+    out = list(text)
+    end = len(text)
+
+    def blank(start: int, stop: int) -> None:
+        for k in range(start, min(stop, end)):
+            if out[k] != "\n":
+                out[k] = " "
+
+    def template(i: int) -> int:
+        start = i
+        while i < end:
+            if text[i] == "\\":
+                i += 2
+            elif text[i] == "`":
+                blank(start, i)
+                return i + 1
+            elif text.startswith("${", i):
+                blank(start, i)
+                i = code(i + 2, closing=True)
+                start = i
+            else:
+                i += 1
+        blank(start, end)
+        return end
+
+    def code(i: int, closing: bool = False) -> int:
+        depth = 0
+        prev = ""
+        while i < end:
+            char = text[i]
+            if text.startswith("//", i):
+                stop = text.find("\n", i)
+                stop = end if stop < 0 else stop
+                blank(i, stop)
+                i = stop
+            elif text.startswith(("/*", "{#"), i):
+                stop = text.find("*/" if char == "/" else "#}", i + 2)
+                stop = end if stop < 0 else stop + 2
+                blank(i, stop)
+                i = stop
+            elif char in "'\"":
+                j = i + 1
+                while j < end and text[j] not in (char, "\n"):
+                    j += 2 if text[j] == "\\" else 1
+                blank(i + 1, j)
+                i, prev = j + 1, char
+            elif char == "`":
+                i, prev = template(i + 1), char
+            elif char == "/" and (not prev or prev in _REGEX_PRECEDERS or prev in _REGEX_KEYWORDS):
+                j, in_class = i + 1, False
+                while j < end and text[j] != "\n" and (text[j] != "/" or in_class):
+                    if text[j] == "\\":
+                        j += 1
+                    elif text[j] in "[]":
+                        in_class = text[j] == "["
+                    j += 1
+                blank(i + 1, j)
+                i, prev = j + 1, "regex"
+            elif char.isalnum() or char in "_$":
+                word = _WORD.match(text, i)
+                assert word is not None
+                i, prev = word.end(), word.group(0)
+            elif char.isspace():
+                i += 1
+            else:
+                if char == "{":
+                    depth += 1
+                elif char == "}":
+                    if closing and depth == 0:
+                        return i + 1
+                    depth -= 1
+                i, prev = i + 1, char
+        return end
+
+    code(0)
+    return "".join(out)
 
 #: A ratchet: each literal PASS here follows a guard in its own template.
 #: Entries come out when the row moves onto establishFixture, and none go in.
@@ -479,7 +565,7 @@ def _string_value(argument: str) -> str | None:
 def _literal_fixture_passes(text: str) -> list[str]:
     """Fixture ids this source records with the outcome written as the literal 'PASS'."""
     ids = []
-    for call in RECORD_HEAD.finditer(text):
+    for call in RECORD_ANYWHERE.finditer(_code_only(text)):
         arguments = _arguments(text, call.end(), 3)
         if len(arguments) < 3:
             continue
@@ -528,10 +614,19 @@ def test_the_literal_pass_detector_reads_the_shapes_it_claims_to() -> None:
       record("a.b.fixture-seven", "q", "PASS", "e");
       record(`a.b.fixture-eight`, 'q', `PASS`, 'e');
       record('a.b.fixture-nine', 'q', `${outcome}`, 'e');
+      if (held) record('a.b.fixture-x', 'q', 'PASS', 'e');
+      const note = "if (held) record('a.b.fixture-in-string', 'q', 'PASS', 'e')";
+      /* if (held) record('a.b.fixture-in-block', 'q', 'PASS', 'e'); */
+      {# record('a.b.fixture-in-jinja', 'q', 'PASS', 'e') #}
+      const tpl = `record('a.b.fixture-in-template', 'q', 'PASS', 'e')`;
+      const quote = /'/; ok && record('a.b.fixture-after-regex', 'q', 'PASS', 'e');
+      log(`${record('a.b.fixture-in-hole', 'q', 'PASS', 'e')}`);
+      other.record('a.b.fixture-method', 'q', 'PASS', 'e');
     """
     assert _literal_fixture_passes(text) == [
         "a.b.fixture-one", "a.b.fixture-two", "a.b.fixture-six",
-        "a.b.fixture-seven", "a.b.fixture-eight",
+        "a.b.fixture-seven", "a.b.fixture-eight", "a.b.fixture-x",
+        "a.b.fixture-after-regex", "a.b.fixture-in-hole",
     ]
 
 

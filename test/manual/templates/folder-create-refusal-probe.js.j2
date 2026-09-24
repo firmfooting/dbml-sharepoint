@@ -184,31 +184,33 @@
   const shapeOf = (title) => spGet(`${listPath(title)}?$select=BaseTemplate,ContentTypesEnabled,EnableFolderCreation`);
   log('INFO', `${libDefault.reused ? 'reused' : 'created'} '${LIB_DEFAULT}', `
     + `${libNoCt.reused ? 'reused' : 'created'} '${LIB_NOCT}'.`);
-  // Both reads run inside the helper, so a read that throws is recorded rather than escaping.
+  const rootOf = (title) => spGet(`${listPath(title)}/RootFolder?$select=ServerRelativeUrl`);
+  const isPath = (v) => typeof v === 'string' && v !== '';
+  // Every read runs inside the helper, so a read that throws is recorded rather than escaping.
+  let defaultContentTypes;
+  let rootDefault;
+  let rootNoCt;
   const held = await establishFixture('library.doc-lib.fixture-library-created', async () => {
-    const shapeDefault = await shapeOf(LIB_DEFAULT);
-    if (!shapeDefault.ok) return shapeDefault;
-    const shapeNoCt = await shapeOf(LIB_NOCT);
-    if (!shapeNoCt.ok) return shapeNoCt;
-    log('INFO', `Default library shape: ${JSON.stringify(shapeDefault.body)}`);
+    const answers = [];
+    for (const read of [() => shapeOf(LIB_DEFAULT), () => shapeOf(LIB_NOCT),
+                        () => rootOf(LIB_DEFAULT), () => rootOf(LIB_NOCT)]) {
+      const r = await read();
+      if (unanswered(r)) return r;
+      answers.push(r.body);
+    }
+    log('INFO', `Default library shape: ${JSON.stringify(answers[0])}`);
+    defaultContentTypes = answers[0].ContentTypesEnabled;
+    [rootDefault, rootNoCt] = [answers[2].ServerRelativeUrl, answers[3].ServerRelativeUrl];
     return { ok: true, status: 200, body: {
-      DefaultBaseTemplate: (shapeDefault.body || {}).BaseTemplate,
-      NoCtBaseTemplate: (shapeNoCt.body || {}).BaseTemplate,
-      NoCtContentTypesEnabled: (shapeNoCt.body || {}).ContentTypesEnabled,
+      DefaultBaseTemplate: answers[0].BaseTemplate,
+      NoCtBaseTemplate: answers[1].BaseTemplate,
+      NoCtContentTypesEnabled: answers[1].ContentTypesEnabled,
+      DefaultRootFolder: answers[2].ServerRelativeUrl,
+      NoCtRootFolder: answers[3].ServerRelativeUrl,
     } };
-  }, { DefaultBaseTemplate: 101, NoCtBaseTemplate: 101, NoCtContentTypesEnabled: false }, IDS);
+  }, { DefaultBaseTemplate: 101, NoCtBaseTemplate: 101, NoCtContentTypesEnabled: false,
+       DefaultRootFolder: isPath, NoCtRootFolder: isPath }, IDS);
   if (!held) return report();
-
-  const rootOf = async (title) => {
-    const r = await spGet(`${listPath(title)}/RootFolder?$select=ServerRelativeUrl`);
-    return readFailed(r) ? null : r.body.ServerRelativeUrl;
-  };
-  const rootDefault = await rootOf(LIB_DEFAULT);
-  const rootNoCt = await rootOf(LIB_NOCT);
-  if (!rootDefault || !rootNoCt) {
-    voidAll(IDS, 'a library RootFolder did not read back, so no folder path could be built.');
-    return report();
-  }
 
   // ---- one cell of the two by two --------------------------------------
   // Recorded as PASS when the call is accepted AND the folder reads back,
@@ -244,10 +246,19 @@
 
   await addFolder('library.folder.spaced-name-default-library', Q.spacedDefault,
                   LIB_DEFAULT, rootDefault, SPACED);
-  await addFolder('library.folder.plain-name-content-types-disabled', Q.plainNoCt,
-                  LIB_NOCT, rootNoCt, PLAIN);
-  await addFolder('library.folder.spaced-name-content-types-disabled', Q.spacedNoCt,
-                  LIB_NOCT, rootNoCt, SPACED);
+  // These two cells read against the control across the switch, which is only varied if Default reads true.
+  if (defaultContentTypes === true) {
+    await addFolder('library.folder.plain-name-content-types-disabled', Q.plainNoCt,
+                    LIB_NOCT, rootNoCt, PLAIN);
+    await addFolder('library.folder.spaced-name-content-types-disabled', Q.spacedNoCt,
+                    LIB_NOCT, rootNoCt, SPACED);
+  } else {
+    voidAll(['library.folder.plain-name-content-types-disabled',
+             'library.folder.spaced-name-content-types-disabled'],
+            `the switch did not vary: '${LIB_DEFAULT}' read ContentTypesEnabled `
+            + `${JSON.stringify(defaultContentTypes)} and '${LIB_NOCT}' read false, so no cell `
+            + 'can attribute a result to the content types switch.');
+  }
 
   // ---- the documented ResourcePath spelling ----------------------------
   {

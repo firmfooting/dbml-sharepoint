@@ -462,6 +462,11 @@ def test_list_modified_clock_clears_a_column_rule_left_by_modified_clock() -> No
               if r["verb"] == "MERGE" and "getbyinternalnameortitle('DM')" in r["path"]]
     assert clears and '"ValidationFormula":""' in clears[0]["body"]
     assert not _void_ids(rows)
+    # Every column's shape is read before any of them is written to.
+    first_write = next(i for i, r in enumerate(sent) if r["verb"] == "MERGE")
+    for name in ("DM", "DC", "WM"):
+        assert any(r["verb"] == "GET" and f"getbyinternalnameortitle('{name}')" in r["path"]
+                   for r in sent[:first_write]), name
 
 
 def test_list_modified_clock_voids_the_rows_when_a_column_rule_does_not_clear() -> None:
@@ -483,8 +488,27 @@ def test_list_modified_clock_voids_the_rows_on_a_reused_column_of_the_wrong_shap
     assert _void_ids(rows) == _LIST_ALL
     assert _void_ids(rows) == _catalogued_dependents("list-modified-clock-probe.js", _FIXTURE_DM)
     assert not _item_writes(sent)
-    # Only the column-rule clears are sent; the list rule is never set.
-    assert not [r for r in sent if r["verb"] == "MERGE" and "/fields/" not in r["path"]]
+    # A wrong-shaped column is never cleared, and neither is any other (#644).
+    assert not [r for r in sent if r["verb"] == "MERGE"]
+
+
+_COLUMN_FIXTURES = {"DM": _FIXTURE_DM, "DC": "formula.validation.fixture-dc-date-only-column",
+                    "WM": _FIXTURE_WM}
+
+
+@pytest.mark.parametrize("column", ["DM", "DC", "WM"])
+def test_list_modified_clock_writes_no_column_rule_when_one_column_is_the_wrong_shape(
+    column: str,
+) -> None:
+    """The clear ran before the shape read, so it could erase a rule from the wrong column."""
+    columns = {**_SCRATCH_COLUMNS,
+               column: {**_SCRATCH_COLUMNS[column], "TypeAsString": "Text",
+                        "ValidationFormula": "=[X]<=[Modified]"}}
+    rows, sent = _run_probe(_SCRATCH_MOCK, {"fields": columns}, "list-modified-clock-probe.js")
+
+    assert "TypeAsString differs" in rows[_COLUMN_FIXTURES[column]]["evidence"]
+    assert _void_ids(rows) == _LIST_ALL
+    assert not [r for r in sent if r["verb"] == "MERGE"]
 
 
 def test_list_modified_clock_voids_the_update_rows_when_the_seed_does_not_read_back() -> None:
@@ -527,8 +551,15 @@ _SENTINEL_MOCK = textwrap.dedent("""
           Information: { Bias: 0, StandardBias: 0, DaylightBias: 0 } });
       }
       if (path.endsWith('/fields/createfieldasxml')) {
+        // Only the status is asserted on, so the body claims nothing about its shape.
+        if (CONFIG.createStatus) {
+          return jsonResponse(CONFIG.createStatus, { 'odata.error': { message: { value: '' } } });
+        }
         const xml = sent.parameters.SchemaXml;
         const name = /Name="([^"]+)"/.exec(xml)[1];
+        if (CONFIG.createdButUnreadable) {
+          return jsonResponse(201, { Id: `field-${name}`, InternalName: name });
+        }
         const type = /Type="([^"]+)"/.exec(xml)[1];
         fields.set(name, { TypeAsString: type, ReadOnlyField: false,
           DisplayFormat: /Format="DateTime"/.test(xml) ? 1 : 0, ValidationFormula: '' });
@@ -536,6 +567,9 @@ _SENTINEL_MOCK = textwrap.dedent("""
       }
       const named = FIELD.exec(path);
       if (named) {
+        if (CONFIG.probeWhenThrows && named[1] === 'ProbeWhen' && verb === 'GET') {
+          throw new TypeError('Failed to fetch');
+        }
         const held = fields.get(named[1]);
         if (!held) return noSuchField();
         if (verb === 'MERGE') {
@@ -649,6 +683,44 @@ def test_datetime_sentinel_voids_the_time_of_day_rows_on_a_reused_date_only_colu
     assert not [r for r in sent if r["path"].endswith("/getitems") or r["path"].endswith("/views")]
     # The rows that do not rest on ProbeWhen's time of day still answer.
     assert rows["formula.validation.doubled-quote-literal-accepted"]["outcome"] == "ACCEPTED"
+
+
+def test_datetime_sentinel_records_a_probe_when_preflight_that_throws() -> None:
+    """The preflight ran outside the helper, so a rejected fetch ended the run unrecorded."""
+    rows, sent = _run_probe(_SENTINEL_MOCK, {"fields": {}, "probeWhenThrows": True},
+                            "datetime-sentinel-probe.js")
+
+    fixture = rows[_PROBE_WHEN]
+    assert fixture["outcome"] == "FAIL", fixture
+    assert "the read threw: Failed to fetch" in fixture["evidence"]
+    assert _void_ids(rows) == _TIME_OF_DAY
+    # Existence was never shown, so the validation control naming ProbeWhen is not sent.
+    assert rows["BOOT"]["outcome"] == "FAIL"
+    assert not [r for r in sent if r["verb"] == "MERGE"]
+    assert not _item_writes(sent)
+
+
+def test_datetime_sentinel_stops_when_probe_when_cannot_be_created() -> None:
+    rows, sent = _run_probe(_SENTINEL_MOCK, {"fields": {}, "createStatus": 500},
+                            "datetime-sentinel-probe.js")
+
+    assert rows["BOOT"]["outcome"] == "FAIL"
+    assert "HTTP 500" in rows["BOOT"]["evidence"]
+    assert "creating ProbeWhen answered HTTP 500" in rows[_PROBE_WHEN]["evidence"]
+    assert _void_ids(rows) == _TIME_OF_DAY
+    assert not [r for r in sent if r["verb"] == "MERGE"]
+
+
+def test_datetime_sentinel_stops_when_a_created_probe_when_does_not_read_back() -> None:
+    """A 2xx create set presence, so the validation control ran against a missing column."""
+    rows, sent = _run_probe(_SENTINEL_MOCK, {"fields": {}, "createdButUnreadable": True},
+                            "datetime-sentinel-probe.js")
+
+    assert rows[_PROBE_WHEN]["outcome"] == "FAIL", rows[_PROBE_WHEN]
+    assert rows["BOOT"]["outcome"] == "FAIL"
+    assert _void_ids(rows) == _TIME_OF_DAY
+    assert not [r for r in sent if r["verb"] == "MERGE"]
+    assert not _item_writes(sent)
 
 
 #: Two document libraries, the fixture and the small shape control. The big
@@ -828,6 +900,7 @@ _FOLDER_MOCK = textwrap.dedent("""
         return jsonResponse(200, { Exists: folders.has(read[1]), Name: read[1],
           ServerRelativeUrl: read[1] });
       }
+      if (CONFIG.rootThrows && path.includes('/RootFolder')) throw new TypeError('Failed to fetch');
       if (CONFIG.shapeThrows && path.includes('$select=BaseTemplate')) {
         throw new TypeError('Failed to fetch');
       }
@@ -850,6 +923,10 @@ _FOLDER_ROWS = {
     "library.folder.spaced-name-content-types-disabled",
     "library.folder.add-using-path-spaced-name",
 }
+_SWITCH_CELLS = {
+    "library.folder.plain-name-content-types-disabled",
+    "library.folder.spaced-name-content-types-disabled",
+}
 _DEFAULT_LIB = "dbmlsp Probe Folder Default"
 _NOCT_LIB = "dbmlsp Probe Folder NoCT"
 
@@ -866,6 +943,7 @@ def test_folder_create_refusal_measures_on_libraries_it_read_back(
 
     assert rows[_LIBRARY]["outcome"] == "PASS", rows[_LIBRARY]
     assert rows["library.folder.control-plain-name-default-library"]["outcome"] == "PASS"
+    assert all(rows[row_id]["outcome"] == "PASS" for row_id in _SWITCH_CELLS)
     assert not _void_ids(rows)
 
 
@@ -904,3 +982,28 @@ def test_folder_create_refusal_voids_the_cells_when_a_shape_read_throws() -> Non
     assert "the read threw" in rows[_LIBRARY]["evidence"]
     assert _void_ids(rows) == _FOLDER_ROWS
     assert not [r for r in sent if "folders" in r["path"].lower()]
+
+
+def test_folder_create_refusal_voids_the_cells_when_a_root_folder_read_throws() -> None:
+    """The RootFolder reads were awaited outside the helper, so a rejected fetch ended the run."""
+    rows, sent = _run_probe(_FOLDER_MOCK, {"lists": {}, "rootThrows": True},
+                            "folder-create-refusal-probe.js")
+
+    assert rows[_LIBRARY]["outcome"] == "FAIL", rows[_LIBRARY]
+    assert "the read threw: Failed to fetch" in rows[_LIBRARY]["evidence"]
+    assert _void_ids(rows) == _FOLDER_ROWS
+    assert not [r for r in sent if "folders" in r["path"].lower()]
+
+
+def test_folder_create_refusal_voids_the_switch_cells_when_the_switch_did_not_vary() -> None:
+    """A reused default library reading false leaves both arms alike, so neither is compared."""
+    lists = {_DEFAULT_LIB: {"BaseTemplate": 101, "ContentTypesEnabled": False},
+             _NOCT_LIB: {"BaseTemplate": 101, "ContentTypesEnabled": False}}
+    rows, sent = _run_probe(_FOLDER_MOCK, {"lists": lists}, "folder-create-refusal-probe.js")
+
+    assert rows[_LIBRARY]["outcome"] == "PASS", rows[_LIBRARY]
+    assert _void_ids(rows) == _SWITCH_CELLS
+    assert all("the switch did not vary" in rows[row_id]["evidence"] for row_id in _SWITCH_CELLS)
+    for row_id in _FOLDER_ROWS - _SWITCH_CELLS:
+        assert rows[row_id]["outcome"] == "PASS", rows[row_id]
+    assert not [r for r in sent if "/folders/add(" in r["path"] and _NOCT_LIB in r["path"]]

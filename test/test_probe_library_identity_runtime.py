@@ -987,6 +987,9 @@ _FOLDERED_STATES = [
      "library.large-list.ui-group-by-multilevel-renders", "3 OF 3 LEVELS RENDER HEADERS"),
 ]
 _FOLDERED_IDS = [f"state-{s[0]}" for s in _FOLDERED_STATES]
+#: The page-identity row each rendered state records, one per state (#644).
+_IDENTITY = {2: "library.large-list.control-ui-foldered-page-identity",
+             3: "library.large-list.control-ui-multilevel-page-identity"}
 
 
 @pytest.mark.parametrize(("state", "fixture", "list_id", "elements", "measured", "outcome"),
@@ -999,7 +1002,8 @@ def test_the_foldered_probe_reads_the_selected_library_back_before_a_rendered_st
 
     assert rows[fixture]["outcome"] == "PASS", rows[fixture]
     assert "BaseTemplate=101" in rows[fixture]["evidence"]
-    assert rows["library.large-list.control-ui-foldered-page-identity"]["outcome"] == "MATCHES"
+    assert rows[_IDENTITY[state]]["outcome"] == "MATCHES", rows[_IDENTITY[state]]
+    assert rows[_IDENTITY[5 - state]]["outcome"] == "NOT REACHED"
     assert rows[measured]["outcome"] == outcome, rows[measured]
     assert rows[measured]["state"] == "settled"
     assert not _voided(rows)
@@ -1019,3 +1023,17 @@ def test_the_foldered_probe_voids_a_rendered_state_on_a_generic_list_of_the_sele
     assert rows[measured]["state"] == "void", rows[measured]
     assert [row_id for row_id, row in rows.items() if row["state"] == "settled"] == [fixture]
     _no_query_or_write(sent)
+
+
+@pytest.mark.parametrize("state", [2, 3], ids=_FOLDERED_IDS)
+def test_the_foldered_probe_voids_only_the_identity_row_of_the_selected_library(state: int) -> None:
+    """The other library is not read in this paste, so its identity row cannot rest on it."""
+    libraries = _foldered_libs(big=100) if state == 2 else _foldered_libs(small=100)
+    list_id = _FOLDERED_ID if state == 2 else _MULTILEVEL_ID
+    rows, _ = _run_rendered(_FOLDERED_PROBE, libraries, state, list_id, [_GRID])
+
+    assert rows[_IDENTITY[state]]["state"] == "void", rows[_IDENTITY[state]]
+    assert rows[_IDENTITY[5 - state]]["state"] == "open", rows[_IDENTITY[5 - state]]
+    fixture = FOLDERED if state == 2 else MULTILEVEL
+    assert _catalog_dependents(_FOLDERED_PROBE, fixture) & set(_IDENTITY.values()) == {
+        _IDENTITY[state]}

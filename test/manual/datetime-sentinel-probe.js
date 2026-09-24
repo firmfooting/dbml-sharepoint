@@ -775,23 +775,40 @@
   // Format="DateTime" is what makes this a date AND TIME column. A plain
   // Format="DateOnly" would have no time portion to argue about, and every
   // question below would be vacuous.
-  if (!(await fieldExists(FIELD))) {
-    const made = await addField(
-      `<Field Type="DateTime" DisplayName="${FIELD}" Name="${FIELD}" Format="DateTime" />`);
-    if (!made.ok) {
-      record('BOOT', 'Create the DateTime column', 'FAIL',
-             `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
-      return report();
-    }
-    log('OK', `Created DateTime column '${FIELD}'.`);
-  }
   // Read back on create or reuse. DisplayFormat is DateTimeFieldFormatType on
   // Learn, where 1 is DateTime; the whole field is read, as $select can 400.
+  // The preflight runs inside the helper, so a fetch that rejects is recorded (#644).
+  const fieldPath = `${fieldsPath}/getbyinternalnameortitle('${FIELD}')`;
+  let fieldPresent = false;
+  let createFailed = null;
   const dateTimeHeld = await establishFixture(
     'formula.datetime.fixture-probewhen-date-time-column',
-    () => spGet(`${fieldsPath}/getbyinternalnameortitle('${FIELD}')`),
+    async () => {
+      const found = await spGet(fieldPath);
+      if (found.ok) {
+        fieldPresent = true;
+        return found;
+      }
+      const made = await addField(
+        `<Field Type="DateTime" DisplayName="${FIELD}" Name="${FIELD}" Format="DateTime" />`);
+      if (!made.ok) {
+        createFailed = `HTTP ${made.status}: ${made.text.slice(0, 300)}`;
+        throw new Error(`creating ${FIELD} answered ${createFailed}`);
+      }
+      log('OK', `Created DateTime column '${FIELD}'.`);
+      // A create that answered 2xx is not existence until the column reads back.
+      const back = await spGet(fieldPath);
+      fieldPresent = back.ok;
+      return back;
+    },
     { InternalName: FIELD, TypeAsString: 'DateTime', DisplayFormat: 1, ReadOnlyField: false },
     [...TIME_OF_DAY_ROWS, 'expression.client-validation.now-sentinel-stored']);
+  // The validation control below names FIELD, so a column not shown to exist stops the run.
+  if (!fieldPresent) {
+    record('BOOT', 'Create the DateTime column', 'FAIL', createFailed
+      || `'${FIELD}' could not be read or created; see formula.datetime.fixture-probewhen-date-time-column`);
+    return report();
+  }
 
   // ---- Timestamps -----------------------------------------------------
   // Written as UTC ISO, which is how SharePoint stores and how REST wants
