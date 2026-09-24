@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY FORMULA SURFACE
  *
- * REVISION: 10ffe78c
+ * REVISION: a8ccbcba
  *
  * ONE QUESTION:
  *   Does the formula surface of a document library diverge from a generic list?
@@ -397,7 +397,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 10ffe78c. Quote this when reporting results.');
+  log('INFO', 'probe revision a8ccbcba. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibFormula';
   const TARGET = 'dbmlsp Probe LibFormula Target';
@@ -497,7 +497,7 @@
     const read = await spGet(`${targetPath}?$select=BaseTemplate,Id`);
     if (unanswered(read) === null) targetListId = read.body.Id;
     return read;
-  }, { BaseTemplate: 100 }, [LOOKUP_ROW]);
+  }, { BaseTemplate: 100, Id: (id) => typeof id === 'string' && id !== '' }, [LOOKUP_ROW]);
   if (!targetHeld) {
     targetListId = null;
   } else if (madeTarget !== null) {

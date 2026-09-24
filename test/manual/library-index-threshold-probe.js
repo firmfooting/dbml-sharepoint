@@ -7,7 +7,7 @@
  *   index on them? A served filter means an index answered it; a refusal means
  *   the query would have had to scan the whole library.
  *
- * REVISION: 3ca4a21e
+ * REVISION: 42970c5c
  *
  * THE COLUMNS: Title, Name (FileLeafRef), Created, Modified, Author, Editor,
  * plus ID as the positive control and two probe-owned columns as the negative
@@ -549,7 +549,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 3ca4a21e. Quote this when reporting results.');
+  log('INFO', 'probe revision 42970c5c. Quote this when reporting results.');
 
   // The expensive half. Off, so a paste that only wants to measure an
   // already-built library never starts five thousand uploads.
@@ -941,7 +941,8 @@
   const prepare = async (title, path, wanted, cap, note, held = null) => {
     const made = await ensureLibrary(title, note);
     if (!made.ok) {
-      return { ok: false, why: `library '${title}' does not exist and could not be created `
+      return { ok: false, libraryFailed: true,
+        why: `library '${title}' does not exist and could not be created `
         + `(HTTP ${made.status}: ${made.text.slice(0, 200)})` };
     }
     if (held && !await held.library(made)) return { ok: false, voided: true };
@@ -1020,8 +1021,11 @@
     });
   if (big.voided) return report();
   if (!big.ok) {
-    record('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)',
-           'FAIL', big.why);
+    // A failure after the fixtures settled leaves their rows as read; only the build aborts.
+    if (big.libraryFailed) {
+      record('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)',
+             'FAIL', big.why);
+    }
     record('library.index.fixture-file-count', `The fixture library holds at least ${TARGET_FILES} files`,
            'ABORTED', big.why);
     record('library.index.fixture-target-seeded', 'The one target file carries the Title, text and person markers',

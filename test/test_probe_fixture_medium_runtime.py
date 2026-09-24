@@ -53,6 +53,9 @@ _MOCK = textwrap.dedent("""
     };
     for (const [title, shape] of Object.entries(CONFIG.existing || {})) {
       const list = newList(title, shape.template, shape.contentTypes === true);
+      // Failure modes a live read can produce: a payload missing Id, and a RootFolder read refused.
+      list.omitId = shape.omitId === true;
+      list.rootFolderStatus = shape.rootFolderStatus || null;
       for (const [name, props] of Object.entries(shape.fields || {})) {
         const other = props.LookupList === 'OTHER'
           ? `{${newList(`other ${name}`, 100).Id}}` : props.LookupList;
@@ -118,6 +121,7 @@ _MOCK = textwrap.dedent("""
         const whole = { Id: list.Id, Title: list.Title, BaseTemplate: list.BaseTemplate,
           ContentTypesEnabled: list.ContentTypesEnabled, ItemCount: list.items.length,
           ListItemEntityTypeFullName: 'SP.Data.LibItem' };
+        if (list.omitId) delete whole.Id;
         // A $select is served only the properties it names, as a live read is.
         const select = /\\$select=([^&]+)/.exec(rest);
         if (!select) return jsonResponse(200, whole);
@@ -125,6 +129,7 @@ _MOCK = textwrap.dedent("""
           .filter((name) => name in whole).map((name) => [name, whole[name]])));
       }
       if (rest.startsWith('/RootFolder')) {
+        if (list.rootFolderStatus) return refusal(list.rootFolderStatus, 'Throttled.');
         return jsonResponse(200, { ServerRelativeUrl: list.root });
       }
       if (rest === '/fields/createfieldasxml') {
@@ -440,6 +445,17 @@ def test_formula_establishes_a_target_that_is_a_generic_list(reused: bool) -> No
     assert [r for r in sent if _LOOKUP_CREATE in r["body"]]
 
 
+def test_formula_voids_the_lookup_leg_on_a_target_read_that_serves_no_id() -> None:
+    """A target read without Id set targetListId to undefined and built a lookup on it."""
+    config = {"existing": {_FORMULA_TARGET: {"template": 100, "omitId": True}}}
+    rows, sent = _run_probe(_MOCK, config, _FORMULA)
+
+    assert rows[_TARGET_ROW]["outcome"] == "FAIL", rows[_TARGET_ROW]
+    assert "Id" in rows[_TARGET_ROW]["evidence"]
+    assert _voided_by(rows, _TARGET_ROW) == _catalogued_dependents(_FORMULA, _TARGET_ROW)
+    assert not [r for r in sent if _LOOKUP_CREATE in r["body"]]
+
+
 _THRESHOLD = "library-index-threshold-probe.js"
 _THRESHOLD_LIB = "dbmlsp Probe LibIdxThreshold"
 _THRESHOLD_COLUMNS = "library.index.fixture-probe-columns-created"
@@ -474,3 +490,18 @@ def test_threshold_establishes_probe_columns_of_the_declared_types(reused: bool)
     assert rows[_THRESHOLD_COLUMNS]["outcome"] == "PASS", rows[_THRESHOLD_COLUMNS]
     assert 'TidxUnindexedPerson.TypeAsString="User"' in rows[_THRESHOLD_COLUMNS]["evidence"]
     assert not _voided_by(rows, _THRESHOLD_COLUMNS)
+
+
+def test_threshold_keeps_settled_fixtures_when_the_root_folder_read_fails() -> None:
+    """A RootFolder failure after both fixtures passed was reported as the library failing."""
+    fields = {"TidxUnindexedText": {"TypeAsString": "Text"},
+              "TidxUnindexedPerson": {"TypeAsString": "User"}}
+    config = {"existing": {_THRESHOLD_LIB: {
+        "template": 101, "fields": fields, "rootFolderStatus": 503}}}
+    rows, sent = _run_probe(_MOCK, config, _THRESHOLD)
+
+    assert rows[_DOC_LIB]["outcome"] == "PASS", rows[_DOC_LIB]
+    assert rows[_THRESHOLD_COLUMNS]["outcome"] == "PASS", rows[_THRESHOLD_COLUMNS]
+    assert rows["library.index.fixture-file-count"]["outcome"] == "ABORTED"
+    assert "RootFolder" in rows["library.index.fixture-file-count"]["evidence"]
+    assert not [r for r in sent if "/Files/add" in r["path"]]
