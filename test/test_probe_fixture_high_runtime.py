@@ -149,3 +149,187 @@ def test_today_semantics_does_not_report_a_default_that_never_fired() -> None:
     assert rows[_DEFAULT]["outcome"] == "NOT ESTABLISHED", rows[_DEFAULT]
     assert "T stored as null" in rows[_DEFAULT]["evidence"]
     assert rows[_RULES]["outcome"] == "PASS"
+
+
+# --------------------------------------------------------------------------
+# The document library probes (items 10 and 14) share one mock site.
+# --------------------------------------------------------------------------
+#: Lists, libraries, fields, items, files, folders and views. An item POST
+#: naming a column the list lacks is refused, as a live site refuses it.
+_LIBRARY_MOCK = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+    const lists = new Map();
+    const folders = new Set();
+    let nextList = 1;
+    const parse = (raw) => { try { return JSON.parse(raw); } catch { return null; } };
+    const refusal = (status, value) =>
+      jsonResponse(status, { 'odata.error': { message: { value } } });
+    const newList = (title, template) => {
+      const n = nextList;
+      nextList += 1;
+      const list = { Id: `list-${n}`, Title: title, BaseTemplate: template,
+        root: `/sites/test/L${n}`, fields: new Map(), items: [], views: new Map(),
+        nextItem: 1, EnableFolderCreation: true };
+      folders.add(list.root);
+      lists.set(title, list);
+      return list;
+    };
+    for (const [title, shape] of Object.entries(CONFIG.existing || {})) {
+      const list = newList(title, shape.template);
+      for (const [view, props] of Object.entries(shape.views || {})) {
+        list.views.set(view, { Title: view, ...props });
+      }
+    }
+    const rowOf = (list, item) => {
+      const row = { Id: item.Id, Title: item.Title || null, FileLeafRef: item.FileLeafRef || null };
+      for (const name of list.fields.keys()) row[name] = item[name] ?? null;
+      return row;
+    };
+    const addFile = (folder, name) => {
+      const list = [...lists.values()].find((l) => folder.startsWith(l.root));
+      if (!list || !folders.has(folder)) return refusal(404, 'File Not Found.');
+      if ((CONFIG.failUpload || []).includes(name)) return refusal(400, 'The upload was refused.');
+      if (!list.items.some((i) => i.FileLeafRef === name)) {
+        list.items.push({ Id: list.nextItem, FileLeafRef: name, folder });
+        list.nextItem += 1;
+      }
+      return jsonResponse(200, { Name: name, ServerRelativeUrl: `${folder}/${name}` });
+    };
+    const writeItem = (list, item, sent) => {
+      const unknown = Object.keys(sent).filter((k) => k !== 'Title' && !list.fields.has(k));
+      if (unknown.length) return refusal(400, `Column '${unknown[0]}' does not exist.`);
+      if ((CONFIG.failMerge || []).includes(item.FileLeafRef)) return jsonResponse(500, {});
+      if (!(CONFIG.dropMerge || []).includes(item.FileLeafRef)) Object.assign(item, sent);
+      return jsonResponse(204, {});
+    };
+    const LIST = /^web\\/lists\\/getbytitle\\('([^']+)'\\)(.*)$/;
+    const FOLDER = /^web\\/GetFolderByServerRelativeUrl\\('([^']+)'\\)(.*)$/;
+    const NAMED = /^\\/(fields|views)\\/getby(?:internalnameortitle|title)\\('([^']+)'\\)(.*)$/;
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const method = opts.method || 'GET';
+      const verb = (opts.headers || {})['X-HTTP-Method'] || method;
+      const raw = opts.body === undefined ? '' : String(opts.body);
+      const sent = parse(raw) || {};
+      const path = decodeURIComponent(u.split('/_api/')[1] || '');
+      SENT.push({ verb, path, body: raw });
+
+      if (path.startsWith('contextinfo')) return digestResponse();
+      if (path === 'web/lists' && method === 'POST') {
+        const list = newList(sent.Title, sent.BaseTemplate);
+        return jsonResponse(201, { Id: list.Id, Title: list.Title });
+      }
+      const inFolder = FOLDER.exec(path);
+      if (inFolder) {
+        const [, folder, rest] = inFolder;
+        const file = /^\\/Files\\/add\\(url='([^']+)'/.exec(rest);
+        if (file) return addFile(folder, file[1]);
+        const sub = /^\\/folders\\/add\\(url='([^']+)'\\)/.exec(rest);
+        if (!sub) return jsonResponse(200, { Exists: folders.has(folder) });
+        if (CONFIG.folderStatus) return jsonResponse(CONFIG.folderStatus, {});
+        folders.add(`${folder}/${sub[1]}`);
+        return jsonResponse(200, { Name: sub[1], Exists: true });
+      }
+      const inList = LIST.exec(path);
+      if (!inList) return refusal(404, `unmocked ${path}`);
+      const list = lists.get(inList[1]);
+      if (!list) return refusal(404, 'List does not exist.');
+      const rest = inList[2];
+      if (rest === '' || rest.startsWith('?')) {
+        if (verb !== 'MERGE') {
+          return jsonResponse(200, { Id: list.Id, Title: list.Title,
+            BaseTemplate: list.BaseTemplate, EnableFolderCreation: list.EnableFolderCreation });
+        }
+        if ('EnableFolderCreation' in sent) list.EnableFolderCreation = sent.EnableFolderCreation;
+        return jsonResponse(204, {});
+      }
+      if (rest.startsWith('/RootFolder')) {
+        return jsonResponse(200, { ServerRelativeUrl: list.root });
+      }
+      if (rest === '/fields/createfieldasxml') {
+        const name = /Name="([^"]+)"/.exec(sent.parameters.SchemaXml)[1];
+        list.fields.set(name, { InternalName: name, TypeAsString: 'Choice' });
+        return jsonResponse(201, { InternalName: name });
+      }
+      if (rest === '/fields' && method === 'POST') {
+        list.fields.set(sent.Title, { InternalName: sent.Title, TypeAsString: 'Text',
+          DefaultFormula: sent.DefaultFormula || null, Sealed: false });
+        return jsonResponse(201, { InternalName: sent.Title });
+      }
+      const named = NAMED.exec(rest);
+      if (named) {
+        const [, kind, name] = named;
+        const held = (kind === 'fields' ? list.fields : list.views).get(name);
+        if (!held) return refusal(400, `'${name}' does not exist.`);
+        if (verb !== 'MERGE') return jsonResponse(200, held);
+        const { __metadata, ...props } = sent;
+        Object.assign(held, props);
+        return jsonResponse(204, {});
+      }
+      if (rest === '/views' && method === 'POST') {
+        list.views.set(sent.Title, { Title: sent.Title, Scope: sent.Scope || 0 });
+        return jsonResponse(201, { Title: sent.Title });
+      }
+      if (rest.startsWith('/defaultview')) {
+        return jsonResponse(200, { Id: 'view-0', Title: 'All', ViewQuery: '', ListViewXml: '' });
+      }
+      const one = /^\\/items\\((\\d+)\\)/.exec(rest);
+      if (one) {
+        const item = list.items.find((i) => i.Id === Number(one[1]));
+        if (verb === 'MERGE') return writeItem(list, item, sent);
+        return jsonResponse(200, rowOf(list, item));
+      }
+      if (rest.startsWith('/items') && method === 'POST') {
+        const item = { Id: list.nextItem };
+        const answer = writeItem(list, item, sent);
+        if (!answer.ok) return answer;
+        list.nextItem += 1;
+        list.items.push(item);
+        return jsonResponse(201, { Id: item.Id });
+      }
+      if (rest.startsWith('/items')) {
+        return jsonResponse(200, { value: list.items.map((i) => rowOf(list, i)) });
+      }
+      if (rest === '/RenderListDataAsStream') {
+        const xml = (sent.parameters && sent.parameters.ViewXml) || '';
+        if (/NoSuchColumn|Name="Folder"/.test(xml)) return refusal(500, 'Column does not exist.');
+        if (/Collapse="TRUE"/.test(xml)) return jsonResponse(200, { Row: [] });
+        const atRoot = list.items.filter((i) => i.folder === list.root);
+        return jsonResponse(200, { Row: atRoot.map((i) => rowOf(list, i)) });
+      }
+      return refusal(404, `unmocked ${path}`);
+    };
+""")
+
+# --------------------------------------------------------------------------
+# Item 10: a view found by title answers for no POST this run sent.
+# --------------------------------------------------------------------------
+_GUARDS = "library-guards-probe.js"
+_GUARDS_LIB = "dbmlsp Probe Guards Library"
+_SCOPE_CREATE = "library.view.scope-on-create-reads-back"
+_SCOPE_CREATE_VIEW = "dbmlsp guards scope create"
+
+
+def _view_creates(sent: list[dict[str, str]]) -> list[dict[str, str]]:
+    return [r for r in sent if r["verb"] == "POST" and r["path"].endswith("/views")]
+
+
+def test_guards_reads_scope_back_off_a_view_it_created() -> None:
+    rows, sent = _run_probe(_LIBRARY_MOCK, {}, _GUARDS)
+
+    assert rows[_SCOPE_CREATE]["outcome"] == "STICKS", rows[_SCOPE_CREATE]
+    assert rows["library.view.scope-on-merge-reads-back"]["outcome"] == "STICKS"
+    assert any(_SCOPE_CREATE_VIEW in r["body"] for r in _view_creates(sent))
+
+
+def test_guards_voids_scope_on_create_when_the_view_was_already_present() -> None:
+    """The reused view read back Scope 1 and was reported as a create that stuck."""
+    existing = {_GUARDS_LIB: {"template": 101, "views": {_SCOPE_CREATE_VIEW: {"Scope": 1}}}}
+    rows, sent = _run_probe(_LIBRARY_MOCK, {"existing": existing}, _GUARDS)
+
+    row = rows[_SCOPE_CREATE]
+    assert row["state"] == "void", row
+    assert "already present" in row["evidence"]
+    assert not any(_SCOPE_CREATE_VIEW in r["body"] for r in _view_creates(sent))
+    assert rows["library.view.scope-on-merge-reads-back"]["outcome"] == "STICKS"
