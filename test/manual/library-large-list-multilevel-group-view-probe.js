@@ -13,7 +13,7 @@
  *   serving at the same moment the group-by is refused, and is that refusal
  *   still the threshold rather than something else?
  *
- * REVISION: 2fa714d8
+ * REVISION: 1c3d43ae
  *
  * THE FIXTURE IS READ, NEVER REBUILT. `library-large-list-fixture-probe.js`
  * builds and owns 'dbmlsp Probe LargeLib': about 5,500 files named
@@ -686,7 +686,7 @@
     console.log('Copy this whole block back verbatim.');
   };
  
-  log('INFO', 'probe revision 2fa714d8. Quote this when reporting results.');
+  log('INFO', 'probe revision 1c3d43ae. Quote this when reporting results.');
 
   // ---- The fixture contract, restated ----------------------------------
   // Owned by library-large-list-fixture-probe.js. Read, never rebuilt.
@@ -819,6 +819,8 @@
     log('INFO', 'six pastes to build. This probe has no destructive path at all.');
   }
 
+  const DOC_LIBRARY = 'library.large-list.fixture-document-library';
+  expect('library.large-list.fixture-document-library', `The fixture library '${LIB}' reads back as a document library (BaseTemplate 101)`);
   expect('library.large-list.fixture-library-present', `The fixture library '${LIB}' is present, holds more than 5,000 files and carries the seven contract columns`);
   expect('library.large-list.fixture-index-flags-clear', 'Every contract column reads Indexed=false before this run writes anything');
   expect('library.large-list.control-id-query-served', 'POSITIVE CONTROL: a selective filter on Id is served past the threshold');
@@ -1134,6 +1136,11 @@
   // ---- fixture-library-present -----------------------------------------
   const libRead = await spGet(`${libPath}?$select=Title,BaseTemplate,ItemCount`);
   const libOk = !readFailed(libRead);
+  // Found by title, so a generic list under the name would answer every row below as a list (#559).
+  if (libOk && !await establishFixture(DOC_LIBRARY, async () => libRead, { BaseTemplate: 101 },
+    RESULTS.map((row) => row.id).filter((id) => id !== DOC_LIBRARY))) {
+    return report();
+  }
   // Counted from the newest file NAME, never from ItemCount, and read with the
   // one ordering the fixture probe established is served past the threshold:
   // $orderby=Id desc on the natively indexed Id.

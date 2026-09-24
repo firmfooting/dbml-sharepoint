@@ -3,7 +3,7 @@
  * SERVE IT INSIDE A LIBRARY OVER 5,000, AND DOES A THREE-LEVEL GROUP-BY WORK
  * WHERE NOTHING IS NEAR THE THRESHOLD?
  *
- * REVISION: 51cd80ac
+ * REVISION: c36e84f5
  *
  * TWO QUESTIONS, AND THEY ARE DELIBERATELY ASKED IN ONE RUN. Every large-list
  * probe before this one measured a group-by refused past 5,000 and could not
@@ -812,7 +812,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not work
   // produce identical transcripts otherwise.
-  log('INFO', 'probe revision 51cd80ac. Quote this when reporting results.');
+  log('INFO', 'probe revision c36e84f5. Quote this when reporting results.');
 
   // ---- Operator settings -------------------------------------------------
   // Which leg of the run this paste is. One paste answers one state, because a
@@ -1426,7 +1426,9 @@
   };
 
   // ---- The questions ------------------------------------------------------
-  expect('library.large-list.fixture-foldered-file-count', `The large library '${LIB}' holds ${TARGET_FILES} files, counted from the newest file name`);
+  expect('library.large-list.fixture-foldered-document-library', `The large library '${LIB}' reads back as a document library (BaseTemplate 101)`);
+  expect('library.large-list.fixture-multilevel-document-library', `The small library '${SMALL}' reads back as a document library (BaseTemplate 101)`);
+  expect('library.large-list.fixture-foldered-file-count',`The large library '${LIB}' holds ${TARGET_FILES} files, counted from the newest file name`);
   expect('library.large-list.fixture-foldered-folder-counts', `Each of the ${FOLDERS.length} folders holds fewer than ${THRESHOLD} files while the library holds more`);
   expect('library.large-list.fixture-foldered-index-written-under-threshold', `${CHOICE} reads Indexed=true and its Description carries the stamp saying the flag was written below ${THRESHOLD} files`);
   expect('library.large-list.fixture-foldered-witness-unindexed', `${NUMBER} reads Indexed=false, so this run has an unindexed column to witness the throttle with`);
@@ -1453,6 +1455,32 @@
   expect('library.large-list.ui-group-by-indexed-column-folder-scoped', `THE RENDERED CRUX: does the modern page render a grouped view scoped to a folder under ${THRESHOLD} files inside a library over ${THRESHOLD}`);
   expect('library.large-list.ui-group-by-multilevel-renders', 'Does the modern page render three group levels on the small library');
   expect('library.large-list.ui-threshold-banner-text', 'What does the rendered threshold refusal actually say, where one appears');
+  // The rows each library's template decides. The capture control reads a third library and is in none.
+  const FOLDERED_ROWS = [
+    'library.large-list.fixture-foldered-file-count', 'library.large-list.fixture-foldered-folder-counts',
+    'library.large-list.fixture-foldered-index-written-under-threshold',
+    'library.large-list.fixture-foldered-witness-unindexed', 'library.large-list.control-foldered-id-query-served',
+    'library.large-list.control-foldered-unindexed-filter-refused',
+    'library.large-list.control-foldered-render-where-absent-refused',
+    'library.large-list.control-foldered-folder-path-narrows',
+    'library.large-list.control-foldered-group-by-narrowed-honoured',
+    'library.large-list.foldered-group-by-root-scoped', 'library.large-list.foldered-group-by-folder-scoped',
+    'library.large-list.foldered-group-by-folder-scoped-counts',
+    'library.large-list.control-ui-folder-scope-rendered',
+    'library.large-list.ui-group-by-indexed-column-folder-scoped',
+  ];
+  const MULTILEVEL_ROWS = [
+    'library.large-list.fixture-multilevel-file-count', 'library.large-list.fixture-multilevel-under-threshold',
+    'library.large-list.control-multilevel-single-level-honoured',
+    'library.large-list.multilevel-group-by-two-levels', 'library.large-list.multilevel-group-by-three-levels',
+    'library.large-list.ui-group-by-multilevel-renders',
+  ];
+  const SHARED_ROWS = [
+    'library.large-list.foldered-group-by-refusal-signature', 'library.large-list.fixture-foldered-ui-views-created',
+    'library.large-list.control-ui-foldered-fixture-readable-after-view-writes',
+    'library.large-list.control-ui-foldered-default-view-unchanged',
+    'library.large-list.control-ui-foldered-page-identity', 'library.large-list.ui-threshold-banner-text',
+  ];
 
   // Every row still carrying the harness sentinel, stamped with one reason. A
   // paste that answers one state must not report the other states' questions as
@@ -1534,6 +1562,12 @@
     // ---- fixture-foldered-file-count -------------------------------------
     const libRead = await spGet(`${libPath}?$select=Title,BaseTemplate,ItemCount`);
     const libOk = !readFailed(libRead);
+    // Found by title, so a generic list under the name would answer every row below as a list (#559).
+    if (libOk && !await establishFixture('library.large-list.fixture-foldered-document-library',
+      async () => libRead, { BaseTemplate: 101 }, [...FOLDERED_ROWS, ...SHARED_ROWS])) {
+      report();
+      return;
+    }
     const before = libOk
       ? await newestFile(libPath, FILE_NUMBER, FOLDERS)
       : { ok: false, number: 0, name: null, id: null, why: 'the library did not read back' };
@@ -1683,6 +1717,12 @@
     // ---- fixture-multilevel-file-count and under-threshold ---------------
     const smallRead = await spGet(`${smallPath}?$select=Title,BaseTemplate,ItemCount`);
     const smallOk = !readFailed(smallRead);
+    // Read before any query is sent, so a generic list under the small title voids its rows unsent.
+    if (smallOk && !await establishFixture('library.large-list.fixture-multilevel-document-library',
+      async () => smallRead, { BaseTemplate: 101 }, [...MULTILEVEL_ROWS, ...SHARED_ROWS])) {
+      report();
+      return;
+    }
     const smallNewest = smallOk
       ? await newestFile(smallPath, SMALL_NUMBER, [])
       : { ok: false, number: 0, name: null, id: null, why: 'the library did not read back' };
@@ -2544,12 +2584,21 @@
   // ---- STATES 2 and 3 both read a fixture library's own page --------------
   const wanted = STATE === 2 ? LIB : SMALL;
   const wantedPath = STATE === 2 ? libPath : smallPath;
-  const wantedRead = await spGet(wantedPath);
-  const wantedId = !readFailed(wantedRead) ? guid(wantedRead.body.Id) : null;
-  const matched = wantedId !== null && identity.ids.includes(wantedId);
+  const wantedFixture = STATE === 2
+    ? 'library.large-list.fixture-foldered-document-library'
+    : 'library.large-list.fixture-multilevel-document-library';
+  const wantedRows = [...(STATE === 2 ? FOLDERED_ROWS : MULTILEVEL_ROWS), ...SHARED_ROWS];
+  const wantedRead = await spGet(`${wantedPath}?$select=Id,BaseTemplate`);
+  // Each paste finds the library by title afresh, so a generic list put under it since STATE 0 would match by Id (#559).
+  if (!await establishFixture(wantedFixture, async () => wantedRead, { BaseTemplate: 101 }, wantedRows)) {
+    report();
+    return;
+  }
+  const wantedId = guid(wantedRead.body.Id);
+  const matched = identity.ids.includes(wantedId);
   record('library.large-list.control-ui-foldered-page-identity',
          'CONTROL: does the rendered page say, in its own JavaScript context, which fixture library it belongs to',
-         wantedId === null ? 'NOT ESTABLISHED' : matched ? 'MATCHES' : 'DOES NOT MATCH',
+         matched ? 'MATCHES' : 'DOES NOT MATCH',
          `STATE ${STATE} expects '${wanted}', which reads list Id ${show(wantedId)} over REST. `
          + `${identity.detail}. experience ${experience.verdict}: ${experience.detail}. `
          + (matched

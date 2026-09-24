@@ -8,7 +8,7 @@
  *   unmeasured. Does either one create, hold a value, project through a view
  *   and take an index the way the list-to-list shape does?
  *
- * REVISION: ae01cee4
+ * REVISION: f8af0858
  *
  * WHY: `analysis/joins.py` counts every lookup the same way and the deploy
  * emits every lookup the same way, whichever container is at each end. A
@@ -523,7 +523,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision ae01cee4. Quote this when reporting results.');
+  log('INFO', 'probe revision f8af0858. Quote this when reporting results.');
 
   // Three containers, never two. See the acyclic finding in the header.
   const LIB = 'dbmlsp Probe XLookup Lib';
@@ -608,6 +608,18 @@
   expect('scale.join.control-list-lookup-ceiling', 'CONTROL: how many single-value list-to-list lookups can one view project on this fixture?');
   expect('scale.join.library-lookup-ceiling', 'How many lookups can one view project on a DOCUMENT LIBRARY?');
   expect('scale.join.list-to-library-costs-a-join', 'How many joins does a lookup whose target is a library cost against the view ceiling?');
+  // Every row the catalogue rests on the library, the list-only controls included, since the run stops before them.
+  const LIBRARY_ROWS = [
+    'library.lookup.fixture-containers-ready',
+    'library.lookup.control-list-to-list-lookup-created',
+    'library.lookup.control-unsupported-operand-refused', 'scale.join.control-list-lookup-ceiling',
+    'library.lookup.library-to-list-created', 'library.lookup.library-to-list-item-write',
+    'library.lookup.library-to-list-indexed', 'library.lookup.list-to-library-title-created',
+    'library.lookup.list-to-library-name-created', 'library.lookup.list-to-library-item-write',
+    'library.lookup.list-to-library-folder-row-selectable', 'library.lookup.list-to-library-indexed',
+    'library.lookup.picker-enumerates-files', 'scale.join.library-lookup-ceiling',
+    'scale.join.list-to-library-costs-a-join',
+  ];
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const show = (value) => (value === undefined ? 'undefined' : JSON.stringify(value));
@@ -881,10 +893,8 @@
   const existingLib = await spGet(libPath);
   let libraryReady = false;
   if (existingLib.ok) {
-    record('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)',
-           'ALREADY PRESENT',
-           `reusing an existing '${LIB}'. Its columns may carry an earlier run's lookups. `
-           + 'Set CLEANUP = true for a clean answer');
+    log('INFO', `reusing an existing '${LIB}'. Its columns may carry an earlier run's lookups. `
+      + 'Set CLEANUP = true for a clean answer.');
     libraryReady = true;
   } else {
     const made = await spPost('web/lists', {
@@ -892,10 +902,15 @@
       BaseTemplate: 101,
       Description: 'dbml-sharepoint cross-lookup probe library. Safe to delete.',
     }, digest);
-    record('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)',
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIB}'` : `HTTP ${made.status}: ${clip(made.text, 300)}`);
+    if (!made.ok) {
+      record('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)',
+             'FAIL', `HTTP ${made.status}: ${clip(made.text, 300)}`);
+    }
     libraryReady = made.ok;
+  }
+  if (libraryReady && !await establishFixture('library.doc-lib.fixture-library-created',
+    () => spGet(`${libPath}?$select=BaseTemplate`), { BaseTemplate: 101 }, LIBRARY_ROWS)) {
+    return report();
   }
 
   // Every id this probe can still answer once the library is known to exist.

@@ -347,11 +347,8 @@
     let ready = false;
     const existing = await spGet(container.path);
     if (existing.ok) {
-      record(container.fixtureId,
-             `fixture: a scratch ${where} exists to read and write settings on`,
-             'ALREADY PRESENT',
-             `reusing an existing '${container.title}'. Its settings may carry an `
-             + 'earlier run\'s writes. Set CLEANUP = true for a clean answer');
+      log('INFO', `reusing an existing '${container.title}'. Its settings may carry an `
+        + 'earlier run\'s writes. Set CLEANUP = true for a clean answer.');
       ready = true;
     } else {
       const digest = await getDigest();
@@ -360,13 +357,26 @@
         BaseTemplate: container.baseTemplate,
         Description: container.description,
       }, digest);
-      record(container.fixtureId,
-             `fixture: a scratch ${where} exists to read and write settings on`,
-             made.ok ? 'PASS' : 'FAIL',
-             made.ok
-               ? `created '${container.title}' (BaseTemplate ${container.baseTemplate})`
-               : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
+      if (!made.ok) {
+        record(container.fixtureId,
+               `fixture: a scratch ${where} exists to read and write settings on`,
+               'FAIL', `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
+      }
       ready = made.ok;
+    }
+    // Each container's rows rest on its own template, so a list reused under the other's title voids only its rows.
+    if (ready && !await establishFixture(container.fixtureId,
+      () => spGet(`${container.path}?$select=BaseTemplate`),
+      { BaseTemplate: container.baseTemplate },
+      [container.controlId, container.unknownId, container.enumerationId,
+       ...CANDIDATES.map((row) => row[container.idIndex])])) {
+      for (const row of CANDIDATES) {
+        ROWS.push({
+          container: where, property: row[0], written: null, readBack: null,
+          before: null, sticks: null, status: null, error: `void: the fixture ${container.fixtureId} did not hold`,
+        });
+      }
+      continue;
     }
 
     if (!ready) {
