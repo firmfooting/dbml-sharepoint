@@ -453,19 +453,24 @@
   // ---- fixture-library-created (L1): the library ----------------------
   const existing = await spGet(listPath);
   if (existing.ok) {
-    record('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)', 'ALREADY PRESENT',
-           'reusing an existing library. Set CLEANUP = true for a clean answer');
+    log('INFO', `reusing an existing '${LIB}'. Set CLEANUP = true for a clean answer.`);
   } else {
     const made = await spPost('web/lists', {
       Title: LIB,
       BaseTemplate: 101,
       Description: 'dbml-sharepoint probe library. Safe to delete.',
     }, digest);
-    record('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)',
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIB}'` : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
-    if (!made.ok) return report();
+    if (!made.ok) {
+      record('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)',
+             'FAIL', `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
+      return report();
+    }
   }
+  // A generic list reused under the title accepts the fileless POST L2 turns on (#559).
+  const isLibrary = await establishFixture('library.doc-lib.fixture-library-created',
+    () => spGet(`${listPath}?$select=BaseTemplate`), { BaseTemplate: 101 },
+    RESULTS.map((r) => r.id).filter((id) => id !== 'library.doc-lib.fixture-library-created'));
+  if (!isLibrary) return report();
 
   // ---- control-missing-column-refused (LN): NEGATIVE CONTROL ----------
   digest = await getDigest();

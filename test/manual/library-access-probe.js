@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY ACCESS SURFACE
  *
- * REVISION: f3736204
+ * REVISION: 00496eb9
  *
  * ONE QUESTION:
  *   Does the permission model of a document library diverge from a generic list?
@@ -473,7 +473,7 @@
     record(id, question, row.outcome, row.evidence, row.state);
   };
 
-  log('INFO', 'probe revision f3736204. Quote this when reporting results.');
+  log('INFO', 'probe revision 00496eb9. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibAccess';
   const FILE = 'probe-access-doc.txt';
@@ -689,9 +689,7 @@
   // ---- fixture-library-created: the library ---------------------------
   const existing = await spGet(`${listPath}?$select=Title`);
   if (existing.ok) {
-    record('library.doc-lib.fixture-library-created', Q_FIXTURE,
-           'ALREADY PRESENT',
-           'reusing an existing library. Set CLEANUP = true for a clean answer');
+    log('INFO', `reusing an existing '${LIB}'. Set CLEANUP = true for a clean answer.`);
   } else {
     digest = await getDigest();
     const made = await spPost('web/lists', {
@@ -699,11 +697,18 @@
       BaseTemplate: 101,
       Description: 'dbml-sharepoint library-access probe library. Safe to delete.',
     }, digest);
-    record('library.doc-lib.fixture-library-created', Q_FIXTURE,
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIB}'` : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
-    if (!made.ok) return report();
+    if (!made.ok) {
+      record('library.doc-lib.fixture-library-created', Q_FIXTURE,
+             'FAIL', `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
+      return report();
+    }
   }
+  // Every access question is asked of a document library, so a generic list reused under the title voids them.
+  const isLibrary = await establishFixture('library.doc-lib.fixture-library-created',
+    () => spGet(`${listPath}?$select=BaseTemplate`), { BaseTemplate: 101 },
+    ['library.access.control-missing-column-refused', 'library.access.unique-permissions-library',
+     'library.access.role-assignment-library', 'library.access.file-scoped-unique-permission']);
+  if (!isLibrary) return report();
 
   // ---- RootFolder path ------------------------------------------------
   const root = await spGet(`${listPath}/RootFolder?$select=ServerRelativeUrl`);

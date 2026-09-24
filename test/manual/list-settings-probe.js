@@ -6,7 +6,7 @@
  *   through the ordinary MERGE path actually change the container, on a
  *   GENERIC LIST and on a DOCUMENT LIBRARY, which may not answer the same?
  *
- * REVISION: 608c4ae5
+ * REVISION: 0dcac270
  *
  * WHY: attachments are disabled on every list before go-live as a MANUAL
  * step, on ten lists in programme-governance alone, because there is no
@@ -454,7 +454,7 @@
   // up. Destructive, so it ships false like every other guard.
   const CLEANUP_AT_END = false;
 
-  log('INFO', 'probe revision 608c4ae5. Quote this when reporting results.');
+  log('INFO', 'probe revision 0dcac270. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe ListSettings';
   const LIB = 'dbmlsp Probe ListSettings Lib';
@@ -667,11 +667,8 @@
     let ready = false;
     const existing = await spGet(container.path);
     if (existing.ok) {
-      record(container.fixtureId,
-             `fixture: a scratch ${where} exists to read and write settings on`,
-             'ALREADY PRESENT',
-             `reusing an existing '${container.title}'. Its settings may carry an `
-             + 'earlier run\'s writes. Set CLEANUP = true for a clean answer');
+      log('INFO', `reusing an existing '${container.title}'. Its settings may carry an `
+        + 'earlier run\'s writes. Set CLEANUP = true for a clean answer.');
       ready = true;
     } else {
       const digest = await getDigest();
@@ -680,13 +677,26 @@
         BaseTemplate: container.baseTemplate,
         Description: container.description,
       }, digest);
-      record(container.fixtureId,
-             `fixture: a scratch ${where} exists to read and write settings on`,
-             made.ok ? 'PASS' : 'FAIL',
-             made.ok
-               ? `created '${container.title}' (BaseTemplate ${container.baseTemplate})`
-               : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
+      if (!made.ok) {
+        record(container.fixtureId,
+               `fixture: a scratch ${where} exists to read and write settings on`,
+               'FAIL', `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
+      }
       ready = made.ok;
+    }
+    // Each container's rows rest on its own template, so a list reused under the other's title voids only its rows.
+    if (ready && !await establishFixture(container.fixtureId,
+      () => spGet(`${container.path}?$select=BaseTemplate`),
+      { BaseTemplate: container.baseTemplate },
+      [container.controlId, container.unknownId, container.enumerationId,
+       ...CANDIDATES.map((row) => row[container.idIndex])])) {
+      for (const row of CANDIDATES) {
+        ROWS.push({
+          container: where, property: row[0], written: null, readBack: null,
+          before: null, sticks: null, status: null, error: `void: the fixture ${container.fixtureId} did not hold`,
+        });
+      }
+      continue;
     }
 
     if (!ready) {

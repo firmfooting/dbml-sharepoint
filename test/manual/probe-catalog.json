@@ -1156,6 +1156,7 @@
             {
               "id": "library.lookup.picker-enumerates-files",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.list-to-library-title-created"
               ]
@@ -1173,6 +1174,7 @@
             }
           ],
           "controls": [
+            "library.doc-lib.fixture-library-created",
             "library.lookup.fixture-containers-ready",
             "library.lookup.list-to-library-title-created"
           ]
@@ -1488,25 +1490,34 @@
             },
             {
               "id": "library.file-vs-item.fileless-item-post",
-              "depends_on": []
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
             },
             {
               "id": "library.file-vs-item.fileless-item-readback",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.file-vs-item.fileless-item-post"
               ]
             },
             {
               "id": "library.file-vs-item.title-after-upload",
-              "depends_on": []
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
             },
             {
               "id": "library.doc-lib.view-fileleafref",
-              "depends_on": []
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
             },
             {
               "id": "library.file-vs-item.control-missing-column-refused",
-              "depends_on": []
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
             }
           ],
           "states": [],
@@ -1524,12 +1535,15 @@
             {
               "id": "library.file-vs-item.fileless-item-visible",
               "depends_on": [
+                "library.doc-lib.fixture-library-created",
                 "library.file-vs-item.fileless-item-post"
               ]
             },
             {
               "id": "library.doc-lib.header-fileleafref",
-              "depends_on": []
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
             }
           ],
           "states": [

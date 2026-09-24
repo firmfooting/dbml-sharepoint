@@ -1,0 +1,647 @@
+"""Run the probes that measure a document library found by title (#559, items 9 and 12).
+
+Each of them reused its library by title, or read `BaseTemplate` and never
+compared it, while every finding it records is phrased "on a document
+library". A generic list under the same name accepts the fileless item POST
+`document-library-probe.js`'s headline refusal rests on, so a reused list of
+the wrong kind produced confident findings about libraries that were really
+about lists.
+
+Each probe now reads the library back through `establishFixture` with
+`BaseTemplate: 101` before anything measures against it. Every probe is run
+healthy, on the create path and the reuse path where it has both, and then
+with a generic list (BaseTemplate 100) under the library's name, which must
+void exactly the rows that rest on the library and send none of their writes.
+"""
+
+import json
+import textwrap
+from typing import Any
+
+import pytest
+from _node import NODE, run_node
+from _paths import MANUAL
+
+pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
+
+WINDOW = (
+    "globalThis.window = { _spPageContextInfo: "
+    "{ webAbsoluteUrl: 'https://example.sharepoint.com/sites/test' }, "
+    "location: { origin: 'https://example.sharepoint.com' } };\n"
+)
+
+#: A fetch response, a record of every request, and waits that cost nothing.
+_RESPONSES = textwrap.dedent("""
+    const SENT = [];
+    process.on('exit', () => console.log('__SENT__' + JSON.stringify(SENT)));
+    const jsonResponse = (status, payload) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => 'Thu, 24 Sep 2026 09:00:00 GMT' },
+      json: async () => payload,
+      text: async () => JSON.stringify(payload),
+    });
+    const spError = (status, message) => jsonResponse(status, {
+      'odata.error': { message: { lang: 'en-US', value: message } } });
+    const realSetTimeout = setTimeout;
+    globalThis.setTimeout = (fn, ms, ...rest) => realSetTimeout(fn, 0, ...rest);
+""")
+
+#: A site holding the scratch containers the five item-12 probes create or
+#: reuse. Only the calls those probes send on a healthy run are answered.
+_SITE_MOCK = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+    const ROOT = '/sites/test';
+    // Settings every list reads before list-settings-probe writes to it.
+    const DEFAULTS = {
+      EnableAttachments: true, EnableVersioning: false, EnableMinorVersions: false,
+      EnableModeration: false, EnableFolderCreation: false, NoCrawl: false,
+      Direction: 'none', ContentTypesEnabled: false, ReadSecurity: 1,
+      WriteSecurity: 1, IrmEnabled: false, IrmExpire: false, IrmReject: false,
+    };
+    const OWNERS = 3;
+    const FULL_CONTROL = 1073741829;
+    const lists = new Map();
+    let nextList = 1;
+    const addList = (title, baseTemplate, description) => {
+      const n = nextList;
+      nextList += 1;
+      const id = `0000000${n}-0000-4000-8000-00000000000${n}`;
+      const fields = new Map([['Title', { InternalName: 'Title', TypeAsString: 'Text' }]]);
+      if (baseTemplate === 101) {
+        fields.set('FileLeafRef', { InternalName: 'FileLeafRef', TypeAsString: 'File' });
+      }
+      const list = {
+        id, title, baseTemplate, rootUrl: `${ROOT}/${title.replace(/ /g, '')}`,
+        props: { ...DEFAULTS, Description: description || '' },
+        fields, items: new Map(), nextItem: 1, views: new Map(), unique: false,
+        grants: [], formatter: '',
+      };
+      lists.set(title, list);
+      return list;
+    };
+    for (const [title, baseTemplate] of Object.entries(CONFIG.lists || {})) {
+      addList(title, baseTemplate, 'left by an earlier run');
+    }
+    const byId = (guid) => [...lists.values()].find(
+      (l) => l.id === String(guid).replace(/[{}]/g, '').toLowerCase());
+    const entity = (list) => ({
+      Id: list.id, Title: list.title, BaseTemplate: list.baseTemplate,
+      ItemCount: list.items.size, HasUniqueRoleAssignments: list.unique, ...list.props,
+    });
+    const addRow = (list, row) => {
+      const id = list.nextItem;
+      list.nextItem += 1;
+      const full = { Id: id, ID: id, Title: null, HasUniqueRoleAssignments: false, grants: [],
+                     ...row };
+      list.items.set(id, full);
+      return full;
+    };
+    const fileRow = (list, name, folder) => addRow(list, {
+      FileLeafRef: name, FileRef: `${list.rootUrl}${folder ? `/${folder}` : ''}/${name}`,
+      FileSystemObjectType: 0, FSObjType: 0 });
+    const folderAt = (url) => {
+      const bare = String(url);
+      for (const list of lists.values()) {
+        if (bare === list.title || bare === list.rootUrl) return { list, sub: null };
+        if (bare.startsWith(`${list.rootUrl}/`)) {
+          return { list, sub: bare.slice(list.rootUrl.length + 1) };
+        }
+      }
+      return null;
+    };
+    const selectOf = (rest) => {
+      const m = /[?&]\\$select=([^&]*)/.exec(rest);
+      return m ? m[1].split(',') : null;
+    };
+    const expandOf = (rest) => {
+      const m = /[?&]\\$expand=([^&]*)/.exec(rest);
+      return m ? m[1].split(',') : [];
+    };
+    const withLookups = (list, row, expand) => {
+      const out = { ...row };
+      delete out.grants;
+      for (const name of expand) {
+        const field = list.fields.get(name);
+        if (!field || field.TypeAsString !== 'Lookup') continue;
+        const target = byId(field.LookupList);
+        const hit = target && target.items.get(out[`${name}Id`]);
+        out[name] = hit ? { Title: hit.Title, FileLeafRef: hit.FileLeafRef } : null;
+      }
+      return out;
+    };
+    // The names an item write may carry: its fields, and a lookup's Id twin.
+    const writable = (list, name) => list.fields.has(name)
+      || (name.endsWith('Id')
+          && (list.fields.get(name.slice(0, -2)) || {}).TypeAsString === 'Lookup');
+    const noProperty = (name) => spError(400,
+      `The property '${name}' does not exist on type 'SP.Data.ListItem'.`);
+    // The lookup threshold, 12 by default, as threshold-index-probe measured it on a list.
+    const LOOKUP_THRESHOLD = 12;
+    const BINDING = { Id: FULL_CONTROL, Name: 'Full Control' };
+    const bindings = (grants) => grants.map((principal) => ({
+      PrincipalId: principal, RoleDefinitionBindings: [BINDING] }));
+
+    const onList = async (list, rest, verb, sent, raw, headers) => {
+      const select = selectOf(rest);
+      if (rest === '' || rest.startsWith('?')) {
+        if (verb === 'MERGE') {
+          for (const [name, value] of Object.entries(sent)) {
+            if (name === '__metadata') continue;
+            if (!(name in list.props)) {
+              return spError(400, `The property '${name}' does not exist on type 'SP.List'.`);
+            }
+            list.props[name] = value;
+          }
+          return jsonResponse(204, {});
+        }
+        const whole = entity(list);
+        const missing = (select || []).find((name) => !(name in whole));
+        if (missing) {
+          return spError(400, `The property '${missing}' does not exist on type 'SP.List'.`);
+        }
+        return jsonResponse(200, whole);
+      }
+      if (rest.startsWith('/RootFolder/Files/add(')) {
+        const name = /url='([^']+)'/.exec(rest)[1];
+        fileRow(list, name, null);
+        return jsonResponse(200, { Name: name, ServerRelativeUrl: `${list.rootUrl}/${name}` });
+      }
+      if (rest.startsWith('/RootFolder')) {
+        return jsonResponse(200, { ServerRelativeUrl: list.rootUrl });
+      }
+      if (rest.startsWith('/breakroleinheritance')) {
+        list.unique = true;
+        list.grants = [];
+        return jsonResponse(200, {});
+      }
+      if (rest.startsWith('/resetroleinheritance')) {
+        list.unique = false;
+        return jsonResponse(200, {});
+      }
+      const grant = /^\\/roleassignments\\/addroleassignment\\(principalid=(\\d+),roledefid=(\\d+)/
+        .exec(rest);
+      if (grant) {
+        // The live status for an unknown principal is unrecorded; any refusal serves the control.
+        if (Number(grant[1]) !== OWNERS || Number(grant[2]) !== FULL_CONTROL) {
+          return spError(500, 'Value does not fall within the expected range.');
+        }
+        list.grants.push(OWNERS);
+        return jsonResponse(200, {});
+      }
+      if (rest.startsWith('/roleassignments')) {
+        if (/verbose/.test(headers.Accept || '')) {
+          return jsonResponse(200, { d: { results: list.grants.map((p) => ({
+            PrincipalId: p, RoleDefinitionBindings: { results: [BINDING] } })) } });
+        }
+        return jsonResponse(200, { value: bindings(list.grants) });
+      }
+      const item = /^\\/items\\((\\d+)\\)(.*)$/.exec(rest);
+      if (item) {
+        const row = list.items.get(Number(item[1]));
+        if (!row) return spError(404, 'Item does not exist.');
+        const tail = item[2];
+        if (tail.startsWith('/breakroleinheritance')) {
+          row.HasUniqueRoleAssignments = true;
+          row.grants = [];
+          return jsonResponse(200, {});
+        }
+        if (tail.startsWith('/resetroleinheritance')) {
+          row.HasUniqueRoleAssignments = false;
+          return jsonResponse(200, {});
+        }
+        if (tail.startsWith('/roleassignments/addroleassignment')) {
+          row.grants.push(OWNERS);
+          return jsonResponse(200, {});
+        }
+        if (tail.startsWith('/roleassignments')) {
+          if (/verbose/.test(headers.Accept || '')) {
+            return jsonResponse(200, { d: { results: [] } });
+          }
+          return jsonResponse(200, { value: bindings(row.grants) });
+        }
+        if (verb === 'MERGE') {
+          for (const [name, value] of Object.entries(sent)) {
+            if (!writable(list, name)) return noProperty(name);
+            const field = list.fields.get(name.slice(0, -2));
+            // Measured 2026-09-07: a list's lookup into a library cannot be set by MERGE.
+            if (field && field.TypeAsString === 'Lookup' && list.baseTemplate !== 101
+                && byId(field.LookupList).baseTemplate === 101) {
+              return spError(500, 'Invalid lookup value.');
+            }
+            row[name] = value;
+          }
+          return jsonResponse(204, {});
+        }
+        return jsonResponse(200, withLookups(list, row, expandOf(tail)));
+      }
+      if (rest.startsWith('/items')) {
+        if (verb === 'POST') {
+          const unknown = Object.keys(sent).find((name) => !writable(list, name));
+          if (unknown) return noProperty(unknown);
+          if (list.baseTemplate === 101) {
+            return spError(500, 'To add an item to a document library, use SPFileCollection.Add()');
+          }
+          const row = addRow(list, { ...sent });
+          return jsonResponse(201, { Id: row.Id, Title: row.Title });
+        }
+        const filter = /\\$filter=(\\w+) eq '([^']*)'/.exec(rest);
+        const rows = [...list.items.values()]
+          .filter((row) => !filter || String(row[filter[1]]) === filter[2])
+          .map((row) => withLookups(list, row, []));
+        return jsonResponse(200, { value: rows });
+      }
+      const field = /^\\/fields\\/getby(?:internalnameortitle|title)\\('([^']+)'\\)/.exec(rest);
+      if (field) {
+        const held = list.fields.get(field[1]);
+        if (!held) {
+          return spError(400, `Column '${field[1]}' does not exist. It may have been deleted `
+            + 'by another user.');
+        }
+        if (verb === 'MERGE') {
+          if ('Indexed' in sent) held.Indexed = sent.Indexed === true;
+          return jsonResponse(204, {});
+        }
+        if (/verbose/.test(headers.Accept || '')) {
+          const type = `SP.Field${held.TypeAsString}`;
+          return jsonResponse(200, { d: { ...held, __metadata: { type } } });
+        }
+        return jsonResponse(200, held);
+      }
+      if (rest === '/fields/createfieldasxml') {
+        const xml = sent.parameters.SchemaXml;
+        const attr = (name) => (new RegExp(`${name}="([^"]*)"`).exec(xml) || [])[1];
+        const name = attr('Name');
+        if (list.fields.has(name)) return spError(500, 'A duplicate field name was found.');
+        const type = attr('Type');
+        const formula = /<Formula>=\\[([^\\]]+)\\]<\\/Formula>/.exec(xml);
+        if (type === 'Calculated' && formula
+            && (list.fields.get(formula[1]) || {}).TypeAsString === 'Lookup') {
+          return spError(500, 'One or more column references are not allowed, because the columns '
+            + 'are defined as a data type that is not supported in formulas.');
+        }
+        list.fields.set(name, {
+          InternalName: name, Title: attr('DisplayName'), TypeAsString: type, Indexed: false,
+          ...(type === 'Lookup' ? { LookupList: attr('List'), LookupField: attr('ShowField'),
+                                    AllowMultipleValues: false } : {}),
+        });
+        return jsonResponse(201, { InternalName: name, TypeAsString: type });
+      }
+      if (rest === '/views') {
+        list.views.set(sent.Title, { Title: sent.Title, ViewQuery: sent.ViewQuery, fields: [] });
+        return jsonResponse(201, { Title: sent.Title });
+      }
+      const view = /^\\/views\\/getbytitle\\('([^']+)'\\)\\/viewfields(.*)$/.exec(rest);
+      if (view) {
+        const held = list.views.get(view[1]);
+        if (!held) return spError(400, 'The specified view is invalid.');
+        const add = /addviewfield\\('([^']+)'\\)/.exec(view[2]);
+        if (add) {
+          if (!list.fields.has(add[1])) return spError(400, `Column '${add[1]}' does not exist.`);
+          held.fields.push(add[1]);
+          return jsonResponse(200, {});
+        }
+        return jsonResponse(200, { Items: ['DocIcon', 'LinkFilename', ...held.fields],
+                                   SchemaXml: '<FieldRef Name="DocIcon" />' });
+      }
+      if (rest.startsWith('/defaultview')) {
+        return jsonResponse(200, { Id: 'view-1', Title: 'All Documents',
+          ViewQuery: '<OrderBy><FieldRef Name="FileLeafRef" /></OrderBy>',
+          ListViewXml: '<View Name="{view-1}" DefaultView="TRUE" />' });
+      }
+      const ctRead = /^\\/contenttypes\\('([^']+)'\\)/.exec(rest);
+      if (ctRead) {
+        if (verb === 'MERGE') {
+          list.formatter = sent.ClientFormCustomFormatter;
+          return jsonResponse(204, {});
+        }
+        return jsonResponse(200, { ClientFormCustomFormatter: list.formatter });
+      }
+      if (rest.startsWith('/contenttypes')) {
+        return jsonResponse(200, { value: [
+          { Id: { StringValue: '0x0120001122' }, Name: 'Folder' },
+          { Id: { StringValue: '0x0101003344' }, Name: 'Document' },
+        ] });
+      }
+      if (rest === '/RenderListDataAsStream') {
+        const parameters = sent.parameters || {};
+        const xml = String(parameters.ViewXml || '');
+        const named = [...xml.matchAll(/FieldRef Name=["']([^"']+)["']/g)].map((m) => m[1]);
+        const absent = named.find((name) => !list.fields.has(name)
+          && !['FileLeafRef', 'FileRef', 'ID'].includes(name));
+        if (absent) return spError(500, `Field or property "${absent}" does not exist.`);
+        const lookups = named.filter(
+          (name) => (list.fields.get(name) || {}).TypeAsString === 'Lookup');
+        if (lookups.length > LOOKUP_THRESHOLD) {
+          return spError(500, 'The query cannot be completed because the number of lookup columns '
+            + 'it contains exceeds the lookup column threshold enforced by the administrator.');
+        }
+        const Row = [...list.items.values()].map((row) => {
+          const out = { ID: String(row.Id), FileLeafRef: row.FileLeafRef,
+                        FSObjType: String(row.FSObjType) };
+          for (const name of named) out[name] = row[name] === undefined ? '' : row[name];
+          return out;
+        });
+        return jsonResponse(200, { Row });
+      }
+      return spError(404, `unrouted ${verb} ${rest}`);
+    };
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const method = opts.method || 'GET';
+      const headers = opts.headers || {};
+      const verb = headers['X-HTTP-Method'] || method;
+      const raw = opts.body === undefined ? '' : String(opts.body);
+      const path = decodeURIComponent(String(url).split('/_api/')[1] || '');
+      SENT.push({ verb, path, body: raw });
+      let sent = {};
+      try { sent = raw ? JSON.parse(raw) : {}; } catch { sent = {}; }
+
+      if (path.startsWith('contextinfo')) {
+        return jsonResponse(200, {
+          d: { GetContextWebInformation: { FormDigestValue: 'digest' } } });
+      }
+      if (path === 'web/lists' && method === 'POST') {
+        const made = addList(sent.Title, sent.BaseTemplate, sent.Description);
+        return jsonResponse(201, { Id: made.id, Title: made.title });
+      }
+      if (path.startsWith('web/associatedownergroup')) {
+        return jsonResponse(200, { Id: OWNERS, Title: 'Probe Site Owners' });
+      }
+      const folder = new RegExp("^web/GetFolderByServerRelativeUrl\\\\('([^']+)'\\\\)"
+        + "/(Files|folders)/add\\\\(url='([^']+)'").exec(path);
+      if (folder) {
+        const at = folderAt(folder[1]);
+        if (!at) return spError(404, 'File Not Found.');
+        if (folder[2] === 'folders') {
+          addRow(at.list, { FileLeafRef: folder[3], FileSystemObjectType: 1, FSObjType: 1 });
+        } else {
+          fileRow(at.list, folder[3], at.sub);
+        }
+        return jsonResponse(200, { Name: folder[3],
+                                   ServerRelativeUrl: `${at.list.rootUrl}/${folder[3]}` });
+      }
+      const named = /^web\\/lists\\/getbytitle\\('([^']+)'\\)(.*)$/.exec(path);
+      if (named) {
+        const list = lists.get(named[1].replace(/''/g, "'"));
+        if (!list) {
+          return spError(404, `List '${named[1]}' does not exist at site with URL '${ROOT}'.`);
+        }
+        return onList(list, named[2], verb, sent, raw, headers);
+      }
+      return spError(404, `unrouted ${verb} ${path}`);
+    };
+""")
+
+
+def _probe_js(name: str, gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES")) -> str:
+    """The committed probe with its write gates opened and its result table dumped."""
+    js = (MANUAL / name).read_text(encoding="utf-8")
+    for gate in gates:
+        opened = js.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
+        assert opened != js, f"the {gate} gate is not spelled as this test expects"
+        js = opened
+    exposed = js.replace(
+        "  const report = () => {\n",
+        "  const report = () => {\n    console.log('__ROWS__' + JSON.stringify(RESULTS));\n",
+        1,
+    )
+    assert exposed != js, "the result table dump did not splice into report()"
+    return exposed
+
+
+def _last(output: str, marker: str) -> Any:
+    lines = [ln for ln in output.splitlines() if ln.startswith(marker)]
+    assert lines, f"nothing was printed after {marker}:\n{output[-3000:]}"
+    return json.loads(lines[-1].removeprefix(marker))
+
+
+def _run(mock: str, config: dict[str, Any], name: str,
+         gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"),
+         ) -> tuple[dict[str, dict[str, str]], list[dict[str, str]]]:
+    script = (WINDOW + _RESPONSES + mock.replace("__CONFIG__", json.dumps(config))
+              + "\n" + _probe_js(name, gates))
+    output = run_node(script)
+    rows = {row["id"]: row for row in _last(output, "__ROWS__")}
+    return rows, list(_last(output, "__SENT__"))
+
+
+def _voided(rows: dict[str, dict[str, str]]) -> set[str]:
+    return {row_id for row_id, row in rows.items() if row["state"] == "void"}
+
+
+def _writes(sent: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Every request that is not a read or a digest."""
+    return [r for r in sent if r["verb"] != "GET" and not r["path"].startswith("contextinfo")]
+
+
+def _assert_generic_list_voids(
+    rows: dict[str, dict[str, str]], fixture: str, dependents: set[str],
+) -> None:
+    held = rows[fixture]
+    assert held["outcome"] == "FAIL", held
+    assert "BaseTemplate differs: read 100, declared 101" in held["evidence"], held
+    assert _voided(rows) == dependents
+    assert all(fixture in rows[row_id]["evidence"] for row_id in dependents)
+
+
+# --------------------------------------------------------------------------
+# Item 12: the five probes that create or reuse their own library.
+# --------------------------------------------------------------------------
+DOC_LIB = "library.doc-lib.fixture-library-created"
+_CREATED_OR_REUSED = pytest.mark.parametrize("reused", [False, True], ids=["created", "reused"])
+
+_DOCUMENT_LIBRARY = "dbmlsp Probe DocLib"
+_DOCUMENT_LIBRARY_ROWS = {
+    "library.file-vs-item.control-missing-column-refused",
+    "library.file-vs-item.fileless-item-post",
+    "library.file-vs-item.fileless-item-readback",
+    "library.file-vs-item.fileless-item-visible",
+    "library.file-vs-item.title-after-upload",
+    "library.doc-lib.view-fileleafref",
+    "library.doc-lib.header-fileleafref",
+}
+
+
+@_CREATED_OR_REUSED
+def test_document_library_probe_measures_on_a_library_it_read_back(reused: bool) -> None:
+    lists = {_DOCUMENT_LIBRARY: 101} if reused else {}
+    rows, sent = _run(_SITE_MOCK, {"lists": lists}, "document-library-probe.js")
+
+    assert rows[DOC_LIB]["outcome"] == "PASS", rows[DOC_LIB]
+    assert "BaseTemplate=101" in rows[DOC_LIB]["evidence"]
+    assert rows["library.file-vs-item.fileless-item-post"]["outcome"] == "REFUSED, AND SAYS WHY"
+    assert rows["library.file-vs-item.title-after-upload"]["outcome"].startswith("TITLE IS EMPTY")
+    assert rows["library.doc-lib.header-fileleafref"]["outcome"] == "STORED"
+    assert not _voided(rows)
+    assert [r for r in _writes(sent) if r["path"].endswith("/items")]
+
+
+def test_document_library_probe_voids_its_rows_on_a_generic_list_of_the_same_name() -> None:
+    """A generic list ACCEPTS the fileless POST, which would invert the headline."""
+    rows, sent = _run(_SITE_MOCK, {"lists": {_DOCUMENT_LIBRARY: 100}}, "document-library-probe.js")
+
+    _assert_generic_list_voids(rows, DOC_LIB, _DOCUMENT_LIBRARY_ROWS)
+    assert not _writes(sent)
+
+
+_ACCESS_LIBRARY = "dbmlsp Probe LibAccess"
+_ACCESS_ROWS = {
+    "library.access.control-missing-column-refused",
+    "library.access.unique-permissions-library",
+    "library.access.role-assignment-library",
+    "library.access.file-scoped-unique-permission",
+}
+
+
+@_CREATED_OR_REUSED
+def test_library_access_probe_measures_on_a_library_it_read_back(reused: bool) -> None:
+    lists = {_ACCESS_LIBRARY: 101} if reused else {}
+    rows, sent = _run(_SITE_MOCK, {"lists": lists}, "library-access-probe.js")
+
+    assert rows[DOC_LIB]["outcome"] == "PASS", rows[DOC_LIB]
+    assert rows["library.access.control-missing-column-refused"]["outcome"] == "PASS"
+    assert rows["library.access.unique-permissions-library"]["outcome"] == "SAME AS LIST"
+    assert rows["library.access.file-scoped-unique-permission"]["outcome"] == "SAME AS LIST"
+    assert not _voided(rows)
+    assert [r for r in _writes(sent) if "breakroleinheritance" in r["path"]]
+
+
+def test_library_access_probe_voids_its_rows_on_a_generic_list_of_the_same_name() -> None:
+    rows, sent = _run(_SITE_MOCK, {"lists": {_ACCESS_LIBRARY: 100}}, "library-access-probe.js")
+
+    _assert_generic_list_voids(rows, DOC_LIB, _ACCESS_ROWS)
+    assert not _writes(sent)
+
+
+_VIEW_LIBRARY = "dbmlsp Probe LibView"
+_VIEW_ROWS = {
+    "library.view.control-missing-column-refused",
+    "library.view.group-by-metadata-column",
+    "library.view.group-by-folder",
+}
+
+
+@_CREATED_OR_REUSED
+def test_library_view_probe_measures_on_a_library_it_read_back(reused: bool) -> None:
+    lists = {_VIEW_LIBRARY: 101} if reused else {}
+    rows, sent = _run(_SITE_MOCK, {"lists": lists}, "library-view-probe.js")
+
+    assert rows[DOC_LIB]["outcome"] == "PASS", rows[DOC_LIB]
+    assert rows["library.view.control-missing-column-refused"]["outcome"] == "PASS"
+    assert rows["library.view.group-by-metadata-column"]["outcome"] == "SAME AS LIST"
+    assert not _voided(rows)
+    assert [r for r in _writes(sent) if "/Files/add(" in r["path"]]
+
+
+def test_library_view_probe_voids_its_rows_on_a_generic_list_of_the_same_name() -> None:
+    rows, sent = _run(_SITE_MOCK, {"lists": {_VIEW_LIBRARY: 100}}, "library-view-probe.js")
+
+    _assert_generic_list_voids(rows, DOC_LIB, _VIEW_ROWS)
+    assert not _writes(sent)
+
+
+_CROSS_LIBRARY = "dbmlsp Probe XLookup Lib"
+_CROSS_LIBRARY_ROWS = {
+    "library.lookup.fixture-containers-ready",
+    "library.lookup.library-to-list-created",
+    "library.lookup.library-to-list-item-write",
+    "library.lookup.library-to-list-indexed",
+    "library.lookup.list-to-library-title-created",
+    "library.lookup.list-to-library-name-created",
+    "library.lookup.list-to-library-item-write",
+    "library.lookup.list-to-library-folder-row-selectable",
+    "library.lookup.list-to-library-indexed",
+    "library.lookup.picker-enumerates-files",
+    "scale.join.library-lookup-ceiling",
+    "scale.join.list-to-library-costs-a-join",
+}
+#: Both ends generic lists, so they rest on no library and are never voided by one.
+_CROSS_LIST_ROWS = {
+    "library.lookup.control-list-to-list-lookup-created",
+    "library.lookup.control-unsupported-operand-refused",
+    "scale.join.control-list-lookup-ceiling",
+}
+
+
+@_CREATED_OR_REUSED
+def test_cross_lookup_probe_measures_on_a_library_it_read_back(reused: bool) -> None:
+    lists = {_CROSS_LIBRARY: 101} if reused else {}
+    rows, sent = _run(_SITE_MOCK, {"lists": lists}, "cross-lookup-probe.js")
+
+    assert rows[DOC_LIB]["outcome"] == "PASS", rows[DOC_LIB]
+    assert rows["library.lookup.fixture-containers-ready"]["outcome"] == "PASS"
+    assert rows["library.lookup.library-to-list-item-write"]["outcome"] == "HELD"
+    assert rows["library.lookup.list-to-library-item-write"]["outcome"] == "REFUSED"
+    assert rows["scale.join.library-lookup-ceiling"]["outcome"] == "CEILING 12"
+    assert rows["scale.join.list-to-library-costs-a-join"]["outcome"] == "COSTS 1"
+    assert not _voided(rows)
+    assert [r for r in _writes(sent) if r["path"].endswith("/fields/createfieldasxml")]
+
+
+def test_cross_lookup_probe_voids_only_the_library_rows_on_a_generic_list_of_its_name() -> None:
+    rows, sent = _run(_SITE_MOCK, {"lists": {_CROSS_LIBRARY: 100}}, "cross-lookup-probe.js")
+
+    _assert_generic_list_voids(rows, DOC_LIB, _CROSS_LIBRARY_ROWS)
+    for row_id in _CROSS_LIST_ROWS:
+        assert rows[row_id]["state"] == "open", rows[row_id]
+    assert not _writes(sent)
+
+
+_SETTINGS_LIST = "dbmlsp Probe ListSettings"
+_SETTINGS_LIBRARY = "dbmlsp Probe ListSettings Lib"
+_SETTINGS_SETTINGS = (
+    "attachments", "versioning", "minor-versions", "moderation", "folder-creation", "nocrawl",
+    "direction", "content-types", "irm-enabled", "irm-expire", "irm-reject",
+)
+_SETTINGS_LIBRARY_ROWS = {
+    "library.doc-lib.control-description-sticks",
+    "library.doc-lib.control-unknown-property-refused",
+    "library.doc-lib.property-enumeration",
+    "access.item-acl.read-security-on-library",
+    "access.item-acl.write-security-on-library",
+    *(f"library.doc-lib.{name}-sticks" for name in _SETTINGS_SETTINGS),
+}
+_SETTINGS_LIST_ROWS = {
+    "field.list.control-description-sticks",
+    "field.list.control-unknown-property-refused",
+    "field.list.property-enumeration",
+    "access.item-acl.read-security-on-list",
+    "access.item-acl.write-security-on-list",
+    *(f"field.list.{name}-sticks" for name in _SETTINGS_SETTINGS),
+}
+
+
+@_CREATED_OR_REUSED
+def test_list_settings_probe_reads_each_container_back_as_its_own_template(reused: bool) -> None:
+    lists = {_SETTINGS_LIST: 100, _SETTINGS_LIBRARY: 101} if reused else {}
+    rows, sent = _run(_SITE_MOCK, {"lists": lists}, "list-settings-probe.js")
+
+    assert rows["field.list.fixture-scratch-list"]["outcome"] == "PASS"
+    assert "BaseTemplate=100" in rows["field.list.fixture-scratch-list"]["evidence"]
+    assert rows[DOC_LIB]["outcome"] == "PASS"
+    assert "BaseTemplate=101" in rows[DOC_LIB]["evidence"]
+    assert rows["library.doc-lib.versioning-sticks"]["outcome"] == "STICKS"
+    assert not _voided(rows)
+    assert [r for r in _writes(sent) if _SETTINGS_LIBRARY in r["path"]]
+
+
+def test_list_settings_probe_voids_only_the_library_rows_on_a_generic_list_of_its_name() -> None:
+    """The generic list's rows still run; nothing is written to the impostor."""
+    rows, sent = _run(_SITE_MOCK, {"lists": {_SETTINGS_LIBRARY: 100}}, "list-settings-probe.js")
+
+    _assert_generic_list_voids(rows, DOC_LIB, _SETTINGS_LIBRARY_ROWS)
+    assert rows["field.list.versioning-sticks"]["outcome"] == "STICKS"
+    assert not [r for r in _writes(sent) if _SETTINGS_LIBRARY in r["path"]]
+
+
+def test_list_settings_probe_declares_a_generic_list_where_its_rows_want_one() -> None:
+    """The list rows rest on BaseTemplate 100, so a library under the list's name voids them."""
+    rows, sent = _run(_SITE_MOCK, {"lists": {_SETTINGS_LIST: 101}}, "list-settings-probe.js")
+
+    held = rows["field.list.fixture-scratch-list"]
+    assert held["outcome"] == "FAIL", held
+    assert "BaseTemplate differs: read 101, declared 100" in held["evidence"]
+    assert _voided(rows) == _SETTINGS_LIST_ROWS
+    assert rows["library.doc-lib.versioning-sticks"]["outcome"] == "STICKS"
+    assert not [r for r in _writes(sent) if f"'{_SETTINGS_LIST}')" in r["path"]]

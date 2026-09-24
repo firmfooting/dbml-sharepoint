@@ -121,10 +121,7 @@
   // ---- fixture-library-created: the library ---------------------------
   const existing = await spGet(listPath);
   if (existing.ok) {
-    record('library.doc-lib.fixture-library-created',
-           'A document library is created (BaseTemplate 101)',
-           'ALREADY PRESENT',
-           'reusing an existing library. Set CLEANUP = true for a clean answer');
+    log('INFO', `reusing an existing '${LIB}'. Set CLEANUP = true for a clean answer.`);
   } else {
     digest = await getDigest();
     const made = await spPost('web/lists', {
@@ -132,12 +129,19 @@
       BaseTemplate: 101,
       Description: 'dbml-sharepoint library-view probe library. Safe to delete.',
     }, digest);
-    record('library.doc-lib.fixture-library-created',
-           'A document library is created (BaseTemplate 101)',
-           made.ok ? 'PASS' : 'FAIL',
-           made.ok ? `created '${LIB}'` : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
-    if (!made.ok) return report();
+    if (!made.ok) {
+      record('library.doc-lib.fixture-library-created',
+             'A document library is created (BaseTemplate 101)',
+             'FAIL', `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
+      return report();
+    }
   }
+  // Every grouping row is asked of a document library, so a generic list reused under the title voids them.
+  const isLibrary = await establishFixture('library.doc-lib.fixture-library-created',
+    () => spGet(`${listPath}?$select=BaseTemplate`), { BaseTemplate: 101 },
+    ['library.view.control-missing-column-refused', 'library.view.group-by-metadata-column',
+     'library.view.group-by-folder']);
+  if (!isLibrary) return report();
 
   // ---- RootFolder path ------------------------------------------------
   const root = await spGet(`${listPath}/RootFolder?$select=ServerRelativeUrl`);
