@@ -149,7 +149,7 @@
   const Q = {
     fixture: 'A generic list is created (BaseTemplate 100)',
     control: 'NEGATIVE CONTROL: an item POST naming a column that does not exist is refused',
-    columns: 'Every probe column reads back as its declared type, and a reused one carries the formula this probe sends',
+    columns: 'Every probe column whose create was not refused reads back as its declared type, and a reused one carries the formula this probe sends',
     textProp: 'Does DefaultFormula on a single-line Text column read back as sent',
     textFill: 'Does ="Y"&YEAR(TODAY()) on a single-line Text column fill on a bare item create',
   };

@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHICH FUNCTIONS A DefaultFormula EVALUATES
  *
- * REVISION: a7bf7dea
+ * REVISION: 4b13e683
  *
  * ONE QUESTION:
  *   Does a DefaultFormula calling DAY, ROUNDDOWN, MOD, TEXT, IF, AND or OR
@@ -408,7 +408,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision a7bf7dea. Quote this when reporting results.');
+  log('INFO', 'probe revision 4b13e683. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Functions List';
   const listPath = `web/lists/getbytitle('${LIST}')`;
@@ -471,7 +471,7 @@
   const Q = {
     fixture: 'A generic list is created (BaseTemplate 100)',
     control: 'NEGATIVE CONTROL: an item POST naming a column that does not exist is refused',
-    columns: 'Every probe column reads back as its declared type, and a reused one carries the formula this probe sends',
+    columns: 'Every probe column whose create was not refused reads back as its declared type, and a reused one carries the formula this probe sends',
     textProp: 'Does DefaultFormula on a single-line Text column read back as sent',
     textFill: 'Does ="Y"&YEAR(TODAY()) on a single-line Text column fill on a bare item create',
   };

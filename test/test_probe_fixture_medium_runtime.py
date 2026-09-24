@@ -565,6 +565,8 @@ _LIST_MOCK = textwrap.dedent(r"""
     };
     for (const [title, shape] of Object.entries(CONFIG.existing || {})) {
       const list = newList(title, shape.template, shape.description);
+      // A read that serves no Id, which a failure case sets.
+      list.omitId = shape.omitId === true;
       for (const [name, props] of Object.entries(shape.fields || {})) {
         list.fields.set(name, newField(name, props));
       }
@@ -623,7 +625,8 @@ _LIST_MOCK = textwrap.dedent(r"""
           Object.assign(list, props);
           return respond(204, {});
         }
-        const { fields, items, nextItem, ...whole } = list;
+        const { fields, items, nextItem, omitId, ...whole } = list;
+        if (omitId) delete whole.Id;
         return respond(200, project({ ...whole, ItemCount: items.length,
           ListItemEntityTypeFullName: 'SP.Data.ProbeListItem' }, rest), verbose);
       }
@@ -791,6 +794,18 @@ def test_a_generic_list_that_holds_establishes(probe: str, reused: bool) -> None
 
     _assert_held(rows, fixture)
     assert "BaseTemplate=100" in rows[fixture]["evidence"]
+
+
+def test_lookup_acl_voids_its_rows_on_a_target_read_that_serves_no_id() -> None:
+    """The lookup took the create's Id, so a target read with no Id built against undefined."""
+    target, source = _GENERIC_LIST_PROBES["lookup-acl-probe.js"][1]
+    config = {"existing": {target: {"template": 100, "omitId": True}}}
+    rows, sent = _run_probe(_LIST_MOCK, config, "lookup-acl-probe.js")
+
+    _assert_voids_catalogued(rows, "lookup-acl-probe.js",
+                             "access.lookup-acl.fixture-lists-created", "target.Id")
+    assert not _writes_to(sent, target, uploads=False)
+    assert not _writes_to(sent, source, uploads=False)
 
 
 # ---- Columns reused by name, read back as their declared shape -----------

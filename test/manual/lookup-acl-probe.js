@@ -872,15 +872,20 @@
                 `the source list could not be created (see the FAIL above)`);
   }
   // Read back on reuse as well as on create, because a list found by title may be a library.
+  // The lookup binds to the Id read here, since a create's response body may not carry one.
+  let targetGuid = null;
   if (!await establishFixture(LISTS_ROW, async () => {
     const body = {};
     for (const [key, title] of [['target', TARGET], ['source', SOURCE]]) {
-      const read = await spGet(`web/lists/getbytitle('${title}')?$select=BaseTemplate`);
+      const read = await spGet(`web/lists/getbytitle('${title}')?$select=BaseTemplate,Id`);
       if (unanswered(read) !== null) return read;
       body[`${key}.BaseTemplate`] = read.body.BaseTemplate;
+      if (key === 'target') body['target.Id'] = read.body.Id;
     }
+    targetGuid = body['target.Id'];
     return { ok: true, status: 200, body };
-  }, { 'target.BaseTemplate': 100, 'source.BaseTemplate': 100 },
+  }, { 'target.BaseTemplate': 100, 'source.BaseTemplate': 100,
+    'target.Id': (id) => typeof id === 'string' && id !== '' },
   RESULTS.map((r) => r.id).filter((id) => id !== LISTS_ROW))) {
     report();
     return;
@@ -922,7 +927,6 @@
   const closedId = closedRow.body.Id;
   log('OK', 'Created one open and one closed row on the target.');
 
-  const targetGuid = targetList.Id;
   const addLookup = async (name, lookupFieldName) => {
     digest = await getDigest();
     return spPost(`web/lists/getbytitle('${SOURCE}')/fields/addfield`, {
