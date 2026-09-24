@@ -2,7 +2,7 @@
  * dbml-sharepoint PROBE: DOES THE MODERN LIBRARY PAGE RENDER A GROUPED VIEW
  * PAST 5,000 ITEMS, WHERE EVERY REST SURFACE REFUSES ONE?
  *
- * REVISION: 5258d7c7
+ * REVISION: 7a7374ed
  *
  * ONE QUESTION, AND IT IS ABOUT A DIFFERENT LAYER FROM EVERY LARGE-LIST PROBE
  * BEFORE IT. #472, #478, #479, #480, #481 and #483 all measured the REST layer:
@@ -670,7 +670,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not work
   // produce identical transcripts otherwise.
-  log('INFO', 'probe revision 5258d7c7. Quote this when reporting results.');
+  log('INFO', 'probe revision 7a7374ed. Quote this when reporting results.');
 
   // ---- Operator settings -------------------------------------------------
   // Which leg of the run this paste is. One paste answers one state, because a
@@ -776,7 +776,11 @@
   const fieldPath = (name) =>
     `${libPath}/fields/getbyinternalnameortitle('${odataName(name)}')`;
 
-  expect('library.large-list.fixture-preindex-library-present', `The fixture library '${LIB}' is present, holds more than 5,000 files and carries both contract columns`);
+  const DOC_LIBRARY = 'library.large-list.fixture-document-library';
+  // The capture control is read on some other library under the threshold, not on the fixture.
+  const CAPTURE_CONTROL = 'library.large-list.control-ui-modern-renders-below-threshold';
+  expect('library.large-list.fixture-document-library', `The fixture library '${LIB}' reads back as a document library (BaseTemplate 101)`);
+  expect('library.large-list.fixture-preindex-library-present',`The fixture library '${LIB}' is present, holds more than 5,000 files and carries both contract columns`);
   expect('library.large-list.fixture-preindex-index-written-under-threshold', `${CHOICE} reads Indexed=true and its Description carries the stamp saying the flag was written below ${THRESHOLD} files`);
   expect('library.large-list.fixture-preindex-witness-unindexed', `${NUMBER} reads Indexed=false, so the unindexed side of the comparison really is unindexed`);
   expect('library.large-list.fixture-ui-grouped-views-created', 'Both grouped views exist and read back carrying a single-level <GroupBy> on the column they name');
@@ -1052,6 +1056,12 @@
     // ---- The fixture, read -----------------------------------------------
     const libRead = await spGet(libPath);
     const libOk = !readFailed(libRead);
+    // Found by title, so a generic list under the name would take the two views and every row below (#559).
+    if (libOk && !await establishFixture(DOC_LIBRARY, async () => libRead, { BaseTemplate: 101 },
+      RESULTS.map((row) => row.id).filter((id) => id !== DOC_LIBRARY && id !== CAPTURE_CONTROL))) {
+      report();
+      return;
+    }
     const libId = libOk ? guid(libRead.body.Id) : null;
     const before = await newestFile();
     const count = before.ok ? before.number : 0;

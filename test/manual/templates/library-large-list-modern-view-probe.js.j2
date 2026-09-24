@@ -454,7 +454,11 @@
   const fieldPath = (name) =>
     `${libPath}/fields/getbyinternalnameortitle('${odataName(name)}')`;
 
-  expect('library.large-list.fixture-preindex-library-present', `The fixture library '${LIB}' is present, holds more than 5,000 files and carries both contract columns`);
+  const DOC_LIBRARY = 'library.large-list.fixture-document-library';
+  // The capture control is read on some other library under the threshold, not on the fixture.
+  const CAPTURE_CONTROL = 'library.large-list.control-ui-modern-renders-below-threshold';
+  expect('library.large-list.fixture-document-library', `The fixture library '${LIB}' reads back as a document library (BaseTemplate 101)`);
+  expect('library.large-list.fixture-preindex-library-present',`The fixture library '${LIB}' is present, holds more than 5,000 files and carries both contract columns`);
   expect('library.large-list.fixture-preindex-index-written-under-threshold', `${CHOICE} reads Indexed=true and its Description carries the stamp saying the flag was written below ${THRESHOLD} files`);
   expect('library.large-list.fixture-preindex-witness-unindexed', `${NUMBER} reads Indexed=false, so the unindexed side of the comparison really is unindexed`);
   expect('library.large-list.fixture-ui-grouped-views-created', 'Both grouped views exist and read back carrying a single-level <GroupBy> on the column they name');
@@ -730,6 +734,12 @@
     // ---- The fixture, read -----------------------------------------------
     const libRead = await spGet(libPath);
     const libOk = !readFailed(libRead);
+    // Found by title, so a generic list under the name would take the two views and every row below (#559).
+    if (libOk && !await establishFixture(DOC_LIBRARY, async () => libRead, { BaseTemplate: 101 },
+      RESULTS.map((row) => row.id).filter((id) => id !== DOC_LIBRARY && id !== CAPTURE_CONTROL))) {
+      report();
+      return;
+    }
     const libId = libOk ? guid(libRead.body.Id) : null;
     const before = await newestFile();
     const count = before.ok ? before.number : 0;

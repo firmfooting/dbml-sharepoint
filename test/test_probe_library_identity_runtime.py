@@ -645,3 +645,241 @@ def test_list_settings_probe_declares_a_generic_list_where_its_rows_want_one() -
     assert _voided(rows) == _SETTINGS_LIST_ROWS
     assert rows["library.doc-lib.versioning-sticks"]["outcome"] == "STICKS"
     assert not [r for r in _writes(sent) if f"'{_SETTINGS_LIST}')" in r["path"]]
+
+
+# --------------------------------------------------------------------------
+# Item 9: the large-list probes, which read a fixture another probe built.
+# They have no create path, so the healthy run is the reuse path.
+# --------------------------------------------------------------------------
+#: The fixture libraries past the threshold. Every filter or render the run
+#: sends is refused with the throttle a live run gave unless it is on Id.
+_LARGE_MOCK = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+    const libs = new Map(Object.entries(CONFIG.libraries));
+    const LIST = /^web\\/lists\\/getbytitle\\('([^']+)'\\)(.*)$/;
+    const FIELD = /^\\/fields\\/getbyinternalnameortitle\\('([^']+)'\\)$/;
+    const throttled = () => jsonResponse(500, { 'odata.error': {
+      code: '-2147024860, Microsoft.SharePoint.SPQueryThrottledException',
+      message: { lang: 'en-US', value: 'The attempted operation is prohibited because it '
+        + 'exceeds the list view threshold.' } } });
+    const views = new Map();
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const method = opts.method || 'GET';
+      const headers = opts.headers || {};
+      const verb = headers['X-HTTP-Method'] || method;
+      const raw = opts.body === undefined ? '' : String(opts.body);
+      const path = decodeURIComponent(String(url).split('/_api/')[1] || '');
+      SENT.push({ verb, path, body: raw });
+      let sent = {};
+      try { sent = raw ? JSON.parse(raw) : {}; } catch { sent = {}; }
+
+      if (path.startsWith('contextinfo')) {
+        return jsonResponse(200, {
+          d: { GetContextWebInformation: { FormDigestValue: 'digest' } } });
+      }
+      const folder = /^web\\/GetFolderByServerRelativeUrl\\('([^']+)'\\)/.exec(path);
+      if (folder) {
+        const name = folder[1].split('/').pop();
+        return jsonResponse(200, { Exists: true, ItemCount: 1752, Name: name });
+      }
+      const named = LIST.exec(path);
+      if (!named) return spError(404, `unrouted ${verb} ${path}`);
+      const lib = libs.get(named[1]);
+      if (!lib) return spError(404, `List '${named[1]}' does not exist.`);
+      const rest = named[2];
+      if (rest === '' || rest.startsWith('?')) {
+        return jsonResponse(200, { Id: lib.id, Title: named[1], BaseTemplate: lib.baseTemplate,
+                                   ItemCount: lib.count });
+      }
+      if (rest.startsWith('/RootFolder')) return jsonResponse(200, { ServerRelativeUrl: lib.root });
+      const field = FIELD.exec(rest);
+      if (field) {
+        const held = lib.fields[field[1]];
+        if (!held) return spError(400, `Column '${field[1]}' does not exist.`);
+        if (verb === 'MERGE') {
+          const unknown = Object.keys(sent).find(
+            (key) => !['__metadata', 'Indexed', 'Description'].includes(key));
+          if (unknown) {
+            return spError(400, `The property '${unknown}' does not exist on type 'SP.Field'.`);
+          }
+          Object.assign(held, sent);
+          delete held.__metadata;
+          return jsonResponse(204, {});
+        }
+        const body = { InternalName: field[1], AutoIndexed: false, Description: '', ...held };
+        if (/verbose/.test(headers.Accept || '')) {
+          const type = `SP.Field${held.TypeAsString}`;
+          return jsonResponse(200, { d: { ...body, __metadata: { type } } });
+        }
+        return jsonResponse(200, body);
+      }
+      if (rest.startsWith('/items')) {
+        if (/\\$orderby=Id desc/.test(rest)) {
+          return jsonResponse(200, { value: [{ Id: lib.count + 3, FileLeafRef: lib.newest }] });
+        }
+        const idFilter = /\\$filter=Id eq (\\d+)/.exec(rest);
+        if (idFilter) return jsonResponse(200, { value: [{ Id: Number(idFilter[1]) }] });
+        return throttled();
+      }
+      if (rest.startsWith('/views')) {
+        const list = views.get(named[1]) || [{ Id: 'v0', Title: 'All Documents', DefaultView: true,
+          ViewQuery: '', RowLimit: 30, ServerRelativeUrl: `${lib.root}/Forms/AllItems.aspx` }];
+        views.set(named[1], list);
+        if (rest === '/views' && verb === 'POST') {
+          list.push({ Id: `v${list.length}`, Title: sent.Title, DefaultView: false,
+                      ViewQuery: sent.ViewQuery, RowLimit: sent.RowLimit,
+                      ServerRelativeUrl: `${lib.root}/Forms/${sent.Title}.aspx` });
+          return jsonResponse(201, { Title: sent.Title });
+        }
+        if (verb !== 'GET') return jsonResponse(200, {});
+        return jsonResponse(200, { value: list });
+      }
+      if (rest === '/RenderListDataAsStream') {
+        const xml = String((sent.parameters || {}).ViewXml || '');
+        if (/NoSuchColumnAtAll/.test(xml)) return spError(500, 'Field or property does not exist.');
+        if (/FieldRef Name=.ID/.test(xml) && /<Where>/.test(xml)) {
+          return jsonResponse(200, { Row: [] });
+        }
+        return throttled();
+      }
+      return spError(404, `unrouted ${verb} ${rest}`);
+    };
+""")
+
+_LV_COLUMNS = {
+    "LVText": "Text", "LVNumber": "Number", "LVChoice": "Choice", "LVDate": "DateTime",
+    "LVMultiChoice": "MultiChoice", "LVLookup": "Lookup", "LVCalc": "Calculated",
+}
+
+
+def _library(count: int, newest: str, root: str, fields: dict[str, dict[str, Any]],
+             base_template: int = 101) -> dict[str, Any]:
+    return {"id": f"guid-{root}", "baseTemplate": base_template, "count": count,
+            "newest": newest, "root": f"/sites/test/{root}", "fields": fields}
+
+
+def _large_lib(base_template: int = 101) -> dict[str, Any]:
+    fields = {name: {"TypeAsString": kind, "Indexed": False} for name, kind in _LV_COLUMNS.items()}
+    fields["LVCalc"]["Formula"] = "=[LVNumber]*2"
+    return {"dbmlsp Probe LargeLib": _library(
+        5500, "dbmlsp-lv-05500.txt", "LargeLib", fields, base_template)}
+
+
+def _preindex_lib(base_template: int = 101) -> dict[str, Any]:
+    return {"dbmlsp Probe PreIndex": _library(5100, "dbmlsp-pre-05100.txt", "PreIndex", {
+        "PChoice": {"TypeAsString": "Choice", "Indexed": True,
+                    "Description": "dbmlsp preindex: Indexed:true written at 4900 file(s) on "
+                                   "2026-09-10"},
+        "PNumber": {"TypeAsString": "Number", "Indexed": False},
+    }, base_template)}
+
+
+def _foldered_libs(big: int = 101, small: int = 101) -> dict[str, Any]:
+    return {
+        "dbmlsp Probe Foldered": _library(5256, "dbmlsp-fld-05256.txt", "Foldered", {
+            "PChoice": {"TypeAsString": "Choice", "Indexed": True,
+                        "Description": "dbmlsp foldered: Indexed:true written at 4900 file(s) "
+                                       "on 2026-09-12"},
+            "PNumber": {"TypeAsString": "Number", "Indexed": False},
+        }, big),
+        "dbmlsp Probe MultiLevel": _library(240, "dbmlsp-ml-00240.txt", "MultiLevel", {
+            "MChoice": {"TypeAsString": "Choice", "Indexed": False},
+            "MFlag": {"TypeAsString": "Boolean", "Indexed": False},
+            "MText": {"TypeAsString": "Text", "Indexed": False},
+        }, small),
+    }
+
+
+def _catalog_dependents(probe: str, fixture: str) -> set[str]:
+    """The rows the catalogue says rest on `fixture`, which the run must void exactly."""
+    catalog = json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
+    descriptor = next(p for p in catalog["probes"] if p["file"] == probe)
+    return {finding["id"] for scenario in descriptor["scenarios"]
+            for finding in scenario["findings"] if fixture in finding["depends_on"]}
+
+
+def _no_query_or_write(sent: list[dict[str, str]]) -> None:
+    assert not [r for r in sent if r["verb"] != "GET" or "$filter=" in r["path"]], sent
+
+
+LARGE_LIST = "library.large-list.fixture-document-library"
+
+#: (probe, the fixtures it reads, the row that reads the fixture's contract).
+_LARGE_LIST_PROBES = [
+    ("library-large-list-calculated-probe.js", _large_lib,
+     "library.large-list.fixture-library-present"),
+    ("library-large-list-group-view-probe.js", _large_lib,
+     "library.large-list.fixture-library-present"),
+    ("library-large-list-multilevel-group-view-probe.js", _large_lib,
+     "library.large-list.fixture-library-present"),
+    ("library-large-list-index-probe.js", _large_lib,
+     "library.large-list.fixture-library-present"),
+    ("library-large-list-preindex-group-view-probe.js", _preindex_lib,
+     "library.large-list.fixture-preindex-library-present"),
+    ("library-large-list-modern-view-probe.js", _preindex_lib,
+     "library.large-list.fixture-preindex-library-present"),
+]
+
+
+@pytest.mark.parametrize(("probe", "libraries", "present"), _LARGE_LIST_PROBES,
+                         ids=[p[0].removesuffix("-probe.js") for p in _LARGE_LIST_PROBES])
+def test_a_large_list_probe_measures_on_a_library_it_read_back(
+    probe: str, libraries: Any, present: str,
+) -> None:
+    """Controls further down may fail against this mock; none may fail in the fixture's name."""
+    rows, sent = _run(_LARGE_MOCK, {"libraries": libraries()}, probe)
+
+    assert rows[LARGE_LIST]["outcome"] == "PASS", rows[LARGE_LIST]
+    assert "BaseTemplate=101" in rows[LARGE_LIST]["evidence"]
+    assert rows[present]["outcome"] == "PASS", rows[present]
+    assert not [row_id for row_id, row in rows.items() if LARGE_LIST in row["evidence"]
+                and row_id != LARGE_LIST]
+    assert [r for r in sent if "/fields/" in r["path"]]
+
+
+@pytest.mark.parametrize(("probe", "libraries", "present"), _LARGE_LIST_PROBES,
+                         ids=[p[0].removesuffix("-probe.js") for p in _LARGE_LIST_PROBES])
+def test_a_large_list_probe_voids_its_rows_on_a_generic_list_of_the_fixture_name(
+    probe: str, libraries: Any, present: str,
+) -> None:
+    rows, sent = _run(_LARGE_MOCK, {"libraries": libraries(100)}, probe)
+
+    dependents = _catalog_dependents(probe, LARGE_LIST)
+    assert present in dependents
+    _assert_generic_list_voids(rows, LARGE_LIST, dependents)
+    _no_query_or_write(sent)
+
+
+FOLDERED = "library.large-list.fixture-foldered-document-library"
+MULTILEVEL = "library.large-list.fixture-multilevel-document-library"
+_FOLDERED_PROBE = "library-large-list-foldered-group-view-probe.js"
+
+
+def test_the_foldered_probe_measures_on_two_libraries_it_read_back() -> None:
+    rows, sent = _run(_LARGE_MOCK, {"libraries": _foldered_libs()}, _FOLDERED_PROBE)
+
+    for fixture in (FOLDERED, MULTILEVEL):
+        assert rows[fixture]["outcome"] == "PASS", rows[fixture]
+        assert not [row_id for row_id, row in rows.items() if fixture in row["evidence"]
+                    and row_id != fixture]
+    assert rows["library.large-list.fixture-foldered-file-count"]["outcome"] == "PASS"
+    assert rows["library.large-list.fixture-multilevel-file-count"]["outcome"] == "PASS"
+    assert [r for r in sent if r["path"].endswith("/RenderListDataAsStream")]
+
+
+def test_the_foldered_probe_voids_the_large_library_rows_on_a_generic_list_of_its_name() -> None:
+    rows, sent = _run(_LARGE_MOCK, {"libraries": _foldered_libs(big=100)}, _FOLDERED_PROBE)
+
+    _assert_generic_list_voids(rows, FOLDERED, _catalog_dependents(_FOLDERED_PROBE, FOLDERED))
+    _no_query_or_write(sent)
+
+
+def test_the_foldered_probe_voids_the_small_library_rows_on_a_generic_list_of_its_name() -> None:
+    """The large library's own fixture rows still read, and nothing is queried on either."""
+    rows, sent = _run(_LARGE_MOCK, {"libraries": _foldered_libs(small=100)}, _FOLDERED_PROBE)
+
+    assert rows[FOLDERED]["outcome"] == "PASS"
+    assert rows["library.large-list.fixture-foldered-file-count"]["outcome"] == "PASS"
+    _assert_generic_list_voids(rows, MULTILEVEL, _catalog_dependents(_FOLDERED_PROBE, MULTILEVEL))
+    _no_query_or_write(sent)

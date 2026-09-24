@@ -12,7 +12,7 @@
  * it does not matter, the two libraries answer the same way and the guidance is
  * about the index build rather than about what an aggregation is given.
  *
- * REVISION: de0dd5a2
+ * REVISION: eb48f97b
  *
  * THE FIXTURE IS READ. IT IS NEVER BUILT, WRITTEN TO, OR TORN DOWN.
  * `library-large-list-preindex-fixture-probe.js` builds and owns
@@ -649,7 +649,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision de0dd5a2. Quote this when reporting results.');
+  log('INFO', 'probe revision eb48f97b. Quote this when reporting results.');
 
   // ---- The fixture contract, restated ----------------------------------
   // Owned by library-large-list-preindex-fixture-probe.js. Read, never built,
@@ -747,6 +747,8 @@
     log('INFO', 'that takes six pastes to build and whose index cannot be rebuilt at all.');
   }
 
+  const DOC_LIBRARY = 'library.large-list.fixture-document-library';
+  expect('library.large-list.fixture-document-library', `The fixture library '${LIB}' reads back as a document library (BaseTemplate 101)`);
   expect('library.large-list.fixture-preindex-library-present', `The fixture library '${LIB}' is present, holds more than 5,000 files and carries both contract columns`);
   expect('library.large-list.fixture-preindex-index-written-under-threshold', `${CHOICE} reads Indexed=true and its Description carries the stamp saying the flag was written below ${THRESHOLD} files`);
   expect('library.large-list.fixture-preindex-witness-unindexed', `${NUMBER} reads Indexed=false, so this run has an unindexed column to witness the throttle with`);
@@ -992,6 +994,11 @@
   // ---- fixture-preindex-library-present --------------------------------
   const libRead = await spGet(`${libPath}?$select=Title,BaseTemplate,ItemCount`);
   const libOk = !readFailed(libRead);
+  // Found by title, so a generic list under the name would answer every row below as a list (#559).
+  if (libOk && !await establishFixture(DOC_LIBRARY, async () => libRead, { BaseTemplate: 101 },
+    RESULTS.map((row) => row.id).filter((id) => id !== DOC_LIBRARY))) {
+    return report();
+  }
   // Counted from the newest file NAME, never from ItemCount, and read with the
   // one ordering the fixture probe established is served past the threshold:
   // $orderby=Id desc on the natively indexed Id.
