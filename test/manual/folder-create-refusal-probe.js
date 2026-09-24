@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHY A DECLARED FOLDER CREATE IS REFUSED
  *
- * REVISION: fb856759
+ * REVISION: a5238cf7
  *
  * ONE QUESTION:
  *   folders/add(url=) is measured working. On a live deploy it answered
@@ -409,7 +409,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision fb856759. Quote this when reporting results.');
+  log('INFO', 'probe revision a5238cf7. Quote this when reporting results.');
 
   const LIB_DEFAULT = 'dbmlsp Probe Folder Default';
   const LIB_NOCT = 'dbmlsp Probe Folder NoCT';
@@ -502,18 +502,22 @@
     return report();
   }
 
-  // Read back what each library actually is. OBSERVED, not asserted: the
-  // tenant's defaults are what this probe is trying to learn, so a mismatch
-  // here is a finding to print rather than a reason to stop.
-  const describe = async (title) => {
-    const r = await spGet(`${listPath(title)}?$select=BaseTemplate,ContentTypesEnabled,EnableFolderCreation`);
-    if (readFailed(r)) return `'${title}' did not read back (HTTP ${r.status})`;
-    return `'${title}' BaseTemplate ${r.body.BaseTemplate}, ContentTypesEnabled ${r.body.ContentTypesEnabled}, EnableFolderCreation ${r.body.EnableFolderCreation}`;
-  };
-  const shapes = `${await describe(LIB_DEFAULT)}; ${await describe(LIB_NOCT)}`;
-  record('library.doc-lib.fixture-library-created', Q.fixture, 'PASS',
-         `${libDefault.reused ? 'reused' : 'created'} '${LIB_DEFAULT}', `
-         + `${libNoCt.reused ? 'reused' : 'created'} '${LIB_NOCT}'. ${shapes}`);
+  // Both are reused by title, so each must read back as a library, and NoCT with content types off.
+  const shapeOf = (title) => spGet(`${listPath(title)}?$select=BaseTemplate,ContentTypesEnabled,EnableFolderCreation`);
+  const shapeDefault = await shapeOf(LIB_DEFAULT);
+  const shapeNoCt = await shapeOf(LIB_NOCT);
+  log('INFO', `${libDefault.reused ? 'reused' : 'created'} '${LIB_DEFAULT}', `
+    + `${libNoCt.reused ? 'reused' : 'created'} '${LIB_NOCT}'. Default library shape: ${JSON.stringify(shapeDefault.body)}`);
+  const held = await establishFixture('library.doc-lib.fixture-library-created',
+    async () => (!shapeDefault.ok ? shapeDefault : !shapeNoCt.ok ? shapeNoCt : {
+      ok: true, status: 200, body: {
+        DefaultBaseTemplate: (shapeDefault.body || {}).BaseTemplate,
+        NoCtBaseTemplate: (shapeNoCt.body || {}).BaseTemplate,
+        NoCtContentTypesEnabled: (shapeNoCt.body || {}).ContentTypesEnabled,
+      },
+    }),
+    { DefaultBaseTemplate: 101, NoCtBaseTemplate: 101, NoCtContentTypesEnabled: false }, IDS);
+  if (!held) return report();
 
   const rootOf = async (title) => {
     const r = await spGet(`${listPath(title)}/RootFolder?$select=ServerRelativeUrl`);

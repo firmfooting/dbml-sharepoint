@@ -444,8 +444,6 @@ LITERAL_FIXTURE_PASSES = {
         "reached only after the create and an Id read-back both answered",
     ("boolean-field-probe.js.j2", "field.boolean.fixture-scratch-list"):
         "reached only after the create and an Id read-back both answered",
-    ("folder-create-refusal-probe.js.j2", "library.doc-lib.fixture-library-created"):
-        "reuses both libraries by title; BaseTemplate is printed and not yet declared",
     ("list-identity-cache-probe.js.j2", "transport.cache.fixture-list-created"):
         "reached only after the create and an Id read-back both answered",
     ("operator-safety-grant-probe.js.j2", "access.list-acl.fixture-scratch-list"):
@@ -469,6 +467,15 @@ def _arguments(text: str, after_paren: int, wanted: int) -> list[str]:
     return found
 
 
+#: A JS string literal in any quote style, with no interpolation in a template.
+STRING_LITERAL = re.compile(r"\s*(?:'([^'\\]*)'|\"([^\"\\]*)\"|`([^`\\$]*)`)\s*")
+
+
+def _string_value(argument: str) -> str | None:
+    literal = STRING_LITERAL.fullmatch(argument)
+    return None if literal is None else next(g for g in literal.groups() if g is not None)
+
+
 def _literal_fixture_passes(text: str) -> list[str]:
     """Fixture ids this source records with the outcome written as the literal 'PASS'."""
     ids = []
@@ -476,9 +483,9 @@ def _literal_fixture_passes(text: str) -> list[str]:
         arguments = _arguments(text, call.end(), 3)
         if len(arguments) < 3:
             continue
-        literal = re.fullmatch(r"\s*'([^']*)'\s*", arguments[0])
-        if literal and "fixture" in literal.group(1) and arguments[2].strip() == "'PASS'":
-            ids.append(literal.group(1))
+        fixture = _string_value(arguments[0])
+        if fixture and "fixture" in fixture and _string_value(arguments[2]) == "PASS":
+            ids.append(fixture)
     return ids
 
 
@@ -518,9 +525,13 @@ def test_the_literal_pass_detector_reads_the_shapes_it_claims_to() -> None:
       record(id, 'q', 'PASS', 'e');
       // record('a.b.fixture-five', 'q', 'PASS', 'e');
       record('a.b.fixture-six', 'the owner\\'s fixture', 'PASS', 'e');
+      record("a.b.fixture-seven", "q", "PASS", "e");
+      record(`a.b.fixture-eight`, 'q', `PASS`, 'e');
+      record('a.b.fixture-nine', 'q', `${outcome}`, 'e');
     """
     assert _literal_fixture_passes(text) == [
         "a.b.fixture-one", "a.b.fixture-two", "a.b.fixture-six",
+        "a.b.fixture-seven", "a.b.fixture-eight",
     ]
 
 

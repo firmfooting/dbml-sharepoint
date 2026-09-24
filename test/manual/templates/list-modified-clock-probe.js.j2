@@ -105,7 +105,8 @@
   ]) {
     const held = await establishFixture(fixture,
       () => spGet(`${listPath}/fields/getbyinternalnameortitle('${enc(title)}')`),
-      { InternalName: title, TypeAsString: 'DateTime', DisplayFormat: displayFormat }, ALL_ROWS);
+      { InternalName: title, TypeAsString: 'DateTime', DisplayFormat: displayFormat,
+        Required: false, DefaultValue: (v) => v === null || v === '' }, ALL_ROWS);
     shaped = held && shaped;
   }
   if (!shaped) return report();

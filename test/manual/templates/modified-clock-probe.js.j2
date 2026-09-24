@@ -95,7 +95,8 @@
     // The whole field is read: a $select naming a property the entity lacks answers 400.
     const held = await establishFixture(fixture,
       () => spGet(`${fields}/getbyinternalnameortitle('${enc(title)}')`),
-      { InternalName: title, TypeAsString: 'DateTime', DisplayFormat: displayFormat },
+      { InternalName: title, TypeAsString: 'DateTime', DisplayFormat: displayFormat,
+        Required: false, DefaultValue: (v) => v === null || v === '' },
       ['formula.validation.column-rule-cross-column-accepted', ...ALL_ROWS]);
     shaped = held && shaped;
   }

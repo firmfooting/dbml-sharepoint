@@ -406,6 +406,21 @@ _LIST_ALL = {*_LIST_RULE, *_LIST_DM, *_LIST_UPDATE, _SEED,
              "formula.validation.list-modified-rejects-20h-ahead"}
 
 
+@pytest.mark.parametrize("shape", [{"Required": True}, {"DefaultValue": "[today]"}],
+                         ids=["required", "defaulted"])
+def test_modified_clock_voids_the_rows_on_a_reused_column_that_is_not_optional(
+    shape: dict[str, Any],
+) -> None:
+    """Each save names one column, so a required or defaulted other column skews every row."""
+    columns = {**_SCRATCH_COLUMNS, "DC": {**_DATE, **shape}}
+    rows, sent = _run_probe(_SCRATCH_MOCK, {"fields": columns}, "modified-clock-probe.js")
+
+    fixture = rows["formula.validation.fixture-dc-date-only-column"]
+    assert fixture["outcome"] == "FAIL", fixture
+    assert _void_ids(rows) == {"formula.validation.column-rule-cross-column-accepted", *_COLUMN_ALL}
+    assert not _item_writes(sent)
+
+
 def test_list_modified_clock_measures_on_date_columns_it_read_back() -> None:
     rows, sent = _run_probe(_SCRATCH_MOCK, {"fields": _SCRATCH_COLUMNS},
                             "list-modified-clock-probe.js")
@@ -730,3 +745,91 @@ def test_threshold_voids_the_rows_when_the_resume_read_is_throttled() -> None:
     assert _void_ids(rows) == _COUNT_DEPENDENTS
     assert not [r for r in sent if "/Files/add(" in r["path"]]
     assert not _filters(sent)
+
+
+#: Libraries by title. A generic list reused under a library's title is the
+#: shape the fixture must refuse; folders are accepted and read back.
+_FOLDER_MOCK = textwrap.dedent("""
+    const CONFIG = __CONFIG__;
+    const lists = new Map(Object.entries(CONFIG.lists));
+    const folders = new Set();
+    const LIST = /^web\\/lists\\/getbytitle\\('([^']+)'\\)(\\/RootFolder)?/;
+    const ADD = /GetFolderByServerRelativeUrl\\('([^']+)'\\)\\/folders\\/add\\(url='([^']+)'\\)/;
+    const PATH = /Folders\\/AddUsingPath\\(decodedurl='([^']+)'\\)/;
+    const READ = /GetFolderByServerRelativeUrl\\('([^']+)'\\)\\?/;
+
+    globalThis.fetch = async (url, opts = {}) => {
+      const method = opts.method || 'GET';
+      const raw = opts.body === undefined ? '' : String(opts.body);
+      const sent = raw ? JSON.parse(raw) : {};
+      const path = decodeURIComponent(String(url).split('/_api/')[1] || '');
+      SENT.push({ verb: method, path, body: raw });
+
+      if (path.startsWith('contextinfo')) return digestResponse();
+      if (path === 'web/lists' && method === 'POST') {
+        lists.set(sent.Title, { BaseTemplate: sent.BaseTemplate,
+          ContentTypesEnabled: sent.ContentTypesEnabled !== false, EnableFolderCreation: true });
+        return jsonResponse(201, { Title: sent.Title });
+      }
+      const add = ADD.exec(path);
+      if (add) { folders.add(`${add[1]}/${add[2]}`); return jsonResponse(200, { Exists: true }); }
+      const made = PATH.exec(path);
+      if (made) { folders.add(made[1]); return jsonResponse(200, { Exists: true }); }
+      const read = READ.exec(path);
+      if (read) {
+        return jsonResponse(200, { Exists: folders.has(read[1]), Name: read[1],
+          ServerRelativeUrl: read[1] });
+      }
+      const list = LIST.exec(path);
+      if (list) {
+        const held = lists.get(list[1]);
+        if (!held) return jsonResponse(404, { error: 'List does not exist.' });
+        if (list[2]) return jsonResponse(200, { ServerRelativeUrl: `/sites/s/${list[1]}` });
+        return jsonResponse(200, { Title: list[1], ...held });
+      }
+      return jsonResponse(404, { error: `unmocked ${path}` });
+    };
+""")
+
+_LIBRARY = "library.doc-lib.fixture-library-created"
+_FOLDER_ROWS = {
+    "library.folder.control-plain-name-default-library",
+    "library.folder.spaced-name-default-library",
+    "library.folder.plain-name-content-types-disabled",
+    "library.folder.spaced-name-content-types-disabled",
+    "library.folder.add-using-path-spaced-name",
+}
+_DEFAULT_LIB = "dbmlsp Probe Folder Default"
+_NOCT_LIB = "dbmlsp Probe Folder NoCT"
+
+
+@pytest.mark.parametrize("lists", [
+    {},
+    {_DEFAULT_LIB: {"BaseTemplate": 101, "ContentTypesEnabled": True},
+     _NOCT_LIB: {"BaseTemplate": 101, "ContentTypesEnabled": False}},
+], ids=["created", "reused"])
+def test_folder_create_refusal_measures_on_libraries_it_read_back(
+    lists: dict[str, Any],
+) -> None:
+    rows, _ = _run_probe(_FOLDER_MOCK, {"lists": lists}, "folder-create-refusal-probe.js")
+
+    assert rows[_LIBRARY]["outcome"] == "PASS", rows[_LIBRARY]
+    assert rows["library.folder.control-plain-name-default-library"]["outcome"] == "PASS"
+    assert not _void_ids(rows)
+
+
+@pytest.mark.parametrize("lists", [
+    {_DEFAULT_LIB: {"BaseTemplate": 100, "ContentTypesEnabled": False},
+     _NOCT_LIB: {"BaseTemplate": 101, "ContentTypesEnabled": False}},
+    {_DEFAULT_LIB: {"BaseTemplate": 101, "ContentTypesEnabled": True},
+     _NOCT_LIB: {"BaseTemplate": 101, "ContentTypesEnabled": True}},
+], ids=["generic-list", "content-types-on"])
+def test_folder_create_refusal_voids_the_cells_on_a_reused_list_of_the_wrong_shape(
+    lists: dict[str, Any],
+) -> None:
+    rows, sent = _run_probe(_FOLDER_MOCK, {"lists": lists}, "folder-create-refusal-probe.js")
+
+    assert rows[_LIBRARY]["outcome"] == "FAIL", rows[_LIBRARY]
+    assert "differs" in rows[_LIBRARY]["evidence"]
+    assert _void_ids(rows) == _FOLDER_ROWS
+    assert not [r for r in sent if "folders" in r["path"].lower()]
