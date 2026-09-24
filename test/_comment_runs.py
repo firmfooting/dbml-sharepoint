@@ -218,6 +218,7 @@ def _starts_regex(before: str) -> bool:
 class _CState:
     """Lexer state carried across lines: an open block comment and template frames."""
 
+    #: A flag, not a depth: neither JS nor M nests comments (Learn, m-spec-lexical-structure).
     block: bool = False
     #: -1 is a template literal, n >= 0 the brace depth of a `${` inside one.
     stack: list[int] = field(default_factory=list)

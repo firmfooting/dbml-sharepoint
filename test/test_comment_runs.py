@@ -100,6 +100,16 @@ def test_a_quote_in_a_toml_comment_or_string_does_not_open_a_multiline_string() 
     assert [(run.first_line, run.length) for run in _flagged(text, "a.toml")] == [(2, 7)]
 
 
+@pytest.mark.parametrize("name", ["a.pq", "a.js"])
+def test_the_first_block_closer_ends_the_comment_because_comments_do_not_nest(name: str) -> None:
+    """#637 asked for nesting in `.pq`; the M spec on Learn says "Comments do not nest"."""
+    text = "/* outer\n" + "   /* inner */\n" + "   Source = 1,\n" * (MIN_RUN - 2) + "*/\n"
+
+    assert comment_runs(text, name) == []
+    nested = "/*\n" + "   /* inner\n" * (MIN_RUN - 2) + "*/\n"
+    assert [run.length for run in _flagged(nested, name)] == [MIN_RUN]
+
+
 def test_a_dbml_block_comment_counts() -> None:
     block = "/*\n" + " * why\n" * 5 + " */\nTable t {}\n"
 
