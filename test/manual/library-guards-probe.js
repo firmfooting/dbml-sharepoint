@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: THE THREE GUARDS LIBRARY SUPPORT HOLDS CLOSED
  *
- * REVISION: cee72814
+ * REVISION: a19bd743
  *
  * ONE QUESTION:
  *   Can the deploy open the three doors it keeps shut on a document library
@@ -448,7 +448,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision cee72814. Quote this when reporting results.');
+  log('INFO', 'probe revision a19bd743. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Guards List';
   const LIB = 'dbmlsp Probe Guards Library';
@@ -907,11 +907,18 @@
   }
 
   const madeBare = await ensureView(SCOPE_MERGE_VIEW, {});
+  const scopeBefore = madeBare.ok ? await readScope(SCOPE_MERGE_VIEW) : null;
   if (!madeBare.ok) {
     record('library.view.scope-on-merge-reads-back', Q.scopeMerge, 'NOT ESTABLISHED',
            `the bare view to MERGE against was not created (${short(madeBare)})`, 'void');
+  } else if (typeof scopeBefore !== 'number' || scopeBefore === RECURSIVE) {
+    // Only a view that read another Scope beforehand can show the MERGE changing it.
+    const already = scopeBefore === RECURSIVE;
+    record('library.view.scope-on-merge-reads-back', Q.scopeMerge, 'NOT ESTABLISHED',
+           `Scope read ${JSON.stringify(scopeBefore)} before, so no MERGE was sent: it could not show `
+           + `Scope ${RECURSIVE} taking effect${already ? '. Set CLEANUP = true to recycle the library first' : ''}`,
+           already ? 'void' : 'open');
   } else {
-    const scopeBefore = await readScope(SCOPE_MERGE_VIEW);
     digest = await getDigest();
     const merged = await spPost(`${libPath}/views/getbytitle('${SCOPE_MERGE_VIEW}')`,
       { __metadata: { type: 'SP.View' }, Scope: RECURSIVE }, digest, MERGE);

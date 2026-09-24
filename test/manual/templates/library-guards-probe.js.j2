@@ -585,11 +585,18 @@
   }
 
   const madeBare = await ensureView(SCOPE_MERGE_VIEW, {});
+  const scopeBefore = madeBare.ok ? await readScope(SCOPE_MERGE_VIEW) : null;
   if (!madeBare.ok) {
     record('library.view.scope-on-merge-reads-back', Q.scopeMerge, 'NOT ESTABLISHED',
            `the bare view to MERGE against was not created (${short(madeBare)})`, 'void');
+  } else if (typeof scopeBefore !== 'number' || scopeBefore === RECURSIVE) {
+    // Only a view that read another Scope beforehand can show the MERGE changing it.
+    const already = scopeBefore === RECURSIVE;
+    record('library.view.scope-on-merge-reads-back', Q.scopeMerge, 'NOT ESTABLISHED',
+           `Scope read ${JSON.stringify(scopeBefore)} before, so no MERGE was sent: it could not show `
+           + `Scope ${RECURSIVE} taking effect${already ? '. Set CLEANUP = true to recycle the library first' : ''}`,
+           already ? 'void' : 'open');
   } else {
-    const scopeBefore = await readScope(SCOPE_MERGE_VIEW);
     digest = await getDigest();
     const merged = await spPost(`${libPath}/views/getbytitle('${SCOPE_MERGE_VIEW}')`,
       { __metadata: { type: 'SP.View' }, Scope: RECURSIVE }, digest, MERGE);

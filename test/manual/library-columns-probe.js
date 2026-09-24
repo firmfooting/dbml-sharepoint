@@ -411,7 +411,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 44f6717f. Quote this when reporting results.');
+  log('INFO', 'probe revision deef2045. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibCols';
   const TARGET_LIB = 'dbmlsp Probe LibCols Target';
@@ -717,18 +717,26 @@
            'VOID', `${calcShape.line}; file item ${itemId === null ? 'was not found' : `is ${itemId}`}`, 'void');
   } else {
     const readCalc = await spGet(`${listPath}/items(${itemId})?$select=Id,ColChoice,ColCalc`);
-    const expectedVal = 'Beta - calc';
+    // The operand is the ColChoice this same read served, not the value the choice write sent.
+    const operand = readFailed(readCalc) ? null : readCalc.body.ColChoice;
+    const expectedVal = `${operand} - calc`;
     if (readFailed(readCalc)) {
       record('library.column.calculated-column-on-library', 'Does a calculated column behave the same on a document library',
              'NOT ESTABLISHED',
              `item ${itemId} did not read back (HTTP ${readCalc.status}), so no computed value was seen`);
+    } else if (typeof operand !== 'string' || operand === '') {
+      record('library.column.calculated-column-on-library', 'Does a calculated column behave the same on a document library',
+             'NOT ESTABLISHED',
+             `ColChoice read back ${JSON.stringify(operand === undefined ? null : operand)}, so the formula had no `
+             + `value to compute from; ColCalc read ${JSON.stringify(readCalc.body.ColCalc)}`);
     } else {
       const calcVal = readCalc.body.ColCalc;
       record('library.column.calculated-column-on-library', 'Does a calculated column behave the same on a document library',
              calcVal === expectedVal ? 'PASS' : 'FAIL',
              calcVal === expectedVal
-               ? `calculated column evaluated operand [ColChoice] and read back as "${calcVal}"`
-               : `calculated column read back "${calcVal}", expected "${expectedVal}" (HTTP ${readCalc.status})`);
+               ? `calculated column evaluated operand [ColChoice]="${operand}" and read back as "${calcVal}"`
+               : `calculated column read back "${calcVal}", expected "${expectedVal}" from ColChoice="${operand}" `
+                 + `in the same read (HTTP ${readCalc.status})`);
     }
   }
 
@@ -888,9 +896,20 @@
              `violating write refused with HTTP ${badWrite.status} (${badWrite.text.slice(0, 160)});`
              + ` valid write returned HTTP ${goodWrite.status}`);
     } else if (badWrite.ok) {
+      // A MERGE answers 204 whether or not the value was kept, so INERT needs the violating value read back.
+      const badBack = await spGet(`${listPath}/items(${itemId})?$select=Id,ColChoice`);
+      const stored = readFailed(badBack) ? undefined : badBack.body.ColChoice;
+      const kept = stored === 'InvalidValue';
       record('library.validation.validation-formula-on-library', 'Does a list ValidationFormula enforce against a library items metadata',
-             'INERT',
-             'the violating write was ACCEPTED; list ValidationFormula does not enforce against library item updates');
+             kept ? 'INERT' : 'NOT ESTABLISHED',
+             readFailed(badBack)
+               ? `the violating write answered HTTP ${badWrite.status}, but item ${itemId} did not read back `
+                 + `(HTTP ${badBack.status}), so the value it stored was never seen`
+               : kept
+                 ? 'the violating write was ACCEPTED and ColChoice reads back "InvalidValue"; '
+                   + 'list ValidationFormula does not enforce against library item updates'
+                 : `the violating write answered HTTP ${badWrite.status}, but ColChoice reads back `
+                   + `${JSON.stringify(stored === undefined ? null : stored)}, so the rule was never shown letting it through`);
     } else {
       record('library.validation.validation-formula-on-library', 'Does a list ValidationFormula enforce against a library items metadata',
              'NOT ESTABLISHED',

@@ -6,11 +6,16 @@ establish what the verdict claims. A sabotage wrapper is laid over an existing
 mock so the mock itself keeps encoding only what a live run returns.
 """
 
+import json
 import textwrap
+from typing import Any
 
 import pytest
-from _node import NODE
+from _node import NODE, run_node
 from test_probe_fixture_high_runtime import (
+    _GUARDS,
+    _GUARDS_LIB,
+    _LIBRARY_MOCK,
     _RULE_FIXTURES,
     _RULE_ROWS,
     _TODAY,
@@ -18,6 +23,13 @@ from test_probe_fixture_high_runtime import (
     _TODAY_MOCK,
 )
 from test_probe_fixture_runtime import _catalogued_dependents, _run_probe, _void_ids
+from test_probe_runtime import (
+    _LIB_COLS_HARNESS,
+    _LIB_COLS_HEALTHY,
+    LIB_COLS_PROBE,
+    _fixture_probe_js,
+    _fixture_rows,
+)
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
@@ -95,3 +107,133 @@ def test_today_semantics_leaves_a_save_that_failed_without_a_refusal_open(
     assert row["outcome"] == "NOT ESTABLISHED", row
     assert row["state"] == "open", row
     assert f"FAILED HTTP {status}" in row["evidence"]
+
+
+# --------------------------------------------------------------------------
+# Item 2: library-guards, scope-on-merge-reads-back.
+# --------------------------------------------------------------------------
+_SCOPE_MERGE = "library.view.scope-on-merge-reads-back"
+_SCOPE_MERGE_VIEW = "dbmlsp guards scope merge"
+
+
+def _scope_merges(sent: list[dict[str, str]]) -> list[dict[str, str]]:
+    return [r for r in sent if r["verb"] == "MERGE" and _SCOPE_MERGE_VIEW in r["path"]]
+
+
+def _guards_reusing(scope: int) -> dict[str, Any]:
+    views = {_SCOPE_MERGE_VIEW: {"Scope": scope}}
+    return {"existing": {_GUARDS_LIB: {"template": 101, "views": views}}}
+
+
+def test_guards_settles_a_merge_on_a_reused_view_that_read_another_scope() -> None:
+    rows, sent = _run_probe(_LIBRARY_MOCK, _guards_reusing(0), _GUARDS)
+
+    assert rows[_SCOPE_MERGE]["outcome"] == "STICKS", rows[_SCOPE_MERGE]
+    assert "Scope read 0 before" in rows[_SCOPE_MERGE]["evidence"]
+    assert len(_scope_merges(sent)) == 1
+
+
+def test_guards_does_not_settle_a_merge_on_a_view_already_at_scope_one() -> None:
+    """A reused view already reading Scope 1 reported STICKS for a MERGE that changed nothing."""
+    rows, sent = _run_probe(_LIBRARY_MOCK, _guards_reusing(1), _GUARDS)
+
+    row = rows[_SCOPE_MERGE]
+    assert row["outcome"] == "NOT ESTABLISHED", row
+    assert row["state"] == "void", row
+    assert "Scope read 1 before, so no MERGE was sent" in row["evidence"]
+    assert not _scope_merges(sent)
+
+
+def test_guards_does_not_settle_a_merge_when_the_scope_before_did_not_read() -> None:
+    mock = _over(_LIBRARY_MOCK, f"""
+        if (verb === 'GET' && where.includes("views/getbytitle('{_SCOPE_MERGE_VIEW}')")
+            && where.includes('Scope')) return throttled();
+    """)
+    rows, sent = _run_probe(mock, {}, _GUARDS)
+
+    row = rows[_SCOPE_MERGE]
+    assert row["outcome"] == "NOT ESTABLISHED", row
+    assert row["state"] == "open", row
+    assert "(read failed HTTP 429)" in row["evidence"]
+    assert not _scope_merges(sent)
+
+
+# --------------------------------------------------------------------------
+# Items 3 and 4: library-columns.
+# --------------------------------------------------------------------------
+_CALC = "library.column.calculated-column-on-library"
+_RULE = "library.validation.validation-formula-on-library"
+
+
+def _run_lib_cols(wrapper: str = "", **changes: Any) -> dict[str, dict[str, str]]:
+    config = json.loads(json.dumps(_LIB_COLS_HEALTHY))
+    config.update(changes)
+    harness = _LIB_COLS_HARNESS.replace("__CONFIG__", json.dumps(config))
+    script = (_over(harness, wrapper) if wrapper else harness) + "\n" + _fixture_probe_js(
+        LIB_COLS_PROBE)
+    return _fixture_rows(run_node(script))
+
+
+def _choice_write_lands_as(value: str) -> str:
+    """The Beta write answers 204 and the item keeps `value`, as a write that did not land."""
+    return f"""
+        if (verb === 'MERGE' && body.ColChoice === 'Beta') {{
+          opts = {{ ...opts, body: JSON.stringify({{ ...body, ColChoice: {value} }}) }};
+        }}
+    """
+
+
+def test_calculated_column_is_judged_against_the_choice_it_was_read_beside() -> None:
+    rows = _run_lib_cols()
+
+    assert rows[_CALC]["outcome"] == "PASS", rows[_CALC]
+    assert '[ColChoice]="Beta"' in rows[_CALC]["evidence"]
+
+
+def test_calculated_column_is_not_failed_by_a_choice_write_that_did_not_land() -> None:
+    """The row expected 'Beta - calc' whatever the item held, and FAILed a correct calculation."""
+    rows = _run_lib_cols(_choice_write_lands_as("'Alpha'"))
+
+    assert rows["library.column.control-missing-column-refused"]["outcome"] == "PASS"
+    assert rows[_CALC]["outcome"] == "PASS", rows[_CALC]
+    assert '[ColChoice]="Alpha"' in rows[_CALC]["evidence"]
+
+
+def test_calculated_column_with_a_blank_operand_is_not_established() -> None:
+    rows = _run_lib_cols(_choice_write_lands_as("null"))
+
+    assert rows[_CALC]["outcome"] == "NOT ESTABLISHED", rows[_CALC]
+    assert "ColChoice read back null" in rows[_CALC]["evidence"]
+
+
+def test_an_accepted_violating_write_that_stored_the_value_is_inert() -> None:
+    rows = _run_lib_cols(ruleEnforces=False)
+
+    assert rows[_RULE]["outcome"] == "INERT", rows[_RULE]
+    assert 'ColChoice reads back "InvalidValue"' in rows[_RULE]["evidence"]
+
+
+def test_an_accepted_violating_write_that_stored_nothing_is_not_inert() -> None:
+    """INERT was recorded off the 204 alone, which a dropped write also answers."""
+    rows = _run_lib_cols("""
+        if (verb === 'MERGE' && body.ColChoice === 'InvalidValue') {
+          return jsonResponse(204, {});
+        }
+    """, ruleEnforces=False)
+
+    assert rows[_RULE]["outcome"] == "NOT ESTABLISHED", rows[_RULE]
+    assert 'ColChoice reads back "Beta"' in rows[_RULE]["evidence"]
+
+
+def test_an_accepted_violating_write_that_did_not_read_back_is_not_inert() -> None:
+    rows = _run_lib_cols("""
+        if (verb === 'MERGE' && body.ColChoice === 'InvalidValue') globalThis.violated = true;
+        if (verb === 'GET' && globalThis.violated && /\\/items\\(\\d+\\)/.test(where)) {
+          return jsonResponse(429, { error: 'throttled' });
+        }
+    """, ruleEnforces=False)
+
+    assert rows[_RULE]["outcome"] == "NOT ESTABLISHED", rows[_RULE]
+    assert "did not read back (HTTP 429)" in rows[_RULE]["evidence"]
+
+
