@@ -473,9 +473,11 @@
         createFailed = `HTTP ${made.status}: ${made.text.slice(0, 300)}`;
         throw new Error(`creating ${FIELD} answered ${createFailed}`);
       }
-      fieldPresent = true;
       log('OK', `Created DateTime column '${FIELD}'.`);
-      return spGet(fieldPath);
+      // A create that answered 2xx is not existence until the column reads back.
+      const back = await spGet(fieldPath);
+      fieldPresent = back.ok;
+      return back;
     },
     { InternalName: FIELD, TypeAsString: 'DateTime', DisplayFormat: 1, ReadOnlyField: false },
     [...TIME_OF_DAY_ROWS, 'expression.client-validation.now-sentinel-stored']);

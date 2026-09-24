@@ -557,6 +557,9 @@ _SENTINEL_MOCK = textwrap.dedent("""
         }
         const xml = sent.parameters.SchemaXml;
         const name = /Name="([^"]+)"/.exec(xml)[1];
+        if (CONFIG.createdButUnreadable) {
+          return jsonResponse(201, { Id: `field-${name}`, InternalName: name });
+        }
         const type = /Type="([^"]+)"/.exec(xml)[1];
         fields.set(name, { TypeAsString: type, ReadOnlyField: false,
           DisplayFormat: /Format="DateTime"/.test(xml) ? 1 : 0, ValidationFormula: '' });
@@ -706,6 +709,18 @@ def test_datetime_sentinel_stops_when_probe_when_cannot_be_created() -> None:
     assert "creating ProbeWhen answered HTTP 500" in rows[_PROBE_WHEN]["evidence"]
     assert _void_ids(rows) == _TIME_OF_DAY
     assert not [r for r in sent if r["verb"] == "MERGE"]
+
+
+def test_datetime_sentinel_stops_when_a_created_probe_when_does_not_read_back() -> None:
+    """A 2xx create set presence, so the validation control ran against a missing column."""
+    rows, sent = _run_probe(_SENTINEL_MOCK, {"fields": {}, "createdButUnreadable": True},
+                            "datetime-sentinel-probe.js")
+
+    assert rows[_PROBE_WHEN]["outcome"] == "FAIL", rows[_PROBE_WHEN]
+    assert rows["BOOT"]["outcome"] == "FAIL"
+    assert _void_ids(rows) == _TIME_OF_DAY
+    assert not [r for r in sent if r["verb"] == "MERGE"]
+    assert not _item_writes(sent)
 
 
 #: Two document libraries, the fixture and the small shape control. The big
