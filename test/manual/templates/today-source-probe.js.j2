@@ -47,6 +47,8 @@
   expect('query.caml-adhoc.today-element-site-date', 'CAML DM Eq <Today/> returns which day');
   expect('query.caml-adhoc.today-offset-element-previous-day', 'CAML DM Eq <Today OffsetDays=-1/> returns which day');
   expect('query.caml-adhoc.today-include-time-current-instant', 'CAML Modified Leq <Today IncludeTimeValue/> sees recent rows');
+  expect('query.caml-adhoc.fixture-dm-column', 'DM reads back as a date-only DateTime column');
+  expect('field.date.fixture-td-column', 'TD reads back as a date-only DateTime column with the dynamic default [today]');
   expect('field.date.dynamic-default-rest-fill', 'a [today] dynamic default filled through REST');
 
   if (!CONFIRMED) {
@@ -90,17 +92,25 @@
   const nowLocal = new Date();
   const localMidnightUtc = (days) =>
     new Date(nowLocal.getFullYear(), nowLocal.getMonth(), nowLocal.getDate() + days, 0, 0, 0, 0).toISOString();
+  const DM_ROWS = ['query.caml-adhoc.today-element-site-date', 'query.caml-adhoc.today-offset-element-previous-day'];
+  let dmHeld = false;
   const ensureDm = async () => {
     const titles = ((await spGet(`${listPath}/fields?$select=Title&$top=500`)).body?.value || []).map((f) => f.Title);
     const present = titles.includes('DM');
-    if (!present) {
-      if (!ALLOW_WRITES) return 'DM absent and ALLOW_WRITES is false, so it was not created';
+    let head = `DM ensured (${present ? 'already present' : 'created'})`;
+    if (!present && !ALLOW_WRITES) {
+      head = 'DM absent and ALLOW_WRITES is false, so it was not created';
+    } else if (!present) {
       const made = await spPost(`${listPath}/fields`, {
         __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4, Title: 'DM', DisplayFormat: 0,
       }, await getDigest(), VERBOSE);
-      if (!made.ok) return `DM create refused: HTTP ${made.status} ${made.text.slice(0, 160)}`;
+      if (!made.ok) head = `DM create refused: HTTP ${made.status} ${made.text.slice(0, 160)}`;
     }
-    const head = `DM ensured (${present ? 'already present' : 'created'})`;
+    // Read back on reuse as well as on create, because an earlier run may have left DM as date and time.
+    dmHeld = await establishFixture('query.caml-adhoc.fixture-dm-column',
+      () => spGet(`${listPath}/fields/getbyinternalnameortitle('DM')`),
+      { TypeAsString: 'DateTime', DisplayFormat: 0 }, DM_ROWS);
+    if (!dmHeld) return head;
     const before = await spGet(`${listPath}/items?$select=Id,Title,DM&$top=500`);
     if (readFailed(before)) return `${head}; DM values not readable: HTTP ${before.status}`;
     const carrying = (before.body.value || []).filter((r) => r.DM);
@@ -222,6 +232,7 @@
     },
   ];
   for (const row of rows) {
+    if (!dmHeld && DM_ROWS.includes(row.id)) continue;
     const got = await caml(row.where, row.fields);
     const detail = row.id === 'query.caml-adhoc.today-element-site-date'
       ? `${dmNote}; ${got.detail}` : got.detail;
@@ -246,13 +257,18 @@
   }
 
   // ---- D1: the dynamic default, server side ----------------------------------
+  const FILL = 'field.date.dynamic-default-rest-fill';
+  const FILL_Q = 'a [today] dynamic default filled through REST';
+  const TD_Q = RESULTS.find((r) => r.id === 'field.date.fixture-td-column').question;
   if (!ADD_DEFAULT_COLUMN) {
+    record('field.date.fixture-td-column', TD_Q, 'NOT REACHED', 'ADD_DEFAULT_COLUMN is off, so TD was never created or read.');
     // A skipped row, not an inapplicable one. NOT APPLICABLE settled it, so a
     // run with the flag off reported this question answered while the column
     // it asks about was never created.
     record('field.date.dynamic-default-rest-fill', 'a [today] dynamic default filled through REST', 'NOT REACHED',
       'ADD_DEFAULT_COLUMN is off, so TD was never created and the question was not asked. Set ADD_DEFAULT_COLUMN and ALLOW_WRITES and run again.');
   } else if (!ALLOW_WRITES) {
+    record('field.date.fixture-td-column', TD_Q, 'NOT ESTABLISHED', 'ADD_DEFAULT_COLUMN needs ALLOW_WRITES');
     record('field.date.dynamic-default-rest-fill', 'a [today] dynamic default filled through REST', 'NOT ESTABLISHED', 'ADD_DEFAULT_COLUMN needs ALLOW_WRITES');
   } else {
     const have = new Set(((await spGet(`${listPath}/fields?$select=Title&$top=500`)).body?.value || []).map((f) => f.Title));
@@ -263,16 +279,29 @@
       }, await getDigest(), VERBOSE);
       created = r.ok ? 'TD created with default [today]' : `TD create refused: HTTP ${r.status} ${r.text.slice(0, 160)}`;
     }
+    log('INFO', created);
+    // Read back on reuse as well as on create, because a TD left by an earlier run may carry no default.
+    if (!await establishFixture('field.date.fixture-td-column',
+      () => spGet(`${listPath}/fields/getbyinternalnameortitle('TD')`),
+      { TypeAsString: 'DateTime', DisplayFormat: 0, DefaultValue: '[today]' }, [FILL])) {
+      return report();
+    }
     const meta = await spGet(`${listPath}?$select=ListItemEntityTypeFullName`);
     const made = await spPost(`${listPath}/items`, {
       __metadata: { type: meta.body && meta.body.ListItemEntityTypeFullName }, Title: 'default-today',
     }, await getDigest(), VERBOSE);
-    if (made.ok) {
-      const back = await spGet(`${listPath}/items(${made.body.d.Id})?$select=Id,TD,T,Created`);
-      record('field.date.dynamic-default-rest-fill', 'a [today] dynamic default filled through REST', 'PASS',
-        `${created}; REST item with no dates: TD ([today]) = ${back.body && back.body.TD}; T (=TODAY() default) = ${back.body && back.body.T}; Created ${back.body && back.body.Created}. Now open New on the list and note the prefilled TD.`);
+    const id = made.ok && made.body && made.body.d ? made.body.d.Id : null;
+    const back = id === null || id === undefined ? null : await spGet(`${listPath}/items(${id})?$select=Id,TD,T,Created`);
+    if (!made.ok) {
+      record(FILL, FILL_Q, 'NOT ESTABLISHED', `${created}; could not create the item: HTTP ${made.status} ${made.text.slice(0, 160)}`);
+    } else if (back === null || readFailed(back) || !('TD' in back.body)) {
+      record(FILL, FILL_Q, 'NOT ESTABLISHED',
+        `${created}; the item create answered HTTP ${made.status}, but TD on the created item was never read, `
+        + `so whether the default filled is unobserved${back === null ? ' (the create served no id)' : ` (HTTP ${back.status})`}`);
     } else {
-      record('field.date.dynamic-default-rest-fill', 'a [today] dynamic default filled through REST', 'FAIL', `${created}; could not create the item: HTTP ${made.status} ${made.text.slice(0, 160)}`);
+      // The item carried no TD, so a value read back is the default filling and a blank is it not filling.
+      record(FILL, FILL_Q, back.body.TD ? 'FILLED' : 'BLANK',
+        `${created}; REST item with no dates: TD ([today]) = ${back.body.TD}; T (=TODAY() default) = ${back.body.T}; Created ${back.body.Created}. Now open New on the list and note the prefilled TD.`);
     }
   }
   return report();

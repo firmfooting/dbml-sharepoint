@@ -8,7 +8,7 @@
  *   unmeasured. Does either one create, hold a value, project through a view
  *   and take an index the way the list-to-list shape does?
  *
- * REVISION: 65e84e9b
+ * REVISION: 14460a74
  *
  * WHY: `analysis/joins.py` counts every lookup the same way and the deploy
  * emits every lookup the same way, whichever container is at each end. A
@@ -523,7 +523,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 65e84e9b. Quote this when reporting results.');
+  log('INFO', 'probe revision 14460a74. Quote this when reporting results.');
 
   // Three containers, never two. See the acyclic finding in the header.
   const LIB = 'dbmlsp Probe XLookup Lib';
@@ -593,6 +593,7 @@
   }
 
   expect('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)');
+  expect('library.lookup.fixture-lists-generic', 'The lookup source and target are generic lists (BaseTemplate 100)');
   expect('library.lookup.fixture-containers-ready', 'The three containers, the target rows, the file and the folder all exist');
   expect('library.lookup.control-list-to-list-lookup-created', 'POSITIVE CONTROL: a Lookup created by createfieldasxml between two generic lists is created and reads back bound');
   expect('library.lookup.control-unsupported-operand-refused', 'NEGATIVE CONTROL: the same createfieldasxml call refuses a Calculated column whose formula names a Lookup operand');
@@ -610,7 +611,7 @@
   expect('scale.join.list-to-library-costs-a-join', 'How many joins does a lookup whose target is a library cost against the view ceiling?');
   // Every row the catalogue rests on the library, the list-only controls included, since the run stops before them.
   const LIBRARY_ROWS = [
-    'library.lookup.fixture-containers-ready',
+    'library.lookup.fixture-lists-generic', 'library.lookup.fixture-containers-ready',
     'library.lookup.control-list-to-list-lookup-created',
     'library.lookup.control-unsupported-operand-refused', 'scale.join.control-list-lookup-ceiling',
     'library.lookup.library-to-list-created', 'library.lookup.library-to-list-item-write',
@@ -960,6 +961,20 @@
   const source = await ensureList(srcPath, SRC,
     'dbml-sharepoint cross-lookup probe source list. Safe to delete.');
   notes.push(source.note);
+  // Read back on reuse as well as on create, because a list found by title may be a library.
+  const LISTS_ROW = 'library.lookup.fixture-lists-generic';
+  if (!await establishFixture(LISTS_ROW, async () => {
+    const body = {};
+    for (const [key, path] of [['target', tgtPath], ['source', srcPath]]) {
+      const read = await spGet(`${path}?$select=BaseTemplate`);
+      if (unanswered(read) !== null) return read;
+      body[`${key}.BaseTemplate`] = read.body.BaseTemplate;
+    }
+    return { ok: true, status: 200, body };
+  }, { 'target.BaseTemplate': 100, 'source.BaseTemplate': 100 },
+  LIBRARY_ROWS.filter((id) => id !== LISTS_ROW))) {
+    return report();
+  }
   const libRead = await spGet(libPath);
   const libId = libRead.ok && libRead.body ? libRead.body.Id : null;
   notes.push(libId ? `library id read` : `library id could NOT be read (HTTP ${libRead.status})`);

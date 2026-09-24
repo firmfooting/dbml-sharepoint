@@ -499,6 +499,10 @@
     return;
   }
 
+  // Registered here because only the setup pass builds the lists; the other passes never ask it.
+  const LISTS_ROW = 'access.lookup-acl.fixture-lists-created';
+  expect('access.lookup-acl.fixture-lists-created', 'The lookup source and target are generic lists (BaseTemplate 100)');
+
   await resetList(SOURCE);
   await resetList(TARGET);
   let digest = await getDigest();
@@ -545,6 +549,25 @@
     return bail('access.lookup-acl.control-target-denied', 'CONTROL: is the second account actually denied the TARGET list?',
                 `the source list could not be created (see the FAIL above)`);
   }
+  // Read back on reuse as well as on create, because a list found by title may be a library.
+  // The lookup binds to the Id read here, since a create's response body may not carry one.
+  let targetGuid = null;
+  if (!await establishFixture(LISTS_ROW, async () => {
+    const body = {};
+    for (const [key, title] of [['target', TARGET], ['source', SOURCE]]) {
+      const read = await spGet(`web/lists/getbytitle('${title}')?$select=BaseTemplate,Id`);
+      if (unanswered(read) !== null) return read;
+      body[`${key}.BaseTemplate`] = read.body.BaseTemplate;
+      if (key === 'target') body['target.Id'] = read.body.Id;
+    }
+    targetGuid = body['target.Id'];
+    return { ok: true, status: 200, body };
+  }, { 'target.BaseTemplate': 100, 'source.BaseTemplate': 100,
+    'target.Id': (id) => typeof id === 'string' && id !== '' },
+  RESULTS.map((r) => r.id).filter((id) => id !== LISTS_ROW))) {
+    report();
+    return;
+  }
 
   // A second target column, so K3 can ask whether $expand reaches past the
   // display field; and a status column the calculated label keys on.
@@ -582,7 +605,6 @@
   const closedId = closedRow.body.Id;
   log('OK', 'Created one open and one closed row on the target.');
 
-  const targetGuid = targetList.Id;
   const addLookup = async (name, lookupFieldName) => {
     digest = await getDigest();
     return spPost(`web/lists/getbytitle('${SOURCE}')/fields/addfield`, {

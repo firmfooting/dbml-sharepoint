@@ -68,6 +68,13 @@ _HARNESS = textwrap.dedent("""
     const views = new Map();
 
     const FIELD_RE = /getbyinternalnameortitle\\('([^']+)'\\)/;
+    const PARENT_ID = '0000000a-0000-4000-8000-00000000000a';
+    const MAIN_ID = '0000000b-0000-4000-8000-00000000000b';
+    // The types the probe's own schemas create, as a live field read serves them.
+    const FIELD_TYPES = {
+      Bucket: 'Text', Shadow: 'Text', SortBait: 'Text', ClosedAt: 'DateTime',
+      Owner: 'User', NotNullIdx: 'DateTime', NotNullUni: 'DateTime', Parent: 'Lookup',
+    };
 
     const jsonResponse = (status, payload) => ({
       ok: status >= 200 && status < 300,
@@ -121,6 +128,9 @@ _HARNESS = textwrap.dedent("""
           }
           return jsonResponse(200, {
             InternalName: name,
+            TypeAsString: { ...FIELD_TYPES, ...(CONFIG.fieldTypes || {}) }[name],
+            // Served braced while a list Id is served bare, so the probe must normalise.
+            ...(name === 'Parent' ? { LookupList: CONFIG.parentLookup || `{${PARENT_ID}}` } : {}),
             Indexed: CONFIG.indexed[name] === true,
             AutoIndexed: false,
           });
@@ -151,9 +161,11 @@ _HARNESS = textwrap.dedent("""
         return jsonResponse(200, { value: [...views.values()] });
       }
       if (/getbytitle\\('[^']*'\\)($|\\?)/.test(u)) {
+        const isParent = u.includes('Parent');
         return jsonResponse(200, {
-          Id: 'list-1',
-          ItemCount: u.includes('Parent') ? CONFIG.parentCount : CONFIG.itemCount,
+          Id: isParent ? PARENT_ID : MAIN_ID,
+          BaseTemplate: (isParent ? CONFIG.parentTemplate : CONFIG.mainTemplate) || 100,
+          ItemCount: isParent ? CONFIG.parentCount : CONFIG.itemCount,
           ListItemEntityTypeFullName: 'SP.Data.ProbeListItem',
         });
       }
@@ -4811,6 +4823,7 @@ CROSS_WEB_LOCAL_TITLE = "title-of-the-row-in-this-web"
 
 _CROSS_WEB_HARNESS = textwrap.dedent("""
     const CONFIG = __CONFIG__;
+    const createdLists = new Set();
 
     globalThis.window = {
       location: { origin: 'https://example.sharepoint.com' },
@@ -4977,6 +4990,7 @@ _CROSS_WEB_HARNESS = textwrap.dedent("""
 
       if (method === 'POST' && u.endsWith('/web/lists')) {
         const sent = JSON.parse(body || '{}');
+        createdLists.add(sent.Title);
         return jsonResponse(201, { Id: `list-${sent.Title}` });
       }
 
@@ -5070,9 +5084,14 @@ _CROSS_WEB_HARNESS = textwrap.dedent("""
         return jsonResponse(200, { value: [] });
       }
 
-      if (/getbytitle\\('[^']*'\\)$/.test(u)) {
-        if (CONFIG.listsExist) return jsonResponse(200, { Id: 'list-existing' });
-        return jsonResponse(404, { error: 'not found' });
+      // A list read serves BaseTemplate as a live one does; a created list is readable afterwards.
+      const listRead = /getbytitle\\('([^']*)'\\)(\\?.*)?$/.exec(u);
+      if (listRead) {
+        if (!CONFIG.listsExist && !createdLists.has(listRead[1])) {
+          return jsonResponse(404, { error: 'not found' });
+        }
+        return jsonResponse(200, { Id: 'list-existing',
+          BaseTemplate: (CONFIG.listTemplates || {})[listRead[1]] || 100 });
       }
 
       return jsonResponse(200, { value: [] });
@@ -6351,7 +6370,7 @@ _TRANSITION_HARNESS = textwrap.dedent(r"""
       if (u.includes("getbytitle('")) {
         return listExists
           ? respond(200, { Id: 'list-1',
-              Title: 'dbmlsp Probe Unique Transition', BaseTemplate: 100 })
+              Title: 'dbmlsp Probe Unique Transition', BaseTemplate: CONFIG.listTemplate || 100 })
           : respond(404, { error: { message: 'the list does not exist' } });
       }
       return respond(404, { error: 'no such endpoint' });
@@ -6571,7 +6590,7 @@ def test_a_column_that_already_carries_the_constraint_voids_the_run() -> None:
 
     fixture = rows["field.unique.fixture-unconstrained-columns"]
     assert fixture["outcome"] == "FAIL", fixture
-    assert "EnforceUniqueValues reads back true" in fixture["evidence"], fixture
+    assert "DupRef.EnforceUniqueValues differs: read true, declared false" in fixture["evidence"]
     for name in _TRANSITION_MEASUREMENTS:
         assert rows[name]["state"] == "void", name
 
@@ -6586,7 +6605,7 @@ def test_a_fixture_readback_missing_indexed_fails_rather_than_assuming_false() -
 
     fixture = rows["field.unique.fixture-unconstrained-columns"]
     assert fixture["outcome"] == "FAIL", fixture
-    assert "carries no Indexed" in fixture["evidence"], fixture
+    assert "IdxRef.Indexed is absent from the payload" in fixture["evidence"], fixture
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -7709,7 +7728,8 @@ _CALC_CHOICE_HARNESS = textwrap.dedent("""
       }
       // The lookup target, read for the GUID the lookup column points at.
       if (CONFIG.emptyTargetRead && named[1].endsWith('Target')) return emptyResponse(200);
-      return jsonResponse(200, { Id: `list-${named[1]}`, Title: named[1] });
+      return jsonResponse(200, { Id: `list-${named[1]}`, Title: named[1],
+        BaseTemplate: (CONFIG.listTemplates || {})[named[1]] || 100 });
     };
 """)
 

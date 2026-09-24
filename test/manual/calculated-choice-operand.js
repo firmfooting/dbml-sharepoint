@@ -505,6 +505,12 @@
          'A Lookup column in a CONDITIONAL VISIBILITY formula');
   expect('formula.calc.control-person-operand-refused',
          'NEGATIVE CONTROL: a Person operand is refused');
+  expect('formula.choice.fixture-list-created', 'The probe list is a generic list (BaseTemplate 100)');
+  expect('formula.calc.fixture-target-list-created', 'The lookup target is a generic list (BaseTemplate 100)');
+  const LIST_ROW = 'formula.choice.fixture-list-created';
+  const TARGET_ROW = 'formula.calc.fixture-target-list-created';
+  const LOOKUP_ROWS = ['formula.calc.lookup-operand-accepted', 'formula.validation.lookup-operand',
+                       'expression.client-validation.lookup-operand'];
 
   // Removes a previous run's lists so every question below is answered by
   // actually creating something. No-op unless CLEANUP is on.
@@ -531,6 +537,11 @@
     log('OK', `Created list '${LIST}'.`);
   } else {
     log('INFO', `List '${LIST}' already exists, topping up.`);
+  }
+  // Read back on reuse as well as on create, because a list found by title may be a library.
+  if (!await establishFixture(LIST_ROW, () => spGet(`web/lists/getbytitle('${LIST}')?$select=BaseTemplate`),
+    { BaseTemplate: 100 }, RESULTS.map((r) => r.id).filter((id) => id !== LIST_ROW))) {
+    return report();
   }
 
   const fieldsPath = `web/lists/getbytitle('${LIST}')/fields`;
@@ -912,10 +923,15 @@
       Description: 'dbml-sharepoint probe lookup target. Safe to delete.',
     }, digest);
   }
-  const target = await spGet(`web/lists/getbytitle('${targetList}')`);
+  let target = null;
+  // Read back on reuse as well as on create, because a list found by title may be a library.
+  const targetHeld = await establishFixture(TARGET_ROW, async () => {
+    target = await spGet(`web/lists/getbytitle('${targetList}')?$select=BaseTemplate,Id`);
+    return target;
+  }, { BaseTemplate: 100 }, LOOKUP_ROWS);
   // The lookup needs the target list's GUID, so a read that did not answer
   // leaves nothing to point a column at rather than a list of id undefined.
-  const targetId = readFailed(target) ? null : target.body.Id;
+  const targetId = !targetHeld || readFailed(target) ? null : target.body.Id;
   if (targetId) {
     digest = await getDigest();
     await spPost(`web/lists/getbytitle('${targetList}')/items`, { Title: 'row one' }, digest);
@@ -941,7 +957,7 @@
   // Person operand is refused, but the error names no type list, so Lookup
   // has to be asked separately rather than assumed to behave the same.
   if (!lookupReady) {
-    record('formula.calc.lookup-operand-accepted',
+    if (targetHeld) record('formula.calc.lookup-operand-accepted',
            'A Lookup operand in a CALCULATED formula', 'NOT ESTABLISHED',
            'no Lookup column was there to write a formula over');
   } else {
@@ -996,7 +1012,7 @@
   ];
   for (const [id, question, field, body, prop, toolStance] of stores) {
     if (field === 'ProbeLookup' && !lookupReady) {
-      record(id, question, 'NOT ESTABLISHED', 'the lookup column could not be created');
+      if (targetHeld) record(id, question, 'NOT ESTABLISHED', 'the lookup column could not be created');
       continue;
     }
     const set = await setOnField(field, body);

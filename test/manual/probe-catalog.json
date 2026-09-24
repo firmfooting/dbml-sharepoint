@@ -430,100 +430,149 @@
           "pattern": "machine-only",
           "findings": [
             {
+              "id": "formula.calc.fixture-target-list-created",
+              "depends_on": [
+                "formula.choice.fixture-list-created"
+              ]
+            },
+            {
+              "id": "formula.choice.fixture-list-created",
+              "depends_on": []
+            },
+            {
               "id": "formula.choice.calc-column-accepted",
               "depends_on": [
+                "formula.choice.fixture-list-created",
                 "formula.calc.control-person-operand-refused"
               ]
             },
             {
               "id": "formula.choice.calc-column-renders",
-              "depends_on": []
+              "depends_on": [
+                "formula.choice.fixture-list-created"
+              ]
             },
             {
               "id": "formula.choice.formula-as-stored",
-              "depends_on": []
+              "depends_on": [
+                "formula.choice.fixture-list-created"
+              ]
             },
             {
               "id": "formula.choice.metachar-value-renders",
-              "depends_on": []
+              "depends_on": [
+                "formula.choice.fixture-list-created"
+              ]
             },
             {
               "id": "formula.choice.blank-operand-renders",
-              "depends_on": []
+              "depends_on": [
+                "formula.choice.fixture-list-created"
+              ]
             },
             {
               "id": "formula.choice.spaced-display-name-accepted",
               "depends_on": [
+                "formula.choice.fixture-list-created",
                 "formula.calc.control-person-operand-refused"
               ]
             },
             {
               "id": "formula.choice.spaced-display-name-as-stored",
-              "depends_on": []
+              "depends_on": [
+                "formula.choice.fixture-list-created"
+              ]
             },
             {
               "id": "formula.choice.spaced-display-name-renders",
-              "depends_on": []
+              "depends_on": [
+                "formula.choice.fixture-list-created"
+              ]
             },
             {
               "id": "formula.choice.datetime-result-accepted",
               "depends_on": [
+                "formula.choice.fixture-list-created",
                 "formula.calc.control-person-operand-refused"
               ]
             },
             {
               "id": "formula.choice.datetime-result-computes",
-              "depends_on": []
+              "depends_on": [
+                "formula.choice.fixture-list-created"
+              ]
             },
             {
               "id": "formula.calc.lookup-operand-accepted",
               "depends_on": [
+                "formula.calc.fixture-target-list-created",
+                "formula.choice.fixture-list-created",
                 "formula.calc.control-person-operand-refused"
               ]
             },
             {
               "id": "formula.validation.lookup-operand",
-              "depends_on": []
+              "depends_on": [
+                "formula.calc.fixture-target-list-created",
+                "formula.choice.fixture-list-created"
+              ]
             },
             {
               "id": "expression.client-validation.lookup-operand",
-              "depends_on": []
+              "depends_on": [
+                "formula.calc.fixture-target-list-created",
+                "formula.choice.fixture-list-created"
+              ]
             },
             {
               "id": "formula.calc.control-person-operand-refused",
-              "depends_on": []
+              "depends_on": [
+                "formula.choice.fixture-list-created"
+              ]
             },
             {
               "id": "formula.choice.number-result-accepted",
               "depends_on": [
+                "formula.choice.fixture-list-created",
                 "formula.calc.control-person-operand-refused"
               ]
             },
             {
               "id": "formula.choice.number-result-computes",
-              "depends_on": []
+              "depends_on": [
+                "formula.choice.fixture-list-created"
+              ]
             },
             {
               "id": "formula.validation.person-operand",
-              "depends_on": []
+              "depends_on": [
+                "formula.choice.fixture-list-created"
+              ]
             },
             {
               "id": "expression.client-validation.person-operand",
-              "depends_on": []
+              "depends_on": [
+                "formula.choice.fixture-list-created"
+              ]
             },
             {
               "id": "formula.choice.retitled-operand-survives",
-              "depends_on": []
+              "depends_on": [
+                "formula.choice.fixture-list-created"
+              ]
             },
             {
               "id": "formula.choice.retitled-operand-referenced-anew",
               "depends_on": [
+                "formula.choice.fixture-list-created",
                 "formula.calc.control-person-operand-refused"
               ]
             }
           ],
           "states": [],
           "controls": [
+            "formula.calc.fixture-target-list-created",
+            "formula.choice.fixture-list-created",
             "formula.calc.control-person-operand-refused"
           ],
           "depends_on": []
@@ -549,56 +598,86 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "formula.calc.operand-boolean",
+              "id": "formula.calc.fixture-lists-created",
               "depends_on": []
+            },
+            {
+              "id": "formula.calc.operand-boolean",
+              "depends_on": [
+                "formula.calc.fixture-lists-created"
+              ]
             },
             {
               "id": "formula.calc.operand-calculated",
-              "depends_on": []
+              "depends_on": [
+                "formula.calc.fixture-lists-created"
+              ]
             },
             {
               "id": "formula.calc.operand-choice",
-              "depends_on": []
+              "depends_on": [
+                "formula.calc.fixture-lists-created"
+              ]
             },
             {
               "id": "formula.calc.operand-date",
-              "depends_on": []
+              "depends_on": [
+                "formula.calc.fixture-lists-created"
+              ]
             },
             {
               "id": "formula.calc.operand-hyperlink",
-              "depends_on": []
+              "depends_on": [
+                "formula.calc.fixture-lists-created"
+              ]
             },
             {
               "id": "formula.calc.operand-multiline",
-              "depends_on": []
+              "depends_on": [
+                "formula.calc.fixture-lists-created"
+              ]
             },
             {
               "id": "formula.calc.operand-lookup",
-              "depends_on": []
+              "depends_on": [
+                "formula.calc.fixture-lists-created"
+              ]
             },
             {
               "id": "formula.calc.operand-number",
-              "depends_on": []
+              "depends_on": [
+                "formula.calc.fixture-lists-created"
+              ]
             },
             {
               "id": "formula.calc.operand-person",
-              "depends_on": []
+              "depends_on": [
+                "formula.calc.fixture-lists-created"
+              ]
             },
             {
               "id": "formula.calc.operand-richtext",
-              "depends_on": []
+              "depends_on": [
+                "formula.calc.fixture-lists-created"
+              ]
             },
             {
               "id": "formula.calc.operand-text",
-              "depends_on": []
+              "depends_on": [
+                "formula.calc.fixture-lists-created"
+              ]
             },
             {
               "id": "formula.calc.operand-datetime",
-              "depends_on": []
+              "depends_on": [
+                "formula.calc.fixture-lists-created"
+              ]
             }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "formula.calc.fixture-lists-created"
+          ],
           "depends_on": []
         }
       ]
@@ -1008,18 +1087,26 @@
           "pattern": "machine-only",
           "findings": [
             {
+              "id": "library.lookup.fixture-lists-generic",
+              "depends_on": [
+                "library.doc-lib.fixture-library-created"
+              ]
+            },
+            {
               "id": "library.doc-lib.fixture-library-created",
               "depends_on": []
             },
             {
               "id": "library.lookup.fixture-containers-ready",
               "depends_on": [
+                "library.lookup.fixture-lists-generic",
                 "library.doc-lib.fixture-library-created"
               ]
             },
             {
               "id": "library.lookup.control-list-to-list-lookup-created",
               "depends_on": [
+                "library.lookup.fixture-lists-generic",
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready"
               ]
@@ -1027,6 +1114,7 @@
             {
               "id": "library.lookup.control-unsupported-operand-refused",
               "depends_on": [
+                "library.lookup.fixture-lists-generic",
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created"
@@ -1035,6 +1123,7 @@
             {
               "id": "library.lookup.library-to-list-created",
               "depends_on": [
+                "library.lookup.fixture-lists-generic",
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
@@ -1044,6 +1133,7 @@
             {
               "id": "library.lookup.library-to-list-item-write",
               "depends_on": [
+                "library.lookup.fixture-lists-generic",
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
@@ -1054,6 +1144,7 @@
             {
               "id": "library.lookup.library-to-list-indexed",
               "depends_on": [
+                "library.lookup.fixture-lists-generic",
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
@@ -1064,6 +1155,7 @@
             {
               "id": "library.lookup.list-to-library-title-created",
               "depends_on": [
+                "library.lookup.fixture-lists-generic",
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
@@ -1073,6 +1165,7 @@
             {
               "id": "library.lookup.list-to-library-name-created",
               "depends_on": [
+                "library.lookup.fixture-lists-generic",
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
@@ -1082,6 +1175,7 @@
             {
               "id": "library.lookup.list-to-library-item-write",
               "depends_on": [
+                "library.lookup.fixture-lists-generic",
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
@@ -1092,6 +1186,7 @@
             {
               "id": "library.lookup.list-to-library-folder-row-selectable",
               "depends_on": [
+                "library.lookup.fixture-lists-generic",
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
@@ -1102,6 +1197,7 @@
             {
               "id": "library.lookup.list-to-library-indexed",
               "depends_on": [
+                "library.lookup.fixture-lists-generic",
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
@@ -1112,6 +1208,7 @@
             {
               "id": "scale.join.control-list-lookup-ceiling",
               "depends_on": [
+                "library.lookup.fixture-lists-generic",
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
@@ -1121,6 +1218,7 @@
             {
               "id": "scale.join.library-lookup-ceiling",
               "depends_on": [
+                "library.lookup.fixture-lists-generic",
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
@@ -1130,6 +1228,7 @@
             {
               "id": "scale.join.list-to-library-costs-a-join",
               "depends_on": [
+                "library.lookup.fixture-lists-generic",
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.control-list-to-list-lookup-created",
@@ -1141,6 +1240,7 @@
           ],
           "states": [],
           "controls": [
+            "library.lookup.fixture-lists-generic",
             "library.doc-lib.fixture-library-created",
             "library.lookup.fixture-containers-ready",
             "library.lookup.control-list-to-list-lookup-created",
@@ -1156,6 +1256,7 @@
             {
               "id": "library.lookup.picker-enumerates-files",
               "depends_on": [
+                "library.lookup.fixture-lists-generic",
                 "library.doc-lib.fixture-library-created",
                 "library.lookup.fixture-containers-ready",
                 "library.lookup.list-to-library-title-created"
@@ -5757,12 +5858,19 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "access.lookup-acl.control-target-denied",
+              "id": "access.lookup-acl.fixture-lists-created",
               "depends_on": []
+            },
+            {
+              "id": "access.lookup-acl.control-target-denied",
+              "depends_on": [
+                "access.lookup-acl.fixture-lists-created"
+              ]
             },
             {
               "id": "access.lookup-acl.display-value-to-denied-reader",
               "depends_on": [
+                "access.lookup-acl.fixture-lists-created",
                 "access.lookup-acl.control-target-denied",
                 "access.lookup-acl.control-source-readable"
               ]
@@ -5770,29 +5878,39 @@
             {
               "id": "access.lookup-acl.expand-reaches-other-columns",
               "depends_on": [
+                "access.lookup-acl.fixture-lists-created",
                 "access.lookup-acl.control-target-denied",
                 "access.lookup-acl.control-source-readable"
               ]
             },
             {
               "id": "access.lookup-acl.control-source-readable",
-              "depends_on": []
+              "depends_on": [
+                "access.lookup-acl.fixture-lists-created"
+              ]
             },
             {
               "id": "field.lookup.calculated-display-field",
-              "depends_on": []
+              "depends_on": [
+                "access.lookup-acl.fixture-lists-created"
+              ]
             },
             {
               "id": "field.lookup.empty-label-linked-readback",
-              "depends_on": []
+              "depends_on": [
+                "access.lookup-acl.fixture-lists-created"
+              ]
             },
             {
               "id": "access.lookup-acl.control-target-present-after-read",
-              "depends_on": []
+              "depends_on": [
+                "access.lookup-acl.fixture-lists-created"
+              ]
             }
           ],
           "states": [],
           "controls": [
+            "access.lookup-acl.fixture-lists-created",
             "access.lookup-acl.control-target-denied",
             "access.lookup-acl.control-source-readable",
             "access.lookup-acl.control-target-present-after-read"
@@ -5807,6 +5925,7 @@
             {
               "id": "field.lookup.picker-omits-empty-label",
               "depends_on": [
+                "access.lookup-acl.fixture-lists-created",
                 "field.lookup.calculated-display-field",
                 "field.lookup.empty-label-linked-readback"
               ]
@@ -6710,42 +6829,54 @@
           "pattern": "machine-only",
           "findings": [
             {
-              "id": "field.lookup.control-primary-lookup-created",
+              "id": "field.lookup.fixture-lists-created",
               "depends_on": []
+            },
+            {
+              "id": "field.lookup.control-primary-lookup-created",
+              "depends_on": [
+                "field.lookup.fixture-lists-created"
+              ]
             },
             {
               "id": "field.lookup.dependent-fieldref-accepted",
               "depends_on": [
+                "field.lookup.fixture-lists-created",
                 "field.lookup.control-primary-lookup-created"
               ]
             },
             {
               "id": "field.lookup.isdependentlookup-readback",
               "depends_on": [
+                "field.lookup.fixture-lists-created",
                 "field.lookup.control-primary-lookup-created"
               ]
             },
             {
               "id": "field.lookup.primary-lists-dependent",
               "depends_on": [
+                "field.lookup.fixture-lists-created",
                 "field.lookup.control-primary-lookup-created"
               ]
             },
             {
               "id": "field.lookup.dependent-fill-live-label",
               "depends_on": [
+                "field.lookup.fixture-lists-created",
                 "field.lookup.control-primary-lookup-created"
               ]
             },
             {
               "id": "field.lookup.dependent-fill-blank-label",
               "depends_on": [
+                "field.lookup.fixture-lists-created",
                 "field.lookup.control-primary-lookup-created"
               ]
             }
           ],
           "states": [],
           "controls": [
+            "field.lookup.fixture-lists-created",
             "field.lookup.control-primary-lookup-created"
           ],
           "depends_on": []
@@ -6757,15 +6888,20 @@
           "findings": [
             {
               "id": "field.lookup.control-present-target-id-write-accepted",
-              "depends_on": []
+              "depends_on": [
+                "field.lookup.fixture-lists-created"
+              ]
             },
             {
               "id": "field.lookup.control-absent-target-id-names-no-row",
-              "depends_on": []
+              "depends_on": [
+                "field.lookup.fixture-lists-created"
+              ]
             },
             {
               "id": "field.lookup.absent-target-id-write",
               "depends_on": [
+                "field.lookup.fixture-lists-created",
                 "field.lookup.control-present-target-id-write-accepted",
                 "field.lookup.control-absent-target-id-names-no-row"
               ]
@@ -6773,6 +6909,7 @@
             {
               "id": "field.lookup.absent-target-id-readback",
               "depends_on": [
+                "field.lookup.fixture-lists-created",
                 "field.lookup.control-present-target-id-write-accepted",
                 "field.lookup.control-absent-target-id-names-no-row"
               ]
@@ -6792,25 +6929,33 @@
           "findings": [
             {
               "id": "field.cross-web.control-other-web-has-a-list",
-              "depends_on": []
+              "depends_on": [
+                "field.lookup.fixture-lists-created"
+              ]
             },
             {
               "id": "field.cross-web.control-other-web-list-has-an-item",
               "depends_on": [
+                "field.lookup.fixture-lists-created",
                 "field.cross-web.control-other-web-has-a-list"
               ]
             },
             {
               "id": "field.cross-web.control-same-web-lookup-created",
-              "depends_on": []
+              "depends_on": [
+                "field.lookup.fixture-lists-created"
+              ]
             },
             {
               "id": "field.cross-web.control-same-web-webid-accepted",
-              "depends_on": []
+              "depends_on": [
+                "field.lookup.fixture-lists-created"
+              ]
             },
             {
               "id": "field.cross-web.createfieldasxml-other-web-refused",
               "depends_on": [
+                "field.lookup.fixture-lists-created",
                 "field.cross-web.control-other-web-has-a-list",
                 "field.cross-web.control-same-web-lookup-created"
               ]
@@ -6818,6 +6963,7 @@
             {
               "id": "field.cross-web.webid-attribute-refused",
               "depends_on": [
+                "field.lookup.fixture-lists-created",
                 "field.cross-web.control-other-web-has-a-list",
                 "field.cross-web.control-same-web-webid-accepted"
               ]
@@ -6825,18 +6971,21 @@
             {
               "id": "field.cross-web.list-spelling-targets-other-web",
               "depends_on": [
+                "field.lookup.fixture-lists-created",
                 "field.cross-web.createfieldasxml-other-web-refused"
               ]
             },
             {
               "id": "field.cross-web.webid-spelling-targets-other-web",
               "depends_on": [
+                "field.lookup.fixture-lists-created",
                 "field.cross-web.webid-attribute-refused"
               ]
             },
             {
               "id": "field.cross-web.list-spelling-resolves-remote-item",
               "depends_on": [
+                "field.lookup.fixture-lists-created",
                 "field.cross-web.createfieldasxml-other-web-refused",
                 "field.cross-web.control-other-web-list-has-an-item"
               ]
@@ -6844,6 +6993,7 @@
             {
               "id": "field.cross-web.webid-spelling-resolves-remote-item",
               "depends_on": [
+                "field.lookup.fixture-lists-created",
                 "field.cross-web.webid-attribute-refused",
                 "field.cross-web.control-other-web-list-has-an-item"
               ]
@@ -7346,8 +7496,20 @@
           "pattern": "machine-only",
           "findings": [
             {
+              "id": "scale.index.fixture-columns-typed",
+              "depends_on": [
+                "scale.threshold.fixture-lists-created"
+              ]
+            },
+            {
+              "id": "scale.threshold.fixture-lists-created",
+              "depends_on": []
+            },
+            {
               "id": "scale.index.caml-and-indexed-first",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
@@ -7355,6 +7517,8 @@
             {
               "id": "scale.index.caml-and-unindexed-first",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
@@ -7362,17 +7526,24 @@
             {
               "id": "scale.index.caml-eq-calculated",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
             },
             {
               "id": "scale.index.calculated-indexable",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.index.caml-comparison-indexed-text",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
@@ -7380,6 +7551,8 @@
             {
               "id": "scale.index.odata-comparison-indexed-text",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
@@ -7387,21 +7560,31 @@
             {
               "id": "scale.index.odata-comparison-unindexed-text",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
             },
             {
               "id": "scale.index.negative-control-clearable",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.index.fixture-indexes-set",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.join.modified-by-counts-as-join",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set",
                 "scale.join.lookup-column-ceiling"
@@ -7410,6 +7593,8 @@
             {
               "id": "scale.join.lookup-column-ceiling",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
@@ -7417,6 +7602,8 @@
             {
               "id": "scale.join.person-counts-as-join",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set",
                 "scale.join.lookup-column-ceiling"
@@ -7425,6 +7612,8 @@
             {
               "id": "scale.join.projected-field-costs-a-join",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
@@ -7432,6 +7621,8 @@
             {
               "id": "scale.join.created-by-counts-as-join",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set",
                 "scale.join.lookup-column-ceiling"
@@ -7440,6 +7631,8 @@
             {
               "id": "scale.join.created-date-counts-as-join",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set",
                 "scale.join.lookup-column-ceiling"
@@ -7448,6 +7641,8 @@
             {
               "id": "scale.join.modified-date-counts-as-join",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set",
                 "scale.join.lookup-column-ceiling"
@@ -7455,11 +7650,16 @@
             },
             {
               "id": "scale.index.calculated-showfield-allowed",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.index.caml-eq-indexed-lookup-lookupid",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
@@ -7467,6 +7667,8 @@
             {
               "id": "scale.index.odata-comparison-indexed-lookup",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
@@ -7474,6 +7676,8 @@
             {
               "id": "scale.index.caml-eq-indexed-lookup-projected",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
@@ -7481,6 +7685,8 @@
             {
               "id": "scale.index.caml-isnotnull-indexed-datetime",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set",
                 "scale.index.fixture-notnull-seed-intact"
@@ -7489,6 +7695,8 @@
             {
               "id": "scale.index.caml-isnotnull-unindexed-datetime",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set",
                 "scale.index.fixture-notnull-seed-intact"
@@ -7496,11 +7704,16 @@
             },
             {
               "id": "scale.index.multiline-text-indexable",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.index.caml-isnull-indexed-datetime",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
@@ -7508,6 +7721,8 @@
             {
               "id": "scale.index.odata-null-indexed-datetime",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
@@ -7515,6 +7730,8 @@
             {
               "id": "scale.index.caml-eq-indexed-person-lookupid",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
@@ -7522,6 +7739,8 @@
             {
               "id": "scale.index.caml-eq-indexed-person-value",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
@@ -7529,6 +7748,8 @@
             {
               "id": "scale.index.caml-eq-indexed-person-projected",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
@@ -7536,17 +7757,24 @@
             {
               "id": "scale.index.odata-comparison-indexed-person",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
             },
             {
               "id": "scale.threshold.fixture-item-count",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.index.fixture-notnull-seed-intact",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
@@ -7554,6 +7782,8 @@
             {
               "id": "scale.native-idx.author-threshold-filter",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
@@ -7561,6 +7791,8 @@
             {
               "id": "scale.native-idx.created-threshold-filter",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
@@ -7568,6 +7800,8 @@
             {
               "id": "scale.native-idx.editor-threshold-filter",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
@@ -7575,49 +7809,80 @@
             {
               "id": "scale.native-idx.modified-threshold-filter",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "scale.threshold.fixture-item-count",
                 "scale.index.fixture-indexes-set"
               ]
             },
             {
               "id": "scale.index.target-ordered-by-calculated",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.index.target-ordered-by-conditional",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.index.target-enumerable-unordered",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.index.target-type-ahead-conditional",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.index.target-ordered-by-showfield",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.index.target-type-ahead",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.index.target-filter-then-order-showfield",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.index.target-status-filter",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.index.target-status-filter-then-order-title",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             }
           ],
           "states": [],
           "controls": [
+            "scale.index.fixture-columns-typed",
+            "scale.threshold.fixture-lists-created",
             "scale.threshold.fixture-item-count",
             "scale.index.fixture-indexes-set",
             "scale.index.fixture-notnull-seed-intact",
@@ -7634,27 +7899,45 @@
           "findings": [
             {
               "id": "scale.index.indexed-autoindexed-flags",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.index.picker-calculated-showfield",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.index.picker-conditional-showfield",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.index.picker-indexed-showfield",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.index.picker-honours-default-view",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.index.fixture-target-showfield-indexed",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             }
           ],
           "states": [
@@ -7724,23 +8007,38 @@
           "findings": [
             {
               "id": "scale.threshold.guarded-comparison-indexed-text",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.threshold.guarded-isnull-indexed-datetime",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.threshold.guard-alone-every-row",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.threshold.guarded-comparison-unindexed-text",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "scale.index.fixture-twins-match-same-rows",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             }
           ],
           "states": [],
@@ -7758,12 +8056,17 @@
             {
               "id": "view.filter-editor.negated-clause-rows",
               "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created",
                 "view.filter-editor.plain-clause-rows"
               ]
             },
             {
               "id": "view.filter-editor.plain-clause-rows",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             }
           ],
           "states": [
@@ -7794,19 +8097,31 @@
           "findings": [
             {
               "id": "view.threshold-render.indexed-filter-guarded",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "view.threshold-render.indexed-filter",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "view.threshold-render.unindexed-filter-guarded",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             },
             {
               "id": "view.threshold-render.unindexed-filter",
-              "depends_on": []
+              "depends_on": [
+                "scale.index.fixture-columns-typed",
+                "scale.threshold.fixture-lists-created"
+              ]
             }
           ],
           "states": [
@@ -8207,6 +8522,14 @@
           "pattern": "machine-only",
           "findings": [
             {
+              "id": "field.date.fixture-td-column",
+              "depends_on": []
+            },
+            {
+              "id": "query.caml-adhoc.fixture-dm-column",
+              "depends_on": []
+            },
+            {
               "id": "formula.datetime.control-site-time-zone",
               "depends_on": []
             },
@@ -8223,12 +8546,14 @@
             {
               "id": "query.caml-adhoc.today-element-site-date",
               "depends_on": [
+                "query.caml-adhoc.fixture-dm-column",
                 "formula.datetime.control-site-time-zone"
               ]
             },
             {
               "id": "query.caml-adhoc.today-offset-element-previous-day",
               "depends_on": [
+                "query.caml-adhoc.fixture-dm-column",
                 "formula.datetime.control-site-time-zone"
               ]
             },
@@ -8241,12 +8566,16 @@
             {
               "id": "field.date.dynamic-default-rest-fill",
               "depends_on": [
+                "field.date.fixture-td-column",
                 "formula.datetime.control-site-time-zone"
               ]
             }
           ],
           "states": [],
-          "controls": [],
+          "controls": [
+            "field.date.fixture-td-column",
+            "query.caml-adhoc.fixture-dm-column"
+          ],
           "depends_on": [],
           "surface": "formula"
         }
@@ -9391,6 +9720,13 @@
           "pattern": "machine-only",
           "findings": [
             {
+              "id": "field.default-formula.fixture-columns-typed",
+              "depends_on": [
+                "field.default-formula.fixture-list-created",
+                "field.default-formula.control-missing-column-refused"
+              ]
+            },
+            {
               "id": "field.default-formula.fixture-list-created",
               "depends_on": []
             },
@@ -9403,6 +9739,7 @@
             {
               "id": "field.default-formula.function-day-fills",
               "depends_on": [
+                "field.default-formula.fixture-columns-typed",
                 "field.default-formula.fixture-list-created",
                 "field.default-formula.control-missing-column-refused"
               ]
@@ -9410,6 +9747,7 @@
             {
               "id": "field.default-formula.function-rounddown-fills",
               "depends_on": [
+                "field.default-formula.fixture-columns-typed",
                 "field.default-formula.fixture-list-created",
                 "field.default-formula.control-missing-column-refused"
               ]
@@ -9417,6 +9755,7 @@
             {
               "id": "field.default-formula.function-mod-fills",
               "depends_on": [
+                "field.default-formula.fixture-columns-typed",
                 "field.default-formula.fixture-list-created",
                 "field.default-formula.control-missing-column-refused"
               ]
@@ -9424,6 +9763,7 @@
             {
               "id": "field.default-formula.function-text-fills",
               "depends_on": [
+                "field.default-formula.fixture-columns-typed",
                 "field.default-formula.fixture-list-created",
                 "field.default-formula.control-missing-column-refused"
               ]
@@ -9431,6 +9771,7 @@
             {
               "id": "field.default-formula.function-if-fills",
               "depends_on": [
+                "field.default-formula.fixture-columns-typed",
                 "field.default-formula.fixture-list-created",
                 "field.default-formula.control-missing-column-refused"
               ]
@@ -9438,6 +9779,7 @@
             {
               "id": "field.default-formula.function-and-fills",
               "depends_on": [
+                "field.default-formula.fixture-columns-typed",
                 "field.default-formula.fixture-list-created",
                 "field.default-formula.control-missing-column-refused",
                 "field.default-formula.function-if-fills"
@@ -9446,6 +9788,7 @@
             {
               "id": "field.default-formula.function-or-fills",
               "depends_on": [
+                "field.default-formula.fixture-columns-typed",
                 "field.default-formula.fixture-list-created",
                 "field.default-formula.control-missing-column-refused",
                 "field.default-formula.function-if-fills"
@@ -9454,6 +9797,7 @@
             {
               "id": "field.default-formula.text-property-reads-back",
               "depends_on": [
+                "field.default-formula.fixture-columns-typed",
                 "field.default-formula.fixture-list-created",
                 "field.default-formula.control-missing-column-refused"
               ]
@@ -9461,6 +9805,7 @@
             {
               "id": "field.default-formula.text-fills-on-item-create",
               "depends_on": [
+                "field.default-formula.fixture-columns-typed",
                 "field.default-formula.fixture-list-created",
                 "field.default-formula.control-missing-column-refused"
               ]
@@ -9468,6 +9813,7 @@
             {
               "id": "field.default-formula.datetime-fills-on-item-create",
               "depends_on": [
+                "field.default-formula.fixture-columns-typed",
                 "field.default-formula.fixture-list-created",
                 "field.default-formula.control-missing-column-refused"
               ]
@@ -9475,6 +9821,7 @@
             {
               "id": "field.default-formula.shipped-financial-year-fills",
               "depends_on": [
+                "field.default-formula.fixture-columns-typed",
                 "field.default-formula.fixture-list-created",
                 "field.default-formula.control-missing-column-refused"
               ]
@@ -9482,6 +9829,7 @@
             {
               "id": "field.default-formula.shipped-financial-quarter-fills",
               "depends_on": [
+                "field.default-formula.fixture-columns-typed",
                 "field.default-formula.fixture-list-created",
                 "field.default-formula.control-missing-column-refused"
               ]
@@ -9489,6 +9837,7 @@
           ],
           "states": [],
           "controls": [
+            "field.default-formula.fixture-columns-typed",
             "field.default-formula.fixture-list-created",
             "field.default-formula.control-missing-column-refused"
           ],
@@ -10572,6 +10921,7 @@
             {
               "id": "formula.validation.control-over-limit-under-bare-column-rule",
               "depends_on": [
+                "formula.validation.fixture-list-created",
                 "formula.validation.fixture-number-column",
                 "formula.validation.control-missing-column-refused",
                 "formula.validation.fixture-no-rule-in-force",
@@ -10581,6 +10931,7 @@
             {
               "id": "formula.validation.blank-omitted-under-bare-column-rule",
               "depends_on": [
+                "formula.validation.fixture-list-created",
                 "formula.validation.fixture-number-column",
                 "formula.validation.control-missing-column-refused",
                 "formula.validation.fixture-no-rule-in-force",
@@ -10591,6 +10942,7 @@
             {
               "id": "formula.validation.blank-null-under-bare-column-rule",
               "depends_on": [
+                "formula.validation.fixture-list-created",
                 "formula.validation.fixture-number-column",
                 "formula.validation.control-missing-column-refused",
                 "formula.validation.fixture-no-rule-in-force",
@@ -10610,6 +10962,7 @@
             {
               "id": "formula.validation.control-over-limit-under-guarded-column-rule",
               "depends_on": [
+                "formula.validation.fixture-list-created",
                 "formula.validation.fixture-number-column",
                 "formula.validation.control-missing-column-refused",
                 "formula.validation.fixture-no-rule-in-force",
@@ -10619,6 +10972,7 @@
             {
               "id": "formula.validation.blank-omitted-under-guarded-column-rule",
               "depends_on": [
+                "formula.validation.fixture-list-created",
                 "formula.validation.fixture-number-column",
                 "formula.validation.control-missing-column-refused",
                 "formula.validation.fixture-no-rule-in-force",
@@ -10629,6 +10983,7 @@
             {
               "id": "formula.validation.blank-null-under-guarded-column-rule",
               "depends_on": [
+                "formula.validation.fixture-list-created",
                 "formula.validation.fixture-number-column",
                 "formula.validation.control-missing-column-refused",
                 "formula.validation.fixture-no-rule-in-force",
@@ -10648,6 +11003,7 @@
             {
               "id": "formula.validation.fixture-bare-list-rule-stored",
               "depends_on": [
+                "formula.validation.fixture-list-created",
                 "formula.validation.fixture-number-column",
                 "formula.validation.control-missing-column-refused",
                 "formula.validation.fixture-no-rule-in-force",
@@ -10657,6 +11013,7 @@
             {
               "id": "formula.validation.control-over-limit-under-bare-list-rule",
               "depends_on": [
+                "formula.validation.fixture-list-created",
                 "formula.validation.fixture-number-column",
                 "formula.validation.control-missing-column-refused",
                 "formula.validation.fixture-no-rule-in-force",
@@ -10667,6 +11024,7 @@
             {
               "id": "formula.validation.blank-omitted-under-bare-list-rule",
               "depends_on": [
+                "formula.validation.fixture-list-created",
                 "formula.validation.fixture-number-column",
                 "formula.validation.control-missing-column-refused",
                 "formula.validation.fixture-no-rule-in-force",
@@ -10678,6 +11036,7 @@
             {
               "id": "formula.validation.blank-null-under-bare-list-rule",
               "depends_on": [
+                "formula.validation.fixture-list-created",
                 "formula.validation.fixture-number-column",
                 "formula.validation.control-missing-column-refused",
                 "formula.validation.fixture-no-rule-in-force",
@@ -10689,6 +11048,7 @@
             {
               "id": "formula.validation.fixture-guarded-list-rule-stored",
               "depends_on": [
+                "formula.validation.fixture-list-created",
                 "formula.validation.fixture-number-column",
                 "formula.validation.control-missing-column-refused",
                 "formula.validation.fixture-no-rule-in-force",
@@ -10698,6 +11058,7 @@
             {
               "id": "formula.validation.control-over-limit-under-guarded-list-rule",
               "depends_on": [
+                "formula.validation.fixture-list-created",
                 "formula.validation.fixture-number-column",
                 "formula.validation.control-missing-column-refused",
                 "formula.validation.fixture-no-rule-in-force",
@@ -10708,6 +11069,7 @@
             {
               "id": "formula.validation.blank-omitted-under-guarded-list-rule",
               "depends_on": [
+                "formula.validation.fixture-list-created",
                 "formula.validation.fixture-number-column",
                 "formula.validation.control-missing-column-refused",
                 "formula.validation.fixture-no-rule-in-force",
@@ -10719,6 +11081,7 @@
             {
               "id": "formula.validation.blank-null-under-guarded-list-rule",
               "depends_on": [
+                "formula.validation.fixture-list-created",
                 "formula.validation.fixture-number-column",
                 "formula.validation.control-missing-column-refused",
                 "formula.validation.fixture-no-rule-in-force",
@@ -10796,6 +11159,7 @@
             {
               "id": "field.sealed.seal-write-readback",
               "depends_on": [
+                "field.sealed.fixture-list-created",
                 "field.sealed.fixture-subject-column",
                 "field.sealed.control-unknown-property-refused"
               ]
@@ -10803,6 +11167,7 @@
             {
               "id": "field.sealed.canbedeleted-after-seal",
               "depends_on": [
+                "field.sealed.fixture-list-created",
                 "field.sealed.fixture-subject-column",
                 "field.sealed.control-unknown-property-refused",
                 "field.sealed.seal-write-readback"
@@ -10811,6 +11176,7 @@
             {
               "id": "field.sealed.unseal-write-readback",
               "depends_on": [
+                "field.sealed.fixture-list-created",
                 "field.sealed.fixture-subject-column",
                 "field.sealed.control-unknown-property-refused"
               ]
@@ -10818,6 +11184,7 @@
             {
               "id": "field.sealed.canbedeleted-after-unseal",
               "depends_on": [
+                "field.sealed.fixture-list-created",
                 "field.sealed.fixture-subject-column",
                 "field.sealed.control-unknown-property-refused",
                 "field.sealed.unseal-write-readback"
@@ -10826,6 +11193,7 @@
             {
               "id": "field.sealed.canbedeleted-write-while-unsealed",
               "depends_on": [
+                "field.sealed.fixture-list-created",
                 "field.sealed.fixture-subject-column",
                 "field.sealed.control-unknown-property-refused",
                 "field.sealed.control-description-sticks",
@@ -10835,6 +11203,7 @@
             {
               "id": "field.sealed.fixture-reseal-written",
               "depends_on": [
+                "field.sealed.fixture-list-created",
                 "field.sealed.fixture-subject-column",
                 "field.sealed.control-unknown-property-refused",
                 "field.sealed.control-description-sticks",
@@ -10844,6 +11213,7 @@
             {
               "id": "field.sealed.canbedeleted-write-while-sealed",
               "depends_on": [
+                "field.sealed.fixture-list-created",
                 "field.sealed.fixture-subject-column",
                 "field.sealed.control-unknown-property-refused",
                 "field.sealed.control-description-sticks",
@@ -10853,6 +11223,7 @@
             {
               "id": "field.sealed.both-properties-in-one-merge",
               "depends_on": [
+                "field.sealed.fixture-list-created",
                 "field.sealed.fixture-subject-column",
                 "field.sealed.control-unknown-property-refused",
                 "field.sealed.control-description-sticks",
@@ -10862,12 +11233,14 @@
             {
               "id": "field.sealed.control-plain-column-deleted",
               "depends_on": [
-                "field.sealed.fixture-list-created"
+                "field.sealed.fixture-list-created",
+                "field.sealed.fixture-subject-column"
               ]
             },
             {
               "id": "field.sealed.fixture-sealed-for-delete",
               "depends_on": [
+                "field.sealed.fixture-list-created",
                 "field.sealed.fixture-subject-column",
                 "field.sealed.control-unknown-property-refused",
                 "field.sealed.control-plain-column-deleted"
@@ -10876,6 +11249,7 @@
             {
               "id": "field.sealed.delete-while-sealed",
               "depends_on": [
+                "field.sealed.fixture-list-created",
                 "field.sealed.fixture-subject-column",
                 "field.sealed.control-unknown-property-refused",
                 "field.sealed.control-plain-column-deleted",
@@ -10885,6 +11259,8 @@
             {
               "id": "field.sealed.fixture-subject-restored",
               "depends_on": [
+                "field.sealed.fixture-list-created",
+                "field.sealed.fixture-subject-column",
                 "field.sealed.control-plain-column-deleted",
                 "field.sealed.fixture-sealed-for-delete"
               ]
@@ -10892,6 +11268,8 @@
             {
               "id": "field.sealed.fixture-unsealed-for-delete",
               "depends_on": [
+                "field.sealed.fixture-list-created",
+                "field.sealed.fixture-subject-column",
                 "field.sealed.control-plain-column-deleted",
                 "field.sealed.fixture-sealed-for-delete",
                 "field.sealed.fixture-subject-restored"
@@ -10900,6 +11278,8 @@
             {
               "id": "field.sealed.delete-while-unsealed",
               "depends_on": [
+                "field.sealed.fixture-list-created",
+                "field.sealed.fixture-subject-column",
                 "field.sealed.control-plain-column-deleted",
                 "field.sealed.fixture-subject-restored",
                 "field.sealed.fixture-unsealed-for-delete"
