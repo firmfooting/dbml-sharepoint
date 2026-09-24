@@ -1404,7 +1404,9 @@
             },
             {
               "id": "expression.client-validation.now-sentinel-stored",
-              "depends_on": []
+              "depends_on": [
+                "formula.datetime.fixture-probewhen-date-time-column"
+              ]
             },
             {
               "id": "formula.validation.backslash-quote-literal",
@@ -5124,91 +5126,117 @@
               "id": "formula.validation.list-modified-allows-yesterday",
               "depends_on": [
                 "formula.validation.list-modified-rule-accepted",
-                "formula.validation.fixture-dm-date-only-column"
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-dc-date-only-column",
+                "formula.validation.fixture-wm-date-time-column"
               ]
             },
             {
               "id": "formula.validation.list-modified-allows-today",
               "depends_on": [
                 "formula.validation.list-modified-rule-accepted",
-                "formula.validation.fixture-dm-date-only-column"
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-dc-date-only-column",
+                "formula.validation.fixture-wm-date-time-column"
               ]
             },
             {
               "id": "formula.validation.list-modified-rejects-tomorrow",
               "depends_on": [
                 "formula.validation.list-modified-rule-accepted",
-                "formula.validation.fixture-dm-date-only-column"
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-dc-date-only-column",
+                "formula.validation.fixture-wm-date-time-column"
               ]
             },
             {
               "id": "formula.validation.control-list-modified-rejects-thirty-days",
               "depends_on": [
                 "formula.validation.list-modified-rule-accepted",
-                "formula.validation.fixture-dm-date-only-column"
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-dc-date-only-column",
+                "formula.validation.fixture-wm-date-time-column"
               ]
             },
             {
               "id": "formula.validation.list-created-allows-today",
               "depends_on": [
                 "formula.validation.list-modified-rule-accepted",
-                "formula.validation.fixture-dc-date-only-column"
+                "formula.validation.fixture-dc-date-only-column",
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-wm-date-time-column"
               ]
             },
             {
               "id": "formula.validation.list-created-rejects-tomorrow",
               "depends_on": [
                 "formula.validation.list-modified-rule-accepted",
-                "formula.validation.fixture-dc-date-only-column"
+                "formula.validation.fixture-dc-date-only-column",
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-wm-date-time-column"
               ]
             },
             {
               "id": "formula.validation.list-modified-allows-20h-ago",
               "depends_on": [
                 "formula.validation.list-modified-rule-accepted",
-                "formula.validation.fixture-wm-date-time-column"
+                "formula.validation.fixture-wm-date-time-column",
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-dc-date-only-column"
               ]
             },
             {
               "id": "formula.validation.list-modified-allows-hour-ago",
               "depends_on": [
                 "formula.validation.list-modified-rule-accepted",
-                "formula.validation.fixture-wm-date-time-column"
+                "formula.validation.fixture-wm-date-time-column",
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-dc-date-only-column"
               ]
             },
             {
               "id": "formula.validation.list-modified-rejects-hour-ahead",
               "depends_on": [
                 "formula.validation.list-modified-rule-accepted",
-                "formula.validation.fixture-wm-date-time-column"
+                "formula.validation.fixture-wm-date-time-column",
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-dc-date-only-column"
               ]
             },
             {
               "id": "formula.validation.list-modified-rejects-20h-ahead",
               "depends_on": [
                 "formula.validation.list-modified-rule-accepted",
-                "formula.validation.fixture-wm-date-time-column"
+                "formula.validation.fixture-wm-date-time-column",
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-dc-date-only-column"
               ]
             },
             {
               "id": "formula.validation.fixture-update-seed-created",
               "depends_on": [
                 "formula.validation.list-modified-rule-accepted",
-                "formula.validation.fixture-wm-date-time-column"
+                "formula.validation.fixture-wm-date-time-column",
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-dc-date-only-column"
               ]
             },
             {
               "id": "formula.validation.list-modified-update-sees-own-save",
               "depends_on": [
                 "formula.validation.fixture-update-seed-created",
-                "formula.validation.fixture-wm-date-time-column"
+                "formula.validation.fixture-wm-date-time-column",
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-dc-date-only-column"
               ]
             },
             {
               "id": "formula.validation.control-list-modified-update-rejects-hour-ahead",
               "depends_on": [
                 "formula.validation.fixture-update-seed-created",
-                "formula.validation.fixture-wm-date-time-column"
+                "formula.validation.fixture-wm-date-time-column",
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-dc-date-only-column"
               ]
             },
             {
@@ -5779,56 +5807,72 @@
               "id": "formula.validation.column-modified-allows-yesterday",
               "depends_on": [
                 "formula.validation.column-rule-cross-column-accepted",
-                "formula.validation.fixture-dm-date-only-column"
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-dc-date-only-column",
+                "formula.validation.fixture-wm-date-time-column"
               ]
             },
             {
               "id": "formula.validation.column-modified-allows-today",
               "depends_on": [
                 "formula.validation.column-rule-cross-column-accepted",
-                "formula.validation.fixture-dm-date-only-column"
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-dc-date-only-column",
+                "formula.validation.fixture-wm-date-time-column"
               ]
             },
             {
               "id": "formula.validation.column-modified-rejects-tomorrow",
               "depends_on": [
                 "formula.validation.column-rule-cross-column-accepted",
-                "formula.validation.fixture-dm-date-only-column"
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-dc-date-only-column",
+                "formula.validation.fixture-wm-date-time-column"
               ]
             },
             {
               "id": "formula.validation.column-created-allows-today",
               "depends_on": [
                 "formula.validation.column-rule-cross-column-accepted",
-                "formula.validation.fixture-dc-date-only-column"
+                "formula.validation.fixture-dc-date-only-column",
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-wm-date-time-column"
               ]
             },
             {
               "id": "formula.validation.column-created-rejects-tomorrow",
               "depends_on": [
                 "formula.validation.column-rule-cross-column-accepted",
-                "formula.validation.fixture-dc-date-only-column"
+                "formula.validation.fixture-dc-date-only-column",
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-wm-date-time-column"
               ]
             },
             {
               "id": "formula.validation.column-modified-allows-hour-ago",
               "depends_on": [
                 "formula.validation.column-rule-cross-column-accepted",
-                "formula.validation.fixture-wm-date-time-column"
+                "formula.validation.fixture-wm-date-time-column",
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-dc-date-only-column"
               ]
             },
             {
               "id": "formula.validation.column-modified-rejects-hour-ahead",
               "depends_on": [
                 "formula.validation.column-rule-cross-column-accepted",
-                "formula.validation.fixture-wm-date-time-column"
+                "formula.validation.fixture-wm-date-time-column",
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-dc-date-only-column"
               ]
             },
             {
               "id": "formula.validation.column-modified-update-sees-own-save",
               "depends_on": [
                 "formula.validation.column-rule-cross-column-accepted",
-                "formula.validation.fixture-wm-date-time-column"
+                "formula.validation.fixture-wm-date-time-column",
+                "formula.validation.fixture-dm-date-only-column",
+                "formula.validation.fixture-dc-date-only-column"
               ]
             },
             {

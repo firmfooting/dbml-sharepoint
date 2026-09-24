@@ -249,6 +249,14 @@ def _void_ids(rows: dict[str, dict[str, str]]) -> set[str]:
     return {row_id for row_id, row in rows.items() if row["state"] == "void"}
 
 
+def _catalogued_dependents(probe: str, fixture: str) -> set[str]:
+    """The findings probe-catalog.json says `fixture` gates, so runtime and catalogue agree."""
+    catalog = json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
+    [entry] = [p for p in catalog["probes"] if p["file"] == probe]
+    return {finding["id"] for scenario in entry["scenarios"] for finding in scenario["findings"]
+            if fixture in finding["depends_on"]}
+
+
 #: The scratch list the today-semantics probe leaves, with the columns the two
 #: clock probes reuse by Title. A field is served whole, as a GET with no
 #: $select is on a live site.
@@ -372,6 +380,7 @@ def test_modified_clock_voids_the_rows_on_a_reused_column_of_the_wrong_shape() -
     assert "DisplayFormat differs: read 1, declared 0" in fixture["evidence"]
     # One shared rule covers all three columns, so every row is blocked, not only DM's.
     assert _void_ids(rows) == {"formula.validation.column-rule-cross-column-accepted", *_COLUMN_ALL}
+    assert _void_ids(rows) == _catalogued_dependents("modified-clock-probe.js", _FIXTURE_DM)
     assert all(_FIXTURE_DM in rows[row_id]["evidence"] for row_id in _COLUMN_ALL)
     assert not _item_writes(sent)
     assert not [r for r in sent if r["verb"] == "MERGE"]
@@ -421,6 +430,8 @@ def test_modified_clock_voids_the_rows_on_a_reused_column_that_is_not_optional(
     fixture = rows["formula.validation.fixture-dc-date-only-column"]
     assert fixture["outcome"] == "FAIL", fixture
     assert _void_ids(rows) == {"formula.validation.column-rule-cross-column-accepted", *_COLUMN_ALL}
+    assert _void_ids(rows) == _catalogued_dependents(
+        "modified-clock-probe.js", "formula.validation.fixture-dc-date-only-column")
     assert not _item_writes(sent)
 
 
@@ -443,6 +454,7 @@ def test_list_modified_clock_voids_the_rows_on_a_reused_column_of_the_wrong_shap
     assert rows[_FIXTURE_DM]["outcome"] == "FAIL"
     assert "TypeAsString differs" in rows[_FIXTURE_DM]["evidence"]
     assert _void_ids(rows) == _LIST_ALL
+    assert _void_ids(rows) == _catalogued_dependents("list-modified-clock-probe.js", _FIXTURE_DM)
     assert not _item_writes(sent)
     assert not [r for r in sent if r["verb"] == "MERGE"]
 
@@ -587,6 +599,7 @@ def test_datetime_sentinel_voids_on_a_column_renamed_to_probe_when() -> None:
     assert rows[_PROBE_WHEN]["outcome"] == "FAIL", rows[_PROBE_WHEN]
     assert "InternalName differs" in rows[_PROBE_WHEN]["evidence"]
     assert _void_ids(rows) == _TIME_OF_DAY
+    assert _void_ids(rows) == _catalogued_dependents("datetime-sentinel-probe.js", _PROBE_WHEN)
 
 
 def test_datetime_sentinel_voids_the_time_of_day_rows_on_a_reused_date_only_column() -> None:
