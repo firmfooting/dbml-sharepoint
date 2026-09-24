@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHY A DECLARED FOLDER CREATE IS REFUSED
  *
- * REVISION: efacd22c
+ * REVISION: f03f24d3
  *
  * ONE QUESTION:
  *   folders/add(url=) is measured working. On a live deploy it answered
@@ -316,6 +316,72 @@
     if (evidence) console.log(`      evidence: ${evidence}`);
   };
 
+  // ---- Fixtures (#559) -----------------------------------------------
+  // Why a response carries no reading, or null when it does. Learn documents
+  // 429 and 503 as the two SharePoint Online throttle statuses.
+  const unanswered = (r) => {
+    if (r.ok) {
+      return r.body !== null && typeof r.body === 'object'
+        ? null : `answered HTTP ${r.status} with no payload`;
+    }
+    if (r.status === 429 || r.status === 503) return `was throttled (HTTP ${r.status})`;
+    if (r.status === 408) return 'timed out (HTTP 408)';
+    if (r.status === 401 || r.status === 403) return `was not authorised (HTTP ${r.status})`;
+    return isRefusal(r.status) ? `was refused (HTTP ${r.status})` : `did not answer (HTTP ${r.status})`;
+  };
+
+  // A voided row keeps its question and is counted apart from open and answered.
+  const voidDependents = (ids, reason) => {
+    for (const id of ids) {
+      const row = RESULTS.find((r) => r.id === id);
+      record(id, row ? row.question : id, 'NOT ESTABLISHED', reason, 'void');
+    }
+  };
+
+  // `read` resolves to a harness response ({ ok, status, body }). `declared`
+  // maps each property the measurement depends on to a value or a predicate.
+  // PASS needs every one read back; otherwise FAIL, void `dependents`, false.
+  const establishFixture = async (id, read, declared, dependents) => {
+    const row = RESULTS.find((r) => r.id === id);
+    const question = row ? row.question : id;
+    const problems = [];
+    const seen = [];
+    let got = null;
+    let threw = false;
+    try {
+      got = await read();
+    } catch (err) {
+      threw = true;
+      problems.push(`the read threw: ${err && err.message ? err.message : String(err)}`);
+    }
+    if (!threw) {
+      const silent = got && typeof got === 'object' ? unanswered(got) : 'returned no response';
+      if (silent) problems.push(`the read ${silent}`);
+    }
+    if (!problems.length) {
+      for (const [name, want] of Object.entries(declared)) {
+        if (!Object.prototype.hasOwnProperty.call(got.body, name) || got.body[name] === undefined) {
+          problems.push(`${name} is absent from the payload`);
+          continue;
+        }
+        const value = got.body[name];
+        seen.push(`${name}=${JSON.stringify(value)}`);
+        const held = typeof want === 'function' ? want(value) === true : value === want;
+        if (!held) {
+          problems.push(`${name} differs: read ${JSON.stringify(value)}, declared `
+            + (typeof want === 'function' ? 'by a predicate it fails' : JSON.stringify(want)));
+        }
+      }
+    }
+    if (!problems.length) {
+      record(id, question, 'PASS', `read back ${seen.join(', ')}`);
+      return true;
+    }
+    record(id, question, 'FAIL', problems.join('; ') + (seen.length ? `; read ${seen.join(', ')}` : ''));
+    voidDependents(dependents, `the fixture ${id} did not hold: ${problems.join('; ')}`);
+    return false;
+  };
+
   const report = () => {
     console.log('\n==================== RESULTS ====================');
     for (const r of RESULTS) {
@@ -343,7 +409,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision efacd22c. Quote this when reporting results.');
+  log('INFO', 'probe revision f03f24d3. Quote this when reporting results.');
 
   const LIB_DEFAULT = 'dbmlsp Probe Folder Default';
   const LIB_NOCT = 'dbmlsp Probe Folder NoCT';
@@ -436,18 +502,24 @@
     return report();
   }
 
-  // Read back what each library actually is. OBSERVED, not asserted: the
-  // tenant's defaults are what this probe is trying to learn, so a mismatch
-  // here is a finding to print rather than a reason to stop.
-  const describe = async (title) => {
-    const r = await spGet(`${listPath(title)}?$select=BaseTemplate,ContentTypesEnabled,EnableFolderCreation`);
-    if (readFailed(r)) return `'${title}' did not read back (HTTP ${r.status})`;
-    return `'${title}' BaseTemplate ${r.body.BaseTemplate}, ContentTypesEnabled ${r.body.ContentTypesEnabled}, EnableFolderCreation ${r.body.EnableFolderCreation}`;
-  };
-  const shapes = `${await describe(LIB_DEFAULT)}; ${await describe(LIB_NOCT)}`;
-  record('library.doc-lib.fixture-library-created', Q.fixture, 'PASS',
-         `${libDefault.reused ? 'reused' : 'created'} '${LIB_DEFAULT}', `
-         + `${libNoCt.reused ? 'reused' : 'created'} '${LIB_NOCT}'. ${shapes}`);
+  // Both are reused by title, so each must read back as a library, and NoCT with content types off.
+  const shapeOf = (title) => spGet(`${listPath(title)}?$select=BaseTemplate,ContentTypesEnabled,EnableFolderCreation`);
+  log('INFO', `${libDefault.reused ? 'reused' : 'created'} '${LIB_DEFAULT}', `
+    + `${libNoCt.reused ? 'reused' : 'created'} '${LIB_NOCT}'.`);
+  // Both reads run inside the helper, so a read that throws is recorded rather than escaping.
+  const held = await establishFixture('library.doc-lib.fixture-library-created', async () => {
+    const shapeDefault = await shapeOf(LIB_DEFAULT);
+    if (!shapeDefault.ok) return shapeDefault;
+    const shapeNoCt = await shapeOf(LIB_NOCT);
+    if (!shapeNoCt.ok) return shapeNoCt;
+    log('INFO', `Default library shape: ${JSON.stringify(shapeDefault.body)}`);
+    return { ok: true, status: 200, body: {
+      DefaultBaseTemplate: (shapeDefault.body || {}).BaseTemplate,
+      NoCtBaseTemplate: (shapeNoCt.body || {}).BaseTemplate,
+      NoCtContentTypesEnabled: (shapeNoCt.body || {}).ContentTypesEnabled,
+    } };
+  }, { DefaultBaseTemplate: 101, NoCtBaseTemplate: 101, NoCtContentTypesEnabled: false }, IDS);
+  if (!held) return report();
 
   const rootOf = async (title) => {
     const r = await spGet(`${listPath(title)}/RootFolder?$select=ServerRelativeUrl`);

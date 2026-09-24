@@ -250,6 +250,72 @@
     if (evidence) console.log(`      evidence: ${evidence}`);
   };
 
+  // ---- Fixtures (#559) -----------------------------------------------
+  // Why a response carries no reading, or null when it does. Learn documents
+  // 429 and 503 as the two SharePoint Online throttle statuses.
+  const unanswered = (r) => {
+    if (r.ok) {
+      return r.body !== null && typeof r.body === 'object'
+        ? null : `answered HTTP ${r.status} with no payload`;
+    }
+    if (r.status === 429 || r.status === 503) return `was throttled (HTTP ${r.status})`;
+    if (r.status === 408) return 'timed out (HTTP 408)';
+    if (r.status === 401 || r.status === 403) return `was not authorised (HTTP ${r.status})`;
+    return isRefusal(r.status) ? `was refused (HTTP ${r.status})` : `did not answer (HTTP ${r.status})`;
+  };
+
+  // A voided row keeps its question and is counted apart from open and answered.
+  const voidDependents = (ids, reason) => {
+    for (const id of ids) {
+      const row = RESULTS.find((r) => r.id === id);
+      record(id, row ? row.question : id, 'NOT ESTABLISHED', reason, 'void');
+    }
+  };
+
+  // `read` resolves to a harness response ({ ok, status, body }). `declared`
+  // maps each property the measurement depends on to a value or a predicate.
+  // PASS needs every one read back; otherwise FAIL, void `dependents`, false.
+  const establishFixture = async (id, read, declared, dependents) => {
+    const row = RESULTS.find((r) => r.id === id);
+    const question = row ? row.question : id;
+    const problems = [];
+    const seen = [];
+    let got = null;
+    let threw = false;
+    try {
+      got = await read();
+    } catch (err) {
+      threw = true;
+      problems.push(`the read threw: ${err && err.message ? err.message : String(err)}`);
+    }
+    if (!threw) {
+      const silent = got && typeof got === 'object' ? unanswered(got) : 'returned no response';
+      if (silent) problems.push(`the read ${silent}`);
+    }
+    if (!problems.length) {
+      for (const [name, want] of Object.entries(declared)) {
+        if (!Object.prototype.hasOwnProperty.call(got.body, name) || got.body[name] === undefined) {
+          problems.push(`${name} is absent from the payload`);
+          continue;
+        }
+        const value = got.body[name];
+        seen.push(`${name}=${JSON.stringify(value)}`);
+        const held = typeof want === 'function' ? want(value) === true : value === want;
+        if (!held) {
+          problems.push(`${name} differs: read ${JSON.stringify(value)}, declared `
+            + (typeof want === 'function' ? 'by a predicate it fails' : JSON.stringify(want)));
+        }
+      }
+    }
+    if (!problems.length) {
+      record(id, question, 'PASS', `read back ${seen.join(', ')}`);
+      return true;
+    }
+    record(id, question, 'FAIL', problems.join('; ') + (seen.length ? `; read ${seen.join(', ')}` : ''));
+    voidDependents(dependents, `the fixture ${id} did not hold: ${problems.join('; ')}`);
+    return false;
+  };
+
   const report = () => {
     console.log('\n==================== RESULTS ====================');
     for (const r of RESULTS) {
@@ -288,6 +354,12 @@
   expect('formula.validation.column-modified-allows-hour-ago', 'WM = now - 1 h');
   expect('formula.validation.column-modified-rejects-hour-ahead', 'WM = now + 1 h');
   expect('formula.validation.column-modified-update-sees-own-save', 'an update to WM = five seconds ago saves against this save\'s Modified');
+  expect('formula.validation.fixture-dm-date-only-column', 'DM reads back as a date-only DateTime column');
+  expect('formula.validation.fixture-dc-date-only-column', 'DC reads back as a date-only DateTime column');
+  expect('formula.validation.fixture-wm-date-time-column', 'WM reads back as a date-and-time DateTime column');
+  const DM_ROWS = ['formula.validation.column-modified-allows-yesterday', 'formula.validation.column-modified-allows-today', 'formula.validation.column-modified-rejects-tomorrow'];
+  const DC_ROWS = ['formula.validation.column-created-allows-today', 'formula.validation.column-created-rejects-tomorrow'];
+  const WM_ROWS = ['formula.validation.column-modified-allows-hour-ago', 'formula.validation.column-modified-rejects-hour-ahead', 'formula.validation.column-modified-update-sees-own-save'];
 
   if (!CONFIRMED) {
     log('INFO', `Would add three columns with validation rules to '${LIST}' on ${WEB} and save nine items.`);
@@ -328,20 +400,41 @@
   const fields = `${listPath}/fields`;
   const items = `${listPath}/items`;
   const have = new Set(((await spGet(`${fields}?$select=Title&$top=500`)).body?.value || []).map((f) => f.Title));
-  const ensure = async (title, displayFormat, formula, message) => {
+  // Each column is reused by Title, so its shape is read back before any rule or save rests on it.
+  const COLUMNS = [
+    ['DM', 0, 'formula.validation.fixture-dm-date-only-column'],
+    ['DC', 0, 'formula.validation.fixture-dc-date-only-column'],
+    ['WM', 1, 'formula.validation.fixture-wm-date-time-column'],
+  ];
+  // One shared rule covers all three, so any column that fails blocks every row.
+  const ALL_ROWS = [...DM_ROWS, ...DC_ROWS, ...WM_ROWS];
+  let shaped = true;
+  for (const [title, displayFormat, fixture] of COLUMNS) {
     if (!have.has(title)) {
       const made = await post(fields, { __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4, Title: title, DisplayFormat: displayFormat });
-      if (!made.ok) return { ok: false, detail: `${title} create ${made.status} ${reason(made)}` };
+      log(made.ok ? 'OK' : 'FAIL', `${title} create answered HTTP ${made.status}${made.ok ? '' : ` ${reason(made)}`}`);
     }
-    const set = await post(`${fields}/getbytitle('${enc(title)}')`, {
+    // The whole field is read: a $select naming a property the entity lacks answers 400.
+    const held = await establishFixture(fixture,
+      () => spGet(`${fields}/getbyinternalnameortitle('${enc(title)}')`),
+      { InternalName: title, TypeAsString: 'DateTime', DisplayFormat: displayFormat,
+        ReadOnlyField: false, EnforceUniqueValues: false,
+        Required: false, DefaultValue: (v) => v === null || v === '',
+        DefaultFormula: (v) => v === null || v === '' },
+      ['formula.validation.column-rule-cross-column-accepted', ...ALL_ROWS]);
+    shaped = held && shaped;
+  }
+  if (!shaped) return report();
+  const ensure = async (title, formula, message) => {
+    const set = await post(`${fields}/getbyinternalnameortitle('${enc(title)}')`, {
       __metadata: { type: 'SP.FieldDateTime' }, ValidationFormula: formula, ValidationMessage: message,
     }, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
     return { ok: set.ok, detail: `${title} ${set.ok ? 'rule accepted' : `rule refused ${set.status} ${reason(set)}`}` };
   };
   const rules = [
-    await ensure('DM', 0, '=[DM]<=[Modified]', 'DM after Modified'),
-    await ensure('DC', 0, '=[DC]<=[Created]', 'DC after Created'),
-    await ensure('WM', 1, '=[WM]<=[Modified]', 'WM after Modified'),
+    await ensure('DM', '=[DM]<=[Modified]', 'DM after Modified'),
+    await ensure('DC', '=[DC]<=[Created]', 'DC after Created'),
+    await ensure('WM', '=[WM]<=[Modified]', 'WM after Modified'),
   ];
   const accepted = rules.every((r) => r.ok);
   record('formula.validation.column-rule-cross-column-accepted', 'column rules against [Modified] and [Created] are accepted', accepted ? 'ACCEPTED' : 'REFUSED', rules.map((r) => r.detail).join('; '));

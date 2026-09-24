@@ -213,7 +213,8 @@ def test_native_index_voids_the_rows_a_failed_control_would_orphan() -> None:
         for scenario in descriptor["scenarios"]
         for finding in scenario["findings"]
     }
-    source = (MANUAL / "native-index-probe.js").read_text(encoding="utf-8")
+    # The template, not the render: the shared harness voids rows of its own.
+    source = (MANUAL / "templates" / "native-index-probe.js.j2").read_text(encoding="utf-8")
 
     control = "scale.native-idx.control-index-readable"
     comparison = "scale.index.odata-comparison-found-list"

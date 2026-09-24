@@ -259,6 +259,72 @@
     if (evidence) console.log(`      evidence: ${evidence}`);
   };
 
+  // ---- Fixtures (#559) -----------------------------------------------
+  // Why a response carries no reading, or null when it does. Learn documents
+  // 429 and 503 as the two SharePoint Online throttle statuses.
+  const unanswered = (r) => {
+    if (r.ok) {
+      return r.body !== null && typeof r.body === 'object'
+        ? null : `answered HTTP ${r.status} with no payload`;
+    }
+    if (r.status === 429 || r.status === 503) return `was throttled (HTTP ${r.status})`;
+    if (r.status === 408) return 'timed out (HTTP 408)';
+    if (r.status === 401 || r.status === 403) return `was not authorised (HTTP ${r.status})`;
+    return isRefusal(r.status) ? `was refused (HTTP ${r.status})` : `did not answer (HTTP ${r.status})`;
+  };
+
+  // A voided row keeps its question and is counted apart from open and answered.
+  const voidDependents = (ids, reason) => {
+    for (const id of ids) {
+      const row = RESULTS.find((r) => r.id === id);
+      record(id, row ? row.question : id, 'NOT ESTABLISHED', reason, 'void');
+    }
+  };
+
+  // `read` resolves to a harness response ({ ok, status, body }). `declared`
+  // maps each property the measurement depends on to a value or a predicate.
+  // PASS needs every one read back; otherwise FAIL, void `dependents`, false.
+  const establishFixture = async (id, read, declared, dependents) => {
+    const row = RESULTS.find((r) => r.id === id);
+    const question = row ? row.question : id;
+    const problems = [];
+    const seen = [];
+    let got = null;
+    let threw = false;
+    try {
+      got = await read();
+    } catch (err) {
+      threw = true;
+      problems.push(`the read threw: ${err && err.message ? err.message : String(err)}`);
+    }
+    if (!threw) {
+      const silent = got && typeof got === 'object' ? unanswered(got) : 'returned no response';
+      if (silent) problems.push(`the read ${silent}`);
+    }
+    if (!problems.length) {
+      for (const [name, want] of Object.entries(declared)) {
+        if (!Object.prototype.hasOwnProperty.call(got.body, name) || got.body[name] === undefined) {
+          problems.push(`${name} is absent from the payload`);
+          continue;
+        }
+        const value = got.body[name];
+        seen.push(`${name}=${JSON.stringify(value)}`);
+        const held = typeof want === 'function' ? want(value) === true : value === want;
+        if (!held) {
+          problems.push(`${name} differs: read ${JSON.stringify(value)}, declared `
+            + (typeof want === 'function' ? 'by a predicate it fails' : JSON.stringify(want)));
+        }
+      }
+    }
+    if (!problems.length) {
+      record(id, question, 'PASS', `read back ${seen.join(', ')}`);
+      return true;
+    }
+    record(id, question, 'FAIL', problems.join('; ') + (seen.length ? `; read ${seen.join(', ')}` : ''));
+    voidDependents(dependents, `the fixture ${id} did not hold: ${problems.join('; ')}`);
+    return false;
+  };
+
   const report = () => {
     console.log('\n==================== RESULTS ====================');
     for (const r of RESULTS) {
@@ -304,6 +370,14 @@
   expect('formula.validation.list-modified-update-sees-own-save', 'an update to WM = five seconds before its own save saves');
   expect('formula.validation.control-list-modified-update-rejects-hour-ahead', 'an update to WM = now + 1 h is refused (control)');
   expect('formula.validation.fixture-list-rule-cleared', 'the list validation formula is cleared again');
+  expect('formula.validation.fixture-dm-date-only-column', 'DM reads back as a date-only DateTime column');
+  expect('formula.validation.fixture-dc-date-only-column', 'DC reads back as a date-only DateTime column');
+  expect('formula.validation.fixture-wm-date-time-column', 'WM reads back as a date-and-time DateTime column');
+  const RULE_ROWS = ['formula.validation.list-modified-rule-accepted', 'formula.validation.list-modified-rule-readback'];
+  const DM_ROWS = ['formula.validation.list-modified-allows-yesterday', 'formula.validation.list-modified-allows-today', 'formula.validation.list-modified-rejects-tomorrow', 'formula.validation.control-list-modified-rejects-thirty-days'];
+  const DC_ROWS = ['formula.validation.list-created-allows-today', 'formula.validation.list-created-rejects-tomorrow'];
+  const UPDATE_ROWS = ['formula.validation.list-modified-update-sees-own-save', 'formula.validation.control-list-modified-update-rejects-hour-ahead'];
+  const WM_ROWS = ['formula.validation.list-modified-allows-20h-ago', 'formula.validation.list-modified-allows-hour-ago', 'formula.validation.list-modified-rejects-hour-ahead', 'formula.validation.list-modified-rejects-20h-ahead', 'formula.validation.fixture-update-seed-created', ...UPDATE_ROWS];
 
   if (!CONFIRMED) {
     log('INFO', `Would set and clear a list validation formula on '${LIST}' on ${WEB} and save a dozen items.`);
@@ -342,6 +416,29 @@
   }
   const itemType = list.body.ListItemEntityTypeFullName;
   const items = `${listPath}/items`;
+  // DM, DC and WM are left by the modified-clock probe and reused by Title, so each shape is read back first.
+  // The run stops on any failed column, so each fixture blocks every row.
+  const ALL_ROWS = [...RULE_ROWS, ...DM_ROWS, ...DC_ROWS, ...WM_ROWS];
+  let shaped = true;
+  for (const [title, displayFormat, fixture] of [
+    ['DM', 0, 'formula.validation.fixture-dm-date-only-column'],
+    ['DC', 0, 'formula.validation.fixture-dc-date-only-column'],
+    ['WM', 1, 'formula.validation.fixture-wm-date-time-column'],
+  ]) {
+    const field = `${listPath}/fields/getbyinternalnameortitle('${enc(title)}')`;
+    // modified-clock leaves column rules on these, which would refuse saves the list rule is measured on.
+    const clear = await post(field, { __metadata: { type: 'SP.FieldDateTime' }, ValidationFormula: '', ValidationMessage: '' },
+      { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+    log(clear.ok ? 'OK' : 'WARN', `${title} column rule clear answered HTTP ${clear.status}`);
+    const held = await establishFixture(fixture, () => spGet(field),
+      { InternalName: title, TypeAsString: 'DateTime', DisplayFormat: displayFormat,
+        ValidationFormula: (v) => v === null || v === '',
+        ReadOnlyField: false, EnforceUniqueValues: false,
+        Required: false, DefaultValue: (v) => v === null || v === '',
+        DefaultFormula: (v) => v === null || v === '' }, ALL_ROWS);
+    shaped = held && shaped;
+  }
+  if (!shaped) return report();
   const setRule = async (formula, message) => post(listPath, {
     __metadata: { type: 'SP.List' }, ValidationFormula: formula, ValidationMessage: message,
   }, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
@@ -375,21 +472,26 @@
   }
 
   const seed = await save('update-seed', { WM: new Date(nowUtc.getTime() - 3600 * 1000).toISOString() });
-  if (seed.ok) {
-    const seedId = seed.body.d.Id;
-    const before = await spGet(`${items}(${seedId})?$select=Id,Modified`);
-    record('formula.validation.fixture-update-seed-created', 'a seed item with WM = now - 1 h is created', 'PASS', `item ${seedId}; Modified ${before.body && before.body.Modified}; waiting 10 s`);
-    await sleep(10000);
-    const t1 = new Date();
-    const value = new Date(t1.getTime() - 5000).toISOString();
-    const upd = await post(`${items}(${seedId})`, { __metadata: { type: itemType }, WM: value }, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
-    const after = await spGet(`${items}(${seedId})?$select=Id,Modified,WM`);
-    record('formula.validation.list-modified-update-sees-own-save', 'an update to WM = five seconds before its own save saves', upd.ok ? 'SAVED' : 'REFUSED',
-      `update at ${t1.toISOString()} to ${value}: ${verdict(upd)}; Modified now ${after.body && after.body.Modified}; WM ${after.body && after.body.WM}`);
-    const upd2 = await post(`${items}(${seedId})`, { __metadata: { type: itemType }, WM: new Date(Date.now() + 3600 * 1000).toISOString() }, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
-    record('formula.validation.control-list-modified-update-rejects-hour-ahead', 'an update to WM = now + 1 h is refused (control)', upd2.ok ? 'SAVED' : 'REFUSED', verdict(upd2));
+  const seedId = seed.ok && seed.body && seed.body.d ? seed.body.d.Id : null;
+  if (seedId !== null && seedId !== undefined) {
+    const seeded = await establishFixture('formula.validation.fixture-update-seed-created',
+      () => spGet(`${items}(${seedId})?$select=Id,Modified,WM`),
+      { Id: seedId, Modified: (v) => typeof v === 'string', WM: (v) => typeof v === 'string' && v !== '' },
+      UPDATE_ROWS);
+    if (seeded) {
+      await sleep(10000);
+      const t1 = new Date();
+      const value = new Date(t1.getTime() - 5000).toISOString();
+      const upd = await post(`${items}(${seedId})`, { __metadata: { type: itemType }, WM: value }, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+      const after = await spGet(`${items}(${seedId})?$select=Id,Modified,WM`);
+      record('formula.validation.list-modified-update-sees-own-save', 'an update to WM = five seconds before its own save saves', upd.ok ? 'SAVED' : 'REFUSED',
+        `update at ${t1.toISOString()} to ${value}: ${verdict(upd)}; Modified now ${after.body && after.body.Modified}; WM ${after.body && after.body.WM}`);
+      const upd2 = await post(`${items}(${seedId})`, { __metadata: { type: itemType }, WM: new Date(Date.now() + 3600 * 1000).toISOString() }, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+      record('formula.validation.control-list-modified-update-rejects-hour-ahead', 'an update to WM = now + 1 h is refused (control)', upd2.ok ? 'SAVED' : 'REFUSED', verdict(upd2));
+    }
   } else {
     record('formula.validation.fixture-update-seed-created', 'a seed item with WM = now - 1 h is created', 'FAIL', `could not create the seed item: HTTP ${seed.status} ${reason(seed)}`);
+    voidDependents(UPDATE_ROWS, 'the fixture formula.validation.fixture-update-seed-created was not created');
   }
 
   const cleared = await setRule('', '');

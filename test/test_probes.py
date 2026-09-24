@@ -329,12 +329,15 @@ def _first_argument(text: str, after_paren: int) -> str:
     """
     depth = 0
     quote: str | None = None
+    escaped = False
     for position in range(after_paren, len(text)):
         char = text[position]
         if quote is not None:
-            if char == "\\":
-                continue
-            if char == quote:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True  # the next character is content, even a quote
+            elif char == quote:
                 quote = None
             continue
         if char in "'\"`":
@@ -429,6 +432,107 @@ def test_question_call_detector_ignores_comments_and_strings() -> None:
     """
     assert RECORD_CALL.findall(text) == ["REAL"]
     assert EXPECT_CALL.findall(text) == ["REAL"]
+
+
+# === A fixture row may not be a literal PASS (#559) ========================
+RECORD_HEAD = re.compile(r"^[ \t]*record\(", re.MULTILINE)
+
+#: A ratchet: each literal PASS here follows a guard in its own template.
+#: Entries come out when the row moves onto establishFixture, and none go in.
+LITERAL_FIXTURE_PASSES = {
+    ("batch-field-create-probe.js.j2", "transport.batch.fixture-scratch-list"):
+        "reached only after the create and an Id read-back both answered",
+    ("boolean-field-probe.js.j2", "field.boolean.fixture-scratch-list"):
+        "reached only after the create and an Id read-back both answered",
+    ("list-identity-cache-probe.js.j2", "transport.cache.fixture-list-created"):
+        "reached only after the create and an Id read-back both answered",
+    ("operator-safety-grant-probe.js.j2", "access.list-acl.fixture-scratch-list"):
+        "reached only after an ownership claim and an inheritance read both held",
+    ("throttle-batch-probe.js.j2", "transport.throttle.fixture-scratch-list"):
+        "reached only after the create and an Id read-back both answered",
+}
+
+
+def _arguments(text: str, after_paren: int, wanted: int) -> list[str]:
+    """The first `wanted` top-level arguments of a call, scanned as `_first_argument` is."""
+    found: list[str] = []
+    start = after_paren
+    while len(found) < wanted:
+        argument = _first_argument(text, start)
+        found.append(argument)
+        start += len(argument)
+        if start >= len(text) or text[start] != ",":
+            break
+        start += 1
+    return found
+
+
+#: A JS string literal in any quote style, with no interpolation in a template.
+STRING_LITERAL = re.compile(r"\s*(?:'([^'\\]*)'|\"([^\"\\]*)\"|`([^`\\$]*)`)\s*")
+
+
+def _string_value(argument: str) -> str | None:
+    literal = STRING_LITERAL.fullmatch(argument)
+    return None if literal is None else next(g for g in literal.groups() if g is not None)
+
+
+def _literal_fixture_passes(text: str) -> list[str]:
+    """Fixture ids this source records with the outcome written as the literal 'PASS'."""
+    ids = []
+    for call in RECORD_HEAD.finditer(text):
+        arguments = _arguments(text, call.end(), 3)
+        if len(arguments) < 3:
+            continue
+        fixture = _string_value(arguments[0])
+        if fixture and "fixture" in fixture and _string_value(arguments[2]) == "PASS":
+            ids.append(fixture)
+    return ids
+
+
+def test_no_fixture_row_is_recorded_as_a_literal_pass() -> None:
+    """A literal cannot fail, so a fixture recorded that way establishes nothing.
+
+    `establishFixture` in the shared harness reads the declared properties back
+    and voids the dependents when one does not hold.
+    """
+    offenders = []
+    allowed = set()
+    templates = sorted(TEMPLATES.glob("*.js.j2"))
+    assert len(templates) >= _MIN_TEMPLATES, f"only {len(templates)} templates scanned"
+    for path in templates:
+        for fixture in _literal_fixture_passes(path.read_text(encoding="utf-8")):
+            if (path.name, fixture) in LITERAL_FIXTURE_PASSES:
+                allowed.add((path.name, fixture))
+            else:
+                offenders.append(f"{path.name}: {fixture}")
+    assert not offenders, (
+        f"Fixture row(s) recorded as a literal 'PASS': {offenders}. Read the fixture back "
+        f"through establishFixture, which records PASS only when every declared property holds."
+    )
+    assert allowed == set(LITERAL_FIXTURE_PASSES), (
+        f"Stale LITERAL_FIXTURE_PASSES entries, remove them: "
+        f"{sorted(set(LITERAL_FIXTURE_PASSES) - allowed)}"
+    )
+
+
+def test_the_literal_pass_detector_reads_the_shapes_it_claims_to() -> None:
+    text = """\
+      record('a.b.fixture-one', 'q', 'PASS', 'e');
+      record('a.b.fixture-two', `q ${x}`,
+             'PASS', `built from ${y}, with a comma`);
+      record('a.b.fixture-three', 'q', held ? 'PASS' : 'FAIL', 'e');
+      record('a.b.control-four', 'q', 'PASS', 'e');
+      record(id, 'q', 'PASS', 'e');
+      // record('a.b.fixture-five', 'q', 'PASS', 'e');
+      record('a.b.fixture-six', 'the owner\\'s fixture', 'PASS', 'e');
+      record("a.b.fixture-seven", "q", "PASS", "e");
+      record(`a.b.fixture-eight`, 'q', `PASS`, 'e');
+      record('a.b.fixture-nine', 'q', `${outcome}`, 'e');
+    """
+    assert _literal_fixture_passes(text) == [
+        "a.b.fixture-one", "a.b.fixture-two", "a.b.fixture-six",
+        "a.b.fixture-seven", "a.b.fixture-eight",
+    ]
 
 
 def test_probes_carry_no_control_characters() -> None:

@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY COLUMN INTERACTIONS
  *
- * REVISION: 8bb901af
+ * REVISION: b946faa0
  *
  * ONE QUESTION:
  *   How do multi-value columns and custom column formatting behave on a document library?
@@ -278,6 +278,72 @@
     if (evidence) console.log(`      evidence: ${evidence}`);
   };
 
+  // ---- Fixtures (#559) -----------------------------------------------
+  // Why a response carries no reading, or null when it does. Learn documents
+  // 429 and 503 as the two SharePoint Online throttle statuses.
+  const unanswered = (r) => {
+    if (r.ok) {
+      return r.body !== null && typeof r.body === 'object'
+        ? null : `answered HTTP ${r.status} with no payload`;
+    }
+    if (r.status === 429 || r.status === 503) return `was throttled (HTTP ${r.status})`;
+    if (r.status === 408) return 'timed out (HTTP 408)';
+    if (r.status === 401 || r.status === 403) return `was not authorised (HTTP ${r.status})`;
+    return isRefusal(r.status) ? `was refused (HTTP ${r.status})` : `did not answer (HTTP ${r.status})`;
+  };
+
+  // A voided row keeps its question and is counted apart from open and answered.
+  const voidDependents = (ids, reason) => {
+    for (const id of ids) {
+      const row = RESULTS.find((r) => r.id === id);
+      record(id, row ? row.question : id, 'NOT ESTABLISHED', reason, 'void');
+    }
+  };
+
+  // `read` resolves to a harness response ({ ok, status, body }). `declared`
+  // maps each property the measurement depends on to a value or a predicate.
+  // PASS needs every one read back; otherwise FAIL, void `dependents`, false.
+  const establishFixture = async (id, read, declared, dependents) => {
+    const row = RESULTS.find((r) => r.id === id);
+    const question = row ? row.question : id;
+    const problems = [];
+    const seen = [];
+    let got = null;
+    let threw = false;
+    try {
+      got = await read();
+    } catch (err) {
+      threw = true;
+      problems.push(`the read threw: ${err && err.message ? err.message : String(err)}`);
+    }
+    if (!threw) {
+      const silent = got && typeof got === 'object' ? unanswered(got) : 'returned no response';
+      if (silent) problems.push(`the read ${silent}`);
+    }
+    if (!problems.length) {
+      for (const [name, want] of Object.entries(declared)) {
+        if (!Object.prototype.hasOwnProperty.call(got.body, name) || got.body[name] === undefined) {
+          problems.push(`${name} is absent from the payload`);
+          continue;
+        }
+        const value = got.body[name];
+        seen.push(`${name}=${JSON.stringify(value)}`);
+        const held = typeof want === 'function' ? want(value) === true : value === want;
+        if (!held) {
+          problems.push(`${name} differs: read ${JSON.stringify(value)}, declared `
+            + (typeof want === 'function' ? 'by a predicate it fails' : JSON.stringify(want)));
+        }
+      }
+    }
+    if (!problems.length) {
+      record(id, question, 'PASS', `read back ${seen.join(', ')}`);
+      return true;
+    }
+    record(id, question, 'FAIL', problems.join('; ') + (seen.length ? `; read ${seen.join(', ')}` : ''));
+    voidDependents(dependents, `the fixture ${id} did not hold: ${problems.join('; ')}`);
+    return false;
+  };
+
   const report = () => {
     console.log('\n==================== RESULTS ====================');
     for (const r of RESULTS) {
@@ -305,7 +371,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 8bb901af. Quote this when reporting results.');
+  log('INFO', 'probe revision b946faa0. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibColInteractions';
   const TARGET_LIB = 'dbmlsp Probe LibColTarget';

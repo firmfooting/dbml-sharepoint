@@ -295,6 +295,28 @@
   expect('formula.validation.doubled-quote-literal-rejects-match', '...and rejects an item holding exactly that value');
   expect('formula.validation.doubled-quote-literal-allows-other', '...and leaves a different value alone');
   expect('formula.validation.backslash-quote-literal', 'The backslash convention instead: accepted, and does it parse');
+  expect('formula.datetime.fixture-probewhen-date-time-column', 'ProbeWhen reads back as a date-and-time DateTime column');
+  // Every row that saves or queries against ProbeWhen's time of day.
+  const TIME_OF_DAY_ROWS = [
+    'formula.datetime.now-function-accepted',
+    'formula.datetime.now-function-rejects-future',
+    'formula.datetime.control-now-function-allows-past',
+    'formula.datetime.today-rejects-earlier-today',
+    'formula.datetime.control-today-allows-yesterday',
+    'formula.datetime.today-plus-one-allows-later-today',
+    'formula.datetime.today-plus-one-rejects-two-days-out',
+    'formula.datetime.today-plus-one-ceiling-tomorrow-night',
+    'query.caml.control-real-element-selects',
+    'query.caml.bogus-element-accepted',
+    'query.caml-adhoc.now-element-inert',
+    'query.view-query.now-element-roundtrip',
+    'query.caml-adhoc.now-element-discriminates',
+    'query.caml-adhoc.now-element-include-time-discriminates',
+    'query.caml-adhoc.today-element-include-time-discriminates',
+    'query.caml-adhoc.today-element-date-granular',
+    'query.view-query.today-include-time-roundtrip',
+    'query.view-query.today-include-time-selects',
+  ];
 
   await resetList(LIST);
   let digest = await getDigest();
@@ -441,6 +463,13 @@
     }
     log('OK', `Created DateTime column '${FIELD}'.`);
   }
+  // Read back on create or reuse. DisplayFormat is DateTimeFieldFormatType on
+  // Learn, where 1 is DateTime; the whole field is read, as $select can 400.
+  const dateTimeHeld = await establishFixture(
+    'formula.datetime.fixture-probewhen-date-time-column',
+    () => spGet(`${fieldsPath}/getbyinternalnameortitle('${FIELD}')`),
+    { InternalName: FIELD, TypeAsString: 'DateTime', DisplayFormat: 1, ReadOnlyField: false },
+    [...TIME_OF_DAY_ROWS, 'expression.client-validation.now-sentinel-stored']);
 
   // ---- Timestamps -----------------------------------------------------
   // Written as UTC ISO, which is how SharePoint stores and how REST wants
@@ -542,467 +571,470 @@
                + bogus.text.slice(0, 200));
   await clearValidation();
 
-  // ---- now-function-* (V1 / V2): NOW() --------------------------------
-  const nowFormula = await setValidation(`=[${FIELD}]<=NOW()`);
-  if (!nowFormula.ok) {
-    record('formula.datetime.now-function-accepted', 'NOW() in a ValidationFormula', 'REFUSED',
-           `HTTP ${nowFormula.status}: ${nowFormula.text.slice(0, 300)}`);
-    record('formula.datetime.now-function-rejects-future', 'If NOW() was accepted, does it reject a future timestamp',
-           'NOT APPLICABLE', 'NOW() was refused at V1, so there is nothing to evaluate');
-    record('formula.datetime.control-now-function-allows-past', 'CONTROL: under the same NOW() rule, does an allowed value save',
-           'NOT APPLICABLE', 'NOW() was refused at V1, so there is no rule to control');
-  } else {
-    // Accepted is the surprising branch. Read it back before believing it:
-    // accepted-then-discarded is a distinct and worse outcome than either.
-    const back = await spGet(
-      `${fieldsPath}/getbyinternalnameortitle('${FIELD}')?$select=ValidationFormula`);
-    // A failed read-back is not a discard. Same rule the library probe's
-    // `view-fileleafref` and `header-fileleafref` (L6, L7) follow:
-    // "SharePoint threw the formula away" is a claim, and a throttled GET is
-    // not evidence for it.
-    if (!back.ok || back.body === null) {
-      record('formula.datetime.now-function-accepted', 'NOW() in a ValidationFormula', 'NOT ESTABLISHED',
-             `the MERGE returned HTTP ${nowFormula.status}, but the read-back failed `
-             + `(HTTP ${back.status}), so whether the formula was kept is unobserved, `
-             + 'and V2 below is then evaluating under a rule this run cannot confirm '
-             + 'is in force.');
+  // Named here because the eyes-on check at the end prints them.
+  const VIEW = 'dbmlsp probe now view';
+  const REAL_VIEW = 'dbmlsp probe today includetime view';
+  if (dateTimeHeld) {
+    // ---- now-function-* (V1 / V2): NOW() --------------------------------
+    const nowFormula = await setValidation(`=[${FIELD}]<=NOW()`);
+    if (!nowFormula.ok) {
+      record('formula.datetime.now-function-accepted', 'NOW() in a ValidationFormula', 'REFUSED',
+             `HTTP ${nowFormula.status}: ${nowFormula.text.slice(0, 300)}`);
+      record('formula.datetime.now-function-rejects-future', 'If NOW() was accepted, does it reject a future timestamp',
+             'NOT APPLICABLE', 'NOW() was refused at V1, so there is nothing to evaluate');
+      record('formula.datetime.control-now-function-allows-past', 'CONTROL: under the same NOW() rule, does an allowed value save',
+             'NOT APPLICABLE', 'NOW() was refused at V1, so there is no rule to control');
     } else {
-      const stored = back.body.ValidationFormula;
-      record('formula.datetime.now-function-accepted', 'NOW() in a ValidationFormula',
-             stored ? 'ACCEPTED' : 'ACCEPTED THEN DISCARDED',
-             `HTTP ${nowFormula.status}; reads back ${JSON.stringify(stored)}`);
-    }
-    // Inert is the outcome that would fool a deploy: it saves, it reads back
-    // equal, every phase passes, and the rule never fires.
-    const future = await trySave('V2 future by three hours', LATER_TODAY);
-    record('formula.datetime.now-function-rejects-future', 'If NOW() was accepted, does it reject a future timestamp',
-           future.saved ? 'ACCEPTED BUT INERT' : 'ENFORCED',
-           future.saved
-             ? `a timestamp three hours in the future SAVED despite the rule. ${future.detail}`
-             : `refused as intended. ${future.detail}`);
+      // Accepted is the surprising branch. Read it back before believing it:
+      // accepted-then-discarded is a distinct and worse outcome than either.
+      const back = await spGet(
+        `${fieldsPath}/getbyinternalnameortitle('${FIELD}')?$select=ValidationFormula`);
+      // A failed read-back is not a discard. Same rule the library probe's
+      // `view-fileleafref` and `header-fileleafref` (L6, L7) follow:
+      // "SharePoint threw the formula away" is a claim, and a throttled GET is
+      // not evidence for it.
+      if (!back.ok || back.body === null) {
+        record('formula.datetime.now-function-accepted', 'NOW() in a ValidationFormula', 'NOT ESTABLISHED',
+               `the MERGE returned HTTP ${nowFormula.status}, but the read-back failed `
+               + `(HTTP ${back.status}), so whether the formula was kept is unobserved, `
+               + 'and V2 below is then evaluating under a rule this run cannot confirm '
+               + 'is in force.');
+      } else {
+        const stored = back.body.ValidationFormula;
+        record('formula.datetime.now-function-accepted', 'NOW() in a ValidationFormula',
+               stored ? 'ACCEPTED' : 'ACCEPTED THEN DISCARDED',
+               `HTTP ${nowFormula.status}; reads back ${JSON.stringify(stored)}`);
+      }
+      // Inert is the outcome that would fool a deploy: it saves, it reads back
+      // equal, every phase passes, and the rule never fires.
+      const future = await trySave('V2 future by three hours', LATER_TODAY);
+      record('formula.datetime.now-function-rejects-future', 'If NOW() was accepted, does it reject a future timestamp',
+             future.saved ? 'ACCEPTED BUT INERT' : 'ENFORCED',
+             future.saved
+               ? `a timestamp three hours in the future SAVED despite the rule. ${future.detail}`
+               : `refused as intended. ${future.detail}`);
 
-    // V2C is the positive control for V2, under the SAME uncleared rule.
-    // YESTERDAY rather than a same-day stamp: -27h is outside the whole
-    // UTC-12..+14 offset range, so it is in the past whatever zone the site
-    // keeps, and the control needs no assumption about how NOW() handles
-    // zones, which is the very thing under test.
-    const past = await trySave('V2C yesterday under NOW()', YESTERDAY);
-    record('formula.datetime.control-now-function-allows-past', 'CONTROL: under the same NOW() rule, does an allowed value save',
-           past.saved ? 'PASS' : 'FAIL',
-           past.saved
-             ? `a timestamp 27 hours in the past saved, so the rule discriminates `
-               + `rather than refusing everything. ${past.detail}`
-             : 'the rule refused a value 27 hours in the PAST as well, so it refuses '
-               + 'everything and V2 above proves nothing about enforcement. '
-               + past.detail);
-    await dropControl(past.id, 'formula.datetime.control-now-function-allows-past');
-  }
-  await clearValidation();
-
-  // ---- today-rejects-earlier-today (V3): five templates assume this ---
-  if (!SAME_DAY_OK) {
-    record('formula.datetime.today-rejects-earlier-today', 'Under <= TODAY(), an item stamped EARLIER TODAY is rejected',
-           'NOT ESTABLISHED', 'time-of-day gate closed (see TZ0)');
-  } else {
-    const todayRule = await setValidation(`=[${FIELD}]<=TODAY()`);
-    if (!todayRule.ok) {
-      record('formula.datetime.today-rejects-earlier-today', 'Under <= TODAY(), an item stamped EARLIER TODAY is rejected',
-             'NOT ESTABLISHED',
-             `could not set the rule: HTTP ${todayRule.status} ${todayRule.text.slice(0, 200)}`);
-    } else {
-      const earlier = await trySave('V3 earlier today', EARLIER_TODAY);
-      record('formula.datetime.today-rejects-earlier-today', 'Under <= TODAY(), an item stamped EARLIER TODAY is rejected',
-             earlier.saved ? 'SAVED: assumption WRONG' : 'REJECTED: assumption HOLDS',
-             earlier.saved
-               ? 'a timestamp from earlier TODAY was accepted under <= TODAY(). Five '
-                 + 'templates carry a today+1 allowance that may be unnecessary. '
-                 + earlier.detail
-               : 'TODAY() is midnight and rejects same-day timestamps, which is why '
-                 + 'the today+1 allowance exists. ' + earlier.detail);
-
-      // V3C is the positive control for the decisive row, under the SAME
-      // uncleared rule. -27h crosses at least one local midnight in every
-      // zone even across a DST step, so it needs no extension of the
-      // same-day gate. Read the pair together: V3 alone cannot tell a
-      // midnight boundary from a rule that refuses every value.
-      const yesterday = await trySave('V3C yesterday under TODAY()', YESTERDAY);
-      record('formula.datetime.control-today-allows-yesterday', 'CONTROL: under the same TODAY() rule, does a value from yesterday save',
-             yesterday.saved ? 'PASS' : 'FAIL',
-             yesterday.saved
-               ? 'a timestamp 27 hours in the past saved under the same rule, so the '
-                 + 'refusal above discriminates rather than being a rule that refuses '
-                 + `everything. It bounds the boundary to somewhere in the last 27 `
-                 + `hours; it does NOT by itself pin it at midnight. ${yesterday.detail}`
+      // V2C is the positive control for V2, under the SAME uncleared rule.
+      // YESTERDAY rather than a same-day stamp: -27h is outside the whole
+      // UTC-12..+14 offset range, so it is in the past whatever zone the site
+      // keeps, and the control needs no assumption about how NOW() handles
+      // zones, which is the very thing under test.
+      const past = await trySave('V2C yesterday under NOW()', YESTERDAY);
+      record('formula.datetime.control-now-function-allows-past', 'CONTROL: under the same NOW() rule, does an allowed value save',
+             past.saved ? 'PASS' : 'FAIL',
+             past.saved
+               ? `a timestamp 27 hours in the past saved, so the rule discriminates `
+                 + `rather than refusing everything. ${past.detail}`
                : 'the rule refused a value 27 hours in the PAST as well, so it refuses '
-                 + 'everything and V3 above establishes nothing. ' + yesterday.detail);
-      await dropControl(yesterday.id, 'formula.datetime.control-today-allows-yesterday');
+                 + 'everything and V2 above proves nothing about enforcement. '
+                 + past.detail);
+      await dropControl(past.id, 'formula.datetime.control-now-function-allows-past');
     }
     await clearValidation();
-  }
 
-  // ---- today-plus-one-* (V4 / V5 / V6): the shipped idiom's ceiling ---
-  const allowance = await setValidation(`=[${FIELD}]<=TODAY()+1`);
-  if (!allowance.ok) {
-    for (const id of ['formula.datetime.today-plus-one-allows-later-today',
-                      'formula.datetime.today-plus-one-rejects-two-days-out',
-                      'formula.datetime.today-plus-one-ceiling-tomorrow-night']) {
-      record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED',
-             `could not set <= TODAY()+1: HTTP ${allowance.status} ${allowance.text.slice(0, 200)}`);
-    }
-  } else {
+    // ---- today-rejects-earlier-today (V3): five templates assume this ---
     if (!SAME_DAY_OK) {
-      record('formula.datetime.today-plus-one-allows-later-today', 'Under <= TODAY()+1, an item stamped LATER TODAY saves',
+      record('formula.datetime.today-rejects-earlier-today', 'Under <= TODAY(), an item stamped EARLIER TODAY is rejected',
              'NOT ESTABLISHED', 'time-of-day gate closed (see TZ0)');
     } else {
-      const later = await trySave('V4 later today', LATER_TODAY);
-      record('formula.datetime.today-plus-one-allows-later-today', 'Under <= TODAY()+1, an item stamped LATER TODAY saves',
-             later.saved ? 'PASS' : 'FAIL',
-             later.saved
-               ? 'the shipped idiom accepts a same-day timestamp, as intended. ' + later.detail
-               : 'the shipped idiom REJECTS a same-day timestamp, so five templates would '
-                 + 'refuse ordinary entries. ' + later.detail);
+      const todayRule = await setValidation(`=[${FIELD}]<=TODAY()`);
+      if (!todayRule.ok) {
+        record('formula.datetime.today-rejects-earlier-today', 'Under <= TODAY(), an item stamped EARLIER TODAY is rejected',
+               'NOT ESTABLISHED',
+               `could not set the rule: HTTP ${todayRule.status} ${todayRule.text.slice(0, 200)}`);
+      } else {
+        const earlier = await trySave('V3 earlier today', EARLIER_TODAY);
+        record('formula.datetime.today-rejects-earlier-today', 'Under <= TODAY(), an item stamped EARLIER TODAY is rejected',
+               earlier.saved ? 'SAVED: assumption WRONG' : 'REJECTED: assumption HOLDS',
+               earlier.saved
+                 ? 'a timestamp from earlier TODAY was accepted under <= TODAY(). Five '
+                   + 'templates carry a today+1 allowance that may be unnecessary. '
+                   + earlier.detail
+                 : 'TODAY() is midnight and rejects same-day timestamps, which is why '
+                   + 'the today+1 allowance exists. ' + earlier.detail);
+
+        // V3C is the positive control for the decisive row, under the SAME
+        // uncleared rule. -27h crosses at least one local midnight in every
+        // zone even across a DST step, so it needs no extension of the
+        // same-day gate. Read the pair together: V3 alone cannot tell a
+        // midnight boundary from a rule that refuses every value.
+        const yesterday = await trySave('V3C yesterday under TODAY()', YESTERDAY);
+        record('formula.datetime.control-today-allows-yesterday', 'CONTROL: under the same TODAY() rule, does a value from yesterday save',
+               yesterday.saved ? 'PASS' : 'FAIL',
+               yesterday.saved
+                 ? 'a timestamp 27 hours in the past saved under the same rule, so the '
+                   + 'refusal above discriminates rather than being a rule that refuses '
+                   + `everything. It bounds the boundary to somewhere in the last 27 `
+                   + `hours; it does NOT by itself pin it at midnight. ${yesterday.detail}`
+                 : 'the rule refused a value 27 hours in the PAST as well, so it refuses '
+                   + 'everything and V3 above establishes nothing. ' + yesterday.detail);
+        await dropControl(yesterday.id, 'formula.datetime.control-today-allows-yesterday');
+      }
+      await clearValidation();
     }
 
-    const twoDays = await trySave('V5 two days out', TWO_DAYS);
-    record('formula.datetime.today-plus-one-rejects-two-days-out', 'Under <= TODAY()+1, an item stamped TWO DAYS out is rejected',
-           twoDays.saved ? 'FAIL' : 'PASS',
-           twoDays.saved
-             ? 'the allowance is wider than one day. It did NOT reject +51 hours. ' + twoDays.detail
-             : 'rejected as intended. ' + twoDays.detail);
-
-    // The comments in five templates say "any time today passes, next month
-    // does not" and are silent on tomorrow. This is the row that lets them
-    // say something true about the actual ceiling.
-    if (!V6_SAFE) {
-      record('formula.datetime.today-plus-one-ceiling-tomorrow-night', 'Under <= TODAY()+1, the exact ceiling (tomorrow 23:00)',
-             'NOT ESTABLISHED',
-             `${TOMORROW_2300} is 23:00 tomorrow in THIS browser's zone, and the `
-             + 'site offset TZ0 determined does not put it exactly one site-local day '
-             + 'ahead. Either answer would be about a day this run cannot name, so '
-             + 'neither is recorded. Re-run from a machine in the site zone.');
+    // ---- today-plus-one-* (V4 / V5 / V6): the shipped idiom's ceiling ---
+    const allowance = await setValidation(`=[${FIELD}]<=TODAY()+1`);
+    if (!allowance.ok) {
+      for (const id of ['formula.datetime.today-plus-one-allows-later-today',
+                        'formula.datetime.today-plus-one-rejects-two-days-out',
+                        'formula.datetime.today-plus-one-ceiling-tomorrow-night']) {
+        record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED',
+               `could not set <= TODAY()+1: HTTP ${allowance.status} ${allowance.text.slice(0, 200)}`);
+      }
     } else {
-      const tomorrowNight = await trySave('V6 tomorrow 23:00', TOMORROW_2300);
-      record('formula.datetime.today-plus-one-ceiling-tomorrow-night', 'Under <= TODAY()+1, the exact ceiling (tomorrow 23:00)',
-             tomorrowNight.saved ? 'ALLOWANCE IS ~48H' : 'ALLOWANCE IS ~24H',
-             `${TOMORROW_2300} (23:00 tomorrow here, and site-local tomorrow under `
-             + 'the offset TZ0 determined) '
-             + (tomorrowNight.saved
-               ? 'SAVED, so TODAY()+1 permits the whole of tomorrow. The allowance is '
-                 + 'about 48 hours, not 24, and the template comments should say so. '
-               : 'was REJECTED, so TODAY()+1 is a midnight ceiling and the allowance is '
-                 + 'about 24 hours. ')
-             + tomorrowNight.detail);
-    }
-  }
-  await clearValidation();
+      if (!SAME_DAY_OK) {
+        record('formula.datetime.today-plus-one-allows-later-today', 'Under <= TODAY()+1, an item stamped LATER TODAY saves',
+               'NOT ESTABLISHED', 'time-of-day gate closed (see TZ0)');
+      } else {
+        const later = await trySave('V4 later today', LATER_TODAY);
+        record('formula.datetime.today-plus-one-allows-later-today', 'Under <= TODAY()+1, an item stamped LATER TODAY saves',
+               later.saved ? 'PASS' : 'FAIL',
+               later.saved
+                 ? 'the shipped idiom accepts a same-day timestamp, as intended. ' + later.detail
+                 : 'the shipped idiom REJECTS a same-day timestamp, so five templates would '
+                   + 'refuse ordinary entries. ' + later.detail);
+      }
 
-  // ---- Seed the two rows the CAML questions compare -------------------
-  // Created AFTER validation is cleared, so a leftover rule cannot silently
-  // stop the CAML fixtures from existing.
-  const seeded = {
-    earlier: (await trySave('CAML earlier today', EARLIER_TODAY)),
-    later: (await trySave('CAML later today', LATER_TODAY)),
-    yesterday: (await trySave('CAML yesterday', YESTERDAY)),
-  };
-  const camlReady = seeded.earlier.saved && seeded.later.saved && seeded.yesterday.saved;
-  if (!camlReady) {
-    log('FAIL', 'Could not seed the CAML fixture rows; C-rows will report NOT ESTABLISHED.');
-    log('INFO', `earlier: ${seeded.earlier.detail}`);
-    log('INFO', `later:   ${seeded.later.detail}`);
-    log('INFO', `yesterday: ${seeded.yesterday.detail}`);
-  }
+      const twoDays = await trySave('V5 two days out', TWO_DAYS);
+      record('formula.datetime.today-plus-one-rejects-two-days-out', 'Under <= TODAY()+1, an item stamped TWO DAYS out is rejected',
+             twoDays.saved ? 'FAIL' : 'PASS',
+             twoDays.saved
+               ? 'the allowance is wider than one day. It did NOT reject +51 hours. ' + twoDays.detail
+               : 'rejected as intended. ' + twoDays.detail);
 
-  // CamlQuery is one of the few endpoints that still wants odata=verbose:
-  // the entity needs its __metadata type hint, which nometadata rejects.
-  const caml = async (whereXml, includeTime) => {
-    digest = await getDigest();
-    const viewXml = `<View><Query><Where>${whereXml}</Where></Query><RowLimit>100</RowLimit></View>`;
-    const res = await spPost(`web/lists/getbytitle('${LIST}')/getitems`, {
-      query: { __metadata: { type: 'SP.CamlQuery' }, ViewXml: viewXml },
-    }, digest, {
-      Accept: 'application/json;odata=verbose',
-      'Content-Type': 'application/json;odata=verbose',
-    });
-    const rows = res.ok && res.body && res.body.d ? (res.body.d.results || []) : [];
-    return {
-      ok: res.ok,
-      status: res.status,
-      titles: rows.map((r) => r.Title).sort(),
-      text: res.text,
-      viewXml,
-      includeTime,
-    };
-  };
-  const value = (inner, includeTime) =>
-    `<Value Type="DateTime"${includeTime ? " IncludeTimeValue='TRUE'" : ''}>${inner}</Value>`;
-  const ltWhen = (inner, includeTime) =>
-    `<Lt><FieldRef Name="${FIELD}"/>${value(inner, includeTime)}</Lt>`;
-
-  const has = (titles, t) => titles.includes(t);
-  // The whole point: "earlier today" in and "later today" out. Anything
-  // else means the comparison is not seeing the time portion.
-  const verdictFor = (r, inner) => {
-    const e = has(r.titles, 'CAML earlier today');
-    const l = has(r.titles, 'CAML later today');
-    // An empty result from <Now/> is the INERT signature, not a broken
-    // query: the element does not resolve, the value is empty and nothing
-    // matches, which is what an invented element does in the same position
-    // (control-real-element-selects, and the A/B of 2026-07-29). Reporting
-    // it as "yesterday not returned" would file the predicted answer as a
-    // fault in the probe.
-    if (inner === '<Now/>' && r.titles.length === 0) {
-      return 'INERT: element not resolved (matches the invented-element result)';
-    }
-    // Yesterday's row is the sanity check otherwise: any sane "< now-ish"
-    // filter must return it. If it does not, the query ran but is not doing
-    // what its shape suggests, and the earlier/later reading is not worth
-    // having.
-    if (!has(r.titles, 'CAML yesterday')) return 'SUSPECT: yesterday not returned';
-    if (e && !l) return 'DISCRIMINATES (time compared)';
-    if (e && l) return 'BOTH RETURNED (time ignored, compared as a later boundary)';
-    if (!e && !l) return 'NEITHER RETURNED (time ignored, compared as midnight)';
-    return 'INVERTED: later-today returned but earlier-today did not';
-  };
-
-  // ---- control-real-element-selects: the CAML control -----------------
-  // The control here has to have a POSITIVE arm that can actually select.
-  // The one this replaces compared <Now/> with <Nowww/> and asked for
-  // different row counts, but <Now/> in a comparison is inert, so both
-  // arms return nothing on a working site and the control failed by
-  // construction. <Today/> is the element known to select, so the pair that
-  // discriminates is <Today/> against an invented name. All three rows below
-  // read the row stamped 27 hours ago, which is strictly earlier than
-  // site-local midnight under either candidate offset, so none of them is
-  // gated on the time of day.
-  const CONTROL_ROWS = [
-    'query.caml.control-real-element-selects',
-    'query.caml.bogus-element-accepted',
-    'query.caml-adhoc.now-element-inert',
-  ];
-  if (!camlReady) {
-    for (const id of CONTROL_ROWS) {
-      record(id, RESULTS.find((r) => r.id === id).question,
-             'NOT ESTABLISHED', 'the fixture rows could not be created');
-    }
-  } else {
-    const controlQuestion = 'CONTROL: <Today/> selects rows where an invented <Nowww/> selects none';
-    const real = await caml(ltWhen('<Today/>', false), false);
-    const junk = await caml(ltWhen('<Nowww/>', false), false);
-    const arms = `<Today/> -> ${real.ok ? JSON.stringify(real.titles) : `HTTP ${real.status}`}; `
-      + `<Nowww/> -> ${junk.ok ? JSON.stringify(junk.titles) : `HTTP ${junk.status}`}`;
-
-    // Read positively, and NOT as a control-: what SharePoint does with an
-    // unknown element name is a finding in its own right, and voiding the
-    // C-rows on the answer it actually gives would suppress it.
-    //
-    // 4xx only. A 500 is the shape a missing FieldRef already produces, so
-    // it cannot be told apart from the query failing for another reason.
-    const refusedByName = isRefusal(junk.status) && junk.status < 500;
-    record('query.caml.bogus-element-accepted', 'What CAML does with an unknown element name inside <Value>',
-           junk.ok ? 'ACCEPTED (no element-name validation)'
-                   : refusedByName ? 'REFUSED' : 'NOT ESTABLISHED',
-           junk.ok
-             ? `HTTP ${junk.status} and ${junk.titles.length} row(s) for ${junk.viewXml}. A CAML `
-               + 'query naming a column that does not exist was refused with HTTP 500 on the '
-               + 'today-source run of 2026-09-02, so the element name inside <Value> is the '
-               + 'part nothing validates: a wrong element in an emitted ViewQuery saves, reads '
-               + 'back byte-identical and renders an empty view, where a wrong FieldRef would '
-               + 'have been refused outright.'
-             : refusedByName
-               ? `refused with HTTP ${junk.status}: ${junk.text.slice(0, 260)}`
-               : `HTTP ${junk.status}, which is the request failing rather than the server `
-                 + `ruling on the element name: ${junk.text.slice(0, 200)}`);
-
-    if (!real.ok || !junk.ok) {
-      record('query.caml.control-real-element-selects', controlQuestion, 'NOT ESTABLISHED',
-             `${arms}. One arm did not run, so nothing was compared and C1-C7 are `
-             + 'unproven rather than answered: '
-             + (real.ok ? junk.text : real.text).slice(0, 200));
-    } else if (!has(real.titles, 'CAML yesterday')) {
-      record('query.caml.control-real-element-selects', controlQuestion, 'FAIL',
-             `${arms}. <Today/> did not return the row stamped 27 hours ago, which is `
-             + 'earlier than site-local midnight under either candidate offset, so the '
-             + 'comparison is not reaching the column and C1-C7 prove nothing.');
-    } else if (junk.titles.length > 0) {
-      record('query.caml.control-real-element-selects', controlQuestion, 'FAIL',
-             `${arms}. The invented element matched rows, so the element name is being `
-             + 'ignored and C1-C7 prove nothing about which element was read.');
-    } else {
-      record('query.caml.control-real-element-selects', controlQuestion, 'PASS',
-             `${arms}, the split this control needs: the real element matched and the `
-             + 'invented one matched nothing, so the query shape is parsed and the '
-             + 'element name reaches the comparison.');
-    }
-
-    // now-element-inert: the same question the retired control was asking
-    // backwards. <Now/> is compared against the arm that just selected, so
-    // an empty result is an answer rather than an absence.
-    const inertQuestion = '<Now/> against the rows <Today/> selected: does it select anything';
-    const nowArm = await caml(ltWhen('<Now/>', false), false);
-    if (!real.ok || !nowArm.ok) {
-      record('query.caml-adhoc.now-element-inert', inertQuestion, 'NOT ESTABLISHED',
-             `<Today/> -> ${real.ok ? JSON.stringify(real.titles) : `HTTP ${real.status}`}; `
-             + `<Now/> -> ${nowArm.ok ? JSON.stringify(nowArm.titles) : `HTTP ${nowArm.status}`}. `
-             + 'One arm did not run, so the two were not compared: '
-             + (real.ok ? nowArm.text : real.text).slice(0, 200));
-    } else if (!has(real.titles, 'CAML yesterday')) {
-      record('query.caml-adhoc.now-element-inert', inertQuestion, 'NOT ESTABLISHED',
-             `<Today/> -> ${JSON.stringify(real.titles)}; <Now/> -> ${JSON.stringify(nowArm.titles)}. `
-             + 'The <Today/> arm did not return the dependency row either, so an empty '
-             + '<Now/> result says nothing about <Now/>.');
-    } else if (nowArm.titles.length === 0) {
-      record('query.caml-adhoc.now-element-inert', inertQuestion, 'INERT (matches the invented-element signature)',
-             `<Today/> -> ${JSON.stringify(real.titles)}; <Now/> -> [], from the same list at `
-             + 'the same moment with only the element changed. That is the signature an '
-             + 'invented element leaves in the same position, and it agrees with the A/B '
-             + 'of 2026-07-29 recorded in analysis/condition_rendering.py.');
-    } else {
-      record('query.caml-adhoc.now-element-inert', inertQuestion, 'SELECTS (time compared)',
-             `<Today/> -> ${JSON.stringify(real.titles)}; <Now/> -> ${JSON.stringify(nowArm.titles)}. `
-             + '<Now/> matched rows, which contradicts the 2026-07-29 A/B and the filter '
-             + 'panel showing an empty value for that element. Re-run before acting on it, '
-             + 'and if it holds, conditions.py has a rendering to reconsider.');
-    }
-  }
-
-  // ---- now-element-roundtrip (C1): the deploy surface -----------------
-  // deploy.js writes ViewQuery and verifies by read-back, so "saves and
-  // survives the round trip" is the question that decides whether a `now`
-  // sentinel could be shipped at all.
-  // Creating a view is TWO calls, and the second is not optional.
-  //
-  // A view with no ViewFields displays nothing whether or not its filter
-  // matched, so its emptiness is not evidence. An empty result only counts
-  // when a non-empty one would have been visible.
-  //
-  // The fields cannot be passed to the create call as
-  // `ViewFields: { results: [...] }`: that wrapper is the odata=VERBOSE
-  // convention, and this harness sends nometadata, which REJECTS it rather
-  // than ignoring it ("The property 'results' does not exist on type
-  // 'SP.ViewFieldCollection'"), the same hazard recorded beside addField in
-  // calculated-choice-operand.js.j2. addviewfield works under either
-  // format.
-  const createView = async (title, query) => {
-    digest = await getDigest();
-    const made = await spPost(`web/lists/getbytitle('${LIST}')/views`, {
-      Title: title, ViewQuery: query, RowLimit: 100,
-    }, digest);
-    if (!made.ok) return { ok: false, status: made.status, text: made.text };
-    for (const column of ['Title', FIELD]) {
-      digest = await getDigest();
-      const added = await spPost(
-        `web/lists/getbytitle('${LIST}')/views/getbytitle('${title}')`
-        + `/viewfields/addviewfield('${column}')`, {}, digest);
-      if (!added.ok) {
-        return { ok: false, status: added.status,
-                 text: `view created but addviewfield('${column}') failed: ${added.text}` };
+      // The comments in five templates say "any time today passes, next month
+      // does not" and are silent on tomorrow. This is the row that lets them
+      // say something true about the actual ceiling.
+      if (!V6_SAFE) {
+        record('formula.datetime.today-plus-one-ceiling-tomorrow-night', 'Under <= TODAY()+1, the exact ceiling (tomorrow 23:00)',
+               'NOT ESTABLISHED',
+               `${TOMORROW_2300} is 23:00 tomorrow in THIS browser's zone, and the `
+               + 'site offset TZ0 determined does not put it exactly one site-local day '
+               + 'ahead. Either answer would be about a day this run cannot name, so '
+               + 'neither is recorded. Re-run from a machine in the site zone.');
+      } else {
+        const tomorrowNight = await trySave('V6 tomorrow 23:00', TOMORROW_2300);
+        record('formula.datetime.today-plus-one-ceiling-tomorrow-night', 'Under <= TODAY()+1, the exact ceiling (tomorrow 23:00)',
+               tomorrowNight.saved ? 'ALLOWANCE IS ~48H' : 'ALLOWANCE IS ~24H',
+               `${TOMORROW_2300} (23:00 tomorrow here, and site-local tomorrow under `
+               + 'the offset TZ0 determined) '
+               + (tomorrowNight.saved
+                 ? 'SAVED, so TODAY()+1 permits the whole of tomorrow. The allowance is '
+                   + 'about 48 hours, not 24, and the template comments should say so. '
+                 : 'was REJECTED, so TODAY()+1 is a midnight ceiling and the allowance is '
+                   + 'about 24 hours. ')
+               + tomorrowNight.detail);
       }
     }
-    return { ok: true, status: made.status, text: made.text };
-  };
+    await clearValidation();
 
-  const VIEW = 'dbmlsp probe now view';
-  const viewQuery = `<Where>${ltWhen('<Now/>', true)}</Where>`;
-  const madeView = await createView(VIEW, viewQuery);
-  if (!madeView.ok) {
-    record('query.view-query.now-element-roundtrip', 'A view ViewQuery containing <Now/> saves and reads back intact',
-           'REFUSED', `HTTP ${madeView.status}: ${madeView.text.slice(0, 300)}`);
-  } else {
-    const back = await spGet(
-      `web/lists/getbytitle('${LIST}')/views/getbytitle('${VIEW}')?$select=ViewQuery`);
-    if (readFailed(back)) {
-      record('query.view-query.now-element-roundtrip', 'A view ViewQuery containing <Now/> saves and reads back intact',
-             'NOT ESTABLISHED',
-             `the view was created (HTTP ${madeView.status}) but the ViewQuery `
-             + `read-back failed (HTTP ${back.status}). "SharePoint rewrote it" is a `
-             + 'claim, and nothing was read.');
+    // ---- Seed the two rows the CAML questions compare -------------------
+    // Created AFTER validation is cleared, so a leftover rule cannot silently
+    // stop the CAML fixtures from existing.
+    const seeded = {
+      earlier: (await trySave('CAML earlier today', EARLIER_TODAY)),
+      later: (await trySave('CAML later today', LATER_TODAY)),
+      yesterday: (await trySave('CAML yesterday', YESTERDAY)),
+    };
+    const camlReady = seeded.earlier.saved && seeded.later.saved && seeded.yesterday.saved;
+    if (!camlReady) {
+      log('FAIL', 'Could not seed the CAML fixture rows; C-rows will report NOT ESTABLISHED.');
+      log('INFO', `earlier: ${seeded.earlier.detail}`);
+      log('INFO', `later:   ${seeded.later.detail}`);
+      log('INFO', `yesterday: ${seeded.yesterday.detail}`);
+    }
+
+    // CamlQuery is one of the few endpoints that still wants odata=verbose:
+    // the entity needs its __metadata type hint, which nometadata rejects.
+    const caml = async (whereXml, includeTime) => {
+      digest = await getDigest();
+      const viewXml = `<View><Query><Where>${whereXml}</Where></Query><RowLimit>100</RowLimit></View>`;
+      const res = await spPost(`web/lists/getbytitle('${LIST}')/getitems`, {
+        query: { __metadata: { type: 'SP.CamlQuery' }, ViewXml: viewXml },
+      }, digest, {
+        Accept: 'application/json;odata=verbose',
+        'Content-Type': 'application/json;odata=verbose',
+      });
+      const rows = res.ok && res.body && res.body.d ? (res.body.d.results || []) : [];
+      return {
+        ok: res.ok,
+        status: res.status,
+        titles: rows.map((r) => r.Title).sort(),
+        text: res.text,
+        viewXml,
+        includeTime,
+      };
+    };
+    const value = (inner, includeTime) =>
+      `<Value Type="DateTime"${includeTime ? " IncludeTimeValue='TRUE'" : ''}>${inner}</Value>`;
+    const ltWhen = (inner, includeTime) =>
+      `<Lt><FieldRef Name="${FIELD}"/>${value(inner, includeTime)}</Lt>`;
+
+    const has = (titles, t) => titles.includes(t);
+    // The whole point: "earlier today" in and "later today" out. Anything
+    // else means the comparison is not seeing the time portion.
+    const verdictFor = (r, inner) => {
+      const e = has(r.titles, 'CAML earlier today');
+      const l = has(r.titles, 'CAML later today');
+      // An empty result from <Now/> is the INERT signature, not a broken
+      // query: the element does not resolve, the value is empty and nothing
+      // matches, which is what an invented element does in the same position
+      // (control-real-element-selects, and the A/B of 2026-07-29). Reporting
+      // it as "yesterday not returned" would file the predicted answer as a
+      // fault in the probe.
+      if (inner === '<Now/>' && r.titles.length === 0) {
+        return 'INERT: element not resolved (matches the invented-element result)';
+      }
+      // Yesterday's row is the sanity check otherwise: any sane "< now-ish"
+      // filter must return it. If it does not, the query ran but is not doing
+      // what its shape suggests, and the earlier/later reading is not worth
+      // having.
+      if (!has(r.titles, 'CAML yesterday')) return 'SUSPECT: yesterday not returned';
+      if (e && !l) return 'DISCRIMINATES (time compared)';
+      if (e && l) return 'BOTH RETURNED (time ignored, compared as a later boundary)';
+      if (!e && !l) return 'NEITHER RETURNED (time ignored, compared as midnight)';
+      return 'INVERTED: later-today returned but earlier-today did not';
+    };
+
+    // ---- control-real-element-selects: the CAML control -----------------
+    // The control here has to have a POSITIVE arm that can actually select.
+    // The one this replaces compared <Now/> with <Nowww/> and asked for
+    // different row counts, but <Now/> in a comparison is inert, so both
+    // arms return nothing on a working site and the control failed by
+    // construction. <Today/> is the element known to select, so the pair that
+    // discriminates is <Today/> against an invented name. All three rows below
+    // read the row stamped 27 hours ago, which is strictly earlier than
+    // site-local midnight under either candidate offset, so none of them is
+    // gated on the time of day.
+    const CONTROL_ROWS = [
+      'query.caml.control-real-element-selects',
+      'query.caml.bogus-element-accepted',
+      'query.caml-adhoc.now-element-inert',
+    ];
+    if (!camlReady) {
+      for (const id of CONTROL_ROWS) {
+        record(id, RESULTS.find((r) => r.id === id).question,
+               'NOT ESTABLISHED', 'the fixture rows could not be created');
+      }
     } else {
-      const stored = back.body.ViewQuery || '';
+      const controlQuestion = 'CONTROL: <Today/> selects rows where an invented <Nowww/> selects none';
+      const real = await caml(ltWhen('<Today/>', false), false);
+      const junk = await caml(ltWhen('<Nowww/>', false), false);
+      const arms = `<Today/> -> ${real.ok ? JSON.stringify(real.titles) : `HTTP ${real.status}`}; `
+        + `<Nowww/> -> ${junk.ok ? JSON.stringify(junk.titles) : `HTTP ${junk.status}`}`;
+
+      // Read positively, and NOT as a control-: what SharePoint does with an
+      // unknown element name is a finding in its own right, and voiding the
+      // C-rows on the answer it actually gives would suppress it.
+      //
+      // 4xx only. A 500 is the shape a missing FieldRef already produces, so
+      // it cannot be told apart from the query failing for another reason.
+      const refusedByName = isRefusal(junk.status) && junk.status < 500;
+      record('query.caml.bogus-element-accepted', 'What CAML does with an unknown element name inside <Value>',
+             junk.ok ? 'ACCEPTED (no element-name validation)'
+                     : refusedByName ? 'REFUSED' : 'NOT ESTABLISHED',
+             junk.ok
+               ? `HTTP ${junk.status} and ${junk.titles.length} row(s) for ${junk.viewXml}. A CAML `
+                 + 'query naming a column that does not exist was refused with HTTP 500 on the '
+                 + 'today-source run of 2026-09-02, so the element name inside <Value> is the '
+                 + 'part nothing validates: a wrong element in an emitted ViewQuery saves, reads '
+                 + 'back byte-identical and renders an empty view, where a wrong FieldRef would '
+                 + 'have been refused outright.'
+               : refusedByName
+                 ? `refused with HTTP ${junk.status}: ${junk.text.slice(0, 260)}`
+                 : `HTTP ${junk.status}, which is the request failing rather than the server `
+                   + `ruling on the element name: ${junk.text.slice(0, 200)}`);
+
+      if (!real.ok || !junk.ok) {
+        record('query.caml.control-real-element-selects', controlQuestion, 'NOT ESTABLISHED',
+               `${arms}. One arm did not run, so nothing was compared and C1-C7 are `
+               + 'unproven rather than answered: '
+               + (real.ok ? junk.text : real.text).slice(0, 200));
+      } else if (!has(real.titles, 'CAML yesterday')) {
+        record('query.caml.control-real-element-selects', controlQuestion, 'FAIL',
+               `${arms}. <Today/> did not return the row stamped 27 hours ago, which is `
+               + 'earlier than site-local midnight under either candidate offset, so the '
+               + 'comparison is not reaching the column and C1-C7 prove nothing.');
+      } else if (junk.titles.length > 0) {
+        record('query.caml.control-real-element-selects', controlQuestion, 'FAIL',
+               `${arms}. The invented element matched rows, so the element name is being `
+               + 'ignored and C1-C7 prove nothing about which element was read.');
+      } else {
+        record('query.caml.control-real-element-selects', controlQuestion, 'PASS',
+               `${arms}, the split this control needs: the real element matched and the `
+               + 'invented one matched nothing, so the query shape is parsed and the '
+               + 'element name reaches the comparison.');
+      }
+
+      // now-element-inert: the same question the retired control was asking
+      // backwards. <Now/> is compared against the arm that just selected, so
+      // an empty result is an answer rather than an absence.
+      const inertQuestion = '<Now/> against the rows <Today/> selected: does it select anything';
+      const nowArm = await caml(ltWhen('<Now/>', false), false);
+      if (!real.ok || !nowArm.ok) {
+        record('query.caml-adhoc.now-element-inert', inertQuestion, 'NOT ESTABLISHED',
+               `<Today/> -> ${real.ok ? JSON.stringify(real.titles) : `HTTP ${real.status}`}; `
+               + `<Now/> -> ${nowArm.ok ? JSON.stringify(nowArm.titles) : `HTTP ${nowArm.status}`}. `
+               + 'One arm did not run, so the two were not compared: '
+               + (real.ok ? nowArm.text : real.text).slice(0, 200));
+      } else if (!has(real.titles, 'CAML yesterday')) {
+        record('query.caml-adhoc.now-element-inert', inertQuestion, 'NOT ESTABLISHED',
+               `<Today/> -> ${JSON.stringify(real.titles)}; <Now/> -> ${JSON.stringify(nowArm.titles)}. `
+               + 'The <Today/> arm did not return the dependency row either, so an empty '
+               + '<Now/> result says nothing about <Now/>.');
+      } else if (nowArm.titles.length === 0) {
+        record('query.caml-adhoc.now-element-inert', inertQuestion, 'INERT (matches the invented-element signature)',
+               `<Today/> -> ${JSON.stringify(real.titles)}; <Now/> -> [], from the same list at `
+               + 'the same moment with only the element changed. That is the signature an '
+               + 'invented element leaves in the same position, and it agrees with the A/B '
+               + 'of 2026-07-29 recorded in analysis/condition_rendering.py.');
+      } else {
+        record('query.caml-adhoc.now-element-inert', inertQuestion, 'SELECTS (time compared)',
+               `<Today/> -> ${JSON.stringify(real.titles)}; <Now/> -> ${JSON.stringify(nowArm.titles)}. `
+               + '<Now/> matched rows, which contradicts the 2026-07-29 A/B and the filter '
+               + 'panel showing an empty value for that element. Re-run before acting on it, '
+               + 'and if it holds, conditions.py has a rendering to reconsider.');
+      }
+    }
+
+    // ---- now-element-roundtrip (C1): the deploy surface -----------------
+    // deploy.js writes ViewQuery and verifies by read-back, so "saves and
+    // survives the round trip" is the question that decides whether a `now`
+    // sentinel could be shipped at all.
+    // Creating a view is TWO calls, and the second is not optional.
+    //
+    // A view with no ViewFields displays nothing whether or not its filter
+    // matched, so its emptiness is not evidence. An empty result only counts
+    // when a non-empty one would have been visible.
+    //
+    // The fields cannot be passed to the create call as
+    // `ViewFields: { results: [...] }`: that wrapper is the odata=VERBOSE
+    // convention, and this harness sends nometadata, which REJECTS it rather
+    // than ignoring it ("The property 'results' does not exist on type
+    // 'SP.ViewFieldCollection'"), the same hazard recorded beside addField in
+    // calculated-choice-operand.js.j2. addviewfield works under either
+    // format.
+    const createView = async (title, query) => {
+      digest = await getDigest();
+      const made = await spPost(`web/lists/getbytitle('${LIST}')/views`, {
+        Title: title, ViewQuery: query, RowLimit: 100,
+      }, digest);
+      if (!made.ok) return { ok: false, status: made.status, text: made.text };
+      for (const column of ['Title', FIELD]) {
+        digest = await getDigest();
+        const added = await spPost(
+          `web/lists/getbytitle('${LIST}')/views/getbytitle('${title}')`
+          + `/viewfields/addviewfield('${column}')`, {}, digest);
+        if (!added.ok) {
+          return { ok: false, status: added.status,
+                   text: `view created but addviewfield('${column}') failed: ${added.text}` };
+        }
+      }
+      return { ok: true, status: made.status, text: made.text };
+    };
+
+    const viewQuery = `<Where>${ltWhen('<Now/>', true)}</Where>`;
+    const madeView = await createView(VIEW, viewQuery);
+    if (!madeView.ok) {
       record('query.view-query.now-element-roundtrip', 'A view ViewQuery containing <Now/> saves and reads back intact',
-             stored.includes('<Now') ? 'PASS' : 'ACCEPTED THEN REWRITTEN',
-             `sent ${JSON.stringify(viewQuery)}; stored ${JSON.stringify(stored)}`);
-    }
-  }
-
-  // ---- query.caml-adhoc.* (C2-C5): what the comparison actually does --
-  const camlRows = [
-    ['query.caml-adhoc.now-element-discriminates', '<Now/> WITHOUT IncludeTimeValue discriminates within one day', '<Now/>', false],
-    ['query.caml-adhoc.now-element-include-time-discriminates', "<Now/> WITH IncludeTimeValue='TRUE' discriminates within one day", '<Now/>', true],
-    ['query.caml-adhoc.today-element-include-time-discriminates', "<Today/> WITH IncludeTimeValue='TRUE': midnight, or current instant", '<Today/>', true],
-    ['query.caml-adhoc.today-element-date-granular', 'BASELINE: <Today/> without IncludeTimeValue is date-granular', '<Today/>', false],
-  ];
-  for (const [id, question, inner, includeTime] of camlRows) {
-    if (!camlReady || !SAME_DAY_OK) {
-      record(id, question, 'NOT ESTABLISHED',
-             !camlReady ? 'the fixture rows could not be created'
-                        : 'time-of-day gate closed (see TZ0)');
-      continue;
-    }
-    const r = await caml(ltWhen(inner, includeTime), includeTime);
-    if (!r.ok) {
-      record(id, question, 'REFUSED', `HTTP ${r.status}: ${r.text.slice(0, 260)}`);
-      continue;
-    }
-    record(id, question, verdictFor(r, inner),
-           `${r.viewXml} -> ${JSON.stringify(r.titles)}`);
-  }
-
-  // ---- today-include-time-* (C6 / C7): where the deploy writes --------
-  // C2-C5 asked their questions through `getitems` with an ad-hoc
-  // CamlQuery. That is NOT what deploy.js writes: it writes a view's stored
-  // ViewQuery, and C1 has already shown SharePoint rewrites that XML on
-  // save. So the rendering the tool would ship has, until here, only ever
-  // been observed somewhere else. These two close that gap.
-  const REAL_VIEW = 'dbmlsp probe today includetime view';
-  if (!camlReady || !SAME_DAY_OK) {
-    for (const id of ['query.view-query.today-include-time-roundtrip', 'query.view-query.today-include-time-selects']) {
-      record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED',
-             !camlReady ? 'the fixture rows could not be created'
-                        : 'time-of-day gate closed (see TZ0)');
-    }
-  } else {
-    const realQuery = `<Where>${ltWhen('<Today/>', true)}</Where>`;
-    const madeReal = await createView(REAL_VIEW, realQuery);
-    if (!madeReal.ok) {
-      record('query.view-query.today-include-time-roundtrip', 'A saved view using <Today/> + IncludeTimeValue keeps its query',
-             'REFUSED', `HTTP ${madeReal.status}: ${madeReal.text.slice(0, 300)}`);
-      record('query.view-query.today-include-time-selects', '...and that SAVED VIEW returns the instant-discriminated rows',
-             'NOT APPLICABLE', 'the view could not be created');
+             'REFUSED', `HTTP ${madeView.status}: ${madeView.text.slice(0, 300)}`);
     } else {
       const back = await spGet(
-        `web/lists/getbytitle('${LIST}')/views/getbytitle('${REAL_VIEW}')?$select=ViewQuery`);
-      const stored = back.ok && back.body ? (back.body.ViewQuery || '') : '';
-      const kept = stored.includes('IncludeTimeValue') && stored.includes('<Today');
-      record('query.view-query.today-include-time-roundtrip', 'A saved view using <Today/> + IncludeTimeValue keeps its query',
-             kept ? 'PASS' : 'REWRITTEN: the attribute did not survive',
-             `sent ${JSON.stringify(realQuery)}; stored ${JSON.stringify(stored)}`);
-
-      // Re-run the XML SHAREPOINT PERSISTED, not the XML we sent. That is
-      // the whole point: C4 proved the query we author discriminates, and
-      // this proves the query that survives a view save still does. If
-      // SharePoint drops IncludeTimeValue on the way in, C6 catches it; if
-      // it keeps the attribute but stops honouring it, only this does.
-      if (!stored) {
-        record('query.view-query.today-include-time-selects', '...and that SAVED VIEW returns the instant-discriminated rows',
-               'NOT ESTABLISHED', 'the stored ViewQuery could not be read back');
+        `web/lists/getbytitle('${LIST}')/views/getbytitle('${VIEW}')?$select=ViewQuery`);
+      if (readFailed(back)) {
+        record('query.view-query.now-element-roundtrip', 'A view ViewQuery containing <Now/> saves and reads back intact',
+               'NOT ESTABLISHED',
+               `the view was created (HTTP ${madeView.status}) but the ViewQuery `
+               + `read-back failed (HTTP ${back.status}). "SharePoint rewrote it" is a `
+               + 'claim, and nothing was read.');
       } else {
-        const r = await caml(stored.replace(/^<Where>/, '').replace(/<\/Where>$/, ''), true);
-        if (!r.ok) {
+        const stored = back.body.ViewQuery || '';
+        record('query.view-query.now-element-roundtrip', 'A view ViewQuery containing <Now/> saves and reads back intact',
+               stored.includes('<Now') ? 'PASS' : 'ACCEPTED THEN REWRITTEN',
+               `sent ${JSON.stringify(viewQuery)}; stored ${JSON.stringify(stored)}`);
+      }
+    }
+
+    // ---- query.caml-adhoc.* (C2-C5): what the comparison actually does --
+    const camlRows = [
+      ['query.caml-adhoc.now-element-discriminates', '<Now/> WITHOUT IncludeTimeValue discriminates within one day', '<Now/>', false],
+      ['query.caml-adhoc.now-element-include-time-discriminates', "<Now/> WITH IncludeTimeValue='TRUE' discriminates within one day", '<Now/>', true],
+      ['query.caml-adhoc.today-element-include-time-discriminates', "<Today/> WITH IncludeTimeValue='TRUE': midnight, or current instant", '<Today/>', true],
+      ['query.caml-adhoc.today-element-date-granular', 'BASELINE: <Today/> without IncludeTimeValue is date-granular', '<Today/>', false],
+    ];
+    for (const [id, question, inner, includeTime] of camlRows) {
+      if (!camlReady || !SAME_DAY_OK) {
+        record(id, question, 'NOT ESTABLISHED',
+               !camlReady ? 'the fixture rows could not be created'
+                          : 'time-of-day gate closed (see TZ0)');
+        continue;
+      }
+      const r = await caml(ltWhen(inner, includeTime), includeTime);
+      if (!r.ok) {
+        record(id, question, 'REFUSED', `HTTP ${r.status}: ${r.text.slice(0, 260)}`);
+        continue;
+      }
+      record(id, question, verdictFor(r, inner),
+             `${r.viewXml} -> ${JSON.stringify(r.titles)}`);
+    }
+
+    // ---- today-include-time-* (C6 / C7): where the deploy writes --------
+    // C2-C5 asked their questions through `getitems` with an ad-hoc
+    // CamlQuery. That is NOT what deploy.js writes: it writes a view's stored
+    // ViewQuery, and C1 has already shown SharePoint rewrites that XML on
+    // save. So the rendering the tool would ship has, until here, only ever
+    // been observed somewhere else. These two close that gap.
+    if (!camlReady || !SAME_DAY_OK) {
+      for (const id of ['query.view-query.today-include-time-roundtrip', 'query.view-query.today-include-time-selects']) {
+        record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED',
+               !camlReady ? 'the fixture rows could not be created'
+                          : 'time-of-day gate closed (see TZ0)');
+      }
+    } else {
+      const realQuery = `<Where>${ltWhen('<Today/>', true)}</Where>`;
+      const madeReal = await createView(REAL_VIEW, realQuery);
+      if (!madeReal.ok) {
+        record('query.view-query.today-include-time-roundtrip', 'A saved view using <Today/> + IncludeTimeValue keeps its query',
+               'REFUSED', `HTTP ${madeReal.status}: ${madeReal.text.slice(0, 300)}`);
+        record('query.view-query.today-include-time-selects', '...and that SAVED VIEW returns the instant-discriminated rows',
+               'NOT APPLICABLE', 'the view could not be created');
+      } else {
+        const back = await spGet(
+          `web/lists/getbytitle('${LIST}')/views/getbytitle('${REAL_VIEW}')?$select=ViewQuery`);
+        const stored = back.ok && back.body ? (back.body.ViewQuery || '') : '';
+        const kept = stored.includes('IncludeTimeValue') && stored.includes('<Today');
+        record('query.view-query.today-include-time-roundtrip', 'A saved view using <Today/> + IncludeTimeValue keeps its query',
+               kept ? 'PASS' : 'REWRITTEN: the attribute did not survive',
+               `sent ${JSON.stringify(realQuery)}; stored ${JSON.stringify(stored)}`);
+
+        // Re-run the XML SHAREPOINT PERSISTED, not the XML we sent. That is
+        // the whole point: C4 proved the query we author discriminates, and
+        // this proves the query that survives a view save still does. If
+        // SharePoint drops IncludeTimeValue on the way in, C6 catches it; if
+        // it keeps the attribute but stops honouring it, only this does.
+        if (!stored) {
           record('query.view-query.today-include-time-selects', '...and that SAVED VIEW returns the instant-discriminated rows',
-                 'REFUSED', `HTTP ${r.status}: ${r.text.slice(0, 240)}`);
+                 'NOT ESTABLISHED', 'the stored ViewQuery could not be read back');
         } else {
-          const e = has(r.titles, 'CAML earlier today');
-          const l = has(r.titles, 'CAML later today');
-          record('query.view-query.today-include-time-selects', '...and that SAVED VIEW returns the instant-discriminated rows',
-                 e && !l ? 'DISCRIMINATES: matches C4'
-                         : e && l ? 'BOTH RETURNED: does NOT match C4'
-                                  : !e && !l ? 'NEITHER RETURNED: does NOT match C4'
-                                             : 'INVERTED',
-                 `re-ran the STORED query and got ${JSON.stringify(r.titles)}. C4 saw `
-                 + '["CAML earlier today","CAML yesterday"] from the authored query. '
-                 + 'Agreement means a view save does not change the meaning; '
-                 + 'disagreement means the CamlQuery result does not transfer, and '
-                 + 'the view-filter rendering would have to be gated again.');
+          const r = await caml(stored.replace(/^<Where>/, '').replace(/<\/Where>$/, ''), true);
+          if (!r.ok) {
+            record('query.view-query.today-include-time-selects', '...and that SAVED VIEW returns the instant-discriminated rows',
+                   'REFUSED', `HTTP ${r.status}: ${r.text.slice(0, 240)}`);
+          } else {
+            const e = has(r.titles, 'CAML earlier today');
+            const l = has(r.titles, 'CAML later today');
+            record('query.view-query.today-include-time-selects', '...and that SAVED VIEW returns the instant-discriminated rows',
+                   e && !l ? 'DISCRIMINATES: matches C4'
+                           : e && l ? 'BOTH RETURNED: does NOT match C4'
+                                    : !e && !l ? 'NEITHER RETURNED: does NOT match C4'
+                                               : 'INVERTED',
+                   `re-ran the STORED query and got ${JSON.stringify(r.titles)}. C4 saw `
+                   + '["CAML earlier today","CAML yesterday"] from the authored query. '
+                   + 'Agreement means a view save does not change the meaning; '
+                   + 'disagreement means the CamlQuery result does not transfer, and '
+                   + 'the view-filter rendering would have to be gated again.');
+          }
         }
       }
     }
@@ -1013,28 +1045,31 @@
   // no headless probe can see, and form-visibility-interactive.js exists
   // precisely because this project learned that the hard way. A PASS here
   // means "SharePoint kept the formula", never "the rule works".
-  const clientRule = await spPost(
-    `${fieldsPath}/getbyinternalnameortitle('${FIELD}')`,
-    { ClientValidationFormula: `=if(@now > [$${FIELD}], 'true', 'false')` },
-    await getDigest(), { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
-  if (!clientRule.ok) {
-    record('expression.client-validation.now-sentinel-stored', '@now is accepted and stored in a ClientValidationFormula',
-           'REFUSED', `HTTP ${clientRule.status}: ${clientRule.text.slice(0, 300)}`);
-  } else {
-    const back = await spGet(
-      `${fieldsPath}/getbyinternalnameortitle('${FIELD}')?$select=ClientValidationFormula`);
-    if (readFailed(back)) {
+  // The expression names ProbeWhen by internal name, so it rests on the fixture.
+  if (dateTimeHeld) {
+    const clientRule = await spPost(
+      `${fieldsPath}/getbyinternalnameortitle('${FIELD}')`,
+      { ClientValidationFormula: `=if(@now > [$${FIELD}], 'true', 'false')` },
+      await getDigest(), { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+    if (!clientRule.ok) {
       record('expression.client-validation.now-sentinel-stored', '@now is accepted and stored in a ClientValidationFormula',
-             'NOT ESTABLISHED',
-             `the MERGE returned HTTP ${clientRule.status} but the read-back failed `
-             + `(HTTP ${back.status}), so whether it was stored is unobserved.`);
+             'REFUSED', `HTTP ${clientRule.status}: ${clientRule.text.slice(0, 300)}`);
     } else {
-      const stored = back.body.ClientValidationFormula;
-      record('expression.client-validation.now-sentinel-stored', '@now is accepted and stored in a ClientValidationFormula',
-             stored && String(stored).includes('@now') ? 'STORED' : 'ACCEPTED THEN DISCARDED',
-             `reads back ${JSON.stringify(stored)}. STORAGE ONLY: whether the rule `
-             + 'actually fires needs an eyes-on check in the form designer, exactly as '
-             + 'form-visibility-interactive.js does.');
+      const back = await spGet(
+        `${fieldsPath}/getbyinternalnameortitle('${FIELD}')?$select=ClientValidationFormula`);
+      if (readFailed(back)) {
+        record('expression.client-validation.now-sentinel-stored', '@now is accepted and stored in a ClientValidationFormula',
+               'NOT ESTABLISHED',
+               `the MERGE returned HTTP ${clientRule.status} but the read-back failed `
+               + `(HTTP ${back.status}), so whether it was stored is unobserved.`);
+      } else {
+        const stored = back.body.ClientValidationFormula;
+        record('expression.client-validation.now-sentinel-stored', '@now is accepted and stored in a ClientValidationFormula',
+               stored && String(stored).includes('@now') ? 'STORED' : 'ACCEPTED THEN DISCARDED',
+               `reads back ${JSON.stringify(stored)}. STORAGE ONLY: whether the rule `
+               + 'actually fires needs an eyes-on check in the form designer, exactly as '
+               + 'form-visibility-interactive.js does.');
+      }
     }
   }
 
@@ -1188,6 +1223,11 @@
     console.log('  rows count items, so every query.* row counted one row that should');
     console.log('  not have been there. Treat them as NOT ESTABLISHED, delete the');
     console.log('  list, and re-run before reporting anything from this run.');
+  }
+  if (!dateTimeHeld) {
+    log('INFO', `ProbeWhen did not read back as a date-and-time column, so no view was made. `
+                + `See the fixture row, delete '${LIST}' if it is the wrong shape, and re-run.`);
+    return;
   }
   console.log('\n============ ONE EYES-ON CHECK ============');
   console.log(`  Open the list and click the view "${REAL_VIEW}".`);

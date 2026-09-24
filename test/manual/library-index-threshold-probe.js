@@ -7,7 +7,7 @@
  *   index on them? A served filter means an index answered it; a refusal means
  *   the query would have had to scan the whole library.
  *
- * REVISION: cbb0c5ef
+ * REVISION: 6399bf1d
  *
  * THE COLUMNS: Title, Name (FileLeafRef), Created, Modified, Author, Editor,
  * plus ID as the positive control and two probe-owned columns as the negative
@@ -456,6 +456,72 @@
     if (evidence) console.log(`      evidence: ${evidence}`);
   };
 
+  // ---- Fixtures (#559) -----------------------------------------------
+  // Why a response carries no reading, or null when it does. Learn documents
+  // 429 and 503 as the two SharePoint Online throttle statuses.
+  const unanswered = (r) => {
+    if (r.ok) {
+      return r.body !== null && typeof r.body === 'object'
+        ? null : `answered HTTP ${r.status} with no payload`;
+    }
+    if (r.status === 429 || r.status === 503) return `was throttled (HTTP ${r.status})`;
+    if (r.status === 408) return 'timed out (HTTP 408)';
+    if (r.status === 401 || r.status === 403) return `was not authorised (HTTP ${r.status})`;
+    return isRefusal(r.status) ? `was refused (HTTP ${r.status})` : `did not answer (HTTP ${r.status})`;
+  };
+
+  // A voided row keeps its question and is counted apart from open and answered.
+  const voidDependents = (ids, reason) => {
+    for (const id of ids) {
+      const row = RESULTS.find((r) => r.id === id);
+      record(id, row ? row.question : id, 'NOT ESTABLISHED', reason, 'void');
+    }
+  };
+
+  // `read` resolves to a harness response ({ ok, status, body }). `declared`
+  // maps each property the measurement depends on to a value or a predicate.
+  // PASS needs every one read back; otherwise FAIL, void `dependents`, false.
+  const establishFixture = async (id, read, declared, dependents) => {
+    const row = RESULTS.find((r) => r.id === id);
+    const question = row ? row.question : id;
+    const problems = [];
+    const seen = [];
+    let got = null;
+    let threw = false;
+    try {
+      got = await read();
+    } catch (err) {
+      threw = true;
+      problems.push(`the read threw: ${err && err.message ? err.message : String(err)}`);
+    }
+    if (!threw) {
+      const silent = got && typeof got === 'object' ? unanswered(got) : 'returned no response';
+      if (silent) problems.push(`the read ${silent}`);
+    }
+    if (!problems.length) {
+      for (const [name, want] of Object.entries(declared)) {
+        if (!Object.prototype.hasOwnProperty.call(got.body, name) || got.body[name] === undefined) {
+          problems.push(`${name} is absent from the payload`);
+          continue;
+        }
+        const value = got.body[name];
+        seen.push(`${name}=${JSON.stringify(value)}`);
+        const held = typeof want === 'function' ? want(value) === true : value === want;
+        if (!held) {
+          problems.push(`${name} differs: read ${JSON.stringify(value)}, declared `
+            + (typeof want === 'function' ? 'by a predicate it fails' : JSON.stringify(want)));
+        }
+      }
+    }
+    if (!problems.length) {
+      record(id, question, 'PASS', `read back ${seen.join(', ')}`);
+      return true;
+    }
+    record(id, question, 'FAIL', problems.join('; ') + (seen.length ? `; read ${seen.join(', ')}` : ''));
+    voidDependents(dependents, `the fixture ${id} did not hold: ${problems.join('; ')}`);
+    return false;
+  };
+
   const report = () => {
     console.log('\n==================== RESULTS ====================');
     for (const r of RESULTS) {
@@ -483,7 +549,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision cbb0c5ef. Quote this when reporting results.');
+  log('INFO', 'probe revision 6399bf1d. Quote this when reporting results.');
 
   // The expensive half. Off, so a paste that only wants to measure an
   // already-built library never starts five thousand uploads.
@@ -803,24 +869,30 @@
     return last;
   };
 
-  // Where to resume. Read from the NEWEST file the library already holds
-  // rather than derived from the item count, because a count is right only
-  // while nothing has ever failed. Ordering by Id is the one ordering a
-  // library past the threshold can be relied on to serve.
-  const resumeFrom = async (path, fallback) => {
+  // Where to resume, from the NEWEST file the library holds, ordered by Id as
+  // a library past the threshold serves. A read that did not answer resumes
+  // nothing: a throttle is not an empty library.
+  const resumeFrom = async (path) => {
     const newest = await spGet(
       `${path}/items?$select=Id,FileLeafRef&$orderby=Id desc&$top=1`);
-    const rows = (newest.ok && newest.body && newest.body.value) || [];
-    const name = rows.length ? String(rows[0].FileLeafRef || '') : '';
+    const silent = unanswered(newest);
+    if (silent) return { number: null, why: `the resume read ${silent}` };
+    const rows = newest.body.value;
+    if (!Array.isArray(rows)) return { number: null, why: 'the resume read served no rows' };
+    if (!rows.length) return { number: 0, why: '' };
+    const name = String(rows[0].FileLeafRef || '');
     const digits = name.match(/dbmlsp-tidx-(\d+)\.txt$/);
-    return digits ? Number(digits[1]) : fallback;
+    return digits ? { number: Number(digits[1]), why: '' }
+      : { number: null, why: `the newest file '${name}' is not one this probe uploads` };
   };
 
   const uploadUpTo = async (path, folderUrl, wanted, cap) => {
-    const before = await spGet(`${path}?$select=ItemCount`);
-    const held = (before.ok && before.body) ? before.body.ItemCount : 0;
-    const from = (await resumeFrom(path, held)) + 1;
-    if (from > wanted) return { uploaded: 0, from, held, stoppedAt: null, reason: 'already built' };
+    const resume = await resumeFrom(path);
+    if (resume.number === null) {
+      return { uploaded: 0, from: null, stoppedAt: null, reason: 'did not resume', unread: resume.why };
+    }
+    const from = resume.number + 1;
+    if (from > wanted) return { uploaded: 0, from, stoppedAt: null, reason: 'already built' };
     let digest = await getDigest();
     let uploaded = 0;
     for (let n = from; n <= wanted && uploaded < cap; n += 1) {
@@ -828,7 +900,7 @@
       const sent = await uploadOne(folderUrl, fileName(n), digest);
       if (!sent.ok) {
         return {
-          uploaded, from, held, stoppedAt: n,
+          uploaded, from, stoppedAt: n,
           reason: `HTTP ${sent.status}: ${sent.text.slice(0, 200)}`,
         };
       }
@@ -837,7 +909,7 @@
         log('INFO', `uploaded ${uploaded} file(s) this run; at ${fileName(n)}.`);
       }
     }
-    return { uploaded, from, held, stoppedAt: null, reason: uploaded >= cap ? 'hit the per-run cap' : 'reached the target' };
+    return { uploaded, from, stoppedAt: null, reason: uploaded >= cap ? 'hit the per-run cap' : 'reached the target' };
   };
 
   // The target file's item, addressed through the FILE rather than through a
@@ -880,13 +952,9 @@
     }
     const build = BUILD_FIXTURE || wanted <= SMALL_FILES
       ? await uploadUpTo(path, folderUrl, wanted, cap)
-      : { uploaded: 0, from: 0, held: 0, stoppedAt: null, reason: 'BUILD_FIXTURE is off' };
-    // ItemCount is timer-job-cached and lags a fresh upload burst by minutes,
-    // so read the live count from the newest FileLeafRef number instead; the
-    // same signal resumeFrom already trusts, and the uploads are contiguous.
-    const count = await resumeFrom(path, 0);
+      : { uploaded: 0, from: 0, stoppedAt: null, reason: 'BUILD_FIXTURE is off' };
     return {
-      ok: true, folderUrl, count, build,
+      ok: true, folderUrl, build,
       created: made.made, columns: columns.note,
     };
   };
@@ -911,8 +979,7 @@
   record('library.doc-lib.fixture-library-created', 'A document library is created (BaseTemplate 101)',
          big.ok ? (big.created ? 'PASS' : 'ALREADY PRESENT') : 'FAIL',
          big.ok
-           ? `'${LIB}' is present with the two probe-owned columns (${big.columns}). `
-             + `It holds ${big.count} item(s).`
+           ? `'${LIB}' is present with the two probe-owned columns (${big.columns}).`
            : big.why);
   if (!big.ok) {
     record('library.index.fixture-file-count', `The fixture library holds at least ${TARGET_FILES} files`,
@@ -923,25 +990,53 @@
   }
 
   // ---- fixture-file-count ------------------------------------------------
+  const FILE_COUNT_DEPENDENTS = [
+    'library.index.fixture-target-seeded',
+    'library.index.control-small-library-shapes',
+    'library.index.control-threshold-id-served',
+    'library.index.control-unindexed-refused',
+    'library.index.control-unindexed-person-refused',
+    ...CANDIDATES.map((row) => row.id),
+  ];
   const buildNote =
-    `${big.build.uploaded} file(s) uploaded this run (${big.build.reason}); the library `
-    + `now holds ${big.count} item(s) of the ${TARGET_FILES} wanted`
+    `${big.build.uploaded} file(s) uploaded this run (${big.build.reason})`
     + (big.build.stoppedAt === null ? '' : `; the pass stopped at ${fileName(big.build.stoppedAt)}`);
-  const pastThreshold = big.count >= TARGET_FILES;
-  record('library.index.fixture-file-count', `The fixture library holds at least ${TARGET_FILES} files`,
-         pastThreshold ? 'PASS' : 'SHORT',
-         pastThreshold
-           ? buildNote
-           : `${buildNote}. Re-paste with BUILD_FIXTURE = true until this reads PASS. `
-             + 'Nothing below this line was measured, because a query on a library that is '
-             + 'not past the threshold answers a different question.');
-  if (!pastThreshold) {
-    const why = `the fixture library holds ${big.count} of ${TARGET_FILES} files, so no `
+  log('INFO', buildNote);
+  if (big.build.unread) {
+    const why = `${big.build.unread}, so this run uploaded nothing and cannot say how far the build got`;
+    record('library.index.fixture-file-count', `The fixture library holds at least ${TARGET_FILES} files`,
+           'FAIL', why);
+    voidDependents(FILE_COUNT_DEPENDENTS,
+                   `the fixture library.index.fixture-file-count did not hold: ${why}`);
+    return report();
+  }
+  // Counted from ItemCount read after the last upload, never from a file name.
+  // ItemCount can trail an upload burst, which reads short rather than complete.
+  // A read that throws is kept and rethrown inside establishFixture, which records it.
+  const countRead = await spGet(`${libPath}?$select=ItemCount`).catch((error) => error);
+  const countThrew = countRead instanceof Error;
+  const fileCount = !countThrew && unanswered(countRead) === null
+    && typeof countRead.body.ItemCount === 'number'
+    ? countRead.body.ItemCount : null;
+  if (fileCount !== null && fileCount < TARGET_FILES) {
+    record('library.index.fixture-file-count', `The fixture library holds at least ${TARGET_FILES} files`,
+           'SHORT',
+           `${buildNote}; ItemCount reads ${fileCount} of the ${TARGET_FILES} wanted. Re-paste with `
+           + 'BUILD_FIXTURE = true until this reads PASS, and wait a few minutes after the last '
+           + 'upload, since ItemCount can trail one. Nothing below this line was measured, because '
+           + 'a query on a library that is not past the threshold answers a different question.');
+    const why = `the fixture library holds ${fileCount} of ${TARGET_FILES} files, so no `
       + 'query here was asked past the threshold';
     record('library.index.fixture-target-seeded', 'The one target file carries the Title, text and person markers',
            'ABORTED', why);
     return abortRemaining(why);
   }
+  const counted = await establishFixture('library.index.fixture-file-count', async () => {
+    if (countThrew) throw countRead;
+    return countRead;
+  },
+    { ItemCount: (n) => typeof n === 'number' && n >= TARGET_FILES }, FILE_COUNT_DEPENDENTS);
+  if (!counted) return report();
 
   // ---- fixture-target-seeded ---------------------------------------------
   const seedLibrary = async (path, folderUrl) => {
@@ -999,14 +1094,21 @@
   let shapesHeld = false;
   const shapeNotes = [];
   const brokenShapes = new Set();
+  // Counted by listing, which is exact at this size, and never from a file name.
+  const smallRows = small.ok && !small.build.unread
+    ? await spGet(`${smallPath}/items?$select=Id&$top=${PAGE}`) : null;
+  const smallCount = smallRows && unanswered(smallRows) === null && Array.isArray(smallRows.body.value)
+    ? smallRows.body.value.length : null;
 
-  if (!small.ok || small.count < SMALL_FILES) {
+  if (!small.ok || small.build.unread || smallCount === null || smallCount < SMALL_FILES) {
     record('library.index.control-small-library-shapes', 'CONTROL: every filter parses and finds its target on a small library nothing throttles',
            'NOT ESTABLISHED',
-           small.ok
-             ? `'${SMALL}' holds ${small.count} of ${SMALL_FILES} files, so the shapes were `
-               + 'not exercised'
-             : small.why);
+           !small.ok ? small.why
+             : small.build.unread ? `the build of '${SMALL}' did not resume: ${small.build.unread}`
+               : smallCount === null
+                 ? `the file listing of '${SMALL}' ${unanswered(smallRows) || 'served no rows'}`
+                 : `'${SMALL}' holds ${smallCount} of ${SMALL_FILES} files, so the shapes were `
+                   + 'not exercised');
   } else {
     const smallSeed = await seedLibrary(smallPath, small.folderUrl);
     if (!smallSeed.ok) {
@@ -1079,7 +1181,7 @@
       shapesHeld = controlShapesBroken.length === 0 && personShape !== null;
       record('library.index.control-small-library-shapes', 'CONTROL: every filter parses and finds its target on a small library nothing throttles',
              shapesHeld ? 'PASS' : 'CONTROL FAILED, METHOD VOID',
-             `on ${small.count} file(s): ${shapeNotes.join('; ')}`
+             `on ${smallCount} file(s): ${shapeNotes.join('; ')}`
              + (personShape === null
                ? '. No person filter spelling parsed and matched, so neither person row '
                  + 'below can be read.'
@@ -1118,7 +1220,7 @@
   const idServed = idOutcome.startsWith('SERVED');
   record('library.index.control-threshold-id-served', 'POSITIVE CONTROL: a selective filter on ID is served past the threshold',
          idOutcome,
-         `$filter=${idResult.filter} on ${big.count} item(s), HTTP ${idResult.status}: ${idResult.body}`
+         `$filter=${idResult.filter} on ${fileCount} item(s), HTTP ${idResult.status}: ${idResult.body}`
          + (idServed
            ? '. A native index can therefore be observed by this method on this library.'
            : '. ID is the column whose native index is least in doubt, so a refusal here '
@@ -1143,7 +1245,7 @@
          textExpired ? 'CONTROL EXPIRED, METHOD VOID'
            : textRefused ? 'REFUSED (threshold)'
              : 'CONTROL FAILED, METHOD VOID',
-         `$filter=${textResult.filter} on ${big.count} item(s), HTTP ${textResult.status}: `
+         `$filter=${textResult.filter} on ${fileCount} item(s), HTTP ${textResult.status}: `
          + `${textResult.body}. ${flagNote(UNINDEXED_TEXT, textFlags)}`
          + (textExpired
            ? '. The column carries an index, so it is no longer an unindexed control. '
@@ -1215,7 +1317,7 @@
     const result = await askFilter(libPath, row.filter(target));
     const outcome = judge(result, row.expected, row.expected === 0 ? null : targetId);
     record(row.id, row.question, outcome,
-           `$filter=${result.filter} on ${big.count} item(s), HTTP ${result.status}: `
+           `$filter=${result.filter} on ${fileCount} item(s), HTTP ${result.status}: `
            + `${result.body}`
            + (row.expected === 0
              ? '. This is the zero-match shape; read it beside the person control, which sends '
