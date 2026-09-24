@@ -433,10 +433,35 @@
   const fT = await addField('T', 0, { DefaultFormula: '=TODAY()' });
   record('formula.datetime.fixture-date-columns-created', 'the three date columns are created', fD.ok && fW.ok && fT.ok ? 'PASS' : 'FAIL',
     `D ${fD.status}, W ${fW.status}, T with DefaultFormula =TODAY() ${fT.status}${fT.ok ? '' : ` ${reason(fT)}`}`);
-  const vD = await merge('D', { ValidationFormula: '=[D]<=TODAY()', ValidationMessage: 'D is after TODAY()' });
-  const vW = await merge('W', { ValidationFormula: '=[W]<=NOW()', ValidationMessage: 'W is after NOW()' });
-  record('formula.datetime.fixture-today-now-rules-stored', 'the TODAY() and NOW() validation formulas are stored', vD.ok && vW.ok ? 'PASS' : 'FAIL',
-    `D ${vD.status}${vD.ok ? '' : ` ${reason(vD)}`}; W ${vW.status}${vW.ok ? '' : ` ${reason(vW)}`}`);
+  const D_RULE = '=[D]<=TODAY()';
+  const W_RULE = '=[W]<=NOW()';
+  const vD = await merge('D', { ValidationFormula: D_RULE, ValidationMessage: 'D is after TODAY()' });
+  const vW = await merge('W', { ValidationFormula: W_RULE, ValidationMessage: 'W is after NOW()' });
+  log('INFO', `rule MERGEs answered D ${vD.status}${vD.ok ? '' : ` ${reason(vD)}`}; W ${vW.status}${vW.ok ? '' : ` ${reason(vW)}`}`);
+  // A MERGE answers 204 whether or not the rule was kept, and every save row reads a refusal as the rule.
+  const SAVE_ROWS = [
+    'formula.datetime.today-allows-two-days-ago', 'formula.datetime.today-allows-yesterday',
+    'formula.datetime.today-allows-site-midnight-today', 'formula.datetime.today-allows-utc-midnight-today',
+    'formula.datetime.today-rejects-tomorrow', 'formula.datetime.now-function-minus-20h',
+    'formula.datetime.now-function-minus-12h', 'formula.datetime.now-function-minus-1h',
+    'formula.datetime.now-function-plus-1h', 'formula.datetime.now-function-plus-12h',
+    'formula.datetime.now-function-plus-20h',
+  ];
+  // MEASURED 2026-09-02 (save-instant-paths-probe): a stored formula reads back without its brackets.
+  const canonical = (formula) => String(formula).replace(/[[\]]/g, '');
+  const readRules = async () => {
+    const rules = {};
+    for (const name of ['D', 'W']) {
+      const back = await spGet(`${fields}/getbyinternalnameortitle('${name}')?$select=ValidationFormula`);
+      if (unanswered(back)) return back;
+      rules[`${name}.ValidationFormula`] = back.body.ValidationFormula;
+    }
+    return { ok: true, status: 200, body: rules };
+  };
+  const rulesHeld = await establishFixture('formula.datetime.fixture-today-now-rules-stored', readRules, {
+    'D.ValidationFormula': (v) => typeof v === 'string' && canonical(v) === canonical(D_RULE),
+    'W.ValidationFormula': (v) => typeof v === 'string' && canonical(v) === canonical(W_RULE),
+  }, SAVE_ROWS);
 
   const meta = await spGet(`${listPath}?$select=ListItemEntityTypeFullName`);
   const itemType = meta.body && meta.body.ListItemEntityTypeFullName;
@@ -445,12 +470,21 @@
 
   // ---- D0: what TODAY() resolved to, via the default formula ------------------
   const bare = await save('bare', {});
-  if (bare.ok) {
-    const back = await spGet(`${items}(${bare.body.d.Id})?$select=Id,T,Created`);
-    record('formula.datetime.today-function-default-value', 'what TODAY() resolves to, through a =TODAY() default', 'PASS',
-      `T stored as ${back.body && back.body.T}; Created ${back.body && back.body.Created}; site-local midnight today would be ${localMidnightUtc(0)}`);
+  const bareId = bare.ok && bare.body && bare.body.d ? bare.body.d.Id : null;
+  if (bareId !== null && bareId !== undefined) {
+    const back = await spGet(`${items}(${bareId})?$select=Id,T,Created`);
+    // A blank T says the default never fired, so no resolved TODAY() was observed.
+    const filled = !readFailed(back) && back.body.T !== null && back.body.T !== undefined;
+    record('formula.datetime.today-function-default-value', 'what TODAY() resolves to, through a =TODAY() default',
+      filled ? 'PASS' : 'NOT ESTABLISHED',
+      readFailed(back)
+        ? `the bare item did not read back (HTTP ${back.status})`
+        : `T stored as ${JSON.stringify(back.body.T)}; Created ${back.body.Created}; site-local midnight today would be ${localMidnightUtc(0)}`);
   } else {
-    record('formula.datetime.today-function-default-value', 'what TODAY() resolves to, through a =TODAY() default', 'FAIL', `bare item refused: HTTP ${bare.status} ${reason(bare)}`);
+    record('formula.datetime.today-function-default-value', 'what TODAY() resolves to, through a =TODAY() default',
+      bare.ok ? 'NOT ESTABLISHED' : 'FAIL',
+      bare.ok ? `the bare item create answered HTTP ${bare.status} and served no id`
+              : `bare item refused: HTTP ${bare.status} ${reason(bare)}`);
   }
 
   // ---- D rows: date-only D against TODAY() ------------------------------------
@@ -462,14 +496,14 @@
     ['formula.datetime.today-allows-utc-midnight-today', 'D = today as UTC midnight saves', utcMidnight],
     ['formula.datetime.today-rejects-tomorrow', 'D = tomorrow (site-local midnight) is refused', localMidnightUtc(1)],
   ];
-  for (const [id, question, value] of dates) {
+  for (const [id, question, value] of rulesHeld ? dates : []) {
     const r = await save(id, { D: value });
     record(id, question, r.ok ? 'SAVED' : 'REFUSED', `${value}: ${verdict(r)}`);
   }
 
   // ---- N rows: datetime W against NOW() ---------------------------------------
   const hours = [['formula.datetime.now-function-minus-20h', -20], ['formula.datetime.now-function-minus-12h', -12], ['formula.datetime.now-function-minus-1h', -1], ['formula.datetime.now-function-plus-1h', 1], ['formula.datetime.now-function-plus-12h', 12], ['formula.datetime.now-function-plus-20h', 20]];
-  for (const [id, h] of hours) {
+  for (const [id, h] of rulesHeld ? hours : []) {
     const value = new Date(nowUtc.getTime() + h * 3600 * 1000).toISOString();
     const r = await save(id, { W: value });
     record(id, `W = now ${h >= 0 ? '+' : '-'} ${Math.abs(h)} h`, r.ok ? 'SAVED' : 'REFUSED', `${value}: ${verdict(r)}`);
