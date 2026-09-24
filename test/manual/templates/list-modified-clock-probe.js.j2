@@ -97,24 +97,31 @@
   // DM, DC and WM are left by the modified-clock probe and reused by Title, so each shape is read back first.
   // The run stops on any failed column, so each fixture blocks every row.
   const ALL_ROWS = [...RULE_ROWS, ...DM_ROWS, ...DC_ROWS, ...WM_ROWS];
-  let shaped = true;
-  for (const [title, displayFormat, fixture] of [
+  const COLUMNS = [
     ['DM', 0, 'formula.validation.fixture-dm-date-only-column'],
     ['DC', 0, 'formula.validation.fixture-dc-date-only-column'],
     ['WM', 1, 'formula.validation.fixture-wm-date-time-column'],
-  ]) {
-    const field = `${listPath}/fields/getbyinternalnameortitle('${enc(title)}')`;
-    // modified-clock leaves column rules on these, which would refuse saves the list rule is measured on.
-    const clear = await post(field, { __metadata: { type: 'SP.FieldDateTime' }, ValidationFormula: '', ValidationMessage: '' },
+  ];
+  const fieldOf = (title) => `${listPath}/fields/getbyinternalnameortitle('${enc(title)}')`;
+  const blank = (v) => v === null || v === '';
+  const shapeFor = (title, displayFormat) => ({
+    InternalName: title, TypeAsString: 'DateTime', DisplayFormat: displayFormat,
+    ReadOnlyField: false, EnforceUniqueValues: false,
+    Required: false, DefaultValue: blank, DefaultFormula: blank });
+  // Identity and shape first, with no write, so a wrong-shaped column is never cleared (#644).
+  let shaped = true;
+  for (const [title, displayFormat, fixture] of COLUMNS) {
+    shaped = await establishFixture(fixture, () => spGet(fieldOf(title)),
+      shapeFor(title, displayFormat), ALL_ROWS) && shaped;
+  }
+  if (!shaped) return report();
+  // modified-clock leaves column rules on these, which would refuse saves the list rule is measured on.
+  for (const [title, displayFormat, fixture] of COLUMNS) {
+    const clear = await post(fieldOf(title), { __metadata: { type: 'SP.FieldDateTime' }, ValidationFormula: '', ValidationMessage: '' },
       { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
     log(clear.ok ? 'OK' : 'WARN', `${title} column rule clear answered HTTP ${clear.status}`);
-    const held = await establishFixture(fixture, () => spGet(field),
-      { InternalName: title, TypeAsString: 'DateTime', DisplayFormat: displayFormat,
-        ValidationFormula: (v) => v === null || v === '',
-        ReadOnlyField: false, EnforceUniqueValues: false,
-        Required: false, DefaultValue: (v) => v === null || v === '',
-        DefaultFormula: (v) => v === null || v === '' }, ALL_ROWS);
-    shaped = held && shaped;
+    shaped = await establishFixture(fixture, () => spGet(fieldOf(title)),
+      { ...shapeFor(title, displayFormat), ValidationFormula: blank }, ALL_ROWS) && shaped;
   }
   if (!shaped) return report();
   const setRule = async (formula, message) => post(listPath, {
