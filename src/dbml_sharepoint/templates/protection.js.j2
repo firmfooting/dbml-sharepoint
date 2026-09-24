@@ -147,10 +147,15 @@
         if (back.AllowDeletion !== want) {
           throw mismatch(`AllowDeletion reads back ${back.AllowDeletion} after writing ${want}`);
         }
-        summary.actions.push(lost
-          ? { action: word, list: LIST_TITLE, requested: { AllowDeletion: want }, outcome: 'applied', verified: true }
-          : { action: word, verified: true });
-        log('INFO', `'${LIST_TITLE}': AllowDeletion is now ${want} (read back).`);
+        // A lost request on a list already in that state proves the state, not that the write happened.
+        const already = lost && state.meta.AllowDeletion === want;
+        summary.actions.push(!lost
+          ? { action: word, verified: true }
+          : { action: word, list: LIST_TITLE, requested: { AllowDeletion: want },
+              outcome: already ? 'already-in-state' : 'applied', verified: true });
+        log('INFO', already
+          ? `'${LIST_TITLE}': AllowDeletion was already ${want} and still reads ${want}; whether the lost request reached SharePoint is unknown.`
+          : `'${LIST_TITLE}': AllowDeletion is now ${want} (read back).`);
       } else if (word === 'seal' || word === 'unseal') {
         const want = word === 'seal';
         const targets = state.fields.filter((f) => (f.Sealed === true) !== want);

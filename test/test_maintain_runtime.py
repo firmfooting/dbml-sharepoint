@@ -686,6 +686,20 @@ def test_a_lock_whose_merge_never_answered_but_took_is_settled_as_applied() -> N
     assert len(prompts) == 2
 
 
+def test_a_lost_lock_on_a_list_already_locked_is_not_recorded_as_applied() -> None:
+    """The readback matches because nothing changed, so it cannot say the write happened."""
+    (summary, _calls, _prompts, _tables), out = _protection_output(
+        _config(allow_deletion=False), ["lock", ""],
+        {"listMergeThrows": True, "discardListMerge": True},
+    )
+    assert "aborted" not in summary
+    assert summary["actions"] == [{
+        "action": "lock", "list": "APP_Thing", "requested": {"AllowDeletion": False},
+        "outcome": "already-in-state", "verified": True,
+    }]
+    assert "was already false and still reads false" in out
+
+
 def test_a_lock_whose_merge_never_answered_and_never_took_is_a_mismatch() -> None:
     (summary, _calls, prompts, _tables), out = _protection_output(
         _config(allow_deletion=True), ["lock", ""],
