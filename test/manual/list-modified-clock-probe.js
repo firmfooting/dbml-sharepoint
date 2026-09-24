@@ -428,6 +428,7 @@
     const held = await establishFixture(fixture,
       () => spGet(`${listPath}/fields/getbyinternalnameortitle('${enc(title)}')`),
       { InternalName: title, TypeAsString: 'DateTime', DisplayFormat: displayFormat,
+        ReadOnlyField: false,
         Required: false, DefaultValue: (v) => v === null || v === '',
         DefaultFormula: (v) => v === null || v === '' }, ALL_ROWS);
     shaped = held && shaped;

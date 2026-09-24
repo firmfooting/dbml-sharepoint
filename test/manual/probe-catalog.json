@@ -3484,7 +3484,8 @@
             {
               "id": "library.index.control-small-library-shapes",
               "depends_on": [
-                "library.index.fixture-file-count"
+                "library.index.fixture-file-count",
+                "library.index.fixture-target-seeded"
               ]
             },
             {

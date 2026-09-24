@@ -790,7 +790,7 @@
   const dateTimeHeld = await establishFixture(
     'formula.datetime.fixture-probewhen-date-time-column',
     () => spGet(`${fieldsPath}/getbyinternalnameortitle('${FIELD}')`),
-    { InternalName: FIELD, TypeAsString: 'DateTime', DisplayFormat: 1 },
+    { InternalName: FIELD, TypeAsString: 'DateTime', DisplayFormat: 1, ReadOnlyField: false },
     [...TIME_OF_DAY_ROWS, 'expression.client-validation.now-sentinel-stored']);
 
   // ---- Timestamps -----------------------------------------------------

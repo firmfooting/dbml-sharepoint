@@ -300,6 +300,7 @@ _SCRATCH_MOCK = textwrap.dedent("""
           fields.set(sent.Title, {
             TypeAsString: 'DateTime', DisplayFormat: sent.DisplayFormat,
             ValidationFormula: '', Required: false, DefaultValue: null, DefaultFormula: null,
+            ReadOnlyField: false,
           });
           return jsonResponse(201, { d: { Title: sent.Title, TypeAsString: 'DateTime' } });
         }
@@ -336,7 +337,8 @@ _SCRATCH_MOCK = textwrap.dedent("""
 """)
 
 _DATE = {"TypeAsString": "DateTime", "DisplayFormat": 0, "ValidationFormula": "",
-         "Required": False, "DefaultValue": None, "DefaultFormula": None}
+         "Required": False, "DefaultValue": None, "DefaultFormula": None,
+         "ReadOnlyField": False}
 _DATE_TIME = {**_DATE, "DisplayFormat": 1}
 _SCRATCH_COLUMNS = {"DM": _DATE, "DC": _DATE, "WM": _DATE_TIME}
 
@@ -417,8 +419,9 @@ _LIST_ALL = {*_LIST_RULE, *_LIST_DM, *_LIST_UPDATE, _SEED,
 
 @pytest.mark.parametrize(
     "shape",
-    [{"Required": True}, {"DefaultValue": "[today]"}, {"DefaultFormula": "=TODAY()"}],
-    ids=["required", "defaulted", "formula-defaulted"],
+    [{"Required": True}, {"DefaultValue": "[today]"}, {"DefaultFormula": "=TODAY()"},
+     {"ReadOnlyField": True}],
+    ids=["required", "defaulted", "formula-defaulted", "read-only"],
 )
 def test_modified_clock_voids_the_rows_on_a_reused_column_that_is_not_optional(
     shape: dict[str, Any],
@@ -502,7 +505,7 @@ _SENTINEL_MOCK = textwrap.dedent("""
         const xml = sent.parameters.SchemaXml;
         const name = /Name="([^"]+)"/.exec(xml)[1];
         const type = /Type="([^"]+)"/.exec(xml)[1];
-        fields.set(name, { TypeAsString: type,
+        fields.set(name, { TypeAsString: type, ReadOnlyField: false,
           DisplayFormat: /Format="DateTime"/.test(xml) ? 1 : 0, ValidationFormula: '' });
         return jsonResponse(201, { Id: `field-${name}`, InternalName: name });
       }
@@ -574,7 +577,8 @@ _TIME_OF_DAY = {
 
 @pytest.mark.parametrize(
     "fields",
-    [{}, {"ProbeWhen": {"TypeAsString": "DateTime", "DisplayFormat": 1, "ValidationFormula": ""}}],
+    [{}, {"ProbeWhen": {"TypeAsString": "DateTime", "DisplayFormat": 1, "ValidationFormula": "",
+                        "ReadOnlyField": False}}],
     ids=["created", "reused"],
 )
 def test_datetime_sentinel_measures_on_a_date_time_column_it_read_back(
@@ -592,7 +596,7 @@ def test_datetime_sentinel_voids_on_a_column_renamed_to_probe_when() -> None:
     """Saves and CAML name ProbeWhen as an internal name, which a title match does not prove."""
     fields = {"ProbeWhen": {
         "InternalName": "Renamed", "TypeAsString": "DateTime", "DisplayFormat": 1,
-        "ValidationFormula": "",
+        "ValidationFormula": "", "ReadOnlyField": False,
     }}
     rows, _ = _run_probe(_SENTINEL_MOCK, {"fields": fields}, "datetime-sentinel-probe.js")
 
@@ -606,6 +610,7 @@ def test_datetime_sentinel_voids_the_time_of_day_rows_on_a_reused_date_only_colu
     """A reused ProbeWhen with no time portion makes every time-of-day row vacuous."""
     fields = {"ProbeWhen": {
         "TypeAsString": "DateTime", "DisplayFormat": 0, "ValidationFormula": "",
+        "ReadOnlyField": False,
     }}
     rows, sent = _run_probe(_SENTINEL_MOCK, {"fields": fields}, "datetime-sentinel-probe.js")
 
