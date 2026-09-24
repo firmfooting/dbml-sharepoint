@@ -8,7 +8,7 @@
  *   unmeasured. Does either one create, hold a value, project through a view
  *   and take an index the way the list-to-list shape does?
  *
- * REVISION: 09622537
+ * REVISION: f8af0858
  *
  * WHY: `analysis/joins.py` counts every lookup the same way and the deploy
  * emits every lookup the same way, whichever container is at each end. A
@@ -523,7 +523,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 09622537. Quote this when reporting results.');
+  log('INFO', 'probe revision f8af0858. Quote this when reporting results.');
 
   // Three containers, never two. See the acyclic finding in the header.
   const LIB = 'dbmlsp Probe XLookup Lib';
@@ -608,8 +608,11 @@
   expect('scale.join.control-list-lookup-ceiling', 'CONTROL: how many single-value list-to-list lookups can one view project on this fixture?');
   expect('scale.join.library-lookup-ceiling', 'How many lookups can one view project on a DOCUMENT LIBRARY?');
   expect('scale.join.list-to-library-costs-a-join', 'How many joins does a lookup whose target is a library cost against the view ceiling?');
+  // Every row the catalogue rests on the library, the list-only controls included, since the run stops before them.
   const LIBRARY_ROWS = [
     'library.lookup.fixture-containers-ready',
+    'library.lookup.control-list-to-list-lookup-created',
+    'library.lookup.control-unsupported-operand-refused', 'scale.join.control-list-lookup-ceiling',
     'library.lookup.library-to-list-created', 'library.lookup.library-to-list-item-write',
     'library.lookup.library-to-list-indexed', 'library.lookup.list-to-library-title-created',
     'library.lookup.list-to-library-name-created', 'library.lookup.list-to-library-item-write',
@@ -905,8 +908,6 @@
     }
     libraryReady = made.ok;
   }
-  // Only the rows that write on or look up into the library rest on its template. The two
-  // list-to-list controls and the list ceiling do not, so they are left unreached, not voided.
   if (libraryReady && !await establishFixture('library.doc-lib.fixture-library-created',
     () => spGet(`${libPath}?$select=BaseTemplate`), { BaseTemplate: 101 }, LIBRARY_ROWS)) {
     return report();

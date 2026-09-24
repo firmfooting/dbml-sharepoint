@@ -3,7 +3,7 @@
  * SERVE IT INSIDE A LIBRARY OVER 5,000, AND DOES A THREE-LEVEL GROUP-BY WORK
  * WHERE NOTHING IS NEAR THE THRESHOLD?
  *
- * REVISION: 3d75375e
+ * REVISION: c36e84f5
  *
  * TWO QUESTIONS, AND THEY ARE DELIBERATELY ASKED IN ONE RUN. Every large-list
  * probe before this one measured a group-by refused past 5,000 and could not
@@ -812,7 +812,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not work
   // produce identical transcripts otherwise.
-  log('INFO', 'probe revision 3d75375e. Quote this when reporting results.');
+  log('INFO', 'probe revision c36e84f5. Quote this when reporting results.');
 
   // ---- Operator settings -------------------------------------------------
   // Which leg of the run this paste is. One paste answers one state, because a
@@ -2584,12 +2584,21 @@
   // ---- STATES 2 and 3 both read a fixture library's own page --------------
   const wanted = STATE === 2 ? LIB : SMALL;
   const wantedPath = STATE === 2 ? libPath : smallPath;
-  const wantedRead = await spGet(wantedPath);
-  const wantedId = !readFailed(wantedRead) ? guid(wantedRead.body.Id) : null;
-  const matched = wantedId !== null && identity.ids.includes(wantedId);
+  const wantedFixture = STATE === 2
+    ? 'library.large-list.fixture-foldered-document-library'
+    : 'library.large-list.fixture-multilevel-document-library';
+  const wantedRows = [...(STATE === 2 ? FOLDERED_ROWS : MULTILEVEL_ROWS), ...SHARED_ROWS];
+  const wantedRead = await spGet(`${wantedPath}?$select=Id,BaseTemplate`);
+  // Each paste finds the library by title afresh, so a generic list put under it since STATE 0 would match by Id (#559).
+  if (!await establishFixture(wantedFixture, async () => wantedRead, { BaseTemplate: 101 }, wantedRows)) {
+    report();
+    return;
+  }
+  const wantedId = guid(wantedRead.body.Id);
+  const matched = identity.ids.includes(wantedId);
   record('library.large-list.control-ui-foldered-page-identity',
          'CONTROL: does the rendered page say, in its own JavaScript context, which fixture library it belongs to',
-         wantedId === null ? 'NOT ESTABLISHED' : matched ? 'MATCHES' : 'DOES NOT MATCH',
+         matched ? 'MATCHES' : 'DOES NOT MATCH',
          `STATE ${STATE} expects '${wanted}', which reads list Id ${show(wantedId)} over REST. `
          + `${identity.detail}. experience ${experience.verdict}: ${experience.detail}. `
          + (matched

@@ -445,6 +445,14 @@ def _assert_generic_list_voids(
     assert all(fixture in rows[row_id]["evidence"] for row_id in dependents)
 
 
+def _catalog_dependents(probe: str, fixture: str) -> set[str]:
+    """The rows the catalogue says rest on `fixture`, which the run must void exactly."""
+    catalog = json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
+    descriptor = next(p for p in catalog["probes"] if p["file"] == probe)
+    return {finding["id"] for scenario in descriptor["scenarios"]
+            for finding in scenario["findings"] if fixture in finding["depends_on"]}
+
+
 # --------------------------------------------------------------------------
 # Item 12: the five probes that create or reuse their own library.
 # --------------------------------------------------------------------------
@@ -542,26 +550,6 @@ def test_library_view_probe_voids_its_rows_on_a_generic_list_of_the_same_name() 
 
 
 _CROSS_LIBRARY = "dbmlsp Probe XLookup Lib"
-_CROSS_LIBRARY_ROWS = {
-    "library.lookup.fixture-containers-ready",
-    "library.lookup.library-to-list-created",
-    "library.lookup.library-to-list-item-write",
-    "library.lookup.library-to-list-indexed",
-    "library.lookup.list-to-library-title-created",
-    "library.lookup.list-to-library-name-created",
-    "library.lookup.list-to-library-item-write",
-    "library.lookup.list-to-library-folder-row-selectable",
-    "library.lookup.list-to-library-indexed",
-    "library.lookup.picker-enumerates-files",
-    "scale.join.library-lookup-ceiling",
-    "scale.join.list-to-library-costs-a-join",
-}
-#: Both ends generic lists, so they rest on no library and are never voided by one.
-_CROSS_LIST_ROWS = {
-    "library.lookup.control-list-to-list-lookup-created",
-    "library.lookup.control-unsupported-operand-refused",
-    "scale.join.control-list-lookup-ceiling",
-}
 
 
 @_CREATED_OR_REUSED
@@ -579,12 +567,14 @@ def test_cross_lookup_probe_measures_on_a_library_it_read_back(reused: bool) -> 
     assert [r for r in _writes(sent) if r["path"].endswith("/fields/createfieldasxml")]
 
 
-def test_cross_lookup_probe_voids_only_the_library_rows_on_a_generic_list_of_its_name() -> None:
+def test_cross_lookup_probe_voids_every_catalogued_row_on_a_generic_list_of_its_name() -> None:
+    """The run stops before the list-to-list controls too, so no catalogued dependent stays open."""
     rows, sent = _run(_SITE_MOCK, {"lists": {_CROSS_LIBRARY: 100}}, "cross-lookup-probe.js")
 
-    _assert_generic_list_voids(rows, DOC_LIB, _CROSS_LIBRARY_ROWS)
-    for row_id in _CROSS_LIST_ROWS:
-        assert rows[row_id]["state"] == "open", rows[row_id]
+    dependents = _catalog_dependents("cross-lookup-probe.js", DOC_LIB)
+    assert "library.lookup.control-list-to-list-lookup-created" in dependents
+    _assert_generic_list_voids(rows, DOC_LIB, dependents)
+    assert not [row_id for row_id, row in rows.items() if row["state"] == "open"]
     assert not _writes(sent)
 
 
@@ -791,14 +781,6 @@ def _foldered_libs(big: int = 101, small: int = 101) -> dict[str, Any]:
     }
 
 
-def _catalog_dependents(probe: str, fixture: str) -> set[str]:
-    """The rows the catalogue says rest on `fixture`, which the run must void exactly."""
-    catalog = json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
-    descriptor = next(p for p in catalog["probes"] if p["file"] == probe)
-    return {finding["id"] for scenario in descriptor["scenarios"]
-            for finding in scenario["findings"] if fixture in finding["depends_on"]}
-
-
 def _no_query_or_write(sent: list[dict[str, str]]) -> None:
     assert not [r for r in sent if r["verb"] != "GET" or "$filter=" in r["path"]], sent
 
@@ -882,4 +864,158 @@ def test_the_foldered_probe_voids_the_small_library_rows_on_a_generic_list_of_it
     assert rows[FOLDERED]["outcome"] == "PASS"
     assert rows["library.large-list.fixture-foldered-file-count"]["outcome"] == "PASS"
     _assert_generic_list_voids(rows, MULTILEVEL, _catalog_dependents(_FOLDERED_PROBE, MULTILEVEL))
+    _no_query_or_write(sent)
+
+
+# --------------------------------------------------------------------------
+# The rendered states, pasted on a page after the setup leg. Each paste finds
+# its fixture by title afresh, so it must read the template back itself.
+# --------------------------------------------------------------------------
+#: A page the probe reads through its DOM instruments. Each element is a leaf
+#: carrying its text and the selectors it answers to.
+_PAGE = textwrap.dedent("""
+    const PAGE = __PAGE__;
+    globalThis.window = {
+      _spPageContextInfo: { webAbsoluteUrl: 'https://example.sharepoint.com/sites/test',
+                            listId: PAGE.listId, currentUICultureName: 'en-US' },
+      location: { origin: 'https://example.sharepoint.com', href: PAGE.href },
+    };
+    const nodes = PAGE.elements.map((e) => ({ sel: e.sel, textContent: e.text, children: [] }));
+    const text = nodes.map((n) => n.textContent).join('\\n');
+    globalThis.document = {
+      title: PAGE.title,
+      body: { innerText: text, textContent: text },
+      querySelectorAll: (selector) => (selector === '*' ? nodes
+        : nodes.filter((n) => selector.split(', ').some((s) => n.sel.includes(s)))),
+    };
+""")
+
+_GRID = {"sel": ["[data-automationid]", 'div[role="grid"]', '[role="grid"]'], "text": ""}
+
+
+def _rows(*names: str) -> list[dict[str, Any]]:
+    return [{"sel": ['[role="row"]'], "text": name} for name in names]
+
+
+def _expanders(*texts: str) -> list[dict[str, Any]]:
+    return [{"sel": ["[aria-expanded]"], "text": text} for text in texts]
+
+
+def _run_rendered(probe: str, libraries: dict[str, Any], state: int, list_id: str,
+                  elements: list[dict[str, Any]],
+                  ) -> tuple[dict[str, dict[str, str]], list[dict[str, str]]]:
+    page = {"listId": list_id, "title": "Documents", "elements": elements,
+            "href": "https://example.sharepoint.com/sites/test/Forms/AllItems.aspx"}
+    js = _probe_js(probe, ("CONFIRMED",))
+    staged = js.replace("  const STATE = 0;", f"  const STATE = {state};", 1)
+    assert staged != js, "the STATE constant is not spelled as this test expects"
+    script = (_PAGE.replace("__PAGE__", json.dumps(page)) + _RESPONSES
+              + _LARGE_MOCK.replace("__CONFIG__", json.dumps({"libraries": libraries}))
+              + "\n" + staged)
+    output = run_node(script)
+    rows = {row["id"]: row for row in _last(output, "__ROWS__")}
+    return rows, list(_last(output, "__SENT__"))
+
+
+_MODERN_PROBE = "library-large-list-modern-view-probe.js"
+_PREINDEX_ID = "guid-PreIndex"
+#: (state, the page it reads, the row that state settles, the outcome it gives).
+_MODERN_STATES = [
+    (2, [_GRID, *_rows("dbmlsp-pre-05100.txt", "dbmlsp-pre-05099.txt")],
+     "library.large-list.ui-default-view-renders-past-threshold", "RENDERS"),
+    (3, [_GRID, *_expanders("PChoice: Alpha (1275)", "PChoice: Beta (1275)")],
+     "library.large-list.ui-group-by-indexed-column-renders", "GROUPS AND COUNTS RENDER"),
+    (4, [_GRID, *_expanders("PNumber: 1 (5)", "PNumber: 2 (5)")],
+     "library.large-list.ui-group-by-unindexed-column-renders", "GROUPS RENDER"),
+    (5, [_GRID, {"sel": ['[role="dialog"]'], "text": "Alpha Beta Gamma Delta"}],
+     "library.large-list.ui-column-header-filter-past-threshold", "VALUES OFFERED"),
+]
+_MODERN_IDS = [f"state-{s[0]}" for s in _MODERN_STATES]
+
+
+@pytest.mark.parametrize(("state", "elements", "measured", "outcome"), _MODERN_STATES,
+                         ids=_MODERN_IDS)
+def test_the_modern_probe_reads_the_library_back_before_a_rendered_state(
+    state: int, elements: list[dict[str, Any]], measured: str, outcome: str,
+) -> None:
+    rows, sent = _run_rendered(_MODERN_PROBE, _preindex_lib(), state, _PREINDEX_ID, elements)
+
+    assert rows[LARGE_LIST]["outcome"] == "PASS", rows[LARGE_LIST]
+    assert "BaseTemplate=101" in rows[LARGE_LIST]["evidence"]
+    identity = rows["library.large-list.control-ui-page-identity-matches-fixture"]
+    assert identity["outcome"] == "MATCHES", identity
+    assert rows[measured]["outcome"] == outcome, rows[measured]
+    assert rows[measured]["state"] == "settled"
+    assert not _voided(rows)
+    _no_query_or_write(sent)
+
+
+@pytest.mark.parametrize(("state", "elements", "measured"), [s[:3] for s in _MODERN_STATES],
+                         ids=_MODERN_IDS)
+def test_the_modern_probe_voids_a_rendered_state_on_a_generic_list_of_the_fixture_name(
+    state: int, elements: list[dict[str, Any]], measured: str,
+) -> None:
+    """The page's Id matches the list, so only the template can say it is not the fixture."""
+    rows, sent = _run_rendered(_MODERN_PROBE, _preindex_lib(100), state, _PREINDEX_ID, elements)
+
+    _assert_generic_list_voids(rows, LARGE_LIST, _catalog_dependents(_MODERN_PROBE, LARGE_LIST))
+    assert rows[measured]["state"] == "void", rows[measured]
+    assert [row_id for row_id, row in rows.items() if row["state"] == "settled"] == [LARGE_LIST]
+    _no_query_or_write(sent)
+
+
+def test_the_modern_probe_voids_a_rendered_state_when_the_fixture_does_not_read() -> None:
+    rows, sent = _run_rendered(_MODERN_PROBE, {}, 3, _PREINDEX_ID, _MODERN_STATES[1][1])
+
+    held = rows[LARGE_LIST]
+    assert held["outcome"] == "FAIL", held
+    assert "HTTP 404" in held["evidence"], held
+    assert _voided(rows) == _catalog_dependents(_MODERN_PROBE, LARGE_LIST)
+    _no_query_or_write(sent)
+
+
+_FOLDERED_ID = "guid-Foldered"
+_MULTILEVEL_ID = "guid-MultiLevel"
+#: (state, the fixture it reads, the page's list id, the page, the row it settles, the outcome).
+_FOLDERED_STATES = [
+    (2, FOLDERED, _FOLDERED_ID,
+     [_GRID, *_rows("dbmlsp-fld-00003.txt", "dbmlsp-fld-00006.txt"),
+      *_expanders("PChoice: Alpha (40)")],
+     "library.large-list.ui-group-by-indexed-column-folder-scoped", "GROUPS AND COUNTS RENDER"),
+    (3, MULTILEVEL, _MULTILEVEL_ID,
+     [_GRID, *_expanders("MChoice: Alpha (60)", "MFlag: Yes (20)", "MText: mtext-0 (4)")],
+     "library.large-list.ui-group-by-multilevel-renders", "3 OF 3 LEVELS RENDER HEADERS"),
+]
+_FOLDERED_IDS = [f"state-{s[0]}" for s in _FOLDERED_STATES]
+
+
+@pytest.mark.parametrize(("state", "fixture", "list_id", "elements", "measured", "outcome"),
+                         _FOLDERED_STATES, ids=_FOLDERED_IDS)
+def test_the_foldered_probe_reads_the_selected_library_back_before_a_rendered_state(
+    state: int, fixture: str, list_id: str, elements: list[dict[str, Any]], measured: str,
+    outcome: str,
+) -> None:
+    rows, sent = _run_rendered(_FOLDERED_PROBE, _foldered_libs(), state, list_id, elements)
+
+    assert rows[fixture]["outcome"] == "PASS", rows[fixture]
+    assert "BaseTemplate=101" in rows[fixture]["evidence"]
+    assert rows["library.large-list.control-ui-foldered-page-identity"]["outcome"] == "MATCHES"
+    assert rows[measured]["outcome"] == outcome, rows[measured]
+    assert rows[measured]["state"] == "settled"
+    assert not _voided(rows)
+    _no_query_or_write(sent)
+
+
+@pytest.mark.parametrize(("state", "fixture", "list_id", "elements", "measured"),
+                         [s[:5] for s in _FOLDERED_STATES], ids=_FOLDERED_IDS)
+def test_the_foldered_probe_voids_a_rendered_state_on_a_generic_list_of_the_selected_name(
+    state: int, fixture: str, list_id: str, elements: list[dict[str, Any]], measured: str,
+) -> None:
+    """Only the library the state selects is swapped, and only its rows are voided."""
+    libraries = _foldered_libs(big=100) if state == 2 else _foldered_libs(small=100)
+    rows, sent = _run_rendered(_FOLDERED_PROBE, libraries, state, list_id, elements)
+
+    _assert_generic_list_voids(rows, fixture, _catalog_dependents(_FOLDERED_PROBE, fixture))
+    assert rows[measured]["state"] == "void", rows[measured]
+    assert [row_id for row_id, row in rows.items() if row["state"] == "settled"] == [fixture]
     _no_query_or_write(sent)

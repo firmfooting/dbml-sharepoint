@@ -2262,12 +2262,21 @@
   // ---- STATES 2 and 3 both read a fixture library's own page --------------
   const wanted = STATE === 2 ? LIB : SMALL;
   const wantedPath = STATE === 2 ? libPath : smallPath;
-  const wantedRead = await spGet(wantedPath);
-  const wantedId = !readFailed(wantedRead) ? guid(wantedRead.body.Id) : null;
-  const matched = wantedId !== null && identity.ids.includes(wantedId);
+  const wantedFixture = STATE === 2
+    ? 'library.large-list.fixture-foldered-document-library'
+    : 'library.large-list.fixture-multilevel-document-library';
+  const wantedRows = [...(STATE === 2 ? FOLDERED_ROWS : MULTILEVEL_ROWS), ...SHARED_ROWS];
+  const wantedRead = await spGet(`${wantedPath}?$select=Id,BaseTemplate`);
+  // Each paste finds the library by title afresh, so a generic list put under it since STATE 0 would match by Id (#559).
+  if (!await establishFixture(wantedFixture, async () => wantedRead, { BaseTemplate: 101 }, wantedRows)) {
+    report();
+    return;
+  }
+  const wantedId = guid(wantedRead.body.Id);
+  const matched = identity.ids.includes(wantedId);
   record('library.large-list.control-ui-foldered-page-identity',
          'CONTROL: does the rendered page say, in its own JavaScript context, which fixture library it belongs to',
-         wantedId === null ? 'NOT ESTABLISHED' : matched ? 'MATCHES' : 'DOES NOT MATCH',
+         matched ? 'MATCHES' : 'DOES NOT MATCH',
          `STATE ${STATE} expects '${wanted}', which reads list Id ${show(wantedId)} over REST. `
          + `${identity.detail}. experience ${experience.verdict}: ${experience.detail}. `
          + (matched
