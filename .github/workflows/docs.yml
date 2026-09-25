@@ -1,11 +1,16 @@
-# Docs site deploy (GitHub Pages). Manual by design: run it when the
-# docs are worth republishing (workflow_dispatch), not on every push.
-# The API reference pages under website/docs/api/ are generated and
-# COMMITTED (deterministic; drift shows as a git diff), so the build
-# here needs Node only.
+# Docs site deploy (GitHub Pages) on every push to main that changes website/,
+# so the published docs are main's. website/ is the site's whole input: the
+# generated API pages are committed there, and CI fails when they drift.
+# ci.yml's docs job builds the same site on every pull request.
+# workflow_dispatch republishes with no change, such as after a Pages outage.
 name: Docs
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - '.github/workflows/docs.yml'
   workflow_dispatch:
 
 permissions: {}
