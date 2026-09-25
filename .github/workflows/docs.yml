@@ -1,14 +1,8 @@
-# Docs site deploy (GitHub Pages). Publishes on every push to main that
-# changes the site, so the published docs are main's docs: a page merged
-# is a page live, with nobody having to remember to run this. The site is
-# built from website/ alone. The API reference pages under
-# website/docs/api/ are generated and COMMITTED (deterministic; drift
-# shows as a git diff, and ci.yml fails on it), so a source change that
-# alters them arrives here as a change under website/ too, and the build
-# needs Node only. ci.yml's docs job builds the same site on every pull
-# request, so a broken link is caught before it reaches main.
-# workflow_dispatch stays for a republish with no change, such as after a
-# Pages outage.
+# Docs site deploy (GitHub Pages) on every push to main that changes website/,
+# so the published docs are main's. website/ is the site's whole input: the
+# generated API pages are committed there, and CI fails when they drift.
+# ci.yml's docs job builds the same site on every pull request.
+# workflow_dispatch republishes with no change, such as after a Pages outage.
 name: Docs
 
 on:
