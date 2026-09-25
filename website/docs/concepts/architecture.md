@@ -34,8 +34,14 @@ pipeline; the packaging spine sits at the package root:
 | --- | --- | --- |
 | `model/` | `parser` · `mapping_loader` · `release` | Parse DBML, the mapping YAML (+ enums/retention), release.yaml into typed objects |
 | `analysis/` | `validator` · `ordering` · `typemap` · `phases` · `permissions` · `styles` · `reporting/` | Build-time rules (fail-closed), dependency ordering, SP type/formatter/permission projections, and the reporting pack's plan and dictionary rows as data |
-| `generators/` | `jsgen` · `rollbackgen` · `assessgen` · `demogen` · `manifestgen` · `report_m` · `report_sql` · `report_md` · `reportgen` | Each renders one artifact family from model + analysis; the three `report_*` renderers are split by escaping function and `reportgen` composes them into the pack |
-| root | `bundle` · `templating` · `cli` · `extension` | The one emission sequence (`emit_bundle`), stale clearing, INDEX/checksums, the shared Jinja env, the CLI, the extension protocol |
+| `generators/` | `jsgen` · `rollbackgen` · `assessgen` · `verifygen` · `demogen` · `manifestgen` · `report_m` · `report_sql` · `report_md` · `reportgen` · `extractgen` · `identifygen` · `maintaingen` | Each renders one artifact family from model + analysis; the three `report_*` renderers are split by escaping function and `reportgen` composes them into the pack |
+| root | `bundle` · `templating` · `cli` · `pipeline` · `project` · `wizard` · `catalogue` · `extension` | The one emission sequence (`emit_bundle`), stale clearing, INDEX/checksums, the shared Jinja env, the CLI, its library entry points (`execute_build`) and input loading, the interactive wizard and the catalogue of shipped templates it offers, the extension protocol |
+
+The shipped solution templates live in `src/dbml_sharepoint/solutions/`,
+inside the package, because only files under it reach the wheel and the
+wizard's audience is somebody who ran `uvx dbml-sharepoint` and never
+cloned this repository. Do not confuse them with `templates/` below, which
+is Jinja.
 
 Data flows downward (analysis knows nothing of generators) and the root
 modules orchestrate. The [generated API reference](../api/index.md)
@@ -52,8 +58,9 @@ paragraph if it matters to you.
 ## Templates mirror the layout
 
 `templates/*.js.j2` are the pasteable entry-point scripts;
-`templates/_*.js.j2` are shared partials (provenance header, site guard,
-HTTP transport, write headers, cached digest); `templates/deploy/_*.js.j2`
+`templates/_*.js.j2` are shared partials (provenance header, site guard
+with `apiUrl` and `odataName`, HTTP transport, write headers, cached
+digest); `templates/deploy/_*.js.j2`
 are deploy.js.txt's phase bodies.
 
 **"Shared" means available to every script, not present in every script.**

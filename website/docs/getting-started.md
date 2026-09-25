@@ -20,8 +20,11 @@ Either puts the `dbml-sharepoint` command on your path. Check it with
 The solution templates are part of the package, so an install is all you
 need to use them, no clone required.
 
-These pages document `main`. `--time-zone` below arrived after 0.4.0, so if
-the released version refuses a flag you see here, take `main` directly:
+These pages document `main`, which can be ahead of the latest release on
+PyPI. If the released version refuses a flag or a mapping key you see here,
+check the
+[changelog](https://github.com/firmfooting/dbml-sharepoint/blob/main/CHANGELOG.md)
+or take `main` directly:
 
 ```bash
 uv tool install git+https://github.com/firmfooting/dbml-sharepoint
@@ -162,6 +165,9 @@ one.
 4. F12 → Console → paste the whole of `build/deploy.js.txt` → Enter.
 5. Watch the `[SP-DEPLOY]` lines; success ends with a summary and
    `errors: []`.
+6. If the build emitted `build/verify.js.txt`, paste it next, on the same
+   site, and read its
+   [`VERIFIED / MISMATCH / NOT-VERIFIED`](artifacts/verify.md) verdict.
 
 Rerunning `deploy.js.txt` is safe: verified work is skipped, drift is
 reconciled, and anything that cannot be verified fails closed with a

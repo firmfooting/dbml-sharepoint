@@ -102,3 +102,17 @@ config:
   # Removing the body H1 would leave those pages with no visible heading.
   MD025:
     front_matter_title: ""
+
+  # MD033 (no-inline-html) stays ON, with an allowlist of the elements the
+  # README's shared firmfooting header and footer need and Markdown cannot
+  # express: a `<picture>` that swaps the lockup for dark mode, inside an
+  # `<h1>` so MD041 still sees a top-level heading first, and a `<sub>`
+  # footer carrying a link. Any other element still fires.
+  MD033:
+    allowed_elements:
+      - h1
+      - picture
+      - source
+      - img
+      - sub
+      - a

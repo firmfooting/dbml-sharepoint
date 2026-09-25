@@ -51,9 +51,10 @@ roughly one `contextinfo` POST per run.
 
 deploy.js.txt runs the phase sequence from the
 [phases manifest](architecture.md#the-phases-manifest): PREPARE
-(preflight, security principals, enrolment, maintenance unseal),
-STRUCTURE (lists, deferred lookups, indexes, defaults), PRESENTATION
-(views, forms), PROTECTION (seal, ACLs), DATA (seeds).
+(assessment, preflight, list renames, security principals, enrolment,
+run and change logs, maintenance unseal), STRUCTURE (lists, folders,
+deferred lookups, indexes, defaults), PRESENTATION (views, forms),
+PROTECTION (seal, ACLs), DATA (seeds).
 
 Within a phase, parallelism follows the **lane rule**: SharePoint stores
 fields and views in the list schema, and concurrent schema writes to the

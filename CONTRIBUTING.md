@@ -10,8 +10,11 @@ and how a change is expected to move from idea to merged.
 ## Setup
 
 ```bash
+git clone https://github.com/firmfooting/dbml-sharepoint
+cd dbml-sharepoint
 uv sync
 uv run prek install   # installs the git hooks
+uv run dbml-sharepoint version
 ```
 
 Hooks are run by [prek](https://prek.j178.dev/), which is pinned in the
@@ -53,6 +56,34 @@ Notes that save you a round-trip:
   findings reference too: `uv run python website/scripts/generate_findings.py`.
 - **Emitted JS.** For template changes, build an example and
   `node --check` the emitted scripts.
+
+## Where things live
+
+The repository map (one module per concern, grouped into the `model/`,
+`analysis/` and `generators/` layer packages, with the packaging spine at
+the package root), the template layout and the extension protocol are
+documented in [Concepts → Architecture](website/docs/concepts/architecture.md).
+The naming conventions are in
+[Development → Philosophy](website/docs/development/philosophy.md), under
+the public-name rule: underscore-prefixed names are module-private, and
+anything imported across modules is public and unprefixed.
+
+## The docs site
+
+The documentation at
+[firmfooting.github.io/dbml-sharepoint](https://firmfooting.github.io/dbml-sharepoint/)
+is built from [`website/`](website), a Docusaurus site. To browse it
+locally:
+
+```bash
+cd website
+npm install
+npm start
+```
+
+`website/docs/api/` and `website/docs/reference/findings.md` are generated.
+Regenerate them with the commands under *Generated docs* above rather than
+editing them by hand.
 
 ## Commits and merging
 

@@ -60,11 +60,56 @@ const config = {
             position: 'left',
             label: 'Documentation',
           },
+          {
+            href: 'https://github.com/firmfooting/dbml-sharepoint',
+            position: 'right',
+            label: 'GitHub',
+          },
         ],
       },
+      // Footer `to` paths resolve against baseUrl, and onBrokenLinks
+      // checks them at build time. `href` targets are external and are not.
       footer: {
         style: 'dark',
-        copyright: 'dbml-sharepoint, MIT licensed.',
+        links: [
+          {
+            title: 'Docs',
+            items: [
+              { label: 'Getting started', to: '/getting-started' },
+              { label: 'Concepts', to: '/concepts/architecture' },
+              { label: 'Reference', to: '/reference/mapping' },
+            ],
+          },
+          {
+            title: 'Project',
+            items: [
+              {
+                label: 'GitHub',
+                href: 'https://github.com/firmfooting/dbml-sharepoint',
+              },
+              {
+                label: 'Changelog',
+                href: 'https://github.com/firmfooting/dbml-sharepoint/blob/main/CHANGELOG.md',
+              },
+              {
+                label: 'Security',
+                href: 'https://github.com/firmfooting/dbml-sharepoint/blob/main/SECURITY.md',
+              },
+            ],
+          },
+          {
+            title: 'firmfooting',
+            items: [
+              { label: 'Org on GitHub', href: 'https://github.com/firmfooting' },
+              { label: 'formwork', href: 'https://github.com/firmfooting/formwork' },
+              { label: 'vsdxkit', href: 'https://github.com/firmfooting/vsdxkit' },
+              { label: 'branding', href: 'https://github.com/firmfooting/branding' },
+            ],
+          },
+        ],
+        copyright:
+          'dbml-sharepoint, MIT licensed. Part of firmfooting. ' +
+          'Not affiliated with or endorsed by Microsoft.',
       },
       prism: {
         additionalLanguages: ['json', 'yaml', 'sql', 'bash'],
