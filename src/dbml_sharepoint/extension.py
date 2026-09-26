@@ -118,7 +118,7 @@ class UnknownExtensionError(ValueError):
     """
 
 
-def resolve_extension(name: str | None) -> BaseExtension:
+def resolve_extension(name: str | None) -> DeploymentExtension:
     """Resolve by entry-point name; None/'null' -> NullExtension.
     Raises ValueError listing installed extensions when the name is unknown."""
     if name in (None, "", "null"):
@@ -127,11 +127,11 @@ def resolve_extension(name: str | None) -> BaseExtension:
     for ep in eps:
         if ep.name == name:
             extension: object = ep.load()()
-            # An entry point is untyped; a plugin that builds something else fails here, named.
-            if not isinstance(extension, BaseExtension):
+            # The protocol, not BaseExtension: a plugin may implement it without subclassing.
+            if not isinstance(extension, DeploymentExtension):
                 raise TypeError(
                     f"Extension {name!r} ({ep.value}) built a {type(extension).__name__}, "
-                    "not a BaseExtension",
+                    "which does not implement DeploymentExtension",
                 )
             return extension
     installed = sorted(ep.name for ep in eps)

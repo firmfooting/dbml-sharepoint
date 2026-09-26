@@ -1,6 +1,7 @@
 # test/test_extension.py
 from importlib.metadata import EntryPoint
 from pathlib import Path
+from typing import Any, ClassVar
 
 import pytest
 import typer
@@ -9,6 +10,7 @@ from _model import column as make_column
 from _model import schema as make_schema
 from _model import table as make_table
 
+from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.extension import (
     BaseExtension,
     DeploymentExtension,
@@ -17,7 +19,8 @@ from dbml_sharepoint.extension import (
     SiteContext,
     resolve_extension,
 )
-from dbml_sharepoint.model.parser import Schema
+from dbml_sharepoint.model.mapping_types import MappingBundle
+from dbml_sharepoint.model.parser import Column, Schema, Table
 
 
 def _schema() -> Schema:
@@ -143,6 +146,40 @@ def test_resolve_extension_returns_the_extension_a_plugin_builds(
 ) -> None:
     _installed(monkeypatch, "dbml_sharepoint.extension:NullExtension")
     assert isinstance(resolve_extension("acme"), NullExtension)
+
+
+class ProtocolOnlyExtension:
+    """Every DeploymentExtension member, and no BaseExtension ancestry."""
+
+    name: ClassVar[str] = "acme"
+    requires_project_cli: ClassVar[bool] = False
+
+    def extra_validators(self, bundle: MappingBundle, schema: Schema) -> list[Finding]:
+        return []
+
+    def expand_column(
+        self, table: Table, column: Column, bundle: MappingBundle,
+    ) -> list[dict[str, Any]] | None:
+        return None
+
+    def seed_lists(
+        self, bundle: MappingBundle, schema: Schema, site_context: SiteContext,
+    ) -> dict[str, dict[str, Any]]:
+        return {}
+
+    def manifest_extras(self, bundle: MappingBundle, schema: Schema) -> ManifestExtras:
+        return ManifestExtras()
+
+    def cli_subcommands(self, app: typer.Typer) -> None:
+        return
+
+
+def test_resolve_extension_accepts_a_plugin_that_implements_the_protocol(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The architecture page tells a plugin to implement DeploymentExtension, not to subclass."""
+    _installed(monkeypatch, f"{__name__}:ProtocolOnlyExtension")
+    assert type(resolve_extension("acme")).__name__ == "ProtocolOnlyExtension"
 
 
 def test_resolve_extension_unknown_message_mentions_requested_name() -> None:

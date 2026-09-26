@@ -952,7 +952,7 @@ def build_schema_json(
                 for section in body.get("sections") or []:
                     if isinstance(section, dict) and isinstance(section.get("fields"), list):
                         names: list[object] = section["fields"]
-                        # str() as the validator reads them; it refuses a name no column renders.
+                        # The validator has refused a non-string entry; str() narrows the type.
                         section["fields"] = [
                             bundle.mapping.display_name_for(table_name, str(name))
                             for name in names
