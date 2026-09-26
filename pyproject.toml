@@ -228,6 +228,9 @@ incompatible-comparison = "error"
 # Warnings by default, which do not fail the gate.
 unnecessary-type-conversion = "error"
 redundant-condition = "error"
+# Off even in strict: an implicit Any reaching a call or a variable is a value nothing checked.
+unknown-argument-type = "error"
+unknown-variable-type = "error"
 
 # Test data is often deliberately untyped: `[]`, `{}` and mock lambdas.
 [[tool.pyrefly.sub-config]]
@@ -236,6 +239,9 @@ matches = "test/**"
 [tool.pyrefly.sub-config.errors]
 implicit-any-empty-container = false
 implicit-any-lambda = false
+# Tests read node output and fixtures through json.loads, whose values are unchecked by design.
+unknown-argument-type = false
+unknown-variable-type = false
 
 [tool.coverage.run]
 # Measured on the package, not on the test tree: a test file that never runs
