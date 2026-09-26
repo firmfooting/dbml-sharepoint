@@ -5126,7 +5126,7 @@ _NON_TEXT_KEY_CASES = [
     ),
     pytest.param(
         _views_yaml("views:\n  ~:\n    - { title: All, fields: [Title] }"),
-        "views: key None is not text (YAML read it as NoneType); quote it",
+        "views: key None is not text (YAML read it as null); quote it",
         id="mapping-null",
     ),
     pytest.param(

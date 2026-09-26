@@ -29,7 +29,7 @@ def test_a_mapping_passes_through_unchanged() -> None:
         ("2026", "key 2026 is not text (YAML read it as int)"),
         ("2.10", "key 2.1 is not text (YAML read it as float)"),
         ("010", "key 8 is not text (YAML read it as int)"),
-        ("~", "key None is not text (YAML read it as NoneType)"),
+        ("~", "key None is not text (YAML read it as null)"),
     ],
 )
 def test_a_key_yaml_did_not_read_as_text_is_refused(typed: str, read: str) -> None:

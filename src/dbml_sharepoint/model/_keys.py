@@ -22,9 +22,10 @@ def _text_key(key: object, context: str) -> str:
     """
     if isinstance(key, str):
         return key
+    # "NoneType" is Python's word; the author wrote `~` or nothing, which YAML calls null.
+    kind = "null" if key is None else type(key).__name__
     raise MappingShapeError(
-        f"{context}: key {key!r} is not text (YAML read it as "
-        f"{type(key).__name__}); quote it",
+        f"{context}: key {key!r} is not text (YAML read it as {kind}); quote it",
     )
 
 
