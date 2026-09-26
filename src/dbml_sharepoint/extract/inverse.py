@@ -77,10 +77,20 @@ def _canonical(formatter: object) -> str:
 # === Column formatting ======================================================
 
 
+def _class_expression(formatter: dict[str, Any]) -> str | None:
+    """The formatter's `attributes.class`, or None when it is not text."""
+    attributes: object = formatter.get("attributes")
+    if not isinstance(attributes, dict):
+        return None
+    entries: dict[object, object] = attributes
+    class_expr = entries.get("class")
+    return class_expr if isinstance(class_expr, str) else None
+
+
 def _severity_candidate(formatter: dict[str, Any]) -> dict[str, Any] | None:
     """A `severity` or `pill` spec proposed from a formatter's class chain."""
-    class_expr = formatter.get("attributes", {}).get("class")
-    if not isinstance(class_expr, str):
+    class_expr = _class_expression(formatter)
+    if class_expr is None:
         return None
     calculated = text_value(calculated=True) in class_expr
     chain = class_expr.removesuffix(_SEVERITY_TEXT_SUFFIX)
@@ -107,13 +117,16 @@ def _severity_candidate(formatter: dict[str, Any]) -> dict[str, Any] | None:
 
 def _overdue_date_candidate(formatter: dict[str, Any]) -> dict[str, Any] | None:
     """An `overdue-date` spec proposed from a formatter's class expression."""
-    class_expr = formatter.get("attributes", {}).get("class")
-    if not isinstance(class_expr, str) or "@now" not in class_expr:
+    class_expr = _class_expression(formatter)
+    if class_expr is None or "@now" not in class_expr:
         return None
     spec: dict[str, Any] = {"style": "overdue-date"}
     if text_value(calculated=True) in class_expr:
         spec["calculated"] = True
-    excluded = re.findall(r"\[\$([A-Za-z_][A-Za-z0-9_]*)\] != '((?:[^']|'')*)'", class_expr)
+    # Two groups, so findall gives one pair of strings per match.
+    excluded: list[tuple[str, str]] = re.findall(
+        r"\[\$([A-Za-z_][A-Za-z0-9_]*)\] != '((?:[^']|'')*)'", class_expr,
+    )
     if excluded:
         guard_field = excluded[0][0]
         if any(name != guard_field for name, _ in excluded):
@@ -129,8 +142,8 @@ def _overdue_date_candidate(formatter: dict[str, Any]) -> dict[str, Any] | None:
 
 def _numeric_severity_candidate(formatter: dict[str, Any]) -> dict[str, Any] | None:
     """Recover numeric bands using the same scalar expression as the generator."""
-    expression = formatter.get("attributes", {}).get("class")
-    if not isinstance(expression, str):
+    expression = _class_expression(formatter)
+    if expression is None:
         return None
     calculated = text_value(calculated=True) in expression
     scalar = ScalarValue("Number", calculated=calculated)
