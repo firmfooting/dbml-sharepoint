@@ -95,6 +95,22 @@ BUILTIN_SP_GROUPS = frozenset({'Members', 'Owners', 'Site Members', 'Site Owners
 ASSOCIATED_GROUP_ALIASES = {'site owners': 'associated_owner_group', 'site members': 'associated_member_group', 'site visitors': 'associated_visitor_group'}
 ```
 
+### `policy_writes`
+
+```python
+def policy_writes(policy: dbml_sharepoint.model.mapping_types.ListPermissionPolicy) -> bool
+```
+
+True when applying `policy` performs at least one ACL WRITE.
+
+Read off the one body both scopes go through,
+`templates/deploy/_acls.js.j2::reconcileScope`: it POSTs
+`breakroleinheritance` only when the policy breaks inheritance,
+`addroleassignment` only for a declared assignment it does not already
+find, and `removeroleassignment` only in exact mode, where an empty
+declared set is the allowlist that strips the scope. Every other request
+it makes is a read, so those three are the whole of the write set.
+
 ### `requires_manage_permissions`
 
 ```python
@@ -122,7 +138,7 @@ which was a proxy for the ACL work it performs: a policy that breaks no
 inheritance, declares no assignment and reconciles `configured` makes
 `reconcileScope` read and write nothing, and demanding the right for it
 made both the assessment and deploy.js's live preflight reject an
-operator holding every right the deployment exercises. `_policy_writes`
+operator holding every right the deployment exercises. `policy_writes`
 asks the effective question for both scopes.
 
 `table_names` should be the entity names actually in this build

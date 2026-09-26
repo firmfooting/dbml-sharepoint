@@ -253,7 +253,7 @@ ASSOCIATED_GROUP_ALIASES = {
 }
 
 
-def _policy_writes(policy: ListPermissionPolicy) -> bool:
+def policy_writes(policy: ListPermissionPolicy) -> bool:
     """True when applying `policy` performs at least one ACL WRITE.
 
     Read off the one body both scopes go through,
@@ -296,7 +296,7 @@ def requires_manage_permissions(
     inheritance, declares no assignment and reconciles `configured` makes
     `reconcileScope` read and write nothing, and demanding the right for it
     made both the assessment and deploy.js's live preflight reject an
-    operator holding every right the deployment exercises. `_policy_writes`
+    operator holding every right the deployment exercises. `policy_writes`
     asks the effective question for both scopes.
 
     `table_names` should be the entity names actually in this build
@@ -327,7 +327,7 @@ def requires_manage_permissions(
     # stay answerable when the enum does not resolve (see the reader gate).
     for name in table_names:
         policies = (mapping.permissions_for_entity(name), perms.folder_policies.get(name))
-        if any(policy is not None and _policy_writes(policy) for policy in policies):
+        if any(policy is not None and policy_writes(policy) for policy in policies):
             return True
     return False
 
