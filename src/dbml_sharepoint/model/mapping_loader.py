@@ -47,8 +47,9 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
     unknown_sections = set(raw) - KNOWN_SECTIONS
     if unknown_sections:
         raise UnknownMappingKeyError(
-            f"unknown mapping section(s) {sorted(unknown_sections)}. Unknown keys used to be "
-            f"ignored, so a misspelled section silently deployed nothing.",
+            f"unknown mapping section(s) {sorted(unknown_sections, key=str)}. "
+            f"Unknown keys used to be ignored, so a misspelled section "
+            f"silently deployed nothing.",
         )
     for removed, replacement in _REMOVED_SECTIONS.items():
         if removed in raw:

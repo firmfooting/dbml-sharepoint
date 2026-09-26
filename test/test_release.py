@@ -46,6 +46,28 @@ def test_release_unknown_keys_are_rejected(tmp_path: Path) -> None:
         load_release(tmp_path / "release.yaml")
 
 
+def test_release_unknown_keys_of_two_types_are_named_rather_than_compared(
+    tmp_path: Path,
+) -> None:
+    """YAML reads `2026:` as an int, and sorting it beside a text key raised a
+    bare TypeError before the refusal could be built."""
+    write_mapping(
+        tmp_path,
+        """
+        release: "1.0.0"
+        date: "2026-01-01"
+        deployer_version: "dbml-sharepoint/0.1.0"
+        schema_version: "1.0.0"
+        2026: x
+        note: y
+        """,
+        prefix=None,
+        name="release.yaml",
+    )
+    with pytest.raises(ValueError, match=r"unknown key\(s\) \[2026, 'note'\]"):
+        load_release(tmp_path / "release.yaml")
+
+
 def test_release_missing_key_is_named_not_a_keyerror(tmp_path: Path) -> None:
     """A missing key raised a bare KeyError('release'), which reaches the
     operator as a traceback naming a dict lookup rather than a file."""

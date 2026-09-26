@@ -1463,6 +1463,18 @@ def test_unknown_top_level_section_is_a_load_error(tmp_path: Path) -> None:
     assert "form_visibilty" in str(err)
 
 
+def test_unknown_top_level_sections_of_two_types_are_named_rather_than_compared(
+    tmp_path: Path,
+) -> None:
+    """YAML reads `2026:` as an int, and sorting it beside a text section
+    raised a bare TypeError before the refusal could be built."""
+    write_mapping(tmp_path, blocks(entities("Risk"), "2026: x\nnote: y"))
+    _refuses(
+        tmp_path / "m.yaml", UnknownMappingKeyError,
+        match=r"unknown mapping section\(s\) \[2026, 'note'\]",
+    )
+
+
 def test_documented_permissions_block_is_rejected_not_ignored(tmp_path: Path) -> None:
     """`permissions:` was allow-listed and never read. A build of the
     documented block was byte-identical to a mapping with no permissions at

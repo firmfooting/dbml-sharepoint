@@ -43,7 +43,7 @@ def load_release(path: Path) -> Release:
     unknown = set(raw) - set(_REQUIRED_KEYS) - set(_OPTIONAL_KEYS)
     if unknown:
         raise ValueError(
-            f"{path}: unknown key(s) {sorted(unknown)} "
+            f"{path}: unknown key(s) {sorted(unknown, key=str)} "
             f"(known: {sorted((*_REQUIRED_KEYS, *_OPTIONAL_KEYS))})",
         )
     missing = [key for key in _REQUIRED_KEYS if key not in raw]
