@@ -23,12 +23,16 @@ def check(vc: ValidationContext) -> list[Finding]:
 
 
 def _location(path: str) -> Location:
-    """The section a dotted key path starts in, with the whole path as `sub`."""
+    """The section a dotted key path starts in, and the rest of the path as `sub`.
+
+    A head that names no section keeps the whole path, so nothing is lost.
+    """
     head = path.split(".", 1)[0].split("[", 1)[0]
     # `policies` is the head of every path in retention-policies.yaml.
     if head == "policies":
         return Location(Section.RETENTION, sub=path)
     try:
-        return Location(Section(head), sub=path)
+        section = Section(head)
     except ValueError:
         return Location(Section.MAPPING, sub=path)
+    return Location(section, sub=path.removeprefix(head).removeprefix(".") or None)

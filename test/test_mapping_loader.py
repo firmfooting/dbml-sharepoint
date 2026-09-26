@@ -15,7 +15,6 @@ from _packs import blocks, entities, entity, with_tail, write_mapping
 from _paths import FIXTURES, PACKAGE
 
 from dbml_sharepoint.analysis.findings import Finding, FindingCode
-from dbml_sharepoint.analysis.findings import Section as FindingSection
 from dbml_sharepoint.analysis.validator import validate_against_mapping
 from dbml_sharepoint.model import errors, mapping_types
 from dbml_sharepoint.model.errors import (
@@ -3966,7 +3965,7 @@ _RECORDED_BLANK_CASES = [
         """),
         "views.Project[0].sort[0].direction", "asc",
         lambda b: b.mapping.views["Project"][0].sort[0].direction,
-        FindingSection.VIEWS,
+        "views.Project[0].sort[0].direction",
         id="view-sort-direction",
     ),
     pytest.param(
@@ -3979,7 +3978,7 @@ _RECORDED_BLANK_CASES = [
         """),
         "views.Project[0].where", None,
         lambda b: b.mapping.views["Project"][0].where,
-        FindingSection.VIEWS,
+        "views.Project[0].where",
         id="view-where",
     ),
     pytest.param(
@@ -3991,7 +3990,7 @@ _RECORDED_BLANK_CASES = [
         """),
         "form_visibility.Risk.reconcile", "exact",
         lambda b: b.mapping.form_visibility["Risk"].reconcile,
-        FindingSection.FORM_VISIBILITY,
+        "form_visibility.Risk.reconcile",
         id="form-visibility-reconcile",
     ),
     pytest.param(
@@ -4003,7 +4002,7 @@ _RECORDED_BLANK_CASES = [
         """),
         "form_visibility.Risk.columns.Title.when", None,
         lambda b: b.mapping.form_visibility["Risk"].columns["Title"].when,
-        FindingSection.FORM_VISIBILITY,
+        "form_visibility.Risk.columns.Title.when",
         id="form-visibility-when",
     ),
     pytest.param(
@@ -4015,7 +4014,7 @@ _RECORDED_BLANK_CASES = [
         """),
         "column_validation.Risk.reconcile", "exact",
         lambda b: b.mapping.column_validation["Risk"].reconcile,
-        FindingSection.COLUMN_VALIDATION,
+        "column_validation.Risk.reconcile",
         id="column-validation-reconcile",
     ),
     pytest.param(
@@ -4027,7 +4026,7 @@ _RECORDED_BLANK_CASES = [
         """),
         "list_permissions.default.reconcile", "configured",
         lambda b: b.mapping.permissions.default_policy.reconcile_mode,
-        FindingSection.LIST_PERMISSIONS,
+        "list_permissions.default.reconcile",
         id="list-permissions-reconcile",
     ),
     pytest.param(
@@ -4037,7 +4036,7 @@ _RECORDED_BLANK_CASES = [
         """),
         "groups[0].owner_group", "Site Owners",
         lambda b: b.mapping.permissions.groups[0].owner_group,
-        FindingSection.GROUPS,
+        "groups.[0].owner_group",
         id="group-owner-group",
     ),
     pytest.param(
@@ -4047,7 +4046,7 @@ _RECORDED_BLANK_CASES = [
         """),
         "groups[0].from_enum", None,
         lambda b: next((s.enum for s in b.mapping.permissions.group_sources), None),
-        FindingSection.GROUPS,
+        "groups.[0].from_enum",
         id="group-from-enum",
     ),
     pytest.param(
@@ -4063,7 +4062,7 @@ _RECORDED_BLANK_CASES = [
         ),
         "demo_items.Docs[0].file.content", DEMO_FILE_CONTENT,
         lambda b: b.mapping.demo_items["Docs"][0].file.content,
-        FindingSection.DEMO_ITEMS,
+        "demo_items.Docs[0].file.content",
         id="demo-file-content",
     ),
     pytest.param(
@@ -4074,7 +4073,7 @@ _RECORDED_BLANK_CASES = [
         """),
         "versioning.default.major_version_limit", Versioning.major_version_limit,
         lambda b: b.mapping.versioning_default.major_version_limit,
-        FindingSection.VERSIONING,
+        "versioning.default.major_version_limit",
         id="major-version-limit",
     ),
     pytest.param(
@@ -4086,7 +4085,7 @@ _RECORDED_BLANK_CASES = [
         """),
         "versioning.overrides.Risk.major_version_limit", 50,
         lambda b: b.mapping.versioning_for("Risk").major_version_limit,
-        FindingSection.VERSIONING,
+        "versioning.overrides.Risk.major_version_limit",
         id="versioning-override-takes-the-resolved-default",
     ),
     pytest.param(
@@ -4098,14 +4097,14 @@ _RECORDED_BLANK_CASES = [
         """),
         "item_security.overrides.Risk.read", "own",
         lambda b: b.mapping.item_security_for("Risk").read,
-        FindingSection.MAPPING,
+        "mapping.item_security.overrides.Risk.read",
         id="item-security-override-takes-the-resolved-default",
     ),
     pytest.param(
         blocks(entities("Risk"), "seal_columns:"),
         "mapping.seal_columns", False,
         lambda b: b.mapping.seal_columns,
-        FindingSection.MAPPING,
+        "mapping.seal_columns",
         id="seal-columns",
     ),
     pytest.param(
@@ -4115,7 +4114,7 @@ _RECORDED_BLANK_CASES = [
         """),
         "reporting.users_table", False,
         lambda b: b.mapping.reporting.users_table,
-        FindingSection.REPORTING,
+        "reporting.users_table",
         id="reporting-switch",
     ),
     pytest.param(
@@ -4126,7 +4125,7 @@ _RECORDED_BLANK_CASES = [
         """),
         "retired_columns.Risk.Old.hide_existing", False,
         lambda b: b.mapping.retired_columns["Risk"]["Old"].hide_existing,
-        FindingSection.RETIRED_COLUMNS,
+        "retired_columns.Risk.Old.hide_existing",
         id="hide-existing",
     ),
 ]
@@ -4139,7 +4138,7 @@ def _validated(bundle: MappingBundle) -> list[Finding]:
 
 
 @pytest.mark.parametrize(
-    ("body", "path", "default", "read", "section"), _RECORDED_BLANK_CASES,
+    ("body", "path", "default", "read", "location"), _RECORDED_BLANK_CASES,
 )
 def test_a_blank_key_takes_a_behavioural_default_and_is_reported(
     tmp_path: Path,
@@ -4147,9 +4146,14 @@ def test_a_blank_key_takes_a_behavioural_default_and_is_reported(
     path: str,
     default: object,
     read: Callable[[Any], object],
-    section: FindingSection,
+    location: str,
 ) -> None:
     """The default is what the mapping gets, and the warning names the path.
+
+    `location` is the finding's `location.path`: the section from the path's
+    head, and only the rest of the path under it, so the head is not repeated.
+    A head that names no section (`item_security`) stays in the path under
+    `mapping`.
 
     Before #665 each of these was refused, or raised a bare TypeError. The
     build now goes ahead with what an absent key would give, and the author
@@ -4164,7 +4168,7 @@ def test_a_blank_key_takes_a_behavioural_default_and_is_reported(
         f"{path} is written with no value, so it takes its default {default!r}.",
     )
     assert finding.location is not None
-    assert (finding.location.section, finding.location.sub) == (section, path)
+    assert finding.location.path == location
 
 
 #: One declaration per blank key whose default is empty text, an empty list or
@@ -4246,7 +4250,8 @@ def test_a_blank_key_in_a_retention_policy_takes_its_default(tmp_path: Path) -> 
     ]
     finding = only(_validated(bundle), FindingCode.BLANK_KEY_TOOK_DEFAULT)
     assert finding.location is not None
-    assert finding.location.section == FindingSection.RETENTION
+    # `policies` names no section, so the retention path keeps its head.
+    assert finding.location.path == "retention.policies.keep.trigger"
 
 
 def test_an_absent_key_takes_the_default_without_a_record(tmp_path: Path) -> None:
