@@ -3892,18 +3892,6 @@ def test_a_list_section_with_every_entry_commented_out_loads_as_absent(tmp_path:
     assert (permissions.groups, permissions.levels) == ([], [])
 
 
-def test_list_validation_names_unknown_keys_of_two_types(tmp_path: Path) -> None:
-    """YAML reads `2026:` as an int, and sorting it beside a text key raised a bare TypeError."""
-    write_mapping(tmp_path, blocks(entities("Risk"), """
-        list_validation:
-          Risk:
-            2026: x
-            note: y
-    """))
-    with pytest.raises(UnknownMappingKeyError, match=r"unknown key\(s\) \[2026, 'note'\]"):
-        load_mapping(tmp_path / "m.yaml")
-
-
 #: A required key inside a LIST entry, which `_reject_unknown_keys` passes
 #: (it refuses only keys nobody reads) and a direct subscript then answered
 #: with a bare `KeyError`. `MappingError` does not catch that, so the
@@ -5217,6 +5205,37 @@ _NON_TEXT_KEY_CASES = [
         """),
         "retired_columns.Risk: key 2026 is not text (YAML read it as int); quote it",
         id="retired-column",
+    ),
+    pytest.param(
+        # Sorting 2026 beside `note` raised a bare TypeError before #663.
+        blocks(entities("Risk"), "list_validation:\n  Risk:\n    2026: x\n    note: y"),
+        "list_validation.Risk: key 2026 is not text (YAML read it as int); quote it",
+        id="list-validation-key",
+    ),
+    pytest.param(
+        _views_yaml("""
+            views:
+              Project:
+                - title: Open
+                  fields: [Title]
+                  where: [{ field: Status, op: eq, value: Open, On: x }]
+        """),
+        "views.Project[0].where.all_of[0]: key True is not text (YAML read it as bool); quote it",
+        id="condition-leaf-key",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            form_visibility:
+              Risk:
+                columns:
+                  Title:
+                    new: true
+                    existing: true
+                    when: { any_of: [{ field: Status, op: is_null }], 2.10: x }
+        """),
+        "form_visibility.Risk.columns.Title.when: key 2.1 is not text "
+        "(YAML read it as float); quote it",
+        id="condition-group-key",
     ),
 ]
 
