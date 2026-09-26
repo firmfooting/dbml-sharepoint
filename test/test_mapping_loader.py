@@ -4320,6 +4320,47 @@ def test_a_blank_principal_is_refused_as_an_absent_one(tmp_path: Path) -> None:
     )
 
 
+#: A per-entity block written with nothing under it, and where the loaded
+#: section lives. Each reads as absent, the way a blank
+#: `versioning.overrides.<E>:` already did, so the entity has no entry there.
+_BLANK_ENTITY_BLOCKS = [
+    pytest.param(
+        "form_visibility:\n  Risk:", lambda m: m.form_visibility, id="form-visibility",
+    ),
+    pytest.param(
+        "column_validation:\n  Risk:", lambda m: m.column_validation,
+        id="column-validation",
+    ),
+    pytest.param(
+        "list_validation:\n  Risk:", lambda m: m.list_validation, id="list-validation",
+    ),
+    pytest.param("field_sets:\n  Risk:", lambda m: m.field_sets, id="field-sets"),
+    pytest.param(
+        "retired_columns:\n  Risk:", lambda m: m.retired_columns, id="retired-columns",
+    ),
+    pytest.param(
+        "list_permissions:\n  overrides:\n    Risk:", lambda m: m.permissions.overrides,
+        id="list-permissions-override",
+    ),
+    pytest.param(
+        "list_permissions:\n  folders:\n    Risk:",
+        lambda m: m.permissions.folder_policies,
+        id="list-permissions-folders",
+    ),
+]
+
+
+@pytest.mark.parametrize(("declaration", "section"), _BLANK_ENTITY_BLOCKS)
+def test_a_blank_entity_block_reads_as_absent(
+    tmp_path: Path, declaration: str, section: Callable[[Any], Mapping[str, object]],
+) -> None:
+    """Silent, because an entity with no block is what the author wrote."""
+    write_mapping(tmp_path, blocks(entities("Risk"), declaration))
+    mapping = load_mapping(tmp_path / "m.yaml").mapping
+    assert "Risk" not in section(mapping)
+    assert mapping.blank_defaults == []
+
+
 def test_a_reader_outside_a_load_takes_the_default_without_a_record() -> None:
     """The collector is opened by `load_mapping`, so a reader called on its
     own has nowhere to record and must still answer."""

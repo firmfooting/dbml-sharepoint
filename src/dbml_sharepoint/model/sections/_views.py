@@ -213,6 +213,9 @@ def _parse_field_sets(raw_sets: Any) -> dict[str, dict[str, list[str]]]:
     """
     parsed: dict[str, dict[str, list[str]]] = {}
     for entity, sets in _require_mapping(raw_sets, "field_sets").items():
+        # A blank entity block reads as absent: that entity declares no sets.
+        if sets is None:
+            continue
         if not isinstance(sets, dict):
             raise MappingShapeError(
                 f"field_sets.{entity}: expected a mapping of set name to "

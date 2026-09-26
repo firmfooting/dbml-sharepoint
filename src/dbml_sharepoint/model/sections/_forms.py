@@ -26,24 +26,25 @@ from dbml_sharepoint.model.sections.context import SectionContext
 
 
 def read(sc: SectionContext) -> dict[str, Any]:
+    # A blank entity block reads as absent: that entity declares nothing here.
     return {
         "form_visibility": {
             entity: _parse_form_visibility(block, f"form_visibility.{entity}")
             for entity, block in _require_mapping(
                 sc.block("form_visibility"), "form_visibility",
-            ).items()
+            ).items() if block is not None
         },
         "column_validation": {
             entity: _parse_column_validation(block, f"column_validation.{entity}")
             for entity, block in _require_mapping(
                 sc.block("column_validation"), "column_validation",
-            ).items()
+            ).items() if block is not None
         },
         "list_validation": {
             entity: _parse_list_validation(rule, f"list_validation.{entity}")
             for entity, rule in _require_mapping(
                 sc.block("list_validation"), "list_validation",
-            ).items()
+            ).items() if rule is not None
         },
     }
 

@@ -143,6 +143,9 @@ def read(sc: SectionContext) -> dict[str, Any]:
     for entity_name, raw_policy in _require_mapping(
         raw_list_perms.get("overrides"), "list_permissions.overrides",
     ).items():
+        # A blank override reads as absent, so the entity keeps the default policy.
+        if raw_policy is None:
+            continue
         ctx = f"list_permissions.overrides.{entity_name}"
         overrides[entity_name] = _parse_policy(raw_policy, ctx, prefix=prefix)
 
@@ -153,6 +156,8 @@ def read(sc: SectionContext) -> dict[str, Any]:
     for entity_name, raw_policy in _require_mapping(
         raw_list_perms.get("folders"), "list_permissions.folders",
     ).items():
+        if raw_policy is None:
+            continue
         ctx = f"list_permissions.folders.{entity_name}"
         folder_policies[entity_name] = _parse_policy(raw_policy, ctx, prefix=prefix)
 
