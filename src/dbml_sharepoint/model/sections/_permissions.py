@@ -136,8 +136,10 @@ def read(sc: SectionContext) -> dict[str, Any]:
         default_policy = _parse_policy(
             raw_default, "list_permissions.default", allow_site_role=True, prefix=prefix,
         )
-        raw_scope: object = raw_default.get("site_role")
-        default_policy_site_role = str(raw_scope) if raw_scope is not None else None
+        # A blank applies the policy to the entities of every role, so it is recorded.
+        default_policy_site_role = optional_str(
+            raw_default, "site_role", "list_permissions.default", record_blank=True,
+        )
 
     overrides: dict[str, ListPermissionPolicy] = {}
     for entity_name, raw_policy in _require_mapping(

@@ -26,8 +26,9 @@ A blank key follows one rule (decided on #665), and every reader here keeps it:
   is any boolean, a vocabulary word (`direction`, `reconcile`, `trigger`,
   `owner_group`, item_security `read` and `write`, a view's `scope`), a
   condition (`where`, `when`), a `from_enum` source, `major_version_limit`,
-  a view's `row_limit`, an entity's `title`, and a policy's `assignments`
-  (under `reconcile: exact` an empty grant list strips every grant).
+  a view's `row_limit`, an entity's `title`, the default permission policy's
+  `site_role`, and a policy's `assignments` (under `reconcile: exact` an
+  empty grant list strips every grant).
 - Where the default is empty text, an empty list or a value that changes
   nothing (`description`, `notes`, `extension`, a style guard's `not`), a
   blank stays silent, because it can only mean nothing.

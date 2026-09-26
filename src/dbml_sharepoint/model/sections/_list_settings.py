@@ -62,8 +62,9 @@ def read(sc: SectionContext) -> dict[str, Any]:
         versioning.get("overrides"), "versioning.overrides",
     ).items():
         context = f"versioning.overrides.{override_entity}"
+        # Only a blank is no override: `or {}` also read `Risk: false` as one.
         versioning_overrides[override_entity] = _versioning_values(
-            override or {}, context, versioning_default,
+            {} if override is None else override, context, versioning_default,
         )
 
     # Item-level trimming, same default/overrides shape as versioning and the
@@ -84,7 +85,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
     ).items():
         context = f"item_security.overrides.{override_entity}"
         item_security_overrides[override_entity] = _item_security_values(
-            override or {}, context, item_security_default,
+            {} if override is None else override, context, item_security_default,
         )
 
     return {

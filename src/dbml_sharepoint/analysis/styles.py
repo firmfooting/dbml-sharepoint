@@ -416,10 +416,17 @@ def _overdue_date(
         if not isinstance(raw_excluded, list):
             raise _fail(context, "overdue-date guard 'not' must be a list of values")
         excluded: list[object] = raw_excluded
-        guard_terms = "".join(
-            f" && [${field_name}] != {quoted(str(v))}"
-            for v in excluded
-        )
+        # Each member is compared as quoted text, so `str()` compared `~` as 'None'.
+        members: list[str] = []
+        for member in excluded:
+            if not isinstance(member, str):
+                raise _fail(
+                    context,
+                    f"overdue-date guard 'not' members must be text, got {member!r}; "
+                    f"quote a value YAML reads as another type",
+                )
+            members.append(member)
+        guard_terms = "".join(f" && [${field_name}] != {quoted(v)}" for v in members)
     overdue = f"{scalar.valid} && {value} < @now{guard_terms}"
     severe = _resolve("severe", context, theme)
     return {

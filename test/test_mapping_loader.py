@@ -11,7 +11,7 @@ import yaml
 from _findings import only
 from _model import schema as make_schema
 from _model import table as make_table
-from _packs import blocks, entities, entity, with_tail, write_mapping
+from _packs import DEFAULT_PREFIX, blocks, entities, entity, with_tail, write_mapping
 from _paths import FIXTURES, PACKAGE
 
 from dbml_sharepoint.analysis.findings import Finding, FindingCode
@@ -554,6 +554,31 @@ def test_extension_config_for_override_wins_over_other_selected_extension(
     assert bundle.extension_config_for("my_org") == {"org_register_source": "reg.yaml"}
 
 
+@pytest.mark.parametrize(("block", "message"), [
+    pytest.param("[on]", "extensions.audit: expected a mapping, got list", id="list"),
+    pytest.param("5", "extensions.audit: expected a mapping, got int", id="number"),
+])
+def test_an_extension_block_that_is_not_a_mapping_is_refused(
+    tmp_path: Path, block: str, message: str,
+) -> None:
+    """Each block went through `dict()`. `[on]` loaded as `{"o": "n"}`, a list
+    of longer words raised a ValueError naming no key, and a number raised a
+    TypeError the CLI does not catch."""
+    write_mapping(tmp_path, blocks(entities("Risk"), f"extensions:\n  audit: {block}"))
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == message
+
+
+def test_an_extension_block_reaches_the_extension_untouched(tmp_path: Path) -> None:
+    """The reference promises the block is passed through as written, so a key
+    YAML read as a number stays a number for the extension to judge."""
+    write_mapping(tmp_path, blocks(entities("Risk"), "extensions:\n  audit: { 2026: x, off: y }"))
+    bundle = load_mapping(tmp_path / "m.yaml")
+    assert bundle.extension_config_for("audit") == {2026: "x", False: "y"}
+
+
 def test_entity_display_column_parsed(tmp_path: Path) -> None:
     """A1: a target entity may declare display_column; lookups into it render
     that field instead of the built-in Title. Absent, it defaults to None."""
@@ -629,6 +654,16 @@ def test_a_default_formula_must_be_a_string(tmp_path: Path) -> None:
     """))
     err = _refuses(tmp_path / "m.yaml", MappingShapeError, r"default_formulas\.Project\.PeriodYear")
     assert "2026" in str(err)
+
+
+def test_a_blank_default_formula_is_required(tmp_path: Path) -> None:
+    """The sentence a blank `calculated_formulas` entry gets, rather than a
+    formula string expected and None found."""
+    write_mapping(tmp_path, _views_yaml("default_formulas:\n  Project:\n    PeriodYear:"))
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == "default_formulas.Project.PeriodYear is required"
 
 
 def test_a_default_formulas_entity_block_must_be_a_mapping(tmp_path: Path) -> None:
@@ -3948,6 +3983,11 @@ def test_a_form_body_field_that_is_not_a_name_survives_the_retirement_fold(
     assert body["sections"][0]["fields"] == [{"nested": True}]
 
 
+def _derived(entry: str) -> str:
+    """A mapping whose Risk entity declares one derived column, `entry`, written inline."""
+    return blocks(entities("Risk"), f"derived_columns:\n  Risk:\n    - {entry}")
+
+
 #: One declaration per reader whose default decides deployed behaviour, each
 #: key written with no value. A blank reads as absent (#665), so each takes its
 #: default, and because the author may have meant a value the load records it
@@ -4170,6 +4210,43 @@ _RECORDED_BLANK_CASES = [
         "list_permissions.default.assignments",
         id="assignments",
     ),
+    pytest.param(
+        _derived("{ kind: expr, name: Age, type: number, m: '1', hidden: }"),
+        "derived_columns.Risk[0].hidden", False,
+        lambda b: b.mapping.derived_columns["Risk"][0].hidden,
+        "derived_columns.Risk[0].hidden",
+        id="derived-hidden",
+    ),
+    pytest.param(
+        _derived("{ kind: expr, name: Age, type: number, m: '1', replace: }"),
+        "derived_columns.Risk[0].replace", False,
+        lambda b: b.mapping.derived_columns["Risk"][0].replace,
+        "derived_columns.Risk[0].replace",
+        id="derived-replace",
+    ),
+    pytest.param(
+        _derived(
+            "{ kind: count, from: Task, via: Risk, name: Open, aggregate: count, "
+            "type: Int64, where: }",
+        ),
+        "derived_columns.Risk[0].where", "",
+        lambda b: b.mapping.derived_columns["Risk"][0].where,
+        "derived_columns.Risk[0].where",
+        id="derived-where",
+    ),
+    pytest.param(
+        # With no site role the default policy applies to the entities of every role.
+        blocks(entities("Risk"), """
+            list_permissions:
+              default:
+                break_inheritance: true
+                site_role:
+        """),
+        "list_permissions.default.site_role", None,
+        lambda b: b.mapping.permissions.default_policy_site_role,
+        "list_permissions.default.site_role",
+        id="default-policy-site-role",
+    ),
 ]
 
 
@@ -4197,9 +4274,9 @@ def test_a_blank_key_takes_a_behavioural_default_and_is_reported(
     A head that names no section (`item_security`) stays in the path under
     `mapping`.
 
-    Before #665 each of these was refused, or raised a bare TypeError. The
-    build now goes ahead with what an absent key would give, and the author
-    is told.
+    Before #665 each of these was refused, raised a bare TypeError, or went
+    through `bool()` or `str()` in silence. The build now goes ahead with
+    what an absent key would give, and the author is told.
     """
     write_mapping(tmp_path, body)
     bundle = load_mapping(tmp_path / "m.yaml")
@@ -4229,6 +4306,91 @@ _SILENT_BLANK_CASES = [
         blocks(entities("Risk"), "extension:"),
         lambda b: b.mapping.extension, None,
         id="extension",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            retired_columns:
+              Risk:
+                Old: { retired: 2026-09-01, reason: }
+        """),
+        lambda b: b.mapping.retired_columns["Risk"]["Old"].reason, "",
+        id="retired-reason",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            retired_columns:
+              Risk:
+                Old: { retired: 2026-09-01, superseded_by: }
+        """),
+        lambda b: b.mapping.retired_columns["Risk"]["Old"].superseded_by, None,
+        id="retired-superseded-by",
+    ),
+    pytest.param(
+        _derived("{ kind: expr, name: Age, type: number, m: '1', description: }"),
+        lambda b: b.mapping.derived_columns["Risk"][0].description, "",
+        id="derived-description",
+    ),
+    pytest.param(
+        # A blank `via:` read as "None" was a second join, refused as "both were given".
+        _derived(
+            "{ kind: lookup, from: Owner, via: , key: OwnerId, "
+            "pick: { OwnerName: Title }, types: { OwnerName: text } }",
+        ),
+        lambda b: (b.mapping.derived_columns["Risk"][0].via,
+                   b.mapping.derived_columns["Risk"][0].key),
+        ("", "OwnerId"),
+        id="derived-via",
+    ),
+    pytest.param(
+        _derived(
+            "{ kind: lookup, from: Owner, via: Owner, key: , "
+            "pick: { OwnerName: Title }, types: { OwnerName: text } }",
+        ),
+        lambda b: (b.mapping.derived_columns["Risk"][0].via,
+                   b.mapping.derived_columns["Risk"][0].key),
+        ("Owner", ""),
+        id="derived-key",
+    ),
+    pytest.param(
+        # A blank `column:` read as "None" was refused as a column a count must not name.
+        _derived(
+            "{ kind: count, from: Task, via: Risk, name: Open, aggregate: count, "
+            "type: Int64, column: }",
+        ),
+        lambda b: b.mapping.derived_columns["Risk"][0].column, "",
+        id="derived-column",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "derived_columns:\n  Risk:"),
+        lambda b: b.mapping.derived_columns, {},
+        id="derived-entity-block",
+    ),
+    pytest.param(
+        # A blank spelling beside a written one was refused as declaring both.
+        _views_yaml(
+            "views:\n  Project:\n    - { title: All, fields: [Title], "
+            "group_by: { field: Status, fields: } }",
+        ),
+        lambda b: b.mapping.views["Project"][0].group_by.fields, ["Status"],
+        id="view-group-by-fields-blank",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: All, fields: [Title], "
+            "group_by: { field: , fields: [Status, Owner] } }",
+        ),
+        lambda b: b.mapping.views["Project"][0].group_by.fields, ["Status", "Owner"],
+        id="view-group-by-field-blank",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "prefix_owner:"),
+        lambda b: b.mapping.prefix_owner, "",
+        id="prefix-owner",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "extensions:\n  audit:"),
+        lambda b: b.extension_configs, {"audit": {}},
+        id="extension-block",
     ),
 ]
 
@@ -4504,3 +4666,429 @@ def test_a_source_file_that_is_not_utf8_is_a_named_refusal(tmp_path: Path) -> No
     assert str(err.value).startswith(
         "column_formatting.Risk.Status: 'f.json' is not valid UTF-8:",
     ), str(err.value)
+
+
+#: One value per site that passed unchecked YAML through `str()` or `bool()`
+#: (#665), each of the wrong type or a required value left blank. `str()` made
+#: `title: [All]` the view title "['All']" and a blank one the text "None".
+_COERCED_VALUE_CASES = [
+    pytest.param(
+        _views_yaml("views:\n  Project:\n    - { title: [All], fields: [Title] }"),
+        "views.Project[0].title must be a string, got ['All']",
+        id="view-title",
+    ),
+    pytest.param(
+        _views_yaml("views:\n  Project:\n    - { title: 5, fields: [Title] }"),
+        "views.Project[0].title must be a string, got 5",
+        id="view-title-number",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: All, fields: [Title], "
+            "group_by: { field: [Status] } }",
+        ),
+        "views.Project[0].group_by.field must be a string, got ['Status']",
+        id="view-group-by-field",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: All, fields: [Title], "
+            "group_by: { field: } }",
+        ),
+        "views.Project[0].group_by: declare exactly one of 'field' (one level) "
+        "or 'fields' (one or two levels)",
+        id="view-group-by-field-blank",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: All, fields: [Title], "
+            "group_by: { fields: [Status, 5] } }",
+        ),
+        "views.Project[0].group_by.fields must be a list of strings, got 5",
+        id="view-group-by-fields",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            column_validation:
+              Risk:
+                columns:
+                  Title:
+                    when: [{ field: Title, op: is_not_null }]
+                    message: [Give it a title]
+        """),
+        "column_validation.Risk.columns.Title.message must be a string, "
+        "got ['Give it a title']",
+        id="column-validation-message",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            list_validation:
+              Risk:
+                when: [{ field: Title, op: is_not_null }]
+                message: 5
+        """),
+        "list_validation.Risk.message must be a string, got 5",
+        id="list-validation-message",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "retired_columns:\n  Risk:\n    Old: { retired: 2026 }"),
+        "retired_columns.Risk.Old.retired must be a string, got 2026",
+        id="retired",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            retired_columns:
+              Risk:
+                Old: { retired: 2026-09-01, superseded_by: [New] }
+        """),
+        "retired_columns.Risk.Old.superseded_by must be a string, got ['New']",
+        id="retired-superseded-by",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            retired_columns:
+              Risk:
+                Old: { retired: 2026-09-01, reason: 5 }
+        """),
+        "retired_columns.Risk.Old.reason must be a string, got 5",
+        id="retired-reason",
+    ),
+    pytest.param(
+        _derived("{ kind: expr, name: Age, type: number, m: '1', hidden: 'false' }"),
+        "derived_columns.Risk[0].hidden must be a boolean, got 'false'",
+        id="derived-hidden",
+    ),
+    pytest.param(
+        _derived("{ kind: expr, name: Age, type: number, m: '1', replace: 1 }"),
+        "derived_columns.Risk[0].replace must be a boolean, got 1",
+        id="derived-replace",
+    ),
+    pytest.param(
+        _derived("{ kind: expr, name: Age, type: number, m: '1', description: [Age] }"),
+        "derived_columns.Risk[0].description must be a string, got ['Age']",
+        id="derived-description",
+    ),
+    pytest.param(
+        _derived(
+            "{ kind: lookup, from: Owner, via: [Owner], pick: { OwnerName: Title }, "
+            "types: { OwnerName: text } }",
+        ),
+        "derived_columns.Risk[0].via must be a string, got ['Owner']",
+        id="derived-via",
+    ),
+    pytest.param(
+        _derived(
+            "{ kind: lookup, from: Owner, key: 5, pick: { OwnerName: Title }, "
+            "types: { OwnerName: text } }",
+        ),
+        "derived_columns.Risk[0].key must be a string, got 5",
+        id="derived-key",
+    ),
+    pytest.param(
+        _derived(
+            "{ kind: count, from: Task, via: Risk, name: Latest, aggregate: max, "
+            "type: date, column: [DueDate] }",
+        ),
+        "derived_columns.Risk[0].column must be a string, got ['DueDate']",
+        id="derived-column",
+    ),
+    pytest.param(
+        _derived(
+            "{ kind: count, from: Task, via: Risk, name: Open, aggregate: count, "
+            "type: Int64, where: 5 }",
+        ),
+        "derived_columns.Risk[0].where must be a string, got 5",
+        id="derived-where",
+    ),
+    pytest.param(
+        _views_yaml("""
+            views:
+              Project:
+                - title: Open
+                  fields: [Title]
+                  where: [{ field: [Status], op: eq, value: Open }]
+        """),
+        "views.Project[0].where.all_of[0].field must be a string, got ['Status']",
+        id="condition-field",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            form_visibility:
+              Risk:
+                columns:
+                  Title: { new: true, existing: true, when: { field: Status, op: 5 } }
+        """),
+        "form_visibility.Risk.columns.Title.when.op must be a string, got 5",
+        id="condition-op",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "calculated_formulas:\n  Risk: { Score: 5 }"),
+        "calculated_formulas.Risk.Score must be a string, got 5",
+        id="calculated-formula",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "calculated_formulas:\n  Risk: { Score: }"),
+        "calculated_formulas.Risk.Score is required",
+        id="calculated-formula-blank",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            display_names:
+              mode: auto
+              overrides:
+                Risk: { Owner: [Risk owner] }
+        """),
+        "display_names.overrides.Risk.Owner must be a string, got ['Risk owner']",
+        id="display-name-override",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            display_names:
+              mode: auto
+              overrides:
+                Risk: { Owner: }
+        """),
+        "display_names.overrides.Risk.Owner is required",
+        id="display-name-override-blank",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            list_permissions:
+              default:
+                break_inheritance: true
+                site_role: [default]
+        """),
+        "list_permissions.default.site_role must be a string, got ['default']",
+        id="default-policy-site-role",
+    ),
+    pytest.param(
+        blocks("prefix: 5", entities("Risk")),
+        "mapping.prefix must be a string, got 5",
+        id="prefix",
+    ),
+    pytest.param(
+        # Every list was titled "None" followed by its entity name.
+        blocks("prefix:", entities("Risk")),
+        "mapping.prefix is required",
+        id="prefix-blank",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "prefix_owner: [Platform team]"),
+        "mapping.prefix_owner must be a string, got ['Platform team']",
+        id="prefix-owner",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "extension: [audit]"),
+        "mapping.extension must be a string, got ['audit']",
+        id="extension",
+    ),
+    # A falsy value of the wrong type was reported as missing, because presence was tested first.
+    pytest.param(
+        blocks(entities("Risk"), """
+            form_visibility:
+              Risk:
+                columns:
+                  Title: { new: true, existing: true, when: { field: Status, op: no } }
+        """),
+        "form_visibility.Risk.columns.Title.when.op must be a string, got False",
+        id="condition-op-false",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: Open, fields: [Title], "
+            "where: [{ field: 0, op: eq, value: Open }] }",
+        ),
+        "views.Project[0].where.all_of[0].field must be a string, got 0",
+        id="condition-field-zero",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: Open, fields: [Title], "
+            "where: [{ field: [], op: eq, value: Open }] }",
+        ),
+        "views.Project[0].where.all_of[0].field must be a string, got []",
+        id="condition-field-empty-list",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            column_validation:
+              Risk:
+                columns:
+                  Title: { when: [{ field: Title, op: is_not_null }], message: false }
+        """),
+        "column_validation.Risk.columns.Title.message must be a string, got False",
+        id="column-validation-message-false",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            list_validation:
+              Risk: { when: [{ field: Title, op: is_not_null }], message: 0 }
+        """),
+        "list_validation.Risk.message must be a string, got 0",
+        id="list-validation-message-zero",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            column_validation:
+              Risk:
+                columns:
+                  Title: { when: false, message: Give it a title }
+        """),
+        "column_validation.Risk.columns.Title.when: expected a mapping or a list of "
+        "conditions, got bool",
+        id="column-validation-when-false",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "message"), _COERCED_VALUE_CASES)
+def test_a_value_the_loader_coerced_is_refused_by_its_path(
+    tmp_path: Path, body: str, message: str,
+) -> None:
+    """Each loaded as its `str()` or its truthiness and deployed that, with
+    nothing in the build to say the value was not what the author wrote."""
+    # A case that declares its own prefix replaces the one `write_mapping` adds.
+    write_mapping(
+        tmp_path, body, prefix=None if body.startswith("prefix:") else DEFAULT_PREFIX,
+    )
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == message
+
+
+@pytest.mark.parametrize(("body", "message"), [
+    pytest.param(
+        blocks(entities("Risk"), """
+            list_validation:
+              Risk: { when: [{ field: Title, op: is_not_null }], message: '' }
+        """),
+        "list_validation.Risk: 'message' is required",
+        id="empty-message",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            list_validation:
+              Risk: { when: [], message: Give it a title }
+        """),
+        "list_validation.Risk: 'when' is required",
+        id="empty-when",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: Open, fields: [Title], "
+            "where: [{ field: '', op: eq, value: Open }] }",
+        ),
+        "views.Project[0].where.all_of[0]: 'field' is required on a condition",
+        id="empty-field",
+    ),
+])
+def test_empty_text_or_an_empty_tree_is_still_required(
+    tmp_path: Path, body: str, message: str,
+) -> None:
+    """The type is checked before the presence now, and empty text or an empty
+    condition is still a value that was not given."""
+    write_mapping(tmp_path, body)
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == message
+
+
+#: A falsy value of the wrong shape, which an `x or <empty>` read took as
+#: absent. Only a blank is absent under the blank-key rule.
+_FALSY_SHAPE_CASES = [
+    pytest.param(
+        blocks(entities("Risk"), "versioning:\n  overrides:\n    Risk: false"),
+        "versioning.overrides.Risk: expected a mapping, got bool",
+        id="versioning-override",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "item_security:\n  overrides:\n    Risk: 0"),
+        "item_security.overrides.Risk: expected a mapping, got int",
+        id="item-security-override",
+    ),
+    pytest.param(
+        _views_yaml("views:\n  Project:\n    - { title: All, fields: [Title], sort: false }"),
+        "views.Project[0].sort must be a list, got False",
+        id="view-sort",
+    ),
+    pytest.param(
+        _views_yaml("views:\n  Project:\n    - { title: All, fields: [Title], renamed_from: 0 }"),
+        "views.Project[0]: 'renamed_from' must be a list of view titles",
+        id="view-renamed-from",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "cross_site_reference_columns: false"),
+        "cross_site_reference_columns: expected a list, got bool",
+        id="cross-site",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "polymorphic_patterns: 0"),
+        "polymorphic_patterns: expected a list, got int",
+        id="polymorphic",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "watched_lists: ''"),
+        "watched_lists: expected a list, got str",
+        id="watched",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "message"), _FALSY_SHAPE_CASES)
+def test_a_falsy_value_of_the_wrong_shape_is_not_read_as_absent(
+    tmp_path: Path, body: str, message: str,
+) -> None:
+    """Each loaded as though the key were absent, so `watched_lists: ''` watched
+    nothing and said nothing."""
+    write_mapping(tmp_path, body)
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == message
+
+
+def test_a_pointed_file_holding_a_falsy_value_is_not_read_as_empty(tmp_path: Path) -> None:
+    """An empty file is still an empty one; a file holding `false` is not."""
+    _side_file(tmp_path, "false\n")
+    write_mapping(tmp_path, blocks(entities("Risk"), "reporting_source: side.yaml"))
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == "side.yaml: expected a mapping of names, got bool"
+
+    _side_file(tmp_path, "")
+    assert load_mapping(tmp_path / "m.yaml").mapping.derived_columns == {}
+
+
+@pytest.mark.parametrize(("value", "message"), [
+    pytest.param("[P]", "list_defaults.Risk must be a string, got ['P']", id="list"),
+    pytest.param("", "list_defaults.Risk is required", id="blank"),
+])
+def test_a_retention_list_default_that_is_not_a_policy_name_is_refused(
+    tmp_path: Path, value: str, message: str,
+) -> None:
+    """`Risk: [P]` loaded, and the validator's policy lookup raised a bare
+    TypeError on it."""
+    (tmp_path / "r.yaml").write_text(
+        f"policies:\n  P: {{ retain_years: 1 }}\nlist_defaults:\n  Risk: {value}\n",
+        encoding="utf-8",
+    )
+    write_mapping(tmp_path, blocks(entities("Risk"), "retention_policies_source: r.yaml"))
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == message
+
+
+def test_an_unquoted_retired_date_still_loads_as_iso_text(tmp_path: Path) -> None:
+    """The mapping reference writes `retired:` unquoted, which YAML reads as a
+    date. That one non-text type is still accepted, as release.yaml's `date` is."""
+    write_mapping(tmp_path, blocks(entities("Risk"), """
+        retired_columns:
+          Risk:
+            Old: { retired: 2026-09-01 }
+    """))
+    retired = load_mapping(tmp_path / "m.yaml").mapping.retired_columns["Risk"]["Old"]
+    assert retired.retired == "2026-09-01"

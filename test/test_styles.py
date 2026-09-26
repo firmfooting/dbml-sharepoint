@@ -17,7 +17,7 @@ from dbml_sharepoint.analysis.styles import (
     expand_style,
     parse_theme,
 )
-from dbml_sharepoint.model.errors import UnknownMappingKeyError
+from dbml_sharepoint.model.errors import MappingShapeError, UnknownMappingKeyError
 
 
 def test_tokens_are_the_documented_severity_set() -> None:
@@ -213,6 +213,21 @@ def test_invalid_specs_fail_closed_with_context(spec: dict[str, Any], fragment: 
         expand_style(spec, "column_formatting.T.C")
     assert "column_formatting.T.C" in str(err.value)
     assert fragment in str(err.value)
+
+
+@pytest.mark.parametrize("member", [["Done"], None, True, 3])
+def test_an_overdue_guard_member_that_is_not_text_is_refused(member: object) -> None:
+    """Each member is emitted as a quoted text comparison, and `str()` compared
+    `[Done]` as '['Done']', `~` as 'None' and `true` as 'True'. A number is
+    refused too: the comparison is against text either way, so quoting it says
+    what is emitted."""
+    spec = {"style": "overdue-date", "guard": {"field": "Status", "not": ["Closed", member]}}
+    with pytest.raises(MappingShapeError) as err:
+        expand_style(spec, "column_formatting.T.C")
+    assert str(err.value) == (
+        f"column_formatting.T.C: overdue-date guard 'not' members must be text, "
+        f"got {member!r}; quote a value YAML reads as another type"
+    )
 
 
 def test_theme_overrides_tokens() -> None:

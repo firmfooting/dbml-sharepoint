@@ -26,6 +26,8 @@ from dbml_sharepoint.model.reading import (
     load_json_value,
     optional_bool,
     optional_int,
+    optional_str,
+    optional_str_list,
     optional_value,
     require_str,
     strict_str,
@@ -63,7 +65,8 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
     if not isinstance(raw_view, dict):
         raise MappingShapeError(f"{context}: view must be a mapping, got {type(raw_view).__name__}")
     view = _known_keys(raw_view, _VIEW_KEYS, context)
-    title = view.get("title")
+    # The type before the presence, because `str()` made `title: [All]` the title "['All']".
+    title = optional_str(view, "title", context)
     if not title:
         raise MappingShapeError(f"{context}: view 'title' is required")
     fields = view.get("fields")
@@ -72,7 +75,10 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
             f"{context}: view 'fields' must be a non-empty list of column names",
         )
     field_names: list[str] = fields
-    renamed_from = view.get("renamed_from") or list[str]()
+    # Only a blank is absent here and for `sort`: `or` read `renamed_from: 0` as none.
+    renamed_from = view.get("renamed_from")
+    if renamed_from is None:
+        renamed_from = list[str]()
     if not isinstance(renamed_from, list) or not all(
         isinstance(previous, str) for previous in renamed_from
     ):
@@ -81,7 +87,9 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
     # A blank `where:` is an unfiltered view, which the load records.
     raw_where = optional_value(view, "where", context)
     where = parse_condition(raw_where, f"{context}.where") if raw_where is not None else None
-    raw_sort = view.get("sort") or list[object]()
+    raw_sort = view.get("sort")
+    if raw_sort is None:
+        raw_sort = list[object]()
     # A mapping or a string iterated as keys or characters, and a number raised TypeError.
     if not isinstance(raw_sort, list):
         raise MappingShapeError(f"{context}.sort must be a list, got {raw_sort!r}")
@@ -107,18 +115,24 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
             raw_group, {"field", "fields", "collapsed"}, f"{context}.group_by",
         )
         # Both spellings at once would need a precedence rule nobody would
-        # remember, so it is an error rather than a silent winner.
-        if ("field" in group) == ("fields" in group):
+        # remember, so it is an error rather than a silent winner. A blank
+        # one reads as absent, so it is not a second spelling.
+        spellings = [key for key in ("field", "fields") if group.get(key) is not None]
+        if len(spellings) != 1:
             raise MappingShapeError(
                 f"{context}.group_by: declare exactly one of 'field' (one level) "
                 f"or 'fields' (one or two levels)",
             )
-        raw_fields = group["fields"] if "fields" in group else [group["field"]]
-        if not isinstance(raw_fields, list) or not raw_fields:
+        # Read as text, because `str()` grouped `field: [Status]` by "['Status']".
+        group_fields = (
+            list(optional_str_list(group, "fields", f"{context}.group_by"))
+            if spellings == ["fields"]
+            else [require_str(group, "field", f"{context}.group_by")]
+        )
+        if not group_fields:
             raise MappingShapeError(
                 f"{context}.group_by: 'fields' must be a non-empty list of column names",
             )
-        group_fields: list[object] = raw_fields
         # SharePoint's own ceiling. Dropping the third silently would answer
         # a declared grouping with a different one.
         if len(group_fields) > 2:
@@ -127,7 +141,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
                 f"got {len(group_fields)}",
             )
         group_by = ViewGroupBy(
-            fields=[str(name) for name in group_fields],
+            fields=group_fields,
             collapsed=optional_bool(group, "collapsed", f"{context}.group_by"),
         )
     raw_formatting = view.get("formatting")
@@ -184,7 +198,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
                 )
             totals[str(col)] = func
     return ViewDef(
-        title=str(title),
+        title=title,
         fields=list(field_names),
         renamed_from=list(previous_titles),
         default=optional_bool(view, "default", context),
