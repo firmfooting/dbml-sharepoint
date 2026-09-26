@@ -110,8 +110,10 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
             raw_group, {"field", "fields", "collapsed"}, f"{context}.group_by",
         )
         # Both spellings at once would need a precedence rule nobody would
-        # remember, so it is an error rather than a silent winner.
-        if ("field" in group) == ("fields" in group):
+        # remember, so it is an error rather than a silent winner. A blank
+        # one reads as absent, so it is not a second spelling.
+        spellings = [key for key in ("field", "fields") if group.get(key) is not None]
+        if len(spellings) != 1:
             raise MappingShapeError(
                 f"{context}.group_by: declare exactly one of 'field' (one level) "
                 f"or 'fields' (one or two levels)",
@@ -119,7 +121,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
         # Read as text, because `str()` grouped `field: [Status]` by "['Status']".
         group_fields = (
             list(optional_str_list(group, "fields", f"{context}.group_by"))
-            if "fields" in group
+            if spellings == ["fields"]
             else [require_str(group, "field", f"{context}.group_by")]
         )
         if not group_fields:

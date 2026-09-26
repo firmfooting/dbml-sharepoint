@@ -4317,6 +4317,23 @@ _SILENT_BLANK_CASES = [
         lambda b: b.mapping.derived_columns, {},
         id="derived-entity-block",
     ),
+    pytest.param(
+        # A blank spelling beside a written one was refused as declaring both.
+        _views_yaml(
+            "views:\n  Project:\n    - { title: All, fields: [Title], "
+            "group_by: { field: Status, fields: } }",
+        ),
+        lambda b: b.mapping.views["Project"][0].group_by.fields, ["Status"],
+        id="view-group-by-fields-blank",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: All, fields: [Title], "
+            "group_by: { field: , fields: [Status, Owner] } }",
+        ),
+        lambda b: b.mapping.views["Project"][0].group_by.fields, ["Status", "Owner"],
+        id="view-group-by-field-blank",
+    ),
 ]
 
 
@@ -4620,7 +4637,8 @@ _COERCED_VALUE_CASES = [
             "views:\n  Project:\n    - { title: All, fields: [Title], "
             "group_by: { field: } }",
         ),
-        "views.Project[0].group_by.field is required",
+        "views.Project[0].group_by: declare exactly one of 'field' (one level) "
+        "or 'fields' (one or two levels)",
         id="view-group-by-field-blank",
     ),
     pytest.param(
