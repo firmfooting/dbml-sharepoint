@@ -554,6 +554,23 @@ def test_extension_config_for_override_wins_over_other_selected_extension(
     assert bundle.extension_config_for("my_org") == {"org_register_source": "reg.yaml"}
 
 
+@pytest.mark.parametrize(("block", "message"), [
+    pytest.param("[on]", "extensions.audit: expected a mapping of names, got list", id="list"),
+    pytest.param("5", "extensions.audit: expected a mapping of names, got int", id="number"),
+])
+def test_an_extension_block_that_is_not_a_mapping_is_refused(
+    tmp_path: Path, block: str, message: str,
+) -> None:
+    """Each block went through `dict()`. `[on]` loaded as `{"o": "n"}`, a list
+    of longer words raised a ValueError naming no key, and a number raised a
+    TypeError the CLI does not catch."""
+    write_mapping(tmp_path, blocks(entities("Risk"), f"extensions:\n  audit: {block}"))
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == message
+
+
 def test_entity_display_column_parsed(tmp_path: Path) -> None:
     """A1: a target entity may declare display_column; lookups into it render
     that field instead of the built-in Title. Absent, it defaults to None."""
@@ -4351,6 +4368,11 @@ _SILENT_BLANK_CASES = [
         blocks(entities("Risk"), "prefix_owner:"),
         lambda b: b.mapping.prefix_owner, "",
         id="prefix-owner",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "extensions:\n  audit:"),
+        lambda b: b.extension_configs, {"audit": {}},
+        id="extension-block",
     ),
 ]
 

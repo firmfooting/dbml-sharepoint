@@ -1,7 +1,8 @@
 # src/dbml_sharepoint/model/sections/_extensions.py
 """`extension` and `extensions`: which extension runs, and its configuration.
 
-The blocks are passed through untyped. Selection by name is deferred to
+Each block must be a mapping, and what it holds is passed through untyped,
+because only the extension knows its own keys. Selection by name is deferred to
 `MappingBundle.extension_config_for` so it honours the RESOLVED extension: a
 CLI `--extension` override may differ from the mapping's own `extension:`
 key.
@@ -21,7 +22,9 @@ def read(sc: SectionContext) -> dict[str, Any]:
     return {
         # Refused as the wrong type here, where a list was reported as an unknown extension.
         "extension": optional_str(sc.blocks, "extension", "mapping"),
+        # `dict()` raised a bare error on a list or a scalar; a blank block is an empty one.
         "extension_configs": {
-            name: dict(block or {}) for name, block in extensions_block.items()
+            name: dict(_require_mapping(block, f"extensions.{name}"))
+            for name, block in extensions_block.items()
         },
     }
