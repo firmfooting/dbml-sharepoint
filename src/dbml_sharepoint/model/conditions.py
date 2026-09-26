@@ -113,11 +113,11 @@ def parse_condition(raw: Any, context: str) -> Condition:
     required: dict[str, str] = {}
     for key in ("field", "op"):
         value = raw_map.get(key)
+        # The type first, so `op: no` is not called missing; `require_str` is an import cycle.
+        if value is not None and not isinstance(value, str):
+            raise MappingShapeError(f"{context}.{key} must be a string, got {value!r}")
         if not value:
             raise MappingShapeError(f"{context}: {key!r} is required on a condition")
-        # `str()` read `field: [Status]` as "['Status']"; `require_str` would be an import cycle.
-        if not isinstance(value, str):
-            raise MappingShapeError(f"{context}.{key} must be a string, got {value!r}")
         required[key] = value
     optional: dict[str, str | None] = {}
     for key in ("property", "measure"):

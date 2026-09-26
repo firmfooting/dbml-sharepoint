@@ -6,10 +6,11 @@ All three carry condition trees. They are parsed here for shape and
 diagnosed by the validator, which has the schema the operators need.
 """
 
+from collections.abc import Mapping
 from typing import Any
 
 from dbml_sharepoint.model._keys import _known_keys, _reject_unknown_keys, _require_mapping
-from dbml_sharepoint.model.conditions import parse_condition
+from dbml_sharepoint.model.conditions import Condition, parse_condition
 from dbml_sharepoint.model.errors import (
     MappingShapeError,
     MappingValueError,
@@ -21,7 +22,7 @@ from dbml_sharepoint.model.mapping_types import (
     FormVisibility,
     ListValidation,
 )
-from dbml_sharepoint.model.reading import optional_value, require_str, strict_bool, strict_str
+from dbml_sharepoint.model.reading import optional_str, optional_value, strict_bool, strict_str
 from dbml_sharepoint.model.sections.context import SectionContext
 
 
@@ -104,18 +105,33 @@ def _parse_column_validation(block: Any, context: str) -> EntitySection[ColumnVa
         if not isinstance(raw, dict):
             raise MappingShapeError(f"{where}: expected a mapping with 'when' and 'message'")
         declared = _known_keys(raw, {"when", "message"}, where)
-        for key in ("when", "message"):
-            if not declared.get(key):
-                raise MappingShapeError(
-                    f"{where}: {key!r} is required -- a rule with no message fails the save "
-                    f"with SharePoint's generic text, which tells the author nothing",
-                )
-        columns[name] = ColumnValidation(
-            when=parse_condition(declared["when"], f"{where}.when"),
-            # `str()` showed `message: [x]` to the person whose save failed as "['x']".
-            message=require_str(declared, "message", where),
-        )
+        when, message = _rule(declared, where, _NO_MESSAGE)
+        columns[name] = ColumnValidation(when=when, message=message)
     return EntitySection(reconcile=reconcile, columns=columns)
+
+
+_NO_MESSAGE = (
+    " -- a rule with no message fails the save with SharePoint's generic text, "
+    "which tells the author nothing"
+)
+
+
+def _rule(declared: Mapping[str, object], context: str, why: str = "") -> tuple[Condition, str]:
+    """A validation rule's `when` and `message`, each typed before it is required.
+
+    Presence was tested first, so `message: false` or `0` was reported as
+    missing. Only an absent, blank or empty value is; any other value of the
+    wrong type is named as that. `str()` showed `message: [x]` to the person
+    whose save failed as "['x']".
+    """
+    message = optional_str(declared, "message", context)
+    when = declared.get("when")
+    # An empty tree is no condition; any other wrong type is `parse_condition`'s to name.
+    if when is None or when == [] or when == {}:
+        raise MappingShapeError(f"{context}: 'when' is required{why}")
+    if not message:
+        raise MappingShapeError(f"{context}: 'message' is required{why}")
+    return parse_condition(when, f"{context}.when"), message
 
 
 def _parse_list_validation(rule: Any, context: str) -> ListValidation:
@@ -138,10 +154,5 @@ def _parse_list_validation(rule: Any, context: str) -> ListValidation:
     if unknown:
         raise UnknownMappingKeyError(f"{context}: unknown key(s) {sorted(unknown, key=str)}")
     declared: dict[str, object] = rule
-    for key in ("when", "message"):
-        if not declared.get(key):
-            raise MappingShapeError(f"{context}: {key!r} is required")
-    return ListValidation(
-        when=parse_condition(declared["when"], f"{context}.when"),
-        message=require_str(declared, "message", context),
-    )
+    when, message = _rule(declared, context)
+    return ListValidation(when=when, message=message)

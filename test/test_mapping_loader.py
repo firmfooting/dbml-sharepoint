@@ -4872,6 +4872,62 @@ _COERCED_VALUE_CASES = [
         "mapping.extension must be a string, got ['audit']",
         id="extension",
     ),
+    # A falsy value of the wrong type was reported as missing, because presence was tested first.
+    pytest.param(
+        blocks(entities("Risk"), """
+            form_visibility:
+              Risk:
+                columns:
+                  Title: { new: true, existing: true, when: { field: Status, op: no } }
+        """),
+        "form_visibility.Risk.columns.Title.when.op must be a string, got False",
+        id="condition-op-false",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: Open, fields: [Title], "
+            "where: [{ field: 0, op: eq, value: Open }] }",
+        ),
+        "views.Project[0].where.all_of[0].field must be a string, got 0",
+        id="condition-field-zero",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: Open, fields: [Title], "
+            "where: [{ field: [], op: eq, value: Open }] }",
+        ),
+        "views.Project[0].where.all_of[0].field must be a string, got []",
+        id="condition-field-empty-list",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            column_validation:
+              Risk:
+                columns:
+                  Title: { when: [{ field: Title, op: is_not_null }], message: false }
+        """),
+        "column_validation.Risk.columns.Title.message must be a string, got False",
+        id="column-validation-message-false",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            list_validation:
+              Risk: { when: [{ field: Title, op: is_not_null }], message: 0 }
+        """),
+        "list_validation.Risk.message must be a string, got 0",
+        id="list-validation-message-zero",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            column_validation:
+              Risk:
+                columns:
+                  Title: { when: false, message: Give it a title }
+        """),
+        "column_validation.Risk.columns.Title.when: expected a mapping or a list of "
+        "conditions, got bool",
+        id="column-validation-when-false",
+    ),
 ]
 
 
@@ -4885,6 +4941,44 @@ def test_a_value_the_loader_coerced_is_refused_by_its_path(
     write_mapping(
         tmp_path, body, prefix=None if body.startswith("prefix:") else DEFAULT_PREFIX,
     )
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == message
+
+
+@pytest.mark.parametrize(("body", "message"), [
+    pytest.param(
+        blocks(entities("Risk"), """
+            list_validation:
+              Risk: { when: [{ field: Title, op: is_not_null }], message: '' }
+        """),
+        "list_validation.Risk: 'message' is required",
+        id="empty-message",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            list_validation:
+              Risk: { when: [], message: Give it a title }
+        """),
+        "list_validation.Risk: 'when' is required",
+        id="empty-when",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: Open, fields: [Title], "
+            "where: [{ field: '', op: eq, value: Open }] }",
+        ),
+        "views.Project[0].where.all_of[0]: 'field' is required on a condition",
+        id="empty-field",
+    ),
+])
+def test_empty_text_or_an_empty_tree_is_still_required(
+    tmp_path: Path, body: str, message: str,
+) -> None:
+    """The type is checked before the presence now, and empty text or an empty
+    condition is still a value that was not given."""
+    write_mapping(tmp_path, body)
     with pytest.raises(MappingError) as err:
         load_mapping(tmp_path / "m.yaml")
     assert type(err.value) is MappingShapeError
