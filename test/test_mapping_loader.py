@@ -444,6 +444,33 @@ def test_retention_policy_rejects_unknown_key(tmp_path: Path) -> None:
     assert "sp_labl" in str(err)
 
 
+@pytest.mark.parametrize(
+    ("typed", "message"),
+    [
+        # Loaded with no list defaults at all, and no finding.
+        (
+            "list_defualts: { Project: Standard7Y }",
+            "unknown key(s) ['list_defualts'] (known: ['list_defaults', 'policies'])",
+        ),
+        ("No: x", "key False is not text (YAML read it as bool); quote it"),
+    ],
+    ids=["misspelled", "not-text"],
+)
+def test_the_retention_file_refuses_a_key_it_does_not_read(
+    tmp_path: Path, typed: str, message: str,
+) -> None:
+    (tmp_path / "retention.yaml").write_text(
+        f"policies:\n  Standard7Y:\n    retain_years: 7\n{typed}\n", encoding="utf-8",
+    )
+    write_mapping(
+        tmp_path,
+        blocks(entities("Project"), "retention_policies_source: retention.yaml"),
+    )
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert str(err.value) == f"{(tmp_path / 'retention.yaml').resolve()}: {message}"
+
+
 def test_retention_policy_rejects_wrong_typed_value(tmp_path: Path) -> None:
     """`retain_years` is typed `int | None` in `RetentionPolicy`; a quoted
     number must not load as a `str` living inside that field -- invisible to

@@ -24,6 +24,7 @@ from dbml_sharepoint.model.sections.context import SectionContext
 _RETENTION_POLICY_KEYS = frozenset(
     {"description", "sp_label", "retain_years", "retain_days", "trigger"},
 )
+_RETENTION_FILE_KEYS = frozenset({"policies", "list_defaults"})
 
 
 def read(sc: SectionContext) -> dict[str, Any]:
@@ -98,6 +99,8 @@ def _load_retention(path: Path) -> tuple[dict[str, RetentionPolicy], dict[str, s
     here would make a typo'd file byte-identical to one with the key deleted.
     """
     raw = load_yaml(path, "retention_policies_source")
+    # The docstring promised this and nothing did it, so `list_defualts:` loaded as no defaults.
+    _reject_unknown_keys(raw, _RETENTION_FILE_KEYS, str(path))
     raw_policies = _require_mapping(raw.get("policies"), "policies", allow_absent=False)
     policies: dict[str, RetentionPolicy] = {}
     for name, raw_spec in raw_policies.items():
