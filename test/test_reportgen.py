@@ -1,5 +1,6 @@
 # test/test_reportgen.py
 import re
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import cast, get_args
@@ -1638,7 +1639,7 @@ def _ambiguous() -> tuple[Schema, MappingBundle]:
     generate_data_dictionary,
 ])
 def test_a_member_containing_the_separator_is_refused(
-    generate: object,
+    generate: Callable[..., object],
 ) -> None:
     """Every entry point, because the export is lossy at all of them.
 
@@ -1664,7 +1665,7 @@ def test_a_member_containing_the_separator_is_refused(
     )
 
     with pytest.raises(ValueError, match="AuditEvents") as err:
-        generate(schema, bundle, "default", **kwargs)  # type: ignore[operator]
+        generate(schema, bundle, "default", **kwargs)
 
     assert "Permission change; revoked" in str(err.value)
     assert '"; "' in str(err.value)

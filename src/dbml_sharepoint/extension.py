@@ -126,7 +126,14 @@ def resolve_extension(name: str | None) -> BaseExtension:
     eps = entry_points(group="dbml_sharepoint.extensions")
     for ep in eps:
         if ep.name == name:
-            return ep.load()()  # type: ignore[no-any-return]
+            extension: object = ep.load()()
+            # An entry point is untyped; a plugin that builds something else fails here, named.
+            if not isinstance(extension, BaseExtension):
+                raise TypeError(
+                    f"Extension {name!r} ({ep.value}) built a {type(extension).__name__}, "
+                    "not a BaseExtension",
+                )
+            return extension
     installed = sorted(ep.name for ep in eps)
     raise UnknownExtensionError(
         f"Unknown extension {name!r}; installed: {installed or 'none'}"

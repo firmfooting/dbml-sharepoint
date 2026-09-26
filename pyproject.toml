@@ -210,6 +210,8 @@ search-path = ["src", "test", "website/scripts", "scripts"]
 preset = "strict"
 check-unannotated-defs = true
 infer-return-types = "never"
+# A mypy-coded `# type: ignore[x]` otherwise hides every pyrefly error on its line.
+type-ignore-unknown-tag-behavior = "no-effect"
 
 [tool.pyrefly.errors]
 no-any-return = "error"

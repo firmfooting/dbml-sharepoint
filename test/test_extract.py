@@ -144,13 +144,16 @@ def _with_formatter(formatter: str) -> str:
     return field_xml("Text", CustomFormatter=formatter.replace('"', "&quot;"))
 
 
-def _decode(*xml: str, entity: str = "T", **kwargs: object) -> DecodedEntity:
+def _decode(
+    *xml: str, entity: str = "T", unrecovered: list[Unrecovered] | None = None,
+    list_description: str = "",
+) -> DecodedEntity:
     """Decode some fields with a fresh registry, discarding the notes."""
-    kwargs.setdefault("unrecovered", [])
     return decode_list(
         [parse_field_xml(x) for x in xml],
         entity=entity, list_title="t", enums=new_enum_registry(),
-        **kwargs,  # type: ignore[arg-type]
+        unrecovered=[] if unrecovered is None else unrecovered,
+        list_description=list_description,
     )
 
 
@@ -184,7 +187,9 @@ def _stored(attribute: str) -> dict[str, str]:
 
 def _live_payload() -> dict[str, Any]:
     """The fixture's download, as a mutable object a test can damage."""
-    return json.loads(SAMPLE.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+    payload = json.loads(SAMPLE.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict), payload
+    return payload
 
 
 # --- The fixture, read as it arrived ---------------------------------------

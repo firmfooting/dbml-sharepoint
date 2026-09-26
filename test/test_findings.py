@@ -73,7 +73,7 @@ def test_finding_is_hashable_and_frozen() -> None:
     )
     assert {f, f} == {f}
     with pytest.raises(dataclasses.FrozenInstanceError):
-        f.message = "something else"  # type: ignore[misc]
+        f.message = "something else"  # pyrefly: ignore[read-only]
 
     # `severity` is a read-only property now rather than a field, so the
     # interesting assertion is that there is nowhere to write it -- not which

@@ -224,7 +224,9 @@ def clean_signature(obj: object) -> str:
 
     See `_portable_default` for what gets replaced and why.
     """
-    sig = inspect.signature(obj)  # type: ignore[arg-type]
+    if not callable(obj):
+        raise TypeError(f"{obj!r} is not callable")
+    sig = inspect.signature(obj)
     params = [
         p if p.default is inspect.Parameter.empty
         else p.replace(default=_portable_default(p.default))
@@ -245,7 +247,8 @@ def render_function(name: str, obj: object) -> str:
 def render_class(name: str, obj: type) -> str:
     out = f"### `{name}`\n\n"
     if dataclasses.is_dataclass(obj):
-        params = obj.__dataclass_params__  # type: ignore[attr-defined]
+        # The stubs do not declare __dataclass_params__, which the decorator sets.
+        params = inspect.getattr_static(obj, "__dataclass_params__")
         decorator = "@dataclass(frozen=True)" if params.frozen else "@dataclass"
         lines = [f"{decorator}\nclass {name}:"]
         for f in dataclasses.fields(obj):

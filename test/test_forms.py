@@ -27,6 +27,7 @@ from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
     EntitySection,
     FormVisibility,
+    Mapping,
     MappingBundle,
 )
 from dbml_sharepoint.model.parser import Schema
@@ -425,7 +426,7 @@ def test_condition_problems_are_reported_through_the_shared_validator() -> None:
 # refusal `load_mapping` raises. There is no object to build; the text is the
 # subject.
 
-def _load(tmp_path: object, section: str) -> object:
+def _load(tmp_path: object, section: str) -> Mapping:
     from pathlib import Path
 
     from dbml_sharepoint.model.mapping_loader import load_mapping
@@ -446,7 +447,7 @@ def test_shorthand_strings_parse(tmp_path: object) -> None:
               Route: hidden
               Note: visible
     """)
-    columns = mapping.form_visibility["Escalation"].columns  # type: ignore[attr-defined]
+    columns = mapping.form_visibility["Escalation"].columns
     assert (columns["Route"].new, columns["Route"].existing) == (False, False)
     assert (columns["Note"].new, columns["Note"].existing) == (True, True)
 
@@ -460,7 +461,7 @@ def test_reconcile_defaults_to_exact(tmp_path: object) -> None:
             columns:
               Route: hidden
     """)
-    assert mapping.form_visibility["Escalation"].reconcile == "exact"  # type: ignore[attr-defined]
+    assert mapping.form_visibility["Escalation"].reconcile == "exact"
 
 
 def test_column_validation_requires_both_when_and_message(tmp_path: object) -> None:

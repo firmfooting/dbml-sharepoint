@@ -63,7 +63,7 @@ normaliser needs no special cases for either.
 ```python
 @dataclass(frozen=True)
 class Group:
-    kind: typing.Literal['all_of', 'any_of', 'none_of']
+    kind: GroupKind
     children: tuple['Condition', ...]
 ```
 

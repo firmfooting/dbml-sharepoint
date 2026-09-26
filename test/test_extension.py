@@ -1,4 +1,5 @@
 # test/test_extension.py
+from importlib.metadata import EntryPoint
 from pathlib import Path
 
 import pytest
@@ -116,6 +117,32 @@ def test_resolve_extension_empty_string_is_null() -> None:
 def test_resolve_extension_unknown_raises_with_installed_list() -> None:
     with pytest.raises(ValueError, match="installed:"):
         resolve_extension("nope")
+
+
+def _installed(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    """One real entry point named `acme`, loaded from `value`."""
+    point = EntryPoint(name="acme", value=value, group="dbml_sharepoint.extensions")
+
+    def only_acme(*, group: str) -> list[EntryPoint]:
+        return [point] if group == "dbml_sharepoint.extensions" else []
+
+    monkeypatch.setattr("dbml_sharepoint.extension.entry_points", only_acme)
+
+
+def test_resolve_extension_refuses_a_plugin_that_builds_something_else(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An entry point is untyped, so a plugin building a dict must not pass as an extension."""
+    _installed(monkeypatch, "builtins:dict")
+    with pytest.raises(TypeError, match=r"'acme' \(builtins:dict\) built a dict"):
+        resolve_extension("acme")
+
+
+def test_resolve_extension_returns_the_extension_a_plugin_builds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _installed(monkeypatch, "dbml_sharepoint.extension:NullExtension")
+    assert isinstance(resolve_extension("acme"), NullExtension)
 
 
 def test_resolve_extension_unknown_message_mentions_requested_name() -> None:

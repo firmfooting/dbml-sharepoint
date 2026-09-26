@@ -1800,7 +1800,7 @@ def test_build_rejects_invalid_site_role(tmp_path: Path) -> None:
 
 def test_build_rejects_extension_that_requires_project_cli(
     tmp_path: Path,
-    monkeypatch: object,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A project-only extension must fail before creating any artifact."""
 
@@ -1811,7 +1811,7 @@ def test_build_rejects_extension_that_requires_project_cli(
     def resolve_project_only(_name: str | None) -> BaseExtension:
         return ProjectOnlyExtension()
 
-    monkeypatch.setattr(  # type: ignore[attr-defined]
+    monkeypatch.setattr(
         "dbml_sharepoint.project.resolve_extension",
         resolve_project_only,
     )

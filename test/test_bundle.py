@@ -20,6 +20,8 @@ from dbml_sharepoint.bundle import (
     write_checksums,
     write_index,
 )
+from dbml_sharepoint.model.mapping_types import MappingBundle
+from dbml_sharepoint.model.parser import Schema
 
 
 def test_generated_files_is_the_full_bundle() -> None:
@@ -337,7 +339,7 @@ def test_write_index_verify_row_only_when_asked(tmp_path: Path) -> None:
     assert "_dbml-verify" in md
 
 
-def _emit(tmp_path: Path, schema: object, bundle: object) -> Path:
+def _emit(tmp_path: Path, schema: Schema, bundle: MappingBundle) -> Path:
     from dbml_sharepoint.model.release import load_release
 
     out = tmp_path / "build"
@@ -345,8 +347,8 @@ def _emit(tmp_path: Path, schema: object, bundle: object) -> Path:
     out.mkdir(exist_ok=True)
     (out / "deploy-manifest.md").write_text("manifest", encoding="utf-8")
     emit_bundle(
-        out, schema=schema, mapping_bundle=bundle,  # type: ignore[arg-type]
-        resolved=resolve(schema, bundle.mapping),  # type: ignore[arg-type,attr-defined]
+        out, schema=schema, mapping_bundle=bundle,
+        resolved=resolve(schema, bundle.mapping),
         release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test", site_role="default",
         schema_name="s.dbml", mapping_name="m.yaml", source_mtime="2026-05-04T00:00:00Z",

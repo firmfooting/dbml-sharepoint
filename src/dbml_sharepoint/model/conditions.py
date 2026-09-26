@@ -24,7 +24,8 @@ from typing import Any, Literal
 
 from dbml_sharepoint.model.errors import MappingShapeError, UnknownMappingKeyError
 
-GROUP_KINDS: tuple[str, ...] = ("all_of", "any_of", "none_of")
+type GroupKind = Literal["all_of", "any_of", "none_of"]
+GROUP_KINDS: tuple[GroupKind, ...] = ("all_of", "any_of", "none_of")
 
 #: Operators that carry no `value`, which is a fact about the GRAMMAR rather
 #: than about any target: `is_null` asks whether the column is empty, and there
@@ -67,7 +68,7 @@ class Group:
     See `analysis.condition_rendering.normalise`.
     """
 
-    kind: Literal["all_of", "any_of", "none_of"]
+    kind: GroupKind
     children: tuple["Condition", ...]
 
 
@@ -122,7 +123,7 @@ def parse_condition(raw: Any, context: str) -> Condition:
     )
 
 
-def _group(kind: str, items: Any, context: str) -> Group:
+def _group(kind: GroupKind, items: Any, context: str) -> Group:
     if not isinstance(items, list):
         raise MappingShapeError(f"{context}.{kind}: expected a list of conditions")
     if not items:
@@ -132,4 +133,4 @@ def _group(kind: str, items: Any, context: str) -> Group:
     children = tuple(
         parse_condition(item, f"{context}.{kind}[{index}]") for index, item in enumerate(items)
     )
-    return Group(kind, children)  # type: ignore[arg-type]
+    return Group(kind, children)

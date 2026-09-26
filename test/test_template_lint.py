@@ -247,7 +247,7 @@ def test_no_template_names_a_merged_acl_collection() -> None:
     assert not offenders, offenders
 
 
-def test_generated_api_docs_are_current(tmp_path: Path) -> None:
+def test_generated_api_docs_are_current(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The generator is deterministic by design, so a committed page that
     differs from a fresh run means someone changed the code and did not
     regenerate.
@@ -259,11 +259,8 @@ def test_generated_api_docs_are_current(tmp_path: Path) -> None:
     """
     generate_api = _load_generate_api()
     committed: Path = generate_api.OUT_DIR
-    try:
-        generate_api.OUT_DIR = tmp_path  # type: ignore[attr-defined]
-        generate_api.write_all()
-    finally:
-        generate_api.OUT_DIR = committed  # type: ignore[attr-defined]
+    monkeypatch.setattr(generate_api, "OUT_DIR", tmp_path)
+    generate_api.write_all()
 
     def pages(root: Path) -> dict[Path, str]:
         return {q.relative_to(root): q.read_text(encoding="utf-8") for q in root.rglob("*.md")}
