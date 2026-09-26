@@ -5,6 +5,7 @@ Lives alone so the parsers and the retirement fold can both apply it
 without importing each other.
 """
 
+import datetime as dt
 from typing import Any
 
 from dbml_sharepoint.model.errors import MappingShapeError, UnknownMappingKeyError
@@ -24,8 +25,10 @@ def _text_key(key: object, context: str) -> str:
         return key
     # "NoneType" is Python's word; the author wrote `~` or nothing, which YAML calls null.
     kind = "null" if key is None else type(key).__name__
+    # The ISO text the author typed, not `datetime.date(2026, 9, 1)`.
+    shown = key.isoformat() if isinstance(key, dt.date) else repr(key)
     raise MappingShapeError(
-        f"{context}: key {key!r} is not text (YAML read it as {kind}); quote it",
+        f"{context}: key {shown} is not text (YAML read it as {kind}); quote it",
     )
 
 
