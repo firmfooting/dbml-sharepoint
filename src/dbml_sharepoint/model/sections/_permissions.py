@@ -11,7 +11,7 @@ one.
 from collections.abc import Sequence
 from typing import Any, cast
 
-from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model._keys import _known_keys, _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.mapping_types import (
     PRINCIPAL_KIND_LIST,
@@ -129,7 +129,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
         default_policy = _parse_policy(
             raw_default, "list_permissions.default", allow_site_role=True, prefix=prefix,
         )
-        raw_scope = raw_default.get("site_role")
+        raw_scope: object = raw_default.get("site_role")
         default_policy_site_role = str(raw_scope) if raw_scope is not None else None
 
     overrides: dict[str, ListPermissionPolicy] = {}
@@ -312,12 +312,22 @@ def _parse_policy(
             "an inherited ACL cannot be reconciled as a list-scoped allowlist",
         )
     assignments: list[RoleAssignment] = []
-    for i, raw_a in enumerate(raw_policy.get("assignments", [])):
-        _reject_unknown_keys(raw_a, {"principal", "level"}, f"{context}.assignments[{i}]")
-        principal = _parse_principal(
-            raw_a.get("principal", {}), f"{context}.assignments[{i}].principal", prefix,
+    raw_assignments: object = raw_policy.get("assignments", [])
+    if not isinstance(raw_assignments, list):
+        raise MappingShapeError(
+            f"{context}.assignments must be a list, got {raw_assignments!r}",
         )
-        level = raw_a.get("level")
+    entries: list[object] = raw_assignments
+    for i, raw_a in enumerate(entries):
+        assignment = _known_keys(raw_a, {"principal", "level"}, f"{context}.assignments[{i}]")
+        principal = _parse_principal(
+            assignment.get("principal", {}), f"{context}.assignments[{i}].principal", prefix,
+        )
+        level = assignment.get("level")
+        if level is not None and not isinstance(level, str):
+            raise MappingShapeError(
+                f"{context}.assignments[{i}].level must be a string, got {level!r}",
+            )
         if isinstance(level, str):
             level = expand_prefix(level, prefix, f"{context}.assignments[{i}].level")
         if not level:

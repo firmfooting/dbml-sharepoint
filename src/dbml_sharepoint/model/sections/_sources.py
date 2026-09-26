@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
-from dbml_sharepoint.model.errors import MappingReferenceError
+from dbml_sharepoint.model.errors import MappingReferenceError, MappingShapeError
 from dbml_sharepoint.model.mapping_types import RetentionPolicy
 from dbml_sharepoint.model.reading import (
     load_yaml,
@@ -30,7 +30,13 @@ def read(sc: SectionContext) -> dict[str, Any]:
         sc.base_dir, _require_mapping(sc.block("enum_sources"), "enum_sources"),
     )
 
-    retention_source = sc.block("retention_policies_source")
+    retention_source: object = sc.block("retention_policies_source")
+    # A number or a list raised TypeError from the path join, and an empty one loaded as absent.
+    if retention_source is not None and not isinstance(retention_source, str):
+        raise MappingShapeError(
+            f"retention_policies_source must be a path relative to the mapping, "
+            f"got {retention_source!r}",
+        )
     retention_path = (sc.base_dir / retention_source).resolve() if retention_source else None
     retention_policies: dict[str, RetentionPolicy] = {}
     retention_list_defaults: dict[str, str] = {}

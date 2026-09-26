@@ -3715,6 +3715,89 @@ def test_an_item_security_scope_splits_the_type_from_the_word(tmp_path: Path) ->
     assert str(err.value) == "item_security.default.read: expected one of all, own, got 'mine'"
 
 
+#: A value of the wrong YAML type that reached a loop, a path join or a typed
+#: field unchecked: `sort: 5` and a blank `assignments:` raised a bare
+#: TypeError, and `level: 5` loaded as a permission level.
+_WRONG_TYPE_CASES = [
+    pytest.param(
+        _views_yaml("views:\n  Project:\n    - { title: All, fields: [Title], sort: 5 }"),
+        "views.Project[0].sort must be a list, got 5",
+        id="view-sort-number",
+    ),
+    pytest.param(
+        _views_yaml("views:\n  Project:\n    - { title: All, fields: [Title], sort: Title }"),
+        "views.Project[0].sort must be a list, got 'Title'",
+        id="view-sort-text",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            list_permissions:
+              default:
+                break_inheritance: true
+                assignments:
+        """),
+        "list_permissions.default.assignments must be a list, got None",
+        id="assignments-blank",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            list_permissions:
+              default:
+                break_inheritance: true
+                assignments: { principal: { kind: associated_member_group }, level: Read }
+        """),
+        "list_permissions.default.assignments must be a list, got "
+        "{'principal': {'kind': 'associated_member_group'}, 'level': 'Read'}",
+        id="assignments-mapping",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            list_permissions:
+              default:
+                break_inheritance: true
+                assignments:
+                  - { principal: { kind: associated_member_group }, level: 5 }
+        """),
+        "list_permissions.default.assignments[0].level must be a string, got 5",
+        id="assignment-level-number",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            list_permissions:
+              default:
+                break_inheritance: true
+                assignments:
+                  - { principal: { kind: associated_member_group }, level: [Read] }
+        """),
+        "list_permissions.default.assignments[0].level must be a string, got ['Read']",
+        id="assignment-level-list",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "retention_policies_source: 5"),
+        "retention_policies_source must be a path relative to the mapping, got 5",
+        id="retention-source-number",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "retention_policies_source: {}"),
+        "retention_policies_source must be a path relative to the mapping, got {}",
+        id="retention-source-empty-mapping",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "message"), _WRONG_TYPE_CASES)
+def test_a_value_of_the_wrong_yaml_type_is_a_shape_error(
+    tmp_path: Path, body: str, message: str,
+) -> None:
+    """Refused where it is read, naming the key, rather than crashing later or
+    loading as something the author did not write."""
+    write_mapping(tmp_path, body)
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == message
+
+
 #: A required key inside a LIST entry, which `_reject_unknown_keys` passes
 #: (it refuses only keys nobody reads) and a direct subscript then answered
 #: with a bare `KeyError`. `MappingError` does not catch that, so the
