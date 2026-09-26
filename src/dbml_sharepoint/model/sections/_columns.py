@@ -63,17 +63,15 @@ def read(sc: SectionContext) -> dict[str, Any]:
             column=require_str(item, "column", where),
         ))
 
-    calculated_formulas = {
-        entity: {
-            col: str(formula)
-            for col, formula in _require_mapping(
-                cols, f"calculated_formulas.{entity}",
-            ).items()
+    calculated_formulas: dict[str, dict[str, str]] = {}
+    for entity, cols in _require_mapping(
+        sc.block("calculated_formulas"), "calculated_formulas",
+    ).items():
+        formulas = _require_mapping(cols, f"calculated_formulas.{entity}")
+        # `require_str`, where `str()` deployed a blank formula as the text "None".
+        calculated_formulas[entity] = {
+            col: require_str(formulas, col, f"calculated_formulas.{entity}") for col in formulas
         }
-        for entity, cols in _require_mapping(
-            sc.block("calculated_formulas"), "calculated_formulas",
-        ).items()
-    }
 
     return {
         "cross_site_reference_columns": cross_site,

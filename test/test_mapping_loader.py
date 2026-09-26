@@ -4763,6 +4763,36 @@ _COERCED_VALUE_CASES = [
         "form_visibility.Risk.columns.Title.when.op must be a string, got 5",
         id="condition-op",
     ),
+    pytest.param(
+        blocks(entities("Risk"), "calculated_formulas:\n  Risk: { Score: 5 }"),
+        "calculated_formulas.Risk.Score must be a string, got 5",
+        id="calculated-formula",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "calculated_formulas:\n  Risk: { Score: }"),
+        "calculated_formulas.Risk.Score is required",
+        id="calculated-formula-blank",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            display_names:
+              mode: auto
+              overrides:
+                Risk: { Owner: [Risk owner] }
+        """),
+        "display_names.overrides.Risk.Owner must be a string, got ['Risk owner']",
+        id="display-name-override",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            display_names:
+              mode: auto
+              overrides:
+                Risk: { Owner: }
+        """),
+        "display_names.overrides.Risk.Owner is required",
+        id="display-name-override-blank",
+    ),
 ]
 
 

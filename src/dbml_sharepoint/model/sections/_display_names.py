@@ -5,24 +5,23 @@ from typing import Any
 
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
+from dbml_sharepoint.model.reading import require_str
 from dbml_sharepoint.model.sections.context import SectionContext
 
 
 def read(sc: SectionContext) -> dict[str, Any]:
     section = sc.block("display_names")
     mode = _parse_display_name_mode(section)
-    overrides = {
-        entity: {
-            col: str(name)
-            for col, name in _require_mapping(
-                cols, f"display_names.overrides.{entity}",
-            ).items()
+    overrides: dict[str, dict[str, str]] = {}
+    for entity, cols in _require_mapping(
+        _require_mapping(section, "display_names").get("overrides"),
+        "display_names.overrides",
+    ).items():
+        names = _require_mapping(cols, f"display_names.overrides.{entity}")
+        # `require_str`, where `str()` titled a column "None" or "['Owner']".
+        overrides[entity] = {
+            col: require_str(names, col, f"display_names.overrides.{entity}") for col in names
         }
-        for entity, cols in _require_mapping(
-            _require_mapping(section, "display_names").get("overrides"),
-            "display_names.overrides",
-        ).items()
-    }
     return {"display_name_mode": mode, "display_name_overrides": overrides}
 
 
