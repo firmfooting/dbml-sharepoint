@@ -10,7 +10,7 @@ the seal and unseal pair, the lifted save rule, and the cleanup in the
 import json
 import re
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, override
 
 from _builders import ID_PK, TITLE, table
 from _packs import blocks, entities, pack
@@ -497,6 +497,7 @@ class _SeedExtension(BaseExtension):
 
     name: ClassVar[str] = "seedstub"
 
+    @override
     def seed_lists(
         self, bundle: Any, schema: Any, site_context: SiteContext,
     ) -> dict[str, dict[str, Any]]:

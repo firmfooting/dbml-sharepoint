@@ -27,8 +27,9 @@ def _parse_previous_prefixes(declared: Any, current: Any) -> tuple[str, ...]:
         return ()
     if not isinstance(declared, list) or not all(isinstance(p, str) for p in declared):
         raise MappingShapeError("previous_prefixes must be a list of strings")
+    names: list[str] = declared
     seen: set[str] = set()
-    for previous in declared:
+    for previous in names:
         if previous == current:
             raise MappingValueError(
                 f"previous_prefixes names the current prefix {previous!r}; a prefix "
@@ -37,4 +38,4 @@ def _parse_previous_prefixes(declared: Any, current: Any) -> tuple[str, ...]:
         if previous in seen:
             raise MappingValueError(f"previous_prefixes names {previous!r} twice")
         seen.add(previous)
-    return tuple(declared)
+    return tuple(names)

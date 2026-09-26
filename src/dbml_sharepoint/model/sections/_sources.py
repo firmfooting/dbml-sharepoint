@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
-from dbml_sharepoint.model.errors import MappingReferenceError
+from dbml_sharepoint.model.errors import MappingReferenceError, MappingShapeError
 from dbml_sharepoint.model.mapping_types import RetentionPolicy
 from dbml_sharepoint.model.reading import (
     load_yaml,
@@ -30,7 +30,15 @@ def read(sc: SectionContext) -> dict[str, Any]:
         sc.base_dir, _require_mapping(sc.block("enum_sources"), "enum_sources"),
     )
 
-    retention_source = sc.block("retention_policies_source")
+    retention_source: object = sc.block("retention_policies_source")
+    # A number or a list raised TypeError from the path join, and an empty one loaded as absent.
+    if retention_source is not None and (
+        not isinstance(retention_source, str) or not retention_source
+    ):
+        raise MappingShapeError(
+            f"retention_policies_source must be a path relative to the mapping, "
+            f"got {retention_source!r}",
+        )
     retention_path = (sc.base_dir / retention_source).resolve() if retention_source else None
     retention_policies: dict[str, RetentionPolicy] = {}
     retention_list_defaults: dict[str, str] = {}
@@ -47,7 +55,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
 
 
 def _load_enum_choices(
-    base_dir: Path, enum_sources: dict[str, str],
+    base_dir: Path, enum_sources: dict[str, object],
 ) -> tuple[dict[str, list[str]], dict[str, Path]]:
     """Load every `enum_sources` entry into a name -> list[str] map.
 
@@ -60,6 +68,11 @@ def _load_enum_choices(
     choices: dict[str, list[str]] = {}
     resolved: dict[str, Path] = {}
     for name, spec in enum_sources.items():
+        # A number or a list raised AttributeError, which the CLI deliberately does not catch.
+        if not isinstance(spec, str):
+            raise MappingShapeError(
+                f"enum_sources[{name!r}]: expected 'path#fragment', got {spec!r}",
+            )
         path_part, _, fragment = spec.partition("#")
         fragment = fragment or "choices"
         path = (base_dir / path_part).resolve()

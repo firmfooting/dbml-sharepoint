@@ -54,7 +54,7 @@ the interface does not have.
 ### `resolve_extension_or_refuse`
 
 ```python
-def resolve_extension_or_refuse(extension: str | None, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, mapping: pathlib.Path) -> dbml_sharepoint.extension.BaseExtension
+def resolve_extension_or_refuse(extension: str | None, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, mapping: pathlib.Path) -> dbml_sharepoint.extension.DeploymentExtension
 ```
 
 Resolve the extension name, reporting an unknown one as a message.

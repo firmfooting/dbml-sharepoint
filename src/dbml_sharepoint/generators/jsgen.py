@@ -72,11 +72,12 @@ from dbml_sharepoint.model.mapping_types import (
     EntitySection,
     FormVisibility,
     MappingBundle,
+    Principal,
     ViewDef,
     ViewScope,
     view_url_slug,
 )
-from dbml_sharepoint.model.parser import Column, Schema
+from dbml_sharepoint.model.parser import Column, ColumnDefault, EnumDef, Schema
 from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
 
@@ -419,6 +420,22 @@ def _view_caml_query(
     return "".join(parts)
 
 
+def _in_declaration_order(names: frozenset[str], columns: Sequence[Column]) -> list[str]:
+    """`names` in column declaration order, with any name the table lacks last."""
+    declared = [c.name for c in columns]
+
+    def position(name: str) -> int:
+        return declared.index(name) if name in declared else len(declared)
+
+    return sorted(names, key=position)
+
+
+def _create_body(field: dict[str, Any]) -> dict[str, Any]:
+    """A field spec's REST create body, whose keys vary with the field type."""
+    body: dict[str, Any] = field["body"]
+    return body
+
+
 def _order_calculated_after_references(
     fields: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -444,16 +461,16 @@ def _order_calculated_after_references(
         ready = [
             f for f in remaining
             if not (
-                (formula_column_refs(f["body"]["Formula"]) & calc_titles)
+                (formula_column_refs(_create_body(f)["Formula"]) & calc_titles)
                 - emitted - {f["title"]}
             )
         ]
         if not ready:
             # validate_against_mapping reports this as a build error first;
             # guard defensively in case it is bypassed.
+            circular: list[str] = sorted(f["title"] for f in remaining)
             raise ValueError(
-                "circular calculated-column references: "
-                + ", ".join(sorted(f["title"] for f in remaining)),
+                "circular calculated-column references: " + ", ".join(circular),
             )
         for f in ready:
             ordered.append(f)
@@ -496,7 +513,7 @@ def _title_patch(col: Column, display_title: str | None) -> dict[str, Any]:
     return patch
 
 
-def _principal_json(principal: Any) -> dict[str, Any]:
+def _principal_json(principal: Principal) -> dict[str, Any]:
     """A principal as the templates read it: the kind, and a name only for a
     named group. The three `associated_*` kinds resolve through the site's own
     endpoints and carry no name at all."""
@@ -772,6 +789,7 @@ def build_schema_json(
         )
         calculated_here = bundle.mapping.calculated_formulas.get(table_name, {})
         for f in fields_phase1:
+            create_body = _create_body(f)
             f["display_title"] = display_map[f["title"]]
             is_calculated = f["title"] in calculated_here
             f["client_validation_formula"] = _visibility_formula(
@@ -779,13 +797,13 @@ def build_schema_json(
             )
             f["validation_formula"], f["validation_message"] = _column_validation(
                 validation, f["title"], col_types, display_map,
-                field_type_kind=f["body"]["FieldTypeKind"],
+                field_type_kind=create_body["FieldTypeKind"],
                 is_calculated=is_calculated,
                 hoisted=hoisted_names,
             )
             f["seal"] = bundle.mapping.seal_columns
-            if "Formula" in f["body"]:
-                f["body"]["Formula"] = rewrite_formula_refs(f["body"]["Formula"], display_map)
+            if "Formula" in create_body:
+                create_body["Formula"] = rewrite_formula_refs(create_body["Formula"], display_map)
             formatter = table_formatting.get(f["title"])
             f["custom_formatter"] = (
                 json.dumps(formatter, separators=(",", ":"), sort_keys=True)
@@ -793,31 +811,32 @@ def build_schema_json(
                 else None
             )
         for deferred in phase2:
-            if deferred["list"] == list_title and "display_title" not in deferred["field"]:
-                deferred["field"]["display_title"] = bundle.mapping.display_name_for(
-                    table_name, deferred["field"]["title"],
+            deferred_field: dict[str, Any] = deferred["field"]
+            if deferred["list"] == list_title and "display_title" not in deferred_field:
+                deferred_field["display_title"] = bundle.mapping.display_name_for(
+                    table_name, deferred_field["title"],
                 )
-                deferred_formatter = table_formatting.get(deferred["field"]["title"])
-                deferred["field"]["custom_formatter"] = (
+                deferred_formatter = table_formatting.get(deferred_field["title"])
+                deferred_field["custom_formatter"] = (
                     json.dumps(deferred_formatter, separators=(",", ":"), sort_keys=True)
                     if deferred_formatter is not None
                     else None
                 )
-                deferred_calculated = deferred["field"]["title"] in calculated_here
-                deferred["field"]["client_validation_formula"] = _visibility_formula(
-                    visibility, deferred["field"]["title"], col_types,
+                deferred_calculated = deferred_field["title"] in calculated_here
+                deferred_field["client_validation_formula"] = _visibility_formula(
+                    visibility, deferred_field["title"], col_types,
                     is_calculated=deferred_calculated,
                 )
                 (
-                    deferred["field"]["validation_formula"],
-                    deferred["field"]["validation_message"],
+                    deferred_field["validation_formula"],
+                    deferred_field["validation_message"],
                 ) = _column_validation(
-                    validation, deferred["field"]["title"], col_types, display_map,
-                    field_type_kind=deferred["field"]["body"]["FieldTypeKind"],
+                    validation, deferred_field["title"], col_types, display_map,
+                    field_type_kind=_create_body(deferred_field)["FieldTypeKind"],
                     is_calculated=deferred_calculated,
                     hoisted=hoisted_names,
                 )
-                deferred["field"]["seal"] = bundle.mapping.seal_columns
+                deferred_field["seal"] = bundle.mapping.seal_columns
 
         if title_patch is None and not (entity.is_library and title_display is None):
             # No DBML Title column: the built-in Title on a base-template list is
@@ -887,10 +906,7 @@ def build_schema_json(
             "validation_described": (
                 describe(declared_validation.when) if declared_validation is not None else None
             ),
-            "validation_hoisted": sorted(
-                hoisted_names, key=lambda name: [c.name for c in table.columns].index(name)
-                if name in [c.name for c in table.columns] else len(table.columns),
-            ),
+            "validation_hoisted": _in_declaration_order(hoisted_names, table.columns),
             "prevent_deletion": bundle.mapping.prevent_list_deletion,
             # False unless the mapping said `attachments: false`. True is
             # SharePoint's own default, so a mapping that says nothing gets
@@ -935,9 +951,11 @@ def build_schema_json(
                 body = json.loads(json.dumps(declared_form.body))
                 for section in body.get("sections") or []:
                     if isinstance(section, dict) and isinstance(section.get("fields"), list):
+                        names: list[object] = section["fields"]
+                        # The validator has refused a non-string entry; str() narrows the type.
                         section["fields"] = [
-                            bundle.mapping.display_name_for(table_name, name)
-                            for name in section["fields"]
+                            bundle.mapping.display_name_for(table_name, str(name))
+                            for name in names
                         ]
                 parts["bodyJSONFormatter"] = body
             if declared_form.footer is not None:
@@ -1173,7 +1191,7 @@ def build_schema_json(
 
 
 def _field_body(
-    col: Any, enums_by_name: dict[str, Any], list_title_prefix: str,
+    col: Column, enums_by_name: dict[str, EnumDef], list_title_prefix: str,
     entities: dict[str, EntityMapping] | None = None,
     formulas: dict[str, str] | None = None,
     default_formulas: dict[str, str] | None = None,
@@ -1372,7 +1390,7 @@ def _field_body(
     return {"title": sp.name, "body": body}
 
 
-def _bool_default_to_sp(value: str | int | bool) -> str:
+def _bool_default_to_sp(value: ColumnDefault) -> str:
     """Map a DBML boolean default literal to SharePoint's '1'/'0' string.
 
     DBML/pydbml surfaces booleans as ``True``/``False`` or the integer/string

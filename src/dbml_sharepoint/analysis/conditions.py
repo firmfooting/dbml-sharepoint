@@ -585,7 +585,7 @@ def _choice_member_problems(
     whole_member_ops = {"eq", "neq", "in", "not_in", "includes", "not_includes"}
     if enum_name is None or leaf.op not in whole_member_ops:
         return []
-    values = (
+    values: list[object] = (
         leaf.value
         if leaf.op in {"in", "not_in"} and isinstance(leaf.value, list)
         else [leaf.value]

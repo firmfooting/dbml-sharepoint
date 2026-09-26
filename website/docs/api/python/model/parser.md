@@ -35,7 +35,7 @@ class Column:
     type: str
     required: bool = False
     unique: bool = False
-    default: str | int | bool | None = None
+    default: ColumnDefault | None = None
     ref: dbml_sharepoint.model.parser.Reference | None = None
     note: str = ''
     is_pk: bool = False

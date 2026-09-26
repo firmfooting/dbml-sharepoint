@@ -141,7 +141,7 @@ def assess_targets(
                 bundle.mapping.list_title(table_name),
                 [[title, marker_for(family, name)] for title, name in previous],
             ])
-        templates.add(int(entity.base_template))
+        templates.add(entity.base_template)
         table_names.append(table_name)
         markers.append((bundle.mapping.list_title(table_name), marker_for(family, table_name)))
         table = by_name.get(table_name)
@@ -221,8 +221,8 @@ def assess_targets(
         "list_view_threshold": LIST_VIEW_THRESHOLD,
         "index_change_ceiling": INDEX_CHANGE_CEILING,
         "declares_groups": bool(site_groups),
-        "declares_seal": bool(m.seal_columns),
-        "declares_prevent_deletion": bool(m.prevent_list_deletion),
+        "declares_seal": m.seal_columns,
+        "declares_prevent_deletion": m.prevent_list_deletion,
         "declares_column_formatting": bool(m.column_formatting),
         "declares_form_formatting": bool(m.form_formatting),
         "declares_versioning": versioning_on,

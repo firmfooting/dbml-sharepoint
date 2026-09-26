@@ -178,3 +178,50 @@ def test_an_unrecognised_parse_error_passes_through_untouched(
         parse_dbml(path)
 
     assert "Expected" in str(raised.value)
+
+
+# --- column defaults ----------------------------------------------------------
+
+
+def test_literal_defaults_keep_the_type_pydbml_read(tmp_path: Path) -> None:
+    """A decimal default is a float, which `Column.default` did not admit."""
+    path = _write(tmp_path, """
+        Table Risk {
+          Id int [pk, increment]
+          Score decimal [default: 1.5]
+          Rank int [default: 3]
+          Open boolean [default: true]
+          Label nvarchar [default: 'x']
+        }
+    """)
+
+    columns = {c.name: c.default for c in parse_dbml(path).tables[0].columns}
+
+    assert columns == {"Id": None, "Score": 1.5, "Rank": 3, "Open": True, "Label": "x"}
+
+
+def test_an_expression_default_is_refused_by_column(tmp_path: Path) -> None:
+    """`now()` reached the create body as an object and the build died in json.dumps."""
+    path = _write(tmp_path, """
+        Table Risk {
+          Id int [pk, increment]
+          Title nvarchar [default: `now()`]
+        }
+    """)
+
+    with pytest.raises(ValueError, match=r"Risk\.Title: default `now\(\)` is a SQL expression"):
+        parse_dbml(path)
+
+
+@pytest.mark.parametrize("literal", ["null", "'NULL'"])
+def test_a_null_default_is_refused_by_column(tmp_path: Path, literal: str) -> None:
+    """pydbml reads both as the text "NULL", which deployed as every new item's value."""
+    path = _write(tmp_path, f"""
+        Table Risk {{
+          Id int [pk, increment]
+          Title nvarchar [default: {literal}]
+        }}
+    """)
+
+    with pytest.raises(ValueError, match=r"Risk\.Title: default: null and default: 'NULL'"):
+        parse_dbml(path)

@@ -7,10 +7,12 @@ stops distinguishing them turns a test red.
 """
 
 from pathlib import Path
+from typing import Unpack
 
 import pytest
 from _builders import ID_PK, TITLE, table
 from _findings import by_severity, none_of, only
+from _model import MappingSections
 from _model import bundle as make_bundle
 from _model import column as make_column
 from _model import schema as make_schema
@@ -45,9 +47,9 @@ def _docs(kind: EntityKind = "DocumentLibrary", base_template: int = 101) -> Ent
     )
 
 
-def _library_findings(entity: EntityMapping, **sections: object) -> list[Finding]:
+def _library_findings(entity: EntityMapping, **sections: Unpack[MappingSections]) -> list[Finding]:
     schema = make_schema(make_table("Docs", make_column("Title", required=True)))
-    bundle = make_bundle(entities={"Docs": entity}, **sections)  # type: ignore[arg-type]
+    bundle = make_bundle(entities={"Docs": entity}, **sections)
     return validate_against_mapping(schema, bundle)
 
 

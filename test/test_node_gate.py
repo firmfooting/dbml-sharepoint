@@ -20,7 +20,7 @@ def test_a_ci_run_without_node_is_refused(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("CI", "true")
     monkeypatch.setattr("_node.NODE", None)
     with pytest.raises(pytest.UsageError) as refusal:
-        conftest.pytest_collection_modifyitems(None, None, [])  # type: ignore[arg-type]
+        conftest.pytest_collection_modifyitems(None, None, [])  # pyrefly: ignore[bad-argument-type]
     message = str(refusal.value)
     # The operator has to be told what to do about it, not just that it broke.
     assert "node is not on PATH" in message
@@ -31,7 +31,7 @@ def test_a_ci_run_with_node_present_is_allowed(monkeypatch: pytest.MonkeyPatch) 
     """The guard must not fail a runner that has what it asked for."""
     monkeypatch.setenv("CI", "true")
     monkeypatch.setattr("_node.NODE", "/usr/bin/node")
-    conftest.pytest_collection_modifyitems(None, None, [])  # type: ignore[arg-type]
+    conftest.pytest_collection_modifyitems(None, None, [])  # pyrefly: ignore[bad-argument-type]
 
 
 def test_a_local_run_without_node_still_skips(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -43,7 +43,7 @@ def test_a_local_run_without_node_still_skips(monkeypatch: pytest.MonkeyPatch) -
     """
     monkeypatch.delenv("CI", raising=False)
     monkeypatch.setattr("_node.NODE", None)
-    conftest.pytest_collection_modifyitems(None, None, [])  # type: ignore[arg-type]
+    conftest.pytest_collection_modifyitems(None, None, [])  # pyrefly: ignore[bad-argument-type]
 
 
 def test_the_requirement_is_keyed_on_ci_alone(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -11,7 +11,12 @@ one.
 from collections.abc import Sequence
 from typing import Any, cast
 
-from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model._keys import (
+    _known_keys,
+    _reject_unknown_keys,
+    _require_list,
+    _require_mapping,
+)
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.mapping_types import (
     PRINCIPAL_KIND_LIST,
@@ -68,20 +73,23 @@ def read(sc: SectionContext) -> dict[str, Any]:
     previous_prefixes = sc.loaded["previous_prefixes"]
 
     # All three sections are optional; default to empty / no default policy.
-    raw_levels = sc.block("permission_levels", [])
-    raw_groups = sc.block("groups", [])
+    raw_levels = _require_list(sc.block("permission_levels"), "permission_levels")
+    raw_groups = _require_list(sc.block("groups"), "groups")
     raw_list_perms = _require_mapping(sc.block("list_permissions"), "list_permissions")
     _reject_unknown_keys(
         raw_list_perms, {"default", "overrides", "folders"}, "list_permissions",
     )
 
-    for i, lvl in enumerate(raw_levels):
-        _reject_unknown_keys(
+    level_blocks = [
+        _known_keys(
             lvl, {"name", "description", "base_permissions", "renamed_from"},
             f"permission_levels[{i}]",
         )
-    for i, grp in enumerate(raw_groups):
-        _reject_unknown_keys(grp, _GROUP_KEYS, f"groups[{i}]")
+        for i, lvl in enumerate(raw_levels)
+    ]
+    group_blocks = [
+        _known_keys(grp, _GROUP_KEYS, f"groups[{i}]") for i, grp in enumerate(raw_groups)
+    ]
 
     levels = [
         CustomPermissionLevel(
@@ -102,12 +110,12 @@ def read(sc: SectionContext) -> dict[str, Any]:
                 prefix, previous_prefixes, f"permission_levels[{i}].renamed_from",
             ),
         )
-        for i, lvl in enumerate(raw_levels)
+        for i, lvl in enumerate(level_blocks)
     ]
 
     groups: list[SiteGroup] = []
     group_sources: list[GroupsFromEnum] = []
-    for i, grp in enumerate(raw_groups):
+    for i, grp in enumerate(group_blocks):
         group = _parse_group(grp, f"groups[{i}]", prefix, previous_prefixes)
         # Presence, not truthiness: `from_enum:` with no value is a mistake
         # worth reporting, and `.get()` would read it as an absent key and
@@ -129,7 +137,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
         default_policy = _parse_policy(
             raw_default, "list_permissions.default", allow_site_role=True, prefix=prefix,
         )
-        raw_scope = raw_default.get("site_role")
+        raw_scope: object = raw_default.get("site_role")
         default_policy_site_role = str(raw_scope) if raw_scope is not None else None
 
     overrides: dict[str, ListPermissionPolicy] = {}
@@ -270,6 +278,9 @@ def _parse_principal(raw_principal: Any, context: str, prefix: str = "") -> Prin
             f"{PRINCIPAL_KIND_LIST}; got {kind!r}",
         )
     name = raw_principal.get("name")
+    # A number or a list was carried through as the group name the deploy looks up.
+    if name is not None and not isinstance(name, str):
+        raise MappingShapeError(f"{context}: principal name must be a string, got {name!r}")
     if isinstance(name, str):
         name = expand_prefix(name, prefix, f"{context}.name")
     if kind == "group" and not name:
@@ -312,12 +323,22 @@ def _parse_policy(
             "an inherited ACL cannot be reconciled as a list-scoped allowlist",
         )
     assignments: list[RoleAssignment] = []
-    for i, raw_a in enumerate(raw_policy.get("assignments", [])):
-        _reject_unknown_keys(raw_a, {"principal", "level"}, f"{context}.assignments[{i}]")
-        principal = _parse_principal(
-            raw_a.get("principal", {}), f"{context}.assignments[{i}].principal", prefix,
+    raw_assignments: object = raw_policy.get("assignments", [])
+    if not isinstance(raw_assignments, list):
+        raise MappingShapeError(
+            f"{context}.assignments must be a list, got {raw_assignments!r}",
         )
-        level = raw_a.get("level")
+    entries: list[object] = raw_assignments
+    for i, raw_a in enumerate(entries):
+        assignment = _known_keys(raw_a, {"principal", "level"}, f"{context}.assignments[{i}]")
+        principal = _parse_principal(
+            assignment.get("principal", {}), f"{context}.assignments[{i}].principal", prefix,
+        )
+        level = assignment.get("level")
+        if level is not None and not isinstance(level, str):
+            raise MappingShapeError(
+                f"{context}.assignments[{i}].level must be a string, got {level!r}",
+            )
         if isinstance(level, str):
             level = expand_prefix(level, prefix, f"{context}.assignments[{i}].level")
         if not level:

@@ -30,7 +30,7 @@ def _parse_display_name_mode(section: Any) -> str | None:
     if section is None:
         return None
     _reject_unknown_keys(section, {"mode", "overrides"}, "display_names")
-    mode = section.get("mode")
+    mode: object = section.get("mode")
     # A section written for its overrides alone leaves the key missing, which
     # is a key to add rather than the misspelled mode a value error means.
     if mode is None:

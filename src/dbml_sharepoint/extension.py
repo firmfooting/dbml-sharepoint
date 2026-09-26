@@ -118,7 +118,7 @@ class UnknownExtensionError(ValueError):
     """
 
 
-def resolve_extension(name: str | None) -> BaseExtension:
+def resolve_extension(name: str | None) -> DeploymentExtension:
     """Resolve by entry-point name; None/'null' -> NullExtension.
     Raises ValueError listing installed extensions when the name is unknown."""
     if name in (None, "", "null"):
@@ -126,7 +126,14 @@ def resolve_extension(name: str | None) -> BaseExtension:
     eps = entry_points(group="dbml_sharepoint.extensions")
     for ep in eps:
         if ep.name == name:
-            return ep.load()()  # type: ignore[no-any-return]
+            extension: object = ep.load()()
+            # The protocol, not BaseExtension: a plugin may implement it without subclassing.
+            if not isinstance(extension, DeploymentExtension):
+                raise TypeError(
+                    f"Extension {name!r} ({ep.value}) built a {type(extension).__name__}, "
+                    "which does not implement DeploymentExtension",
+                )
+            return extension
     installed = sorted(ep.name for ep in eps)
     raise UnknownExtensionError(
         f"Unknown extension {name!r}; installed: {installed or 'none'}"

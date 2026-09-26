@@ -190,7 +190,9 @@ def _run_phase(state: dict[str, Any], lists: list[dict[str, Any]]) -> dict[str, 
     )
     output = run_node(script)
     line = next(ln for ln in output.splitlines() if ln.startswith("__RESULT__"))
-    return json.loads(line.removeprefix("__RESULT__"))  # type: ignore[no-any-return]
+    result = json.loads(line.removeprefix("__RESULT__"))
+    assert isinstance(result, dict), result
+    return result
 
 
 def _library(*folders: str) -> dict[str, Any]:

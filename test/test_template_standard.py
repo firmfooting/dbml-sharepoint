@@ -60,7 +60,7 @@ from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, PLACEHOLDER_TIME_ZON
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import Mapping, SiteGroup
-from dbml_sharepoint.model.parser import Schema, parse_dbml
+from dbml_sharepoint.model.parser import ColumnDefault, Schema, parse_dbml
 
 # This module is the family-standard conformance sweep, and it dominates the
 # suite's case count. Most of its functions are parametrised across the whole
@@ -1168,7 +1168,7 @@ def test_every_declared_view_is_satisfied_by_a_demo_row(template: str) -> None:
 _FORMULA_DEFAULT = object()
 
 
-def _stored_default(value: str | int | bool, column_type: str) -> str | int | bool:
+def _stored_default(value: ColumnDefault, column_type: str) -> ColumnDefault:
     """A schema default as the row stores it. `[today]` is the create date on a date
     column; a Text column stores the token literally (pinned in test_probe_runtime.py)."""
     if not isinstance(value, str):
@@ -1343,7 +1343,7 @@ def _attributes(node: dict[str, Any]) -> dict[str, Any]:
 def _classes(node: dict[str, Any]) -> set[str]:
     """Class tokens as a SET: §1.1 fixes the classes, not their order."""
     raw = _attributes(node).get("class")
-    return set(str(raw).split()) if isinstance(raw, str) else set()
+    return set(raw.split()) if isinstance(raw, str) else set()
 
 
 def _text(node: dict[str, Any]) -> str:

@@ -72,16 +72,17 @@ def generate_manifest(
     bare `KeyError` nor a silent omission.
     """
     template = script_env().get_template("manifest.md.j2")
+    lists: list[dict[str, Any]] = schema_json["lists"]
 
     counts = {
-        "lists": len(schema_json["lists"]),
-        "fields_phase1": sum(len(lst["fields_phase1"]) for lst in schema_json["lists"]),
+        "lists": len(lists),
+        "fields_phase1": sum(len(lst["fields_phase1"]) for lst in lists),
         "phase2_lookups": len(schema_json["phase2_lookups"]),
         "indexed": len(schema_json["indexed_columns"]),
         "views": len(schema_json["views"]),
         "formatted_columns": sum(
             1
-            for lst in schema_json["lists"]
+            for lst in lists
             for f in lst["fields_phase1"]
             if f.get("custom_formatter") is not None
         ),
@@ -91,7 +92,7 @@ def generate_manifest(
 
     formatted_columns = [
         {"list": lst["title"], "column": f["title"]}
-        for lst in schema_json["lists"]
+        for lst in lists
         for f in lst["fields_phase1"]
         if f.get("custom_formatter") is not None
     ]
@@ -104,7 +105,7 @@ def generate_manifest(
     # the script disagreeing, in the artefact an operator reads to decide
     # whether to paste the script. Anything below that starts from
     # bundle.mapping passes through here first.
-    deployed_titles = {lst["title"] for lst in schema_json["lists"]}
+    deployed_titles = {lst["title"] for lst in lists}
 
     def _deployed(entity: str) -> bool:
         return (bundle.mapping.entities[entity].site_role == site_role
@@ -121,8 +122,9 @@ def generate_manifest(
     # From `schema_json`, whose groups are already resolved: a `from_enum`
     # group's name reaches `lists_granting_group` below, and the template
     # spelling matches no assignment.
+    groups: list[dict[str, Any]] = schema_json.get("groups", [])
     _reader_groups = [
-        g["name"] for g in schema_json.get("groups", [])
+        g["name"] for g in groups
         if g.get("enroll_enterprise_reader")
     ]
     _deployed_entities = [e for e in bundle.mapping.entities if _deployed(e)]
@@ -173,7 +175,7 @@ def generate_manifest(
     # rules below: the manifest reports what the script does.
     default_formulas = [
         {"list": lst["title"], "column": f["title"], "formula": f["body"]["DefaultFormula"]}
-        for lst in schema_json["lists"]
+        for lst in lists
         for f in _written_fields(lst)
         if f["body"].get("DefaultFormula") is not None
     ]
@@ -189,7 +191,7 @@ def generate_manifest(
             "formula": f["client_validation_formula"],
             "cleared": f["client_validation_formula"] == "",
         }
-        for lst in schema_json["lists"]
+        for lst in lists
         for f in _written_fields(lst)
         if f.get("client_validation_formula", UNMANAGED) != UNMANAGED
     ]
@@ -202,7 +204,7 @@ def generate_manifest(
             "cleared": f["validation_formula"] == "",
             "hoisted": f["title"] in lst.get("validation_hoisted", []),
         }
-        for lst in schema_json["lists"]
+        for lst in lists
         for f in _written_fields(lst)
         if f.get("validation_formula", UNMANAGED) != UNMANAGED
     ]
@@ -239,7 +241,7 @@ def generate_manifest(
             "message_length": len(lst["validation_message"] or ""),
             "message_limit": MAX_VALIDATION_MESSAGE,
         }
-        for lst in schema_json["lists"]
+        for lst in lists
         if lst.get("validation_formula") is not None
     ]
 
@@ -251,9 +253,10 @@ def generate_manifest(
             for key in sorted(keys, key=order.index)
         )
 
+    form_rows: list[dict[str, Any]] = schema_json["form_formatting"]
     form_formatting = [
         {"list": row["list"], "parts": _form_parts(row["client_form_custom_formatter"])}
-        for row in schema_json["form_formatting"]
+        for row in form_rows
     ]
 
     entity_by_title = {
@@ -298,13 +301,14 @@ def generate_manifest(
                 return ", ".join(declared.expanded_sets)
         return ""
 
+    view_rows: list[dict[str, Any]] = schema_json["views"]
     views = [
         {
             **view,
             "summary": _view_summary(view["list"], view["title"]),
             "expanded_from": _view_expanded_from(view["list"], view["title"]),
         }
-        for view in schema_json["views"]
+        for view in view_rows
     ]
     # Retirement is a load-time mutation of the author's own declarations;
     # the manifest is where the operator sees what was rewritten and why.
@@ -357,7 +361,7 @@ def generate_manifest(
         counts=counts,
         findings=findings,
         polymorphic=polymorphic,
-        lists=schema_json["lists"],
+        lists=lists,
         phase2=schema_json["phase2_lookups"],
         indexed=schema_json["indexed_columns"],
         views=views,

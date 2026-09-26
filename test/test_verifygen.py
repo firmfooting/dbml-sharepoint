@@ -67,7 +67,7 @@ def _clock_pack() -> tuple[Schema, MappingBundle]:
     return schema, bundle
 
 
-def _checks(targets: dict) -> dict[str, dict]:  # type: ignore[type-arg]
+def _checks(targets: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {check["key"]: check for check in targets["checks"]}
 
 

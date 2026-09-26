@@ -1591,7 +1591,7 @@ def _run(console: Console) -> int:
             # The build refused and has already said why on stderr. Its exit
             # code is the documented contract; pass it through rather than
             # flattening every refusal to 1.
-            return int(exc.exit_code)
+            return exc.exit_code
         except typer.BadParameter as exc:
             # Reachable since the env file started reaching `execute_build`:
             # its armed guard refuses a reader the mapping has no group for,

@@ -23,7 +23,7 @@ from pyparsing.exceptions import ParseBaseException
 from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
 from dbml_sharepoint.analysis.timezones import is_known_zone, unknown_zone_message
 from dbml_sharepoint.extension import (
-    BaseExtension,
+    DeploymentExtension,
     UnknownExtensionError,
     resolve_extension,
 )
@@ -102,7 +102,7 @@ def load_config(
 
 def resolve_extension_or_refuse(
     extension: str | None, bundle: MappingBundle, mapping: Path,
-) -> BaseExtension:
+) -> DeploymentExtension:
     """Resolve the extension name, reporting an unknown one as a message.
 
     `resolve_extension` raises `ValueError`, which `CONFIG_ERRORS` already

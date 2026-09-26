@@ -24,7 +24,8 @@ from typing import Any, Literal
 
 from dbml_sharepoint.model.errors import MappingShapeError, UnknownMappingKeyError
 
-GROUP_KINDS: tuple[str, ...] = ("all_of", "any_of", "none_of")
+type GroupKind = Literal["all_of", "any_of", "none_of"]
+GROUP_KINDS: tuple[GroupKind, ...] = ("all_of", "any_of", "none_of")
 
 #: Operators that carry no `value`, which is a fact about the GRAMMAR rather
 #: than about any target: `is_null` asks whether the column is empty, and there
@@ -67,7 +68,7 @@ class Group:
     See `analysis.condition_rendering.normalise`.
     """
 
-    kind: Literal["all_of", "any_of", "none_of"]
+    kind: GroupKind
     children: tuple["Condition", ...]
 
 
@@ -87,49 +88,56 @@ def parse_condition(raw: Any, context: str) -> Condition:
         raise MappingShapeError(
             f"{context}: expected a mapping or a list of conditions, got {type(raw).__name__}",
         )
+    raw_map: dict[object, object] = raw
 
-    present = [kind for kind in GROUP_KINDS if kind in raw]
-    is_leaf = bool(_LEAF_KEYS & set(raw)) and not present
+    present = [kind for kind in GROUP_KINDS if kind in raw_map]
+    is_leaf = bool(_LEAF_KEYS & set(raw_map)) and not present
     if not is_leaf:
         if len(present) != 1:
             raise MappingShapeError(
                 f"{context}: expected exactly one of {', '.join(GROUP_KINDS)}, "
                 f"or a condition with 'field' and 'op'",
             )
-        unknown = set(raw) - {present[0]}
+        unknown = set(raw_map) - {present[0]}
         if unknown:
-            raise UnknownMappingKeyError(f"{context}: unknown group key(s) {sorted(unknown)}")
-        return _group(present[0], raw[present[0]], context)
+            raise UnknownMappingKeyError(
+                f"{context}: unknown group key(s) {sorted(unknown, key=str)}",
+            )
+        return _group(present[0], raw_map[present[0]], context)
 
-    unknown_leaf = set(raw) - _LEAF_KEYS
+    unknown_leaf = set(raw_map) - _LEAF_KEYS
     if unknown_leaf:
         raise UnknownMappingKeyError(
-            f"{context}: unknown key(s) {sorted(unknown_leaf)} on a condition",
+            f"{context}: unknown key(s) {sorted(unknown_leaf, key=str)} on a condition",
         )
     for key in ("field", "op"):
-        if not raw.get(key):
+        if not raw_map.get(key):
             raise MappingShapeError(f"{context}: {key!r} is required on a condition")
+    optional: dict[str, str | None] = {}
     for key in ("property", "measure"):
-        value = raw.get(key)
+        value = raw_map.get(key)
         if value is not None and not isinstance(value, str):
             raise MappingShapeError(f"{context}: {key!r} must be a string or null")
+        optional[key] = value
     return Leaf(
-        field=str(raw["field"]),
-        op=str(raw["op"]),
-        value=raw.get("value"),
-        property=raw.get("property"),
-        measure=raw.get("measure"),
+        field=str(raw_map["field"]),
+        op=str(raw_map["op"]),
+        value=raw_map.get("value"),
+        property=optional["property"],
+        measure=optional["measure"],
     )
 
 
-def _group(kind: str, items: Any, context: str) -> Group:
+def _group(kind: GroupKind, items: Any, context: str) -> Group:
     if not isinstance(items, list):
         raise MappingShapeError(f"{context}.{kind}: expected a list of conditions")
-    if not items:
+    item_list: list[object] = items
+    if not item_list:
         raise MappingShapeError(
             f"{context}.{kind}: empty group -- remove it or give it a condition",
         )
     children = tuple(
-        parse_condition(item, f"{context}.{kind}[{index}]") for index, item in enumerate(items)
+        parse_condition(item, f"{context}.{kind}[{index}]")
+        for index, item in enumerate(item_list)
     )
-    return Group(kind, children)  # type: ignore[arg-type]
+    return Group(kind, children)

@@ -30,10 +30,12 @@ def formatter_field_refs(node: object) -> frozenset[str]:
         if isinstance(value, str):
             refs.update(_FORMATTER_FIELD_REF.findall(value))
         elif isinstance(value, dict):
-            for child in value.values():
+            mapping: dict[object, object] = value
+            for child in mapping.values():
                 _walk(child)
         elif isinstance(value, list):
-            for child in value:
+            children: list[object] = value
+            for child in children:
                 _walk(child)
 
     _walk(node)

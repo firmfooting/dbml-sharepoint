@@ -181,8 +181,8 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
             from_entity=_derived_text(item, "from", where),
             via=via,
             key=join_key,
-            pick={str(k): str(v) for k, v in pick.items()},
-            types={str(k): str(v) for k, v in types.items()},
+            pick=dict(pick),
+            types=dict(types),
             hidden=hidden,
             description=description,
         )
@@ -232,8 +232,9 @@ def _parse_derived_columns(raw: Any) -> dict[str, list[DerivedColumn]]:
                 f"derived_columns.{entity} must be a list of columns, "
                 f"got {items!r}",
             )
+        entries: list[object] = items
         out[entity] = [
             _parse_derived_column(item, f"derived_columns.{entity}[{i}]")
-            for i, item in enumerate(items)
+            for i, item in enumerate(entries)
         ]
     return out

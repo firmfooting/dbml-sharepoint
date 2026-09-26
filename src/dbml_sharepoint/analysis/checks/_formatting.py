@@ -130,6 +130,27 @@ def _view_dependencies(
     return findings
 
 
+def _listed_fields(
+    section: dict[object, object], entity_name: str, at: Location,
+) -> tuple[list[object], list[Finding]]:
+    """The entries of one form body section's `fields`, as authored, and a
+    finding when `fields` is present but is not a list."""
+    raw_fields = section.get("fields")
+    if isinstance(raw_fields, list):
+        listed: list[object] = raw_fields
+        return listed, []
+    if raw_fields is None:
+        return [], []
+    # Only a list names columns: a string was read one character at a time,
+    # and a number raised.
+    return [], [Finding(
+        FindingCode.FORM_SECTION_FIELD_NOT_RENDERED,
+        f"form_formatting[{entity_name}].body: sections fields must be a "
+        f"list of column names, got {raw_fields!r}.",
+        location=at,
+    )]
+
+
 def check(vc: ValidationContext) -> list[Finding]:
     schema = vc.schema
     bundle = vc.bundle
@@ -417,14 +438,20 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # Created/Modified/Author, which no author places on a form.
                 declared = rendered_columns(form_table, xcols) | {"Title"}
                 placed: set[str] = set()
-                for index, section in enumerate(sections):
+                section_list: list[object] = sections
+                for index, section in enumerate(section_list):
                     if not isinstance(section, dict):
                         continue
-                    is_last = index == len(sections) - 1
-                    section_fields = [str(n) for n in (section.get("fields") or [])]
+                    section_map: dict[object, object] = section
+                    is_last = index == len(section_list) - 1
+                    listed, shape_findings = _listed_fields(
+                        section_map, entity_name, body_at,
+                    )
+                    findings += shape_findings
+                    section_fields = [n for n in listed if isinstance(n, str)]
                     placed.update(section_fields)
-                    for name in section_fields:
-                        if name not in rendered:
+                    for name in listed:
+                        if not isinstance(name, str) or name not in rendered:
                             findings.append(Finding(
                                 FindingCode.FORM_SECTION_FIELD_NOT_RENDERED,
                                 f"form_formatting[{entity_name}].body: "
@@ -441,7 +468,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     # form as cosmetic and expected.
                     named = [n for n in section_fields if n in declared]
                     if named and not is_last and all(n in hidden_everywhere for n in named):
-                        title = section.get("displayname") or "(untitled)"
+                        title = section_map.get("displayname") or "(untitled)"
                         findings.append(Finding(
                             FindingCode.FORM_SECTION_ENTIRELY_HIDDEN,
                             f"form_formatting[{entity_name}].body: section "

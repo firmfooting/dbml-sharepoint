@@ -17,7 +17,7 @@ from dbml_sharepoint.analysis.limits import (
     MAX_FIELD_DESCRIPTION,
     MAX_TEXT_FIELD_LENGTH,
 )
-from dbml_sharepoint.model.parser import Column
+from dbml_sharepoint.model.parser import Column, ColumnDefault
 
 type FieldKind = Literal[
     "Skip", "Text", "Note", "DateTime", "Choice", "Lookup",
@@ -511,7 +511,7 @@ class SPField:
     field_type_kind: int | None
     required: bool
     unique: bool
-    default: str | int | bool | None
+    default: ColumnDefault | None
     description: str
     # Type-specific:
     choices_enum: str | None = None

@@ -35,12 +35,6 @@ _CONSUMERS = (
     PACKAGE / "generators" / "demogen.py",
     PACKAGE / "wizard.py",
 )
-_COMMON_ARGS = {
-    "site_url": "https://example.sharepoint.com/sites/test",
-    "site_role": "default",
-    "source_dbml": "simple.dbml",
-    "generated_at": "2026-05-04T00:00:00Z",
-}
 
 
 def _docstrings(tree: ast.AST) -> set[int]:
@@ -120,9 +114,11 @@ def _demo_js(title_prefix: str = DEMO_TITLE_PREFIX) -> str:
         schema=schema,
         bundle=bundle,
         release=load_release(FIXTURES / "release.yaml"),
-        **_COMMON_ARGS,
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="simple.dbml",
+        generated_at="2026-05-04T00:00:00Z",
     )
-
 
 
 def test_owner_declares_the_marker_and_safe_javascript_shape() -> None:

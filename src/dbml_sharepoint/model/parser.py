@@ -11,14 +11,17 @@ docs/design/requirements/dbml-sharepoint-requirements.md section 5.
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
-from pydbml import PyDBML
+from pydbml.classes import Column as DbmlColumn
+from pydbml.classes import Enum as DbmlEnum
+from pydbml.classes import Expression
+from pydbml.database import Database
 from pydbml.exceptions import (
     ColumnNotFoundError,
     DatabaseValidationError,
     TableNotFoundError,
 )
+from pydbml.parser.parser import PyDBML
 
 
 @dataclass(frozen=True)
@@ -29,6 +32,10 @@ class Reference:
     target_column: str
 
 
+#: A literal DBML column default. pydbml reads `1.5` as a float and `3` as an int.
+type ColumnDefault = str | int | float | bool
+
+
 @dataclass
 class Column:
     """A single column on a DBML Table."""
@@ -37,7 +44,7 @@ class Column:
     type: str
     required: bool = False
     unique: bool = False
-    default: str | int | bool | None = None
+    default: ColumnDefault | None = None
     ref: Reference | None = None
     note: str = ""
     is_pk: bool = False
@@ -151,7 +158,8 @@ def _translate(detail: str, source: str) -> str:
 def parse_dbml(path: Path) -> Schema:
     """Parse a DBML file and return our in-memory model."""
     try:
-        parsed = PyDBML(path)
+        # parse_file is typed; the PyDBML(path) factory returns a Database it annotates as PyDBML.
+        parsed: Database = PyDBML.parse_file(path)
     except (
         ColumnNotFoundError, TableNotFoundError, DatabaseValidationError,
     ) as exc:
@@ -187,14 +195,16 @@ def parse_dbml(path: Path) -> Schema:
             note=raw_table.note.text if raw_table.note else "",
         )
         for raw_col in raw_table.columns:
-            table.columns.append(_to_column(raw_col))
+            table.columns.append(_to_column(raw_col, raw_table.name))
         for raw_index in raw_table.indexes:
+            # An untyped pydbml property: a Column subject gives its name, any other str().
+            subject_names: list[str] = raw_index.subject_names
             table.indexes.append(TableIndex(
-                columns=tuple(raw_index.subject_names),
+                columns=tuple(subject_names),
                 name=raw_index.name,
-                unique=bool(raw_index.unique),
+                unique=raw_index.unique,
                 type=raw_index.type,
-                pk=bool(raw_index.pk),
+                pk=raw_index.pk,
                 note=raw_index.note.text if raw_index.note else "",
             ))
         schema.tables.append(table)
@@ -202,27 +212,53 @@ def parse_dbml(path: Path) -> Schema:
     return schema
 
 
-def _to_column(raw: Any) -> Column:
+def _to_column(raw: DbmlColumn, table_name: str) -> Column:
     """Convert a pydbml column object into our Column dataclass."""
-    type_name = raw.type.name if hasattr(raw.type, "name") else str(raw.type)
+    where = f"{table_name}.{raw.name}"
+    # pydbml's grammar gives a type name, which it swaps for the Enum when one is declared.
+    type_name = raw.type.name if isinstance(raw.type, DbmlEnum) else raw.type
     ref: Reference | None = None
-    for raw_ref in getattr(raw, "get_refs", list)():
+    for raw_ref in raw.get_refs():
         # pydbml exposes refs from the column side; first one wins for our subset.
-        target = raw_ref.table2.name if raw_ref.col1[0] is raw else raw_ref.table1.name
-        target_col = raw_ref.col2[0].name if raw_ref.col1[0] is raw else raw_ref.col1[0].name
-        ref = Reference(target_table=target, target_column=target_col)
+        outbound = raw_ref.col1[0] is raw
+        target_table = raw_ref.table2 if outbound else raw_ref.table1
+        target_column = raw_ref.col2[0] if outbound else raw_ref.col1[0]
+        if target_table is None:
+            raise ValueError(f"{where}: pydbml returned a ref with no target table")
+        ref = Reference(target_table=target_table.name, target_column=target_column.name)
         break
     return Column(
         name=raw.name,
         type=type_name,
-        required=getattr(raw, "not_null", False),
-        unique=getattr(raw, "unique", False),
-        default=raw.default if getattr(raw, "default", None) not in (None, "") else None,
+        required=raw.not_null,
+        unique=raw.unique,
+        default=_column_default(raw.default, where),
         ref=ref,
         note=raw.note.text if raw.note else "",
-        is_pk=getattr(raw, "pk", False),
-        is_auto_increment=getattr(raw, "autoinc", False),
+        is_pk=raw.pk,
+        is_auto_increment=raw.autoinc,
     )
+
+
+def _column_default(
+    value: ColumnDefault | Expression | None, where: str,
+) -> ColumnDefault | None:
+    """A column's literal default, or None; refuses the two forms SharePoint cannot hold."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, Expression):
+        raise ValueError(
+            f"{where}: default `{value}` is a SQL expression, which SharePoint cannot "
+            f"evaluate. A date that defaults to today takes default: '[today]'; any "
+            f"other computed default belongs in the mapping's default_formulas.",
+        )
+    # pydbml reads `null` and 'NULL' as the same string, so neither says what was meant.
+    if value == "NULL":
+        raise ValueError(
+            f"{where}: default: null and default: 'NULL' read identically, so neither "
+            f"is accepted. Remove the default for an empty column.",
+        )
+    return value
 
 
 def _strip_quotes(value: str) -> str:

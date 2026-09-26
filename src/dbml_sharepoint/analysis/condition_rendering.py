@@ -24,7 +24,13 @@ from dbml_sharepoint.analysis.typemap import (
     is_boolean,
     is_multi_value,
 )
-from dbml_sharepoint.model.conditions import VALUELESS_OPS, Condition, Group, Leaf
+from dbml_sharepoint.model.conditions import (
+    VALUELESS_OPS,
+    Condition,
+    Group,
+    GroupKind,
+    Leaf,
+)
 
 
 class ConditionRefusalKind(Enum):
@@ -119,7 +125,7 @@ NEGATION: dict[str, str] = {
 # MultiChoice column returning the rows without the member AND the empty row.
 _NULL_INCLUSIVE_NEGATIVES = frozenset({"neq", "not_in", "not_includes"})
 
-_FLIP: dict[str, str] = {"all_of": "any_of", "any_of": "all_of"}
+_FLIP: dict[GroupKind, GroupKind] = {"all_of": "any_of", "any_of": "all_of"}
 
 
 def normalise(condition: Condition) -> Condition:
@@ -190,6 +196,7 @@ def _push(node: Condition, *, negate: bool) -> Condition:
         # explicitly; neq/not_in do so in their own renderings above.
         return Group("any_of", (Leaf(node.field, "is_null", None, node.property), flipped))
 
+    kind: GroupKind
     if node.kind == "none_of":
         # none_of[C] == all_of[!C];  !none_of[C] == any_of[C].
         kind = "any_of" if negate else "all_of"
@@ -199,7 +206,7 @@ def _push(node: Condition, *, negate: bool) -> Condition:
         child_negate = negate
 
     children = tuple(_push(child, negate=child_negate) for child in node.children)
-    return Group(kind, children)  # type: ignore[arg-type]
+    return Group(kind, children)
 
 
 # === Rendering ==============================================================

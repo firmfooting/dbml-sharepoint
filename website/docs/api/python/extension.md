@@ -128,7 +128,7 @@ the operator as a traceback naming the plugin.
 ### `resolve_extension`
 
 ```python
-def resolve_extension(name: str | None) -> dbml_sharepoint.extension.BaseExtension
+def resolve_extension(name: str | None) -> dbml_sharepoint.extension.DeploymentExtension
 ```
 
 Resolve by entry-point name; None/'null' -> NullExtension.

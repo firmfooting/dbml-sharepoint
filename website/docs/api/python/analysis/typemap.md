@@ -326,7 +326,7 @@ class SPField:
     field_type_kind: int | None
     required: bool
     unique: bool
-    default: str | int | bool | None
+    default: ColumnDefault | None
     description: str
     choices_enum: str | None = None
     target_list: str | None = None
@@ -339,7 +339,7 @@ class SPField:
     output_type: int | None = None
 ```
 
-SPField(name: str, kind: FieldKind, field_type_kind: int | None, required: bool, unique: bool, default: str | int | bool | None, description: str, choices_enum: str | None = None, target_list: str | None = None, date_only: bool = True, rich_text: bool = False, number_of_lines: int = 6, max_length: int = 255, selection_mode: int = 0, display_format: int = 0, output_type: int | None = None)
+SPField(name: str, kind: FieldKind, field_type_kind: int | None, required: bool, unique: bool, default: ColumnDefault | None, description: str, choices_enum: str | None = None, target_list: str | None = None, date_only: bool = True, rich_text: bool = False, number_of_lines: int = 6, max_length: int = 255, selection_mode: int = 0, display_format: int = 0, output_type: int | None = None)
 
 ### `map_column`
 

@@ -296,16 +296,18 @@ def _formatter_strings(node: object, key: str = "") -> list[tuple[str, str]]:
         # into `CustomFormatter`, keys included, and `{"label&detail": "x"}`
         # puts the same bare character into the same view schema XML by
         # another route. Found by review, not by a template doing it.
+        mapping: dict[object, object] = node
         return [
             pair
-            for child_key, child in node.items()
+            for child_key, child in mapping.items()
             for pair in (
                 (str(child_key), str(child_key)),
                 *_formatter_strings(child, str(child_key)),
             )
         ]
     if isinstance(node, list):
-        return [pair for child in node for pair in _formatter_strings(child, key)]
+        children: list[object] = node
+        return [pair for child in children for pair in _formatter_strings(child, key)]
     return []
 
 

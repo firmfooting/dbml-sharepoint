@@ -53,3 +53,42 @@ def test_release_missing_key_is_named_not_a_keyerror(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="release") as err:
         load_release(tmp_path / "release.yaml")
     assert "release.yaml" in str(err.value)
+
+
+_QUOTED = {
+    "release": '"1.0.0"',
+    "date": '"2026-01-01"',
+    "deployer_version": '"dbml-sharepoint/0.1.0"',
+    "schema_version": '"1.0.0"',
+}
+
+
+def _release_yaml(**overrides: str) -> str:
+    return "\n".join(f"{key}: {value}" for key, value in {**_QUOTED, **overrides}.items())
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "message"),
+    [
+        ("release", "2.10", r"'release' must be text, got float 2\.1; quote it"),
+        ("schema_version", "1", r"'schema_version' must be text, got int 1; quote it"),
+        ("deployer_version", "[a]", r"'deployer_version' must be text, got list"),
+        ("flow_package_version", "1.0", r"'flow_package_version' must be text, got float"),
+        ("notes", "", r"'notes' is present with no value"),
+        ("date", "20260101", r"'date' must be text, got int"),
+    ],
+)
+def test_release_value_that_is_not_text_is_refused(
+    tmp_path: Path, key: str, value: str, message: str,
+) -> None:
+    """An unquoted `release: 2.10` loads as the float 2.1, which reached
+    deploy.js as the number 2.1 through `tojson`."""
+    write_mapping(tmp_path, _release_yaml(**{key: value}), prefix=None, name="release.yaml")
+    with pytest.raises(ValueError, match=message) as err:
+        load_release(tmp_path / "release.yaml")
+    assert "release.yaml" in str(err.value)
+
+
+def test_release_unquoted_date_is_read_as_iso_text(tmp_path: Path) -> None:
+    write_mapping(tmp_path, _release_yaml(date="2026-09-24"), prefix=None, name="release.yaml")
+    assert load_release(tmp_path / "release.yaml").date == "2026-09-24"

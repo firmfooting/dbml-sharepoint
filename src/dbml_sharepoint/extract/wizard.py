@@ -213,7 +213,7 @@ def _run(
         # The extraction refused and has already said why. Its exit code is
         # the documented contract; pass it through rather than flattening
         # every refusal to 1.
-        return int(exc.exit_code)
+        return exc.exit_code
     except typer.BadParameter as exc:
         # `click.UsageError`, not `typer.Exit`, so the clause above cannot
         # catch it. 2 is the documented code for a usage error.

@@ -25,7 +25,7 @@ import re
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, override
 
 import pytest
 import yaml
@@ -144,13 +144,16 @@ def _with_formatter(formatter: str) -> str:
     return field_xml("Text", CustomFormatter=formatter.replace('"', "&quot;"))
 
 
-def _decode(*xml: str, entity: str = "T", **kwargs: object) -> DecodedEntity:
+def _decode(
+    *xml: str, entity: str = "T", unrecovered: list[Unrecovered] | None = None,
+    list_description: str = "",
+) -> DecodedEntity:
     """Decode some fields with a fresh registry, discarding the notes."""
-    kwargs.setdefault("unrecovered", [])
     return decode_list(
         [parse_field_xml(x) for x in xml],
         entity=entity, list_title="t", enums=new_enum_registry(),
-        **kwargs,  # type: ignore[arg-type]
+        unrecovered=[] if unrecovered is None else unrecovered,
+        list_description=list_description,
     )
 
 
@@ -184,7 +187,9 @@ def _stored(attribute: str) -> dict[str, str]:
 
 def _live_payload() -> dict[str, Any]:
     """The fixture's download, as a mutable object a test can damage."""
-    return json.loads(SAMPLE.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+    payload = json.loads(SAMPLE.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict), payload
+    return payload
 
 
 # --- The fixture, read as it arrived ---------------------------------------
@@ -1124,6 +1129,7 @@ def _download(body: str) -> str:
     (_download('"lists": []'), "declares no lists"),
     (_download('"lists": [1]'), "is not an object"),
     (_download('"lists": [{"fields": []}]'), "has no title"),
+    (_download('"lists": [{"title": 5, "fields": []}]'), "'title' must be a string, got 5"),
     (_download('"lists": [{"title": "a"}]'), "is missing or is not a list"),
     (_download('"lists": [{"title": "a", "fields": []}]'), "nothing to extract"),
     (_download('"lists": [{"title": "a", "fields": [1]}]'), "not a string of XML"),
@@ -1143,6 +1149,35 @@ def test_a_damaged_download_is_refused_with_a_sentence(
     """
     with pytest.raises(SourceError, match=re.escape(message)):
         load_live_json(payload)
+
+
+@pytest.mark.parametrize(("where", "key", "message"), [
+    ("list", "description", "lists[0]: 'description' must be a string, got 5"),
+    ("list", "contentTypeFormatter", "lists[0]: 'contentTypeFormatter' must be a string, got 5"),
+    ("download", "siteUrl", "the download: 'siteUrl' must be a string, got 5"),
+])
+def test_a_text_property_of_the_download_that_is_not_text_is_refused(
+    where: str, key: str, message: str,
+) -> None:
+    """These reached `str` fields unchecked; a number is refused where it is read."""
+    document = json.loads(SAMPLE.read_text(encoding="utf-8"))
+    (document["lists"][0] if where == "list" else document)[key] = 5
+    with pytest.raises(SourceError, match=re.escape(message)):
+        load_live_json(json.dumps(document))
+
+
+@pytest.mark.parametrize(("views", "message"), [
+    (5, "lists[0].views is not a list"),
+    ([{"Title": "All Items"}, "Open"], "lists[0].views[1] is not an object"),
+])
+def test_views_that_extract_js_could_not_have_written_are_refused(
+    views: object, message: str,
+) -> None:
+    """A number raised TypeError, and a view that was not an object was dropped unmentioned."""
+    document = json.loads(SAMPLE.read_text(encoding="utf-8"))
+    document["lists"][0]["views"] = views
+    with pytest.raises(SourceError, match=re.escape(message)):
+        load_live_json(json.dumps(document))
 
 
 def test_a_file_that_cannot_be_read_as_text_is_refused(tmp_path: Path) -> None:
@@ -1641,6 +1676,7 @@ def test_the_wizard_leaves_quietly_on_ctrl_c(
     monkeypatch.chdir(tmp_path)
 
     class Interrupted(ScriptedConsole):
+        @override
         def input(self, prompt: object = "", **kwargs: object) -> str:
             raise KeyboardInterrupt
 

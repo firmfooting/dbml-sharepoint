@@ -206,11 +206,12 @@ python-version = "3.13"
 project-includes = ["src", "test", "website/scripts", "scripts"]
 # Test helpers and scripts import their siblings as top-level modules.
 search-path = ["src", "test", "website/scripts", "scripts"]
-# Translated from mypy --strict by `pyrefly init`.
-preset = "legacy"
+# The strict preset, not legacy: legacy types untyped imports such as pydbml as Any.
+preset = "strict"
 check-unannotated-defs = true
 infer-return-types = "never"
-ignore-missing-imports = ["pydbml.*"]
+# A mypy-coded `# type: ignore[x]` otherwise hides every pyrefly error on its line.
+type-ignore-unknown-tag-behavior = "no-effect"
 
 [tool.pyrefly.errors]
 no-any-return = "error"
@@ -222,7 +223,14 @@ implicit-any = "error"
 # which `pyrefly init` does not carry over.
 implicit-reexport = "error"
 unused-ignore = "error"
+unused-type-ignore = "error"
 incompatible-comparison = "error"
+# Warnings by default, which do not fail the gate.
+unnecessary-type-conversion = "error"
+redundant-condition = "error"
+# Off even in strict: an implicit Any reaching a call or a variable is a value nothing checked.
+unknown-argument-type = "error"
+unknown-variable-type = "error"
 
 # Test data is often deliberately untyped: `[]`, `{}` and mock lambdas.
 [[tool.pyrefly.sub-config]]
@@ -231,6 +239,9 @@ matches = "test/**"
 [tool.pyrefly.sub-config.errors]
 implicit-any-empty-container = false
 implicit-any-lambda = false
+# Tests read node output and fixtures through json.loads, whose values are unchecked by design.
+unknown-argument-type = false
+unknown-variable-type = false
 
 [tool.coverage.run]
 # Measured on the package, not on the test tree: a test file that never runs

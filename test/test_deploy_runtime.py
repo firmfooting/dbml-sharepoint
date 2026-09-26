@@ -20,7 +20,7 @@ import tempfile
 import textwrap
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, ClassVar, NamedTuple
+from typing import Any, ClassVar, NamedTuple, override
 from urllib.parse import quote
 
 import pytest
@@ -8103,6 +8103,7 @@ class _OwnershipSeedExtension(BaseExtension):
     def __init__(self, titles: tuple[str, ...]) -> None:
         self._titles = titles
 
+    @override
     def seed_lists(
         self, bundle: Any, schema: Any, site_context: Any,
     ) -> dict[str, dict[str, Any]]:
@@ -9104,7 +9105,7 @@ def test_an_exact_list_declaring_nothing_strips_it_and_reads_it_back(
     # The seeded stray is the only binding there, and it goes.
     removals = [c for c in calls if "removeroleassignment" in c["url"]]
     assert len(removals) == 1, removals
-    stray_principal = _STRAY_BINDING[0][0]["Member"]["Id"]  # type: ignore[index]
+    stray_principal = _STRAY_BINDING[0][0]["Member"]["Id"]
     assert f"principalid={stray_principal}" in removals[0]["url"]
     log = _phase_log(output, pn("acls"))
     assert any(

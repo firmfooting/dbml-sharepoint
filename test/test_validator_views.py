@@ -825,6 +825,23 @@ def test_demo_items_valid_set_passes() -> None:
         if f.location is not None and f.location.section == Section.DEMO_ITEMS
     ] == []
 
+def test_a_demo_ref_whose_key_is_not_a_string_is_refused() -> None:
+    """A YAML list under `demo_ref` is unhashable, so looking it up among the
+    declared keys raised a TypeError instead of reporting the unknown key."""
+    errors = _project_errors(
+        demo_items={
+            "Project": [
+                DemoItem(key="p1", values={
+                    "Title": "[DEMO] Row",
+                    "SortOrder": {"demo_ref": ["p0"]},
+                }),
+            ],
+        },
+    )
+    f = only(errors, FindingCode.DEMO_REF_UNKNOWN_KEY)
+    assert f.location == Location(Section.DEMO_ITEMS, entity="Project", sub="p1")
+    assert "['p0']" in f.message
+
 def _multi_value_demo_errors(**values: Any) -> list[Finding]:
     """One demo row on a table carrying a multi-value column and a `date[]`.
 

@@ -372,7 +372,6 @@ def guards_resolution[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
         require_matching_resolution(resolved, bundle, _argument_of(supplied, Schema))
         return fn(*args, **kwargs)
 
-    # Read by the static test above; a plain function object carries no such
-    # attribute, so the type checker has to be told.
-    guarded.__resolution_guarded__ = True  # type: ignore[attr-defined]
+    # Read by the static test above. A function's __dict__ is typed, an invented attribute is not.
+    guarded.__dict__["__resolution_guarded__"] = True
     return guarded

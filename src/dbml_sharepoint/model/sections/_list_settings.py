@@ -104,7 +104,7 @@ def _check_versioning_values(block: Any, context: str) -> None:
             raise MappingShapeError(
                 f"{context}.{key}: expected true or false, got {block[key]!r}",
             )
-    limit = block.get("major_version_limit")
+    limit: object = block.get("major_version_limit")
     if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int)):
         raise MappingShapeError(
             f"{context}.major_version_limit: expected an integer, got {limit!r}",
@@ -123,7 +123,7 @@ def _check_item_security_values(block: Any, context: str) -> None:
     for key in ("read", "write"):
         if key not in block:
             continue
-        value = block[key]
+        value: object = block[key]
         # The shape before the word, as `scope` and `totals` do: a list is
         # unhashable, and `read: 2` is a type rather than a scope declined.
         if not isinstance(value, str):

@@ -112,7 +112,7 @@ def _instrument() -> None:
         original_finding(self, *args, **kwargs)
         _record(self.code.name)
 
-    _findings.Finding.__init__ = finding_init  # type: ignore[method-assign]
+    _findings.Finding.__init__ = finding_init
 
 
 def _shared_dir(config: pytest.Config) -> Path:

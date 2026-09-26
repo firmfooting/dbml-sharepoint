@@ -48,8 +48,10 @@ def _demo_ref_findings(
             f"{{demo_ref: <key>}}.",
             location=at,
         )]
-    key = member["demo_ref"]
-    if key not in demo_keys:
+    reference: dict[object, object] = member
+    key = reference["demo_ref"]
+    # isinstance first: a YAML list or mapping key is unhashable and cannot be looked up.
+    if not isinstance(key, str) or key not in demo_keys:
         return [Finding(
             FindingCode.DEMO_REF_UNKNOWN_KEY,
             f"{ctx}: {col_name} demo_ref {key!r} is not a declared demo key.",
@@ -177,9 +179,10 @@ def check(vc: ValidationContext) -> list[Finding]:
                         continue
                     # Compared by list rather than by set: a demo value can
                     # hold an unhashable member, and these lists are tiny.
+                    members: list[object] = value
                     seen: list[object] = []
                     repeated: list[object] = []
-                    for member in value:
+                    for member in members:
                         if member not in seen:
                             seen.append(member)
                         elif member not in repeated:
@@ -203,19 +206,23 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # traceback rather than a finding. A validator must refuse
                 # everything its generator refuses, and refuse it first.
                 if is_hyperlink(col_type):
+                    address: object
                     if isinstance(value, dict):
-                        unknown = set(value) - {"url", "description"}
-                        if unknown or "url" not in value:
+                        link: dict[object, object] = value
+                        unknown = set(link) - {"url", "description"}
+                        if unknown or "url" not in link:
+                            # Ordered by str: a YAML key may be an int, and `1 < "url"` raises.
+                            got_keys = sorted(link, key=str)
                             findings.append(Finding(
                                 FindingCode.DEMO_HYPERLINK_OBJECT_INVALID,
                                 f"{ctx}: {col_name} is a hyperlink; an object value "
                                 f"must be {{url: <address>, description: <label>}} "
                                 f"with 'description' optional. Got keys "
-                                f"{sorted(value)}.",
+                                f"{got_keys}.",
                                 location=at,
                             ))
                             continue
-                        address = value["url"]
+                        address = link["url"]
                     else:
                         address = value
                     # Checked as a STRING, not stringified: str(None) is
@@ -304,7 +311,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # column, so it keeps the same code rather than gaining a twin.
                 # The arity test stays here: on a SCALAR enum column a list is
                 # simply not a member, which is what already fires today.
-                declared = (
+                declared: list[object] = (
                     value
                     if is_multi_value(col_type or "") and isinstance(value, list)
                     else [value]

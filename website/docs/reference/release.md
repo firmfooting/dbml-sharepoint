@@ -32,6 +32,11 @@ both load errors naming the file, including a near-miss like
 schema version and report nothing. Every `release.yaml` under `src/dbml_sharepoint/solutions/`
 and `examples/` is a working example of the shape.
 
+Every value is text, so quote it. YAML reads an unquoted `2.10` as the
+number 2.1, which would stamp a different version than the one written, so
+an unquoted number or a key with no value is a load error. An unquoted date
+is the one exception: it is read back as ISO text.
+
 `release` is the key, not `release_tag`. `release_tag` is the name the
 loaded object carries in Python, and the two are deliberately allowed to
 differ so the file reads as a release description rather than as a struct.

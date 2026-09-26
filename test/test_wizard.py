@@ -14,6 +14,7 @@ import sys
 import tempfile
 from dataclasses import replace
 from pathlib import Path
+from typing import override
 
 import pytest
 from _console import ScriptedConsole
@@ -933,6 +934,7 @@ def test_cancelling_exits_130_without_a_traceback() -> None:
     """Ctrl-C is a normal way to leave a wizard, not a crash."""
 
     class Interrupting(ScriptedConsole):
+        @override
         def input(self, prompt: object = "", **kwargs: object) -> str:
             raise KeyboardInterrupt
 

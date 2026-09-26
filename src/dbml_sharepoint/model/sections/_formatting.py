@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from dbml_sharepoint.analysis import styles
-from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model._keys import _known_keys, _require_mapping
 from dbml_sharepoint.model.errors import MappingShapeError
 from dbml_sharepoint.model.mapping_types import FormFormatting
 from dbml_sharepoint.model.reading import load_json_value
@@ -56,10 +56,10 @@ def read(sc: SectionContext) -> dict[str, Any]:
 def _parse_form_formatting(base_dir: Path, parts: Any, context: str) -> FormFormatting:
     if not isinstance(parts, dict):
         raise MappingShapeError(f"{context}: expected a mapping of header/body/footer parts")
-    _reject_unknown_keys(parts, {"header", "body", "footer"}, context)
+    declared = _known_keys(parts, {"header", "body", "footer"}, context)
     loaded = {
         name: load_json_value(base_dir, value, f"{context}.{name}")
-        for name, value in parts.items()
+        for name, value in declared.items()
         if value is not None
     }
     if not loaded:

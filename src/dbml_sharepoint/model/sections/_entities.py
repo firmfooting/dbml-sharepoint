@@ -39,11 +39,12 @@ def read(sc: SectionContext) -> dict[str, Any]:
         sc.required("entities"), "entities", allow_absent=False,
     ).items():
         _reject_unknown_keys(spec, _ENTITY_KEYS, f"entities.{name}")
+        raw_kind: object = spec.get("kind")
         entities[name] = EntityMapping(
             name=name,
             title=require_str(spec, "title", f"entities.{name}") if "title" in spec else None,
             internal_name=_internal_name(spec, name),
-            kind=_parse_entity_kind(spec.get("kind"), f"entities.{name}"),
+            kind=_parse_entity_kind(raw_kind, f"entities.{name}"),
             base_template=require_int(spec, "base_template", f"entities.{name}"),
             site_role=require_str(spec, "site_role", f"entities.{name}"),
             singleton=optional_bool(spec, "singleton", f"entities.{name}"),

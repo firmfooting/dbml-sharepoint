@@ -299,7 +299,8 @@ def mapping(
         declared = entities
     resolved = _loader_defaults()
     resolved.update(sections)
-    return Mapping(prefix=prefix, entities=declared, **resolved)
+    # Unpack[MappingSections] admits only its keys; a closed TypedDict (PEP 728) needs Python 3.15.
+    return Mapping(prefix=prefix, entities=declared, **resolved)  # pyrefly: ignore[open-unpacking]
 
 
 def bundle(

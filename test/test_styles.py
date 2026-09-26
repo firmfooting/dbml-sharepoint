@@ -250,6 +250,15 @@ def test_theme_icon_must_be_a_string_or_null() -> None:
     )["good"].icon is None
 
 
+@pytest.mark.parametrize("classes", [[["a", "b"]], ["a", True], [1]])
+def test_theme_classes_members_must_be_strings(classes: list[object]) -> None:
+    """`str()` on each member emitted the class "['a', 'b']" for a nested
+    list and "True" for a YAML `true`, the same fault the icon rule above
+    refuses."""
+    with pytest.raises(ValueError, match="'classes' members must be strings"):
+        parse_theme({"good": {"classes": classes}}, "style_theme")
+
+
 def test_theme_token_names_must_be_strings() -> None:
     """A YAML mapping key may be any scalar, so `1:` reported as an unknown
     token where the fault is the shape."""

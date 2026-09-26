@@ -177,7 +177,7 @@ def test_the_section_typeddict_covers_every_mapping_field() -> None:
 def test_an_unknown_section_is_a_type_error_not_a_silent_drop() -> None:
     """pyrefly is the real gate; this is the runtime half of the same statement."""
     with pytest.raises(TypeError):
-        mapping(entities=["Risk"], form_visibilty={})  # type: ignore[call-arg]
+        mapping(entities=["Risk"], form_visibilty={})  # pyrefly: ignore[unexpected-keyword]
 
 
 def test_the_builders_do_not_share_mutable_state_between_calls() -> None:

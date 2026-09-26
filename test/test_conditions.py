@@ -129,6 +129,13 @@ def test_unknown_leaf_key_is_rejected() -> None:
         parse_condition([{"field": "A", "op": "eq", "vaule": 1}], "ctx")
 
 
+def test_unknown_leaf_keys_of_two_types_are_named_rather_than_compared() -> None:
+    """YAML reads `1:` as an int, and sorting it beside a text key raised a
+    bare TypeError before the refusal could be built."""
+    with pytest.raises(UnknownMappingKeyError, match=r"\[1, 'vaule'\]"):
+        parse_condition([{"field": "A", "op": "eq", 1: 2, "vaule": 1}], "ctx")
+
+
 # === Normalisation ==========================================================
 
 def test_every_operator_has_an_exact_negation() -> None:

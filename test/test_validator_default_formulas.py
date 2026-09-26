@@ -56,12 +56,14 @@ def _schema() -> Schema:
     )
 
 
-def _formula_findings(formulas: dict[str, str], **sections: object) -> list[Finding]:
+def _formula_findings(
+    formulas: dict[str, str], *, cross_site_reference_columns: list[CrossSiteRef] | None = None,
+) -> list[Finding]:
     bundle = make_bundle(
         entities=["Saq"],
         default_formulas={"Saq": formulas},
         calculated_formulas={"Saq": {"Band": '="x"'}},
-        **sections,  # type: ignore[arg-type]
+        cross_site_reference_columns=cross_site_reference_columns or [],
     )
     return validate_against_mapping(_schema(), bundle)
 

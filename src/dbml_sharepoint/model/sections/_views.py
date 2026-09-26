@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from dbml_sharepoint.analysis.typemap import TOTAL_FUNCTIONS
-from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model._keys import _known_keys, _require_list, _require_mapping
 from dbml_sharepoint.model.conditions import parse_condition
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.mapping_types import (
@@ -46,7 +46,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
         {
             entity: [
                 _parse_view(item, f"views.{entity}[{i}]", sc.base_dir)
-                for i, item in enumerate(items or [])
+                for i, item in enumerate(_require_list(items, f"views.{entity}"))
             ]
             for entity, items in _require_mapping(sc.block("views"), "views").items()
         },
@@ -61,28 +61,35 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
     validate_against_mapping."""
     if not isinstance(raw_view, dict):
         raise MappingShapeError(f"{context}: view must be a mapping, got {type(raw_view).__name__}")
-    _reject_unknown_keys(raw_view, _VIEW_KEYS, context)
-    title = raw_view.get("title")
+    view = _known_keys(raw_view, _VIEW_KEYS, context)
+    title = view.get("title")
     if not title:
         raise MappingShapeError(f"{context}: view 'title' is required")
-    fields = raw_view.get("fields")
+    fields = view.get("fields")
     if not isinstance(fields, list) or not fields or not all(isinstance(f, str) for f in fields):
         raise MappingShapeError(
             f"{context}: view 'fields' must be a non-empty list of column names",
         )
-    renamed_from = raw_view.get("renamed_from") or []
+    field_names: list[str] = fields
+    renamed_from = view.get("renamed_from") or list[str]()
     if not isinstance(renamed_from, list) or not all(
         isinstance(previous, str) for previous in renamed_from
     ):
         raise MappingShapeError(f"{context}: 'renamed_from' must be a list of view titles")
+    previous_titles: list[str] = renamed_from
     where = (
-        parse_condition(raw_view["where"], f"{context}.where")
-        if "where" in raw_view
+        parse_condition(view["where"], f"{context}.where")
+        if "where" in view
         else None
     )
+    raw_sort = view.get("sort") or list[object]()
+    # A mapping or a string iterated as keys or characters, and a number raised TypeError.
+    if not isinstance(raw_sort, list):
+        raise MappingShapeError(f"{context}.sort must be a list, got {raw_sort!r}")
+    sort_entries: list[object] = raw_sort
     sort: list[ViewSort] = []
-    for i, entry in enumerate(raw_view.get("sort") or []):
-        _reject_unknown_keys(entry, {"field", "direction"}, f"{context}.sort[{i}]")
+    for i, raw_entry in enumerate(sort_entries):
+        entry = _known_keys(raw_entry, {"field", "direction"}, f"{context}.sort[{i}]")
         # The shape before the word, as `scope` below does: a list here is
         # not a direction spelled wrongly. `strict_str` rather than
         # `optional_str` so a blank `direction:` is refused, not read as asc.
@@ -95,39 +102,38 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
             field=require_str(entry, "field", f"{context}.sort[{i}]"),
             direction=cast("SortDirection", direction),
         ))
-    raw_group = raw_view.get("group_by")
+    raw_group = view.get("group_by")
     group_by = None
     if raw_group is not None:
-        _reject_unknown_keys(
+        group = _known_keys(
             raw_group, {"field", "fields", "collapsed"}, f"{context}.group_by",
         )
         # Both spellings at once would need a precedence rule nobody would
         # remember, so it is an error rather than a silent winner.
-        if ("field" in raw_group) == ("fields" in raw_group):
+        if ("field" in group) == ("fields" in group):
             raise MappingShapeError(
                 f"{context}.group_by: declare exactly one of 'field' (one level) "
                 f"or 'fields' (one or two levels)",
             )
-        raw_fields = (
-            raw_group["fields"] if "fields" in raw_group else [raw_group["field"]]
-        )
+        raw_fields = group["fields"] if "fields" in group else [group["field"]]
         if not isinstance(raw_fields, list) or not raw_fields:
             raise MappingShapeError(
                 f"{context}.group_by: 'fields' must be a non-empty list of column names",
             )
+        group_fields: list[object] = raw_fields
         # SharePoint's own ceiling. Dropping the third silently would answer
         # a declared grouping with a different one.
-        if len(raw_fields) > 2:
+        if len(group_fields) > 2:
             raise MappingShapeError(
                 f"{context}.group_by: SharePoint groups by at most two levels, "
-                f"got {len(raw_fields)}",
+                f"got {len(group_fields)}",
             )
         group_by = ViewGroupBy(
-            fields=[str(name) for name in raw_fields],
-            collapsed=optional_bool(raw_group, "collapsed", f"{context}.group_by"),
+            fields=[str(name) for name in group_fields],
+            collapsed=optional_bool(group, "collapsed", f"{context}.group_by"),
         )
-    raw_formatting = raw_view.get("formatting")
-    raw_widths = raw_view.get("widths")
+    raw_formatting = view.get("formatting")
+    raw_widths = view.get("widths")
     widths: dict[str, int] = {}
     if raw_widths is not None:
         if not isinstance(raw_widths, dict):
@@ -135,14 +141,15 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
                 f"{context}: 'widths' must be a mapping of column name to "
                 f"pixel width, got {type(raw_widths).__name__}",
             )
-        for col, px in raw_widths.items():
+        width_map: dict[object, object] = raw_widths
+        for col, px in width_map.items():
             if isinstance(px, bool) or not isinstance(px, int):
                 raise MappingShapeError(
                     f"{context}: widths[{col}] must be an integer pixel "
                     f"width, got {px!r}",
                 )
             widths[str(col)] = px
-    raw_scope = raw_view.get("scope")
+    raw_scope = view.get("scope")
     # isinstance first: a list or mapping is unhashable, and `in` over a
     # frozenset would raise the TypeError the CLI does not catch. Two
     # refusals rather than one, because the wrong YAML type is a shape error
@@ -156,7 +163,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
             f"{context}: scope must be one of {', '.join(sorted(VIEW_SCOPES))}, "
             f"got {raw_scope!r}",
         )
-    raw_totals = raw_view.get("totals")
+    raw_totals = view.get("totals")
     totals: dict[str, str] = {}
     if raw_totals is not None:
         if not isinstance(raw_totals, dict):
@@ -164,7 +171,8 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
                 f"{context}: 'totals' must be a mapping of column name to "
                 f"aggregation, got {type(raw_totals).__name__}",
             )
-        for col, func in raw_totals.items():
+        total_map: dict[object, object] = raw_totals
+        for col, func in total_map.items():
             # Split for the same reason `scope` is: a non-string is a shape.
             if not isinstance(func, str):
                 raise MappingShapeError(
@@ -179,13 +187,13 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
             totals[str(col)] = func
     return ViewDef(
         title=str(title),
-        fields=[str(f) for f in fields],
-        renamed_from=[str(previous) for previous in renamed_from],
-        default=optional_bool(raw_view, "default", context),
+        fields=list(field_names),
+        renamed_from=list(previous_titles),
+        default=optional_bool(view, "default", context),
         where=where,
         sort=sort,
         group_by=group_by,
-        row_limit=optional_int(raw_view, "row_limit", context),
+        row_limit=optional_int(view, "row_limit", context),
         formatting=(
             load_json_value(base_dir, raw_formatting, f"{context}.formatting")
             if raw_formatting is not None
@@ -212,8 +220,9 @@ def _parse_field_sets(raw_sets: Any) -> dict[str, dict[str, list[str]]]:
                 f"field_sets.{entity}: expected a mapping of set name to "
                 f"column list, got {type(sets).__name__}",
             )
-        parsed[str(entity)] = {}
-        for set_name, columns in sets.items():
+        parsed[entity] = {}
+        set_map: dict[object, object] = sets
+        for set_name, columns in set_map.items():
             if not isinstance(columns, list) or not all(
                 isinstance(col, str) for col in columns
             ):
@@ -221,7 +230,8 @@ def _parse_field_sets(raw_sets: Any) -> dict[str, dict[str, list[str]]]:
                     f"field_sets.{entity}.{set_name}: expected a list of "
                     f"column names",
                 )
-            parsed[str(entity)][str(set_name)] = [str(col) for col in columns]
+            column_names: list[str] = columns
+            parsed[entity][str(set_name)] = list(column_names)
     return parsed
 
 
