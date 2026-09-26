@@ -5237,6 +5237,45 @@ _NON_TEXT_KEY_CASES = [
         "(YAML read it as float); quote it",
         id="condition-group-key",
     ),
+    pytest.param(
+        # Emitted as `"attributes":{"false":"x"}` before this was refused.
+        blocks(entities("Risk"), """
+            column_formatting:
+              Risk:
+                Title: { elmType: div, attributes: { No: x } }
+        """),
+        "column_formatting.Risk.Title.attributes: key False is not text "
+        "(YAML read it as bool); quote it",
+        id="inline-column-formatter",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            column_formatting:
+              Risk:
+                Title: { elmType: div, children: [{ elmType: span, 1: x }] }
+        """),
+        "column_formatting.Risk.Title.children[0]: key 1 is not text "
+        "(YAML read it as int); quote it",
+        id="inline-column-formatter-list",
+    ),
+    pytest.param(
+        # Beside a text key, the build's sorted json.dumps raised a bare TypeError.
+        _views_yaml(
+            "views:\n  Project:\n    - { title: All, fields: [Title], "
+            "formatting: { hideSelection: true, 1: x } }",
+        ),
+        "views.Project[0].formatting: key 1 is not text (YAML read it as int); quote it",
+        id="inline-view-formatter",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            form_formatting:
+              Risk:
+                header: { elmType: div, 2.10: x }
+        """),
+        "form_formatting.Risk.header: key 2.1 is not text (YAML read it as float); quote it",
+        id="inline-form-formatter",
+    ),
 ]
 
 

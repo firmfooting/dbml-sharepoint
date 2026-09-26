@@ -45,6 +45,7 @@ from typing import Any
 
 import yaml
 
+from dbml_sharepoint.model._keys import _text_key
 from dbml_sharepoint.model.errors import (
     MappingReferenceError,
     MappingShapeError,
@@ -172,6 +173,7 @@ def load_json_value(base_dir: Path, value: Any, context: str) -> dict[str, Any]:
     mapping. Anything else (or malformed JSON) is a load error naming the
     offending declaration."""
     if isinstance(value, dict):
+        _json_keys_are_text(value, context)
         return dict(value)
     if isinstance(value, str):
         path = (base_dir / value).resolve()
@@ -196,6 +198,23 @@ def load_json_value(base_dir: Path, value: Any, context: str) -> dict[str, Any]:
         f"{context}: expected a relative .json path or an inline mapping, "
         f"got {type(value).__name__}",
     )
+
+
+def _json_keys_are_text(value: object, context: str) -> None:
+    """Refuse, at any depth, an inline formatter key YAML did not read as text.
+
+    A JSON member name is always text, so `attributes: {No: x}` was emitted
+    as `"false"`, and an int key beside a text one crashed `json.dumps`
+    with a bare TypeError when the build sorted the keys.
+    """
+    if isinstance(value, dict):
+        entries: dict[object, object] = value
+        for key, member in entries.items():
+            _json_keys_are_text(member, f"{context}.{_text_key(key, context)}")
+    elif isinstance(value, list):
+        items: list[object] = value
+        for index, item in enumerate(items):
+            _json_keys_are_text(item, f"{context}[{index}]")
 
 
 def strict_bool(
