@@ -26,6 +26,8 @@ from dbml_sharepoint.model.reading import (
     load_json_value,
     optional_bool,
     optional_int,
+    optional_str,
+    optional_str_list,
     optional_value,
     require_str,
     strict_str,
@@ -63,7 +65,8 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
     if not isinstance(raw_view, dict):
         raise MappingShapeError(f"{context}: view must be a mapping, got {type(raw_view).__name__}")
     view = _known_keys(raw_view, _VIEW_KEYS, context)
-    title = view.get("title")
+    # The type before the presence, because `str()` made `title: [All]` the title "['All']".
+    title = optional_str(view, "title", context)
     if not title:
         raise MappingShapeError(f"{context}: view 'title' is required")
     fields = view.get("fields")
@@ -113,12 +116,16 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
                 f"{context}.group_by: declare exactly one of 'field' (one level) "
                 f"or 'fields' (one or two levels)",
             )
-        raw_fields = group["fields"] if "fields" in group else [group["field"]]
-        if not isinstance(raw_fields, list) or not raw_fields:
+        # Read as text, because `str()` grouped `field: [Status]` by "['Status']".
+        group_fields = (
+            list(optional_str_list(group, "fields", f"{context}.group_by"))
+            if "fields" in group
+            else [require_str(group, "field", f"{context}.group_by")]
+        )
+        if not group_fields:
             raise MappingShapeError(
                 f"{context}.group_by: 'fields' must be a non-empty list of column names",
             )
-        group_fields: list[object] = raw_fields
         # SharePoint's own ceiling. Dropping the third silently would answer
         # a declared grouping with a different one.
         if len(group_fields) > 2:
@@ -127,7 +134,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
                 f"got {len(group_fields)}",
             )
         group_by = ViewGroupBy(
-            fields=[str(name) for name in group_fields],
+            fields=group_fields,
             collapsed=optional_bool(group, "collapsed", f"{context}.group_by"),
         )
     raw_formatting = view.get("formatting")
@@ -184,7 +191,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
                 )
             totals[str(col)] = func
     return ViewDef(
-        title=str(title),
+        title=title,
         fields=list(field_names),
         renamed_from=list(previous_titles),
         default=optional_bool(view, "default", context),

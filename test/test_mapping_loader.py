@@ -4504,3 +4504,57 @@ def test_a_source_file_that_is_not_utf8_is_a_named_refusal(tmp_path: Path) -> No
     assert str(err.value).startswith(
         "column_formatting.Risk.Status: 'f.json' is not valid UTF-8:",
     ), str(err.value)
+
+
+#: One value per site that passed unchecked YAML through `str()` or `bool()`
+#: (#665), each of the wrong type or a required value left blank. `str()` made
+#: `title: [All]` the view title "['All']" and a blank one the text "None".
+_COERCED_VALUE_CASES = [
+    pytest.param(
+        _views_yaml("views:\n  Project:\n    - { title: [All], fields: [Title] }"),
+        "views.Project[0].title must be a string, got ['All']",
+        id="view-title",
+    ),
+    pytest.param(
+        _views_yaml("views:\n  Project:\n    - { title: 5, fields: [Title] }"),
+        "views.Project[0].title must be a string, got 5",
+        id="view-title-number",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: All, fields: [Title], "
+            "group_by: { field: [Status] } }",
+        ),
+        "views.Project[0].group_by.field must be a string, got ['Status']",
+        id="view-group-by-field",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: All, fields: [Title], "
+            "group_by: { field: } }",
+        ),
+        "views.Project[0].group_by.field is required",
+        id="view-group-by-field-blank",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: All, fields: [Title], "
+            "group_by: { fields: [Status, 5] } }",
+        ),
+        "views.Project[0].group_by.fields must be a list of strings, got 5",
+        id="view-group-by-fields",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "message"), _COERCED_VALUE_CASES)
+def test_a_value_the_loader_coerced_is_refused_by_its_path(
+    tmp_path: Path, body: str, message: str,
+) -> None:
+    """Each loaded as its `str()` or its truthiness and deployed that, with
+    nothing in the build to say the value was not what the author wrote."""
+    write_mapping(tmp_path, body)
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == message
