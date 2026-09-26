@@ -555,8 +555,8 @@ def test_extension_config_for_override_wins_over_other_selected_extension(
 
 
 @pytest.mark.parametrize(("block", "message"), [
-    pytest.param("[on]", "extensions.audit: expected a mapping of names, got list", id="list"),
-    pytest.param("5", "extensions.audit: expected a mapping of names, got int", id="number"),
+    pytest.param("[on]", "extensions.audit: expected a mapping, got list", id="list"),
+    pytest.param("5", "extensions.audit: expected a mapping, got int", id="number"),
 ])
 def test_an_extension_block_that_is_not_a_mapping_is_refused(
     tmp_path: Path, block: str, message: str,
@@ -569,6 +569,14 @@ def test_an_extension_block_that_is_not_a_mapping_is_refused(
         load_mapping(tmp_path / "m.yaml")
     assert type(err.value) is MappingShapeError
     assert str(err.value) == message
+
+
+def test_an_extension_block_reaches_the_extension_untouched(tmp_path: Path) -> None:
+    """The reference promises the block is passed through as written, so a key
+    YAML read as a number stays a number for the extension to judge."""
+    write_mapping(tmp_path, blocks(entities("Risk"), "extensions:\n  audit: { 2026: x, off: y }"))
+    bundle = load_mapping(tmp_path / "m.yaml")
+    assert bundle.extension_config_for("audit") == {2026: "x", False: "y"}
 
 
 def test_entity_display_column_parsed(tmp_path: Path) -> None:

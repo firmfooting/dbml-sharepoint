@@ -11,6 +11,7 @@ key.
 from typing import Any
 
 from dbml_sharepoint.model._keys import _require_mapping
+from dbml_sharepoint.model.errors import MappingShapeError
 from dbml_sharepoint.model.reading import optional_str
 from dbml_sharepoint.model.sections.context import SectionContext
 
@@ -22,9 +23,24 @@ def read(sc: SectionContext) -> dict[str, Any]:
     return {
         # Refused as the wrong type here, where a list was reported as an unknown extension.
         "extension": optional_str(sc.blocks, "extension", "mapping"),
-        # `dict()` raised a bare error on a list or a scalar; a blank block is an empty one.
         "extension_configs": {
-            name: dict(_require_mapping(block, f"extensions.{name}"))
+            name: _extension_config(block, f"extensions.{name}")
             for name, block in extensions_block.items()
         },
     }
+
+
+def _extension_config(block: object, context: str) -> dict[Any, Any]:
+    """One extension's block, as written: only the extension knows its keys.
+
+    `dict()` loaded `[on]` as `{"o": "n"}` and raised a bare error on any
+    other list or a scalar. Not `_require_mapping`, which rewrites a key that
+    is not text, and the reference promises the block reaches the extension
+    untouched. A blank block is an empty one.
+    """
+    if block is None:
+        return {}
+    if not isinstance(block, dict):
+        raise MappingShapeError(f"{context}: expected a mapping, got {type(block).__name__}")
+    config: dict[Any, Any] = block
+    return dict(config)
