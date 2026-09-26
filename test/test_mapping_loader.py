@@ -4230,6 +4230,24 @@ _SILENT_BLANK_CASES = [
         lambda b: b.mapping.extension, None,
         id="extension",
     ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            retired_columns:
+              Risk:
+                Old: { retired: 2026-09-01, reason: }
+        """),
+        lambda b: b.mapping.retired_columns["Risk"]["Old"].reason, "",
+        id="retired-reason",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            retired_columns:
+              Risk:
+                Old: { retired: 2026-09-01, superseded_by: }
+        """),
+        lambda b: b.mapping.retired_columns["Risk"]["Old"].superseded_by, None,
+        id="retired-superseded-by",
+    ),
 ]
 
 
@@ -4567,6 +4585,29 @@ _COERCED_VALUE_CASES = [
         "list_validation.Risk.message must be a string, got 5",
         id="list-validation-message",
     ),
+    pytest.param(
+        blocks(entities("Risk"), "retired_columns:\n  Risk:\n    Old: { retired: 2026 }"),
+        "retired_columns.Risk.Old.retired must be a string, got 2026",
+        id="retired",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            retired_columns:
+              Risk:
+                Old: { retired: 2026-09-01, superseded_by: [New] }
+        """),
+        "retired_columns.Risk.Old.superseded_by must be a string, got ['New']",
+        id="retired-superseded-by",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            retired_columns:
+              Risk:
+                Old: { retired: 2026-09-01, reason: 5 }
+        """),
+        "retired_columns.Risk.Old.reason must be a string, got 5",
+        id="retired-reason",
+    ),
 ]
 
 
@@ -4581,3 +4622,15 @@ def test_a_value_the_loader_coerced_is_refused_by_its_path(
         load_mapping(tmp_path / "m.yaml")
     assert type(err.value) is MappingShapeError
     assert str(err.value) == message
+
+
+def test_an_unquoted_retired_date_still_loads_as_iso_text(tmp_path: Path) -> None:
+    """The mapping reference writes `retired:` unquoted, which YAML reads as a
+    date. That one non-text type is still accepted, as release.yaml's `date` is."""
+    write_mapping(tmp_path, blocks(entities("Risk"), """
+        retired_columns:
+          Risk:
+            Old: { retired: 2026-09-01 }
+    """))
+    retired = load_mapping(tmp_path / "m.yaml").mapping.retired_columns["Risk"]["Old"]
+    assert retired.retired == "2026-09-01"
