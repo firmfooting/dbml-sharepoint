@@ -13,12 +13,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from pydbml import PyDBML
+from pydbml.database import Database
 from pydbml.exceptions import (
     ColumnNotFoundError,
     DatabaseValidationError,
     TableNotFoundError,
 )
+from pydbml.parser.parser import PyDBML
 
 
 @dataclass(frozen=True)
@@ -151,7 +152,8 @@ def _translate(detail: str, source: str) -> str:
 def parse_dbml(path: Path) -> Schema:
     """Parse a DBML file and return our in-memory model."""
     try:
-        parsed = PyDBML(path)
+        # parse_file is typed; the PyDBML(path) factory returns a Database it annotates as PyDBML.
+        parsed: Database = PyDBML.parse_file(path)
     except (
         ColumnNotFoundError, TableNotFoundError, DatabaseValidationError,
     ) as exc:
@@ -192,9 +194,9 @@ def parse_dbml(path: Path) -> Schema:
             table.indexes.append(TableIndex(
                 columns=tuple(raw_index.subject_names),
                 name=raw_index.name,
-                unique=bool(raw_index.unique),
+                unique=raw_index.unique,
                 type=raw_index.type,
-                pk=bool(raw_index.pk),
+                pk=raw_index.pk,
                 note=raw_index.note.text if raw_index.note else "",
             ))
         schema.tables.append(table)

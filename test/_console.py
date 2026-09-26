@@ -9,6 +9,7 @@ under test, including their defaults and their `choices=` validation.
 import io
 import re
 from collections.abc import Sequence
+from typing import override
 
 from rich.console import Console
 
@@ -48,6 +49,7 @@ class ScriptedConsole(Console):
         super().__init__(file=io.StringIO(), width=width, force_terminal=False)
         self._answers = list(answers)
 
+    @override
     def input(self, prompt: object = "", **kwargs: object) -> str:
         if prompt:
             self.print(prompt, end="")

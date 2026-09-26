@@ -112,7 +112,7 @@ def test_default_and_blocked_view_contracts_match_their_titles() -> None:
 def test_follow_up_action_warns_against_identifiers() -> None:
     platform = next(table for table in _schema().tables if table.name == "Platform")
     column = next(column for column in platform.columns if column.name == "FollowUpAction")
-    note = str(column.note).lower()
+    note = column.note.lower()
     assert "no patient or client identifiers" in note
     assert "categories" in note and "never examples" in note
 

@@ -137,7 +137,9 @@ class _Targets:
     ) -> None:
         self.column(name, kind, display_format)
         leaf = {"field": name, "op": "leq", "value": value}
-        clause = to_validation(Group("all_of", (Leaf(**leaf),)), {name: kind})
+        clause = to_validation(
+            Group("all_of", (Leaf(field=name, op="leq", value=value),)), {name: kind},
+        )
         self.checks.append({
             "kind": "save", "key": key, "cell": cell_id, "info": info,
             "column": self.columns[name], "clause": clause, "leaf": leaf,

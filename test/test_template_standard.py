@@ -1343,7 +1343,7 @@ def _attributes(node: dict[str, Any]) -> dict[str, Any]:
 def _classes(node: dict[str, Any]) -> set[str]:
     """Class tokens as a SET: §1.1 fixes the classes, not their order."""
     raw = _attributes(node).get("class")
-    return set(str(raw).split()) if isinstance(raw, str) else set()
+    return set(raw.split()) if isinstance(raw, str) else set()
 
 
 def _text(node: dict[str, Any]) -> str:

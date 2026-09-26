@@ -170,7 +170,7 @@ def _toml_string_end(line: str, index: int, delimiter: str) -> int:
 def _toml_comment_lines(lines: list[str]) -> set[int]:
     """`#` lines, skipping multi-line string content, where a `#` is text."""
     found: set[int] = set()
-    open_multi = ""
+    open_multi: str = ""
     for number, line in enumerate(lines, start=1):
         index = 0
         if not open_multi and line.lstrip().startswith("#"):

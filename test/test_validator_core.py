@@ -1,6 +1,6 @@
 """Validator: the shared fixtures, cross-cutting checks and the extension hook."""
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, override
 
 import pytest
 from _builders import ID_PK, TITLE, table
@@ -1631,6 +1631,7 @@ class _StubExtension(BaseExtension):
 
     name: ClassVar[str] = "stub"
 
+    @override
     def extra_validators(self, bundle: Any, schema: Any) -> list[Finding]:
         return [Finding(FindingCode.EXTENSION_WARNING, "stub extension finding")]
 
@@ -1667,6 +1668,7 @@ class _ErrorExtension(BaseExtension):
 
     name: ClassVar[str] = "erroring-stub"
 
+    @override
     def extra_validators(self, bundle: Any, schema: Any) -> list[Finding]:
         return [Finding(FindingCode.EXTENSION_REPORTED, "stub extension error")]
 

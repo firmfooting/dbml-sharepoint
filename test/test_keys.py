@@ -21,6 +21,12 @@ def test_a_mapping_passes_through_unchanged() -> None:
     assert _require_mapping(block, "mapping.entities") is block
 
 
+def test_a_key_yaml_did_not_read_as_text_is_normalised_to_text() -> None:
+    """The result is typed `dict[str, ...]`, and callers index it by name."""
+    block = {2026: "=TODAY()", "Risk": {}}
+    assert _require_mapping(block, "default_formulas.Risk") == {"2026": "=TODAY()", "Risk": {}}
+
+
 def test_an_empty_mapping_is_accepted() -> None:
     """`{}` is this structure with zero entries, which the shipped mappings
     write deliberately. The guard is about SHAPE, never about emptiness."""

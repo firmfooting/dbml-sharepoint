@@ -212,7 +212,7 @@ def _parse_field_sets(raw_sets: Any) -> dict[str, dict[str, list[str]]]:
                 f"field_sets.{entity}: expected a mapping of set name to "
                 f"column list, got {type(sets).__name__}",
             )
-        parsed[str(entity)] = {}
+        parsed[entity] = {}
         for set_name, columns in sets.items():
             if not isinstance(columns, list) or not all(
                 isinstance(col, str) for col in columns
@@ -221,7 +221,7 @@ def _parse_field_sets(raw_sets: Any) -> dict[str, dict[str, list[str]]]:
                     f"field_sets.{entity}.{set_name}: expected a list of "
                     f"column names",
                 )
-            parsed[str(entity)][str(set_name)] = [str(col) for col in columns]
+            parsed[entity][str(set_name)] = [str(col) for col in columns]
     return parsed
 
 

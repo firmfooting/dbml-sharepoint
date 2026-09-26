@@ -2,7 +2,7 @@
 from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, ClassVar, Unpack
+from typing import Any, ClassVar, Unpack, override
 
 import pytest
 from _builders import ID_PK, TITLE, table
@@ -105,11 +105,13 @@ def test_manifest_includes_phase_headings_and_release() -> None:
 class _SeedExtension(BaseExtension):
     name: ClassVar[str] = "seedstub"
 
+    @override
     def seed_lists(
         self, bundle: Any, schema: Any, site_context: SiteContext,
     ) -> dict[str, dict[str, Any]]:
         return {"APP_AppSettings": {"Title": "App Settings", "UnitName": "Zeta"}}
 
+    @override
     def manifest_extras(self, bundle: Any, schema: Any) -> ManifestExtras:
         return ManifestExtras(
             sections={"Organisation identity": "Seeded from the organisation register."},

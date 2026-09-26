@@ -50,7 +50,7 @@ def _parse_demo_item(raw_item: Any, context: str) -> DemoItem:
             f"column name to value",
         )
     return DemoItem(
-        key=str(key),
+        key=key,
         values={str(col): v for col, v in values.items()},
         file=_parse_demo_file(raw_item.get("file"), f"{context}.file"),
     )

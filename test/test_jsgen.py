@@ -15,7 +15,7 @@ abort that runs before anything else does.
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Any, override
 
 from _builders import ID_PK, TITLE, table
 from _packs import blocks, entities, pack
@@ -109,6 +109,7 @@ def test_deploy_js_logs_the_env_file_path_digest_and_keys_used() -> None:
 class _CrossSiteExpansion(BaseExtension):
     """The Choice + URL pair a cross-site reference really becomes."""
 
+    @override
     def expand_column(
         self, table: Any, column: Any, bundle: Any,
     ) -> list[dict[str, Any]] | None:

@@ -66,7 +66,10 @@ def _require_mapping(
         raise MappingShapeError(
             f"{context}: expected a mapping of names, got {type(block).__name__}",
         )
-    return block
+    if all(isinstance(key, str) for key in block):
+        return block
+    # YAML reads a key such as `2026:` as an int; normalised once here, not by every caller.
+    return {str(key): value for key, value in block.items()}
 
 
 def _reject_unknown_keys(block: Any, allowed: frozenset[str] | set[str], context: str) -> None:

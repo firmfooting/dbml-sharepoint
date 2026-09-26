@@ -44,7 +44,7 @@ def _render() -> str:
         sys.path.insert(0, str(scripts))
     import generate_findings
 
-    return str(generate_findings.render())
+    return generate_findings.render()
 
 
 # --- the data ---------------------------------------------------------------

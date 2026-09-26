@@ -25,7 +25,7 @@ import re
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, override
 
 import pytest
 import yaml
@@ -1641,6 +1641,7 @@ def test_the_wizard_leaves_quietly_on_ctrl_c(
     monkeypatch.chdir(tmp_path)
 
     class Interrupted(ScriptedConsole):
+        @override
         def input(self, prompt: object = "", **kwargs: object) -> str:
             raise KeyboardInterrupt
 

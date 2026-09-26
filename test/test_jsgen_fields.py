@@ -9,7 +9,7 @@ so takes its own route through the generator.
 
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, cast, override
 
 import pytest
 from _builders import ID_PK, TITLE, table
@@ -599,6 +599,7 @@ def test_generated_condition_fields_are_typed_in_schema_output(tmp_path: Path) -
     even though neither appears as an ordinary rendered DBML column."""
 
     class Expansion(BaseExtension):
+        @override
         def expand_column(
             self, table: Any, column: Any, bundle: Any,
         ) -> list[dict[str, Any]] | None:

@@ -29,6 +29,6 @@ def read(sc: SectionContext) -> dict[str, Any]:
                     f"default_formulas.{entity}.{column}: expected a formula "
                     f"string such as \"=TODAY()\", got {formula!r}",
                 )
-            formulas[str(column)] = formula
-        default_formulas[str(entity)] = formulas
+            formulas[column] = formula
+        default_formulas[entity] = formulas
     return {"default_formulas": default_formulas}
