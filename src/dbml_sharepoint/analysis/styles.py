@@ -319,7 +319,7 @@ def _data_bar(
             "color_by requires 'field' (a column internal name)",
         )
         _reject_unknown_keys(color_by, _COLOR_BY_KEYS, f"{context}.color_by")
-        value_map = _validated_map(color_by, context)
+        value_map = _validated_map(color_by, f"{context}.color_by")
         source_calculated = _bool(
             color_by, "calculated", f"{context}.color_by", default=False,
         )

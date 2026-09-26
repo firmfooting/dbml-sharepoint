@@ -230,6 +230,21 @@ def test_an_overdue_guard_member_that_is_not_text_is_refused(member: object) -> 
     )
 
 
+@pytest.mark.parametrize(("color_by", "message"), [
+    ({"field": "R"}, "this style requires a non-empty 'map' of value -> token"),
+    ({"field": "R", "map": {"A": ["good"]}}, "map['A'] must be a token name, got ['good']"),
+])
+def test_a_color_by_map_refusal_names_color_by(
+    color_by: dict[str, object], message: str,
+) -> None:
+    """The nested map is the one at fault, so the path names it."""
+    with pytest.raises(MappingShapeError) as err:
+        expand_style(
+            {"style": "data-bar", "max": 25, "color_by": color_by}, "column_formatting.T.C",
+        )
+    assert str(err.value) == f"column_formatting.T.C.color_by: {message}"
+
+
 def test_theme_overrides_tokens() -> None:
     theme = parse_theme(
         {"good": {"classes": ["my-brand-good"], "icon": "Emoji2"}}, "style_theme",
