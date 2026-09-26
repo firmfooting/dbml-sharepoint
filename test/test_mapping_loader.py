@@ -5092,3 +5092,71 @@ def test_an_unquoted_retired_date_still_loads_as_iso_text(tmp_path: Path) -> Non
     """))
     retired = load_mapping(tmp_path / "m.yaml").mapping.retired_columns["Risk"]["Old"]
     assert retired.retired == "2026-09-01"
+
+
+#: One key per site that reads a mapping key as a name, each one YAML 1.1 did
+#: not read as text (#664). `str()` turned `No:` into "False", `2.10:` into
+#: "2.1" and `010:` into "8", none of them what was typed, and merged `1:` into
+#: a `"1":` beside it.
+_NON_TEXT_KEY_CASES = [
+    pytest.param(
+        blocks(entities("Risk"), 'calculated_formulas:\n  Risk: { No: "=1" }'),
+        "calculated_formulas.Risk: key False is not text (YAML read it as bool); quote it",
+        id="mapping-bool",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), 'default_formulas:\n  Risk: { 2026: "=TODAY()" }'),
+        "default_formulas.Risk: key 2026 is not text (YAML read it as int); quote it",
+        id="mapping-int",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            display_names:
+              mode: auto
+              overrides:
+                Risk: { 2.10: Owner }
+        """),
+        "display_names.overrides.Risk: key 2.1 is not text (YAML read it as float); quote it",
+        id="mapping-float",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "enum_sources: { 010: topics.yaml }"),
+        "enum_sources: key 8 is not text (YAML read it as int); quote it",
+        id="mapping-octal",
+    ),
+    pytest.param(
+        _views_yaml("views:\n  ~:\n    - { title: All, fields: [Title] }"),
+        "views: key None is not text (YAML read it as NoneType); quote it",
+        id="mapping-null",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "column_formatting:\n  Risk: { 1: a.json, '1': b.json }"),
+        "column_formatting.Risk: key 1 is not text (YAML read it as int); quote it",
+        id="mapping-merged-twin",
+    ),
+    pytest.param(
+        _views_yaml("views:\n  Project:\n    - { title: All, fields: [Title], On: true }"),
+        "views.Project[0]: key True is not text (YAML read it as bool); quote it",
+        id="known-keys-bool",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: All, fields: [Title], "
+            "sort: [{ field: Title, 010: asc }] }",
+        ),
+        "views.Project[0].sort[0]: key 8 is not text (YAML read it as int); quote it",
+        id="known-keys-octal",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "message"), _NON_TEXT_KEY_CASES)
+def test_a_key_yaml_did_not_read_as_text_is_refused_by_its_path(
+    tmp_path: Path, body: str, message: str,
+) -> None:
+    """Each key is a name, and the name YAML handed back was not the one typed."""
+    write_mapping(tmp_path, body)
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == message
