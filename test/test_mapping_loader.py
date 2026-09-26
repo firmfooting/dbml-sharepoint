@@ -4199,6 +4199,19 @@ _RECORDED_BLANK_CASES = [
         "derived_columns.Risk[0].where",
         id="derived-where",
     ),
+    pytest.param(
+        # With no site role the default policy applies to the entities of every role.
+        blocks(entities("Risk"), """
+            list_permissions:
+              default:
+                break_inheritance: true
+                site_role:
+        """),
+        "list_permissions.default.site_role", None,
+        lambda b: b.mapping.permissions.default_policy_site_role,
+        "list_permissions.default.site_role",
+        id="default-policy-site-role",
+    ),
 ]
 
 
@@ -4792,6 +4805,16 @@ _COERCED_VALUE_CASES = [
         """),
         "display_names.overrides.Risk.Owner is required",
         id="display-name-override-blank",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            list_permissions:
+              default:
+                break_inheritance: true
+                site_role: [default]
+        """),
+        "list_permissions.default.site_role must be a string, got ['default']",
+        id="default-policy-site-role",
     ),
 ]
 
