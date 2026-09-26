@@ -4157,6 +4157,19 @@ _RECORDED_BLANK_CASES = [
         "views.Project[0].row_limit",
         id="view-row-limit",
     ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            list_permissions:
+              default:
+                break_inheritance: true
+                reconcile: exact
+                assignments:
+        """),
+        "list_permissions.default.assignments", [],
+        lambda b: b.mapping.permissions.default_policy.assignments,
+        "list_permissions.default.assignments",
+        id="assignments",
+    ),
 ]
 
 
@@ -4213,16 +4226,6 @@ _SILENT_BLANK_CASES = [
         id="group-description",
     ),
     pytest.param(
-        blocks(entities("Risk"), """
-            list_permissions:
-              default:
-                break_inheritance: true
-                assignments:
-        """),
-        lambda b: b.mapping.permissions.default_policy.assignments, [],
-        id="assignments",
-    ),
-    pytest.param(
         blocks(entities("Risk"), "extension:"),
         lambda b: b.mapping.extension, None,
         id="extension",
@@ -4234,7 +4237,7 @@ _SILENT_BLANK_CASES = [
 def test_a_blank_key_whose_default_is_empty_is_not_reported(
     tmp_path: Path, body: str, read: Callable[[Any], object], default: object,
 ) -> None:
-    """A blank `assignments:` was refused as the wrong type until #665."""
+    """Nothing here decides what deploys, so nothing warns."""
     write_mapping(tmp_path, body)
     bundle = load_mapping(tmp_path / "m.yaml")
     assert read(bundle) == default
@@ -4297,6 +4300,24 @@ def test_a_blank_style_key_expands_as_its_default(
     blank_bundle, written_bundle = load(blank, "blank.yaml"), load(written, "written.yaml")
     assert blank_bundle.mapping.column_formatting == written_bundle.mapping.column_formatting
     assert blank_bundle.mapping.blank_defaults == recorded
+
+
+def test_a_blank_principal_is_refused_as_an_absent_one(tmp_path: Path) -> None:
+    """`principal:` with nothing after it is the same mistake as leaving the
+    key out, so it gets the same refusal rather than a type error."""
+    write_mapping(tmp_path, blocks(entities("Risk"), """
+        list_permissions:
+          default:
+            break_inheritance: true
+            assignments:
+              - { principal: , level: Read }
+    """))
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value).startswith(
+        "list_permissions.default.assignments[0].principal: principal 'kind' is required",
+    )
 
 
 def test_a_reader_outside_a_load_takes_the_default_without_a_record() -> None:

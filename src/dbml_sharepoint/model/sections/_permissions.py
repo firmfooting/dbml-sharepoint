@@ -321,10 +321,11 @@ def _parse_policy(
             "an inherited ACL cannot be reconciled as a list-scoped allowlist",
         )
     assignments: list[RoleAssignment] = []
-    # A blank `assignments:` grants nothing, which is also what an absent key means.
-    raw_assignments: object = raw_policy.get("assignments")
-    if raw_assignments is None:
-        raw_assignments = list[object]()
+    # A blank `assignments:` grants nothing, and is recorded because under
+    # `reconcile: exact` an empty grant list strips every grant the list has.
+    raw_assignments: object = optional_value(
+        raw_policy, "assignments", context, default=list[object](),
+    )
     if not isinstance(raw_assignments, list):
         raise MappingShapeError(
             f"{context}.assignments must be a list, got {raw_assignments!r}",
@@ -332,8 +333,11 @@ def _parse_policy(
     entries: list[object] = raw_assignments
     for i, raw_a in enumerate(entries):
         assignment = _known_keys(raw_a, {"principal", "level"}, f"{context}.assignments[{i}]")
+        # A blank `principal:` is an absent one, refused the same way below.
+        raw_principal = assignment.get("principal")
         principal = _parse_principal(
-            assignment.get("principal", {}), f"{context}.assignments[{i}].principal", prefix,
+            {} if raw_principal is None else raw_principal,
+            f"{context}.assignments[{i}].principal", prefix,
         )
         level = assignment.get("level")
         if level is not None and not isinstance(level, str):
