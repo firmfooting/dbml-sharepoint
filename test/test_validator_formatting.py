@@ -533,6 +533,29 @@ def test_form_formatting_validation() -> None:
     })
     assert ok == []
 
+@pytest.mark.parametrize("fields", ["Title", 5, {"Title": 1}, False])
+def test_form_section_fields_that_are_not_a_list_are_refused(fields: object) -> None:
+    """A string was read one character at a time, a number raised, and a
+    mapping or `false` passed clean although jsgen rewrites only a list."""
+    errors = _project_errors(form_formatting={
+        "Project": FormFormatting(
+            body={"sections": [{"displayname": "X", "fields": fields}]},
+        ),
+    })
+    f = only(errors, FindingCode.FORM_SECTION_FIELD_NOT_RENDERED)
+    assert f.location == Location(Section.FORM_FORMATTING, entity="Project", sub="body")
+    assert f"must be a list of column names, got {fields!r}." in f.message
+
+def test_a_form_section_field_that_is_not_a_string_is_refused() -> None:
+    """Judged as authored rather than stringified, so the message shows `1`, not `'1'`."""
+    errors = _project_errors(form_formatting={
+        "Project": FormFormatting(
+            body={"sections": [{"displayname": "X", "fields": ["Title", 1]}]},
+        ),
+    })
+    f = only(errors, FindingCode.FORM_SECTION_FIELD_NOT_RENDERED)
+    assert "sections field 1 is not a rendered column" in f.message
+
 def _when(*leaves: dict[str, object]) -> Condition:
     """A condition tree, through the real parser rather than by hand.
 
