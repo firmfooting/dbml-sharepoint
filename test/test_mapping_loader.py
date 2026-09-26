@@ -656,6 +656,16 @@ def test_a_default_formula_must_be_a_string(tmp_path: Path) -> None:
     assert "2026" in str(err)
 
 
+def test_a_blank_default_formula_is_required(tmp_path: Path) -> None:
+    """The sentence a blank `calculated_formulas` entry gets, rather than a
+    formula string expected and None found."""
+    write_mapping(tmp_path, _views_yaml("default_formulas:\n  Project:\n    PeriodYear:"))
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == "default_formulas.Project.PeriodYear is required"
+
+
 def test_a_default_formulas_entity_block_must_be_a_mapping(tmp_path: Path) -> None:
     write_mapping(tmp_path, _views_yaml("""
         default_formulas:
