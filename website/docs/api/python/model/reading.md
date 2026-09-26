@@ -48,13 +48,14 @@ Collect the blank keys that took a behavioural default, for one load.
 ### `optional_value`
 
 ```python
-def optional_value(raw: collections.abc.Mapping[str, typing.Any], key: str, context: str) -> Any
+def optional_value(raw: collections.abc.Mapping[str, typing.Any], key: str, context: str, *, default: object = None) -> Any
 ```
 
-The untyped value under `key`, or None when it is absent or blank.
+The untyped value under `key`, or `default` when it is absent or blank.
 
-For a key whose absence is itself a behaviour (no condition, no enum to
-expand) and whose value is typed by the caller, so a blank is recorded.
+For a key whose default is itself a behaviour (no condition, no enum to
+expand, a style's boolean) and whose value the caller types, so a blank
+is recorded as taking `default`.
 
 ### `drop_blank_keys`
 

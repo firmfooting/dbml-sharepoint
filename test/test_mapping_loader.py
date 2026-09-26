@@ -4242,6 +4242,63 @@ def test_a_blank_key_whose_default_is_empty_is_not_reported(
     assert FindingCode.BLANK_KEY_TOOK_DEFAULT not in {f.code for f in _validated(bundle)}
 
 
+#: A style spec written with one key blank, the same spec with that key's
+#: default written out, and what the blank records. Style specs expand at
+#: load time inside `analysis/styles.py`, so the collector is open for them.
+_STYLE_BLANK_CASES = [
+    pytest.param(
+        "{ style: severity, map: { Open: good }, calculated: }",
+        "{ style: severity, map: { Open: good }, calculated: false }",
+        [BlankDefault(path="column_formatting.Risk.Status.calculated", default=False)],
+        id="calculated",
+    ),
+    pytest.param(
+        "{ style: severity, map: { Open: good }, icons: }",
+        "{ style: severity, map: { Open: good }, icons: true }",
+        [BlankDefault(path="column_formatting.Risk.Status.icons", default=True)],
+        id="icons",
+    ),
+    pytest.param(
+        "{ style: data-bar, max: 10,"
+        " color_by: { field: Sev, map: { Low: good }, calculated: } }",
+        "{ style: data-bar, max: 10,"
+        " color_by: { field: Sev, map: { Low: good }, calculated: false } }",
+        [BlankDefault(path="column_formatting.Risk.Status.color_by.calculated", default=False)],
+        id="color-by-calculated",
+    ),
+    pytest.param(
+        "{ style: trend, against: Other, against_calculated: }",
+        "{ style: trend, against: Other, against_calculated: false }",
+        [BlankDefault(path="column_formatting.Risk.Status.against_calculated", default=False)],
+        id="against-calculated",
+    ),
+    pytest.param(
+        "{ style: overdue-date, guard: { field: State, not: } }",
+        "{ style: overdue-date, guard: { field: State, not: [] } }",
+        [],
+        id="guard-not-is-silent",
+    ),
+]
+
+
+@pytest.mark.parametrize(("blank", "written", "recorded"), _STYLE_BLANK_CASES)
+def test_a_blank_style_key_expands_as_its_default(
+    tmp_path: Path, blank: str, written: str, recorded: list[BlankDefault],
+) -> None:
+    """A blank boolean is recorded; a blank `guard.not` excludes nothing, silently."""
+    def load(spec: str, name: str) -> MappingBundle:
+        write_mapping(tmp_path, blocks(entities("Risk"), f"""
+            column_formatting:
+              Risk:
+                Status: {spec}
+        """), name=name)
+        return load_mapping(tmp_path / name)
+
+    blank_bundle, written_bundle = load(blank, "blank.yaml"), load(written, "written.yaml")
+    assert blank_bundle.mapping.column_formatting == written_bundle.mapping.column_formatting
+    assert blank_bundle.mapping.blank_defaults == recorded
+
+
 def test_a_reader_outside_a_load_takes_the_default_without_a_record() -> None:
     """The collector is opened by `load_mapping`, so a reader called on its
     own has nowhere to record and must still answer."""

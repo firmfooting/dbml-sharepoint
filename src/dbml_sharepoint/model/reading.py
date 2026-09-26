@@ -82,13 +82,16 @@ def _or_default(raw: Mapping[str, Any], key: str, context: str, default: object)
     return default
 
 
-def optional_value(raw: Mapping[str, Any], key: str, context: str) -> Any:
-    """The untyped value under `key`, or None when it is absent or blank.
+def optional_value(
+    raw: Mapping[str, Any], key: str, context: str, *, default: object = None,
+) -> Any:
+    """The untyped value under `key`, or `default` when it is absent or blank.
 
-    For a key whose absence is itself a behaviour (no condition, no enum to
-    expand) and whose value is typed by the caller, so a blank is recorded.
+    For a key whose default is itself a behaviour (no condition, no enum to
+    expand, a style's boolean) and whose value the caller types, so a blank
+    is recorded as taking `default`.
     """
-    return _or_default(raw, key, context, None)
+    return _or_default(raw, key, context, default)
 
 
 def drop_blank_keys(
