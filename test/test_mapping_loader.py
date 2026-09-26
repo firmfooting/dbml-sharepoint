@@ -522,6 +522,26 @@ def test_enum_sources_fragmentless_value_defaults_to_choices_key(tmp_path: Path)
     assert bundle.enum_choices["status"] == ["Open", "Closed"]
 
 
+def test_an_enum_source_key_that_is_not_text_is_refused(tmp_path: Path) -> None:
+    """`#yes` is text and YAML reads a `yes:` key as True, so the fragment
+    never matched and the file was reported as holding no list of strings."""
+    write_mapping(tmp_path, """
+        yes:
+          - "Open"
+    """, prefix=None, name="answers.yaml")
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        enum_sources:
+          answer: "answers.yaml#yes"
+    """), prefix='prefix: "MIN_"', name="mapping.yaml")
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "mapping.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == (
+        f"{(tmp_path / 'answers.yaml').resolve()}: key True is not text "
+        f"(YAML read it as bool); quote it"
+    )
+
+
 def test_extension_config_for_selects_block_by_name(tmp_path: Path) -> None:
     """extension_config_for(name) returns exactly the named extension's block.
     Another extension's block must not leak into it."""

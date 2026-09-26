@@ -9,7 +9,7 @@ than a declaration.
 from pathlib import Path
 from typing import Any
 
-from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping, _text_key
 from dbml_sharepoint.model.errors import MappingReferenceError, MappingShapeError
 from dbml_sharepoint.model.mapping_types import RetentionPolicy
 from dbml_sharepoint.model.reading import (
@@ -80,6 +80,9 @@ def _load_enum_choices(
         path = (base_dir / path_part).resolve()
         resolved[name] = path
         source = load_yaml(path, f"enum_sources[{name!r}]")
+        # A fragment is text, so a `yes:` key (read as True) never matched `#yes`.
+        for key in source:
+            _text_key(key, str(path))
         values = source.get(fragment)
         if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
             raise MappingReferenceError(
