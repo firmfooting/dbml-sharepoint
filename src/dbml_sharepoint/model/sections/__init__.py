@@ -150,7 +150,7 @@ def _pointed_blocks(
     path = (base_dir / source).resolve()
     if not path.is_file():
         raise MappingReferenceError(f"{pointer}: cannot read {source!r} at {path}")
-    contents = read_yaml_document(path, pointer) or {}
-    block = _require_mapping(contents, f"{source}")
+    # Not `or {}`, which read a file holding `false` as an empty one; only an empty file is.
+    block = _require_mapping(read_yaml_document(path, pointer), f"{source}")
     _reject_unknown_keys(block, frozenset(keys), f"{source}")
     return {key: block[key] for key in keys if key in block}

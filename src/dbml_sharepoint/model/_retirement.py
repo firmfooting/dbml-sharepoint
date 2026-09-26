@@ -9,6 +9,7 @@ already-resolved structures, and the record of what was rewritten travels
 on Mapping.retirement_strips for the validator to report.
 """
 
+import datetime as dt
 from dataclasses import replace
 from typing import Any, cast
 
@@ -24,7 +25,7 @@ from dbml_sharepoint.model.mapping_types import (
     RetirementStrip,
     ViewDef,
 )
-from dbml_sharepoint.model.reading import optional_bool
+from dbml_sharepoint.model.reading import optional_bool, optional_str, require_str
 
 _RETIREMENT_KEYS = frozenset({"retired", "superseded_by", "reason", "hide_existing"})
 
@@ -67,14 +68,16 @@ def _parse_retired_columns(raw: Any, context: str) -> dict[str, RetiredColumn]:
         if retired is None:
             raise MappingShapeError(f"{col_ctx}: 'retired' (an ISO date) is required")
         hide = optional_bool(fields, "hide_existing", col_ctx)
-        superseded = fields.get("superseded_by")
         parsed[str(col)] = RetiredColumn(
             column=str(col),
-            # A YAML date scalar arrives as datetime.date; str() normalises
-            # it back to the ISO text the validator and manifest expect.
-            retired=str(retired),
-            superseded_by=str(superseded) if superseded is not None else None,
-            reason=str(fields.get("reason", "")),
+            # YAML reads an unquoted date as a date, whose str() is the ISO text.
+            retired=(
+                str(retired) if isinstance(retired, dt.date)
+                else require_str(fields, "retired", col_ctx)
+            ),
+            superseded_by=optional_str(fields, "superseded_by", col_ctx),
+            # A blank reason is no reason, where `str()` made it the text "None".
+            reason=optional_str(fields, "reason", col_ctx) or "",
             hide_existing=hide,
         )
     return parsed

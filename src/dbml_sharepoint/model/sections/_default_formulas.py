@@ -22,6 +22,9 @@ def read(sc: SectionContext) -> dict[str, Any]:
         for column, formula in _require_mapping(
             cols, f"default_formulas.{entity}",
         ).items():
+            # A blank reads as `calculated_formulas` reads one: a required value left out.
+            if formula is None:
+                raise MappingShapeError(f"default_formulas.{entity}.{column} is required")
             # Not coerced with str(): a bare `2026` or `true` is a value, and
             # a value belongs in the DBML `default:` setting, not here.
             if not isinstance(formula, str):

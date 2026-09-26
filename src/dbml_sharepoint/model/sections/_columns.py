@@ -9,7 +9,7 @@ and the column exist is the validator's question.
 
 from typing import Any
 
-from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model._keys import _known_keys, _require_list, _require_mapping
 from dbml_sharepoint.model.errors import MappingShapeError
 from dbml_sharepoint.model.mapping_types import CrossSiteRef, PolymorphicPattern, WatchedList
 from dbml_sharepoint.model.reading import require_str
@@ -17,23 +17,28 @@ from dbml_sharepoint.model.sections.context import SectionContext
 
 
 def read(sc: SectionContext) -> dict[str, Any]:
+    # `_require_list` for all three lists, where `or []` read `watched_lists: ''` as none.
     cross_site = []
-    for i, item in enumerate(sc.block("cross_site_reference_columns") or []):
+    for i, item in enumerate(_require_list(
+        sc.block("cross_site_reference_columns"), "cross_site_reference_columns",
+    )):
         where = f"cross_site_reference_columns[{i}]"
-        _reject_unknown_keys(item, {"entity", "column"}, where)
+        entry = _known_keys(item, {"entity", "column"}, where)
         cross_site.append(CrossSiteRef(
-            entity=require_str(item, "entity", where),
-            column=require_str(item, "column", where),
+            entity=require_str(entry, "entity", where),
+            column=require_str(entry, "column", where),
         ))
 
     polymorphic = []
-    for i, item in enumerate(sc.block("polymorphic_patterns") or []):
+    for i, item in enumerate(_require_list(
+        sc.block("polymorphic_patterns"), "polymorphic_patterns",
+    )):
         where = f"polymorphic_patterns[{i}]"
-        _reject_unknown_keys(item, {"list", "field", "discriminator"}, where)
+        entry = _known_keys(item, {"list", "field", "discriminator"}, where)
         polymorphic.append(PolymorphicPattern(
-            list=require_str(item, "list", where),
-            field=require_str(item, "field", where),
-            discriminator=require_str(item, "discriminator", where),
+            list=require_str(entry, "list", where),
+            field=require_str(entry, "field", where),
+            discriminator=require_str(entry, "discriminator", where),
         ))
 
     lookup_projections: dict[str, dict[str, list[str]]] = {}
@@ -55,25 +60,23 @@ def read(sc: SectionContext) -> dict[str, Any]:
         lookup_projections[entity] = entity_proj
 
     watched = []
-    for i, item in enumerate(sc.block("watched_lists") or []):
+    for i, item in enumerate(_require_list(sc.block("watched_lists"), "watched_lists")):
         where = f"watched_lists[{i}]"
-        _reject_unknown_keys(item, {"entity", "column"}, where)
+        entry = _known_keys(item, {"entity", "column"}, where)
         watched.append(WatchedList(
-            entity=require_str(item, "entity", where),
-            column=require_str(item, "column", where),
+            entity=require_str(entry, "entity", where),
+            column=require_str(entry, "column", where),
         ))
 
-    calculated_formulas = {
-        entity: {
-            col: str(formula)
-            for col, formula in _require_mapping(
-                cols, f"calculated_formulas.{entity}",
-            ).items()
+    calculated_formulas: dict[str, dict[str, str]] = {}
+    for entity, cols in _require_mapping(
+        sc.block("calculated_formulas"), "calculated_formulas",
+    ).items():
+        formulas = _require_mapping(cols, f"calculated_formulas.{entity}")
+        # `require_str`, where `str()` deployed a blank formula as the text "None".
+        calculated_formulas[entity] = {
+            col: require_str(formulas, col, f"calculated_formulas.{entity}") for col in formulas
         }
-        for entity, cols in _require_mapping(
-            sc.block("calculated_formulas"), "calculated_formulas",
-        ).items()
-    }
 
     return {
         "cross_site_reference_columns": cross_site,

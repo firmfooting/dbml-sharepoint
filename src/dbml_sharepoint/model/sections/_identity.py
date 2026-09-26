@@ -9,14 +9,17 @@ into the manifest.
 from typing import Any
 
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
+from dbml_sharepoint.model.reading import optional_str, require_str
 from dbml_sharepoint.model.sections.context import SectionContext
 
 
 def read(sc: SectionContext) -> dict[str, Any]:
-    prefix = sc.required("prefix")
+    # `required` names an absent prefix; a blank one titled every list "None" + its name.
+    sc.required("prefix")
+    prefix = require_str(sc.blocks, "prefix", "mapping")
     return {
         "prefix": prefix,
-        "prefix_owner": sc.block("prefix_owner", ""),
+        "prefix_owner": optional_str(sc.blocks, "prefix_owner", "mapping") or "",
         "previous_prefixes": _parse_previous_prefixes(sc.block("previous_prefixes"), prefix),
     }
 
