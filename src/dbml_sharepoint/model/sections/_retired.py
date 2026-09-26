@@ -14,11 +14,13 @@ from dbml_sharepoint.model.sections.context import SectionContext
 
 
 def read(sc: SectionContext) -> dict[str, Any]:
+    # A blank entity block reads as absent: that entity retires nothing.
     return {
         "retired_columns": {
             entity: _parse_retired_columns(cols, f"retired_columns.{entity}")
             for entity, cols in _require_mapping(
                 sc.block("retired_columns"), "retired_columns",
             ).items()
+            if cols is not None
         },
     }

@@ -74,8 +74,9 @@ def _release_yaml(**overrides: str) -> str:
         ("schema_version", "1", r"'schema_version' must be text, got int 1; quote it"),
         ("deployer_version", "[a]", r"'deployer_version' must be text, got list"),
         ("flow_package_version", "1.0", r"'flow_package_version' must be text, got float"),
-        ("notes", "", r"'notes' is present with no value"),
         ("date", "20260101", r"'date' must be text, got int"),
+        ("release", "", r"'release' is required"),
+        ("date", "", r"'date' is required"),
     ],
 )
 def test_release_value_that_is_not_text_is_refused(
@@ -87,6 +88,17 @@ def test_release_value_that_is_not_text_is_refused(
     with pytest.raises(ValueError, match=message) as err:
         load_release(tmp_path / "release.yaml")
     assert "release.yaml" in str(err.value)
+
+
+def test_release_blank_optional_key_takes_its_default(tmp_path: Path) -> None:
+    """A blank key reads as absent, the rule `model/reading.py` states. Both
+    defaults here only describe the release, so nothing is reported."""
+    write_mapping(
+        tmp_path, _release_yaml(notes="", flow_package_version=""),
+        prefix=None, name="release.yaml",
+    )
+    release = load_release(tmp_path / "release.yaml")
+    assert (release.notes, release.flow_package_version) == ("", "none")
 
 
 def test_release_unquoted_date_is_read_as_iso_text(tmp_path: Path) -> None:

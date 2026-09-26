@@ -432,6 +432,23 @@ a build, but a stale declaration is worth telling the author about.
 `context` is the human-readable declaration site, e.g.
 "views[Tier3Board].Last 14 days fields".
 
+### `BlankDefault`
+
+```python
+@dataclass(frozen=True)
+class BlankDefault:
+    path: str
+    default: object
+```
+
+One key written with no value whose default decides deployed behaviour.
+
+The loader reads the blank key as absent, so the default applies, and
+keeps this record for the validator to report. The rule for which blanks
+are recorded is stated once, in the `model/reading.py` module docstring.
+
+`path` is the dotted key path, e.g. "views.Project[0].sort[0].direction".
+
 ### `CustomPermissionLevel`
 
 ```python
@@ -637,6 +654,7 @@ class Mapping:
     list_validation: dict[str, dbml_sharepoint.model.mapping_types.ListValidation] = field(default_factory=dict)
     retired_columns: dict[str, dict[str, dbml_sharepoint.model.mapping_types.RetiredColumn]] = field(default_factory=dict)
     retirement_strips: list[dbml_sharepoint.model.mapping_types.RetirementStrip] = field(default_factory=list)
+    blank_defaults: list[dbml_sharepoint.model.mapping_types.BlankDefault] = field(default_factory=list)
     seal_columns: bool = False
     prevent_list_deletion: bool = False
     attachments: bool = True

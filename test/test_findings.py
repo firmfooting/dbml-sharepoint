@@ -51,7 +51,7 @@ def test_location_renders_a_section_with_no_entity() -> None:
 
 
 def test_location_orders_view_then_column_then_sub() -> None:
-    """The tail is one tuple literal, and its ORDER is the whole rendering.
+    """The ORDER of the tail is the whole rendering.
 
     Each of the three has a test of its own above, and all three pass with
     the tuple in any order -- only a location carrying more than one of them
@@ -61,6 +61,12 @@ def test_location_orders_view_then_column_then_sub() -> None:
         Section.VIEWS, entity="Risk", view="Open", column="Status", sub="sort",
     )
     assert loc.path == "views[Risk].Open.Status.sort"
+
+
+def test_location_attaches_an_index_sub_without_a_dot() -> None:
+    """A `sub` naming a list entry reads as the dotted key path an author
+    wrote. No other location's `sub` starts with a bracket."""
+    assert Location(Section.GROUPS, sub="[0].owner_group").path == "groups[0].owner_group"
 
 
 def test_finding_is_hashable_and_frozen() -> None:

@@ -26,7 +26,7 @@ from typing import Any
 from dbml_sharepoint.model._retirement import _apply_retirement
 from dbml_sharepoint.model.errors import UnknownMappingKeyError
 from dbml_sharepoint.model.mapping_types import _REMOVED_SECTIONS, Mapping, MappingBundle
-from dbml_sharepoint.model.reading import load_yaml
+from dbml_sharepoint.model.reading import load_yaml, recording_blank_defaults
 from dbml_sharepoint.model.sections import KNOWN_SECTIONS, SECTION_FAMILIES, section_context
 
 # The families produce `Mapping` fields and, for the three that load a file
@@ -55,14 +55,16 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             raise UnknownMappingKeyError(f"{removed!r} has been replaced by {replacement}")
 
     loaded: dict[str, Any] = {}
-    for family in SECTION_FAMILIES:
-        loaded.update(family.read(
-            section_context(family, raw, base_dir, MappingProxyType(loaded)),
-        ))
+    with recording_blank_defaults() as blank_defaults:
+        for family in SECTION_FAMILIES:
+            loaded.update(family.read(
+                section_context(family, raw, base_dir, MappingProxyType(loaded)),
+            ))
 
-    mapping = Mapping(**{
-        name: value for name, value in loaded.items() if name in _MAPPING_FIELDS
-    })
+    mapping = Mapping(
+        **{name: value for name, value in loaded.items() if name in _MAPPING_FIELDS},
+        blank_defaults=blank_defaults,
+    )
     # Retirement resolves ONCE, here, into the structures the generators
     # already consume. `field_sets` expansion rewrites views[].fields
     # BEFORE this call, so retirement filters the expanded list.

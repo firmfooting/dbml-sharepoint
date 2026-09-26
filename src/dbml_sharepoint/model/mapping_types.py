@@ -500,6 +500,21 @@ class RetirementStrip:
 
 
 @dataclass(frozen=True)
+class BlankDefault:
+    """One key written with no value whose default decides deployed behaviour.
+
+    The loader reads the blank key as absent, so the default applies, and
+    keeps this record for the validator to report. The rule for which blanks
+    are recorded is stated once, in the `model/reading.py` module docstring.
+
+    `path` is the dotted key path, e.g. "views.Project[0].sort[0].direction".
+    """
+
+    path: str
+    default: object
+
+
+@dataclass(frozen=True)
 class CustomPermissionLevel:
     """A custom permission level to create at the site."""
 
@@ -814,6 +829,9 @@ class Mapping:
     # replaced, kept so the validator can warn about declarations the fold
     # silently rewrote.
     retirement_strips: list[RetirementStrip] = field(default_factory=list)
+    # Blank keys that took a behavioural default, recorded by `load_mapping`
+    # so the validator can warn that the author may have meant a value.
+    blank_defaults: list[BlankDefault] = field(default_factory=list)
     # UI hardening (friction, not enforcement; site admins can undo via
     # API): seal every deployed column (blocks UI schema edits even for
     # admins; the deployer unseals for its own runs) and block UI deletion

@@ -24,6 +24,7 @@ from dbml_sharepoint.model.mapping_types import (
     RetirementStrip,
     ViewDef,
 )
+from dbml_sharepoint.model.reading import optional_bool
 
 _RETIREMENT_KEYS = frozenset({"retired", "superseded_by", "reason", "hide_existing"})
 
@@ -65,11 +66,7 @@ def _parse_retired_columns(raw: Any, context: str) -> dict[str, RetiredColumn]:
         retired = fields.get("retired")
         if retired is None:
             raise MappingShapeError(f"{col_ctx}: 'retired' (an ISO date) is required")
-        hide = fields.get("hide_existing", False)
-        if not isinstance(hide, bool):
-            raise MappingShapeError(
-                f"{col_ctx}.hide_existing must be a boolean, got {hide!r}",
-            )
+        hide = optional_bool(fields, "hide_existing", col_ctx)
         superseded = fields.get("superseded_by")
         parsed[str(col)] = RetiredColumn(
             column=str(col),

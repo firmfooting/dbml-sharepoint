@@ -8,10 +8,10 @@ apply to every list the mapping deploys.
 
 from typing import Any
 
-from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model._keys import _known_keys, _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.mapping_types import ITEM_SECURITY_SCOPES, ItemSecurity, Versioning
-from dbml_sharepoint.model.reading import optional_bool, strict_bool
+from dbml_sharepoint.model.reading import drop_blank_keys, optional_bool, strict_bool
 from dbml_sharepoint.model.sections.context import SectionContext
 
 _VERSIONING_KEYS = frozenset({
@@ -23,8 +23,10 @@ _ITEM_SECURITY_KEYS = frozenset({"read", "write"})
 def read(sc: SectionContext) -> dict[str, Any]:
     versioning = _require_mapping(sc.block("versioning"), "versioning")
     _reject_unknown_keys(versioning, {"default", "overrides"}, "versioning")
-    default_v = _require_mapping(versioning.get("default"), "versioning.default")
-    _check_versioning_values(default_v, "versioning.default")
+    default_v = _versioning_values(
+        _require_mapping(versioning.get("default"), "versioning.default"),
+        "versioning.default", Versioning(),
+    )
     # Every absent-key fallback is `Versioning`'s own field default, named
     # rather than typed out again. The 500 in particular was restated in
     # `test/_model.py` as well, which is how a default ends up with three
@@ -60,17 +62,18 @@ def read(sc: SectionContext) -> dict[str, Any]:
         versioning.get("overrides"), "versioning.overrides",
     ).items():
         context = f"versioning.overrides.{override_entity}"
-        _check_versioning_values(override or {}, context)
-        versioning_overrides[override_entity] = dict(override or {})
+        versioning_overrides[override_entity] = _versioning_values(
+            override or {}, context, versioning_default,
+        )
 
     # Item-level trimming, same default/overrides shape as versioning and the
     # same reason for normalising a null override to `{}`.
     item_security = _require_mapping(sc.block("item_security"), "item_security")
     _reject_unknown_keys(item_security, {"default", "overrides"}, "item_security")
-    default_is = _require_mapping(
-        item_security.get("default"), "item_security.default",
+    default_is = _item_security_values(
+        _require_mapping(item_security.get("default"), "item_security.default"),
+        "item_security.default", ItemSecurity(),
     )
-    _check_item_security_values(default_is, "item_security.default")
     item_security_default = ItemSecurity(
         read=str(default_is.get("read", ItemSecurity.read)),
         write=str(default_is.get("write", ItemSecurity.write)),
@@ -80,8 +83,9 @@ def read(sc: SectionContext) -> dict[str, Any]:
         item_security.get("overrides"), "item_security.overrides",
     ).items():
         context = f"item_security.overrides.{override_entity}"
-        _check_item_security_values(override or {}, context)
-        item_security_overrides[override_entity] = dict(override or {})
+        item_security_overrides[override_entity] = _item_security_values(
+            override or {}, context, item_security_default,
+        )
 
     return {
         "versioning_default": versioning_default,
@@ -96,34 +100,48 @@ def read(sc: SectionContext) -> dict[str, Any]:
     }
 
 
-def _check_versioning_values(block: Any, context: str) -> None:
-    """Type-check one versioning settings block (default or override)."""
-    _reject_unknown_keys(block, _VERSIONING_KEYS, context)
+def _versioning_values(block: Any, context: str, fallback: Versioning) -> dict[str, Any]:
+    """Type-check one versioning block (default or override), without its blanks.
+
+    A blank key takes `fallback`'s value: the dataclass default for
+    `versioning.default`, and the resolved default for an override.
+    """
+    declared = drop_blank_keys(_known_keys(block, _VERSIONING_KEYS, context), context, {
+        "enable_versioning": fallback.enable_versioning,
+        "major_version_limit": fallback.major_version_limit,
+        "enable_minor_versions": fallback.enable_minor_versions,
+    })
     for key in ("enable_versioning", "enable_minor_versions"):
-        if key in block and not isinstance(block[key], bool):
+        if key in declared and not isinstance(declared[key], bool):
             raise MappingShapeError(
-                f"{context}.{key}: expected true or false, got {block[key]!r}",
+                f"{context}.{key}: expected true or false, got {declared[key]!r}",
             )
-    limit: object = block.get("major_version_limit")
+    limit = declared.get("major_version_limit")
     if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int)):
         raise MappingShapeError(
             f"{context}.major_version_limit: expected an integer, got {limit!r}",
         )
+    return declared
 
 
-def _check_item_security_values(block: Any, context: str) -> None:
-    """Type-check one item_security block (default or override).
+def _item_security_values(
+    block: Any, context: str, fallback: ItemSecurity,
+) -> dict[str, Any]:
+    """Type-check one item_security block (default or override), without its blanks.
 
     The values are refused rather than coerced: `read: created_by` is exactly
     the spelling somebody reaches for, and silently reading it as `all` would
     ship a list whose rows are visible to everyone while the mapping says
     otherwise. That is the failure class this repository exists to close.
+    A blank key takes `fallback`'s value, as `_versioning_values` says.
     """
-    _reject_unknown_keys(block, _ITEM_SECURITY_KEYS, context)
+    declared = drop_blank_keys(_known_keys(block, _ITEM_SECURITY_KEYS, context), context, {
+        "read": fallback.read, "write": fallback.write,
+    })
     for key in ("read", "write"):
-        if key not in block:
+        if key not in declared:
             continue
-        value: object = block[key]
+        value = declared[key]
         # The shape before the word, as `scope` and `totals` do: a list is
         # unhashable, and `read: 2` is a type rather than a scope declined.
         if not isinstance(value, str):
@@ -135,3 +153,4 @@ def _check_item_security_values(block: Any, context: str) -> None:
                 f"{context}.{key}: expected one of "
                 f"{', '.join(sorted(ITEM_SECURITY_SCOPES))}, got {value!r}",
             )
+    return declared
