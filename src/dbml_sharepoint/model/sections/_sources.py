@@ -32,7 +32,9 @@ def read(sc: SectionContext) -> dict[str, Any]:
 
     retention_source: object = sc.block("retention_policies_source")
     # A number or a list raised TypeError from the path join, and an empty one loaded as absent.
-    if retention_source is not None and not isinstance(retention_source, str):
+    if retention_source is not None and (
+        not isinstance(retention_source, str) or not retention_source
+    ):
         raise MappingShapeError(
             f"retention_policies_source must be a path relative to the mapping, "
             f"got {retention_source!r}",

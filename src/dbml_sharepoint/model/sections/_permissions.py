@@ -11,7 +11,12 @@ one.
 from collections.abc import Sequence
 from typing import Any, cast
 
-from dbml_sharepoint.model._keys import _known_keys, _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model._keys import (
+    _known_keys,
+    _reject_unknown_keys,
+    _require_list,
+    _require_mapping,
+)
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.mapping_types import (
     PRINCIPAL_KIND_LIST,
@@ -68,20 +73,23 @@ def read(sc: SectionContext) -> dict[str, Any]:
     previous_prefixes = sc.loaded["previous_prefixes"]
 
     # All three sections are optional; default to empty / no default policy.
-    raw_levels = sc.block("permission_levels", [])
-    raw_groups = sc.block("groups", [])
+    raw_levels = _require_list(sc.block("permission_levels"), "permission_levels")
+    raw_groups = _require_list(sc.block("groups"), "groups")
     raw_list_perms = _require_mapping(sc.block("list_permissions"), "list_permissions")
     _reject_unknown_keys(
         raw_list_perms, {"default", "overrides", "folders"}, "list_permissions",
     )
 
-    for i, lvl in enumerate(raw_levels):
-        _reject_unknown_keys(
+    level_blocks = [
+        _known_keys(
             lvl, {"name", "description", "base_permissions", "renamed_from"},
             f"permission_levels[{i}]",
         )
-    for i, grp in enumerate(raw_groups):
-        _reject_unknown_keys(grp, _GROUP_KEYS, f"groups[{i}]")
+        for i, lvl in enumerate(raw_levels)
+    ]
+    group_blocks = [
+        _known_keys(grp, _GROUP_KEYS, f"groups[{i}]") for i, grp in enumerate(raw_groups)
+    ]
 
     levels = [
         CustomPermissionLevel(
@@ -102,12 +110,12 @@ def read(sc: SectionContext) -> dict[str, Any]:
                 prefix, previous_prefixes, f"permission_levels[{i}].renamed_from",
             ),
         )
-        for i, lvl in enumerate(raw_levels)
+        for i, lvl in enumerate(level_blocks)
     ]
 
     groups: list[SiteGroup] = []
     group_sources: list[GroupsFromEnum] = []
-    for i, grp in enumerate(raw_groups):
+    for i, grp in enumerate(group_blocks):
         group = _parse_group(grp, f"groups[{i}]", prefix, previous_prefixes)
         # Presence, not truthiness: `from_enum:` with no value is a mistake
         # worth reporting, and `.get()` would read it as an absent key and

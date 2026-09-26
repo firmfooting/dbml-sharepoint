@@ -11,7 +11,7 @@ against the schema.
 
 from typing import Any
 
-from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_list, _require_mapping
 from dbml_sharepoint.model.errors import MappingShapeError
 from dbml_sharepoint.model.mapping_types import DEMO_FILE_CONTENT, DemoFile, DemoItem
 from dbml_sharepoint.model.reading import optional_str, require_str, strict_str
@@ -23,7 +23,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
         "demo_items": {
             entity: [
                 _parse_demo_item(item, f"demo_items.{entity}[{i}]")
-                for i, item in enumerate(items or [])
+                for i, item in enumerate(_require_list(items, f"demo_items.{entity}"))
             ]
             for entity, items in _require_mapping(
                 sc.block("demo_items"), "demo_items",

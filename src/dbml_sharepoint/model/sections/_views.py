@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from dbml_sharepoint.analysis.typemap import TOTAL_FUNCTIONS
-from dbml_sharepoint.model._keys import _known_keys, _require_mapping
+from dbml_sharepoint.model._keys import _known_keys, _require_list, _require_mapping
 from dbml_sharepoint.model.conditions import parse_condition
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.mapping_types import (
@@ -46,7 +46,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
         {
             entity: [
                 _parse_view(item, f"views.{entity}[{i}]", sc.base_dir)
-                for i, item in enumerate(items or [])
+                for i, item in enumerate(_require_list(items, f"views.{entity}"))
             ]
             for entity, items in _require_mapping(sc.block("views"), "views").items()
         },

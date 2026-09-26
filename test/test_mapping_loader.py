@@ -3799,6 +3799,31 @@ _WRONG_TYPE_CASES = [
         "retention_policies_source must be a path relative to the mapping, got {}",
         id="retention-source-empty-mapping",
     ),
+    pytest.param(
+        blocks(entities("Risk"), "retention_policies_source: ''"),
+        "retention_policies_source must be a path relative to the mapping, got ''",
+        id="retention-source-empty-text",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "groups: 5"),
+        "groups: expected a list, got int",
+        id="groups-number",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "permission_levels: { name: Reviewer }"),
+        "permission_levels: expected a list, got dict",
+        id="permission-levels-mapping",
+    ),
+    pytest.param(
+        _views_yaml("views:\n  Project: 5"),
+        "views.Project: expected a list, got int",
+        id="views-entity-number",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "demo_items:\n  Risk: 5"),
+        "demo_items.Risk: expected a list, got int",
+        id="demo-items-entity-number",
+    ),
 ]
 
 
@@ -3813,6 +3838,18 @@ def test_a_value_of_the_wrong_yaml_type_is_a_shape_error(
         load_mapping(tmp_path / "m.yaml")
     assert type(err.value) is MappingShapeError
     assert str(err.value) == message
+
+
+def test_a_list_section_with_every_entry_commented_out_loads_as_absent(tmp_path: Path) -> None:
+    """The `_require_mapping` rule for list-shaped sections: a blank key is not a TypeError."""
+    write_mapping(tmp_path, blocks(entities("Risk"), """
+        groups:
+          # - { name: Team }
+        permission_levels:
+    """))
+    permissions = load_mapping(tmp_path / "m.yaml").mapping.permissions
+    assert permissions is not None
+    assert (permissions.groups, permissions.levels) == ([], [])
 
 
 def test_list_validation_names_unknown_keys_of_two_types(tmp_path: Path) -> None:

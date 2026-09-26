@@ -73,6 +73,23 @@ def _require_mapping(
     return {str(key): value for key, value in entries.items()}
 
 
+def _require_list(block: object, context: str) -> list[object]:
+    """Return `block` as a list, or fail naming the section.
+
+    `_require_mapping` for the list-shaped sections, with the same rule for
+    `None`: a blank key, or one whose entries are all commented out, is
+    absent. A number or a mapping reached `enumerate` and raised TypeError.
+    """
+    if block is None:
+        return []
+    if not isinstance(block, list):
+        raise MappingShapeError(
+            f"{context}: expected a list, got {type(block).__name__}",
+        )
+    entries: list[object] = block
+    return entries
+
+
 def _reject_unknown_keys(block: Any, allowed: frozenset[str] | set[str], context: str) -> None:
     """Fail on any key the loader does not read.
 
