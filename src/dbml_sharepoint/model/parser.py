@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from pydbml.classes import Enum as DbmlEnum
 from pydbml.database import Database
 from pydbml.exceptions import (
     ColumnNotFoundError,
@@ -191,8 +192,10 @@ def parse_dbml(path: Path) -> Schema:
         for raw_col in raw_table.columns:
             table.columns.append(_to_column(raw_col))
         for raw_index in raw_table.indexes:
+            # An untyped pydbml property: a Column subject gives its name, any other str().
+            subject_names: list[str] = raw_index.subject_names
             table.indexes.append(TableIndex(
-                columns=tuple(raw_index.subject_names),
+                columns=tuple(subject_names),
                 name=raw_index.name,
                 unique=raw_index.unique,
                 type=raw_index.type,
@@ -206,16 +209,21 @@ def parse_dbml(path: Path) -> Schema:
 
 def _to_column(raw: Any) -> Column:
     """Convert a pydbml column object into our Column dataclass."""
-    type_name = raw.type.name if hasattr(raw.type, "name") else str(raw.type)
+    # pydbml's grammar gives a type name, which it swaps for the Enum when one is declared.
+    raw_type: str | DbmlEnum = raw.type
+    type_name = raw_type.name if isinstance(raw_type, DbmlEnum) else raw_type
     ref: Reference | None = None
     for raw_ref in getattr(raw, "get_refs", list)():
         # pydbml exposes refs from the column side; first one wins for our subset.
-        target = raw_ref.table2.name if raw_ref.col1[0] is raw else raw_ref.table1.name
-        target_col = raw_ref.col2[0].name if raw_ref.col1[0] is raw else raw_ref.col1[0].name
+        target: str = raw_ref.table2.name if raw_ref.col1[0] is raw else raw_ref.table1.name
+        target_col: str = (
+            raw_ref.col2[0].name if raw_ref.col1[0] is raw else raw_ref.col1[0].name
+        )
         ref = Reference(target_table=target, target_column=target_col)
         break
+    name: str = raw.name
     return Column(
-        name=raw.name,
+        name=name,
         type=type_name,
         required=getattr(raw, "not_null", False),
         unique=getattr(raw, "unique", False),
