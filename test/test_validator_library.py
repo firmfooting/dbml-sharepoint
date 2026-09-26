@@ -993,6 +993,50 @@ def test_an_exact_folder_policy_granting_nothing_warns_once(tmp_path: Path) -> N
     assert "Docs" in f.message
 
 
+def test_a_folder_policy_that_writes_nothing_is_refused(tmp_path: Path) -> None:
+    """It wrote nothing and still took both folders out of the exact-mode
+    check that refuses an undeclared folder scope (#617)."""
+    f = only(
+        _folder_policy_body(tmp_path, "{break_inheritance: false}"),
+        FindingCode.FOLDER_POLICY_WRITES_NOTHING,
+    )
+    assert f.severity == "error"
+    assert f.location == Location(Section.LIST_PERMISSIONS, sub="folders")
+    assert "Docs" in f.message
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        pytest.param("{break_inheritance: true}", id="breaks"),
+        pytest.param(
+            "{break_inheritance: false, assignments: "
+            "[{principal: {kind: associated_member_group}, level: Read}]}",
+            id="grants",
+        ),
+    ],
+)
+def test_a_folder_policy_that_breaks_or_grants_is_not_refused(
+    tmp_path: Path, policy: str,
+) -> None:
+    none_of(
+        _folder_policy_body(tmp_path, policy),
+        FindingCode.FOLDER_POLICY_WRITES_NOTHING,
+    )
+
+
+def test_a_library_with_no_folders_is_told_that_rather_than_both(
+    tmp_path: Path,
+) -> None:
+    """With no folders there is nothing for the policy to exempt, and the
+    remedy is the container's, so the write question is not asked."""
+    findings = _folder_policy_body(
+        tmp_path, "{break_inheritance: false}", folders="[]",
+    )
+    only(findings, FindingCode.FOLDER_PERMISSIONS_WITHOUT_FOLDERS)
+    none_of(findings, FindingCode.FOLDER_POLICY_WRITES_NOTHING)
+
+
 @pytest.mark.parametrize(
     "flag", ["enroll_enterprise_reader", "enroll_operator_during_deploy"],
 )

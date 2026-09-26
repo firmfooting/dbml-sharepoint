@@ -12,6 +12,7 @@ from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import LIST_VIEW_THRESHOLD
+from dbml_sharepoint.analysis.permissions import policy_writes
 from dbml_sharepoint.analysis.typemap import element_type
 from dbml_sharepoint.model.mapping_types import (
     DemoItem,
@@ -62,19 +63,26 @@ def check(vc: ValidationContext) -> list[Finding]:
 
 
 def _folder_permissions(vc: ValidationContext) -> list[Finding]:
-    """`list_permissions.folders.<entity>`: it must name a library with folders.
+    """`list_permissions.folders.<entity>`: it must name a library with
+    folders, and it must write something to them.
 
     Keyed by entity and never by folder, so the only questions left are
-    whether the entity exists, whether it can hold folders, and whether it
-    declares any. Which folders it declares is `resolved.folders`' answer
-    and is not re-derived here.
+    whether the entity exists, whether it can hold folders, whether it
+    declares any, and whether the policy writes. Which folders it declares
+    is `resolved.folders`' answer and is not re-derived here.
+
+    The write question is asked last, once the folders are known to exist,
+    because what the policy does wrong is exempt those folders from the
+    exact-mode descendant check in `_acls.js.j2`. A list override is not
+    held to it: `break_inheritance: false` alone there opts a list out of
+    the default policy.
     """
     perms = vc.bundle.mapping.permissions
     if perms is None:
         return []
     at = Location(Section.LIST_PERMISSIONS, sub="folders")
     findings: list[Finding] = []
-    for entity_name in perms.folder_policies:
+    for entity_name, policy in perms.folder_policies.items():
         entity = vc.bundle.mapping.entities.get(entity_name)
         if entity is None:
             findings.append(Finding(
@@ -105,6 +113,19 @@ def _folder_permissions(vc: ValidationContext) -> list[Finding]:
                 f"list_permissions.folders.{entity_name}: {entity_name} "
                 f"declares no folders, so this policy governs nothing and no "
                 f"folder ACL is written.",
+                location=at,
+            ))
+            continue
+        if not policy_writes(policy):
+            findings.append(Finding(
+                FindingCode.FOLDER_POLICY_WRITES_NOTHING,
+                f"list_permissions.folders.{entity_name}: this policy breaks "
+                f"no inheritance, grants nothing and removes nothing, so the "
+                f"deploy writes nothing to the folders {entity_name} "
+                f"declares. Declaring it only exempts those folders from the "
+                f"check that stops a reconcile: exact deploy on a folder with "
+                f"permissions of its own. Remove the policy, or give it "
+                f"break_inheritance: true or an assignment.",
                 location=at,
             ))
     return findings

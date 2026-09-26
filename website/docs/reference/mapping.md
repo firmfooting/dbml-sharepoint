@@ -2124,7 +2124,10 @@ facts rule that out, together:
   of that site until an operator resolves it by hand. A folder the mapping
   secures through `list_permissions.folders` is the one exception, and it is
   not a loophole: that scope is declared, so the phase writes it rather than
-  finding it, and a scope nobody declared still aborts.
+  finding it, and a scope nobody declared still aborts. A folder policy that
+  breaks no inheritance and declares no assignment would write nothing and
+  still exempt its folders, so the build refuses it
+  (`folder_policy_writes_nothing`).
 - A grant made at **site or list scope** is a different thing and is handled
   differently. It is a role assignment at that scope, not an item scope, so
   it is caught by the bullet above rather than this one: `exact` treats the

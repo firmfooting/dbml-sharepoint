@@ -715,6 +715,23 @@ FINDING_HELP: dict[FindingCode, str] = {
         "the block: a policy that silently governs nothing is the failure "
         "this rule exists to make loud."
     ),
+    FindingCode.FOLDER_POLICY_WRITES_NOTHING: (
+        "A `list_permissions.folders` policy sets `break_inheritance: "
+        "false` and declares no `assignments`, which leaves it reconciling "
+        "`configured` because `exact` requires breaking inheritance. The "
+        "deploy's ACL phase then breaks nothing, adds nothing and removes "
+        "nothing on those folders. Declaring the policy still has an effect. "
+        "Under a list's `reconcile: exact` policy the phase stops before "
+        "writing that list's permissions when a folder or item carries "
+        "permissions of its own that the mapping does not declare, and a "
+        "declared folder is exempt. This policy therefore writes nothing "
+        "and switches that check off for every folder it covers, so a "
+        "folder somebody secured by hand passes unreviewed. Remove the "
+        "policy, or give it `break_inheritance: true` or an assignment so "
+        "the deploy manages the folders it exempts. A list override is not "
+        "held to this: one with `break_inheritance: false` and nothing else "
+        "is how a list opts out of the default policy."
+    ),
     FindingCode.VIEW_SCOPE_ON_A_LIST: (
         "A view declares `scope` on an entity that is not a "
         "`DocumentLibrary`. Scope decides whether a view shows the files in "
