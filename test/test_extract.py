@@ -1129,6 +1129,7 @@ def _download(body: str) -> str:
     (_download('"lists": []'), "declares no lists"),
     (_download('"lists": [1]'), "is not an object"),
     (_download('"lists": [{"fields": []}]'), "has no title"),
+    (_download('"lists": [{"title": 5, "fields": []}]'), "'title' must be a string, got 5"),
     (_download('"lists": [{"title": "a"}]'), "is missing or is not a list"),
     (_download('"lists": [{"title": "a", "fields": []}]'), "nothing to extract"),
     (_download('"lists": [{"title": "a", "fields": [1]}]'), "not a string of XML"),
@@ -1148,6 +1149,21 @@ def test_a_damaged_download_is_refused_with_a_sentence(
     """
     with pytest.raises(SourceError, match=re.escape(message)):
         load_live_json(payload)
+
+
+@pytest.mark.parametrize(("where", "key", "message"), [
+    ("list", "description", "lists[0]: 'description' must be a string, got 5"),
+    ("list", "contentTypeFormatter", "lists[0]: 'contentTypeFormatter' must be a string, got 5"),
+    ("download", "siteUrl", "the download: 'siteUrl' must be a string, got 5"),
+])
+def test_a_text_property_of_the_download_that_is_not_text_is_refused(
+    where: str, key: str, message: str,
+) -> None:
+    """These reached `str` fields unchecked; a number is refused where it is read."""
+    document = json.loads(SAMPLE.read_text(encoding="utf-8"))
+    (document["lists"][0] if where == "list" else document)[key] = 5
+    with pytest.raises(SourceError, match=re.escape(message)):
+        load_live_json(json.dumps(document))
 
 
 def test_a_file_that_cannot_be_read_as_text_is_refused(tmp_path: Path) -> None:

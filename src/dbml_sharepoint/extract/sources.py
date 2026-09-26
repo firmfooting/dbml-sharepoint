@@ -103,22 +103,30 @@ def load_live_json(raw: str) -> Source:
     for index, entry in enumerate(raw_lists):
         if not isinstance(entry, dict):
             raise SourceError(f"lists[{index}] is not an object")
-        title = entry.get("title") or ""
+        title = _text(entry, "title", f"lists[{index}]")
         if not title:
             raise SourceError(f"lists[{index}] has no title")
         lists.append(SourceList(
             title=title,
             fields=_parse_all(entry.get("fields"), f"lists[{index}].fields"),
-            description=entry.get("description") or "",
+            description=_text(entry, "description", f"lists[{index}]"),
             views=[v for v in entry.get("views") or [] if isinstance(v, dict)],
-            content_type_formatter=entry.get("contentTypeFormatter") or "",
+            content_type_formatter=_text(entry, "contentTypeFormatter", f"lists[{index}]"),
         ))
     return Source(
         kind=LIVE_KIND,
         capabilities=LIVE_ABSENCES,
         lists=lists,
-        site_url=document.get("siteUrl") or "",
+        site_url=_text(document, "siteUrl", "the download"),
     )
+
+
+def _text(entry: dict[object, object], key: str, context: str) -> str:
+    """A text property of the download, where absent and empty both read as ""."""
+    value = entry.get(key) or ""
+    if not isinstance(value, str):
+        raise SourceError(f"{context}: {key!r} must be a string, got {value!r}")
+    return value
 
 
 def _parse_all(entries: object, context: str) -> list[RawField]:
