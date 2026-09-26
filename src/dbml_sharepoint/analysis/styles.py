@@ -46,6 +46,7 @@ from dbml_sharepoint.model._keys import _reject_unknown_keys
 # Same route as the guard above, and the same reason: `_formatting.read`
 # delegates to this module, so a refusal here is a mapping refusal.
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
+from dbml_sharepoint.model.reading import optional_value
 
 _SCHEMA = "https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json"
 
@@ -120,8 +121,10 @@ def _bool(spec: dict[str, Any], key: str, context: str, *, default: bool) -> boo
     `bool("false")` is True, so the cautious spelling meant its opposite:
     `calculated: "false"` switched the calculated-value handling ON, and
     `icons: "false"` kept the icons it was written to remove.
+
+    A blank key takes `default` and is recorded, the rule `model/reading.py` states.
     """
-    value = spec.get(key, default)
+    value = optional_value(spec, key, context, default=default)
     if not isinstance(value, bool):
         raise _fail(context, f"{key}: expected true or false, got {value!r}")
     return value
@@ -406,8 +409,10 @@ def _overdue_date(
             "overdue-date guard requires 'field' (a column internal name)",
         )
         # A string is iterable, so `or []` sent "Done" through as four
-        # single-character comparisons.
-        raw_excluded = guard_map.get("not", [])
+        # single-character comparisons. A blank `not:` excludes nothing.
+        raw_excluded = guard_map.get("not")
+        if raw_excluded is None:
+            raw_excluded = list[object]()
         if not isinstance(raw_excluded, list):
             raise _fail(context, "overdue-date guard 'not' must be a list of values")
         excluded: list[object] = raw_excluded

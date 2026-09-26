@@ -110,7 +110,7 @@ def _load_retention(path: Path) -> tuple[dict[str, RetentionPolicy], dict[str, s
             retain_years=optional_int(spec, "retain_years", context),
             retain_days=optional_int(spec, "retain_days", context),
             # `strict_str` because "creation" is one retention clock of
-            # several, so `trigger:` with nothing after it must not pick it.
+            # several, so a blank `trigger:` that picks it is recorded.
             trigger=strict_str(spec, "trigger", context, default="creation"),
         )
     list_defaults = dict(_require_mapping(raw.get("list_defaults"), "list_defaults"))

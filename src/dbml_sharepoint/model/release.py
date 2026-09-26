@@ -63,14 +63,19 @@ def load_release(path: Path) -> Release:
 
 
 def _text(raw: dict[object, object], key: str, path: Path, *, default: str | None = None) -> str:
-    """The value of `key` as text, refusing the numbers YAML reads from an unquoted version."""
-    if key not in raw and default is not None:
-        return default
-    value = raw[key]
+    """The value of `key` as text, refusing the numbers YAML reads from an unquoted version.
+
+    A blank key reads as absent, following the rule in `model/reading.py`:
+    an optional one takes `default` without a record, because both defaults
+    here only describe the release, and a required one is refused.
+    """
+    value = raw.get(key)
+    if value is None:
+        if default is not None:
+            return default
+        raise ValueError(f"{path}: {key!r} is required")
     if isinstance(value, str):
         return value
-    if value is None:
-        raise ValueError(f"{path}: {key!r} is present with no value")
     raise ValueError(
         f"{path}: {key!r} must be text, got {type(value).__name__} {value!r}; quote it",
     )

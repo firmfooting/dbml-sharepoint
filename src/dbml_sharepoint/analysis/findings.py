@@ -44,6 +44,9 @@ class Section(StrEnum):
     LIST_VALIDATION = "list_validation"
     DERIVED_COLUMNS = "derived_columns"
     LOOKUP_PROJECTIONS = "lookup_projections"
+    # The top-level switches no section above owns (`seal_columns`,
+    # `attachments`, `item_security`), and a blank key found in one.
+    MAPPING = "mapping"
     PERMISSION_LEVELS = "permission_levels"
     POLYMORPHIC_PATTERNS = "polymorphic_patterns"
     # Not one of the eighteen message prefixes: retention lives in its own
@@ -76,8 +79,12 @@ class Location:
         head = str(self.section)
         if self.entity is not None:
             head = f"{head}[{self.entity}]"
-        tail = [p for p in (self.view, self.column, self.sub) if p is not None]
-        return ".".join([head, *tail])
+        tail = [p for p in (self.view, self.column) if p is not None]
+        path = ".".join([head, *tail])
+        if self.sub is not None:
+            # An index attaches to what it indexes: `groups[0]`, not `groups.[0]`.
+            path += self.sub if self.sub.startswith("[") else f".{self.sub}"
+        return path
 
 
 class FindingCode(StrEnum):
@@ -398,6 +405,9 @@ class FindingCode(StrEnum):
     VALIDATION_FORMULA_TOO_LONG = "validation_formula_too_long", "error"
     VALIDATION_MESSAGE_TOO_LONG = "validation_message_too_long", "error"
     VIEW_EMPTIED_BY_RETIREMENT = "view_emptied_by_retirement", "warning"
+
+    # --- facts the loader recorded while reading (checks/_loading.py) -------
+    BLANK_KEY_TOOK_DEFAULT = "blank_key_took_default", "warning"
 
     # --- permission levels, groups and policies (checks/_permissions.py) ----
     AUTOMATION_GROUP_GRANTED_FULL_CONTROL = (

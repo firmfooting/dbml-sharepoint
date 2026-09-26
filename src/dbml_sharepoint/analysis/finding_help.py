@@ -162,6 +162,17 @@ FINDING_HELP: dict[FindingCode, str] = {
         "An auto-increment primary key is named something other than "
         "`Id`."
     ),
+    FindingCode.BLANK_KEY_TOOK_DEFAULT: (
+        "A key is written with no value, so the loader read it as absent and "
+        "gave it its default, and that default decides how the deployed lists "
+        "behave: a boolean, a vocabulary word such as `direction` or "
+        "`reconcile`, a `where` or `when` condition, a `from_enum` source, "
+        "`major_version_limit`, a view's `row_limit`, an entity's `title` or a "
+        "policy's `assignments`. The author may have meant a value. Remove the "
+        "key to take the default without this warning, or give it a value. A "
+        "blank key whose default is empty text, an empty list or no value is "
+        "not reported."
+    ),
     FindingCode.CALCULATED_COLUMN_HAS_NO_FORMULA: (
         "A `calculated_*` DBML column has no matching entry under "
         "`calculated_formulas:`."

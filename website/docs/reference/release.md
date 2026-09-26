@@ -34,8 +34,12 @@ and `examples/` is a working example of the shape.
 
 Every value is text, so quote it. YAML reads an unquoted `2.10` as the
 number 2.1, which would stamp a different version than the one written, so
-an unquoted number or a key with no value is a load error. An unquoted date
-is the one exception: it is read back as ISO text.
+an unquoted number is a load error. An unquoted date is the one exception:
+it is read back as ISO text.
+
+A key written with no value reads as absent. A blank `notes:` or
+`flow_package_version:` takes its default, and a blank required key is a
+load error, the same as a missing one.
 
 `release` is the key, not `release_tag`. `release_tag` is the name the
 loaded object carries in Python, and the two are deliberately allowed to

@@ -21,29 +21,30 @@ from dbml_sharepoint.model.mapping_types import (
     FormVisibility,
     ListValidation,
 )
-from dbml_sharepoint.model.reading import strict_bool, strict_str
+from dbml_sharepoint.model.reading import optional_value, strict_bool, strict_str
 from dbml_sharepoint.model.sections.context import SectionContext
 
 
 def read(sc: SectionContext) -> dict[str, Any]:
+    # A blank entity block reads as absent: that entity declares nothing here.
     return {
         "form_visibility": {
             entity: _parse_form_visibility(block, f"form_visibility.{entity}")
             for entity, block in _require_mapping(
                 sc.block("form_visibility"), "form_visibility",
-            ).items()
+            ).items() if block is not None
         },
         "column_validation": {
             entity: _parse_column_validation(block, f"column_validation.{entity}")
             for entity, block in _require_mapping(
                 sc.block("column_validation"), "column_validation",
-            ).items()
+            ).items() if block is not None
         },
         "list_validation": {
             entity: _parse_list_validation(rule, f"list_validation.{entity}")
             for entity, rule in _require_mapping(
                 sc.block("list_validation"), "list_validation",
-            ).items()
+            ).items() if rule is not None
         },
     }
 
@@ -54,7 +55,7 @@ def _entity_section(block: Any, context: str) -> tuple[str, dict[str, Any]]:
     _reject_unknown_keys(block, {"reconcile", "columns"}, context)
     # The shape first: `reconcile: [exact]` is the wrong shape, and `str()`
     # on it reported "['exact']" as a word this loader declined. `strict_str`
-    # keeps `reconcile:` with nothing after it a refusal rather than 'exact'.
+    # records a blank `reconcile:`, which takes 'exact'.
     reconcile = strict_str(block, "reconcile", context, default="exact")
     if reconcile not in ("exact", "declared"):
         raise MappingValueError(
@@ -85,15 +86,12 @@ def _parse_form_visibility(block: Any, context: str) -> EntitySection[FormVisibi
         if not isinstance(raw, dict):
             raise MappingShapeError(f"{where}: expected 'hidden', 'visible' or a mapping")
         declared = _known_keys(raw, {"new", "existing", "when"}, where)
+        # A blank `when:` shows the column unconditionally, which the load records.
+        raw_when = optional_value(declared, "when", where)
         columns[name] = FormVisibility(
             new=strict_bool(declared, "new", where),
             existing=strict_bool(declared, "existing", where),
-            # An empty `when` is a mistake, not an absence. The same
-            # declaration errors in column_validation and as an empty group.
-            when=(
-                parse_condition(declared["when"], f"{where}.when")
-                if "when" in declared else None
-            ),
+            when=parse_condition(raw_when, f"{where}.when") if raw_when is not None else None,
         )
     return EntitySection(reconcile=reconcile, columns=columns)
 

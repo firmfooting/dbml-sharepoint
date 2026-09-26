@@ -26,6 +26,7 @@ from dbml_sharepoint.model.reading import (
     load_json_value,
     optional_bool,
     optional_int,
+    optional_value,
     require_str,
     strict_str,
 )
@@ -77,11 +78,9 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
     ):
         raise MappingShapeError(f"{context}: 'renamed_from' must be a list of view titles")
     previous_titles: list[str] = renamed_from
-    where = (
-        parse_condition(view["where"], f"{context}.where")
-        if "where" in view
-        else None
-    )
+    # A blank `where:` is an unfiltered view, which the load records.
+    raw_where = optional_value(view, "where", context)
+    where = parse_condition(raw_where, f"{context}.where") if raw_where is not None else None
     raw_sort = view.get("sort") or list[object]()
     # A mapping or a string iterated as keys or characters, and a number raised TypeError.
     if not isinstance(raw_sort, list):
@@ -91,8 +90,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
     for i, raw_entry in enumerate(sort_entries):
         entry = _known_keys(raw_entry, {"field", "direction"}, f"{context}.sort[{i}]")
         # The shape before the word, as `scope` below does: a list here is
-        # not a direction spelled wrongly. `strict_str` rather than
-        # `optional_str` so a blank `direction:` is refused, not read as asc.
+        # not a direction spelled wrongly. `strict_str` so a blank is recorded.
         direction = strict_str(entry, "direction", f"{context}.sort[{i}]", default="asc")
         if direction not in {"asc", "desc"}:
             raise MappingValueError(
@@ -149,7 +147,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
                     f"width, got {px!r}",
                 )
             widths[str(col)] = px
-    raw_scope = view.get("scope")
+    raw_scope = optional_value(view, "scope", context)
     # isinstance first: a list or mapping is unhashable, and `in` over a
     # frozenset would raise the TypeError the CLI does not catch. Two
     # refusals rather than one, because the wrong YAML type is a shape error
@@ -193,7 +191,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
         where=where,
         sort=sort,
         group_by=group_by,
-        row_limit=optional_int(view, "row_limit", context),
+        row_limit=optional_int(view, "row_limit", context, record_blank=True),
         formatting=(
             load_json_value(base_dir, raw_formatting, f"{context}.formatting")
             if raw_formatting is not None
@@ -215,6 +213,9 @@ def _parse_field_sets(raw_sets: Any) -> dict[str, dict[str, list[str]]]:
     """
     parsed: dict[str, dict[str, list[str]]] = {}
     for entity, sets in _require_mapping(raw_sets, "field_sets").items():
+        # A blank entity block reads as absent: that entity declares no sets.
+        if sets is None:
+            continue
         if not isinstance(sets, dict):
             raise MappingShapeError(
                 f"field_sets.{entity}: expected a mapping of set name to "

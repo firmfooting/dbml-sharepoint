@@ -42,7 +42,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
         raw_kind: object = spec.get("kind")
         entities[name] = EntityMapping(
             name=name,
-            title=require_str(spec, "title", f"entities.{name}") if "title" in spec else None,
+            title=optional_str(spec, "title", f"entities.{name}", record_blank=True),
             internal_name=_internal_name(spec, name),
             kind=_parse_entity_kind(raw_kind, f"entities.{name}"),
             base_template=require_int(spec, "base_template", f"entities.{name}"),

@@ -17,6 +17,7 @@ from dbml_sharepoint.model.errors import (
     UnknownMappingKeyError,
 )
 from dbml_sharepoint.model.mapping_types import DerivedColumn, ReportingOptions
+from dbml_sharepoint.model.reading import strict_bool
 from dbml_sharepoint.model.sections.context import SectionContext
 
 _DERIVED_KEYS: dict[str, frozenset[str]] = {
@@ -61,17 +62,11 @@ def _parse_reporting(block: Any) -> ReportingOptions:
         raise UnknownMappingKeyError(REMOVED_TIME_ZONE_KEY_MESSAGE)
     switches = ("system_columns", "users_table")
     _reject_unknown_keys(section, set(switches), "reporting")
-    values: dict[str, bool] = {}
-    for name in switches:
-        value = section.get(name, False)
-        # YAML reads "yes" and 1 as truthy, so anything but a real boolean
-        # would switch the feature on by accident and never say so.
-        if not isinstance(value, bool):
-            raise MappingShapeError(
-                f"reporting.{name}: expected true or false, got {value!r}",
-            )
-        values[name] = value
-    return ReportingOptions(**values)
+    # YAML reads "yes" and 1 as truthy, so anything but a real boolean
+    # would switch the feature on by accident and never say so.
+    return ReportingOptions(**{
+        name: strict_bool(section, name, "reporting", default=False) for name in switches
+    })
 
 
 def _derived_text(item: dict[str, Any], key: str, where: str) -> str:
