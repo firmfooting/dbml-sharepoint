@@ -22,6 +22,7 @@ everywhere else in this package.
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from dbml_sharepoint.model._keys import _text_key
 from dbml_sharepoint.model.errors import MappingShapeError, UnknownMappingKeyError
 
 type GroupKind = Literal["all_of", "any_of", "none_of"]
@@ -89,6 +90,8 @@ def parse_condition(raw: Any, context: str) -> Condition:
             f"{context}: expected a mapping or a list of conditions, got {type(raw).__name__}",
         )
     raw_map: dict[object, object] = raw
+    for key in raw_map:
+        _text_key(key, context)
 
     present = [kind for kind in GROUP_KINDS if kind in raw_map]
     is_leaf = bool(_LEAF_KEYS & set(raw_map)) and not present

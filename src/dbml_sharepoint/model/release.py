@@ -8,6 +8,8 @@ from pathlib import Path
 
 import yaml
 
+from dbml_sharepoint.model._keys import _text_key
+
 
 @dataclass(frozen=True)
 class Release:
@@ -40,16 +42,16 @@ def load_release(path: Path) -> Release:
             f"{path}: expected a YAML mapping at the top level, "
             f"got {type(raw).__name__}",
         )
-    unknown = set(raw) - set(_REQUIRED_KEYS) - set(_OPTIONAL_KEYS)
+    entries: dict[object, object] = raw
+    unknown = {_text_key(key, str(path)) for key in entries} - {*_REQUIRED_KEYS, *_OPTIONAL_KEYS}
     if unknown:
         raise ValueError(
             f"{path}: unknown key(s) {sorted(unknown)} "
             f"(known: {sorted((*_REQUIRED_KEYS, *_OPTIONAL_KEYS))})",
         )
-    missing = [key for key in _REQUIRED_KEYS if key not in raw]
+    missing = [key for key in _REQUIRED_KEYS if key not in entries]
     if missing:
         raise ValueError(f"{path}: missing required key(s) {missing}")
-    entries: dict[object, object] = raw
     date = entries["date"]
     return Release(
         release_tag=_text(entries, "release", path),

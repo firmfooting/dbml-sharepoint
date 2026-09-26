@@ -444,6 +444,33 @@ def test_retention_policy_rejects_unknown_key(tmp_path: Path) -> None:
     assert "sp_labl" in str(err)
 
 
+@pytest.mark.parametrize(
+    ("typed", "message"),
+    [
+        # Loaded with no list defaults at all, and no finding.
+        (
+            "list_defualts: { Project: Standard7Y }",
+            "unknown key(s) ['list_defualts'] (known: ['list_defaults', 'policies'])",
+        ),
+        ("No: x", "key False is not text (YAML read it as bool); quote it"),
+    ],
+    ids=["misspelled", "not-text"],
+)
+def test_the_retention_file_refuses_a_key_it_does_not_read(
+    tmp_path: Path, typed: str, message: str,
+) -> None:
+    (tmp_path / "retention.yaml").write_text(
+        f"policies:\n  Standard7Y:\n    retain_years: 7\n{typed}\n", encoding="utf-8",
+    )
+    write_mapping(
+        tmp_path,
+        blocks(entities("Project"), "retention_policies_source: retention.yaml"),
+    )
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert str(err.value) == f"{(tmp_path / 'retention.yaml').resolve()}: {message}"
+
+
 def test_retention_policy_rejects_wrong_typed_value(tmp_path: Path) -> None:
     """`retain_years` is typed `int | None` in `RetentionPolicy`; a quoted
     number must not load as a `str` living inside that field -- invisible to
@@ -493,6 +520,26 @@ def test_enum_sources_fragmentless_value_defaults_to_choices_key(tmp_path: Path)
     """), prefix='prefix: "MIN_"', name="mapping.yaml")
     bundle = load_mapping(tmp_path / "mapping.yaml")
     assert bundle.enum_choices["status"] == ["Open", "Closed"]
+
+
+def test_an_enum_source_key_that_is_not_text_is_refused(tmp_path: Path) -> None:
+    """`#yes` is text and YAML reads a `yes:` key as True, so the fragment
+    never matched and the file was reported as holding no list of strings."""
+    write_mapping(tmp_path, """
+        yes:
+          - "Open"
+    """, prefix=None, name="answers.yaml")
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        enum_sources:
+          answer: "answers.yaml#yes"
+    """), prefix='prefix: "MIN_"', name="mapping.yaml")
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "mapping.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == (
+        f"{(tmp_path / 'answers.yaml').resolve()}: key True is not text "
+        f"(YAML read it as bool); quote it"
+    )
 
 
 def test_extension_config_for_selects_block_by_name(tmp_path: Path) -> None:
@@ -1461,6 +1508,26 @@ def test_unknown_top_level_section_is_a_load_error(tmp_path: Path) -> None:
     """))
     err = _refuses(tmp_path / "m.yaml", UnknownMappingKeyError)
     assert "form_visibilty" in str(err)
+
+
+@pytest.mark.parametrize(
+    ("typed", "message"),
+    [
+        # Sorting 2026 beside the text section `note` raised a bare TypeError.
+        ("2026: x\nnote: y", "mapping: key 2026 is not text (YAML read it as int); quote it"),
+        # Named as the unknown section False, which is not what was typed.
+        ("No: x", "mapping: key False is not text (YAML read it as bool); quote it"),
+    ],
+    ids=["int-beside-text", "bool"],
+)
+def test_a_top_level_key_that_is_not_text_is_refused_before_the_unknown_sections(
+    tmp_path: Path, typed: str, message: str,
+) -> None:
+    write_mapping(tmp_path, blocks(entities("Risk"), typed))
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == message
 
 
 def test_documented_permissions_block_is_rejected_not_ignored(tmp_path: Path) -> None:
@@ -3880,18 +3947,6 @@ def test_a_list_section_with_every_entry_commented_out_loads_as_absent(tmp_path:
     assert (permissions.groups, permissions.levels) == ([], [])
 
 
-def test_list_validation_names_unknown_keys_of_two_types(tmp_path: Path) -> None:
-    """YAML reads `2026:` as an int, and sorting it beside a text key raised a bare TypeError."""
-    write_mapping(tmp_path, blocks(entities("Risk"), """
-        list_validation:
-          Risk:
-            2026: x
-            note: y
-    """))
-    with pytest.raises(UnknownMappingKeyError, match=r"unknown key\(s\) \[2026, 'note'\]"):
-        load_mapping(tmp_path / "m.yaml")
-
-
 #: A required key inside a LIST entry, which `_reject_unknown_keys` passes
 #: (it refuses only keys nobody reads) and a direct subscript then answered
 #: with a bare `KeyError`. `MappingError` does not catch that, so the
@@ -5092,3 +5147,200 @@ def test_an_unquoted_retired_date_still_loads_as_iso_text(tmp_path: Path) -> Non
     """))
     retired = load_mapping(tmp_path / "m.yaml").mapping.retired_columns["Risk"]["Old"]
     assert retired.retired == "2026-09-01"
+
+
+#: One key per site that reads a mapping key as a name, each one YAML 1.1 did
+#: not read as text (#664). `str()` turned `No:` into "False", `2.10:` into
+#: "2.1" and `010:` into "8", none of them what was typed, and merged `1:` into
+#: a `"1":` beside it.
+_NON_TEXT_KEY_CASES = [
+    pytest.param(
+        blocks(entities("Risk"), 'calculated_formulas:\n  Risk: { No: "=1" }'),
+        "calculated_formulas.Risk: key False is not text (YAML read it as bool); quote it",
+        id="mapping-bool",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), 'default_formulas:\n  Risk: { 2026: "=TODAY()" }'),
+        "default_formulas.Risk: key 2026 is not text (YAML read it as int); quote it",
+        id="mapping-int",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            display_names:
+              mode: auto
+              overrides:
+                Risk: { 2.10: Owner }
+        """),
+        "display_names.overrides.Risk: key 2.1 is not text (YAML read it as float); quote it",
+        id="mapping-float",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "enum_sources: { 010: topics.yaml }"),
+        "enum_sources: key 8 is not text (YAML read it as int); quote it",
+        id="mapping-octal",
+    ),
+    pytest.param(
+        _views_yaml("views:\n  ~:\n    - { title: All, fields: [Title] }"),
+        "views: key None is not text (YAML read it as null); quote it",
+        id="mapping-null",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "column_formatting:\n  Risk: { 1: a.json, '1': b.json }"),
+        "column_formatting.Risk: key 1 is not text (YAML read it as int); quote it",
+        id="mapping-merged-twin",
+    ),
+    pytest.param(
+        _views_yaml("views:\n  Project:\n    - { title: All, fields: [Title], On: true }"),
+        "views.Project[0]: key True is not text (YAML read it as bool); quote it",
+        id="known-keys-bool",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: All, fields: [Title], "
+            "sort: [{ field: Title, 010: asc }] }",
+        ),
+        "views.Project[0].sort[0]: key 8 is not text (YAML read it as int); quote it",
+        id="known-keys-octal",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            form_visibility:
+              Risk:
+                columns:
+                  No: hidden
+        """),
+        "form_visibility.Risk.columns: key False is not text (YAML read it as bool); quote it",
+        id="form-visibility-column",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            column_validation:
+              Risk:
+                columns:
+                  2026:
+                    when: [{ field: Title, op: is_not_null }]
+                    message: Give it a title
+        """),
+        "column_validation.Risk.columns: key 2026 is not text (YAML read it as int); quote it",
+        id="column-validation-column",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: All, fields: [Title], widths: { 2.10: 120 } }",
+        ),
+        "views.Project[0].widths: key 2.1 is not text (YAML read it as float); quote it",
+        id="view-widths",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: All, fields: [Title], totals: { Yes: count } }",
+        ),
+        "views.Project[0].totals: key True is not text (YAML read it as bool); quote it",
+        id="view-totals",
+    ),
+    pytest.param(
+        _views_yaml("field_sets:\n  Project:\n    2026: [Title]"),
+        "field_sets.Project: key 2026 is not text (YAML read it as int); quote it",
+        id="field-set-name",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            demo_items:
+              Risk:
+                - { key: r1, values: { Title: First, Off: x } }
+        """),
+        "demo_items.Risk[0].values: key False is not text (YAML read it as bool); quote it",
+        id="demo-values",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            retired_columns:
+              Risk:
+                2026: { retired: 2026-09-01 }
+        """),
+        "retired_columns.Risk: key 2026 is not text (YAML read it as int); quote it",
+        id="retired-column",
+    ),
+    pytest.param(
+        # Sorting 2026 beside `note` raised a bare TypeError before #663.
+        blocks(entities("Risk"), "list_validation:\n  Risk:\n    2026: x\n    note: y"),
+        "list_validation.Risk: key 2026 is not text (YAML read it as int); quote it",
+        id="list-validation-key",
+    ),
+    pytest.param(
+        _views_yaml("""
+            views:
+              Project:
+                - title: Open
+                  fields: [Title]
+                  where: [{ field: Status, op: eq, value: Open, On: x }]
+        """),
+        "views.Project[0].where.all_of[0]: key True is not text (YAML read it as bool); quote it",
+        id="condition-leaf-key",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            form_visibility:
+              Risk:
+                columns:
+                  Title:
+                    new: true
+                    existing: true
+                    when: { any_of: [{ field: Status, op: is_null }], 2.10: x }
+        """),
+        "form_visibility.Risk.columns.Title.when: key 2.1 is not text "
+        "(YAML read it as float); quote it",
+        id="condition-group-key",
+    ),
+    pytest.param(
+        # Emitted as `"attributes":{"false":"x"}` before this was refused.
+        blocks(entities("Risk"), """
+            column_formatting:
+              Risk:
+                Title: { elmType: div, attributes: { No: x } }
+        """),
+        "column_formatting.Risk.Title.attributes: key False is not text "
+        "(YAML read it as bool); quote it",
+        id="inline-column-formatter",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            column_formatting:
+              Risk:
+                Title: { elmType: div, children: [{ elmType: span, 1: x }] }
+        """),
+        "column_formatting.Risk.Title.children[0]: key 1 is not text "
+        "(YAML read it as int); quote it",
+        id="inline-column-formatter-list",
+    ),
+    pytest.param(
+        # Beside a text key, the build's sorted json.dumps raised a bare TypeError.
+        _views_yaml(
+            "views:\n  Project:\n    - { title: All, fields: [Title], "
+            "formatting: { hideSelection: true, 1: x } }",
+        ),
+        "views.Project[0].formatting: key 1 is not text (YAML read it as int); quote it",
+        id="inline-view-formatter",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            form_formatting:
+              Risk:
+                header: { elmType: div, 2.10: x }
+        """),
+        "form_formatting.Risk.header: key 2.1 is not text (YAML read it as float); quote it",
+        id="inline-form-formatter",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "message"), _NON_TEXT_KEY_CASES)
+def test_a_key_yaml_did_not_read_as_text_is_refused_by_its_path(
+    tmp_path: Path, body: str, message: str,
+) -> None:
+    """Each key is a name, and the name YAML handed back was not the one typed."""
+    write_mapping(tmp_path, body)
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == message
