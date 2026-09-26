@@ -57,7 +57,8 @@ def _field_plan(
     # value is also a mapping, and a bare isinstance check claimed it as a
     # lookup reference and then raised KeyError.
     if isinstance(value, dict) and "demo_ref" in value:
-        return {"name": name, "kind": "ref", "value": str(value["demo_ref"])}
+        ref: object = value["demo_ref"]
+        return {"name": name, "kind": "ref", "value": str(ref)}
     # Ahead of the multi-value arm, which would otherwise plan the demo_ref
     # objects as literal members and write them into the item body verbatim.
     # `is_ref` comes from the column rather than from the value because an
@@ -79,7 +80,8 @@ def _field_plan(
                     f"{name}: every member of a multi-value lookup demo value "
                     f"must be {{demo_ref: <key>}}, got {member!r}.",
                 )
-            keys.append(str(member["demo_ref"]))
+            member_ref: object = member["demo_ref"]
+            keys.append(str(member_ref))
         return {
             "name": name,
             "kind": "multi_ref",
