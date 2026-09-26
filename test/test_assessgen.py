@@ -2950,7 +2950,7 @@ def test_group_and_level_renames_are_blocking_requirements_with_their_previous_n
         groups:
           - name: "{prefix} Request Handlers"
             description: "Handlers."
-    """)
+    """, prefix=None)
     bundle = load_mapping(tmp_path / "m.yaml")
     schema = make_schema(make_table("Risk", "Title", note="Risks."))
     family = family_for(schema)

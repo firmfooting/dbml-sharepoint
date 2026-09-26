@@ -651,7 +651,7 @@ def test_groups_and_levels_carry_their_previous_names_and_markers(tmp_path: Path
           - name: "{prefix} Programme Leads"
             description: "Leads."
             renamed_from: ["{prefix} Program Governance"]
-    """)
+    """, prefix=None)
     bundle = load_mapping(tmp_path / "m.yaml")
     schema = parse_dbml(FIXTURES / "simple.dbml")
     family = family_for(schema)

@@ -2823,7 +2823,9 @@ def test_a_section_of_the_wrong_shape_names_the_section(
     tuple to AttributeError/TypeError would make every genuine loader bug
     look like a bad mapping file, which is the worse trade.
     """
-    path = write_mapping(tmp_path, with_tail(entities("Project"), fragment))
+    # The `entities` fragment is the section itself; a second `entities:` would be a repeated key.
+    body = fragment if section == "entities" else with_tail(entities("Project"), fragment)
+    path = write_mapping(tmp_path, body)
     _refuses(path, MappingShapeError, section)
 
 
@@ -3024,7 +3026,7 @@ def test_a_prefix_placeholder_in_group_and_level_names_expands_to_the_stem(tmp_p
               assignments:
                 - principal: { kind: group, name: "{prefix} Request Handlers" }
                   level: "{prefix} Submit Only"
-    """)
+    """, prefix=None)
     perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
     assert perms is not None
     assert [g.name for g in perms.groups] == ["GOV Request Handlers"]
@@ -3046,7 +3048,7 @@ def test_an_empty_prefix_drops_the_placeholder_and_its_space(tmp_path: Path) -> 
         groups:
           - name: "{prefix} Request Handlers"
             description: "Handlers."
-    """)
+    """, prefix=None)
     perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
     assert perms is not None
     assert [g.name for g in perms.groups] == ["Request Handlers"]
@@ -3064,7 +3066,7 @@ def test_a_placeholder_anywhere_but_the_start_is_refused(tmp_path: Path) -> None
         groups:
           - name: "Handlers {prefix}"
             description: "Handlers."
-    """)
+    """, prefix=None)
     _refuses(tmp_path / "m.yaml", MappingValueError, r"groups\[0\]\.name")
 
 
@@ -3074,13 +3076,13 @@ def test_previous_prefixes_parse_and_default_empty(tmp_path: Path) -> None:
         previous_prefixes: ["", "ADOPT_"]
         entities:
           Risk: { kind: List, base_template: 100, site_role: default }
-    """)
+    """, prefix=None)
     assert load_mapping(tmp_path / "m.yaml").mapping.previous_prefixes == ("", "ADOPT_")
     write_mapping(tmp_path, """
         prefix: "GOV_"
         entities:
           Risk: { kind: List, base_template: 100, site_role: default }
-    """)
+    """, prefix=None)
     assert load_mapping(tmp_path / "m.yaml").mapping.previous_prefixes == ()
 
 
@@ -3104,7 +3106,7 @@ def test_previous_prefixes_refuse_a_bad_shape(
         previous_prefixes: {declared}
         entities:
           Risk: {{ kind: List, base_template: 100, site_role: default }}
-    """)
+    """, prefix=None)
     _refuses(tmp_path / "m.yaml", error, why)
 
 
@@ -3128,7 +3130,7 @@ def test_groups_and_levels_compute_their_previous_names_over_every_stem(tmp_path
             renamed_from: ["{prefix} Program Governance"]
           - name: "{prefix} Request Handlers"
             description: "Handlers."
-    """)
+    """, prefix=None)
     perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
     assert perms is not None
     leads, handlers = perms.groups
@@ -3151,7 +3153,7 @@ def test_a_literal_previous_group_name_is_not_re_prefixed(tmp_path: Path) -> Non
           - name: "{prefix} Editors"
             description: "Editors."
             renamed_from: ["Register Editors"]
-    """)
+    """, prefix=None)
     perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
     assert perms is not None
     assert perms.groups[0].previous_names == ("Editors", "Register Editors")
