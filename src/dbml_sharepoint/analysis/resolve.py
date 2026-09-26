@@ -373,6 +373,6 @@ def guards_resolution[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
         return fn(*args, **kwargs)
 
     # Read by the static test above; a plain function object carries no such
-    # attribute, so mypy has to be told.
+    # attribute, so the type checker has to be told.
     guarded.__resolution_guarded__ = True  # type: ignore[attr-defined]
     return guarded

@@ -398,7 +398,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 visibility = bundle.mapping.form_visibility.get(entity_name)
                 hidden_everywhere = {
                     name
-                    for name, rule in (visibility.columns.items() if visibility else {}.items())
+                    for name, rule in (visibility.columns.items() if visibility else ())
                     if not rule.new and not rule.existing
                 }
                 # THE LAST SECTION IS A DOCUMENTED CATCH-ALL. Learn, on

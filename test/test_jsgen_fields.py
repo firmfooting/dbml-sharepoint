@@ -272,7 +272,7 @@ def test_meta_type_names_the_kind_it_cannot_map() -> None:
 def test_field_body_refuses_a_kind_the_match_does_not_know(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """mypy is the real gate that keeps `match sp.kind` exhaustive; this pins
+    """pyrefly is the real gate that keeps `match sp.kind` exhaustive; this pins
     the runtime shape of its default arm so a later refactor cannot turn
     `assert_never` into a silent fall-through that drops the field's body.
     """

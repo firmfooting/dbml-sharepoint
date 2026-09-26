@@ -9,6 +9,7 @@ in exactly one place.
 """
 
 from pathlib import Path
+from typing import Any, cast
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
@@ -53,6 +54,9 @@ def script_env() -> Environment:
     )
     env.filters["comment_safe"] = comment_safe
     env.filters["markdown_cell"] = markdown_cell
+    # Jinja infers `globals` from its defaults' types; it holds anything.
+    env_globals = cast("dict[str, Any]", env.globals)
+
     # A GLOBAL rather than a per-render argument, because the fact belongs to
     # every script that reconciles a field and no generator should be able to
     # forget it. The eleven pairs were previously typed out by hand inside
@@ -61,15 +65,15 @@ def script_env() -> Environment:
     # It throws in the operator's browser, mid-deploy, on a customer site.
     # `analysis/typemap.py` owns the pairing; `test_typemap.py` asserts the
     # rendered Map covers every FieldKind.
-    env.globals["type_as_string_by_kind"] = TYPE_AS_STRING_PAIRS
+    env_globals["type_as_string_by_kind"] = TYPE_AS_STRING_PAIRS
     # The arity half of the same fact. A LookupMulti reads back the same
     # FieldTypeKind as a Lookup, so the number alone no longer names the type
     # and the deployer picks between these two maps on AllowMultipleValues.
-    env.globals["multi_type_as_string_by_kind"] = MULTI_TYPE_AS_STRING_PAIRS
-    env.globals["base_type_as_string"] = BASE_TYPE_AS_STRING_PAIRS
+    env_globals["multi_type_as_string_by_kind"] = MULTI_TYPE_AS_STRING_PAIRS
+    env_globals["base_type_as_string"] = BASE_TYPE_AS_STRING_PAIRS
     # Rendered into both the probe that SELECTS these properties and the
     # reconciler that COMPARES them, which were two hand-kept copies of one
     # list.
-    env.globals["derived_field_properties"] = DERIVED_FIELD_PROPERTIES
-    env.globals["derived_field_property_kinds"] = DERIVED_FIELD_PROPERTY_KINDS
+    env_globals["derived_field_properties"] = DERIVED_FIELD_PROPERTIES
+    env_globals["derived_field_property_kinds"] = DERIVED_FIELD_PROPERTY_KINDS
     return env

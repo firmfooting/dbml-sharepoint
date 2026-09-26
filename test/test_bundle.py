@@ -287,7 +287,7 @@ def test_the_package_has_exactly_one_writer() -> None:
 
     The defect is PER-CALL-SITE, which is what makes it worth a test rather than
     a note: the fix does not generalise, so the next writer someone adds
-    reintroduces it, and nothing in ruff, mypy or the suite would say so.
+    reintroduces it, and nothing in ruff, pyrefly or the suite would say so.
 
     Static, in the same way `test_every_finding_site_carries_a_location` is:
     a property of the source, not of any particular run. It is deliberately

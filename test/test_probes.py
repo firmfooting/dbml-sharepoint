@@ -360,9 +360,8 @@ def _assembled_skeleton(expression: str) -> str | None:
         pieces = re.findall(r"`([^`]*)`", expression)
         return "".join(INTERPOLATION.sub("", piece) for piece in pieces)
     if "+" in expression:
-        return "".join(
-            single or double for single, double in QUOTED_PIECE.findall(expression)
-        )
+        quoted: list[tuple[str, str]] = QUOTED_PIECE.findall(expression)
+        return "".join(single or double for single, double in quoted)
     return None
 
 

@@ -11,7 +11,6 @@ PINNED: dict[str, list[str]] = {
     ".github/workflows/ci.yml": [
         "22a9938dfbc0",
         "3b57d9338deb",
-        "4d69f8a4afa4",
     ],
     ".github/workflows/pr-title.yml": [
         "3f9f2fc5f0fc",

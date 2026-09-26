@@ -62,7 +62,7 @@ def _entity_section(block: Any, context: str) -> tuple[str, dict[str, Any]]:
         )
     columns = block.get("columns")
     if columns is None:
-        columns = {}
+        columns = dict[str, Any]()
     if not isinstance(columns, dict):
         raise MappingShapeError(
             f"{context}.columns: expected a mapping of column name to declaration",

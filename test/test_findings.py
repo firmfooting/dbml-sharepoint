@@ -103,7 +103,7 @@ def test_the_finding_vocabulary_has_one_home() -> None:
     reappears as a deferred import somewhere else. `Severity` is the one of
     the five validator has no use of its own for, so it is the one that can be asserted absent;
     the other four are still in its namespace because its own rules
-    construct them. mypy covers the other direction, refusing any module that
+    construct them. pyrefly covers the other direction, refusing any module that
     imports the vocabulary through validator rather than from here.
     """
     from dbml_sharepoint.analysis import findings, validator

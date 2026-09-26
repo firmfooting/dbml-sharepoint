@@ -89,7 +89,7 @@ def test_unique_transition_healthy_reused_fixture_reaches_measurements() -> None
 def test_unique_transition_wrong_or_absent_type_voids_measurements(
     name: str, missing: bool,
 ) -> None:
-    config = {'omit': [[name, 'TypeAsString']]} if missing else {
+    config: dict[str, Any] = {'omit': [[name, 'TypeAsString']]} if missing else {
         'fields': {name: {'TypeAsString': 'Text' if name == 'NoteRef' else 'Note'}},
     }
     rows = _run_probe(**config)

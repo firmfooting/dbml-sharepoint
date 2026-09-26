@@ -5,8 +5,8 @@ Every name now has exactly one importable home, and the package docstring
 names those homes. Nothing else keeps that true, so these gates do.
 
 The first refuses a second home for a name. `__all__` is the obvious way to
-create one and `from x import Y as Y` is the other, because `mypy --strict`
-reads a redundant alias as an explicit re-export. A gate reading only
+create one and `from x import Y as Y` is the other, because pyrefly (like
+mypy) reads a redundant alias as an explicit re-export. A gate reading only
 `__all__` would wave through the alias, which is precisely the construct the
 docstring's rationale rejects.
 
@@ -241,7 +241,7 @@ def _literal_strings(value: ast.expr, relative: str, lineno: int) -> list[str]:
 
 
 def _redundant_aliases(module: ast.Module, relative: str) -> list[str]:
-    """`import Y as Y`, which `mypy --strict` accepts as an explicit re-export."""
+    """`import Y as Y`, which pyrefly accepts as an explicit re-export."""
     offenders: list[str] = []
     for node in _module_level(module.body):
         if not isinstance(node, ast.Import | ast.ImportFrom):
@@ -290,8 +290,8 @@ def re_export_offenders(source: str, relative: str) -> list[str]:
     A plain `from x import Y` is deliberately not counted, though it does bind
     `Y` in this module's namespace and `analysis.validator.Finding` still
     resolves at runtime because of it. Counting it would flag every ordinary
-    import in the package, and `mypy --strict` already refuses that path with
-    "does not explicitly export attribute". The three shapes below are the
+    import in the package, and pyrefly already refuses that path with
+    `implicit-reexport`. The three shapes below are the
     ones where a module claims a name as its own, so they are the ones a type
     checker honours and the ones this gate answers for.
     """
@@ -428,7 +428,7 @@ def test_the_scan_reports_an_all_naming_an_imported_name(tmp_path: Path) -> None
 
 
 def test_the_scan_reports_a_redundant_alias_import(tmp_path: Path) -> None:
-    """`import Y as Y` is a re-export to `mypy --strict`, so it is one here.
+    """`import Y as Y` is a re-export to pyrefly, so it is one here.
 
     Reading `__all__` alone would leave this construct as a supported way to
     do the forbidden thing, and it is the one a contributor reaches for after
