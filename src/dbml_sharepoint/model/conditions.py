@@ -110,9 +110,15 @@ def parse_condition(raw: Any, context: str) -> Condition:
         raise UnknownMappingKeyError(
             f"{context}: unknown key(s) {sorted(unknown_leaf, key=str)} on a condition",
         )
+    required: dict[str, str] = {}
     for key in ("field", "op"):
-        if not raw_map.get(key):
+        value = raw_map.get(key)
+        if not value:
             raise MappingShapeError(f"{context}: {key!r} is required on a condition")
+        # `str()` read `field: [Status]` as "['Status']"; `require_str` would be an import cycle.
+        if not isinstance(value, str):
+            raise MappingShapeError(f"{context}.{key} must be a string, got {value!r}")
+        required[key] = value
     optional: dict[str, str | None] = {}
     for key in ("property", "measure"):
         value = raw_map.get(key)
@@ -120,8 +126,8 @@ def parse_condition(raw: Any, context: str) -> Condition:
             raise MappingShapeError(f"{context}: {key!r} must be a string or null")
         optional[key] = value
     return Leaf(
-        field=str(raw_map["field"]),
-        op=str(raw_map["op"]),
+        field=required["field"],
+        op=required["op"],
         value=raw_map.get("value"),
         property=optional["property"],
         measure=optional["measure"],

@@ -4742,6 +4742,27 @@ _COERCED_VALUE_CASES = [
         "derived_columns.Risk[0].where must be a string, got 5",
         id="derived-where",
     ),
+    pytest.param(
+        _views_yaml("""
+            views:
+              Project:
+                - title: Open
+                  fields: [Title]
+                  where: [{ field: [Status], op: eq, value: Open }]
+        """),
+        "views.Project[0].where.all_of[0].field must be a string, got ['Status']",
+        id="condition-field",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            form_visibility:
+              Risk:
+                columns:
+                  Title: { new: true, existing: true, when: { field: Status, op: 5 } }
+        """),
+        "form_visibility.Risk.columns.Title.when.op must be a string, got 5",
+        id="condition-op",
+    ),
 ]
 
 
