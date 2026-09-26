@@ -1912,7 +1912,8 @@ loader refuses the combination. Group owner assignment uses CSOM where REST
 cannot express it.
 
 `site_role:` is read on `list_permissions.default` only. Setting it inside
-an `overrides:` entry is accepted by the loader and then discarded. An
+an `overrides:` or `folders:` entry is refused at load as an unknown key
+(`list_permissions.overrides.<Entity>: unknown key(s) ['site_role']`). An
 override applies to its entity wherever that entity deploys.
 
 ### `folders:` and `{member}`
