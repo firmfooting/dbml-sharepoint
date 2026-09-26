@@ -90,7 +90,7 @@ def test_base_extension_hooks_match_null_defaults() -> None:
 
 
 def test_base_extension_satisfies_deployment_extension_protocol() -> None:
-    # Typed assignment: mypy --strict verifies BaseExtension structurally
+    # Typed assignment: the type checker verifies BaseExtension structurally
     # implements the DeploymentExtension protocol (five hooks + name ClassVar).
     ext: DeploymentExtension = BaseExtension()
     # Runtime check via @runtime_checkable.

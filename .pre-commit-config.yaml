@@ -56,9 +56,9 @@ repos:
         language: system
         types_or: [python, pyi]
         require_serial: true
-      - id: mypy
-        name: mypy (strict)
-        entry: uv run mypy
+      - id: pyrefly
+        name: pyrefly (strict)
+        entry: uv run pyrefly check
         language: system
         types: [python]
         pass_filenames: false

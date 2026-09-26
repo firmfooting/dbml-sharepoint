@@ -72,7 +72,7 @@ dev = [
   "pytest-cov>=5.0.0",
   "pytest-xdist>=3.6.0",
   "ruff>=0.16.0",
-  "mypy>=1.10.0",
+  "pyrefly>=1.3.0",
   "types-PyYAML>=6.0.12",
   "j2lint>=1.2.0",
   # The git-hook runner. Pinned here for the same reason as every other gate:
@@ -199,14 +199,36 @@ max-complexity = 54
 # verdicts ARE the record the CI log keeps.
 "scripts/**" = ["S603", "S607", "T20"]
 
-[tool.mypy]
-python_version = "3.13"
-strict = true
-files = ["src", "test", "website/scripts", "scripts"]
+[tool.pyrefly]
+python-version = "3.13"
+project-includes = ["src", "test", "website/scripts", "scripts"]
+# Test helpers and scripts import their siblings as top-level modules.
+search-path = ["src", "test", "website/scripts", "scripts"]
+# Translated from mypy --strict by `pyrefly init`.
+preset = "legacy"
+check-unannotated-defs = true
+infer-return-types = "never"
+ignore-missing-imports = ["pydbml.*"]
 
-[[tool.mypy.overrides]]
-module = "pydbml.*"
-ignore_missing_imports = true
+[tool.pyrefly.errors]
+no-any-return = "error"
+implicit-any-parameter = "error"
+redundant-cast = "warn"
+unannotated-return = "error"
+implicit-any = "error"
+# mypy --strict's no_implicit_reexport, warn_unused_ignores and strict_equality,
+# which `pyrefly init` does not carry over.
+implicit-reexport = "error"
+unused-ignore = "error"
+incompatible-comparison = "error"
+
+# Test data is often deliberately untyped: `[]`, `{}` and mock lambdas.
+[[tool.pyrefly.sub-config]]
+matches = "test/**"
+
+[tool.pyrefly.sub-config.errors]
+implicit-any-empty-container = false
+implicit-any-lambda = false
 
 [tool.coverage.run]
 # Measured on the package, not on the test tree: a test file that never runs

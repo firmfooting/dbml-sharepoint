@@ -3,13 +3,13 @@
 Every name an extension author needs is imported from the module that defines
 it, and no module here declares another module's name as its own. An
 aggregator would need an export list, or a redundant `import X as X`, to
-survive `mypy --strict`, and either gives a name a second home to be kept in
-step with the first.
+survive pyrefly's `implicit-reexport` rule, and either gives a name a second
+home to be kept in step with the first.
 
 An old path such as `dbml_sharepoint.analysis.validator.Finding` does still
 resolve at RUNTIME: a normal `from x import Y` binds `Y` in the importing
-module and Python offers no way to unbind it. `mypy --strict` refuses it
-("does not explicitly export attribute", checked 2026-08-17), which is what
+module and Python offers no way to unbind it. `pyrefly check` refuses it
+(`implicit-reexport`, checked 2026-09-26), which is what
 makes the paths below the supported ones rather than merely the preferred
 ones.
 

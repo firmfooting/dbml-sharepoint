@@ -139,7 +139,7 @@ def report_output_names(
     blank. The display column is dropped from them where the two coincide,
     because one expand path cannot land twice under one name.
 
-    A fourteenth `FieldKind` fails `uv run mypy` on the `assert_never` below,
+    A fourteenth `FieldKind` fails `uv run pyrefly check` on the `assert_never` below,
     which is the point: a kind whose report columns nobody has decided must
     not resolve to silence in a rule that refuses builds. The runtime raise
     behind it is a backstop only, because `_build_plans` reaches its own

@@ -111,7 +111,7 @@ def _visibility_findings(
 ) -> list[Finding]:
     """One column's declaration, defaulted to the harmless case.
 
-    Spelled out rather than `**kwargs: object` so mypy checks the call. The
+    Spelled out rather than `**kwargs: object` so the type checker checks the call. The
     old helper needed a `type: ignore[arg-type]` to hand a `dict[str, object]`
     to a keyword-only signature, which is exactly the untyped boundary the
     surrounding work exists to close.

@@ -1365,7 +1365,7 @@ def _field_body(
             body["OutputType"] = sp.output_type
             body["Formula"] = (formulas or {}).get(sp.name, "")
         case _:
-            # A new FieldKind member with no arm here fails mypy at check
+            # A new FieldKind member with no arm here fails pyrefly at check
             # time, before it can reach a deploy script with no type body.
             assert_never(sp.kind)
 

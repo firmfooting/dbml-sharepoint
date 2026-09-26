@@ -175,7 +175,7 @@ def test_the_section_typeddict_covers_every_mapping_field() -> None:
 
 
 def test_an_unknown_section_is_a_type_error_not_a_silent_drop() -> None:
-    """mypy is the real gate; this is the runtime half of the same statement."""
+    """pyrefly is the real gate; this is the runtime half of the same statement."""
     with pytest.raises(TypeError):
         mapping(entities=["Risk"], form_visibilty={})  # type: ignore[call-arg]
 

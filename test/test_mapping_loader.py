@@ -446,7 +446,7 @@ def test_retention_policy_rejects_unknown_key(tmp_path: Path) -> None:
 def test_retention_policy_rejects_wrong_typed_value(tmp_path: Path) -> None:
     """`retain_years` is typed `int | None` in `RetentionPolicy`; a quoted
     number must not load as a `str` living inside that field -- invisible to
-    `mypy --strict` because `spec.get(...)` is `Any`."""
+    the type checker because `spec.get(...)` is `Any`."""
     (tmp_path / "retention.yaml").write_text(
         "policies:\n"
         "  Standard7Y:\n"
