@@ -41,6 +41,7 @@ from dbml_sharepoint.model.reading import (
     optional_bool,
     optional_str,
     optional_str_list,
+    optional_value,
     require_str,
     strict_bool,
     strict_str,
@@ -117,11 +118,9 @@ def read(sc: SectionContext) -> dict[str, Any]:
     group_sources: list[GroupsFromEnum] = []
     for i, grp in enumerate(group_blocks):
         group = _parse_group(grp, f"groups[{i}]", prefix, previous_prefixes)
-        # Presence, not truthiness: `from_enum:` with no value is a mistake
-        # worth reporting, and `.get()` would read it as an absent key and
-        # deploy the template verbatim, leaving `{member}` in a live group
-        # name while the folder policy naming that group expanded it.
-        if "from_enum" not in grp:
+        # A blank `from_enum:` is a literal group, which the load records. A
+        # `{member}` left in its name is still refused below.
+        if optional_value(grp, "from_enum", f"groups[{i}]") is None:
             _reject_member_placeholders(group, f"groups[{i}]")
             groups.append(group)
             continue
@@ -211,8 +210,7 @@ def _parse_group(
             require_str(grp, "name", context), prefix, f"{context}.name",
         ),
         description=optional_str(grp, "description", context) or "",
-        # `owner_group:` with nothing after it reached `expand_prefix` as
-        # None and raised TypeError, which the CLI does not catch.
+        # `strict_str`, so a blank takes the default rather than reaching `expand_prefix` as None.
         owner_group=expand_prefix(
             strict_str(grp, "owner_group", context, default="Site Owners"),
             prefix, f"{context}.owner_group",
@@ -306,8 +304,8 @@ def _parse_policy(
     # asked to keep.
     break_inheritance = strict_bool(raw_policy, "break_inheritance", context)
     # The shape before the word, as the other two vocabulary readers do, and
-    # `strict_str` so `reconcile:` with nothing after it is refused rather
-    # than read as the mode that leaves an existing ACL alone.
+    # `strict_str` so a blank `reconcile:` is recorded: its default is the
+    # mode that leaves an existing ACL alone.
     reconcile_mode = cast(
         "ReconcileMode",
         strict_str(raw_policy, "reconcile", context, default="configured"),
@@ -323,7 +321,10 @@ def _parse_policy(
             "an inherited ACL cannot be reconciled as a list-scoped allowlist",
         )
     assignments: list[RoleAssignment] = []
-    raw_assignments: object = raw_policy.get("assignments", [])
+    # A blank `assignments:` grants nothing, which is also what an absent key means.
+    raw_assignments: object = raw_policy.get("assignments")
+    if raw_assignments is None:
+        raw_assignments = list[object]()
     if not isinstance(raw_assignments, list):
         raise MappingShapeError(
             f"{context}.assignments must be a list, got {raw_assignments!r}",

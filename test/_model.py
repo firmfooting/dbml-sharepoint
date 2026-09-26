@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any, TypedDict, Unpack
 
 from dbml_sharepoint.model.mapping_types import (
+    BlankDefault,
     ColumnValidation,
     CrossSiteRef,
     DemoItem,
@@ -236,6 +237,7 @@ class MappingSections(TypedDict, total=False):
     list_validation: dict[str, ListValidation]
     retired_columns: dict[str, dict[str, RetiredColumn]]
     retirement_strips: list[RetirementStrip]
+    blank_defaults: list[BlankDefault]
     seal_columns: bool
     prevent_list_deletion: bool
     attachments: bool

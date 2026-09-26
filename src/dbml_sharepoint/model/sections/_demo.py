@@ -72,7 +72,7 @@ def _parse_demo_file(raw_file: Any, context: str) -> DemoFile | None:
     return DemoFile(
         name=require_str(raw_file, "name", context),
         folder=optional_str(raw_file, "folder", context),
-        # `strict_str`: the fallback is a body of text, so `content:` with
-        # nothing after it must not silently upload the sample paragraph.
+        # `strict_str`: the fallback is a body of text, so a blank `content:`
+        # that uploads the sample paragraph is recorded.
         content=strict_str(raw_file, "content", context, default=DEMO_FILE_CONTENT),
     )

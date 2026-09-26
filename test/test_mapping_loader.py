@@ -1,7 +1,7 @@
 # test/test_mapping_loader.py
 import ast
 from collections import Counter
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import fields, replace
 from pathlib import Path
 from typing import Any
@@ -23,6 +23,7 @@ from dbml_sharepoint.model.errors import (
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     DEMO_FILE_CONTENT,
+    BlankDefault,
     FoldersFromEnum,
     FormVisibility,
     ItemSecurity,
@@ -30,6 +31,7 @@ from dbml_sharepoint.model.mapping_types import (
     RetiredColumn,
     Versioning,
 )
+from dbml_sharepoint.model.reading import strict_str
 from dbml_sharepoint.model.sections import (
     KNOWN_SECTIONS,
     SECTION_FAMILIES,
@@ -197,24 +199,17 @@ def test_site_group_empty_gate_requires_boolean(tmp_path: Path) -> None:
     )
 
 
-def test_a_group_source_with_no_enum_named_is_refused(tmp_path: Path) -> None:
-    """`from_enum:` with nothing after it is a mistake, not a literal group.
-
-    Read by presence rather than truthiness. Treating an explicit null as an
-    absent key deployed the template verbatim, which put a literal
-    `{member}` in a live group name while the folder policy naming that group
-    expanded it to something else and then could not resolve its principal.
-    """
+def test_a_blank_group_source_still_refuses_a_member_placeholder(tmp_path: Path) -> None:
+    """`from_enum:` with nothing after it reads as absent, so the group is a
+    literal one, and a `{member}` in its name is refused as it is on any
+    literal group rather than deployed verbatim."""
     write_mapping(tmp_path, blocks(entities("Project"), """
         groups:
           - from_enum:
             name: "{member} Editors"
     """), name="mapping.yaml")
 
-    _refuses(
-        tmp_path / "mapping.yaml", MappingShapeError,
-        "from_enum must be a string",
-    )
+    _refuses(tmp_path / "mapping.yaml", MappingValueError, r"groups\[0\]\.name")
 
 
 def test_a_member_placeholder_on_a_literal_group_is_refused(tmp_path: Path) -> None:
@@ -1542,10 +1537,12 @@ def test_the_families_produce_every_field_exactly_once(tmp_path: Path) -> None:
         name for _, _, fields_ in _run_families(tmp_path, _MINIMAL_DOCUMENT) for name in fields_
     )
     # `retirement_strips` is filled by the retirement fold after the
-    # families run; `source_paths` is assembled by the runner from two of
-    # the fields below.
+    # families run, and `blank_defaults` by the runner's collector around
+    # them; `source_paths` is assembled by the runner from two of the fields
+    # below.
     expected = (
-        {f.name for f in fields(mapping_types.Mapping)} - {"retirement_strips"}
+        {f.name for f in fields(mapping_types.Mapping)}
+        - {"retirement_strips", "blank_defaults"}
     ) | (
         {f.name for f in fields(mapping_types.MappingBundle)} - {"mapping", "source_paths"}
     )
@@ -3716,8 +3713,8 @@ def test_an_item_security_scope_splits_the_type_from_the_word(tmp_path: Path) ->
 
 
 #: A value of the wrong YAML type that reached a loop, a path join or a typed
-#: field unchecked: `sort: 5` and a blank `assignments:` raised a bare
-#: TypeError, and `level: 5` loaded as a permission level.
+#: field unchecked: `sort: 5` raised a bare TypeError, and `level: 5` loaded
+#: as a permission level.
 _WRONG_TYPE_CASES = [
     pytest.param(
         _views_yaml("views:\n  Project:\n    - { title: All, fields: [Title], sort: 5 }"),
@@ -3728,16 +3725,6 @@ _WRONG_TYPE_CASES = [
         _views_yaml("views:\n  Project:\n    - { title: All, fields: [Title], sort: Title }"),
         "views.Project[0].sort must be a list, got 'Title'",
         id="view-sort-text",
-    ),
-    pytest.param(
-        blocks(entities("Risk"), """
-            list_permissions:
-              default:
-                break_inheritance: true
-                assignments:
-        """),
-        "list_permissions.default.assignments must be a list, got None",
-        id="assignments-blank",
     ),
     pytest.param(
         blocks(entities("Risk"), """
@@ -3901,6 +3888,16 @@ _REQUIRED_INNER_KEYS = [
         "groups[0].name is required",
         id="group",
     ),
+    pytest.param(
+        "groups:\n  - { name: , description: nothing }",
+        "groups[0].name is required",
+        id="group-name-blank",
+    ),
+    pytest.param(
+        "watched_lists:\n  - { entity: Risk, column: }",
+        "watched_lists[0].column is required",
+        id="watched-column-blank",
+    ),
 ]
 
 
@@ -3945,14 +3942,12 @@ def test_a_form_body_field_that_is_not_a_name_survives_the_retirement_fold(
     assert body["sections"][0]["fields"] == [{"nested": True}]
 
 
-#: One declaration per reader that answers an ABSENT key with a default of
-#: its own. A key written with nothing after it holds `null`, which is a
-#: declaration and not an absence, so each of these has to be refused rather
-#: than answered with the loader's choice. Three of them regressed in this
-#: layer: `str(raw.get(key, default))` put `'None'` through the vocabulary
-#: check that followed, and `optional_str` returns the same `None` for a
-#: declared null as for a key nobody wrote, which selected the default.
-_EXPLICIT_NULL_CASES = [
+#: One declaration per reader whose default decides deployed behaviour, each
+#: key written with no value. A blank reads as absent (#665), so each takes its
+#: default, and because the author may have meant a value the load records it
+#: and validation warns. These were refused until #665; see `model/reading.py`
+#: for the rule.
+_RECORDED_BLANK_CASES = [
     pytest.param(
         _views_yaml("""
             views:
@@ -3960,29 +3955,55 @@ _EXPLICIT_NULL_CASES = [
                 - title: All
                   fields: [Title]
                   sort:
-                    - { field: Title, direction: null }
+                    - { field: Title, direction: }
         """),
-        "views.Project[0].sort[0].direction must be a string, got None",
+        "views.Project[0].sort[0].direction", "asc",
+        lambda b: b.mapping.views["Project"][0].sort[0].direction,
         id="view-sort-direction",
+    ),
+    pytest.param(
+        _views_yaml("""
+            views:
+              Project:
+                - title: All
+                  fields: [Title]
+                  where:
+        """),
+        "views.Project[0].where", None,
+        lambda b: b.mapping.views["Project"][0].where,
+        id="view-where",
     ),
     pytest.param(
         blocks(entities("Risk"), """
             form_visibility:
               Risk:
-                reconcile: null
+                reconcile:
                 columns: {}
         """),
-        "form_visibility.Risk.reconcile must be a string, got None",
+        "form_visibility.Risk.reconcile", "exact",
+        lambda b: b.mapping.form_visibility["Risk"].reconcile,
         id="form-visibility-reconcile",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            form_visibility:
+              Risk:
+                columns:
+                  Title: { new: true, existing: false, when: }
+        """),
+        "form_visibility.Risk.columns.Title.when", None,
+        lambda b: b.mapping.form_visibility["Risk"].columns["Title"].when,
+        id="form-visibility-when",
     ),
     pytest.param(
         blocks(entities("Risk"), """
             column_validation:
               Risk:
-                reconcile: null
+                reconcile:
                 columns: {}
         """),
-        "column_validation.Risk.reconcile must be a string, got None",
+        "column_validation.Risk.reconcile", "exact",
+        lambda b: b.mapping.column_validation["Risk"].reconcile,
         id="column-validation-reconcile",
     ),
     pytest.param(
@@ -3990,18 +4011,29 @@ _EXPLICIT_NULL_CASES = [
             list_permissions:
               default:
                 break_inheritance: true
-                reconcile: null
+                reconcile:
         """),
-        "list_permissions.default.reconcile must be a string, got None",
+        "list_permissions.default.reconcile", "configured",
+        lambda b: b.mapping.permissions.default_policy.reconcile_mode,
         id="list-permissions-reconcile",
     ),
     pytest.param(
         blocks(entities("Risk"), """
             groups:
-              - { name: Team, owner_group: null }
+              - { name: Team, owner_group: }
         """),
-        "groups[0].owner_group must be a string, got None",
+        "groups[0].owner_group", "Site Owners",
+        lambda b: b.mapping.permissions.groups[0].owner_group,
         id="group-owner-group",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            groups:
+              - { name: Team, from_enum: }
+        """),
+        "groups[0].from_enum", None,
+        lambda b: next((s.enum for s in b.mapping.permissions.group_sources), None),
+        id="group-from-enum",
     ),
     pytest.param(
         blocks(
@@ -4011,41 +4043,148 @@ _EXPLICIT_NULL_CASES = [
               Docs:
                 - key: a
                   values: { Title: A }
-                  file: { name: a.txt, content: null }
+                  file: { name: a.txt, content: }
             """,
         ),
-        "demo_items.Docs[0].file.content must be a string, got None",
+        "demo_items.Docs[0].file.content", DEMO_FILE_CONTENT,
+        lambda b: b.mapping.demo_items["Docs"][0].file.content,
         id="demo-file-content",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            versioning:
+              default:
+                major_version_limit:
+        """),
+        "versioning.default.major_version_limit", Versioning.major_version_limit,
+        lambda b: b.mapping.versioning_default.major_version_limit,
+        id="major-version-limit",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            versioning:
+              default: { major_version_limit: 50 }
+              overrides:
+                Risk: { major_version_limit: }
+        """),
+        "versioning.overrides.Risk.major_version_limit", 50,
+        lambda b: b.mapping.versioning_for("Risk").major_version_limit,
+        id="versioning-override-takes-the-resolved-default",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            item_security:
+              default: { read: own }
+              overrides:
+                Risk: { read: }
+        """),
+        "item_security.overrides.Risk.read", "own",
+        lambda b: b.mapping.item_security_for("Risk").read,
+        id="item-security-override-takes-the-resolved-default",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "seal_columns:"),
+        "mapping.seal_columns", False,
+        lambda b: b.mapping.seal_columns,
+        id="seal-columns",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            reporting:
+              users_table:
+        """),
+        "reporting.users_table", False,
+        lambda b: b.mapping.reporting.users_table,
+        id="reporting-switch",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            retired_columns:
+              Risk:
+                Old: { retired: "2026-01-01", hide_existing: }
+        """),
+        "retired_columns.Risk.Old.hide_existing", False,
+        lambda b: b.mapping.retired_columns["Risk"]["Old"].hide_existing,
+        id="hide-existing",
     ),
 ]
 
 
-@pytest.mark.parametrize(("body", "message"), _EXPLICIT_NULL_CASES)
-def test_an_explicit_null_is_refused_where_a_default_would_be_chosen(
-    tmp_path: Path, body: str, message: str,
+@pytest.mark.parametrize(
+    ("body", "path", "default", "read"), _RECORDED_BLANK_CASES,
+)
+def test_a_blank_key_takes_a_behavioural_default_and_is_recorded(
+    tmp_path: Path,
+    body: str,
+    path: str,
+    default: object,
+    read: Callable[[Any], object],
 ) -> None:
-    """A shape error rather than a value error, by the rule the rest of this
-    layer follows: `None` is not a word outside the vocabulary, it is the
-    wrong YAML type for a key that takes a string.
+    """The default is what the mapping gets, and the record names the path.
 
-    The absence of this test is why the regression landed. Every one of these
-    mappings loaded clean, and a sort direction the author left blank came
-    out as `asc` rather than as a question.
+    Before #665 each of these was refused, or raised a bare TypeError. The
+    build now goes ahead with what an absent key would give, and the load
+    records it.
     """
     write_mapping(tmp_path, body)
-    with pytest.raises(MappingError) as err:
-        load_mapping(tmp_path / "m.yaml")
-    assert type(err.value) is MappingShapeError
-    assert str(err.value) == message
+    bundle = load_mapping(tmp_path / "m.yaml")
+    assert read(bundle) == default
+    assert bundle.mapping.blank_defaults == [BlankDefault(path=path, default=default)]
+
+
+#: One declaration per blank key whose default is empty text, an empty list or
+#: no value. A blank there can only mean nothing, so nothing is recorded.
+_SILENT_BLANK_CASES = [
+    pytest.param(
+        blocks(entities("Risk"), """
+            groups:
+              - { name: Team, description: }
+        """),
+        lambda b: b.mapping.permissions.groups[0].description, "",
+        id="group-description",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            list_permissions:
+              default:
+                break_inheritance: true
+                assignments:
+        """),
+        lambda b: b.mapping.permissions.default_policy.assignments, [],
+        id="assignments",
+    ),
+    pytest.param(
+        entities(entity("Risk", title="")),
+        lambda b: b.mapping.entities["Risk"].title, None,
+        id="entity-title",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "read", "default"), _SILENT_BLANK_CASES)
+def test_a_blank_key_whose_default_is_empty_is_not_recorded(
+    tmp_path: Path, body: str, read: Callable[[Any], object], default: object,
+) -> None:
+    """A blank `assignments:` was refused as the wrong type until #665."""
+    write_mapping(tmp_path, body)
+    bundle = load_mapping(tmp_path / "m.yaml")
+    assert read(bundle) == default
+    assert bundle.mapping.blank_defaults == []
+
+
+def test_a_reader_outside_a_load_takes_the_default_without_a_record() -> None:
+    """The collector is opened by `load_mapping`, so a reader called on its
+    own has nowhere to record and must still answer."""
+    assert strict_str({"direction": None}, "direction", "sort", default="asc") == "asc"
 
 
 def test_an_optional_string_still_refuses_the_wrong_shape(tmp_path: Path) -> None:
     """`optional_str` keeps its own job where None is the field's real value.
 
-    The three vocabulary readers moved to `strict_str`, and they were what
-    exercised this refusal, so the typo the docstring is written around is
-    what pins it now: `display_column: [Title]` reached a set-membership test
-    deep in validation and raised `TypeError: unhashable type: 'list'`.
+    The vocabulary readers use `strict_str`, and they were what exercised
+    this refusal, so the typo the docstring is written around is what pins
+    it now: `display_column: [Title]` reached a set-membership test deep in
+    validation and raised `TypeError: unhashable type: 'list'`.
     """
     write_mapping(tmp_path, entities(entity("Risk", display_column="[Title]")))
     with pytest.raises(MappingError) as err:
@@ -4054,28 +4193,27 @@ def test_an_optional_string_still_refuses_the_wrong_shape(tmp_path: Path) -> Non
     assert str(err.value) == "entities.Risk.display_column must be a string, got ['Title']"
 
 
-def test_an_explicit_null_in_a_retention_policy_is_refused(tmp_path: Path) -> None:
+def test_a_blank_key_in_a_retention_policy_takes_its_default(tmp_path: Path) -> None:
     """The same reader in a file the mapping points at. 'creation' is one
-    retention clock of several, so a blank `trigger:` must not pick it."""
+    retention clock of several, so a blank `trigger:` that picks it is
+    recorded under the file's own path."""
     (tmp_path / "r.yaml").write_text(
-        "policies:\n  keep:\n    trigger: null\nlist_defaults: {}\n", encoding="utf-8",
+        "policies:\n  keep:\n    trigger:\nlist_defaults: {}\n", encoding="utf-8",
     )
     write_mapping(
         tmp_path, blocks(entities("Risk"), "retention_policies_source: r.yaml"),
     )
-    with pytest.raises(MappingError) as err:
-        load_mapping(tmp_path / "m.yaml")
-    assert type(err.value) is MappingShapeError
-    assert str(err.value) == "policies.keep.trigger must be a string, got None"
+    bundle = load_mapping(tmp_path / "m.yaml")
+    assert bundle.retention_policies["keep"].trigger == "creation"
+    assert bundle.mapping.blank_defaults == [
+        BlankDefault(path="policies.keep.trigger", default="creation"),
+    ]
 
 
-def test_an_absent_key_still_takes_the_default_the_null_case_refuses(
-    tmp_path: Path,
-) -> None:
-    """The refusals above are only right while absence still means the
-    default. A reader that refused both would satisfy every case in that
-    table and break every mapping that simply leaves the key out, which is
-    most of them.
+def test_an_absent_key_takes_the_default_without_a_record(tmp_path: Path) -> None:
+    """The warning is only right while absence stays silent. A reader that
+    recorded both would satisfy every case above and warn on every mapping
+    that simply leaves the key out, which is most of them.
     """
     (tmp_path / "r.yaml").write_text(
         "policies:\n  keep:\n    retain_years: 7\nlist_defaults: {}\n", encoding="utf-8",
@@ -4107,6 +4245,7 @@ def test_an_absent_key_still_takes_the_default_the_null_case_refuses(
     ))
     bundle = load_mapping(tmp_path / "m.yaml")
     mapping = bundle.mapping
+    assert mapping.blank_defaults == []
     assert mapping.views["Project"][0].sort[0].direction == "asc"
     assert mapping.form_visibility["Project"].reconcile == "exact"
     permissions = mapping.permissions
