@@ -9,7 +9,12 @@ diagnosed by the validator, which has the schema the operators need.
 from collections.abc import Mapping
 from typing import Any
 
-from dbml_sharepoint.model._keys import _known_keys, _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model._keys import (
+    _known_keys,
+    _reject_unknown_keys,
+    _require_mapping,
+    _text_key,
+)
 from dbml_sharepoint.model.conditions import Condition, parse_condition
 from dbml_sharepoint.model.errors import (
     MappingShapeError,
@@ -69,6 +74,8 @@ def _entity_section(block: Any, context: str) -> tuple[str, dict[str, Any]]:
         raise MappingShapeError(
             f"{context}.columns: expected a mapping of column name to declaration",
         )
+    for name in columns:
+        _text_key(name, f"{context}.columns")
     return reconcile, columns
 
 
