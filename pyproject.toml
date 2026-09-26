@@ -73,6 +73,8 @@ dev = [
   "pytest-xdist>=3.6.0",
   "ruff>=0.16.0",
   "pyrefly>=1.3.0",
+  # PyYAML ships no py.typed: without these stubs pyrefly types every `yaml`
+  # call as Unknown and still passes, so removing them weakens the gate silently.
   "types-PyYAML>=6.0.12",
   "j2lint>=1.2.0",
   # The git-hook runner. Pinned here for the same reason as every other gate:
@@ -213,7 +215,7 @@ ignore-missing-imports = ["pydbml.*"]
 [tool.pyrefly.errors]
 no-any-return = "error"
 implicit-any-parameter = "error"
-redundant-cast = "warn"
+redundant-cast = "error"
 unannotated-return = "error"
 implicit-any = "error"
 # mypy --strict's no_implicit_reexport, warn_unused_ignores and strict_equality,
