@@ -15,7 +15,7 @@ both the build and the check read.
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, TypedDict
 
 from dbml_sharepoint.analysis.clock_cells import cell_for
 from dbml_sharepoint.analysis.clock_usage import clock_usage
@@ -65,12 +65,21 @@ def _spelling(offset: int) -> str:
     return f"today+{offset}" if offset > 0 else f"today-{-offset}"
 
 
+class _Row(TypedDict):
+    """One scratch-list item. `day` predicts which queries match it and is not emitted."""
+
+    id: str
+    column: str
+    value: dict[str, Any]
+    day: int | None
+
+
 class _Targets:
     """Accumulates columns, rows and checks while the cells are walked."""
 
     def __init__(self) -> None:
         self.columns: dict[str, dict[str, Any]] = {}
-        self.rows: dict[str, dict[str, Any]] = {}
+        self.rows: dict[str, _Row] = {}
         self.checks: list[dict[str, Any]] = []
 
     def column(self, name: str, kind: str, display_format: int, **extra: Any) -> str:
@@ -229,10 +238,11 @@ class _Targets:
         })
 
 
-def _not_after_now(row: dict[str, Any]) -> bool:
+def _not_after_now(row: _Row) -> bool:
     value = row["value"]
     if value["kind"] == "instant":
-        return bool(value["seconds"] <= 0)
+        seconds: int = value["seconds"]
+        return seconds <= 0
     return bool(value["kind"] == "midnight" and row["day"] is not None and row["day"] <= 0)
 
 
