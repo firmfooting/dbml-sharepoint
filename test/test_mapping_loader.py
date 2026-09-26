@@ -5052,6 +5052,26 @@ def test_a_pointed_file_holding_a_falsy_value_is_not_read_as_empty(tmp_path: Pat
     assert load_mapping(tmp_path / "m.yaml").mapping.derived_columns == {}
 
 
+@pytest.mark.parametrize(("value", "message"), [
+    pytest.param("[P]", "list_defaults.Risk must be a string, got ['P']", id="list"),
+    pytest.param("", "list_defaults.Risk is required", id="blank"),
+])
+def test_a_retention_list_default_that_is_not_a_policy_name_is_refused(
+    tmp_path: Path, value: str, message: str,
+) -> None:
+    """`Risk: [P]` loaded, and the validator's policy lookup raised a bare
+    TypeError on it."""
+    (tmp_path / "r.yaml").write_text(
+        f"policies:\n  P: {{ retain_years: 1 }}\nlist_defaults:\n  Risk: {value}\n",
+        encoding="utf-8",
+    )
+    write_mapping(tmp_path, blocks(entities("Risk"), "retention_policies_source: r.yaml"))
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == message
+
+
 def test_an_unquoted_retired_date_still_loads_as_iso_text(tmp_path: Path) -> None:
     """The mapping reference writes `retired:` unquoted, which YAML reads as a
     date. That one non-text type is still accepted, as release.yaml's `date` is."""

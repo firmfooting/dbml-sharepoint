@@ -16,6 +16,7 @@ from dbml_sharepoint.model.reading import (
     load_yaml,
     optional_int,
     optional_str,
+    require_str,
     strict_str,
 )
 from dbml_sharepoint.model.sections.context import SectionContext
@@ -113,5 +114,9 @@ def _load_retention(path: Path) -> tuple[dict[str, RetentionPolicy], dict[str, s
             # several, so a blank `trigger:` that picks it is recorded.
             trigger=strict_str(spec, "trigger", context, default="creation"),
         )
-    list_defaults = dict(_require_mapping(raw.get("list_defaults"), "list_defaults"))
+    raw_defaults = _require_mapping(raw.get("list_defaults"), "list_defaults")
+    # Text, where `Risk: [P]` loaded and the validator's policy lookup raised TypeError.
+    list_defaults = {
+        entity: require_str(raw_defaults, entity, "list_defaults") for entity in raw_defaults
+    }
     return policies, list_defaults
