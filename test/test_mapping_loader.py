@@ -4544,6 +4544,29 @@ _COERCED_VALUE_CASES = [
         "views.Project[0].group_by.fields must be a list of strings, got 5",
         id="view-group-by-fields",
     ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            column_validation:
+              Risk:
+                columns:
+                  Title:
+                    when: [{ field: Title, op: is_not_null }]
+                    message: [Give it a title]
+        """),
+        "column_validation.Risk.columns.Title.message must be a string, "
+        "got ['Give it a title']",
+        id="column-validation-message",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            list_validation:
+              Risk:
+                when: [{ field: Title, op: is_not_null }]
+                message: 5
+        """),
+        "list_validation.Risk.message must be a string, got 5",
+        id="list-validation-message",
+    ),
 ]
 
 

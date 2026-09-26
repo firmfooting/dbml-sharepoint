@@ -21,7 +21,7 @@ from dbml_sharepoint.model.mapping_types import (
     FormVisibility,
     ListValidation,
 )
-from dbml_sharepoint.model.reading import optional_value, strict_bool, strict_str
+from dbml_sharepoint.model.reading import optional_value, require_str, strict_bool, strict_str
 from dbml_sharepoint.model.sections.context import SectionContext
 
 
@@ -112,7 +112,8 @@ def _parse_column_validation(block: Any, context: str) -> EntitySection[ColumnVa
                 )
         columns[name] = ColumnValidation(
             when=parse_condition(declared["when"], f"{where}.when"),
-            message=str(declared["message"]),
+            # `str()` showed `message: [x]` to the person whose save failed as "['x']".
+            message=require_str(declared, "message", where),
         )
     return EntitySection(reconcile=reconcile, columns=columns)
 
@@ -142,5 +143,5 @@ def _parse_list_validation(rule: Any, context: str) -> ListValidation:
             raise MappingShapeError(f"{context}: {key!r} is required")
     return ListValidation(
         when=parse_condition(declared["when"], f"{context}.when"),
-        message=str(declared["message"]),
+        message=require_str(declared, "message", context),
     )
