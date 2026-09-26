@@ -23,6 +23,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
+from dbml_sharepoint.model._keys import _text_key
 from dbml_sharepoint.model._retirement import _apply_retirement
 from dbml_sharepoint.model.errors import UnknownMappingKeyError
 from dbml_sharepoint.model.mapping_types import _REMOVED_SECTIONS, Mapping, MappingBundle
@@ -44,10 +45,10 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
     # Before any family runs, so the highest-signal error is the one
     # reported: a misspelled section used to lose to a shape error anywhere
     # in the sections parsed ahead of this gate.
-    unknown_sections = set(raw) - KNOWN_SECTIONS
+    unknown_sections = {_text_key(key, "mapping") for key in raw} - KNOWN_SECTIONS
     if unknown_sections:
         raise UnknownMappingKeyError(
-            f"unknown mapping section(s) {sorted(unknown_sections, key=str)}. "
+            f"unknown mapping section(s) {sorted(unknown_sections)}. "
             f"Unknown keys used to be ignored, so a misspelled section "
             f"silently deployed nothing.",
         )

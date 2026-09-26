@@ -46,26 +46,30 @@ def test_release_unknown_keys_are_rejected(tmp_path: Path) -> None:
         load_release(tmp_path / "release.yaml")
 
 
-def test_release_unknown_keys_of_two_types_are_named_rather_than_compared(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    ("typed", "read"),
+    [
+        # Sorting 2026 beside the text key `note` raised a bare TypeError.
+        ("2026: x\nnote: y", "key 2026 is not text (YAML read it as int)"),
+        # Named as the unknown key False, which is not what was typed.
+        ("No: x", "key False is not text (YAML read it as bool)"),
+    ],
+    ids=["int-beside-text", "bool"],
+)
+def test_a_release_key_that_is_not_text_is_refused_before_the_unknown_keys(
+    tmp_path: Path, typed: str, read: str,
 ) -> None:
-    """YAML reads `2026:` as an int, and sorting it beside a text key raised a
-    bare TypeError before the refusal could be built."""
     write_mapping(
         tmp_path,
-        """
-        release: "1.0.0"
-        date: "2026-01-01"
-        deployer_version: "dbml-sharepoint/0.1.0"
-        schema_version: "1.0.0"
-        2026: x
-        note: y
-        """,
+        'release: "1.0.0"\ndate: "2026-01-01"\n'
+        'deployer_version: "dbml-sharepoint/0.1.0"\nschema_version: "1.0.0"\n' + typed,
         prefix=None,
         name="release.yaml",
     )
-    with pytest.raises(ValueError, match=r"unknown key\(s\) \[2026, 'note'\]"):
-        load_release(tmp_path / "release.yaml")
+    path = tmp_path / "release.yaml"
+    with pytest.raises(ValueError) as err:
+        load_release(path)
+    assert str(err.value) == f"{path}: {read}; quote it"
 
 
 def test_release_missing_key_is_named_not_a_keyerror(tmp_path: Path) -> None:
