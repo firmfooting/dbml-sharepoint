@@ -29,6 +29,7 @@ import inspect
 import re
 import shutil
 import sys
+from collections.abc import Collection
 from pathlib import Path, PurePath
 from types import FunctionType
 
@@ -307,18 +308,22 @@ def stable_repr(obj: object) -> str:
         # Published docs showing it would teach the wrong literal.
         if not obj:
             return f"{type(obj).__name__}()"
-        inner = ", ".join(sorted(stable_repr(x) for x in obj))
+        members: Collection[object] = obj
+        inner = ", ".join(sorted(stable_repr(x) for x in members))
         return f"{type(obj).__name__}({{{inner}}})"
     if isinstance(obj, dict):
+        entries: dict[object, object] = obj
         items = ", ".join(
-            f"{stable_repr(k)}: {stable_repr(v)}" for k, v in obj.items()
+            f"{stable_repr(k)}: {stable_repr(v)}" for k, v in entries.items()
         )
         return f"{{{items}}}"
     if isinstance(obj, tuple):
-        inner = ", ".join(stable_repr(x) for x in obj)
-        return "(" + inner + ("," if len(obj) == 1 else "") + ")"
+        elements: tuple[object, ...] = obj
+        inner = ", ".join(stable_repr(x) for x in elements)
+        return "(" + inner + ("," if len(elements) == 1 else "") + ")"
     if isinstance(obj, list):
-        return "[" + ", ".join(stable_repr(x) for x in obj) + "]"
+        values: list[object] = obj
+        return "[" + ", ".join(stable_repr(x) for x in values) + "]"
     if (
         dataclasses.is_dataclass(obj)
         and not isinstance(obj, type)
@@ -478,7 +483,8 @@ def generate_templates_page() -> None:
     phase_by_template: dict[str, str] = {}
     for group in phases_context():
         for step in group["steps"]:
-            phase_by_template[step["template"]] = (
+            template: str = step["template"]
+            phase_by_template[template] = (
                 f"Phase {step['number']} ({group['name']}): {step['name']}"
             )
 
@@ -525,9 +531,9 @@ def generate_conditions_page() -> None:
     rewrites itself, and an operator a target cannot express prints as
     "not supported" because the renderer raised.
     """
-    rendering = importlib.import_module("dbml_sharepoint.analysis.condition_rendering")
-    conditions = importlib.import_module("dbml_sharepoint.analysis.conditions")
-    model = importlib.import_module("dbml_sharepoint.model.conditions")
+    from dbml_sharepoint.analysis import condition_rendering as rendering
+    from dbml_sharepoint.analysis import conditions
+    from dbml_sharepoint.model import conditions as model
     parse = model.parse_condition
 
     # `Events` is multi-value, and it is in this table so the two membership
