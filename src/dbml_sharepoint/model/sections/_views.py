@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from dbml_sharepoint.analysis.typemap import TOTAL_FUNCTIONS
-from dbml_sharepoint.model._keys import _known_keys, _require_list, _require_mapping
+from dbml_sharepoint.model._keys import _known_keys, _require_list, _require_mapping, _text_key
 from dbml_sharepoint.model.conditions import parse_condition
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.mapping_types import (
@@ -154,13 +154,14 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
                 f"pixel width, got {type(raw_widths).__name__}",
             )
         width_map: dict[object, object] = raw_widths
-        for col, px in width_map.items():
+        for raw_col, px in width_map.items():
+            col = _text_key(raw_col, f"{context}.widths")
             if isinstance(px, bool) or not isinstance(px, int):
                 raise MappingShapeError(
                     f"{context}: widths[{col}] must be an integer pixel "
                     f"width, got {px!r}",
                 )
-            widths[str(col)] = px
+            widths[col] = px
     raw_scope = optional_value(view, "scope", context)
     # isinstance first: a list or mapping is unhashable, and `in` over a
     # frozenset would raise the TypeError the CLI does not catch. Two
@@ -184,7 +185,8 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
                 f"aggregation, got {type(raw_totals).__name__}",
             )
         total_map: dict[object, object] = raw_totals
-        for col, func in total_map.items():
+        for raw_col, func in total_map.items():
+            col = _text_key(raw_col, f"{context}.totals")
             # Split for the same reason `scope` is: a non-string is a shape.
             if not isinstance(func, str):
                 raise MappingShapeError(
@@ -196,7 +198,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
                     f"{context}: totals[{col}] must be one of "
                     f"{', '.join(sorted(TOTAL_FUNCTIONS))}, got {func!r}",
                 )
-            totals[str(col)] = func
+            totals[col] = func
     return ViewDef(
         title=title,
         fields=list(field_names),
@@ -237,7 +239,8 @@ def _parse_field_sets(raw_sets: Any) -> dict[str, dict[str, list[str]]]:
             )
         parsed[entity] = {}
         set_map: dict[object, object] = sets
-        for set_name, columns in set_map.items():
+        for raw_set_name, columns in set_map.items():
+            set_name = _text_key(raw_set_name, f"field_sets.{entity}")
             if not isinstance(columns, list) or not all(
                 isinstance(col, str) for col in columns
             ):
@@ -246,7 +249,7 @@ def _parse_field_sets(raw_sets: Any) -> dict[str, dict[str, list[str]]]:
                     f"column names",
                 )
             column_names: list[str] = columns
-            parsed[entity][str(set_name)] = list(column_names)
+            parsed[entity][set_name] = list(column_names)
     return parsed
 
 

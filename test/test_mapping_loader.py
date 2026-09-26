@@ -5169,6 +5169,25 @@ _NON_TEXT_KEY_CASES = [
         "column_validation.Risk.columns: key 2026 is not text (YAML read it as int); quote it",
         id="column-validation-column",
     ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: All, fields: [Title], widths: { 2.10: 120 } }",
+        ),
+        "views.Project[0].widths: key 2.1 is not text (YAML read it as float); quote it",
+        id="view-widths",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: All, fields: [Title], totals: { Yes: count } }",
+        ),
+        "views.Project[0].totals: key True is not text (YAML read it as bool); quote it",
+        id="view-totals",
+    ),
+    pytest.param(
+        _views_yaml("field_sets:\n  Project:\n    2026: [Title]"),
+        "field_sets.Project: key 2026 is not text (YAML read it as int); quote it",
+        id="field-set-name",
+    ),
 ]
 
 
