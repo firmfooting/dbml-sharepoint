@@ -10,6 +10,7 @@ key.
 from typing import Any
 
 from dbml_sharepoint.model._keys import _require_mapping
+from dbml_sharepoint.model.reading import optional_str
 from dbml_sharepoint.model.sections.context import SectionContext
 
 
@@ -18,7 +19,8 @@ def read(sc: SectionContext) -> dict[str, Any]:
         sc.block("extensions"), "extensions",
     )
     return {
-        "extension": sc.block("extension"),
+        # Refused as the wrong type here, where a list was reported as an unknown extension.
+        "extension": optional_str(sc.blocks, "extension", "mapping"),
         "extension_configs": {
             name: dict(block or {}) for name, block in extensions_block.items()
         },

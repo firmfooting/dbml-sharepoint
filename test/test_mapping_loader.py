@@ -11,7 +11,7 @@ import yaml
 from _findings import only
 from _model import schema as make_schema
 from _model import table as make_table
-from _packs import blocks, entities, entity, with_tail, write_mapping
+from _packs import DEFAULT_PREFIX, blocks, entities, entity, with_tail, write_mapping
 from _paths import FIXTURES, PACKAGE
 
 from dbml_sharepoint.analysis.findings import Finding, FindingCode
@@ -4347,6 +4347,11 @@ _SILENT_BLANK_CASES = [
         lambda b: b.mapping.views["Project"][0].group_by.fields, ["Status", "Owner"],
         id="view-group-by-field-blank",
     ),
+    pytest.param(
+        blocks(entities("Risk"), "prefix_owner:"),
+        lambda b: b.mapping.prefix_owner, "",
+        id="prefix-owner",
+    ),
 ]
 
 
@@ -4816,6 +4821,27 @@ _COERCED_VALUE_CASES = [
         "list_permissions.default.site_role must be a string, got ['default']",
         id="default-policy-site-role",
     ),
+    pytest.param(
+        blocks("prefix: 5", entities("Risk")),
+        "mapping.prefix must be a string, got 5",
+        id="prefix",
+    ),
+    pytest.param(
+        # Every list was titled "None" followed by its entity name.
+        blocks("prefix:", entities("Risk")),
+        "mapping.prefix is required",
+        id="prefix-blank",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "prefix_owner: [Platform team]"),
+        "mapping.prefix_owner must be a string, got ['Platform team']",
+        id="prefix-owner",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "extension: [audit]"),
+        "mapping.extension must be a string, got ['audit']",
+        id="extension",
+    ),
 ]
 
 
@@ -4825,7 +4851,10 @@ def test_a_value_the_loader_coerced_is_refused_by_its_path(
 ) -> None:
     """Each loaded as its `str()` or its truthiness and deployed that, with
     nothing in the build to say the value was not what the author wrote."""
-    write_mapping(tmp_path, body)
+    # A case that declares its own prefix replaces the one `write_mapping` adds.
+    write_mapping(
+        tmp_path, body, prefix=None if body.startswith("prefix:") else DEFAULT_PREFIX,
+    )
     with pytest.raises(MappingError) as err:
         load_mapping(tmp_path / "m.yaml")
     assert type(err.value) is MappingShapeError
