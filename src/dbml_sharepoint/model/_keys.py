@@ -5,9 +5,31 @@ Lives alone so the parsers and the retirement fold can both apply it
 without importing each other.
 """
 
+import datetime as dt
 from typing import Any
 
 from dbml_sharepoint.model.errors import MappingShapeError, UnknownMappingKeyError
+
+
+def _text_key(key: object, context: str) -> str:
+    """`key` as the name the author typed, or fail saying to quote it.
+
+    YAML 1.1 resolves an unquoted key as it resolves a value, so `No:` loads
+    as False, `2.10:` as 2.1, `010:` as 8 and `~:` as None. None of those is
+    the text that was typed, and `str()` cannot recover it: `2.10` comes back
+    as "2.1". Normalising also merged `1:` with a `"1":` beside it, one entry
+    silently replacing the other. Every key this loader reads is a name, so a
+    key that is not text is refused.
+    """
+    if isinstance(key, str):
+        return key
+    # "NoneType" is Python's word; the author wrote `~` or nothing, which YAML calls null.
+    kind = "null" if key is None else type(key).__name__
+    # The ISO text the author typed, not `datetime.date(2026, 9, 1)`.
+    shown = key.isoformat() if isinstance(key, dt.date) else repr(key)
+    raise MappingShapeError(
+        f"{context}: key {shown} is not text (YAML read it as {kind}); quote it",
+    )
 
 
 def _require_mapping(
@@ -55,6 +77,8 @@ def _require_mapping(
     `_reject_unknown_keys` says so: a level that still reads
     `x.get("default") or {}` coerces an empty list right back to an empty
     mapping and the section loads as absent.
+
+    Every key must be text, because each one is a name: see `_text_key`.
     """
     if block is None:
         if not allow_absent:
@@ -67,10 +91,9 @@ def _require_mapping(
             f"{context}: expected a mapping of names, got {type(block).__name__}",
         )
     entries: dict[object, Any] = block
-    if all(isinstance(key, str) for key in entries):
-        return block
-    # YAML reads a key such as `2026:` as an int; normalised once here, not by every caller.
-    return {str(key): value for key, value in entries.items()}
+    for key in entries:
+        _text_key(key, context)
+    return block
 
 
 def _require_list(block: object, context: str) -> list[object]:
@@ -109,17 +132,18 @@ def _known_keys(
 
     Every key is one of `allowed`, so the result is keyed by `str`; each
     value is still unchecked YAML, so it is `object` until the caller
-    narrows it.
+    narrows it. A key that is not text is refused by `_text_key` first,
+    because "unknown key False" does not tell the author they typed `No:`.
     """
     if not isinstance(block, dict):
         raise MappingShapeError(
             f"{context}: expected a mapping, got {type(block).__name__}",
         )
     entries: dict[object, object] = block
-    unknown = set(entries) - set(allowed)
+    unknown = {_text_key(key, context) for key in entries} - set(allowed)
     if unknown:
         raise UnknownMappingKeyError(
-            f"{context}: unknown key(s) {sorted(unknown, key=str)} "
+            f"{context}: unknown key(s) {sorted(unknown)} "
             f"(known: {sorted(allowed)})",
         )
     checked: dict[str, object] = block

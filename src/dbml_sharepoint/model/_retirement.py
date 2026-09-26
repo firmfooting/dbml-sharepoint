@@ -13,7 +13,7 @@ import datetime as dt
 from dataclasses import replace
 from typing import Any, cast
 
-from dbml_sharepoint.model._keys import _known_keys
+from dbml_sharepoint.model._keys import _known_keys, _text_key
 from dbml_sharepoint.model.errors import MappingShapeError
 from dbml_sharepoint.model.mapping_types import (
     RETIRED_SUFFIX,
@@ -55,7 +55,8 @@ def _parse_retired_columns(raw: Any, context: str) -> dict[str, RetiredColumn]:
         )
     entries: dict[object, object] = raw
     parsed: dict[str, RetiredColumn] = {}
-    for col, spec in entries.items():
+    for raw_col, spec in entries.items():
+        col = _text_key(raw_col, context)
         col_ctx = f"{context}.{col}"
         if not isinstance(spec, dict):
             raise MappingShapeError(
@@ -68,8 +69,8 @@ def _parse_retired_columns(raw: Any, context: str) -> dict[str, RetiredColumn]:
         if retired is None:
             raise MappingShapeError(f"{col_ctx}: 'retired' (an ISO date) is required")
         hide = optional_bool(fields, "hide_existing", col_ctx)
-        parsed[str(col)] = RetiredColumn(
-            column=str(col),
+        parsed[col] = RetiredColumn(
+            column=col,
             # YAML reads an unquoted date as a date, whose str() is the ISO text.
             retired=(
                 str(retired) if isinstance(retired, dt.date)

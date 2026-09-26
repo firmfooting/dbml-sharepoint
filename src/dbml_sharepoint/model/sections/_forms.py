@@ -9,7 +9,12 @@ diagnosed by the validator, which has the schema the operators need.
 from collections.abc import Mapping
 from typing import Any
 
-from dbml_sharepoint.model._keys import _known_keys, _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model._keys import (
+    _known_keys,
+    _reject_unknown_keys,
+    _require_mapping,
+    _text_key,
+)
 from dbml_sharepoint.model.conditions import Condition, parse_condition
 from dbml_sharepoint.model.errors import (
     MappingShapeError,
@@ -69,6 +74,8 @@ def _entity_section(block: Any, context: str) -> tuple[str, dict[str, Any]]:
         raise MappingShapeError(
             f"{context}.columns: expected a mapping of column name to declaration",
         )
+    for name in columns:
+        _text_key(name, f"{context}.columns")
     return reconcile, columns
 
 
@@ -137,7 +144,8 @@ def _rule(declared: Mapping[str, object], context: str, why: str = "") -> tuple[
 def _parse_list_validation(rule: Any, context: str) -> ListValidation:
     if not isinstance(rule, dict):
         raise MappingShapeError(f"{context}: expected a mapping with 'when' and 'message'")
-    unknown = set(rule) - {"when", "message"}
+    entries: dict[object, object] = rule
+    unknown = {_text_key(key, context) for key in entries} - {"when", "message"}
     if "formula" in unknown:
         raise UnknownMappingKeyError(
             f"{context}: 'formula' has been replaced by 'when', which takes a condition "
@@ -152,7 +160,7 @@ def _parse_list_validation(rule: Any, context: str) -> ListValidation:
             f"See the condition grammar reference for the operator vocabulary.",
         )
     if unknown:
-        raise UnknownMappingKeyError(f"{context}: unknown key(s) {sorted(unknown, key=str)}")
+        raise UnknownMappingKeyError(f"{context}: unknown key(s) {sorted(unknown)}")
     declared: dict[str, object] = rule
     when, message = _rule(declared, context)
     return ListValidation(when=when, message=message)

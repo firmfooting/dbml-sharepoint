@@ -129,11 +129,12 @@ def test_unknown_leaf_key_is_rejected() -> None:
         parse_condition([{"field": "A", "op": "eq", "vaule": 1}], "ctx")
 
 
-def test_unknown_leaf_keys_of_two_types_are_named_rather_than_compared() -> None:
-    """YAML reads `1:` as an int, and sorting it beside a text key raised a
-    bare TypeError before the refusal could be built."""
-    with pytest.raises(UnknownMappingKeyError, match=r"\[1, 'vaule'\]"):
+def test_a_leaf_key_that_is_not_text_is_refused_before_the_unknown_keys() -> None:
+    """YAML reads `1:` as an int. Sorting it beside a text key raised a bare
+    TypeError, and naming it as unknown does not say to quote it."""
+    with pytest.raises(MappingShapeError) as err:
         parse_condition([{"field": "A", "op": "eq", 1: 2, "vaule": 1}], "ctx")
+    assert str(err.value) == "ctx.all_of[0]: key 1 is not text (YAML read it as int); quote it"
 
 
 # === Normalisation ==========================================================

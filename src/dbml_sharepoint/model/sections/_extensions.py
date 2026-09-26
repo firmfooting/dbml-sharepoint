@@ -34,7 +34,7 @@ def _extension_config(block: object, context: str) -> dict[Any, Any]:
     """One extension's block, as written: only the extension knows its keys.
 
     `dict()` loaded `[on]` as `{"o": "n"}` and raised a bare error on any
-    other list or a scalar. Not `_require_mapping`, which rewrites a key that
+    other list or a scalar. Not `_require_mapping`, which refuses a key that
     is not text, and the reference promises the block reaches the extension
     untouched. A blank block is an empty one.
     """
