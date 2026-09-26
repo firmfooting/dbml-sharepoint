@@ -270,6 +270,9 @@ def _parse_principal(raw_principal: Any, context: str, prefix: str = "") -> Prin
             f"{PRINCIPAL_KIND_LIST}; got {kind!r}",
         )
     name = raw_principal.get("name")
+    # A number or a list was carried through as the group name the deploy looks up.
+    if name is not None and not isinstance(name, str):
+        raise MappingShapeError(f"{context}: principal name must be a string, got {name!r}")
     if isinstance(name, str):
         name = expand_prefix(name, prefix, f"{context}.name")
     if kind == "group" and not name:

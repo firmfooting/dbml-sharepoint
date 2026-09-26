@@ -3773,6 +3773,23 @@ _WRONG_TYPE_CASES = [
         id="assignment-level-list",
     ),
     pytest.param(
+        blocks(entities("Risk"), """
+            list_permissions:
+              default:
+                break_inheritance: true
+                assignments:
+                  - { principal: { kind: group, name: 5 }, level: Read }
+        """),
+        "list_permissions.default.assignments[0].principal: principal name must be "
+        "a string, got 5",
+        id="principal-name-number",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "enum_sources:\n  topic: 5"),
+        "enum_sources['topic']: expected 'path#fragment', got 5",
+        id="enum-source-number",
+    ),
+    pytest.param(
         blocks(entities("Risk"), "retention_policies_source: 5"),
         "retention_policies_source must be a path relative to the mapping, got 5",
         id="retention-source-number",
@@ -3796,6 +3813,18 @@ def test_a_value_of_the_wrong_yaml_type_is_a_shape_error(
         load_mapping(tmp_path / "m.yaml")
     assert type(err.value) is MappingShapeError
     assert str(err.value) == message
+
+
+def test_list_validation_names_unknown_keys_of_two_types(tmp_path: Path) -> None:
+    """YAML reads `2026:` as an int, and sorting it beside a text key raised a bare TypeError."""
+    write_mapping(tmp_path, blocks(entities("Risk"), """
+        list_validation:
+          Risk:
+            2026: x
+            note: y
+    """))
+    with pytest.raises(UnknownMappingKeyError, match=r"unknown key\(s\) \[2026, 'note'\]"):
+        load_mapping(tmp_path / "m.yaml")
 
 
 #: A required key inside a LIST entry, which `_reject_unknown_keys` passes

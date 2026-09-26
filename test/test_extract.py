@@ -1166,6 +1166,20 @@ def test_a_text_property_of_the_download_that_is_not_text_is_refused(
         load_live_json(json.dumps(document))
 
 
+@pytest.mark.parametrize(("views", "message"), [
+    (5, "lists[0].views is not a list"),
+    ([{"Title": "All Items"}, "Open"], "lists[0].views[1] is not an object"),
+])
+def test_views_that_extract_js_could_not_have_written_are_refused(
+    views: object, message: str,
+) -> None:
+    """A number raised TypeError, and a view that was not an object was dropped unmentioned."""
+    document = json.loads(SAMPLE.read_text(encoding="utf-8"))
+    document["lists"][0]["views"] = views
+    with pytest.raises(SourceError, match=re.escape(message)):
+        load_live_json(json.dumps(document))
+
+
 def test_a_file_that_cannot_be_read_as_text_is_refused(tmp_path: Path) -> None:
     missing = tmp_path / "nothing.json"
     with pytest.raises(SourceError, match=re.escape("nothing.json")):

@@ -53,7 +53,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
 
 
 def _load_enum_choices(
-    base_dir: Path, enum_sources: dict[str, str],
+    base_dir: Path, enum_sources: dict[str, object],
 ) -> tuple[dict[str, list[str]], dict[str, Path]]:
     """Load every `enum_sources` entry into a name -> list[str] map.
 
@@ -66,6 +66,11 @@ def _load_enum_choices(
     choices: dict[str, list[str]] = {}
     resolved: dict[str, Path] = {}
     for name, spec in enum_sources.items():
+        # A number or a list raised AttributeError, which the CLI deliberately does not catch.
+        if not isinstance(spec, str):
+            raise MappingShapeError(
+                f"enum_sources[{name!r}]: expected 'path#fragment', got {spec!r}",
+            )
         path_part, _, fragment = spec.partition("#")
         fragment = fragment or "choices"
         path = (base_dir / path_part).resolve()

@@ -110,7 +110,7 @@ def load_live_json(raw: str) -> Source:
             title=title,
             fields=_parse_all(entry.get("fields"), f"lists[{index}].fields"),
             description=_text(entry, "description", f"lists[{index}]"),
-            views=[v for v in entry.get("views") or [] if isinstance(v, dict)],
+            views=_views(entry.get("views"), f"lists[{index}].views"),
             content_type_formatter=_text(entry, "contentTypeFormatter", f"lists[{index}]"),
         ))
     return Source(
@@ -127,6 +127,22 @@ def _text(entry: dict[object, object], key: str, context: str) -> str:
     if not isinstance(value, str):
         raise SourceError(f"{context}: {key!r} must be a string, got {value!r}")
     return value
+
+
+def _views(raw: object, context: str) -> list[dict[str, Any]]:
+    """The views extract.js read, an array of objects; absent reads as none."""
+    if raw is None:
+        return []
+    # A number raised TypeError, and a non-object entry was dropped without a word.
+    if not isinstance(raw, list):
+        raise SourceError(f"{context} is not a list")
+    entries: list[object] = raw
+    views: list[dict[str, Any]] = []
+    for index, view in enumerate(entries):
+        if not isinstance(view, dict):
+            raise SourceError(f"{context}[{index}] is not an object")
+        views.append(view)
+    return views
 
 
 def _parse_all(entries: object, context: str) -> list[RawField]:

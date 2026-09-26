@@ -137,7 +137,7 @@ def _parse_list_validation(rule: Any, context: str) -> ListValidation:
             f"See the condition grammar reference for the operator vocabulary.",
         )
     if unknown:
-        raise UnknownMappingKeyError(f"{context}: unknown key(s) {sorted(unknown)}")
+        raise UnknownMappingKeyError(f"{context}: unknown key(s) {sorted(unknown, key=str)}")
     declared: dict[str, object] = rule
     for key in ("when", "message"):
         if not declared.get(key):
