@@ -21,7 +21,7 @@ from _findings import none_of, only
 from _packs import blocks, entities, pack
 from _ratchet import Ratchet
 
-from dbml_sharepoint.analysis.checks import _retirement
+import dbml_sharepoint.analysis.checks._retirement as _retirement
 from dbml_sharepoint.analysis.checks._retirement import GRANDFATHERED_BLANK_ARMS
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.validator import validate_against_mapping

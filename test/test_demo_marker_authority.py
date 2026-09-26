@@ -171,7 +171,7 @@ def test_literal_scans_detect_the_marker_under_another_name(tmp_path: Path) -> N
 def test_validator_rule_and_message_move_with_the_owner(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from dbml_sharepoint.analysis.checks import _demo
+    import dbml_sharepoint.analysis.checks._demo as _demo
 
     monkeypatch.setattr(_demo, "DEMO_TITLE_PREFIX", "[SAMPLE] ")
     errors = _project_errors(

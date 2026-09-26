@@ -253,7 +253,7 @@ def _enum_groups(vc: ValidationContext, perms: PermissionsConfig) -> list[Findin
         # Each enrolment flag names ONE identity, and exactly one member is
         # the only count that gives it one group to land in: more leave every
         # group after the first empty, and none generates no group at all.
-        enrolments = [] if len(members) == 1 else [
+        enrolments: list[str] = [] if len(members) == 1 else [
             flag for flag, on in (
                 ("enroll_enterprise_reader", source.template.enroll_enterprise_reader),
                 (
@@ -667,8 +667,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             # make a trimming family's reader posture invisible either way:
             # elevated is allowed and Read is silently useless.
             for level, origin in sorted(
-                {(level, origin) for level, origin in grants if level == "Read"}
-                if trims_reads else set(),
+                {(level, origin) for level, origin in grants if trims_reads and level == "Read"},
                 key=lambda pair: (pair[0], pair[1].path),
             ):
                 findings.append(Finding(

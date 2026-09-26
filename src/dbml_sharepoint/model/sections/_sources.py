@@ -32,10 +32,10 @@ def read(sc: SectionContext) -> dict[str, Any]:
 
     retention_source = sc.block("retention_policies_source")
     retention_path = (sc.base_dir / retention_source).resolve() if retention_source else None
+    retention_policies: dict[str, RetentionPolicy] = {}
+    retention_list_defaults: dict[str, str] = {}
     if retention_path is not None:
         retention_policies, retention_list_defaults = _load_retention(retention_path)
-    else:
-        retention_policies, retention_list_defaults = {}, {}
 
     return {
         "enum_sources": enum_source_paths,

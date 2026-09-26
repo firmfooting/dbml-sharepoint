@@ -179,15 +179,15 @@ def test_every_reader_of_the_today_sentinel_shares_one_pattern() -> None:
     the same shape as any two readers disagreeing about one declaration.
     Comments asserted the agreement; this asserts it.
     """
-    from dbml_sharepoint.analysis.checks import _demo
+    import dbml_sharepoint.analysis.checks._demo as _demo
     from dbml_sharepoint.analysis.condition_rendering import _TODAY
     from dbml_sharepoint.analysis.typemap import TODAY_SENTINEL
     from dbml_sharepoint.generators.demogen import _TODAY_OFFSET
 
     assert _TODAY is TODAY_SENTINEL
     assert _TODAY_OFFSET is TODAY_SENTINEL
-    # Through `vars`, not attribute access: mypy refuses to reach a name
-    # through a module that only imported it, which is the question here.
+    # Through `vars`: the question is whether the module binds the name itself,
+    # which attribute access through a module that only imported it hides.
     assert vars(_demo)["TODAY_SENTINEL"] is TODAY_SENTINEL
 
 

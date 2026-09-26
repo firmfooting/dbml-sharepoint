@@ -155,7 +155,7 @@ def parse_list_url(url: str) -> ListUrl:
 
     path = parsed.path
     readings = [c for c in (_list_cut(path), _library_cut(path)) if c is not None]
-    cut = max(readings, key=lambda reading: reading.at, default=None)
+    cut = max(readings, key=lambda reading: reading.at) if readings else None
     if cut is None:
         raise ListUrlError(
             f"{url!r} has no /Lists/<name>/ segment and no /<library>/Forms/"

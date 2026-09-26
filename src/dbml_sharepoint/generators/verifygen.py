@@ -231,7 +231,7 @@ def _not_after_now(row: dict[str, Any]) -> bool:
     value = row["value"]
     if value["kind"] == "instant":
         return bool(value["seconds"] <= 0)
-    return value["kind"] == "midnight" and row["day"] is not None and row["day"] <= 0
+    return bool(value["kind"] == "midnight" and row["day"] is not None and row["day"] <= 0)
 
 
 def verify_targets(schema: Schema, bundle: MappingBundle, site_role: str) -> dict[str, Any]:

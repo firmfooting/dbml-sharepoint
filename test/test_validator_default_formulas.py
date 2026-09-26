@@ -14,7 +14,7 @@ from _model import ref as make_ref
 from _model import schema as make_schema
 from _model import table as make_table
 
-from dbml_sharepoint.analysis.checks import _default_formulas
+import dbml_sharepoint.analysis.checks._default_formulas as _default_formulas
 from dbml_sharepoint.analysis.checks._default_formulas import (
     DEFAULT_FORMULA_FUNCTIONS,
     DEFAULT_FORMULA_TYPES,

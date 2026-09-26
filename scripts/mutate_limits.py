@@ -126,7 +126,8 @@ def _integer_constants(source: str) -> set[str]:
         if isinstance(statement, ast.Assign):
             targets, value = statement.targets, statement.value
         elif isinstance(statement, ast.AnnAssign):
-            targets, value = [statement.target], statement.value
+            targets = [statement.target]
+            value = statement.value
         else:
             continue
         if not isinstance(value, ast.Constant):
