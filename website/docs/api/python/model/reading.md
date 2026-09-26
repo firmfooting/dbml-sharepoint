@@ -24,11 +24,12 @@ A blank key follows one rule (decided on #665), and every reader here keeps it:
   recorded as a `BlankDefault` and validation warns with
   `blank_key_took_default`, because the author may have meant a value. That
   is any boolean, a vocabulary word (`direction`, `reconcile`, `trigger`,
-  `owner_group`, item_security `read` and `write`), a condition (`where`,
-  `when`), a `from_enum` source and `major_version_limit`.
-- Where the default is empty text, an empty list or no value (`description`,
-  `notes`, `assignments`), a blank stays silent, because it can only mean
-  nothing.
+  `owner_group`, item_security `read` and `write`, a view's `scope`), a
+  condition (`where`, `when`), a `from_enum` source, `major_version_limit`,
+  a view's `row_limit` and an entity's `title`.
+- Where the default is empty text, an empty list or a value that changes
+  nothing (`description`, `notes`, `assignments`, `extension`), a blank stays
+  silent, because it can only mean nothing.
 - A required key left blank is refused as `{context}.{key} is required`.
 - A value of the wrong type is refused.
 
@@ -148,7 +149,7 @@ A blank key takes it and is recorded, as `strict_bool`'s does.
 ### `optional_str`
 
 ```python
-def optional_str(raw: collections.abc.Mapping[str, typing.Any], key: str, context: str) -> str | None
+def optional_str(raw: collections.abc.Mapping[str, typing.Any], key: str, context: str, *, record_blank: bool = False) -> str | None
 ```
 
 Read an optional string, refusing anything YAML happened to parse instead.
@@ -158,6 +159,10 @@ Passed through, it reaches a set-membership test deep in validation and
 raises `TypeError: unhashable type: 'list'`, a traceback instead of the
 ordinary "this column does not exist" error the author needed. Refuse the
 shape here, where the context string can name the key.
+
+`record_blank` is for a key whose absence is itself a behaviour (an
+entity's `title` falls back to the derived list title): a blank one is
+recorded as taking None. Off by default, so `extension:` stays silent.
 
 ### `strict_str`
 
@@ -196,7 +201,7 @@ required key, so a caller catching `MappingError` has to get one.
 ### `optional_int`
 
 ```python
-def optional_int(raw: collections.abc.Mapping[str, typing.Any], key: str, context: str) -> int | None
+def optional_int(raw: collections.abc.Mapping[str, typing.Any], key: str, context: str, *, record_blank: bool = False) -> int | None
 ```
 
 Read an optional integer, refusing bools and un-coercible strings.
@@ -205,6 +210,8 @@ Read an optional integer, refusing bools and un-coercible strings.
 `"100"` became 100 (so a quoted number worked by accident and taught the
 wrong lesson), and `many` raised `invalid literal for int() with base 10`,
 a message naming neither the key, the view, nor the entity.
+
+`record_blank` works as `optional_str`'s does (a view's `row_limit`).
 
 ### `require_str`
 

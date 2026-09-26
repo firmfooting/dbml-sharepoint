@@ -147,7 +147,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
                     f"width, got {px!r}",
                 )
             widths[str(col)] = px
-    raw_scope = view.get("scope")
+    raw_scope = optional_value(view, "scope", context)
     # isinstance first: a list or mapping is unhashable, and `in` over a
     # frozenset would raise the TypeError the CLI does not catch. Two
     # refusals rather than one, because the wrong YAML type is a shape error
@@ -191,7 +191,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
         where=where,
         sort=sort,
         group_by=group_by,
-        row_limit=optional_int(view, "row_limit", context),
+        row_limit=optional_int(view, "row_limit", context, record_blank=True),
         formatting=(
             load_json_value(base_dir, raw_formatting, f"{context}.formatting")
             if raw_formatting is not None

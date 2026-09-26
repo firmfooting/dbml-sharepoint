@@ -4128,6 +4128,35 @@ _RECORDED_BLANK_CASES = [
         "retired_columns.Risk.Old.hide_existing",
         id="hide-existing",
     ),
+    pytest.param(
+        entities(entity("Risk", title="")),
+        "entities.Risk.title", None,
+        lambda b: b.mapping.entities["Risk"].title,
+        "entities.Risk.title",
+        id="entity-title",
+    ),
+    pytest.param(
+        _views_yaml("""
+            views:
+              Project:
+                - { title: All, fields: [Title], scope: }
+        """),
+        "views.Project[0].scope", None,
+        lambda b: b.mapping.views["Project"][0].scope,
+        "views.Project[0].scope",
+        id="view-scope",
+    ),
+    pytest.param(
+        _views_yaml("""
+            views:
+              Project:
+                - { title: All, fields: [Title], row_limit: }
+        """),
+        "views.Project[0].row_limit", None,
+        lambda b: b.mapping.views["Project"][0].row_limit,
+        "views.Project[0].row_limit",
+        id="view-row-limit",
+    ),
 ]
 
 
@@ -4172,7 +4201,8 @@ def test_a_blank_key_takes_a_behavioural_default_and_is_reported(
 
 
 #: One declaration per blank key whose default is empty text, an empty list or
-#: no value. A blank there can only mean nothing, so nothing is recorded.
+#: a value that changes nothing. A blank there can only mean nothing, so
+#: nothing is recorded.
 _SILENT_BLANK_CASES = [
     pytest.param(
         blocks(entities("Risk"), """
@@ -4193,9 +4223,9 @@ _SILENT_BLANK_CASES = [
         id="assignments",
     ),
     pytest.param(
-        entities(entity("Risk", title="")),
-        lambda b: b.mapping.entities["Risk"].title, None,
-        id="entity-title",
+        blocks(entities("Risk"), "extension:"),
+        lambda b: b.mapping.extension, None,
+        id="extension",
     ),
 ]
 
