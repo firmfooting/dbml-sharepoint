@@ -1,6 +1,7 @@
 # test/test_styles.py
 import ast
 import copy
+import datetime as dt
 import json
 import re
 from pathlib import Path
@@ -243,6 +244,59 @@ def test_a_color_by_map_refusal_names_color_by(
             {"style": "data-bar", "max": 25, "color_by": color_by}, "column_formatting.T.C",
         )
     assert str(err.value) == f"column_formatting.T.C.color_by: {message}"
+
+
+def _with_map(style: str, value_map: dict[object, object]) -> dict[str, Any]:
+    """A spec of `style` whose value-to-token map is `value_map`."""
+    if style == "color_by":
+        return {"style": "data-bar", "max": 25,
+                "color_by": {"field": "R", "map": value_map}}
+    return {"style": style, "map": value_map}
+
+
+#: Where each style's map sits under the column's context.
+_MAP_AT = {
+    "severity": "column_formatting.T.C.map",
+    "pill": "column_formatting.T.C.map",
+    "color_by": "column_formatting.T.C.color_by.map",
+}
+
+
+@pytest.mark.parametrize("style", sorted(_MAP_AT))
+@pytest.mark.parametrize(("key", "shown", "kind"), [
+    (1, "1", "int"),
+    (2.1, "2.1", "float"),
+    (None, "None", "null"),
+    (True, "True", "bool"),
+    (dt.date(2026, 9, 1), "2026-09-01", "date"),
+])
+def test_a_map_key_that_is_not_text_is_refused(
+    style: str, key: object, shown: str, kind: str,
+) -> None:
+    """The formatter compares the cell against each key as quoted text, and
+    `str()` compared `No:` as 'False', `2.10:` as '2.1' and `~:` as 'None',
+    none of them what was typed. Beside a text key, so no position excuses it."""
+    with pytest.raises(MappingShapeError) as err:
+        expand_style(_with_map(style, {"Open": "good", key: "low"}), "column_formatting.T.C")
+    assert str(err.value) == (
+        f"{_MAP_AT[style]}: key {shown} is not text (YAML read it as {kind}); quote it"
+    )
+
+
+@pytest.mark.parametrize("style", sorted(_MAP_AT))
+def test_a_map_key_is_refused_before_its_token(style: str) -> None:
+    """Both halves of `1: [good]` are wrong, and the key is the one to name first."""
+    with pytest.raises(MappingShapeError) as err:
+        expand_style(_with_map(style, {1: ["good"]}), "column_formatting.T.C")
+    assert str(err.value) == (
+        f"{_MAP_AT[style]}: key 1 is not text (YAML read it as int); quote it"
+    )
+
+
+@pytest.mark.parametrize("style", sorted(_MAP_AT))
+def test_a_quoted_numeric_map_key_is_compared_as_that_text(style: str) -> None:
+    formatter = json.dumps(expand_style(_with_map(style, {"1": "good"}), "column_formatting.T.C"))
+    assert " == '1'" in formatter
 
 
 def test_theme_overrides_tokens() -> None:

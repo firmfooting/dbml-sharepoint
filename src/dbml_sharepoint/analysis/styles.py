@@ -41,7 +41,7 @@ from dbml_sharepoint.analysis.typemap import DATE_TYPES, NUMBER_TYPES
 # `model/` stays the home even though this is `analysis/`: `_keys.py` imports
 # nothing but `typing`, so there is no cycle, and every other caller of the
 # guard is a parser under `model/`.
-from dbml_sharepoint.model._keys import _reject_unknown_keys
+from dbml_sharepoint.model._keys import _reject_unknown_keys, _text_key
 
 # Same route as the guard above, and the same reason: `_formatting.read`
 # delegates to this module, so a refusal here is a mapping refusal.
@@ -151,8 +151,14 @@ def _if_chain(pairs: list[tuple[str, str]], fallback: str) -> str:
 def _validated_map(spec: dict[str, Any], context: str) -> dict[str, str]:
     """The `map` of column value to token name.
 
-    A value is stringified because a cell is compared as text and YAML reads
-    `1` or `true` as a scalar. A TOKEN is not: `str()` on a list made
+    Each key must be text. The emitted formatter compares the cell against the
+    key as quoted text (`@currentField == '<key>'`), and what YAML hands back
+    for an unquoted `1`, `No` or `2.10` is not the text the author typed:
+    `str()` made `No` 'False' and `2.10` '2.1', and merged `1:` with a `"1":`
+    beside it. The key is checked before its token, because a key that is not
+    text is the first thing wrong with the entry.
+
+    A TOKEN is not stringified either: `str()` on a list made
     `map: {Open: [good]}` report the unknown token `"['good']"`, a word
     outside the vocabulary where the real fault is the shape.
     """
@@ -161,10 +167,11 @@ def _validated_map(spec: dict[str, Any], context: str) -> dict[str, str]:
         raise _fail(context, "this style requires a non-empty 'map' of value -> token")
     value_map: dict[object, object] = raw_map
     tokens: dict[str, str] = {}
-    for value, token in value_map.items():
+    for raw_value, token in value_map.items():
+        value = _text_key(raw_value, f"{context}.map")
         if not isinstance(token, str):
             raise _fail(context, f"map[{value!r}] must be a token name, got {token!r}")
-        tokens[str(value)] = token
+        tokens[value] = token
     return tokens
 
 def _condition(value: str, calculated: bool, ref: str = "@currentField") -> str:
