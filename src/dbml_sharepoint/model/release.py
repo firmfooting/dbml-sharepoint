@@ -1,6 +1,7 @@
 # src/dbml_sharepoint/model/release.py
 """release.yaml reader + config-snapshot hashing."""
 
+import datetime as dt
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,13 +49,30 @@ def load_release(path: Path) -> Release:
     missing = [key for key in _REQUIRED_KEYS if key not in raw]
     if missing:
         raise ValueError(f"{path}: missing required key(s) {missing}")
+    entries: dict[object, object] = raw
+    date = entries["date"]
     return Release(
-        release_tag=raw["release"],
-        date=raw["date"],
-        deployer_version=raw["deployer_version"],
-        schema_version=raw["schema_version"],
-        flow_package_version=raw.get("flow_package_version", "none"),
-        notes=raw.get("notes", ""),
+        release_tag=_text(entries, "release", path),
+        # An unquoted date loads as datetime.date; str() gives ISO text, as retired_columns does.
+        date=str(date) if isinstance(date, dt.date) else _text(entries, "date", path),
+        deployer_version=_text(entries, "deployer_version", path),
+        schema_version=_text(entries, "schema_version", path),
+        flow_package_version=_text(entries, "flow_package_version", path, default="none"),
+        notes=_text(entries, "notes", path, default=""),
+    )
+
+
+def _text(raw: dict[object, object], key: str, path: Path, *, default: str | None = None) -> str:
+    """The value of `key` as text, refusing the numbers YAML reads from an unquoted version."""
+    if key not in raw and default is not None:
+        return default
+    value = raw[key]
+    if isinstance(value, str):
+        return value
+    if value is None:
+        raise ValueError(f"{path}: {key!r} is present with no value")
+    raise ValueError(
+        f"{path}: {key!r} must be text, got {type(value).__name__} {value!r}; quote it",
     )
 
 
