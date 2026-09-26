@@ -77,7 +77,7 @@ from dbml_sharepoint.model.mapping_types import (
     ViewScope,
     view_url_slug,
 )
-from dbml_sharepoint.model.parser import Column, EnumDef, Schema
+from dbml_sharepoint.model.parser import Column, ColumnDefault, EnumDef, Schema
 from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
 
@@ -1390,7 +1390,7 @@ def _field_body(
     return {"title": sp.name, "body": body}
 
 
-def _bool_default_to_sp(value: str | int | bool) -> str:
+def _bool_default_to_sp(value: ColumnDefault) -> str:
     """Map a DBML boolean default literal to SharePoint's '1'/'0' string.
 
     DBML/pydbml surfaces booleans as ``True``/``False`` or the integer/string
