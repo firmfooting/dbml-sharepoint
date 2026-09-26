@@ -8,7 +8,7 @@ diagnosed by the validator, which has the schema the operators need.
 
 from typing import Any
 
-from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model._keys import _known_keys, _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model.conditions import parse_condition
 from dbml_sharepoint.model.errors import (
     MappingShapeError,
@@ -84,13 +84,16 @@ def _parse_form_visibility(block: Any, context: str) -> EntitySection[FormVisibi
             continue
         if not isinstance(raw, dict):
             raise MappingShapeError(f"{where}: expected 'hidden', 'visible' or a mapping")
-        _reject_unknown_keys(raw, {"new", "existing", "when"}, where)
+        declared = _known_keys(raw, {"new", "existing", "when"}, where)
         columns[name] = FormVisibility(
-            new=strict_bool(raw, "new", where),
-            existing=strict_bool(raw, "existing", where),
+            new=strict_bool(declared, "new", where),
+            existing=strict_bool(declared, "existing", where),
             # An empty `when` is a mistake, not an absence. The same
             # declaration errors in column_validation and as an empty group.
-            when=parse_condition(raw["when"], f"{where}.when") if "when" in raw else None,
+            when=(
+                parse_condition(declared["when"], f"{where}.when")
+                if "when" in declared else None
+            ),
         )
     return EntitySection(reconcile=reconcile, columns=columns)
 
@@ -102,16 +105,16 @@ def _parse_column_validation(block: Any, context: str) -> EntitySection[ColumnVa
         where = f"{context}.columns.{name}"
         if not isinstance(raw, dict):
             raise MappingShapeError(f"{where}: expected a mapping with 'when' and 'message'")
-        _reject_unknown_keys(raw, {"when", "message"}, where)
+        declared = _known_keys(raw, {"when", "message"}, where)
         for key in ("when", "message"):
-            if not raw.get(key):
+            if not declared.get(key):
                 raise MappingShapeError(
                     f"{where}: {key!r} is required -- a rule with no message fails the save "
                     f"with SharePoint's generic text, which tells the author nothing",
                 )
         columns[name] = ColumnValidation(
-            when=parse_condition(raw["when"], f"{where}.when"),
-            message=str(raw["message"]),
+            when=parse_condition(declared["when"], f"{where}.when"),
+            message=str(declared["message"]),
         )
     return EntitySection(reconcile=reconcile, columns=columns)
 
@@ -135,10 +138,11 @@ def _parse_list_validation(rule: Any, context: str) -> ListValidation:
         )
     if unknown:
         raise UnknownMappingKeyError(f"{context}: unknown key(s) {sorted(unknown)}")
+    declared: dict[str, object] = rule
     for key in ("when", "message"):
-        if not rule.get(key):
+        if not declared.get(key):
             raise MappingShapeError(f"{context}: {key!r} is required")
     return ListValidation(
-        when=parse_condition(rule["when"], f"{context}.when"),
-        message=str(rule["message"]),
+        when=parse_condition(declared["when"], f"{context}.when"),
+        message=str(declared["message"]),
     )

@@ -49,9 +49,10 @@ def _parse_demo_item(raw_item: Any, context: str) -> DemoItem:
             f"{context}: demo item 'values' must be a non-empty mapping of "
             f"column name to value",
         )
+    value_map: dict[object, object] = values
     return DemoItem(
         key=key,
-        values={str(col): v for col, v in values.items()},
+        values={str(col): v for col, v in value_map.items()},
         file=_parse_demo_file(raw_item.get("file"), f"{context}.file"),
     )
 

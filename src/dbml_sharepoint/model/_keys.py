@@ -66,10 +66,11 @@ def _require_mapping(
         raise MappingShapeError(
             f"{context}: expected a mapping of names, got {type(block).__name__}",
         )
-    if all(isinstance(key, str) for key in block):
+    entries: dict[object, Any] = block
+    if all(isinstance(key, str) for key in entries):
         return block
     # YAML reads a key such as `2026:` as an int; normalised once here, not by every caller.
-    return {str(key): value for key, value in block.items()}
+    return {str(key): value for key, value in entries.items()}
 
 
 def _reject_unknown_keys(block: Any, allowed: frozenset[str] | set[str], context: str) -> None:
@@ -81,13 +82,28 @@ def _reject_unknown_keys(block: Any, allowed: frozenset[str] | set[str], context
     deploys an unfiltered view, and a misspelled `break_inheritance` leaves
     a list on inherited permissions, all reporting zero findings.
     """
+    _known_keys(block, allowed, context)
+
+
+def _known_keys(
+    block: object, allowed: frozenset[str] | set[str], context: str,
+) -> dict[str, object]:
+    """`_reject_unknown_keys`, returning the block typed as what it proved.
+
+    Every key is one of `allowed`, so the result is keyed by `str`; each
+    value is still unchecked YAML, so it is `object` until the caller
+    narrows it.
+    """
     if not isinstance(block, dict):
         raise MappingShapeError(
             f"{context}: expected a mapping, got {type(block).__name__}",
         )
-    unknown = set(block) - set(allowed)
+    entries: dict[object, object] = block
+    unknown = set(entries) - set(allowed)
     if unknown:
         raise UnknownMappingKeyError(
-            f"{context}: unknown key(s) {sorted(unknown)} "
+            f"{context}: unknown key(s) {sorted(unknown, key=str)} "
             f"(known: {sorted(allowed)})",
         )
+    checked: dict[str, object] = block
+    return checked

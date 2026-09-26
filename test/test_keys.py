@@ -11,7 +11,7 @@ offending key.
 
 import pytest
 
-from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model._keys import _known_keys, _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model.errors import MappingShapeError, UnknownMappingKeyError
 
 
@@ -121,3 +121,23 @@ def test_the_allowed_set_may_be_a_frozenset() -> None:
     block = {"title": 1}
     _reject_unknown_keys(block, frozenset({"title"}), "ctx")
     assert block == {"title": 1}
+
+
+def test_unknown_keys_of_two_types_are_named_rather_than_compared() -> None:
+    """YAML reads `2026:` as an int, and sorting it beside a text key raised a
+    bare TypeError before the refusal could be built."""
+    with pytest.raises(UnknownMappingKeyError, match=r"unknown key\(s\) \[2026, 'b'\]"):
+        _reject_unknown_keys({2026: "a", "b": 2}, {"title"}, "mapping.views")
+
+
+def test_known_keys_returns_the_block_it_checked() -> None:
+    """The same object, typed by what the guard proved, so callers index it."""
+    block = {"title": "Risks"}
+    assert _known_keys(block, {"title"}, "mapping.views") is block
+
+
+def test_known_keys_refuses_what_the_guard_refuses() -> None:
+    with pytest.raises(MappingShapeError, match="expected a mapping, got list"):
+        _known_keys(["title"], {"title"}, "mapping.views.Risk")
+    with pytest.raises(UnknownMappingKeyError, match=r"unknown key\(s\) \['deafult'\]"):
+        _known_keys({"deafult": True}, {"default"}, "mapping.views.Risk")

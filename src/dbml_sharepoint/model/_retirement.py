@@ -12,7 +12,7 @@ on Mapping.retirement_strips for the validator to report.
 from dataclasses import replace
 from typing import Any, cast
 
-from dbml_sharepoint.model._keys import _reject_unknown_keys
+from dbml_sharepoint.model._keys import _known_keys
 from dbml_sharepoint.model.errors import MappingShapeError
 from dbml_sharepoint.model.mapping_types import (
     RETIRED_SUFFIX,
@@ -51,8 +51,9 @@ def _parse_retired_columns(raw: Any, context: str) -> dict[str, RetiredColumn]:
             f"details, or a bare list of column names, got "
             f"{type(raw).__name__}",
         )
+    entries: dict[object, object] = raw
     parsed: dict[str, RetiredColumn] = {}
-    for col, spec in raw.items():
+    for col, spec in entries.items():
         col_ctx = f"{context}.{col}"
         if not isinstance(spec, dict):
             raise MappingShapeError(
@@ -60,23 +61,23 @@ def _parse_retired_columns(raw: Any, context: str) -> dict[str, RetiredColumn]:
                 f"superseded_by / reason / hide_existing, got "
                 f"{type(spec).__name__}",
             )
-        _reject_unknown_keys(spec, _RETIREMENT_KEYS, col_ctx)
-        retired = spec.get("retired")
+        fields = _known_keys(spec, _RETIREMENT_KEYS, col_ctx)
+        retired = fields.get("retired")
         if retired is None:
             raise MappingShapeError(f"{col_ctx}: 'retired' (an ISO date) is required")
-        hide = spec.get("hide_existing", False)
+        hide = fields.get("hide_existing", False)
         if not isinstance(hide, bool):
             raise MappingShapeError(
                 f"{col_ctx}.hide_existing must be a boolean, got {hide!r}",
             )
-        superseded = spec.get("superseded_by")
+        superseded = fields.get("superseded_by")
         parsed[str(col)] = RetiredColumn(
             column=str(col),
             # A YAML date scalar arrives as datetime.date; str() normalises
             # it back to the ISO text the validator and manifest expect.
             retired=str(retired),
             superseded_by=str(superseded) if superseded is not None else None,
-            reason=str(spec.get("reason", "")),
+            reason=str(fields.get("reason", "")),
             hide_existing=hide,
         )
     return parsed
@@ -161,6 +162,7 @@ def _strip_retired_from_form(
     sections = body.get("sections")
     if not isinstance(sections, list):
         return form
+    section_list: list[object] = sections
 
     def _fields_of(section: object) -> list[Any] | None:
         if isinstance(section, dict) and isinstance(section.get("fields"), list):
@@ -171,7 +173,7 @@ def _strip_retired_from_form(
     # `fields` entry may be a list or mapping, which is unhashable.
     named = [
         name
-        for section in sections
+        for section in section_list
         for name in (_fields_of(section) or [])
         if isinstance(name, str) and name in retired
     ]
@@ -195,7 +197,7 @@ def _strip_retired_from_form(
             and isinstance(section, dict)
             else section
         )
-        for section in sections
+        for section in section_list
     ]
     # Re-spreading an existing key keeps its original position, so the rest
     # of the body renders byte-for-byte as authored.
