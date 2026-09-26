@@ -75,7 +75,10 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
             f"{context}: view 'fields' must be a non-empty list of column names",
         )
     field_names: list[str] = fields
-    renamed_from = view.get("renamed_from") or list[str]()
+    # Only a blank is absent here and for `sort`: `or` read `renamed_from: 0` as none.
+    renamed_from = view.get("renamed_from")
+    if renamed_from is None:
+        renamed_from = list[str]()
     if not isinstance(renamed_from, list) or not all(
         isinstance(previous, str) for previous in renamed_from
     ):
@@ -84,7 +87,9 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
     # A blank `where:` is an unfiltered view, which the load records.
     raw_where = optional_value(view, "where", context)
     where = parse_condition(raw_where, f"{context}.where") if raw_where is not None else None
-    raw_sort = view.get("sort") or list[object]()
+    raw_sort = view.get("sort")
+    if raw_sort is None:
+        raw_sort = list[object]()
     # A mapping or a string iterated as keys or characters, and a number raised TypeError.
     if not isinstance(raw_sort, list):
         raise MappingShapeError(f"{context}.sort must be a list, got {raw_sort!r}")

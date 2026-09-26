@@ -4985,6 +4985,73 @@ def test_empty_text_or_an_empty_tree_is_still_required(
     assert str(err.value) == message
 
 
+#: A falsy value of the wrong shape, which an `x or <empty>` read took as
+#: absent. Only a blank is absent under the blank-key rule.
+_FALSY_SHAPE_CASES = [
+    pytest.param(
+        blocks(entities("Risk"), "versioning:\n  overrides:\n    Risk: false"),
+        "versioning.overrides.Risk: expected a mapping, got bool",
+        id="versioning-override",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "item_security:\n  overrides:\n    Risk: 0"),
+        "item_security.overrides.Risk: expected a mapping, got int",
+        id="item-security-override",
+    ),
+    pytest.param(
+        _views_yaml("views:\n  Project:\n    - { title: All, fields: [Title], sort: false }"),
+        "views.Project[0].sort must be a list, got False",
+        id="view-sort",
+    ),
+    pytest.param(
+        _views_yaml("views:\n  Project:\n    - { title: All, fields: [Title], renamed_from: 0 }"),
+        "views.Project[0]: 'renamed_from' must be a list of view titles",
+        id="view-renamed-from",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "cross_site_reference_columns: false"),
+        "cross_site_reference_columns: expected a list, got bool",
+        id="cross-site",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "polymorphic_patterns: 0"),
+        "polymorphic_patterns: expected a list, got int",
+        id="polymorphic",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "watched_lists: ''"),
+        "watched_lists: expected a list, got str",
+        id="watched",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "message"), _FALSY_SHAPE_CASES)
+def test_a_falsy_value_of_the_wrong_shape_is_not_read_as_absent(
+    tmp_path: Path, body: str, message: str,
+) -> None:
+    """Each loaded as though the key were absent, so `watched_lists: ''` watched
+    nothing and said nothing."""
+    write_mapping(tmp_path, body)
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == message
+
+
+def test_a_pointed_file_holding_a_falsy_value_is_not_read_as_empty(tmp_path: Path) -> None:
+    """An empty file is still an empty one; a file holding `false` is not."""
+    _side_file(tmp_path, "false\n")
+    write_mapping(tmp_path, blocks(entities("Risk"), "reporting_source: side.yaml"))
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is MappingShapeError
+    assert str(err.value) == "side.yaml: expected a mapping of names, got bool"
+
+    _side_file(tmp_path, "")
+    assert load_mapping(tmp_path / "m.yaml").mapping.derived_columns == {}
+
+
 def test_an_unquoted_retired_date_still_loads_as_iso_text(tmp_path: Path) -> None:
     """The mapping reference writes `retired:` unquoted, which YAML reads as a
     date. That one non-text type is still accepted, as release.yaml's `date` is."""
