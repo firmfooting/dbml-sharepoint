@@ -33,6 +33,10 @@ A blank key follows one rule (decided on #665), and every reader here keeps it:
   blank stays silent, because it can only mean nothing.
 - A required key left blank is refused as `{context}.{key} is required`.
 - A value of the wrong type is refused.
+- Where null is itself a documented value, it keeps that meaning and takes
+  no default. A condition's `value: null` is carried as written and judged
+  by its operator, and a `style_theme` token's `icon: null` shows no icon,
+  where an absent `icon` takes the token's own.
 
 Recording happens only inside `recording_blank_defaults()`, which
 `load_mapping` opens around the section families. Outside it a blank still
