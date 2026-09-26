@@ -167,6 +167,57 @@ def _folder_policy_assignments(
         )
 
 
+def _exact_policies_granting_nothing(
+    vc: ValidationContext, perms: PermissionsConfig,
+) -> list[Finding]:
+    """`reconcile: exact` with no assignments, once per declared policy block.
+
+    A warning, because stripping a scope is supported and
+    `test_an_exact_list_declaring_nothing_strips_it_and_reads_it_back` pins
+    it. The message says only what `_acls.js.j2` does: the prune removes
+    every binding outside the empty allowlist except 'Limited Access'. What
+    SharePoint does once the last binding on a scope is gone is unmeasured
+    (#667), so it is not stated.
+
+    A folder block is read through its expansion, so it reports only where
+    it governs a folder, and once however many folders it governs.
+    """
+    declared: list[tuple[ListPermissionPolicy, str, str, Location]] = []
+    if perms.default_policy is not None:
+        declared.append((
+            perms.default_policy, "list_permissions.default",
+            "every list it applies to", _DEFAULT_POLICY,
+        ))
+    declared += [
+        (policy, f"list_permissions.overrides[{name!r}]", name, _OVERRIDES)
+        for name, policy in perms.overrides.items()
+    ]
+    # Any one folder answers for its block: expanding `{member}` changes neither mode nor count.
+    folder_blocks = {
+        name: policy for name, _folder, policy in _expanded_folder_policies(vc, perms)
+    }
+    declared += [
+        (
+            policy, f"list_permissions.folders[{name!r}]",
+            f"every folder {name} declares", _FOLDERS,
+        )
+        for name, policy in folder_blocks.items()
+    ]
+    return [
+        Finding(
+            FindingCode.EXACT_POLICY_GRANTS_NOTHING,
+            f"{ctx}: reconcile: exact with no assignments makes the deploy "
+            f"remove every direct role assignment on {scope} except Limited "
+            f"Access, including any the operator holds there. Declare the "
+            f"assignments that should stay, or use reconcile: configured, "
+            f"which leaves undeclared grants alone.",
+            location=at,
+        )
+        for policy, ctx, scope, at in declared
+        if policy.reconcile_mode == "exact" and not policy.assignments
+    ]
+
+
 def _group_name_characters(vc: ValidationContext) -> list[Finding]:
     """No declared group name may carry a character SharePoint refuses.
 
@@ -735,5 +786,6 @@ def check(vc: ValidationContext) -> list[Finding]:
             _check_policy_assignments(override_policy, ctx_key, _OVERRIDES)
 
         _folder_policy_assignments(vc, perms, _check_policy_assignments)
+        findings += _exact_policies_granting_nothing(vc, perms)
 
     return findings

@@ -426,6 +426,8 @@ class FindingCode(StrEnum):
         "enterprise_reader_group_requires_empty", "error")
     ENTERPRISE_READER_ON_TRIMMED_LIST = (
         "enterprise_reader_on_trimmed_list", "warning")
+    # Warning: stripping a scope is supported, and what the last removal does is unmeasured.
+    EXACT_POLICY_GRANTS_NOTHING = "exact_policy_grants_nothing", "warning"
     GROUP_AUTO_ACCEPT_WITHOUT_REQUESTS = (
         "group_auto_accept_without_requests", "error")
     GROUP_DESCRIPTION_TOO_LONG = "group_description_too_long", "error"

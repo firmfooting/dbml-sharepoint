@@ -20,7 +20,7 @@ from _model import table as make_table
 from _packs import pack
 
 from dbml_sharepoint.analysis.checks._structure import TEMPLATE_BY_KIND
-from dbml_sharepoint.analysis.findings import Finding, FindingCode
+from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.validator import validate_against_mapping, validate_all
 from dbml_sharepoint.extension import NullExtension
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
@@ -712,6 +712,7 @@ def test_a_group_per_enum_member_securing_its_own_folder_is_clean(
     none_of(findings, FindingCode.FOLDER_PERMISSIONS_ON_A_LIST)
     none_of(findings, FindingCode.FOLDER_PERMISSIONS_WITHOUT_FOLDERS)
     none_of(findings, FindingCode.UNKNOWN_PRINCIPAL_GROUP)
+    none_of(findings, FindingCode.EXACT_POLICY_GRANTS_NOTHING)
     assert by_severity(findings, "error") == [], by_severity(findings, "error")
 
 
@@ -946,6 +947,50 @@ def test_folder_permissions_on_an_unknown_entity_are_refused(
         FindingCode.UNKNOWN_TABLE,
     )
     assert "Nope" in f.message
+
+
+def _folder_policy_body(
+    tmp_path: Path, policy: str, *, folders: str = "{from_enum: division}",
+) -> list[Finding]:
+    """A two-folder library whose folder policy is `policy`, in YAML flow style."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n  "Corporate services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping=f"""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {folders}
+
+            list_permissions:
+              default:
+                break_inheritance: true
+                reconcile: exact
+                assignments:
+                  - principal: {{ kind: associated_owner_group }}
+                    level: "Full Control"
+              folders:
+                Docs: {policy}
+        """,
+    )
+    return validate_against_mapping(schema, bundle)
+
+
+def test_an_exact_folder_policy_granting_nothing_warns_once(tmp_path: Path) -> None:
+    """One declared block over two folders is one warning, not one per folder."""
+    f = only(
+        _folder_policy_body(
+            tmp_path, "{break_inheritance: true, reconcile: exact, assignments: []}",
+        ),
+        FindingCode.EXACT_POLICY_GRANTS_NOTHING,
+    )
+    assert f.location == Location(Section.LIST_PERMISSIONS, sub="folders")
+    assert "Docs" in f.message
 
 
 @pytest.mark.parametrize(

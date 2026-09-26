@@ -1426,6 +1426,85 @@ def test_override_key_referencing_missing_entity_is_error() -> None:
     assert finding.location == Location(Section.LIST_PERMISSIONS, sub="overrides")
     assert "DoesNotExist" in finding.message
 
+
+_OWNERS_CONTRIBUTE = RoleAssignment(
+    principal=Principal(kind="associated_owner_group"), level="Contribute",
+)
+
+
+def _exact_policy_findings(
+    *,
+    default: ListPermissionPolicy | None = None,
+    overrides: dict[str, ListPermissionPolicy] | None = None,
+) -> list[Finding]:
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    bundle.mapping.permissions = PermissionsConfig(
+        levels=[], groups=[], default_policy=default, overrides=overrides or {},
+    )
+    return validate_against_mapping(schema, bundle)
+
+
+def _strips() -> ListPermissionPolicy:
+    return ListPermissionPolicy(
+        break_inheritance=True, assignments=[], reconcile_mode="exact",
+    )
+
+
+def test_an_exact_default_policy_granting_nothing_warns() -> None:
+    """The deploy prunes every binding outside an empty allowlist, the
+    operator's included, and no build rule said so (#667)."""
+    finding = only(
+        _exact_policy_findings(default=_strips()),
+        FindingCode.EXACT_POLICY_GRANTS_NOTHING,
+    )
+    assert finding.severity == "warning"
+    assert finding.location == Location(Section.LIST_PERMISSIONS, sub="default")
+
+
+def test_an_exact_override_granting_nothing_warns_and_names_its_entity() -> None:
+    finding = only(
+        _exact_policy_findings(
+            default=ListPermissionPolicy(
+                break_inheritance=True, assignments=[_OWNERS_CONTRIBUTE],
+                reconcile_mode="exact",
+            ),
+            overrides={"Task": _strips()},
+        ),
+        FindingCode.EXACT_POLICY_GRANTS_NOTHING,
+    )
+    assert finding.location == Location(Section.LIST_PERMISSIONS, sub="overrides")
+    assert "'Task'" in finding.message
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        pytest.param(
+            ListPermissionPolicy(
+                break_inheritance=True, assignments=[_OWNERS_CONTRIBUTE],
+                reconcile_mode="exact",
+            ),
+            id="exact-with-assignments",
+        ),
+        pytest.param(
+            ListPermissionPolicy(
+                break_inheritance=True, assignments=[], reconcile_mode="configured",
+            ),
+            id="configured-with-none",
+        ),
+    ],
+)
+def test_a_policy_that_names_a_grant_or_prunes_nothing_does_not_warn(
+    policy: ListPermissionPolicy,
+) -> None:
+    """Exact with a grant keeps that grant, and configured mode removes no
+    principal the policy does not name, so neither empties a scope."""
+    none_of(
+        _exact_policy_findings(default=policy, overrides={"Task": policy}),
+        FindingCode.EXACT_POLICY_GRANTS_NOTHING,
+    )
+
 def test_lookup_target_without_title_or_display_column_is_error() -> None:
     """A1: a lookup into a target list that has no Title column and no
     display_column would render blank in SP (LookupField defaults to the empty

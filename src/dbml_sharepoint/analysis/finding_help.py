@@ -990,6 +990,27 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A configured `enum_sources` entry has no matching DBML enum in "
         "the schema."
     ),
+    FindingCode.EXACT_POLICY_GRANTS_NOTHING: (
+        "A `list_permissions` policy (the default, an override or a folder "
+        "policy) declares `reconcile: exact` and no `assignments`. Exact "
+        "mode treats the declared assignments as an allowlist, so the "
+        "deploy's ACL phase removes every direct role assignment on each "
+        "scope the policy governs, whoever holds it, and spares only a "
+        "binding named `Limited Access`. The operator's own binding is not "
+        "exempt. Breaking inheritance with `copyRoleAssignments=false` was measured "
+        "on a list to leave exactly one binding, the deploying account's "
+        "own at Full Control (2026-09-22, "
+        "`test/manual/operator-safety-grant-probe.js`), so on a list this "
+        "deploy breaks, the removal takes the last binding the list holds. "
+        "That probe granted another principal before removing the "
+        "operator's binding, so what SharePoint does when the last binding "
+        "on a scope goes has not been measured on a live site: whether it "
+        "accepts the removal, what access the operator keeps, and whether "
+        "the deploy's read-back of the scope succeeds. That is tracked on "
+        "#667. This is a warning rather than an error because stripping a "
+        "scope is supported. Declare the assignments that should stay, or "
+        "use `reconcile: configured`, which leaves undeclared grants alone."
+    ),
     FindingCode.EXTENSION_REPORTED: (
         "A finding raised by an extension's own validators."
     ),
