@@ -5188,6 +5188,15 @@ _NON_TEXT_KEY_CASES = [
         "field_sets.Project: key 2026 is not text (YAML read it as int); quote it",
         id="field-set-name",
     ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            demo_items:
+              Risk:
+                - { key: r1, values: { Title: First, Off: x } }
+        """),
+        "demo_items.Risk[0].values: key False is not text (YAML read it as bool); quote it",
+        id="demo-values",
+    ),
 ]
 
 
