@@ -79,8 +79,12 @@ class Location:
         head = str(self.section)
         if self.entity is not None:
             head = f"{head}[{self.entity}]"
-        tail = [p for p in (self.view, self.column, self.sub) if p is not None]
-        return ".".join([head, *tail])
+        tail = [p for p in (self.view, self.column) if p is not None]
+        path = ".".join([head, *tail])
+        if self.sub is not None:
+            # An index attaches to what it indexes: `groups[0]`, not `groups.[0]`.
+            path += self.sub if self.sub.startswith("[") else f".{self.sub}"
+        return path
 
 
 class FindingCode(StrEnum):

@@ -4036,7 +4036,7 @@ _RECORDED_BLANK_CASES = [
         """),
         "groups[0].owner_group", "Site Owners",
         lambda b: b.mapping.permissions.groups[0].owner_group,
-        "groups.[0].owner_group",
+        "groups[0].owner_group",
         id="group-owner-group",
     ),
     pytest.param(
@@ -4046,7 +4046,7 @@ _RECORDED_BLANK_CASES = [
         """),
         "groups[0].from_enum", None,
         lambda b: next((s.enum for s in b.mapping.permissions.group_sources), None),
-        "groups.[0].from_enum",
+        "groups[0].from_enum",
         id="group-from-enum",
     ),
     pytest.param(
