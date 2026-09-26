@@ -1043,6 +1043,41 @@ def test_a_block_style_previous_prefixes_is_refused(tmp_path: Path) -> None:
         wizard._rewrite_prefix(mapping, "")
 
 
+def test_a_flow_list_continued_onto_a_second_line_is_refused(tmp_path: Path) -> None:
+    """The mapping loads, but the line the rewrite parses holds half a list.
+
+    The parser's error on that half used to escape as `yaml.YAMLError`, which
+    the scaffold boundary in `_run` does not catch, so it reached the
+    operator as a traceback over a half-written project.
+    """
+    mapping = tmp_path / "mapping.yaml"
+    mapping.write_text(
+        'prefix: "GOV_"\nprevious_prefixes: ["",\n  "ADOPT_"]\nentities: {}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(wizard.WizardError, match="does not parse from its own line"):
+        wizard._rewrite_prefix(mapping, "")
+
+
+def test_a_copy_the_loader_refuses_is_a_wizard_refusal(tmp_path: Path) -> None:
+    """The read-back runs the real loader, whose refusals are `MappingError`.
+
+    `_run` catches only `WizardError` and `OSError` around the scaffold, so a
+    loader refusal there was a traceback rather than the sentence naming the
+    file that every other scaffold failure gets.
+    """
+    mapping = tmp_path / "mapping.yaml"
+    mapping.write_text('prefix: "A_"\nentities: [Risk]\n', encoding="utf-8")
+
+    with pytest.raises(wizard.WizardError) as err:
+        wizard._rewrite_prefix(mapping, "NEW_")
+    assert str(err.value).startswith(
+        f"{mapping} does not load after setting its prefix to 'NEW_': ",
+    ), str(err.value)
+    assert "entities: expected a mapping of names, got list" in str(err.value)
+
+
 def test_the_dropped_previous_prefix_is_reported_not_silent(
     tmp_path: Path,
 ) -> None:

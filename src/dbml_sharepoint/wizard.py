@@ -79,6 +79,7 @@ from dbml_sharepoint.model.env_file import (
     EnvFileError,
     read_env_file,
 )
+from dbml_sharepoint.model.errors import MappingError
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.pipeline import execute_build
 from dbml_sharepoint.project import (
@@ -855,7 +856,15 @@ def _drop_chosen_from_previous_prefixes(
     match = matches[0]
     # Parsed as YAML rather than split on the brackets, so a trailing
     # comment on the line is handled by the parser that will read it back.
-    declared = yaml.safe_load(match.group(1))
+    try:
+        declared = yaml.safe_load(match.group(1))
+    except yaml.YAMLError as exc:
+        # A flow list continued onto a second line does not parse from its first.
+        raise WizardError(
+            f"`previous_prefixes:` does not parse from its own line "
+            f"({match.group(0).strip()!r}), so the one-line rewrite this "
+            f"wizard makes cannot edit it: {exc}",
+        ) from exc
     if not isinstance(declared, list) or not all(isinstance(p, str) for p in declared):
         raise WizardError(
             f"`previous_prefixes:` is not a single flow-style list of strings "
@@ -905,7 +914,14 @@ def _rewrite_prefix(mapping_path: Path, prefix: str) -> tuple[str, ...]:
     # depend on which machine ran the wizard. The templates ship LF.
     write_artifact(mapping_path, new_text)
 
-    bundle = load_mapping(mapping_path)
+    # `_run` catches WizardError around the scaffold, and a loader refusal is not one.
+    try:
+        bundle = load_mapping(mapping_path)
+    except MappingError as exc:
+        raise WizardError(
+            f"{mapping_path} does not load after setting its prefix to "
+            f"{prefix!r}: {exc}",
+        ) from exc
     if bundle.mapping.prefix != prefix:
         raise WizardError(
             f"wrote prefix {prefix!r} to {mapping_path} but the mapping "
