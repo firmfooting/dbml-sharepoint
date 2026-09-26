@@ -153,13 +153,16 @@ def _validated_map(spec: dict[str, Any], context: str) -> dict[str, str]:
     `map: {Open: [good]}` report the unknown token `"['good']"`, a word
     outside the vocabulary where the real fault is the shape.
     """
-    value_map = spec.get("map")
-    if not isinstance(value_map, dict) or not value_map:
+    raw_map = spec.get("map")
+    if not isinstance(raw_map, dict) or not raw_map:
         raise _fail(context, "this style requires a non-empty 'map' of value -> token")
+    value_map: dict[object, object] = raw_map
+    tokens: dict[str, str] = {}
     for value, token in value_map.items():
         if not isinstance(token, str):
             raise _fail(context, f"map[{value!r}] must be a token name, got {token!r}")
-    return {str(value): token for value, token in value_map.items()}
+        tokens[str(value)] = token
+    return tokens
 
 def _condition(value: str, calculated: bool, ref: str = "@currentField") -> str:
     source = text_value(ref, calculated=True) if calculated else ref
@@ -395,17 +398,19 @@ def _overdue_date(
     if guard is not None:
         if not isinstance(guard, dict):
             raise _fail(context, "overdue-date guard must be a mapping")
-        _reject_unknown_keys(guard, _GUARD_KEYS, f"{context}.guard")
+        guard_map: dict[object, object] = guard
+        _reject_unknown_keys(guard_map, _GUARD_KEYS, f"{context}.guard")
         field_name = _internal_name(
-            guard.get("field"),
+            guard_map.get("field"),
             context,
             "overdue-date guard requires 'field' (a column internal name)",
         )
         # A string is iterable, so `or []` sent "Done" through as four
         # single-character comparisons.
-        excluded = guard.get("not", [])
-        if not isinstance(excluded, list):
+        raw_excluded = guard_map.get("not", [])
+        if not isinstance(raw_excluded, list):
             raise _fail(context, "overdue-date guard 'not' must be a list of values")
+        excluded: list[object] = raw_excluded
         guard_terms = "".join(
             f" && [${field_name}] != {quoted(str(v))}"
             for v in excluded
@@ -563,6 +568,27 @@ def expand_style(
     _reject_unknown_keys(spec, registered.keys, context)
     return registered.expand(spec, context, theme)
 
+def _theme_classes(raw: object, name: str, context: str) -> str:
+    """A token override's `classes`: one string, or a list of class names
+    joined by spaces."""
+    classes = raw
+    if isinstance(raw, list):
+        listed: list[object] = raw
+        class_names: list[str] = []
+        for member in listed:
+            # `str()` on a list member emitted the class "['a', 'b']", as it did for `icon`.
+            if not isinstance(member, str):
+                raise _fail(
+                    context, f"{name}: 'classes' members must be strings, got {member!r}",
+                )
+            class_names.append(member)
+        classes = " ".join(class_names)
+    if not isinstance(classes, str) or not classes:
+        raise _fail(
+            context, f"{name}: 'classes' (non-empty list or string) is required",
+        )
+    return classes
+
 def parse_theme(raw: object, context: str) -> dict[str, StyleToken]:
     """Parse the optional mapping-level style_theme key: per-token
     overrides {token: {classes: [...] | str, icon: str|null}}."""
@@ -570,8 +596,9 @@ def parse_theme(raw: object, context: str) -> dict[str, StyleToken]:
         return {}
     if not isinstance(raw, dict):
         raise _fail(context, "expected a mapping of token overrides")
+    overrides: dict[object, object] = raw
     theme: dict[str, StyleToken] = {}
-    for name, override in raw.items():
+    for name, override in overrides.items():
         # The shape before the word here too: a YAML key may be any scalar,
         # and `1` is not a token name spelled wrongly.
         if not isinstance(name, str):
@@ -582,17 +609,12 @@ def parse_theme(raw: object, context: str) -> dict[str, StyleToken]:
             )
         if not isinstance(override, dict):
             raise _fail(context, f"{name}: expected a mapping with classes/icon")
-        _reject_unknown_keys(override, {"classes", "icon"}, f"{context}.{name}")
-        classes = override.get("classes")
-        if isinstance(classes, list):
-            classes = " ".join(str(c) for c in classes)
-        if not isinstance(classes, str) or not classes:
-            raise _fail(
-                context, f"{name}: 'classes' (non-empty list or string) is required",
-            )
+        override_map: dict[object, object] = override
+        _reject_unknown_keys(override_map, {"classes", "icon"}, f"{context}.{name}")
+        classes = _theme_classes(override_map.get("classes"), name, context)
         # An absent `icon` keeps the token's own and `icon: null` is a
         # declared no icon; `str()` on anything else emitted "['Emoji2']".
-        icon = override.get("icon", TOKENS[name].icon)
+        icon = override_map.get("icon", TOKENS[name].icon)
         if icon is not None and not isinstance(icon, str):
             raise _fail(context, f"{name}: 'icon' must be a string or null, got {icon!r}")
         theme[name] = StyleToken(classes, icon)
