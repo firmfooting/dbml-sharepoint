@@ -183,6 +183,13 @@ def test_a_hyperlink_demo_object_refuses_unknown_keys() -> None:
     f = only(errors, FindingCode.DEMO_HYPERLINK_OBJECT_INVALID)
     assert "'label'" in f.message
 
+def test_a_hyperlink_demo_object_with_a_non_string_key_is_refused() -> None:
+    """The message lists the keys it got, and sorting a YAML int key against
+    `url` raised a TypeError instead of reporting the object."""
+    errors = _hyperlink_demo({"url": "https://example.invalid/a.pdf", 1: "x"})
+    f = only(errors, FindingCode.DEMO_HYPERLINK_OBJECT_INVALID)
+    assert "[1, 'url']" in f.message
+
 def test_a_null_hyperlink_url_is_refused() -> None:
     """`str(None)` is "None", non-empty, and a perfectly valid-looking
     string. A coerced emptiness test passes it through to become a link
