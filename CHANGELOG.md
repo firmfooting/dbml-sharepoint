@@ -1,5 +1,83 @@
 # Changelog
 
+## [0.6.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.5.1...v0.6.0) (2026-09-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* refuse the wrongly typed schema, mapping and release values strict type checking exposed ([#663](https://github.com/firmfooting/dbml-sharepoint/issues/663))
+* **legal-compliance-register:** a redeploy over 2.2.0 replaces the library's role assignments but does not delete the old groups or restore inheritance on folders that already broke it.
+* **schema:** emit one ACL scope collection ([#600](https://github.com/firmfooting/dbml-sharepoint/issues/600))
+* **libraries:** take a library's folders from a DBML enum ([#596](https://github.com/firmfooting/dbml-sharepoint/issues/596))
+* **programme-governance:** proposed and rejected risks, structured detail, and ID in every delivery view ([#591](https://github.com/firmfooting/dbml-sharepoint/issues/591))
+
+### Features
+
+* **assess:** report how full an existing list already is ([#553](https://github.com/firmfooting/dbml-sharepoint/issues/553)) ([63ae28a](https://github.com/firmfooting/dbml-sharepoint/commit/63ae28a888d1ba130545de5578a16f56ef822da6))
+* **cli:** give validate, explain and report library entry points ([#563](https://github.com/firmfooting/dbml-sharepoint/issues/563)) ([f8f35e0](https://github.com/firmfooting/dbml-sharepoint/commit/f8f35e07640b141a71ef7bffd6a07be2efe055d5))
+* **core:** seed demonstration files into a document library ([#539](https://github.com/firmfooting/dbml-sharepoint/issues/539)) ([ff39cb4](https://github.com/firmfooting/dbml-sharepoint/commit/ff39cb451fe19650213d92e6b074c61e51786579))
+* **core:** support document libraries as deployable entities ([#536](https://github.com/firmfooting/dbml-sharepoint/issues/536)) ([de5579e](https://github.com/firmfooting/dbml-sharepoint/commit/de5579e5b7265a777a246ccdfd54b3125f696294))
+* **deploy:** name a unique constraint the site does not carry yet ([#569](https://github.com/firmfooting/dbml-sharepoint/issues/569)) ([cf1b97f](https://github.com/firmfooting/dbml-sharepoint/commit/cf1b97fb0de855c3850788d213d35437d75996e8))
+* **digital-innovation-log:** add the M365 intake and pattern family ([#587](https://github.com/firmfooting/dbml-sharepoint/issues/587)) ([6c3db52](https://github.com/firmfooting/dbml-sharepoint/commit/6c3db52e9b62c4f240bc90296b2cf0a9b593c596))
+* **formatting:** share scalar handling and add numeric severity ([#585](https://github.com/firmfooting/dbml-sharepoint/issues/585)) ([4f93db1](https://github.com/firmfooting/dbml-sharepoint/commit/4f93db19984c7826b6d0ddf7996963b47d29eaa1))
+* **legal-compliance-register:** grant the site's own groups instead of family groups ([#652](https://github.com/firmfooting/dbml-sharepoint/issues/652)) ([9d39ada](https://github.com/firmfooting/dbml-sharepoint/commit/9d39ada6a4fca5302dd4015f849a376ab460beac))
+* **libraries:** secure each library folder with groups generated from a DBML enum ([#597](https://github.com/firmfooting/dbml-sharepoint/issues/597)) ([b92a2a0](https://github.com/firmfooting/dbml-sharepoint/commit/b92a2a085ff211d03f3223a71a8caff783280bc1))
+* **libraries:** take a library's folders from a DBML enum ([#596](https://github.com/firmfooting/dbml-sharepoint/issues/596)) ([f63ec1c](https://github.com/firmfooting/dbml-sharepoint/commit/f63ec1c0880cdba7b2b484ca2cb059628c556023))
+* **lookups:** refuse a library file-name display column, with the measurement ([#602](https://github.com/firmfooting/dbml-sharepoint/issues/602)) ([305ae71](https://github.com/firmfooting/dbml-sharepoint/commit/305ae7127ce78dd604fe456d60cf537182f296e2))
+* **maintain:** a list-script sidecar that deletes one list by URL ([#568](https://github.com/firmfooting/dbml-sharepoint/issues/568)) ([9accc61](https://github.com/firmfooting/dbml-sharepoint/commit/9accc61c64b44e46cf013d2783e767ff148ff7f6))
+* **mapping:** declare per-column default formulas ([#537](https://github.com/firmfooting/dbml-sharepoint/issues/537)) ([e7a9fe7](https://github.com/firmfooting/dbml-sharepoint/commit/e7a9fe714c5f318c7200cf9ff3c3cd55ceed8e27))
+* **programme-governance:** an issue records the decision it was resolved under ([#638](https://github.com/firmfooting/dbml-sharepoint/issues/638)) ([3dfba3b](https://github.com/firmfooting/dbml-sharepoint/commit/3dfba3b004a56fe3d1ed0c9a695224fd27a7f8e3))
+* **programme-governance:** proposed and rejected risks, structured detail, and ID in every delivery view ([#591](https://github.com/firmfooting/dbml-sharepoint/issues/591)) ([61cd23a](https://github.com/firmfooting/dbml-sharepoint/commit/61cd23af34a5718224e4f687db6acb88fc16907f))
+* **programme-governance:** update involvement fields and forms ([#583](https://github.com/firmfooting/dbml-sharepoint/issues/583)) ([93ed5e1](https://github.com/firmfooting/dbml-sharepoint/commit/93ed5e1db9c24e9fca80a6f33e479a1ad3e49981))
+* **schema:** emit one ACL scope collection ([#600](https://github.com/firmfooting/dbml-sharepoint/issues/600)) ([10ece67](https://github.com/firmfooting/dbml-sharepoint/commit/10ece67fe388db0426d2277310892491853c1fa9))
+* **seam-register:** add the provider dependency discovery family ([#606](https://github.com/firmfooting/dbml-sharepoint/issues/606)) ([241a558](https://github.com/firmfooting/dbml-sharepoint/commit/241a558809a69ce4310234a6088a4a31846273b8))
+* **solutions:** add legal-compliance-register family ([#540](https://github.com/firmfooting/dbml-sharepoint/issues/540)) ([84a0dc3](https://github.com/firmfooting/dbml-sharepoint/commit/84a0dc3bc1a6454381e9183d6a03aa4dc2131a0c))
+
+
+### Bug Fixes
+
+* **acls:** verify every scope's role assignments through one reconcile routine ([#599](https://github.com/firmfooting/dbml-sharepoint/issues/599)) ([25b4616](https://github.com/firmfooting/dbml-sharepoint/commit/25b461645bd47caee2dfc43385fcc9a699dd520d))
+* **deploy:** a truncated view, content-type or field page is not proof of absence ([#626](https://github.com/firmfooting/dbml-sharepoint/issues/626)) ([796d161](https://github.com/firmfooting/dbml-sharepoint/commit/796d1617f26e9588928159462b5b8ed12e40fcd4))
+* **deploy:** fail closed when a write phase has no proven list identity ([#601](https://github.com/firmfooting/dbml-sharepoint/issues/601)) ([4285cc3](https://github.com/firmfooting/dbml-sharepoint/commit/4285cc3db4056fd91906bc3cf0edb0065c411070))
+* **deploy:** read a column past a full field page by name instead of creating it ([#607](https://github.com/firmfooting/dbml-sharepoint/issues/607)) ([b8f8640](https://github.com/firmfooting/dbml-sharepoint/commit/b8f86408f003046db6edc4fb6d972d287143ac37)), closes [#577](https://github.com/firmfooting/dbml-sharepoint/issues/577)
+* **deploy:** read and report an adopted lookup's delete behaviour ([#628](https://github.com/firmfooting/dbml-sharepoint/issues/628)) ([4eb3ee0](https://github.com/firmfooting/dbml-sharepoint/commit/4eb3ee0151fbf7bc4bfa122db0c7038c5fc0a3c3)), closes [#576](https://github.com/firmfooting/dbml-sharepoint/issues/576)
+* **deploy:** select Scope and Sealed where drift checks read them, found by $select-honest mocks ([#630](https://github.com/firmfooting/dbml-sharepoint/issues/630)) ([23cd914](https://github.com/firmfooting/dbml-sharepoint/commit/23cd914dab6b03edec111ec835381046ede4df8b))
+* **deploy:** tell an operator where a group's provenance marker actually lives ([#546](https://github.com/firmfooting/dbml-sharepoint/issues/546)) ([8f632eb](https://github.com/firmfooting/dbml-sharepoint/commit/8f632eba9f45cf7bc991e79a1ca6206dc9a8bd56))
+* **deploy:** unblock a document library's first live provision ([#543](https://github.com/firmfooting/dbml-sharepoint/issues/543)) ([0c7dacf](https://github.com/firmfooting/dbml-sharepoint/commit/0c7dacf3f3a61be83e0d1bf611d6a531d9aaeea2))
+* **formatting:** handle plain calculated numbers and dates ([#584](https://github.com/firmfooting/dbml-sharepoint/issues/584)) ([47210bb](https://github.com/firmfooting/dbml-sharepoint/commit/47210bbb18d90d14f146c5ec2cdd34f8daef0ceb))
+* **jsgen:** deploy the constraint a unique Title declares ([#550](https://github.com/firmfooting/dbml-sharepoint/issues/550)) ([3ed1088](https://github.com/firmfooting/dbml-sharepoint/commit/3ed108856ed79817d0d96874f1650b06745519c5))
+* **logging:** seal and lock the sidecar logs the way every other list is ([#547](https://github.com/firmfooting/dbml-sharepoint/issues/547)) ([56a3d04](https://github.com/firmfooting/dbml-sharepoint/commit/56a3d04af476687355504ac6246ba96cb57793ad))
+* **model:** give the mapping loader's refusals names ([#564](https://github.com/firmfooting/dbml-sharepoint/issues/564)) ([398a40f](https://github.com/firmfooting/dbml-sharepoint/commit/398a40fbd2c529d33a4e301082cb4b80e42fa47c))
+* **probes:** accept a hidden target in lookup-acl, once the owner confirms it ([#604](https://github.com/firmfooting/dbml-sharepoint/issues/604)) ([2a65e1e](https://github.com/firmfooting/dbml-sharepoint/commit/2a65e1ea7db379912f3463dcbd05370f18189982))
+* **probes:** re-render the library lookup probe and count its catalogue entry ([#623](https://github.com/firmfooting/dbml-sharepoint/issues/623)) ([966dc1d](https://github.com/firmfooting/dbml-sharepoint/commit/966dc1d758bb3dc76f8d8bafa5dfb1c4593db933))
+* **probes:** record only what the run actually measured ([#560](https://github.com/firmfooting/dbml-sharepoint/issues/560)) ([4483500](https://github.com/firmfooting/dbml-sharepoint/commit/4483500b1e395564faa2249df1976c6d0c08f27e))
+* **probes:** sample the Pacific zone in the site-zone probe ([#603](https://github.com/firmfooting/dbml-sharepoint/issues/603)) ([4c9cbb6](https://github.com/firmfooting/dbml-sharepoint/commit/4c9cbb60994a8ae6090eae0bf6d4864730627d92)), closes [#593](https://github.com/firmfooting/dbml-sharepoint/issues/593)
+* **probes:** void a row whose step never answered instead of settling it ([#571](https://github.com/firmfooting/dbml-sharepoint/issues/571)) ([45c0dfa](https://github.com/firmfooting/dbml-sharepoint/commit/45c0dfa512625d409524a133a8e0607e58c26b13))
+* refuse the wrongly typed schema, mapping and release values strict type checking exposed ([#663](https://github.com/firmfooting/dbml-sharepoint/issues/663)) ([0cba469](https://github.com/firmfooting/dbml-sharepoint/commit/0cba469729df7f9f022597685c59ab09c925c01b))
+* reject unestablished assessment and library probe findings ([#581](https://github.com/firmfooting/dbml-sharepoint/issues/581)) ([1ab73bf](https://github.com/firmfooting/dbml-sharepoint/commit/1ab73bfeb44f1ab9a3df6ef9bdb7da672c261af6))
+* **reporting:** read a list's own rows without naming its own query ([#588](https://github.com/firmfooting/dbml-sharepoint/issues/588)) ([5698601](https://github.com/firmfooting/dbml-sharepoint/commit/569860131e88ae323426d1828d3e19605099b841))
+* **reporting:** read another list through a base function so queries cannot cycle ([#590](https://github.com/firmfooting/dbml-sharepoint/issues/590)) ([55f6743](https://github.com/firmfooting/dbml-sharepoint/commit/55f674331f0fb06a910631bdda70751ac59ec4e6))
+* **rollback:** confirm a list is gone before reporting it deleted ([#558](https://github.com/firmfooting/dbml-sharepoint/issues/558)) ([ee9fd7d](https://github.com/firmfooting/dbml-sharepoint/commit/ee9fd7dff5b55f6744e219a19cc7140a02a00db2))
+* **rollback:** re-prove ownership after the human confirms, before deleting ([#545](https://github.com/firmfooting/dbml-sharepoint/issues/545)) ([2cad4be](https://github.com/firmfooting/dbml-sharepoint/commit/2cad4be5915803d792610dd1c6ec5bcce50f8a84))
+* **sidecars:** restore a guard a failed write took off, and name what is left open ([#645](https://github.com/firmfooting/dbml-sharepoint/issues/645)) ([38ac60f](https://github.com/firmfooting/dbml-sharepoint/commit/38ac60f5db5199adf4bb527bc953bacb37994ed3))
+* **sidecars:** settle a lock whose request rejected by reading it back ([#647](https://github.com/firmfooting/dbml-sharepoint/issues/647)) ([ba90c20](https://github.com/firmfooting/dbml-sharepoint/commit/ba90c206331943803919c349ddc3a560e3b17d21))
+* **views:** refuse a view two declarations resolve to, and a foreign page ([#557](https://github.com/firmfooting/dbml-sharepoint/issues/557)) ([4c7ce1f](https://github.com/firmfooting/dbml-sharepoint/commit/4c7ce1f1f1f3b87d2bd2aa02af2ddd7f89e2c138))
+
+
+### Performance Improvements
+
+* **assess:** read a family's lists in one batch instead of one each ([#566](https://github.com/firmfooting/dbml-sharepoint/issues/566)) ([f1b0da1](https://github.com/firmfooting/dbml-sharepoint/commit/f1b0da179bee59eadc3e5b8a025e5f0d3ab4e969))
+
+
+### Documentation
+
+* **concepts:** what a DBML ref becomes, and the knobs that do not exist ([#570](https://github.com/firmfooting/dbml-sharepoint/issues/570)) ([b9fd278](https://github.com/firmfooting/dbml-sharepoint/commit/b9fd278edb135b84544cff1ef7154a2c136c98cf))
+* **limits:** cite what the same-site lookup rule rests on, and probe the rest ([#565](https://github.com/firmfooting/dbml-sharepoint/issues/565)) ([e42600c](https://github.com/firmfooting/dbml-sharepoint/commit/e42600cdb623ca70b02f18676c73fcf3b7af7537))
+* **limits:** record what Learn does and does not say about four ceilings ([#551](https://github.com/firmfooting/dbml-sharepoint/issues/551)) ([8e9176f](https://github.com/firmfooting/dbml-sharepoint/commit/8e9176fd3500495adcf263c5ed7605d5f3807cf2))
+* refresh the live findings catalogue ([#541](https://github.com/firmfooting/dbml-sharepoint/issues/541)) ([b5b5b0a](https://github.com/firmfooting/dbml-sharepoint/commit/b5b5b0aa17011c6d5e3f91753fc6178295d97e31))
+* rework the README and docs landing page around the firmfooting brand ([#659](https://github.com/firmfooting/dbml-sharepoint/issues/659)) ([0f9d65d](https://github.com/firmfooting/dbml-sharepoint/commit/0f9d65d8374275f20ba8a18a5a64862dbf43ac9b))
+* **website:** apply the firmfooting brand ([#657](https://github.com/firmfooting/dbml-sharepoint/issues/657)) ([b6b8578](https://github.com/firmfooting/dbml-sharepoint/commit/b6b8578c22cab4950f43947576011c0a05da0b16))
+
 ## [0.5.1](https://github.com/firmfooting/dbml-sharepoint/compare/v0.5.0...v0.5.1) (2026-09-12)
 
 
