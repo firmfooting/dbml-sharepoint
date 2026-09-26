@@ -333,7 +333,8 @@ def check(vc: ValidationContext) -> list[Finding]:
                 members = style_enum_members.get(types_by_col.get(source, ""))
                 if members is None:
                     continue
-                for unknown in sorted(set(block.get("map", {})) - members):
+                # `key=str`: a hand-built Mapping skips the loader's text-key refusal.
+                for unknown in sorted(set(block.get("map", {})) - members, key=str):
                     findings.append(Finding(
                         map_rule.code,
                         f"{ctx}: {map_rule.label} {unknown!r} is not a member of "
