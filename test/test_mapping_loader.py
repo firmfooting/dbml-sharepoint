@@ -3948,6 +3948,11 @@ def test_a_form_body_field_that_is_not_a_name_survives_the_retirement_fold(
     assert body["sections"][0]["fields"] == [{"nested": True}]
 
 
+def _derived(entry: str) -> str:
+    """A mapping whose Risk entity declares one derived column, `entry`, written inline."""
+    return blocks(entities("Risk"), f"derived_columns:\n  Risk:\n    - {entry}")
+
+
 #: One declaration per reader whose default decides deployed behaviour, each
 #: key written with no value. A blank reads as absent (#665), so each takes its
 #: default, and because the author may have meant a value the load records it
@@ -4170,6 +4175,30 @@ _RECORDED_BLANK_CASES = [
         "list_permissions.default.assignments",
         id="assignments",
     ),
+    pytest.param(
+        _derived("{ kind: expr, name: Age, type: number, m: '1', hidden: }"),
+        "derived_columns.Risk[0].hidden", False,
+        lambda b: b.mapping.derived_columns["Risk"][0].hidden,
+        "derived_columns.Risk[0].hidden",
+        id="derived-hidden",
+    ),
+    pytest.param(
+        _derived("{ kind: expr, name: Age, type: number, m: '1', replace: }"),
+        "derived_columns.Risk[0].replace", False,
+        lambda b: b.mapping.derived_columns["Risk"][0].replace,
+        "derived_columns.Risk[0].replace",
+        id="derived-replace",
+    ),
+    pytest.param(
+        _derived(
+            "{ kind: count, from: Task, via: Risk, name: Open, aggregate: count, "
+            "type: Int64, where: }",
+        ),
+        "derived_columns.Risk[0].where", "",
+        lambda b: b.mapping.derived_columns["Risk"][0].where,
+        "derived_columns.Risk[0].where",
+        id="derived-where",
+    ),
 ]
 
 
@@ -4197,9 +4226,9 @@ def test_a_blank_key_takes_a_behavioural_default_and_is_reported(
     A head that names no section (`item_security`) stays in the path under
     `mapping`.
 
-    Before #665 each of these was refused, or raised a bare TypeError. The
-    build now goes ahead with what an absent key would give, and the author
-    is told.
+    Before #665 each of these was refused, raised a bare TypeError, or went
+    through `bool()` or `str()` in silence. The build now goes ahead with
+    what an absent key would give, and the author is told.
     """
     write_mapping(tmp_path, body)
     bundle = load_mapping(tmp_path / "m.yaml")
@@ -4247,6 +4276,46 @@ _SILENT_BLANK_CASES = [
         """),
         lambda b: b.mapping.retired_columns["Risk"]["Old"].superseded_by, None,
         id="retired-superseded-by",
+    ),
+    pytest.param(
+        _derived("{ kind: expr, name: Age, type: number, m: '1', description: }"),
+        lambda b: b.mapping.derived_columns["Risk"][0].description, "",
+        id="derived-description",
+    ),
+    pytest.param(
+        # A blank `via:` read as "None" was a second join, refused as "both were given".
+        _derived(
+            "{ kind: lookup, from: Owner, via: , key: OwnerId, "
+            "pick: { OwnerName: Title }, types: { OwnerName: text } }",
+        ),
+        lambda b: (b.mapping.derived_columns["Risk"][0].via,
+                   b.mapping.derived_columns["Risk"][0].key),
+        ("", "OwnerId"),
+        id="derived-via",
+    ),
+    pytest.param(
+        _derived(
+            "{ kind: lookup, from: Owner, via: Owner, key: , "
+            "pick: { OwnerName: Title }, types: { OwnerName: text } }",
+        ),
+        lambda b: (b.mapping.derived_columns["Risk"][0].via,
+                   b.mapping.derived_columns["Risk"][0].key),
+        ("Owner", ""),
+        id="derived-key",
+    ),
+    pytest.param(
+        # A blank `column:` read as "None" was refused as a column a count must not name.
+        _derived(
+            "{ kind: count, from: Task, via: Risk, name: Open, aggregate: count, "
+            "type: Int64, column: }",
+        ),
+        lambda b: b.mapping.derived_columns["Risk"][0].column, "",
+        id="derived-column",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "derived_columns:\n  Risk:"),
+        lambda b: b.mapping.derived_columns, {},
+        id="derived-entity-block",
     ),
 ]
 
@@ -4607,6 +4676,53 @@ _COERCED_VALUE_CASES = [
         """),
         "retired_columns.Risk.Old.reason must be a string, got 5",
         id="retired-reason",
+    ),
+    pytest.param(
+        _derived("{ kind: expr, name: Age, type: number, m: '1', hidden: 'false' }"),
+        "derived_columns.Risk[0].hidden must be a boolean, got 'false'",
+        id="derived-hidden",
+    ),
+    pytest.param(
+        _derived("{ kind: expr, name: Age, type: number, m: '1', replace: 1 }"),
+        "derived_columns.Risk[0].replace must be a boolean, got 1",
+        id="derived-replace",
+    ),
+    pytest.param(
+        _derived("{ kind: expr, name: Age, type: number, m: '1', description: [Age] }"),
+        "derived_columns.Risk[0].description must be a string, got ['Age']",
+        id="derived-description",
+    ),
+    pytest.param(
+        _derived(
+            "{ kind: lookup, from: Owner, via: [Owner], pick: { OwnerName: Title }, "
+            "types: { OwnerName: text } }",
+        ),
+        "derived_columns.Risk[0].via must be a string, got ['Owner']",
+        id="derived-via",
+    ),
+    pytest.param(
+        _derived(
+            "{ kind: lookup, from: Owner, key: 5, pick: { OwnerName: Title }, "
+            "types: { OwnerName: text } }",
+        ),
+        "derived_columns.Risk[0].key must be a string, got 5",
+        id="derived-key",
+    ),
+    pytest.param(
+        _derived(
+            "{ kind: count, from: Task, via: Risk, name: Latest, aggregate: max, "
+            "type: date, column: [DueDate] }",
+        ),
+        "derived_columns.Risk[0].column must be a string, got ['DueDate']",
+        id="derived-column",
+    ),
+    pytest.param(
+        _derived(
+            "{ kind: count, from: Task, via: Risk, name: Open, aggregate: count, "
+            "type: Int64, where: 5 }",
+        ),
+        "derived_columns.Risk[0].where must be a string, got 5",
+        id="derived-where",
     ),
 ]
 

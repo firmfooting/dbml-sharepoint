@@ -17,7 +17,7 @@ from dbml_sharepoint.model.errors import (
     UnknownMappingKeyError,
 )
 from dbml_sharepoint.model.mapping_types import DerivedColumn, ReportingOptions
-from dbml_sharepoint.model.reading import strict_bool
+from dbml_sharepoint.model.reading import optional_bool, optional_str, strict_bool, strict_str
 from dbml_sharepoint.model.sections.context import SectionContext
 
 _DERIVED_KEYS: dict[str, frozenset[str]] = {
@@ -107,8 +107,9 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
             f"carries the list.",
         )
     _reject_unknown_keys(item, _DERIVED_KEYS[kind], where)
-    hidden = bool(item.get("hidden", False))
-    description = str(item.get("description", ""))
+    # Typed reads, because `bool("false")` is True and `str()` made a blank the text "None".
+    hidden = optional_bool(item, "hidden", where)
+    description = optional_str(item, "description", where) or ""
     if kind == "expr":
         declared_type = _derived_text(item, "type", where)
         if declared_type not in DERIVED_TYPES:
@@ -123,11 +124,12 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
             m=_derived_text(item, "m", where),
             hidden=hidden,
             description=description,
-            replace=bool(item.get("replace", False)),
+            replace=optional_bool(item, "replace", where),
         )
     if kind == "lookup":
-        via = str(item.get("via", ""))
-        join_key = str(item.get("key", ""))
+        # A blank join is no join, so a blank `via:` beside a `key` is not "both".
+        via = optional_str(item, "via", where) or ""
+        join_key = optional_str(item, "key", where) or ""
         if bool(via) == bool(join_key):
             raise MappingShapeError(
                 f"{where}: a lookup joins EITHER on `via`, a lookup column "
@@ -193,7 +195,7 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
             f"{where}: type must be one of "
             f"{', '.join(sorted(DERIVED_TYPES))}, got {declared_type!r}",
         )
-    column = str(item.get("column", ""))
+    column = optional_str(item, "column", where) or ""
     if aggregate != "count" and not column:
         raise MappingShapeError(
             f"{where}: aggregate {aggregate!r} reads a column of the child "
@@ -211,7 +213,8 @@ def _parse_derived_column(item: Any, where: str) -> DerivedColumn:
         name=_derived_text(item, "name", where),
         aggregate=aggregate,
         column=column,
-        where=str(item.get("where", "")),
+        # `strict_str`, so a blank `where:` that counts every child row is recorded.
+        where=strict_str(item, "where", where, default=""),
         type=declared_type,
         hidden=hidden,
         description=description,
@@ -222,6 +225,9 @@ def _parse_derived_columns(raw: Any) -> dict[str, list[DerivedColumn]]:
     """The `derived_columns` section: {entity: [column, ...]}."""
     out: dict[str, list[DerivedColumn]] = {}
     for entity, items in _require_mapping(raw, "derived_columns").items():
+        # A blank entity block reads as absent: that entity declares no derived columns.
+        if items is None:
+            continue
         if not isinstance(items, list):
             raise MappingShapeError(
                 f"derived_columns.{entity} must be a list of columns, "
