@@ -18,33 +18,40 @@ Why a fact is here rather than in the schema follows one rule, written down in
 declares the logical model in standard DBML, and everything that is SharePoint
 syntax, deployment behaviour or a consumer's computation lives here.
 
-## Spellings YAML 1.1 and 1.2 read differently
+## How the file is read
 
-The file is parsed as YAML 1.1, which reads an unquoted `yes`, `no`, `on` or
-`off` as a boolean, `010` as the octal number 8 and `1:30` as the base-60
-number 90. YAML 1.2, as ruamel.yaml reads it, takes all of those as text
-except `010`, which it reads as 10, and it reads `08`, `0o10`, `1e3` and
-`-.5` as numbers where YAML 1.1 reads text. A file does not say which version
-it was written for, so a value the two read differently is a load error,
-whether it is a key or a value and wherever it sits. One error names every
-such value, up to twenty, with its line, the reading it has had until now,
-and the spelling that keeps that reading:
+The file is parsed by ruamel.yaml, which reads YAML 1.2. It was parsed as
+YAML 1.1 until 2026-09, and YAML 1.2 differs from it on these unquoted
+values:
 
-```text
-mapping.yaml: uses spellings YAML 1.1 and 1.2 read differently:
-  line 12, column 11: `yes` is read as a boolean until now and as text in YAML 1.2; write `true` to keep the boolean, or quote it ("yes") for text
-```
+- `yes`, `no`, `on` and `off` are text. Write `true` or `false` for a
+  boolean.
+- A leading zero is decimal: `010` is 10 and `08` is 8.
+- `1:30` is text, not the base-60 number 90.
 
-Write `true` or `false` for a boolean, a plain decimal for a number, and quote
-anything meant as text. A timestamp whose seventh fraction digit is 5 or more
-is refused too, because PyYAML drops the digits past the sixth and ruamel.yaml
-rounds the sixth up, and so are an explicit tag other than `!!str`, a `%YAML` or
-`%TAG` directive, a sequence or mapping used as a key, and an alias inside the
-collection its anchor names, which would make that collection contain itself.
-ruamel.yaml reads
-`1_000` and `0b101` as numbers, as YAML 1.1 does, where the YAML 1.2 core
-schema reads them as text, so those load. The same rule applies to every
-YAML file the mapping names and to `release.yaml`.
+The other direction also changed. These unquoted values were text in
+YAML 1.1 and are numbers now:
+
+- `0o10` is the octal number 8.
+- `1e3` and `1.0e3` are the float 1000.0, and `-.5` is -0.5.
+
+ruamel.yaml reads `1_000` and `0b101` as numbers, as YAML 1.1 does, where
+the YAML 1.2 core schema reads them as text. Quote anything meant as text.
+
+Some valid YAML is refused, naming its line:
+
+- a key written twice in one mapping, even one that merges another with `<<`;
+- an explicit tag, except `!!str` on a single value;
+- a `%YAML` or `%TAG` directive;
+- an anchor name used twice;
+- a sequence or mapping used as a key;
+- an alias inside the collection its anchor names, which would make that
+  collection contain itself;
+- nesting deeper than 100 levels, counting the levels an alias stands for.
+
+A value the parser cannot construct, such as the date `2026-02-30`, is a
+load error naming its line too. The same rules apply to every YAML file the
+mapping names and to `release.yaml`.
 
 ## Identity
 
@@ -2573,6 +2580,5 @@ Project-specific configuration for an [extension](../concepts/architecture.md#th
 The core loader passes it through untyped; selection honours the
 *resolved* extension (a CLI `--extension` override may differ from the
 mapping's `extension:` key). The block is still parsed with the rest of the
-file, so a spelling
-[YAML 1.1 and 1.2 read differently](#spellings-yaml-11-and-12-read-differently)
-is refused inside it too.
+file, so [what the parser refuses](#how-the-file-is-read) is refused inside
+it too.

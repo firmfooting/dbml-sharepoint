@@ -950,8 +950,8 @@ def _looks_like_a_date(value: object) -> bool:
     from the build and from the deploy alike. Refusing here needs no answer
     to that question.
 
-    A bare `datetime.date` passes: PyYAML resolves an unquoted `2026-07-29`
-    to one before this module sees it, and `str()` on a date is the ISO
+    A bare `datetime.date` passes: the YAML loader resolves an unquoted
+    `2026-07-29` to one before this module sees it, and `str()` on a date is the ISO
     literal exactly. A `datetime.datetime` does NOT (`str()` spells the
     separator as a space, which no probe has run), and it is rejected by
     `_check_date_literal` with its own message rather than here.
@@ -1093,7 +1093,7 @@ def _check_date_literal(
     if _looks_like_a_date(value):
         return
 
-    # PyYAML resolves an unquoted `2026-07-29T14:30:00` to a datetime, and
+    # The YAML loader resolves an unquoted `2026-07-29T14:30:00` to a datetime, and
     # `str()` on one spells the separator as a SPACE. Quoting it gives the
     # `T` spelling the probe ran, so say that rather than claiming the value
     # the author wrote is not a date.

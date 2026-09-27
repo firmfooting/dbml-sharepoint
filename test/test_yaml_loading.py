@@ -1,28 +1,28 @@
 # test/test_yaml_loading.py
 """The one YAML parser, and the gate that keeps every read going through it.
 
-`yaml.safe_load` keeps the last of two identical keys in a mapping and reports
-nothing (#672). `model/_yaml.py` refuses the repeat, and it only protects the
-files that are read with it, so the gate below holds the package and its tests
-to it.
+ruamel.yaml's own loader checks for a repeated key, but not in a mapping
+that merges another nor inside the merged one, and PyYAML, which read every
+file here until 2026-09, kept the last of two and reported nothing (#672).
+`model/_yaml.py` refuses the repeat, and it only protects the files that are
+read with it, so the gate below holds the package and its tests to it.
 
-The version guard's own cases are in `test_yaml_versions.py`, which does not
-import PyYAML. The ones here compare the loader with PyYAML itself.
+The loader's other refusals are in `test_yaml_refusals.py`, which imports
+neither library.
 """
 
 import io
-import itertools
 import tomllib
+from pathlib import Path
 
 import pytest
-import yaml
-from _paths import REPO_ROOT, SOLUTION_TEMPLATES
-from yaml.constructor import ConstructorError
+from _paths import FIXTURES, REPO_ROOT, SOLUTION_TEMPLATES
+from ruamel.yaml import YAML
+from ruamel.yaml.constructor import ConstructorError
+from ruamel.yaml.nodes import ScalarNode
 
+from dbml_sharepoint import catalogue
 from dbml_sharepoint.model import _yaml
-
-#: The tags whose resolution YAML 1.2 changed, the only ones the frozen tables hold.
-_THREE = frozenset({"tag:yaml.org,2002:bool", "tag:yaml.org,2002:float", "tag:yaml.org,2002:int"})
 
 
 def _refusal(text: str) -> str:
@@ -58,7 +58,7 @@ def test_a_repeat_is_refused_wherever_a_mapping_sits(text: str, key: str) -> Non
 def test_two_spellings_read_as_one_boolean_are_both_named() -> None:
     """`True` and `true` are two spellings to the author, so naming only
     `True` would not say what was written twice. `No` and `Off` were the
-    case here until the parser refused both (#686)."""
+    case here until YAML 1.2 read both as text (#686)."""
     assert _refusal("map: { True: blocked, true: warning }\n") == (
         "while constructing a mapping\n"
         '  in "<file>", line 1, column 6\n'
@@ -116,12 +116,12 @@ def test_a_key_beside_a_merge_overrides_it() -> None:
 
 
 def test_a_second_merge_key_in_one_mapping_is_refused() -> None:
-    """Two `<<` keys are a repeat under the spec, and PyYAML settles their
-    clash the opposite way to the list form, so neither reading is safe."""
+    """Two `<<` keys are a repeat under the spec. PyYAML settled their clash
+    the opposite way to the list form, reading `x` as 2 here where the list
+    reads 1, so neither reading is safe."""
     two_keys = "a: &a {x: 1}\nb: &b {x: 2}\nuse:\n  <<: *a\n  <<: *b\n"
     listed = "a: &a {x: 1}\nb: &b {x: 2}\nuse:\n  <<: [*a, *b]\n"
-    assert yaml.safe_load(two_keys)["use"] == {"x": 2}
-    assert yaml.safe_load(listed)["use"] == _yaml.safe_load(listed)["use"] == {"x": 1}
+    assert _yaml.safe_load(listed)["use"] == {"x": 1}
     assert _refusal(two_keys) == (
         "while constructing a mapping\n"
         '  in "<file>", line 4, column 3\n'
@@ -132,8 +132,7 @@ def test_a_second_merge_key_in_one_mapping_is_refused() -> None:
 
 def test_a_quoted_merge_spelling_is_a_text_key_not_a_second_merge() -> None:
     text = 'a: &a {x: 1}\nuse: {<<: *a, "<<": 2}\n'
-    assert _yaml.safe_load(text) == yaml.safe_load(text)
-    assert _yaml.safe_load(text)["use"] == {"x": 1, "<<": 2}
+    assert _yaml.safe_load(text) == {"a": {"x": 1}, "use": {"x": 1, "<<": 2}}
 
 
 def test_a_repeat_inside_a_merge_source_is_refused() -> None:
@@ -143,30 +142,25 @@ def test_a_repeat_inside_a_merge_source_is_refused() -> None:
 
 
 def test_a_nested_merge_flattened_before_it_is_built_is_not_a_repeat() -> None:
-    """PyYAML builds mappings breadth first, so `use` flattens `b` in place
+    """Mappings are built breadth first, so `use` flattens `b` in place
     before `b` is built, leaving `x` twice in its pairs. A check that read
-    those pairs again would refuse a document SafeLoader reads correctly."""
+    those pairs again would refuse a document the parser reads correctly."""
     text = "defs:\n  inner:\n    b: &b {<<: &a {x: 1}, x: 3}\nuse: {<<: *b}\n"
-    assert _yaml.safe_load(text) == yaml.safe_load(text)
-    assert _yaml.safe_load(text)["use"] == {"x": 3}
+    assert _yaml.safe_load(text) == {"defs": {"inner": {"b": {"x": 3}}}, "use": {"x": 3}}
 
 
-def test_a_value_key_loads_as_safe_loader_reads_it() -> None:
-    """PyYAML tags a bare `=` key specially and retags it as text while
+def test_a_value_key_loads_as_text() -> None:
+    """The parser tags a bare `=` key specially and retags it as text while
     flattening, so it cannot be constructed before that."""
-    assert _yaml.safe_load("=: 1\n") == yaml.safe_load("=: 1\n") == {"=": 1}
+    assert _yaml.safe_load("=: 1\n") == {"=": 1}
 
 
 @pytest.mark.parametrize(
     ("text", "kind"), [("? [a, b]\n: 1\n", "sequence"), ("? {a: 1}\n: 1\n", "mapping")],
 )
-def test_a_collection_key_is_refused_before_safe_loader_would_refuse_it(
-    text: str, kind: str,
-) -> None:
-    """SafeLoader refuses both keys as unhashable, and ruamel.yaml reads the
-    sequence as a tuple, so the loader refuses both itself, as composed (#686)."""
-    with pytest.raises(yaml.YAMLError, match="found unhashable key"):
-        yaml.safe_load(text)
+def test_a_collection_key_is_refused_as_it_is_composed(text: str, kind: str) -> None:
+    """PyYAML refused both keys as unhashable, and ruamel.yaml reads the
+    sequence as a tuple, so the loader refuses both itself (#686)."""
     assert _refusal(text) == (
         "while composing a mapping\n"
         '  in "<file>", line 1, column 1\n'
@@ -178,8 +172,10 @@ def test_a_collection_key_is_refused_before_safe_loader_would_refuse_it(
 def test_every_shipped_yaml_file_loads_unchanged() -> None:
     """An enforced rule must not be stronger than the reference implementation.
 
-    The programme-governance mapping overrides a merged width, which is the
-    case a naive repeat check refuses, so it is named as well as globbed.
+    Every shipped file loads unrefused, to what ruamel.yaml's own safe loader
+    reads. The programme-governance mapping overrides a merged width, which
+    is the case a naive repeat check refuses, so it is named as well as
+    globbed, with the widths PyYAML read there.
     """
     shipped = sorted(SOLUTION_TEMPLATES.rglob("*.yaml"))
     governance = SOLUTION_TEMPLATES / "programme-governance" / "20-configure" / "mapping.yaml"
@@ -187,80 +183,97 @@ def test_every_shipped_yaml_file_loads_unchanged() -> None:
     assert "<<: *action_spine\n        Title: 300\n" in governance.read_text(encoding="utf-8")
     for path in shipped:
         text = path.read_text(encoding="utf-8")
-        assert _yaml.safe_load(text) == yaml.safe_load(text), path
-
-
-def _fuzz() -> list[str]:
-    """Every token of up to four characters that numbers are spelled with, and the booleans.
-
-    The alphabet the research fuzz measured the two libraries over (#686).
-    """
-    alphabet = "0178_.-+eE:obx"
-    spelled = {
-        "".join(chars) for n in range(1, 5) for chars in itertools.product(alphabet, repeat=n)
+        assert _yaml.safe_load(text) == YAML(typ="safe", pure=True).load(text), path
+    views = _yaml.safe_load(governance.read_text(encoding="utf-8"))["views"]["Action"]
+    overdue = next(view for view in views if view["title"] == "Overdue")
+    assert overdue["widths"] == {
+        "Title": 300, "Workstream": 180, "WorkstreamPhase": 130, "AssignedTo": 160,
+        "DueDate": 160, "Status": 120, "RelatedRiskTitle": 220, "CompletedDate": 160,
     }
-    words = ("yes", "no", "on", "off", "y", "n", "true", "false", "null")
-    return sorted(spelled | {w for word in words for w in (word, word.upper(), word.title())})
 
 
-def test_the_frozen_yaml_1_1_table_is_the_resolver_pyyaml_runs() -> None:
-    """The guard reads a frozen copy and never asks the live resolver, so a
-    PyYAML that changed its rules would go unnoticed without this. Its bool,
-    float and int resolvers are tried before any other, so a value none of
-    them takes is resolved by the rules both versions share."""
-    live: dict[tuple[str, str, int], set[str]] = {}
-    for first, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items():
-        tags = [tag for tag, _ in resolvers]
-        assert tags[: len(set(tags) & _THREE)] == [
-            tag for tag, _, chars in _yaml._YAML_1_1 if first in chars
-        ], first
-        for tag, pattern in resolvers:
-            live.setdefault((tag, pattern.pattern, pattern.flags), set()).add(first)
-    for tag, pattern, chars in _yaml._YAML_1_1:
-        assert live[tag, pattern.pattern, pattern.flags] == set(chars), tag
-    timestamp = _yaml._TIMESTAMP
-    assert ("tag:yaml.org,2002:timestamp", timestamp.pattern, timestamp.flags) in live
+def _roots() -> dict[str, set[Path]]:
+    """Every YAML document the tool reads that the repository holds, by where it is.
+
+    Each mapping, release and side file of the shipped templates, the
+    examples and the fixtures, and each journey, whose front matter is read.
+    """
+    return {
+        "templates": set(SOLUTION_TEMPLATES.rglob("*.yaml")),
+        "examples": set((REPO_ROOT / "examples").rglob("*.yaml")),
+        "fixtures": set(FIXTURES.rglob("*.yaml")),
+        "journeys": set((SOLUTION_TEMPLATES / catalogue.JOURNEYS_DIRNAME).glob("*.md")),
+    }
 
 
-def test_the_frozen_boolean_spellings_are_the_ones_pyyaml_looks_up() -> None:
-    """The guard says a resolved boolean outside these fails to load, as it does here."""
-    assert frozenset(yaml.SafeLoader.bool_values) == _yaml._BOOLEANS_1_1
-    with pytest.raises(KeyError):
-        yaml.safe_load("v: ! |\n  yes\n")
+_ROOTS = _roots()
+_DOCUMENTS = sorted({path for found in _ROOTS.values() for path in found})
+
+# Raised as documents are added and never lowered to pass: a drop means a glob stopped matching.
+_FLOOR = 103
 
 
-def test_the_frozen_timestamp_parts_are_the_ones_pyyaml_constructs_from() -> None:
-    """The guard states the time YAML 1.1 has read from a copy of this regex."""
-    parts, live = _yaml._TIME_PARTS, yaml.SafeLoader.timestamp_regexp
-    assert (parts.pattern, parts.flags) == (live.pattern, live.flags)
+def test_the_round_trip_covers_every_kind_of_document() -> None:
+    """A glob that matched nothing would pass the round trip below vacuously,
+    and one that matched fewer would pass it on what was left."""
+    assert [root for root, found in _ROOTS.items() if not found] == []
+    assert len(_DOCUMENTS) >= _FLOOR
+    names = {path.name for path in _DOCUMENTS}
+    assert {"mapping.yaml", "release.yaml", "reporting.yaml", "demo.yaml", "topics.yaml"} <= names
+    assert any(path.suffix == ".md" for path in _DOCUMENTS)
 
 
 @pytest.mark.parametrize(
-    "fraction", ["1234565", "1234564", "9999995", "12345650", "12345612345678901234"],
+    "path", _DOCUMENTS, ids=lambda path: path.relative_to(REPO_ROOT).as_posix(),
 )
-def test_pyyaml_reads_the_time_the_guard_states(fraction: str) -> None:
-    """PyYAML keeps six fraction digits, which is the time the refusal says
-    has been read until now and the spelling it offers."""
-    token = f"2026-01-02T03:04:05.{fraction}+10:00"
-    read = yaml.safe_load(f"v: {token}\n")["v"]
-    kept = token.replace(fraction, fraction[:6])
-    assert read == yaml.safe_load(f"v: {kept}\n")["v"]
-    why = _yaml._refusal(token)
-    assert (why is None) == (fraction[6] < "5")
-    if why is not None:
-        assert f"read as the time {read.isoformat()} until now" in why
-        assert f"write `{kept}` to keep the time" in why
+def test_every_document_the_tool_reads_round_trips_through_the_writer(path: Path) -> None:
+    """What the loader reads, the writer writes back as a document that
+    reads as the same value, so a file `extract` or an edit writes loads."""
+    text = path.read_text(encoding="utf-8")
+    loaded = catalogue._front_matter(text, path) if path.suffix == ".md" else _yaml.safe_load(text)
+    # `repr` also tells 1 from 1.0 and True, and one key order from another.
+    assert repr(_yaml.safe_load(_yaml.safe_dump(loaded))) == repr(loaded)
 
 
-def test_pyyaml_resolves_every_fuzz_token_as_the_frozen_table_says() -> None:
-    loader = yaml.SafeLoader("")
-    try:
-        for token in _fuzz():
-            resolved = loader.resolve(yaml.ScalarNode, token, (True, False))
-            expected = resolved if resolved in _THREE else None
-            assert _yaml._tag(_yaml._YAML_1_1, token) == expected, token
-    finally:
-        loader.dispose()
+@pytest.mark.parametrize(
+    ("zone", "read"),
+    [
+        ("Z", ", tzinfo=datetime.timezone.utc"),
+        ("+00:00", ", tzinfo=datetime.timezone.utc"),
+        ("-00:00", ", tzinfo=datetime.timezone.utc"),
+        ("+10:00", ", tzinfo=datetime.timezone(datetime.timedelta(seconds=36000))"),
+        (" -05", ", tzinfo=datetime.timezone(datetime.timedelta(days=-1, seconds=68400))"),
+        ("", ""),
+    ],
+)
+def test_a_zoned_time_keeps_the_zone_pyyaml_gave_it(zone: str, read: str) -> None:
+    """ruamel.yaml names a zone as it was written, `Z` or `+10:00`, and
+    PyYAML 6.0.3 did not, as measured on 2026-09-27. A message that shows a
+    loaded time with `!r`, as a condition's and a demo row's refusals do,
+    would otherwise change its words; this is the value those have shown."""
+    value = _yaml.safe_load(f"v: 2026-01-02 03:04:05{zone}\n")["v"]
+    assert repr(value) == f"datetime.datetime(2026, 1, 2, 3, 4, 5{read})"
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ("%YAML 2.0\n---\na: 1\n", "found incompatible YAML document (version 1.* is required)"),
+        ("%YAML 0.9\n---\na: 1\n", "found incompatible YAML document (version 1.* is required)"),
+        ("%YAML 1.2\n%YAML 1.2\n---\na: 1\n", "found duplicate YAML directive"),
+        ("%YAML 1.1\n%YAML 2.0\n---\na: 1\n", "found duplicate YAML directive"),
+    ],
+    ids=["major-2", "major-0", "repeated", "repeated-major-2"],
+)
+def test_a_version_directive_the_parser_rejects_is_still_rejected(
+    text: str, message: str,
+) -> None:
+    """The scanner hands the parser `1.2` for any `%YAML 1.x`, so ruamel.yaml
+    neither switches version nor asserts. Another major version, and a second
+    `%YAML`, still reach the parser's own checks, whose words and marks are
+    the ones PyYAML 6.0.3 gave, as measured on 2026-09-27."""
+    where = "2" if message.endswith("directive") else "1"
+    assert _refusal(text) == f'{message}\n  in "<file>", line {where}, column 1'
 
 
 @pytest.mark.parametrize(
@@ -271,13 +284,14 @@ def test_a_construction_error_is_a_yaml_error_at_its_node(
 ) -> None:
     """Each escaped every handler that catches the parser's errors: the
     mapping reader's, the catalogue's skip, the CLI's and the wizard's.
-    Without an explicit tag only ValueError and KeyError can be raised, so
-    the int constructor is made to raise each in turn."""
+    Every tag is refused, which closes the usual way to reach most of them,
+    so the int constructor is made to raise each in turn."""
 
-    def fail(loader: _yaml.UniqueKeyLoader, node: yaml.ScalarNode) -> int:
-        raise error(f"{loader.construct_scalar(node)} failed")
+    def fail(constructor: _yaml.UniqueKeyConstructor, node: ScalarNode) -> int:
+        raise error(f"{constructor.construct_scalar(node)} failed")
 
-    monkeypatch.setitem(_yaml.UniqueKeyLoader.yaml_constructors, "tag:yaml.org,2002:int", fail)
+    constructors = _yaml.UniqueKeyConstructor.yaml_constructors
+    monkeypatch.setitem(constructors, "tag:yaml.org,2002:int", fail)
     with pytest.raises(ConstructorError) as err:
         _yaml.safe_load(io.StringIO("a: x\nb: 12\n"))
     assert type(err.value.__cause__) is error
@@ -287,18 +301,20 @@ def test_a_construction_error_is_a_yaml_error_at_its_node(
     )
 
 
-def test_pyyaml_may_be_imported_only_by_the_parser_and_its_own_test() -> None:
-    """`yaml.safe_load` anywhere else would read a repeated key silently again.
+def test_a_yaml_library_may_be_imported_only_by_the_parser_and_its_own_test() -> None:
+    """ruamel.yaml's loader anywhere else would read a repeat in a merging
+    mapping, an explicit tag and a `%YAML 1.1` directive without a word.
 
-    Ruff's banned-api rule refuses every spelling of a PyYAML import; this pins
-    that the rule is on and that only `model/_yaml.py` and this module, which
-    compares the parser with PyYAML, are exempt from it. A test reading YAML
-    through PyYAML would go on testing PyYAML's reading once the parser changes.
+    Ruff's banned-api rule refuses every spelling of an import of either
+    library: `ruamel` covers `ruamel.yaml` and its modules. This pins that
+    the rule is on and that only `model/_yaml.py` and this module, which
+    compares the loader with ruamel.yaml's own, are exempt from it. PyYAML is no longer
+    installed, and its ban stays so that it cannot come back unnoticed.
     """
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     lint = pyproject["tool"]["ruff"]["lint"]
     assert "TID251" in lint["select"]
-    assert "yaml" in lint["flake8-tidy-imports"]["banned-api"]
+    assert sorted(lint["flake8-tidy-imports"]["banned-api"]) == ["ruamel", "yaml"]
     exempt = sorted(
         pattern for pattern, rules in lint["per-file-ignores"].items() if "TID251" in rules
     )

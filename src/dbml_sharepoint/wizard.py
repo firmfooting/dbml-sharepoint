@@ -858,10 +858,15 @@ def _drop_chosen_from_previous_prefixes(
     # comment on the line is handled by the parser that will read it back.
     try:
         declared = _yaml.safe_load(match.group(1))
-    except _yaml.AmbiguousYAMLError as exc:
+    except _yaml.TagOrDirectiveError as exc:
         # The line parses; the parser counts from the text after the colon, the operator from 1:1.
         where = exc.moved(text.count("\n", 0, match.start()), match.start(1) - match.start())
         raise WizardError(f"`previous_prefixes:` {where}") from exc
+    except _yaml.RefusedYAMLError as exc:
+        # The line parses, as valid YAML the loader will not read, such as a reused anchor.
+        raise WizardError(
+            f"`previous_prefixes:` is refused ({match.group(0).strip()!r}): {exc}",
+        ) from exc
     except _yaml.PARSE_ERRORS as exc:
         # A flow list continued onto a second line does not parse from its first.
         raise WizardError(
@@ -891,8 +896,8 @@ def _rewrite_prefix(mapping_path: Path, prefix: str) -> tuple[str, ...]:
 
     A targeted line rewrite, not a YAML round-trip. Every shipped mapping
     is heavily commented -- the comments are the documentation for the
-    template -- and `yaml.safe_load` followed by `yaml.dump` would discard
-    all of them and reorder the file.
+    template -- and `_yaml.safe_load` followed by `_yaml.safe_dump` would
+    discard all of them.
 
     Verified through the real loader rather than by re-reading the text:
     what matters is whether the mapping the build will load carries the
@@ -1211,8 +1216,8 @@ def _read_facts(solution: Solution) -> _TemplateFacts:
     """Load one template's mapping, or refuse by name.
 
     `load_mapping` raises `ValueError` for anything it dislikes, `KeyError`
-    for an absent required section, and passes through `OSError` and
-    `yaml.YAMLError` from the read. The wizard is the error boundary here, so
+    for an absent required section, and passes through `OSError` and the
+    parser's `YAMLError` from the read. The wizard is the error boundary here, so
     all four become one `WizardError` naming the template -- which is what
     the caller prints before writing anything.
     """

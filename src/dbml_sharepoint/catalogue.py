@@ -303,7 +303,7 @@ def _mapping_facts(mapping_path: Path) -> tuple[tuple[str, ...], str]:
     """
     try:
         raw: Any = _yaml.safe_load(mapping_path.read_text(encoding="utf-8"))
-    except (OSError, *_yaml.PARSE_ERRORS):
+    except (OSError, UnicodeDecodeError, *_yaml.PARSE_ERRORS):
         return (), ""
     if not isinstance(raw, dict):
         return (), ""
@@ -370,7 +370,7 @@ def _front_matter(text: str, path: Path) -> dict[str, Any]:
     try:
         # The opening fence parses as a blank line, so the lines the parser names are the file's.
         loaded = _yaml.safe_load("\n".join(["", *lines[1:end]])) or {}
-    except _yaml.AmbiguousYAMLError as exc:
+    except _yaml.TagOrDirectiveError as exc:
         raise ValueError(f"{path}: front matter {exc}") from exc
     except _yaml.RefusedYAMLError as exc:
         raise ValueError(f"{path}: front matter is refused: {exc}") from exc

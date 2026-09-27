@@ -24,16 +24,19 @@ class MappingError(ValueError):
 
 
 class MappingSourceError(MappingError):
-    """A document the loader had to read never became YAML.
+    """A document the loader had to read never became data it would use.
 
-    The file could not be opened, or its bytes do not parse. Distinct from
-    the refusals below because none of them can be stated yet: no block of
-    the document has been read, so the fix is to the file or to the path
-    rather than to a declaration.
+    The file could not be opened, its bytes are not UTF-8 or do not parse,
+    or the parser refused what they say. Distinct from the refusals below
+    because none of them can be stated yet: no block of the document has
+    been read, so the fix is to the file or to the path rather than to a
+    declaration.
 
-    A key written twice in one mapping is refused here too, because the
-    parser refuses it before any block is read. The parser's message names
-    that key and the line of each occurrence.
+    The parser refuses a key written twice in any mapping of the document,
+    at any depth and inside a merged one, naming the key and the line of
+    each occurrence. It also refuses an explicit tag or a `%YAML` or `%TAG`
+    directive, naming each line, and valid YAML it will not read, such as a
+    reused anchor. Its error is kept as `__cause__`.
     """
 
 

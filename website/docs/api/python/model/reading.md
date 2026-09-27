@@ -83,7 +83,7 @@ def read_yaml_document(path: pathlib.Path, named_by: str | None = None) -> Any
 
 Parse one YAML file, naming every way reading it can fail.
 
-`yaml.YAMLError` and the `OSError` from opening the file are neither of
+The parser's `YAMLError` and the `OSError` from opening the file are neither of
 them a `MappingError`, so a caller switching on the base class used to
 miss the two most ordinary failures there are: a mapping with a typo
 that stops it parsing, and a source file that is not where the mapping
@@ -92,12 +92,13 @@ passed through because it carries the line and column, which is the part
 an author can act on.
 
 A key written twice in one mapping is a parse failure too, refused by
-`_yaml.safe_load` where `yaml.safe_load` kept the last and said nothing.
-So is a value YAML 1.1 and 1.2 read differently, such as `yes` or `010`.
-That file is valid YAML, so its refusal names the spellings instead. A
-reused anchor, a collection used as a key, an alias inside its own
-collection and nesting past a hundred levels are valid YAML as well, and
-their refusal says the file is refused rather than invalid.
+`_yaml.safe_load` rather than read as its last value (#672).
+So is an explicit tag such as `!!int`, or a `%YAML` or `%TAG` directive.
+That file is valid YAML, so its refusal names each one rather than
+calling the file invalid. A reused anchor, a collection used as a key,
+an alias inside its own collection and nesting past a hundred levels are
+valid YAML as well, and their refusal says the file is refused rather
+than invalid.
 
 Decoding is the third way, and it is the one that hides: the bytes turn
 into text inside the parser, so a file that is not UTF-8 raises
