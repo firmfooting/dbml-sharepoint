@@ -618,7 +618,8 @@ class RoleAssignment:
 @dataclass(frozen=True)
 class ListPermissionPolicy:
     break_inheritance: bool
-    assignments: list[RoleAssignment]
+    # A tuple, because a resolved copy is outside the build guard's fingerprint (#620).
+    assignments: tuple[RoleAssignment, ...]
     # configured: reconcile stale role levels only for declared principals.
     # exact: treat declared principal/role pairs as an allowlist and remove
     # every other direct role binding (except SharePoint's derived Limited

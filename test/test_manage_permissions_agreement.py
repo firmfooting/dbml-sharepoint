@@ -87,12 +87,12 @@ def test_break_inheritance_true_needs_manage_permissions() -> None:
             groups=[],
             default_policy=ListPermissionPolicy(
                 break_inheritance=True,
-                assignments=[
+                assignments=(
                     RoleAssignment(
                         principal=Principal(kind="associated_owner_group"),
                         level="Full Control",
                     ),
-                ],
+                ),
             ),
             overrides={},
         ),
@@ -112,12 +112,12 @@ def test_break_inheritance_false_still_needs_manage_permissions() -> None:
             groups=[],
             default_policy=ListPermissionPolicy(
                 break_inheritance=False,
-                assignments=[
+                assignments=(
                     RoleAssignment(
                         principal=Principal(kind="associated_member_group"),
                         level="Contribute",
                     ),
-                ],
+                ),
             ),
             overrides={},
         ),
@@ -152,7 +152,7 @@ def test_a_folder_policy_that_writes_nothing_needs_no_manage_permissions() -> No
     preflight reject an operator holding every right the deploy uses."""
     _agree(
         _folder_policy_bundle(ListPermissionPolicy(
-            break_inheritance=False, assignments=[], reconcile_mode="configured",
+            break_inheritance=False, assignments=(), reconcile_mode="configured",
         )),
         expected=False,
     )
@@ -163,7 +163,7 @@ def test_a_folder_policy_that_breaks_inheritance_needs_manage_permissions() -> N
     afterwards."""
     _agree(
         _folder_policy_bundle(ListPermissionPolicy(
-            break_inheritance=True, assignments=[], reconcile_mode="configured",
+            break_inheritance=True, assignments=(), reconcile_mode="configured",
         )),
         expected=True,
     )
@@ -175,12 +175,12 @@ def test_a_folder_policy_with_an_assignment_needs_manage_permissions() -> None:
     _agree(
         _folder_policy_bundle(ListPermissionPolicy(
             break_inheritance=False,
-            assignments=[
+            assignments=(
                 RoleAssignment(
                     principal=Principal(kind="associated_member_group"),
                     level="Contribute",
                 ),
-            ],
+            ),
             reconcile_mode="configured",
         )),
         expected=True,
@@ -192,7 +192,7 @@ def test_an_exact_folder_policy_needs_manage_permissions_with_nothing_declared()
     that removes every binding rather than the policy that does nothing."""
     _agree(
         _folder_policy_bundle(ListPermissionPolicy(
-            break_inheritance=False, assignments=[], reconcile_mode="exact",
+            break_inheritance=False, assignments=(), reconcile_mode="exact",
         )),
         expected=True,
     )

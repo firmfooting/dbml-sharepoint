@@ -78,7 +78,7 @@ def policy_for_folder(
     wanted a level per division would otherwise have to write the policy out
     once per folder, which is the duplication this whole shape removes.
     """
-    return replace(policy, assignments=[
+    return replace(policy, assignments=tuple(
         RoleAssignment(
             principal=Principal(
                 kind=a.principal.kind,
@@ -90,7 +90,7 @@ def policy_for_folder(
             level=expand_member(a.level, folder),
         )
         for a in policy.assignments
-    ])
+    ))
 
 
 def folder_policies(

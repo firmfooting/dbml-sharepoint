@@ -1338,12 +1338,12 @@ def test_assignment_referencing_undeclared_level_is_error() -> None:
         groups=[],
         default_policy=ListPermissionPolicy(
             break_inheritance=True,
-            assignments=[
+            assignments=(
                 RoleAssignment(
                     principal=Principal(kind="associated_owner_group"),
                     level="NonExistentLevel",
                 ),
-            ],
+            ),
         ),
         overrides={},
     )
@@ -1374,12 +1374,12 @@ def test_principal_group_using_associated_alias_is_error() -> None:
             groups=[],
             default_policy=ListPermissionPolicy(
                 break_inheritance=True,
-                assignments=[
+                assignments=(
                     RoleAssignment(
                         principal=Principal(kind="group", name=alias),
                         level="Contribute",
                     ),
-                ],
+                ),
             ),
             overrides={},
         )
@@ -1412,12 +1412,12 @@ def test_override_key_referencing_missing_entity_is_error() -> None:
         overrides={
             "DoesNotExist": ListPermissionPolicy(
                 break_inheritance=True,
-                assignments=[
+                assignments=(
                     RoleAssignment(
                         principal=Principal(kind="associated_owner_group"),
                         level="Contribute",
                     ),
-                ],
+                ),
             ),
         },
     )
@@ -1935,19 +1935,21 @@ def _reader_findings(
         groups.append(reader("XX Other Readers"))
     # Grant EVERY declared reader, so a test that adds a second one measures
     # only the duplicate rule and does not also trip "granted nothing".
-    assignments = [] if level is None else [
+    assignments = () if level is None else tuple(
         RoleAssignment(
             principal=Principal(kind="group", name=g.name), level=level,
         )
         for g in groups
-    ]
+    )
     overrides = {} if override_level is None else {
         "Risk": ListPermissionPolicy(
             break_inheritance=True, reconcile_mode="exact",
-            assignments=[RoleAssignment(
-                principal=Principal(kind="group", name=groups[0].name),
-                level=override_level,
-            )],
+            assignments=(
+                RoleAssignment(
+                    principal=Principal(kind="group", name=groups[0].name),
+                    level=override_level,
+                ),
+            ),
         ),
     }
     return validate_against_mapping(
@@ -2177,10 +2179,12 @@ def _automation_findings(
     overrides = {} if override_level is None else {
         "Risk": ListPermissionPolicy(
             break_inheritance=True, reconcile_mode="exact",
-            assignments=[RoleAssignment(
-                principal=Principal(kind="group", name=group.name),
-                level=override_level,
-            )],
+            assignments=(
+                RoleAssignment(
+                    principal=Principal(kind="group", name=group.name),
+                    level=override_level,
+                ),
+            ),
         ),
     }
     return validate_against_mapping(
@@ -2191,10 +2195,12 @@ def _automation_findings(
                 levels=[], groups=[group],
                 default_policy=ListPermissionPolicy(
                     break_inheritance=True, reconcile_mode="exact",
-                    assignments=[RoleAssignment(
-                        principal=Principal(kind="group", name=group.name),
-                        level=level,
-                    )],
+                    assignments=(
+                        RoleAssignment(
+                            principal=Principal(kind="group", name=group.name),
+                            level=level,
+                        ),
+                    ),
                 ),
                 overrides=overrides,
             ),
@@ -2643,10 +2649,12 @@ def test_an_acl_naming_an_undeclared_group_is_an_error() -> None:
                 groups=[],
                 default_policy=ListPermissionPolicy(
                     break_inheritance=True,
-                    assignments=[RoleAssignment(
-                        principal=Principal(kind="group", name="APP_Ghost"),
-                        level="Read",
-                    )],
+                    assignments=(
+                        RoleAssignment(
+                            principal=Principal(kind="group", name="APP_Ghost"),
+                            level="Read",
+                        ),
+                    ),
                     reconcile_mode="configured",
                 ),
                 overrides={},

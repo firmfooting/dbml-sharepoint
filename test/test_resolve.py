@@ -80,10 +80,12 @@ def test_resolve_expands_groups_folders_and_policies_once() -> None:
         group_sources=(GroupsFromEnum(enum="division", template=_group("{member} Owners")),),
         folder_policies={"Risk": ListPermissionPolicy(
             break_inheritance=True,
-            assignments=[RoleAssignment(
-                principal=Principal(kind="group", name="{member} Owners"),
-                level="Read",
-            )],
+            assignments=(
+                RoleAssignment(
+                    principal=Principal(kind="group", name="{member} Owners"),
+                    level="Read",
+                ),
+            ),
         )},
     )
     mapping = make_mapping(
@@ -276,9 +278,11 @@ def test_require_folder_policies_keeps_the_scope_the_old_resolver_had() -> None:
         levels=[], groups=[], default_policy=None, overrides={},
         folder_policies={"Docs": ListPermissionPolicy(
             break_inheritance=True,
-            assignments=[RoleAssignment(
-                principal=Principal(kind="group", name="Librarians"), level="Read",
-            )],
+            assignments=(
+                RoleAssignment(
+                    principal=Principal(kind="group", name="Librarians"), level="Read",
+                ),
+            ),
         )},
     )
     library = {
@@ -417,9 +421,11 @@ def test_a_permissions_edit_after_resolution_is_refused_by_name() -> None:
     schema = make_schema(make_table("Risk", "Title"))
     policy = ListPermissionPolicy(
         break_inheritance=True,
-        assignments=[RoleAssignment(
-            principal=Principal(kind="group", name="Librarians"), level="Read",
-        )],
+        assignments=(
+            RoleAssignment(
+                principal=Principal(kind="group", name="Librarians"), level="Read",
+            ),
+        ),
     )
     perms = PermissionsConfig(
         levels=[], groups=[], default_policy=None, overrides={},
@@ -442,6 +448,44 @@ def test_a_permissions_edit_after_resolution_is_refused_by_name() -> None:
     with pytest.raises(MismatchedResolutionError) as excinfo:
         require_matching_resolution(resolved, bundle, schema)
     assert excinfo.value.detail == "its folder policies changed after it was resolved"
+
+
+def _resolved_with_a_folder_policy() -> ResolvedMapping:
+    """One library with one literal folder, granted to one group."""
+    policy = ListPermissionPolicy(
+        break_inheritance=True,
+        assignments=(
+            RoleAssignment(
+                principal=Principal(kind="group", name="Librarians"), level="Read",
+            ),
+        ),
+    )
+    mapping = make_mapping(
+        entities={"Risk": EntityMapping(
+            name="Risk", kind="DocumentLibrary", base_template=101,
+            site_role="default", folder_source=("Shared",),
+        )},
+        permissions=PermissionsConfig(
+            levels=[], groups=[], default_policy=None, overrides={},
+            folder_policies={"Risk": policy},
+        ),
+    )
+    return resolve(make_schema(make_table("Risk", "Title")), mapping)
+
+
+def test_a_resolved_folder_policy_cannot_gain_a_grant() -> None:
+    """The guard fingerprints the mapping, and this policy is not the mapping's (#620).
+
+    `policy_for_folder` builds a new policy for every folder, so a grant
+    appended to one after `resolve()` changed nothing the guard compares, and
+    `build_schema_json` emitted an ACL the mapping never declared.
+    """
+    resolved = _resolved_with_a_folder_policy()
+    ((folder, policy),) = resolved.require_folder_policies("Risk")
+    assert folder == "Shared"
+
+    with pytest.raises(AttributeError):
+        policy.assignments.append(policy.assignments[0])  # pyrefly: ignore[missing-attribute]
 
 
 def test_an_edit_the_resolution_cannot_see_is_not_refused(tmp_path: Path) -> None:

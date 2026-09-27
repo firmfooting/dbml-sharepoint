@@ -231,12 +231,12 @@ def test_manage_permissions_required_even_with_inheritance_left_alone() -> None:
             groups=[],
             default_policy=ListPermissionPolicy(
                 break_inheritance=False,
-                assignments=[
+                assignments=(
                     RoleAssignment(
                         principal=Principal(kind="associated_member_group"),
                         level="Contribute",
                     ),
-                ],
+                ),
             ),
             overrides={},
         ),
