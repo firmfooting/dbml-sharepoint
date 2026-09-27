@@ -6,8 +6,7 @@ import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
-import yaml
-
+from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model._keys import _text_key
 
 
@@ -36,7 +35,7 @@ def load_release(path: Path) -> Release:
     dict lookup rather than the file they mistyped.
     """
     with path.open(encoding="utf-8") as fh:
-        raw = yaml.safe_load(fh)
+        raw = _yaml.safe_load(fh)
     if not isinstance(raw, dict):
         raise ValueError(
             f"{path}: expected a YAML mapping at the top level, "

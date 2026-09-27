@@ -3654,6 +3654,81 @@ def test_a_source_file_that_does_not_parse_is_a_named_refusal(
     assert "side.yaml" in str(err.value), str(err.value)
 
 
+def _repeated_key(
+    path: Path, key: str, mapping_at: tuple[int, int], first: int, again: tuple[int, int],
+) -> str:
+    """The refusal for `key` written twice in one mapping of `path`.
+
+    Positions are (line, column) as the parser prints them, counting from one.
+    """
+    return (
+        f"{path}: is not valid YAML: while constructing a mapping\n"
+        f'  in "{path}", line {mapping_at[0]}, column {mapping_at[1]}\n'
+        f"found duplicate key {key!r} (first at line {first})\n"
+        f'  in "{path}", line {again[0]}, column {again[1]}'
+    )
+
+
+_RISK = "{ kind: List, base_template: 100, site_role: default }"
+
+#: A key written twice at each depth and in each style a mapping can take,
+#: with where the parser places the mapping, the first key and the repeat.
+#: `write_mapping` puts `prefix:` on line 1.
+_REPEATED_KEYS = [
+    pytest.param(
+        f"entities:\n  Risk: {_RISK}\nentities:\n  Issue: {_RISK}\n",
+        "entities", (1, 1), 2, (4, 1),
+        id="top-level-section",
+    ),
+    pytest.param(
+        f"entities:\n  Risk: {_RISK}\n  Issue: {_RISK}\n  Risk: {_RISK}\n",
+        "Risk", (3, 3), 3, (5, 3),
+        id="nested-entity",
+    ),
+    pytest.param(
+        "entities:\n  Risk: { kind: List, base_template: 100, site_role: default,"
+        " base_template: 101 }\n",
+        "base_template", (3, 9), 3, (3, 63),
+        id="flow-style",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "key", "mapping_at", "first", "again"), _REPEATED_KEYS)
+def test_a_key_written_twice_is_a_named_refusal(
+    tmp_path: Path, body: str, key: str,
+    mapping_at: tuple[int, int], first: int, again: tuple[int, int],
+) -> None:
+    """#672: YAML kept the last of two identical keys and said nothing.
+
+    An entity declared twice under `entities:` after a copy-paste lost the
+    earlier block whole, and a repeated section lost every entry above it,
+    with a clean build either way. The message names the key and the line of
+    both occurrences, because the author has to choose between them.
+    """
+    path = write_mapping(tmp_path, body)
+    with pytest.raises(MappingError) as err:
+        load_mapping(path)
+    assert type(err.value) is MappingSourceError
+    assert isinstance(err.value.__cause__, yaml.YAMLError)
+    assert str(err.value) == _repeated_key(path.resolve(), key, mapping_at, first, again)
+
+
+@pytest.mark.parametrize("declaration", _NAMED_YAML_SOURCES)
+def test_a_source_file_with_a_key_written_twice_is_a_named_refusal(
+    tmp_path: Path, declaration: str,
+) -> None:
+    """Every file a mapping names is parsed by the same loader as the mapping."""
+    side = tmp_path / "side.yaml"
+    side.write_text("policies: {}\nnotes: x\npolicies: {}\n", encoding="utf-8")
+    path = write_mapping(tmp_path, blocks(entities("Risk"), declaration))
+    with pytest.raises(MappingError) as err:
+        load_mapping(path)
+    assert type(err.value) is MappingSourceError
+    assert isinstance(err.value.__cause__, yaml.YAMLError)
+    assert str(err.value) == _repeated_key(side.resolve(), "policies", (1, 1), 1, (3, 1))
+
+
 #: One mapping per delegated style refusal. `_formatting.read` does none of
 #: this validation itself: it hands the declared block to
 #: `analysis/styles.py`, which is why these escaped a gate scanning `model/`.

@@ -108,7 +108,7 @@ def test_a_malformed_mapping_does_not_break_the_whole_picker(
 ) -> None:
     """Listing what is available must not depend on all of it being valid.
 
-    `_mapping_facts` reads two keys with `yaml.safe_load` rather than going
+    `_mapping_facts` reads two keys with a plain parse rather than going
     through `load_mapping`, precisely so one bad template costs its own row
     and not the other twenty-nine.
     """
@@ -128,6 +128,52 @@ def test_a_malformed_mapping_does_not_break_the_whole_picker(
     assert set(found) == {"good", "broken"}
     assert found["good"].prefix == "G_"
     assert found["broken"].prefix == ""
+
+
+def test_a_mapping_declaring_a_key_twice_is_skipped_like_a_broken_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The picker reads with the loader the build uses, so it offers no
+    prefix or lists for a mapping the build will refuse (#672). Read with
+    `yaml.safe_load`, this one offered `E_` and one list."""
+    for name, mapping_text in (
+        ("good", 'prefix: "G_"\nentities:\n  Thing: {}\n'),
+        ("repeated", 'prefix: "D_"\nentities:\n  Thing: {}\nprefix: "E_"\n'),
+    ):
+        (tmp_path / name / "10-design").mkdir(parents=True)
+        (tmp_path / name / "10-design" / "schema.dbml").write_text("", encoding="utf-8")
+        (tmp_path / name / "20-configure").mkdir()
+        (tmp_path / name / "20-configure" / "mapping.yaml").write_text(
+            mapping_text, encoding="utf-8",
+        )
+
+    monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
+    found = {s.id: s for s in available_solutions()}
+    assert set(found) == {"good", "repeated"}
+    assert (found["good"].prefix, found["good"].lists) == ("G_", ("Thing",))
+    assert (found["repeated"].prefix, found["repeated"].lists) == ("", ())
+
+
+def test_a_journey_declaring_a_key_twice_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A second `solutions:` replaced the first, so the families only the
+    first one named dropped out of the journey with nothing said (#672).
+
+    Refused rather than skipped, as `available_journeys` treats every
+    malformed journey.
+    """
+    journeys = tmp_path / catalogue.JOURNEYS_DIRNAME
+    journeys.mkdir()
+    (journeys / "j.md").write_text(
+        "---\ntitle: J\nsummary: S\nsolutions: [a, b]\nsolutions: [c]\n---\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
+    repeated = r"found duplicate key 'solutions' \(first at line 3\)"
+    with pytest.raises(yaml.YAMLError, match=repeated):
+        catalogue.available_journeys()
 
 
 def test_load_solution_names_the_alternatives() -> None:

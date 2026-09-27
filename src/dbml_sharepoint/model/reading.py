@@ -45,6 +45,7 @@ from typing import Any
 
 import yaml
 
+from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model._keys import _text_key
 from dbml_sharepoint.model.errors import (
     MappingReferenceError,
@@ -130,8 +131,11 @@ def read_yaml_document(path: Path, named_by: str | None = None) -> Any:
     passed through because it carries the line and column, which is the part
     an author can act on.
 
+    A key written twice in one mapping is a parse failure too, refused by
+    `_yaml.safe_load` where `yaml.safe_load` kept the last and said nothing.
+
     Decoding is the third way, and it is the one that hides: the bytes turn
-    into text inside `yaml.safe_load`, so a file that is not UTF-8 raises
+    into text inside the parser, so a file that is not UTF-8 raises
     `UnicodeDecodeError` past both of the other handlers. It is a
     `ValueError` subclass, so it reached a caller catching `ValueError`
     looking exactly like a refusal this module composed.
@@ -143,7 +147,7 @@ def read_yaml_document(path: Path, named_by: str | None = None) -> Any:
     """
     try:
         with path.open(encoding="utf-8") as fh:
-            return yaml.safe_load(fh)
+            return _yaml.safe_load(fh)
     except OSError as exc:
         reason = exc.strerror or exc
         if named_by is None:

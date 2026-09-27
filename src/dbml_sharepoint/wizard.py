@@ -72,6 +72,7 @@ from dbml_sharepoint.catalogue import (
     available_journeys,
     available_solutions,
 )
+from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.env_file import (
     ENTERPRISE_READER_KEY,
     ENV_FILENAME,
@@ -857,7 +858,7 @@ def _drop_chosen_from_previous_prefixes(
     # Parsed as YAML rather than split on the brackets, so a trailing
     # comment on the line is handled by the parser that will read it back.
     try:
-        declared = yaml.safe_load(match.group(1))
+        declared = _yaml.safe_load(match.group(1))
     except yaml.YAMLError as exc:
         # A flow list continued onto a second line does not parse from its first.
         raise WizardError(

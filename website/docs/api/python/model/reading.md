@@ -91,8 +91,11 @@ says. The original is kept as `__cause__`, and the parser's own text is
 passed through because it carries the line and column, which is the part
 an author can act on.
 
+A key written twice in one mapping is a parse failure too, refused by
+`_yaml.safe_load` where `yaml.safe_load` kept the last and said nothing.
+
 Decoding is the third way, and it is the one that hides: the bytes turn
-into text inside `yaml.safe_load`, so a file that is not UTF-8 raises
+into text inside the parser, so a file that is not UTF-8 raises
 `UnicodeDecodeError` past both of the other handlers. It is a
 `ValueError` subclass, so it reached a caller catching `ValueError`
 looking exactly like a refusal this module composed.

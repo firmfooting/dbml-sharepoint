@@ -2,6 +2,7 @@
 from pathlib import Path
 
 import pytest
+import yaml
 from _packs import write_mapping
 from _paths import FIXTURES
 
@@ -125,6 +126,23 @@ def test_release_blank_optional_key_takes_its_default(tmp_path: Path) -> None:
     )
     release = load_release(tmp_path / "release.yaml")
     assert (release.notes, release.flow_package_version) == ("", "none")
+
+
+def test_a_release_key_written_twice_is_refused(tmp_path: Path) -> None:
+    """#672: YAML kept the second `schema_version:` and said nothing, and the
+    version stamp is what a later run compares against."""
+    write_mapping(
+        tmp_path, _release_yaml() + '\nschema_version: "1.0.1"', prefix=None, name="release.yaml",
+    )
+    path = tmp_path / "release.yaml"
+    with pytest.raises(yaml.YAMLError) as err:
+        load_release(path)
+    assert str(err.value) == (
+        "while constructing a mapping\n"
+        f'  in "{path}", line 1, column 1\n'
+        "found duplicate key 'schema_version' (first at line 4)\n"
+        f'  in "{path}", line 5, column 1'
+    )
 
 
 def test_release_unquoted_date_is_read_as_iso_text(tmp_path: Path) -> None:

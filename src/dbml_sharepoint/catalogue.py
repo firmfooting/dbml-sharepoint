@@ -21,6 +21,8 @@ from typing import Any
 
 import yaml
 
+from dbml_sharepoint.model import _yaml
+
 #: One directory per list family. Not `templates/`, which is Jinja.
 SOLUTIONS_DIR = Path(__file__).parent / "solutions"
 
@@ -292,7 +294,7 @@ def _title(readme: str, fallback: str) -> str:
 def _mapping_facts(mapping_path: Path) -> tuple[tuple[str, ...], str]:
     """The entity names and prefix, read WITHOUT the mapping loader.
 
-    Deliberately a plain `yaml.safe_load` of two keys. `load_mapping` parses
+    Deliberately a plain parse of two keys. `load_mapping` parses
     and folds every section and raises on anything it dislikes, so using it
     here would let one malformed template take down the whole picker --
     including every other family, all of them fine. Listing what is
@@ -302,7 +304,7 @@ def _mapping_facts(mapping_path: Path) -> tuple[tuple[str, ...], str]:
     accepted here that would be refused there.
     """
     try:
-        raw: Any = yaml.safe_load(mapping_path.read_text(encoding="utf-8"))
+        raw: Any = _yaml.safe_load(mapping_path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError):
         return (), ""
     if not isinstance(raw, dict):
@@ -367,7 +369,7 @@ def _front_matter(text: str, path: Path) -> dict[str, Any]:
         end = lines.index(_FRONT_MATTER_FENCE, 1)
     except ValueError:
         raise ValueError(f"{path}: front matter is never closed with '---'") from None
-    loaded = yaml.safe_load("\n".join(lines[1:end])) or {}
+    loaded = _yaml.safe_load("\n".join(lines[1:end])) or {}
     if not isinstance(loaded, dict):
         raise ValueError(f"{path}: front matter must be a mapping")
     return loaded
