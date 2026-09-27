@@ -12,6 +12,7 @@ nothing here imports it.
 
 import datetime as dt
 import io
+import sys
 from pathlib import Path
 
 import pytest
@@ -437,6 +438,45 @@ def test_a_value_the_loader_cannot_construct_is_a_parse_error(
     assert message.endswith(f'\n  in "<file>", line 1, {at}'), message
 
 
+def test_an_escape_past_the_last_character_is_a_parse_error() -> None:
+    """ruamel.yaml's scanner let chr()'s ValueError escape every handler
+    that catches the parser's errors. `\\U0010FFFF`, the last, loads."""
+    assert _yaml.safe_load('v: "\\U0010FFFF"\n') == {"v": chr(0x10FFFF)}
+    assert _refusal('v: "\\U00110000"\n') == (
+        "while scanning a double-quoted scalar\n"
+        '  in "<file>", line 1, column 4\n'
+        "found an escape that names no character; the last is `\\U0010FFFF`\n"
+        '  in "<file>", line 1, column 7'
+    )
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "column"),
+    [pytest.param("1.", "", 9, id="minor"), pytest.param("", ".1", 7, id="major")],
+)
+def test_a_version_number_too_long_to_read_is_a_parse_error(
+    before: str, after: str, column: int,
+) -> None:
+    """int() refuses more digits than Python's limit with a ValueError, which
+    escaped as the escape above did. At the limit, the directive is refused
+    as any `%YAML` is. 640 is the lowest limit Python accepts, and each
+    number here is 1, written with leading zeros."""
+    limit = sys.get_int_max_str_digits()
+    sys.set_int_max_str_digits(640)
+    try:
+        at_limit = _refusal(f"%YAML {before}{'0' * 639}1{after}\n---\nv: 1\n")
+        past_limit = _refusal(f"%YAML {before}{'0' * 640}1{after}\n---\nv: 1\n")
+    finally:
+        sys.set_int_max_str_digits(limit)
+    assert at_limit.startswith(f"{_HEADER}\n  line 1, column 1: the `%YAML` directive")
+    assert past_limit == (
+        "while scanning a directive\n"
+        '  in "<file>", line 1, column 1\n'
+        "found a version number too long to read; remove the directive\n"
+        f'  in "<file>", line 1, column {column}'
+    )
+
+
 def test_the_writer_keeps_order_width_and_unicode() -> None:
     """The options the extract passed are the writer's own now: keys in the
     order given, one line per long scalar, block style, and text as written."""
@@ -464,21 +504,23 @@ def test_a_template_a_parse_refuses_is_skipped_by_the_picker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The picker offers no prefix or lists for a mapping the build refuses."""
+    head = f"{DEFAULT_PREFIX}\nentities:\n  Thing: {{}}\n".encode()
     for name, mapping_text in (
-        ("good", f"{DEFAULT_PREFIX}\nentities:\n  Thing: {{}}\n"),
-        ("tagged", f"{DEFAULT_PREFIX}\nentities:\n  Thing: {{}}\nlocked: !!bool true\n"),
-        ("unconstructable", f"{DEFAULT_PREFIX}\nentities:\n  Thing: {{}}\nwhen: 2026-02-30\n"),
-        ("refused", f"{DEFAULT_PREFIX}\nentities:\n  Thing: {{}}\nloop: &x [*x]\n"),
+        ("good", head),
+        ("tagged", head + b"locked: !!bool true\n"),
+        ("unconstructable", head + b"when: 2026-02-30\n"),
+        ("refused", head + b"loop: &x [*x]\n"),
+        ("escape", head + b'note: "\\U00110000"\n'),
+        # Latin-1, as an editor saving in a Windows code page writes it.
+        ("undecodable", head + b"note: caf\xe9\n"),
     ):
         (tmp_path / name / "10-design").mkdir(parents=True)
         (tmp_path / name / "10-design" / "schema.dbml").write_text("", encoding="utf-8")
         (tmp_path / name / "20-configure").mkdir()
-        (tmp_path / name / "20-configure" / "mapping.yaml").write_text(
-            mapping_text, encoding="utf-8",
-        )
+        (tmp_path / name / "20-configure" / "mapping.yaml").write_bytes(mapping_text)
     monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
     found = {s.id: (s.prefix, s.lists) for s in catalogue.available_solutions()}
     assert found == {
         "good": ("APP_", ("Thing",)), "tagged": ("", ()), "unconstructable": ("", ()),
-        "refused": ("", ()),
+        "refused": ("", ()), "escape": ("", ()), "undecodable": ("", ()),
     }

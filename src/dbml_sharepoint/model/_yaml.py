@@ -34,7 +34,7 @@ from ruamel.yaml.error import FileMark, StreamMark, YAMLError
 from ruamel.yaml.events import AliasEvent, CollectionStartEvent, ScalarEvent
 from ruamel.yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 from ruamel.yaml.representer import SafeRepresenter
-from ruamel.yaml.scanner import Scanner
+from ruamel.yaml.scanner import Scanner, ScannerError
 from ruamel.yaml.tokens import DirectiveToken
 
 #: What a parse of malformed YAML raises, so a caller can catch it without ruamel.yaml.
@@ -122,8 +122,34 @@ class _Scanner(Scanner):
 
     `%YAML 1.1` would switch ruamel.yaml to YAML 1.1's rules for the rest of
     the file, and `%TAG` can point `!!` anywhere. The scanner sees a
-    directive first, before ruamel.yaml acts on it.
+    directive first, before ruamel.yaml acts on it. Two ValueErrors that
+    ruamel.yaml's scanner lets escape are raised as a `ScannerError`.
     """
+
+    @override
+    def scan_yaml_directive_number(self, start_mark: Any) -> int:
+        try:
+            number: int = super().scan_yaml_directive_number(start_mark)
+        except ValueError as exc:
+            # int() refuses more digits than sys.get_int_max_str_digits() allows.
+            raise ScannerError(
+                "while scanning a directive", start_mark,
+                "found a version number too long to read; remove the directive",
+                self.reader.get_mark(),
+            ) from exc
+        return number
+
+    @override
+    def scan_flow_scalar_non_spaces(self, double: Any, start_mark: Any) -> Any:
+        try:
+            return super().scan_flow_scalar_non_spaces(double, start_mark)
+        except ValueError as exc:
+            # chr() refuses an escape past U+10FFFF, which only `\U` can spell.
+            raise ScannerError(
+                "while scanning a double-quoted scalar", start_mark,
+                "found an escape that names no character; the last is `\\U0010FFFF`",
+                self.reader.get_mark(),
+            ) from exc
 
     @override
     def scan_directive(self) -> DirectiveToken:

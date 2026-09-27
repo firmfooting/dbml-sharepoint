@@ -303,7 +303,7 @@ def _mapping_facts(mapping_path: Path) -> tuple[tuple[str, ...], str]:
     """
     try:
         raw: Any = _yaml.safe_load(mapping_path.read_text(encoding="utf-8"))
-    except (OSError, *_yaml.PARSE_ERRORS):
+    except (OSError, UnicodeDecodeError, *_yaml.PARSE_ERRORS):
         return (), ""
     if not isinstance(raw, dict):
         return (), ""
