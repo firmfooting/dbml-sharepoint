@@ -1452,8 +1452,8 @@ def _strips() -> ListPermissionPolicy:
 
 
 def test_an_exact_default_policy_granting_nothing_warns() -> None:
-    """The deploy prunes every binding outside an empty allowlist, the
-    operator's included, and no build rule said so (#667)."""
+    """The deploy issues a removal for every binding outside an empty
+    allowlist, the operator's included, and no build rule said so (#667)."""
     finding = only(
         _exact_policy_findings(default=_strips()),
         FindingCode.EXACT_POLICY_GRANTS_NOTHING,

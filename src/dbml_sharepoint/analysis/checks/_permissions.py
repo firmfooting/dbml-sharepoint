@@ -174,10 +174,11 @@ def _exact_policies_granting_nothing(
 
     A warning, because stripping a scope is supported and
     `test_an_exact_list_declaring_nothing_strips_it_and_reads_it_back` pins
-    it. The message says only what `_acls.js.j2` does: the prune removes
-    every binding outside the empty allowlist except 'Limited Access'. What
-    SharePoint does once the last binding on a scope is gone is unmeasured
-    (#667), so it is not stated.
+    it. The message says only what `_acls.js.j2` does: the prune issues a
+    removal for every binding outside the empty allowlist except 'Limited
+    Access'. Whether those removals succeed once the last binding on a scope
+    goes, and what the operator keeps, is unmeasured (#667), so it is not
+    stated.
 
     Each block reports only where it governs a scope, because that is where
     the deploy carries it: the default when some list takes it rather than an
@@ -218,8 +219,8 @@ def _exact_policies_granting_nothing(
         Finding(
             FindingCode.EXACT_POLICY_GRANTS_NOTHING,
             f"{ctx}: reconcile: exact with no assignments makes the deploy "
-            f"remove every direct role assignment on {scope} except Limited "
-            f"Access, including any the operator holds there. Declare the "
+            f"issue a removal for every direct role assignment on {scope} "
+            f"except Limited Access, the operator's included. Declare the "
             f"assignments that should stay, or use reconcile: configured, "
             f"which leaves undeclared grants alone.",
             location=at,
