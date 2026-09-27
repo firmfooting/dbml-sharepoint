@@ -488,6 +488,20 @@ def test_a_resolved_folder_policy_cannot_gain_a_grant() -> None:
         policy.assignments.append(policy.assignments[0])  # pyrefly: ignore[missing-attribute]
 
 
+def test_a_policy_built_from_a_list_does_not_share_it() -> None:
+    """A policy built in code from a list holds its own tuple, so later edits miss it (#620)."""
+    grant = RoleAssignment(principal=Principal(kind="group", name="Librarians"), level="Read")
+    grants = [grant]
+    policy = ListPermissionPolicy(
+        break_inheritance=True,
+        assignments=grants,  # pyrefly: ignore[bad-argument-type]
+    )
+    grants.append(grant)
+
+    assert type(policy.assignments) is tuple
+    assert policy.assignments == (grant,)
+
+
 def test_a_resolution_cannot_be_edited_after_resolve() -> None:
     """A replaced entry is as invisible to the guard as an appended grant (#620)."""
     resolved = _resolved_with_a_folder_policy()

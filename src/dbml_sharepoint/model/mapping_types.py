@@ -626,6 +626,10 @@ class ListPermissionPolicy:
     # Access binding). Exact is the recommended fail-closed baseline.
     reconcile_mode: ReconcileMode = "configured"
 
+    def __post_init__(self) -> None:
+        # The annotation is not enforced, so a caller's list is copied rather than shared.
+        object.__setattr__(self, "assignments", tuple(self.assignments))
+
 
 @dataclass
 class PermissionsConfig:
