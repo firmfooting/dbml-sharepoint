@@ -193,8 +193,10 @@ def _exact_policies_granting_nothing(
     governed = {name for name in mapping.entities if name in vc.table_names}
     declared: list[tuple[ListPermissionPolicy, str, str, Location]] = []
     default = perms.default_policy
+    # Not by identity: one policy object may be both the default and an override.
     if default is not None and any(
-        mapping.permissions_for_entity(name) is default for name in governed
+        name not in perms.overrides and mapping.permissions_for_entity(name) is not None
+        for name in governed
     ):
         declared.append((
             default, "list_permissions.default",
@@ -208,7 +210,8 @@ def _exact_policies_granting_nothing(
     # Any one folder answers for its block: expanding `{member}` changes neither mode nor count.
     folder_blocks = {
         name: policy for name, _folder, policy in _expanded_folder_policies(vc, perms)
-        if name in governed
+        # A list's folders are refused by `folders_on_a_list`, and no folder scope is emitted.
+        if name in governed and mapping.entities[name].is_library
     }
     declared += [
         (

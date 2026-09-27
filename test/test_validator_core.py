@@ -1492,6 +1492,17 @@ def test_an_exact_default_that_no_list_takes_does_not_warn() -> None:
     )
 
 
+def test_a_default_reused_as_every_override_is_not_reported_as_the_default() -> None:
+    """One policy object may be the default and every override; no list takes the default."""
+    strips = _strips()
+    findings = _exact_policy_findings(
+        default=strips,
+        overrides=dict.fromkeys(("Project", "Task", "AppSettings"), strips),
+    )
+    located = [f.location for f in findings if f.code == FindingCode.EXACT_POLICY_GRANTS_NOTHING]
+    assert located == [Location(Section.LIST_PERMISSIONS, sub="overrides")] * 3
+
+
 def test_an_exact_default_scoped_to_a_role_no_list_has_does_not_warn() -> None:
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")

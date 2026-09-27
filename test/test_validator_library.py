@@ -1041,6 +1041,31 @@ def test_an_exact_folder_policy_on_a_library_the_schema_lacks_does_not_warn(
     none_of(findings, FindingCode.EXACT_POLICY_GRANTS_NOTHING)
 
 
+def test_an_exact_folder_policy_on_a_list_is_left_to_the_folder_rules(
+    tmp_path: Path,
+) -> None:
+    """A list has no folders to secure, so no folder scope is emitted to prune."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Tasks", ID_PK, TITLE),
+        mapping="""
+            entities:
+              Tasks:
+                kind: List
+                base_template: 100
+                site_role: default
+                folders: [Alpha, Beta]
+
+            list_permissions:
+              folders:
+                Tasks: {break_inheritance: true, reconcile: exact, assignments: []}
+        """,
+    )
+    findings = validate_against_mapping(schema, bundle)
+    only(findings, FindingCode.FOLDER_PERMISSIONS_ON_A_LIST)
+    none_of(findings, FindingCode.EXACT_POLICY_GRANTS_NOTHING)
+
+
 def test_an_empty_folder_policy_on_a_library_the_schema_lacks_is_not_refused(
     tmp_path: Path,
 ) -> None:
