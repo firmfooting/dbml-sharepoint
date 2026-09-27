@@ -12,7 +12,6 @@ from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import LIST_VIEW_THRESHOLD
-from dbml_sharepoint.analysis.permissions import policy_writes
 from dbml_sharepoint.analysis.typemap import element_type
 from dbml_sharepoint.model.mapping_types import (
     DemoItem,
@@ -64,18 +63,19 @@ def check(vc: ValidationContext) -> list[Finding]:
 
 def _folder_permissions(vc: ValidationContext) -> list[Finding]:
     """`list_permissions.folders.<entity>`: it must name a library with
-    folders, and it must write something to them.
+    folders, and it must manage them.
 
     Keyed by entity and never by folder, so the only questions left are
     whether the entity exists, whether it can hold folders, whether it
-    declares any, and whether the policy writes. Which folders it declares
-    is `resolved.folders`' answer and is not re-derived here.
+    declares any, and whether the policy manages them. Which folders it
+    declares is `resolved.folders`' answer and is not re-derived here.
 
-    The write question is asked last, once the folders are known to exist,
-    because what the policy does wrong is exempt those folders from the
-    exact-mode descendant check in `_acls.js.j2`. A list override is not
-    held to it: `break_inheritance: false` alone there opts a list out of
-    the default policy.
+    Managing is judged by reconcile mode and assignments, never by
+    `break_inheritance`: `reconcileScope` in `_acls.js.j2` breaks only a
+    scope that still inherits, so on a folder that is already unique a
+    configured policy with no grant writes nothing whatever it declares. It
+    is asked last, once the folders are known to exist, because the harm is
+    that declaring them exempts them from the exact-mode descendant check.
     """
     perms = vc.bundle.mapping.permissions
     if perms is None:
@@ -116,16 +116,18 @@ def _folder_permissions(vc: ValidationContext) -> list[Finding]:
                 location=at,
             ))
             continue
-        if not policy_writes(policy):
+        if policy.reconcile_mode == "configured" and not policy.assignments:
             findings.append(Finding(
-                FindingCode.FOLDER_POLICY_WRITES_NOTHING,
-                f"list_permissions.folders.{entity_name}: this policy breaks "
-                f"no inheritance, grants nothing and removes nothing, so the "
-                f"deploy writes nothing to the folders {entity_name} "
-                f"declares. Declaring it only exempts those folders from the "
-                f"check that stops a reconcile: exact deploy on a folder with "
-                f"permissions of its own. Remove the policy, or give it "
-                f"break_inheritance: true or an assignment.",
+                FindingCode.FOLDER_POLICY_MANAGES_NOTHING,
+                f"list_permissions.folders.{entity_name}: reconcile: "
+                f"configured with no assignments grants nothing and removes "
+                f"nothing on the folders {entity_name} declares, and on a "
+                f"folder that already has permissions of its own the deploy "
+                f"writes nothing at all. Declaring it still exempts those "
+                f"folders from the check that stops a reconcile: exact deploy "
+                f"on a folder with permissions of its own. Declare the "
+                f"assignments the folders should have, or use reconcile: "
+                f"exact so every grant on them is reviewed.",
                 location=at,
             ))
     return findings

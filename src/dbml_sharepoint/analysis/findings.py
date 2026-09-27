@@ -314,7 +314,7 @@ class FindingCode(StrEnum):
     FOLDER_ENUM_UNKNOWN = "folder_enum_unknown", "error"
     FOLDER_PERMISSIONS_ON_A_LIST = "folder_permissions_on_a_list", "error"
     FOLDER_PERMISSIONS_WITHOUT_FOLDERS = "folder_permissions_without_folders", "error"
-    FOLDER_POLICY_WRITES_NOTHING = "folder_policy_writes_nothing", "error"
+    FOLDER_POLICY_MANAGES_NOTHING = "folder_policy_manages_nothing", "error"
     VIEW_SCOPE_ON_A_LIST = "view_scope_on_a_list", "error"
     # Warning severity: the view renders and answers correctly below the
     # threshold; what changes past it is measured, and the author may accept it.
