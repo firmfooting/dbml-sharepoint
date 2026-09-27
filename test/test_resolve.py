@@ -524,6 +524,31 @@ def test_a_resolution_does_not_share_the_dicts_it_was_built_from() -> None:
     assert resolved.folder_policies == {"Risk": ()}
 
 
+def test_a_resolution_does_not_share_the_lists_it_was_built_from() -> None:
+    """A caller that ignores the declared tuples still cannot reach the output
+    through a list it kept: each container is copied one level down."""
+    members = ["North"]
+    names = ["Shared"]
+    pairs: list[tuple[str, ListPermissionPolicy]] = []
+    resolved = ResolvedMapping(
+        mapping=make_mapping(),
+        enum_members={"division": members},  # pyrefly: ignore[bad-assignment]
+        folders={"Risk": names},  # pyrefly: ignore[bad-assignment]
+        folder_policies={"Risk": pairs},  # pyrefly: ignore[bad-assignment]
+        groups=[],  # pyrefly: ignore[bad-argument-type]
+        unresolved=[],  # pyrefly: ignore[bad-argument-type]
+    )
+
+    members.append("South")
+    names.append("Restricted")
+    pairs.append(("Restricted", ListPermissionPolicy(break_inheritance=True, assignments=())))
+
+    assert resolved.enum_members == {"division": ("North",)}
+    assert resolved.folders == {"Risk": ("Shared",)}
+    assert resolved.folder_policies == {"Risk": ()}
+    assert (type(resolved.groups), type(resolved.unresolved)) == (tuple, tuple)
+
+
 def test_an_edit_the_resolution_cannot_see_is_not_refused(tmp_path: Path) -> None:
     """A guard that refuses edits it has no view of gets suppressed instead.
 

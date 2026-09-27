@@ -140,12 +140,19 @@ class ResolvedMapping:
         # Taken here rather than in `resolve()`, so a hand-built resolution
         # carries one too and the guard has something to compare.
         object.__setattr__(self, "consumed", MappingProxyType(_consumed_inputs(self.mapping)))
-        # Copied, then read-only: the guard fingerprints the mapping, not these (#620).
-        object.__setattr__(self, "enum_members", MappingProxyType(dict(self.enum_members)))
-        object.__setattr__(self, "folders", MappingProxyType(dict(self.folders)))
-        object.__setattr__(
-            self, "folder_policies", MappingProxyType(dict(self.folder_policies)),
-        )
+        # Copied to tuples behind read-only views; the guard sees the mapping, not these (#620).
+        object.__setattr__(self, "enum_members", MappingProxyType(
+            {name: tuple(members) for name, members in self.enum_members.items()},
+        ))
+        object.__setattr__(self, "folders", MappingProxyType(
+            {entity: tuple(names) for entity, names in self.folders.items()},
+        ))
+        object.__setattr__(self, "folder_policies", MappingProxyType({
+            entity: tuple((folder, policy) for folder, policy in pairs)
+            for entity, pairs in self.folder_policies.items()
+        }))
+        object.__setattr__(self, "groups", tuple(self.groups))
+        object.__setattr__(self, "unresolved", tuple(self.unresolved))
 
     def require_resolved(self) -> None:
         """Raise what the strict resolvers raise today, for a generator.
