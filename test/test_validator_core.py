@@ -1447,7 +1447,7 @@ def _exact_policy_findings(
 
 def _strips() -> ListPermissionPolicy:
     return ListPermissionPolicy(
-        break_inheritance=True, assignments=[], reconcile_mode="exact",
+        break_inheritance=True, assignments=(), reconcile_mode="exact",
     )
 
 
@@ -1465,10 +1465,7 @@ def test_an_exact_default_policy_granting_nothing_warns() -> None:
 def test_an_exact_override_granting_nothing_warns_and_names_its_entity() -> None:
     finding = only(
         _exact_policy_findings(
-            default=ListPermissionPolicy(
-                break_inheritance=True, assignments=[_OWNERS_CONTRIBUTE],
-                reconcile_mode="exact",
-            ),
+            default=_grants(),
             overrides={"Task": _strips()},
         ),
         FindingCode.EXACT_POLICY_GRANTS_NOTHING,
@@ -1479,7 +1476,7 @@ def test_an_exact_override_granting_nothing_warns_and_names_its_entity() -> None
 
 def _grants() -> ListPermissionPolicy:
     return ListPermissionPolicy(
-        break_inheritance=True, assignments=[_OWNERS_CONTRIBUTE], reconcile_mode="exact",
+        break_inheritance=True, assignments=(_OWNERS_CONTRIBUTE,), reconcile_mode="exact",
     )
 
 
@@ -1518,16 +1515,10 @@ def test_an_exact_override_on_an_unknown_table_is_left_to_unknown_table() -> Non
 @pytest.mark.parametrize(
     "policy",
     [
+        pytest.param(_grants(), id="exact-with-assignments"),
         pytest.param(
             ListPermissionPolicy(
-                break_inheritance=True, assignments=[_OWNERS_CONTRIBUTE],
-                reconcile_mode="exact",
-            ),
-            id="exact-with-assignments",
-        ),
-        pytest.param(
-            ListPermissionPolicy(
-                break_inheritance=True, assignments=[], reconcile_mode="configured",
+                break_inheritance=True, assignments=(), reconcile_mode="configured",
             ),
             id="configured-with-none",
         ),
