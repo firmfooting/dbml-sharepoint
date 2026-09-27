@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: REMOVING THE LAST ROLE ASSIGNMENT ON A LIST ----
  *
- * REVISION: 4660cfde
+ * REVISION: ca4495b7
  *
  * THE REQUEST UNDER TEST (issue #667). A `list_permissions` policy with
  * `reconcile: exact` and no assignments makes Phase 4.2 in
@@ -73,6 +73,13 @@
  *     flap (access.list-acl.enumeration-is-monotonic).
  *   access.list-acl.after-last-binding-unique
  *     HasUniqueRoleAssignments on each of the same five reads.
+ *   access.list-acl.after-last-binding-by-id
+ *     The flag and the enumeration again on each of the five, read by the
+ *     list's Id, with the same query, Accept, no-store and retry as the reads
+ *     by title. This is the row that answers whether this account can still
+ *     read the list: a 401 or 403 here is "refused" and a 404 "absent", each
+ *     about this list. A 200 must carry this run's Id; another Id
+ *     contradicts the address, is reported, and leaves the row open.
  *   access.list-acl.after-last-binding-delete
  *     What the DELETE that ends the run answers, and whether a read by Id
  *     then finds the list gone. It is sent only once a read by Id shows this
@@ -91,7 +98,10 @@
  * read by title carried this run's Id, the bracket the deploy's
  * withOwnedList relies on. Anything after the last such read, or anything
  * at all once a read shows another list, leaves its row NOT ESTABLISHED with
- * the answers still in the evidence.
+ * the answers still in the evidence. So a refusal by title never settles
+ * those rows. The rows that model the deploy stay on the title, because the
+ * deploy reads by title; the access question goes to after-last-binding-by-id,
+ * whose reads name the list by its address and need no bracket.
  *
  * No principal's title is printed, only its length. Every response text has
  * this site's URL, host and path and this account's login name, email and
@@ -557,7 +567,7 @@
     record(id, question, row.outcome, row.evidence, row.state);
   };
 
-  log('INFO', 'probe revision 4660cfde. Quote this when reporting results.');
+  log('INFO', 'probe revision ca4495b7. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe LastBinding';
   const OWNERSHIP = 'dbml-sharepoint last-binding-removal probe list. Safe to delete.';
@@ -571,6 +581,7 @@
     readback: 'After them, what do the GETs Phase 4.2 makes after its last removal answer, and what would the deploy conclude',
     enumeration: 'After them, what does the role-assignment enumeration return over the settle window',
     unique: 'After them, does the list still read HasUniqueRoleAssignments=true',
+    byId: 'After them, what do the flag and the enumeration answer when the list is read by its Id',
     delete: 'After them, can this account still delete the list',
   };
 
@@ -581,6 +592,7 @@
   expect('access.list-acl.after-last-binding-readback', Q.readback);
   expect('access.list-acl.after-last-binding-enumeration', Q.enumeration);
   expect('access.list-acl.after-last-binding-unique', Q.unique);
+  expect('access.list-acl.after-last-binding-by-id', Q.byId);
   expect('access.list-acl.after-last-binding-delete', Q.delete);
 
   const ALL = RESULTS.map((r) => r.id);
@@ -588,8 +600,8 @@
   const AFTER_LIST = ALL.slice(1);
   const AFTER_BREAK = ALL.slice(2);
   const OBSERVED_ROWS = ALL.slice(3);
-  // The rows read through the title; the closing delete goes by Id and is not among them.
-  const READ_BY_TITLE = OBSERVED_ROWS.slice(0, -1);
+  // The rows read through the title; the by-Id row and the closing delete go by Id.
+  const READ_BY_TITLE = OBSERVED_ROWS.slice(0, -2);
   // The harness's own words for a row nothing has recorded yet.
   const PENDING = RESULTS[0].evidence;
 
@@ -949,7 +961,7 @@
       }
       const r = await read(next, NOMETADATA);
       if (silent(r)) return { kind: 'silent', why: `page ${pages + 1} ${describeRead(r)}` };
-      if (!r.ok) return { kind: 'refused', why: `page ${pages + 1} answered ${describeRead(r)}` };
+      if (!r.ok) return { kind: 'refused', status: r.status, why: `page ${pages + 1} answered ${describeRead(r)}` };
       if (status === null) status = r.status;
       const rows = r.body ? r.body.value : undefined;
       if (!Array.isArray(rows)) {
@@ -967,9 +979,8 @@
   };
 
   // Every field a row is placed by is a prerequisite, as in operator-safety-grant-probe.js.
-  const enumerate = async () => {
-    const at = nextTurn();
-    const got = { ...(await readPages(api(`${listPath}/${PROBE_BINDING_QUERY}`))), at };
+  const enumerateAt = async (base) => {
+    const got = await readPages(api(`${base}/${PROBE_BINDING_QUERY}`));
     if (got.kind !== 'rows') return got;
     try {
       const rows = [];
@@ -1007,6 +1018,11 @@
         why: err instanceof Unestablished ? err.message : `the enumeration could not be parsed: ${String(err)}`,
       };
     }
+  };
+  // By title, it takes a turn; by Id (enumerateAt(byIdPath)) the address names the list.
+  const enumerate = async () => {
+    const at = nextTurn();
+    return { ...(await enumerateAt(listPath)), at };
   };
 
   const whose = (principalId) => (Number(principalId) === myId ? 'this account' : 'another principal');
@@ -1403,6 +1419,8 @@
     // ---- after-last-binding-enumeration, after-last-binding-unique --------
     // One window, both reads each time; the flag read selects the Id, and is the proof
     // (ATTRIBUTION in the header) for the enumeration before it.
+    // Then the same two reads by Id, which answer the access question a refusal by title cannot.
+    const byIdPath = `web/lists(guid'${ownedId}')`;
     const settleReads = [];
     for (let attempt = 0; attempt < SETTLE_READS; attempt += 1) {
       if (attempt > 0) await sleep(SETTLE_MS);
@@ -1412,10 +1430,77 @@
       const u = await read(api(`${listPath}?$select=Id,HasUniqueRoleAssignments`));
       const body = u.ok && u.body !== null && typeof u.body === 'object' ? u.body : null;
       const own = body !== null && noteIdentity(`the flag read ${n}`, body.Id, undefined, flagTurn);
-      settleReads.push({ n, e, u, body, own, flagTurn });
+      const idFlag = await read(api(`${byIdPath}?$select=Id,HasUniqueRoleAssignments`));
+      const idEnum = await enumerateAt(byIdPath);
+      settleReads.push({ n, e, u, body, own, flagTurn, idFlag, idEnum });
     }
 
-    // ---- the rows, each only as far as a read by title carried this run's Id ----
+    // ---- after-last-binding-by-id: the address names the list, so no bracket ----
+    const removedKeys = new Set(removals.map((x) => `${x.row.principalId}:${x.row.roleDefId}`));
+    const accessOf = (status) => {
+      if (status === 401 || status === 403) return 'refused';
+      if (status === 404) return 'absent';
+      return `answered HTTP ${status}`;
+    };
+    const idFlagOf = (r) => {
+      if (silent(r)) return { kind: null, text: `${describeRead(r)}, not an answer` };
+      if (!r.ok) return { kind: accessOf(r.status), text: describeRead(r) };
+      const b = r.body !== null && typeof r.body === 'object' ? r.body : {};
+      if (typeof b.Id !== 'string') {
+        return { kind: null, text: `HTTP ${r.status} with an Id of ${shapeOf(b.Id)}, not an answer` };
+      }
+      if (guidOf(b.Id) !== ownedId) {
+        return { kind: 'contradiction', text: `HTTP ${r.status} carrying list ${guidOf(b.Id)}` };
+      }
+      if (typeof b.HasUniqueRoleAssignments !== 'boolean') {
+        return { kind: null, text: `HTTP ${r.status} carrying ${shapeOf(b.HasUniqueRoleAssignments)}, not an answer` };
+      }
+      return { kind: 'readable', text: `HTTP ${r.status}, HasUniqueRoleAssignments=${b.HasUniqueRoleAssignments}` };
+    };
+    const idEnumOf = (e) => {
+      if (e.kind === 'rows') {
+        const held = e.rows.some((r) => removedKeys.has(`${r.principalId}:${r.levelId}`));
+        return {
+          kind: 'readable',
+          held,
+          text: `HTTP ${e.status}, ${e.rows.length} row(s) over ${e.pages} page(s): ${describeRows(e.rows)}`,
+        };
+      }
+      if (e.kind === 'refused') return { kind: accessOf(e.status), text: e.why };
+      return { kind: null, text: `${e.why}, not an answer` };
+    };
+    const idReads = settleReads.map(({ n, idFlag, idEnum }) => ({
+      n, flag: idFlagOf(idFlag), enumeration: idEnumOf(idEnum),
+    }));
+    const tally = (pick) => {
+      const kinds = new Map();
+      for (const x of idReads) {
+        const kind = pick(x).kind || 'not an answer';
+        kinds.set(kind, [...(kinds.get(kind) || []), x.n]);
+      }
+      return [...kinds].map(([kind, ns]) => `${kind} on read(s) ${ns.join(', ')}`).join(', ');
+    };
+    const contradicted = idReads.filter((x) => x.flag.kind === 'contradiction').map((x) => x.n);
+    const idHeard = idReads.some((x) => x.flag.kind !== null || x.enumeration.kind !== null);
+    const idHeld = idReads.filter((x) => x.enumeration.kind === 'readable');
+    const idDetail = idReads.map((x) => `read ${x.n}: flag ${x.flag.text}; enumeration `
+      + `${x.enumeration.text}`).join(' | ');
+    let idSummary = `none of the ${SETTLE_READS} reads by Id answered`;
+    if (contradicted.length) {
+      idSummary = `read(s) ${contradicted.join(', ')} addressed list ${ownedId} by its Id and answered `
+        + 'another list\'s Id, which contradicts the address, so this row is not settled';
+    } else if (idHeard) {
+      idSummary = `read by its Id, list ${ownedId}: the flag read was ${tally((x) => x.flag)}, and the `
+        + `enumeration was ${tally((x) => x.enumeration)}`
+        + (idHeld.length ? `; the removed binding(s) (${[...removedKeys].join(', ')}) read present on `
+          + `${idHeld.filter((x) => x.enumeration.held).map((x) => x.n).join(', ') || 'no read'} and `
+          + `absent on ${idHeld.filter((x) => !x.enumeration.held).map((x) => x.n).join(', ') || 'no read'}`
+          : '');
+    }
+    record('access.list-acl.after-last-binding-by-id', Q.byId,
+      idHeard && !contradicted.length ? 'OBSERVED' : 'NOT ESTABLISHED', `${idSummary}: ${idDetail}.`);
+
+    // ---- the rows read by title, each only as far as one carried this run's Id ----
     if (rebound !== null) {
       closeAll(READ_BY_TITLE, 'NOT ESTABLISHED',
         `the title '${LIST}' answered another list during the run (${rebound}), so which list `
@@ -1431,7 +1516,6 @@
       placed(readbackTurn) ? readbackOutcome : 'NOT ESTABLISHED',
       `${readbackEvidence}${placed(readbackTurn) ? '' : `. For the read-back's last request, ${unplaced}`}.`);
 
-    const removedKeys = new Set(removals.map((x) => `${x.row.principalId}:${x.row.roleDefId}`));
     const enumReads = [];
     const uniqueReads = [];
     const present = [];

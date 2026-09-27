@@ -294,7 +294,11 @@ access. What an owner who is not an administrator can still reach needs a
 second identity and is not measured by it. It mints its own
 `fixture-last-binding-` rows rather than reusing `fixture-scratch-list`,
 because it builds a different list and ends by deleting it rather than
-restoring it.
+restoring it. After the removal it reads the list by its Id as well as by its
+title. A refusal by title names no list and one by Id does, so whether the
+administrator can still read the list is answered by
+`after-last-binding-by-id`, while the rows that model the deploy stay on the
+title the deploy reads by.
 
 ### 9. `scale`: behaviour at and beyond the list view threshold
 

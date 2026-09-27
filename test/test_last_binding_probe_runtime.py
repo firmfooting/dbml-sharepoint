@@ -36,10 +36,13 @@ REMOVAL = "access.list-acl.last-binding-removal"
 READBACK = "access.list-acl.after-last-binding-readback"
 ENUMERATION = "access.list-acl.after-last-binding-enumeration"
 UNIQUE = "access.list-acl.after-last-binding-unique"
+BY_ID = "access.list-acl.after-last-binding-by-id"
 DELETE = "access.list-acl.after-last-binding-delete"
 
-#: The five rows that observe the scope once a removal was sent.
-OBSERVED = (REMOVAL, READBACK, ENUMERATION, UNIQUE, DELETE)
+#: The six rows that observe the scope once a removal was sent.
+OBSERVED = (REMOVAL, READBACK, ENUMERATION, UNIQUE, BY_ID, DELETE)
+#: The four of them read through the title, which a rebind or a refusal leaves unplaced.
+READ_BY_TITLE = (REMOVAL, READBACK, ENUMERATION, UNIQUE)
 ALL = (FIXTURE_LIST, FIXTURE_BREAK, FIXTURE_DIRECT, *OBSERVED)
 
 _TITLE = "dbmlsp Probe LastBinding"
@@ -136,7 +139,7 @@ _HARNESS = textwrap.dedent("""
       }));
     };
 
-    const enumeration = (u, verbose) => {
+    const enumeration = (u, verbose, counted = true) => {
       const continued = u.includes('$skiptoken=');
       if (verbose && !site.removalSent) {
         if (CONFIG.snapshot === 'refused') return spError(500, '-1, x', 'enumeration refused');
@@ -152,7 +155,7 @@ _HARNESS = textwrap.dedent("""
         if (n <= CONFIG.snapshotEmptyReads || (CONFIG.snapshotFlap && n % 2 === 0)) visible = [];
       }
       if (site.removalSent && !continued) {
-        if (verbose) site.deployReads += 1; else site.probeReads += 1;
+        if (verbose) site.deployReads += 1; else if (counted) site.probeReads += 1;
         const reads = verbose ? site.deployReads : site.probeReads;
         const back = verbose ? CONFIG.reappearOnDeployRead : CONFIG.reappearOnProbeRead;
         if (back === reads) visible = [...visible, ...site.removed];
@@ -259,10 +262,25 @@ _HARNESS = textwrap.dedent("""
         }
         if (!mine) return spError(404, '-1, x', 'no such list');
         if (hidden) return denied();
-        return respond(200, {
-          Id: site.listId, Title: CONFIG.title,
+        const flagRead = u.includes('HasUniqueRoleAssignments');
+        const status = CONFIG.byIdStatusAfterRemoval;
+        if (site.removalSent && status !== null && (flagRead || u.includes('/roleassignments?'))) {
+          return status === 404 ? spError(404, '-1, x', 'no such list')
+            : spError(status, '-2147024891, System.UnauthorizedAccessException', 'Access denied.');
+        }
+        if (u.includes('/roleassignments?')) return enumeration(u, false, false);
+        const listed = {
+          Id: site.removalSent && flagRead && CONFIG.byIdFlagAnswersId !== null
+            ? CONFIG.byIdFlagAnswersId : site.listId,
+          Title: CONFIG.title,
           Description: CONFIG.markerAtDelete ? 'Quarterly board packs' : site.description,
-        });
+          HasUniqueRoleAssignments: site.unique,
+        };
+        if (site.removalSent && flagRead) {
+          if (CONFIG.byIdFlagOmitsId) delete listed.Id;
+          if (CONFIG.byIdFlagIsNull) listed.HasUniqueRoleAssignments = null;
+        }
+        return respond(200, listed);
       }
 
       if (!u.includes(TITLE)) return spError(404, '-1, x', `unmocked ${u}`);
@@ -302,7 +320,7 @@ _HARNESS = textwrap.dedent("""
         return spError(404, '-1, x', `unmocked POST ${u}`);
       }
 
-      if (hidden) return denied();
+      if (hidden || (site.removalSent && CONFIG.titleDeniedAfterRemoval)) return denied();
       if (u.includes('/roleassignments?')) return enumeration(u, u.includes('$select='));
       if (u.includes('/items?')) return items();
       const shapeRead = u.includes('$select=Id,Title,BaseTemplate');
@@ -387,6 +405,11 @@ _DEFAULTS: dict[str, Any] = {
     "deleteIgnored": False,
     "readAfterDelete": None,
     "digestThrottledCalls": [],
+    "titleDeniedAfterRemoval": False,
+    "byIdFlagAnswersId": None,
+    "byIdStatusAfterRemoval": None,
+    "byIdFlagOmitsId": False,
+    "byIdFlagIsNull": False,
 }
 
 #: The probe's waits, cut so a run takes milliseconds. The splices are the pins.
@@ -522,6 +545,8 @@ def test_a_removal_the_platform_accepts_answers_every_row() -> None:
     )
     assert f"principal {_OPERATOR} (this account" not in enumeration["evidence"]
     assert rows[UNIQUE]["evidence"].count("HasUniqueRoleAssignments=true") == 5
+    assert rows[BY_ID]["outcome"] == "OBSERVED", rows[BY_ID]
+    assert "the flag read was readable on read(s) 1, 2, 3, 4, 5" in rows[BY_ID]["evidence"]
     delete = rows[DELETE]
     assert delete["outcome"] == "ACCEPTED", delete
     assert delete["evidence"].startswith("the list is gone"), delete["evidence"]
@@ -845,6 +870,8 @@ def test_a_paged_snapshot_is_read_to_the_end() -> None:
     assert [c for c in calls if "$skiptoken=" in c["url"]]
     assert "read 1: 2 binding(s) over 2 page(s)" in rows[FIXTURE_DIRECT]["evidence"]
     assert len(_removals(calls)) == 2
+    assert [c for c in calls if f"lists(guid'{_CREATED_ID}')/roleassignments?" in c["url"]
+            and "$skiptoken=" in c["url"]]
 
 
 @needs_node
@@ -1122,16 +1149,24 @@ def test_a_create_answered_as_failed_is_read_back_and_cleaned_up_when_it_landed(
 
 
 @needs_node
-def test_an_administrator_shut_out_after_the_removal_is_carried_but_not_settled() -> None:
+def test_an_administrator_shut_out_after_the_removal_is_settled_by_id_not_by_title() -> None:
     """Learn predicts an administrator keeps access, and a 403 on every read
-    would contradict it. A refusal by title carries no list Id, though, and
-    with every read refused none after it shows which list refused, so each
-    row keeps the 403s in its evidence and stays open. A list whose marker
-    cannot be read by Id is not deleted, and the delete row says why."""
+    would contradict it. A refusal by title carries no list Id and none after
+    it shows which list refused, so the title rows keep the 403s and stay
+    open. A read by Id names the list by its address, so the same refusal
+    there settles the by-Id row. A list whose marker cannot be read by Id is
+    not deleted, and the delete row says why."""
     rows, calls, _output = _run_probe(afterRemoval="denied")
 
+    by_id = rows[BY_ID]
+    assert by_id["outcome"] == "OBSERVED", by_id
+    assert by_id["state"] == "settled"
+    assert by_id["evidence"].startswith(
+        f"read by its Id, list {_CREATED_ID}: the flag read was refused on read(s) 1, 2, 3, 4, 5, "
+        "and the enumeration was refused on read(s) 1, 2, 3, 4, 5: "
+    ), by_id["evidence"]
     unplaced = f"no read by title after it carried list {_CREATED_ID} as its Id"
-    for row in (REMOVAL, READBACK, ENUMERATION, UNIQUE):
+    for row in READ_BY_TITLE:
         assert rows[row]["outcome"] == "NOT ESTABLISHED", rows[row]
         assert rows[row]["state"] == "open", rows[row]
         assert unplaced in rows[row]["evidence"], rows[row]["evidence"]
@@ -1154,13 +1189,109 @@ def test_an_administrator_shut_out_after_the_removal_is_carried_but_not_settled(
 
 
 @needs_node
+@pytest.mark.parametrize(("status", "kind"), [(401, "refused"), (403, "refused"), (404, "absent")])
+def test_every_answer_by_id_about_access_is_an_observation(status: int, kind: str) -> None:
+    """Whatever a read by Id answers, it answers about this list, so a 401,
+    403 or 404 there settles the row. The title rows are untouched by it."""
+    rows, _calls, _output = _run_probe(byIdStatusAfterRemoval=status)
+
+    by_id = rows[BY_ID]
+    assert by_id["outcome"] == "OBSERVED", by_id
+    assert by_id["evidence"].startswith(
+        f"read by its Id, list {_CREATED_ID}: the flag read was {kind} on read(s) 1, 2, 3, 4, 5, "
+        f"and the enumeration was {kind} on read(s) 1, 2, 3, 4, 5: "
+    ), by_id["evidence"]
+    assert by_id["evidence"].count(f"HTTP {status} {{") == 10
+    for row in READ_BY_TITLE:
+        assert rows[row]["state"] == "settled", rows[row]
+
+
+@needs_node
+def test_a_title_refused_while_the_id_reads_answers_the_access_question() -> None:
+    """The case the by-Id reads exist for: every read by title is refused, so
+    those rows stay open, and the same list read by its Id is still readable
+    with the removed binding gone."""
+    rows, calls, _output = _run_probe(titleDeniedAfterRemoval=True)
+
+    for row in READ_BY_TITLE:
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", rows[row]
+    by_id = rows[BY_ID]
+    assert by_id["outcome"] == "OBSERVED", by_id
+    assert by_id["evidence"].startswith(
+        f"read by its Id, list {_CREATED_ID}: the flag read was readable on read(s) 1, 2, 3, 4, 5, "
+        "and the enumeration was readable on read(s) 1, 2, 3, 4, 5; the removed binding(s) "
+        f"({_OPERATOR}:3) read present on no read and absent on 1, 2, 3, 4, 5: "
+    ), by_id["evidence"]
+    assert by_id["evidence"].count("HasUniqueRoleAssignments=true") == 5
+    assert rows[DELETE]["outcome"] == "ACCEPTED"
+
+    by_id_path = f"web/lists(guid'{_CREATED_ID}')"
+    flag_reads = [c for c in calls if c["url"].endswith(
+        f"{by_id_path}?$select=Id,HasUniqueRoleAssignments")]
+    enum_reads = [c for c in calls if f"{by_id_path}/roleassignments?" in c["url"]]
+    title_enum = next(c for c in calls if f"getbytitle('{_TITLE}')/roleassignments?$expand=Member"
+                      in c["url"])
+    assert len(flag_reads) == len(enum_reads) == 5
+    for call in (*flag_reads, *enum_reads):
+        assert call["cache"] == "no-store", call
+        assert call["accept"] == title_enum["accept"], call
+    assert all(c["url"].split("/roleassignments?", 1)[1]
+               == title_enum["url"].split("/roleassignments?", 1)[1] for c in enum_reads)
+
+
+@needs_node
+def test_a_read_by_id_answering_another_list_is_reported_not_settled() -> None:
+    """An address names one list, so a 200 carrying another list's Id is a
+    contradiction. It is reported and the row stays open; the title rows,
+    which prove themselves, are unaffected."""
+    rows, _calls, _output = _run_probe(byIdFlagAnswersId=_FOREIGN_ID)
+
+    by_id = rows[BY_ID]
+    assert by_id["outcome"] == "NOT ESTABLISHED", by_id
+    assert by_id["state"] == "open"
+    assert by_id["evidence"].startswith(
+        f"read(s) 1, 2, 3, 4, 5 addressed list {_CREATED_ID} by its Id and answered another "
+        "list's Id, which contradicts the address, so this row is not settled: "
+    ), by_id["evidence"]
+    assert f"flag HTTP 200 carrying list {_FOREIGN_ID}" in by_id["evidence"]
+    for row in READ_BY_TITLE:
+        assert rows[row]["state"] == "settled", rows[row]
+    assert rows[DELETE]["outcome"] == "ACCEPTED"
+
+
+@needs_node
+@pytest.mark.parametrize(
+    ("config", "said"),
+    [
+        ({"byIdFlagOmitsId": True}, "flag HTTP 200 with an Id of undefined, not an answer"),
+        ({"byIdFlagIsNull": True}, "flag HTTP 200 carrying null, not an answer"),
+    ],
+)
+def test_a_flag_read_by_id_short_of_its_id_or_flag_is_not_an_answer(
+    config: dict[str, Any], said: str,
+) -> None:
+    """A 200 flag read by Id must still carry the Id it was addressed by and
+    a boolean flag. The enumeration by Id carries no list Id at all, and its
+    address is what names the list, so it still answers."""
+    rows, _calls, _output = _run_probe(**config)
+
+    by_id = rows[BY_ID]
+    assert by_id["outcome"] == "OBSERVED", by_id
+    assert by_id["evidence"].startswith(
+        f"read by its Id, list {_CREATED_ID}: the flag read was not an answer on read(s) "
+        "1, 2, 3, 4, 5, and the enumeration was readable on read(s) 1, 2, 3, 4, 5"
+    ), by_id["evidence"]
+    assert by_id["evidence"].count(said) == 5
+
+
+@needs_node
 def test_reads_that_never_answer_after_the_removal_settle_nothing() -> None:
     """A throttle that outlasts the deploy's retries on every read is not an
     observation of the scope, so no row settles from it. The removal's 200
     is carried, but nothing after it showed which list took it."""
-    rows, _calls, _output = _run_probe(afterRemoval="throttled")
+    rows, calls, _output = _run_probe(afterRemoval="throttled")
 
-    for row in (REMOVAL, READBACK, ENUMERATION, UNIQUE):
+    for row in (*READ_BY_TITLE, BY_ID):
         assert rows[row]["outcome"] == "NOT ESTABLISHED", rows[row]
         assert rows[row]["state"] == "open", rows[row]
     assert "answered HTTP 200" in rows[REMOVAL]["evidence"]
@@ -1168,6 +1299,11 @@ def test_reads_that_never_answer_after_the_removal_settle_nothing() -> None:
     assert rows[UNIQUE]["evidence"].startswith(
         f"none of the 5 reads answered for list {_CREATED_ID}"
     )
+    assert rows[BY_ID]["evidence"].startswith("none of the 5 reads by Id answered: ")
+    # Each read by Id is retried as fetchWithRetry retries: the first try and 8 more.
+    by_id_flags = [c for c in calls if c["url"].endswith(
+        f"lists(guid'{_CREATED_ID}')?$select=Id,HasUniqueRoleAssignments")]
+    assert len(by_id_flags) == 5 * 9
 
 
 @needs_node
@@ -1201,7 +1337,7 @@ def test_a_title_rebound_that_hides_its_id_settles_nothing_read_by_title() -> No
         flagIdOmitted=[1, 2, 3, 4, 5],
     )
 
-    for row in (REMOVAL, READBACK, ENUMERATION, UNIQUE):
+    for row in READ_BY_TITLE:
         assert rows[row]["outcome"] == "NOT ESTABLISHED", rows[row]
         assert rows[row]["state"] == "open", rows[row]
     for row in (REMOVAL, READBACK, ENUMERATION):
@@ -1213,6 +1349,8 @@ def test_a_title_rebound_that_hides_its_id_settles_nothing_read_by_title() -> No
     assert [c["url"].split("/_api/", 1)[1] for c in _deletes(calls)] == [
         f"web/lists(guid'{_CREATED_ID}')"
     ]
+    # The reads by Id go to the list this run made, whatever the title answers.
+    assert rows[BY_ID]["outcome"] == "OBSERVED", rows[BY_ID]
 
 
 @needs_node
@@ -1289,11 +1427,12 @@ def test_a_title_rebound_after_the_removal_leaves_the_title_rows_open() -> None:
     throughout, so its row is still an answer."""
     rows, calls, output = _run_probe(rebindAfterRemoval=True)
 
-    # Recorded once, so the transcript never shows it closed for the title's reason first.
-    assert [ln for ln in output.splitlines() if f"{DELETE}: " in ln] == [
-        f"[INFO] {DELETE}: ACCEPTED. {rows[DELETE]['question']}"
-    ]
-    for row in (REMOVAL, READBACK, ENUMERATION, UNIQUE):
+    # Recorded once, so the transcript never shows them closed for the title's reason first.
+    for row, outcome in ((DELETE, "ACCEPTED"), (BY_ID, "OBSERVED")):
+        assert [ln for ln in output.splitlines() if f"{row}: " in ln] == [
+            f"[INFO] {row}: {outcome}. {rows[row]['question']}"
+        ]
+    for row in READ_BY_TITLE:
         assert rows[row]["outcome"] == "NOT ESTABLISHED", rows[row]
         assert rows[row]["state"] == "open"
         assert f"answered list {_REBOUND_ID} where this run claimed {_CREATED_ID}" in (
