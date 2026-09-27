@@ -183,9 +183,10 @@ def _exact_policies_granting_nothing(
     Each block reports only where it governs a scope, because that is where
     the deploy carries it: the default when some list takes it rather than an
     override or a `site_role` that excludes it, an override keyed by a table
-    that deploys, and a folder block through its expansion, once however
-    many folders it covers. A block that governs nothing either deploys
-    nothing or already has a finding of its own, such as `unknown_table`.
+    that deploys, and a folder block on such a table through its expansion,
+    once however many folders it covers. A block that governs nothing either
+    deploys nothing or already has a finding of its own, such as
+    `unknown_table` or `entity_not_in_schema`.
     """
     mapping = vc.bundle.mapping
     # A list deploys only when the mapping and the schema both declare it.
@@ -207,6 +208,7 @@ def _exact_policies_granting_nothing(
     # Any one folder answers for its block: expanding `{member}` changes neither mode nor count.
     folder_blocks = {
         name: policy for name, _folder, policy in _expanded_folder_policies(vc, perms)
+        if name in governed
     }
     declared += [
         (
