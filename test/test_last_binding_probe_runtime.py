@@ -24,7 +24,7 @@ from typing import Any
 import pytest
 from _node import NODE
 from _node import run_node as _run
-from _paths import JINJA_TEMPLATES, MANUAL
+from _paths import JINJA_TEMPLATES, MANUAL, PACKAGE
 
 PROBE = MANUAL / "last-binding-removal-probe.js"
 HARNESS = MANUAL / "templates" / "_probe_harness.js.j2"
@@ -66,8 +66,13 @@ _HARNESS = textwrap.dedent("""
     const CONFIG = __CONFIG__;
 
     globalThis.__calls = [];
+    // Looped: at exit a non-blocking pipe takes 64 KiB per write and drops the rest.
     process.on('exit', () => {
-      console.log('__CALLS__' + JSON.stringify(globalThis.__calls));
+      const fs = require('node:fs');
+      const out = Buffer.from(`__CALLS__${JSON.stringify(globalThis.__calls)}\\n`);
+      for (let at = 0; at < out.length;) {
+        try { at += fs.writeSync(1, out, at); } catch (e) { if (e.code !== 'EAGAIN') throw e; }
+      }
     });
 
     globalThis.window = { _spPageContextInfo: { webAbsoluteUrl: CONFIG.web } };
@@ -103,6 +108,7 @@ _HARNESS = textwrap.dedent("""
       probeReads: 0,
       deployReads: 0,
       shapeReads: 0,
+      snapshotReads: 0,
     };
 
     const TITLE = `getbytitle('${CONFIG.title}')`;
@@ -137,6 +143,11 @@ _HARNESS = textwrap.dedent("""
         return respond(200, { d: {} });
       }
       let visible = site.bindings;
+      if (verbose && !site.removalSent && !continued) {
+        site.snapshotReads += 1;
+        const n = site.snapshotReads;
+        if (n <= CONFIG.snapshotEmptyReads || (CONFIG.snapshotFlap && n % 2 === 0)) visible = [];
+      }
       if (site.removalSent && !continued) {
         if (verbose) site.deployReads += 1; else site.probeReads += 1;
         const reads = verbose ? site.deployReads : site.probeReads;
@@ -200,10 +211,14 @@ _HARNESS = textwrap.dedent("""
         return respond(200, me);
       }
       if (u.endsWith('/web/lists') && method === 'POST') {
-        if (CONFIG.createRefused) return spError(500, '-1, x', 'list create refused');
+        if (CONFIG.createRefused === true) return spError(500, '-1, x', 'list create refused');
         site.listExists = true;
         site.listId = CONFIG.createdId;
         site.description = JSON.parse(String(opts.body)).Description;
+        // A write the server applied and still answered as failed.
+        if (CONFIG.createRefused === 'but-created') {
+          return spError(500, '-1, x', 'list create timed out');
+        }
         return respond(201, {
           Title: CONFIG.title,
           ...(CONFIG.createAnswersId === null ? {} : { Id: CONFIG.createAnswersId }),
@@ -215,6 +230,13 @@ _HARNESS = textwrap.dedent("""
       const hidden = site.removalSent && CONFIG.afterRemoval === 'denied';
       const byId = /\\/web\\/lists\\(guid'([^']*)'\\)/.exec(u);
       if (byId) {
+        // Somebody else's list, reachable by its Id and never by this probe's title.
+        if (CONFIG.foreignListId !== null && byId[1].toLowerCase() === CONFIG.foreignListId) {
+          if (method === 'POST') return respond(200, {});
+          return respond(200, {
+            Id: CONFIG.foreignListId, Title: 'Board packs', Description: 'Quarterly board packs',
+          });
+        }
         const mine = site.listExists
           && byId[1].toLowerCase() === String(site.listId).toLowerCase();
         if (method === 'POST' && headers['X-HTTP-Method'] === 'DELETE') {
@@ -227,7 +249,8 @@ _HARNESS = textwrap.dedent("""
         if (!mine) return spError(404, '-1, x', 'no such list');
         if (hidden) return denied();
         return respond(200, {
-          Id: site.listId, Title: CONFIG.title, Description: site.description,
+          Id: site.listId, Title: CONFIG.title,
+          Description: CONFIG.markerAtDelete ? 'Quarterly board packs' : site.description,
         });
       }
 
@@ -271,21 +294,26 @@ _HARNESS = textwrap.dedent("""
       if (hidden) return denied();
       if (u.includes('/roleassignments?')) return enumeration(u, u.includes('$select='));
       if (u.includes('/items?')) return items();
-      if (u.includes('$select=Id,Title,BaseTemplate')) site.shapeReads += 1;
+      const shapeRead = u.includes('$select=Id,Title,BaseTemplate');
+      if (shapeRead) site.shapeReads += 1;
       if (CONFIG.listReadBackRefused && u.includes('HasUniqueRoleAssignments')
           && u.includes('Description')) {
         return spError(500, '-1, x', 'list read refused');
       }
       const reboundNow = (site.removalSent && CONFIG.rebindAfterRemoval)
         || (CONFIG.rebindFromShapeRead !== null && site.shapeReads >= CONFIG.rebindFromShapeRead);
+      let listId = reboundNow ? CONFIG.reboundId : site.listId;
+      if (occupied && CONFIG.titleOccupied === 'marker-no-id') listId = undefined;
+      else if (CONFIG.titleReadId !== null) listId = CONFIG.titleReadId;
       const entity = {
-        Id: occupied && CONFIG.titleOccupied === 'marker-no-id' ? undefined
-          : reboundNow ? CONFIG.reboundId : site.listId,
+        Id: listId,
         Title: CONFIG.title, BaseTemplate: 100, ContentTypesEnabled: false,
         Description: site.description, EnableVersioning: false, EnableMinorVersions: false,
         MajorVersionLimit: 0, ValidationFormula: '', ValidationMessage: '',
         HasUniqueRoleAssignments: site.unique,
       };
+      const omit = CONFIG.shapeOmits;
+      if (shapeRead && omit !== null && site.shapeReads >= omit.fromRead) delete entity[omit.field];
       if (String(headers.Accept).includes('odata=verbose')) return respond(200, { d: entity });
       return respond(200, entity);
     };
@@ -330,6 +358,12 @@ _DEFAULTS: dict[str, Any] = {
     "endlessPages": False,
     "deleteRefused": False,
     "deleteThrows": False,
+    "foreignListId": None,
+    "markerAtDelete": False,
+    "titleReadId": None,
+    "shapeOmits": None,
+    "snapshotEmptyReads": 0,
+    "snapshotFlap": False,
 }
 
 #: The probe's waits, cut so a run takes milliseconds. The splices are the pins.
@@ -430,7 +464,8 @@ def _deploy_shape_select() -> str:
 
 
 def _path(call: dict[str, Any]) -> str:
-    return str(call["url"]).split("/_api/web/lists/", 1)[1]
+    """The request below `web/lists/`, or the whole URL for one addressed otherwise."""
+    return str(call["url"]).split("/_api/web/lists/", 1)[-1]
 
 
 needs_node = pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -548,14 +583,35 @@ def test_the_read_back_sends_the_deploys_own_requests_in_its_order() -> None:
         c["url"] for c in gets if c["cache"] != "no-store"
     ]
 
-    # The break's bracket, then the snapshot with no wait between, as for a list.
+    # The break's bracket closes, the settle window reads the flag, and Phase 4.2
+    # opens with its identity read immediately before the snapshot.
     broke = calls.index(_breaks(calls)[0])
-    after_break = [c for c in calls[broke + 1:] if c["method"] == "GET"]
-    assert [_path(c) for c in after_break[:2]] == [shape, enumeration]
+    after_break = [_path(c) for c in calls[broke + 1:] if c["method"] == "GET"]
+    flag = f"getbytitle('{_TITLE}')?$select=Id,HasUniqueRoleAssignments"
+    first_snapshot = after_break.index(enumeration)
+    assert after_break[:2] == [shape, flag]
+    assert after_break[first_snapshot - 1] == shape
+    assert flag in after_break[:first_snapshot]
     # ownedListIdentity before pruning, then the removal's own opening read.
     removed = calls.index(_removals(calls)[0])
     before_removal = [c for c in calls[:removed] if c["method"] == "GET"]
     assert [_path(c) for c in before_removal[-2:]] == [shape, shape]
+
+
+def test_the_path_the_probe_reproduces_is_the_one_an_exact_policy_takes() -> None:
+    """The header claims an exact policy's list is broken early in Phase 1 and
+    found already unique in Phase 4.2, which is why the probe puts a settle
+    window between its break and the snapshot. Each link is pinned to source."""
+    permissions = (
+        PACKAGE / "model" / "sections" / "_permissions.py"
+    ).read_text(encoding="utf-8")
+    assert 'if reconcile_mode == "exact" and not break_inheritance:' in permissions
+    lists = (JINJA_TEMPLATES / "deploy" / "_lists.js.j2").read_text(encoding="utf-8")
+    assert (
+        ".filter(s => !s.folder && s.break_inheritance && s.reconcile_mode === 'exact')"
+    ) in lists
+    assert "/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)" in lists
+    assert "already has unique role assignments, reconciling existing bindings" in _acls()
 
 
 def _deploy_post(what: str) -> str:
@@ -720,10 +776,13 @@ def test_a_break_that_did_not_hold_voids_every_row_after_it(
 @pytest.mark.parametrize(
     ("config", "said"),
     [
-        ({"leftBindings": []}, "it returned 0 binding(s) over 1 page(s), 0 of them"),
+        ({"leftBindings": []}, "read 1: 0 binding(s) over 1 page(s), 0 other than"),
         (
             {"leftBindings": [{**_OPERATOR_BINDING, "levelId": 4, "levelName": "Limited Access"}]},
-            "0 of them other than 'Limited Access'",
+            (
+                "read 1: 1 binding(s) over 1 page(s): 11:4 'Limited Access' (this account), "
+                "0 other than"
+            ),
         ),
         ({"snapshot": "refused"}, "the deploy would throw reading it (page 1 answered HTTP 500"),
         ({"snapshot": "no-principal"},
@@ -737,13 +796,18 @@ def test_a_snapshot_with_nothing_to_prune_sends_no_removal(
     config: dict[str, Any], said: str,
 ) -> None:
     """The prune needs a binding to remove, read the way the deploy reads it
-    and to its last page. A snapshot the deploy would throw on, or read as
-    empty, voids the question rather than answering it."""
+    and to its last page. Only a window in which no read held one voids the
+    question; every read in it is recorded."""
     rows, calls, _output = _run_probe(**config)
 
+    evidence = rows[FIXTURE_DIRECT]["evidence"]
     assert rows[FIXTURE_DIRECT]["outcome"] == "FAIL"
-    assert said in rows[FIXTURE_DIRECT]["evidence"], rows[FIXTURE_DIRECT]["evidence"]
-    assert "so no removal was sent" in rows[FIXTURE_DIRECT]["evidence"]
+    assert said in evidence, evidence
+    assert "read 6: " in evidence, evidence
+    assert evidence.endswith(
+        "no read held a binding other than 'Limited Access' for the prune to remove, so no "
+        "removal was sent."
+    ), evidence
     for row in OBSERVED:
         assert rows[row]["state"] == "void", rows[row]
     assert not _removals(calls)
@@ -756,8 +820,37 @@ def test_a_paged_snapshot_is_read_to_the_end() -> None:
     rows, calls, _output = _run_probe(paged=True, leftBindings=[_GROUP_BINDING, _OPERATOR_BINDING])
 
     assert [c for c in calls if "$skiptoken=" in c["url"]]
-    assert "it returned 2 binding(s) over 2 page(s)" in rows[FIXTURE_DIRECT]["evidence"]
+    assert "read 1: 2 binding(s) over 2 page(s)" in rows[FIXTURE_DIRECT]["evidence"]
     assert len(_removals(calls)) == 2
+
+
+@needs_node
+def test_a_transiently_empty_snapshot_is_recorded_and_re_read_rather_than_voiding() -> None:
+    """An empty read is what the deploy would have pruned nothing from. It is
+    recorded as such, and the window reads on until two reads agree."""
+    rows, calls, _output = _run_probe(snapshotEmptyReads=2)
+
+    evidence = rows[FIXTURE_DIRECT]["evidence"]
+    assert rows[FIXTURE_DIRECT]["outcome"] == "PASS", evidence
+    assert "read 1: 0 binding(s) over 1 page(s), 0 other than 'Limited Access'" in evidence
+    assert "read 2: 0 binding(s)" in evidence
+    assert evidence.endswith("reads 3 and 4 agreed, so read 4 is the snapshot."), evidence
+    assert len(_removals(calls)) == 1
+    assert rows[REMOVAL]["outcome"] == "ACCEPTED"
+
+
+@needs_node
+def test_a_snapshot_that_never_settles_proceeds_on_its_last_binding_and_says_so() -> None:
+    rows, calls, _output = _run_probe(snapshotFlap=True)
+
+    evidence = rows[FIXTURE_DIRECT]["evidence"]
+    assert rows[FIXTURE_DIRECT]["outcome"] == "PASS", evidence
+    assert "read 6: 0 binding(s)" in evidence
+    assert evidence.endswith(
+        "no two consecutive reads agreed, so read 5, the last holding a binding other than "
+        "'Limited Access', is the snapshot."
+    ), evidence
+    assert len(_removals(calls)) == 1
 
 
 @needs_node
@@ -865,7 +958,9 @@ def test_a_delete_that_did_not_go_is_recorded_and_hands_over_a_line_that_does(
 
 @needs_node
 def test_an_id_that_is_not_a_guid_is_never_spliced_into_the_delete() -> None:
-    rows, calls, output = _run_probe(createAnswersId="not-a-guid')/items(1")
+    """The marker read is the one source of the Id the delete goes by, so an
+    Id it answers in the wrong shape reaches the DELETE's own guard."""
+    rows, calls, output = _run_probe(createAnswersId=None, titleReadId="not-a-guid')/items(1")
 
     assert rows[FIXTURE_LIST]["outcome"] == "FAIL"
     assert not _deletes(calls)
@@ -874,13 +969,76 @@ def test_an_id_that_is_not_a_guid_is_never_spliced_into_the_delete() -> None:
     assert any("Delete the list titled" in line for line in failures), failures
 
 
+_FOREIGN_ID = "44444444-4444-4444-4444-444444444444"
+
+
+@needs_node
+def test_a_create_answering_another_lists_id_never_deletes_that_list() -> None:
+    """Only the Id the marker read confirmed is ever deleted. A create that
+    answers somebody else's Id fails the fixture, and the scratch list the
+    marker read found is the one cleaned up."""
+    rows, calls, _output = _run_probe(createAnswersId=_FOREIGN_ID, foreignListId=_FOREIGN_ID)
+
+    evidence = rows[FIXTURE_LIST]["evidence"]
+    assert rows[FIXTURE_LIST]["outcome"] == "FAIL"
+    assert (
+        f"the create answered list {_FOREIGN_ID}, but the title reads list {_CREATED_ID} "
+        "carrying this probe's marker"
+    ) in evidence
+    for row in ALL[1:]:
+        assert rows[row]["state"] == "void", rows[row]
+    assert not [c for c in calls if _FOREIGN_ID in c["url"]], calls
+    assert [c["url"].split("/_api/", 1)[1] for c in _deletes(calls)] == [
+        f"web/lists(guid'{_CREATED_ID}')"
+    ]
+
+
+@needs_node
+def test_a_list_whose_marker_is_gone_by_the_delete_is_not_deleted() -> None:
+    """The DELETE has no title bracket, so the marker read by Id is its guard."""
+    rows, calls, output = _run_probe(markerAtDelete=True)
+
+    assert not _deletes(calls)
+    delete = rows[DELETE]
+    assert delete["outcome"] == "NOT ESTABLISHED", delete
+    assert delete["evidence"].startswith(
+        f"no DELETE was sent: the read by Id answered HTTP 200, which does not show this "
+        f"probe's marker on list {_CREATED_ID}"
+    ), delete["evidence"]
+    failures = _lines(output, "FAIL")
+    assert len(failures) == 1, failures
+    assert f"(list {_CREATED_ID}) may still exist" in failures[0]
+    assert "no line to delete it is printed" in failures[0]
+    assert "paste this line" not in failures[0]
+
+
+@needs_node
+def test_a_create_answered_as_failed_is_read_back_and_cleaned_up_when_it_landed() -> None:
+    """A write reported as refused may still have been applied, so the title is
+    read back, and what the marker proves is this run's is deleted by Id."""
+    rows, calls, output = _run_probe(createRefused="but-created")
+
+    evidence = rows[FIXTURE_LIST]["evidence"]
+    assert rows[FIXTURE_LIST]["outcome"] == "FAIL"
+    assert "could not create 'dbmlsp Probe LastBinding': HTTP 500" in evidence
+    assert (
+        f"The title then read list {_CREATED_ID} carrying this probe's marker, so the create "
+        "was applied anyway, and that list is deleted at the end"
+    ) in evidence
+    assert [c["url"].split("/_api/", 1)[1] for c in _deletes(calls)] == [
+        f"web/lists(guid'{_CREATED_ID}')"
+    ]
+    assert not [line for line in _lines(output, "FAIL") if "could not establish" in line]
+    assert any("read it back absent" in line for line in _lines(output, "OK")), output
+
+
 @needs_node
 def test_an_administrator_shut_out_after_the_removal_is_what_the_rows_record() -> None:
     """Learn predicts an administrator keeps access; a 403 on every read is
     therefore the observation that would contradict it, and it is recorded
-    as one. A 404 after the delete says nothing when the list was not
-    readable before it."""
-    rows, _calls, _output = _run_probe(afterRemoval="denied")
+    as one. A list whose marker cannot be read by Id is not deleted, and the
+    delete row says why rather than settling."""
+    rows, calls, _output = _run_probe(afterRemoval="denied")
 
     readback = rows[READBACK]
     assert readback["outcome"] == "OBSERVED", readback
@@ -895,9 +1053,11 @@ def test_an_administrator_shut_out_after_the_removal_is_what_the_rows_record() -
     assert enumeration["evidence"].count("answered HTTP 403") == 5
     assert rows[UNIQUE]["outcome"] == "OBSERVED"
     assert rows[UNIQUE]["evidence"].count("HTTP 403") == 5
+    assert rows[DELETE]["outcome"] == "NOT ESTABLISHED"
     assert rows[DELETE]["evidence"].startswith(
-        "the list was not readable by Id before the DELETE"
+        "no DELETE was sent: the read by Id answered HTTP 403"
     ), rows[DELETE]["evidence"]
+    assert not _deletes(calls)
 
 
 @needs_node
@@ -960,18 +1120,28 @@ def test_a_row_the_deploy_would_throw_on_is_where_the_read_back_stops() -> None:
 
 
 @needs_node
-def test_a_title_rebound_after_the_removal_leaves_the_after_rows_open() -> None:
+def test_a_title_rebound_after_the_removal_leaves_the_title_rows_open() -> None:
     """After the removals nothing is written by title, so a read answering
-    another list only has to be noticed. What was read cannot be attributed,
-    so the rows stay open; the delete still goes to the claimed Id."""
-    rows, calls, _output = _run_probe(rebindAfterRemoval=True)
+    another list only has to be noticed. What was read through the title
+    cannot be attributed, so those rows stay open. The delete goes by Id
+    throughout, so its row is still an answer."""
+    rows, calls, output = _run_probe(rebindAfterRemoval=True)
 
-    for row in OBSERVED:
+    # Recorded once, so the transcript never shows it closed for the title's reason first.
+    assert [ln for ln in output.splitlines() if f"{DELETE}: " in ln] == [
+        f"[INFO] {DELETE}: ACCEPTED. {rows[DELETE]['question']}"
+    ]
+    for row in (REMOVAL, READBACK, ENUMERATION, UNIQUE):
         assert rows[row]["outcome"] == "NOT ESTABLISHED", rows[row]
         assert rows[row]["state"] == "open"
         assert f"answered list {_REBOUND_ID} where this run claimed {_CREATED_ID}" in (
             rows[row]["evidence"]
         )
+    delete = rows[DELETE]
+    assert delete["outcome"] == "ACCEPTED", delete
+    assert delete["state"] == "settled"
+    assert delete["evidence"].startswith("the list is gone"), delete["evidence"]
+    assert "Addressed by Id throughout, which the rebound title" in delete["evidence"]
     deletes = _deletes(calls)
     assert len(deletes) == 1
     assert f"lists(guid'{_CREATED_ID}')" in deletes[0]["url"]
@@ -982,7 +1152,8 @@ def test_a_title_rebound_after_the_removal_leaves_the_after_rows_open() -> None:
     ("from_read", "where", "broke"),
     [
         (1, "the list read before breakroleinheritance", False),
-        (4, "the list read that opens removal 1's bracket", True),
+        (3, "the list read before reading ACL state", True),
+        (5, "the list read that opens removal 1's bracket", True),
     ],
 )
 def test_a_title_rebound_before_a_write_stops_the_run_before_it(
@@ -1007,6 +1178,36 @@ def test_a_title_rebound_before_a_write_stops_the_run_before_it(
     deletes = _deletes(calls)
     assert len(deletes) == 1
     assert f"lists(guid'{_CREATED_ID}')" in deletes[0]["url"]
+
+
+@needs_node
+@pytest.mark.parametrize(
+    ("field", "from_read", "where", "broke"),
+    [
+        ("Id", 1, "the list read before breakroleinheritance", False),
+        ("Description", 1, "the list read before breakroleinheritance", False),
+        ("Id", 5, "the list read that opens removal 1's bracket", True),
+    ],
+)
+def test_an_identity_read_missing_a_field_stops_the_run_before_the_write(
+    field: str, from_read: int, where: str, broke: bool,
+) -> None:
+    """A 200 that leaves out the Id or the marker identifies no list, and the
+    deploy's own shape gate refuses one, so nothing is written on it."""
+    rows, calls, output = _run_probe(shapeOmits={"field": field, "fromRead": from_read})
+
+    assert bool(_breaks(calls)) is broke
+    assert not _removals(calls)
+    id_shape = "undefined" if field == "Id" else "a string of 36 char(s)"
+    description_shape = "undefined" if field == "Description" else "a string of 64 char(s)"
+    stop = [line for line in _lines(output, "FAIL") if "the measurement pass stopped" in line]
+    assert stop == [(
+        f"[FAIL] the measurement pass stopped: the deploy throws at {where}, which answered "
+        f"HTTP 200 with an Id of {id_shape} and a Description of {description_shape}, so it "
+        "identifies no list. Nothing further was sent by title."
+    )], stop
+    for row in OBSERVED:
+        assert rows[row]["state"] == "open", rows[row]
 
 
 @needs_node

@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: REMOVING THE LAST ROLE ASSIGNMENT ON A LIST ----
  *
- * REVISION: 28e5e92e
+ * REVISION: 2ea9271b
  *
  * THE REQUEST UNDER TEST (issue #667). A `list_permissions` policy with
  * `reconcile: exact` and no assignments makes Phase 4.2 in
@@ -50,10 +50,10 @@
  *     breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)
  *     is accepted and the list then reads HasUniqueRoleAssignments=true.
  *   access.list-acl.fixture-last-binding-direct
- *     The deploy's own enumeration, read when the deploy reads it and to its
- *     last page, holds at least one binding other than 'Limited Access'.
- *     Not "exactly one, this account's": that is a measurement, and the
- *     sibling probe's header explains why asserting it is wrong.
+ *     The deploy's own pruning snapshot, read once the break has settled and
+ *     to its last page, holds at least one binding other than 'Limited
+ *     Access'. Not "exactly one, this account's": that is a measurement, and
+ *     the sibling probe's header explains why asserting it is wrong.
  *
  * OBSERVED. Recorded as they came back, never asserted:
  *   access.list-acl.last-binding-removal
@@ -75,7 +75,9 @@
  *     HasUniqueRoleAssignments on each of the same five reads.
  *   access.list-acl.after-last-binding-delete
  *     What the DELETE that ends the run answers, and whether a read by Id
- *     then finds the list gone.
+ *     then finds the list gone. It is sent only once a read by Id shows this
+ *     probe's marker, and every request goes by Id, so the row is recorded
+ *     even when the title came to answer another list.
  *
  * The after- rows describe the scope once a removal was SENT, whatever it
  * answered, so a refused call that removed the binding anyway is visible.
@@ -84,26 +86,48 @@
  * display name replaced first, then URLs, hosts and account names masked by
  * pattern, because a transcript gets pasted into a pull request.
  *
- * FIDELITY TO THE DEPLOY. From the break on, the requests are the deploy's
- * own, in its order, with its $select, its verbose Accept and no-store: the
- * break in its identity bracket, the enumeration snapshot straight after it
- * (the deploy passes `settle: is_library`, so a list gets no wait), the
- * identity read before pruning, each removal in its own bracket in snapshot
- * order, settleBindings, and surveyDescendants. The break and the removals
- * carry only Accept and X-RequestDigest, no body, as `_acls.js.j2` sends
- * them. A throttle (429, 503 or the throttle page) is retried as
- * fetchWithRetry retries it: up to 8 times, after Retry-After seconds or
- * 2^n seconds capped at 60. The differences, named:
- *   (a) between the snapshot and the first removal this probe reads
- *       HasUniqueRoleAssignments until it turns, up to 6 reads 2000 ms apart,
- *       because the removals depend on the scope being unique. The deploy
- *       makes no such read for a list.
- *   (b) an identity read is judged on the list Id and the ownership marker.
- *       The deploy also applies probeListShapeByTitle's type checks and
+ * FIDELITY TO THE DEPLOY. WHICH PATH: an exact policy requires
+ * break_inheritance: true (model/sections/_permissions.py), and Phase 1
+ * breaks every inheriting exact-mode list as soon as it is created or
+ * adopted (early isolation in deploy/_lists.js.j2). Phase 4.2 then finds the
+ * list already unique, breaks nothing, and takes its pruning snapshot after
+ * every phase in between. That is the path reproduced here. reconcileScope's
+ * own break, with the snapshot straight after it, runs only for a list that
+ * inherits again by Phase 4.2, and is not reproduced.
+ *
+ * So the break stands for Phase 1's, and the settle window stands for the
+ * phases in between: this probe reads HasUniqueRoleAssignments until it
+ * turns (up to 6 reads 2000 ms apart), then re-reads the snapshot until two
+ * consecutive reads agree and hold a binding other than 'Limited Access' (up
+ * to 6 reads 2000 ms apart). The deploy reads its snapshot once, but on a
+ * real bundle that read comes far longer after the break than this window
+ * lasts, and this enumeration was measured to flap
+ * (access.list-acl.enumeration-is-monotonic), so one read here is not the
+ * settled scope Phase 4.2 sees. Every snapshot read is recorded: an empty
+ * one, which the deploy would have pruned nothing from, is an observation
+ * and does not void the run. If no two reads agree, the last one holding a
+ * binding is used and the evidence says so.
+ *
+ * From the identity read that opens Phase 4.2 on, the requests are the
+ * deploy's own, in its order, with its $select, its verbose Accept and
+ * no-store: that read, the snapshot, the identity read before pruning, each
+ * removal in its own bracket in snapshot order, settleBindings, and
+ * surveyDescendants. The break and the removals carry only Accept and
+ * X-RequestDigest, no body, as the deploy sends them. A throttle (429, 503
+ * or the throttle page) is retried as fetchWithRetry retries it: up to 8
+ * times, after Retry-After seconds or 2^n seconds capped at 60. The
+ * remaining differences, named:
+ *   (a) the break is bracketed by this probe's identity reads; Phase 1 sends
+ *       it straight after reconcileListShape proved the list, and follows it
+ *       with an ItemCount check this probe does not make.
+ *   (b) an identity read must carry a string Id and this probe's marker as
+ *       its Description, or nothing further is written. The deploy also
+ *       applies probeListShapeByTitle's other type checks and
  *       assertListAdoptable, and adds a RootFolder select for a list with an
  *       internal_name, which this scratch list does not have.
- *   (c) the reads the deploy makes before the break (the ownership survey,
- *       the first descendant survey, the flag check) are not reproduced.
+ *   (c) Phase 4.2's own reads before the snapshot, the descendant survey and
+ *       the flag check, are not reproduced: the list holds no items, and the
+ *       settle window has just read the flag.
  *   (d) the deploy caches its digest and gates throttles across lanes; this
  *       probe asks for a digest per write and sends one request at a time.
  *
@@ -519,7 +543,7 @@
     record(id, question, row.outcome, row.evidence, row.state);
   };
 
-  log('INFO', 'probe revision 28e5e92e. Quote this when reporting results.');
+  log('INFO', 'probe revision 2ea9271b. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe LastBinding';
   const OWNERSHIP = 'dbml-sharepoint last-binding-removal probe list. Safe to delete.';
@@ -528,7 +552,7 @@
   const Q = {
     list: 'A list this run created carries its marker and Id and still inherits',
     break: 'breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false) is accepted and the list then reads unique',
-    direct: "The deploy's enumeration after the break, read to its last page, holds at least one binding other than 'Limited Access'",
+    direct: "The deploy's pruning snapshot, read once the break has settled and to its last page, holds at least one binding other than 'Limited Access'",
     removal: "What does removeroleassignment answer for each binding the exact prune removes, in its order, the list's last one included",
     readback: 'After them, what do the GETs Phase 4.2 makes after its last removal answer, and what would the deploy conclude',
     enumeration: 'After them, what does the role-assignment enumeration return over the settle window',
@@ -550,6 +574,8 @@
   const AFTER_LIST = ALL.slice(1);
   const AFTER_BREAK = ALL.slice(2);
   const OBSERVED_ROWS = ALL.slice(3);
+  // The rows read through the title; the closing delete goes by Id and is not among them.
+  const READ_BY_TITLE = OBSERVED_ROWS.slice(0, -1);
   // The harness's own words for a row nothing has recorded yet.
   const PENDING = RESULTS[0].evidence;
 
@@ -576,6 +602,8 @@
   const SETTLE_MS = 2000;
   // HasUniqueRoleAssignments lags a break (MEASURED 2026-09-09, library.access.unique-permissions-library).
   const UNIQUE_TRIES = 6;
+  // The snapshot window: see FIDELITY in the header for why it exists.
+  const SNAPSHOT_READS = 6;
   const PAGE_LIMIT = 50;
   // fetchWithRetry's policy in _http.js.j2; RETRY_UNIT_MS is the second it counts in.
   const RETRY_ATTEMPTS = 8;
@@ -724,12 +752,21 @@
   const deployIdentity = async (label) => {
     const r = await read(api(`${listPath}?$select=${SHAPE_SELECT}`), VERBOSE);
     const d = r.ok && r.body && typeof r.body.d === 'object' ? r.body.d : null;
-    if (d) noteIdentity(label, d.Id, d.Description);
-    const step = `${label}: ${describeRead(r)}${d ? ` carrying list ${guidOf(d.Id)}` : ''}`;
+    // An identity with a field missing proves nothing, and the deploy's shape gate refuses one.
+    const whole = d !== null && typeof d.Id === 'string' && typeof d.Description === 'string';
+    if (whole) noteIdentity(label, d.Id, d.Description);
+    const step = `${label}: ${describeRead(r)}${whole ? ` carrying list ${guidOf(d.Id)}` : ''}`;
     if (silent(r)) return { step, silent: true, stop: null };
     if (!r.ok) return { step, stop: `the deploy throws at ${label}, which answered HTTP ${r.status}` };
     if (d === null) {
       return { step, stop: `the deploy throws at ${label}, which answered HTTP ${r.status} with no list in it` };
+    }
+    if (!whole) {
+      return {
+        step,
+        stop: `the deploy throws at ${label}, which answered HTTP ${r.status} with an Id of `
+          + `${shapeOf(d.Id)} and a Description of ${shapeOf(d.Description)}, so it identifies no list`,
+      };
     }
     if (rebound !== null) return { step, stop: `the deploy throws at ${label}: ${rebound}` };
     return { step, stop: null };
@@ -969,14 +1006,27 @@
   myId = meId;
 
   // ---- the closing DELETE, also CLEANUP's ---------------------------------
-  // By Id, the documented form, so a rebound title cannot redirect it. The read before
-  // it is what makes a 404 after it mean gone rather than hidden.
+  // By Id, the documented form, so a rebound title cannot redirect it. The marker is
+  // re-read by Id first: no title bracket guards this write, so that read is its guard,
+  // and it is also what makes a 404 after it mean gone rather than hidden.
   const deleteById = async (id) => {
     if (!GUID.test(String(id))) {
-      return { invalid: true, confirmed: false, facts: `'${id}' is not a list Id, so no DELETE was sent` };
+      return { sent: false, confirmed: false, facts: `'${id}' is not a list Id, so no DELETE was sent` };
     }
     const byId = `web/lists(guid'${id}')`;
-    const before = await read(api(`${byId}?$select=Id`));
+    const before = await read(api(`${byId}?$select=Id,Description`));
+    const ours = before.ok && before.body !== null && typeof before.body === 'object'
+      && guidOf(before.body.Id) === String(id).toLowerCase() && before.body.Description === OWNERSHIP;
+    if (!ours) {
+      return {
+        sent: false,
+        confirmed: false,
+        foreign: before.ok,
+        facts: `the read by Id answered ${describeRead(before)}`
+          + `${before.ok ? `, which does not show this probe's marker on list ${id}` : ''}, so no `
+          + 'DELETE was sent',
+      };
+    }
     let gone;
     try {
       gone = await post(byId, await getDigest(), { headers: { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' } });
@@ -985,13 +1035,12 @@
     }
     const after = await read(api(`${byId}?$select=Id`));
     return {
-      invalid: false,
+      sent: true,
       gone,
-      before,
-      confirmed: gone.ok && before.ok && after.status === 404,
-      facts: `the read by Id answered ${describeRead(before)} before the DELETE, the DELETE `
-        + `${gone.threw ? `threw (${scrub(gone.threw)})` : `answered ${describeRead(gone)}`}, and `
-        + `the read by Id answered ${describeRead(after)} after it`,
+      confirmed: gone.ok && after.status === 404,
+      facts: `the read by Id answered ${describeRead(before)} carrying this probe's marker before `
+        + `the DELETE, the DELETE ${gone.threw ? `threw (${scrub(gone.threw)})` : `answered ${describeRead(gone)}`}, `
+        + `and the read by Id answered ${describeRead(after)} after it`,
     };
   };
 
@@ -1063,23 +1112,37 @@
       body: JSON.stringify({ Title: LIST, BaseTemplate: 100, Description: OWNERSHIP }),
       headers: { Accept: NOMETADATA, 'Content-Type': NOMETADATA },
     });
+    // Read back whatever the create answered: a write reported as refused may still
+    // have been applied. Only this marker read adopts an Id, never the create's answer.
+    const shape = await read(api(`${listPath}?$select=Id,Description,HasUniqueRoleAssignments`));
+    const marked = shape.ok && shape.body !== null && typeof shape.body === 'object'
+      && shape.body.Description === OWNERSHIP;
+    ownedId = marked ? guidOf(shape.body.Id) : null;
     if (!made.ok) {
-      // A refusal created nothing; a throw or a throttle may still have.
-      if (!silent(made)) createSent = false;
+      if (shape.status === 404) createSent = false;
+      let after;
+      if (shape.status === 404) after = 'read as absent, so nothing was created';
+      else if (ownedId !== null) {
+        after = `read list ${ownedId} carrying this probe's marker, so the create was applied `
+          + 'anyway, and that list is deleted at the end';
+      } else {
+        after = `answered ${describeRead(shape)} without this probe's marker, so what the create `
+          + 'left is unknown';
+      }
       settleFixture('access.list-acl.fixture-last-binding-list', false,
-        `could not create '${LIST}': ${describeRead(made)}`, AFTER_LIST);
+        `could not create '${LIST}': ${describeRead(made)}. The title then ${after}`, AFTER_LIST);
       return;
     }
     const createdId = guidOf(made.body && made.body.Id);
-    const shape = await read(api(`${listPath}?$select=Id,Description,HasUniqueRoleAssignments`));
-    // The delete at the end goes by the Id this run made; the read-back supplies it only
-    // when the create answered without one.
-    const readBackId = shape.ok && shape.body && shape.body.Description === OWNERSHIP
-      ? guidOf(shape.body.Id) : null;
-    ownedId = createdId !== null ? createdId : readBackId;
+    if (createdId !== null && ownedId !== null && createdId !== ownedId) {
+      settleFixture('access.list-acl.fixture-last-binding-list', false,
+        `the create answered list ${createdId}, but the title reads list ${ownedId} carrying this `
+        + 'probe\'s marker. Only the list the marker read confirmed is deleted at the end.', AFTER_LIST);
+      return;
+    }
     const listHeld = await establishFixture('access.list-acl.fixture-last-binding-list',
       async () => shape, {
-        Id: (value) => guidOf(value) !== null && guidOf(value) === ownedId,
+        Id: (value) => GUID.test(String(guidOf(value))) && guidOf(value) === ownedId,
         Description: OWNERSHIP,
         HasUniqueRoleAssignments: false,
       }, AFTER_LIST);
@@ -1096,9 +1159,7 @@
       return;
     }
     await proveOwned('the list read after breakroleinheritance');
-    // No settle wait for a list that is not a library, so the snapshot is next, as in the deploy.
-    const snapshot = await deployEnumeration();
-    // This probe's own, (a) in the header: the removals depend on the scope being unique.
+    // ---- the settle window, standing for the phases before Phase 4.2 --------
     const polls = [];
     let unique = null;
     for (let attempt = 0; attempt < UNIQUE_TRIES; attempt += 1) {
@@ -1116,27 +1177,50 @@
       }, AFTER_BREAK);
     if (!brokeHeld) return;
 
-    // ---- fixture-last-binding-direct -------------------------------------
-    const strays = snapshot.kind === 'rows'
-      ? snapshot.rows.filter((row) => row.name !== 'Limited Access') : [];
-    let said;
-    if (snapshot.kind === 'throws') {
-      said = `the deploy would throw reading it (${snapshot.why}) and remove nothing`;
-    } else if (snapshot.kind === 'silent') {
-      said = `it did not answer (${snapshot.why})`;
-    } else {
-      said = `it returned ${snapshot.rows.length} binding(s) over ${snapshot.pages} page(s)`
-        + `${snapshot.rows.length ? `: ${describeBindings(snapshot.rows)}` : ''}, ${strays.length} `
-        + "of them other than 'Limited Access'"
-        + `${snapshot.notes.length ? `; ${snapshot.notes.join('; ')}` : ''}`;
+    // ---- fixture-last-binding-direct: Phase 4.2 opens -----------------------
+    await proveOwned('the list read before reading ACL state');
+    const pruneable = (e) => (e.kind === 'rows' && e.notes.length === 0
+      ? e.rows.filter((row) => row.name !== 'Limited Access') : []);
+    const snapshotReads = [];
+    let previous = null;
+    let chosen = null;
+    let stable = false;
+    for (let attempt = 0; attempt < SNAPSHOT_READS && !stable; attempt += 1) {
+      if (attempt > 0) await sleep(SETTLE_MS);
+      const e = await deployEnumeration();
+      const n = attempt + 1;
+      let said;
+      if (e.kind === 'throws') said = `the deploy would throw reading it (${e.why})`;
+      else if (e.kind === 'silent') said = `it did not answer (${e.why})`;
+      else {
+        said = `${e.rows.length} binding(s) over ${e.pages} page(s)`
+          + `${e.rows.length ? `: ${describeBindings(e.rows)}` : ''}, ${pruneable(e).length} other `
+          + `than 'Limited Access'${e.notes.length ? `; ${e.notes.join('; ')}` : ''}`;
+      }
+      snapshotReads.push(`read ${n}: ${said}`);
+      if (pruneable(e).length === 0) {
+        previous = null;
+        continue;
+      }
+      const keys = e.rows.map((row) => row.key).join(',');
+      stable = previous !== null && previous.keys === keys;
+      previous = { keys };
+      chosen = { e, n };
     }
-    const direct = snapshot.kind === 'rows' && snapshot.notes.length === 0 && strays.length > 0;
-    if (!settleFixture('access.list-acl.fixture-last-binding-direct', direct,
-      `this account is principal ${myId}. Read as the deploy reads it, straight after the break, `
-      + `${said}${direct ? '' : '. There is no binding for the prune to remove, so no removal was sent'}.`,
-      OBSERVED_ROWS)) {
+    let chosenBecause = `no read held a binding other than 'Limited Access' for the prune to remove, `
+      + 'so no removal was sent';
+    if (stable) chosenBecause = `reads ${chosen.n - 1} and ${chosen.n} agreed, so read ${chosen.n} is the snapshot`;
+    else if (chosen !== null) {
+      chosenBecause = `no two consecutive reads agreed, so read ${chosen.n}, the last holding a binding `
+        + "other than 'Limited Access', is the snapshot";
+    }
+    if (!settleFixture('access.list-acl.fixture-last-binding-direct', chosen !== null,
+      `this account is principal ${myId}. The deploy's snapshot, re-read up to ${SNAPSHOT_READS} `
+      + `times ${SETTLE_MS} ms apart until two consecutive reads agreed: ${snapshotReads.join('; ')}. `
+      + `${chosenBecause}.`, OBSERVED_ROWS)) {
       return;
     }
+    const strays = pruneable(chosen.e);
 
     // ---- the exact prune, and the read-back after it -----------------------
     const trace = [];
@@ -1312,7 +1396,7 @@
       + `HasUniqueRoleAssignments ${span}: ${uniqueReads.join('; ')}.`);
 
     if (rebound !== null) {
-      closeAll(OBSERVED_ROWS, 'NOT ESTABLISHED',
+      closeAll(READ_BY_TITLE, 'NOT ESTABLISHED',
         `the title '${LIST}' answered another list during the run (${rebound}), so which list `
         + 'the removals and these reads reached is unknown. Nothing further was written by title.');
     }
@@ -1329,18 +1413,26 @@
       return;
     }
     const result = await deleteById(ownedId);
-    if (removalSent && rebound === null && !result.invalid) {
+    // Every request here goes by Id, so a rebound title leaves this row answerable.
+    if (removalSent) {
       const gone = result.gone;
-      record('access.list-acl.after-last-binding-delete', Q.delete,
-        silent(gone) ? 'NOT ESTABLISHED' : gone.ok ? 'ACCEPTED' : 'REFUSED',
-        `${result.confirmed ? 'the list is gone' : result.before.ok ? 'the list was not read back absent'
-          : 'the list was not readable by Id before the DELETE, so a 404 after it cannot say gone'}: `
-        + `${result.facts}.`);
+      let outcome = 'NOT ESTABLISHED';
+      if (result.sent && !silent(gone)) outcome = gone.ok ? 'ACCEPTED' : 'REFUSED';
+      let head = 'no DELETE was sent';
+      if (result.confirmed) head = 'the list is gone';
+      else if (result.sent) head = 'the list was not read back absent';
+      record('access.list-acl.after-last-binding-delete', Q.delete, outcome,
+        `${head}: ${result.facts}${rebound === null ? '' : `. Addressed by Id throughout, `
+          + `which the rebound title (${rebound}) does not redirect`}.`);
     }
     log(result.confirmed ? 'OK' : 'FAIL', result.confirmed
       ? `deleted '${LIST}' (list ${ownedId}) and read it back absent. Learn documents a DELETE of `
         + 'a list as a Recycle operation; this run did not look in the recycle bin.'
-      : `'${LIST}' (list ${ownedId}) may still exist: ${result.facts}. ${handDelete(ownedId)}`);
+      : `'${LIST}' (list ${ownedId}) may still exist: ${result.facts}. ${result.foreign
+        // A pasted line would delete whatever the Id reads as, so none is offered here.
+        ? 'It no longer reads as this probe\'s list, so no line to delete it is printed. Check it '
+          + 'in Site contents before removing it by hand.'
+        : handDelete(ownedId)}`);
   };
 
   try {
