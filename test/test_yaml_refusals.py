@@ -262,11 +262,17 @@ def test_a_reused_anchor_is_refused_naming_both() -> None:
         pytest.param("{[a, b]: 1}\n", "sequence", "line 1, column 2", id="flow-sequence"),
         pytest.param("? [a, b]\n: 1\n", "sequence", "line 1, column 3", id="block-sequence"),
         pytest.param("? {a: 1}\n: 1\n", "mapping", "line 1, column 3", id="mapping"),
-        pytest.param("m: &m {a: 1}\n? *m\n: 1\n", "mapping", "line 1, column 4", id="alias"),
+        pytest.param(
+            "m: &m {a: 1}\n? *m\n: 1\n", "mapping", "line 2, column 3", id="aliased-mapping",
+        ),
+        pytest.param(
+            "x: &a [1]\n? *a\n: 2\n", "sequence", "line 2, column 3", id="aliased-sequence",
+        ),
     ],
 )
 def test_a_sequence_or_mapping_used_as_a_key_is_refused(text: str, kind: str, at: str) -> None:
-    """ruamel.yaml reads a sequence key as a tuple where PyYAML refuses it."""
+    """ruamel.yaml would read a sequence key as a tuple. An aliased key is
+    marked at the alias, where the author wrote the key, not at the anchor."""
     assert _refused(text) == (
         "while composing a mapping\n"
         '  in "<file>", line 1, column 1\n'

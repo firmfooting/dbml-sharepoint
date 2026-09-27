@@ -31,7 +31,13 @@ from ruamel.yaml import YAML
 from ruamel.yaml.composer import Composer, ComposerError
 from ruamel.yaml.constructor import ConstructorError, SafeConstructor
 from ruamel.yaml.error import FileMark, StreamMark, YAMLError
-from ruamel.yaml.events import AliasEvent, CollectionStartEvent, ScalarEvent
+from ruamel.yaml.events import (
+    AliasEvent,
+    CollectionStartEvent,
+    Event,
+    ScalarEvent,
+    SequenceStartEvent,
+)
 from ruamel.yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 from ruamel.yaml.representer import SafeRepresenter
 from ruamel.yaml.scanner import Scanner, ScannerError
@@ -231,9 +237,24 @@ class _Composer(Composer):
                 f"found duplicate anchor {event.anchor!r}; first occurrence",
                 first.start_mark, "second occurrence", event.start_mark,
             )
+        if isinstance(parent, MappingNode) and index is None:
+            # ruamel.yaml composes a key with no index, and reads a sequence key as a tuple.
+            self._refuse_collection_key(parent, event)
         if isinstance(event, AliasEvent) and event.anchor in self.anchors:
             self._refuse_deep_alias(self.anchors[event.anchor], event.start_mark)
         return super().compose_node(parent, index)
+
+    def _refuse_collection_key(self, mapping: MappingNode, event: Event) -> None:
+        """Refuse a sequence or mapping key of `mapping`, marked where it or its alias is."""
+        key: Event | Node | None = event
+        if isinstance(event, AliasEvent):
+            key = self.anchors.get(event.anchor)
+        if isinstance(key, CollectionStartEvent | SequenceNode | MappingNode):
+            kind = "sequence" if isinstance(key, SequenceStartEvent | SequenceNode) else "mapping"
+            raise RefusedYAMLError(
+                "while composing a mapping", mapping.start_mark,
+                f"found a {kind} used as a key; a key must be a single value", event.start_mark,
+            )
 
     def _refuse_deep_alias(self, aliased: Node, mark: StreamMark) -> None:
         """Refuse an alias whose collection, standing where the alias does, nests past the limit."""
@@ -287,15 +308,6 @@ class _Composer(Composer):
         name = self._open("mapping")
         node: MappingNode = super().compose_mapping_node(anchor)
         self._close(name, node)
-        pairs: list[tuple[Node, Node]] = node.value
-        for key_node, _ in pairs:
-            # ruamel.yaml reads a sequence key as a tuple, where PyYAML refused it.
-            if not isinstance(key_node, ScalarNode):
-                raise RefusedYAMLError(
-                    "while composing a mapping", node.start_mark,
-                    f"found a {_kind(key_node)} used as a key; a key must be a single value",
-                    key_node.start_mark,
-                )
         return node
 
 
