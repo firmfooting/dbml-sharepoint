@@ -488,6 +488,42 @@ def test_a_resolved_folder_policy_cannot_gain_a_grant() -> None:
         policy.assignments.append(policy.assignments[0])  # pyrefly: ignore[missing-attribute]
 
 
+def test_a_resolution_cannot_be_edited_after_resolve() -> None:
+    """A replaced entry is as invisible to the guard as an appended grant (#620)."""
+    resolved = _resolved_with_a_folder_policy()
+
+    with pytest.raises(TypeError):
+        resolved.folder_policies["Risk"] = ()  # pyrefly: ignore[unsupported-operation]
+    with pytest.raises(TypeError):
+        resolved.folders["Risk"] = ("Restricted",)  # pyrefly: ignore[unsupported-operation]
+    with pytest.raises(TypeError):
+        resolved.enum_members["division"] = ()  # pyrefly: ignore[unsupported-operation]
+    # The snapshot the guard compares against, which an edit would silence.
+    with pytest.raises(TypeError):
+        resolved.consumed["folder policies"] = ""  # pyrefly: ignore[unsupported-operation]
+
+
+def test_a_resolution_does_not_share_the_dicts_it_was_built_from() -> None:
+    """A read-only view of a caller's own dict still changes when that dict does."""
+    enum_members = {"division": ("North",)}
+    folders = {"Risk": ("Shared",)}
+    policies: dict[str, tuple[tuple[str, ListPermissionPolicy], ...]] = {"Risk": ()}
+    resolved = ResolvedMapping(
+        mapping=make_mapping(), enum_members=enum_members, folders=folders,
+        folder_policies=policies, groups=(),
+    )
+
+    enum_members["division"] = ("South",)
+    folders["Risk"] = ("Restricted",)
+    policies["Risk"] = (("Restricted", ListPermissionPolicy(
+        break_inheritance=True, assignments=(),
+    )),)
+
+    assert resolved.enum_members == {"division": ("North",)}
+    assert resolved.folders == {"Risk": ("Shared",)}
+    assert resolved.folder_policies == {"Risk": ()}
+
+
 def test_an_edit_the_resolution_cannot_see_is_not_refused(tmp_path: Path) -> None:
     """A guard that refuses edits it has no view of gets suppressed instead.
 

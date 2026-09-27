@@ -25,6 +25,7 @@ from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field
 from functools import wraps
 from inspect import signature
+from types import MappingProxyType
 
 from dbml_sharepoint.analysis.folders import (
     UnknownFolderEnumError,
@@ -138,7 +139,13 @@ class ResolvedMapping:
     def __post_init__(self) -> None:
         # Taken here rather than in `resolve()`, so a hand-built resolution
         # carries one too and the guard has something to compare.
-        object.__setattr__(self, "consumed", _consumed_inputs(self.mapping))
+        object.__setattr__(self, "consumed", MappingProxyType(_consumed_inputs(self.mapping)))
+        # Copied, then read-only: the guard fingerprints the mapping, not these (#620).
+        object.__setattr__(self, "enum_members", MappingProxyType(dict(self.enum_members)))
+        object.__setattr__(self, "folders", MappingProxyType(dict(self.folders)))
+        object.__setattr__(
+            self, "folder_policies", MappingProxyType(dict(self.folder_policies)),
+        )
 
     def require_resolved(self) -> None:
         """Raise what the strict resolvers raise today, for a generator.
