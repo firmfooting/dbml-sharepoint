@@ -18,11 +18,11 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-import yaml
 from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.validator import validate, validate_against_mapping
+from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.parser import parse_dbml
 
@@ -37,7 +37,7 @@ EXPECTED_ROWS = 29
 
 
 def _rows() -> list[dict[str, Any]]:
-    raw: dict[str, Any] = yaml.safe_load(SEED.read_text(encoding="utf-8"))
+    raw: dict[str, Any] = _yaml.safe_load(SEED.read_text(encoding="utf-8"))
     assert set(raw) == {"seed_items"}, f"the seed file holds {sorted(raw)}, not only seed_items"
     assert set(raw["seed_items"]) == {"Pattern"}, "the catalogue seeds DI_Pattern and nothing else"
     rows: list[dict[str, Any]] = raw["seed_items"]["Pattern"]
@@ -75,10 +75,10 @@ def test_every_row_validates_as_a_pattern_row(tmp_path: Path) -> None:
     family = tmp_path / "digital-innovation-log"
     shutil.copytree(FAMILY, family)
     mapping_path = family / "20-configure" / "mapping.yaml"
-    mapping = yaml.safe_load(mapping_path.read_text(encoding="utf-8"))
+    mapping = _yaml.safe_load(mapping_path.read_text(encoding="utf-8"))
     del mapping["demo_items"]
     mapping["demo_source"] = "seed-check.yaml"
-    mapping_path.write_text(yaml.safe_dump(mapping, sort_keys=False), encoding="utf-8")
+    mapping_path.write_text(_yaml.safe_dump(mapping, sort_keys=False), encoding="utf-8")
 
     marked = [
         {
@@ -88,7 +88,7 @@ def test_every_row_validates_as_a_pattern_row(tmp_path: Path) -> None:
         for row in _rows()
     ]
     (family / "20-configure" / "seed-check.yaml").write_text(
-        yaml.safe_dump({"demo_items": {"Pattern": marked}}, sort_keys=False), encoding="utf-8"
+        _yaml.safe_dump({"demo_items": {"Pattern": marked}}, sort_keys=False), encoding="utf-8"
     )
 
     schema = parse_dbml(family / "10-design" / "schema.dbml")

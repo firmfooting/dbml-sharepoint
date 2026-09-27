@@ -8,7 +8,6 @@ malformed template cannot take the picker down with it.
 from pathlib import Path
 
 import pytest
-import yaml
 from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint import catalogue
@@ -17,6 +16,7 @@ from dbml_sharepoint.catalogue import (
     available_solutions,
     load_solution,
 )
+from dbml_sharepoint.model import _yaml
 
 
 def test_every_shipped_family_is_offered() -> None:
@@ -57,7 +57,7 @@ def test_each_solution_describes_itself(solution: catalogue.Solution) -> None:
     assert solution.summary
     assert solution.lists
     assert isinstance(solution.prefix, str)
-    raw = yaml.safe_load(solution.mapping_path.read_text(encoding="utf-8"))
+    raw = _yaml.safe_load(solution.mapping_path.read_text(encoding="utf-8"))
     assert "prefix" in raw, f"{solution.id}: mapping.yaml declares no prefix key"
 
 

@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from dbml_sharepoint.generators.report_m import _row_key_m
+from dbml_sharepoint.model import _yaml
 
 _FAMILY = (
     Path(__file__).resolve().parents[1]
@@ -57,9 +58,7 @@ def test_the_docs_teach_the_real_key_shape(doc: str, fragment: str) -> None:
 def test_every_demo_change_key_is_the_real_key_of_its_own_row() -> None:
     """Demo rows are the shape operators copy. Each must satisfy
     ChangeKey == SiteUrl|ListTitle|ItemId exactly."""
-    import yaml  # the repo ships it via website/tooling; fallback below
-
-    mapping = yaml.safe_load(
+    mapping = _yaml.safe_load(
         (_FAMILY / "20-configure" / "mapping.yaml").read_text(encoding="utf-8")
     )
     demos = (mapping.get("demo_items") or {}).get("ColumnHistory") or []
