@@ -781,10 +781,12 @@ def test_a_folder_grant_counts_as_a_grant_on_that_entity(tmp_path: Path) -> None
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     folder_only = ListPermissionPolicy(
         break_inheritance=True, reconcile_mode="exact",
-        assignments=[RoleAssignment(
-            principal=Principal(kind="group", name="dbml Enterprise Readers"),
-            level="Read",
-        )],
+        assignments=(
+            RoleAssignment(
+                principal=Principal(kind="group", name="dbml Enterprise Readers"),
+                level="Read",
+            ),
+        ),
     )
     entity = next(iter(bundle.mapping.entities))
     perms = bundle.mapping.permissions
@@ -847,10 +849,12 @@ def test_a_folder_principal_template_resolving_to_the_reader_counts() -> None:
             perms, overrides={}, default_policy=None,
             folder_policies={entity: ListPermissionPolicy(
                 break_inheritance=True, reconcile_mode="exact",
-                assignments=[RoleAssignment(
-                    principal=Principal(kind="group", name="dbml Enterprise {member}"),
-                    level="Read",
-                )],
+                assignments=(
+                    RoleAssignment(
+                        principal=Principal(kind="group", name="dbml Enterprise {member}"),
+                        level="Read",
+                    ),
+                ),
             )},
         ),
     )
@@ -884,10 +888,12 @@ def test_a_folder_policy_over_an_entity_with_no_folders_grants_nothing() -> None
             perms, overrides={}, default_policy=None,
             folder_policies={entity: ListPermissionPolicy(
                 break_inheritance=True, reconcile_mode="exact",
-                assignments=[RoleAssignment(
-                    principal=Principal(kind="group", name="dbml Enterprise Readers"),
-                    level="Read",
-                )],
+                assignments=(
+                    RoleAssignment(
+                        principal=Principal(kind="group", name="dbml Enterprise Readers"),
+                        level="Read",
+                    ),
+                ),
             )},
         ),
     )
@@ -920,10 +926,12 @@ def test_a_folder_policy_off_this_build_does_not_demand_manage_permissions(
     assert perms is not None
     policy = ListPermissionPolicy(
         break_inheritance=True, reconcile_mode="exact",
-        assignments=[RoleAssignment(
-            principal=Principal(kind="associated_owner_group", name=None),
-            level="Read",
-        )],
+        assignments=(
+            RoleAssignment(
+                principal=Principal(kind="associated_owner_group", name=None),
+                level="Read",
+            ),
+        ),
     )
     bare = dataclasses.replace(
         bundle.mapping,

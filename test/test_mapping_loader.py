@@ -181,6 +181,17 @@ def test_permissions_section_loaded() -> None:
     assert len(perms.default_policy.assignments) == 3
 
 
+def test_a_loaded_policy_cannot_gain_a_grant() -> None:
+    """A list here would take an append the mapping file never declared (#620)."""
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    perms = bundle.mapping.permissions
+    assert perms is not None
+    assert perms.default_policy is not None
+    assignments = perms.default_policy.assignments
+    with pytest.raises(AttributeError):
+        assignments.append(assignments[0])  # pyrefly: ignore[missing-attribute]
+
+
 def test_site_group_empty_gate_defaults_to_false(tmp_path: Path) -> None:
     write_mapping(tmp_path, blocks(entities("Project"), """
         groups:
@@ -380,7 +391,7 @@ def test_default_policy_not_applied_to_other_site_role() -> None:
     # Entities of the scoped role still receive the default.
     assert bundle.mapping.permissions_for_entity("Project") is not None
     # Explicit overrides remain per-entity and are not scope-filtered.
-    hub_policy = ListPermissionPolicy(break_inheritance=True, assignments=[])
+    hub_policy = ListPermissionPolicy(break_inheritance=True, assignments=())
     perms.overrides["Task"] = hub_policy
     assert bundle.mapping.permissions_for_entity("Task") is hub_policy
 
@@ -4304,8 +4315,9 @@ _RECORDED_BLANK_CASES = [
                 reconcile: exact
                 assignments:
         """),
+        # Read as a list: the warning names the default in the spelling YAML uses.
         "list_permissions.default.assignments", [],
-        lambda b: b.mapping.permissions.default_policy.assignments,
+        lambda b: list(b.mapping.permissions.default_policy.assignments),
         "list_permissions.default.assignments",
         id="assignments",
     ),

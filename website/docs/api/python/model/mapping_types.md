@@ -543,11 +543,11 @@ RoleAssignment(principal: dbml_sharepoint.model.mapping_types.Principal, level: 
 @dataclass(frozen=True)
 class ListPermissionPolicy:
     break_inheritance: bool
-    assignments: list[dbml_sharepoint.model.mapping_types.RoleAssignment]
+    assignments: tuple[dbml_sharepoint.model.mapping_types.RoleAssignment, ...]
     reconcile_mode: ReconcileMode = 'configured'
 ```
 
-ListPermissionPolicy(break_inheritance: bool, assignments: list[dbml_sharepoint.model.mapping_types.RoleAssignment], reconcile_mode: ReconcileMode = 'configured')
+ListPermissionPolicy(break_inheritance: bool, assignments: tuple[dbml_sharepoint.model.mapping_types.RoleAssignment, ...], reconcile_mode: ReconcileMode = 'configured')
 
 ### `PermissionsConfig`
 

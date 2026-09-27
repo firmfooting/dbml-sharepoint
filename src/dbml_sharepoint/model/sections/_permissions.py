@@ -358,6 +358,6 @@ def _parse_policy(
         assignments.append(RoleAssignment(principal=principal, level=level))
     return ListPermissionPolicy(
         break_inheritance=break_inheritance,
-        assignments=assignments,
+        assignments=tuple(assignments),
         reconcile_mode=reconcile_mode,
     )

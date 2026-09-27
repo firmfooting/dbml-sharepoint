@@ -269,10 +269,10 @@ def _bundle_with_reader_dropped_from(entity_names: Iterable[str]) -> MappingBund
     assert default is not None
     without_reader = replace(
         default,
-        assignments=[
+        assignments=tuple(
             a for a in default.assignments
             if not (a.principal.kind == "group" and a.principal.name == reader_group)
-        ],
+        ),
     )
     for entity_name in entity_names:
         perms.overrides[entity_name] = without_reader
