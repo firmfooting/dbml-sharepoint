@@ -30,6 +30,11 @@
       "allowedVersions": "<3.3"
     },
     {
+      "description": "model/_yaml.py holds a literal copy of ruamel.yaml 0.19's YAML 1.2 resolver, which a minor release may change. Mirrors the cap in pyproject.toml; lift both together with the copy.",
+      "matchPackageNames": ["ruamel.yaml"],
+      "allowedVersions": "<0.20"
+    },
+    {
       "description": "Docusaurus packages move as a set; a partial bump leaves the preset and core on different versions.",
       "matchPackageNames": ["@docusaurus/**"],
       "groupName": "docusaurus"

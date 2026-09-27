@@ -33,6 +33,10 @@ dependencies = [
   # Lift this cap once PyDBML has migrated to the snake_case API.
   "pyparsing>=3.0.0,<3.3",
   "pyyaml>=6.0.1",
+  # `model/_yaml.py` holds a literal copy of this version's YAML 1.2 resolver
+  # to compare with YAML 1.1's, and a minor release may change the resolver.
+  # Lift the cap with the copy, and the matching rule in renovate.json.
+  "ruamel.yaml>=0.19.1,<0.20",
   "jinja2>=3.1.3",
   "typer>=0.12.0",
   "rich>=15.0.0",
