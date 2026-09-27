@@ -450,6 +450,16 @@ def test_the_writer_keeps_order_width_and_unicode() -> None:
     )
 
 
+def test_the_writer_double_quotes_a_string_holding_nel() -> None:
+    """Extract writes text read from a live list. The writer single-quoted
+    a string holding NEL (U+0085) and broke the line at it, so `a<NEL>b`
+    read back as `a b`. LS and PS read back as written, and are left alone."""
+    document = {"v": "a\x85b", "a\x85b": 1}
+    written = _yaml.safe_dump(document)
+    assert written == 'v: "a\\Nb"\n? "a\\Nb"\n: 1\n'
+    assert repr(_yaml.safe_load(written)) == repr(document)
+
+
 def test_a_template_a_parse_refuses_is_skipped_by_the_picker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

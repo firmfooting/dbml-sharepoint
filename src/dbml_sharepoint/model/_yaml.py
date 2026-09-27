@@ -33,6 +33,7 @@ from ruamel.yaml.constructor import ConstructorError, SafeConstructor
 from ruamel.yaml.error import FileMark, StreamMark, YAMLError
 from ruamel.yaml.events import AliasEvent, CollectionStartEvent, ScalarEvent
 from ruamel.yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
+from ruamel.yaml.representer import SafeRepresenter
 from ruamel.yaml.scanner import Scanner
 from ruamel.yaml.tokens import DirectiveToken
 
@@ -50,6 +51,9 @@ _MAX_DEPTH = 100
 
 #: How many refusals one error lists before it counts the rest.
 _MAX_LISTED = 20
+
+#: NEL (U+0085), by code point so no string literal here holds a character a console cannot print.
+_NEL = chr(0x85)
 
 
 def _tag_name(tag: str) -> str:
@@ -373,17 +377,35 @@ def safe_load(stream: str | IO[str]) -> Any:
     return _Reading().load(stream)
 
 
+class _Representer(SafeRepresenter):
+    """ruamel.yaml's safe representer, double-quoting a string that holds NEL (U+0085)."""
+
+    @override
+    def represent_str(self, data: Any) -> ScalarNode:
+        if _NEL in data:
+            # Single-quoted, the writer breaks the line at NEL, and `a<NEL>b` reads back as `a b`.
+            node: ScalarNode = self.represent_scalar(_STR, data, style='"')
+            return node
+        represented: ScalarNode = super().represent_str(data)
+        return represented
+
+
+_Representer.add_representer(str, _Representer.represent_str)
+
+
 def safe_dump(data: object) -> str:
     """`data` as YAML for an operator to edit and diff.
 
     ruamel.yaml's safe writer quotes a string its reader would read as
     another type, so the output reads back through `safe_load` unchanged.
-    Keys keep their order, text is written as it is, and `width` is
-    effectively off: the default wraps a long scalar across lines, which is
-    legal YAML and unreadable in a diff, since a one-word edit to a
-    validation message reflows the whole block.
+    A string holding NEL is double-quoted, which writes it as `\\N`. Keys
+    keep their order, text is written as it is, and `width` is effectively
+    off: the default wraps a long scalar across lines, which is legal YAML
+    and unreadable in a diff, since a one-word edit to a validation message
+    reflows the whole block.
     """
     writer = YAML(typ="safe", pure=True)
+    writer.Representer = _Representer
     writer.default_flow_style = False
     writer.sort_base_mapping_type_on_output = False
     writer.allow_unicode = True
