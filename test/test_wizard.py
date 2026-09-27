@@ -1046,7 +1046,7 @@ def test_a_block_style_previous_prefixes_is_refused(tmp_path: Path) -> None:
 def test_a_flow_list_continued_onto_a_second_line_is_refused(tmp_path: Path) -> None:
     """The mapping loads, but the line the rewrite parses holds half a list.
 
-    The parser's error on that half used to escape as `yaml.YAMLError`, which
+    The parser's error on that half used to escape as a `YAMLError`, which
     the scaffold boundary in `_run` does not catch, so it reached the
     operator as a traceback over a half-written project.
     """

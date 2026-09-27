@@ -891,8 +891,8 @@ def _rewrite_prefix(mapping_path: Path, prefix: str) -> tuple[str, ...]:
 
     A targeted line rewrite, not a YAML round-trip. Every shipped mapping
     is heavily commented -- the comments are the documentation for the
-    template -- and `yaml.safe_load` followed by `yaml.dump` would discard
-    all of them and reorder the file.
+    template -- and `_yaml.safe_load` followed by `_yaml.safe_dump` would
+    discard all of them.
 
     Verified through the real loader rather than by re-reading the text:
     what matters is whether the mapping the build will load carries the
@@ -1211,8 +1211,8 @@ def _read_facts(solution: Solution) -> _TemplateFacts:
     """Load one template's mapping, or refuse by name.
 
     `load_mapping` raises `ValueError` for anything it dislikes, `KeyError`
-    for an absent required section, and passes through `OSError` and
-    `yaml.YAMLError` from the read. The wizard is the error boundary here, so
+    for an absent required section, and passes through `OSError` and the
+    parser's `YAMLError` from the read. The wizard is the error boundary here, so
     all four become one `WizardError` naming the template -- which is what
     the caller prints before writing anything.
     """

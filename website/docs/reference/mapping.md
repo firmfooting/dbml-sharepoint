@@ -20,15 +20,16 @@ syntax, deployment behaviour or a consumer's computation lives here.
 
 ## Spellings YAML 1.1 and 1.2 read differently
 
-The file is parsed as YAML 1.1, which reads an unquoted `yes`, `no`, `on` or
-`off` as a boolean, `010` as the octal number 8 and `1:30` as the base-60
-number 90. YAML 1.2, as ruamel.yaml reads it, takes all of those as text
-except `010`, which it reads as 10, and it reads `08`, `0o10`, `1e3` and
-`-.5` as numbers where YAML 1.1 reads text. A file does not say which version
-it was written for, so a value the two read differently is a load error,
-whether it is a key or a value and wherever it sits. One error names every
-such value, up to twenty, with its line, the reading it has had until now,
-and the spelling that keeps that reading:
+The file is parsed by ruamel.yaml, which reads YAML 1.2. Until 2026-09 it
+was parsed as YAML 1.1, which reads an unquoted `yes`, `no`, `on` or `off` as
+a boolean, `010` as the octal number 8 and `1:30` as the base-60 number 90.
+YAML 1.2, as ruamel.yaml reads it, takes all of those as text except `010`,
+which it reads as 10, and it reads `08`, `0o10`, `1e3` and `-.5` as numbers
+where YAML 1.1 reads text. A file does not say which version it was written
+for, so a value the two read differently is a load error, whether it is a key
+or a value and wherever it sits. One error names every such value, up to
+twenty, with its line, the reading it has had until now, and the spelling that
+keeps that reading:
 
 ```text
 mapping.yaml: uses spellings YAML 1.1 and 1.2 read differently:
@@ -37,14 +38,14 @@ mapping.yaml: uses spellings YAML 1.1 and 1.2 read differently:
 
 Write `true` or `false` for a boolean, a plain decimal for a number, and quote
 anything meant as text. A timestamp whose seventh fraction digit is 5 or more
-is refused too, because PyYAML drops the digits past the sixth and ruamel.yaml
-rounds the sixth up, and so are an explicit tag other than `!!str`, a `%YAML` or
-`%TAG` directive, a sequence or mapping used as a key, and an alias inside the
-collection its anchor names, which would make that collection contain itself.
-ruamel.yaml reads
-`1_000` and `0b101` as numbers, as YAML 1.1 does, where the YAML 1.2 core
-schema reads them as text, so those load. The same rule applies to every
-YAML file the mapping names and to `release.yaml`.
+is refused too, because YAML 1.1 as it was read until now drops the digits
+past the sixth and ruamel.yaml rounds the sixth up, and so are an explicit tag
+other than `!!str`, a `%YAML` or `%TAG` directive, a sequence or mapping used
+as a key, and an alias inside the collection its anchor names, which would
+make that collection contain itself. ruamel.yaml reads `1_000` and `0b101` as
+numbers, as YAML 1.1 does, where the YAML 1.2 core schema reads them as text,
+so those load. The same rule applies to every YAML file the mapping names and
+to `release.yaml`.
 
 ## Identity
 

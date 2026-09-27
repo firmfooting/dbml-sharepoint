@@ -134,8 +134,8 @@ def test_a_mapping_declaring_a_key_twice_is_skipped_like_a_broken_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The picker reads with the loader the build uses, so it offers no
-    prefix or lists for a mapping the build will refuse (#672). Read with
-    `yaml.safe_load`, this one offered `E_` and one list."""
+    prefix or lists for a mapping the build will refuse (#672). Read with a
+    loader that kept the last key, this one offered `E_` and one list."""
     for name, mapping_text in (
         ("good", 'prefix: "G_"\nentities:\n  Thing: {}\n'),
         ("repeated", 'prefix: "D_"\nentities:\n  Thing: {}\nprefix: "E_"\n'),

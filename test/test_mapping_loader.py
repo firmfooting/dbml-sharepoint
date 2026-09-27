@@ -3672,7 +3672,7 @@ def test_the_loader_module_gate_reaches_past_the_model_directory() -> None:
 
 
 def test_a_mapping_that_does_not_parse_is_a_named_refusal(tmp_path: Path) -> None:
-    """`yaml.YAMLError` is not a `MappingError`, so the single most ordinary
+    """The parser's `YAMLError` is not a `MappingError`, so the single most ordinary
     way a mapping is wrong escaped the hierarchy the layer advertises.
 
     The parser's own text is passed through rather than summarised: the line
@@ -4898,7 +4898,7 @@ def test_an_absent_key_takes_the_default_without_a_record(tmp_path: Path) -> Non
 
 
 #: A mapping whose bytes are not UTF-8. Decoding happens inside
-#: `yaml.safe_load`, past the `OSError` and `yaml.YAMLError` handlers, and
+#: `_yaml.safe_load`, past the `OSError` and `YAMLError` handlers, and
 #: `UnicodeDecodeError` is itself a `ValueError`, so it reached a caller
 #: looking exactly like a refusal this loader had composed.
 _NOT_UTF8_MAPPING = (
@@ -5667,6 +5667,6 @@ _VERSION_REFUSED_CASES = [
 def test_a_spelling_yaml_1_1_and_1_2_read_differently_is_refused_before_its_section(
     tmp_path: Path, body: str, found: str,
 ) -> None:
-    """Each was refused by its section, naming the key path, once PyYAML had
-    read it. The parser refuses it first now, naming the line instead."""
+    """Each was refused by its section, naming the key path, once YAML 1.1
+    had read it. The parser refuses it first now, naming the line instead."""
     _refused_by_the_version_guard(write_mapping(tmp_path, body), found)
