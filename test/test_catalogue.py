@@ -165,15 +165,20 @@ def test_a_journey_declaring_a_key_twice_is_refused(
     """
     journeys = tmp_path / catalogue.JOURNEYS_DIRNAME
     journeys.mkdir()
-    (journeys / "j.md").write_text(
+    journey = journeys / "j.md"
+    journey.write_text(
         "---\ntitle: J\nsummary: S\nsolutions: [a, b]\nsolutions: [c]\n---\n",
         encoding="utf-8",
     )
 
     monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
-    repeated = r"found duplicate key 'solutions' \(first at line 3\)"
-    with pytest.raises(yaml.YAMLError, match=repeated):
+    with pytest.raises(ValueError) as err:
         catalogue.available_journeys()
+    message = str(err.value)
+    assert message.startswith(f"{journey}: front matter is not valid YAML: "), message
+    # The file's own line numbers: the repeat is on line 5 and the first on line 4.
+    assert "found duplicate key 'solutions' (first at line 4)\n" in message, message
+    assert '"<unicode string>", line 5, column 1' in message, message
 
 
 def test_load_solution_names_the_alternatives() -> None:

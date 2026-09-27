@@ -369,7 +369,11 @@ def _front_matter(text: str, path: Path) -> dict[str, Any]:
         end = lines.index(_FRONT_MATTER_FENCE, 1)
     except ValueError:
         raise ValueError(f"{path}: front matter is never closed with '---'") from None
-    loaded = _yaml.safe_load("\n".join(lines[1:end])) or {}
+    try:
+        # The opening fence parses as a blank line, so the lines the parser names are the file's.
+        loaded = _yaml.safe_load("\n".join(["", *lines[1:end]])) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(f"{path}: front matter is not valid YAML: {exc}") from exc
     if not isinstance(loaded, dict):
         raise ValueError(f"{path}: front matter must be a mapping")
     return loaded
