@@ -1587,6 +1587,28 @@ def test_a_previous_prefixes_line_with_a_refused_tag_is_a_wizard_refusal(
     )
 
 
+def test_a_previous_prefixes_line_the_loader_refuses_is_named_as_refused(tmp_path: Path) -> None:
+    """A reused anchor parses, so the line is refused rather than reported
+    as a line that does not parse from its own line."""
+    mapping = tmp_path / "mapping.yaml"
+    mapping.write_text(
+        'prefix: "GOV_"\nprevious_prefixes: [&a "", &a "X"]\nentities: {}\n', encoding="utf-8",
+    )
+    with pytest.raises(wizard.WizardError) as err:
+        wizard._rewrite_prefix(mapping, "")
+    assert str(err.value) == (
+        "`previous_prefixes:` is refused ('previous_prefixes: [&a \"\", &a \"X\"]'): "
+        "found duplicate anchor 'a'; first occurrence\n"
+        '  in "<unicode string>", line 1, column 3:\n'
+        '     [&a "", &a "X"]\n'
+        "      ^ (line: 1)\n"
+        "second occurrence\n"
+        '  in "<unicode string>", line 1, column 10:\n'
+        '     [&a "", &a "X"]\n'
+        "             ^ (line: 1)"
+    )
+
+
 def test_a_template_directory_that_is_not_there_is_reported_not_a_traceback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

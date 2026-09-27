@@ -862,6 +862,11 @@ def _drop_chosen_from_previous_prefixes(
         # The line parses; the parser counts from the text after the colon, the operator from 1:1.
         where = exc.moved(text.count("\n", 0, match.start()), match.start(1) - match.start())
         raise WizardError(f"`previous_prefixes:` {where}") from exc
+    except _yaml.RefusedYAMLError as exc:
+        # The line parses, as valid YAML the loader will not read, such as a reused anchor.
+        raise WizardError(
+            f"`previous_prefixes:` is refused ({match.group(0).strip()!r}): {exc}",
+        ) from exc
     except _yaml.PARSE_ERRORS as exc:
         # A flow list continued onto a second line does not parse from its first.
         raise WizardError(
