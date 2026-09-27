@@ -281,7 +281,24 @@ role definition can hold but whether the platform defends the six it ships.
 
 Probes: `enterprise-reader-probe.js`, `reader-bindings-probe.js`,
 `built-in-levels-probe.js`, `lookup-acl-probe.js`,
-`siteuserinfolist-probe.js`, `operator-safety-grant-probe.js`
+`siteuserinfolist-probe.js`, `operator-safety-grant-probe.js`,
+`last-binding-removal-probe.js`
+
+`last-binding-removal-probe.js` sends what `operator-safety-grant-probe.js`
+avoids by granting the owner group first: the removal of every direct binding
+on a list, the last one included, which is what an exact policy with no
+assignments sends. It is the site collection administrator half of that
+question. It answers whether SharePoint accepts the removal and what the scope
+then reports, and it tests Learn's prediction that an administrator keeps
+access. What an owner who is not an administrator can still reach needs a
+second identity and is not measured by it. It mints its own
+`fixture-last-binding-` rows rather than reusing `fixture-scratch-list`,
+because it builds a different list and ends by deleting it rather than
+restoring it. After the removal it reads the list by its Id as well as by its
+title. A refusal by title names no list and one by Id does, so whether the
+administrator can still read the list is answered by
+`after-last-binding-by-id`, while the rows that model the deploy stay on the
+title the deploy reads by.
 
 ### 9. `scale`: behaviour at and beyond the list view threshold
 

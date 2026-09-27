@@ -11810,6 +11810,105 @@
           ]
         }
       ]
+    },
+    {
+      "file": "last-binding-removal-probe.js",
+      "surface": "access",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch list, its broken role inheritance, the removal of every direct binding the break leaves except 'Limited Access', in the order the deploy's exact prune removes them (this account's own among them), and the DELETE by Id that ends the run"
+      ],
+      "cleanup": {
+        "policy": "after"
+      },
+      "prerequisites": [
+        "site collection administrator, checked rather than trusted: when web/currentuser reports IsSiteAdmin=false nothing is written and every question is recorded NOT REACHED (void); when web/currentuser cannot be read, or answers without a usable Id and IsSiteAdmin, nothing is written and every question is recorded NOT ESTABLISHED (open)",
+        "this is the site collection administrator half of #667: it answers whether SharePoint accepts the removal of a list's last direct binding and what the scope then reports, and it tests Learn's prediction that an administrator keeps access, which the reads of the list by its Id answer because a refusal by title names no list; what an owner who is not an administrator can still reach is not measured here",
+        "a disposable site, because a refused closing DELETE leaves a list with no direct role assignments at all; the run then prints a line that deletes it by its Id",
+        "the scratch title must be free, or hold only a list this probe left behind, which CLEANUP deletes by its Id; a same-title list without the ownership marker, one with the marker but no usable Id, and a title whose occupancy cannot be read are all refused before anything is written"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "access",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "access.list-acl.fixture-last-binding-list",
+              "depends_on": []
+            },
+            {
+              "id": "access.list-acl.fixture-last-binding-break",
+              "depends_on": [
+                "access.list-acl.fixture-last-binding-list"
+              ]
+            },
+            {
+              "id": "access.list-acl.fixture-last-binding-direct",
+              "depends_on": [
+                "access.list-acl.fixture-last-binding-list",
+                "access.list-acl.fixture-last-binding-break"
+              ]
+            },
+            {
+              "id": "access.list-acl.last-binding-removal",
+              "depends_on": [
+                "access.list-acl.fixture-last-binding-list",
+                "access.list-acl.fixture-last-binding-break",
+                "access.list-acl.fixture-last-binding-direct"
+              ]
+            },
+            {
+              "id": "access.list-acl.after-last-binding-readback",
+              "depends_on": [
+                "access.list-acl.fixture-last-binding-list",
+                "access.list-acl.fixture-last-binding-break",
+                "access.list-acl.fixture-last-binding-direct"
+              ]
+            },
+            {
+              "id": "access.list-acl.after-last-binding-enumeration",
+              "depends_on": [
+                "access.list-acl.fixture-last-binding-list",
+                "access.list-acl.fixture-last-binding-break",
+                "access.list-acl.fixture-last-binding-direct"
+              ]
+            },
+            {
+              "id": "access.list-acl.after-last-binding-unique",
+              "depends_on": [
+                "access.list-acl.fixture-last-binding-list",
+                "access.list-acl.fixture-last-binding-break",
+                "access.list-acl.fixture-last-binding-direct"
+              ]
+            },
+            {
+              "id": "access.list-acl.after-last-binding-by-id",
+              "depends_on": [
+                "access.list-acl.fixture-last-binding-list",
+                "access.list-acl.fixture-last-binding-break",
+                "access.list-acl.fixture-last-binding-direct"
+              ]
+            },
+            {
+              "id": "access.list-acl.after-last-binding-delete",
+              "depends_on": [
+                "access.list-acl.fixture-last-binding-list",
+                "access.list-acl.fixture-last-binding-break",
+                "access.list-acl.fixture-last-binding-direct"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "access.list-acl.fixture-last-binding-list",
+            "access.list-acl.fixture-last-binding-break",
+            "access.list-acl.fixture-last-binding-direct"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
