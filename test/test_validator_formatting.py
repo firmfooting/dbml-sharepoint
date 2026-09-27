@@ -420,6 +420,36 @@ def test_a_map_key_that_is_not_text_is_a_finding_not_a_crash(
     assert "key 'Bogus' is not a member" in second
 
 
+def test_two_map_keys_that_print_alike_are_reported_in_a_fixed_order() -> None:
+    """`1` and "1" sort equal as text, so without a tie-break the order of
+    the two findings followed the hash seed."""
+    schema = make_schema(
+        make_table("Risk", make_column("Title", required=True), make_column("Rating", "rating")),
+        enums=[make_enum("rating", "Low", "High")],
+    )
+    spec = {"style": "severity", "map": {1: "good", "1": "low"}}
+    bundle = make_bundle(entities=["Risk"], column_style_specs={"Risk": {"Rating": spec}})
+    first, second = messages(
+        validate_against_mapping(schema, bundle), FindingCode.STYLE_MAP_KEY_NOT_IN_ENUM,
+    )
+    assert "key '1' is not a member" in first
+    assert "key 1 is not a member" in second
+
+
+@pytest.mark.parametrize("value_map", [None, [["Low"]], 3])
+def test_a_map_that_is_not_a_mapping_is_skipped_not_a_crash(value_map: object) -> None:
+    """A Mapping built in code never meets the loader's shape refusal, and
+    iterating None, a list of lists or a number raised a bare TypeError."""
+    schema = make_schema(
+        make_table("Risk", make_column("Title", required=True), make_column("Rating", "rating")),
+        enums=[make_enum("rating", "Low", "High")],
+    )
+    spec = {"style": "severity", "map": value_map}
+    bundle = make_bundle(entities=["Risk"], column_style_specs={"Risk": {"Rating": spec}})
+    findings = validate_against_mapping(schema, bundle)
+    assert not [f for f in findings if f.code == FindingCode.STYLE_MAP_KEY_NOT_IN_ENUM]
+
+
 #: The schema every counter-example below is declared against. One enum column
 #: for the two map rules to judge, a number for the bar and the trend, and a
 #: date for the overdue guard.
