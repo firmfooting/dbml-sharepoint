@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
       # This job already depends on node twice below, to syntax-check every
       # emitted script, and it never declared it. It was running on whatever
       # the runner image happened to ship. The runtime tests are the worse
@@ -178,7 +178,7 @@ jobs:
           # The script diffs against the merge base, which does not exist in a
           # shallow clone.
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
       - name: Sync dependencies
         run: uv sync
       - name: Mutate every ceiling this pull request changes
