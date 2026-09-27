@@ -949,10 +949,36 @@ def test_folder_permissions_on_an_unknown_entity_are_refused(
     assert "Nope" in f.message
 
 
+#: List policies in YAML flow style, for `_folder_policy_body`'s `default` and `overrides`.
+_EXACT_LIST = (
+    "{break_inheritance: true, reconcile: exact, assignments: "
+    '[{principal: {kind: associated_owner_group}, level: "Full Control"}]}'
+)
+_CONFIGURED_LIST = (
+    "{break_inheritance: true, reconcile: configured, assignments: "
+    '[{principal: {kind: associated_owner_group}, level: "Full Control"}]}'
+)
+
+
 def _folder_policy_body(
-    tmp_path: Path, policy: str, *, folders: str = "{from_enum: division}",
+    tmp_path: Path,
+    policy: str,
+    *,
+    folders: str = "{from_enum: division}",
+    default: str | None = _EXACT_LIST,
+    override: str | None = None,
 ) -> list[Finding]:
-    """A two-folder library whose folder policy is `policy`, in YAML flow style."""
+    """A two-folder library whose folder policy is `policy`, in YAML flow style.
+
+    `default` and `override` are the library's list policy through each
+    route; `None` leaves that route undeclared.
+    """
+    blocks = [f"folders: {{Docs: {policy}}}"]
+    if default is not None:
+        blocks.append(f"default: {default}")
+    if override is not None:
+        blocks.append(f"overrides: {{Docs: {override}}}")
+    list_permissions = "{" + ", ".join(blocks) + "}"
     schema, bundle = pack(
         tmp_path,
         dbml=(
@@ -967,15 +993,7 @@ def _folder_policy_body(
                 site_role: default
                 folders: {folders}
 
-            list_permissions:
-              default:
-                break_inheritance: true
-                reconcile: exact
-                assignments:
-                  - principal: {{ kind: associated_owner_group }}
-                    level: "Full Control"
-              folders:
-                Docs: {policy}
+            list_permissions: {list_permissions}
         """,
     )
     return validate_against_mapping(schema, bundle)
@@ -1006,8 +1024,9 @@ def test_an_exact_folder_policy_granting_nothing_warns_once(tmp_path: Path) -> N
 def test_a_configured_folder_policy_granting_nothing_is_refused(
     tmp_path: Path, policy: str,
 ) -> None:
-    """It grants and removes nothing, and still took both folders out of the
-    exact-mode check that refuses an undeclared folder scope (#617)."""
+    """Under an exact list (here through the default) it grants and removes
+    nothing, and still took both folders out of the exact-mode check that
+    refuses an undeclared folder scope (#617)."""
     f = only(
         _folder_policy_body(tmp_path, policy),
         FindingCode.FOLDER_POLICY_MANAGES_NOTHING,
@@ -1015,6 +1034,43 @@ def test_a_configured_folder_policy_granting_nothing_is_refused(
     assert f.severity == "error"
     assert f.location == Location(Section.LIST_PERMISSIONS, sub="folders")
     assert "Docs" in f.message
+
+
+def test_an_exact_list_reached_through_an_override_is_judged_too(tmp_path: Path) -> None:
+    only(
+        _folder_policy_body(
+            tmp_path, "{break_inheritance: true}",
+            default=_CONFIGURED_LIST, override=_EXACT_LIST,
+        ),
+        FindingCode.FOLDER_POLICY_MANAGES_NOTHING,
+    )
+
+
+@pytest.mark.parametrize(
+    ("default", "override"),
+    [
+        pytest.param(_CONFIGURED_LIST, None, id="configured-default"),
+        # The override is what the library deploys under, not the exact default.
+        pytest.param(_EXACT_LIST, _CONFIGURED_LIST, id="configured-override"),
+        pytest.param(None, None, id="no-list-policy"),
+    ],
+)
+@pytest.mark.parametrize(
+    "policy",
+    [
+        pytest.param("{break_inheritance: true}", id="breaks"),
+        pytest.param("{break_inheritance: false}", id="inherits"),
+    ],
+)
+def test_a_configured_folder_policy_granting_nothing_is_allowed_off_an_exact_list(
+    tmp_path: Path, policy: str, default: str | None, override: str | None,
+) -> None:
+    """The descendant check runs only under an exact list, so here there is
+    nothing to exempt, and breaking a folder to manage it by hand is legal."""
+    none_of(
+        _folder_policy_body(tmp_path, policy, default=default, override=override),
+        FindingCode.FOLDER_POLICY_MANAGES_NOTHING,
+    )
 
 
 @pytest.mark.parametrize(

@@ -75,7 +75,14 @@ def _folder_permissions(vc: ValidationContext) -> list[Finding]:
     scope that still inherits, so on a folder that is already unique a
     configured policy with no grant writes nothing whatever it declares. It
     is asked last, once the folders are known to exist, because the harm is
-    that declaring them exempts them from the exact-mode descendant check.
+    that declaring them exempts them from the descendant-scope check.
+
+    Only under a list whose effective policy is exact, because that check
+    runs only then: `_acls.js.j2` runs it when the list scope or a folder
+    scope reconciles exact, an entity has one folder policy, and `jsgen`
+    emits the list scope from `permissions_for_entity` with its mode. Under
+    a configured list, or none, a configured folder policy that only breaks
+    inheritance hands the folder to manual management, which is legitimate.
     """
     perms = vc.bundle.mapping.permissions
     if perms is None:
@@ -116,18 +123,22 @@ def _folder_permissions(vc: ValidationContext) -> list[Finding]:
                 location=at,
             ))
             continue
-        if policy.reconcile_mode == "configured" and not policy.assignments:
+        list_policy = vc.bundle.mapping.permissions_for_entity(entity_name)
+        under_exact_list = list_policy is not None and list_policy.reconcile_mode == "exact"
+        if under_exact_list and policy.reconcile_mode == "configured" and not policy.assignments:
             findings.append(Finding(
                 FindingCode.FOLDER_POLICY_MANAGES_NOTHING,
-                f"list_permissions.folders.{entity_name}: reconcile: "
-                f"configured with no assignments grants nothing and removes "
-                f"nothing on the folders {entity_name} declares, and on a "
-                f"folder that already has permissions of its own the deploy "
-                f"writes nothing at all. Declaring it still exempts those "
-                f"folders from the check that stops a reconcile: exact deploy "
-                f"on a folder with permissions of its own. Declare the "
-                f"assignments the folders should have, or use reconcile: "
-                f"exact so every grant on them is reviewed.",
+                f"list_permissions.folders.{entity_name}: {entity_name} "
+                f"reconciles exact, and this folder policy reconciles "
+                f"configured with no assignments. It grants nothing and "
+                f"removes nothing on the folders {entity_name} declares, and "
+                f"on a folder that already has permissions of its own the "
+                f"deploy writes nothing at all. Declaring it still exempts "
+                f"those folders from the check {entity_name}'s exact policy "
+                f"runs, which stops the deploy on a folder with permissions "
+                f"of its own. Declare the assignments the folders should "
+                f"have, or use reconcile: exact so every grant on them is "
+                f"reviewed.",
                 location=at,
             ))
     return findings

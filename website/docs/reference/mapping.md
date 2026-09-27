@@ -1978,10 +1978,13 @@ Six refusals, all at build time:
 - `folder_permissions_on_a_list` and `folder_permissions_without_folders`,
   for a policy attached to something with no folders to secure.
 - `folder_policy_manages_nothing`, for a folder policy that reconciles
-  `configured` and declares no assignment. It grants and removes nothing on
-  the folders, and on a folder that already has permissions of its own the
-  deploy writes nothing at all, yet declaring it exempts those folders from
-  the descendant-scope guard below.
+  `configured` and declares no assignment, under a library whose own list
+  policy reconciles `exact`. It grants and removes nothing on the folders,
+  and on a folder that already has permissions of its own the deploy writes
+  nothing at all, yet declaring it exempts those folders from the
+  descendant-scope guard below. Under a configured list, or a library with
+  no list policy, the guard does not run, so such a policy exempts nothing
+  and is allowed.
 - `group_name_invalid`, for a resolved group name carrying a character
   SharePoint refuses. See `{member_safe}` below.
 
@@ -2011,10 +2014,11 @@ does not declare still aborts the phase, named by its path. A folder
 it under its own policy: with `reconcile: exact` it reviews every grant on the
 folder, and with `reconcile: configured` it adds the declared grants and, by
 design, leaves alone the grants of every principal the policy does not name.
-A configured policy that declares no grant would exempt its folders while
-managing nothing, so the build refuses it (`folder_policy_manages_nothing`).
-Without the exclusion the first redeploy after enabling folder ACLs would fail
-forever on the phase's own work. Nothing is erased either way.
+Under a list that reconciles `exact`, a configured folder policy that declares
+no grant would exempt its folders while managing nothing, so the build refuses
+it (`folder_policy_manages_nothing`). Without the exclusion the first redeploy
+after enabling folder ACLs would fail forever on the phase's own work. Nothing
+is erased either way.
 
 **Rollback does not restore folder inheritance,** because it deletes the
 library outright and the folders go with it. The case worth planning for is a
@@ -2137,9 +2141,10 @@ facts rule that out, together:
   not a loophole: that scope is declared, and the phase reconciles it under
   its own policy instead of finding it (every grant on it under
   `reconcile: exact`, the declared grants under `reconcile: configured`),
-  while a scope nobody declared still aborts. A configured folder policy that
-  declares no grant would exempt its folders while managing nothing, so the
-  build refuses it (`folder_policy_manages_nothing`).
+  while a scope nobody declared still aborts. Under a list that reconciles
+  `exact`, a configured folder policy that declares no grant would exempt its
+  folders while managing nothing, so the build refuses it
+  (`folder_policy_manages_nothing`).
 - A grant made at **site or list scope** is a different thing and is handled
   differently. It is a role assignment at that scope, not an item scope, so
   it is caught by the bullet above rather than this one: `exact` treats the
