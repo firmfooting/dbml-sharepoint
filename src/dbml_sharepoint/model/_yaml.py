@@ -21,6 +21,9 @@ import yaml
 from yaml.constructor import ConstructorError
 from yaml.nodes import MappingNode, Node
 
+#: What a parse of malformed YAML raises, so a caller can catch it without PyYAML.
+PARSE_ERRORS: tuple[type[yaml.YAMLError]] = (yaml.YAMLError,)
+
 #: The tag PyYAML gives `<<`, the merge key.
 _MERGE_TAG = "tag:yaml.org,2002:merge"
 
@@ -105,3 +108,9 @@ def safe_load(stream: str | IO[str]) -> Any:
         return loader.get_single_data()
     finally:
         loader.dispose()
+
+
+def safe_dump(data: object, **options: Any) -> str:
+    """`yaml.safe_dump` to a string, so a module that writes YAML need not import PyYAML."""
+    dumped: str = yaml.safe_dump(data, **options)
+    return dumped

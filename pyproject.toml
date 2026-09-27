@@ -111,7 +111,7 @@ target-version = "py313"
 # enforced cannot rot; a rule that lives in a document can.
 select = [
   "A", "ANN", "B", "BLE", "C4", "C901", "DTZ", "E", "F", "FURB", "I", "ISC",
-  "N", "PIE", "PLC0415", "PTH", "RET", "RUF", "S", "SIM", "T20", "TID252",
+  "N", "PIE", "PLC0415", "PTH", "RET", "RUF", "S", "SIM", "T20", "TID251", "TID252",
   "UP", "W",
 ]
 ignore = [
@@ -145,6 +145,10 @@ ignore = [
 # Default is "parents", which bans `..` and leaves `from . import x` alone.
 # There was exactly one such import and it had no reason to be relative.
 ban-relative-imports = "all"
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# `yaml.safe_load` keeps the last of two identical keys and says nothing (#672).
+"yaml".msg = "parse YAML through dbml_sharepoint.model._yaml, which refuses a repeated key"
 
 [tool.ruff.lint.mccabe]
 # A RATCHET, exactly like coverage's `fail_under` and `_reachability`'s
@@ -189,7 +193,8 @@ max-complexity = 54
 # `wizard.py` and two in `extract/wizard.py` break a genuine cycle with
 # `cli.py` (#171), and seven in `bundle.py` keep that module importable for its
 # packaging helpers without pulling in the whole generation stack.
-"test/**" = ["S101", "PLC0415"]
+"test/**" = ["S101", "PLC0415", "TID251"]
+"src/dbml_sharepoint/model/_yaml.py" = ["TID251"]  # the one module that parses YAML
 "website/scripts/**" = ["T20", "PLC0415"] # generator scripts report via print
 "test/manual/render_probes.py" = ["T20"]     # generator script, reports via print
 "test/manual/make_threshold_rows.py" = ["T20"]  # generator script, reports via print

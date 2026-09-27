@@ -6,13 +6,12 @@ nothing (#672). `model/_yaml.py` refuses the repeat, and it only protects the
 files that are read with it, so the gate below holds the package to it.
 """
 
-import ast
 import io
-from pathlib import Path
+import tomllib
 
 import pytest
 import yaml
-from _paths import PACKAGE, SOLUTION_TEMPLATES
+from _paths import REPO_ROOT, SOLUTION_TEMPLATES
 
 from dbml_sharepoint.model import _yaml
 
@@ -172,125 +171,19 @@ def test_every_shipped_yaml_file_loads_unchanged() -> None:
         assert _yaml.safe_load(text) == yaml.safe_load(text), path
 
 
-#: The PyYAML names a module other than the parser may use, none of which parse.
-_ALLOWED = frozenset({
-    # Catching the parser's refusal.
-    "YAMLError",
-    # Writing a document: `extract/emit.py` renders the mapping it recovers.
-    "safe_dump",
-})
-
-#: The one module allowed to use the rest of PyYAML.
-_PARSER = "model/_yaml.py"
-
-
-def _is_pyyaml(module: str) -> bool:
-    return module == "yaml" or module.startswith("yaml.")
-
-
-def _bindings(tree: ast.Module) -> dict[str, str]:
-    """Each name an `import` binds to PyYAML, and the module it names.
-
-    `import yaml.loader` binds `yaml` to the package, as Python does, and
-    `import yaml.loader as ld` binds `ld` to the submodule.
-    """
-    return {
-        alias.asname or "yaml": alias.name if alias.asname else "yaml"
-        for node in ast.walk(tree) if isinstance(node, ast.Import)
-        for alias in node.names if _is_pyyaml(alias.name)
-    }
-
-
-def _chain(name: ast.Name, parents: dict[ast.AST, ast.AST]) -> list[str]:
-    """The attributes read off `name`, outermost last: `yaml.loader.X` is `[loader, X]`."""
-    attrs: list[str] = []
-    node: ast.AST = name
-    while isinstance(parent := parents.get(node), ast.Attribute) and parent.value is node:
-        attrs.append(parent.attr)
-        node = parent
-    return attrs
-
-
-def _unlisted_yaml_uses(root: Path) -> dict[str, list[str]]:
-    """Every reach into PyYAML under `root` past `_ALLOWED`, by module.
-
-    A name read through `yaml`, an alias of it or a submodule, followed to
-    the first attribute below the package; any `from yaml.<sub> import`;
-    `from yaml import *`; and a `from yaml import` of a name not listed.
-    Reaching PyYAML through `getattr` or `importlib` is out of scope.
-    """
-    found: dict[str, list[str]] = {}
-    for path in sorted(root.rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        bound = _bindings(tree)
-        parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
-        uses: list[tuple[int, str]] = []
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in bound:
-                attrs = _chain(node, parents)
-                below = [*bound[node.id].split(".")[1:], *attrs]
-                if not below or below[0] not in _ALLOWED:
-                    uses.append((node.lineno, ".".join([node.id, *attrs])))
-            elif (
-                isinstance(node, ast.ImportFrom)
-                and node.level == 0
-                and _is_pyyaml(node.module or "")
-            ):
-                uses.extend(
-                    (node.lineno, f"from {node.module} import {alias.name}")
-                    for alias in node.names
-                    if node.module != "yaml" or alias.name not in _ALLOWED
-                )
-        if uses:
-            found[path.relative_to(root).as_posix()] = [f"{n}: {use}" for n, use in sorted(uses)]
-    return found
-
-
-def test_the_package_parses_yaml_only_through_the_unique_key_loader() -> None:
+def test_the_package_may_import_pyyaml_only_in_its_parser() -> None:
     """`yaml.safe_load` anywhere else would read a repeated key silently again.
 
-    Static, like `test_the_package_has_exactly_one_writer`, because the defect
-    is per call site: the next parse someone adds reintroduces it, and nothing
-    in ruff, pyrefly or the rest of the suite would say so.
+    Ruff's banned-api rule refuses every spelling of a PyYAML import; this pins
+    that the rule is on and that `model/_yaml.py` is the one module in `src/`
+    exempt from it.
     """
-    found = _unlisted_yaml_uses(PACKAGE)
-    # Not vacuous: the parser's own base class is a use the walk has to see.
-    assert _PARSER in found, sorted(found)
-    outside = {module: uses for module, uses in found.items() if module != _PARSER}
-    assert not outside, (
-        "parse YAML with `dbml_sharepoint.model._yaml.safe_load`, which refuses "
-        f"a repeated key, or add a name that cannot parse to `_ALLOWED`. Found: {outside}"
-    )
-
-
-def test_the_gate_flags_every_spelling_that_reaches_past_the_allowlist(tmp_path: Path) -> None:
-    seeded = {
-        "direct.py": "import yaml\nyaml.safe_load(s)\nyaml.load(s, Loader=yaml.SafeLoader)\n",
-        "aliased.py": "import yaml as y\ny.load_all(s)\n",
-        "imported.py": "from yaml import CSafeLoader, safe_load\n",
-        "lower_level.py": "import yaml\nyaml.compose(s)\nyaml.compose_all(s)\nyaml.parse(s)\n",
-        "submodule.py": "import yaml.loader\nyaml.safe_load(s)\nyaml.loader.SafeLoader(s)\n",
-        "submodule_aliased.py": "import yaml.loader as ld\nld.SafeLoader(s)\n",
-        "submodule_imported.py": "from yaml import loader\n",
-        "star.py": "from yaml import *\n",
-        "from_submodule.py": "from yaml.constructor import SafeConstructor\n",
-        "passed_on.py": "import yaml\nparse_with(yaml)\n",
-        "clean.py": (
-            "import yaml\nfrom yaml import YAMLError\nyaml.safe_dump(d)\n"
-            "except_ = yaml.YAMLError\nname = yaml.YAMLError.__name__\n"
-        ),
-    }
-    for name, text in seeded.items():
-        (tmp_path / name).write_text(text, encoding="utf-8")
-    assert _unlisted_yaml_uses(tmp_path) == {
-        "aliased.py": ["2: y.load_all"],
-        "direct.py": ["2: yaml.safe_load", "3: yaml.SafeLoader", "3: yaml.load"],
-        "from_submodule.py": ["1: from yaml.constructor import SafeConstructor"],
-        "imported.py": ["1: from yaml import CSafeLoader", "1: from yaml import safe_load"],
-        "lower_level.py": ["2: yaml.compose", "3: yaml.compose_all", "4: yaml.parse"],
-        "passed_on.py": ["2: yaml"],
-        "star.py": ["1: from yaml import *"],
-        "submodule.py": ["2: yaml.safe_load", "3: yaml.loader.SafeLoader"],
-        "submodule_aliased.py": ["2: ld.SafeLoader"],
-        "submodule_imported.py": ["1: from yaml import loader"],
-    }
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    lint = pyproject["tool"]["ruff"]["lint"]
+    assert "TID251" in lint["select"]
+    assert "yaml" in lint["flake8-tidy-imports"]["banned-api"]
+    exempt = [
+        pattern for pattern, rules in lint["per-file-ignores"].items()
+        if "TID251" in rules and pattern.startswith("src/")
+    ]
+    assert exempt == ["src/dbml_sharepoint/model/_yaml.py"]

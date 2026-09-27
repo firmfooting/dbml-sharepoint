@@ -19,8 +19,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from dbml_sharepoint.model import _yaml
 
 #: One directory per list family. Not `templates/`, which is Jinja.
@@ -305,7 +303,7 @@ def _mapping_facts(mapping_path: Path) -> tuple[tuple[str, ...], str]:
     """
     try:
         raw: Any = _yaml.safe_load(mapping_path.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError):
+    except (OSError, *_yaml.PARSE_ERRORS):
         return (), ""
     if not isinstance(raw, dict):
         return (), ""
@@ -372,7 +370,7 @@ def _front_matter(text: str, path: Path) -> dict[str, Any]:
     try:
         # The opening fence parses as a blank line, so the lines the parser names are the file's.
         loaded = _yaml.safe_load("\n".join(["", *lines[1:end]])) or {}
-    except yaml.YAMLError as exc:
+    except _yaml.PARSE_ERRORS as exc:
         raise ValueError(f"{path}: front matter is not valid YAML: {exc}") from exc
     if not isinstance(loaded, dict):
         raise ValueError(f"{path}: front matter must be a mapping")

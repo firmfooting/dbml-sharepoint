@@ -44,7 +44,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import typer
-import yaml
 from rich.console import Console, Group, RenderableType
 from rich.markup import escape
 from rich.padding import Padding
@@ -859,7 +858,7 @@ def _drop_chosen_from_previous_prefixes(
     # comment on the line is handled by the parser that will read it back.
     try:
         declared = _yaml.safe_load(match.group(1))
-    except yaml.YAMLError as exc:
+    except _yaml.PARSE_ERRORS as exc:
         # A flow list continued onto a second line does not parse from its first.
         raise WizardError(
             f"`previous_prefixes:` does not parse from its own line "
@@ -1215,7 +1214,7 @@ def _read_facts(solution: Solution) -> _TemplateFacts:
     """
     try:
         bundle = load_mapping(solution.mapping_path)
-    except (OSError, KeyError, ValueError, yaml.YAMLError) as exc:
+    except (OSError, KeyError, ValueError, *_yaml.PARSE_ERRORS) as exc:
         raise WizardError(
             f"the {solution.id} template's mapping could not be loaded: {exc}",
         ) from exc

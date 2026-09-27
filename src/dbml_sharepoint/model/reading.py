@@ -43,8 +43,6 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model._keys import _text_key
 from dbml_sharepoint.model.errors import (
@@ -157,7 +155,7 @@ def read_yaml_document(path: Path, named_by: str | None = None) -> Any:
         # The pointer resolved and the file opened, so the declaration is
         # not what is wrong: these bytes are not a document at all.
         raise MappingSourceError(f"{path}: is not valid UTF-8: {exc}") from exc
-    except yaml.YAMLError as exc:
+    except _yaml.PARSE_ERRORS as exc:
         raise MappingSourceError(f"{path}: is not valid YAML: {exc}") from exc
 
 
