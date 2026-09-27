@@ -78,7 +78,7 @@ def test_every_row_validates_as_a_pattern_row(tmp_path: Path) -> None:
     mapping = _yaml.safe_load(mapping_path.read_text(encoding="utf-8"))
     del mapping["demo_items"]
     mapping["demo_source"] = "seed-check.yaml"
-    mapping_path.write_text(_yaml.safe_dump(mapping, sort_keys=False), encoding="utf-8")
+    mapping_path.write_text(_yaml.safe_dump(mapping), encoding="utf-8")
 
     marked = [
         {
@@ -88,7 +88,7 @@ def test_every_row_validates_as_a_pattern_row(tmp_path: Path) -> None:
         for row in _rows()
     ]
     (family / "20-configure" / "seed-check.yaml").write_text(
-        _yaml.safe_dump({"demo_items": {"Pattern": marked}}, sort_keys=False), encoding="utf-8"
+        _yaml.safe_dump({"demo_items": {"Pattern": marked}}), encoding="utf-8"
     )
 
     schema = parse_dbml(family / "10-design" / "schema.dbml")

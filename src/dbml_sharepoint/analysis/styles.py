@@ -139,8 +139,8 @@ def _validated_map(spec: dict[str, Any], context: str) -> dict[str, str]:
 
     Each key must be text. The emitted formatter compares the cell against the
     key as quoted text (`@currentField == '<key>'`), and what YAML hands back
-    for an unquoted `1`, `No` or `2.10` is not the text the author typed:
-    `str()` made `No` 'False' and `2.10` '2.1', and merged `1:` with a `"1":`
+    for an unquoted `1`, `false` or `2.10` is not the text the author typed:
+    `str()` made `false` 'False' and `2.10` '2.1', and merged `1:` with a `"1":`
     beside it. The key is checked before its token, because a key that is not
     text is the first thing wrong with the entry.
 

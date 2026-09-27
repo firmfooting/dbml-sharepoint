@@ -14,12 +14,14 @@ from dbml_sharepoint.model.errors import MappingShapeError, UnknownMappingKeyErr
 def _text_key(key: object, context: str) -> str:
     """`key` as the name the author typed, or fail saying to quote it.
 
-    YAML 1.1 resolves an unquoted key as it resolves a value, so `No:` loads
-    as False, `2.10:` as 2.1, `010:` as 8 and `~:` as None. None of those is
+    YAML resolves an unquoted key as it resolves a value, so `false:` loads
+    as False, `2.10:` as 2.1, `0x10:` as 16 and `~:` as None. None of those is
     the text that was typed, and `str()` cannot recover it: `2.10` comes back
     as "2.1". Normalising also merged `1:` with a `"1":` beside it, one entry
     silently replacing the other. Every key this loader reads is a name or a
-    value compared as text, so a key that is not text is refused.
+    value compared as text, so a key that is not text is refused. `No:` and
+    `010:`, which YAML 1.1 and 1.2 read differently, never reach here: the
+    parser refuses them.
     """
     if isinstance(key, str):
         return key
@@ -133,7 +135,7 @@ def _known_keys(
     Every key is one of `allowed`, so the result is keyed by `str`; each
     value is still unchecked YAML, so it is `object` until the caller
     narrows it. A key that is not text is refused by `_text_key` first,
-    because "unknown key False" does not tell the author they typed `No:`.
+    because "unknown key 2.1" does not tell the author they typed `2.10:`.
     """
     if not isinstance(block, dict):
         raise MappingShapeError(

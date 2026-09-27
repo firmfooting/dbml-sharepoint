@@ -35,7 +35,10 @@ and `examples/` is a working example of the shape.
 Every value is text, so quote it. YAML reads an unquoted `2.10` as the
 number 2.1, which would stamp a different version than the one written, so
 an unquoted number is a load error. An unquoted date is the one exception:
-it is read back as ISO text.
+it is read back as ISO text. A spelling YAML 1.1 and 1.2 read differently,
+such as `yes`, `010` or `1e3`, is refused before any of that, with its line
+and the fix, as it is in
+[the mapping](./mapping.md#spellings-yaml-11-and-12-read-differently).
 
 A key written with no value reads as absent. A blank `notes:` or
 `flow_package_version:` takes its default, and a blank required key is a

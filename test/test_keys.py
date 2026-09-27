@@ -25,10 +25,10 @@ def test_a_mapping_passes_through_unchanged() -> None:
 @pytest.mark.parametrize(
     ("typed", "read"),
     [
-        ("No", "key False is not text (YAML read it as bool)"),
+        ("false", "key False is not text (YAML read it as bool)"),
         ("2026", "key 2026 is not text (YAML read it as int)"),
         ("2.10", "key 2.1 is not text (YAML read it as float)"),
-        ("010", "key 8 is not text (YAML read it as int)"),
+        ("0x10", "key 16 is not text (YAML read it as int)"),
         ("~", "key None is not text (YAML read it as null)"),
         ("2026-09-01", "key 2026-09-01 is not text (YAML read it as date)"),
         ("2026-09-01 10:30:00", "key 2026-09-01T10:30:00 is not text (YAML read it as datetime)"),
@@ -36,11 +36,21 @@ def test_a_mapping_passes_through_unchanged() -> None:
 )
 def test_a_key_yaml_did_not_read_as_text_is_refused(typed: str, read: str) -> None:
     """Normalising with `str()` cannot give back what was typed: `2.10:`
-    came back as "2.1" and `No:` as "False", so the key is refused instead."""
+    came back as "2.1" and `false:` as "False", so the key is refused instead."""
     block = _yaml.safe_load(f"{typed}: =TODAY()\nRisk: {{}}")
     with pytest.raises(MappingShapeError) as err:
         _require_mapping(block, "default_formulas.Risk")
     assert str(err.value) == f"default_formulas.Risk: {read}; quote it"
+
+
+@pytest.mark.parametrize("typed", ["No", "010"])
+def test_a_key_yaml_1_1_and_1_2_read_differently_is_refused_by_the_parser_first(
+    typed: str,
+) -> None:
+    """`No:` and `010:` were two of the cases above. The parser refuses both
+    now (#686), so neither becomes a key for `_require_mapping` to name."""
+    with pytest.raises(_yaml.AmbiguousYAMLError, match=rf"line 1, column 1: `{typed}` is read as"):
+        _yaml.safe_load(f"{typed}: =TODAY()\nRisk: {{}}")
 
 
 def test_a_number_key_beside_its_quoted_twin_is_refused_rather_than_merged() -> None:

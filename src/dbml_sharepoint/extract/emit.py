@@ -171,7 +171,7 @@ def render_mapping(extraction: Extraction, *, prefix: str = DEFAULT_PREFIX) -> s
         if section:
             document[key] = section
 
-    body = _dump(document)
+    body = _yaml.safe_dump(document)
     return _MAPPING_HEADER.format(source=extraction.source, prefix=prefix) + body
 
 
@@ -186,22 +186,6 @@ _MAPPING_HEADER = """\
 # `versioning` and `entities.*.base_template` are DECLARED here rather than
 # recovered, because neither source carries the live settings.
 """
-
-
-def _dump(document: dict[str, Any]) -> str:
-    """YAML for an operator to edit and diff.
-
-    `width` is effectively off. The default wraps a long scalar across
-    lines, which is legal YAML and unreadable in a diff: a one-word edit to
-    a validation message reflows the whole block.
-    """
-    return _yaml.safe_dump(
-        document,
-        sort_keys=False,
-        default_flow_style=False,
-        allow_unicode=True,
-        width=10_000,
-    )
 
 
 def _renames_a_column(entity: DecodedEntity) -> bool:
@@ -249,4 +233,4 @@ def render_release(*, source: str, generated_at: str) -> str:
             "schema_version on every schema or mapping change after it."
         ),
     }
-    return _dump(document)
+    return _yaml.safe_dump(document)
