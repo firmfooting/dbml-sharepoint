@@ -1609,6 +1609,26 @@ def test_a_copy_that_cannot_be_made_is_reported_not_a_traceback(
     assert not destination.exists()
 
 
+def test_a_scaffold_refusal_is_printed_as_text_not_markup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A loader refusal names settings such as `views[risk_open].columns`,
+    and rich read the bracketed part as a markup tag and dropped it."""
+    solution = _fake_family(tmp_path / "fake")
+    _offer_only(monkeypatch, solution)
+
+    def _refuse(*_args: object, **_kwargs: object) -> tuple[str, ...]:
+        raise wizard.WizardError("views[risk_open].columns: 'Owner' is not a column")
+
+    monkeypatch.setattr(wizard, "_rewrite_prefix", _refuse)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    assert "views[risk_open].columns: 'Owner' is not a column" in _collapsed(console)
+
+
 def test_a_template_whose_lists_could_not_be_read_is_still_described(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -1553,7 +1553,7 @@ def _run(console: Console) -> int:
     try:
         repointed, applied, dropped = _scaffold(answers)
     except (WizardError, OSError) as exc:
-        console.print(f"[red]Could not scaffold the project:[/red] {exc}")
+        console.print(f"[red]Could not scaffold the project:[/red] {escape(str(exc))}")
         return 1
 
     console.print(f"\n[green]Wrote[/green] {escape(str(answers.destination))}")
