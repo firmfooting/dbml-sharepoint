@@ -1477,6 +1477,44 @@ def test_an_exact_override_granting_nothing_warns_and_names_its_entity() -> None
     assert "'Task'" in finding.message
 
 
+def _grants() -> ListPermissionPolicy:
+    return ListPermissionPolicy(
+        break_inheritance=True, assignments=[_OWNERS_CONTRIBUTE], reconcile_mode="exact",
+    )
+
+
+def test_an_exact_default_that_no_list_takes_does_not_warn() -> None:
+    """Every entity is overridden, so no list deploys under the default and
+    the deploy's ACL scopes carry only the overrides."""
+    every_entity = ("Project", "Task", "AppSettings")
+    none_of(
+        _exact_policy_findings(
+            default=_strips(), overrides={name: _grants() for name in every_entity},
+        ),
+        FindingCode.EXACT_POLICY_GRANTS_NOTHING,
+    )
+
+
+def test_an_exact_default_scoped_to_a_role_no_list_has_does_not_warn() -> None:
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    bundle.mapping.permissions = PermissionsConfig(
+        levels=[], groups=[], default_policy=_strips(), overrides={},
+        default_policy_site_role="committee",
+    )
+    findings = validate_against_mapping(schema, bundle)
+    none_of(findings, FindingCode.EXACT_POLICY_GRANTS_NOTHING)
+    only(findings, FindingCode.UNKNOWN_SITE_ROLE)
+
+
+def test_an_exact_override_on_an_unknown_table_is_left_to_unknown_table() -> None:
+    findings = _exact_policy_findings(
+        default=_grants(), overrides={"DoesNotExist": _strips()},
+    )
+    only(findings, FindingCode.UNKNOWN_TABLE)
+    none_of(findings, FindingCode.EXACT_POLICY_GRANTS_NOTHING)
+
+
 @pytest.mark.parametrize(
     "policy",
     [

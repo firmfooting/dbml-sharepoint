@@ -179,18 +179,29 @@ def _exact_policies_granting_nothing(
     SharePoint does once the last binding on a scope is gone is unmeasured
     (#667), so it is not stated.
 
-    A folder block is read through its expansion, so it reports only where
-    it governs a folder, and once however many folders it governs.
+    Each block reports only where it governs a scope, because that is where
+    the deploy carries it: the default when some list takes it rather than an
+    override or a `site_role` that excludes it, an override keyed by a table
+    that deploys, and a folder block through its expansion, once however
+    many folders it covers. A block that governs nothing either deploys
+    nothing or already has a finding of its own, such as `unknown_table`.
     """
+    mapping = vc.bundle.mapping
+    # A list deploys only when the mapping and the schema both declare it.
+    governed = {name for name in mapping.entities if name in vc.table_names}
     declared: list[tuple[ListPermissionPolicy, str, str, Location]] = []
-    if perms.default_policy is not None:
+    default = perms.default_policy
+    if default is not None and any(
+        mapping.permissions_for_entity(name) is default for name in governed
+    ):
         declared.append((
-            perms.default_policy, "list_permissions.default",
+            default, "list_permissions.default",
             "every list it applies to", _DEFAULT_POLICY,
         ))
     declared += [
         (policy, f"list_permissions.overrides[{name!r}]", name, _OVERRIDES)
         for name, policy in perms.overrides.items()
+        if name in governed
     ]
     # Any one folder answers for its block: expanding `{member}` changes neither mode nor count.
     folder_blocks = {
