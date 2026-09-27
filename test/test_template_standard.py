@@ -57,6 +57,7 @@ from dbml_sharepoint.analysis.role_definition_description import level_descripti
 from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, NOW_SENTINEL
 from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, PLACEHOLDER_TIME_ZONE
+from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import Mapping, SiteGroup
@@ -2696,9 +2697,7 @@ def test_every_family_group_and_level_takes_the_prefix_placeholder(template: str
     stem at load, so the wizard's rewrite of `prefix:` renames the groups
     and levels with the lists. A stem typed in ("RR Risk Managers") would
     survive that rewrite and leave a site with ACME_ lists and RR groups."""
-    import yaml
-
-    raw = yaml.safe_load(
+    raw = _yaml.safe_load(
         (SOLUTION_TEMPLATES / template / "20-configure" / "mapping.yaml")
         .read_text(encoding="utf-8"),
     )

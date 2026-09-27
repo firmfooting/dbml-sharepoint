@@ -2,10 +2,10 @@
 from pathlib import Path
 
 import pytest
-import yaml
 from _packs import write_mapping
 from _paths import FIXTURES
 
+from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.release import load_release, snapshot_hashes
 
 
@@ -135,7 +135,7 @@ def test_a_release_key_written_twice_is_refused(tmp_path: Path) -> None:
         tmp_path, _release_yaml() + '\nschema_version: "1.0.1"', prefix=None, name="release.yaml",
     )
     path = tmp_path / "release.yaml"
-    with pytest.raises(yaml.YAMLError) as err:
+    with pytest.raises(_yaml.PARSE_ERRORS) as err:
         load_release(path)
     assert str(err.value) == (
         "while constructing a mapping\n"

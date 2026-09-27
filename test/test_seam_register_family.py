@@ -17,12 +17,12 @@ from typing import Any
 from urllib.parse import unquote
 
 import pytest
-import yaml
 from _paths import SOLUTION_TEMPLATES
 from test_template_standard import _as_date, _evaluate, _load
 
 from dbml_sharepoint.analysis.condition_rendering import normalise
 from dbml_sharepoint.analysis.conditions import leaves
+from dbml_sharepoint.model import _yaml
 
 FAMILY = SOLUTION_TEMPLATES / "seam-register"
 MAPPING = FAMILY / "20-configure" / "mapping.yaml"
@@ -35,7 +35,7 @@ Offenders = set[tuple[str, str]]
 
 
 def _mapping() -> dict[str, Any]:
-    loaded: dict[str, Any] = yaml.safe_load(MAPPING.read_text(encoding="utf-8"))
+    loaded: dict[str, Any] = _yaml.safe_load(MAPPING.read_text(encoding="utf-8"))
     return loaded
 
 

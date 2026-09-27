@@ -3,7 +3,8 @@
 
 `yaml.safe_load` keeps the last of two identical keys in a mapping and reports
 nothing (#672). `model/_yaml.py` refuses the repeat, and it only protects the
-files that are read with it, so the gate below holds the package to it.
+files that are read with it, so the gate below holds the package and its tests
+to it.
 """
 
 import io
@@ -18,7 +19,7 @@ from dbml_sharepoint.model import _yaml
 
 def _refusal(text: str) -> str:
     """The parser's message for `text`, read as a stream so it carries no snippet."""
-    with pytest.raises(yaml.YAMLError) as err:
+    with pytest.raises(_yaml.PARSE_ERRORS) as err:
         _yaml.safe_load(io.StringIO(text))
     return str(err.value)
 
@@ -148,7 +149,7 @@ def test_a_value_key_loads_as_safe_loader_reads_it() -> None:
 
 @pytest.mark.parametrize("text", ["? [a, b]\n: 1\n", "? {a: 1}\n: 1\n"])
 def test_an_unhashable_key_fails_as_safe_loader_fails(text: str) -> None:
-    with pytest.raises(yaml.YAMLError) as ours:
+    with pytest.raises(_yaml.PARSE_ERRORS) as ours:
         _yaml.safe_load(text)
     with pytest.raises(yaml.YAMLError) as theirs:
         yaml.safe_load(text)
@@ -171,19 +172,19 @@ def test_every_shipped_yaml_file_loads_unchanged() -> None:
         assert _yaml.safe_load(text) == yaml.safe_load(text), path
 
 
-def test_the_package_may_import_pyyaml_only_in_its_parser() -> None:
+def test_pyyaml_may_be_imported_only_by_the_parser_and_its_own_test() -> None:
     """`yaml.safe_load` anywhere else would read a repeated key silently again.
 
     Ruff's banned-api rule refuses every spelling of a PyYAML import; this pins
-    that the rule is on and that `model/_yaml.py` is the one module in `src/`
-    exempt from it.
+    that the rule is on and that only `model/_yaml.py` and this module, which
+    compares the parser with PyYAML, are exempt from it. A test reading YAML
+    through PyYAML would go on testing PyYAML's reading once the parser changes.
     """
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     lint = pyproject["tool"]["ruff"]["lint"]
     assert "TID251" in lint["select"]
     assert "yaml" in lint["flake8-tidy-imports"]["banned-api"]
-    exempt = [
-        pattern for pattern, rules in lint["per-file-ignores"].items()
-        if "TID251" in rules and pattern.startswith("src/")
-    ]
-    assert exempt == ["src/dbml_sharepoint/model/_yaml.py"]
+    exempt = sorted(
+        pattern for pattern, rules in lint["per-file-ignores"].items() if "TID251" in rules
+    )
+    assert exempt == ["src/dbml_sharepoint/model/_yaml.py", "test/test_yaml_loading.py"]

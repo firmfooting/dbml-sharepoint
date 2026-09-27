@@ -28,7 +28,6 @@ from pathlib import Path
 from typing import Any, override
 
 import pytest
-import yaml
 from _console import ScriptedConsole, collapsed
 from _node import NODE
 from _paths import FIXTURES
@@ -91,6 +90,7 @@ from dbml_sharepoint.generators.extractgen import (
     generate_extract_js,
     slug_from_path,
 )
+from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.conditions import parse_condition
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.parser import parse_dbml
@@ -812,7 +812,7 @@ def test_display_names_are_declared_only_when_a_title_differs() -> None:
     assert _entity().display_overrides == {}
 
     plain = _decode(field_xml("Text", StaticName="Owner"))
-    assert "display_names" not in yaml.safe_load(
+    assert "display_names" not in _yaml.safe_load(
         render_mapping(Extraction(entities=[plain])),
     )
 
@@ -820,7 +820,7 @@ def test_display_names_are_declared_only_when_a_title_differs() -> None:
         field_xml("Text", StaticName="RiskOwner", DisplayName="Risk Owner"),
     )
     assert derived.display_overrides == {}
-    assert yaml.safe_load(
+    assert _yaml.safe_load(
         render_mapping(Extraction(entities=[derived])),
     )["display_names"] == {"mode": "auto"}
 
@@ -828,7 +828,7 @@ def test_display_names_are_declared_only_when_a_title_differs() -> None:
         field_xml("Text", StaticName="RiskOwner", DisplayName="Accountable person"),
     )
     assert renamed.display_overrides == {"RiskOwner": "Accountable person"}
-    assert yaml.safe_load(
+    assert _yaml.safe_load(
         render_mapping(Extraction(entities=[renamed])),
     )["display_names"]["overrides"] == {"T": {"RiskOwner": "Accountable person"}}
 

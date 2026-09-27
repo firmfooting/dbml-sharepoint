@@ -10,8 +10,8 @@ offending key.
 """
 
 import pytest
-import yaml
 
+from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model._keys import _known_keys, _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model.errors import MappingShapeError, UnknownMappingKeyError
 
@@ -37,7 +37,7 @@ def test_a_mapping_passes_through_unchanged() -> None:
 def test_a_key_yaml_did_not_read_as_text_is_refused(typed: str, read: str) -> None:
     """Normalising with `str()` cannot give back what was typed: `2.10:`
     came back as "2.1" and `No:` as "False", so the key is refused instead."""
-    block = yaml.safe_load(f"{typed}: =TODAY()\nRisk: {{}}")
+    block = _yaml.safe_load(f"{typed}: =TODAY()\nRisk: {{}}")
     with pytest.raises(MappingShapeError) as err:
         _require_mapping(block, "default_formulas.Risk")
     assert str(err.value) == f"default_formulas.Risk: {read}; quote it"
@@ -46,14 +46,14 @@ def test_a_key_yaml_did_not_read_as_text_is_refused(typed: str, read: str) -> No
 def test_a_number_key_beside_its_quoted_twin_is_refused_rather_than_merged() -> None:
     """`1:` and `"1":` are two keys to YAML, and `str()` folded them into one,
     so one declaration silently replaced the other."""
-    block = yaml.safe_load('1: first\n"1": second')
+    block = _yaml.safe_load('1: first\n"1": second')
     with pytest.raises(MappingShapeError, match=r"key 1 is not text"):
         _require_mapping(block, "field_sets.Risk")
 
 
 def test_a_quoted_key_is_text() -> None:
     """Quoting is the fix the refusal names, so it must be enough."""
-    block = yaml.safe_load('"No": a\n"2.10": b\n"010": c')
+    block = _yaml.safe_load('"No": a\n"2.10": b\n"010": c')
     assert _require_mapping(block, "display_names.overrides.Risk") == {
         "No": "a", "2.10": "b", "010": "c",
     }
