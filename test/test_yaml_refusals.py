@@ -520,6 +520,20 @@ def test_the_writer_keeps_order_width_and_unicode() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "010", "0o10", "08", "1e3", "~", "null", "<<", "=", "2026-01-02", "true", "yes", "1:30",
+        "0x1F",
+    ],
+)
+def test_text_the_writer_writes_reads_back_as_the_same_text(text: str) -> None:
+    """Each reads as another value, a merge or a value key under YAML 1.1 or
+    1.2 when bare. `extract` writes text from a live list, as values and keys."""
+    document = {"v": text, text: 1}
+    assert repr(_yaml.safe_load(_yaml.safe_dump(document))) == repr(document)
+
+
 def test_the_writer_double_quotes_a_string_holding_nel() -> None:
     """Extract writes text read from a live list. The writer single-quoted
     a string holding NEL (U+0085) and broke the line at it, so `a<NEL>b`
