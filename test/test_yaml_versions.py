@@ -498,10 +498,17 @@ def _refusal(text: str) -> str:
     return str(err.value)
 
 
+def _refused(text: str) -> str:
+    """The message for valid YAML `text` the loader refuses, which is its own class."""
+    with pytest.raises(_yaml.RefusedYAMLError) as err:
+        _yaml.safe_load(io.StringIO(text))
+    return str(err.value)
+
+
 def test_a_reused_anchor_is_refused_naming_both() -> None:
     """ruamel.yaml only warns and aliases the second, so a later `*x` would
     silently mean a different node."""
-    assert _refusal("a: &x 1\nb: &x 2\nc: *x\n") == (
+    assert _refused("a: &x 1\nb: &x 2\nc: *x\n") == (
         "found duplicate anchor 'x'; first occurrence\n"
         '  in "<file>", line 1, column 4\n'
         "second occurrence\n"
@@ -520,7 +527,7 @@ def test_a_reused_anchor_is_refused_naming_both() -> None:
 )
 def test_a_sequence_or_mapping_used_as_a_key_is_refused(text: str, kind: str, at: str) -> None:
     """ruamel.yaml reads a sequence key as a tuple where PyYAML refuses it."""
-    assert _refusal(text) == (
+    assert _refused(text) == (
         "while composing a mapping\n"
         '  in "<file>", line 1, column 1\n'
         f"found a {kind} used as a key; a key must be a single value\n"
@@ -548,7 +555,7 @@ def test_an_alias_inside_the_collection_it_names_is_refused(
 ) -> None:
     """PyYAML and ruamel.yaml both read `&x [*x]` as a list that contains
     itself, and any walk of it, an extension's among them, never ends."""
-    assert _refusal(text) == (
+    assert _refused(text) == (
         "while composing the collection anchored 'x'\n"
         f'  in "<file>", {anchor_at}\n'
         "found an alias to the anchor 'x' inside the collection it names\n"
@@ -580,23 +587,75 @@ def test_a_recursive_alias_in_an_extensions_block_is_refused_naming_the_file(
     )
     with pytest.raises(MappingSourceError) as err:
         load_mapping(path)
+    assert type(err.value.__cause__) is _yaml.RefusedYAMLError
     assert str(err.value) == (
-        f"{path.resolve()}: is not valid YAML: while composing the collection anchored 'x'\n"
+        f"{path.resolve()}: is refused: while composing the collection anchored 'x'\n"
         f'  in "{path.resolve()}", line 5, column 10\n'
         "found an alias to the anchor 'x' inside the collection it names\n"
         f'  in "{path.resolve()}", line 5, column 17'
     )
 
 
+#: Valid YAML the loader refuses, written as a top-level key's value at line 4, and its problem.
+_REFUSED = [
+    pytest.param("v: &x 1\nw: &x 2", "found duplicate anchor 'x'; first occurrence", id="anchor"),
+    pytest.param("v: {[a]: 1}", "while composing a mapping", id="collection-key"),
+    pytest.param("v: &x [*x]", "while composing the collection anchored 'x'", id="recursive"),
+    pytest.param("v: " + "[" * 101 + "]" * 101, "found a sequence nested deeper", id="depth"),
+]
+
+
+@pytest.mark.parametrize(("text", "problem"), _REFUSED)
+def test_valid_yaml_the_loader_refuses_is_worded_as_refused_not_invalid(
+    tmp_path: Path, text: str, problem: str,
+) -> None:
+    path = write_mapping(tmp_path, blocks(entities("Risk"), text))
+    with pytest.raises(MappingSourceError) as err:
+        load_mapping(path)
+    assert type(err.value.__cause__) is _yaml.RefusedYAMLError
+    assert str(err.value).startswith(f"{path.resolve()}: is refused: {problem}")
+
+
+@pytest.mark.parametrize(("text", "problem"), _REFUSED)
+def test_valid_yaml_the_loader_refuses_in_release_yaml_is_a_config_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], text: str, problem: str,
+) -> None:
+    release = write_mapping(
+        tmp_path,
+        'release: "1.0.0"\ndate: "2026-01-01"\ndeployer_version: "dbml-sharepoint/0.1.0"\n'
+        f'schema_version: "1.0.0"\n{text}',
+        prefix=None,
+        name="release.yaml",
+    )
+    with pytest.raises(typer.Exit) as exit_:
+        load_config(FIXTURES / "simple.dbml", FIXTURES / "sharepoint-mapping.yaml", release)
+    assert exit_.value.exit_code == 1
+    assert capsys.readouterr().err.startswith(f"[ERROR] release {release}: {problem}")
+
+
+@pytest.mark.parametrize(("text", "problem"), _REFUSED)
+def test_valid_yaml_the_loader_refuses_in_a_journey_is_worded_as_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, problem: str,
+) -> None:
+    journeys = tmp_path / catalogue.JOURNEYS_DIRNAME
+    journeys.mkdir()
+    journey = journeys / "j.md"
+    journey.write_text(f"---\ntitle: J\nsummary: S\n{text}\n---\n", encoding="utf-8")
+    monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
+    with pytest.raises(ValueError) as err:
+        catalogue.available_journeys()
+    assert str(err.value).startswith(f"{journey}: front matter is refused: {problem}")
+
+
 def test_nesting_is_bounded_before_the_interpreter_s_recursion_limit() -> None:
     """A RecursionError is no parse error, so it escaped every handler."""
     assert _yaml.safe_load("[" * 100 + "]" * 100) == _nested(100)
     for depth in (101, 5000):
-        assert _refusal("[" * depth + "]" * depth) == (
+        assert _refused("[" * depth + "]" * depth) == (
             "found a sequence nested deeper than 100 levels\n"
             '  in "<file>", line 1, column 101'
         )
-    assert _refusal("{a: " * 101 + "}" * 101) == (
+    assert _refused("{a: " * 101 + "}" * 101) == (
         "found a mapping nested deeper than 100 levels\n"
         '  in "<file>", line 1, column 401'
     )
@@ -682,6 +741,7 @@ def test_a_template_a_parse_refuses_is_skipped_by_the_picker(
         ("good", f"{DEFAULT_PREFIX}\nentities:\n  Thing: {{}}\n"),
         ("read-differently", f"{DEFAULT_PREFIX}\nentities:\n  Thing: {{}}\nlocked: yes\n"),
         ("unconstructable", f"{DEFAULT_PREFIX}\nentities:\n  Thing: {{}}\nwhen: 2026-02-30\n"),
+        ("refused", f"{DEFAULT_PREFIX}\nentities:\n  Thing: {{}}\nloop: &x [*x]\n"),
     ):
         (tmp_path / name / "10-design").mkdir(parents=True)
         (tmp_path / name / "10-design" / "schema.dbml").write_text("", encoding="utf-8")
@@ -693,4 +753,5 @@ def test_a_template_a_parse_refuses_is_skipped_by_the_picker(
     found = {s.id: (s.prefix, s.lists) for s in catalogue.available_solutions()}
     assert found == {
         "good": ("APP_", ("Thing",)), "read-differently": ("", ()), "unconstructable": ("", ()),
+        "refused": ("", ()),
     }

@@ -94,7 +94,10 @@ an author can act on.
 A key written twice in one mapping is a parse failure too, refused by
 `_yaml.safe_load` where `yaml.safe_load` kept the last and said nothing.
 So is a value YAML 1.1 and 1.2 read differently, such as `yes` or `010`.
-That file is valid YAML, so its refusal names the spellings instead.
+That file is valid YAML, so its refusal names the spellings instead. A
+reused anchor, a collection used as a key, an alias inside its own
+collection and nesting past a hundred levels are valid YAML as well, and
+their refusal says the file is refused rather than invalid.
 
 Decoding is the third way, and it is the one that hides: the bytes turn
 into text inside the parser, so a file that is not UTF-8 raises

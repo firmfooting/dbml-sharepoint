@@ -372,6 +372,8 @@ def _front_matter(text: str, path: Path) -> dict[str, Any]:
         loaded = _yaml.safe_load("\n".join(["", *lines[1:end]])) or {}
     except _yaml.AmbiguousYAMLError as exc:
         raise ValueError(f"{path}: front matter {exc}") from exc
+    except _yaml.RefusedYAMLError as exc:
+        raise ValueError(f"{path}: front matter is refused: {exc}") from exc
     except _yaml.PARSE_ERRORS as exc:
         raise ValueError(f"{path}: front matter is not valid YAML: {exc}") from exc
     if not isinstance(loaded, dict):

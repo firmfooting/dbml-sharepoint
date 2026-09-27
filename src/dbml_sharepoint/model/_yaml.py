@@ -358,6 +358,17 @@ class AmbiguousYAMLError(yaml.YAMLError):
         ])
 
 
+class RefusedYAMLError(ComposerError):
+    """Valid YAML the loader refuses as it composes the document.
+
+    A reused anchor, a sequence or mapping used as a key, an alias inside
+    the collection its anchor names, and nesting deeper than `_MAX_DEPTH`.
+    The YAML spec allows each; the loader refuses them because the two
+    libraries read them differently or a reader of the result cannot finish.
+    `str()` is the marked message, so a caller can prefix the file's path.
+    """
+
+
 class UniqueKeyLoader(yaml.SafeLoader):
     """`yaml.SafeLoader`, refusing a repeated key and what YAML 1.2 reads differently.
 
@@ -377,8 +388,8 @@ class UniqueKeyLoader(yaml.SafeLoader):
     a node cannot say whether its tag was written or resolved. It refuses a
     resolved scalar the two versions read differently, every explicit tag but
     `!!str` on a scalar, and a `%YAML` or `%TAG` directive, and collects them
-    all before one `AmbiguousYAMLError`. A sequence or mapping used as a key
-    is refused as it is found, and so is an alias inside the collection its
+    all before one `AmbiguousYAMLError`. What `RefusedYAMLError` names is
+    refused as it is found, among it an alias inside the collection its
     anchor names, which PyYAML reads as a collection that contains itself.
     """
 
@@ -432,11 +443,17 @@ class UniqueKeyLoader(yaml.SafeLoader):
         event: Event = self.peek_event()
         if isinstance(event, AliasEvent) and event.anchor in self._enclosing:
             # PyYAML would hand back the open collection, which would then contain itself.
-            raise ComposerError(
+            raise RefusedYAMLError(
                 f"while composing the collection anchored {event.anchor!r}",
                 self._enclosing[event.anchor],
                 f"found an alias to the anchor {event.anchor!r} inside the collection it names",
                 event.start_mark,
+            )
+        if isinstance(event, ScalarEvent | CollectionStartEvent) and event.anchor in self.anchors:
+            # PyYAML's own refusal and words, raised first so it is this loader's class.
+            raise RefusedYAMLError(
+                f"found duplicate anchor {event.anchor!r}; first occurrence",
+                self.anchors[event.anchor].start_mark, "second occurrence", event.start_mark,
             )
         return super().compose_node(parent, index)
 
@@ -447,7 +464,7 @@ class UniqueKeyLoader(yaml.SafeLoader):
         """
         event: CollectionStartEvent = self.peek_event()
         if self._depth == _MAX_DEPTH:
-            raise ComposerError(
+            raise RefusedYAMLError(
                 None, None, f"found a {kind} nested deeper than {_MAX_DEPTH} levels",
                 event.start_mark,
             )
@@ -483,7 +500,7 @@ class UniqueKeyLoader(yaml.SafeLoader):
             # ruamel.yaml reads a sequence key as a tuple, where PyYAML refuses it.
             if not isinstance(key_node, ScalarNode):
                 kind = "sequence" if isinstance(key_node, SequenceNode) else "mapping"
-                raise ComposerError(
+                raise RefusedYAMLError(
                     "while composing a mapping", node.start_mark,
                     f"found a {kind} used as a key; a key must be a single value",
                     key_node.start_mark,

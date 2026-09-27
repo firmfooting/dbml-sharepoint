@@ -1528,6 +1528,24 @@ def test_a_template_mapping_the_version_guard_refuses_is_a_wizard_refusal(tmp_pa
     )
 
 
+def test_a_template_mapping_the_loader_refuses_as_valid_yaml_is_a_wizard_refusal(
+    tmp_path: Path,
+) -> None:
+    """A recursive alias is valid YAML the loader refuses, and `_read_facts`
+    still names the template for it."""
+    solution = _fake_family(tmp_path / "fake", _ONE_ENTITY + "notes: &x [*x]\n")
+    with pytest.raises(wizard.WizardError) as err:
+        wizard._read_facts(solution)
+    path = solution.mapping_path.resolve()
+    assert str(err.value) == (
+        "the fake-template template's mapping could not be loaded: "
+        f"{path}: is refused: while composing the collection anchored 'x'\n"
+        f'  in "{path}", line 4, column 8\n'
+        "found an alias to the anchor 'x' inside the collection it names\n"
+        f'  in "{path}", line 4, column 12'
+    )
+
+
 def test_a_previous_prefixes_line_the_version_guard_refuses_is_a_wizard_refusal(
     tmp_path: Path,
 ) -> None:
