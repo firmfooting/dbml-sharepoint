@@ -999,11 +999,23 @@ def _folder_policy_body(
     return validate_against_mapping(schema, bundle)
 
 
-def test_an_exact_folder_policy_granting_nothing_warns_once(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "default",
+    [
+        pytest.param(_EXACT_LIST, id="exact-list"),
+        # The folder prunes whatever its list does, unlike `folder_policy_manages_nothing`.
+        pytest.param(_CONFIGURED_LIST, id="configured-list"),
+        pytest.param(None, id="no-list-policy"),
+    ],
+)
+def test_an_exact_folder_policy_granting_nothing_warns_once(
+    tmp_path: Path, default: str | None,
+) -> None:
     """One declared block over two folders is one warning, not one per folder."""
     f = only(
         _folder_policy_body(
             tmp_path, "{break_inheritance: true, reconcile: exact, assignments: []}",
+            default=default,
         ),
         FindingCode.EXACT_POLICY_GRANTS_NOTHING,
     )
