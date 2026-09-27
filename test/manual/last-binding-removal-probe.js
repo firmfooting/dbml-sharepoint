@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: REMOVING THE LAST ROLE ASSIGNMENT ON A LIST ----
  *
- * REVISION: 78f41d72
+ * REVISION: ad331e23
  *
  * THE REQUEST UNDER TEST (issue #667). A `list_permissions` policy with
  * `reconcile: exact` and no assignments makes Phase 4.2 in
@@ -39,9 +39,11 @@
  *     What removeroleassignment answers for that binding, status and body.
  *   access.list-acl.after-last-binding-readback
  *     The GETs Phase 4.2 makes after its last removal, in its order, with its
- *     $select, its verbose Accept and its no-store: the list shape read, then
- *     the role-assignment enumeration up to five times 2000 ms apart, then
- *     the shape read again. Each answer, and what the deploy would conclude.
+ *     $select, its verbose Accept and its no-store: the list shape read that
+ *     closes the removal's bracket, the one that opens settleBindings', the
+ *     role-assignment enumeration up to five times 2000 ms apart, and the
+ *     shape read that closes settleBindings'. Each answer, and what the
+ *     deploy would conclude.
  *   access.list-acl.after-last-binding-enumeration
  *     Five enumerations over 8000 ms, every page, each row with its
  *     principal type and level, because this enumeration was measured to
@@ -467,7 +469,7 @@
     record(id, question, row.outcome, row.evidence, row.state);
   };
 
-  log('INFO', 'probe revision 78f41d72. Quote this when reporting results.');
+  log('INFO', 'probe revision ad331e23. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe LastBinding';
   const OWNERSHIP = 'dbml-sharepoint last-binding-removal probe list. Safe to delete.';
