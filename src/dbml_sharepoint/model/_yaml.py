@@ -28,6 +28,8 @@ class UniqueKeyLoader(yaml.SafeLoader):
     A key written beside a merge (`<<: *anchor`) is not a repeat. It overrides
     the merged key, as the merge-key spec documents, and the shipped
     programme-governance mapping widens one column of a merged view that way.
+    A second `<<` in one mapping is a repeat, and PyYAML settles a clash
+    between two of them the opposite way to the list form `<<: [*a, *b]`.
 
     The check runs in `flatten_mapping`, the first place a mapping's pairs are
     rewritten. A mapping used as a merge source is flattened into its user
@@ -48,6 +50,10 @@ class UniqueKeyLoader(yaml.SafeLoader):
             return
         self._checked.add(node)
         pairs: list[tuple[Node, Node]] = node.value
+        merges = [key_node for key_node, _ in pairs if key_node.tag == _MERGE_TAG]
+        if len(merges) > 1:
+            # A merge key has no constructor, so it is named by its spelling.
+            raise _repeat(node, "<<", merges[0], merges[1])
         written = [key_node for key_node, _ in pairs if key_node.tag != _MERGE_TAG]
         # After the flatten, which retags a `=` key as text; constructing it before fails.
         super().flatten_mapping(node)
@@ -55,20 +61,26 @@ class UniqueKeyLoader(yaml.SafeLoader):
 
     def _refuse_repeats(self, node: MappingNode, written: list[Node]) -> None:
         """Raise on the second of two keys in `written` that construct equal."""
-        first_line: dict[Hashable, int] = {}
+        first: dict[Hashable, Node] = {}
         for key_node in written:
             key: object = self.construct_object(key_node)
             # SafeLoader's own "found unhashable key" follows in construct_mapping.
             if not isinstance(key, Hashable):
                 continue
-            if key in first_line:
-                raise ConstructorError(
-                    "while constructing a mapping", node.start_mark,
-                    f"found duplicate key {key!r} (first at line {first_line[key]})",
-                    key_node.start_mark,
-                )
-            # Marks count from zero; the line printed under the error counts from one.
-            first_line[key] = key_node.start_mark.line + 1
+            if key in first:
+                raise _repeat(node, key, first[key], key_node)
+            first[key] = key_node
+
+
+def _repeat(node: MappingNode, key: object, first: Node, second: Node) -> ConstructorError:
+    """The refusal of `second`, a key of `node` that reads as `key` as `first` did."""
+    # Marks count from zero; the line printed under the error counts from one.
+    first_line = first.start_mark.line + 1
+    return ConstructorError(
+        "while constructing a mapping", node.start_mark,
+        f"found duplicate key {key!r} (first at line {first_line})",
+        second.start_mark,
+    )
 
 
 def safe_load(stream: str | IO[str]) -> Any:

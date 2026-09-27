@@ -73,6 +73,27 @@ def test_a_key_beside_a_merge_overrides_it() -> None:
     assert merged["use"] == {"x": 2, "y": 3}
 
 
+def test_a_second_merge_key_in_one_mapping_is_refused() -> None:
+    """Two `<<` keys are a repeat under the spec, and PyYAML settles their
+    clash the opposite way to the list form, so neither reading is safe."""
+    two_keys = "a: &a {x: 1}\nb: &b {x: 2}\nuse:\n  <<: *a\n  <<: *b\n"
+    listed = "a: &a {x: 1}\nb: &b {x: 2}\nuse:\n  <<: [*a, *b]\n"
+    assert yaml.safe_load(two_keys)["use"] == {"x": 2}
+    assert yaml.safe_load(listed)["use"] == _yaml.safe_load(listed)["use"] == {"x": 1}
+    assert _refusal(two_keys) == (
+        "while constructing a mapping\n"
+        '  in "<file>", line 4, column 3\n'
+        "found duplicate key '<<' (first at line 4)\n"
+        '  in "<file>", line 5, column 3'
+    )
+
+
+def test_a_quoted_merge_spelling_is_a_text_key_not_a_second_merge() -> None:
+    text = 'a: &a {x: 1}\nuse: {<<: *a, "<<": 2}\n'
+    assert _yaml.safe_load(text) == yaml.safe_load(text)
+    assert _yaml.safe_load(text)["use"] == {"x": 1, "<<": 2}
+
+
 def test_a_repeat_inside_a_merge_source_is_refused() -> None:
     """The source is flattened into its user and never constructed alone, so
     a check in `construct_mapping` would not see it."""
