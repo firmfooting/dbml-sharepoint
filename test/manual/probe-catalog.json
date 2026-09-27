@@ -11817,15 +11817,16 @@
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
-        "one scratch list, its broken role inheritance, the removal of the one role assignment the break leaves (this account's own), and the DELETE by Id that ends the run"
+        "one scratch list, its broken role inheritance, the removal of every direct binding the break leaves except 'Limited Access', in the order the deploy's exact prune removes them (this account's own among them), and the DELETE by Id that ends the run"
       ],
       "cleanup": {
         "policy": "after"
       },
       "prerequisites": [
-        "site collection administrator, checked rather than trusted: when web/currentuser does not report IsSiteAdmin=true nothing is written and every question is recorded NOT REACHED",
-        "a disposable site, because a refused closing DELETE leaves a list with no role assignments at all",
-        "the scratch title must be free, or hold only a list this probe left behind, which CLEANUP recycles by its Id; a same-title list without the ownership marker, and a title whose occupancy cannot be read, are both refused before anything is written"
+        "site collection administrator, checked rather than trusted: when web/currentuser reports IsSiteAdmin=false nothing is written and every question is recorded NOT REACHED (void); when web/currentuser cannot be read, or answers without a usable Id and IsSiteAdmin, nothing is written and every question is recorded NOT ESTABLISHED (open)",
+        "this is the site collection administrator half of #667: it answers whether SharePoint accepts the removal of a list's last direct binding and what the scope then reports, and it tests Learn's prediction that an administrator keeps access; what an owner who is not an administrator can still reach is not measured here",
+        "a disposable site, because a refused closing DELETE leaves a list with no direct role assignments at all; the run then prints a line that deletes it by its Id",
+        "the scratch title must be free, or hold only a list this probe left behind, which CLEANUP deletes by its Id; a same-title list without the ownership marker, one with the marker but no usable Id, and a title whose occupancy cannot be read are all refused before anything is written"
       ],
       "scenarios": [
         {
@@ -11844,7 +11845,7 @@
               ]
             },
             {
-              "id": "access.list-acl.fixture-last-binding-sole-operator",
+              "id": "access.list-acl.fixture-last-binding-direct",
               "depends_on": [
                 "access.list-acl.fixture-last-binding-list",
                 "access.list-acl.fixture-last-binding-break"
@@ -11855,7 +11856,7 @@
               "depends_on": [
                 "access.list-acl.fixture-last-binding-list",
                 "access.list-acl.fixture-last-binding-break",
-                "access.list-acl.fixture-last-binding-sole-operator"
+                "access.list-acl.fixture-last-binding-direct"
               ]
             },
             {
@@ -11863,7 +11864,7 @@
               "depends_on": [
                 "access.list-acl.fixture-last-binding-list",
                 "access.list-acl.fixture-last-binding-break",
-                "access.list-acl.fixture-last-binding-sole-operator"
+                "access.list-acl.fixture-last-binding-direct"
               ]
             },
             {
@@ -11871,7 +11872,7 @@
               "depends_on": [
                 "access.list-acl.fixture-last-binding-list",
                 "access.list-acl.fixture-last-binding-break",
-                "access.list-acl.fixture-last-binding-sole-operator"
+                "access.list-acl.fixture-last-binding-direct"
               ]
             },
             {
@@ -11879,7 +11880,7 @@
               "depends_on": [
                 "access.list-acl.fixture-last-binding-list",
                 "access.list-acl.fixture-last-binding-break",
-                "access.list-acl.fixture-last-binding-sole-operator"
+                "access.list-acl.fixture-last-binding-direct"
               ]
             },
             {
@@ -11887,7 +11888,7 @@
               "depends_on": [
                 "access.list-acl.fixture-last-binding-list",
                 "access.list-acl.fixture-last-binding-break",
-                "access.list-acl.fixture-last-binding-sole-operator"
+                "access.list-acl.fixture-last-binding-direct"
               ]
             }
           ],
@@ -11895,7 +11896,7 @@
           "controls": [
             "access.list-acl.fixture-last-binding-list",
             "access.list-acl.fixture-last-binding-break",
-            "access.list-acl.fixture-last-binding-sole-operator"
+            "access.list-acl.fixture-last-binding-direct"
           ],
           "depends_on": []
         }
