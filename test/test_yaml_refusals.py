@@ -409,6 +409,28 @@ def _nested(depth: int) -> list[object]:
     return value
 
 
+def _chain(links: int) -> str:
+    """Anchors `a0` to `a<links>`, each a sequence holding an alias to the one before."""
+    return "a0: &a0 []\n" + "".join(f"a{n}: &a{n} [*a{n - 1}]\n" for n in range(1, links + 1))
+
+
+def test_nesting_is_bounded_through_an_alias() -> None:
+    """The value built holds what an anchor names wherever its alias stands,
+    so a chain of short aliases nested as deep as it was long. The
+    collection named is the one that would stand at level 101."""
+    assert _yaml.safe_load(_chain(98))["a98"] == _nested(99)
+    for links in (99, 3000):
+        assert _refused(_chain(links)) == (
+            "found a sequence nested deeper than 100 levels\n"
+            '  in "<file>", line 100, column 12'
+        )
+    assert _yaml.safe_load("x: &x {k: 1}\ny: " + "[" * 98 + "*x" + "]" * 98)["x"] == {"k": 1}
+    assert _refused("x: &x {k: 1}\ny: " + "[" * 99 + "*x" + "]" * 99) == (
+        "found a mapping nested deeper than 100 levels\n"
+        '  in "<file>", line 2, column 103'
+    )
+
+
 @pytest.mark.parametrize(
     ("text", "problem", "at"),
     [

@@ -41,7 +41,7 @@ Some valid YAML is refused, naming its line:
 - a sequence or mapping used as a key;
 - an alias inside the collection its anchor names, which would make that
   collection contain itself;
-- nesting deeper than 100 levels.
+- nesting deeper than 100 levels, counting the levels an alias stands for.
 
 A value the parser cannot construct, such as the date `2026-02-30`, is a
 load error naming its line too. The same rules apply to every YAML file the

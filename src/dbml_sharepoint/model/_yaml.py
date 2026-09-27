@@ -104,10 +104,11 @@ class RefusedYAMLError(ComposerError):
     """Valid YAML the loader refuses as it composes the document.
 
     A reused anchor, a sequence or mapping used as a key, an alias inside
-    the collection its anchor names, and nesting deeper than `_MAX_DEPTH`.
-    The YAML spec allows each; the loader refuses them because ruamel.yaml
-    would build a value no reader here expects or can finish walking. `str()`
-    is the marked message, so a caller can prefix the file's path.
+    the collection its anchor names, and nesting deeper than `_MAX_DEPTH`,
+    counted through aliases. The YAML spec allows each; the loader refuses
+    them because ruamel.yaml would build a value no reader here expects or
+    can finish walking. `str()` is the marked message, so a caller can
+    prefix the file's path.
     """
 
 
@@ -177,7 +178,9 @@ class _Composer(Composer):
     collects them with the scanner's refused directives before one
     `TagOrDirectiveError`. What `RefusedYAMLError` names is refused as it is
     found, among it an alias inside the collection its anchor names, which
-    ruamel.yaml would read as a collection that contains itself.
+    ruamel.yaml would read as a collection that contains itself. The depth
+    bound counts through an alias, since the value built holds what the
+    anchor names wherever the alias stands.
     """
 
     def __init__(self, loader: Any = None) -> None:
@@ -185,6 +188,8 @@ class _Composer(Composer):
         self._depth = 0
         # The anchor of each collection still being composed, and where it starts.
         self._enclosing: dict[str, StreamMark] = {}
+        # How many levels each composed collection nests, itself included.
+        self._height: dict[Node, int] = {}
 
     def _refuse_tag(self, tag: str, mark: StreamMark, *, scalar: bool) -> None:
         """Record an explicit `tag`, which would read its value by rules of its own."""
@@ -226,7 +231,21 @@ class _Composer(Composer):
                 f"found duplicate anchor {event.anchor!r}; first occurrence",
                 first.start_mark, "second occurrence", event.start_mark,
             )
+        if isinstance(event, AliasEvent) and event.anchor in self.anchors:
+            self._refuse_deep_alias(self.anchors[event.anchor], event.start_mark)
         return super().compose_node(parent, index)
+
+    def _refuse_deep_alias(self, aliased: Node, mark: StreamMark) -> None:
+        """Refuse an alias whose collection, standing where the alias does, nests past the limit."""
+        room = _MAX_DEPTH - self._depth
+        if self._height.get(aliased, 0) <= room:
+            return
+        # Down the deepest branch to the collection that would stand one level past the limit.
+        for _ in range(room):
+            aliased = max(_children(aliased), key=lambda child: self._height.get(child, 0))
+        raise RefusedYAMLError(
+            None, None, f"found a {_kind(aliased)} nested deeper than {_MAX_DEPTH} levels", mark,
+        )
 
     def _open(self, kind: str) -> str | None:
         """Enter a sequence or mapping, refusing an explicit tag and nesting past the limit.
@@ -248,35 +267,50 @@ class _Composer(Composer):
             self._enclosing[anchor] = event.start_mark
         return anchor
 
-    def _close(self, anchor: str | None) -> None:
-        """Leave the sequence or mapping `_open` entered."""
+    def _close(self, anchor: str | None, node: Node) -> None:
+        """Leave the sequence or mapping `_open` entered, `node`, recording its height."""
         self._depth -= 1
         if anchor is not None:
             del self._enclosing[anchor]
+        heights = (self._height.get(child, 0) for child in _children(node))
+        self._height[node] = 1 + max(heights, default=0)
 
     @override
     def compose_sequence_node(self, anchor: Any) -> SequenceNode:
         name = self._open("sequence")
         node: SequenceNode = super().compose_sequence_node(anchor)
-        self._close(name)
+        self._close(name, node)
         return node
 
     @override
     def compose_mapping_node(self, anchor: Any) -> MappingNode:
         name = self._open("mapping")
         node: MappingNode = super().compose_mapping_node(anchor)
-        self._close(name)
+        self._close(name, node)
         pairs: list[tuple[Node, Node]] = node.value
         for key_node, _ in pairs:
             # ruamel.yaml reads a sequence key as a tuple, where PyYAML refused it.
             if not isinstance(key_node, ScalarNode):
-                kind = "sequence" if isinstance(key_node, SequenceNode) else "mapping"
                 raise RefusedYAMLError(
                     "while composing a mapping", node.start_mark,
-                    f"found a {kind} used as a key; a key must be a single value",
+                    f"found a {_kind(key_node)} used as a key; a key must be a single value",
                     key_node.start_mark,
                 )
         return node
+
+
+def _children(node: Node) -> list[Node]:
+    """The nodes a sequence or mapping holds, a mapping's keys among them."""
+    if isinstance(node, MappingNode):
+        pairs: list[tuple[Node, Node]] = node.value
+        return [part for pair in pairs for part in pair]
+    items: list[Node] = node.value
+    return items
+
+
+def _kind(node: Node) -> str:
+    """What an author calls a collection `node`."""
+    return "sequence" if isinstance(node, SequenceNode) else "mapping"
 
 
 class UniqueKeyConstructor(SafeConstructor):
