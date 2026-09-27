@@ -39,7 +39,9 @@ Write `true` or `false` for a boolean, a plain decimal for a number, and quote
 anything meant as text. A timestamp whose seventh fraction digit is 5 or more
 is refused too, because PyYAML drops the digits past the sixth and ruamel.yaml
 rounds the sixth up, and so are an explicit tag other than `!!str`, a `%YAML` or
-`%TAG` directive, and a sequence or mapping used as a key. ruamel.yaml reads
+`%TAG` directive, a sequence or mapping used as a key, and an alias inside the
+collection its anchor names, which would make that collection contain itself.
+ruamel.yaml reads
 `1_000` and `0b101` as numbers, as YAML 1.1 does, where the YAML 1.2 core
 schema reads them as text, so those load. The same rule applies to every
 YAML file the mapping names and to `release.yaml`.

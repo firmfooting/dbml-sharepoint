@@ -31,7 +31,7 @@ import yaml
 from yaml.composer import ComposerError
 from yaml.constructor import ConstructorError
 from yaml.error import Mark
-from yaml.events import CollectionStartEvent, ScalarEvent
+from yaml.events import AliasEvent, CollectionStartEvent, Event, ScalarEvent
 from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 from yaml.tokens import DirectiveToken
 
@@ -378,13 +378,16 @@ class UniqueKeyLoader(yaml.SafeLoader):
     resolved scalar the two versions read differently, every explicit tag but
     `!!str` on a scalar, and a `%YAML` or `%TAG` directive, and collects them
     all before one `AmbiguousYAMLError`. A sequence or mapping used as a key
-    is refused as it is found.
+    is refused as it is found, and so is an alias inside the collection its
+    anchor names, which PyYAML reads as a collection that contains itself.
     """
 
     def __init__(self, stream: str | IO[str]) -> None:
         # Set before the scanner starts, which may read a directive.
         self._found: list[tuple[Mark, str]] = []
         self._depth = 0
+        # The anchor of each collection still being composed, and where it starts.
+        self._enclosing: dict[str, Mark] = {}
         super().__init__(stream)
         # A mapping is checked once: flattening rewrites its pairs in place.
         self._checked: set[MappingNode] = set()
@@ -424,8 +427,24 @@ class UniqueKeyLoader(yaml.SafeLoader):
             self._refuse_tag(tag, event.start_mark, scalar=True)
         return super().compose_scalar_node(anchor)
 
-    def _open(self, kind: str) -> None:
-        """Enter a sequence or mapping, refusing an explicit tag and nesting past the limit."""
+    @override
+    def compose_node(self, parent: Node | None, index: int) -> Node | None:
+        event: Event = self.peek_event()
+        if isinstance(event, AliasEvent) and event.anchor in self._enclosing:
+            # PyYAML would hand back the open collection, which would then contain itself.
+            raise ComposerError(
+                f"while composing the collection anchored {event.anchor!r}",
+                self._enclosing[event.anchor],
+                f"found an alias to the anchor {event.anchor!r} inside the collection it names",
+                event.start_mark,
+            )
+        return super().compose_node(parent, index)
+
+    def _open(self, kind: str) -> str | None:
+        """Enter a sequence or mapping, refusing an explicit tag and nesting past the limit.
+
+        Returns its anchor, which no alias inside it may name.
+        """
         event: CollectionStartEvent = self.peek_event()
         if self._depth == _MAX_DEPTH:
             raise ComposerError(
@@ -436,19 +455,29 @@ class UniqueKeyLoader(yaml.SafeLoader):
         tag = _written_tag(event.tag)
         if tag is not None:
             self._refuse_tag(tag, event.start_mark, scalar=False)
+        anchor: str | None = event.anchor
+        if anchor is not None:
+            self._enclosing[anchor] = event.start_mark
+        return anchor
+
+    def _close(self, anchor: str | None) -> None:
+        """Leave the sequence or mapping `_open` entered."""
+        self._depth -= 1
+        if anchor is not None:
+            del self._enclosing[anchor]
 
     @override
     def compose_sequence_node(self, anchor: dict[Any, Node]) -> SequenceNode:
-        self._open("sequence")
+        name = self._open("sequence")
         node = super().compose_sequence_node(anchor)
-        self._depth -= 1
+        self._close(name)
         return node
 
     @override
     def compose_mapping_node(self, anchor: dict[Any, Node]) -> MappingNode:
-        self._open("mapping")
+        name = self._open("mapping")
         node = super().compose_mapping_node(anchor)
-        self._depth -= 1
+        self._close(name)
         pairs: list[tuple[Node, Node]] = node.value
         for key_node, _ in pairs:
             # ruamel.yaml reads a sequence key as a tuple, where PyYAML refuses it.

@@ -528,6 +528,66 @@ def test_a_sequence_or_mapping_used_as_a_key_is_refused(text: str, kind: str, at
     )
 
 
+@pytest.mark.parametrize(
+    ("text", "anchor_at", "alias_at"),
+    [
+        pytest.param("a: &x [*x]\n", "line 1, column 4", "line 1, column 8", id="sequence"),
+        pytest.param("a: &x {k: *x}\n", "line 1, column 4", "line 1, column 11", id="mapping"),
+        pytest.param(
+            "a: &x [1, [2, *x]]\n", "line 1, column 4", "line 1, column 15", id="nested-sequence",
+        ),
+        pytest.param(
+            "a: &x\n  k:\n    j: *x\n", "line 1, column 4", "line 3, column 8", id="nested-mapping",
+        ),
+        pytest.param("a: &x {b: 1, <<: *x}\n", "line 1, column 4", "line 1, column 18", id="merge"),
+        pytest.param("&x [*x]\n", "line 1, column 1", "line 1, column 5", id="document"),
+    ],
+)
+def test_an_alias_inside_the_collection_it_names_is_refused(
+    text: str, anchor_at: str, alias_at: str,
+) -> None:
+    """PyYAML and ruamel.yaml both read `&x [*x]` as a list that contains
+    itself, and any walk of it, an extension's among them, never ends."""
+    assert _refusal(text) == (
+        "while composing the collection anchored 'x'\n"
+        f'  in "<file>", {anchor_at}\n'
+        "found an alias to the anchor 'x' inside the collection it names\n"
+        f'  in "<file>", {alias_at}'
+    )
+
+
+@pytest.mark.parametrize(
+    ("text", "value"),
+    [
+        ("a: &x [1]\nb: *x\n", {"a": [1], "b": [1]}),
+        ("a: &x [1]\nb: [*x, *x]\n", {"a": [1], "b": [[1], [1]]}),
+        ("a: {x: &x [1], y: *x}\n", {"a": {"x": [1], "y": [1]}}),
+        ("a: &x {k: 1}\nb: {<<: *x, j: 2}\n", {"a": {"k": 1}, "b": {"k": 1, "j": 2}}),
+    ],
+)
+def test_an_alias_to_a_collection_already_composed_loads(
+    text: str, value: dict[str, object],
+) -> None:
+    assert _yaml.safe_load(text) == value
+
+
+def test_a_recursive_alias_in_an_extensions_block_is_refused_naming_the_file(
+    tmp_path: Path,
+) -> None:
+    """The block reached its extension untouched, which then recursed without end."""
+    path = write_mapping(
+        tmp_path, blocks(entities("Risk"), "extensions:\n  audit: &x {k: *x}"),
+    )
+    with pytest.raises(MappingSourceError) as err:
+        load_mapping(path)
+    assert str(err.value) == (
+        f"{path.resolve()}: is not valid YAML: while composing the collection anchored 'x'\n"
+        f'  in "{path.resolve()}", line 5, column 10\n'
+        "found an alias to the anchor 'x' inside the collection it names\n"
+        f'  in "{path.resolve()}", line 5, column 17'
+    )
+
+
 def test_nesting_is_bounded_before_the_interpreter_s_recursion_limit() -> None:
     """A RecursionError is no parse error, so it escaped every handler."""
     assert _yaml.safe_load("[" * 100 + "]" * 100) == _nested(100)
