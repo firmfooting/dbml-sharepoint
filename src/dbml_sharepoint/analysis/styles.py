@@ -24,23 +24,9 @@ from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.formatter_values import ScalarValue, hide_blank, quoted, text_value
 from dbml_sharepoint.analysis.typemap import DATE_TYPES, NUMBER_TYPES
 
-# The unknown-key guard, imported rather than reimplemented.
-#
-# A style spec used to ignore everything it did not recognise, and every miss
-# was silent and wrong in the direction that reads as fine: a typo'd `guard:`
-# renders finished rows as overdue, and `calculated: true` -- documented as
-# required on a calculated column -- changed nothing at all when misspelled,
-# so the values kept their `string;#` prefix and matched no map key.
-#
-# The fix at the time was a SECOND COPY of `model/_keys._reject_unknown_keys`,
-# emitting byte-identical text (`_fail` composes `"{context}: {message}"`,
-# which is exactly what the original produced) while omitting its `isinstance`
-# guard. Same rule, same kind of block, so it is now the same function -- and
-# style specs pick up the mapping check they were missing.
-#
-# `model/` stays the home even though this is `analysis/`: `_keys.py` imports
-# nothing but `typing`, so there is no cycle, and every other caller of the
-# guard is a parser under `model/`.
+# The loader's own key guards, shared rather than copied: a second copy once dropped the
+# mapping check, so a misspelled `guard:` or `calculated:` loaded and changed nothing.
+# `model/_keys.py` imports only `datetime` and `model.errors`, so there is no cycle.
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _text_key
 
 # Same route as the guard above, and the same reason: `_formatting.read`
@@ -330,7 +316,7 @@ def _data_bar(
         source_calculated = _bool(
             color_by, "calculated", f"{context}.color_by", default=False,
         )
-        tokens = {v: _resolve(t, context, theme) for v, t in value_map.items()}
+        tokens = {v: _resolve(t, f"{context}.color_by", theme) for v, t in value_map.items()}
         fallback = _resolve("muted", context, theme)
         ref = f"[${field_name}]"
         pairs = [

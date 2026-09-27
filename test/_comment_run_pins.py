@@ -187,7 +187,6 @@ PINNED: dict[str, list[str]] = {
         "9f6112ac0ff4",
     ],
     "src/dbml_sharepoint/analysis/styles.py": [
-        "782ba4168007",
         "b3935b6d6e3f",
     ],
     "src/dbml_sharepoint/analysis/typemap.py": [

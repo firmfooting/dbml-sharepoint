@@ -18,7 +18,11 @@ from dbml_sharepoint.analysis.styles import (
     expand_style,
     parse_theme,
 )
-from dbml_sharepoint.model.errors import MappingShapeError, UnknownMappingKeyError
+from dbml_sharepoint.model.errors import (
+    MappingShapeError,
+    MappingValueError,
+    UnknownMappingKeyError,
+)
 
 
 def test_tokens_are_the_documented_severity_set() -> None:
@@ -244,6 +248,16 @@ def test_a_color_by_map_refusal_names_color_by(
             {"style": "data-bar", "max": 25, "color_by": color_by}, "column_formatting.T.C",
         )
     assert str(err.value) == f"column_formatting.T.C.color_by: {message}"
+
+
+def test_an_unknown_color_by_token_names_color_by() -> None:
+    """A word outside the theme is a fault in the nested map, like its shape."""
+    with pytest.raises(MappingValueError) as err:
+        expand_style(
+            {"style": "data-bar", "max": 25, "color_by": {"field": "R", "map": {"A": "nope"}}},
+            "column_formatting.T.C",
+        )
+    assert str(err.value).startswith("column_formatting.T.C.color_by: unknown token 'nope'")
 
 
 def _with_map(style: str, value_map: dict[object, object]) -> dict[str, Any]:
