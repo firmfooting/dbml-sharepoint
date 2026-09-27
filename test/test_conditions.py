@@ -34,6 +34,7 @@ from dbml_sharepoint.analysis.conditions import (
     measure_tree,
 )
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
+from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf, parse_condition
 from dbml_sharepoint.model.errors import MappingShapeError, UnknownMappingKeyError
 
@@ -702,8 +703,8 @@ def test_an_unquoted_yaml_datetime_is_refused_and_says_to_quote_it() -> None:
     run. Quoting it gives the `T` spelling that is verified, so the refusal
     names that rather than claiming the value is not a date."""
     # Naive on purpose, hence the noqa: an unquoted YAML datetime with no
-    # offset is exactly what PyYAML hands this module, and attaching a tzinfo
-    # would test a value the loader never produces.
+    # offset is exactly what the loader hands this module, and attaching a
+    # tzinfo would test a value the loader never produces.
     naive = dt.datetime(2026, 7, 29, 14, 30)  # noqa: DTZ001
     condition = parse_condition(
         [{"field": "OccurredAt", "op": "leq", "value": naive}], "ctx",
@@ -711,6 +712,21 @@ def test_an_unquoted_yaml_datetime_is_refused_and_says_to_quote_it() -> None:
     for render in (to_caml, to_validation, to_expression):
         with pytest.raises(ValueError, match="quote it"):
             render(condition, TYPES)
+
+
+def test_a_zoned_unquoted_yaml_datetime_is_refused_showing_the_zone_as_read() -> None:
+    """The refusal shows the value with `!r`, zone and all. ruamel.yaml names
+    the zone `Z` as written, and the loader keeps the unnamed UTC that PyYAML
+    read, so the words are the ones this refusal has always had (#686)."""
+    value = _yaml.safe_load("v: 2026-07-29T14:30:00Z\n")["v"]
+    condition = parse_condition(
+        [{"field": "OccurredAt", "op": "leq", "value": value}], "ctx",
+    )
+    shown = "datetime.datetime(2026, 7, 29, 14, 30, tzinfo=datetime.timezone.utc)"
+    for render in (to_caml, to_validation, to_expression):
+        with pytest.raises(ValueError) as err:
+            render(condition, TYPES)
+        assert f"{shown} is an unquoted YAML datetime; quote it." in str(err.value)
 
 
 def test_a_null_test_on_a_date_column_needs_no_date() -> None:

@@ -22,7 +22,7 @@ for the same failures would have to be translated back at every call site.
 ### `CONFIG_ERRORS`
 
 ```python
-CONFIG_ERRORS = (<class 'ValueError'>, <class 'KeyError'>, <class 'OSError'>, <class 'yaml.error.YAMLError'>, <class 'pyparsing.exceptions.ParseBaseException'>)
+CONFIG_ERRORS = (<class 'ValueError'>, <class 'KeyError'>, <class 'OSError'>, <class 'ruamel.yaml.error.YAMLError'>, <class 'pyparsing.exceptions.ParseBaseException'>)
 ```
 
 ### `config_error`
