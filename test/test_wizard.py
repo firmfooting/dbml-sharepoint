@@ -1513,6 +1513,40 @@ def test_a_previous_prefixes_line_with_a_key_written_twice_is_refused(
         wizard._rewrite_prefix(mapping, "")
 
 
+def test_a_template_mapping_the_version_guard_refuses_is_a_wizard_refusal(tmp_path: Path) -> None:
+    """A spelling YAML 1.1 and 1.2 read differently is refused by the
+    parser (#686), and `_read_facts` names the template for it as it does
+    for any other mapping that does not load."""
+    solution = _fake_family(tmp_path / "fake", _ONE_ENTITY + "notes: { draft: yes }\n")
+    with pytest.raises(wizard.WizardError) as err:
+        wizard._read_facts(solution)
+    assert str(err.value) == (
+        "the fake-template template's mapping could not be loaded: "
+        f"{solution.mapping_path.resolve()}: uses spellings YAML 1.1 and 1.2 read differently:\n"
+        "  line 4, column 17: `yes` is read as a boolean until now and as text in YAML 1.2; "
+        'write `true` to keep the boolean, or quote it ("yes") for text'
+    )
+
+
+def test_a_previous_prefixes_line_the_version_guard_refuses_is_a_wizard_refusal(
+    tmp_path: Path,
+) -> None:
+    """The one line the rewrite parses goes through the same guard. The line
+    does parse, and the refusal places it in the file, not in the text after
+    the colon that the rewrite hands the parser."""
+    mapping = tmp_path / "mapping.yaml"
+    mapping.write_text(
+        'prefix: "GOV_"\nprevious_prefixes: ["", 010]\nentities: {}\n', encoding="utf-8",
+    )
+    with pytest.raises(wizard.WizardError) as err:
+        wizard._rewrite_prefix(mapping, "")
+    assert str(err.value) == (
+        "`previous_prefixes:` uses spellings YAML 1.1 and 1.2 read differently:\n"
+        "  line 2, column 25: `010` is read as the number 8 until now and as the number 10 "
+        'in YAML 1.2; write 8 to keep the number, or quote it ("010") for text'
+    )
+
+
 def test_a_template_directory_that_is_not_there_is_reported_not_a_traceback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

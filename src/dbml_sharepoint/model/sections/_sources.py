@@ -80,7 +80,7 @@ def _load_enum_choices(
         path = (base_dir / path_part).resolve()
         resolved[name] = path
         source = load_yaml(path, f"enum_sources[{name!r}]")
-        # A fragment is text, so a `yes:` key (read as True) never matched `#yes`.
+        # A fragment is text, so a `true:` key (read as True) never matched `#true`.
         for key in source:
             _text_key(key, str(path))
         values = source.get(fragment)

@@ -18,6 +18,32 @@ Why a fact is here rather than in the schema follows one rule, written down in
 declares the logical model in standard DBML, and everything that is SharePoint
 syntax, deployment behaviour or a consumer's computation lives here.
 
+## Spellings YAML 1.1 and 1.2 read differently
+
+The file is parsed as YAML 1.1, which reads an unquoted `yes`, `no`, `on` or
+`off` as a boolean, `010` as the octal number 8 and `1:30` as the base-60
+number 90. YAML 1.2, as ruamel.yaml reads it, takes all of those as text
+except `010`, which it reads as 10, and it reads `08`, `0o10`, `1e3` and
+`-.5` as numbers where YAML 1.1 reads text. A file does not say which version
+it was written for, so a value the two read differently is a load error,
+whether it is a key or a value and wherever it sits. One error names every
+such value, up to twenty, with its line, the reading it has had until now,
+and the spelling that keeps that reading:
+
+```text
+mapping.yaml: uses spellings YAML 1.1 and 1.2 read differently:
+  line 12, column 11: `yes` is read as a boolean until now and as text in YAML 1.2; write `true` to keep the boolean, or quote it ("yes") for text
+```
+
+Write `true` or `false` for a boolean, a plain decimal for a number, and quote
+anything meant as text. A timestamp whose seventh fraction digit is 5 or more
+is refused too, because PyYAML drops the digits past the sixth and ruamel.yaml
+rounds the sixth up, and so are an explicit tag other than `!!str`, a `%YAML` or
+`%TAG` directive, and a sequence or mapping used as a key. ruamel.yaml reads
+`1_000` and `0b101` as numbers, as YAML 1.1 does, where the YAML 1.2 core
+schema reads them as text, so those load. The same rule applies to every
+YAML file the mapping names and to `release.yaml`.
+
 ## Identity
 
 ```yaml
@@ -2544,4 +2570,7 @@ extensions:
 Project-specific configuration for an [extension](../concepts/architecture.md#the-extension-protocol).
 The core loader passes it through untyped; selection honours the
 *resolved* extension (a CLI `--extension` override may differ from the
-mapping's `extension:` key).
+mapping's `extension:` key). The block is still parsed with the rest of the
+file, so a spelling
+[YAML 1.1 and 1.2 read differently](#spellings-yaml-11-and-12-read-differently)
+is refused inside it too.

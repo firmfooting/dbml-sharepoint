@@ -7,6 +7,7 @@ from _paths import FIXTURES
 
 from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.release import load_release, snapshot_hashes
+from dbml_sharepoint.project import CONFIG_ERRORS
 
 
 def test_load_release_returns_tag_and_versions() -> None:
@@ -53,7 +54,7 @@ def test_release_unknown_keys_are_rejected(tmp_path: Path) -> None:
         # Sorting 2026 beside the text key `note` raised a bare TypeError.
         ("2026: x\nnote: y", "key 2026 is not text (YAML read it as int)"),
         # Named as the unknown key False, which is not what was typed.
-        ("No: x", "key False is not text (YAML read it as bool)"),
+        ("false: x", "key False is not text (YAML read it as bool)"),
     ],
     ids=["int-beside-text", "bool"],
 )
@@ -71,6 +72,26 @@ def test_a_release_key_that_is_not_text_is_refused_before_the_unknown_keys(
     with pytest.raises(ValueError) as err:
         load_release(path)
     assert str(err.value) == f"{path}: {read}; quote it"
+
+
+def test_a_release_key_yaml_1_2_reads_as_text_is_refused_by_the_parser(tmp_path: Path) -> None:
+    """`No:` was the case above until the parser refused it (#686). The
+    refusal is the parser's own, which `project.CONFIG_ERRORS` catches."""
+    write_mapping(
+        tmp_path,
+        'release: "1.0.0"\ndate: "2026-01-01"\n'
+        'deployer_version: "dbml-sharepoint/0.1.0"\nschema_version: "1.0.0"\nNo: x',
+        prefix=None,
+        name="release.yaml",
+    )
+    with pytest.raises(_yaml.AmbiguousYAMLError) as err:
+        load_release(tmp_path / "release.yaml")
+    assert isinstance(err.value, CONFIG_ERRORS)
+    assert str(err.value) == (
+        "uses spellings YAML 1.1 and 1.2 read differently:\n"
+        "  line 5, column 1: `No` is read as a boolean until now and as text in YAML 1.2; "
+        'write `false` to keep the boolean, or quote it ("No") for text'
+    )
 
 
 def test_release_missing_key_is_named_not_a_keyerror(tmp_path: Path) -> None:

@@ -5,16 +5,24 @@
 nothing (#672). `model/_yaml.py` refuses the repeat, and it only protects the
 files that are read with it, so the gate below holds the package and its tests
 to it.
+
+The version guard's own cases are in `test_yaml_versions.py`, which does not
+import PyYAML. The ones here compare the loader with PyYAML itself.
 """
 
 import io
+import itertools
 import tomllib
 
 import pytest
 import yaml
 from _paths import REPO_ROOT, SOLUTION_TEMPLATES
+from yaml.constructor import ConstructorError
 
 from dbml_sharepoint.model import _yaml
+
+#: The tags whose resolution YAML 1.2 changed, the only ones the frozen tables hold.
+_THREE = frozenset({"tag:yaml.org,2002:bool", "tag:yaml.org,2002:float", "tag:yaml.org,2002:int"})
 
 
 def _refusal(text: str) -> str:
@@ -39,22 +47,24 @@ def test_a_key_written_twice_is_refused_naming_both_lines() -> None:
         pytest.param("a:\n  b: 1\n  c: 2\n  b: 3\n", "'b'", id="nested"),
         pytest.param("a: {b: 1, b: 2}\n", "'b'", id="flow"),
         pytest.param("- {b: 1, b: 2}\n", "'b'", id="in-a-sequence"),
-        pytest.param("!!set {a, a}\n", "'a'", id="set"),
+        # The `!!set {a, a}` this case was written as is an explicit tag, refused first (#686).
+        pytest.param("{a, a}\n", "'a'", id="keys-only"),
     ],
 )
 def test_a_repeat_is_refused_wherever_a_mapping_sits(text: str, key: str) -> None:
     assert f"found duplicate key {key}" in _refusal(text)
 
 
-def test_two_words_read_as_one_boolean_are_both_named() -> None:
-    """`No` and `Off` are two words to the author, so naming only `False`
-    would not say what was written twice."""
-    assert _refusal("map: { No: blocked, Off: warning }\n") == (
+def test_two_spellings_read_as_one_boolean_are_both_named() -> None:
+    """`True` and `true` are two spellings to the author, so naming only
+    `True` would not say what was written twice. `No` and `Off` were the
+    case here until the parser refused both (#686)."""
+    assert _refusal("map: { True: blocked, true: warning }\n") == (
         "while constructing a mapping\n"
         '  in "<file>", line 1, column 6\n'
-        "found duplicate key False: 'No' (line 1) and 'Off' (line 1) both read as False; "
+        "found duplicate key True: 'True' (line 1) and 'true' (line 1) both read as True; "
         "quote them\n"
-        '  in "<file>", line 1, column 21'
+        '  in "<file>", line 1, column 23'
     )
 
 
@@ -79,7 +89,7 @@ def test_two_words_read_as_one_boolean_are_both_named() -> None:
             id="int-and-float",
         ),
         pytest.param(
-            "No: a\nNo: b\n", "found duplicate key False (first at line 1)",
+            "true: a\ntrue: b\n", "found duplicate key True (first at line 1)",
             id="one-spelling-twice",
         ),
     ],
@@ -147,14 +157,22 @@ def test_a_value_key_loads_as_safe_loader_reads_it() -> None:
     assert _yaml.safe_load("=: 1\n") == yaml.safe_load("=: 1\n") == {"=": 1}
 
 
-@pytest.mark.parametrize("text", ["? [a, b]\n: 1\n", "? {a: 1}\n: 1\n"])
-def test_an_unhashable_key_fails_as_safe_loader_fails(text: str) -> None:
-    with pytest.raises(_yaml.PARSE_ERRORS) as ours:
-        _yaml.safe_load(text)
-    with pytest.raises(yaml.YAMLError) as theirs:
+@pytest.mark.parametrize(
+    ("text", "kind"), [("? [a, b]\n: 1\n", "sequence"), ("? {a: 1}\n: 1\n", "mapping")],
+)
+def test_a_collection_key_is_refused_before_safe_loader_would_refuse_it(
+    text: str, kind: str,
+) -> None:
+    """SafeLoader refuses both keys as unhashable, and ruamel.yaml reads the
+    sequence as a tuple, so the loader refuses both itself, as composed (#686)."""
+    with pytest.raises(yaml.YAMLError, match="found unhashable key"):
         yaml.safe_load(text)
-    assert str(ours.value) == str(theirs.value)
-    assert "found unhashable key" in str(ours.value)
+    assert _refusal(text) == (
+        "while composing a mapping\n"
+        '  in "<file>", line 1, column 1\n'
+        f"found a {kind} used as a key; a key must be a single value\n"
+        '  in "<file>", line 1, column 3'
+    )
 
 
 def test_every_shipped_yaml_file_loads_unchanged() -> None:
@@ -170,6 +188,103 @@ def test_every_shipped_yaml_file_loads_unchanged() -> None:
     for path in shipped:
         text = path.read_text(encoding="utf-8")
         assert _yaml.safe_load(text) == yaml.safe_load(text), path
+
+
+def _fuzz() -> list[str]:
+    """Every token of up to four characters that numbers are spelled with, and the booleans.
+
+    The alphabet the research fuzz measured the two libraries over (#686).
+    """
+    alphabet = "0178_.-+eE:obx"
+    spelled = {
+        "".join(chars) for n in range(1, 5) for chars in itertools.product(alphabet, repeat=n)
+    }
+    words = ("yes", "no", "on", "off", "y", "n", "true", "false", "null")
+    return sorted(spelled | {w for word in words for w in (word, word.upper(), word.title())})
+
+
+def test_the_frozen_yaml_1_1_table_is_the_resolver_pyyaml_runs() -> None:
+    """The guard reads a frozen copy and never asks the live resolver, so a
+    PyYAML that changed its rules would go unnoticed without this. Its bool,
+    float and int resolvers are tried before any other, so a value none of
+    them takes is resolved by the rules both versions share."""
+    live: dict[tuple[str, str, int], set[str]] = {}
+    for first, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items():
+        tags = [tag for tag, _ in resolvers]
+        assert tags[: len(set(tags) & _THREE)] == [
+            tag for tag, _, chars in _yaml._YAML_1_1 if first in chars
+        ], first
+        for tag, pattern in resolvers:
+            live.setdefault((tag, pattern.pattern, pattern.flags), set()).add(first)
+    for tag, pattern, chars in _yaml._YAML_1_1:
+        assert live[tag, pattern.pattern, pattern.flags] == set(chars), tag
+    timestamp = _yaml._TIMESTAMP
+    assert ("tag:yaml.org,2002:timestamp", timestamp.pattern, timestamp.flags) in live
+
+
+def test_the_frozen_boolean_spellings_are_the_ones_pyyaml_looks_up() -> None:
+    """The guard says a resolved boolean outside these fails to load, as it does here."""
+    assert frozenset(yaml.SafeLoader.bool_values) == _yaml._BOOLEANS_1_1
+    with pytest.raises(KeyError):
+        yaml.safe_load("v: ! |\n  yes\n")
+
+
+def test_the_frozen_timestamp_parts_are_the_ones_pyyaml_constructs_from() -> None:
+    """The guard states the time YAML 1.1 has read from a copy of this regex."""
+    parts, live = _yaml._TIME_PARTS, yaml.SafeLoader.timestamp_regexp
+    assert (parts.pattern, parts.flags) == (live.pattern, live.flags)
+
+
+@pytest.mark.parametrize(
+    "fraction", ["1234565", "1234564", "9999995", "12345650", "12345612345678901234"],
+)
+def test_pyyaml_reads_the_time_the_guard_states(fraction: str) -> None:
+    """PyYAML keeps six fraction digits, which is the time the refusal says
+    has been read until now and the spelling it offers."""
+    token = f"2026-01-02T03:04:05.{fraction}+10:00"
+    read = yaml.safe_load(f"v: {token}\n")["v"]
+    kept = token.replace(fraction, fraction[:6])
+    assert read == yaml.safe_load(f"v: {kept}\n")["v"]
+    why = _yaml._refusal(token)
+    assert (why is None) == (fraction[6] < "5")
+    if why is not None:
+        assert f"read as the time {read.isoformat()} until now" in why
+        assert f"write `{kept}` to keep the time" in why
+
+
+def test_pyyaml_resolves_every_fuzz_token_as_the_frozen_table_says() -> None:
+    loader = yaml.SafeLoader("")
+    try:
+        for token in _fuzz():
+            resolved = loader.resolve(yaml.ScalarNode, token, (True, False))
+            expected = resolved if resolved in _THREE else None
+            assert _yaml._tag(_yaml._YAML_1_1, token) == expected, token
+    finally:
+        loader.dispose()
+
+
+@pytest.mark.parametrize(
+    "error", [ValueError, KeyError, IndexError, OverflowError, AssertionError],
+)
+def test_a_construction_error_is_a_yaml_error_at_its_node(
+    monkeypatch: pytest.MonkeyPatch, error: type[Exception],
+) -> None:
+    """Each escaped every handler that catches the parser's errors: the
+    mapping reader's, the catalogue's skip, the CLI's and the wizard's.
+    Without an explicit tag only ValueError and KeyError can be raised, so
+    the int constructor is made to raise each in turn."""
+
+    def fail(loader: _yaml.UniqueKeyLoader, node: yaml.ScalarNode) -> int:
+        raise error(f"{loader.construct_scalar(node)} failed")
+
+    monkeypatch.setitem(_yaml.UniqueKeyLoader.yaml_constructors, "tag:yaml.org,2002:int", fail)
+    with pytest.raises(ConstructorError) as err:
+        _yaml.safe_load(io.StringIO("a: x\nb: 12\n"))
+    assert type(err.value.__cause__) is error
+    assert str(err.value) == (
+        f"cannot construct !!int from '12': {err.value.__cause__}\n"
+        '  in "<file>", line 2, column 4'
+    )
 
 
 def test_pyyaml_may_be_imported_only_by_the_parser_and_its_own_test() -> None:

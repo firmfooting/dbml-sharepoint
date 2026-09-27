@@ -131,6 +131,8 @@ def read_yaml_document(path: Path, named_by: str | None = None) -> Any:
 
     A key written twice in one mapping is a parse failure too, refused by
     `_yaml.safe_load` where `yaml.safe_load` kept the last and said nothing.
+    So is a value YAML 1.1 and 1.2 read differently, such as `yes` or `010`.
+    That file is valid YAML, so its refusal names the spellings instead.
 
     Decoding is the third way, and it is the one that hides: the bytes turn
     into text inside the parser, so a file that is not UTF-8 raises
@@ -155,6 +157,9 @@ def read_yaml_document(path: Path, named_by: str | None = None) -> Any:
         # The pointer resolved and the file opened, so the declaration is
         # not what is wrong: these bytes are not a document at all.
         raise MappingSourceError(f"{path}: is not valid UTF-8: {exc}") from exc
+    except _yaml.AmbiguousYAMLError as exc:
+        # Valid YAML that 1.1 and 1.2 read differently; its text says so and names each line.
+        raise MappingSourceError(f"{path}: {exc}") from exc
     except _yaml.PARSE_ERRORS as exc:
         raise MappingSourceError(f"{path}: is not valid YAML: {exc}") from exc
 
@@ -307,7 +312,7 @@ def _require(raw: Mapping[str, Any], key: str, context: str) -> Any:
 
 
 def require_int(raw: Mapping[str, Any], key: str, context: str) -> int:
-    """Read a required integer, refusing the bool YAML hands back for `yes`.
+    """Read a required integer, refusing the bool YAML hands back for `true`.
 
     `isinstance(True, int)` is True in Python, so a plain int check passes a
     boolean straight through and `int(True)` is 1. Both fields read this way
@@ -329,7 +334,7 @@ def optional_int(
 ) -> int | None:
     """Read an optional integer, refusing bools and un-coercible strings.
 
-    `int(raw)` accepted three wrong things silently or badly: `yes` became 1,
+    `int(raw)` accepted three wrong things silently or badly: `true` became 1,
     `"100"` became 100 (so a quoted number worked by accident and taught the
     wrong lesson), and `many` raised `invalid literal for int() with base 10`,
     a message naming neither the key, the view, nor the entity.
