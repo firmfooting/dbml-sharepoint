@@ -123,9 +123,14 @@ def _folder_permissions(vc: ValidationContext) -> list[Finding]:
                 location=at,
             ))
             continue
+        # A library the schema lacks emits no scope, so there is no guard to switch off.
+        deploys = entity_name in vc.table_names
         list_policy = vc.bundle.mapping.permissions_for_entity(entity_name)
         under_exact_list = list_policy is not None and list_policy.reconcile_mode == "exact"
-        if under_exact_list and policy.reconcile_mode == "configured" and not policy.assignments:
+        if (
+            deploys and under_exact_list
+            and policy.reconcile_mode == "configured" and not policy.assignments
+        ):
             findings.append(Finding(
                 FindingCode.FOLDER_POLICY_MANAGES_NOTHING,
                 f"list_permissions.folders.{entity_name}: {entity_name} "

@@ -1041,6 +1041,37 @@ def test_an_exact_folder_policy_on_a_library_the_schema_lacks_does_not_warn(
     none_of(findings, FindingCode.EXACT_POLICY_GRANTS_NOTHING)
 
 
+def test_an_empty_folder_policy_on_a_library_the_schema_lacks_is_not_refused(
+    tmp_path: Path,
+) -> None:
+    """No scope is emitted for a library the DBML does not declare, so no
+    guard is switched off; `entity_not_in_schema` says why."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Other", ID_PK, TITLE),
+        mapping=f"""
+            entities:
+              Other:
+                kind: List
+                base_template: 100
+                site_role: default
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: [Alpha, Beta]
+
+            list_permissions:
+              default: {_EXACT_LIST}
+              folders:
+                Docs: {{break_inheritance: true}}
+        """,
+    )
+    findings = validate_against_mapping(schema, bundle)
+    only(findings, FindingCode.ENTITY_NOT_IN_SCHEMA)
+    none_of(findings, FindingCode.FOLDER_POLICY_MANAGES_NOTHING)
+
+
 @pytest.mark.parametrize(
     "policy",
     [
