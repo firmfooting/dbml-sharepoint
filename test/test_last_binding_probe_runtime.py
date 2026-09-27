@@ -109,6 +109,9 @@ _HARNESS = textwrap.dedent("""
       deployReads: 0,
       shapeReads: 0,
       snapshotReads: 0,
+      flagReads: 0,
+      digestCalls: 0,
+      deleteSent: false,
     };
 
     const TITLE = `getbytitle('${CONFIG.title}')`;
@@ -198,6 +201,8 @@ _HARNESS = textwrap.dedent("""
         digest: headers['X-RequestDigest'] || null,
       });
       if (u.endsWith('/_api/contextinfo')) {
+        site.digestCalls += 1;
+        if (CONFIG.digestThrottledCalls.includes(site.digestCalls)) return throttled();
         if (CONFIG.digestRefused) return spError(403, '-1, x', 'no digest');
         return respond(200, { d: { GetContextWebInformation: { FormDigestValue: 'digest' } } });
       }
@@ -240,11 +245,17 @@ _HARNESS = textwrap.dedent("""
         const mine = site.listExists
           && byId[1].toLowerCase() === String(site.listId).toLowerCase();
         if (method === 'POST' && headers['X-HTTP-Method'] === 'DELETE') {
+          site.deleteSent = true;
           if (CONFIG.deleteThrows) throw new Error('mock transport failure on the DELETE');
           if (!mine) return spError(404, '-1, x', 'no such list');
+          // A delete the server applied and still answered as failed.
+          if (CONFIG.deleteRefused === 'but-deleted') site.listExists = false;
           if (CONFIG.deleteRefused) return spError(500, '-1, x', 'the list delete was refused');
-          site.listExists = false;
+          if (!CONFIG.deleteIgnored) site.listExists = false;
           return respond(200, {});
+        }
+        if (site.deleteSent && CONFIG.readAfterDelete === 'refused') {
+          return spError(500, '-1, x', 'list read refused');
         }
         if (!mine) return spError(404, '-1, x', 'no such list');
         if (hidden) return denied();
@@ -314,6 +325,12 @@ _HARNESS = textwrap.dedent("""
       };
       const omit = CONFIG.shapeOmits;
       if (shapeRead && omit !== null && site.shapeReads >= omit.fromRead) delete entity[omit.field];
+      if (shapeRead && site.removalSent && CONFIG.shapeIdOmittedAfterRemoval) delete entity.Id;
+      if (u.includes('$select=Id,HasUniqueRoleAssignments') && site.removalSent) {
+        site.flagReads += 1;
+        if (CONFIG.flagRefused.includes(site.flagReads)) return denied();
+        if (CONFIG.flagIdOmitted.includes(site.flagReads)) delete entity.Id;
+      }
       if (String(headers.Accept).includes('odata=verbose')) return respond(200, { d: entity });
       return respond(200, entity);
     };
@@ -364,6 +381,12 @@ _DEFAULTS: dict[str, Any] = {
     "shapeOmits": None,
     "snapshotEmptyReads": 0,
     "snapshotFlap": False,
+    "shapeIdOmittedAfterRemoval": False,
+    "flagIdOmitted": [],
+    "flagRefused": [],
+    "deleteIgnored": False,
+    "readAfterDelete": None,
+    "digestThrottledCalls": [],
 }
 
 #: The probe's waits, cut so a run takes milliseconds. The splices are the pins.
@@ -916,7 +939,7 @@ def test_a_delete_that_did_not_go_is_recorded_and_hands_over_a_line_that_does(
     delete = rows[DELETE]
     assert delete["outcome"] == outcome, delete
     assert said in delete["evidence"], delete["evidence"]
-    assert delete["evidence"].startswith("the list was not read back absent")
+    assert delete["evidence"].startswith("the list is still there")
     failures = _lines(output, "FAIL")
     assert len(failures) == 1, failures
     assert f"'{_TITLE}' (list {_CREATED_ID}) may still exist" in failures[0]
@@ -954,6 +977,72 @@ def test_a_delete_that_did_not_go_is_recorded_and_hands_over_a_line_that_does(
         "X-RequestDigest": "fresh-digest", "X-HTTP-Method": "DELETE", "IF-MATCH": "*",
     }
     assert "DELETE answered HTTP 200" in replayed
+
+
+@needs_node
+@pytest.mark.parametrize(
+    ("config", "outcome", "head", "status"),
+    [
+        ({"deleteIgnored": True}, "REFUSED",
+         "the list is still there, so the DELETE did not take", "the DELETE answered HTTP 200"),
+        ({"deleteRefused": "but-deleted"}, "ACCEPTED", "the list is gone",
+         "the DELETE answered HTTP 500"),
+        ({"readAfterDelete": "refused"}, "NOT ESTABLISHED",
+         "the read by Id after the DELETE did not say whether the list is gone",
+         "the DELETE answered HTTP 200"),
+    ],
+)
+def test_the_delete_row_is_what_the_read_by_id_after_it_found(
+    config: dict[str, Any], outcome: str, head: str, status: str,
+) -> None:
+    """A delete can commit and answer an error, or answer 2xx and not take, so
+    the outcome is the read-back's and the status is carried beside it."""
+    rows, calls, output = _run_probe(**config)
+
+    delete = rows[DELETE]
+    assert delete["outcome"] == outcome, delete
+    assert delete["evidence"].startswith(f"{head}: "), delete["evidence"]
+    assert status in delete["evidence"], delete["evidence"]
+    assert len(_deletes(calls)) == 1
+    gone = outcome == "ACCEPTED"
+    assert any("read it back absent" in line for line in _lines(output, "OK")) is gone
+    assert any("may still exist" in line for line in _lines(output, "FAIL")) is not gone
+
+
+@needs_node
+@pytest.mark.parametrize("throttled", [[1], [4, 5]])
+def test_a_throttled_digest_is_retried_as_the_deploy_retries_it(throttled: list[int]) -> None:
+    """The harness's getDigest is a bare fetch, so a throttled contextinfo
+    would throw; the deploy's goes through fetchWithRetry. Call 1 is the
+    create's digest and call 4 the closing DELETE's, the one whose loss would
+    leave a list with no binding behind."""
+    rows, calls, output = _run_probe(digestThrottledCalls=throttled)
+
+    digests = [c for c in calls if c["url"].endswith("/_api/contextinfo")]
+    assert len(digests) == 4 + len(throttled)
+    assert len(_creates(calls)) == 1
+    assert rows[REMOVAL]["outcome"] == "ACCEPTED"
+    assert rows[DELETE]["outcome"] == "ACCEPTED"
+    assert calls.index(digests[-1]) < calls.index(_deletes(calls)[0])
+    assert len([ln for ln in _lines(output, "INFO") if "Throttled (HTTP 429)" in ln]) == len(
+        throttled
+    )
+
+
+@needs_node
+def test_a_digest_throttled_past_the_retries_sends_no_delete_and_says_so() -> None:
+    rows, calls, output = _run_probe(digestThrottledCalls=list(range(4, 13)))
+
+    assert not _deletes(calls)
+    delete = rows[DELETE]
+    assert delete["outcome"] == "NOT ESTABLISHED", delete
+    assert delete["evidence"].startswith(
+        "no DELETE was sent: the read by Id answered HTTP 200 carrying this probe's marker, but "
+        "no digest could be had (Error: contextinfo failed: HTTP 429), so no DELETE was sent"
+    ), delete["evidence"]
+    failures = [line for line in _lines(output, "FAIL") if "may still exist" in line]
+    assert len(failures) == 1
+    assert "paste this line" in failures[0]
 
 
 @needs_node
@@ -1033,26 +1122,30 @@ def test_a_create_answered_as_failed_is_read_back_and_cleaned_up_when_it_landed(
 
 
 @needs_node
-def test_an_administrator_shut_out_after_the_removal_is_what_the_rows_record() -> None:
-    """Learn predicts an administrator keeps access; a 403 on every read is
-    therefore the observation that would contradict it, and it is recorded
-    as one. A list whose marker cannot be read by Id is not deleted, and the
-    delete row says why rather than settling."""
+def test_an_administrator_shut_out_after_the_removal_is_carried_but_not_settled() -> None:
+    """Learn predicts an administrator keeps access, and a 403 on every read
+    would contradict it. A refusal by title carries no list Id, though, and
+    with every read refused none after it shows which list refused, so each
+    row keeps the 403s in its evidence and stays open. A list whose marker
+    cannot be read by Id is not deleted, and the delete row says why."""
     rows, calls, _output = _run_probe(afterRemoval="denied")
 
+    unplaced = f"no read by title after it carried list {_CREATED_ID} as its Id"
+    for row in (REMOVAL, READBACK, ENUMERATION, UNIQUE):
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", rows[row]
+        assert rows[row]["state"] == "open", rows[row]
+        assert unplaced in rows[row]["evidence"], rows[row]["evidence"]
+    assert "answered HTTP 200" in rows[REMOVAL]["evidence"]
     readback = rows[READBACK]
-    assert readback["outcome"] == "OBSERVED", readback
     assert readback["evidence"].startswith(
         "the deploy throws at the list read that closes removal 1's bracket, which "
         "answered HTTP 403"
     ), readback["evidence"]
     assert "Access denied." in readback["evidence"]
-    enumeration = rows[ENUMERATION]
-    assert enumeration["outcome"] == "OBSERVED", enumeration
-    assert re.match(r"no read over \d+ ms returned rows", enumeration["evidence"])
-    assert enumeration["evidence"].count("answered HTTP 403") == 5
-    assert rows[UNIQUE]["outcome"] == "OBSERVED"
-    assert rows[UNIQUE]["evidence"].count("HTTP 403") == 5
+    assert rows[ENUMERATION]["evidence"].count("answered HTTP 403 {") == 5
+    assert rows[ENUMERATION]["evidence"].count(f"not an answer: {unplaced}") == 5
+    assert rows[UNIQUE]["evidence"].count("HTTP 403 {") == 5
+    assert rows[UNIQUE]["evidence"].count(f"not an answer: {unplaced}") == 5
     assert rows[DELETE]["outcome"] == "NOT ESTABLISHED"
     assert rows[DELETE]["evidence"].startswith(
         "no DELETE was sent: the read by Id answered HTTP 403"
@@ -1063,15 +1156,84 @@ def test_an_administrator_shut_out_after_the_removal_is_what_the_rows_record() -
 @needs_node
 def test_reads_that_never_answer_after_the_removal_settle_nothing() -> None:
     """A throttle that outlasts the deploy's retries on every read is not an
-    observation of the scope, so no row settles from it."""
+    observation of the scope, so no row settles from it. The removal's 200
+    is carried, but nothing after it showed which list took it."""
     rows, _calls, _output = _run_probe(afterRemoval="throttled")
 
-    assert rows[REMOVAL]["outcome"] == "ACCEPTED"
+    for row in (REMOVAL, READBACK, ENUMERATION, UNIQUE):
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", rows[row]
+        assert rows[row]["state"] == "open", rows[row]
+    assert "answered HTTP 200" in rows[REMOVAL]["evidence"]
+    assert "still throttled after the deploy's retries" in rows[READBACK]["evidence"]
+    assert rows[UNIQUE]["evidence"].startswith(
+        f"none of the 5 reads answered for list {_CREATED_ID}"
+    )
+
+
+@needs_node
+def test_flag_reads_without_their_id_settle_no_row_read_after_the_last_proof() -> None:
+    """The flag read selects the Id, and it is the only read in the window
+    that can show which list answered. Without it, neither the flag nor the
+    enumeration before it is this run's, and nor is the survey that ended
+    the read-back. The removal was bracketed by a whole identity read, and
+    the delete goes by Id, so those two still settle."""
+    rows, _calls, _output = _run_probe(flagIdOmitted=[1, 2, 3, 4, 5])
+
+    unplaced = f"no read by title after it carried list {_CREATED_ID} as its Id"
+    assert rows[REMOVAL]["outcome"] == "ACCEPTED", rows[REMOVAL]
     for row in (READBACK, ENUMERATION, UNIQUE):
         assert rows[row]["outcome"] == "NOT ESTABLISHED", rows[row]
         assert rows[row]["state"] == "open", rows[row]
-    assert "still throttled after the deploy's retries" in rows[READBACK]["evidence"]
-    assert rows[UNIQUE]["evidence"].startswith("none of the 5 reads answered")
+    assert f"For the read-back's last request, {unplaced}" in rows[READBACK]["evidence"]
+    assert rows[ENUMERATION]["evidence"].count(f"not an answer: {unplaced}") == 5
+    assert rows[UNIQUE]["evidence"].count(
+        "with an Id of undefined, which does not say which list answered, not an answer") == 5
+    assert rows[DELETE]["outcome"] == "ACCEPTED"
+
+
+@needs_node
+def test_a_title_rebound_that_hides_its_id_settles_nothing_read_by_title() -> None:
+    """Codex's case: the title answers another list, and every read after the
+    removal leaves the Id out, so no read ever shows the rebind. Nothing read
+    by title after the removal can then be placed on this run's list."""
+    rows, calls, _output = _run_probe(
+        rebindAfterRemoval=True, shapeIdOmittedAfterRemoval=True,
+        flagIdOmitted=[1, 2, 3, 4, 5],
+    )
+
+    for row in (REMOVAL, READBACK, ENUMERATION, UNIQUE):
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", rows[row]
+        assert rows[row]["state"] == "open", rows[row]
+    for row in (REMOVAL, READBACK, ENUMERATION):
+        assert f"no read by title after it carried list {_CREATED_ID} as its Id" in (
+            rows[row]["evidence"]
+        )
+    assert rows[UNIQUE]["evidence"].count("which does not say which list answered") == 5
+    assert rows[DELETE]["outcome"] == "ACCEPTED"
+    assert [c["url"].split("/_api/", 1)[1] for c in _deletes(calls)] == [
+        f"web/lists(guid'{_CREATED_ID}')"
+    ]
+
+
+@needs_node
+def test_each_read_counts_only_up_to_the_last_one_that_carried_the_id() -> None:
+    """A proof covers every read by title before it, back to the one before.
+    Flag read 2 is refused and placed by read 3's Id; flag read 5 is refused
+    and nothing after it carries an Id, so it and enumeration 5 are not
+    answers, while reads 1 to 4 of the enumeration are."""
+    rows, _calls, _output = _run_probe(flagRefused=[2, 5])
+
+    unplaced = f"not an answer: no read by title after it carried list {_CREATED_ID} as its Id"
+    enumeration = rows[ENUMERATION]["evidence"]
+    assert rows[ENUMERATION]["outcome"] == "OBSERVED"
+    assert "read present on no read and absent on read(s) 1, 2, 3, 4," in enumeration
+    assert f"read 5: HTTP 200, 0 row(s), {unplaced}" in enumeration
+    unique = rows[UNIQUE]["evidence"]
+    assert rows[UNIQUE]["outcome"] == "OBSERVED"
+    assert "read 2: HTTP 403 {" in unique
+    assert unique.count(unplaced) == 1
+    assert re.search(r"read 5: HTTP 403 \{[^;]*" + re.escape(unplaced), unique), unique
+    assert unique.count("HasUniqueRoleAssignments=true") == 3
 
 
 @needs_node

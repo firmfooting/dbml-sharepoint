@@ -78,10 +78,22 @@
  *     What the DELETE that ends the run answers, and whether a read by Id
  *     then finds the list gone. It is sent only once a read by Id shows this
  *     probe's marker, and every request goes by Id, so the row is recorded
- *     even when the title came to answer another list.
+ *     even when the title came to answer another list. The outcome is the
+ *     read-back's: gone is ACCEPTED and still there is REFUSED, whatever
+ *     status the DELETE answered, which the evidence carries beside it.
  *
  * The after- rows describe the scope once a removal was SENT, whatever it
  * answered, so a refused call that removed the binding anyway is visible.
+ *
+ * ATTRIBUTION. A request by title reaches whichever list holds the title
+ * when it arrives. The flag read selects the list Id and counts only when
+ * that Id is this run's. A request whose answer cannot carry the Id (a
+ * removal, an enumeration, the survey, a refusal) counts only when a later
+ * read by title carried this run's Id, the bracket the deploy's
+ * withOwnedList relies on. Anything after the last such read, or anything
+ * at all once a read shows another list, leaves its row NOT ESTABLISHED with
+ * the answers still in the evidence.
+ *
  * No principal's title is printed, only its length. Every response text has
  * this site's URL, host and path and this account's login name, email and
  * display name replaced first, then URLs, hosts and account names masked by
@@ -130,7 +142,9 @@
  *       the flag check, are not reproduced: the list holds no items, and the
  *       settle window has just read the flag.
  *   (d) the deploy caches its digest and gates throttles across lanes; this
- *       probe asks for a digest per write and sends one request at a time.
+ *       probe asks for a digest per write, through the same throttle retry
+ *       the deploy's contextinfo goes through, and sends one request at a
+ *       time.
  *
  * MICROSOFT LEARN CITATIONS
  *   "SP.SecurableObject.breakRoleInheritance method"
@@ -321,6 +335,19 @@
     }
   };
 
+  // The harness's getDigest is a bare fetch; the deploy's goes through fetchWithRetry, as this does.
+  const freshDigest = async () => {
+    const res = await send(api('contextinfo'), { method: 'POST', headers: { Accept: VERBOSE } });
+    if (!res.ok || isThrottled(res)) throw new Error(`contextinfo failed: HTTP ${res.status}`);
+    const body = await res.json().catch(() => null);
+    const value = body && body.d && body.d.GetContextWebInformation
+      ? body.d.GetContextWebInformation.FormDigestValue : undefined;
+    if (typeof value !== 'string' || !value.trim()) {
+      throw new Error(`contextinfo failed: HTTP ${res.status} carried no usable FormDigestValue`);
+    }
+    return value;
+  };
+
   // Not an answer at all: a throttle that outlasted the retries, a timeout, or a throw.
   const silent = (r) => Boolean(r.threw) || Boolean(r.throttled) || r.status === 408;
 
@@ -357,12 +384,25 @@
   let rebound = null;
   let myId = null;
 
-  const noteIdentity = (where, id, marker) => {
-    if (rebound !== null || id === undefined) return;
+  // Every request by title takes a turn; see ATTRIBUTION in the header for what a proof covers.
+  let turn = 0;
+  let lastProof = 0;
+  const nextTurn = () => {
+    turn += 1;
+    return turn;
+  };
+  const placed = (at) => rebound === null && at <= lastProof;
+
+  // True when the read proved this run's list. An Id that is not a string proves nothing.
+  const noteIdentity = (where, id, marker, at) => {
+    if (rebound !== null || typeof id !== 'string') return false;
     const now = guidOf(id);
     if (now !== ownedId || (marker !== undefined && marker !== OWNERSHIP)) {
       rebound = `${where} answered list ${now} where this run claimed ${ownedId}`;
+      return false;
     }
+    lastProof = at;
+    return true;
   };
 
   // probeListShapeByTitle's request; see (b) in the header for what is judged.
@@ -373,11 +413,12 @@
   ].join(',');
 
   const deployIdentity = async (label) => {
+    const at = nextTurn();
     const r = await read(api(`${listPath}?$select=${SHAPE_SELECT}`), VERBOSE);
     const d = r.ok && r.body && typeof r.body.d === 'object' ? r.body.d : null;
     // An identity with a field missing proves nothing, and the deploy's shape gate refuses one.
     const whole = d !== null && typeof d.Id === 'string' && typeof d.Description === 'string';
-    if (whole) noteIdentity(label, d.Id, d.Description);
+    if (whole) noteIdentity(label, d.Id, d.Description, at);
     const step = `${label}: ${describeRead(r)}${whole ? ` carrying list ${guidOf(d.Id)}` : ''}`;
     if (silent(r)) return { step, silent: true, stop: null };
     if (!r.ok) return { step, stop: `the deploy throws at ${label}, which answered HTTP ${r.status}` };
@@ -420,6 +461,7 @@
   // scopeBindings, to the letter where the letter decides the verdict: its
   // `(json.d && json.d.results) || []` reads a 200 without results as no rows.
   const deployEnumeration = async () => {
+    nextTurn();
     const rows = [];
     const notes = [];
     let url = api(`${listPath}/${DEPLOY_BINDING_QUERY}`);
@@ -471,6 +513,7 @@
 
   // surveyDescendants, which exact mode runs again once reconcileScope is done.
   const deploySurvey = async () => {
+    nextTurn();
     const rows = [];
     const notes = [];
     let url = api(`${listPath}/${ITEMS_QUERY}`);
@@ -548,7 +591,8 @@
 
   // Every field a row is placed by is a prerequisite, as in operator-safety-grant-probe.js.
   const enumerate = async () => {
-    const got = await readPages(api(`${listPath}/${PROBE_BINDING_QUERY}`));
+    const at = nextTurn();
+    const got = { ...(await readPages(api(`${listPath}/${PROBE_BINDING_QUERY}`))), at };
     if (got.kind !== 'rows') return got;
     try {
       const rows = [];
@@ -650,19 +694,31 @@
           + 'DELETE was sent',
       };
     }
-    let gone;
+    const marked = `the read by Id answered ${describeRead(before)} carrying this probe's marker`;
+    let digest;
     try {
-      gone = await post(byId, await getDigest(), { headers: { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' } });
+      digest = await freshDigest();
     } catch (err) {
-      gone = { ok: false, status: 0, text: '', threw: String(err) };
+      return {
+        sent: false,
+        confirmed: false,
+        facts: `${marked}, but no digest could be had (${scrub(String(err))}), so no DELETE was sent`,
+      };
     }
+    const gone = await post(byId, digest, { headers: { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' } });
     const after = await read(api(`${byId}?$select=Id`));
+    // The read-back decides, not the status: a delete can commit and answer an error, or answer 2xx and not take.
+    let fate = 'unknown';
+    if (after.status === 404) fate = 'gone';
+    else if (after.ok && after.body !== null && typeof after.body === 'object'
+      && guidOf(after.body.Id) === String(id).toLowerCase()) fate = 'present';
     return {
       sent: true,
       gone,
-      confirmed: gone.ok && after.status === 404,
-      facts: `the read by Id answered ${describeRead(before)} carrying this probe's marker before `
-        + `the DELETE, the DELETE ${gone.threw ? `threw (${scrub(gone.threw)})` : `answered ${describeRead(gone)}`}, `
+      fate,
+      confirmed: fate === 'gone',
+      facts: `${marked} before the DELETE, the DELETE `
+        + `${gone.threw ? `threw (${scrub(gone.threw)})` : `answered ${describeRead(gone)}`}, `
         + `and the read by Id answered ${describeRead(after)} after it`,
     };
   };
@@ -729,7 +785,7 @@
 
   const measure = async () => {
     // ---- fixture-last-binding-list ---------------------------------------
-    let digest = await getDigest();
+    let digest = await freshDigest();
     createSent = true;
     const made = await post('web/lists', digest, {
       body: JSON.stringify({ Title: LIST, BaseTemplate: 100, Description: OWNERSHIP }),
@@ -773,7 +829,7 @@
 
     // ---- fixture-last-binding-break --------------------------------------
     await proveOwned('the list read before breakroleinheritance');
-    digest = await getDigest();
+    digest = await freshDigest();
     const broke = await post(
       `${listPath}/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)`, digest);
     if (!broke.ok) {
@@ -849,6 +905,7 @@
     const trace = [];
     const removals = [];
     let lastRemovalAt = -1;
+    let removedTurn = 0;
     let stop = null;
     let stopSilent = false;
 
@@ -867,8 +924,9 @@
         const opening = `the list read that opens removal ${n}'s bracket`;
         if (removals.length === 0) await proveOwned(opening);
         else if (step(await deployIdentity(opening))) break;
-        digest = await getDigest();
+        digest = await freshDigest();
         removalSent = true;
+        removedTurn = nextTurn();
         const answer = await post(`${listPath}/roleassignments/removeroleassignment(`
           + `principalid=${row.principalId},roleDefId=${row.roleDefId})`, digest);
         removals.push({ n, row, answer });
@@ -887,16 +945,15 @@
       trace.push(`the prune stopped: ${scrub(err instanceof Error ? err.message : String(err))}`);
     }
 
-    // ---- last-binding-removal --------------------------------------------
+    // ---- last-binding-removal: recorded below, once the window says whose list answered ----
     const last = removals[removals.length - 1];
     const heard = removals.filter((x) => !silent(x.answer));
     const refused = heard.some((x) => !x.answer.ok);
     const accepted = heard.some((x) => x.answer.ok);
     const answered = (x) => (x.answer.threw ? `threw: ${scrub(x.answer.threw)}`
       : `answered HTTP ${x.answer.status}: ${scrub(x.answer.text).slice(0, 260) || '(empty body)'}`);
-    record('access.list-acl.last-binding-removal', Q.removal,
-      heard.length < removals.length ? 'NOT ESTABLISHED' : refused ? 'REFUSED' : 'ACCEPTED',
-      removals.map((x) => `removal ${x.n} of ${strays.length}, removeroleassignment(principalid=`
+    const removalOutcome = heard.length < removals.length ? 'NOT ESTABLISHED' : refused ? 'REFUSED' : 'ACCEPTED';
+    const removalEvidence = removals.map((x) => `removal ${x.n} of ${strays.length}, removeroleassignment(principalid=`
         + `${x.row.principalId},roleDefId=${x.row.roleDefId}), ${whose(x.row.principalId)}'s `
         + `'${x.row.name}' binding, ${answered(x)}`).join('; ')
       + `. The last removal sent was ${whose(last.row.principalId)}'s binding`
@@ -909,7 +966,7 @@
         ? '. A removal that did not answer is not an answer; the rows below still say what the scope reported' : '')
       + (accepted ? '. A 200 here is not evidence by itself: MEASURED 2026-09-22, this endpoint '
         + 'answered 200 for a principal and level that do not exist, so the enumeration row says '
-        + 'whether it took' : ''));
+        + 'whether it took' : '');
 
     // ---- after-last-binding-readback -------------------------------------
     // Immediately, as the deploy reads: its first request after the last removal is this.
@@ -959,16 +1016,44 @@
           + `${survey.count} item(s), so the list completes Phase 4.2`;
     }
     const after = trace.slice(lastRemovalAt);
-    record('access.list-acl.after-last-binding-readback', Q.readback,
-      stopSilent ? 'NOT ESTABLISHED' : 'OBSERVED',
-      stopSilent
-        ? 'a request did not answer after the deploy\'s own retries, so what the deploy concludes '
-          + `rests on a throttle or a transport failure; re-run. ${trace.join('; ')}.`
-        : `${verdict}${after.length ? `. In order after the last removal: ${after.join('; ')}` : '. It makes no read after that'}.`);
+    const readbackTurn = turn;
+    const readbackOutcome = stopSilent ? 'NOT ESTABLISHED' : 'OBSERVED';
+    const readbackEvidence = stopSilent
+      ? 'a request did not answer after the deploy\'s own retries, so what the deploy concludes '
+        + `rests on a throttle or a transport failure; re-run. ${trace.join('; ')}`
+      : `${verdict}${after.length ? `. In order after the last removal: ${after.join('; ')}` : '. It makes no read after that'}`;
 
     // ---- after-last-binding-enumeration, after-last-binding-unique --------
-    // One window, both reads each time; the flag read carries the Id, which re-proves
-    // the title between enumerations.
+    // One window, both reads each time; the flag read selects the Id, and is the proof
+    // (ATTRIBUTION in the header) for the enumeration before it.
+    const settleReads = [];
+    for (let attempt = 0; attempt < SETTLE_READS; attempt += 1) {
+      if (attempt > 0) await sleep(SETTLE_MS);
+      const n = attempt + 1;
+      const e = await enumerate();
+      const flagTurn = nextTurn();
+      const u = await read(api(`${listPath}?$select=Id,HasUniqueRoleAssignments`));
+      const body = u.ok && u.body !== null && typeof u.body === 'object' ? u.body : null;
+      const own = body !== null && noteIdentity(`the flag read ${n}`, body.Id, undefined, flagTurn);
+      settleReads.push({ n, e, u, body, own, flagTurn });
+    }
+
+    // ---- the rows, each only as far as a read by title carried this run's Id ----
+    if (rebound !== null) {
+      closeAll(READ_BY_TITLE, 'NOT ESTABLISHED',
+        `the title '${LIST}' answered another list during the run (${rebound}), so which list `
+        + 'the removals and these reads reached is unknown. Nothing further was written by title.');
+      return;
+    }
+    const unplaced = `no read by title after it carried list ${ownedId} as its Id, so which list `
+      + 'answered is unknown';
+    record('access.list-acl.last-binding-removal', Q.removal,
+      placed(removedTurn) ? removalOutcome : 'NOT ESTABLISHED',
+      `${removalEvidence}${placed(removedTurn) ? '' : `. For the last removal, ${unplaced}`}.`);
+    record('access.list-acl.after-last-binding-readback', Q.readback,
+      placed(readbackTurn) ? readbackOutcome : 'NOT ESTABLISHED',
+      `${readbackEvidence}${placed(readbackTurn) ? '' : `. For the read-back's last request, ${unplaced}`}.`);
+
     const removedKeys = new Set(removals.map((x) => `${x.row.principalId}:${x.row.roleDefId}`));
     const enumReads = [];
     const uniqueReads = [];
@@ -976,27 +1061,32 @@
     const absent = [];
     let enumHeard = 0;
     let uniqueHeard = 0;
-    for (let attempt = 0; attempt < SETTLE_READS; attempt += 1) {
-      if (attempt > 0) await sleep(SETTLE_MS);
-      const n = attempt + 1;
-      const e = await enumerate();
-      if (e.kind === 'rows') {
+    for (const { n, e, u, body, own, flagTurn } of settleReads) {
+      if (e.kind === 'rows' && placed(e.at)) {
         enumHeard += 1;
         const held = e.rows.some((r) => removedKeys.has(`${r.principalId}:${r.levelId}`));
         (held ? present : absent).push(n);
         enumReads.push(`read ${n}: HTTP ${e.status}, ${e.rows.length} row(s) over ${e.pages} `
           + `page(s): ${describeRows(e.rows)}`);
-      } else if (e.kind === 'refused') {
+      } else if (e.kind === 'refused' && placed(e.at)) {
         enumHeard += 1;
         enumReads.push(`read ${n}: ${e.why}`);
+      } else if (e.kind === 'rows' || e.kind === 'refused') {
+        enumReads.push(`read ${n}: ${e.kind === 'rows' ? `HTTP ${e.status}, ${e.rows.length} row(s)` : e.why}, `
+          + `not an answer: ${unplaced}`);
       } else {
         enumReads.push(`read ${n}: ${e.why}, not an answer`);
       }
-      const u = await read(api(`${listPath}?$select=Id,HasUniqueRoleAssignments`));
-      if (u.ok && u.body) noteIdentity(`the flag read ${n}`, u.body.Id);
-      const flag = u.ok && u.body ? u.body.HasUniqueRoleAssignments : undefined;
-      if (silent(u) || (u.ok && typeof flag !== 'boolean')) {
-        uniqueReads.push(`read ${n}: ${describeRead(u)}${u.ok ? ` carrying ${shapeOf(flag)}` : ''}, not an answer`);
+      const flag = own ? body.HasUniqueRoleAssignments : undefined;
+      if (silent(u)) {
+        uniqueReads.push(`read ${n}: ${describeRead(u)}, not an answer`);
+      } else if (u.ok && !own) {
+        uniqueReads.push(`read ${n}: ${describeRead(u)} with an Id of ${shapeOf(body && body.Id)}, `
+          + 'which does not say which list answered, not an answer');
+      } else if (u.ok && typeof flag !== 'boolean') {
+        uniqueReads.push(`read ${n}: ${describeRead(u)} carrying ${shapeOf(flag)}, not an answer`);
+      } else if (!u.ok && !placed(flagTurn)) {
+        uniqueReads.push(`read ${n}: ${describeRead(u)}, not an answer: ${unplaced}`);
       } else {
         uniqueHeard += 1;
         uniqueReads.push(`read ${n}: ${describeRead(u)}${u.ok ? `, HasUniqueRoleAssignments=${flag}` : ''}`);
@@ -1004,7 +1094,7 @@
     }
     const span = `over ${(SETTLE_READS - 1) * SETTLE_MS} ms`;
     const which = (reads) => (reads.length ? `read(s) ${reads.join(', ')}` : 'no read');
-    let summary = `none of the ${SETTLE_READS} reads ${span} answered`;
+    let summary = `none of the ${SETTLE_READS} reads ${span} answered for list ${ownedId}`;
     if (enumHeard && present.length + absent.length === 0) {
       summary = `no read ${span} returned rows`;
     } else if (enumHeard) {
@@ -1015,14 +1105,8 @@
       enumHeard ? 'OBSERVED' : 'NOT ESTABLISHED', `${summary}: ${enumReads.join('; ')}.`);
     record('access.list-acl.after-last-binding-unique', Q.unique,
       uniqueHeard ? 'OBSERVED' : 'NOT ESTABLISHED',
-      `${uniqueHeard ? '' : `none of the ${SETTLE_READS} reads answered. `}`
+      `${uniqueHeard ? '' : `none of the ${SETTLE_READS} reads answered for list ${ownedId}. `}`
       + `HasUniqueRoleAssignments ${span}: ${uniqueReads.join('; ')}.`);
-
-    if (rebound !== null) {
-      closeAll(READ_BY_TITLE, 'NOT ESTABLISHED',
-        `the title '${LIST}' answered another list during the run (${rebound}), so which list `
-        + 'the removals and these reads reached is unknown. Nothing further was written by title.');
-    }
   };
 
   // ---- after-last-binding-delete, and the cleanup it is ------------------
@@ -1038,12 +1122,19 @@
     const result = await deleteById(ownedId);
     // Every request here goes by Id, so a rebound title leaves this row answerable.
     if (removalSent) {
-      const gone = result.gone;
       let outcome = 'NOT ESTABLISHED';
-      if (result.sent && !silent(gone)) outcome = gone.ok ? 'ACCEPTED' : 'REFUSED';
       let head = 'no DELETE was sent';
-      if (result.confirmed) head = 'the list is gone';
-      else if (result.sent) head = 'the list was not read back absent';
+      if (result.fate === 'gone') {
+        outcome = 'ACCEPTED';
+        head = 'the list is gone';
+      } else if (result.fate === 'present' && silent(result.gone)) {
+        head = 'the list is still there, and the DELETE did not answer';
+      } else if (result.fate === 'present') {
+        outcome = 'REFUSED';
+        head = 'the list is still there, so the DELETE did not take';
+      } else if (result.sent) {
+        head = 'the read by Id after the DELETE did not say whether the list is gone';
+      }
       record('access.list-acl.after-last-binding-delete', Q.delete, outcome,
         `${head}: ${result.facts}${rebound === null ? '' : `. Addressed by Id throughout, `
           + `which the rebound title (${rebound}) does not redirect`}.`);
