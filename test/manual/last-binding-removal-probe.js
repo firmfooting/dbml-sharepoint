@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: REMOVING THE LAST ROLE ASSIGNMENT ON A LIST ----
  *
- * REVISION: ca4495b7
+ * REVISION: f1113e49
  *
  * THE REQUEST UNDER TEST (issue #667). A `list_permissions` policy with
  * `reconcile: exact` and no assignments makes Phase 4.2 in
@@ -567,7 +567,7 @@
     record(id, question, row.outcome, row.evidence, row.state);
   };
 
-  log('INFO', 'probe revision ca4495b7. Quote this when reporting results.');
+  log('INFO', 'probe revision f1113e49. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe LastBinding';
   const OWNERSHIP = 'dbml-sharepoint last-binding-removal probe list. Safe to delete.';
@@ -1156,7 +1156,11 @@
       const cleared = await deleteById(leftover);
       if (!cleared.confirmed) {
         refusal = `the CLEANUP delete of '${LIST}' (list ${leftover}) did not complete: `
-          + `${cleared.facts}. Nothing was created over it. ${handDelete(leftover)}`;
+          + `${cleared.facts}. Nothing was created over it. ${cleared.foreign
+            // A pasted line would delete whatever the Id reads as, so none is offered here.
+            ? 'It no longer reads as this probe\'s list, so no line to delete it is printed. Check '
+              + 'it in Site contents before removing it by hand.'
+            : handDelete(leftover)}`;
       } else {
         log('OK', `CLEANUP: deleted the leftover '${LIST}' (list ${leftover}) by its Id and read it back absent.`);
         const after = await read(api(`${listPath}?$select=Id`));

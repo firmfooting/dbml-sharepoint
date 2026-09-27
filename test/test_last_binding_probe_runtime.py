@@ -1573,6 +1573,24 @@ def test_a_leftover_is_deleted_by_its_id_under_cleanup_and_the_run_proceeds() ->
 
 
 @needs_node
+def test_a_leftover_whose_id_reads_as_another_list_gets_no_delete_line() -> None:
+    """The title showed the marker but the read by Id does not, so a pasted
+    line would delete a list this run has just found is not its own."""
+    rows, calls, _output = _run_probe(
+        cleanup=True, titleOccupied="leftover", foreignListId=_LEFTOVER_ID,
+    )
+
+    evidence = rows[FIXTURE_LIST]["evidence"]
+    assert rows[FIXTURE_LIST]["outcome"] == "ABORTED"
+    assert f"the CLEANUP delete of '{_TITLE}' (list {_LEFTOVER_ID}) did not complete" in evidence
+    assert "no line to delete it is printed" in evidence, evidence
+    assert "paste this line" not in evidence
+    for row in ALL[1:]:
+        assert rows[row]["state"] == "void", rows[row]
+    assert not [c for c in calls if c["method"] == "POST"], calls
+
+
+@needs_node
 def test_a_list_that_cannot_be_created_voids_everything_and_deletes_nothing() -> None:
     rows, calls, output = _run_probe(createRefused=True)
 

@@ -779,7 +779,11 @@
       const cleared = await deleteById(leftover);
       if (!cleared.confirmed) {
         refusal = `the CLEANUP delete of '${LIST}' (list ${leftover}) did not complete: `
-          + `${cleared.facts}. Nothing was created over it. ${handDelete(leftover)}`;
+          + `${cleared.facts}. Nothing was created over it. ${cleared.foreign
+            // A pasted line would delete whatever the Id reads as, so none is offered here.
+            ? 'It no longer reads as this probe\'s list, so no line to delete it is printed. Check '
+              + 'it in Site contents before removing it by hand.'
+            : handDelete(leftover)}`;
       } else {
         log('OK', `CLEANUP: deleted the leftover '${LIST}' (list ${leftover}) by its Id and read it back absent.`);
         const after = await read(api(`${listPath}?$select=Id`));
