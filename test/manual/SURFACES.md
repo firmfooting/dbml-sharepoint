@@ -281,7 +281,15 @@ role definition can hold but whether the platform defends the six it ships.
 
 Probes: `enterprise-reader-probe.js`, `reader-bindings-probe.js`,
 `built-in-levels-probe.js`, `lookup-acl-probe.js`,
-`siteuserinfolist-probe.js`, `operator-safety-grant-probe.js`
+`siteuserinfolist-probe.js`, `operator-safety-grant-probe.js`,
+`last-binding-removal-probe.js`
+
+`last-binding-removal-probe.js` asks what `operator-safety-grant-probe.js`
+avoids by granting the owner group first: what removing the LAST role
+assignment on a list does, which is the request an exact policy with no
+assignments sends. It mints its own `fixture-last-binding-` rows rather
+than reusing `fixture-scratch-list`, because it builds a different list and
+ends by deleting it rather than restoring it.
 
 ### 9. `scale`: behaviour at and beyond the list view threshold
 
