@@ -2,16 +2,17 @@
 """The YAML parser every file this package reads goes through.
 
 It reads with ruamel.yaml 0.19.1's pure-Python safe loader, which reads
-YAML 1.2. Until 2026-09 every file here was read by PyYAML, which reads
-YAML 1.1, where `off` is a boolean, `010` is 8 and `1:30` is 90. A file does
-not say which version it was written for, so a value the two read
-differently is refused rather than read either way (#686). ruamel.yaml
-reads `1_000` and `0b101` as numbers, as YAML 1.1 does, where the YAML 1.2
-core schema reads them as text.
+YAML 1.2: `yes`, `no`, `on` and `off` are text, `010` is 10 and `1:30` is
+text. Until 2026-09 every file here was read by PyYAML, which reads YAML
+1.1, where those are a boolean, 8 and 90. ruamel.yaml reads `1_000` and
+`0b101` as numbers, as YAML 1.1 does, where the YAML 1.2 core schema
+reads them as text.
 
 The YAML spec requires the keys of a mapping to be unique. ruamel.yaml
 checks, but not in a mapping that merges another nor inside the merged
-one, so this loader refuses a repeated key itself (#672).
+one, so this loader refuses a repeated key itself (#672). It also refuses
+an explicit tag and a `%YAML` or `%TAG` directive, which would read a
+value by other rules, and the valid YAML `RefusedYAMLError` names (#686).
 
 A leaf that imports only `ruamel.yaml`, so every module that parses YAML
 can use it without importing another's parser. The mapping reader, the
@@ -23,10 +24,7 @@ way, though it imports `model.errors` and so is not a leaf.
 
 import datetime as dt
 import io
-import json
-import math
-import re
-from collections.abc import Callable, Hashable
+from collections.abc import Hashable
 from typing import IO, Any, override
 
 from ruamel.yaml import YAML
@@ -35,10 +33,7 @@ from ruamel.yaml.constructor import ConstructorError, SafeConstructor
 from ruamel.yaml.error import FileMark, StreamMark, YAMLError
 from ruamel.yaml.events import AliasEvent, CollectionStartEvent, ScalarEvent
 from ruamel.yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
-from ruamel.yaml.representer import SafeRepresenter
-from ruamel.yaml.resolver import VersionedResolver
 from ruamel.yaml.scanner import Scanner
-from ruamel.yaml.tag import Tag
 from ruamel.yaml.tokens import DirectiveToken
 
 #: What a parse of malformed YAML raises, so a caller can catch it without ruamel.yaml.
@@ -48,273 +43,13 @@ PARSE_ERRORS: tuple[type[YAMLError]] = (YAMLError,)
 _MERGE_TAG = "tag:yaml.org,2002:merge"
 
 _STR = "tag:yaml.org,2002:str"
-_BOOL = "tag:yaml.org,2002:bool"
-_FLOAT = "tag:yaml.org,2002:float"
-_INT = "tag:yaml.org,2002:int"
 _TIME = "tag:yaml.org,2002:timestamp"
-
-#: A version's implicit resolvers: a tag, its pattern and the first characters it is tried on.
-type _Table = tuple[tuple[str, re.Pattern[str], frozenset[str]], ...]
-
-#: YAML 1.1 as PyYAML 6.0.3 read it, which read every file here until 2026-09: its
-#: resolvers for the three tags YAML 1.2 changed, copied from its `resolver.py` in the
-#: order it tried them. Its null, merge, timestamp and value resolvers are the same
-#: as ruamel.yaml's, and were tried after these.
-_YAML_1_1: _Table = (
-    (
-        _BOOL,
-        re.compile(r'''^(?:yes|Yes|YES|no|No|NO
-                    |true|True|TRUE|false|False|FALSE
-                    |on|On|ON|off|Off|OFF)$''', re.VERBOSE),
-        frozenset('yYnNtTfFoO'),
-    ),
-    (
-        _FLOAT,
-        re.compile(r'''^(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+][0-9]+)?
-                    |\.[0-9][0-9_]*(?:[eE][-+][0-9]+)?
-                    |[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*
-                    |[-+]?\.(?:inf|Inf|INF)
-                    |\.(?:nan|NaN|NAN))$''', re.VERBOSE),
-        frozenset('-+0123456789.'),
-    ),
-    (
-        _INT,
-        re.compile(r'''^(?:[-+]?0b[0-1_]+
-                    |[-+]?0[0-7_]+
-                    |[-+]?(?:0|[1-9][0-9_]*)
-                    |[-+]?0x[0-9a-fA-F_]+
-                    |[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+)$''', re.VERBOSE),
-        frozenset('-+0123456789'),
-    ),
-)
-
-#: ruamel.yaml 0.19.1's YAML 1.2 resolvers for the same three tags, copied from
-#: its `resolver.py` in the order it tries them.
-_YAML_1_2: _Table = (
-    (
-        _BOOL,
-        re.compile('''^(?:true|True|TRUE|false|False|FALSE)$''', re.VERBOSE),
-        frozenset('tTfF'),
-    ),
-    (
-        _FLOAT,
-        re.compile('''^(?:
-         [-+]?(?:[0-9][0-9_]*)\\.[0-9_]*(?:[eE][-+]?[0-9]+)?
-        |[-+]?(?:[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)
-        |[-+]?\\.[0-9_]+(?:[eE][-+][0-9]+)?
-        |[-+]?\\.(?:inf|Inf|INF)
-        |\\.(?:nan|NaN|NAN))$''', re.VERBOSE),
-        frozenset('-+0123456789.'),
-    ),
-    (
-        _INT,
-        re.compile('''^(?:[-+]?0b[0-1_]+
-        |[-+]?0o?[0-7_]+
-        |[-+]?[0-9_]+
-        |[-+]?0x[0-9a-fA-F_]+)$''', re.VERBOSE),
-        frozenset('-+0123456789'),
-    ),
-)
-
-#: The timestamp resolver both versions share, copied from PyYAML 6.0.3.
-_TIMESTAMP = re.compile(r'''^(?:[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]
-                    |[0-9][0-9][0-9][0-9] -[0-9][0-9]? -[0-9][0-9]?
-                     (?:[Tt]|[ \t]+)[0-9][0-9]?
-                     :[0-9][0-9] :[0-9][0-9] (?:\.[0-9]*)?
-                     (?:[ \t]*(?:Z|[-+][0-9][0-9]?(?::[0-9][0-9])?))?)$''', re.VERBOSE)
-
-#: PyYAML 6.0.3's `SafeConstructor.timestamp_regexp`, which split what the resolver matched.
-_TIME_PARTS = re.compile(r'''^(?P<year>[0-9][0-9][0-9][0-9])
-                -(?P<month>[0-9][0-9]?)
-                -(?P<day>[0-9][0-9]?)
-                (?:(?:[Tt]|[ \t]+)
-                (?P<hour>[0-9][0-9]?)
-                :(?P<minute>[0-9][0-9])
-                :(?P<second>[0-9][0-9])
-                (?:\.(?P<fraction>[0-9]*))?
-                (?:[ \t]*(?P<tz>Z|(?P<tz_sign>[-+])(?P<tz_hour>[0-9][0-9]?)
-                (?::(?P<tz_minute>[0-9][0-9]))?))?)?$''', re.VERBOSE)
-
-#: The keys of PyYAML 6.0.3's `SafeConstructor.bool_values`, which it looked a boolean up in.
-_BOOLEANS_1_1 = frozenset({"yes", "no", "true", "false", "on", "off"})
-
-#: A fraction's digits past the sixth, cut to spell the time YAML 1.1 has read.
-_LONG_FRACTION = re.compile(r"(\.[0-9]{6})[0-9]+")
-
-#: An int both versions read, in digits YAML 1.1 takes as octal.
-_OCTAL = re.compile(r"^[-+]?0[0-7_]+$")
 
 #: How deep a document may nest, well inside the interpreter's recursion limit.
 _MAX_DEPTH = 100
 
 #: How many refusals one error lists before it counts the rest.
 _MAX_LISTED = 20
-
-
-def _tag(table: _Table, value: str) -> str | None:
-    """The tag `table` resolves a plain `value` to, or None where it resolves none of the three."""
-    for tag, pattern, first in table:
-        # A resolver is tried only on a value whose first character it lists, so `_1` is text.
-        if value[:1] in first and pattern.match(value):
-            return tag
-    return None
-
-
-def _shown(value: str) -> str:
-    """`value` as a double-quoted YAML scalar, which is also how a message quotes it."""
-    return json.dumps(value, ensure_ascii=False)
-
-
-def _spelling(number: float) -> str:
-    """`number` written so that YAML 1.1 and 1.2 both read it back as itself."""
-    if isinstance(number, int):
-        return str(number)
-    if math.isinf(number):
-        return ".inf" if number > 0 else "-.inf"
-    text = repr(number)
-    mantissa, exponent, power = text.partition("e")
-    # YAML 1.1 reads `1e+300` as text; its float needs a dot in the mantissa.
-    return f"{mantissa}.0e{power}" if exponent and "." not in mantissa else text
-
-
-def _sexagesimal(tag: str, value: str) -> float:
-    """The number YAML 1.1 read from a base-60 `value`, such as 90 from `1:30`."""
-    digits = value.replace("_", "")
-    sign = -1 if digits[0] == "-" else 1
-    convert: Callable[[str], float] = float if tag == _FLOAT else int
-    number: float = 0
-    base = 1
-    for part in reversed(digits.lstrip("+-").split(":")):
-        number += convert(part) * base
-        base *= 60
-    return sign * number
-
-
-def _number_1_2(tag: str, value: str) -> float:
-    """The number ruamel.yaml 0.19.1 reads from a `value` YAML 1.1 read as text.
-
-    Raises ValueError where ruamel.yaml fails too, as it does on `-_` and `._`.
-    """
-    digits = value.replace("_", "")
-    if tag == _FLOAT:
-        return float(digits)
-    sign = -1 if digits[:1] == "-" else 1
-    digits = digits.lstrip("+-")
-    base = 8 if digits.startswith("0o") else 10
-    return sign * int(digits[2:] if base == 8 else digits, base)
-
-
-def _refusal(value: str) -> str | None:
-    """Why a `value` the resolver reads is refused, or None where YAML 1.1 and 1.2 agree.
-
-    The regexes admit six disagreements and no more: a 1.1 boolean that 1.2
-    reads as text, a 1.1 base-60 int or float that 1.2 reads as text, a 1.1
-    text that 1.2 reads as an int or a float, and an int whose digits 1.1
-    reads as octal. A timestamp whose seventh fraction digit is 5 or more is
-    the one value both tag alike and construct differently.
-    """
-    was, now = _tag(_YAML_1_1, value), _tag(_YAML_1_2, value)
-    if was == now and not (was == _INT and _OCTAL.match(value)):
-        return _timestamp_refusal(value) if was is None and _TIMESTAMP.match(value) else None
-    if was == _BOOL:
-        if value.lower() not in _BOOLEANS_1_1:
-            # A `!` block scalar keeps its line break, which the resolver takes and the lookup not.
-            return (
-                f"`{_shown(value)[1:-1]}` fails to load until now and is read as text in "
-                f"YAML 1.2; quote it ({_shown(value)}) for text"
-            )
-        word = "true" if value.lower() in {"yes", "on"} else "false"
-        return (
-            f"`{_shown(value)[1:-1]}` is read as a boolean until now and as text in YAML 1.2; "
-            f"write `{word}` to keep the boolean, or quote it ({_shown(value)}) for text"
-        )
-    try:
-        return _number_refusal(value, was, now)
-    except (ValueError, OverflowError):
-        # Past Python's 4,300-digit limit or a float's range, so a reading cannot be written.
-        return (
-            f"`{_shown(value)[1:41]}...` is a number too long to compare between YAML 1.1 "
-            "and 1.2; quote it for text"
-        )
-
-
-def _number_refusal(value: str, was: str | None, now: str | None) -> str | None:
-    """Why a number YAML 1.1 or 1.2 reads is refused, or None for an octal both read alike.
-
-    Raises ValueError or OverflowError for a number too long to write.
-    """
-    shown, quoted = _shown(value)[1:-1], _shown(value)
-    if was == now:
-        digits = value.replace("_", "")
-        octal, decimal = int(digits, 8), int(digits, 10)
-        if octal == decimal:
-            return None
-        return (
-            f"`{shown}` is read as the number {octal} until now and as the number "
-            f"{decimal} in YAML 1.2; write {octal} to keep the number, "
-            f"or quote it ({quoted}) for text"
-        )
-    if now is None:
-        number = _spelling(_sexagesimal(was or _INT, value))
-        return (
-            f"`{shown}` is read as the number {number} until now and as text in YAML 1.2; "
-            f"write {number} to keep the number, or quote it ({quoted}) for text"
-        )
-    try:
-        constructed = _number_1_2(now, value)
-    except ValueError:
-        return (
-            f"`{shown}` is read as text until now and as a number YAML 1.2 cannot "
-            f"construct; quote it ({quoted}) to keep the text"
-        )
-    number = _spelling(constructed)
-    return (
-        f"`{shown}` is read as text until now and as the number {number} in YAML 1.2; "
-        f"quote it ({quoted}) to keep the text, or write {number}"
-    )
-
-
-def _timestamp_refusal(value: str) -> str | None:
-    """Why a timestamp is refused, or None where both versions construct the same time.
-
-    PyYAML 6.0.3 kept six fraction digits and dropped the rest. ruamel.yaml
-    0.19.1 adds one to the sixth when the seventh is 5 or more, and carries
-    a fraction that reaches a million into the second, so only then do the
-    two differ.
-    """
-    parts = _TIME_PARTS.match(value)
-    if parts is None or len(fraction := parts["fraction"] or "") < 7 or fraction[6] < "5":
-        return None
-    try:
-        was = _time_1_1(parts)
-    except ValueError:
-        # Neither version constructs it, and the constructor's error names why.
-        return None
-    try:
-        now = f"as the time {(was + dt.timedelta(microseconds=1)).isoformat()} in YAML 1.2"
-    except OverflowError:
-        # The carry passes the last time a datetime holds, and ruamel.yaml raises.
-        now = "as a time YAML 1.2 cannot construct"
-    kept = _shown(_LONG_FRACTION.sub(r"\1", value, count=1))[1:-1]
-    return (
-        f"`{_shown(value)[1:-1]}` is read as the time {was.isoformat()} until now and {now}; "
-        f"write `{kept}` to keep the time, or quote it ({_shown(value)}) for text"
-    )
-
-
-def _time_1_1(parts: re.Match[str]) -> dt.datetime:
-    """The time PyYAML 6.0.3 constructed from a timestamp's `parts`, its fraction cut to six."""
-    tzinfo: dt.tzinfo | None = None
-    if parts["tz_sign"]:
-        offset = dt.timedelta(hours=int(parts["tz_hour"]), minutes=int(parts["tz_minute"] or 0))
-        tzinfo = dt.timezone(-offset if parts["tz_sign"] == "-" else offset)
-    elif parts["tz"]:
-        tzinfo = dt.UTC
-    return dt.datetime(
-        int(parts["year"]), int(parts["month"]), int(parts["day"]), int(parts["hour"]),
-        int(parts["minute"]), int(parts["second"]), int(parts["fraction"][:6].ljust(6, "0")),
-        tzinfo=tzinfo,
-    )
 
 
 def _written_tag(tag: str | None) -> str | None:
@@ -329,12 +64,12 @@ def _tag_name(tag: str) -> str:
     return tag if tag.startswith("!") else f"!<{tag}>"
 
 
-class AmbiguousYAMLError(YAMLError):
-    """A document that uses spellings YAML 1.1 and 1.2 read differently.
+class TagOrDirectiveError(YAMLError):
+    """A document that writes an explicit tag or a directive the loader refuses.
 
     Every one found is listed with its line, up to `_MAX_LISTED`, so one run
-    names them all. `str()` begins "uses spellings", so a caller can prefix
-    the file's path.
+    names them all. `str()` begins "uses tags or directives", so a caller
+    can prefix the file's path.
     """
 
     def __init__(self, found: list[tuple[StreamMark, str]]) -> None:
@@ -346,15 +81,15 @@ class AmbiguousYAMLError(YAMLError):
         ]
         if len(found) > _MAX_LISTED:
             lines.append(f"  and {len(found) - _MAX_LISTED} more")
-        super().__init__("\n".join(["uses spellings YAML 1.1 and 1.2 read differently:", *lines]))
+        super().__init__("\n".join(["uses tags or directives the loader refuses:", *lines]))
 
-    def moved(self, line: int, column: int) -> "AmbiguousYAMLError":
+    def moved(self, line: int, column: int) -> "TagOrDirectiveError":
         """This refusal of a fragment cut from a file, placed where the fragment starts there.
 
         `line` and `column` count from zero, as a mark does. Only the
         fragment's first line is offset by `column`.
         """
-        return AmbiguousYAMLError([
+        return TagOrDirectiveError([
             (
                 FileMark(
                     mark.name, mark.index, mark.line + line,
@@ -371,10 +106,9 @@ class RefusedYAMLError(ComposerError):
 
     A reused anchor, a sequence or mapping used as a key, an alias inside
     the collection its anchor names, and nesting deeper than `_MAX_DEPTH`.
-    The YAML spec allows each; the loader refuses them because the two
-    versions' readers read them differently or a reader of the result
-    cannot finish. `str()` is the marked message, so a caller can prefix
-    the file's path.
+    The YAML spec allows each; the loader refuses them because ruamel.yaml
+    would build a value no reader here expects or can finish walking. `str()`
+    is the marked message, so a caller can prefix the file's path.
     """
 
 
@@ -410,13 +144,12 @@ class _Scanner(Scanner):
 
 
 class _Composer(Composer):
-    """ruamel.yaml's composer, refusing what YAML 1.1 and 1.2 read differently.
+    """ruamel.yaml's composer, refusing explicit tags and the valid YAML it will not read.
 
-    The version check runs as each node is composed, from the parser's
-    event: a node cannot say whether its tag was written or resolved. It
-    refuses a resolved scalar the two versions read differently and every
-    explicit tag but `!!str` on a scalar, and collects them with the
-    scanner's refused directives before one `AmbiguousYAMLError`. What
+    The tag check runs as each node is composed, from the parser's event: a
+    node cannot say whether its tag was written or resolved. It refuses
+    every explicit tag but `!!str` on a scalar, and collects them with the
+    scanner's refused directives before one `TagOrDirectiveError`. What
     `RefusedYAMLError` names is refused as it is found, among it an alias
     inside the collection its anchor names, which ruamel.yaml would read as
     a collection that contains itself.
@@ -429,14 +162,14 @@ class _Composer(Composer):
         self._enclosing: dict[str, StreamMark] = {}
 
     def _refuse_tag(self, tag: str, mark: StreamMark, *, scalar: bool) -> None:
-        """Record an explicit `tag`, which the two versions may construct differently."""
+        """Record an explicit `tag`, which would read its value by rules of its own."""
         fix = (
             "remove it to read the value as though untagged, or write `!!str` for text"
             if scalar else "remove it"
         )
         why = (
-            f"the tag `{_tag_name(tag)}` is refused, because YAML 1.1 and 1.2 construct "
-            f"tagged values differently; {fix}"
+            f"the tag `{_tag_name(tag)}` is refused, because the loader reads every value "
+            f"by one fixed set of rules; {fix}"
         )
         _found(self.loader).append((mark, why))
 
@@ -444,11 +177,7 @@ class _Composer(Composer):
     def compose_scalar_node(self, anchor: Any) -> ScalarNode:
         event: ScalarEvent = self.parser.peek_event()
         tag = _written_tag(event.tag)
-        if tag is None:
-            # A `!` scalar is resolved from its text like a plain one, even when quoted.
-            if event.implicit[0] and (why := _refusal(event.value)) is not None:
-                _found(self.loader).append((event.start_mark, why))
-        elif tag != _STR:
+        if tag is not None and tag != _STR:
             self._refuse_tag(tag, event.start_mark, scalar=True)
         node: ScalarNode = super().compose_scalar_node(anchor)
         return node
@@ -550,7 +279,7 @@ class UniqueKeyConstructor(SafeConstructor):
     def get_single_data(self) -> Any:
         node: Node | None = self.composer.get_single_node()
         if found := _found(self.loader):
-            raise AmbiguousYAMLError(found)
+            raise TagOrDirectiveError(found)
         return None if node is None else self.construct_document(node)
 
     @override
@@ -644,56 +373,24 @@ class _Reading(YAML):
 
 
 def safe_load(stream: str | IO[str]) -> Any:
-    """ruamel.yaml's safe load, refusing a repeated key and what YAML 1.1 read differently."""
+    """ruamel.yaml's safe load, with the refusals the module docstring lists."""
     return _Reading().load(stream)
-
-
-class _EitherVersion(VersionedResolver):
-    """ruamel.yaml's resolver, and YAML 1.1's where YAML 1.2 reads a plain value as text.
-
-    So the writer quotes a string either version would read as another type.
-    """
-
-    @override
-    def resolve(self, kind: Any, value: Any, implicit: Any) -> Any:
-        tag: Tag = super().resolve(kind, value, implicit)
-        if kind is ScalarNode and implicit[0] and str(tag) == _STR:
-            was = _tag(_YAML_1_1, value)
-            if was is not None:
-                return Tag(suffix=was)
-        return tag
-
-
-class _Representer(SafeRepresenter):
-    """ruamel.yaml's safe representer, writing a float YAML 1.1 reads as a float too."""
-
-    @override
-    def represent_float(self, data: Any) -> ScalarNode:
-        node: ScalarNode = super().represent_float(data)
-        text: str = node.value
-        # YAML 1.1 reads `1e+300` as text; its float needs a dot in the mantissa.
-        if "e" in text and "." not in text:
-            node.value = text.replace("e", ".0e", 1)
-        return node
-
-
-_Representer.add_representer(float, _Representer.represent_float)
 
 
 def safe_dump(data: object) -> str:
     """`data` as YAML for an operator to edit and diff.
 
-    A string either YAML version would read as another type is quoted, so
-    the output reads back through `safe_load` unrefused and unchanged. Keys
-    keep their order, and `width` is effectively off: the default wraps a
-    long scalar across lines, which is legal YAML and unreadable in a diff,
-    since a one-word edit to a validation message reflows the whole block.
+    ruamel.yaml's safe writer quotes a string its reader would read as
+    another type, so the output reads back through `safe_load` unchanged.
+    Keys keep their order, text is written as it is, and `width` is
+    effectively off: the default wraps a long scalar across lines, which is
+    legal YAML and unreadable in a diff, since a one-word edit to a
+    validation message reflows the whole block.
     """
     writer = YAML(typ="safe", pure=True)
-    writer.Resolver = _EitherVersion
-    writer.Representer = _Representer
     writer.default_flow_style = False
     writer.sort_base_mapping_type_on_output = False
+    writer.allow_unicode = True
     writer.width = 10_000
     written = io.StringIO()
     writer.dump(data, written)

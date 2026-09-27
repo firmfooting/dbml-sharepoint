@@ -64,39 +64,6 @@ def _refuses(path: Path, error: type[ValueError], match: str | None = None) -> V
     return err.value
 
 
-def _boolean(line: int, column: int, written: str, kept: str) -> str:
-    """The version guard's line for a YAML 1.1 boolean, which YAML 1.2 reads as text."""
-    return (
-        f"line {line}, column {column}: `{written}` is read as a boolean until now and as "
-        f"text in YAML 1.2; write `{kept}` to keep the boolean, or quote it "
-        f'("{written}") for text'
-    )
-
-
-def _octal(line: int, column: int) -> str:
-    """The version guard's line for `010`, an octal 8 in YAML 1.1 and 10 in 1.2."""
-    return (
-        f"line {line}, column {column}: `010` is read as the number 8 until now and as the "
-        'number 10 in YAML 1.2; write 8 to keep the number, or quote it ("010") for text'
-    )
-
-
-def _refused_by_the_version_guard(path: Path, *found: str) -> None:
-    """Assert loading `path` refuses exactly `found`, the spellings YAML 1.1 and 1.2 read apart.
-
-    Refused by the parser, so the refusal names the file and every line (#686).
-    """
-    __tracebackhide__ = True
-    with pytest.raises(MappingError) as err:
-        load_mapping(path)
-    assert type(err.value) is MappingSourceError
-    assert isinstance(err.value.__cause__, _yaml.AmbiguousYAMLError)
-    assert str(err.value) == "\n".join([
-        f"{path.resolve()}: uses spellings YAML 1.1 and 1.2 read differently:",
-        *(f"  {line}" for line in found),
-    ])
-
-
 def test_unknown_entity_kind_is_a_load_error(tmp_path: Path) -> None:
     """kind is a Literal-typed closed vocabulary; the loader is its one
     admission gate. A typo'd kind must fail the build here. Before this
@@ -496,13 +463,10 @@ def test_retention_policy_rejects_unknown_key(tmp_path: Path) -> None:
             "unknown key(s) ['list_defualts'] (known: ['list_defaults', 'policies'])",
         ),
         ("false: x", "key False is not text (YAML read it as bool); quote it"),
-        (
-            "No: x",
-            "uses spellings YAML 1.1 and 1.2 read differently:\n  "
-            + _boolean(4, 1, "No", "false"),
-        ),
+        # A boolean in YAML 1.1, and text in YAML 1.2.
+        ("No: x", "unknown key(s) ['No'] (known: ['list_defaults', 'policies'])"),
     ],
-    ids=["misspelled", "not-text", "read-differently"],
+    ids=["misspelled", "not-text", "text-in-yaml-1-2"],
 )
 def test_the_retention_file_refuses_a_key_it_does_not_read(
     tmp_path: Path, typed: str, message: str,
@@ -590,10 +554,11 @@ def test_an_enum_source_key_that_is_not_text_is_refused(tmp_path: Path) -> None:
     )
 
 
-def test_an_enum_source_key_yaml_1_2_reads_as_text_is_refused_by_the_version_guard(
+def test_an_enum_source_key_yaml_1_2_reads_as_text_matches_its_fragment(
     tmp_path: Path,
 ) -> None:
-    """The `yes:` key of the case above, refused in the file that holds it (#686)."""
+    """The `yes:` key the case above was written with. YAML 1.2 reads it as
+    the text "yes", so `#yes` finds it."""
     write_mapping(tmp_path, """
         yes:
           - "Open"
@@ -602,13 +567,7 @@ def test_an_enum_source_key_yaml_1_2_reads_as_text_is_refused_by_the_version_gua
         enum_sources:
           answer: "answers.yaml#yes"
     """), prefix='prefix: "MIN_"', name="mapping.yaml")
-    with pytest.raises(MappingError) as err:
-        load_mapping(path)
-    assert type(err.value) is MappingSourceError
-    assert str(err.value) == (
-        f"{(tmp_path / 'answers.yaml').resolve()}: uses spellings YAML 1.1 and 1.2 read "
-        f"differently:\n  {_boolean(1, 1, 'yes', 'true')}"
-    )
+    assert load_mapping(path).enum_choices["answer"] == ["Open"]
 
 
 def test_extension_config_for_selects_block_by_name(tmp_path: Path) -> None:
@@ -695,18 +654,18 @@ def test_an_extension_block_reaches_the_extension_untouched(tmp_path: Path) -> N
     assert bundle.extension_config_for("audit") == {2026: "x", False: "y"}
 
 
-@pytest.mark.parametrize(("block", "found"), [
-    pytest.param("[on]", _boolean(5, 11, "on", "true"), id="list"),
-    pytest.param("{ 2026: x, off: y }", _boolean(5, 21, "off", "false"), id="key"),
-])
-def test_an_extension_block_is_still_read_by_the_version_guard(
-    tmp_path: Path, block: str, found: str,
-) -> None:
-    """Passed through untouched means untyped, not unparsed: the parser reads
-    the block, so `on` and `off`, booleans in YAML 1.1 and text in 1.2, are
-    refused here as everywhere else (#686). These were the two tests above."""
-    path = write_mapping(tmp_path, blocks(entities("Risk"), f"extensions:\n  audit: {block}"))
-    _refused_by_the_version_guard(path, found)
+def test_an_extension_block_is_read_as_yaml_1_2(tmp_path: Path) -> None:
+    """The two tests above were written with `[on]` and `off:`, booleans in
+    YAML 1.1. YAML 1.2 reads both as text, so the list is still refused and
+    the key reaches the extension as the text typed."""
+    listed = write_mapping(tmp_path, blocks(entities("Risk"), "extensions:\n  audit: [on]"))
+    with pytest.raises(MappingShapeError) as err:
+        load_mapping(listed)
+    assert str(err.value) == "extensions.audit: expected a mapping, got list"
+    keyed = write_mapping(
+        tmp_path, blocks(entities("Risk"), "extensions:\n  audit: { 2026: x, off: y }"),
+    )
+    assert load_mapping(keyed).extension_config_for("audit") == {2026: "x", "off": "y"}
 
 
 def test_entity_display_column_parsed(tmp_path: Path) -> None:
@@ -904,7 +863,7 @@ def test_row_limit_refuses_a_yaml_boolean(tmp_path: Path) -> None:
     field of this same dataclass, has always rejected `isinstance(px, bool)`
     for precisely this reason; `row_limit` was simply missed.
 
-    `yes` is refused by the parser now (#686), so `true` holds the reader to it.
+    YAML 1.2 reads `yes` as text (#686), so `true` holds the reader to it.
     """
     write_mapping(tmp_path, _views_yaml("""
         views:
@@ -916,16 +875,17 @@ def test_row_limit_refuses_a_yaml_boolean(tmp_path: Path) -> None:
     _refuses(tmp_path / "m.yaml", MappingShapeError, "row_limit")
 
 
-def test_row_limit_yes_is_refused_by_the_version_guard(tmp_path: Path) -> None:
+def test_row_limit_yes_is_refused_as_text(tmp_path: Path) -> None:
     """The spelling of the one-row view above, which YAML 1.2 reads as text."""
-    path = write_mapping(tmp_path, _views_yaml("""
+    write_mapping(tmp_path, _views_yaml("""
         views:
           Project:
             - title: Everything
               fields: [Title]
               row_limit: yes
     """))
-    _refused_by_the_version_guard(path, _boolean(8, 18, "yes", "true"))
+    err = _refuses(tmp_path / "m.yaml", MappingShapeError)
+    assert str(err) == "views.Project[0].row_limit must be an integer, got 'yes'"
 
 
 def test_row_limit_refuses_a_non_integer(tmp_path: Path) -> None:
@@ -1627,12 +1587,13 @@ def test_a_top_level_key_that_is_not_text_is_refused_before_the_unknown_sections
     assert str(err.value) == message
 
 
-def test_a_top_level_key_yaml_1_2_reads_as_text_is_refused_by_the_version_guard(
+def test_a_top_level_key_yaml_1_2_reads_as_text_is_an_unknown_section(
     tmp_path: Path,
 ) -> None:
-    """`No:` was the case above until the parser refused it (#686)."""
-    path = write_mapping(tmp_path, blocks(entities("Risk"), "No: x"))
-    _refused_by_the_version_guard(path, _boolean(4, 1, "No", "false"))
+    """`No:` was the case above while YAML 1.1 read it as False (#686)."""
+    write_mapping(tmp_path, blocks(entities("Risk"), "No: x"))
+    err = _refuses(tmp_path / "m.yaml", UnknownMappingKeyError)
+    assert str(err).startswith("unknown mapping section(s) ['No']. ")
 
 
 def test_documented_permissions_block_is_rejected_not_ignored(tmp_path: Path) -> None:
@@ -5380,7 +5341,7 @@ def test_an_unquoted_retired_date_still_loads_as_iso_text(tmp_path: Path) -> Non
 #: read as text (#664). `str()` turned `false:` into "False", `2.10:` into
 #: "2.1" and `0x10:` into "16", none of them what was typed, and merged `1:`
 #: into a `"1":` beside it. The `No:` and `010:` these cases were written with
-#: are refused by the parser now (#686); `_VERSION_KEY_CASES` keeps them.
+#: are text and 10 in YAML 1.2 (#686), and the `_YAML_1_2_` cases keep them.
 _NON_TEXT_KEY_CASES = [
     pytest.param(
         blocks(entities("Risk"), 'calculated_formulas:\n  Risk: { false: "=1" }'),
@@ -5575,22 +5536,22 @@ def test_a_key_yaml_did_not_read_as_text_is_refused_by_its_path(
 
 
 #: The spellings the cases above, `_DELEGATED_STYLE_CASES` and
-#: `_COERCED_VALUE_CASES` were written with before the parser refused what
-#: YAML 1.1 and 1.2 read differently (#686), each with where it is refused.
-_VERSION_REFUSED_CASES = [
-    pytest.param(
-        blocks(entities("Risk"), 'calculated_formulas:\n  Risk: { No: "=1" }'),
-        _boolean(5, 11, "No", "false"),
-        id="mapping-bool",
-    ),
+#: `_COERCED_VALUE_CASES` were written with while YAML 1.1 read them (#686).
+#: YAML 1.2 reads `No`, `On`, `Yes` and `Off` as text and `010` as 10, and
+#: these are the ones their section still refuses.
+_YAML_1_2_REFUSED_CASES = [
     pytest.param(
         blocks(entities("Risk"), "enum_sources: { 010: topics.yaml }"),
-        _octal(4, 17),
+        MappingShapeError,
+        "enum_sources: key 10 is not text (YAML read it as int); quote it",
         id="mapping-octal",
     ),
     pytest.param(
         _views_yaml("views:\n  Project:\n    - { title: All, fields: [Title], On: true }"),
-        _boolean(6, 38, "On", "true"),
+        UnknownMappingKeyError,
+        "views.Project[0]: unknown key(s) ['On'] (known: ['default', 'fields', 'formatting', "
+        "'group_by', 'renamed_from', 'row_limit', 'scope', 'sort', 'title', 'totals', 'where', "
+        "'widths'])",
         id="known-keys-bool",
     ),
     pytest.param(
@@ -5598,29 +5559,9 @@ _VERSION_REFUSED_CASES = [
             "views:\n  Project:\n    - { title: All, fields: [Title], "
             "sort: [{ field: Title, 010: asc }] }",
         ),
-        _octal(6, 61),
+        MappingShapeError,
+        "views.Project[0].sort[0]: key 10 is not text (YAML read it as int); quote it",
         id="known-keys-octal",
-    ),
-    pytest.param(
-        blocks(entities("Risk"), "form_visibility:\n  Risk:\n    columns:\n      No: hidden"),
-        _boolean(7, 7, "No", "false"),
-        id="form-visibility-column",
-    ),
-    pytest.param(
-        _views_yaml(
-            "views:\n  Project:\n    - { title: All, fields: [Title], totals: { Yes: count } }",
-        ),
-        _boolean(6, 48, "Yes", "true"),
-        id="view-totals",
-    ),
-    pytest.param(
-        blocks(entities("Risk"), """
-            demo_items:
-              Risk:
-                - { key: r1, values: { Title: First, Off: x } }
-        """),
-        _boolean(6, 42, "Off", "false"),
-        id="demo-values",
     ),
     pytest.param(
         _views_yaml("""
@@ -5630,8 +5571,46 @@ _VERSION_REFUSED_CASES = [
                   fields: [Title]
                   where: [{ field: Status, op: eq, value: Open, On: x }]
         """),
-        _boolean(8, 53, "On", "true"),
+        UnknownMappingKeyError,
+        "views.Project[0].where.all_of[0]: unknown key(s) ['On'] on a condition",
         id="condition-leaf-key",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "error", "message"), _YAML_1_2_REFUSED_CASES)
+def test_a_spelling_yaml_1_1_read_otherwise_is_refused_by_its_section_as_yaml_1_2_reads_it(
+    tmp_path: Path, body: str, error: type[MappingError], message: str,
+) -> None:
+    write_mapping(tmp_path, body)
+    with pytest.raises(MappingError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert type(err.value) is error
+    assert str(err.value) == message
+
+
+#: The rest of those spellings, which YAML 1.2 reads as text their section takes.
+_YAML_1_2_TEXT_CASES = [
+    pytest.param(
+        blocks(entities("Risk"), 'calculated_formulas:\n  Risk: { No: "=1" }'), id="mapping-bool",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), "form_visibility:\n  Risk:\n    columns:\n      No: hidden"),
+        id="form-visibility-column",
+    ),
+    pytest.param(
+        _views_yaml(
+            "views:\n  Project:\n    - { title: All, fields: [Title], totals: { Yes: count } }",
+        ),
+        id="view-totals",
+    ),
+    pytest.param(
+        blocks(entities("Risk"), """
+            demo_items:
+              Risk:
+                - { key: r1, values: { Title: First, Off: x } }
+        """),
+        id="demo-values",
     ),
     pytest.param(
         blocks(entities("Risk"), """
@@ -5639,7 +5618,6 @@ _VERSION_REFUSED_CASES = [
               Risk:
                 Title: { elmType: div, attributes: { No: x } }
         """),
-        _boolean(6, 42, "No", "false"),
         id="inline-column-formatter",
     ),
     pytest.param(
@@ -5647,7 +5625,6 @@ _VERSION_REFUSED_CASES = [
             entities("Risk"),
             "column_formatting:\n  Risk:\n    Status: { style: pill, map: { No: good } }",
         ),
-        _boolean(6, 35, "No", "false"),
         id="spec-map-key-bool",
     ),
     pytest.param(
@@ -5657,16 +5634,16 @@ _VERSION_REFUSED_CASES = [
                 columns:
                   Title: { new: true, existing: true, when: { field: Status, op: no } }
         """),
-        _boolean(7, 70, "no", "false"),
         id="condition-op-value",
     ),
 ]
 
 
-@pytest.mark.parametrize(("body", "found"), _VERSION_REFUSED_CASES)
-def test_a_spelling_yaml_1_1_and_1_2_read_differently_is_refused_before_its_section(
-    tmp_path: Path, body: str, found: str,
+@pytest.mark.parametrize("body", _YAML_1_2_TEXT_CASES)
+def test_a_spelling_yaml_1_1_read_otherwise_loads_as_the_text_yaml_1_2_reads(
+    tmp_path: Path, body: str,
 ) -> None:
-    """Each was refused by its section, naming the key path, once YAML 1.1
-    had read it. The parser refuses it first now, naming the line instead."""
-    _refused_by_the_version_guard(write_mapping(tmp_path, body), found)
+    """Each was refused by its section, naming the key path, while YAML 1.1
+    read it as a boolean. The loader reads what it is given as YAML 1.2, and
+    the validator judges the names it then carries."""
+    load_mapping(write_mapping(tmp_path, body))

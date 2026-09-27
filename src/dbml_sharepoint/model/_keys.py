@@ -19,9 +19,7 @@ def _text_key(key: object, context: str) -> str:
     the text that was typed, and `str()` cannot recover it: `2.10` comes back
     as "2.1". Normalising also merged `1:` with a `"1":` beside it, one entry
     silently replacing the other. Every key this loader reads is a name or a
-    value compared as text, so a key that is not text is refused. `No:` and
-    `010:`, which YAML 1.1 and 1.2 read differently, never reach here: the
-    parser refuses them.
+    value compared as text, so a key that is not text is refused.
     """
     if isinstance(key, str):
         return key

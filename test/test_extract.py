@@ -781,6 +781,28 @@ def test_the_emitted_release_loads(tmp_path: Path) -> None:
     assert release.release_tag == "0.0.0"
 
 
+def test_the_emitted_mapping_and_release_read_back_as_extracted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The loader reads each file back as the document the writer was given,
+    so the draft an operator edits starts from exactly what was read."""
+    given: list[object] = []
+    dump = _yaml.safe_dump
+
+    def keep(data: object) -> str:
+        given.append(data)
+        return dump(data)
+
+    monkeypatch.setattr(_yaml, "safe_dump", keep)
+    written = [
+        render_mapping(_extraction()),
+        render_release(source=LIVE_KIND, generated_at=GENERATED_AT),
+    ]
+    assert len(given) == len(written)
+    # `repr` also tells 1 from 1.0 and True, and a tuple from a list.
+    assert [repr(_yaml.safe_load(text)) for text in written] == [repr(data) for data in given]
+
+
 def test_the_schema_synthesises_id_and_never_reads_one() -> None:
     """SharePoint provisions `Id` on every list, so a schema that declared it
     from the read would be telling the deploy to create it."""

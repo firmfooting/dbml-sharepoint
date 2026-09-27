@@ -7,7 +7,6 @@ from _paths import FIXTURES
 
 from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.release import load_release, snapshot_hashes
-from dbml_sharepoint.project import CONFIG_ERRORS
 
 
 def test_load_release_returns_tag_and_versions() -> None:
@@ -74,9 +73,8 @@ def test_a_release_key_that_is_not_text_is_refused_before_the_unknown_keys(
     assert str(err.value) == f"{path}: {read}; quote it"
 
 
-def test_a_release_key_yaml_1_2_reads_as_text_is_refused_by_the_parser(tmp_path: Path) -> None:
-    """`No:` was the case above until the parser refused it (#686). The
-    refusal is the parser's own, which `project.CONFIG_ERRORS` catches."""
+def test_a_release_key_yaml_1_2_reads_as_text_is_an_unknown_key(tmp_path: Path) -> None:
+    """`No:` was the case above while YAML 1.1 read it as False (#686)."""
     write_mapping(
         tmp_path,
         'release: "1.0.0"\ndate: "2026-01-01"\n'
@@ -84,13 +82,12 @@ def test_a_release_key_yaml_1_2_reads_as_text_is_refused_by_the_parser(tmp_path:
         prefix=None,
         name="release.yaml",
     )
-    with pytest.raises(_yaml.AmbiguousYAMLError) as err:
-        load_release(tmp_path / "release.yaml")
-    assert isinstance(err.value, CONFIG_ERRORS)
+    path = tmp_path / "release.yaml"
+    with pytest.raises(ValueError) as err:
+        load_release(path)
     assert str(err.value) == (
-        "uses spellings YAML 1.1 and 1.2 read differently:\n"
-        "  line 5, column 1: `No` is read as a boolean until now and as text in YAML 1.2; "
-        'write `false` to keep the boolean, or quote it ("No") for text'
+        f"{path}: unknown key(s) ['No'] (known: ['date', 'deployer_version', "
+        "'flow_package_version', 'notes', 'release', 'schema_version'])"
     )
 
 

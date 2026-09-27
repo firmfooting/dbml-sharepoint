@@ -858,7 +858,7 @@ def _drop_chosen_from_previous_prefixes(
     # comment on the line is handled by the parser that will read it back.
     try:
         declared = _yaml.safe_load(match.group(1))
-    except _yaml.AmbiguousYAMLError as exc:
+    except _yaml.TagOrDirectiveError as exc:
         # The line parses; the parser counts from the text after the colon, the operator from 1:1.
         where = exc.moved(text.count("\n", 0, match.start()), match.start(1) - match.start())
         raise WizardError(f"`previous_prefixes:` {where}") from exc

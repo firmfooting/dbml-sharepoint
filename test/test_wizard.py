@@ -28,6 +28,7 @@ from dbml_sharepoint.catalogue import (
     available_solutions,
     load_solution,
 )
+from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.env_file import ENV_FILENAME, read_env_file
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.prefix import previous_object_names
@@ -985,6 +986,25 @@ def test_the_chosen_prefix_stops_being_a_previous_one(tmp_path: Path) -> None:
     assert bundle.mapping.previous_prefixes == ("ADOPT_",)
 
 
+def test_the_prefix_rewrites_change_their_two_lines_and_nothing_else(tmp_path: Path) -> None:
+    """Each rewrite edits one line in place, so every other line, comments
+    included, is the template's own, and the file reads back as the
+    template's document but for the two keys set."""
+    mapping = _shipped_mapping("programme-governance", tmp_path)
+    before = mapping.read_text(encoding="utf-8")
+    assert wizard._rewrite_prefix(mapping, "") == ("",)
+    after = mapping.read_text(encoding="utf-8")
+    changed = [
+        was for was, now in zip(before.splitlines(), after.splitlines(), strict=True)
+        if was != now
+    ]
+    assert changed == ['prefix: "GOV_"', 'previous_prefixes: ["", "ADOPT_"]']
+    was, now = _yaml.safe_load(before), _yaml.safe_load(after)
+    assert (now.pop("prefix"), now.pop("previous_prefixes")) == ("", ["ADOPT_"])
+    del was["prefix"], was["previous_prefixes"]
+    assert now == was
+
+
 def test_dropping_the_chosen_prefix_removes_no_rename_candidate(
     tmp_path: Path,
 ) -> None:
@@ -1513,18 +1533,19 @@ def test_a_previous_prefixes_line_with_a_key_written_twice_is_refused(
         wizard._rewrite_prefix(mapping, "")
 
 
-def test_a_template_mapping_the_version_guard_refuses_is_a_wizard_refusal(tmp_path: Path) -> None:
-    """A spelling YAML 1.1 and 1.2 read differently is refused by the
-    parser (#686), and `_read_facts` names the template for it as it does
-    for any other mapping that does not load."""
-    solution = _fake_family(tmp_path / "fake", _ONE_ENTITY + "notes: { draft: yes }\n")
+def test_a_template_mapping_with_a_refused_tag_is_a_wizard_refusal(tmp_path: Path) -> None:
+    """An explicit tag is refused by the parser (#686), and `_read_facts`
+    names the template for it as it does for any other mapping that does
+    not load."""
+    solution = _fake_family(tmp_path / "fake", _ONE_ENTITY + "notes: { draft: !!bool true }\n")
     with pytest.raises(wizard.WizardError) as err:
         wizard._read_facts(solution)
     assert str(err.value) == (
         "the fake-template template's mapping could not be loaded: "
-        f"{solution.mapping_path.resolve()}: uses spellings YAML 1.1 and 1.2 read differently:\n"
-        "  line 4, column 17: `yes` is read as a boolean until now and as text in YAML 1.2; "
-        'write `true` to keep the boolean, or quote it ("yes") for text'
+        f"{solution.mapping_path.resolve()}: uses tags or directives the loader refuses:\n"
+        "  line 4, column 17: the tag `!!bool` is refused, because the loader reads every "
+        "value by one fixed set of rules; remove it to read the value as though untagged, "
+        "or write `!!str` for text"
     )
 
 
@@ -1546,22 +1567,23 @@ def test_a_template_mapping_the_loader_refuses_as_valid_yaml_is_a_wizard_refusal
     )
 
 
-def test_a_previous_prefixes_line_the_version_guard_refuses_is_a_wizard_refusal(
+def test_a_previous_prefixes_line_with_a_refused_tag_is_a_wizard_refusal(
     tmp_path: Path,
 ) -> None:
-    """The one line the rewrite parses goes through the same guard. The line
-    does parse, and the refusal places it in the file, not in the text after
-    the colon that the rewrite hands the parser."""
+    """The one line the rewrite parses goes through the same refusals. The
+    line does parse, and the refusal places it in the file, not in the text
+    after the colon that the rewrite hands the parser."""
     mapping = tmp_path / "mapping.yaml"
     mapping.write_text(
-        'prefix: "GOV_"\nprevious_prefixes: ["", 010]\nentities: {}\n', encoding="utf-8",
+        'prefix: "GOV_"\nprevious_prefixes: ["", !!int 10]\nentities: {}\n', encoding="utf-8",
     )
     with pytest.raises(wizard.WizardError) as err:
         wizard._rewrite_prefix(mapping, "")
     assert str(err.value) == (
-        "`previous_prefixes:` uses spellings YAML 1.1 and 1.2 read differently:\n"
-        "  line 2, column 25: `010` is read as the number 8 until now and as the number 10 "
-        'in YAML 1.2; write 8 to keep the number, or quote it ("010") for text'
+        "`previous_prefixes:` uses tags or directives the loader refuses:\n"
+        "  line 2, column 25: the tag `!!int` is refused, because the loader reads every "
+        "value by one fixed set of rules; remove it to read the value as though untagged, "
+        "or write `!!str` for text"
     )
 
 

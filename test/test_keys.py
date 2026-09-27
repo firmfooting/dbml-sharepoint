@@ -43,14 +43,17 @@ def test_a_key_yaml_did_not_read_as_text_is_refused(typed: str, read: str) -> No
     assert str(err.value) == f"default_formulas.Risk: {read}; quote it"
 
 
-@pytest.mark.parametrize("typed", ["No", "010"])
-def test_a_key_yaml_1_1_and_1_2_read_differently_is_refused_by_the_parser_first(
-    typed: str,
-) -> None:
-    """`No:` and `010:` were two of the cases above. The parser refuses both
-    now (#686), so neither becomes a key for `_require_mapping` to name."""
-    with pytest.raises(_yaml.AmbiguousYAMLError, match=rf"line 1, column 1: `{typed}` is read as"):
-        _yaml.safe_load(f"{typed}: =TODAY()\nRisk: {{}}")
+def test_a_key_yaml_1_1_read_otherwise_is_judged_as_yaml_1_2_reads_it() -> None:
+    """`No:` and `010:` were two of the cases above while YAML 1.1 read them
+    as False and 8 (#686). YAML 1.2 reads the text "No", which passes, and
+    the number 10, which is refused."""
+    block = _yaml.safe_load("No: =TODAY()\nRisk: {}")
+    assert _require_mapping(block, "default_formulas.Risk") is block
+    with pytest.raises(MappingShapeError) as err:
+        _require_mapping(_yaml.safe_load("010: =TODAY()\nRisk: {}"), "default_formulas.Risk")
+    assert str(err.value) == (
+        "default_formulas.Risk: key 10 is not text (YAML read it as int); quote it"
+    )
 
 
 def test_a_number_key_beside_its_quoted_twin_is_refused_rather_than_merged() -> None:

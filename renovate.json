@@ -30,7 +30,7 @@
       "allowedVersions": "<3.3"
     },
     {
-      "description": "model/_yaml.py holds a literal copy of ruamel.yaml 0.19's YAML 1.2 resolver, which a minor release may change. Mirrors the cap in pyproject.toml; lift both together with the copy.",
+      "description": "model/_yaml.py subclasses ruamel.yaml 0.19's scanner, composer and constructor, whose internals a minor release may change. Mirrors the cap in pyproject.toml; lift both together once the loader's tests pass.",
       "matchPackageNames": ["ruamel.yaml"],
       "allowedVersions": "<0.20"
     },
