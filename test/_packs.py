@@ -242,8 +242,10 @@ def write_mapping(
     Counted across the suite: `m.yaml` 357, `mapping.yaml` 28, `m2.yaml` 22,
     `m3.yaml` 12, `m4.yaml` 6, `release.yaml` 6, `fixed.yaml` 4.
 
-    `prefix=None` omits the prefix line entirely, for the enum and release
-    side-files that carry no `prefix:` of their own.
+    `prefix=None` omits the prefix line entirely: for the enum and release
+    side-files that carry no `prefix:` of their own, for a mapping body that
+    declares its own `prefix:`, since the loader refuses a key written twice,
+    and for a mapping meant to have no prefix.
     """
     text = _body(body)
     if prefix is not None:

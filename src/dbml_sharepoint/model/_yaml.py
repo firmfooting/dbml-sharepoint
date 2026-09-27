@@ -6,9 +6,12 @@ nothing, so a second declaration silently replaced the first (#672). The YAML
 spec requires the keys of a mapping to be unique; PyYAML does not enforce it,
 so this loader does.
 
-A leaf importing only `yaml`, for the reason `_keys.py` is one: the mapping
-loader, the release reader, the catalogue and the wizard all parse YAML, and
-none of them may import another.
+A leaf that imports only `yaml`, so every module that parses YAML can use it
+without importing another's parser. The mapping reader, the release reader
+and the catalogue import none of one another; the wizard imports the
+catalogue and the mapping loader, and parses one line of its own through
+this module. `_keys.py` is shared across the parsers the same way, though it
+imports `model.errors` and so is not a leaf.
 """
 
 from collections.abc import Hashable
