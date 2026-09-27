@@ -194,23 +194,32 @@ def test_every_shipped_yaml_file_loads_unchanged() -> None:
     }
 
 
-def _documents() -> list[Path]:
-    """Every YAML document the tool reads that the repository holds.
+def _roots() -> dict[str, set[Path]]:
+    """Every YAML document the tool reads that the repository holds, by where it is.
 
     Each mapping, release and side file of the shipped templates, the
     examples and the fixtures, and each journey, whose front matter is read.
     """
-    return sorted({
-        *SOLUTION_TEMPLATES.rglob("*.yaml"), *(REPO_ROOT / "examples").rglob("*.yaml"),
-        *FIXTURES.rglob("*.yaml"), *(SOLUTION_TEMPLATES / catalogue.JOURNEYS_DIRNAME).glob("*.md"),
-    })
+    return {
+        "templates": set(SOLUTION_TEMPLATES.rglob("*.yaml")),
+        "examples": set((REPO_ROOT / "examples").rglob("*.yaml")),
+        "fixtures": set(FIXTURES.rglob("*.yaml")),
+        "journeys": set((SOLUTION_TEMPLATES / catalogue.JOURNEYS_DIRNAME).glob("*.md")),
+    }
 
 
-_DOCUMENTS = _documents()
+_ROOTS = _roots()
+_DOCUMENTS = sorted({path for found in _ROOTS.values() for path in found})
+
+# Raised as documents are added and never lowered to pass: a drop means a glob stopped matching.
+_FLOOR = 103
 
 
 def test_the_round_trip_covers_every_kind_of_document() -> None:
-    """A glob that matched nothing would pass the round trip below vacuously."""
+    """A glob that matched nothing would pass the round trip below vacuously,
+    and one that matched fewer would pass it on what was left."""
+    assert [root for root, found in _ROOTS.items() if not found] == []
+    assert len(_DOCUMENTS) >= _FLOOR
     names = {path.name for path in _DOCUMENTS}
     assert {"mapping.yaml", "release.yaml", "reporting.yaml", "demo.yaml", "topics.yaml"} <= names
     assert any(path.suffix == ".md" for path in _DOCUMENTS)
