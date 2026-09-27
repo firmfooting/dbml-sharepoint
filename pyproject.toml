@@ -196,7 +196,7 @@ max-complexity = 54
 # packaging helpers without pulling in the whole generation stack.
 "test/**" = ["S101", "PLC0415"]
 "src/dbml_sharepoint/model/_yaml.py" = ["TID251"]  # the one module that parses YAML
-"test/test_yaml_loading.py" = ["TID251"]  # the parser's own test, reads ruamel.yaml's resolver
+"test/test_yaml_loading.py" = ["TID251"]  # the parser's own test, compares it with ruamel.yaml's loader
 "website/scripts/**" = ["T20", "PLC0415"] # generator scripts report via print
 "test/manual/render_probes.py" = ["T20"]     # generator script, reports via print
 "test/manual/make_threshold_rows.py" = ["T20"]  # generator script, reports via print

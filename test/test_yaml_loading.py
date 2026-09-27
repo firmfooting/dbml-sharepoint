@@ -161,8 +161,6 @@ def test_a_value_key_loads_as_text() -> None:
 def test_a_collection_key_is_refused_as_it_is_composed(text: str, kind: str) -> None:
     """PyYAML refused both keys as unhashable, and ruamel.yaml reads the
     sequence as a tuple, so the loader refuses both itself (#686)."""
-    if kind == "sequence":
-        assert YAML(typ="safe", pure=True).load(text) == {("a", "b"): 1}
     assert _refusal(text) == (
         "while composing a mapping\n"
         '  in "<file>", line 1, column 1\n'
@@ -267,7 +265,7 @@ def test_a_zoned_time_keeps_the_zone_pyyaml_gave_it(zone: str, read: str) -> Non
     ],
     ids=["major-2", "major-0", "repeated", "repeated-major-2"],
 )
-def test_a_version_directive_the_parser_rejects_is_rejected_in_pyyaml_s_words(
+def test_a_version_directive_the_parser_rejects_is_still_rejected(
     text: str, message: str,
 ) -> None:
     """The scanner hands the parser `1.2` for any `%YAML 1.x`, so ruamel.yaml

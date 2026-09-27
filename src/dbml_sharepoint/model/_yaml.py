@@ -331,8 +331,9 @@ class UniqueKeyConstructor(SafeConstructor):
     A key written beside a merge (`<<: *anchor`) is not a repeat. It overrides
     the merged key, as the merge-key spec documents, and the shipped
     programme-governance mapping widens one column of a merged view that way.
-    A second `<<` in one mapping is a repeat, and PyYAML settled a clash
-    between two of them the opposite way to the list form `<<: [*a, *b]`.
+    A second `<<` in one mapping is a repeat. ruamel.yaml refuses it too,
+    but in words that name a setting this loader does not offer, so it is
+    refused here as any other repeat is.
 
     The repeat check runs in `flatten_mapping`, the first place a mapping's
     pairs are rewritten. A mapping used as a merge source is flattened into

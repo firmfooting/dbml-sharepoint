@@ -34,9 +34,9 @@ class MappingSourceError(MappingError):
 
     The parser refuses a key written twice in any mapping of the document,
     at any depth and inside a merged one, naming the key and the line of
-    each occurrence. It also refuses an explicit tag or a directive, naming
-    each line, and valid YAML it will not read, such as a reused anchor.
-    Its error is kept as `__cause__`.
+    each occurrence. It also refuses an explicit tag or a `%YAML` or `%TAG`
+    directive, naming each line, and valid YAML it will not read, such as a
+    reused anchor. Its error is kept as `__cause__`.
     """
 
 
