@@ -38,6 +38,8 @@ _HEADER = "uses tags or directives the loader refuses:"
         ("010", 10), ("08", 8), ("1:30", "1:30"),
         # Numbers to ruamel.yaml, and text to the YAML 1.2 core schema.
         ("1_000", 1000), ("0b101", 5),
+        # Text in YAML 1.1, and numbers in YAML 1.2.
+        ("0o10", 8), ("1e3", 1000.0), ("1.0e3", 1000.0), ("-.5", -0.5),
     ],
 )
 def test_a_plain_value_is_read_as_yaml_1_2(token: str, reading: object) -> None:

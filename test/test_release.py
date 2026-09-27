@@ -117,6 +117,7 @@ def _release_yaml(**overrides: str) -> str:
     [
         ("release", "2.10", r"'release' must be text, got float 2\.1; quote it"),
         ("schema_version", "1", r"'schema_version' must be text, got int 1; quote it"),
+        ("schema_version", "1e3", r"'schema_version' must be text, got float 1000\.0; quote it"),
         ("deployer_version", "[a]", r"'deployer_version' must be text, got list"),
         ("flow_package_version", "1.0", r"'flow_package_version' must be text, got float"),
         ("date", "20260101", r"'date' must be text, got int"),

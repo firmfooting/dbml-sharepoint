@@ -38,6 +38,8 @@ an unquoted number is a load error. An unquoted date is the one exception:
 it is read back as ISO text. The file is read as YAML 1.2, as
 [the mapping](./mapping.md#how-the-file-is-read) is, so an unquoted `010` is
 the number 10 and a load error, and an unquoted `yes` is the text "yes".
+An unquoted `1e3`, which YAML 1.1 read as text, is now the number 1000.0,
+so it is a load error too.
 
 A key written with no value reads as absent. A blank `notes:` or
 `flow_package_version:` takes its default, and a blank required key is a

@@ -29,6 +29,12 @@ values:
 - A leading zero is decimal: `010` is 10 and `08` is 8.
 - `1:30` is text, not the base-60 number 90.
 
+The other direction also changed. These unquoted values were text in
+YAML 1.1 and are numbers now:
+
+- `0o10` is the octal number 8.
+- `1e3` and `1.0e3` are the float 1000.0, and `-.5` is -0.5.
+
 ruamel.yaml reads `1_000` and `0b101` as numbers, as YAML 1.1 does, where
 the YAML 1.2 core schema reads them as text. Quote anything meant as text.
 
