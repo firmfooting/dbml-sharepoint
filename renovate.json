@@ -30,8 +30,8 @@
       "allowedVersions": "<3.3"
     },
     {
-      "description": "model/_yaml.py subclasses ruamel.yaml 0.19's scanner, composer and constructor, whose internals a minor release may change. Mirrors the cap in pyproject.toml; lift both together once the loader's tests pass.",
-      "matchPackageNames": ["ruamel.yaml"],
+      "description": "model/_yaml.py subclasses ruamel.yaml 0.19's scanner, composer, constructor and representer, whose internals a minor release may change. Mirrors the cap in pyproject.toml; lift both together once the loader's tests pass. The pep621 manager matches on the PEP 503 name, ruamel-yaml, so both spellings are listed.",
+      "matchPackageNames": ["ruamel-yaml", "ruamel.yaml"],
       "allowedVersions": "<0.20"
     },
     {
