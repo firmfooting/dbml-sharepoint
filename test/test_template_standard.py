@@ -1437,17 +1437,20 @@ def _seen_values(rows: list[dict[str, Any]], source: str) -> set[str]:
 
 
 def _token_maps(column: str, spec: dict[str, Any]) -> list[tuple[str, dict[str, str]]]:
-    """(source column, {member: token}) for a raw style spec's `map:` blocks."""
+    """(source column, {member: token}) for a raw style spec's `map:` blocks.
+
+    The loader has already refused a key or a token that is not text.
+    """
     maps: list[tuple[str, dict[str, str]]] = []
     top = spec.get("map")
     if isinstance(top, dict):
-        maps.append((column, {str(k): str(v) for k, v in top.items()}))
+        maps.append((column, dict(top)))
     colour_by = spec.get("color_by")
     if isinstance(colour_by, dict):
         nested = colour_by.get("map")
         source = str(colour_by.get("field", column))
         if isinstance(nested, dict):
-            maps.append((source, {str(k): str(v) for k, v in nested.items()}))
+            maps.append((source, dict(nested)))
     return maps
 
 

@@ -56,6 +56,24 @@ def _nested(spec: dict[str, Any], path: tuple[str, ...]) -> dict[str, Any] | Non
     return node if isinstance(node, dict) else None
 
 
+def _keys_outside(block: dict[str, Any], members: set[str]) -> list[object]:
+    """The block's map keys that are not `members`, in a stable order.
+
+    A Mapping built in code never meets the loader's refusals, so a map that
+    is not a mapping is skipped here rather than iterated.
+    """
+    raw_map: object = block.get("map", {})
+    if not isinstance(raw_map, dict):
+        return []
+    keys: dict[object, object] = raw_map
+
+    def order(key: object) -> tuple[str, str]:
+        # `repr` breaks the tie between `1` and "1", which sort equal as text.
+        return (str(key), repr(key))
+
+    return sorted(set(keys) - members, key=order)
+
+
 def _scalar_input_findings(
     registered: StyleSpec, column: str, calculated: bool, flag: str,
     types: dict[str, str], lookups: set[str], context: str, at: Location,
@@ -333,7 +351,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 members = style_enum_members.get(types_by_col.get(source, ""))
                 if members is None:
                     continue
-                for unknown in sorted(set(block.get("map", {})) - members):
+                for unknown in _keys_outside(block, members):
                     findings.append(Finding(
                         map_rule.code,
                         f"{ctx}: {map_rule.label} {unknown!r} is not a member of "

@@ -5,6 +5,7 @@ import pytest
 from _findings import by_severity, messages, none_of, only
 from _model import bundle as make_bundle
 from _model import column as make_column
+from _model import enum as make_enum
 from _model import person as make_person
 from _model import ref as make_ref
 from _model import schema as make_schema
@@ -384,6 +385,69 @@ def test_a_color_by_map_on_a_generated_column_is_still_checked(
         Section.COLUMN_FORMATTING, entity="Risk", column="UnitAbbreviation",
     )
     assert "'Bogus'" in finding.message
+
+
+@pytest.mark.parametrize(("column", "spec", "code"), [
+    ("Rating", {"style": "severity", "map": {1: "good", "Bogus": "low"}},
+     FindingCode.STYLE_MAP_KEY_NOT_IN_ENUM),
+    ("Rating", {"style": "pill", "map": {1: "good", "Bogus": "low"}},
+     FindingCode.STYLE_MAP_KEY_NOT_IN_ENUM),
+    ("Score", {"style": "data-bar", "max": 25,
+               "color_by": {"field": "Rating", "map": {1: "good", "Bogus": "low"}}},
+     FindingCode.COLOR_BY_MAP_KEY_NOT_IN_ENUM),
+])
+def test_a_map_key_that_is_not_text_is_a_finding_not_a_crash(
+    column: str, spec: dict[str, object], code: FindingCode,
+) -> None:
+    """The loader refuses a map key that is not text, but a Mapping built in
+    code never meets the loader, and sorting `1` beside 'Bogus' raised a bare
+    TypeError out of the validator."""
+    schema = make_schema(
+        make_table(
+            "Risk", make_column("Title", required=True),
+            make_column("Rating", "rating"), make_column("Score", "int"),
+        ),
+        enums=[make_enum("rating", "Low", "High")],
+    )
+    bundle = make_bundle(entities=["Risk"], column_style_specs={"Risk": {column: spec}})
+    findings = validate_against_mapping(schema, bundle)
+    reported = [f for f in findings if f.code == code]
+    assert [f.location for f in reported] == 2 * [
+        Location(Section.COLUMN_FORMATTING, entity="Risk", column=column),
+    ]
+    first, second = messages(reported, code)
+    assert "key 1 is not a member" in first
+    assert "key 'Bogus' is not a member" in second
+
+
+def test_two_map_keys_that_print_alike_are_reported_in_a_fixed_order() -> None:
+    """`1` and "1" sort equal as text, so without a tie-break the order of
+    the two findings followed the hash seed."""
+    schema = make_schema(
+        make_table("Risk", make_column("Title", required=True), make_column("Rating", "rating")),
+        enums=[make_enum("rating", "Low", "High")],
+    )
+    spec = {"style": "severity", "map": {1: "good", "1": "low"}}
+    bundle = make_bundle(entities=["Risk"], column_style_specs={"Risk": {"Rating": spec}})
+    first, second = messages(
+        validate_against_mapping(schema, bundle), FindingCode.STYLE_MAP_KEY_NOT_IN_ENUM,
+    )
+    assert "key '1' is not a member" in first
+    assert "key 1 is not a member" in second
+
+
+@pytest.mark.parametrize("value_map", [None, [["Low"]], 3])
+def test_a_map_that_is_not_a_mapping_is_skipped_not_a_crash(value_map: object) -> None:
+    """A Mapping built in code never meets the loader's shape refusal, and
+    iterating None, a list of lists or a number raised a bare TypeError."""
+    schema = make_schema(
+        make_table("Risk", make_column("Title", required=True), make_column("Rating", "rating")),
+        enums=[make_enum("rating", "Low", "High")],
+    )
+    spec = {"style": "severity", "map": value_map}
+    bundle = make_bundle(entities=["Risk"], column_style_specs={"Risk": {"Rating": spec}})
+    findings = validate_against_mapping(schema, bundle)
+    assert not [f for f in findings if f.code == FindingCode.STYLE_MAP_KEY_NOT_IN_ENUM]
 
 
 #: The schema every counter-example below is declared against. One enum column

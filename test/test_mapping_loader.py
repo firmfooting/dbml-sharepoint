@@ -3704,6 +3704,38 @@ _DELEGATED_STYLE_CASES = [
         "style_theme: good: 'icon' must be a string or null, got ['Emoji2']",
         id="theme-icon-wrong-type",
     ),
+    # A map key is compared as quoted text, so one YAML did not read as text
+    # is refused where it sits (#666), as every other mapping key is.
+    pytest.param(
+        MappingShapeError,
+        "column_formatting:\n  Risk:\n    Status: "
+        "{ style: severity, map: { '1': good, 1: low } }",
+        "column_formatting.Risk.Status.map: key 1 is not text "
+        "(YAML read it as int); quote it",
+        id="spec-map-key-merged-twin",
+    ),
+    pytest.param(
+        MappingShapeError,
+        "column_formatting:\n  Risk:\n    Status: { style: pill, map: { No: good } }",
+        "column_formatting.Risk.Status.map: key False is not text "
+        "(YAML read it as bool); quote it",
+        id="spec-map-key-bool",
+    ),
+    pytest.param(
+        MappingShapeError,
+        "column_formatting:\n  Risk:\n    Status: { style: severity, map: { ~: good } }",
+        "column_formatting.Risk.Status.map: key None is not text "
+        "(YAML read it as null); quote it",
+        id="spec-map-key-null",
+    ),
+    pytest.param(
+        MappingShapeError,
+        "column_formatting:\n  Risk:\n    Score: { style: data-bar, max: 25, "
+        "color_by: { field: Status, map: { 2.10: good } } }",
+        "column_formatting.Risk.Score.color_by.map: key 2.1 is not text "
+        "(YAML read it as float); quote it",
+        id="spec-color-by-key-float",
+    ),
 ]
 
 
@@ -3720,6 +3752,18 @@ def test_a_delegated_style_refusal_is_in_the_hierarchy(
         load_mapping(path)
     assert type(err.value) is error
     assert str(err.value) == message
+
+
+def test_a_quoted_numeric_map_key_is_compared_as_the_text_typed(tmp_path: Path) -> None:
+    """The fix for an unquoted `1:` is to quote it, so the quoted form must build."""
+    path = write_mapping(tmp_path, blocks(entities("Risk"), """
+        column_formatting:
+          Risk:
+            Status: { style: severity, map: { "1": good, "2.10": low } }
+    """))
+    expanded = load_mapping(path).mapping.column_formatting["Risk"]["Status"]
+    assert "@currentField == '1'" in expanded["attributes"]["class"]
+    assert "@currentField == '2.10'" in expanded["attributes"]["class"]
 
 
 #: The membership tests that hashed a value before checking its type (#578).
