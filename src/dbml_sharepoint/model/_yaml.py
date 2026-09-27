@@ -52,11 +52,6 @@ _MAX_DEPTH = 100
 _MAX_LISTED = 20
 
 
-def _written_tag(tag: str | None) -> str | None:
-    """The tag an event carries when its author wrote one; `!` only asks for the resolver."""
-    return None if tag in {None, "!"} else tag
-
-
 def _tag_name(tag: str) -> str:
     """`tag` as an author would write it."""
     if tag.startswith("tag:yaml.org,2002:"):
@@ -148,11 +143,11 @@ class _Composer(Composer):
 
     The tag check runs as each node is composed, from the parser's event: a
     node cannot say whether its tag was written or resolved. It refuses
-    every explicit tag but `!!str` on a scalar, and collects them with the
-    scanner's refused directives before one `TagOrDirectiveError`. What
-    `RefusedYAMLError` names is refused as it is found, among it an alias
-    inside the collection its anchor names, which ruamel.yaml would read as
-    a collection that contains itself.
+    every explicit tag, a bare `!` among them, but `!!str` on a scalar, and
+    collects them with the scanner's refused directives before one
+    `TagOrDirectiveError`. What `RefusedYAMLError` names is refused as it is
+    found, among it an alias inside the collection its anchor names, which
+    ruamel.yaml would read as a collection that contains itself.
     """
 
     def __init__(self, loader: Any = None) -> None:
@@ -163,9 +158,10 @@ class _Composer(Composer):
 
     def _refuse_tag(self, tag: str, mark: StreamMark, *, scalar: bool) -> None:
         """Record an explicit `tag`, which would read its value by rules of its own."""
+        # Removing a bare `!` is the whole fix: ruamel.yaml reads `! '08'` as 8 and `'08'` as text.
         fix = (
             "remove it to read the value as though untagged, or write `!!str` for text"
-            if scalar else "remove it"
+            if scalar and tag != "!" else "remove it"
         )
         why = (
             f"the tag `{_tag_name(tag)}` is refused, because the loader reads every value "
@@ -176,7 +172,7 @@ class _Composer(Composer):
     @override
     def compose_scalar_node(self, anchor: Any) -> ScalarNode:
         event: ScalarEvent = self.parser.peek_event()
-        tag = _written_tag(event.tag)
+        tag: str | None = event.tag
         if tag is not None and tag != _STR:
             self._refuse_tag(tag, event.start_mark, scalar=True)
         node: ScalarNode = super().compose_scalar_node(anchor)
@@ -214,7 +210,7 @@ class _Composer(Composer):
                 event.start_mark,
             )
         self._depth += 1
-        tag = _written_tag(event.tag)
+        tag: str | None = event.tag
         if tag is not None:
             self._refuse_tag(tag, event.start_mark, scalar=False)
         anchor: str | None = event.anchor

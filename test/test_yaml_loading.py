@@ -277,8 +277,8 @@ def test_a_construction_error_is_a_yaml_error_at_its_node(
 ) -> None:
     """Each escaped every handler that catches the parser's errors: the
     mapping reader's, the catalogue's skip, the CLI's and the wizard's.
-    Without an explicit tag only ValueError and KeyError can be raised, so
-    the int constructor is made to raise each in turn."""
+    Every tag is refused, which closes the usual way to reach most of them,
+    so the int constructor is made to raise each in turn."""
 
     def fail(constructor: _yaml.UniqueKeyConstructor, node: ScalarNode) -> int:
         raise error(f"{constructor.construct_scalar(node)} failed")

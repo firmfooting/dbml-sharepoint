@@ -46,12 +46,12 @@ def test_a_plain_value_is_read_as_yaml_1_2(token: str, reading: object) -> None:
     assert (type(value), value) == (type(reading), reading)
 
 
-def _tag(name: str, *, scalar: bool = True) -> str:
+#: How a tag's refusal ends on a scalar, but for a bare `!`.
+_UNTAG = "remove it to read the value as though untagged, or write `!!str` for text"
+
+
+def _tag(name: str, fix: str = _UNTAG) -> str:
     """The refusal of the explicit tag `name`."""
-    fix = (
-        "remove it to read the value as though untagged, or write `!!str` for text"
-        if scalar else "remove it"
-    )
     return (
         f"the tag `{name}` is refused, because the loader reads every value by one fixed set "
         f"of rules; {fix}"
@@ -70,11 +70,17 @@ _TAGS = [
     pytest.param(
         "v: !<tag:example.com,2026:x> 1", _tag("!<tag:example.com,2026:x>"), id="verbatim",
     ),
-    pytest.param("v: !!str [a]", _tag("!!str", scalar=False), id="str-on-a-sequence"),
-    pytest.param("v: !!seq [a]", _tag("!!seq", scalar=False), id="seq"),
-    pytest.param("v: !!map {a: 1}", _tag("!!map", scalar=False), id="map"),
-    pytest.param("v: !!set {a}", _tag("!!set", scalar=False), id="set"),
-    pytest.param("v: !!omap [a: 1]", _tag("!!omap", scalar=False), id="omap"),
+    pytest.param("v: !!str [a]", _tag("!!str", "remove it"), id="str-on-a-sequence"),
+    pytest.param("v: !!seq [a]", _tag("!!seq", "remove it"), id="seq"),
+    pytest.param("v: !!map {a: 1}", _tag("!!map", "remove it"), id="map"),
+    pytest.param("v: !!set {a}", _tag("!!set", "remove it"), id="set"),
+    pytest.param("v: !!omap [a: 1]", _tag("!!omap", "remove it"), id="omap"),
+    # ruamel.yaml read the first as 8 and the third as a boolean it cannot construct.
+    pytest.param("v: ! '08'", _tag("!", "remove it"), id="bang-quoted"),
+    pytest.param("v: ! 010", _tag("!", "remove it"), id="bang-plain"),
+    pytest.param("v: ! |\n  true\n", _tag("!", "remove it"), id="bang-block"),
+    pytest.param("v: ! [x]", _tag("!", "remove it"), id="bang-sequence"),
+    pytest.param("v: !<!> x", _tag("!", "remove it"), id="bang-verbatim"),
 ]
 
 
@@ -82,7 +88,7 @@ _TAGS = [
 def test_an_explicit_tag_is_refused(text: str, why: str) -> None:
     """A tag reads its value by rules of its own: `!!int "010"` turns quoted
     text into 10, `!!binary` gives bytes and `!!set` a set, none of which a
-    reader here takes."""
+    reader here takes, and a bare `!` has ruamel.yaml read `'08'` as 8."""
     with pytest.raises(_yaml.TagOrDirectiveError) as err:
         _yaml.safe_load(text)
     assert isinstance(err.value, _yaml.PARSE_ERRORS)
@@ -101,12 +107,6 @@ def test_an_explicit_tag_is_refused(text: str, why: str) -> None:
 )
 def test_a_str_tag_on_a_scalar_is_text(text: str, value: str) -> None:
     assert _yaml.safe_load(text) == {"v": value}
-
-
-def test_a_non_specific_tag_is_not_refused_and_reads_as_though_untagged() -> None:
-    """`!` asks the resolver to read the text, and ruamel.yaml then reads it
-    as though it were plain, quotes and all."""
-    assert _yaml.safe_load("a: ! '1.5'\nb: ! [x]\n") == {"a": 1.5, "b": ["x"]}
 
 
 @pytest.mark.parametrize(
@@ -422,10 +422,6 @@ def _nested(depth: int) -> list[object]:
         pytest.param(
             "v: 0o_", "cannot construct !!int from '0o_': invalid literal for int() with "
             "base 8: ''", "column 4", id="empty-octal",
-        ),
-        pytest.param(
-            "v: ! |\n  true\n", "cannot construct !!bool from 'true\\n': 'true\\n'", "column 4",
-            id="bool-with-a-line-break",
         ),
     ],
 )
