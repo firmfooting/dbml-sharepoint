@@ -583,6 +583,37 @@ def test_a_value_neither_version_can_construct_is_a_parse_error(
     assert message.endswith(f'\n  in "<file>", line 1, {at}'), message
 
 
+#: Strings a writer that knew only YAML 1.1 wrote bare, which YAML 1.2 reads as numbers.
+_TRICKY = [
+    "08", "09", "0o10", "1e3", "1.0e3", "-.5", "+.5", "0_8", "._5", "1_e3", "yes", "1:30",
+    "010", "Off", "-_", "._", "0o_", "2026-01-02T03:04:05.1234567", "true", "~", "",
+]
+
+
+def test_the_writer_quotes_every_string_either_version_reads_as_another_type() -> None:
+    """The extract writes mappings for an operator to edit and load back.
+    Written bare, `08` comes back as a refusal, and `._5` would come back
+    from a YAML 1.2 reader as the number 0.5. A float needs a dot before its
+    exponent: ruamel.yaml writes `1e+300`, which YAML 1.1 reads as text."""
+    floats = [1e300, 1e-7, 1e16]
+    document = {"values": _TRICKY, "keys": {text: text for text in _TRICKY}, "floats": floats}
+    written = _yaml.safe_dump(document)
+    assert _yaml.safe_load(written) == document
+    for text in _TRICKY:
+        assert f"- {text}\n" not in written, text
+    assert written.endswith("floats:\n- 1.0e+300\n- 1.0e-07\n- 1.0e+16\n")
+
+
+def test_the_writer_keeps_order_width_and_unicode() -> None:
+    """The options the extract passed are the writer's own now: keys in the
+    order given, one line per long scalar, and text as written."""
+    long_text = "word " * 40
+    written = _yaml.safe_dump({"z": 1, "a": [True, None, 2.5, 1e300], "t": long_text, "u": "Café"})
+    assert written == (
+        f"z: 1\na:\n- true\n- null\n- 2.5\n- 1.0e+300\nt: '{long_text}'\nu: Café\n"
+    )
+
+
 def test_a_template_a_parse_refuses_is_skipped_by_the_picker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

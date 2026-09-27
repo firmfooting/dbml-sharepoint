@@ -538,7 +538,25 @@ def safe_load(stream: str | IO[str]) -> Any:
         loader.dispose()
 
 
-def safe_dump(data: object, **options: Any) -> str:
-    """`yaml.safe_dump` to a string, so a module that writes YAML need not import PyYAML."""
-    dumped: str = yaml.safe_dump(data, **options)
+class _Dumper(yaml.SafeDumper):
+    """`yaml.SafeDumper`, quoting a string YAML 1.2 would read as another type too."""
+
+
+for _tag_rule, _pattern, _first in _YAML_1_2:
+    _Dumper.add_implicit_resolver(_tag_rule, _pattern, sorted(_first))
+
+
+def safe_dump(data: object) -> str:
+    """`data` as YAML for an operator to edit and diff.
+
+    A string either YAML version would read as another type is quoted, so
+    the output reads back through `safe_load` unrefused and unchanged. Keys
+    keep their order, and `width` is effectively off: the default wraps a
+    long scalar across lines, which is legal YAML and unreadable in a diff,
+    since a one-word edit to a validation message reflows the whole block.
+    """
+    dumped: str = yaml.dump(
+        data, Dumper=_Dumper, sort_keys=False, default_flow_style=False,
+        allow_unicode=True, width=10_000,
+    )
     return dumped
