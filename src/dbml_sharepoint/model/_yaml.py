@@ -53,7 +53,7 @@ class UniqueKeyLoader(yaml.SafeLoader):
         merges = [key_node for key_node, _ in pairs if key_node.tag == _MERGE_TAG]
         if len(merges) > 1:
             # A merge key has no constructor, so it is named by its spelling.
-            raise _repeat(node, "<<", merges[0], merges[1])
+            raise _repeat(node, ("<<", merges[0]), ("<<", merges[1]))
         written = [key_node for key_node, _ in pairs if key_node.tag != _MERGE_TAG]
         # After the flatten, which retags a `=` key as text; constructing it before fails.
         super().flatten_mapping(node)
@@ -61,25 +61,37 @@ class UniqueKeyLoader(yaml.SafeLoader):
 
     def _refuse_repeats(self, node: MappingNode, written: list[Node]) -> None:
         """Raise on the second of two keys in `written` that construct equal."""
-        first: dict[Hashable, Node] = {}
+        first: dict[Hashable, tuple[Hashable, Node]] = {}
         for key_node in written:
             key: object = self.construct_object(key_node)
             # SafeLoader's own "found unhashable key" follows in construct_mapping.
             if not isinstance(key, Hashable):
                 continue
             if key in first:
-                raise _repeat(node, key, first[key], key_node)
-            first[key] = key_node
+                raise _repeat(node, first[key], (key, key_node))
+            first[key] = (key, key_node)
 
 
-def _repeat(node: MappingNode, key: object, first: Node, second: Node) -> ConstructorError:
-    """The refusal of `second`, a key of `node` that reads as `key` as `first` did."""
+def _repeat(
+    node: MappingNode, first: tuple[Hashable, Node], second: tuple[Hashable, Node],
+) -> ConstructorError:
+    """The refusal of the second of two keys of `node` that read as equal."""
+    (was, first_node), (key, key_node) = first, second
     # Marks count from zero; the line printed under the error counts from one.
-    first_line = first.start_mark.line + 1
+    first_line, line = first_node.start_mark.line + 1, key_node.start_mark.line + 1
+    problem = f"found duplicate key {key!r} (first at line {first_line})"
+    if not isinstance(key, str) and first_node.value != key_node.value:
+        # `No` and `Off` are two words to the author and one boolean to the parser.
+        read = (
+            f"both read as {key!r}" if repr(was) == repr(key)
+            else f"read as {was!r} and {key!r}, which are equal"
+        )
+        problem = (
+            f"found duplicate key {key!r}: {first_node.value!r} (line {first_line}) and "
+            f"{key_node.value!r} (line {line}) {read}; quote them"
+        )
     return ConstructorError(
-        "while constructing a mapping", node.start_mark,
-        f"found duplicate key {key!r} (first at line {first_line})",
-        second.start_mark,
+        "while constructing a mapping", node.start_mark, problem, key_node.start_mark,
     )
 
 

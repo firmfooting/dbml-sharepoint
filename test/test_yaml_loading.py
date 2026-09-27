@@ -46,17 +46,49 @@ def test_a_repeat_is_refused_wherever_a_mapping_sits(text: str, key: str) -> Non
     assert f"found duplicate key {key}" in _refusal(text)
 
 
+def test_two_words_read_as_one_boolean_are_both_named() -> None:
+    """`No` and `Off` are two words to the author, so naming only `False`
+    would not say what was written twice."""
+    assert _refusal("map: { No: blocked, Off: warning }\n") == (
+        "while constructing a mapping\n"
+        '  in "<file>", line 1, column 6\n'
+        "found duplicate key False: 'No' (line 1) and 'Off' (line 1) both read as False; "
+        "quote them\n"
+        '  in "<file>", line 1, column 21'
+    )
+
+
 @pytest.mark.parametrize(
-    ("text", "key"),
+    ("text", "problem"),
     [
-        pytest.param("1: a\n0x1: b\n", "1", id="int-and-hex"),
-        pytest.param("~: a\nnull: b\n", "None", id="two-nulls"),
+        pytest.param(
+            "1: a\n0x1: b\n",
+            "found duplicate key 1: '1' (line 1) and '0x1' (line 2) both read as 1; quote them",
+            id="int-and-hex",
+        ),
+        pytest.param(
+            "~: a\nnull: b\n",
+            "found duplicate key None: '~' (line 1) and 'null' (line 2) both read as None; "
+            "quote them",
+            id="two-nulls",
+        ),
+        pytest.param(
+            "1: a\n1.0: b\n",
+            "found duplicate key 1.0: '1' (line 1) and '1.0' (line 2) read as 1 and 1.0, "
+            "which are equal; quote them",
+            id="int-and-float",
+        ),
+        pytest.param(
+            "No: a\nNo: b\n", "found duplicate key False (first at line 1)",
+            id="one-spelling-twice",
+        ),
     ],
 )
-def test_keys_that_construct_equal_are_one_key(text: str, key: str) -> None:
+def test_keys_that_construct_equal_are_one_key(text: str, problem: str) -> None:
     """A dict holds one entry for two keys that compare equal, so the second
-    replaced the first exactly as a repeated spelling did."""
-    assert f"found duplicate key {key} (first at line 1)" in _refusal(text)
+    replaced the first exactly as a repeated spelling did. Both spellings are
+    named where they differ."""
+    assert f"\n{problem}\n" in _refusal(text)
 
 
 def test_keys_of_different_types_are_distinct() -> None:
