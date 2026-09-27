@@ -702,7 +702,7 @@ def test_the_reader_flag_accepts_a_group_generated_from_a_one_member_enum(
               assignments:
                 - principal: { kind: group, name: "XX {member} Readers" }
                   level: "Read"
-    """))
+    """), prefix=None)
     out = tmp_path / "build"
     result = runner.invoke(app, [
         "build",
@@ -753,7 +753,7 @@ def test_an_unknown_reader_group_enum_is_reported_by_validation(
             description: "Readers for {member}."
             owner_group: "Site Owners"
             enroll_enterprise_reader: true
-    """))
+    """), prefix=None)
     out = tmp_path / "build"
     result = runner.invoke(app, [
         "build",
@@ -830,7 +830,7 @@ def test_an_unknown_folder_enum_is_reported_by_validation_not_by_the_reader_gate
               assignments:
                 - principal: { kind: group, name: "XX Enterprise Readers" }
                   level: "Read"
-    """))
+    """), prefix=None)
     out = tmp_path / "build"
     result = _cli(
         "build",
@@ -898,7 +898,7 @@ def test_the_reader_gate_does_not_raise_for_a_library_with_no_folder_policy(
             assignments:
               - principal: { kind: group, name: "XX Readers" }
                 level: "Read"
-    """))
+    """), prefix=None)
     out = tmp_path / "build"
     result = _cli(
         "build",
@@ -952,7 +952,7 @@ def test_a_multi_member_reader_enum_is_reported_by_validation_not_by_the_gate(
             description: "Readers for {member}."
             owner_group: "Site Owners"
             enroll_enterprise_reader: true
-    """))
+    """), prefix=None)
     out = tmp_path / "build"
     result = runner.invoke(app, [
         "build",

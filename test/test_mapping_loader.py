@@ -2823,7 +2823,9 @@ def test_a_section_of_the_wrong_shape_names_the_section(
     tuple to AttributeError/TypeError would make every genuine loader bug
     look like a bad mapping file, which is the worse trade.
     """
-    path = write_mapping(tmp_path, with_tail(entities("Project"), fragment))
+    # The `entities` fragment is the section itself; a second `entities:` would be a repeated key.
+    body = fragment if section == "entities" else with_tail(entities("Project"), fragment)
+    path = write_mapping(tmp_path, body)
     _refuses(path, MappingShapeError, section)
 
 
@@ -3024,7 +3026,7 @@ def test_a_prefix_placeholder_in_group_and_level_names_expands_to_the_stem(tmp_p
               assignments:
                 - principal: { kind: group, name: "{prefix} Request Handlers" }
                   level: "{prefix} Submit Only"
-    """)
+    """, prefix=None)
     perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
     assert perms is not None
     assert [g.name for g in perms.groups] == ["GOV Request Handlers"]
@@ -3046,7 +3048,7 @@ def test_an_empty_prefix_drops_the_placeholder_and_its_space(tmp_path: Path) -> 
         groups:
           - name: "{prefix} Request Handlers"
             description: "Handlers."
-    """)
+    """, prefix=None)
     perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
     assert perms is not None
     assert [g.name for g in perms.groups] == ["Request Handlers"]
@@ -3064,7 +3066,7 @@ def test_a_placeholder_anywhere_but_the_start_is_refused(tmp_path: Path) -> None
         groups:
           - name: "Handlers {prefix}"
             description: "Handlers."
-    """)
+    """, prefix=None)
     _refuses(tmp_path / "m.yaml", MappingValueError, r"groups\[0\]\.name")
 
 
@@ -3074,13 +3076,13 @@ def test_previous_prefixes_parse_and_default_empty(tmp_path: Path) -> None:
         previous_prefixes: ["", "ADOPT_"]
         entities:
           Risk: { kind: List, base_template: 100, site_role: default }
-    """)
+    """, prefix=None)
     assert load_mapping(tmp_path / "m.yaml").mapping.previous_prefixes == ("", "ADOPT_")
     write_mapping(tmp_path, """
         prefix: "GOV_"
         entities:
           Risk: { kind: List, base_template: 100, site_role: default }
-    """)
+    """, prefix=None)
     assert load_mapping(tmp_path / "m.yaml").mapping.previous_prefixes == ()
 
 
@@ -3104,7 +3106,7 @@ def test_previous_prefixes_refuse_a_bad_shape(
         previous_prefixes: {declared}
         entities:
           Risk: {{ kind: List, base_template: 100, site_role: default }}
-    """)
+    """, prefix=None)
     _refuses(tmp_path / "m.yaml", error, why)
 
 
@@ -3128,7 +3130,7 @@ def test_groups_and_levels_compute_their_previous_names_over_every_stem(tmp_path
             renamed_from: ["{prefix} Program Governance"]
           - name: "{prefix} Request Handlers"
             description: "Handlers."
-    """)
+    """, prefix=None)
     perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
     assert perms is not None
     leads, handlers = perms.groups
@@ -3151,7 +3153,7 @@ def test_a_literal_previous_group_name_is_not_re_prefixed(tmp_path: Path) -> Non
           - name: "{prefix} Editors"
             description: "Editors."
             renamed_from: ["Register Editors"]
-    """)
+    """, prefix=None)
     perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
     assert perms is not None
     assert perms.groups[0].previous_names == ("Editors", "Register Editors")
@@ -3650,6 +3652,81 @@ def test_a_source_file_that_does_not_parse_is_a_named_refusal(
     assert type(err.value) is MappingSourceError
     assert isinstance(err.value.__cause__, yaml.YAMLError)
     assert "side.yaml" in str(err.value), str(err.value)
+
+
+def _repeated_key(
+    path: Path, key: str, mapping_at: tuple[int, int], first: int, again: tuple[int, int],
+) -> str:
+    """The refusal for `key` written twice in one mapping of `path`.
+
+    Positions are (line, column) as the parser prints them, counting from one.
+    """
+    return (
+        f"{path}: is not valid YAML: while constructing a mapping\n"
+        f'  in "{path}", line {mapping_at[0]}, column {mapping_at[1]}\n'
+        f"found duplicate key {key!r} (first at line {first})\n"
+        f'  in "{path}", line {again[0]}, column {again[1]}'
+    )
+
+
+_RISK = "{ kind: List, base_template: 100, site_role: default }"
+
+#: A key written twice at each depth and in each style a mapping can take,
+#: with where the parser places the mapping, the first key and the repeat.
+#: `write_mapping` puts `prefix:` on line 1.
+_REPEATED_KEYS = [
+    pytest.param(
+        f"entities:\n  Risk: {_RISK}\nentities:\n  Issue: {_RISK}\n",
+        "entities", (1, 1), 2, (4, 1),
+        id="top-level-section",
+    ),
+    pytest.param(
+        f"entities:\n  Risk: {_RISK}\n  Issue: {_RISK}\n  Risk: {_RISK}\n",
+        "Risk", (3, 3), 3, (5, 3),
+        id="nested-entity",
+    ),
+    pytest.param(
+        "entities:\n  Risk: { kind: List, base_template: 100, site_role: default,"
+        " base_template: 101 }\n",
+        "base_template", (3, 9), 3, (3, 63),
+        id="flow-style",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "key", "mapping_at", "first", "again"), _REPEATED_KEYS)
+def test_a_key_written_twice_is_a_named_refusal(
+    tmp_path: Path, body: str, key: str,
+    mapping_at: tuple[int, int], first: int, again: tuple[int, int],
+) -> None:
+    """#672: YAML kept the last of two identical keys and said nothing.
+
+    An entity declared twice under `entities:` after a copy-paste lost the
+    earlier block whole, and a repeated section lost every entry above it,
+    with a clean build either way. The message names the key and the line of
+    both occurrences, because the author has to choose between them.
+    """
+    path = write_mapping(tmp_path, body)
+    with pytest.raises(MappingError) as err:
+        load_mapping(path)
+    assert type(err.value) is MappingSourceError
+    assert isinstance(err.value.__cause__, yaml.YAMLError)
+    assert str(err.value) == _repeated_key(path.resolve(), key, mapping_at, first, again)
+
+
+@pytest.mark.parametrize("declaration", _NAMED_YAML_SOURCES)
+def test_a_source_file_with_a_key_written_twice_is_a_named_refusal(
+    tmp_path: Path, declaration: str,
+) -> None:
+    """Every file a mapping names is parsed by the same loader as the mapping."""
+    side = tmp_path / "side.yaml"
+    side.write_text("policies: {}\nnotes: x\npolicies: {}\n", encoding="utf-8")
+    path = write_mapping(tmp_path, blocks(entities("Risk"), declaration))
+    with pytest.raises(MappingError) as err:
+        load_mapping(path)
+    assert type(err.value) is MappingSourceError
+    assert isinstance(err.value.__cause__, yaml.YAMLError)
+    assert str(err.value) == _repeated_key(side.resolve(), "policies", (1, 1), 1, (3, 1))
 
 
 #: One mapping per delegated style refusal. `_formatting.read` does none of

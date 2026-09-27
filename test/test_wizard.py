@@ -1043,6 +1043,41 @@ def test_a_block_style_previous_prefixes_is_refused(tmp_path: Path) -> None:
         wizard._rewrite_prefix(mapping, "")
 
 
+def test_a_flow_list_continued_onto_a_second_line_is_refused(tmp_path: Path) -> None:
+    """The mapping loads, but the line the rewrite parses holds half a list.
+
+    The parser's error on that half used to escape as `yaml.YAMLError`, which
+    the scaffold boundary in `_run` does not catch, so it reached the
+    operator as a traceback over a half-written project.
+    """
+    mapping = tmp_path / "mapping.yaml"
+    mapping.write_text(
+        'prefix: "GOV_"\nprevious_prefixes: ["",\n  "ADOPT_"]\nentities: {}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(wizard.WizardError, match="does not parse from its own line"):
+        wizard._rewrite_prefix(mapping, "")
+
+
+def test_a_copy_the_loader_refuses_is_a_wizard_refusal(tmp_path: Path) -> None:
+    """The read-back runs the real loader, whose refusals are `MappingError`.
+
+    `_run` catches only `WizardError` and `OSError` around the scaffold, so a
+    loader refusal there was a traceback rather than the sentence naming the
+    file that every other scaffold failure gets.
+    """
+    mapping = tmp_path / "mapping.yaml"
+    mapping.write_text('prefix: "A_"\nentities: [Risk]\n', encoding="utf-8")
+
+    with pytest.raises(wizard.WizardError) as err:
+        wizard._rewrite_prefix(mapping, "NEW_")
+    assert str(err.value).startswith(
+        f"{mapping} does not load after setting its prefix to 'NEW_': ",
+    ), str(err.value)
+    assert "entities: expected a mapping of names, got list" in str(err.value)
+
+
 def test_the_dropped_previous_prefix_is_reported_not_silent(
     tmp_path: Path,
 ) -> None:
@@ -1420,24 +1455,62 @@ def test_a_number_outside_the_table_reprompts_rather_than_indexing(
     assert _collapsed(console).count("No template") == 2
 
 
-def test_a_second_prefix_key_defeats_the_rewrite_and_the_read_back_says_so(
-    tmp_path: Path,
-) -> None:
-    """The case the read-back exists for: the text changed, the meaning did not.
-
-    The rewrite is a targeted `count=1` line edit, and YAML lets the last
-    duplicate key win -- so a mapping declaring `prefix:` twice takes the
-    edit on the first line and loads the second. Re-reading the *text*
-    would have called that a success; only loading the mapping the build
-    will load catches it, which is why the check is written that way.
+def test_a_second_prefix_key_is_refused_by_the_read_back(tmp_path: Path) -> None:
+    """The rewrite is a targeted `count=1` line edit, so a mapping declaring
+    `prefix:` twice took the edit on the first line and, while YAML let the
+    last key win, loaded the second. The loader now refuses the repeat
+    (#672), and the read-back reports that refusal naming the file.
     """
     mapping = tmp_path / "mapping.yaml"
     mapping.write_text(
         'prefix: "A_"\nentities: {}\nprefix: "B_"\n', encoding="utf-8",
     )
 
+    with pytest.raises(wizard.WizardError) as err:
+        wizard._rewrite_prefix(mapping, "NEW_")
+    assert str(err.value).startswith(f"{mapping} does not load"), str(err.value)
+    assert "found duplicate key 'prefix' (first at line 1)" in str(err.value)
+
+
+def test_a_prefix_line_inside_a_quoted_scalar_defeats_the_rewrite_and_the_read_back_says_so(
+    tmp_path: Path,
+) -> None:
+    """The case the read-back exists for: the text changed, the meaning did not.
+
+    A quoted scalar may continue onto a line that starts `prefix:`, and the
+    line edit takes that one because it comes first. Re-reading the *text*
+    would have called that a success; only loading the mapping the build
+    will load catches it, which is why the check is written that way.
+    """
+    mapping = tmp_path / "mapping.yaml"
+    mapping.write_text(
+        "entities: {}\n"
+        "groups:\n"
+        '  - name: "Readers"\n'
+        "    description: 'Reads every list under this\n"
+        "prefix: the one declared below.\n"
+        "      '\n"
+        'prefix: "B_"\n',
+        encoding="utf-8",
+    )
+
     with pytest.raises(wizard.WizardError, match="loaded back as 'B_'"):
         wizard._rewrite_prefix(mapping, "NEW_")
+
+
+def test_a_previous_prefixes_line_with_a_key_written_twice_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The one-line parse of `previous_prefixes:` uses the build's loader too,
+    so it cannot read a line the build would refuse."""
+    mapping = tmp_path / "mapping.yaml"
+    mapping.write_text(
+        'prefix: "GOV_"\nprevious_prefixes: {"": 1, "": 2}\nentities: {}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(wizard.WizardError, match="found duplicate key ''"):
+        wizard._rewrite_prefix(mapping, "")
 
 
 def test_a_template_directory_that_is_not_there_is_reported_not_a_traceback(
@@ -1534,6 +1607,26 @@ def test_a_copy_that_cannot_be_made_is_reported_not_a_traceback(
     assert wizard.run_wizard(console) == 1
     assert "Could not scaffold the project" in _collapsed(console)
     assert not destination.exists()
+
+
+def test_a_scaffold_refusal_is_printed_as_text_not_markup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A loader refusal names settings such as `views[risk_open].columns`,
+    and rich read the bracketed part as a markup tag and dropped it."""
+    solution = _fake_family(tmp_path / "fake")
+    _offer_only(monkeypatch, solution)
+
+    def _refuse(*_args: object, **_kwargs: object) -> tuple[str, ...]:
+        raise wizard.WizardError("views[risk_open].columns: 'Owner' is not a column")
+
+    monkeypatch.setattr(wizard, "_rewrite_prefix", _refuse)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    assert "views[risk_open].columns: 'Owner' is not a column" in _collapsed(console)
 
 
 def test_a_template_whose_lists_could_not_be_read_is_still_described(

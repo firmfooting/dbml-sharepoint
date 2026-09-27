@@ -205,7 +205,7 @@ def _family() -> str:
 
 
 def _deploy_js(tmp_path: Path, *, with_assessment: bool = False) -> str:
-    write_mapping(tmp_path, _MAPPING)
+    write_mapping(tmp_path, _MAPPING, prefix=None)
     bundle = load_mapping(tmp_path / "m.yaml")
     schema = make_schema(make_table("Risk", "Title", note="Risks."))
     js = generate_deploy_js(

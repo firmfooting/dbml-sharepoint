@@ -17,7 +17,6 @@ from typing import Final, NoReturn
 from urllib.parse import urlparse, urlunparse
 
 import typer
-import yaml
 from pyparsing.exceptions import ParseBaseException
 
 from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
@@ -27,6 +26,7 @@ from dbml_sharepoint.extension import (
     UnknownExtensionError,
     resolve_extension,
 )
+from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.env_file import (
     CHANGE_LOG_LIST_PARAMETER,
     DEPLOYMENT_CHANGE_LOG_LIST_PARAMETER,
@@ -50,7 +50,7 @@ from dbml_sharepoint.model.release import Release, load_release
 
 # A bad config file fails as one of these. Deliberately not `Exception`:
 # an unexpected error is a bug in the tool and must keep its traceback.
-CONFIG_ERRORS = (ValueError, KeyError, OSError, yaml.YAMLError, ParseBaseException)
+CONFIG_ERRORS = (ValueError, KeyError, OSError, *_yaml.PARSE_ERRORS, ParseBaseException)
 
 
 def config_error(what: str, path: Path | None, exc: Exception) -> NoReturn:

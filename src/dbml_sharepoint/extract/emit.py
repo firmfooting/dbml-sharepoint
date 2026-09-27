@@ -13,9 +13,8 @@ the output is UTF-8 with LF endings on every platform.
 
 from typing import Any
 
-import yaml
-
 from dbml_sharepoint.extract.decode import DecodedColumn, DecodedEntity, Extraction
+from dbml_sharepoint.model import _yaml
 
 #: The prefix an extracted mapping carries until the operator sets theirs.
 #: Not derived from the list title: a prefix names the DEPLOYING project,
@@ -196,7 +195,7 @@ def _dump(document: dict[str, Any]) -> str:
     lines, which is legal YAML and unreadable in a diff: a one-word edit to
     a validation message reflows the whole block.
     """
-    return yaml.safe_dump(
+    return _yaml.safe_dump(
         document,
         sort_keys=False,
         default_flow_style=False,

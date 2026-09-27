@@ -27,10 +27,13 @@ class MappingSourceError(MappingError):
     """A document the loader had to read never became YAML.
 
     The file could not be opened, or its bytes do not parse. Distinct from
-    the refusals below because none of them can be stated yet: nothing
-    inside the document has been seen, so there is no block, key or value to
-    name, and the fix is to the file or to the path rather than to a
-    declaration.
+    the refusals below because none of them can be stated yet: no block of
+    the document has been read, so the fix is to the file or to the path
+    rather than to a declaration.
+
+    A key written twice in one mapping is refused here too, because the
+    parser refuses it before any block is read. The parser's message names
+    that key and the line of each occurrence.
     """
 
 

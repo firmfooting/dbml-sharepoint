@@ -44,7 +44,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import typer
-import yaml
 from rich.console import Console, Group, RenderableType
 from rich.markup import escape
 from rich.padding import Padding
@@ -72,6 +71,7 @@ from dbml_sharepoint.catalogue import (
     available_journeys,
     available_solutions,
 )
+from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.env_file import (
     ENTERPRISE_READER_KEY,
     ENV_FILENAME,
@@ -79,6 +79,7 @@ from dbml_sharepoint.model.env_file import (
     EnvFileError,
     read_env_file,
 )
+from dbml_sharepoint.model.errors import MappingError
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.pipeline import execute_build
 from dbml_sharepoint.project import (
@@ -855,7 +856,15 @@ def _drop_chosen_from_previous_prefixes(
     match = matches[0]
     # Parsed as YAML rather than split on the brackets, so a trailing
     # comment on the line is handled by the parser that will read it back.
-    declared = yaml.safe_load(match.group(1))
+    try:
+        declared = _yaml.safe_load(match.group(1))
+    except _yaml.PARSE_ERRORS as exc:
+        # A flow list continued onto a second line does not parse from its first.
+        raise WizardError(
+            f"`previous_prefixes:` does not parse from its own line "
+            f"({match.group(0).strip()!r}), so the one-line rewrite this "
+            f"wizard makes cannot edit it: {exc}",
+        ) from exc
     if not isinstance(declared, list) or not all(isinstance(p, str) for p in declared):
         raise WizardError(
             f"`previous_prefixes:` is not a single flow-style list of strings "
@@ -905,7 +914,14 @@ def _rewrite_prefix(mapping_path: Path, prefix: str) -> tuple[str, ...]:
     # depend on which machine ran the wizard. The templates ship LF.
     write_artifact(mapping_path, new_text)
 
-    bundle = load_mapping(mapping_path)
+    # `_run` catches WizardError around the scaffold, and a loader refusal is not one.
+    try:
+        bundle = load_mapping(mapping_path)
+    except MappingError as exc:
+        raise WizardError(
+            f"{mapping_path} does not load after setting its prefix to "
+            f"{prefix!r}: {exc}",
+        ) from exc
     if bundle.mapping.prefix != prefix:
         raise WizardError(
             f"wrote prefix {prefix!r} to {mapping_path} but the mapping "
@@ -1198,7 +1214,7 @@ def _read_facts(solution: Solution) -> _TemplateFacts:
     """
     try:
         bundle = load_mapping(solution.mapping_path)
-    except (OSError, KeyError, ValueError, yaml.YAMLError) as exc:
+    except (OSError, KeyError, ValueError, *_yaml.PARSE_ERRORS) as exc:
         raise WizardError(
             f"the {solution.id} template's mapping could not be loaded: {exc}",
         ) from exc
@@ -1536,7 +1552,7 @@ def _run(console: Console) -> int:
     try:
         repointed, applied, dropped = _scaffold(answers)
     except (WizardError, OSError) as exc:
-        console.print(f"[red]Could not scaffold the project:[/red] {exc}")
+        console.print(f"[red]Could not scaffold the project:[/red] {escape(str(exc))}")
         return 1
 
     console.print(f"\n[green]Wrote[/green] {escape(str(answers.destination))}")
