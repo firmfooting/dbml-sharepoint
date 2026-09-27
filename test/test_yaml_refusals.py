@@ -437,6 +437,14 @@ def test_nesting_is_bounded_through_an_alias() -> None:
         "found a mapping nested deeper than 100 levels\n"
         '  in "<file>", line 2, column 103'
     )
+    # `*m48` names a mapping, and the collection at level 101 inside it is a sequence.
+    mixed = "m0: &m0 {k: []}\n" + "".join(
+        f"m{n}: &m{n} {{k: [*m{n - 1}]}}\n" for n in range(1, 50)
+    )
+    assert _refused(mixed) == (
+        "found a sequence nested deeper than 100 levels\n"
+        '  in "<file>", line 50, column 16'
+    )
 
 
 @pytest.mark.parametrize(
