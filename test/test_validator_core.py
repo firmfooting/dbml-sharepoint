@@ -1426,6 +1426,125 @@ def test_override_key_referencing_missing_entity_is_error() -> None:
     assert finding.location == Location(Section.LIST_PERMISSIONS, sub="overrides")
     assert "DoesNotExist" in finding.message
 
+
+_OWNERS_CONTRIBUTE = RoleAssignment(
+    principal=Principal(kind="associated_owner_group"), level="Contribute",
+)
+
+
+def _exact_policy_findings(
+    *,
+    default: ListPermissionPolicy | None = None,
+    overrides: dict[str, ListPermissionPolicy] | None = None,
+) -> list[Finding]:
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    bundle.mapping.permissions = PermissionsConfig(
+        levels=[], groups=[], default_policy=default, overrides=overrides or {},
+    )
+    return validate_against_mapping(schema, bundle)
+
+
+def _strips() -> ListPermissionPolicy:
+    return ListPermissionPolicy(
+        break_inheritance=True, assignments=(), reconcile_mode="exact",
+    )
+
+
+def test_an_exact_default_policy_granting_nothing_warns() -> None:
+    """The deploy issues a removal for every binding outside an empty
+    allowlist, the operator's included, and no build rule said so (#667)."""
+    finding = only(
+        _exact_policy_findings(default=_strips()),
+        FindingCode.EXACT_POLICY_GRANTS_NOTHING,
+    )
+    assert finding.severity == "warning"
+    assert finding.location == Location(Section.LIST_PERMISSIONS, sub="default")
+
+
+def test_an_exact_override_granting_nothing_warns_and_names_its_entity() -> None:
+    finding = only(
+        _exact_policy_findings(
+            default=_grants(),
+            overrides={"Task": _strips()},
+        ),
+        FindingCode.EXACT_POLICY_GRANTS_NOTHING,
+    )
+    assert finding.location == Location(Section.LIST_PERMISSIONS, sub="overrides")
+    assert "'Task'" in finding.message
+
+
+def _grants() -> ListPermissionPolicy:
+    return ListPermissionPolicy(
+        break_inheritance=True, assignments=(_OWNERS_CONTRIBUTE,), reconcile_mode="exact",
+    )
+
+
+def test_an_exact_default_that_no_list_takes_does_not_warn() -> None:
+    """Every entity is overridden, so no list deploys under the default and
+    the deploy's ACL scopes carry only the overrides."""
+    every_entity = ("Project", "Task", "AppSettings")
+    none_of(
+        _exact_policy_findings(
+            default=_strips(), overrides={name: _grants() for name in every_entity},
+        ),
+        FindingCode.EXACT_POLICY_GRANTS_NOTHING,
+    )
+
+
+def test_a_default_reused_as_every_override_is_not_reported_as_the_default() -> None:
+    """One policy object may be the default and every override; no list takes the default."""
+    strips = _strips()
+    findings = _exact_policy_findings(
+        default=strips,
+        overrides=dict.fromkeys(("Project", "Task", "AppSettings"), strips),
+    )
+    located = [f.location for f in findings if f.code == FindingCode.EXACT_POLICY_GRANTS_NOTHING]
+    assert located == [Location(Section.LIST_PERMISSIONS, sub="overrides")] * 3
+
+
+def test_an_exact_default_scoped_to_a_role_no_list_has_does_not_warn() -> None:
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    bundle.mapping.permissions = PermissionsConfig(
+        levels=[], groups=[], default_policy=_strips(), overrides={},
+        default_policy_site_role="committee",
+    )
+    findings = validate_against_mapping(schema, bundle)
+    none_of(findings, FindingCode.EXACT_POLICY_GRANTS_NOTHING)
+    only(findings, FindingCode.UNKNOWN_SITE_ROLE)
+
+
+def test_an_exact_override_on_an_unknown_table_is_left_to_unknown_table() -> None:
+    findings = _exact_policy_findings(
+        default=_grants(), overrides={"DoesNotExist": _strips()},
+    )
+    only(findings, FindingCode.UNKNOWN_TABLE)
+    none_of(findings, FindingCode.EXACT_POLICY_GRANTS_NOTHING)
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        pytest.param(_grants(), id="exact-with-assignments"),
+        pytest.param(
+            ListPermissionPolicy(
+                break_inheritance=True, assignments=(), reconcile_mode="configured",
+            ),
+            id="configured-with-none",
+        ),
+    ],
+)
+def test_a_policy_that_names_a_grant_or_prunes_nothing_does_not_warn(
+    policy: ListPermissionPolicy,
+) -> None:
+    """Exact with a grant keeps that grant, and configured mode removes no
+    principal the policy does not name, so neither empties a scope."""
+    none_of(
+        _exact_policy_findings(default=policy, overrides={"Task": policy}),
+        FindingCode.EXACT_POLICY_GRANTS_NOTHING,
+    )
+
 def test_lookup_target_without_title_or_display_column_is_error() -> None:
     """A1: a lookup into a target list that has no Title column and no
     display_column would render blank in SP (LookupField defaults to the empty

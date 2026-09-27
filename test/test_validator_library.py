@@ -20,7 +20,7 @@ from _model import table as make_table
 from _packs import pack
 
 from dbml_sharepoint.analysis.checks._structure import TEMPLATE_BY_KIND
-from dbml_sharepoint.analysis.findings import Finding, FindingCode
+from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.validator import validate_against_mapping, validate_all
 from dbml_sharepoint.extension import NullExtension
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
@@ -712,6 +712,7 @@ def test_a_group_per_enum_member_securing_its_own_folder_is_clean(
     none_of(findings, FindingCode.FOLDER_PERMISSIONS_ON_A_LIST)
     none_of(findings, FindingCode.FOLDER_PERMISSIONS_WITHOUT_FOLDERS)
     none_of(findings, FindingCode.UNKNOWN_PRINCIPAL_GROUP)
+    none_of(findings, FindingCode.EXACT_POLICY_GRANTS_NOTHING)
     assert by_severity(findings, "error") == [], by_severity(findings, "error")
 
 
@@ -946,6 +947,257 @@ def test_folder_permissions_on_an_unknown_entity_are_refused(
         FindingCode.UNKNOWN_TABLE,
     )
     assert "Nope" in f.message
+
+
+#: List policies in YAML flow style, for `_folder_policy_body`'s `default` and `overrides`.
+_EXACT_LIST = (
+    "{break_inheritance: true, reconcile: exact, assignments: "
+    '[{principal: {kind: associated_owner_group}, level: "Full Control"}]}'
+)
+_CONFIGURED_LIST = (
+    "{break_inheritance: true, reconcile: configured, assignments: "
+    '[{principal: {kind: associated_owner_group}, level: "Full Control"}]}'
+)
+
+
+def _folder_policy_body(
+    tmp_path: Path,
+    policy: str,
+    *,
+    folders: str = "{from_enum: division}",
+    default: str | None = _EXACT_LIST,
+    override: str | None = None,
+) -> list[Finding]:
+    """A two-folder library whose folder policy is `policy`, in YAML flow style.
+
+    `default` and `override` are the library's list policy through each
+    route; `None` leaves that route undeclared.
+    """
+    blocks = [f"folders: {{Docs: {policy}}}"]
+    if default is not None:
+        blocks.append(f"default: {default}")
+    if override is not None:
+        blocks.append(f"overrides: {{Docs: {override}}}")
+    list_permissions = "{" + ", ".join(blocks) + "}"
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Clinical services"\n  "Corporate services"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+        ),
+        mapping=f"""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {folders}
+
+            list_permissions: {list_permissions}
+        """,
+    )
+    return validate_against_mapping(schema, bundle)
+
+
+def test_an_exact_folder_policy_granting_nothing_warns_once(tmp_path: Path) -> None:
+    """One declared block over two folders is one warning, not one per folder."""
+    f = only(
+        _folder_policy_body(
+            tmp_path, "{break_inheritance: true, reconcile: exact, assignments: []}",
+        ),
+        FindingCode.EXACT_POLICY_GRANTS_NOTHING,
+    )
+    assert f.location == Location(Section.LIST_PERMISSIONS, sub="folders")
+    assert "Docs" in f.message
+
+
+def test_an_exact_folder_policy_on_a_library_the_schema_lacks_does_not_warn(
+    tmp_path: Path,
+) -> None:
+    """The deploy emits no scope for a library the DBML does not declare, so
+    there is no removal to warn about; `entity_not_in_schema` says why."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Other", ID_PK, TITLE),
+        mapping="""
+            entities:
+              Other:
+                kind: List
+                base_template: 100
+                site_role: default
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: [Alpha, Beta]
+
+            list_permissions:
+              folders:
+                Docs: {break_inheritance: true, reconcile: exact, assignments: []}
+        """,
+    )
+    findings = validate_against_mapping(schema, bundle)
+    only(findings, FindingCode.ENTITY_NOT_IN_SCHEMA)
+    none_of(findings, FindingCode.EXACT_POLICY_GRANTS_NOTHING)
+
+
+def test_an_exact_folder_policy_on_a_list_is_left_to_the_folder_rules(
+    tmp_path: Path,
+) -> None:
+    """A list has no folders to secure, so no folder scope is emitted to prune."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Tasks", ID_PK, TITLE),
+        mapping="""
+            entities:
+              Tasks:
+                kind: List
+                base_template: 100
+                site_role: default
+                folders: [Alpha, Beta]
+
+            list_permissions:
+              folders:
+                Tasks: {break_inheritance: true, reconcile: exact, assignments: []}
+        """,
+    )
+    findings = validate_against_mapping(schema, bundle)
+    only(findings, FindingCode.FOLDER_PERMISSIONS_ON_A_LIST)
+    none_of(findings, FindingCode.EXACT_POLICY_GRANTS_NOTHING)
+
+
+def test_an_empty_folder_policy_on_a_library_the_schema_lacks_is_not_refused(
+    tmp_path: Path,
+) -> None:
+    """No scope is emitted for a library the DBML does not declare, so no
+    guard is switched off; `entity_not_in_schema` says why."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Other", ID_PK, TITLE),
+        mapping=f"""
+            entities:
+              Other:
+                kind: List
+                base_template: 100
+                site_role: default
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: [Alpha, Beta]
+
+            list_permissions:
+              default: {_EXACT_LIST}
+              folders:
+                Docs: {{break_inheritance: true}}
+        """,
+    )
+    findings = validate_against_mapping(schema, bundle)
+    only(findings, FindingCode.ENTITY_NOT_IN_SCHEMA)
+    none_of(findings, FindingCode.FOLDER_POLICY_MANAGES_NOTHING)
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        pytest.param("{break_inheritance: false}", id="inherits"),
+        # A break is POSTed only on a scope that still inherits, so on an
+        # already-unique folder this spelling writes nothing either.
+        pytest.param("{break_inheritance: true}", id="breaks"),
+        pytest.param("{break_inheritance: true, reconcile: configured}", id="breaks-explicit"),
+    ],
+)
+def test_a_configured_folder_policy_granting_nothing_is_refused(
+    tmp_path: Path, policy: str,
+) -> None:
+    """Under an exact list (here through the default) it grants and removes
+    nothing, and still took both folders out of the exact-mode check that
+    refuses an undeclared folder scope (#617)."""
+    f = only(
+        _folder_policy_body(tmp_path, policy),
+        FindingCode.FOLDER_POLICY_MANAGES_NOTHING,
+    )
+    assert f.severity == "error"
+    assert f.location == Location(Section.LIST_PERMISSIONS, sub="folders")
+    assert "Docs" in f.message
+
+
+def test_an_exact_list_reached_through_an_override_is_judged_too(tmp_path: Path) -> None:
+    only(
+        _folder_policy_body(
+            tmp_path, "{break_inheritance: true}",
+            default=_CONFIGURED_LIST, override=_EXACT_LIST,
+        ),
+        FindingCode.FOLDER_POLICY_MANAGES_NOTHING,
+    )
+
+
+@pytest.mark.parametrize(
+    ("default", "override"),
+    [
+        pytest.param(_CONFIGURED_LIST, None, id="configured-default"),
+        # The override is what the library deploys under, not the exact default.
+        pytest.param(_EXACT_LIST, _CONFIGURED_LIST, id="configured-override"),
+        pytest.param(None, None, id="no-list-policy"),
+    ],
+)
+@pytest.mark.parametrize(
+    "policy",
+    [
+        pytest.param("{break_inheritance: true}", id="breaks"),
+        pytest.param("{break_inheritance: false}", id="inherits"),
+    ],
+)
+def test_a_configured_folder_policy_granting_nothing_is_allowed_off_an_exact_list(
+    tmp_path: Path, policy: str, default: str | None, override: str | None,
+) -> None:
+    """The descendant check runs only under an exact list, so here there is
+    nothing to exempt, and breaking a folder to manage it by hand is legal."""
+    none_of(
+        _folder_policy_body(tmp_path, policy, default=default, override=override),
+        FindingCode.FOLDER_POLICY_MANAGES_NOTHING,
+    )
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        pytest.param(
+            "{break_inheritance: false, assignments: "
+            "[{principal: {kind: associated_member_group}, level: Read}]}",
+            id="configured-grants",
+        ),
+        pytest.param(
+            "{break_inheritance: true, assignments: "
+            "[{principal: {kind: associated_member_group}, level: Read}]}",
+            id="configured-breaks-and-grants",
+        ),
+        # Exact reviews every grant on the folder; granting none is the warning's case.
+        pytest.param(
+            "{break_inheritance: true, reconcile: exact, assignments: []}",
+            id="exact-grants-nothing",
+        ),
+    ],
+)
+def test_a_folder_policy_that_grants_or_reviews_is_not_refused(
+    tmp_path: Path, policy: str,
+) -> None:
+    none_of(
+        _folder_policy_body(tmp_path, policy),
+        FindingCode.FOLDER_POLICY_MANAGES_NOTHING,
+    )
+
+
+def test_a_library_with_no_folders_is_told_that_rather_than_both(
+    tmp_path: Path,
+) -> None:
+    """With no folders there is nothing for the policy to exempt, and the
+    remedy is the container's, so the policy is not judged as well."""
+    findings = _folder_policy_body(
+        tmp_path, "{break_inheritance: false}", folders="[]",
+    )
+    only(findings, FindingCode.FOLDER_PERMISSIONS_WITHOUT_FOLDERS)
+    none_of(findings, FindingCode.FOLDER_POLICY_MANAGES_NOTHING)
 
 
 @pytest.mark.parametrize(

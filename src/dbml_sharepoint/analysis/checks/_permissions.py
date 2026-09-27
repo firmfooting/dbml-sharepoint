@@ -167,6 +167,74 @@ def _folder_policy_assignments(
         )
 
 
+def _exact_policies_granting_nothing(
+    vc: ValidationContext, perms: PermissionsConfig,
+) -> list[Finding]:
+    """`reconcile: exact` with no assignments, once per declared policy block.
+
+    A warning, because stripping a scope is supported and
+    `test_an_exact_list_declaring_nothing_strips_it_and_reads_it_back` pins
+    it. The message says only what `_acls.js.j2` does: the prune issues a
+    removal for every binding outside the empty allowlist except 'Limited
+    Access'. Whether those removals succeed once the last binding on a scope
+    goes, and what the operator keeps, is unmeasured (#667), so it is not
+    stated.
+
+    Each block reports only where it governs a scope, because that is where
+    the deploy carries it: the default when some list takes it rather than an
+    override or a `site_role` that excludes it, an override keyed by a table
+    that deploys, and a folder block on such a table through its expansion,
+    once however many folders it covers. A block that governs nothing either
+    deploys nothing or already has a finding of its own, such as
+    `unknown_table` or `entity_not_in_schema`.
+    """
+    mapping = vc.bundle.mapping
+    # A list deploys only when the mapping and the schema both declare it.
+    governed = {name for name in mapping.entities if name in vc.table_names}
+    declared: list[tuple[ListPermissionPolicy, str, str, Location]] = []
+    default = perms.default_policy
+    # Not by identity: one policy object may be both the default and an override.
+    if default is not None and any(
+        name not in perms.overrides and mapping.permissions_for_entity(name) is not None
+        for name in governed
+    ):
+        declared.append((
+            default, "list_permissions.default",
+            "every list it applies to", _DEFAULT_POLICY,
+        ))
+    declared += [
+        (policy, f"list_permissions.overrides[{name!r}]", name, _OVERRIDES)
+        for name, policy in perms.overrides.items()
+        if name in governed
+    ]
+    # Any one folder answers for its block: expanding `{member}` changes neither mode nor count.
+    folder_blocks = {
+        name: policy for name, _folder, policy in _expanded_folder_policies(vc, perms)
+        # A list's folders are refused by `folders_on_a_list`, and no folder scope is emitted.
+        if name in governed and mapping.entities[name].is_library
+    }
+    declared += [
+        (
+            policy, f"list_permissions.folders[{name!r}]",
+            f"every folder {name} declares", _FOLDERS,
+        )
+        for name, policy in folder_blocks.items()
+    ]
+    return [
+        Finding(
+            FindingCode.EXACT_POLICY_GRANTS_NOTHING,
+            f"{ctx}: reconcile: exact with no assignments makes the deploy "
+            f"issue a removal for every direct role assignment on {scope} "
+            f"except Limited Access, the operator's included. Declare the "
+            f"assignments that should stay, or use reconcile: configured, "
+            f"which leaves undeclared grants alone.",
+            location=at,
+        )
+        for policy, ctx, scope, at in declared
+        if policy.reconcile_mode == "exact" and not policy.assignments
+    ]
+
+
 def _group_name_characters(vc: ValidationContext) -> list[Finding]:
     """No declared group name may carry a character SharePoint refuses.
 
@@ -735,5 +803,6 @@ def check(vc: ValidationContext) -> list[Finding]:
             _check_policy_assignments(override_policy, ctx_key, _OVERRIDES)
 
         _folder_policy_assignments(vc, perms, _check_policy_assignments)
+        findings += _exact_policies_granting_nothing(vc, perms)
 
     return findings
