@@ -1,0 +1,7 @@
+id = "visitor-log"
+title = "Visitor log"
+summary = "The front-desk sign-in book, digitised: one list (VIVisit) recording who is on site, hosted by whom, since when, with the sign-out that paper books never collect."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

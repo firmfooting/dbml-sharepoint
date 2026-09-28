@@ -54,6 +54,7 @@ from rich.table import Table
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.groups import declaring_groups
 from dbml_sharepoint.analysis.timezones import local_zone_name
+from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.bundle import (
     ASSESS_SCRIPT,
     DEMO_SCRIPT,
@@ -61,16 +62,22 @@ from dbml_sharepoint.bundle import (
     write_artifact,
 )
 from dbml_sharepoint.catalogue import (
+    BROWSE_ALL,
+    CORE_DISTRIBUTION,
     MAPPING_RELPATH,
+    NEVER_COPIED,
     PLACEHOLDER_SITE_URL,
     PLACEHOLDER_TIME_ZONE,
     RELEASE_RELPATH,
     SCHEMA_RELPATH,
+    BlueprintRootError,
     Journey,
     Solution,
-    available_journeys,
-    available_solutions,
+    notices,
+    read_catalogue,
+    terminal_safe,
 )
+from dbml_sharepoint.extension import UnknownExtensionError, resolve_extension
 from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.env_file import (
     ENTERPRISE_READER_KEY,
@@ -81,8 +88,13 @@ from dbml_sharepoint.model.env_file import (
 )
 from dbml_sharepoint.model.errors import MappingError
 from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.mapping_types import MappingBundle
+from dbml_sharepoint.model.parser import parse_dbml
+from dbml_sharepoint.model.reading import recording_reads
+from dbml_sharepoint.model.release import load_release
 from dbml_sharepoint.pipeline import execute_build
 from dbml_sharepoint.project import (
+    CONFIG_ERRORS,
     ENTERPRISE_READER_DECLINED,
     site_url_notice,
     validate_enterprise_reader,
@@ -94,7 +106,7 @@ from dbml_sharepoint.project import (
 #: gitignored in the repository, so they exist only in a contributor's
 #: checkout -- but that is exactly where the wizard gets run during
 #: development, and a stale deploy script in a new project is worse than none.
-_NEVER_COPY = ("build", "reports", "__pycache__")
+_NEVER_COPY = NEVER_COPIED
 
 #: Refuses only what cannot be a filename component or would corrupt the
 #: YAML line the prefix is written into. NOT a SharePoint rule.
@@ -237,18 +249,27 @@ def _catalogue_table(solutions: list[Solution]) -> Table:
     table.add_column("Template", no_wrap=True)
     table.add_column("Lists", justify="right", no_wrap=True)
     table.add_column("Title")
+    current = ""
     for index, solution in enumerate(solutions, start=1):
+        if solution.distribution != current:
+            current = solution.distribution
+            # One row per package, because every blueprint in a package carries its licence.
+            table.add_row(
+                "", f"[bold]{escape(current)}[/bold]", "",
+                f"Licence: {escape(solution.license)}",
+            )
         table.add_row(
-            str(index), solution.id, str(len(solution.lists)), solution.title,
+            # Blueprint text comes from any installed provider, so it is never read as markup.
+            str(index), escape(solution.id), str(len(solution.lists)), escape(solution.title),
         )
     return table
 
 
 #: What the journey step accepts to mean "show me everything".
-_BROWSE_ALL = "all"
+_BROWSE_ALL = BROWSE_ALL
 
 
-def _journey_table(journeys: list[Journey]) -> Table:
+def _journey_table(journeys: list[Journey], installed: set[str]) -> Table:
     table = Table(
         title="Where to start",
         header_style="bold",
@@ -261,9 +282,11 @@ def _journey_table(journeys: list[Journey]) -> Table:
     table.add_column("Templates", justify="right", no_wrap=True)
     table.add_column("What it covers")
     for index, journey in enumerate(journeys, start=1):
-        table.add_row(
-            str(index), journey.id, str(len(journey.solution_ids)), journey.summary,
-        )
+        total = len(journey.solution_ids)
+        have = sum(1 for i in journey.solution_ids if i in installed)
+        # "1 of 2" says part of a journey is not installed before anyone picks it.
+        count = str(total) if have == total else f"{have} of {total}"
+        table.add_row(str(index), escape(journey.id), count, escape(journey.summary))
     table.add_row("", _BROWSE_ALL, "", "Every template, in one list")
     return table
 
@@ -287,7 +310,7 @@ def _pick_journey(
     if not journeys:
         return solutions
     by_id = {s.id: s for s in solutions}
-    console.print(_journey_table(journeys))
+    console.print(_journey_table(journeys, set(by_id)))
     while True:
         answer = Prompt.ask(
             f"[bold]Journey[/bold] (number, name, {_BROWSE_ALL}, or a template)",
@@ -308,12 +331,22 @@ def _pick_journey(
                 f"Pick a number, a name, or {_BROWSE_ALL}.",
             )
             continue
-        # A journey names ids; anything it names that is not on the shelf is
-        # a broken journey, and `test_journeys.py` fails the build for it. Be
-        # forgiving here anyway rather than crash a picker over a doc file.
+        # A provider's journey may name another package's blueprints: say so, never hide them.
+        missing = [i for i in chosen.solution_ids if i not in by_id]
+        if missing:
+            console.print(
+                f"[yellow]Journey {escape(chosen.id)} names {escape(', '.join(missing))}, "
+                f"which {'is' if len(missing) == 1 else 'are'} not available here.[/yellow] "
+                f"{'It' if len(missing) == 1 else 'They'} may come from another package, "
+                "have been refused above, or be misspelt in the journey; "
+                "`dbml-sharepoint blueprints` lists what is installed here.",
+            )
         narrowed = [by_id[i] for i in chosen.solution_ids if i in by_id]
         if not narrowed:
-            console.print(f"[red]Journey {answer!r} names no template that exists.[/red]")
+            console.print(
+                f"[red]Journey {escape(repr(chosen.id))} names no blueprint that is "
+                "installed.[/red]",
+            )
             continue
         return narrowed
 
@@ -352,7 +385,7 @@ def _describe(console: Console, solution: Solution) -> None:
     the operator has just chosen this template off a table that already
     named it -- so the point is confirmation, not presentation.
     """
-    lists = ", ".join(solution.lists) or "(none declared)"
+    lists = escape(", ".join(solution.lists)) or "(none declared)"
     count = len(solution.lists)
     # The declared prefix is shown here, not only in the prompt that follows.
     # A template declaring no prefix is never asked for one at all, which
@@ -361,7 +394,7 @@ def _describe(console: Console, solution: Solution) -> None:
     console.print(
         f"\n  [bold]{escape(solution.title)}[/bold]  -  {count} list"
         f"{'' if count == 1 else 's'}: {lists}"
-        f"  -  prefix {solution.prefix or '(none)'}",
+        f"  -  prefix {escape(solution.prefix) or '(none)'}",
     )
     # `detail`, not `summary`: `summary` is capped at `_SUMMARY_MAX` so it
     # fits the table cell above, and reusing it here cut risk-register's
@@ -371,7 +404,7 @@ def _describe(console: Console, solution: Solution) -> None:
     # this was the only dim block on screen that still wrapped to column 0,
     # once `_ask_prefix` picked up the same helper for its own guidance line.
     if solution.detail:
-        _guidance(console, solution.detail)
+        _guidance(console, escape(solution.detail))
 
 
 def _guidance(console: Console, text: str) -> None:
@@ -1212,6 +1245,111 @@ class _TemplateFacts:
     entity_titles: tuple[tuple[str, str], ...] = ()
 
 
+def _check_reads(solution: Solution, read: list[Path]) -> None:
+    """Refuse a mapping that reads a file the copy would not carry into the project."""
+    root = solution.root.resolve()
+    for path in read:
+        resolved = path.resolve()
+        if not resolved.is_relative_to(root):
+            raise WizardError(
+                f"the {solution.id} template's mapping reads {path}, which is outside the "
+                "template, so the copy would not carry it",
+            )
+        inside = resolved.relative_to(root)
+        if set(inside.parts) & set(_NEVER_COPY):
+            raise WizardError(
+                f"the {solution.id} template's mapping reads {inside.as_posix()}, which the "
+                f"copy leaves out ({', '.join(_NEVER_COPY)} are never copied)",
+            )
+
+
+def _check_tree(solution: Solution) -> None:
+    """Refuse a template the copy would stop part-way through, or would carry too much of.
+
+    The copy follows links, so a link out of the template, or to any directory
+    (one pointing at an ancestor stays inside and never ends), is refused; so is
+    a file this user cannot read, which would leave a partial project.
+    """
+    root = solution.root.resolve()
+    for path in sorted(solution.root.rglob("*")):
+        inside = path.relative_to(solution.root)
+        if set(inside.parts) & set(_NEVER_COPY):
+            continue
+        if path.is_symlink() and path.is_dir():
+            raise WizardError(
+                f"the {solution.id} template's {inside.as_posix()} is a link to a directory, "
+                "which the copy would follow",
+            )
+        if path.is_symlink() and not path.resolve().is_relative_to(root):
+            name = inside.as_posix()
+            raise WizardError(
+                f"the {solution.id} template's {name} links outside the template, and the "
+                "copy would bring whatever it points at into the project",
+            )
+        if path.is_file():
+            try:
+                path.open("rb").close()
+            except OSError as exc:
+                raise WizardError(
+                    f"the {solution.id} template's {inside.as_posix()} cannot be read: {exc}",
+                ) from exc
+
+
+def _check_inputs(solution: Solution, bundle: MappingBundle) -> None:
+    """Load the schema and release the build will read, so a bad one is refused before any copy.
+
+    A blueprint from another package is not held to core's template gates, so
+    its schema and mapping are also validated together, as the build would.
+    """
+    try:
+        schema = parse_dbml(solution.schema_path)
+    except CONFIG_ERRORS as exc:
+        raise WizardError(
+            f"the {solution.id} template's schema could not be loaded: {exc}",
+        ) from exc
+    try:
+        load_release(solution.release_path)
+    except CONFIG_ERRORS as exc:
+        raise WizardError(
+            f"the {solution.id} template's release could not be loaded: {exc}",
+        ) from exc
+    if solution.distribution == CORE_DISTRIBUTION:
+        # Core's own are built end to end by its CI, so their findings are already known.
+        return
+    try:
+        extension = resolve_extension(bundle.mapping.extension)
+    except UnknownExtensionError as exc:
+        raise WizardError(f"the {solution.id} template names {exc}") from exc
+    errors = [f for f in validate_all(schema, bundle, extension) if f.severity == "error"]
+    if errors:
+        shown = "; ".join(f"{f.code}: {f.message}" for f in errors[:3])
+        more = f" (and {len(errors) - 3} more)" if len(errors) > 3 else ""
+        raise WizardError(f"the {solution.id} template fails validation: {shown}{more}")
+
+
+def _check_docs(solution: Solution) -> None:
+    """Refuse a template whose documentation `_repoint_docs` could not read, before any copy.
+
+    A blueprint from another package is not held to core's encoding gate, and
+    the rewrite runs after the project is written.
+    """
+    for doc in sorted(solution.root.rglob("*.md")):
+        inside = doc.relative_to(solution.root)
+        # The copy leaves these out, so `_repoint_docs` never reads them.
+        if set(inside.parts) & set(_NEVER_COPY):
+            continue
+        name = inside.as_posix()
+        try:
+            doc.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise WizardError(
+                f"the {solution.id} template's {name} is not UTF-8: "
+                f"{exc.reason} at byte {exc.start}",
+            ) from exc
+        except OSError as exc:
+            raise WizardError(f"the {solution.id} template's {name} cannot be read: {exc}") from exc
+
+
 def _read_facts(solution: Solution) -> _TemplateFacts:
     """Load one template's mapping, or refuse by name.
 
@@ -1222,11 +1360,16 @@ def _read_facts(solution: Solution) -> _TemplateFacts:
     the caller prints before writing anything.
     """
     try:
-        bundle = load_mapping(solution.mapping_path)
+        with recording_reads() as read:
+            bundle = load_mapping(solution.mapping_path)
     except (OSError, KeyError, ValueError, *_yaml.PARSE_ERRORS) as exc:
         raise WizardError(
             f"the {solution.id} template's mapping could not be loaded: {exc}",
         ) from exc
+    _check_reads(solution, read)
+    _check_tree(solution)
+    _check_inputs(solution, bundle)
+    _check_docs(solution)
     permissions = bundle.mapping.permissions
     return _TemplateFacts(
         roles=frozenset(e.site_role for e in bundle.mapping.entities.values()),
@@ -1422,11 +1565,16 @@ def _next_panel(answers: Answers) -> Panel:
 
 
 def _run(console: Console) -> int:
-    solutions = available_solutions()
+    try:
+        found = read_catalogue()
+    except BlueprintRootError as exc:
+        console.print(f"[red]{escape(terminal_safe(str(exc)))}[/red]")
+        return 1
+    solutions = list(found.solutions)
     # A journey is navigation, not a template. A build that shipped without
     # any still offers every template, so this never turns a cosmetic problem
     # into a wizard that refuses to run.
-    journeys = available_journeys()
+    journeys = list(found.journeys)
     if not solutions:
         console.print(
             "[red]No templates found.[/red] This build of dbml-sharepoint "
@@ -1444,6 +1592,9 @@ def _run(console: Console) -> int:
             border_style="green",
         ),
     )
+    # Once per run, before any question: what was refused, and what another root hid.
+    for line in notices(found):
+        console.print(f"[yellow]{escape(line)}[/yellow]")
 
     # rich degrades a rule to ASCII by itself: `Rule.__rich_console__`
     # substitutes "-" when `options.ascii_only` and the configured characters

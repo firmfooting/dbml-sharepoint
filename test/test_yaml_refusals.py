@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 import typer
+from _catalogue_fixtures import manifest_text
 from _packs import DEFAULT_PREFIX, blocks, entities, write_mapping
 from _paths import FIXTURES
 
@@ -570,6 +571,8 @@ def test_a_template_a_parse_refuses_is_skipped_by_the_picker(
         (tmp_path / name / "10-design" / "schema.dbml").write_text("", encoding="utf-8")
         (tmp_path / name / "20-configure").mkdir()
         (tmp_path / name / "20-configure" / "mapping.yaml").write_bytes(mapping_text)
+        (tmp_path / name / "20-configure" / "release.yaml").write_text("", encoding="utf-8")
+        (tmp_path / name / "blueprint.toml").write_text(manifest_text(name), encoding="utf-8")
     monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
     found = {s.id: (s.prefix, s.lists) for s in catalogue.available_solutions()}
     assert found == {

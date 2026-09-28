@@ -1,0 +1,7 @@
+id = "vehicle-log"
+title = "Vehicle log"
+summary = "The pool-car paper log book, digitised: VEVehicle (the fleet catalogue) and VETrip (every trip: driver, odometer out/in with kilometres calculated, and the business purpose that makes the record tax-defensible)."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

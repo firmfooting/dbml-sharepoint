@@ -1,0 +1,7 @@
+id = "incident-management"
+title = "Incident management"
+summary = "Report it, triage it, fix it, prove it."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

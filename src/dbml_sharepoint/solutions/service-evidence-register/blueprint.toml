@@ -1,0 +1,7 @@
+id = "service-evidence-register"
+title = "Service evidence register"
+summary = "A contemporaneous record of what an external service provider is actually delivering: the events, the chases it took to get an answer, and the themes worth raising formally."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

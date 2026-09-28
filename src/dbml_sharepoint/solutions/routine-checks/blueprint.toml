@@ -1,0 +1,7 @@
+id = "routine-checks"
+title = "Routine checks"
+summary = "The wall-taped paper checklists, digitised: vaccine-fridge temperatures, cleaning rounds, emergency-trolley checks, environmental audits."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

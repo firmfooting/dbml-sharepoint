@@ -1,0 +1,7 @@
+id = "contract-register"
+title = "Contract register"
+summary = "A single source of truth for every contract the organisation holds: who it's with, what it's worth, who owns it, when it starts, ends, and must be renewed or exited."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

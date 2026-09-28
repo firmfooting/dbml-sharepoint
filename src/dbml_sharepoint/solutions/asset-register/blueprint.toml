@@ -1,0 +1,7 @@
+id = "asset-register"
+title = "Asset register"
+summary = "Who has what, where it is, and what state it's in."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

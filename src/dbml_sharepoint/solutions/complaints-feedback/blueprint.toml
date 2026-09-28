@@ -1,0 +1,7 @@
+id = "complaints-feedback"
+title = "Complaints & feedback"
+summary = "Every complaint, compliment and suggestion from the people you serve, with the response clock visible."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

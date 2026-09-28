@@ -36,7 +36,6 @@ PINNED: dict[str, list[str]] = {
         "13413a512984",
         "1f77f373407a",
         "3f703a5d43a0",
-        "7c3188e5030c",
         "a664cee8e30e",
         "e365415b7088",
         "e7ca83021f84",
@@ -1374,9 +1373,6 @@ PINNED: dict[str, list[str]] = {
         "5b63e967372f",
         "c6dca4c1db7a",
         "d765b685da53",
-    ],
-    "test/test_catalogue.py": [
-        "ba9fe6f2e4b2",
     ],
     "test/test_cli.py": [
         "e66734918850",

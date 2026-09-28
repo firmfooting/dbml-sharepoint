@@ -1,0 +1,7 @@
+id = "grants-register"
+title = "Grants register"
+summary = "Every funding submission from preparation to outcome, and (the part everyone drops) every post-award obligation with its due date."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

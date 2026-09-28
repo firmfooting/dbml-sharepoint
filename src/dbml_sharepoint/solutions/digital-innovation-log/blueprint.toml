@@ -1,0 +1,7 @@
+id = "digital-innovation-log"
+title = "Digital innovation log"
+summary = "The M365 asks a rollout hears, captured once by a champion, routed before they are scored, and delivered through a pattern built once."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

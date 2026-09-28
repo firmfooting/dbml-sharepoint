@@ -9,24 +9,31 @@ answer -- under test.
 
 import ast
 import hashlib
+import os
 import shutil
 import sys
 import tempfile
+import tomllib
 from dataclasses import replace
 from pathlib import Path
 from typing import override
 
 import pytest
+from _catalogue_fixtures import CORE_LICENSE, Provider, install, write_family
 from _console import ScriptedConsole
 from _console import collapsed as _collapsed
 
-from dbml_sharepoint import wizard
+from dbml_sharepoint import catalogue, wizard
 from dbml_sharepoint.catalogue import (
+    BLUEPRINT_MANIFEST,
+    CORE_DISTRIBUTION,
     MAPPING_RELPATH,
     PLACEHOLDER_SITE_URL,
+    Journey,
     Solution,
     available_solutions,
     load_solution,
+    read_catalogue,
 )
 from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.env_file import ENV_FILENAME, read_env_file
@@ -150,6 +157,13 @@ _ONE_ENTITY = (
 )
 
 
+#: A release.yaml the loader accepts, for a stand-in family.
+_RELEASE = (
+    'release: "1.0.0"\ndate: "2026-09-28"\n'
+    'deployer_version: "dbml-sharepoint/0.1.0"\nschema_version: "1.0.0"\n'
+)
+
+
 def _fake_family(root: Path, mapping: str = _ONE_ENTITY) -> Solution:
     """A minimal stand-in for a shipped family, and the `Solution` for it.
 
@@ -169,7 +183,7 @@ def _fake_family(root: Path, mapping: str = _ONE_ENTITY) -> Solution:
     (root / "20-configure" / "mapping.yaml").write_text(
         mapping, encoding="utf-8", newline="\n",
     )
-    (root / "20-configure" / "release.yaml").write_text("", encoding="utf-8")
+    (root / "20-configure" / "release.yaml").write_text(_RELEASE, encoding="utf-8", newline="\n")
     return Solution(
         id="fake-template",
         title="Fake",
@@ -178,6 +192,9 @@ def _fake_family(root: Path, mapping: str = _ONE_ENTITY) -> Solution:
         lists=("Risk",),
         prefix="OLD_",
         root=root,
+        distribution=CORE_DISTRIBUTION,
+        license=CORE_LICENSE,
+        origin="firmfooting",
     )
 
 
@@ -198,6 +215,7 @@ def _choice(prefix: str = "RR_", *, lists: tuple[str, ...] = ("Risk",),
         solution=Solution(
             id=id_, title="T", summary="s", detail="s",
             lists=lists, prefix=prefix, root=Path("unused"),
+            distribution=CORE_DISTRIBUTION, license=CORE_LICENSE, origin="firmfooting",
         ),
         prefix=prefix,
         entity_roles=tuple(zip(lists, roles, strict=True)),
@@ -285,7 +303,8 @@ def test_several_templates_nest_by_id(tmp_path: Path) -> None:
 
 
 def _offer_only(monkeypatch: pytest.MonkeyPatch, solution: Solution) -> None:
-    monkeypatch.setattr(wizard, "available_solutions", lambda: [solution])
+    offered = replace(read_catalogue(), solutions=(solution,))
+    monkeypatch.setattr(wizard, "read_catalogue", lambda: offered)
 
 
 def _capture_build(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
@@ -402,17 +421,13 @@ def test_a_previous_build_is_not_copied_into_the_new_project(
         "site_role: default }\n",
         encoding="utf-8",
     )
-    (source / "20-configure" / "release.yaml").write_text("", encoding="utf-8")
+    (source / "20-configure" / "release.yaml").write_text(_RELEASE, encoding="utf-8")
 
-    solution = load_solution("risk-register")
-    monkeypatch.setattr(
-        wizard, "available_solutions", lambda: [
-            type(solution)(
-                id="fake-template", title="Fake", summary="s", detail="s",
-                lists=("Risk",), prefix="OLD_", root=source,
-            ),
-        ],
-    )
+    _offer_only(monkeypatch, replace(
+        load_solution("risk-register"),
+        id="fake-template", title="Fake", summary="s", detail="s",
+        lists=("Risk",), prefix="OLD_", root=source,
+    ))
 
     destination = tmp_path / "proj"
     console = ScriptedConsole(
@@ -925,7 +940,8 @@ def test_a_refused_build_passes_its_exit_code_through(
 def test_no_shipped_templates_is_reported_not_a_crash(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(wizard, "available_solutions", list)
+    empty = replace(read_catalogue(), solutions=())
+    monkeypatch.setattr(wizard, "read_catalogue", lambda: empty)
     console = ScriptedConsole([])
     assert wizard.run_wizard(console) == 1
     assert "shipped without them" in console.text
@@ -2060,6 +2076,7 @@ def test_the_template_summary_names_the_declared_prefix() -> None:
     declared = Solution(
         id="x", title="Fake", summary="s", detail="",
         lists=("Risk",), prefix="RR_", root=Path("unused"),
+        distribution=CORE_DISTRIBUTION, license=CORE_LICENSE, origin="firmfooting",
     )
     with_prefix = ScriptedConsole([])
     wizard._describe(with_prefix, declared)
@@ -2071,11 +2088,11 @@ def test_the_template_summary_names_the_declared_prefix() -> None:
 
 
 def test_a_template_with_no_detail_sentence_prints_no_empty_line() -> None:
-    """`_lead_sentence` returns "" for a README it cannot parse.
+    """A `Solution` built with an empty `detail` prints no blank line.
 
-    Every shipped family has one, so nothing else reaches the empty arm --
-    but a new template whose README opens with a table would print a blank
-    dim line under its title, which reads like a rendering fault. Asserted
+    blueprint.toml refuses an empty summary, so no discovered template reaches the
+    empty arm, but a caller constructing a `Solution` can, and a blank dim
+    line under its title would read like a rendering fault. Asserted
     as a LINE COUNT against the same solution with a detail, because the
     difference between the two arms is a line that is there or is not:
     a substring assertion cannot see a blank one.
@@ -2083,6 +2100,7 @@ def test_a_template_with_no_detail_sentence_prints_no_empty_line() -> None:
     solution = Solution(
         id="x", title="Fake", summary="s", detail="",
         lists=("Risk", "Control"), prefix="", root=Path("unused"),
+        distribution=CORE_DISTRIBUTION, license=CORE_LICENSE, origin="firmfooting",
     )
     without = ScriptedConsole([])
     wizard._describe(without, solution)
@@ -2116,6 +2134,7 @@ def test_the_describe_detail_sentence_indents_every_wrapped_line() -> None:
         detail="A genuinely long detail sentence written to wrap across "
         "several lines once the console is narrow enough to force it.",
         lists=("Risk",), prefix="RR_", root=Path("unused"),
+        distribution=CORE_DISTRIBUTION, license=CORE_LICENSE, origin="firmfooting",
     )
     console = ScriptedConsole([], width=50)
     wizard._describe(console, solution)
@@ -3581,3 +3600,344 @@ def test_the_built_bundle_carries_the_answered_site_url(tmp_path: Path) -> None:
     deploy_js = (destination / "build" / "deploy.js.txt").read_text(encoding="utf-8")
     assert site_url in deploy_js
     assert "sites/example" not in deploy_js
+
+
+def test_the_scaffolded_project_carries_the_pack_s_licence(tmp_path: Path) -> None:
+    """A copied project still says what it was made from and under which licence."""
+    destination = tmp_path / "proj"
+    assert wizard.run_wizard(ScriptedConsole(_answers(destination))) == 0
+    manifest = tomllib.loads((destination / BLUEPRINT_MANIFEST).read_text(encoding="utf-8"))
+    assert (manifest["id"], manifest["license"]) == ("risk-register", CORE_LICENSE)
+
+
+def test_the_table_groups_templates_by_package_and_names_each_licence() -> None:
+    core = load_solution("risk-register")
+    other = replace(
+        core, id="acme-thing", title="Acme thing", distribution="acme-packs", license="BUSL-1.1",
+    )
+    console = ScriptedConsole([])
+    console.print(wizard._catalogue_table([core, other]))
+    shown = _collapsed(console)
+    assert f"Licence: {CORE_LICENSE}" in shown
+    assert "Licence: BUSL-1.1" in shown
+    assert (
+        shown.index(CORE_DISTRIBUTION)
+        < shown.index("risk-register")
+        < shown.index("acme-packs")
+        < shown.index("acme-thing")
+    )
+
+
+def test_a_provider_that_cannot_be_read_stops_the_wizard_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", tmp_path / "missing"))
+    console = ScriptedConsole([])
+    assert wizard.run_wizard(console) == 1
+    shown = _collapsed(console)
+    assert "acme-packs:" in shown
+    assert "is not a directory" in shown
+
+
+def test_a_refused_pack_is_named_before_the_first_question(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packs = tmp_path / "packs"
+    write_family(packs, "acme-thing")  # core's licence, inside a BUSL-1.1 distribution
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+    console = ScriptedConsole(_answers(tmp_path / "proj"))
+    assert wizard.run_wizard(console) == 0
+    shown = _collapsed(console)
+    assert "Not offered: acme-packs:" in shown
+    assert shown.index("Not offered") < shown.index("Where to start")
+
+
+def _with_journey(monkeypatch: pytest.MonkeyPatch, journey: Journey) -> None:
+    offered = replace(read_catalogue(), journeys=(journey,))
+    monkeypatch.setattr(wizard, "read_catalogue", lambda: offered)
+
+
+def _journey(journey_id: str, *members: str) -> Journey:
+    return Journey(
+        id=journey_id, title=journey_id, summary="A journey for a test.",
+        solution_ids=members, path=Path("unused"), distribution="acme-packs",
+    )
+
+
+def test_a_journey_naming_an_uninstalled_template_says_so_and_offers_the_rest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _with_journey(monkeypatch, _journey("partial", "visitor-log", "acme-thing"))
+    console = ScriptedConsole([
+        "partial", *_answers(tmp_path / "proj", template="visitor-log", prefix="VI_"),
+    ])
+    assert wizard.run_wizard(console) == 0
+    shown = _collapsed(console)
+    assert "1 of 2" in shown
+    assert "names acme-thing, which is not available here" in shown
+    assert "dbml-sharepoint blueprints" in shown
+
+
+def test_a_journey_with_nothing_installed_shows_the_hint_and_asks_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _with_journey(monkeypatch, _journey("ghost", "acme-thing", "acme-other"))
+    console = ScriptedConsole(["ghost", *_answers(tmp_path / "proj")])
+    assert wizard.run_wizard(console) == 0
+    shown = _collapsed(console)
+    assert "0 of 2" in shown
+    assert "names acme-thing, acme-other, which are not available here" in shown
+    assert "Journey 'ghost' names no blueprint that is installed" in shown
+
+
+def test_a_provider_that_fails_to_load_stops_the_wizard_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", ImportError("gone")))
+    console = ScriptedConsole([])
+    assert wizard.run_wizard(console) == 1
+    assert "acme-packs:" in _collapsed(console)
+    assert "failed to load" in _collapsed(console)
+
+
+#: Rich markup a provider's text might carry; the closing tag alone makes rich raise.
+_MARKUP = "[/acme] Acme [red]thing[/red]"
+
+
+def test_a_template_s_text_is_shown_literally_not_as_markup() -> None:
+    """Pack text comes from any installed provider, so it is escaped wherever it is printed."""
+    solution = replace(
+        load_solution("risk-register"),
+        id="acme[1]", title=_MARKUP, detail=_MARKUP, lists=("[b]Thing",), prefix="[i]X_",
+    )
+    table = ScriptedConsole([])
+    table.print(wizard._catalogue_table([solution]))
+    assert "acme[1]" in table.text
+    assert _MARKUP in _collapsed(table)
+    described = ScriptedConsole([])
+    wizard._describe(described, solution)
+    shown = _collapsed(described)
+    assert shown.count(_MARKUP) == 2
+    assert "[b]Thing" in shown
+    assert "[i]X_" in shown
+
+
+def test_a_journey_s_text_is_shown_literally_not_as_markup() -> None:
+    journey = replace(_journey("acme[1]", "visitor-log"), summary=_MARKUP)
+    console = ScriptedConsole([])
+    console.print(wizard._journey_table([journey], {"visitor-log"}))
+    assert "acme[1]" in console.text
+    assert _MARKUP in _collapsed(console)
+
+
+def test_a_template_with_undecodable_documentation_is_refused_before_anything_is_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The docs are rewritten after the copy, so a bad one must be found before the copy."""
+    solution = _fake_family(tmp_path / "fake")
+    (solution.root / "30-deploy").mkdir()
+    (solution.root / "30-deploy" / "deploy.md").write_bytes(b"caf\xe9\n")
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    shown = _collapsed(console)
+    assert "30-deploy/deploy.md" in shown
+    assert "not UTF-8" in shown
+    assert not destination.exists()
+
+
+def test_the_journey_hint_does_not_claim_where_a_missing_blueprint_comes_from(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A member can be missing because it was refused or misspelt, not only uninstalled."""
+    _with_journey(monkeypatch, _journey("partial", "visitor-log", "acme-thing"))
+    console = ScriptedConsole([
+        "partial", *_answers(tmp_path / "proj", template="visitor-log", prefix="VI_"),
+    ])
+    assert wizard.run_wizard(console) == 0
+    shown = _collapsed(console)
+    assert "names acme-thing, which is not available here" in shown
+    assert "refused" in shown
+    assert "They come from another package" not in shown
+
+
+def test_the_browse_all_answer_is_the_id_the_catalogue_reserves() -> None:
+    assert wizard._BROWSE_ALL == catalogue.BROWSE_ALL
+
+
+def test_a_template_whose_mapping_reads_a_file_outside_it_is_refused_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the template directory is copied, so a file the mapping reads from elsewhere is lost."""
+    (tmp_path / "outside.yaml").write_text("choices: [Red]\n", encoding="utf-8")
+    solution = _fake_family(
+        tmp_path / "fake", _ONE_ENTITY + "enum_sources:\n  Colour: ../../outside.yaml\n",
+    )
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    shown = _collapsed(console)
+    assert "outside.yaml" in shown
+    assert "outside the template" in shown
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize(
+    ("relpath", "text"),
+    [("10-design/schema.dbml", "Table Risk {\n"), ("20-configure/release.yaml", "release: [\n")],
+)
+def test_a_template_whose_schema_or_release_will_not_load_is_refused_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, relpath: str, text: str,
+) -> None:
+    """A blueprint from another package is not held to core's template gates."""
+    solution = _fake_family(tmp_path / "fake")
+    (solution.root / relpath).write_text(text, encoding="utf-8")
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    assert "could not be loaded" in _collapsed(console)
+    assert not destination.exists()
+
+
+def test_a_template_whose_mapping_reads_a_file_the_copy_leaves_out_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`build/` is never copied, so a mapping source under it would not travel either."""
+    solution = _fake_family(
+        tmp_path / "fake", _ONE_ENTITY + "enum_sources:\n  Colour: ../build/enums.yaml\n",
+    )
+    (solution.root / "build").mkdir()
+    (solution.root / "build" / "enums.yaml").write_text("choices: [Red]\n", encoding="utf-8")
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    shown = _collapsed(console)
+    assert "build/enums.yaml" in shown
+    assert "the copy leaves out" in shown
+    assert not destination.exists()
+
+
+def test_a_journey_id_with_markup_names_no_installed_blueprint_without_crashing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _with_journey(monkeypatch, _journey("[/red]x", "acme-thing"))
+    console = ScriptedConsole(["[/red]x", *_answers(tmp_path / "proj")])
+    assert wizard.run_wizard(console) == 0
+    assert "Journey '[/red]x' names no blueprint that is installed" in _collapsed(console)
+
+
+def test_undecodable_documentation_the_copy_leaves_out_is_not_a_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The preflight reads exactly the docs the copy carries and the rewrite reads."""
+    solution = _fake_family(tmp_path / "fake")
+    (solution.root / "build").mkdir()
+    (solution.root / "build" / "notes.md").write_bytes(b"caf\xe9\n")
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 0
+    assert not (destination / "fake-template" / "build").exists()
+
+
+def test_a_template_with_a_link_out_of_it_is_refused_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The copy follows links, so a link out of the template would copy whatever it points at."""
+    solution = _fake_family(tmp_path / "fake")
+    secret = tmp_path / "secret.txt"
+    secret.write_text("not for the project\n", encoding="utf-8")
+    try:
+        (solution.root / "notes.txt").symlink_to(secret)
+    except OSError as exc:
+        pytest.skip(f"this platform will not create a symlink here: {exc}")
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    shown = _collapsed(console)
+    assert "links outside the template" in shown
+    assert not destination.exists()
+
+
+def test_a_template_with_a_link_to_a_directory_is_refused_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A link back to the template stays inside it, but the copy would follow it for ever."""
+    solution = _fake_family(tmp_path / "fake")
+    (solution.root / "docs").mkdir()
+    try:
+        (solution.root / "docs" / "loop").symlink_to(solution.root, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"this platform will not create a symlink here: {exc}")
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    assert "docs/loop is a link to a directory" in _collapsed(console)
+    assert not destination.exists()
+
+
+# Windows has no mode bits and root ignores them, so a permission test cannot bind there.
+if sys.platform == "win32":
+    _PERMISSIONS_BIND = False
+else:
+    _PERMISSIONS_BIND = os.geteuid() != 0
+
+
+@pytest.mark.skipif(not _PERMISSIONS_BIND, reason="needs POSIX permissions that bind this user")
+def test_a_template_with_a_file_that_cannot_be_read_is_refused_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The copy would stop part-way on it and leave a partial project."""
+    solution = _fake_family(tmp_path / "fake")
+    notice = solution.root / "NOTICE"
+    notice.write_text("terms\n", encoding="utf-8")
+    notice.chmod(0)
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+    try:
+        assert wizard.run_wizard(console) == 1
+    finally:
+        notice.chmod(0o644)
+    assert "NOTICE cannot be read" in _collapsed(console)
+    assert not destination.exists()
+
+
+def test_a_provider_template_that_fails_validation_is_refused_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Another package's blueprint is not built by core's CI, so its findings are checked here."""
+    solution = replace(
+        _fake_family(tmp_path / "fake"), distribution="acme-packs", license="BUSL-1.1",
+    )
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    shown = _collapsed(console)
+    assert "fails validation" in shown
+    assert "entity_not_in_schema" in shown
+    assert not destination.exists()

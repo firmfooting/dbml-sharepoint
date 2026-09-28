@@ -7,19 +7,23 @@ sidebar_position: 54
 
 *Packaging: the shipped solution templates, as data*
 
-The shipped solution templates, as data the wizard can offer.
+The blueprints the wizard can offer, as data.
 
-One `Solution` per directory under `solutions/`. Everything here is
-read-only discovery: nothing in this module writes, validates or deploys.
+Blueprints come from blueprint roots: core's own `solutions/` directory first,
+then the directory each installed distribution registers under the
+`dbml_sharepoint.blueprint_roots` entry-point group. One `Solution` per blueprint
+directory in any root. Everything here is read-only discovery: nothing in
+this module writes, validates a mapping or deploys.
 
 Discovered by glob, never by roster. A hardcoded list of names fails open.
 A new template is simply never offered, and every test stays green saying
-so. `.github/workflows/ci.yml` builds the same set the same way, and
+so. `.github/workflows/ci.yml` builds core's set the same way, and
 `test_template_standard.py` derives its conformance cases from it.
 
-The directory is located the way `templating.py` locates the Jinja
-templates, relative to this file, inside the installed package. That is
-the whole reason the templates were moved here: the audience for the wizard
+Each blueprint declares its id, title, summary and licence in `blueprint.toml`. A blueprint
+whose manifest is missing, or claims a licence its distribution does not
+declare, is refused rather than offered. Core's root is located relative to
+this file, inside the installed package, because the audience for the wizard
 is somebody who ran `uvx dbml-sharepoint` and has no checkout.
 
 ### `SOLUTIONS_DIR`
@@ -70,6 +74,42 @@ JOURNEYS_DIRNAME = 'journeys'
 SECTORS_DIRNAME = 'sectors'
 ```
 
+### `CORE_DISTRIBUTION`
+
+```python
+CORE_DISTRIBUTION = 'dbml-sharepoint'
+```
+
+### `BLUEPRINT_ROOTS_GROUP`
+
+```python
+BLUEPRINT_ROOTS_GROUP = 'dbml_sharepoint.blueprint_roots'
+```
+
+### `BLUEPRINT_MANIFEST`
+
+```python
+BLUEPRINT_MANIFEST = 'blueprint.toml'
+```
+
+### `BROWSE_ALL`
+
+```python
+BROWSE_ALL = 'all'
+```
+
+### `NEVER_COPIED`
+
+```python
+NEVER_COPIED = ('build', 'reports', '__pycache__')
+```
+
+### `ORIGIN_OWN`
+
+```python
+ORIGIN_OWN = 'firmfooting'
+```
+
 ### `UnknownSolutionError`
 
 Named solution does not exist. Carries the available names.
@@ -77,6 +117,14 @@ Named solution does not exist. Carries the available names.
 A `LookupError` rather than a bare `ValueError` so a caller can
 distinguish "no such template" from "this template is malformed", which
 fail in completely different ways and want different messages.
+
+### `BlueprintManifestError`
+
+A blueprint's blueprint.toml is missing, malformed, or claims what the catalogue refuses,
+or the blueprint lacks a file every family ships.
+
+Named so the catalogue can refuse that one blueprint and keep offering the rest,
+and so the reason reaches the operator rather than a traceback.
 
 ### `Solution`
 
@@ -90,6 +138,9 @@ class Solution:
     lists: tuple[str, ...]
     prefix: str
     root: Path
+    distribution: str
+    license: str
+    origin: str
 ```
 
 One shipped list family.
@@ -107,15 +158,106 @@ class Journey:
     summary: str
     solution_ids: tuple[str, ...]
     path: Path
+    distribution: str
 ```
 
 One curated reading order over the families.
 
 The wizard's first step. Grouping is DECLARED here rather than derived
-from a family's own prose: `catalogue._lead_sentence` explains why the
-READMEs' `*Theme:*` line was never consistent enough to key off, and a
-grouping nothing verifies is a grouping that goes stale, which is how one
-shipped family came to sit in no theme at all.
+from a family's own prose: the READMEs' `*Theme:*` line was never
+consistent enough to key off, and a grouping nothing verifies is a
+grouping that goes stale, which is how one shipped family came to sit in
+no theme at all.
+
+### `BlueprintManifest`
+
+```python
+@dataclass(frozen=True)
+class BlueprintManifest:
+    id: str
+    title: str
+    summary: str
+    license: str
+    origin: str
+    notice: str
+    min_core: str
+```
+
+What a blueprint declares about itself in blueprint.toml, checked.
+
+### `BlueprintRoot`
+
+Where one installed distribution keeps its blueprints, and the licence it declares.
+
+### `BlueprintRootError`
+
+A blueprint root cannot be read, so no licence the catalogue would print is certain.
+
+Always names the distribution, so the operator knows what to reinstall or remove.
+
+### `Refusal`
+
+```python
+@dataclass(frozen=True)
+class Refusal:
+    distribution: str
+    path: Path
+    reason: str
+```
+
+A blueprint directory the catalogue will not offer, and the named error why.
+
+### `Shadowed`
+
+```python
+@dataclass(frozen=True)
+class Shadowed:
+    kind: str
+    id: str
+    distribution: str
+    kept_from: str
+```
+
+A blueprint or journey not offered because an earlier root offers the same id.
+
+### `Catalogue`
+
+```python
+@dataclass(frozen=True)
+class Catalogue:
+    solutions: tuple[dbml_sharepoint.catalogue.Solution, ...]
+    journeys: tuple[dbml_sharepoint.catalogue.Journey, ...]
+    refused: tuple[dbml_sharepoint.catalogue.Refusal, ...]
+    shadowed: tuple[dbml_sharepoint.catalogue.Shadowed, ...]
+```
+
+Everything offered from every root, and what was refused.
+
+Read once per command, so the wizard and `blueprints` report the same thing.
+
+### `terminal_safe`
+
+```python
+def terminal_safe(text: str) -> str
+```
+
+`text` with every character outside printable ASCII written as a Python escape.
+
+For messages that carry a path or a name from another package: a refusal
+quotes the very value it refuses, and that value must not reach the
+terminal raw.
+
+### `read_blueprint_manifest`
+
+```python
+def read_blueprint_manifest(blueprint_dir: pathlib.Path, distribution_licence: str) -> dbml_sharepoint.catalogue.BlueprintManifest
+```
+
+Read and check `blueprint_dir/blueprint.toml`, or raise `BlueprintManifestError`.
+
+`distribution_licence` is the License-Expression of the distribution the
+blueprint was found in. A blueprint may not claim a different one, so the licence a
+listing shows is the one the installed package was published under.
 
 ### `available_solutions`
 
@@ -123,12 +265,9 @@ shipped family came to sit in no theme at all.
 def available_solutions() -> list[dbml_sharepoint.catalogue.Solution]
 ```
 
-Every shipped family, ordered by id.
+Every blueprint offered, core's first, each root's ordered by id.
 
-A directory only counts when it carries a `schema.dbml` at the family
-standard's path. That keeps a stray directory -- a leftover `build/`,
-an editor's backup -- from appearing in the picker as a template the
-user can choose and then fail to deploy.
+A refused blueprint is left out; `read_catalogue` says which and why.
 
 ### `available_journeys`
 
@@ -142,6 +281,40 @@ Unlike `available_solutions`, a malformed file RAISES rather than being
 skipped. A family that will not load is one template out of the picker;
 a journey that will not load is a grouping silently missing its members,
 and the guard that would have caught it is the one being bypassed.
+
+### `blueprint_roots`
+
+```python
+def blueprint_roots() -> list[dbml_sharepoint.catalogue.BlueprintRoot]
+```
+
+Where blueprints are read from: core first, then each provider by distribution name.
+
+Raises `BlueprintRootError` when any root cannot be read. A provider that is
+installed but unreadable makes every licence the catalogue would print
+uncertain, so nothing is offered until it is fixed or removed.
+
+### `read_catalogue`
+
+```python
+def read_catalogue() -> dbml_sharepoint.catalogue.Catalogue
+```
+
+Every root's blueprints and journeys, what was refused, and what was hidden.
+
+Raises `BlueprintRootError` when a root cannot be read or a provider's
+journey is malformed, and `ValueError` for a malformed journey of core's own.
+
+### `notices`
+
+```python
+def notices(found: dbml_sharepoint.catalogue.Catalogue) -> list[str]
+```
+
+What an interface prints once per run: each refused blueprint, then each hidden group.
+
+Hidden ids are grouped by package, so a provider that repeats every core
+blueprint costs one line rather than one per blueprint.
 
 ### `load_solution`
 

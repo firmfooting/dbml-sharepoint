@@ -5,16 +5,27 @@ family without loading any of them through the mapping loader, so one
 malformed template cannot take the picker down with it.
 """
 
+from email.message import Message
+from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 
 import pytest
+from _catalogue_fixtures import CORE_LICENSE, manifest_text, write_family
 from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint import catalogue
 from dbml_sharepoint.catalogue import (
+    BLUEPRINT_MANIFEST,
+    CORE_DISTRIBUTION,
+    BlueprintRoot,
+    BlueprintRootError,
     UnknownSolutionError,
+    available_journeys,
     available_solutions,
+    blueprint_roots,
     load_solution,
+    notices,
+    read_catalogue,
 )
 from dbml_sharepoint.model import _yaml
 
@@ -97,6 +108,8 @@ def test_a_directory_without_a_schema_is_not_a_solution(
     (tmp_path / "real" / "20-configure" / "mapping.yaml").write_text(
         'prefix: "X_"\nentities: {}\n', encoding="utf-8",
     )
+    (tmp_path / "real" / "20-configure" / "release.yaml").write_text("", encoding="utf-8")
+    (tmp_path / "real" / BLUEPRINT_MANIFEST).write_text(manifest_text("real"), encoding="utf-8")
     (tmp_path / "stray").mkdir()
 
     monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
@@ -122,6 +135,8 @@ def test_a_malformed_mapping_does_not_break_the_whole_picker(
         (tmp_path / name / "20-configure" / "mapping.yaml").write_text(
             mapping_text, encoding="utf-8",
         )
+        (tmp_path / name / "20-configure" / "release.yaml").write_text("", encoding="utf-8")
+        (tmp_path / name / BLUEPRINT_MANIFEST).write_text(manifest_text(name), encoding="utf-8")
 
     monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
     found = {s.id: s for s in available_solutions()}
@@ -146,6 +161,8 @@ def test_a_mapping_declaring_a_key_twice_is_skipped_like_a_broken_one(
         (tmp_path / name / "20-configure" / "mapping.yaml").write_text(
             mapping_text, encoding="utf-8",
         )
+        (tmp_path / name / "20-configure" / "release.yaml").write_text("", encoding="utf-8")
+        (tmp_path / name / BLUEPRINT_MANIFEST).write_text(manifest_text(name), encoding="utf-8")
 
     monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
     found = {s.id: s for s in available_solutions()}
@@ -202,14 +219,6 @@ def test_a_missing_solutions_directory_is_empty_not_an_error(
     assert available_solutions() == []
 
 
-def test_the_theme_line_is_skipped_not_shown() -> None:
-    """Many READMEs open with `*Theme: ...*`, which is metadata about the
-    collection rather than a description of the template. It is skipped
-    rather than parsed because it wraps inconsistently and only about half
-    the families carry it."""
-    assert not load_solution("visitor-log").summary.startswith("Theme")
-
-
 def test_detail_is_the_untruncated_summary() -> None:
     """The table cell needs a cap; the wizard's detail panel does not.
 
@@ -225,14 +234,7 @@ def test_detail_is_the_untruncated_summary() -> None:
     )
     for solution in long_ones:
         assert not solution.detail.endswith(catalogue._ELLIPSIS)
-        # Strip the marker itself rather than re-slicing at a fixed offset:
-        # `_summary` rstrips *after* cutting to `_SUMMARY_MAX - len(_ELLIPSIS)`,
-        # so on a template where that cut lands on whitespace the kept text
-        # is a few characters shorter than the offset. Re-slicing `summary`
-        # at that same offset then grabs a leading fragment of the "..."
-        # marker instead -- true for service-evidence-register and
-        # volunteer-register today. Removing the marker by suffix instead of
-        # by position holds regardless of where the cut landed.
+        # By suffix, not offset: `_cap` rstrips after cutting, so the kept text may be shorter.
         assert solution.detail.startswith(
             solution.summary.removesuffix(catalogue._ELLIPSIS).rstrip(),
         )
@@ -300,3 +302,99 @@ def test_clean_folds_typography_a_console_cannot_encode() -> None:
         + " owner " + chr(0x2192) + " review" + chr(0x2026)
     )
     assert catalogue._clean(messy) == "Risk 5x5 -- owner -> review..."
+
+
+def test_the_core_root_comes_first_and_carries_core_s_licence() -> None:
+    assert blueprint_roots()[0] == BlueprintRoot(
+        CORE_DISTRIBUTION, catalogue.SOLUTIONS_DIR, CORE_LICENSE,
+    )
+
+
+def test_core_without_distribution_metadata_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Imported from a bare source tree, core's licence is unknowable, so nothing is offered."""
+
+    def missing(name: str) -> Message:
+        raise PackageNotFoundError(name)
+
+    monkeypatch.setattr(catalogue, "metadata", missing)
+    with pytest.raises(BlueprintRootError, match="dbml-sharepoint is not installed"):
+        read_catalogue()
+
+
+def test_core_metadata_without_a_licence_expression_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(catalogue, "metadata", lambda name: Message())
+    with pytest.raises(BlueprintRootError, match="declares no License-Expression"):
+        read_catalogue()
+
+
+def test_every_shipped_solution_is_tagged_with_core() -> None:
+    assert {(s.distribution, s.license, s.origin) for s in available_solutions()} == {
+        (CORE_DISTRIBUTION, CORE_LICENSE, "firmfooting"),
+    }
+
+
+def test_no_shipped_pack_is_refused() -> None:
+    """A refused pack drops out of the picker, which no other test would notice."""
+    assert read_catalogue().refused == ()
+
+
+def test_every_journey_names_the_distribution_that_ships_it() -> None:
+    assert {j.distribution for j in available_journeys()} == {CORE_DISTRIBUTION}
+
+
+def test_a_pack_without_a_manifest_is_refused_and_named(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_family(tmp_path, "good")
+    (write_family(tmp_path, "bare") / BLUEPRINT_MANIFEST).unlink()
+    monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
+
+    found = read_catalogue()
+    assert [s.id for s in found.solutions] == ["good"]
+    assert [(r.distribution, r.path.name) for r in found.refused] == [
+        (CORE_DISTRIBUTION, "bare"),
+    ]
+    assert "no blueprint.toml" in found.refused[0].reason
+    assert notices(found) == [f"Not offered: {CORE_DISTRIBUTION}: {found.refused[0].reason}"]
+    assert [s.id for s in available_solutions()] == ["good"]
+
+
+def test_a_pack_claiming_another_licence_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_family(tmp_path, "relicensed", {"license": "Apache-2.0"})
+    monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
+    found = read_catalogue()
+    assert found.solutions == ()
+    assert "differs from" in found.refused[0].reason
+
+
+def test_title_and_summary_come_from_the_manifest_not_the_readme(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One source for each: the README is documentation, blueprint.toml is what the picker shows."""
+    family = write_family(
+        tmp_path, "declared", {"title": "Declared title", "summary": "Declared summary."},
+    )
+    (family / "README.md").write_text("# Readme title\n\nReadme sentence.\n", encoding="utf-8")
+    monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
+    (solution,) = available_solutions()
+    assert (solution.title, solution.summary, solution.detail) == (
+        "Declared title", "Declared summary.", "Declared summary.",
+    )
+
+
+def test_a_long_manifest_summary_is_capped_for_the_table_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sentence = "A summary " + "long " * 40 + "enough to cap."
+    write_family(tmp_path, "wordy", {"summary": sentence})
+    monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
+    (solution,) = available_solutions()
+    assert len(solution.summary) <= catalogue._SUMMARY_MAX
+    assert solution.summary.endswith(catalogue._ELLIPSIS)
+    assert solution.detail == sentence

@@ -13,17 +13,30 @@ journeys a contract rather than prose.
 from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint.catalogue import (
+    CORE_DISTRIBUTION,
     JOURNEYS_DIRNAME,
     SECTORS_DIRNAME,
+    Journey,
     available_journeys,
     available_solutions,
 )
 
 
+def _core_journeys() -> list[Journey]:
+    """Core's own journeys; a provider's may name another package's templates."""
+    journeys = [j for j in available_journeys() if j.distribution == CORE_DISTRIBUTION]
+    assert journeys, "core ships no journey, so these guards would pass over nothing"
+    return journeys
+
+
+def _core_ids() -> set[str]:
+    return {s.id for s in available_solutions() if s.distribution == CORE_DISTRIBUTION}
+
+
 def test_every_journey_names_only_families_that_exist() -> None:
     """A journey naming a deleted or misspelled family is a dead menu entry."""
-    known = {solution.id for solution in available_solutions()}
-    for journey in available_journeys():
+    known = _core_ids()
+    for journey in _core_journeys():
         missing = [i for i in journey.solution_ids if i not in known]
         assert not missing, (
             f"{journey.path.name} names {missing}, which is not a shipped family. "
@@ -38,8 +51,8 @@ def test_every_family_appears_in_at_least_one_journey() -> None:
     finds. Adding one now means placing it, which is a smaller decision at
     the point the family is written than it is a year later.
     """
-    named = {i for journey in available_journeys() for i in journey.solution_ids}
-    orphans = sorted({s.id for s in available_solutions()} - named)
+    named = {i for journey in _core_journeys() for i in journey.solution_ids}
+    orphans = sorted(_core_ids() - named)
     assert not orphans, (
         f"{orphans} appear in no journey, so the wizard can only reach them "
         f"through 'browse all'. Add each to a journey in "
@@ -54,7 +67,7 @@ def test_a_journey_is_more_than_one_family_or_says_why() -> None:
     is itself a merge of three others, so the journey exists to say which
     one thing to take rather than to sequence several.
     """
-    singles = {j.id for j in available_journeys() if len(j.solution_ids) == 1}
+    singles = {j.id for j in _core_journeys() if len(j.solution_ids) == 1}
     assert singles <= {"running-a-programme"}, (
         f"{sorted(singles)} name one family each. A journey sequences families; "
         "one family needs no sequence."

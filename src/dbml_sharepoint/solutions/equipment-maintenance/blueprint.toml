@@ -1,0 +1,7 @@
+id = "equipment-maintenance"
+title = "Equipment maintenance"
+summary = "What must be tested or serviced, how often, when it's next due, and the evidence it happened."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

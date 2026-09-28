@@ -1,23 +1,29 @@
-"""The shipped solution templates, as data the wizard can offer.
+"""The blueprints the wizard can offer, as data.
 
-One `Solution` per directory under `solutions/`. Everything here is
-read-only discovery: nothing in this module writes, validates or deploys.
+Blueprints come from blueprint roots: core's own `solutions/` directory first,
+then the directory each installed distribution registers under the
+`dbml_sharepoint.blueprint_roots` entry-point group. One `Solution` per blueprint
+directory in any root. Everything here is read-only discovery: nothing in
+this module writes, validates a mapping or deploys.
 
 Discovered by glob, never by roster. A hardcoded list of names fails open.
 A new template is simply never offered, and every test stays green saying
-so. `.github/workflows/ci.yml` builds the same set the same way, and
+so. `.github/workflows/ci.yml` builds core's set the same way, and
 `test_template_standard.py` derives its conformance cases from it.
 
-The directory is located the way `templating.py` locates the Jinja
-templates, relative to this file, inside the installed package. That is
-the whole reason the templates were moved here: the audience for the wizard
+Each blueprint declares its id, title, summary and licence in `blueprint.toml`. A blueprint
+whose manifest is missing, or claims a licence its distribution does not
+declare, is refused rather than offered. Core's root is located relative to
+this file, inside the installed package, because the audience for the wizard
 is somebody who ran `uvx dbml-sharepoint` and has no checkout.
 """
 
 import re
+import tomllib
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
+from importlib.metadata import EntryPoint, PackageNotFoundError, entry_points, metadata
+from pathlib import Path, PureWindowsPath
+from typing import Any, NamedTuple
 
 from dbml_sharepoint.model import _yaml
 
@@ -79,6 +85,31 @@ _SUMMARY_MAX = 140
 #: `test_messages_bound_for_a_console_are_ascii`.
 _ELLIPSIS = "..."
 
+#: The distribution this module ships in. Its blueprints win a duplicate id.
+CORE_DISTRIBUTION = "dbml-sharepoint"
+
+#: The entry-point group a blueprint provider registers a zero-argument callable under.
+BLUEPRINT_ROOTS_GROUP = "dbml_sharepoint.blueprint_roots"
+
+#: The file every blueprint directory carries beside its README.
+BLUEPRINT_MANIFEST = "blueprint.toml"
+
+#: Every key a blueprint.toml carries, each one required.
+_MANIFEST_KEYS = ("id", "title", "summary", "license", "origin", "notice", "min_core")
+
+#: The wizard's answer for "every blueprint", read before any id, so no blueprint or journey
+#: may take it.
+BROWSE_ALL = "all"
+
+#: Directory names the wizard never copies into a project, at any depth.
+NEVER_COPIED = ("build", "reports", "__pycache__")
+
+#: The origin of a blueprint designed by this project, which needs no notice.
+ORIGIN_OWN = "firmfooting"
+
+#: `<organisation>-released` needs a notice file; `<organisation>-held` is never released.
+_ORIGIN_DERIVED = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*-(released|held)")
+
 
 class UnknownSolutionError(LookupError):
     """Named solution does not exist. Carries the available names.
@@ -95,6 +126,15 @@ class UnknownSolutionError(LookupError):
             f"unknown solution template {name!r}. Available: "
             f"{', '.join(available) or '(none)'}",
         )
+
+
+class BlueprintManifestError(ValueError):
+    """A blueprint's blueprint.toml is missing, malformed, or claims what the catalogue refuses,
+    or the blueprint lacks a file every family ships.
+
+    Named so the catalogue can refuse that one blueprint and keep offering the rest,
+    and so the reason reaches the operator rather than a traceback.
+    """
 
 
 @dataclass(frozen=True)
@@ -114,6 +154,12 @@ class Solution:
     lists: tuple[str, ...]
     prefix: str
     root: Path
+    #: The distribution whose blueprint root holds this blueprint.
+    distribution: str
+    #: The SPDX licence the blueprint declares, equal to its distribution's.
+    license: str
+    #: Who designed it: `firmfooting`, `<organisation>-released` or `<organisation>-held`.
+    origin: str
 
     @property
     def schema_path(self) -> Path:
@@ -133,10 +179,10 @@ class Journey:
     """One curated reading order over the families.
 
     The wizard's first step. Grouping is DECLARED here rather than derived
-    from a family's own prose: `catalogue._lead_sentence` explains why the
-    READMEs' `*Theme:*` line was never consistent enough to key off, and a
-    grouping nothing verifies is a grouping that goes stale, which is how one
-    shipped family came to sit in no theme at all.
+    from a family's own prose: the READMEs' `*Theme:*` line was never
+    consistent enough to key off, and a grouping nothing verifies is a
+    grouping that goes stale, which is how one shipped family came to sit in
+    no theme at all.
     """
 
     id: str
@@ -145,6 +191,78 @@ class Journey:
     #: Declared order, which is the order to deploy in. Not sorted.
     solution_ids: tuple[str, ...]
     path: Path
+    #: The distribution whose blueprint root holds this journey file.
+    distribution: str
+
+
+@dataclass(frozen=True)
+class BlueprintManifest:
+    """What a blueprint declares about itself in blueprint.toml, checked."""
+
+    id: str
+    #: Folded to ASCII, because it is rendered into a terminal table.
+    title: str
+    #: The whole lead sentence; the catalogue caps it for the table itself.
+    summary: str
+    #: An SPDX expression, equal to the License-Expression of its distribution.
+    license: str
+    #: `firmfooting`, `<organisation>-released` or `<organisation>-held`.
+    origin: str
+    #: A file inside the blueprint carrying release terms, or "".
+    notice: str
+    #: The core version range the blueprint was tested against. Stored, not evaluated.
+    min_core: str
+
+
+class BlueprintRoot(NamedTuple):
+    """Where one installed distribution keeps its blueprints, and the licence it declares."""
+
+    distribution: str
+    root: Path
+    #: The distribution's License-Expression, which each of its blueprints must repeat.
+    license: str
+
+
+class BlueprintRootError(RuntimeError):
+    """A blueprint root cannot be read, so no licence the catalogue would print is certain.
+
+    Always names the distribution, so the operator knows what to reinstall or remove.
+    """
+
+
+@dataclass(frozen=True)
+class Refusal:
+    """A blueprint directory the catalogue will not offer, and the named error why."""
+
+    distribution: str
+    path: Path
+    reason: str
+
+
+@dataclass(frozen=True)
+class Shadowed:
+    """A blueprint or journey not offered because an earlier root offers the same id."""
+
+    #: "blueprint" or "journey".
+    kind: str
+    id: str
+    #: The distribution whose copy is hidden.
+    distribution: str
+    #: The distribution whose copy is offered instead.
+    kept_from: str
+
+
+@dataclass(frozen=True)
+class Catalogue:
+    """Everything offered from every root, and what was refused.
+
+    Read once per command, so the wizard and `blueprints` report the same thing.
+    """
+
+    solutions: tuple[Solution, ...]
+    journeys: tuple[Journey, ...]
+    refused: tuple[Refusal, ...]
+    shadowed: tuple[Shadowed, ...]
 
 
 #: Typographic characters a README may use, and their terminal spellings.
@@ -206,87 +324,175 @@ def _clean(text: str) -> str:
     console cannot encode is worse than noise, so typographic punctuation is
     folded to its ASCII spelling on the way through.
     """
-    text = re.sub(r"[*_`]+", "", text)
+    return _fold(re.sub(r"[*_`]+", "", text))
+
+
+def _fold(text: str) -> str:
+    """Typography folded to its ASCII spelling and whitespace collapsed; markdown untouched."""
     for fancy, plain in _TERMINAL_SPELLINGS.items():
         text = text.replace(fancy, plain)
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _lead_sentence(readme: str) -> str:
-    """The first sentence of the README's lead paragraph, terminal-safe.
+def _manifest_string(raw: dict[str, Any], key: str, path: Path) -> str:
+    """One required string value of a blueprint.toml, stripped."""
+    if key not in raw:
+        raise BlueprintManifestError(f"{path}: declares no '{key}'")
+    value = raw[key]
+    if not isinstance(value, str):
+        raise BlueprintManifestError(
+            f"{path}: '{key}' must be a string, not {type(value).__name__}",
+        )
+    if not value.strip() and key != "notice":
+        raise BlueprintManifestError(f"{path}: '{key}' is empty")
+    return value.strip()
 
-    Split out of `_summary` so the wizard's detail panel can show the whole
-    sentence. `_SUMMARY_MAX` exists because a summary is rendered into a
-    TABLE CELL; a Panel has no such constraint, and reusing the capped text
-    there cut `...SharePoint calculates Resi...` out of risk-register.
 
-    Many, but not all, READMEs open with a `*Theme: ...*` line, which
-    sometimes wraps onto a second line and sometimes carries a trailing
-    qualifier. It is not consistent enough to key a grouping off, so it is
-    skipped rather than parsed.
+def _check_notice(blueprint_dir: Path, notice: str, path: Path) -> None:
+    """A notice names a file inside the blueprint, so it travels wherever the blueprint goes."""
+    # Windows rules read both separators, so this refuses `/x`, `\\x` and `C:x` on every platform.
+    if PureWindowsPath(notice).anchor:
+        raise BlueprintManifestError(
+            f"{path}: notice {notice!r} must be a path relative to the blueprint",
+        )
+    target = (blueprint_dir / notice).resolve()
+    if not target.is_relative_to(blueprint_dir.resolve()) or not target.is_file():
+        raise BlueprintManifestError(
+            f"{path}: notice {notice!r} is not a file inside the blueprint",
+        )
+    if set(target.relative_to(blueprint_dir.resolve()).parts) & set(NEVER_COPIED):
+        raise BlueprintManifestError(
+            f"{path}: notice {notice!r} is in a directory the wizard never copies "
+            f"({', '.join(NEVER_COPIED)} are never copied)",
+        )
 
-    Returns "" when there is nothing usable. The caller decides what an
-    empty summary looks like; `test_catalogue` asserts no shipped family
-    actually produces one, so an empty string means a NEW template broke
-    the convention rather than that this is a normal state.
+
+def terminal_safe(text: str) -> str:
+    """`text` with every character outside printable ASCII written as a Python escape.
+
+    For messages that carry a path or a name from another package: a refusal
+    quotes the very value it refuses, and that value must not reach the
+    terminal raw.
     """
-    lines = readme.splitlines()
-    # Drop the H1 and anything before it.
-    for index, line in enumerate(lines):
-        if line.startswith("# "):
-            lines = lines[index + 1 :]
-            break
-
-    paragraph: list[str] = []
-    in_theme = False
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            if paragraph:
-                break
-            in_theme = False
-            continue
-        if stripped.startswith("*Theme:"):
-            # May wrap; keep skipping until the emphasis closes or the
-            # paragraph ends.
-            in_theme = not stripped.endswith("*") or stripped == "*Theme:"
-            continue
-        if in_theme:
-            in_theme = not stripped.endswith("*")
-            continue
-        if stripped.startswith(("#", ">", "|", "-", "```")):
-            break
-        paragraph.append(stripped)
-
-    text = _clean(" ".join(paragraph))
-    if not text:
-        return ""
-    # First sentence, but only when the full stop is followed by a space --
-    # otherwise `5x5.` inside a phrase, or a version number, cuts it short.
-    match = re.search(r"\.(?:\s|$)", text)
-    if match:
-        text = text[: match.start() + 1]
-    return text
+    return "".join(c if " " <= c <= "~" else c.encode("unicode_escape").decode() for c in text)
 
 
-def _summary(readme: str) -> str:
-    """`_lead_sentence` capped to fit the wizard's table cell."""
-    text = _lead_sentence(readme)
+def _unprintable(text: str) -> str:
+    """The codepoints in `text` outside printable ASCII, joined, or "" when there are none.
+
+    Control characters are refused with the rest: an escape sequence in a
+    title would clear or rewrite the terminal it is printed to.
+    """
+    return ", ".join(sorted({f"U+{ord(c):04X}" for c in text if not " " <= c <= "~"}))
+
+
+def _terminal_text(value: str, key: str, path: Path) -> str:
+    """`value` folded to ASCII, or refused when a character has no ASCII spelling."""
+    folded = _fold(value)
+    if found := _unprintable(folded):
+        raise BlueprintManifestError(
+            f"{path}: '{key}' carries characters a console may not print: {found}",
+        )
+    return folded
+
+
+def _manifest_table(blueprint_dir: Path, path: Path) -> dict[str, Any]:
+    """The parsed blueprint.toml, or `BlueprintManifestError` saying why it could not be read."""
+    if not path.is_file():
+        raise BlueprintManifestError(
+            f"{blueprint_dir}: no {BLUEPRINT_MANIFEST}; every blueprint declares its id, title, "
+            "summary and licence there",
+        )
+    try:
+        # utf-8-sig: an editor on Windows may save a byte-order mark, which TOML does not allow.
+        return tomllib.loads(path.read_text(encoding="utf-8-sig"))
+    except UnicodeDecodeError as exc:
+        raise BlueprintManifestError(
+            f"{path}: not UTF-8: {exc.reason} at byte {exc.start}",
+        ) from exc
+    except OSError as exc:
+        raise BlueprintManifestError(f"{path}: cannot be read: {exc}") from exc
+    except tomllib.TOMLDecodeError as exc:
+        raise BlueprintManifestError(f"{path}: not valid TOML: {exc}") from exc
+
+
+def _taken_by_the_wizard(item_id: str) -> str:
+    """Why the wizard's pickers would read `item_id` as something else, or "" when they would not.
+
+    Both pickers take `all` and a row number at the same prompt as an id, and read those first.
+    """
+    if item_id == BROWSE_ALL:
+        return f"the id {BROWSE_ALL!r} is reserved: the wizard reads it as every blueprint"
+    if item_id.isdigit():
+        return f"the id {item_id!r} is only digits, which the wizard reads as a row number"
+    if item_id != item_id.strip():
+        return f"the id {item_id!r} has leading or trailing whitespace, which the wizard trims"
+    return ""
+
+
+def _check_id(blueprint_id: str, blueprint_dir: Path, path: Path) -> None:
+    """The id is the directory name, printable, and not the wizard's browse-all answer."""
+    if blueprint_id != blueprint_dir.name:
+        raise BlueprintManifestError(
+            f"{path}: id {blueprint_id!r} is not the directory name {blueprint_dir.name!r}",
+        )
+    if found := _unprintable(blueprint_id):
+        raise BlueprintManifestError(
+            f"{path}: 'id' carries characters a console may not print: {found}",
+        )
+    if reason := _taken_by_the_wizard(blueprint_id):
+        raise BlueprintManifestError(f"{path}: {reason}")
+
+
+def read_blueprint_manifest(blueprint_dir: Path, distribution_licence: str) -> BlueprintManifest:
+    """Read and check `blueprint_dir/blueprint.toml`, or raise `BlueprintManifestError`.
+
+    `distribution_licence` is the License-Expression of the distribution the
+    blueprint was found in. A blueprint may not claim a different one, so the licence a
+    listing shows is the one the installed package was published under.
+    """
+    path = blueprint_dir / BLUEPRINT_MANIFEST
+    raw = _manifest_table(blueprint_dir, path)
+    unknown = sorted(set(raw) - set(_MANIFEST_KEYS))
+    if unknown:
+        raise BlueprintManifestError(f"{path}: unknown key(s) {unknown}")
+    values = {key: _manifest_string(raw, key, path) for key in _MANIFEST_KEYS}
+    _check_id(values["id"], blueprint_dir, path)
+    if values["license"] != distribution_licence:
+        raise BlueprintManifestError(
+            f"{path}: license {values['license']!r} differs from {distribution_licence!r}, "
+            "the License-Expression of the distribution that ships it",
+        )
+    origin = values["origin"]
+    derived = _ORIGIN_DERIVED.fullmatch(origin)
+    if origin != ORIGIN_OWN and derived is None:
+        raise BlueprintManifestError(
+            f"{path}: origin {origin!r} is not {ORIGIN_OWN!r}, "
+            "'<organisation>-released' or '<organisation>-held'",
+        )
+    if derived is not None and derived.group(1) == "released" and not values["notice"]:
+        raise BlueprintManifestError(
+            f"{path}: origin {origin!r} needs a notice file carrying the release terms",
+        )
+    if values["notice"]:
+        _check_notice(blueprint_dir, values["notice"], path)
+    return BlueprintManifest(
+        id=values["id"],
+        title=_terminal_text(values["title"], "title", path),
+        summary=_terminal_text(values["summary"], "summary", path),
+        license=values["license"],
+        origin=origin,
+        notice=values["notice"],
+        min_core=values["min_core"],
+    )
+
+
+def _cap(text: str) -> str:
+    """`text` capped to fit the wizard's table cell; `detail` keeps the whole sentence."""
     if len(text) > _SUMMARY_MAX:
-        # Reserve exactly as many characters as the marker occupies. This read
-        # `- 1` while the marker was a one-character ellipsis; ASCII-ifying it
-        # to "..." for the wizard's table made every truncated summary two
-        # characters over the cap, which `test_each_summary_fits_a_terminal`
-        # caught on fifteen templates.
-        text = text[: _SUMMARY_MAX - len(_ELLIPSIS)].rstrip() + _ELLIPSIS
+        # Reserve exactly as many characters as the marker occupies.
+        return text[: _SUMMARY_MAX - len(_ELLIPSIS)].rstrip() + _ELLIPSIS
     return text
-
-
-def _title(readme: str, fallback: str) -> str:
-    for line in readme.splitlines():
-        if line.startswith("# "):
-            return _clean(line[2:])
-    return fallback
 
 
 def _mapping_facts(mapping_path: Path) -> tuple[tuple[str, ...], str]:
@@ -308,44 +514,114 @@ def _mapping_facts(mapping_path: Path) -> tuple[tuple[str, ...], str]:
     if not isinstance(raw, dict):
         return (), ""
     entities = raw.get("entities")
-    names = tuple(entities) if isinstance(entities, dict) else ()
+    # A key that is not text is one the loader refuses, so offer no lists, as for any refusal.
+    if not isinstance(entities, dict) or not all(isinstance(name, str) for name in entities):
+        return (), ""
+    names = tuple(entities)
     prefix = raw.get("prefix")
     return names, prefix if isinstance(prefix, str) else ""
 
 
-def _build(root: Path) -> Solution:
-    readme_path = root / "README.md"
-    readme = (
-        readme_path.read_text(encoding="utf-8") if readme_path.is_file() else ""
-    )
-    lists, prefix = _mapping_facts(root / MAPPING_RELPATH)
+def _family_dirs(root: Path) -> list[Path]:
+    """Every directory under `root` with a schema at the family standard's path or a manifest.
+
+    That keeps a stray directory (a leftover `build/`, an editor's backup) from
+    appearing in the picker as a blueprint the user can choose and then fail
+    to deploy, while a blueprint that declares itself and lacks its schema is
+    refused by name rather than ignored.
+    """
+    if not root.is_dir():
+        return []
+    families = {path.parent.parent for path in root.glob(f"*/{SCHEMA_RELPATH.as_posix()}")}
+    families |= {path.parent for path in root.glob(f"*/{BLUEPRINT_MANIFEST}")}
+    # A glob skips a directory it cannot enter, so one is kept here for `_build` to refuse.
+    families |= {child for child in root.iterdir() if _unlistable(child)}
+    return sorted(family for family in families if family.name not in _NOT_A_SOLUTION)
+
+
+def _unlistable(path: Path) -> str:
+    """Why the directory at `path` cannot be listed, or "" when it can or is not a directory."""
+    try:
+        if path.is_dir():
+            next(path.iterdir(), None)
+    except OSError as exc:
+        return str(exc)
+    return ""
+
+
+def _build(family: Path, source: BlueprintRoot) -> Solution:
+    """One blueprint, described by its blueprint.toml. Raises `BlueprintManifestError`."""
+    if family.is_symlink():
+        raise BlueprintManifestError(
+            f"{family}: is a link, and the wizard would copy whatever it points at; "
+            "a blueprint is a real directory inside its package",
+        )
+    if reason := _unlistable(family):
+        raise BlueprintManifestError(f"{family}: cannot be listed: {reason}")
+    missing = [
+        relpath.as_posix()
+        for relpath in (SCHEMA_RELPATH, MAPPING_RELPATH, RELEASE_RELPATH)
+        if not (family / relpath).is_file()
+    ]
+    if missing:
+        raise BlueprintManifestError(
+            f"{family}: no {', '.join(missing)}; every blueprint ships its schema, "
+            "mapping and release, and the wizard copies all three",
+        )
+    manifest = read_blueprint_manifest(family, source.license)
+    lists, prefix = _mapping_facts(family / MAPPING_RELPATH)
+    # Printed when the blueprint is chosen, before the mapping loader ever sees them.
+    for key, text in (("prefix", prefix), *(("list", name) for name in lists)):
+        if found := _unprintable(text):
+            raise BlueprintManifestError(
+                f"{family / MAPPING_RELPATH}: {key} {text!r} carries characters a console "
+                f"may not print: {found}",
+            )
     return Solution(
-        id=root.name,
-        title=_title(readme, root.name),
-        summary=_summary(readme),
-        detail=_lead_sentence(readme),
+        id=manifest.id,
+        title=manifest.title,
+        summary=_cap(manifest.summary),
+        detail=manifest.summary,
         lists=lists,
         prefix=prefix,
-        root=root,
+        root=family,
+        distribution=source.distribution,
+        license=manifest.license,
+        origin=manifest.origin,
     )
+
+
+def _gather_solutions(
+    roots: list[BlueprintRoot],
+) -> tuple[list[Solution], list[Refusal], list[Shadowed]]:
+    """Every blueprint in every root, in root order then by id; a repeated id is hidden."""
+    solutions: list[Solution] = []
+    refused: list[Refusal] = []
+    shadowed: list[Shadowed] = []
+    kept: dict[str, str] = {}
+    for source in roots:
+        for family in _family_dirs(source.root):
+            try:
+                solution = _build(family, source)
+            except BlueprintManifestError as exc:
+                refused.append(Refusal(source.distribution, family, str(exc)))
+                continue
+            if solution.id in kept:
+                shadowed.append(
+                    Shadowed("blueprint", solution.id, source.distribution, kept[solution.id]),
+                )
+                continue
+            kept[solution.id] = source.distribution
+            solutions.append(solution)
+    return solutions, refused, shadowed
 
 
 def available_solutions() -> list[Solution]:
-    """Every shipped family, ordered by id.
+    """Every blueprint offered, core's first, each root's ordered by id.
 
-    A directory only counts when it carries a `schema.dbml` at the family
-    standard's path. That keeps a stray directory -- a leftover `build/`,
-    an editor's backup -- from appearing in the picker as a template the
-    user can choose and then fail to deploy.
+    A refused blueprint is left out; `read_catalogue` says which and why.
     """
-    if not SOLUTIONS_DIR.is_dir():
-        return []
-    found = [
-        path.parent.parent
-        for path in sorted(SOLUTIONS_DIR.glob(f"*/{SCHEMA_RELPATH.as_posix()}"))
-        if path.parent.parent.name not in _NOT_A_SOLUTION
-    ]
-    return [_build(root) for root in found]
+    return _gather_solutions(blueprint_roots())[0]
 
 
 #: Opens and closes a journey file's YAML front matter.
@@ -381,7 +657,7 @@ def _front_matter(text: str, path: Path) -> dict[str, Any]:
     return loaded
 
 
-def _build_journey(path: Path) -> Journey:
+def _build_journey(path: Path, distribution: str) -> Journey:
     raw = _front_matter(path.read_text(encoding="utf-8"), path)
     unknown = set(raw) - {"title", "summary", "solutions"}
     if unknown:
@@ -396,13 +672,52 @@ def _build_journey(path: Path) -> Journey:
     for key in ("title", "summary"):
         if not isinstance(raw.get(key), str) or not raw[key].strip():
             raise ValueError(f"{path}: '{key}' must be a non-empty string")
+    shown = {key: _clean(str(raw[key])) for key in ("title", "summary")}
+    # Rendered into the same terminal as a blueprint's title, so held to the same rule.
+    for key, text in {"id": path.stem, **shown, "solutions": "".join(solutions)}.items():
+        if found := _unprintable(text):
+            raise ValueError(
+                f"{path}: '{key}' carries characters a console may not print: {found}",
+            )
+    if reason := _taken_by_the_wizard(path.stem):
+        raise ValueError(f"{path}: {reason}")
     return Journey(
         id=path.stem,
-        title=_clean(str(raw["title"])),
-        summary=_clean(str(raw["summary"])),
+        title=shown["title"],
+        summary=shown["summary"],
         solution_ids=tuple(solutions),
         path=path,
+        distribution=distribution,
     )
+
+
+def _gather_journeys(roots: list[BlueprintRoot]) -> tuple[list[Journey], list[Shadowed]]:
+    """Every journey in every root, ordered by id; a repeated id is hidden."""
+    journeys: dict[str, Journey] = {}
+    shadowed: list[Shadowed] = []
+    for source in roots:
+        directory = source.root / JOURNEYS_DIRNAME
+        if not directory.is_dir():
+            continue
+        # A glob skips a directory it cannot enter, which would drop every journey unsaid.
+        if reason := _unlistable(directory):
+            raise BlueprintRootError(
+                f"{source.distribution}: {directory} cannot be listed: {reason}",
+            )
+        for path in sorted(directory.glob("*.md")):
+            try:
+                journey = _build_journey(path, source.distribution)
+            except (ValueError, OSError) as exc:
+                # Core's journeys are guarded by its tests; a provider's reach the operator.
+                if source.distribution == CORE_DISTRIBUTION:
+                    raise
+                raise BlueprintRootError(f"{source.distribution}: {exc}") from exc
+            if journey.id in journeys:
+                kept = journeys[journey.id].distribution
+                shadowed.append(Shadowed("journey", journey.id, source.distribution, kept))
+                continue
+            journeys[journey.id] = journey
+    return sorted(journeys.values(), key=lambda journey: journey.id), shadowed
 
 
 def available_journeys() -> list[Journey]:
@@ -413,10 +728,145 @@ def available_journeys() -> list[Journey]:
     a journey that will not load is a grouping silently missing its members,
     and the guard that would have caught it is the one being bypassed.
     """
-    directory = SOLUTIONS_DIR / JOURNEYS_DIRNAME
-    if not directory.is_dir():
-        return []
-    return [_build_journey(path) for path in sorted(directory.glob("*.md"))]
+    return _gather_journeys(blueprint_roots())[0]
+
+
+def _declared_licence(distribution: str, declared: str | None) -> str:
+    """The License-Expression a distribution publishes, or `BlueprintRootError`."""
+    if not declared:
+        raise BlueprintRootError(
+            f"{distribution} declares no License-Expression in its metadata, so the "
+            "licence of its blueprints cannot be checked",
+        )
+    # Printed beside every blueprint the distribution ships, so held to their rule.
+    if found := _unprintable(declared):
+        raise BlueprintRootError(
+            f"{distribution}: License-Expression {declared!r} carries characters a console "
+            f"may not print: {found}",
+        )
+    return declared
+
+
+def _core_root() -> BlueprintRoot:
+    """Core's own blueprints. `SOLUTIONS_DIR` is read here so a test can point it elsewhere."""
+    try:
+        declared = metadata(CORE_DISTRIBUTION).get("License-Expression")
+    except PackageNotFoundError as exc:
+        raise BlueprintRootError(
+            f"{CORE_DISTRIBUTION} is not installed, so the licence of its blueprints cannot "
+            "be read; install it (uv sync, or uvx) rather than importing a source tree",
+        ) from exc
+    return BlueprintRoot(
+        CORE_DISTRIBUTION, SOLUTIONS_DIR, _declared_licence(CORE_DISTRIBUTION, declared),
+    )
+
+
+def _provider_root(point: EntryPoint) -> BlueprintRoot:
+    """One provider's root, checked, or `BlueprintRootError` naming the distribution."""
+    if point.dist is None:
+        raise BlueprintRootError(
+            f"entry point {point.name} ({point.value}) in {BLUEPRINT_ROOTS_GROUP} belongs "
+            "to no distribution, so its blueprints have no licence to check",
+        )
+    try:
+        # `.get`, not `.name`: a missing Name header warns today and raises KeyError later.
+        distribution = point.dist.metadata.get("Name")
+        declared = point.dist.metadata.get("License-Expression")
+    except (OSError, ValueError) as exc:
+        raise BlueprintRootError(
+            f"entry point {point.name} ({point.value}) in {BLUEPRINT_ROOTS_GROUP}: its "
+            f"distribution's metadata cannot be read: {type(exc).__name__}: {exc}",
+        ) from exc
+    if not distribution:
+        raise BlueprintRootError(
+            f"entry point {point.name} ({point.value}) in {BLUEPRINT_ROOTS_GROUP}: its "
+            "distribution's metadata declares no Name",
+        )
+    # Printed beside every blueprint the distribution ships, so held to their rule.
+    if found := _unprintable(distribution):
+        raise BlueprintRootError(
+            f"entry point {point.name} ({point.value}) in {BLUEPRINT_ROOTS_GROUP}: its "
+            f"distribution's Name {distribution!r} carries characters a console may not "
+            f"print: {found}",
+        )
+    licence = _declared_licence(distribution, declared)
+    # Any failure inside a provider's own code is that provider's, and named as such.
+    try:
+        root: object = point.load()()
+    except Exception as exc:
+        raise BlueprintRootError(
+            f"{distribution}: {point.value} failed to load: {type(exc).__name__}: {exc}",
+        ) from exc
+    if not isinstance(root, Path):
+        kind = f"{type(root).__module__}.{type(root).__qualname__}"
+        raise BlueprintRootError(
+            f"{distribution}: {point.value} returned a {kind}, not a directory on disk. "
+            "Blueprints are copied and built as real files, so install the distribution unpacked",
+        )
+    if not root.is_dir():
+        raise BlueprintRootError(f"{distribution}: {root} is not a directory")
+    # A directory denied to this user globs as empty, which would hide every blueprint in it.
+    try:
+        next(root.iterdir(), None)
+    except OSError as exc:
+        raise BlueprintRootError(f"{distribution}: {root} cannot be listed: {exc}") from exc
+    return BlueprintRoot(distribution, root, licence)
+
+
+def blueprint_roots() -> list[BlueprintRoot]:
+    """Where blueprints are read from: core first, then each provider by distribution name.
+
+    Raises `BlueprintRootError` when any root cannot be read. A provider that is
+    installed but unreadable makes every licence the catalogue would print
+    uncertain, so nothing is offered until it is fixed or removed.
+    """
+    providers = [_provider_root(point) for point in entry_points(group=BLUEPRINT_ROOTS_GROUP)]
+    return [_core_root(), *sorted(providers, key=lambda root: root.distribution)]
+
+
+def read_catalogue() -> Catalogue:
+    """Every root's blueprints and journeys, what was refused, and what was hidden.
+
+    Raises `BlueprintRootError` when a root cannot be read or a provider's
+    journey is malformed, and `ValueError` for a malformed journey of core's own.
+    """
+    roots = blueprint_roots()
+    solutions, refused, hidden = _gather_solutions(roots)
+    journeys, hidden_journeys = _gather_journeys(roots)
+    # One wizard prompt takes a blueprint id or a journey id, and a blueprint id wins it.
+    offered = {s.id: s.distribution for s in solutions}
+    hidden_journeys += [
+        Shadowed("journey", journey.id, journey.distribution, offered[journey.id])
+        for journey in journeys
+        if journey.id in offered
+    ]
+    return Catalogue(
+        solutions=tuple(solutions),
+        journeys=tuple(j for j in journeys if j.id not in offered),
+        refused=tuple(refused),
+        shadowed=(*hidden, *hidden_journeys),
+    )
+
+
+def notices(found: Catalogue) -> list[str]:
+    """What an interface prints once per run: each refused blueprint, then each hidden group.
+
+    Hidden ids are grouped by package, so a provider that repeats every core
+    blueprint costs one line rather than one per blueprint.
+    """
+    lines = [f"Not offered: {r.distribution}: {terminal_safe(r.reason)}" for r in found.refused]
+    grouped: dict[tuple[str, str, str], list[str]] = {}
+    for hidden in found.shadowed:
+        grouped.setdefault((hidden.kind, hidden.distribution, hidden.kept_from), []).append(
+            hidden.id,
+        )
+    for (kind, distribution, kept_from), ids in grouped.items():
+        noun, verb = (kind, "shares") if len(ids) == 1 else (f"{kind}s", "share")
+        lines.append(
+            f"Hidden: {len(ids)} {noun} from {distribution} {verb} an id with one from "
+            f"{kept_from}, which is offered instead: {', '.join(sorted(ids))}",
+        )
+    return lines
 
 
 def load_solution(name: str) -> Solution:

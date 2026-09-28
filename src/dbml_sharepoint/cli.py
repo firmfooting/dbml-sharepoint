@@ -26,6 +26,8 @@ from dbml_sharepoint.catalogue import (
     MAPPING_RELPATH,
     RELEASE_RELPATH,
     SCHEMA_RELPATH,
+    BlueprintRootError,
+    terminal_safe,
 )
 from dbml_sharepoint.extract.emit import DEFAULT_PREFIX
 from dbml_sharepoint.extract.folder import (
@@ -56,6 +58,7 @@ from dbml_sharepoint.model.env_file import (
 )
 from dbml_sharepoint.pipeline import (
     UnknownFindingCodeError,
+    execute_blueprints,
     execute_build,
     execute_explain,
     execute_extraction,
@@ -410,6 +413,25 @@ def explain(
     except UnknownFindingCodeError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
+
+
+@app.command()
+def blueprints() -> None:
+    """List every installed blueprint with the package it came from and its licence.
+
+    Exits 1 when a blueprint was refused, a blueprint provider cannot be read, or no
+    blueprint is offered at all, so the listing also checks that every installed
+    blueprint is offered. A blueprint hidden by another package's blueprint of the
+    same id is reported but is not a failure.
+    """
+    try:
+        text, clean = execute_blueprints()
+    except BlueprintRootError as exc:
+        typer.echo(terminal_safe(str(exc)), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(text)
+    if not clean:
+        raise typer.Exit(code=1)
 
 
 @app.command()

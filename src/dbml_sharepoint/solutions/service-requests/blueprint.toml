@@ -1,0 +1,7 @@
+id = "service-requests"
+title = "Service requests"
+summary = "An internal helpdesk without helpdesk software: one intake list (SRRequest) for facilities, IT, admin and grounds requests: \"fix the meeting-room screen\", \"new starter needs a chair\", \"replace the gate code\"."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

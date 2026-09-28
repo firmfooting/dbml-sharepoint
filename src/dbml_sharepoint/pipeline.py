@@ -49,6 +49,8 @@ from dbml_sharepoint.catalogue import (
     MAPPING_RELPATH,
     RELEASE_RELPATH,
     SCHEMA_RELPATH,
+    notices,
+    read_catalogue,
 )
 from dbml_sharepoint.extension import (
     SiteContext,
@@ -539,6 +541,33 @@ class UnknownFindingCodeError(LookupError):
     the command prints, suggestion included, because composing that needs
     the catalogue this side already holds.
     """
+
+
+def execute_blueprints() -> tuple[str, bool]:
+    """What `blueprints` prints, and whether the listing is clean.
+
+    Clean means every installed blueprint was offered and at least one was: core
+    always ships blueprints, so an empty listing is a damaged installation.
+    Returns the text rather than echoing it, as `execute_explain` does, so a
+    test can read the listing without a terminal. Raises `BlueprintRootError`
+    when a blueprint root cannot be read.
+    """
+    found = read_catalogue()
+    rows: list[tuple[str, str, str, str]] = [("Blueprint", "Title", "Package", "Licence")]
+    rows += [(s.id, s.title, s.distribution, s.license) for s in found.solutions]
+    widths = [max(len(row[column]) for row in rows) for column in range(3)]
+    lines = [
+        "  ".join([*(cell.ljust(w) for cell, w in zip(row[:3], widths, strict=True)), row[3]])
+        for row in rows
+    ]
+    extra = notices(found)
+    if not found.solutions:
+        extra.append(
+            "No blueprint is offered. dbml-sharepoint always ships some, so this "
+            "installation is incomplete or every blueprint was refused.",
+        )
+    clean = bool(found.solutions) and not found.refused
+    return "\n".join([*lines, *([""] if extra else []), *extra]), clean
 
 
 def execute_explain(code: str) -> str:
