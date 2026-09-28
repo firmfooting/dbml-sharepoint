@@ -11,10 +11,10 @@ demo_items:
         Title: "[DEMO] Name a second supplier"
         Status: Open
         Minutes: 30
-        RelatedRisk: risk-open
+        RelatedRisk: { demo_ref: risk-open }
     - key: action-done
       values:
         Title: "[DEMO] Review the contract"
         Status: Done
         Minutes: 90
-        RelatedRisk: risk-open
+        RelatedRisk: { demo_ref: risk-open }

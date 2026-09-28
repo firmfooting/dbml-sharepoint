@@ -58,6 +58,12 @@ def test_the_reporting_sample_builds_seeded_the_way_ci_builds_it(tmp_path: Path)
     )
     assert (tmp_path / DEMO_SCRIPT).is_file()
     assert f"`{DEMO_SCRIPT}`" in (tmp_path / "index.md").read_text(encoding="utf-8")
+    # A lookup demo value is a demo reference the script resolves to the created
+    # item's id; a literal key would be posted as text and refused by SharePoint.
+    script = (tmp_path / DEMO_SCRIPT).read_text(encoding="utf-8")
+    planned = '"kind": "ref",\n        "name": "RelatedRisk",\n        "value": "risk-open"'
+    assert script.count(planned) == 2
+    assert '"kind": "literal",\n        "name": "RelatedRisk"' not in script
     assert "totals: Minutes sum" in (tmp_path / "deploy-manifest.md").read_text(encoding="utf-8")
     dictionary = (tmp_path / "reporting" / "data-dictionary.md").read_text(encoding="utf-8")
     assert "Score read from the matching Risk row, through the report's own keys." in dictionary
