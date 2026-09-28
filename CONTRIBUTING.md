@@ -116,6 +116,8 @@ The generated scripts run against other people's production SharePoint
 sites. Anything that writes must read back and verify; anything
 uncertain must fail closed with a named error; undocumented SharePoint
 surfaces need live proof and the strictest guards in the codebase. If a
-live run teaches you something, encode it: dated comment, pinned test,
-design-doc revision. Pull requests that weaken a guard need to argue for
-it explicitly.
+live run teaches you something, record it in the findings records (see
+the live findings page), pin the behaviour with a test, and revise the
+design doc; describe the result in your pull request and a maintainer
+records it. Keep when, where and how it was observed out of comments and
+code. Pull requests that weaken a guard need to argue for it explicitly.

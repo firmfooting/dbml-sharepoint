@@ -34,8 +34,15 @@ Corollaries:
   values it **observes**. Asserting over the second kind makes the experiment
   kill itself the moment it starts working, and that looks identical to a real
   failure.
-- If a live run teaches you something, encode it: a dated comment, a pinned test,
-  a design-doc revision.
+- If a live run teaches you something, encode it: record the evidence in the
+  findings records (an evidence package in the maintainers' private
+  `firmfooting/dbml-sharepoint-probes` repository, which feeds
+  `website/docs/reference/live-findings.md`), pin the behaviour with a test,
+  and revise the design doc. A test may assert the value the run established;
+  when, where and how it was observed stays out of comments, docstrings and
+  code, which may name the finding or probe they rely on. Without access to
+  that repository, describe the live result in the pull request and a
+  maintainer records it.
 
 ## Gates
 
