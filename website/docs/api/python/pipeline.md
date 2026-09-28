@@ -84,8 +84,10 @@ the catalogue this side already holds.
 def execute_solutions() -> tuple[str, bool]
 ```
 
-What `solutions` prints, and whether every installed pack was offered.
+What `solutions` prints, and whether the listing is clean.
 
+Clean means every installed pack was offered and at least one was: core
+always ships packs, so an empty listing is a damaged installation.
 Returns the text rather than echoing it, as `execute_explain` does, so a
 test can read the listing without a terminal. Raises `SolutionRootError`
 when a solution root cannot be read.

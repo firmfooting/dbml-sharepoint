@@ -233,3 +233,41 @@ def test_typography_in_a_journey_is_still_folded(
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
     by_id = {j.id: j for j in read_catalogue().journeys}
     assert by_id["acme-journey"].summary == "A journey for a test -- folded."
+
+
+def test_a_provider_pack_missing_its_release_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Offered without it, the wizard would copy it and print a rebuild command naming no file."""
+    packs = tmp_path / "packs"
+    family = write_family(packs, "acme-thing", {"license": "BUSL-1.1"})
+    (family / "20-configure" / "release.yaml").unlink()
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+
+    found = read_catalogue()
+    assert "acme-thing" not in {s.id for s in found.solutions}
+    assert [(r.distribution, r.path.name) for r in found.refused] == [("acme-packs", "acme-thing")]
+    assert "20-configure/release.yaml" in found.refused[0].reason
+
+
+def test_a_provider_pack_with_a_manifest_but_no_schema_is_refused_not_ignored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packs = tmp_path / "packs"
+    family = write_family(packs, "acme-thing", {"license": "BUSL-1.1"})
+    (family / "10-design" / "schema.dbml").unlink()
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+
+    found = read_catalogue()
+    assert [(r.distribution, r.path.name) for r in found.refused] == [("acme-packs", "acme-thing")]
+    assert "10-design/schema.dbml" in found.refused[0].reason
+
+
+def test_a_provider_journey_id_a_console_cannot_print_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packs = tmp_path / "packs"
+    write_journey(packs, "caf" + chr(0x00E9), ["acme-thing"])
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+    with pytest.raises(SolutionRootError, match=r"'id' carries .* U\+00E9"):
+        read_catalogue()

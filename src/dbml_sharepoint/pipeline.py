@@ -544,8 +544,10 @@ class UnknownFindingCodeError(LookupError):
 
 
 def execute_solutions() -> tuple[str, bool]:
-    """What `solutions` prints, and whether every installed pack was offered.
+    """What `solutions` prints, and whether the listing is clean.
 
+    Clean means every installed pack was offered and at least one was: core
+    always ships packs, so an empty listing is a damaged installation.
     Returns the text rather than echoing it, as `execute_explain` does, so a
     test can read the listing without a terminal. Raises `SolutionRootError`
     when a solution root cannot be read.
@@ -559,7 +561,13 @@ def execute_solutions() -> tuple[str, bool]:
         for row in rows
     ]
     extra = notices(found)
-    return "\n".join([*lines, *([""] if extra else []), *extra]), not found.refused
+    if not found.solutions:
+        extra.append(
+            "No template is offered. dbml-sharepoint always ships some, so this "
+            "installation is incomplete or every pack was refused.",
+        )
+    clean = bool(found.solutions) and not found.refused
+    return "\n".join([*lines, *([""] if extra else []), *extra]), clean
 
 
 def execute_explain(code: str) -> str:

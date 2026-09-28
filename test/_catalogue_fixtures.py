@@ -42,7 +42,7 @@ def without(text: str, key: str) -> str:
 
 
 def write_family(parent: Path, pack_id: str, overrides: dict[str, str] | None = None) -> Path:
-    """A minimal pack: an empty schema, a one-entity mapping and a pack.toml."""
+    """A minimal pack: an empty schema, a one-entity mapping, a release and a pack.toml."""
     root = parent / pack_id
     (root / "10-design").mkdir(parents=True)
     (root / "10-design" / "schema.dbml").write_text("", encoding="utf-8")
@@ -50,6 +50,7 @@ def write_family(parent: Path, pack_id: str, overrides: dict[str, str] | None = 
     (root / "20-configure" / "mapping.yaml").write_text(
         'prefix: "X_"\nentities:\n  Thing: {}\n', encoding="utf-8", newline="\n",
     )
+    (root / "20-configure" / "release.yaml").write_text("", encoding="utf-8")
     (root / PACK_MANIFEST).write_text(
         manifest_text(pack_id, overrides), encoding="utf-8", newline="\n",
     )

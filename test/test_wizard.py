@@ -3690,3 +3690,33 @@ def test_a_provider_that_fails_to_load_stops_the_wizard_by_name(
     assert wizard.run_wizard(console) == 1
     assert "acme-packs:" in _collapsed(console)
     assert "failed to load" in _collapsed(console)
+
+
+#: Rich markup a provider's text might carry; the closing tag alone makes rich raise.
+_MARKUP = "[/acme] Acme [red]thing[/red]"
+
+
+def test_a_template_s_text_is_shown_literally_not_as_markup() -> None:
+    """Pack text comes from any installed provider, so it is escaped wherever it is printed."""
+    solution = replace(
+        load_solution("risk-register"),
+        id="acme[1]", title=_MARKUP, detail=_MARKUP, lists=("[b]Thing",), prefix="[i]X_",
+    )
+    table = ScriptedConsole([])
+    table.print(wizard._catalogue_table([solution]))
+    assert "acme[1]" in table.text
+    assert _MARKUP in _collapsed(table)
+    described = ScriptedConsole([])
+    wizard._describe(described, solution)
+    shown = _collapsed(described)
+    assert shown.count(_MARKUP) == 2
+    assert "[b]Thing" in shown
+    assert "[i]X_" in shown
+
+
+def test_a_journey_s_text_is_shown_literally_not_as_markup() -> None:
+    journey = replace(_journey("acme[1]", "visitor-log"), summary=_MARKUP)
+    console = ScriptedConsole([])
+    console.print(wizard._journey_table([journey], {"visitor-log"}))
+    assert "acme[1]" in console.text
+    assert _MARKUP in _collapsed(console)

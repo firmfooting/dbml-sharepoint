@@ -114,9 +114,10 @@ def solutions() -> None
 
 List every installed template with the package it came from and its licence.
 
-Exits 1 when a pack was refused or a pack provider cannot be read, so the
-listing also checks that every installed pack is offered. A template hidden
-by another package's template of the same id is reported but is not a failure.
+Exits 1 when a pack was refused, a pack provider cannot be read, or no
+template is offered at all, so the listing also checks that every installed
+pack is offered. A template hidden by another package's template of the
+same id is reported but is not a failure.
 
 ### `report`
 

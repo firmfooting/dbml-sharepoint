@@ -122,7 +122,8 @@ class UnknownSolutionError(LookupError):
 
 
 class PackManifestError(ValueError):
-    """A pack's pack.toml is missing, malformed, or claims what the catalogue refuses.
+    """A pack's pack.toml is missing, malformed, or claims what the catalogue refuses,
+    or the pack lacks a file every family ships.
 
     Named so the catalogue can refuse that one pack and keep offering the rest,
     and so the reason reaches the operator rather than a traceback.
@@ -360,6 +361,24 @@ def _terminal_text(value: str, key: str, path: Path) -> str:
     return folded
 
 
+def _manifest_table(pack_dir: Path, path: Path) -> dict[str, Any]:
+    """The parsed pack.toml, or `PackManifestError` saying why it could not be read."""
+    if not path.is_file():
+        raise PackManifestError(
+            f"{pack_dir}: no {PACK_MANIFEST}; every pack declares its id, title, "
+            "summary and licence there",
+        )
+    try:
+        # utf-8-sig: an editor on Windows may save a byte-order mark, which TOML does not allow.
+        return tomllib.loads(path.read_text(encoding="utf-8-sig"))
+    except UnicodeDecodeError as exc:
+        raise PackManifestError(f"{path}: not UTF-8: {exc.reason} at byte {exc.start}") from exc
+    except OSError as exc:
+        raise PackManifestError(f"{path}: cannot be read: {exc}") from exc
+    except tomllib.TOMLDecodeError as exc:
+        raise PackManifestError(f"{path}: not valid TOML: {exc}") from exc
+
+
 def read_pack_manifest(pack_dir: Path, distribution_licence: str) -> PackManifest:
     """Read and check `pack_dir/pack.toml`, or raise `PackManifestError`.
 
@@ -368,18 +387,7 @@ def read_pack_manifest(pack_dir: Path, distribution_licence: str) -> PackManifes
     listing shows is the one the installed package was published under.
     """
     path = pack_dir / PACK_MANIFEST
-    if not path.is_file():
-        raise PackManifestError(
-            f"{pack_dir}: no {PACK_MANIFEST}; every pack declares its id, title, "
-            "summary and licence there",
-        )
-    try:
-        # utf-8-sig: an editor on Windows may save a byte-order mark, which TOML does not allow.
-        raw = tomllib.loads(path.read_text(encoding="utf-8-sig"))
-    except UnicodeDecodeError as exc:
-        raise PackManifestError(f"{path}: not UTF-8: {exc.reason} at byte {exc.start}") from exc
-    except tomllib.TOMLDecodeError as exc:
-        raise PackManifestError(f"{path}: not valid TOML: {exc}") from exc
+    raw = _manifest_table(pack_dir, path)
     unknown = sorted(set(raw) - set(_MANIFEST_KEYS))
     if unknown:
         raise PackManifestError(f"{path}: unknown key(s) {unknown}")
@@ -387,6 +395,10 @@ def read_pack_manifest(pack_dir: Path, distribution_licence: str) -> PackManifes
     if values["id"] != pack_dir.name:
         raise PackManifestError(
             f"{path}: id {values['id']!r} is not the directory name {pack_dir.name!r}",
+        )
+    if found := _unencodable(values["id"]):
+        raise PackManifestError(
+            f"{path}: 'id' carries characters a console may not encode: {found}",
         )
     if values["license"] != distribution_licence:
         raise PackManifestError(
@@ -450,23 +462,32 @@ def _mapping_facts(mapping_path: Path) -> tuple[tuple[str, ...], str]:
 
 
 def _family_dirs(root: Path) -> list[Path]:
-    """Every directory under `root` with a schema at the family standard's path.
+    """Every directory under `root` with a schema at the family standard's path, or a pack.toml.
 
     That keeps a stray directory (a leftover `build/`, an editor's backup) from
     appearing in the picker as a template the user can choose and then fail
-    to deploy.
+    to deploy, while a pack that declares itself and lacks its schema is
+    refused by name rather than ignored.
     """
     if not root.is_dir():
         return []
-    return [
-        path.parent.parent
-        for path in sorted(root.glob(f"*/{SCHEMA_RELPATH.as_posix()}"))
-        if path.parent.parent.name not in _NOT_A_SOLUTION
-    ]
+    families = {path.parent.parent for path in root.glob(f"*/{SCHEMA_RELPATH.as_posix()}")}
+    families |= {path.parent for path in root.glob(f"*/{PACK_MANIFEST}")}
+    return sorted(family for family in families if family.name not in _NOT_A_SOLUTION)
 
 
 def _build(family: Path, source: SolutionRoot) -> Solution:
     """One pack, described by its pack.toml. Raises `PackManifestError`."""
+    missing = [
+        relpath.as_posix()
+        for relpath in (SCHEMA_RELPATH, MAPPING_RELPATH, RELEASE_RELPATH)
+        if not (family / relpath).is_file()
+    ]
+    if missing:
+        raise PackManifestError(
+            f"{family}: no {', '.join(missing)}; every pack ships its schema, "
+            "mapping and release, and the wizard copies all three",
+        )
     manifest = read_pack_manifest(family, source.license)
     lists, prefix = _mapping_facts(family / MAPPING_RELPATH)
     return Solution(
@@ -565,7 +586,7 @@ def _build_journey(path: Path, distribution: str) -> Journey:
         if not isinstance(raw.get(key), str) or not raw[key].strip():
             raise ValueError(f"{path}: '{key}' must be a non-empty string")
     shown = {key: _clean(str(raw[key])) for key in ("title", "summary")}
-    for key, text in shown.items():
+    for key, text in {"id": path.stem, **shown}.items():
         # Rendered into the same terminal table as a pack's title, so held to the same rule.
         if found := _unencodable(text):
             raise ValueError(

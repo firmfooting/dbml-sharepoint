@@ -171,3 +171,28 @@ def test_the_shipped_sweep_reads_packs() -> None:
 def test_every_shipped_pack_has_a_valid_manifest(pack_dir: Path) -> None:
     manifest = read_pack_manifest(pack_dir, CORE_LICENSE)
     assert manifest.origin == ORIGIN_OWN
+
+
+def test_a_manifest_that_cannot_be_read_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lock or a permission error refuses that one pack rather than raising past the picker."""
+    pack_dir = _pack(tmp_path, manifest_text("acme-thing"))
+    real = Path.read_text
+
+    def locked(self: Path, encoding: str | None = None, errors: str | None = None) -> str:
+        if self.name == PACK_MANIFEST:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real(self, encoding=encoding, errors=errors)
+
+    monkeypatch.setattr(Path, "read_text", locked)
+    with pytest.raises(PackManifestError, match=r"cannot be read: .*Permission denied"):
+        read_pack_manifest(pack_dir, CORE_LICENSE)
+
+
+def test_an_id_a_console_cannot_print_is_refused(tmp_path: Path) -> None:
+    """The id is printed by the picker and by `solutions`, like the title."""
+    name = "caf" + chr(0x00E9)
+    pack_dir = _pack(tmp_path, manifest_text(name), name=name)
+    with pytest.raises(PackManifestError, match=r"'id' carries .* U\+00E9"):
+        read_pack_manifest(pack_dir, CORE_LICENSE)

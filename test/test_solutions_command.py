@@ -6,6 +6,7 @@ import pytest
 from _catalogue_fixtures import CORE_LICENSE, Provider, install, write_family
 from typer.testing import CliRunner
 
+from dbml_sharepoint import catalogue
 from dbml_sharepoint.catalogue import CORE_DISTRIBUTION, available_solutions
 from dbml_sharepoint.cli import app
 from dbml_sharepoint.pipeline import execute_solutions
@@ -121,3 +122,16 @@ def test_a_provider_journey_that_will_not_parse_exits_1_naming_it(
 
     assert result.exit_code == 1
     assert result.stderr.startswith("acme-packs: ")
+
+
+def test_an_installation_offering_no_template_exits_1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A wheel missing its packs lists nothing, which must not pass as a clean check."""
+    install(monkeypatch, tmp_path / "site")
+    monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path / "missing")
+
+    result = runner.invoke(app, ["solutions"])
+
+    assert result.exit_code == 1
+    assert "No template is offered" in result.stdout

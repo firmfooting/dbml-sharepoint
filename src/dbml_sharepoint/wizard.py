@@ -248,7 +248,8 @@ def _catalogue_table(solutions: list[Solution]) -> Table:
                 f"Licence: {escape(solution.license)}",
             )
         table.add_row(
-            str(index), solution.id, str(len(solution.lists)), solution.title,
+            # Pack text comes from any installed provider, so it is never read as markup.
+            str(index), escape(solution.id), str(len(solution.lists)), escape(solution.title),
         )
     return table
 
@@ -274,7 +275,7 @@ def _journey_table(journeys: list[Journey], installed: set[str]) -> Table:
         have = sum(1 for i in journey.solution_ids if i in installed)
         # "1 of 2" says part of a journey is not installed before anyone picks it.
         count = str(total) if have == total else f"{have} of {total}"
-        table.add_row(str(index), journey.id, count, journey.summary)
+        table.add_row(str(index), escape(journey.id), count, escape(journey.summary))
     table.add_row("", _BROWSE_ALL, "", "Every template, in one list")
     return table
 
@@ -369,7 +370,7 @@ def _describe(console: Console, solution: Solution) -> None:
     the operator has just chosen this template off a table that already
     named it -- so the point is confirmation, not presentation.
     """
-    lists = ", ".join(solution.lists) or "(none declared)"
+    lists = escape(", ".join(solution.lists)) or "(none declared)"
     count = len(solution.lists)
     # The declared prefix is shown here, not only in the prompt that follows.
     # A template declaring no prefix is never asked for one at all, which
@@ -378,7 +379,7 @@ def _describe(console: Console, solution: Solution) -> None:
     console.print(
         f"\n  [bold]{escape(solution.title)}[/bold]  -  {count} list"
         f"{'' if count == 1 else 's'}: {lists}"
-        f"  -  prefix {solution.prefix or '(none)'}",
+        f"  -  prefix {escape(solution.prefix) or '(none)'}",
     )
     # `detail`, not `summary`: `summary` is capped at `_SUMMARY_MAX` so it
     # fits the table cell above, and reusing it here cut risk-register's
@@ -388,7 +389,7 @@ def _describe(console: Console, solution: Solution) -> None:
     # this was the only dim block on screen that still wrapped to column 0,
     # once `_ask_prefix` picked up the same helper for its own guidance line.
     if solution.detail:
-        _guidance(console, solution.detail)
+        _guidance(console, escape(solution.detail))
 
 
 def _guidance(console: Console, text: str) -> None:

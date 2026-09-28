@@ -108,7 +108,8 @@ fail in completely different ways and want different messages.
 
 ### `PackManifestError`
 
-A pack's pack.toml is missing, malformed, or claims what the catalogue refuses.
+A pack's pack.toml is missing, malformed, or claims what the catalogue refuses,
+or the pack lacks a file every family ships.
 
 Named so the catalogue can refuse that one pack and keep offering the rest,
 and so the reason reaches the operator rather than a traceback.

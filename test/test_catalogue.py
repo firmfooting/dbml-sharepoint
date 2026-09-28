@@ -108,6 +108,7 @@ def test_a_directory_without_a_schema_is_not_a_solution(
     (tmp_path / "real" / "20-configure" / "mapping.yaml").write_text(
         'prefix: "X_"\nentities: {}\n', encoding="utf-8",
     )
+    (tmp_path / "real" / "20-configure" / "release.yaml").write_text("", encoding="utf-8")
     (tmp_path / "real" / PACK_MANIFEST).write_text(manifest_text("real"), encoding="utf-8")
     (tmp_path / "stray").mkdir()
 
@@ -134,6 +135,7 @@ def test_a_malformed_mapping_does_not_break_the_whole_picker(
         (tmp_path / name / "20-configure" / "mapping.yaml").write_text(
             mapping_text, encoding="utf-8",
         )
+        (tmp_path / name / "20-configure" / "release.yaml").write_text("", encoding="utf-8")
         (tmp_path / name / PACK_MANIFEST).write_text(manifest_text(name), encoding="utf-8")
 
     monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
@@ -159,6 +161,7 @@ def test_a_mapping_declaring_a_key_twice_is_skipped_like_a_broken_one(
         (tmp_path / name / "20-configure" / "mapping.yaml").write_text(
             mapping_text, encoding="utf-8",
         )
+        (tmp_path / name / "20-configure" / "release.yaml").write_text("", encoding="utf-8")
         (tmp_path / name / PACK_MANIFEST).write_text(manifest_text(name), encoding="utf-8")
 
     monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
