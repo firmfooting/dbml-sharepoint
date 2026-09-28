@@ -9,7 +9,7 @@ The templates below are the starter set that ships with the engine. For a
 reading ORDER rather than a subject index, see [journeys](journeys/): what the
 wizard offers first. Every template appears in at least one journey, which a
 test enforces. More templates ship in separate packages; once one is
-installed, the wizard and `dbml-sharepoint solutions` list its templates
+installed, the wizard and `dbml-sharepoint blueprints` list its templates
 beside these, each with its package and licence. Templates interconnect by
 *process hand-off* (documented in their governance files), never by list
 lookups. Every template deploys and stands alone.

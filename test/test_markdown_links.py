@@ -37,3 +37,20 @@ def test_every_relative_link_outside_the_docs_site_resolves() -> None:
             if not (page.parent / target).exists():
                 broken.append(f"{name}: {target}")
     assert broken == []
+
+
+def test_every_command_named_in_markdown_outside_the_docs_site_exists() -> None:
+    """A README that names a subcommand the CLI does not have sends the reader to a dead end."""
+    from typer.main import get_command
+
+    from dbml_sharepoint.cli import app
+
+    commands = set(getattr(get_command(app), "commands", {}))
+    assert commands, "the CLI declares no subcommands, so this pins nothing"
+    named = re.compile(r"`dbml-sharepoint ([a-z][a-z-]*)")
+    unknown = []
+    for name in _tracked_markdown():
+        for match in named.finditer((REPO_ROOT / name).read_text(encoding="utf-8")):
+            if match.group(1) not in commands:
+                unknown.append(f"{name}: dbml-sharepoint {match.group(1)}")
+    assert unknown == []
