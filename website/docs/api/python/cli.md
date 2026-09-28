@@ -106,17 +106,17 @@ now the only place to look it up was a website.
 The catalogue lookup is `execute_explain`; this is the terminal it
 reaches, and the exit code an unknown token earns.
 
-### `solutions`
+### `blueprints`
 
 ```python
-def solutions() -> None
+def blueprints() -> None
 ```
 
-List every installed template with the package it came from and its licence.
+List every installed blueprint with the package it came from and its licence.
 
-Exits 1 when a pack was refused, a pack provider cannot be read, or no
-template is offered at all, so the listing also checks that every installed
-pack is offered. A template hidden by another package's template of the
+Exits 1 when a blueprint was refused, a blueprint provider cannot be read, or no
+blueprint is offered at all, so the listing also checks that every installed
+blueprint is offered. A blueprint hidden by another package's blueprint of the
 same id is reported but is not a failure.
 
 ### `report`

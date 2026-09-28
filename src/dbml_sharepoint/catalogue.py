@@ -1,8 +1,8 @@
-"""The solution templates the wizard can offer, as data.
+"""The blueprints the wizard can offer, as data.
 
-Templates come from solution roots: core's own `solutions/` directory first,
+Blueprints come from blueprint roots: core's own `solutions/` directory first,
 then the directory each installed distribution registers under the
-`dbml_sharepoint.solution_roots` entry-point group. One `Solution` per pack
+`dbml_sharepoint.blueprint_roots` entry-point group. One `Solution` per blueprint
 directory in any root. Everything here is read-only discovery: nothing in
 this module writes, validates a mapping or deploys.
 
@@ -11,7 +11,7 @@ A new template is simply never offered, and every test stays green saying
 so. `.github/workflows/ci.yml` builds core's set the same way, and
 `test_template_standard.py` derives its conformance cases from it.
 
-Each pack declares its id, title, summary and licence in `pack.toml`. A pack
+Each blueprint declares its id, title, summary and licence in `blueprint.toml`. A blueprint
 whose manifest is missing, or claims a licence its distribution does not
 declare, is refused rather than offered. Core's root is located relative to
 this file, inside the installed package, because the audience for the wizard
@@ -85,19 +85,19 @@ _SUMMARY_MAX = 140
 #: `test_messages_bound_for_a_console_are_ascii`.
 _ELLIPSIS = "..."
 
-#: The distribution this module ships in. Its packs win a duplicate id.
+#: The distribution this module ships in. Its blueprints win a duplicate id.
 CORE_DISTRIBUTION = "dbml-sharepoint"
 
-#: The entry-point group a pack provider registers a zero-argument callable under.
-SOLUTION_ROOTS_GROUP = "dbml_sharepoint.solution_roots"
+#: The entry-point group a blueprint provider registers a zero-argument callable under.
+BLUEPRINT_ROOTS_GROUP = "dbml_sharepoint.blueprint_roots"
 
-#: The file every pack directory carries beside its README.
-PACK_MANIFEST = "pack.toml"
+#: The file every blueprint directory carries beside its README.
+BLUEPRINT_MANIFEST = "blueprint.toml"
 
-#: Every key a pack.toml carries, each one required.
+#: Every key a blueprint.toml carries, each one required.
 _MANIFEST_KEYS = ("id", "title", "summary", "license", "origin", "notice", "min_core")
 
-#: The origin of a pack designed by this project, which needs no notice.
+#: The origin of a blueprint designed by this project, which needs no notice.
 ORIGIN_OWN = "firmfooting"
 
 #: `<organisation>-released` needs a notice file; `<organisation>-held` is never released.
@@ -121,11 +121,11 @@ class UnknownSolutionError(LookupError):
         )
 
 
-class PackManifestError(ValueError):
-    """A pack's pack.toml is missing, malformed, or claims what the catalogue refuses,
-    or the pack lacks a file every family ships.
+class BlueprintManifestError(ValueError):
+    """A blueprint's blueprint.toml is missing, malformed, or claims what the catalogue refuses,
+    or the blueprint lacks a file every family ships.
 
-    Named so the catalogue can refuse that one pack and keep offering the rest,
+    Named so the catalogue can refuse that one blueprint and keep offering the rest,
     and so the reason reaches the operator rather than a traceback.
     """
 
@@ -147,11 +147,11 @@ class Solution:
     lists: tuple[str, ...]
     prefix: str
     root: Path
-    #: The distribution whose solution root holds this pack.
+    #: The distribution whose blueprint root holds this blueprint.
     distribution: str
-    #: The SPDX licence the pack declares, equal to its distribution's.
+    #: The SPDX licence the blueprint declares, equal to its distribution's.
     license: str
-    #: Who designed the pack: `firmfooting`, `<organisation>-released` or `<organisation>-held`.
+    #: Who designed it: `firmfooting`, `<organisation>-released` or `<organisation>-held`.
     origin: str
 
     @property
@@ -184,13 +184,13 @@ class Journey:
     #: Declared order, which is the order to deploy in. Not sorted.
     solution_ids: tuple[str, ...]
     path: Path
-    #: The distribution whose solution root holds this journey file.
+    #: The distribution whose blueprint root holds this journey file.
     distribution: str
 
 
 @dataclass(frozen=True)
-class PackManifest:
-    """What a pack declares about itself in pack.toml, checked."""
+class BlueprintManifest:
+    """What a blueprint declares about itself in blueprint.toml, checked."""
 
     id: str
     #: Folded to ASCII, because it is rendered into a terminal table.
@@ -201,23 +201,23 @@ class PackManifest:
     license: str
     #: `firmfooting`, `<organisation>-released` or `<organisation>-held`.
     origin: str
-    #: A file inside the pack carrying release terms, or "".
+    #: A file inside the blueprint carrying release terms, or "".
     notice: str
-    #: The core version range the pack was tested against. Stored, not evaluated.
+    #: The core version range the blueprint was tested against. Stored, not evaluated.
     min_core: str
 
 
-class SolutionRoot(NamedTuple):
-    """Where one installed distribution keeps its packs, and the licence it declares."""
+class BlueprintRoot(NamedTuple):
+    """Where one installed distribution keeps its blueprints, and the licence it declares."""
 
     distribution: str
     root: Path
-    #: The distribution's License-Expression, which each of its packs must repeat.
+    #: The distribution's License-Expression, which each of its blueprints must repeat.
     license: str
 
 
-class SolutionRootError(RuntimeError):
-    """A solution root cannot be read, so no licence the catalogue would print is certain.
+class BlueprintRootError(RuntimeError):
+    """A blueprint root cannot be read, so no licence the catalogue would print is certain.
 
     Always names the distribution, so the operator knows what to reinstall or remove.
     """
@@ -225,7 +225,7 @@ class SolutionRootError(RuntimeError):
 
 @dataclass(frozen=True)
 class Refusal:
-    """A pack directory the catalogue will not offer, and the named error why."""
+    """A blueprint directory the catalogue will not offer, and the named error why."""
 
     distribution: str
     path: Path
@@ -234,9 +234,9 @@ class Refusal:
 
 @dataclass(frozen=True)
 class Shadowed:
-    """A template or journey not offered because an earlier root offers the same id."""
+    """A blueprint or journey not offered because an earlier root offers the same id."""
 
-    #: "template" or "journey".
+    #: "blueprint" or "journey".
     kind: str
     id: str
     #: The distribution whose copy is hidden.
@@ -249,7 +249,7 @@ class Shadowed:
 class Catalogue:
     """Everything offered from every root, and what was refused.
 
-    Read once per command, so the wizard and `solutions` report the same thing.
+    Read once per command, so the wizard and `blueprints` report the same thing.
     """
 
     solutions: tuple[Solution, ...]
@@ -328,22 +328,26 @@ def _fold(text: str) -> str:
 
 
 def _manifest_string(raw: dict[str, Any], key: str, path: Path) -> str:
-    """One required string value of a pack.toml, stripped."""
+    """One required string value of a blueprint.toml, stripped."""
     if key not in raw:
-        raise PackManifestError(f"{path}: declares no '{key}'")
+        raise BlueprintManifestError(f"{path}: declares no '{key}'")
     value = raw[key]
     if not isinstance(value, str):
-        raise PackManifestError(f"{path}: '{key}' must be a string, not {type(value).__name__}")
+        raise BlueprintManifestError(
+            f"{path}: '{key}' must be a string, not {type(value).__name__}",
+        )
     if not value.strip() and key != "notice":
-        raise PackManifestError(f"{path}: '{key}' is empty")
+        raise BlueprintManifestError(f"{path}: '{key}' is empty")
     return value.strip()
 
 
-def _check_notice(pack_dir: Path, notice: str, path: Path) -> None:
-    """A notice names a file inside the pack, so it travels wherever the pack is copied."""
-    target = (pack_dir / notice).resolve()
-    if not target.is_relative_to(pack_dir.resolve()) or not target.is_file():
-        raise PackManifestError(f"{path}: notice {notice!r} is not a file inside the pack")
+def _check_notice(blueprint_dir: Path, notice: str, path: Path) -> None:
+    """A notice names a file inside the blueprint, so it travels wherever the blueprint goes."""
+    target = (blueprint_dir / notice).resolve()
+    if not target.is_relative_to(blueprint_dir.resolve()) or not target.is_file():
+        raise BlueprintManifestError(
+            f"{path}: notice {notice!r} is not a file inside the blueprint",
+        )
 
 
 def _unencodable(text: str) -> str:
@@ -355,70 +359,72 @@ def _terminal_text(value: str, key: str, path: Path) -> str:
     """`value` folded to ASCII, or refused when a character has no ASCII spelling."""
     folded = _fold(value)
     if found := _unencodable(folded):
-        raise PackManifestError(
+        raise BlueprintManifestError(
             f"{path}: '{key}' carries characters a console may not encode: {found}",
         )
     return folded
 
 
-def _manifest_table(pack_dir: Path, path: Path) -> dict[str, Any]:
-    """The parsed pack.toml, or `PackManifestError` saying why it could not be read."""
+def _manifest_table(blueprint_dir: Path, path: Path) -> dict[str, Any]:
+    """The parsed blueprint.toml, or `BlueprintManifestError` saying why it could not be read."""
     if not path.is_file():
-        raise PackManifestError(
-            f"{pack_dir}: no {PACK_MANIFEST}; every pack declares its id, title, "
+        raise BlueprintManifestError(
+            f"{blueprint_dir}: no {BLUEPRINT_MANIFEST}; every blueprint declares its id, title, "
             "summary and licence there",
         )
     try:
         # utf-8-sig: an editor on Windows may save a byte-order mark, which TOML does not allow.
         return tomllib.loads(path.read_text(encoding="utf-8-sig"))
     except UnicodeDecodeError as exc:
-        raise PackManifestError(f"{path}: not UTF-8: {exc.reason} at byte {exc.start}") from exc
+        raise BlueprintManifestError(
+            f"{path}: not UTF-8: {exc.reason} at byte {exc.start}",
+        ) from exc
     except OSError as exc:
-        raise PackManifestError(f"{path}: cannot be read: {exc}") from exc
+        raise BlueprintManifestError(f"{path}: cannot be read: {exc}") from exc
     except tomllib.TOMLDecodeError as exc:
-        raise PackManifestError(f"{path}: not valid TOML: {exc}") from exc
+        raise BlueprintManifestError(f"{path}: not valid TOML: {exc}") from exc
 
 
-def read_pack_manifest(pack_dir: Path, distribution_licence: str) -> PackManifest:
-    """Read and check `pack_dir/pack.toml`, or raise `PackManifestError`.
+def read_blueprint_manifest(blueprint_dir: Path, distribution_licence: str) -> BlueprintManifest:
+    """Read and check `blueprint_dir/blueprint.toml`, or raise `BlueprintManifestError`.
 
     `distribution_licence` is the License-Expression of the distribution the
-    pack was found in. A pack may not claim a different one, so the licence a
+    blueprint was found in. A blueprint may not claim a different one, so the licence a
     listing shows is the one the installed package was published under.
     """
-    path = pack_dir / PACK_MANIFEST
-    raw = _manifest_table(pack_dir, path)
+    path = blueprint_dir / BLUEPRINT_MANIFEST
+    raw = _manifest_table(blueprint_dir, path)
     unknown = sorted(set(raw) - set(_MANIFEST_KEYS))
     if unknown:
-        raise PackManifestError(f"{path}: unknown key(s) {unknown}")
+        raise BlueprintManifestError(f"{path}: unknown key(s) {unknown}")
     values = {key: _manifest_string(raw, key, path) for key in _MANIFEST_KEYS}
-    if values["id"] != pack_dir.name:
-        raise PackManifestError(
-            f"{path}: id {values['id']!r} is not the directory name {pack_dir.name!r}",
+    if values["id"] != blueprint_dir.name:
+        raise BlueprintManifestError(
+            f"{path}: id {values['id']!r} is not the directory name {blueprint_dir.name!r}",
         )
     if found := _unencodable(values["id"]):
-        raise PackManifestError(
+        raise BlueprintManifestError(
             f"{path}: 'id' carries characters a console may not encode: {found}",
         )
     if values["license"] != distribution_licence:
-        raise PackManifestError(
+        raise BlueprintManifestError(
             f"{path}: license {values['license']!r} differs from {distribution_licence!r}, "
             "the License-Expression of the distribution that ships it",
         )
     origin = values["origin"]
     derived = _ORIGIN_DERIVED.fullmatch(origin)
     if origin != ORIGIN_OWN and derived is None:
-        raise PackManifestError(
+        raise BlueprintManifestError(
             f"{path}: origin {origin!r} is not {ORIGIN_OWN!r}, "
             "'<organisation>-released' or '<organisation>-held'",
         )
     if derived is not None and derived.group(1) == "released" and not values["notice"]:
-        raise PackManifestError(
+        raise BlueprintManifestError(
             f"{path}: origin {origin!r} needs a notice file carrying the release terms",
         )
     if values["notice"]:
-        _check_notice(pack_dir, values["notice"], path)
-    return PackManifest(
+        _check_notice(blueprint_dir, values["notice"], path)
+    return BlueprintManifest(
         id=values["id"],
         title=_terminal_text(values["title"], "title", path),
         summary=_terminal_text(values["summary"], "summary", path),
@@ -462,33 +468,33 @@ def _mapping_facts(mapping_path: Path) -> tuple[tuple[str, ...], str]:
 
 
 def _family_dirs(root: Path) -> list[Path]:
-    """Every directory under `root` with a schema at the family standard's path, or a pack.toml.
+    """Every directory under `root` with a schema at the family standard's path or a manifest.
 
     That keeps a stray directory (a leftover `build/`, an editor's backup) from
-    appearing in the picker as a template the user can choose and then fail
-    to deploy, while a pack that declares itself and lacks its schema is
+    appearing in the picker as a blueprint the user can choose and then fail
+    to deploy, while a blueprint that declares itself and lacks its schema is
     refused by name rather than ignored.
     """
     if not root.is_dir():
         return []
     families = {path.parent.parent for path in root.glob(f"*/{SCHEMA_RELPATH.as_posix()}")}
-    families |= {path.parent for path in root.glob(f"*/{PACK_MANIFEST}")}
+    families |= {path.parent for path in root.glob(f"*/{BLUEPRINT_MANIFEST}")}
     return sorted(family for family in families if family.name not in _NOT_A_SOLUTION)
 
 
-def _build(family: Path, source: SolutionRoot) -> Solution:
-    """One pack, described by its pack.toml. Raises `PackManifestError`."""
+def _build(family: Path, source: BlueprintRoot) -> Solution:
+    """One blueprint, described by its blueprint.toml. Raises `BlueprintManifestError`."""
     missing = [
         relpath.as_posix()
         for relpath in (SCHEMA_RELPATH, MAPPING_RELPATH, RELEASE_RELPATH)
         if not (family / relpath).is_file()
     ]
     if missing:
-        raise PackManifestError(
-            f"{family}: no {', '.join(missing)}; every pack ships its schema, "
+        raise BlueprintManifestError(
+            f"{family}: no {', '.join(missing)}; every blueprint ships its schema, "
             "mapping and release, and the wizard copies all three",
         )
-    manifest = read_pack_manifest(family, source.license)
+    manifest = read_blueprint_manifest(family, source.license)
     lists, prefix = _mapping_facts(family / MAPPING_RELPATH)
     return Solution(
         id=manifest.id,
@@ -505,9 +511,9 @@ def _build(family: Path, source: SolutionRoot) -> Solution:
 
 
 def _gather_solutions(
-    roots: list[SolutionRoot],
+    roots: list[BlueprintRoot],
 ) -> tuple[list[Solution], list[Refusal], list[Shadowed]]:
-    """Every pack in every root, in root order then by id; a repeated id is hidden."""
+    """Every blueprint in every root, in root order then by id; a repeated id is hidden."""
     solutions: list[Solution] = []
     refused: list[Refusal] = []
     shadowed: list[Shadowed] = []
@@ -516,12 +522,12 @@ def _gather_solutions(
         for family in _family_dirs(source.root):
             try:
                 solution = _build(family, source)
-            except PackManifestError as exc:
+            except BlueprintManifestError as exc:
                 refused.append(Refusal(source.distribution, family, str(exc)))
                 continue
             if solution.id in kept:
                 shadowed.append(
-                    Shadowed("template", solution.id, source.distribution, kept[solution.id]),
+                    Shadowed("blueprint", solution.id, source.distribution, kept[solution.id]),
                 )
                 continue
             kept[solution.id] = source.distribution
@@ -530,11 +536,11 @@ def _gather_solutions(
 
 
 def available_solutions() -> list[Solution]:
-    """Every template offered, core's first, each root's ordered by id.
+    """Every blueprint offered, core's first, each root's ordered by id.
 
-    A refused pack is left out; `read_catalogue` says which and why.
+    A refused blueprint is left out; `read_catalogue` says which and why.
     """
-    return _gather_solutions(solution_roots())[0]
+    return _gather_solutions(blueprint_roots())[0]
 
 
 #: Opens and closes a journey file's YAML front matter.
@@ -587,7 +593,7 @@ def _build_journey(path: Path, distribution: str) -> Journey:
             raise ValueError(f"{path}: '{key}' must be a non-empty string")
     shown = {key: _clean(str(raw[key])) for key in ("title", "summary")}
     for key, text in {"id": path.stem, **shown}.items():
-        # Rendered into the same terminal table as a pack's title, so held to the same rule.
+        # Rendered into the same terminal table as a blueprint's title, so held to the same rule.
         if found := _unencodable(text):
             raise ValueError(
                 f"{path}: '{key}' carries characters a console may not encode: {found}",
@@ -602,7 +608,7 @@ def _build_journey(path: Path, distribution: str) -> Journey:
     )
 
 
-def _gather_journeys(roots: list[SolutionRoot]) -> tuple[list[Journey], list[Shadowed]]:
+def _gather_journeys(roots: list[BlueprintRoot]) -> tuple[list[Journey], list[Shadowed]]:
     """Every journey in every root, ordered by id; a repeated id is hidden."""
     journeys: dict[str, Journey] = {}
     shadowed: list[Shadowed] = []
@@ -617,7 +623,7 @@ def _gather_journeys(roots: list[SolutionRoot]) -> tuple[list[Journey], list[Sha
                 # Core's journeys are guarded by its tests; a provider's reach the operator.
                 if source.distribution == CORE_DISTRIBUTION:
                     raise
-                raise SolutionRootError(f"{source.distribution}: {exc}") from exc
+                raise BlueprintRootError(f"{source.distribution}: {exc}") from exc
             if journey.id in journeys:
                 kept = journeys[journey.id].distribution
                 shadowed.append(Shadowed("journey", journey.id, source.distribution, kept))
@@ -634,39 +640,39 @@ def available_journeys() -> list[Journey]:
     a journey that will not load is a grouping silently missing its members,
     and the guard that would have caught it is the one being bypassed.
     """
-    return _gather_journeys(solution_roots())[0]
+    return _gather_journeys(blueprint_roots())[0]
 
 
 def _declared_licence(distribution: str, declared: str | None) -> str:
-    """The License-Expression a distribution publishes, or `SolutionRootError`."""
+    """The License-Expression a distribution publishes, or `BlueprintRootError`."""
     if not declared:
-        raise SolutionRootError(
+        raise BlueprintRootError(
             f"{distribution} declares no License-Expression in its metadata, so the "
-            "licence of its packs cannot be checked",
+            "licence of its blueprints cannot be checked",
         )
     return declared
 
 
-def _core_root() -> SolutionRoot:
-    """Core's own packs. `SOLUTIONS_DIR` is read here so a test can point it elsewhere."""
+def _core_root() -> BlueprintRoot:
+    """Core's own blueprints. `SOLUTIONS_DIR` is read here so a test can point it elsewhere."""
     try:
         declared = metadata(CORE_DISTRIBUTION).get("License-Expression")
     except PackageNotFoundError as exc:
-        raise SolutionRootError(
-            f"{CORE_DISTRIBUTION} is not installed, so the licence of its packs cannot "
+        raise BlueprintRootError(
+            f"{CORE_DISTRIBUTION} is not installed, so the licence of its blueprints cannot "
             "be read; install it (uv sync, or uvx) rather than importing a source tree",
         ) from exc
-    return SolutionRoot(
+    return BlueprintRoot(
         CORE_DISTRIBUTION, SOLUTIONS_DIR, _declared_licence(CORE_DISTRIBUTION, declared),
     )
 
 
-def _provider_root(point: EntryPoint) -> SolutionRoot:
-    """One provider's root, checked, or `SolutionRootError` naming the distribution."""
+def _provider_root(point: EntryPoint) -> BlueprintRoot:
+    """One provider's root, checked, or `BlueprintRootError` naming the distribution."""
     if point.dist is None:
-        raise SolutionRootError(
-            f"entry point {point.name} ({point.value}) in {SOLUTION_ROOTS_GROUP} belongs "
-            "to no distribution, so its packs have no licence to check",
+        raise BlueprintRootError(
+            f"entry point {point.name} ({point.value}) in {BLUEPRINT_ROOTS_GROUP} belongs "
+            "to no distribution, so its blueprints have no licence to check",
         )
     distribution = point.dist.name
     licence = _declared_licence(distribution, point.dist.metadata.get("License-Expression"))
@@ -674,38 +680,38 @@ def _provider_root(point: EntryPoint) -> SolutionRoot:
     try:
         root: object = point.load()()
     except Exception as exc:
-        raise SolutionRootError(
+        raise BlueprintRootError(
             f"{distribution}: {point.value} failed to load: {type(exc).__name__}: {exc}",
         ) from exc
     if not isinstance(root, Path):
         kind = f"{type(root).__module__}.{type(root).__qualname__}"
-        raise SolutionRootError(
+        raise BlueprintRootError(
             f"{distribution}: {point.value} returned a {kind}, not a directory on disk. "
-            "Packs are copied and built as real files, so install the distribution unpacked",
+            "Blueprints are copied and built as real files, so install the distribution unpacked",
         )
     if not root.is_dir():
-        raise SolutionRootError(f"{distribution}: {root} is not a directory")
-    return SolutionRoot(distribution, root, licence)
+        raise BlueprintRootError(f"{distribution}: {root} is not a directory")
+    return BlueprintRoot(distribution, root, licence)
 
 
-def solution_roots() -> list[SolutionRoot]:
-    """Where packs are read from: core first, then each provider by distribution name.
+def blueprint_roots() -> list[BlueprintRoot]:
+    """Where blueprints are read from: core first, then each provider by distribution name.
 
-    Raises `SolutionRootError` when any root cannot be read. A provider that is
+    Raises `BlueprintRootError` when any root cannot be read. A provider that is
     installed but unreadable makes every licence the catalogue would print
     uncertain, so nothing is offered until it is fixed or removed.
     """
-    providers = [_provider_root(point) for point in entry_points(group=SOLUTION_ROOTS_GROUP)]
+    providers = [_provider_root(point) for point in entry_points(group=BLUEPRINT_ROOTS_GROUP)]
     return [_core_root(), *sorted(providers, key=lambda root: root.distribution)]
 
 
 def read_catalogue() -> Catalogue:
-    """Every root's templates and journeys, what was refused, and what was hidden.
+    """Every root's blueprints and journeys, what was refused, and what was hidden.
 
-    Raises `SolutionRootError` when a root cannot be read or a provider's
+    Raises `BlueprintRootError` when a root cannot be read or a provider's
     journey is malformed, and `ValueError` for a malformed journey of core's own.
     """
-    roots = solution_roots()
+    roots = blueprint_roots()
     solutions, refused, hidden = _gather_solutions(roots)
     journeys, hidden_journeys = _gather_journeys(roots)
     return Catalogue(
@@ -717,10 +723,10 @@ def read_catalogue() -> Catalogue:
 
 
 def notices(found: Catalogue) -> list[str]:
-    """What an interface prints once per run: each refused pack, then each hidden group.
+    """What an interface prints once per run: each refused blueprint, then each hidden group.
 
     Hidden ids are grouped by package, so a provider that repeats every core
-    pack costs one line rather than one per pack.
+    blueprint costs one line rather than one per blueprint.
     """
     lines = [f"Not offered: {r.distribution}: {r.reason}" for r in found.refused]
     grouped: dict[tuple[str, str, str], list[str]] = {}

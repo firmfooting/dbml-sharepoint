@@ -1,4 +1,4 @@
-"""Pack directories and pack.toml text for the catalogue tests, written to tmp_path."""
+"""Blueprint directories and blueprint.toml text for the catalogue tests, written to tmp_path."""
 
 import json
 from dataclasses import dataclass
@@ -9,10 +9,10 @@ import pytest
 
 from dbml_sharepoint import catalogue
 from dbml_sharepoint.catalogue import (
+    BLUEPRINT_MANIFEST,
+    BLUEPRINT_ROOTS_GROUP,
     CORE_DISTRIBUTION,
     JOURNEYS_DIRNAME,
-    PACK_MANIFEST,
-    SOLUTION_ROOTS_GROUP,
 )
 
 #: Core's licence as its installed metadata declares it; test_pack_manifest ties it to pyproject.
@@ -20,7 +20,7 @@ CORE_LICENSE = metadata(CORE_DISTRIBUTION)["License-Expression"]
 
 
 def manifest_text(pack_id: str, overrides: dict[str, str] | None = None) -> str:
-    """A valid pack.toml for `pack_id` under core's licence, with any value replaced."""
+    """A valid blueprint.toml for `pack_id` under core's licence, with any value replaced."""
     values = {
         "id": pack_id,
         "title": pack_id.replace("-", " ").capitalize(),
@@ -42,7 +42,7 @@ def without(text: str, key: str) -> str:
 
 
 def write_family(parent: Path, pack_id: str, overrides: dict[str, str] | None = None) -> Path:
-    """A minimal pack: an empty schema, a one-entity mapping, a release and a pack.toml."""
+    """A minimal blueprint: an empty schema, a one-entity mapping, a release and a manifest."""
     root = parent / pack_id
     (root / "10-design").mkdir(parents=True)
     (root / "10-design" / "schema.dbml").write_text("", encoding="utf-8")
@@ -51,7 +51,7 @@ def write_family(parent: Path, pack_id: str, overrides: dict[str, str] | None = 
         'prefix: "X_"\nentities:\n  Thing: {}\n', encoding="utf-8", newline="\n",
     )
     (root / "20-configure" / "release.yaml").write_text("", encoding="utf-8")
-    (root / PACK_MANIFEST).write_text(
+    (root / BLUEPRINT_MANIFEST).write_text(
         manifest_text(pack_id, overrides), encoding="utf-8", newline="\n",
     )
     return root
@@ -117,12 +117,12 @@ def install(monkeypatch: pytest.MonkeyPatch, site: Path, *providers: Provider) -
             fields.append(f"License-Expression: {provider.licence}")
         (dist_info / "METADATA").write_text("\n".join(fields) + "\n", encoding="utf-8")
         (dist_info / "entry_points.txt").write_text(
-            f"[{SOLUTION_ROOTS_GROUP}]\npacks = _catalogue_fixtures:{target}\n",
+            f"[{BLUEPRINT_ROOTS_GROUP}]\npacks = _catalogue_fixtures:{target}\n",
             encoding="utf-8",
         )
-        points.extend(PathDistribution(dist_info).entry_points.select(group=SOLUTION_ROOTS_GROUP))
+        points.extend(PathDistribution(dist_info).entry_points.select(group=BLUEPRINT_ROOTS_GROUP))
 
     def installed(*, group: str) -> list[EntryPoint]:
-        return points if group == SOLUTION_ROOTS_GROUP else []
+        return points if group == BLUEPRINT_ROOTS_GROUP else []
 
     monkeypatch.setattr(catalogue, "entry_points", installed)

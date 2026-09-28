@@ -78,19 +78,19 @@ no such code" from any other lookup failure, and carries the message
 the command prints, suggestion included, because composing that needs
 the catalogue this side already holds.
 
-### `execute_solutions`
+### `execute_blueprints`
 
 ```python
-def execute_solutions() -> tuple[str, bool]
+def execute_blueprints() -> tuple[str, bool]
 ```
 
-What `solutions` prints, and whether the listing is clean.
+What `blueprints` prints, and whether the listing is clean.
 
-Clean means every installed pack was offered and at least one was: core
-always ships packs, so an empty listing is a damaged installation.
+Clean means every installed blueprint was offered and at least one was: core
+always ships blueprints, so an empty listing is a damaged installation.
 Returns the text rather than echoing it, as `execute_explain` does, so a
-test can read the listing without a terminal. Raises `SolutionRootError`
-when a solution root cannot be read.
+test can read the listing without a terminal. Raises `BlueprintRootError`
+when a blueprint root cannot be read.
 
 ### `execute_explain`
 

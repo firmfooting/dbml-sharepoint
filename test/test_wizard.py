@@ -24,9 +24,9 @@ from _console import collapsed as _collapsed
 
 from dbml_sharepoint import wizard
 from dbml_sharepoint.catalogue import (
+    BLUEPRINT_MANIFEST,
     CORE_DISTRIBUTION,
     MAPPING_RELPATH,
-    PACK_MANIFEST,
     PLACEHOLDER_SITE_URL,
     Journey,
     Solution,
@@ -2082,7 +2082,7 @@ def test_the_template_summary_names_the_declared_prefix() -> None:
 def test_a_template_with_no_detail_sentence_prints_no_empty_line() -> None:
     """A `Solution` built with an empty `detail` prints no blank line.
 
-    pack.toml refuses an empty summary, so no discovered template reaches the
+    blueprint.toml refuses an empty summary, so no discovered template reaches the
     empty arm, but a caller constructing a `Solution` can, and a blank dim
     line under its title would read like a rendering fault. Asserted
     as a LINE COUNT against the same solution with a detail, because the
@@ -3598,7 +3598,7 @@ def test_the_scaffolded_project_carries_the_pack_s_licence(tmp_path: Path) -> No
     """A copied project still says what it was made from and under which licence."""
     destination = tmp_path / "proj"
     assert wizard.run_wizard(ScriptedConsole(_answers(destination))) == 0
-    manifest = tomllib.loads((destination / PACK_MANIFEST).read_text(encoding="utf-8"))
+    manifest = tomllib.loads((destination / BLUEPRINT_MANIFEST).read_text(encoding="utf-8"))
     assert (manifest["id"], manifest["license"]) == ("risk-register", CORE_LICENSE)
 
 
@@ -3667,7 +3667,7 @@ def test_a_journey_naming_an_uninstalled_template_says_so_and_offers_the_rest(
     shown = _collapsed(console)
     assert "1 of 2" in shown
     assert "names acme-thing, which is not installed" in shown
-    assert "dbml-sharepoint solutions" in shown
+    assert "dbml-sharepoint blueprints" in shown
 
 
 def test_a_journey_with_nothing_installed_shows_the_hint_and_asks_again(
@@ -3679,7 +3679,7 @@ def test_a_journey_with_nothing_installed_shows_the_hint_and_asks_again(
     shown = _collapsed(console)
     assert "0 of 2" in shown
     assert "names acme-thing, acme-other, which are not installed" in shown
-    assert "Journey 'ghost' names no template that is installed" in shown
+    assert "Journey 'ghost' names no blueprint that is installed" in shown
 
 
 def test_a_provider_that_fails_to_load_stops_the_wizard_by_name(

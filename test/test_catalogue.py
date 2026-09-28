@@ -15,17 +15,17 @@ from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint import catalogue
 from dbml_sharepoint.catalogue import (
+    BLUEPRINT_MANIFEST,
     CORE_DISTRIBUTION,
-    PACK_MANIFEST,
-    SolutionRoot,
-    SolutionRootError,
+    BlueprintRoot,
+    BlueprintRootError,
     UnknownSolutionError,
     available_journeys,
     available_solutions,
+    blueprint_roots,
     load_solution,
     notices,
     read_catalogue,
-    solution_roots,
 )
 from dbml_sharepoint.model import _yaml
 
@@ -109,7 +109,7 @@ def test_a_directory_without_a_schema_is_not_a_solution(
         'prefix: "X_"\nentities: {}\n', encoding="utf-8",
     )
     (tmp_path / "real" / "20-configure" / "release.yaml").write_text("", encoding="utf-8")
-    (tmp_path / "real" / PACK_MANIFEST).write_text(manifest_text("real"), encoding="utf-8")
+    (tmp_path / "real" / BLUEPRINT_MANIFEST).write_text(manifest_text("real"), encoding="utf-8")
     (tmp_path / "stray").mkdir()
 
     monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
@@ -136,7 +136,7 @@ def test_a_malformed_mapping_does_not_break_the_whole_picker(
             mapping_text, encoding="utf-8",
         )
         (tmp_path / name / "20-configure" / "release.yaml").write_text("", encoding="utf-8")
-        (tmp_path / name / PACK_MANIFEST).write_text(manifest_text(name), encoding="utf-8")
+        (tmp_path / name / BLUEPRINT_MANIFEST).write_text(manifest_text(name), encoding="utf-8")
 
     monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
     found = {s.id: s for s in available_solutions()}
@@ -162,7 +162,7 @@ def test_a_mapping_declaring_a_key_twice_is_skipped_like_a_broken_one(
             mapping_text, encoding="utf-8",
         )
         (tmp_path / name / "20-configure" / "release.yaml").write_text("", encoding="utf-8")
-        (tmp_path / name / PACK_MANIFEST).write_text(manifest_text(name), encoding="utf-8")
+        (tmp_path / name / BLUEPRINT_MANIFEST).write_text(manifest_text(name), encoding="utf-8")
 
     monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
     found = {s.id: s for s in available_solutions()}
@@ -305,7 +305,7 @@ def test_clean_folds_typography_a_console_cannot_encode() -> None:
 
 
 def test_the_core_root_comes_first_and_carries_core_s_licence() -> None:
-    assert solution_roots()[0] == SolutionRoot(
+    assert blueprint_roots()[0] == BlueprintRoot(
         CORE_DISTRIBUTION, catalogue.SOLUTIONS_DIR, CORE_LICENSE,
     )
 
@@ -319,7 +319,7 @@ def test_core_without_distribution_metadata_fails_closed(
         raise PackageNotFoundError(name)
 
     monkeypatch.setattr(catalogue, "metadata", missing)
-    with pytest.raises(SolutionRootError, match="dbml-sharepoint is not installed"):
+    with pytest.raises(BlueprintRootError, match="dbml-sharepoint is not installed"):
         read_catalogue()
 
 
@@ -327,7 +327,7 @@ def test_core_metadata_without_a_licence_expression_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(catalogue, "metadata", lambda name: Message())
-    with pytest.raises(SolutionRootError, match="declares no License-Expression"):
+    with pytest.raises(BlueprintRootError, match="declares no License-Expression"):
         read_catalogue()
 
 
@@ -350,7 +350,7 @@ def test_a_pack_without_a_manifest_is_refused_and_named(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     write_family(tmp_path, "good")
-    (write_family(tmp_path, "bare") / PACK_MANIFEST).unlink()
+    (write_family(tmp_path, "bare") / BLUEPRINT_MANIFEST).unlink()
     monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path)
 
     found = read_catalogue()
@@ -358,7 +358,7 @@ def test_a_pack_without_a_manifest_is_refused_and_named(
     assert [(r.distribution, r.path.name) for r in found.refused] == [
         (CORE_DISTRIBUTION, "bare"),
     ]
-    assert "no pack.toml" in found.refused[0].reason
+    assert "no blueprint.toml" in found.refused[0].reason
     assert notices(found) == [f"Not offered: {CORE_DISTRIBUTION}: {found.refused[0].reason}"]
     assert [s.id for s in available_solutions()] == ["good"]
 
@@ -376,7 +376,7 @@ def test_a_pack_claiming_another_licence_is_refused(
 def test_title_and_summary_come_from_the_manifest_not_the_readme(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """One source for each: the README is documentation, pack.toml is what the picker shows."""
+    """One source for each: the README is documentation, blueprint.toml is what the picker shows."""
     family = write_family(
         tmp_path, "declared", {"title": "Declared title", "summary": "Declared summary."},
     )

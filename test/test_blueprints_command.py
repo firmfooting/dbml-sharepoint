@@ -1,4 +1,4 @@
-"""`dbml-sharepoint solutions`: every installed template, its package and its licence."""
+"""`dbml-sharepoint blueprints`: every installed blueprint, its package and its licence."""
 
 from pathlib import Path
 
@@ -9,18 +9,18 @@ from typer.testing import CliRunner
 from dbml_sharepoint import catalogue
 from dbml_sharepoint.catalogue import CORE_DISTRIBUTION, available_solutions
 from dbml_sharepoint.cli import app
-from dbml_sharepoint.pipeline import execute_solutions
+from dbml_sharepoint.pipeline import execute_blueprints
 
 runner = CliRunner()
 
-_HEADER = ["Template", "Title", "Package", "Licence"]
+_HEADER = ["Blueprint", "Title", "Package", "Licence"]
 
 
 def test_core_alone_lists_every_template_with_core_s_package_and_licence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     install(monkeypatch, tmp_path / "site")
-    result = runner.invoke(app, ["solutions"])
+    result = runner.invoke(app, ["blueprints"])
 
     assert result.exit_code == 0, result.output
     lines = result.stdout.splitlines()
@@ -37,7 +37,7 @@ def test_a_provider_s_templates_are_listed_after_core_s(
     write_family(packs, "acme-thing", {"license": "BUSL-1.1"})
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
 
-    result = runner.invoke(app, ["solutions"])
+    result = runner.invoke(app, ["blueprints"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines()[-1].split() == [
@@ -53,12 +53,12 @@ def test_a_hidden_template_is_named_once_and_is_not_a_failure(
     write_family(packs, "risk-register", {"license": "BUSL-1.1"})
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
 
-    result = runner.invoke(app, ["solutions"])
+    result = runner.invoke(app, ["blueprints"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout.count("Hidden:") == 1
     assert (
-        "Hidden: 1 template from acme-packs shares an id with one from dbml-sharepoint, "
+        "Hidden: 1 blueprint from acme-packs shares an id with one from dbml-sharepoint, "
         "which is offered instead: risk-register"
     ) in result.stdout
 
@@ -70,7 +70,7 @@ def test_a_refused_pack_is_named_and_exits_1(
     write_family(packs, "acme-thing")  # core's licence, inside a BUSL-1.1 distribution
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
 
-    result = runner.invoke(app, ["solutions"])
+    result = runner.invoke(app, ["blueprints"])
 
     assert result.exit_code == 1
     assert "Not offered: acme-packs:" in result.stdout
@@ -82,7 +82,7 @@ def test_an_unreadable_provider_exits_1_with_its_name_on_stderr(
 ) -> None:
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", tmp_path / "missing"))
 
-    result = runner.invoke(app, ["solutions"])
+    result = runner.invoke(app, ["blueprints"])
 
     assert result.exit_code == 1
     assert result.stderr.startswith("acme-packs: ")
@@ -93,7 +93,7 @@ def test_execute_solutions_reports_whether_every_pack_was_offered(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     install(monkeypatch, tmp_path / "site")
-    text, every_pack_offered = execute_solutions()
+    text, every_pack_offered = execute_blueprints()
     assert every_pack_offered
     assert text.splitlines()[0].split() == _HEADER
 
@@ -103,7 +103,7 @@ def test_a_provider_that_fails_to_load_exits_1_with_its_name_on_stderr(
 ) -> None:
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", ImportError("gone")))
 
-    result = runner.invoke(app, ["solutions"])
+    result = runner.invoke(app, ["blueprints"])
 
     assert result.exit_code == 1
     assert result.stderr.startswith("acme-packs: ")
@@ -118,7 +118,7 @@ def test_a_provider_journey_that_will_not_parse_exits_1_naming_it(
     (packs / "journeys" / "broken.md").write_text("no front matter\n", encoding="utf-8")
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
 
-    result = runner.invoke(app, ["solutions"])
+    result = runner.invoke(app, ["blueprints"])
 
     assert result.exit_code == 1
     assert result.stderr.startswith("acme-packs: ")
@@ -131,7 +131,7 @@ def test_an_installation_offering_no_template_exits_1(
     install(monkeypatch, tmp_path / "site")
     monkeypatch.setattr(catalogue, "SOLUTIONS_DIR", tmp_path / "missing")
 
-    result = runner.invoke(app, ["solutions"])
+    result = runner.invoke(app, ["blueprints"])
 
     assert result.exit_code == 1
-    assert "No template is offered" in result.stdout
+    assert "No blueprint is offered" in result.stdout

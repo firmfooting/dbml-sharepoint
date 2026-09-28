@@ -26,7 +26,7 @@ from dbml_sharepoint.catalogue import (
     MAPPING_RELPATH,
     RELEASE_RELPATH,
     SCHEMA_RELPATH,
-    SolutionRootError,
+    BlueprintRootError,
 )
 from dbml_sharepoint.extract.emit import DEFAULT_PREFIX
 from dbml_sharepoint.extract.folder import (
@@ -57,11 +57,11 @@ from dbml_sharepoint.model.env_file import (
 )
 from dbml_sharepoint.pipeline import (
     UnknownFindingCodeError,
+    execute_blueprints,
     execute_build,
     execute_explain,
     execute_extraction,
     execute_report,
-    execute_solutions,
     execute_validation,
 )
 from dbml_sharepoint.project import (
@@ -415,17 +415,17 @@ def explain(
 
 
 @app.command()
-def solutions() -> None:
-    """List every installed template with the package it came from and its licence.
+def blueprints() -> None:
+    """List every installed blueprint with the package it came from and its licence.
 
-    Exits 1 when a pack was refused, a pack provider cannot be read, or no
-    template is offered at all, so the listing also checks that every installed
-    pack is offered. A template hidden by another package's template of the
+    Exits 1 when a blueprint was refused, a blueprint provider cannot be read, or no
+    blueprint is offered at all, so the listing also checks that every installed
+    blueprint is offered. A blueprint hidden by another package's blueprint of the
     same id is reported but is not a failure.
     """
     try:
-        text, clean = execute_solutions()
-    except SolutionRootError as exc:
+        text, clean = execute_blueprints()
+    except BlueprintRootError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(text)

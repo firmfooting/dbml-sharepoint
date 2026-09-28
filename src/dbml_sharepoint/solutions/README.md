@@ -150,7 +150,7 @@ work. Build with `--seed` to get them. The marker keeps sample rows visible;
 ```text
 <template>/
   README.md            Why this exists, the value case, what to customise
-  pack.toml            Id, title, summary and licence, as the catalogue reads them
+  blueprint.toml       Id, title, summary and licence, as the catalogue reads them
   10-design/           The data model
       schema.dbml        - tables/columns/enums/indexes (render on dbdiagram.io)
   20-configure/        The physical and release configuration

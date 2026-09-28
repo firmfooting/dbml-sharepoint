@@ -66,9 +66,9 @@ from dbml_sharepoint.catalogue import (
     PLACEHOLDER_TIME_ZONE,
     RELEASE_RELPATH,
     SCHEMA_RELPATH,
+    BlueprintRootError,
     Journey,
     Solution,
-    SolutionRootError,
     notices,
     read_catalogue,
 )
@@ -242,13 +242,13 @@ def _catalogue_table(solutions: list[Solution]) -> Table:
     for index, solution in enumerate(solutions, start=1):
         if solution.distribution != current:
             current = solution.distribution
-            # One row per package, because every pack in a package carries its licence.
+            # One row per package, because every blueprint in a package carries its licence.
             table.add_row(
                 "", f"[bold]{escape(current)}[/bold]", "",
                 f"Licence: {escape(solution.license)}",
             )
         table.add_row(
-            # Pack text comes from any installed provider, so it is never read as markup.
+            # Blueprint text comes from any installed provider, so it is never read as markup.
             str(index), escape(solution.id), str(len(solution.lists)), escape(solution.title),
         )
     return table
@@ -320,18 +320,18 @@ def _pick_journey(
                 f"Pick a number, a name, or {_BROWSE_ALL}.",
             )
             continue
-        # A provider's journey may name another package's templates: say so, never hide them.
+        # A provider's journey may name another package's blueprints: say so, never hide them.
         missing = [i for i in chosen.solution_ids if i not in by_id]
         if missing:
             console.print(
                 f"[yellow]Journey {escape(chosen.id)} names {escape(', '.join(missing))}, "
                 f"which {'is' if len(missing) == 1 else 'are'} not installed.[/yellow] "
-                "They come from another package; `dbml-sharepoint solutions` lists "
+                "They come from another package; `dbml-sharepoint blueprints` lists "
                 "what is installed here.",
             )
         narrowed = [by_id[i] for i in chosen.solution_ids if i in by_id]
         if not narrowed:
-            console.print(f"[red]Journey {answer!r} names no template that is installed.[/red]")
+            console.print(f"[red]Journey {answer!r} names no blueprint that is installed.[/red]")
             continue
         return narrowed
 
@@ -1442,7 +1442,7 @@ def _next_panel(answers: Answers) -> Panel:
 def _run(console: Console) -> int:
     try:
         found = read_catalogue()
-    except SolutionRootError as exc:
+    except BlueprintRootError as exc:
         console.print(f"[red]{escape(str(exc))}[/red]")
         return 1
     solutions = list(found.solutions)

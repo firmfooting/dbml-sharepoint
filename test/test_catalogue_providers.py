@@ -10,15 +10,15 @@ from _catalogue_fixtures import CORE_LICENSE, Provider, install, write_family, w
 
 from dbml_sharepoint import catalogue
 from dbml_sharepoint.catalogue import (
+    BLUEPRINT_ROOTS_GROUP,
     CORE_DISTRIBUTION,
-    SOLUTION_ROOTS_GROUP,
+    BlueprintRootError,
     Shadowed,
-    SolutionRootError,
     available_solutions,
+    blueprint_roots,
     load_solution,
     notices,
     read_catalogue,
-    solution_roots,
 )
 
 
@@ -32,15 +32,15 @@ def test_providers_are_found_under_the_documented_group(
         return []
 
     monkeypatch.setattr(catalogue, "entry_points", spy)
-    solution_roots()
-    assert asked == ["dbml_sharepoint.solution_roots"]
+    blueprint_roots()
+    assert asked == ["dbml_sharepoint.blueprint_roots"]
 
 
 def test_with_no_provider_only_core_is_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     install(monkeypatch, tmp_path / "site")
-    assert [r.distribution for r in solution_roots()] == [CORE_DISTRIBUTION]
+    assert [r.distribution for r in blueprint_roots()] == [CORE_DISTRIBUTION]
 
 
 def test_a_provider_s_packs_follow_core_s_with_its_package_and_licence(
@@ -77,7 +77,7 @@ def test_a_provider_without_a_licence_expression_is_refused_whole(
     packs = tmp_path / "packs"
     packs.mkdir()
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs, licence=None))
-    with pytest.raises(SolutionRootError, match="acme-packs declares no License-Expression"):
+    with pytest.raises(BlueprintRootError, match="acme-packs declares no License-Expression"):
         read_catalogue()
 
 
@@ -87,11 +87,11 @@ def test_a_provider_root_inside_a_zip_is_refused(
     """Packs are copied and built as real files, so a zipped install fails closed."""
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
-        archive.writestr("packs/acme-thing/pack.toml", "")
+        archive.writestr("packs/acme-thing/blueprint.toml", "")
     with zipfile.ZipFile(buffer) as archive:
         zipped = zipfile.Path(archive, "packs/")
         install(monkeypatch, tmp_path / "site", Provider("acme-packs", zipped))
-        with pytest.raises(SolutionRootError, match=r"acme-packs: .* not a directory on disk"):
+        with pytest.raises(BlueprintRootError, match=r"acme-packs: .* not a directory on disk"):
             read_catalogue()
 
 
@@ -99,7 +99,7 @@ def test_a_provider_root_that_does_not_exist_is_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", tmp_path / "missing"))
-    with pytest.raises(SolutionRootError, match="is not a directory"):
+    with pytest.raises(BlueprintRootError, match="is not a directory"):
         read_catalogue()
 
 
@@ -107,10 +107,10 @@ def test_an_entry_point_outside_any_distribution_is_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     point = EntryPoint(
-        name="packs", value="_catalogue_fixtures:first_root", group=SOLUTION_ROOTS_GROUP,
+        name="packs", value="_catalogue_fixtures:first_root", group=BLUEPRINT_ROOTS_GROUP,
     )
     monkeypatch.setattr(catalogue, "entry_points", lambda *, group: [point])
-    with pytest.raises(SolutionRootError, match="belongs to no distribution"):
+    with pytest.raises(BlueprintRootError, match="belongs to no distribution"):
         read_catalogue()
 
 
@@ -126,12 +126,12 @@ def test_core_wins_a_duplicate_id_and_the_loser_is_named_once(
     found = read_catalogue()
     assert load_solution("risk-register").distribution == CORE_DISTRIBUTION
     assert set(found.shadowed) == {
-        Shadowed("template", "risk-register", "acme-packs", CORE_DISTRIBUTION),
-        Shadowed("template", "visitor-log", "acme-packs", CORE_DISTRIBUTION),
+        Shadowed("blueprint", "risk-register", "acme-packs", CORE_DISTRIBUTION),
+        Shadowed("blueprint", "visitor-log", "acme-packs", CORE_DISTRIBUTION),
     }
     assert [line for line in notices(found) if line.startswith("Hidden:")] == [
         (
-            "Hidden: 2 templates from acme-packs share an id with one from dbml-sharepoint, "
+            "Hidden: 2 blueprints from acme-packs share an id with one from dbml-sharepoint, "
             "which is offered instead: risk-register, visitor-log"
         ),
     ]
@@ -148,7 +148,7 @@ def test_between_providers_the_first_by_name_wins(
         Provider("b-packs", later), Provider("a-packs", earlier),
     )
 
-    assert [r.distribution for r in solution_roots()] == [
+    assert [r.distribution for r in blueprint_roots()] == [
         CORE_DISTRIBUTION, "a-packs", "b-packs",
     ]
     assert load_solution("acme-thing").distribution == "a-packs"
@@ -176,7 +176,7 @@ def test_a_provider_whose_entry_point_raises_is_refused_by_name(
     broken = ImportError("No module named 'acme_packs.data'")
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", broken))
     with pytest.raises(
-        SolutionRootError,
+        BlueprintRootError,
         match=r"^acme-packs: .* failed to load: ImportError: No module named 'acme_packs.data'",
     ):
         read_catalogue()
@@ -189,7 +189,8 @@ def test_a_provider_journey_that_will_not_parse_is_refused_by_name(
     (packs / "journeys").mkdir(parents=True)
     (packs / "journeys" / "broken.md").write_text("no front matter\n", encoding="utf-8")
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
-    with pytest.raises(SolutionRootError, match=r"^acme-packs: .*broken\.md: no YAML front matter"):
+    expected = r"^acme-packs: .*broken\.md: no YAML front matter"
+    with pytest.raises(BlueprintRootError, match=expected):
         read_catalogue()
 
 
@@ -200,7 +201,7 @@ def test_a_provider_journey_that_is_not_utf8_is_refused_by_name(
     (packs / "journeys").mkdir(parents=True)
     (packs / "journeys" / "latin.md").write_bytes(b"---\ntitle: caf\xe9\n---\n")
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
-    with pytest.raises(SolutionRootError, match=r"^acme-packs: "):
+    with pytest.raises(BlueprintRootError, match=r"^acme-packs: "):
         read_catalogue()
 
 
@@ -215,7 +216,7 @@ def test_a_provider_journey_a_console_cannot_print_is_refused_by_codepoint(
         encoding="utf-8", newline="\n",
     )
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
-    with pytest.raises(SolutionRootError, match=r"'summary' carries .* U\+00E9"):
+    with pytest.raises(BlueprintRootError, match=r"'summary' carries .* U\+00E9"):
         read_catalogue()
 
 
@@ -269,5 +270,5 @@ def test_a_provider_journey_id_a_console_cannot_print_is_refused(
     packs = tmp_path / "packs"
     write_journey(packs, "caf" + chr(0x00E9), ["acme-thing"])
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
-    with pytest.raises(SolutionRootError, match=r"'id' carries .* U\+00E9"):
+    with pytest.raises(BlueprintRootError, match=r"'id' carries .* U\+00E9"):
         read_catalogue()

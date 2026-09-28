@@ -543,17 +543,17 @@ class UnknownFindingCodeError(LookupError):
     """
 
 
-def execute_solutions() -> tuple[str, bool]:
-    """What `solutions` prints, and whether the listing is clean.
+def execute_blueprints() -> tuple[str, bool]:
+    """What `blueprints` prints, and whether the listing is clean.
 
-    Clean means every installed pack was offered and at least one was: core
-    always ships packs, so an empty listing is a damaged installation.
+    Clean means every installed blueprint was offered and at least one was: core
+    always ships blueprints, so an empty listing is a damaged installation.
     Returns the text rather than echoing it, as `execute_explain` does, so a
-    test can read the listing without a terminal. Raises `SolutionRootError`
-    when a solution root cannot be read.
+    test can read the listing without a terminal. Raises `BlueprintRootError`
+    when a blueprint root cannot be read.
     """
     found = read_catalogue()
-    rows: list[tuple[str, str, str, str]] = [("Template", "Title", "Package", "Licence")]
+    rows: list[tuple[str, str, str, str]] = [("Blueprint", "Title", "Package", "Licence")]
     rows += [(s.id, s.title, s.distribution, s.license) for s in found.solutions]
     widths = [max(len(row[column]) for row in rows) for column in range(3)]
     lines = [
@@ -563,8 +563,8 @@ def execute_solutions() -> tuple[str, bool]:
     extra = notices(found)
     if not found.solutions:
         extra.append(
-            "No template is offered. dbml-sharepoint always ships some, so this "
-            "installation is incomplete or every pack was refused.",
+            "No blueprint is offered. dbml-sharepoint always ships some, so this "
+            "installation is incomplete or every blueprint was refused.",
         )
     clean = bool(found.solutions) and not found.refused
     return "\n".join([*lines, *([""] if extra else []), *extra]), clean
