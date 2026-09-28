@@ -329,8 +329,9 @@ class UniqueKeyConstructor(SafeConstructor):
     """ruamel.yaml's safe constructor, refusing a repeated key and any construction error.
 
     A key written beside a merge (`<<: *anchor`) is not a repeat. It overrides
-    the merged key, as the merge-key spec documents, and the shipped
-    programme-governance mapping widens one column of a merged view that way.
+    the merged key, as the merge-key spec documents, and a mapping may widen
+    one column of a merged view that way (the suite's reporting-sample
+    blueprint under test/fixtures/blueprints does).
     A second `<<` in one mapping is a repeat. ruamel.yaml refuses it too,
     but in words that name a setting this loader does not offer, so it is
     refused here as any other repeat is.

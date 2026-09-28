@@ -33,8 +33,8 @@ from dbml_sharepoint.generators.identifygen import (
 GENERATED_AT = "2026-09-06T12:00:00+00:00"
 WEB = "/sites/test"
 
-FAMILY = "programme-governance"
-OTHER_FAMILY = "risk-register"
+FAMILY = "project-tracker"
+OTHER_FAMILY = "asset-register"
 
 RISK_ID = "aaaaaaaa-0000-0000-0000-000000000001"
 ACTION_ID = "aaaaaaaa-0000-0000-0000-000000000002"
@@ -164,15 +164,15 @@ def _config() -> dict[str, Any]:
             "ServerRelativeUrl": WEB,
         },
         "lists": [
-            _list("GOV_Risk", RISK_ID, items=42, description=marker_for_object(
-                kind="list", name="GOV_Risk", family=FAMILY)),
-            _list("GOV_Action", ACTION_ID, items=7, description=(
+            _list("PT_Risk", RISK_ID, items=42, description=marker_for_object(
+                kind="list", name="PT_Risk", family=FAMILY)),
+            _list("PT_Action", ACTION_ID, items=7, description=(
                 "The actions register. "
-                + marker_for_object(kind="list", name="GOV_Action", family=FAMILY)
+                + marker_for_object(kind="list", name="PT_Action", family=FAMILY)
                 + " Do not delete."
             )),
-            _list("RG_Project", PROJECT_ID, items=3, description=marker_for_object(
-                kind="list", name="RG_Project", family=OTHER_FAMILY)),
+            _list("AR_Asset", PROJECT_ID, items=3, description=marker_for_object(
+                kind="list", name="AR_Asset", family=OTHER_FAMILY)),
             _list(sidecars.RUN_LOG_TITLE, RUN_LOG_ID, items=2, hidden=True,
                   description=sidecars.run_log_marker()),
             _list(sidecars.CHANGE_LOG_TITLE, CHANGE_LOG_ID, items=19, hidden=True,
@@ -207,15 +207,15 @@ def _config() -> dict[str, Any]:
             ],
         },
         "groups": [
-            {"Id": 11, "Title": "GOV Programme Leads", "Description": marker_for_object(
-                kind="group", name="GOV Programme Leads", family=FAMILY)},
+            {"Id": 11, "Title": "PT Project Leads", "Description": marker_for_object(
+                kind="group", name="PT Project Leads", family=FAMILY)},
             {"Id": 12, "Title": "dbml Enterprise Readers", "Description": marker_for_object(
                 kind="group", name="dbml Enterprise Readers", family=None)},
             {"Id": 13, "Title": "Site Owners", "Description": "Built in."},
         ],
         "levels": [
-            {"Id": 21, "Name": "GOV Submit Only", "Description": marker_for_object(
-                kind="level", name="GOV Submit Only", family=FAMILY)},
+            {"Id": 21, "Name": "PT Submit Only", "Description": marker_for_object(
+                kind="level", name="PT Submit Only", family=FAMILY)},
             {"Id": 22, "Name": "Full Control", "Description": "Has full control."},
         ],
     }
@@ -294,10 +294,10 @@ def test_a_marker_surrounded_by_prose_is_still_a_marker() -> None:
     """The deploy tests ownership with `indexOf`, so a description may carry
     text either side of its marker."""
     payload, _, _, _ = _run_script()
-    action = _by_title(payload, "GOV_Action")
+    action = _by_title(payload, "PT_Action")
     assert action["owned"] is True
     assert action["family"] == FAMILY
-    assert action["declaredName"] == "GOV_Action"
+    assert action["declaredName"] == "PT_Action"
 
 
 def test_a_description_that_only_mentions_the_tool_is_not_owned() -> None:
@@ -322,7 +322,7 @@ def test_columns_are_read_once_per_owned_list_and_never_for_the_others() -> None
 def test_built_in_and_hidden_columns_are_left_out() -> None:
     """Every list carries the same built-ins, so they identify nothing."""
     payload, _, _, _ = _run_script()
-    risk = _by_title(payload, "GOV_Risk")
+    risk = _by_title(payload, "PT_Risk")
     names = [column["internalName"] for column in risk["columns"]]
     assert names == ["ResidualRating", "LastReviewedDate"]
 

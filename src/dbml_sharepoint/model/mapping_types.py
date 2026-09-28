@@ -84,11 +84,11 @@ class FoldersFromEnum:
     """`folders: {from_enum: division}`: the folders ARE the enum's members.
 
     A library whose folders name the values of one of its own Choice columns
-    used to declare both, and nothing compared them. The shipped legislative
-    compliance register drifted exactly that way: the `division` enum was
-    edited, the folder list was not, and the deploy created four folders no
-    Division value could match. Naming the enum removes the second copy, so
-    there is nothing left to disagree.
+    used to declare both, and nothing compared them. A shipped library
+    drifted exactly that way: the `division` enum was edited, the folder
+    list was not, and the deploy created four folders no Division value
+    could match. Naming the enum removes the second copy, so there is
+    nothing left to disagree.
 
     Resolved by `analysis/folders.py`, not here, because the schema is not
     loaded with the mapping.

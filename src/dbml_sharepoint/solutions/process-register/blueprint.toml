@@ -1,7 +1,0 @@
-id = "process-register"
-title = "Process register"
-summary = "An inventory of how the organisation actually runs: every business process, who owns it, how it's currently done (paper? email? spreadsheet? a real system?), how much it hurts, and a calculated digitisation-priority score (criticality x pain, 1-9) that turns \"we should digitise things\" into a ranked worklist."
-license = "MIT"
-origin = "firmfooting"
-notice = ""
-min_core = ">=0.5,<1"

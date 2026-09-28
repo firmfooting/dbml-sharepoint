@@ -1,14 +1,13 @@
 # test/test_report_query_cycles.py
 """No reporting query may read, by any chain of names, a query that reads it.
 
-Reported 2026-09-18 against release 4.0.0 of the `programme-governance`
-pack, the day after its self-reference was fixed: the ten list queries
-formed six mutual pairs and twelve cycles, because a `count` over a child
-list read the child's QUERY while a `lookup` on the child read the
-parent's, and each query carried the other's read. In M two queries that
-name each other are a cyclic reference (Learn, M specification, operator
-behavior), and the refresh fails naming neither. Nine of the ten queries
-could not refresh.
+Reported against release 4.0.0, the day after the self-reference was fixed:
+a ten-list family's queries formed six mutual pairs and twelve cycles,
+because a `count` over a child list read the child's QUERY while a `lookup`
+on the child read the parent's, and each query carried the other's read. In
+M two queries that name each other are a cyclic reference (Learn, M
+specification, operator behavior), and the refresh fails naming neither.
+Nine of the ten queries could not refresh.
 
 The fix is a base function per list that another list reads: the rows
 fetched and keyed exactly as the list's query fetches them, under the
@@ -30,7 +29,7 @@ from _model import ref as make_ref
 from _model import schema as make_schema
 from _model import table as make_table
 from _packs import pack
-from _paths import SOLUTION_TEMPLATES
+from _paths import engine_blueprints
 
 from dbml_sharepoint.analysis.reporting.names import (
     BASE_SUFFIX,
@@ -42,16 +41,15 @@ from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import DerivedColumn, MappingBundle
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 
-FAMILIES = sorted(
-    path.parent.parent.name
-    for path in SOLUTION_TEMPLATES.glob("*/10-design/schema.dbml")
-)
+#: Core's blueprints and the suite's: this sweeps the engine's output, not the shipped set.
+BLUEPRINTS = engine_blueprints()
+FAMILIES = sorted(BLUEPRINTS)
 
 _QUERY_REF = re.compile(r'#"([^"]+)"')
 
 
 def _family(name: str) -> tuple[Schema, MappingBundle]:
-    root = SOLUTION_TEMPLATES / name
+    root = BLUEPRINTS[name]
     return (
         parse_dbml(root / "10-design" / "schema.dbml"),
         load_mapping(root / "20-configure" / "mapping.yaml"),
@@ -97,20 +95,6 @@ def test_no_shipped_pack_has_a_cycle_and_every_name_read_is_shipped(
         for reader, read in graph.items():
             missing = read - set(graph)
             assert not missing, f"{family}/{role}: {reader} reads {missing}"
-
-
-def test_the_reported_pairs_are_read_through_base_functions() -> None:
-    """The instance that surfaced the class. Risk counts Actions and Action
-    looks up its Risk; both reads now call the other's base, and neither
-    query names the other."""
-    queries = generate_powerquery(*_family("programme-governance"), "default")
-    risk, action = queries["GOV_Risk.pq"], queries["GOV_Action.pq"]
-    assert '#"GOV_Action_Base"(SiteRoot)' in risk
-    assert '#"GOV_Risk_Base"(SiteRoot)' in action
-    assert '#"GOV_Action"' not in risk
-    assert '#"GOV_Risk"' not in action
-    for name in ("GOV_Action_Base.pq", "GOV_Risk_Base.pq"):
-        assert name in queries
 
 
 # ------------------------------------------------------ the pair, minimal

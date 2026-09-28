@@ -29,8 +29,13 @@ from dbml_sharepoint.analysis.reporting.dictionary import (
     metadata_rows,
     users_dictionary_rows,
 )
-from dbml_sharepoint.analysis.reporting.names import query_name
-from dbml_sharepoint.analysis.reporting.plan import ListPlan, build_plans, tables_for_role
+from dbml_sharepoint.analysis.reporting.names import base_query_name, query_name
+from dbml_sharepoint.analysis.reporting.plan import (
+    ListPlan,
+    build_plans,
+    read_by_another,
+    tables_for_role,
+)
 from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.analysis.timezones import WINDOW_END, WINDOW_START, zone_table
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
@@ -325,21 +330,7 @@ def generate_reporting_md(
         "Long names use a digest suffix. Cross-query references use the same names. "
          "SQL view names must remain distinct from metadata views and within 128 characters."),
         "",
-        ":::warning Load each query under the name of its file",
-        ("A query that reads another list calls that list's base function "
-         "by name, so `GOV_Risk_Base.pq` must be loaded as `GOV_Risk_Base` "
-         "for a query that reads Risk to resolve. Renaming it breaks every "
-         "derived column that reads it, at refresh, and the error names "
-         "only the first missing import. A base function fetches the "
-         "list's rows for the site URL it is given, keyed like the list's "
-         "query and without its reporting-only columns. No query reads "
-         "another query, because two queries that read each other are a "
-         "cyclic reference that only a refresh can see. Power BI does not "
-         "load a function to the model. A duplicated query pointed at "
-         "another site calls each base with that site, so its reporting-only "
-         "columns read that site's rows without further editing."),
-        ":::",
-        "",
+        *_loading_warning(plans),
         *_reads_paragraphs(plans),
         *_date_zone_guide_paragraphs(time_zone),
         "",
@@ -391,6 +382,45 @@ def generate_reporting_md(
 
 
 # ---------------------------------------------------------- Data dictionary
+
+
+def _base_example(plans: list[ListPlan]) -> tuple[str, str] | None:
+    """A list of this build that has a base function, with that function's name.
+
+    The loading warning names a real file of the build, so the operator can
+    check it against the folder rather than translate an invented one. A
+    build in which no query reads another list emits no base function, so
+    there is nothing to warn about and this returns None.
+    """
+    based = read_by_another(plans)
+    if not based:
+        return None
+    return based[0].list_title, base_query_name(based[0].list_title)
+
+
+def _loading_warning(plans: list[ListPlan]) -> list[str]:
+    """The warning to load each query under its file's name, or nothing."""
+    example = _base_example(plans)
+    if example is None:
+        return []
+    example_title, example_base = example
+    return [
+        ":::warning Load each query under the name of its file",
+        ("A query that reads another list calls that list's base function "
+         f"by name, so `{example_base}.pq` must be loaded as `{example_base}` "
+         f"for a query that reads `{example_title}` to resolve. Renaming it "
+         "breaks every derived column that reads it, at refresh, and the "
+         "error names only the first missing import. A base function fetches "
+         "the list's rows for the site URL it is given, keyed like the list's "
+         "query and without its reporting-only columns. No query reads "
+         "another query, because two queries that read each other are a "
+         "cyclic reference that only a refresh can see. Power BI does not "
+         "load a function to the model. A duplicated query pointed at "
+         "another site calls each base with that site, so its reporting-only "
+         "columns read that site's rows without further editing."),
+        ":::",
+        "",
+    ]
 
 
 def _reads_paragraphs(plans: list[ListPlan]) -> list[str]:

@@ -106,11 +106,11 @@ def test_acl_scopes_emits_each_list_scope_before_its_own_folder_scopes(
     shape = [(row["list"], row.get("folder")) for row in out["acl_scopes"]]
     assert shape == [
         (docs, None),
-        (docs, "Clinical services"),
-        (docs, "Corporate services"),
+        (docs, "Field operations"),
+        (docs, "Corporate"),
         (policies, None),
-        (policies, "Clinical services"),
-        (policies, "Corporate services"),
+        (policies, "Field operations"),
+        (policies, "Corporate"),
     ], shape
     # Absent, not null: every JavaScript consumer filters on `!s.folder`.
     assert "folder" not in out["acl_scopes"][0]
@@ -167,16 +167,16 @@ def test_acl_scopes_fails_closed_on_an_empty_or_blank_folder_name(
         build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
 
 
-def _schema_json_for_risk_register() -> dict[str, Any]:
-    """Build SCHEMA for the shipped risk-register family, whose mapping
+def _schema_json_for_contract_register() -> dict[str, Any]:
+    """Build SCHEMA for the shipped contract-register family, whose mapping
     declares all three group shapes: a family-owned group and both
     tool-owned ones."""
-    return _schema_json_for("risk-register")
+    return _schema_json_for("contract-register")
 
 
 def test_every_emitted_group_description_carries_the_marker() -> None:
     """#211: nothing on a group recorded that this tool made it."""
-    schema_json = _schema_json_for_risk_register()
+    schema_json = _schema_json_for_contract_register()
     groups = schema_json["groups"]
     assert groups, "fixture declares no groups; the assertion would be vacuous"
     for grp in groups:
@@ -184,7 +184,7 @@ def test_every_emitted_group_description_carries_the_marker() -> None:
 
 
 def test_the_shared_group_marker_names_no_family() -> None:
-    schema_json = _schema_json_for_risk_register()
+    schema_json = _schema_json_for_contract_register()
     shared = next(g for g in schema_json["groups"] if g["name"] == "dbml Enterprise Readers")
     assert shared["description"].endswith(
         "Provisioned by dbml-sharepoint for group dbml Enterprise Readers."
@@ -192,39 +192,39 @@ def test_the_shared_group_marker_names_no_family() -> None:
 
 
 def test_a_family_group_marker_names_its_family() -> None:
-    schema_json = _schema_json_for_risk_register()
-    owned = next(g for g in schema_json["groups"] if g["name"] == "RR Risk Managers")
+    schema_json = _schema_json_for_contract_register()
+    owned = next(g for g in schema_json["groups"] if g["name"] == "CT Contract Managers")
     assert owned["description"].endswith(
-        "Provisioned by dbml-sharepoint from risk-register for group RR Risk Managers.",
+        "Provisioned by dbml-sharepoint from contract-register for group CT Contract Managers.",
     )
 
 
 def test_each_group_carries_its_own_expected_marker() -> None:
     """The deploy gate compares this per group, not the shared prefix every
     family's marker happens to start with."""
-    schema_json = _schema_json_for_risk_register()
+    schema_json = _schema_json_for_contract_register()
     for grp in schema_json["groups"]:
-        assert grp["expected_marker"] == marker_for_group(grp["name"], "risk-register")
+        assert grp["expected_marker"] == marker_for_group(grp["name"], "contract-register")
 
 
 def test_every_emitted_level_description_carries_the_marker() -> None:
-    """risk-register declares no permission levels, so this loads
-    change-register, which declares 'CH Submit Only'."""
-    schema_json = _schema_json_for("change-register")
+    """contract-register declares no permission levels, so this loads
+    deployment-log, which declares '{prefix} Deployments Submit Only'."""
+    schema_json = _schema_json_for("deployment-log")
     levels = schema_json["permission_levels"]
     assert levels, "fixture declares no permission levels; the assertion would be vacuous"
     for lvl in levels:
         assert lvl["description"].endswith(
-            "Provisioned by dbml-sharepoint from change-register for level " + lvl["name"] + ".",
+            "Provisioned by dbml-sharepoint from deployment-log for level " + lvl["name"] + ".",
         ), lvl["name"]
 
 
 def test_each_level_carries_its_own_expected_marker() -> None:
-    schema_json = _schema_json_for("change-register")
+    schema_json = _schema_json_for("deployment-log")
     levels = schema_json["permission_levels"]
     assert levels, "fixture declares no permission levels; the assertion would be vacuous"
     for lvl in levels:
-        assert lvl["expected_marker"] == marker_for_level("change-register", lvl["name"])
+        assert lvl["expected_marker"] == marker_for_level("deployment-log", lvl["name"])
 
 
 def _acl_phase(js: str) -> str:

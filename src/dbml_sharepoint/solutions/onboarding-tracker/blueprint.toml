@@ -1,7 +1,0 @@
-id = "onboarding-tracker"
-title = "Onboarding tracker"
-summary = "Every new starter, and every task that has to happen across HR, IT, facilities, finance and their manager before and after day one."
-license = "MIT"
-origin = "firmfooting"
-notice = ""
-min_core = ">=0.5,<1"

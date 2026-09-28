@@ -19,7 +19,7 @@ from typing import Any, override
 
 from _builders import ID_PK, TITLE, table
 from _packs import blocks, entities, pack
-from _paths import FIXTURES, SOLUTION_TEMPLATES
+from _paths import FIXTURES, engine_blueprints
 
 from dbml_sharepoint.analysis.joins import (
     all_items_hidden,
@@ -208,8 +208,8 @@ def test_generated_js_aborts_when_sp_page_context_missing() -> None:
 
 
 def _schema_json_for(solution_id: str) -> dict[str, Any]:
-    """Build SCHEMA for a shipped family named by its solution id."""
-    root = SOLUTION_TEMPLATES / solution_id
+    """Build SCHEMA for a shipped family or a test pack, named by its id."""
+    root = engine_blueprints()[solution_id]
     schema = parse_dbml(root / "10-design" / "schema.dbml")
     bundle = load_mapping(root / "20-configure" / "mapping.yaml")
     return build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))

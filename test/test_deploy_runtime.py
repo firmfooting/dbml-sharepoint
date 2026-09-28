@@ -3470,21 +3470,23 @@ def _lifted(script: str, header: str) -> str:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_involvement_notes_requires_conversion_before_redeployment() -> None:
-    from _paths import SOLUTION_TEMPLATES
-
+def test_a_notes_column_made_multi_line_requires_conversion_before_redeployment(
+    tmp_path: Path,
+) -> None:
+    """A column deployed single-line and now declared `longtext` is an immutable
+    mismatch until it is converted; the deploy refuses rather than guessing."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
-    from dbml_sharepoint.model.mapping_loader import load_mapping
-    from dbml_sharepoint.model.parser import parse_dbml
 
-    root = SOLUTION_TEMPLATES / "programme-governance"
-    gov_schema = parse_dbml(root / "10-design/schema.dbml")
-    gov_bundle = load_mapping(root / "20-configure/mapping.yaml")
-    declaration = build_schema_json(
-        gov_schema, gov_bundle, "default", resolved=resolve(gov_schema, gov_bundle.mapping),
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Engagement", ID_PK, TITLE, "Notes longtext [note: 'What was agreed']"),
+        mapping=entities("Engagement"),
     )
-    involvement = next(x for x in declaration["lists"] if x["title"] == "GOV_Involvement")
-    notes = next(f for f in involvement["fields_phase1"] if f["title"] == "Notes")
+    declaration = build_schema_json(
+        schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+    )
+    engagement = next(x for x in declaration["lists"] if x["title"] == "APP_Engagement")
+    notes = next(f for f in engagement["fields_phase1"] if f["title"] == "Notes")
     script = _deploy_js()
     program = "\n".join([
         *(
@@ -3506,9 +3508,9 @@ def test_involvement_notes_requires_conversion_before_redeployment() -> None:
           const actual = {
             InternalName: 'Notes', TypeAsString: 'Text', ReadOnlyField: false, Sealed: false,
           };
-          const before = await immutableFieldMismatches('GOV_Involvement', field, actual, null);
+          const before = await immutableFieldMismatches('APP_Engagement', field, actual, null);
           actual.TypeAsString = 'Note';
-          const after = await immutableFieldMismatches('GOV_Involvement', field, actual, null);
+          const after = await immutableFieldMismatches('APP_Engagement', field, actual, null);
           console.log('__OUT__' + JSON.stringify({ before, after }));
         })();
         """,

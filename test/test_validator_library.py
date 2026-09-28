@@ -153,7 +153,7 @@ def test_a_library_may_declare_folders(tmp_path: Path) -> None:
     reads back as an SP.Folder, so declared names with legal characters
     validate clean."""
     findings = _folders(
-        tmp_path, "DocumentLibrary", 101, '["Clinical services", "Corporate services"]',
+        tmp_path, "DocumentLibrary", 101, '["Field operations", "Corporate"]',
     )
     none_of(findings, FindingCode.FOLDERS_ON_A_LIST)
     none_of(findings, FindingCode.FOLDER_NAME_INVALID)
@@ -162,7 +162,7 @@ def test_a_library_may_declare_folders(tmp_path: Path) -> None:
 
 def test_an_invalid_folder_name_is_refused(tmp_path: Path) -> None:
     f = only(
-        _folders(tmp_path, "DocumentLibrary", 101, '["Clinical/Services"]'),
+        _folders(tmp_path, "DocumentLibrary", 101, '["Field operations/Services"]'),
         FindingCode.FOLDER_NAME_INVALID,
     )
     assert "/" in f.message
@@ -202,13 +202,12 @@ def _folders_from_enum(
 
 
 def test_folders_from_enum_are_the_enums_members(tmp_path: Path) -> None:
-    """The shipped legislative compliance register declared its divisions
-    twice, once as an enum and once as a folder list, and an edit to the
-    enum left the deploy creating the four retired folders. Naming the enum
-    removes the second copy."""
+    """A shipped document library declared its divisions twice, once as an
+    enum and once as a folder list, and an edit to the enum left the deploy
+    creating the retired folders. Naming the enum removes the second copy."""
     findings = _folders_from_enum(
         tmp_path, "DocumentLibrary", 101,
-        '  "Clinical services"\n  "Corporate & community services"',
+        '  "Field operations"\n  "Corporate & community"',
     )
     none_of(findings, FindingCode.FOLDER_ENUM_UNKNOWN)
     none_of(findings, FindingCode.FOLDER_NAME_INVALID)
@@ -222,7 +221,7 @@ def test_folders_from_an_unknown_enum_are_refused(tmp_path: Path) -> None:
     declared."""
     f = only(
         _folders_from_enum(
-            tmp_path, "DocumentLibrary", 101, '  "Clinical services"',
+            tmp_path, "DocumentLibrary", 101, '  "Field operations"',
             named="divison",
         ),
         FindingCode.FOLDER_ENUM_UNKNOWN,
@@ -242,7 +241,7 @@ def test_folders_from_an_enum_no_column_uses_are_flagged(tmp_path: Path) -> None
     schema, bundle = pack(
         tmp_path,
         dbml=(
-            'Enum division {\n  "Clinical services"\n}\n'
+            'Enum division {\n  "Field operations"\n}\n'
             'Enum region {\n  "North"\n  "South"\n}\n'
             + table("Docs", ID_PK, TITLE, "Division division")
         ),
@@ -275,7 +274,7 @@ def test_a_multichoice_column_of_the_enum_counts_as_using_it(
     schema, bundle = pack(
         tmp_path,
         dbml=(
-            'Enum division {\n  "Clinical services"\n}\n'
+            'Enum division {\n  "Field operations"\n}\n'
             + table("Docs", ID_PK, TITLE, "Division division[]")
         ),
         mapping="""
@@ -303,7 +302,7 @@ def test_a_list_declaring_folders_from_an_unknown_enum_is_told_both(
     and met a second error that had been true all along.
     """
     findings = _folders_from_enum(
-        tmp_path, "List", 100, '  "Clinical services"', named="divison",
+        tmp_path, "List", 100, '  "Field operations"', named="divison",
     )
     only(findings, FindingCode.FOLDER_ENUM_UNKNOWN)
     only(findings, FindingCode.FOLDERS_ON_A_LIST)
@@ -360,7 +359,7 @@ def test_an_enum_used_only_for_groups_is_not_called_an_orphan(
     schema, bundle = pack(
         tmp_path,
         dbml=(
-            'Enum division {\n  "Clinical services"\n}\n'
+            'Enum division {\n  "Field operations"\n}\n'
             + table("Docs", ID_PK, TITLE)
         ),
         mapping="""
@@ -381,7 +380,7 @@ def test_folders_from_the_entitys_own_enum_are_not_flagged(tmp_path: Path) -> No
     """The ordinary shape stays quiet, or the warning is noise."""
     none_of(
         _folders_from_enum(
-            tmp_path, "DocumentLibrary", 101, '  "Clinical services"',
+            tmp_path, "DocumentLibrary", 101, '  "Field operations"',
         ),
         FindingCode.FOLDER_ENUM_NOT_A_COLUMN_TYPE,
     )
@@ -400,7 +399,7 @@ def test_an_unresolved_folder_enum_does_not_condemn_every_demo_file(
     schema, bundle = pack(
         tmp_path,
         dbml=(
-            'Enum division {\n  "Clinical services"\n}\n'
+            'Enum division {\n  "Field operations"\n}\n'
             + table("Docs", ID_PK, TITLE, "Division division")
         ),
         mapping="""
@@ -413,11 +412,11 @@ def test_an_unresolved_folder_enum_does_not_condemn_every_demo_file(
             demo_items:
               Docs:
                 - key: d1
-                  values: { Division: "Clinical services" }
-                  file: { name: "[DEMO] Privacy.txt", folder: "Clinical services" }
+                  values: { Division: "Field operations" }
+                  file: { name: "[DEMO] Privacy.txt", folder: "Field operations" }
                 - key: d2
-                  values: { Division: "Clinical services" }
-                  file: { name: "[DEMO] Records.txt", folder: "Clinical services" }
+                  values: { Division: "Field operations" }
+                  file: { name: "[DEMO] Records.txt", folder: "Field operations" }
         """,
     )
     findings = validate_against_mapping(schema, bundle)
@@ -431,7 +430,7 @@ def test_an_enum_member_that_cannot_be_a_folder_is_refused(tmp_path: Path) -> No
     rather than let the folder phase fail on a live site."""
     f = only(
         _folders_from_enum(
-            tmp_path, "DocumentLibrary", 101, '  "Clinical/services"',
+            tmp_path, "DocumentLibrary", 101, '  "Field operations/services"',
         ),
         FindingCode.FOLDER_NAME_INVALID,
     )
@@ -441,7 +440,7 @@ def test_an_enum_member_that_cannot_be_a_folder_is_refused(tmp_path: Path) -> No
 def test_folders_from_enum_are_refused_on_a_list(tmp_path: Path) -> None:
     """Whichever way the folders are spelled, only a library holds them."""
     f = only(
-        _folders_from_enum(tmp_path, "List", 100, '  "Clinical services"'),
+        _folders_from_enum(tmp_path, "List", 100, '  "Field operations"'),
         FindingCode.FOLDERS_ON_A_LIST,
     )
     assert "Docs" in f.message
@@ -562,7 +561,7 @@ def _demo(tmp_path: Path, kind: str, template: int, row: str) -> list[Finding]:
                 kind: {kind}
                 base_template: {template}
                 site_role: default
-                folders: ["Clinical services"]
+                folders: ["Field operations"]
             demo_items:
               Docs:
                 - key: d1
@@ -578,8 +577,8 @@ def test_a_library_demo_file_in_a_declared_folder_validates_clean(tmp_path: Path
     set on it. The marker rides on the file name, so Title is not required."""
     findings = _demo(
         tmp_path, "DocumentLibrary", 101,
-        'values: { Division: "Clinical services" }\n'
-        '                  file: { name: "[DEMO] Privacy.txt", folder: "Clinical services" }',
+        'values: { Division: "Field operations" }\n'
+        '                  file: { name: "[DEMO] Privacy.txt", folder: "Field operations" }',
     )
     for code in (
         FindingCode.DEMO_FILE_REQUIRED_ON_LIBRARY, FindingCode.DEMO_FILE_ON_A_LIST,
@@ -601,17 +600,17 @@ def test_a_demo_file_on_a_list_is_refused(tmp_path: Path) -> None:
 def test_a_demo_file_in_an_undeclared_folder_is_refused(tmp_path: Path) -> None:
     findings = _demo(
         tmp_path, "DocumentLibrary", 101,
-        'values: { Division: "Clinical services" }\n'
+        'values: { Division: "Field operations" }\n'
         '                  file: { name: "[DEMO] Privacy.txt", folder: "Archive" }',
     )
     f = only(findings, FindingCode.DEMO_FILE_FOLDER_UNDECLARED)
-    assert "Archive" in f.message and "Clinical services" in f.message
+    assert "Archive" in f.message and "Field operations" in f.message
 
 
 def test_a_demo_file_name_needs_the_marker_and_legal_characters(tmp_path: Path) -> None:
     findings = _demo(
         tmp_path, "DocumentLibrary", 101,
-        'values: { Division: "Clinical services" }\n'
+        'values: { Division: "Field operations" }\n'
         '                  file: { name: "Privacy:2026.txt" }',
     )
     only(findings, FindingCode.DEMO_FILE_NAME_MISSING_MARKER)
@@ -623,8 +622,8 @@ def test_a_demo_file_needs_a_name_at_load(tmp_path: Path) -> None:
     with pytest.raises(MappingShapeError, match=r"demo_items\.Docs\[0\]\.file"):
         _demo(
             tmp_path, "DocumentLibrary", 101,
-            'values: { Division: "Clinical services" }\n'
-            '                  file: { folder: "Clinical services" }',
+            'values: { Division: "Field operations" }\n'
+            '                  file: { folder: "Field operations" }',
         )
 
 
@@ -659,7 +658,7 @@ def _folder_policy(
     schema, bundle = pack(
         tmp_path,
         dbml=(
-            'Enum division {\n  "Clinical services"\n  "Corporate services"\n}\n'
+            'Enum division {\n  "Field operations"\n  "Corporate"\n}\n'
             + table("Docs", ID_PK, TITLE, "Division division")
         ),
         mapping=f"""
@@ -735,8 +734,8 @@ def test_a_folder_policy_level_that_does_not_exist_is_refused(
     assert all("Folder Edtior" in f.message for f in findings)
     # One per folder, each naming its own: the principal resolves to a
     # different group per member, so no single folder speaks for the rest.
-    assert {"Clinical services", "Corporate services"} == {
-        folder for folder in ("Clinical services", "Corporate services")
+    assert {"Field operations", "Corporate"} == {
+        folder for folder in ("Field operations", "Corporate")
         for f in findings if folder in f.message
     }
 
@@ -795,7 +794,7 @@ def test_one_unknown_enum_does_not_hide_the_groups_that_resolved(
     schema, bundle = pack(
         tmp_path,
         dbml=(
-            'Enum division {\n  "Clinical, services"\n}\n'
+            'Enum division {\n  "Field operations, north"\n}\n'
             + table("Docs", ID_PK, TITLE, "Division division")
         ),
         mapping="""
@@ -854,7 +853,7 @@ def test_a_fixed_name_over_a_single_member_enum_is_allowed(tmp_path: Path) -> No
     schema, bundle = pack(
         tmp_path,
         dbml=(
-            'Enum division {\n  "Clinical services"\n}\n'
+            'Enum division {\n  "Field operations"\n}\n'
             + table("Docs", ID_PK, TITLE, "Division division")
         ),
         mapping="""
@@ -982,7 +981,7 @@ def _folder_policy_body(
     schema, bundle = pack(
         tmp_path,
         dbml=(
-            'Enum division {\n  "Clinical services"\n  "Corporate services"\n}\n'
+            'Enum division {\n  "Field operations"\n  "Corporate"\n}\n'
             + table("Docs", ID_PK, TITLE, "Division division")
         ),
         mapping=f"""
@@ -1226,7 +1225,7 @@ def test_an_enum_group_cannot_enrol_an_identity(tmp_path: Path, flag: str) -> No
     schema, bundle = pack(
         tmp_path,
         dbml=(
-            'Enum division {\n  "Clinical services"\n  "Corporate services"\n}\n'
+            'Enum division {\n  "Field operations"\n  "Corporate"\n}\n'
             + table("Docs", ID_PK, TITLE)
         ),
         mapping=f"""
@@ -1263,7 +1262,7 @@ def test_a_single_member_enum_may_enrol_an_identity(tmp_path: Path, flag: str) -
     """
     schema, bundle = pack(
         tmp_path,
-        dbml=('Enum division {\n  "Clinical services"\n}\n' + table("Docs", ID_PK, TITLE)),
+        dbml=('Enum division {\n  "Field operations"\n}\n' + table("Docs", ID_PK, TITLE)),
         mapping=f"""
             entities:
               Docs: {{ kind: List, base_template: 100, site_role: default }}
@@ -1296,7 +1295,7 @@ def test_an_empty_enum_may_not_enrol_an_identity(tmp_path: Path, flag: str) -> N
     """
     schema, bundle = pack(
         tmp_path,
-        dbml=('Enum division {\n  "Clinical services"\n}\n' + table("Docs", ID_PK, TITLE)),
+        dbml=('Enum division {\n  "Field operations"\n}\n' + table("Docs", ID_PK, TITLE)),
         mapping=f"""
             entities:
               Docs: {{ kind: List, base_template: 100, site_role: default }}
@@ -1344,7 +1343,7 @@ def test_a_generated_group_name_sharepoint_refuses_is_caught_at_build(
     schema, bundle = pack(
         comma,
         dbml=(
-            'Enum division {\n  "Clinical, community & aged services"\n}\n'
+            'Enum division {\n  "Community, aged & home care"\n}\n'
             + table("Docs", ID_PK, TITLE, "Division division")
         ),
         mapping="""
@@ -1406,7 +1405,7 @@ def test_member_safe_makes_a_refused_member_usable(tmp_path: Path) -> None:
     schema, bundle = pack(
         tmp_path,
         dbml=(
-            'Enum division {\n  "Clinical, community & aged services"\n}\n'
+            'Enum division {\n  "Community, aged & home care"\n}\n'
             + table("Docs", ID_PK, TITLE, "Division division")
         ),
         mapping="""
@@ -1428,7 +1427,7 @@ def test_member_safe_makes_a_refused_member_usable(tmp_path: Path) -> None:
     assert [g.name for g in declared_groups(
         bundle.mapping.permissions,
         {e.name: e.members for e in schema.enums},
-    )] == ["Clinical community & aged services Division"]
+    )] == ["Community aged & home care Division"]
 
 
 def test_a_previous_name_that_expands_onto_the_current_one_is_dropped(
@@ -1447,8 +1446,8 @@ def test_a_previous_name_that_expands_onto_the_current_one_is_dropped(
     schema, bundle = pack(
         tmp_path,
         dbml=(
-            'Enum division {\n  "Clinical, community & aged services"\n'
-            '  "Corporate services"\n}\n'
+            'Enum division {\n  "Community, aged & home care"\n'
+            '  "Corporate"\n}\n'
             + table("Docs", ID_PK, TITLE, "Division division")
         ),
         mapping="""
@@ -1478,8 +1477,8 @@ def test_a_previous_name_that_expands_onto_the_current_one_is_dropped(
         )
     ] == [
         (
-            "Clinical community & aged services Editors",
-            ("Clinical, community & aged services Editors",),
+            "Community aged & home care Editors",
+            ("Community, aged & home care Editors",),
         ),
-        ("Corporate services Editors", ()),
+        ("Corporate Editors", ()),
     ]

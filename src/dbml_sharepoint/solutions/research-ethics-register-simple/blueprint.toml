@@ -1,7 +1,0 @@
-id = "research-ethics-register-simple"
-title = "Research ethics register (single list)"
-summary = "One row per research or quality project referred to a partner HREC, with ethics approval and site authorisation as two separate gates."
-license = "MIT"
-origin = "firmfooting"
-notice = ""
-min_core = ">=0.5,<1"

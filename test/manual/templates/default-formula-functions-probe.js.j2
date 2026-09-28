@@ -1,6 +1,6 @@
 {# test/manual/templates/default-formula-functions-probe.js.j2 #}
-/**
- * dbml-sharepoint PROBE: WHICH FUNCTIONS A DefaultFormula EVALUATES
+
+/** ---- dbml-sharepoint PROBE: WHICH FUNCTIONS A DefaultFormula EVALUATES ----
  *
  * REVISION: {{ revision }}
  *
@@ -21,9 +21,9 @@
  * this probe has run, those seven are refused with a finding that says the
  * measurement is pending.
  *
- * The shipped family documents a financial-year customisation built from
- * IF and MOD (legal-compliance-register/README.md), so the two formulas it
- * prints are measured here as written. A single-line Text column and a
+ * A shipped blueprint's README documents a financial-year customisation
+ * built from IF and MOD, so the two formulas it prints are measured here
+ * as written. A single-line Text column and a
  * DateTime column (DisplayFormat 1), each carrying a default formula, are
  * measured beside them, because the same validator holds both types
  * pending: every date measurement so far used a date-only column.

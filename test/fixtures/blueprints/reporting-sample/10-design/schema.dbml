@@ -1,0 +1,40 @@
+// A fixture family for the tests that read a whole blueprint's reporting. Not a
+// shipped blueprint: two lists that read each other, as the reporting sweeps need.
+Project reporting_sample { database_type: 'SharePoint Online Lists' }
+
+Enum risk_status {
+  "Open"
+  "Closed"
+}
+
+Enum action_status {
+  "Open"
+  "Done"
+}
+
+Table Risk {
+  Id       int         [pk, increment]
+  Title    nvarchar    [not null, note: 'The risk, in a sentence']
+  Score    int         [note: 'Likelihood times consequence']
+  Status   risk_status [not null, default: 'Open', note: 'Whether the risk is still live']
+
+  indexes {
+    Status
+  }
+
+  Note: 'Risks the actions treat.'
+}
+
+Table Action {
+  Id           int           [pk, increment]
+  Title        nvarchar      [not null, note: 'What will be done']
+  Status       action_status [not null, default: 'Open', note: 'Whether the action is finished']
+  Minutes      int           [note: 'Time spent so far']
+  RelatedRisk  int           [ref: > Risk.Id, note: 'The risk this action treats']
+
+  indexes {
+    Status
+  }
+
+  Note: 'Actions that treat a risk.'
+}

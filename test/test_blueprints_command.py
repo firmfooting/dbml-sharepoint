@@ -26,7 +26,7 @@ def test_core_alone_lists_every_template_with_core_s_package_and_licence(
     lines = result.stdout.splitlines()
     assert lines[0].split() == _HEADER
     assert len(lines) == 1 + len(available_solutions())
-    row = next(line for line in lines if line.startswith("risk-register "))
+    row = next(line for line in lines if line.startswith("visitor-log "))
     assert row.split()[-2:] == [CORE_DISTRIBUTION, CORE_LICENSE]
 
 
@@ -50,7 +50,7 @@ def test_a_hidden_template_is_named_once_and_is_not_a_failure(
 ) -> None:
     """Expected while a provider and core both ship a pack, so it informs rather than fails."""
     packs = tmp_path / "packs"
-    write_family(packs, "risk-register", {"license": "BUSL-1.1"})
+    write_family(packs, "visitor-log", {"license": "BUSL-1.1"})
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
 
     result = runner.invoke(app, ["blueprints"])
@@ -59,7 +59,7 @@ def test_a_hidden_template_is_named_once_and_is_not_a_failure(
     assert result.stdout.count("Hidden:") == 1
     assert (
         "Hidden: 1 blueprint from acme-packs shares an id with one from dbml-sharepoint, "
-        "which is offered instead: risk-register"
+        "which is offered instead: visitor-log"
     ) in result.stdout
 
 

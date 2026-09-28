@@ -6,24 +6,24 @@ projection is "checked for existence only, never reconciled" because a
 read-only field does not drift, which is a statement about RECONCILIATION.
 Sealing answers a different question: whether a site owner can delete the
 column through the UI. Measured on a live site 2026-09-06, all seven
-projections in `programme-governance` read back `Sealed: false` and
+projections in one shipped family read back `Sealed: false` and
 `CanBeDeleted: true`, while every declared and calculated column on the same
 lists read `Sealed: true` and `CanBeDeleted: false`.
 
 Deleting one takes the view that shows it with no warning anywhere.
 """
 
-from pathlib import Path
 from typing import Any
 
-import dbml_sharepoint
+from _paths import FIXTURES, TEST_BLUEPRINTS
+
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.generators.jsgen import generate_deploy_js
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.parser import parse_dbml
 from dbml_sharepoint.model.release import load_release
 
-FAMILY = Path(dbml_sharepoint.__file__).parent / "solutions" / "programme-governance"
+FAMILY = TEST_BLUEPRINTS / "reporting-sample"
 
 _FIXED_ARGS: dict[str, Any] = {
     "site_url": "https://example.sharepoint.com/sites/test",
@@ -35,14 +35,14 @@ _FIXED_ARGS: dict[str, Any] = {
 
 
 def _family_deploy_js() -> str:
-    """The real family, because it is what carries projections in the fleet."""
+    """A whole pack with a projected lookup, built the way a shipped one is."""
     schema = parse_dbml(FAMILY / "10-design" / "schema.dbml")
     bundle = load_mapping(FAMILY / "20-configure" / "mapping.yaml")
     return generate_deploy_js(
         schema=schema,
         bundle=bundle,
         resolved=resolve(schema, bundle.mapping),
-        release=load_release(FAMILY / "20-configure" / "release.yaml"),
+        release=load_release(FIXTURES / "release.yaml"),
         **_FIXED_ARGS,
     )
 

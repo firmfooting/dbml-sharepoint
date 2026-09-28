@@ -1,7 +1,0 @@
-id = "project-pipeline"
-title = "Project pipeline"
-summary = "One funnel for every project idea, from suggestion to decision to delivery."
-license = "MIT"
-origin = "firmfooting"
-notice = ""
-min_core = ">=0.5,<1"

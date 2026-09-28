@@ -1,0 +1,7 @@
+id = "risk-register"
+title = "Risk register"
+summary = "A stand-in for the wizard tests: one list (RR_Risk) rated against a target, with the review date that follows."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

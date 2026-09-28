@@ -1,10 +1,12 @@
+import shutil
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 from _builders import ID_PK, TITLE, table
 from _packs import pack
-from _paths import SOLUTION_TEMPLATES
+from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.reporting.plan import build_plans
 from dbml_sharepoint.analysis.resolve import resolve
@@ -15,30 +17,84 @@ from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.manifestgen import generate_manifest
 from dbml_sharepoint.generators.rollbackgen import generate_rollback_js
 from dbml_sharepoint.model.errors import MappingValueError
-from dbml_sharepoint.model.mapping_loader import load_mapping
-from dbml_sharepoint.model.parser import parse_dbml
 from dbml_sharepoint.model.release import load_release
 from dbml_sharepoint.wizard import TemplateChoice, _read_facts
 
+_NAMED_LIBRARY_DBML = """
+Enum review_body {
+  "Audit Committee"
+  "Executive Committee"
+}
 
-def test_legal_library_identity_and_navigation_are_consistent() -> None:
-    root = SOLUTION_TEMPLATES / "legal-compliance-register"
-    schema = parse_dbml(root / "10-design/schema.dbml")
-    bundle = load_mapping(root / "20-configure/mapping.yaml")
-    release = load_release(root / "20-configure/release.yaml")
-    built = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
-    title = "Legislative Compliance"
-    assert built["lists"][0]["title"] == title
-    assert built["lists"][0]["internal_name"] == "LegislativeCompliance"
-    committee = next(
-        f for f in built["lists"][0]["fields_phase1"] if f["title"] == "OversightCommittee"
+Table Document {
+  Id int [pk, increment]
+  Title nvarchar
+  ReviewBody review_body [note: 'The body that reviews this file']
+  Status nvarchar [note: 'Where the file is in its cycle']
+}
+"""
+
+_NAMED_LIBRARY_MAPPING = """
+entities:
+  Document:
+    title: Policy Documents
+    internal_name: PolicyDocuments
+    kind: DocumentLibrary
+    base_template: 101
+    site_role: default
+display_names:
+  mode: auto
+views:
+  Document:
+    - title: Folder View
+      scope: default
+      fields: [FileLeafRef, Title]
+    - title: Pending
+      scope: recursive
+      default: true
+      fields: [FileLeafRef, Status]
+      where:
+        - {field: Status, op: eq, value: "Pending"}
+      sort:
+        - {field: Modified, direction: desc}
+demo_items:
+  Document:
+    - key: file-01
+      file:
+        name: "[DEMO] Leave policy.txt"
+        content: Demo placeholder for a policy document.
+      values:
+        Status: Pending
+"""
+
+
+def test_a_named_library_is_deployed_and_navigated_under_its_own_title(tmp_path: Path) -> None:
+    """A library's declared title and immutable URL name reach every generator.
+
+    Written against a synthetic library when the one shipped pack with a named
+    library left core: the entity name must reach none of the emitted scripts.
+    """
+    (tmp_path / "20-configure").mkdir()
+    schema, bundle = pack(
+        tmp_path / "20-configure", dbml=_NAMED_LIBRARY_DBML, mapping=_NAMED_LIBRARY_MAPPING,
+        dbml_name="schema.dbml", mapping_name="mapping.yaml",
     )
-    assert committee["display_title"] == "Oversight Committee"
-    assert not committee["body"].get("Required", False)
-    assert committee["body"]["FieldTypeKind"] == 6
-    assert committee["body"]["Choices"]["results"] == [
-        "Audit and Risk Committee", "Clinical Governance Committee", "Executive Committee",
-    ]
+    # The wizard's facts reader loads the schema and release from a blueprint's own layout.
+    (tmp_path / "10-design").mkdir()
+    (tmp_path / "20-configure" / "schema.dbml").rename(tmp_path / "10-design" / "schema.dbml")
+    shutil.copy(FIXTURES / "release.yaml", tmp_path / "20-configure" / "release.yaml")
+    release = load_release(FIXTURES / "release.yaml")
+    built = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
+    title = "Policy Documents"
+    assert built["lists"][0]["title"] == title
+    assert built["lists"][0]["internal_name"] == "PolicyDocuments"
+    reviewer = next(
+        f for f in built["lists"][0]["fields_phase1"] if f["title"] == "ReviewBody"
+    )
+    assert reviewer["display_title"] == "Review Body"
+    assert not reviewer["body"].get("Required", False)
+    assert reviewer["body"]["FieldTypeKind"] == 6
+    assert reviewer["body"]["Choices"]["results"] == ["Audit Committee", "Executive Committee"]
     targets = assess_targets(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
     assert list(dict(targets["list_markers"])) == [title]
     assert all(v["list"] == title and v["view_fields"][0] == "DocIcon" for v in built["views"])
@@ -48,7 +104,7 @@ def test_legal_library_identity_and_navigation_are_consistent() -> None:
     assert next(v for v in built["views"] if v["title"] == "Pending")["set_default"]
     plan, = build_plans(schema, bundle, "default")
     assert plan.list_title == title
-    assert plan.item_url_path == "/LegislativeCompliance/Forms/DispForm.aspx?ID="
+    assert plan.item_url_path == "/PolicyDocuments/Forms/DispForm.aspx?ID="
     args: dict[str, Any] = dict(
         release=release, site_url="https://example.sharepoint.com/sites/test",
         site_role="default", source_dbml="schema.dbml", generated_at="2026-09-15T00:00:00Z",
@@ -56,16 +112,16 @@ def test_legal_library_identity_and_navigation_are_consistent() -> None:
     for generator in (generate_demo_js, generate_rollback_js):
         emitted = generator(schema=schema, bundle=bundle, **args)
         assert title in emitted
-        assert "LC_Document" not in emitted
+        assert "APP_Document" not in emitted
     manifest = generate_manifest(
         resolved=resolve(schema, bundle.mapping),
         schema_json=built, findings=[], bundle=bundle,
         source_mtime="2026-09-15T00:00:00Z", **args,
     )
-    assert "Immutable library URL name: `LegislativeCompliance`" in manifest
+    assert "Immutable library URL name: `PolicyDocuments`" in manifest
     assert "filter:" in manifest
     assert "sort: Modified desc" in manifest
-    solution = load_solution("legal-compliance-register")
+    solution = replace(load_solution("visitor-log"), id="named-library", root=tmp_path)
     facts = _read_facts(solution)
     assert TemplateChoice(
         solution, "TEST_", facts.entity_roles, facts.entity_titles,

@@ -1,7 +1,0 @@
-id = "improvement-register"
-title = "Improvement register"
-summary = "A continuous-improvement log with test-before-adopt discipline: every improvement idea moves Idea -> Planned -> Testing -> Adopted (or Abandoned, honourably), with before/after measures recorded so \"improved\" is a number, not a feeling."
-license = "MIT"
-origin = "firmfooting"
-notice = ""
-min_core = ">=0.5,<1"

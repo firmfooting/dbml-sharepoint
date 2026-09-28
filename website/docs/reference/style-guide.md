@@ -101,7 +101,7 @@ were also observed in column formatting on 2026-09-16. The shared decoder
 accepts either representation and compares decoded text exactly. A **view**
 row formatter compares directly, and
 `"=if([$Rating] == 'Extreme', …)"` is correct as
-written. `solutions/risk-register` relies on this for its Extreme row
+written. The risk-register template relies on this for its Extreme row
 wash, confirmed rendering on a real list.
 
 Do not add contains-matching to a view formatter "to be safe": it works,

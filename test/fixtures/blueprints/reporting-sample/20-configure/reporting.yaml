@@ -1,0 +1,26 @@
+# No derived column here carries a description, so the data dictionary writes its own.
+reporting:
+  system_columns: true
+  users_table: true
+
+derived_columns:
+  Risk:
+    - kind: count
+      from: Action
+      via: RelatedRisk
+      name: OpenActions
+      aggregate: count
+      type: Int64
+      where: '[Status] = "Open"'
+  Action:
+    - kind: lookup
+      from: Risk
+      via: RelatedRisk
+      pick:
+        RiskScore: Score
+      types:
+        RiskScore: Int64
+    - kind: expr
+      name: LongRunning
+      type: logical
+      m: '[Minutes] > 60'

@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from _builders import ID_PK, TITLE, table
 from _packs import blocks, entities, entity, pack, with_tail, write_dbml, write_mapping
-from _paths import FIXTURES, SOLUTION_TEMPLATES
+from _paths import FIXTURES, engine_blueprints
 from test_jsgen import _generate_simple_js, _generate_views_js, _schema_json_for
 
 from dbml_sharepoint.analysis.condition_rendering import CAML_VIEW_FILTER_GUARD
@@ -629,11 +629,8 @@ def test_an_entity_declaring_no_views_still_gets_all_items(tmp_path: Path) -> No
 
 
 def _shipped_solution_ids() -> list[str]:
-    """Discovered, never listed. A hardcoded roster fails open."""
-    return sorted(
-        path.parent.parent.name
-        for path in SOLUTION_TEMPLATES.glob("*/10-design/schema.dbml")
-    )
+    """Discovered, never listed. A hardcoded roster fails open. Core's and the test packs."""
+    return sorted(engine_blueprints())
 
 
 @pytest.mark.parametrize("solution_id", _shipped_solution_ids())
@@ -658,9 +655,11 @@ def test_every_shipped_view_filter_is_emitted_protected(solution_id: str) -> Non
 def test_the_shipped_corpus_still_declares_filtered_views() -> None:
     """The per-solution test above passes vacuously on a corpus with none.
 
-    Measured 2026-08-17: 192 filtered views. The floor is well under that,
-    because the real number moves whenever a family gains a view and pinning
-    it exactly would fail for the wrong reason.
+    Measured 2026-08-17: 192 filtered views. RE-MEASURED 2026-09-28, once
+    core kept only its starter blueprints and the sweep read the suite's blueprints
+    beside them: 31. The floor is under that, because the real number moves
+    whenever a family gains a view and pinning it exactly would fail for the
+    wrong reason.
     """
     total = sum(
         1
@@ -668,7 +667,7 @@ def test_the_shipped_corpus_still_declares_filtered_views() -> None:
         for view in _schema_json_for(solution_id)["views"]
         if "<Where>" in view["caml_query"]
     )
-    assert total > 100, total
+    assert total > 25, total
 
 
 def test_every_declared_view_filter_is_emitted_protected() -> None:
@@ -683,7 +682,7 @@ def test_every_declared_view_filter_is_emitted_protected() -> None:
     right child as what the editor refuses.
     """
     filtered = 0
-    for view in _schema_json_for("risk-register")["views"]:
+    for view in _schema_json_for("contract-register")["views"]:
         if "<Where>" not in view["caml_query"]:
             continue
         filtered += 1
@@ -703,7 +702,7 @@ def test_a_view_with_no_filter_gains_no_where_clause() -> None:
     for a view whose author declared none.
     """
     unfiltered = [
-        view for view in _schema_json_for("risk-register")["views"]
+        view for view in _schema_json_for("contract-register")["views"]
         if "<Where>" not in view["caml_query"]
     ]
     # `assert unfiltered` is the whole test: the comprehension already

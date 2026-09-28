@@ -1,7 +1,0 @@
-id = "programme-governance"
-title = "Programme governance"
-summary = "Programme governance on ten lists, from workstreams and standing accountabilities to service requests, risks, actions, issues and decisions."
-license = "MIT"
-origin = "firmfooting"
-notice = ""
-min_core = ">=0.5,<1"

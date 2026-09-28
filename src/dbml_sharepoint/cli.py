@@ -517,8 +517,8 @@ def extract_script(
     url: str = typer.Argument(
         ...,
         help="The list's URL, copied from the browser address bar with the "
-        "list open, e.g. https://contoso.sharepoint.com/sites/Risk/Lists/"
-        "RG_Project/AllItems.aspx",
+        "list open, e.g. https://contoso.sharepoint.com/sites/Projects/Lists/"
+        "PT_Project/AllItems.aspx",
     ),
     out: Path | None = typer.Option(
         None,
@@ -576,7 +576,7 @@ def extract_script(
 
 _LIST_URL_HELP = (
     "The list's URL, copied from the browser address bar with the list open, "
-    "e.g. https://contoso.sharepoint.com/sites/Risk/Lists/RG_Project/AllItems.aspx. "
+    "e.g. https://contoso.sharepoint.com/sites/Projects/Lists/PT_Project/AllItems.aspx. "
     "A document library's own URL works too, the one ending /Forms/AllItems.aspx."
 )
 

@@ -23,14 +23,14 @@ def test_a_tool_owned_group_gets_a_family_less_marker_naming_itself() -> None:
     satisfy the other's adoption gate.
     """
     reader = marker_for_group("dbml Enterprise Readers", "risk-register")
-    admin = marker_for_group("dbml List Administrators", "incident-management")
+    admin = marker_for_group("dbml List Administrators", "asset-register")
     automation = marker_for_group("dbml Enterprise Automation", "risk-register")
 
     assert reader == shared_marker_for("dbml Enterprise Readers")
     assert admin == shared_marker_for("dbml List Administrators")
     assert automation == shared_marker_for("dbml Enterprise Automation")
     assert "risk-register" not in reader
-    assert "incident-management" not in admin
+    assert "asset-register" not in admin
     assert "risk-register" not in automation
     assert len({reader, admin, automation}) == 3
 

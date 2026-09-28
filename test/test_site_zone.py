@@ -26,7 +26,7 @@ from _builders import table as dbml_table
 from _console import plain
 from _findings import none_of
 from _packs import entities, write_dbml, write_mapping
-from _paths import FIXTURES, MANUAL, SOLUTION_TEMPLATES
+from _paths import FIXTURES, MANUAL
 from typer.testing import CliRunner
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
@@ -648,46 +648,6 @@ def test_report_requires_the_zone(tmp_path: Path) -> None:
     assert result.exit_code == 2, result.output
     assert "--time-zone" in plain(result.output)
     assert not (tmp_path / "reports").exists()
-
-
-# ----------------------------------------------------------------- the family
-
-
-_FAMILY = SOLUTION_TEMPLATES / "programme-governance"
-
-
-def test_the_family_declares_no_zone_and_dates_its_timestamps_by_the_sites() -> None:
-    """The three derived date columns used to truncate in UTC and said so
-    in their descriptions; now they convert by the site's zone, and the
-    family says nothing about which zone that is. A template anyone can
-    adopt must not carry one adopter's locale."""
-    schema = parse_dbml(_FAMILY / "10-design" / "schema.dbml")
-    bundle = load_mapping(_FAMILY / "20-configure" / "mapping.yaml")
-    reporting = (_FAMILY / "20-configure" / "reporting.yaml").read_text(encoding="utf-8")
-    assert not re.search(r"^\s*time_zone:", reporting, re.MULTILINE)
-    dated = [
-        (entity, entry)
-        for entity, entries in bundle.mapping.derived_columns.items()
-        for entry in entries
-        if entry.name in {"CreatedDate", "ModifiedDate"}
-    ]
-    assert {(entity, entry.name) for entity, entry in dated} == {
-        ("ServiceRequest", "CreatedDate"),
-        ("ServiceRequest", "ModifiedDate"),
-        ("Activity", "ModifiedDate"),
-    }
-    for _, entry in dated:
-        assert entry.m == f"AsSiteDate([{entry.name.removesuffix('Date')}])"
-        assert "truncated in UTC" not in entry.description
-        assert MELBOURNE not in entry.description
-    assert "Australia/Melbourne" not in reporting
-    findings = validate_against_mapping(schema, bundle)
-    none_of(findings, FindingCode.DERIVED_UNKNOWN_REFERENCE)
-    queries = generate_powerquery(schema, bundle, "default", time_zone=MELBOURNE)
-    prefix = bundle.mapping.prefix
-    assert "each AsSiteDate([Created])," in queries[f"{prefix}ServiceRequest.pq"]
-    assert "each AsSiteDate([Modified])," in queries[f"{prefix}ServiceRequest.pq"]
-
 
 
 # ------------------------------------------------------------------ the probe

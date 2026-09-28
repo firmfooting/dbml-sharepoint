@@ -6,6 +6,7 @@ from importlib.metadata import EntryPoint, PathDistribution, metadata
 from pathlib import Path
 
 import pytest
+from _paths import TEST_BLUEPRINTS
 
 from dbml_sharepoint import catalogue
 from dbml_sharepoint.catalogue import (
@@ -126,3 +127,12 @@ def install(monkeypatch: pytest.MonkeyPatch, site: Path, *providers: Provider) -
         return points if group == BLUEPRINT_ROOTS_GROUP else []
 
     monkeypatch.setattr(catalogue, "entry_points", installed)
+
+
+#: The distribution the suite's own blueprints are offered under; not a real package.
+TEST_DISTRIBUTION = "test-blueprints"
+
+
+def offer_test_blueprints(monkeypatch: pytest.MonkeyPatch, site: Path) -> None:
+    """Offer `test/fixtures/blueprints/` beside core's own, as an installed provider would."""
+    install(monkeypatch, site, Provider(TEST_DISTRIBUTION, TEST_BLUEPRINTS, licence=CORE_LICENSE))

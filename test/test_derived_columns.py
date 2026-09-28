@@ -19,7 +19,7 @@ from _model import column, person
 from _model import ref as make_ref
 from _model import schema as make_schema
 from _model import table as make_table
-from _paths import FIXTURES, SOLUTION_TEMPLATES
+from _paths import FIXTURES, engine_blueprints
 
 from dbml_sharepoint.analysis.findings import Finding, FindingCode
 from dbml_sharepoint.analysis.reporting.plan import build_plans, report_column_names
@@ -51,10 +51,9 @@ _MINIMAL = (
     "  Risk: {kind: List, base_template: 100, site_role: default}\n"
 )
 
-FAMILIES = sorted(
-    path.parent.parent.name
-    for path in SOLUTION_TEMPLATES.glob("*/10-design/schema.dbml")
-)
+#: Core's blueprints and the suite's: this sweeps the engine's output, not the shipped set.
+BLUEPRINTS = engine_blueprints()
+FAMILIES = sorted(BLUEPRINTS)
 
 
 def _schema() -> Schema:
@@ -719,7 +718,7 @@ def test_the_shared_column_set_matches_what_the_query_declares(
     adds or drops a column without the plan saying so is caught here rather
     than at refresh.
     """
-    root = SOLUTION_TEMPLATES / family
+    root = BLUEPRINTS[family]
     schema = parse_dbml(root / "10-design/schema.dbml")
     bundle = load_mapping(root / "20-configure/mapping.yaml")
     plans = {plan.entity: plan for plan in build_plans(schema, bundle, "default")}

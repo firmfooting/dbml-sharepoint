@@ -15,8 +15,8 @@ from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
 @pytest.mark.parametrize(
     "name",
     [
-        "Clinical services",
-        "[DEMO] Privacy and health records - 2026 Q3.docx",
+        "Field operations",
+        "[DEMO] Records management policy - 2026 Q3.docx",
         "a.b",
         "Executive and governance",
         "console",  # CON with more letters is an ordinary name

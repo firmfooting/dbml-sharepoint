@@ -1,7 +1,0 @@
-id = "measures-register"
-title = "Measures register"
-summary = "A catalogue of the measures the organisation actually runs on: each KPI's definition (numerator, denominator, exclusions), owner, target, data source, frequency and reporting destination."
-license = "MIT"
-origin = "firmfooting"
-notice = ""
-min_core = ">=0.5,<1"

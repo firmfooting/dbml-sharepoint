@@ -1,25 +1,32 @@
 # test/test_extract.py
-"""The reverse direction: a live list's field XML back to schema + mapping.
+"""The reverse direction: a list's field XML back to schema + mapping.
 
-Everything here is tested against `rg-project-live-extract.json`, a REAL
-read of a real research-governance list taken by `extract.js.txt` and
-committed after the tenant host in it was replaced with
-`example.sharepoint.com`. Nothing else in it was edited, so it is the only
-evidence in this repository of what a live SharePoint list actually stores,
-and the decoder is tested against it rather than against XML written here
-from memory.
+Everything here is tested against `sample-list-extract.json`, a synthetic
+read of the list the shipped `contract-register` blueprint deploys. Every
+name, title, description, choice, default, formula, formatter, view and
+form section in it is that blueprint's, rendered by the shipped forward
+generator; the field grammar around them (attribute names and order, the
+SharePoint-owned attributes, the child elements and the escaping) was
+borrowed type by type from a live read of a list built with this tool, so
+each element is spelled the way SharePoint stores one rather than as XML
+written here from memory. It is not a real read, and nothing in it names
+a tenant, a site or a list anyone runs. The blueprint's one URL column is
+absent, because no read in this repository shows a URL element to borrow.
 
-The list exercises both halves of the recovery rule. Six severity chains,
-two overdue-date formatters, one single-comparison validation rule and one
-form-visibility formula are recovered and then re-composed by the shipped
-forward generator; a data-bar formatter, three `OR(ISBLANK(...))`
-validation rules and a two-clause visibility formula are refused and
-reported. A test below runs the forward generator over each recovered
-declaration and compares the result to what the site stores, which is the
-property the whole extractor rests on.
+The list exercises both halves of the recovery rule. Two severity chains,
+an overdue-date formatter with a guard and one form-visibility formula are
+recovered and then re-composed by the shipped forward generator; a
+data-bar formatter is not one the style vocabulary re-derives and is
+preserved verbatim; two `OR(ISBLANK(...))` validation rules are refused
+and reported. A test below runs the forward generator over each recovered
+declaration and compares the result to what the fixture stores, which is
+the property the whole extractor rests on. The single-comparison rules the
+fixture's list has none of are round-tripped through the same generator
+from builder XML further down.
 """
 
 import functools
+import hashlib
 import json
 import re
 import subprocess
@@ -30,11 +37,12 @@ from typing import Any, override
 import pytest
 from _console import ScriptedConsole, collapsed
 from _node import NODE
-from _paths import FIXTURES
+from _paths import FIXTURES, SOLUTION_TEMPLATES
 from typer.testing import CliRunner, Result
 
 from dbml_sharepoint.analysis.condition_rendering import to_validation
 from dbml_sharepoint.analysis.form_rendering import compose_visibility
+from dbml_sharepoint.analysis.styles import expand_style
 from dbml_sharepoint.cli import app
 from dbml_sharepoint.extract.decode import (
     DecodedEntity,
@@ -93,17 +101,23 @@ from dbml_sharepoint.generators.extractgen import (
 from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.conditions import parse_condition
 from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import parse_dbml
 
-SAMPLE = FIXTURES / "rg-project-live-extract.json"
+SAMPLE = FIXTURES / "sample-list-extract.json"
 
-#: The one list the fixture is a read of, and the table name every test
-#: here gives it.
-LIST_TITLE = "RG_Project"
+#: The blueprint the fixture's list was rendered from, and the table name
+#: it gives that list. The fixture is checked against this mapping rather
+#: than against strings copied out of it.
+BLUEPRINT = SOLUTION_TEMPLATES / "contract-register"
+#: The one list the fixture describes, and the table name every test here
+#: gives it: the blueprint's own, so the recovered declarations diff
+#: against the shipped mapping.
+LIST_TITLE = "CT_Contract"
 #: The server-relative URL that list is served at, which is what the
 #: emitted script resolves by.
 LIST_PATH = f"/sites/Risk/Lists/{LIST_TITLE}"
-ENTITY = "Project"
+ENTITY = "Contract"
 
 #: A site and the address-bar URL of `LIST_TITLE` on it. Not the fixture's
 #: own site: nothing here reads the list, and an invented tenant keeps the
@@ -171,12 +185,18 @@ def _entity() -> DecodedEntity:
     return _extraction().entities[0]
 
 
+@functools.lru_cache(maxsize=1)
+def _blueprint() -> MappingBundle:
+    """The shipped mapping the fixture's list was rendered from."""
+    return load_mapping(BLUEPRINT / "20-configure" / "mapping.yaml")
+
+
 def _stored(attribute: str) -> dict[str, str]:
     """{internal name: attribute} for every field that carries one.
 
     Read straight off the `RawField` records rather than out of the
     decoder's output, so a re-composition test below is comparing against
-    the site's own string and not against something this tool produced.
+    the string the fixture stores and not against something this tool produced.
     """
     return {
         f.internal_name: value
@@ -198,7 +218,7 @@ def _live_payload() -> dict[str, Any]:
 #: The only hosts and site segments a scrubbed fixture may name. Everything
 #: else under a Microsoft tenant domain is somebody's real tenant.
 _PLACEHOLDER_HOSTS = frozenset({"example.sharepoint.com", "contoso.sharepoint.com"})
-_PLACEHOLDER_SITES = frozenset({"research", "risk", "example", "team-a"})
+_PLACEHOLDER_SITES = frozenset({"contracts", "example", "team-a"})
 
 #: A tenant host, a site segment, and the federated user key SharePoint mints
 #: for a guest. The last one embeds the account it was minted for, so it is a
@@ -207,13 +227,40 @@ _TENANT_HOST = re.compile(r"\b([A-Za-z0-9-]+\.(?:sharepoint\.com|onmicrosoft\.co
 _SITE_SEGMENT = re.compile(r"/sites/([A-Za-z0-9._-]+)")
 _FEDERATED_USER_KEY = re.compile(r"\bmsteams_[A-Za-z0-9]+")
 
+#: SHA-256 of the lower-case stem of the list the fixture's grammar was
+#: borrowed from, by length: a digest, so this public file does not name it.
+_FORBIDDEN_STEMS: dict[int, frozenset[str]] = {
+    10: frozenset({"11ace2d96bbb27fede0911183a5fcde1d2ec8bd4ce312829f168b0c1d1428ed0"}),
+}
+_STEM_WORD = re.compile(r"[a-z0-9_]+")
+
+
+def _digest(text: str) -> str:
+    return hashlib.sha256(text.encode("ascii")).hexdigest()
+
+
+def _forbidden_stem(
+    text: str, forbidden: dict[int, frozenset[str]] = _FORBIDDEN_STEMS,
+) -> str | None:
+    """The first forbidden stem in `text`, or None: every window of each
+    length in every lower-case word, the way `test_boundary.py` looks."""
+    for word in _STEM_WORD.finditer(text.lower()):
+        run = word.group(0)
+        for length, digests in forbidden.items():
+            for start in range(len(run) - length + 1):
+                if _digest(run[start:start + length]) in digests:
+                    return run[start:start + length]
+    return None
+
 
 def test_the_fixture_carries_no_tenant_data() -> None:
-    """The fixture is a real read. It ships only because it was scrubbed.
+    """The fixture is synthetic, and this is what keeps it so.
 
-    `test/test_probes.py` scans `test/manual/` for tenant identifiers and
-    not `test/fixtures/`, so nothing else would catch a re-copied download
-    that still had the site it came from in it.
+    Its grammar was borrowed from a live read, so the easy way to regenerate
+    it is to re-cut it from a real site. `test/test_probes.py` scans
+    `test/manual/` for tenant identifiers and not `test/fixtures/`, so
+    nothing else would catch a download that still had the site, or the
+    list, it came from in it.
 
     MATCHED BY SHAPE, NOT BY NAME. A guard for tenant data cannot be a list
     of tenants: this repository is public, so anything the check spells out
@@ -233,7 +280,8 @@ def test_the_fixture_carries_no_tenant_data() -> None:
     )
     assert not _FEDERATED_USER_KEY.search(text), "a federated user key names an account"
     assert not re.findall(r"[\w.%+-]+@[\w.-]+\.\w{2,}", text)
-    assert _source().site_url == "https://example.sharepoint.com/sites/Research"
+    assert _forbidden_stem(text) is None, "the fixture names the list its grammar came from"
+    assert _source().site_url == "https://example.sharepoint.com/sites/Contracts"
     assert "\r" not in text, "the fixture must be LF; see AGENTS.md on generated files"
     assert not text.startswith("\ufeff")
 
@@ -244,19 +292,19 @@ def test_the_download_is_read_with_a_byte_order_mark(tmp_path: Path) -> None:
     that would fail if it stopped being."""
     path = tmp_path / "download.json"
     path.write_bytes(b"\xef\xbb\xbf" + SAMPLE.read_bytes())
-    assert len(load_source(path).lists[0].fields) == 117
+    assert len(load_source(path).lists[0].fields) == 98
 
 
 def test_every_field_in_the_fixture_decodes() -> None:
     fields = _source().lists[0].fields
-    assert len(fields) == 117
+    assert len(fields) == 98
     assert all(f.sp_type for f in fields)
     assert _source().lists[0].title == LIST_TITLE
 
 
 def test_the_built_ins_are_skipped_and_title_is_not() -> None:
-    """Eighty-five of the hundred and seventeen fields on an ordinary list
-    are SharePoint's own. `Title` satisfies every built-in test and is
+    """Eighty-five of the ninety-eight fields on an ordinary list are
+    SharePoint's own. `Title` satisfies every built-in test and is
     still the one this tool manages, so it is kept."""
     entity = _entity()
     assert len(entity.skipped) == 85
@@ -288,50 +336,36 @@ def test_a_non_field_element_is_refused_by_name() -> None:
 
 
 #: What each of the fixture's columns must decode to. Every branch of
-#: `_column_type` that the real read exercises, pinned to the read rather
-#: than to the branch, so a change to the table is checked against evidence.
+#: `_column_type` the fixture exercises, pinned to the fixture rather than
+#: to the branch, so a change to the table is checked against stored XML.
 EXPECTED_TYPES = {
     "Title": "nvarchar",
-    "ProjectType": "project_type",
-    "Department": "nvarchar",
-    "PrincipalInvestigator": "nvarchar",
-    "SiteInvestigator": "person",
-    "ProtocolReference": "nvarchar",
+    "Counterparty": "nvarchar",
+    "ContractRef": "nvarchar",
+    "ContractType": "contract_type",
+    "Status": "status",
+    "Owner": "person",
+    "StartDate": "date",
+    "EndDate": "date",
+    "RenewalType": "renewal_type",
+    "NoticePeriodDays": "number",
+    "AnnualValue": "number",
     "Summary": "richtext",
-    "EthicsPathway": "ethics_pathway",
-    "ParticipantInvolvement": "participant_involvement",
-    "ReviewingHREC": "nvarchar",
-    "EthicsStatus": "ethics_status",
-    "EthicsReference": "nvarchar",
-    "SubmittedDate": "date",
-    "EthicsDecisionDate": "date",
-    "EthicsApprovalExpiry": "date",
-    "ConditionsStatus": "conditions_status",
-    "ApprovalConditions": "richtext",
-    "SiteAuthorisationStatus": "site_authorisation_status",
-    "SSASubmittedDate": "date",
-    "AuthorisationDate": "date",
-    "AuthorisationReference": "nvarchar",
-    "AuthorisedBy": "nvarchar",
-    "ProjectStage": "project_stage",
-    "NextReportDue": "date",
-    "LastReportSubmitted": "date",
-    "LatestAmendmentReference": "nvarchar",
-    "LatestAmendmentStatus": "latest_amendment_status",
-    "LatestAmendmentDate": "date",
-    "AmendmentCount": "number",
-    "GovernanceNotes": "richtext",
-    "CompletedDate": "date",
-    "SiteReadiness": "calculated_text",
+    "TermMonths": "calculated_number",
 }
 
 
 def test_the_fixture_decodes_to_the_expected_types() -> None:
     entity = _entity()
     assert {c.name: c.dbml_type for c in entity.columns} == EXPECTED_TYPES
-    assert entity.indexes == [
-        "EthicsStatus", "SiteAuthorisationStatus", "ProjectStage", "NextReportDue",
-    ]
+    # The three the blueprint's DBML indexes plus the unique column, which
+    # SharePoint indexes to enforce uniqueness; in field order.
+    assert entity.indexes == ["ContractRef", "ContractType", "Status", "EndDate"]
+    (table,) = parse_dbml(BLUEPRINT / "10-design" / "schema.dbml").tables
+    assert set(entity.indexes) == {i.columns[0] for i in table.indexes} | {
+        c.name for c in table.columns if c.unique
+    }
+    assert {c.name for c in entity.columns if c.unique} == {"ContractRef"}
 
 
 @pytest.mark.parametrize(("xml", "expected"), [
@@ -506,12 +540,8 @@ def test_an_enum_name_that_would_collide_with_a_type_is_qualified() -> None:
     assert decoded.columns[0].dbml_type == "risk_date"
 
 
-def test_the_fixture_yields_eight_enums_named_from_their_columns() -> None:
-    assert _extraction().enum_names() == {
-        "project_type", "ethics_pathway", "participant_involvement",
-        "ethics_status", "conditions_status", "site_authorisation_status",
-        "project_stage", "latest_amendment_status",
-    }
+def test_the_fixture_yields_three_enums_named_from_their_columns() -> None:
+    assert _extraction().enum_names() == {"contract_type", "status", "renewal_type"}
 
 
 # --- Verification: the forward generator re-run over what was recovered ----
@@ -519,55 +549,81 @@ def test_the_fixture_yields_eight_enums_named_from_their_columns() -> None:
 # This is the property the extractor rests on. An inversion is accepted
 # only when the SHIPPED generator reproduces the artifact the site stores,
 # so these tests re-run that generator here, independently of `inverse.py`,
-# against the strings the read actually returned.
+# against the strings the fixture stores.
 
 
-def test_historical_formatters_are_preserved_without_silent_rewrites() -> None:
+def test_the_recovered_formatting_reproduces_the_stored_json() -> None:
+    """Three of the four formatters are ones the style vocabulary emits, so
+    each recovered spec is re-expanded here, independently of `inverse.py`,
+    and compared to the JSON the fixture stores. The data bar is the one
+    that is not, and it is preserved whole rather than re-derived."""
     entity = _entity()
     stored = _stored("custom_formatter")
-    assert entity.column_formatting == {}
-    assert set(entity.preserved_formatters) == set(stored)
-    for column, raw in entity.preserved_formatters.items():
-        assert json.loads(raw) == json.loads(stored[column])
+    assert set(stored) == {"Status", "RenewalType", "EndDate", "TermMonths"}
+    assert set(entity.column_formatting) == {"Status", "RenewalType", "EndDate"}
+    for column, spec in entity.column_formatting.items():
+        expanded = expand_style(spec, f"{ENTITY}.{column}")
+        assert expanded == json.loads(stored[column]), column
+    assert set(entity.preserved_formatters) == {"TermMonths"}
+    assert json.loads(entity.preserved_formatters["TermMonths"]) == json.loads(
+        stored["TermMonths"],
+    )
 
 
-def test_the_recovered_validation_reproduces_the_stored_formula() -> None:
-    """One of the four validation rules is a single comparison, which is
-    all `column_validation` declares. Re-rendering it has to give back what
-    the site stores.
+def test_the_recovered_formatting_is_the_blueprints_declaration() -> None:
+    """The list was deployed from the shipped mapping, so each recovered
+    spec must expand to the JSON the loader expanded that mapping's
+    declaration to."""
+    declared = _blueprint().mapping.column_formatting[ENTITY]
+    for column, spec in _entity().column_formatting.items():
+        assert expand_style(spec, f"{ENTITY}.{column}") == declared[column], column
 
-    Compared with the brackets stripped that SharePoint strips on save.
-    That normalisation is recorded, live-verified, in
+
+def test_the_stored_validation_is_the_blueprints_rule_and_is_refused() -> None:
+    """Both stored rules are `any_of [is_null, geq 0]`, which the shipped
+    generator renders as `OR(ISBLANK(...), ...)`. The inverter accepts one
+    comparison and nothing else, so both are refused rather than guessed
+    at, and the fixture is checked to be what the blueprint deploys.
+
+    Compared with the brackets and whitespace stripped that SharePoint
+    strips on save. That normalisation is recorded, live-verified, in
     `templates/deploy/_field_reconcile.js.j2`; it is applied here rather
     than borrowed from `inverse.py`, so this test would still fail if the
     inverter's own comparison went wrong.
     """
     entity = _entity()
     types = {c.name: c.dbml_type for c in entity.columns}
-    assert set(entity.column_validation) == {"AmendmentCount"}
-    declared = entity.column_validation["AmendmentCount"]
-    assert declared["message"]
-    condition = parse_condition(declared["when"], f"{ENTITY}.AmendmentCount")
-    rendered = f"={to_validation(condition, types)}"
-    stripped = re.sub(r"\[([A-Za-z0-9_]+)\]", r"\1", rendered)
-    assert stripped == _stored("validation_formula")["AmendmentCount"]
+    stored = _stored("validation_formula")
+    declared = _blueprint().mapping.column_validation[ENTITY].columns
+    assert set(stored) == {"NoticePeriodDays", "AnnualValue"} == set(declared)
+    assert entity.column_validation == {}
+    for column, rule in declared.items():
+        rendered = f"={to_validation(rule.when, types)}"
+        stripped = re.sub(r"\s+", "", re.sub(r"\[([A-Za-z0-9_]+)\]", r"\1", rendered))
+        assert stripped == stored[column], column
+        assert _stored("validation_message")[column] == rule.message
 
 
 def test_the_recovered_visibility_reproduces_the_stored_formula() -> None:
     """`compose_visibility` renders the gate and the condition together, so
-    re-running it is an exact comparison rather than a normalised one."""
+    re-running it is an exact comparison rather than a normalised one. The
+    recovered declaration is also the blueprint's own."""
     entity = _entity()
     types = {c.name: c.dbml_type for c in entity.columns}
-    assert set(entity.form_visibility) == {"ApprovalConditions"}
-    declared = entity.form_visibility["ApprovalConditions"]
+    assert set(entity.form_visibility) == {"NoticePeriodDays"}
+    declared = entity.form_visibility["NoticePeriodDays"]
     # Neither form is turned off, so the declaration spells only `when`.
     assert set(declared) == {"when"}
     rendered = compose_visibility(
         new=True, existing=True,
-        when=parse_condition(declared["when"], f"{ENTITY}.ApprovalConditions"),
+        when=parse_condition(declared["when"], f"{ENTITY}.NoticePeriodDays"),
         types=types,
     )
-    assert rendered == _stored("client_validation_formula")["ApprovalConditions"]
+    assert rendered == _stored("client_validation_formula")["NoticePeriodDays"]
+    shipped = _blueprint().mapping.form_visibility[ENTITY].columns["NoticePeriodDays"]
+    assert rendered == compose_visibility(
+        new=shipped.new, existing=shipped.existing, when=shipped.when, types=types,
+    )
 
 
 #: The declaration shapes `form_visibility` and `column_validation` accept.
@@ -608,6 +664,22 @@ def test_a_visibility_declaration_survives_the_round_trip(
         types=types,
     )
     assert invert_form_visibility(observed, types, context) == declared
+
+
+def test_a_two_clause_visibility_formula_is_refused_rather_than_guessed() -> None:
+    """The fixture's one visibility formula is recovered, so the refuse path
+    is exercised here on builder input: a formula with a second clause the
+    condition grammar has no spelling for."""
+    from dbml_sharepoint.extract.inverse import invert_form_visibility
+    formula = "=if([$Stage] == 'Open' || [$Count] > 3, 'true', 'false')"
+    assert invert_form_visibility(formula, _TYPES, "T.Notes") is None
+    unrecovered: list[Unrecovered] = []
+    decoded = _decode(
+        field_xml("Note", f"<ClientValidationFormula>{formula}</ClientValidationFormula>"),
+        unrecovered=unrecovered,
+    )
+    assert decoded.form_visibility == {}
+    assert [(u.kind, u.subject) for u in unrecovered] == [("form-visibility", "T.A")]
 
 
 @pytest.mark.parametrize("when", [
@@ -663,18 +735,21 @@ def test_the_calculated_formula_comes_back_from_the_read() -> None:
     """The formula is the part somebody modifying the list most needs, and
     it is in the field XML of a live read."""
     formulas = _entity().calculated_formulas
-    assert set(formulas) == {"SiteReadiness"}
-    assert formulas["SiteReadiness"].startswith('=IF(EthicsStatus="Withdrawn"')
-    assert "SiteAuthorisationStatus" in formulas["SiteReadiness"]
+    assert set(formulas) == {"TermMonths"}
+    assert formulas["TermMonths"].startswith("=IF(OR(ISBLANK(StartDate)")
+    # The blueprint writes `[StartDate]`; the site stores the bare internal
+    # name, and the read carries the stored spelling.
+    declared = _blueprint().mapping.calculated_formulas[ENTITY]["TermMonths"]
+    assert formulas["TermMonths"] == re.sub(r"\[([A-Za-z0-9_]+)\]", r"\1", declared)
 
 
 def test_what_the_inverters_refused_is_reported_and_not_in_the_mapping() -> None:
-    """The refuse path, measured on the same read.
+    """The refuse path, checked on the same fixture.
 
-    A data-bar formatter, three `OR(ISBLANK(...))` validation rules and a
-    two-clause visibility formula are outside what this tool re-derives. A
-    regression that started accepting one of them shows up here as a
-    missing entry rather than as a mapping nobody checked.
+    A data-bar formatter and two `OR(ISBLANK(...))` validation rules are
+    outside what this tool re-derives. A regression that started accepting
+    one of them shows up here as a missing entry rather than as a mapping
+    nobody checked.
     """
     extraction = _extraction()
     entity = extraction.entities[0]
@@ -682,21 +757,18 @@ def test_what_the_inverters_refused_is_reported_and_not_in_the_mapping() -> None
     for item in extraction.unrecovered:
         refused.setdefault(item.kind, set()).add(item.subject)
 
-    assert refused["column-formatting"] == {
-        f"{ENTITY}.{column}" for column in _stored("custom_formatter")
-    }
+    assert refused["column-formatting"] == {f"{ENTITY}.TermMonths"}
     assert refused["column-validation"] == {
-        f"{ENTITY}.SubmittedDate", f"{ENTITY}.EthicsDecisionDate",
-        f"{ENTITY}.AuthorisationDate",
+        f"{ENTITY}.NoticePeriodDays", f"{ENTITY}.AnnualValue",
     }
-    assert refused["form-visibility"] == {f"{ENTITY}.CompletedDate"}
+    assert "form-visibility" not in refused
 
     for kind, section in (
         ("column-formatting", entity.column_formatting),
         ("column-validation", entity.column_validation),
         ("form-visibility", entity.form_visibility),
     ):
-        assert not {f"{ENTITY}.{c}" for c in section} & refused[kind], kind
+        assert not {f"{ENTITY}.{c}" for c in section} & refused.get(kind, set()), kind
 
 
 def test_the_data_bar_formatter_is_preserved_verbatim() -> None:
@@ -704,10 +776,10 @@ def test_the_data_bar_formatter_is_preserved_verbatim() -> None:
     nothing else, so a data bar is kept whole rather than re-derived into a
     style spec that would deploy something else."""
     preserved = _entity().preserved_formatters
-    assert set(preserved) == set(_stored("custom_formatter"))
-    assert "sp-field-dataBars" in preserved["AmendmentCount"]
-    assert json.loads(preserved["AmendmentCount"]) == json.loads(
-        _stored("custom_formatter")["AmendmentCount"],
+    assert set(preserved) == {"TermMonths"}
+    assert "sp-field-dataBars" in preserved["TermMonths"]
+    assert json.loads(preserved["TermMonths"]) == json.loads(
+        _stored("custom_formatter")["TermMonths"],
     )
 
 
@@ -754,7 +826,7 @@ def test_the_emitted_schema_parses(tmp_path: Path) -> None:
     path.write_text(render_schema(_extraction(), project="project"), newline="\n")
     schema = parse_dbml(path)
     assert [t.name for t in schema.tables] == [ENTITY]
-    assert len(schema.enums) == 8
+    assert len(schema.enums) == 3
     assert {c.name for c in schema.tables[0].columns} >= set(EXPECTED_TYPES)
 
 
@@ -767,8 +839,8 @@ def test_the_emitted_mapping_loads(tmp_path: Path) -> None:
     assert set(bundle.mapping.column_formatting.get(ENTITY, {})) == set(
         _entity().column_formatting,
     )
-    assert set(bundle.mapping.form_visibility[ENTITY].columns) == {"ApprovalConditions"}
-    assert set(bundle.mapping.column_validation[ENTITY].columns) == {"AmendmentCount"}
+    assert set(bundle.mapping.form_visibility[ENTITY].columns) == {"NoticePeriodDays"}
+    assert ENTITY not in bundle.mapping.column_validation
 
 
 def test_the_emitted_release_loads(tmp_path: Path) -> None:
@@ -827,9 +899,10 @@ def test_display_names_are_declared_only_when_a_title_differs() -> None:
     declaring one would have the deploy rewrite every title to the value it
     already holds.
 
-    An override is recorded only for a title `auto` would not produce; the
-    fixture has none, which is itself evidence that this list was deployed
-    from a schema rather than built in the UI.
+    An override is recorded only for a title `auto` would not produce. The
+    fixture's list was deployed with `mode: auto` and carries none: every
+    title reads back as `auto` derives it, which is the evidence that the
+    list came from a schema rather than from the browser.
     """
     assert _entity().display_overrides == {}
 
@@ -925,7 +998,7 @@ def test_a_table_name_is_derived_without_guessing_at_plurals() -> None:
     """`Statuses` -> `Statu` is how a plural-stripper fails, and a wrong name
     is harder to notice than an ugly one."""
     assert entity_name_for("Risks") == "Risks"
-    assert entity_name_for("RG_Project") == "RGProject"
+    assert entity_name_for("PT_Project") == "PTProject"
     assert entity_name_for("Risk register") == "RiskRegister"
     with pytest.raises(SourceError, match="cannot derive a table name"):
         entity_name_for("2026")
@@ -945,7 +1018,7 @@ def test_a_name_that_is_not_a_dbml_identifier_is_refused(value: str) -> None:
 
 
 @pytest.mark.parametrize(("title", "expected"), [
-    ("RG_Project", "RG_Project"),
+    ("PT_Project", "PT_Project"),
     ("Risk register", "Risk-register"),
     ("Risks / Controls", "Risks-Controls"),
     ("..", FALLBACK_FOLDER),
@@ -962,18 +1035,18 @@ def test_the_folder_is_named_after_the_list(title: str, expected: str) -> None:
 def test_the_folder_and_the_download_agree() -> None:
     """The whole flow rests on this. The readme says to save the download
     into the folder, and the wizard then looks for it there by name."""
-    for title in ("RG_Project", "Risk register", "Risks / Controls"):
+    for title in ("PT_Project", "Risk register", "Risks / Controls"):
         assert download_name([title]) == f"{folder_for(title).name}-extract.json"
 
 
 @pytest.mark.parametrize("source", [
     # Named bare, from a directory that is not the list's own folder.
-    Path("RG_Project-extract.json"),
+    Path("PT_Project-extract.json"),
     # From the browser's own download directory.
-    Path("/tmp/dl/RG_Project-extract.json"),  # noqa: S108
+    Path("/tmp/dl/PT_Project-extract.json"),  # noqa: S108
     # The in-place case below is keyed on the parent's NAME, so a download
     # sitting in some other list's folder does not join that one.
-    Path("Risk-register") / "RG_Project-extract.json",
+    Path("Risk-register") / "PT_Project-extract.json",
 ])
 def test_the_default_directory_is_the_lists_own_folder(
     source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -1076,33 +1149,33 @@ def test_seeding_leaves_an_existing_readme_alone(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(("url", "site", "title"), [
-    ("https://contoso.sharepoint.com/sites/Risk/Lists/RG_Project/AllItems.aspx",
-     "https://contoso.sharepoint.com/sites/Risk", "RG_Project"),
-    ("https://contoso.sharepoint.com/sites/Risk/Lists/RG_Project/",
-     "https://contoso.sharepoint.com/sites/Risk", "RG_Project"),
-    ("https://contoso.sharepoint.com/sites/Risk/Lists/RG_Project",
-     "https://contoso.sharepoint.com/sites/Risk", "RG_Project"),
+    ("https://contoso.sharepoint.com/sites/Risk/Lists/PT_Project/AllItems.aspx",
+     "https://contoso.sharepoint.com/sites/Risk", "PT_Project"),
+    ("https://contoso.sharepoint.com/sites/Risk/Lists/PT_Project/",
+     "https://contoso.sharepoint.com/sites/Risk", "PT_Project"),
+    ("https://contoso.sharepoint.com/sites/Risk/Lists/PT_Project",
+     "https://contoso.sharepoint.com/sites/Risk", "PT_Project"),
     # The address bar percent-encodes a title with a space in it.
     ("https://contoso.sharepoint.com/sites/Risk/Lists/Risk%20Register/AllItems.aspx",
      "https://contoso.sharepoint.com/sites/Risk", "Risk Register"),
     # SharePoint's own Copy link puts `?web=1` on the clipboard, and a view
     # URL carries a RootFolder query and an anchor. None of them say which
     # list this is.
-    (("https://contoso.sharepoint.com/sites/Risk/Lists/RG_Project/AllItems.aspx"
+    (("https://contoso.sharepoint.com/sites/Risk/Lists/PT_Project/AllItems.aspx"
       "?viewid=1234&web=1#top"),
-     "https://contoso.sharepoint.com/sites/Risk", "RG_Project"),
+     "https://contoso.sharepoint.com/sites/Risk", "PT_Project"),
     # Lowercase, because an operator retyping the path has no reason to
     # keep the capital the address bar shows.
-    ("https://contoso.sharepoint.com/sites/Risk/lists/RG_Project/AllItems.aspx",
-     "https://contoso.sharepoint.com/sites/Risk", "RG_Project"),
+    ("https://contoso.sharepoint.com/sites/Risk/lists/PT_Project/AllItems.aspx",
+     "https://contoso.sharepoint.com/sites/Risk", "PT_Project"),
     # A tenant root site has no /sites/ segment at all.
-    ("https://contoso.sharepoint.com/Lists/RG_Project/AllItems.aspx",
-     "https://contoso.sharepoint.com", "RG_Project"),
+    ("https://contoso.sharepoint.com/Lists/PT_Project/AllItems.aspx",
+     "https://contoso.sharepoint.com", "PT_Project"),
     # A site literally named Lists: the LAST segment is the list's.
-    ("https://contoso.sharepoint.com/sites/Lists/Lists/RG_Project/AllItems.aspx",
-     "https://contoso.sharepoint.com/sites/Lists", "RG_Project"),
-    ("  https://contoso.sharepoint.com/sites/Risk/Lists/RG_Project/AllItems.aspx  ",
-     "https://contoso.sharepoint.com/sites/Risk", "RG_Project"),
+    ("https://contoso.sharepoint.com/sites/Lists/Lists/PT_Project/AllItems.aspx",
+     "https://contoso.sharepoint.com/sites/Lists", "PT_Project"),
+    ("  https://contoso.sharepoint.com/sites/Risk/Lists/PT_Project/AllItems.aspx  ",
+     "https://contoso.sharepoint.com/sites/Risk", "PT_Project"),
 ])
 def test_a_list_url_splits_into_a_site_and_a_title(
     url: str, site: str, title: str,
@@ -1121,8 +1194,8 @@ def test_a_list_url_splits_into_a_site_and_a_title(
      "no /Lists/<name>/ segment"),
     ("https://contoso.sharepoint.com/sites/Risk/Lists/", "names no list"),
     ("https://contoso.sharepoint.com/sites/Risk/Lists/%20/", "names no list"),
-    ("contoso.sharepoint.com/sites/Risk/Lists/RG_Project", "absolute https:// list URL"),
-    ("http://contoso.sharepoint.com/sites/Risk/Lists/RG_Project",
+    ("contoso.sharepoint.com/sites/Risk/Lists/PT_Project", "absolute https:// list URL"),
+    ("http://contoso.sharepoint.com/sites/Risk/Lists/PT_Project",
      "absolute https:// list URL"),
     ("not a url", "absolute https:// list URL"),
 ])
@@ -1219,7 +1292,7 @@ def test_a_file_that_is_not_the_download_names_the_command_that_makes_one(
     """The CSV export was read here once. An operator who still has one, or
     who feeds this the wrong file, gets pointed at `extract-script` rather
     than at a JSON parser's error."""
-    path = tmp_path / "RG_Project.csv"
+    path = tmp_path / "PT_Project.csv"
     path.write_text("Title,Category\nx,y\n", newline="\n")
     with pytest.raises(SourceError, match="extract-script"):
         load_source(path)
@@ -1347,8 +1420,8 @@ def test_extract_writes_the_whole_project(tmp_path: Path) -> None:
     out = tmp_path / "project"
     result = _run("extract", str(SAMPLE), "--out", str(out), "--entity", ENTITY)
     assert result.exit_code == 0, result.output
-    assert "32 column(s)" in result.output
-    assert "8 enum(s)" in result.output
+    assert "13 column(s)" in result.output
+    assert "3 enum(s)" in result.output
     assert LIVE_KIND in result.output
     assert "EXTRACTION-NOTES.md" in result.output
     for relpath in (
@@ -1358,9 +1431,9 @@ def test_extract_writes_the_whole_project(tmp_path: Path) -> None:
         NOTES_RELPATH,
     ):
         assert (out / relpath).is_file(), relpath
-    for column in ("AmendmentCount", "EthicsPathway"):
-        preserved = out / "20-configure" / "formatting" / f"{ENTITY}.{column}.json"
-        assert preserved.is_file(), preserved
+    preserved = out / "20-configure" / "formatting" / f"{ENTITY}.TermMonths.json"
+    assert preserved.is_file(), preserved
+    assert not (out / "20-configure" / "formatting" / f"{ENTITY}.Status.json").exists()
 
 
 def test_extract_writes_into_the_folder_named_for_the_list(
@@ -1437,7 +1510,7 @@ def test_extract_refuses_an_entity_name_for_several_lists(tmp_path: Path) -> Non
     """One flag cannot name two tables, and picking one of them silently is
     how a second list ends up merged into the first."""
     payload = _live_payload()
-    payload["lists"].append({**payload["lists"][0], "title": "RG_Amendment"})
+    payload["lists"].append({**payload["lists"][0], "title": "CT_Amendment"})
     path = tmp_path / "download.json"
     path.write_text(json.dumps(payload), newline="\n")
     result = _run(
@@ -1668,7 +1741,7 @@ def test_the_wizard_passes_a_usage_error_through(
     what the second prompt can be pointed at."""
     monkeypatch.chdir(tmp_path)
     payload = _live_payload()
-    payload["lists"].append({**payload["lists"][0], "title": "RG_Amendment"})
+    payload["lists"].append({**payload["lists"][0], "title": "CT_Amendment"})
     folder = tmp_path / LIST_TITLE
     folder.mkdir()
     (folder / download_name([LIST_TITLE])).write_text(
@@ -1770,11 +1843,11 @@ def test_a_list_url_carries_the_server_relative_path_it_resolves_by() -> None:
     the casing of the `/Lists/` segment is whatever the site serves.
     """
     parsed = parse_list_url(
-        "https://contoso.sharepoint.com/sites/Risk/lists/RG_Project/AllItems.aspx?web=1",
+        "https://contoso.sharepoint.com/sites/Risk/lists/PT_Project/AllItems.aspx?web=1",
     )
     assert parsed.site_url == "https://contoso.sharepoint.com/sites/Risk"
-    assert parsed.list_title == "RG_Project"
-    assert parsed.list_path == "/sites/Risk/lists/RG_Project"
+    assert parsed.list_title == "PT_Project"
+    assert parsed.list_path == "/sites/Risk/lists/PT_Project"
 
 
 def test_a_percent_encoded_slug_is_decoded_once() -> None:
@@ -1791,9 +1864,9 @@ def test_a_percent_encoded_slug_is_decoded_once() -> None:
     # derives a library's root folder from exactly this string, by "deleting
     # '/Forms/AllItems.aspx' and everything after that":
     # https://learn.microsoft.com/graph/teams-configuring-builtin-tabs#document-library-tabs
-    ("https://contoso.sharepoint.com/sites/Risk/RG_Evidence/Forms/AllItems.aspx",
-     "https://contoso.sharepoint.com/sites/Risk", "RG_Evidence",
-     "/sites/Risk/RG_Evidence"),
+    ("https://contoso.sharepoint.com/sites/Risk/PT_Evidence/Forms/AllItems.aspx",
+     "https://contoso.sharepoint.com/sites/Risk", "PT_Evidence",
+     "/sites/Risk/PT_Evidence"),
     # The default library, whose slug has a space, and a view query that says
     # nothing about which library this is.
     (("https://contoso.sharepoint.com/sites/Risk/Shared%20Documents/Forms/"
@@ -1802,17 +1875,17 @@ def test_a_percent_encoded_slug_is_decoded_once() -> None:
      "/sites/Risk/Shared Documents"),
     # Lowercase, and a form other than AllItems: the segment is what marks a
     # library, not the page inside it.
-    ("https://contoso.sharepoint.com/sites/Risk/RG_Evidence/forms/EditForm.aspx",
-     "https://contoso.sharepoint.com/sites/Risk", "RG_Evidence",
-     "/sites/Risk/RG_Evidence"),
+    ("https://contoso.sharepoint.com/sites/Risk/PT_Evidence/forms/EditForm.aspx",
+     "https://contoso.sharepoint.com/sites/Risk", "PT_Evidence",
+     "/sites/Risk/PT_Evidence"),
     # A tenant root site has no /sites/ segment at all.
-    ("https://contoso.sharepoint.com/RG_Evidence/Forms/AllItems.aspx",
-     "https://contoso.sharepoint.com", "RG_Evidence", "/RG_Evidence"),
+    ("https://contoso.sharepoint.com/PT_Evidence/Forms/AllItems.aspx",
+     "https://contoso.sharepoint.com", "PT_Evidence", "/PT_Evidence"),
     # A site literally named Lists, where the library is not under /Lists/
     # and the last /Lists/ in the path is the site's own segment.
-    ("https://contoso.sharepoint.com/sites/Lists/RG_Evidence/Forms/AllItems.aspx",
-     "https://contoso.sharepoint.com/sites/Lists", "RG_Evidence",
-     "/sites/Lists/RG_Evidence"),
+    ("https://contoso.sharepoint.com/sites/Lists/PT_Evidence/Forms/AllItems.aspx",
+     "https://contoso.sharepoint.com/sites/Lists", "PT_Evidence",
+     "/sites/Lists/PT_Evidence"),
 ])
 def test_a_document_library_url_splits_the_same_way(
     url: str, site: str, title: str, list_path: str,
@@ -1848,9 +1921,9 @@ def test_a_list_titled_forms_is_not_read_as_a_library_titled_lists() -> None:
      "/sites/Forms/Lists/APP_Task"),
     # The same site with a library on it: now the /Forms/ marker is the later
     # of the two, and the site's own segment is the earlier.
-    ("https://contoso.sharepoint.com/sites/Forms/RG_Evidence/Forms/AllItems.aspx",
-     "https://contoso.sharepoint.com/sites/Forms", "RG_Evidence",
-     "/sites/Forms/RG_Evidence"),
+    ("https://contoso.sharepoint.com/sites/Forms/PT_Evidence/Forms/AllItems.aspx",
+     "https://contoso.sharepoint.com/sites/Forms", "PT_Evidence",
+     "/sites/Forms/PT_Evidence"),
     # A site called Forms holding a list titled Forms. Three candidate
     # segments, and the marker that names the list is still the last /Lists/.
     ("https://contoso.sharepoint.com/sites/Forms/Lists/Forms/AllItems.aspx",
@@ -1891,8 +1964,8 @@ def test_the_later_structural_segment_names_the_object(
     # forms folder is followed by its view page and nothing else.
     "https://contoso.sharepoint.com/sites/Forms/SitePages/Home.aspx",
     # A library URL trimmed back to the forms folder. It no longer says
-    # whether RG_Evidence is a library or Forms is a site of its own.
-    "https://contoso.sharepoint.com/sites/Risk/RG_Evidence/Forms/",
+    # whether PT_Evidence is a library or Forms is a site of its own.
+    "https://contoso.sharepoint.com/sites/Risk/PT_Evidence/Forms/",
 ])
 def test_a_forms_segment_that_is_not_a_forms_folder_is_refused(url: str) -> None:
     """A /Forms/ this cannot place is refused rather than read as a library.
@@ -1912,7 +1985,7 @@ def test_a_url_naming_neither_shape_names_both_in_the_refusal() -> None:
     pointed at something else, so it has to say what a URL that works looks
     like for a library as well as for a list."""
     with pytest.raises(ListUrlError) as caught:
-        parse_list_url("https://contoso.sharepoint.com/sites/Risk/RG_Evidence")
+        parse_list_url("https://contoso.sharepoint.com/sites/Risk/PT_Evidence")
     assert "/<library>/Forms/" in str(caught.value)
     assert "/Lists/<name>/" in str(caught.value)
 
@@ -1928,8 +2001,8 @@ def test_an_encoded_separator_in_the_slug_is_refused() -> None:
 
 
 @pytest.mark.parametrize(("path", "expected"), [
-    ("/sites/A/Lists/RG_Project", "RG_Project"),
-    ("/sites/A/Lists/RG_Project/", "RG_Project"),
+    ("/sites/A/Lists/PT_Project", "PT_Project"),
+    ("/sites/A/Lists/PT_Project/", "PT_Project"),
     ("/Lists/Bare", "Bare"),
     ("/sites/A/Lists/My List", "My List"),
 ])
@@ -1949,7 +2022,7 @@ _HOST = "example.sharepoint.com"
 @pytest.mark.parametrize(("what", "dirty"), [
     ("a real tenant host", lambda s: s.replace(_HOST, "acme.sharepoint.com", 1)),
     ("an onmicrosoft host", lambda s: s.replace(_HOST, "acme.onmicrosoft.com", 1)),
-    ("a real site name", lambda s: s.replace("/sites/Research", "/sites/AcmeProject", 1)),
+    ("a real site name", lambda s: s.replace("/sites/Contracts", "/sites/AcmeContract", 1)),
     ("a federated user key", lambda s: s.replace('"Title"', '"msteams_ABC123"', 1)),
     ("an email address", lambda s: s.replace('"Title"', '"someone@acme.org"', 1)),
 ])
@@ -1967,3 +2040,16 @@ def test_the_tenant_guard_catches_each_shape_of_leak(
     monkeypatch.setattr("test_extract.SAMPLE", planted)
     with pytest.raises(AssertionError):
         test_the_fixture_carries_no_tenant_data()
+
+
+def test_the_stem_guard_fires_on_a_seeded_digest() -> None:
+    """The digest lookup must FIRE, not merely pass on a clean fixture.
+
+    Seeded with the digest of a stem spelled here, it names that stem inside
+    a longer word and whatever its case, and stays quiet on the sample's own
+    list title.
+    """
+    seeded = {9: frozenset({_digest("zz_sample")})}
+    assert _forbidden_stem('"title": "ZZ_Sample-extract"', seeded) == "zz_sample"
+    assert _forbidden_stem('"title": "OldZZ_Samples"', seeded) == "zz_sample"
+    assert _forbidden_stem(f'"title": "{LIST_TITLE}"', seeded) is None

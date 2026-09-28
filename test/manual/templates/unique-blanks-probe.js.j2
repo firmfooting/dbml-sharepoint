@@ -1,6 +1,6 @@
 {# test/manual/templates/unique-blanks-probe.js.j2 #}
-/**
- * dbml-sharepoint PROBE: DOES A UNIQUE TEXT COLUMN ACCEPT MORE THAN ONE BLANK
+
+/** ---- dbml-sharepoint PROBE: DOES A UNIQUE TEXT COLUMN ACCEPT MORE THAN ONE BLANK ----
  *
  * REVISION: {{ revision }}
  *
@@ -11,8 +11,8 @@
  *
  * A `[unique]` column without `[not null]` is a shape the validator warns on
  * (`unique_without_not_null`: "uniqueness enforced only on populated
- * values") and a shipped family relies on: legal-compliance-register's
- * `Topic.ExternalRef` is unique and its note says to leave it blank when the
+ * values") and a shipped blueprint relies on: its `Topic.ExternalRef` is
+ * unique and its note says to leave it blank when the
  * portal export has no identifier. That wording is a claim about what the
  * platform does with two blanks under the constraint, and nothing has
  * measured it. SQL Server, which backs the content database, treats two

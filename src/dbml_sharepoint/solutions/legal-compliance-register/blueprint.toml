@@ -1,7 +1,0 @@
-id = "legal-compliance-register"
-title = "Legal compliance register"
-summary = "One document library, Legislative Compliance, holds vendor-issued Excel SAQs and the REG workbooks people consult while answering it."
-license = "MIT"
-origin = "firmfooting"
-notice = ""
-min_core = ">=0.5,<1"

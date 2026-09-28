@@ -13,7 +13,7 @@ from _model import ref as make_ref
 from _model import schema as make_schema
 from _model import table as make_table
 from _packs import pack
-from _paths import FIXTURES, SOLUTION_TEMPLATES
+from _paths import FIXTURES, engine_blueprints
 
 from dbml_sharepoint.analysis.report_columns import LIBRARY_REPORT_COLUMNS
 from dbml_sharepoint.analysis.reporting import dictionary as reporting_dictionary
@@ -51,11 +51,9 @@ from dbml_sharepoint.model.parser import Column, Schema, TableIndex, parse_dbml
 from dbml_sharepoint.model.release import load_release
 
 #: Globbed rather than listed, so a new family joins the sweeps below without
-#: anybody remembering to add it.
-FAMILIES = sorted(
-    path.parent.parent.name
-    for path in SOLUTION_TEMPLATES.glob("*/10-design/schema.dbml")
-)
+#: anybody remembering to add it. Core's packs and the test packs.
+BLUEPRINTS = engine_blueprints()
+FAMILIES = sorted(BLUEPRINTS)
 
 
 def _simple() -> tuple[Schema, MappingBundle]:
@@ -1356,7 +1354,7 @@ def test_every_field_kind_contributes_the_columns_the_query_types(
 
 @pytest.mark.parametrize("family", FAMILIES)
 def test_shipped_families_agree_about_their_report_columns(family: str) -> None:
-    root = SOLUTION_TEMPLATES / family
+    root = BLUEPRINTS[family]
     _assert_declared_outputs_match(
         parse_dbml(root / "10-design" / "schema.dbml"),
         load_mapping(root / "20-configure" / "mapping.yaml"),
@@ -2350,17 +2348,12 @@ def test_the_uppercase_id_run_is_recorded_where_the_selection_lives() -> None:
     assert '"ID 2"' in task
 
 
-# --- Defects reported by the first model built on a generated pack ----------
-#
-# Reported 2026-09-07 against 0.4.0 by the consumer of a `programme-governance`
-# 2.4.0 pack, building a Power BI model on a live site. Three of the four items
-# are fixed here; the fourth (every date-only column one day early east of UTC)
-# needs the site's time zone measured first and is issue #467.
-#
-# The unifying fault is that the pack is generated open-loop from the DECLARED
-# schema and never reconciled against a live feed, so each item is a place
-# where what SharePoint actually serves differs from what the declaration says
-# and nothing in the build can see it.
+# --- Defects reported by the first model built on generated queries ---------
+# Reported against 0.4.0 by the first Power BI model built on generated
+# reporting queries against a live site. Three of the four items are fixed
+# here; the fourth (every date-only column one day early east of UTC) is #467.
+# The queries are generated open-loop from the DECLARED schema and never
+# reconciled against a live feed, so nothing in the build sees the difference.
 
 
 def _accumulated_names(query: str, step: str) -> list[str]:
@@ -2553,12 +2546,12 @@ def test_a_document_library_query_carries_the_file_name_and_path() -> None:
 
 
 def test_a_document_library_dictionary_says_a_row_is_a_file() -> None:
-    schema, bundle = _with_task_as_library(folders=("Clinical services", "Corporate"))
+    schema, bundle = _with_task_as_library(folders=("Field operations", "Corporate"))
     dictionary = generate_data_dictionary(
         schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
     )
     assert "each row is a file, named by FileLeafRef" in dictionary
-    assert "filed in one of: Clinical services, Corporate." in dictionary
+    assert "filed in one of: Field operations, Corporate." in dictionary
 
 
 def test_a_server_relative_folder_is_made_absolute_by_the_site_origin() -> None:
@@ -2968,7 +2961,7 @@ def test_no_shipped_query_selects_a_column_the_expand_refuses(family: str) -> No
     A single refused path returns HTTP 400 for the whole request, so this
     is not a missing column, it is a list that does not load.
     """
-    root = SOLUTION_TEMPLATES / family
+    root = BLUEPRINTS[family]
     schema = parse_dbml(root / "10-design/schema.dbml")
     bundle = load_mapping(root / "20-configure/mapping.yaml")
     enums = {e.name for e in schema.enums}
@@ -3112,3 +3105,35 @@ def test_sqlcmd_syntax_in_library_root_is_refused() -> None:
     )
     with pytest.raises(ValueError, match="SQLCMD"):
         generate_sql_views(schema, bundle, "default")
+
+
+_ONE_LIST_DBML = """
+Table Risk {
+  Id int [pk, increment]
+  Title nvarchar
+}
+"""
+
+_ONE_LIST_MAPPING = """
+entities:
+  Risk: {kind: List, base_template: 100, site_role: default}
+"""
+
+
+def test_the_loading_warning_names_the_builds_own_base_function(tmp_path: Path) -> None:
+    """The example in the guide's warning is a file of this build, so the reader can
+    check it against the folder; a build in which no list reads another has no base
+    function to load and gets no warning."""
+    root = BLUEPRINTS["reporting-sample"]
+    schema = parse_dbml(root / "10-design" / "schema.dbml")
+    bundle = load_mapping(root / "20-configure" / "mapping.yaml")
+    guide = generate_reporting_md(schema, bundle, "default")
+    assert (
+        "so `RS_Risk_Base.pq` must be loaded as `RS_Risk_Base` for a query that reads "
+        "`RS_Risk` to resolve"
+    ) in guide
+    schema, bundle = pack(tmp_path, _ONE_LIST_DBML, _ONE_LIST_MAPPING)
+    guide = generate_reporting_md(schema, bundle, "default")
+    assert not generate_powerquery(schema, bundle, "default").keys() & {"Risk_Base.pq"}
+    assert "Load each query under the name of its file" not in guide
+    assert "_Base" not in guide

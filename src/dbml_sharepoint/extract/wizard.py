@@ -59,8 +59,8 @@ def ask_list_url(console: Console) -> ListUrl:
     """
     console.print(
         "[dim]  Open the list in SharePoint and copy the address bar, for "
-        "example\n  https://contoso.sharepoint.com/sites/Risk/Lists/"
-        "RG_Project/AllItems.aspx[/dim]",
+        "example\n  https://contoso.sharepoint.com/sites/Projects/Lists/"
+        "PT_Project/AllItems.aspx[/dim]",
     )
     while True:
         answer = Prompt.ask("[bold]List URL[/bold]", console=console).strip()

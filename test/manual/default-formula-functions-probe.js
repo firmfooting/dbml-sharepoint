@@ -1,7 +1,7 @@
-/**
- * dbml-sharepoint PROBE: WHICH FUNCTIONS A DefaultFormula EVALUATES
+
+/** ---- dbml-sharepoint PROBE: WHICH FUNCTIONS A DefaultFormula EVALUATES ----
  *
- * REVISION: 4b13e683
+ * REVISION: b912a066
  *
  * ONE QUESTION:
  *   Does a DefaultFormula calling DAY, ROUNDDOWN, MOD, TEXT, IF, AND or OR
@@ -20,9 +20,9 @@
  * this probe has run, those seven are refused with a finding that says the
  * measurement is pending.
  *
- * The shipped family documents a financial-year customisation built from
- * IF and MOD (legal-compliance-register/README.md), so the two formulas it
- * prints are measured here as written. A single-line Text column and a
+ * A shipped blueprint's README documents a financial-year customisation
+ * built from IF and MOD, so the two formulas it prints are measured here
+ * as written. A single-line Text column and a
  * DateTime column (DisplayFormat 1), each carrying a default formula, are
  * measured beside them, because the same validator holds both types
  * pending: every date measurement so far used a date-only column.
@@ -408,7 +408,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 4b13e683. Quote this when reporting results.');
+  log('INFO', 'probe revision b912a066. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Functions List';
   const listPath = `web/lists/getbytitle('${LIST}')`;

@@ -467,10 +467,10 @@ def read_by_another(plans: list[ListPlan]) -> list[ListPlan]:
     query, because the query carries derived steps of its own and two
     queries whose derived steps read each other name each other, which in M
     is a cyclic reference (Learn, M language specification, operator
-    behavior) that nothing before a refresh can see. Reported 2026-09-18
-    against a programme-governance pack: six mutual pairs, twelve cycles,
-    and nine of ten queries unable to refresh. A base reads no query at
-    all, so no chain of reads can return to where it started.
+    behavior) that nothing before a refresh can see. Reported against a
+    blueprint: six mutual pairs, twelve cycles, and nine of ten queries
+    unable to refresh. A base reads no query at all, so no chain of reads
+    can return to where it started.
 
     A read of the list's OWN rows reads the step above it and needs no
     base; `_Users` is not a list and has no plan.

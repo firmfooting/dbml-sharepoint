@@ -3,8 +3,8 @@
 Project library_fixture { database_type: 'SharePoint Online Lists' }
 
 Enum division {
-  "Clinical services"
-  "Corporate services"
+  "Field operations"
+  "Corporate"
 }
 
 Enum doc_status {

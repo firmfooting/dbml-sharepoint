@@ -1,5 +1,4 @@
-/**
- * dbml-sharepoint PROBE: CAN THE BUILT-IN TITLE COLUMN BE RENAMED OVER REST?
+/** ---- dbml-sharepoint PROBE: CAN THE BUILT-IN TITLE COLUMN BE RENAMED OVER REST? ----
  *
  * ONE QUESTION:
  *   Does a MERGE of a new `Title` property onto a list's built-in Title field
@@ -73,7 +72,7 @@
  *       whose formula says [Title] still save after the rename? This is the
  *       hazard the build has today: SharePoint resolves formulas by DISPLAY
  *       name, jsgen's display map is built from the declared fields only, and
- *       `programme-governance` ships two formulas referencing [Title].
+ *       a shipped blueprint carries two formulas referencing [Title].
  *   field.title.formula-new-name          OBSERVE: does the same formula save
  *       when it references the NEW display name instead? The pair is the
  *       finding: which spelling a formula must use after a rename decides

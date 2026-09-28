@@ -106,192 +106,6 @@ MAX_BODY_SECTIONS = 8
 # section name is a failure, not a pass, because that is the only thing
 # standing between five beats and 102 section vocabularies.
 SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
-    ("risk-register", "Risk"): {
-        "Describe the risk": "Identify",
-        "Assess the risk": "Assess",
-        "Response and controls": "Act",
-        "Governance": "Govern",
-        "System": "System",
-    },
-    # The three boards are the same artefact at three levels, so they share
-    # one vocabulary deliberately. "Streams" is the Assess beat: the whole
-    # form is a per-stream rating, and a blank cell means unreported.
-    **{
-        ("tiered-huddle", entity): {
-            "Header": "Identify",
-            "Streams": "Assess",
-            "Wrap-up": "Govern",
-        }
-        for entity in ("Tier1Board", "Tier2Board", "Tier3Board")
-    },
-    # Seven sections, two of them Assess. Triage routes every opportunity;
-    # the deeper scoring pass only runs when the triage outcome is "Assess
-    # here", and splitting them is what makes the second one skippable
-    # rather than a wall of fields everyone scrolls past. Consecutive, so
-    # the reader still meets the beats in order.
-    #
-    # "Stop and route safely" is Identify: the screening question that
-    # decides whether this register is the right home at all, and it comes
-    # before capture because a safety or privacy matter must not be typed
-    # in here first and rerouted afterwards.
-    ("digital-innovation-log", "Opportunity"): {
-        "What we heard": "Identify",
-        "Triage and score": "Assess",
-        "Decision and delivery": "Act",
-        "Adoption": "Govern",
-        "System": "System",
-    },
-    ("digital-innovation-log", "Pattern"): {
-        "What it is": "Identify",
-        "Readiness and effort": "Assess",
-        "Build and release": "Act",
-        "System": "System",
-    },
-    # Nine entities, no calculated columns, so no System beat anywhere.
-    ("seam-register", "Provider"): {
-        "The provider": "Identify",
-        "How we work with them": "Assess",
-        "The agreement": "Govern",
-    },
-    # The register's two Assess sections are consecutive: who runs it is
-    # the assessment, and documentation and failures are what backs it.
-    ("seam-register", "Service"): {
-        "The service": "Identify",
-        "Who runs it and who to call": "Assess",
-        "Documentation and failures": "Assess",
-        "Confidence and scope": "Govern",
-    },
-    ("seam-register", "Evidence"): {
-        "The claim": "Identify",
-        "The source": "Assess",
-        "Agreement": "Govern",
-    },
-    ("seam-register", "Seam"): {
-        "The seam": "Identify",
-        "Resolution": "Act",
-    },
-    ("seam-register", "DocumentRequest"): {
-        "The document": "Identify",
-        "The ask": "Act",
-        "What it covers": "Govern",
-    },
-    ("seam-register", "Artefact"): {
-        "The file": "Identify",
-        "What it bears on": "Assess",
-    },
-    # Three Assess sections: the eight questions in the three groups the
-    # interviewer asks them in, so the form reads like the script.
-    ("seam-register", "Interview"): {
-        "The conversation": "Identify",
-        "What they run and use": "Assess",
-        "What they depend on": "Assess",
-        "What worries them": "Assess",
-        "Afterwards": "Act",
-    },
-    ("seam-register", "Incident"): {
-        "The incident": "Identify",
-        "Who resolved it": "Assess",
-        "Where it came from": "Govern",
-    },
-    ("seam-register", "WeeklyUpdate"): {
-        "The week": "Identify",
-        "Five lines": "Assess",
-    },
-    ("opportunities-register", "Opportunity"): {
-        "Stop and route safely": "Identify",
-        "Capture once": "Identify",
-        "Triage and route": "Assess",
-        "Assess only if needed": "Assess",
-        "Own the next step": "Act",
-        "Decide and hand off": "Govern",
-        "System": "System",
-    },
-    # The audit row is a header record (a report and who answers for it),
-    # so it collapses to Identify -> Govern. The recommendation carries the
-    # whole arc except Assess: the rating comes FROM the report rather than
-    # from anything done here.
-    ("audit-actions", "Audit"): {
-        "The review": "Identify",
-        "Response": "Govern",
-    },
-    ("audit-actions", "Recommendation"): {
-        "The finding": "Identify",
-        "The agreed action": "Act",
-        "Closure": "Govern",
-        "System": "System",
-    },
-    # Two standalone registers with no link between them, and the same
-    # shape either way: the person declares, somebody else decides. The
-    # beat boundary is the permission boundary. Everything after the
-    # first section is off the New form.
-    ("declarations-register", "Interest"): {
-        "The interest": "Identify",
-        "Assessment": "Assess",
-        "Review and cessation": "Govern",
-    },
-    ("declarations-register", "GiftBenefit"): {
-        "The offer": "Identify",
-        "Value and context": "Assess",
-        "The decision": "Act",
-    },
-    # Both halves of the grant lifecycle run Identify -> Act -> Govern.
-    # There is no Assess beat on either: the bid/no-bid assessment happens
-    # before a row exists (50-govern's ten-minute test), and an obligation
-    # is not assessed at all. It is either filed or it is not.
-    ("grants-register", "Submission"): {
-        "The bid": "Identify",
-        "Submission and outcome": "Act",
-        "Delivery": "Govern",
-    },
-    ("grants-register", "Acquittal"): {
-        "The obligation": "Identify",
-        "Preparing and filing": "Act",
-        "Escalation notes": "Govern",
-    },
-    # Three beats. There is no Act on a register that transcribes rather
-    # than decides (the doctrine is that authority is created in the
-    # instrument and only mirrored here), and nothing is auto-stamped, so
-    # no System either.
-    ("delegations-register", "Delegation"): {
-        "The authority": "Identify",
-        "Limit and conditions": "Assess",
-        "Source and review": "Govern",
-    },
-    # No System beat: nothing on this list is auto-stamped. Every column is
-    # authored by a coordinator or an obligation owner, so a System section
-    # would be a heading over nothing.
-    ("compliance-obligations", "Obligation"): {
-        "The duty": "Identify",
-        "Assessment and evidence": "Assess",
-        "Gaps and remediation": "Act",
-        "Ownership and cycle": "Govern",
-    },
-    # Workbook content stays in Excel; these sections track the handoffs.
-    ("legal-compliance-register", "Document"): {
-        "The document": "Identify",
-        "Assign and complete": "Act",
-        "Optional executive review": "Govern",
-        "Record in the portal": "Govern",
-    },
-    # Two consecutive Act sections, which §1.2 permits and this register
-    # depends on: "Ethics decision" and "Site authorisation" are two
-    # authorities, two reference numbers and two sets of dates, and the form's
-    # own shape has to say so before anybody reads a word. Merging them into
-    # one "Approvals" block would be the collapse the template exists to
-    # prevent.
-    #
-    # "Oversight and what is owed" is the Govern beat and it carries the
-    # recurring facts this single-list design collapses onto the project row
-    # (the next report, the last one filed, the latest amendment and the
-    # history note that is all the earlier ones leave behind).
-    ("research-ethics-register-simple", "Project"): {
-        "The project": "Identify",
-        "Review pathway": "Assess",
-        "Ethics decision": "Act",
-        "Site authorisation": "Act",
-        "Oversight and what is owed": "Govern",
-        "System": "System",
-    },
     # A contract has no assessment step and no treatment step: the middle of
     # the arc collapses to the commercial terms, which are what the register
     # weighs. Identify -> Assess -> Govern -> System.
@@ -300,70 +114,6 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Term and value": "Assess",
         "Ownership": "Govern",
         "System": "System",
-    },
-    # No Act beat, and there cannot be one: nobody acts on a row here. A
-    # flow writes the row and the response, where there is one, happens on
-    # the register the row describes. "Reporting key" is the System beat
-    # because ChangeKey is a machine join and not a fact about the change.
-    ("column-history", "ColumnHistory"): {
-        "Which item changed": "Identify",
-        "What changed": "Assess",
-        "When and who": "Govern",
-        "Reporting key": "System",
-    },
-    ("tiered-huddle", "Escalation"): {
-        "The issue": "Identify",
-        "Where it goes": "Act",
-        "Outcome": "Govern",
-    },
-    # === Process digitisation & improvement ==================================
-    # Five single-list templates that deliberately read as siblings: name the
-    # thing, assess it against the definitions, act, govern, and a System
-    # section holding the calculated score where one exists. measures-register
-    # has no calculated column and no auto-stamp, so it collapses System away
-    # rather than shipping an empty heading.
-    ("measures-register", "Measure"): {
-        "Name the measure": "Identify",
-        "Define it": "Assess",
-        "Report it": "Act",
-        "Govern it": "Govern",
-    },
-    # Decision and implementation are one beat here, not two: the register's
-    # governance IS its decision trail, and splitting them left the New form
-    # showing a heading with one hidden date under it.
-    ("change-register", "ChangeRequest"): {
-        "Describe the change": "Identify",
-        "Triage": "Assess",
-        "Decision and implementation": "Act",
-        "System": "System",
-    },
-    ("project-pipeline", "Proposal"): {
-        "The idea": "Identify",
-        "Scoping": "Assess",
-        "Decision and delivery": "Act",
-        "System": "System",
-    },
-    ("improvement-register", "Improvement"): {
-        "The idea": "Identify",
-        "Plan the test": "Assess",
-        "Test and outcome": "Act",
-        "System": "System",
-    },
-    ("process-register", "BusinessProcess"): {
-        "Name the process": "Identify",
-        "Score it": "Assess",
-        "Digitise it": "Act",
-        "Review": "Govern",
-        "System": "System",
-    },
-    # People & relationships. "Checks and clearances" is the Assess beat
-    # even though nothing is scored there: the checks ARE the assessment
-    # this register performs, and Active is the decision they gate.
-    ("volunteer-register", "Volunteer"): {
-        "Who they are": "Identify",
-        "Checks and clearances": "Assess",
-        "In the programme": "Act",
-        "Coordination": "Govern",
     },
     # The catalogue never reaches Govern: a Course row is a definition, and
     # the governance that acts on it lives on TrainingRecord.
@@ -378,158 +128,6 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Evidence": "Act",
         "Currency and notes": "Govern",
     },
-    # Both lists collapse Assess: an onboarding record is not rated, it is
-    # scheduled. The middle beat is where the work is scheduled and owned.
-    ("onboarding-tracker", "Starter"): {
-        "The hire": "Identify",
-        "Start and ownership": "Act",
-        "Progress": "Govern",
-    },
-    ("onboarding-tracker", "OnboardingTask"): {
-        "The task": "Identify",
-        "Who and when": "Act",
-        "Outcome": "Govern",
-    },
-    # "Registration" and "Issue and expiry" are the Assess beat: on this
-    # register the assessment IS the documentary evidence, and the Act beat
-    # is what the organisation then does with it (grant a scope, or link
-    # the sighted proof).
-    ("credentialing-register", "Practitioner"): {
-        "The practitioner": "Identify",
-        "Registration": "Assess",
-        "Scope of practice": "Act",
-        "Standing": "Govern",
-    },
-    ("credentialing-register", "Credential"): {
-        "The credential": "Identify",
-        "Issue and expiry": "Assess",
-        "Evidence": "Act",
-        "Standing": "Govern",
-    },
-    # Meeting collapses to two beats and Decision to two, in both cases
-    # because there is genuinely nothing in the middle: a meeting is a fact
-    # plus its record, and a decision is a statement plus its reasoning.
-    ("meeting-actions", "Meeting"): {
-        "The meeting": "Identify",
-        "The record": "Govern",
-    },
-    ("meeting-actions", "Decision"): {
-        "The decision": "Identify",
-        "Why": "Assess",
-    },
-    ("meeting-actions", "ActionItem"): {
-        "The action": "Identify",
-        "Owner and date": "Act",
-        "Progress": "Govern",
-    },
-    # The RAID log borrows its neighbours' vocabularies on purpose rather
-    # than inventing a fifth one. ProjectRisk is risk-register's arc with
-    # the two sections it trimmed renamed to what is left in them
-    # ("Response and owner" has no controls, "Review and closure" has no
-    # sponsor or tolerance window). ProjectAction and ProjectDecision are
-    # meeting-actions' ActionItem and Decision unchanged, because they are
-    # the same artefact and a project member reading both should not have
-    # to learn two names for one section.
-    #
-    # ProjectIssue is the only new shape: Progress is its own Act section
-    # holding just Status, because on an issue the progress IS the status,
-    # and the resolution fields below it are conditional on that value.
-    # programme-governance merged two vocabularies rather than inventing a
-    # third. Its four delivery lists carry the section names the project RAID
-    # log used, and Activity, Involvement and Stakeholder carry the ones the
-    # standing accountability register used. Both families were retired into
-    # this one on 2026-09-04; the names stayed so that anyone who had used
-    # either read the merged family without relearning it.
-    #
-    # Only Workstream and ServiceRequest are new shapes. Workstream has no
-    # Assess beat: a stream of work is not rated, it is sequenced and dated.
-    # ServiceRequest spends three consecutive sections on Govern, which §1.2
-    # permits, because its whole tail is governance: who authorised it, who
-    # is handling it, and how far it was escalated. Splitting them gives the
-    # escalation block a heading somebody can ignore on the nine requests in
-    # ten that never escalate.
-    # The same five beats process-register declares for the same table. The
-    # arc is a property of the shape, so two families carrying it should not
-    # tell the reader two different stories about it.
-    # A mapping backlog, not process-register's digitisation inventory, so the
-    # Act beat is split: deciding the order is one act, doing the mapping is
-    # another, and the register records both.
-    ("programme-governance", "BusinessProcess"): {
-        "Name the process": "Identify",
-        "Score it": "Assess",
-        "Decide the order": "Act",
-        "Map it": "Act",
-        "Review": "Govern",
-        "System": "System",
-    },
-    ("programme-governance", "Workstream"): {
-        "Name the workstream": "Identify",
-        "Sequence and dates": "Act",
-        "Phase and closure": "Govern",
-    },
-    ("programme-governance", "Stakeholder"): {
-        "Name the stakeholder": "Identify",
-        "How to reach them": "Act",
-        "Status and notes": "Govern",
-    },
-    ("programme-governance", "Activity"): {
-        "Describe the activity": "Identify",
-        "Classify it": "Assess",
-        "Assign it": "Act",
-        "Keep it current": "Govern",
-        "System": "System",
-    },
-    ("programme-governance", "Involvement"): {
-        "State the input": "Identify",
-        "How they are involved": "Act",
-    },
-    ("programme-governance", "ServiceRequest"): {
-        "Describe the request": "Identify",
-        "Who needs it and when": "Act",
-        "Internal authorisation": "Govern",
-        "Handling": "Govern",
-        "Escalation": "Govern",
-    },
-    ("programme-governance", "Risk"): {
-        "Describe the risk": "Identify",
-        "Assess the risk": "Assess",
-        "Response and owner": "Act",
-        "Review and closure": "Govern",
-        "System": "System",
-    },
-    ("programme-governance", "Action"): {
-        "The action": "Identify",
-        "Owner and date": "Act",
-        "Progress": "Govern",
-    },
-    ("programme-governance", "Issue"): {
-        "Describe the issue": "Identify",
-        "Severity and owner": "Assess",
-        "Progress": "Act",
-        "Resolution and closure": "Govern",
-    },
-    ("programme-governance", "Decision"): {
-        "The decision": "Identify",
-        "Why": "Assess",
-        "Endorsement route": "Govern",
-    },
-    # "What was said" is the Assess beat on a log whose whole job is
-    # judgement: the summary is what a colleague picking up the thread
-    # actually reads.
-    ("stakeholder-contacts", "Organisation"): {
-        "The organisation": "Identify",
-        "Ownership": "Govern",
-    },
-    ("stakeholder-contacts", "Contact"): {
-        "The person": "Identify",
-        "How to reach them": "Act",
-        "Standing and notes": "Govern",
-    },
-    ("stakeholder-contacts", "Interaction"): {
-        "What happened": "Identify",
-        "What was said": "Assess",
-        "Our record": "Govern",
-    },
     # --- Operations & service ------------------------------------------
     # A visit has nothing to assess: the middle beat collapses, which §1.2
     # permits and names visitor-log as the case for.
@@ -537,20 +135,6 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Who is visiting": "Identify",
         "On site": "Act",
         "Induction": "Govern",
-    },
-    ("service-requests", "Request"): {
-        "Describe the request": "Identify",
-        "Triage": "Assess",
-        "Resolution": "Act",
-        "Ownership": "Govern",
-        "System": "System",
-    },
-    ("complaints-feedback", "Feedback"): {
-        "What was raised": "Identify",
-        "Triage": "Assess",
-        "Response": "Act",
-        "Ownership": "Govern",
-        "System": "System",
     },
     # A reference list has one idea, so it gets one section. Collapsing to
     # a single beat is what §1.2 permits at the small end.
@@ -563,15 +147,6 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Purchase and warranty": "Govern",
         "System": "System",
     },
-    ("vehicle-log", "Vehicle"): {
-        "The vehicle": "Identify",
-        "In service": "Govern",
-    },
-    ("vehicle-log", "Trip"): {
-        "The trip": "Identify",
-        "Out and back": "Act",
-        "System": "System",
-    },
     ("routine-checks", "CheckPoint"): {
         "The checkpoint": "Identify",
         "What good looks like": "Assess",
@@ -582,108 +157,6 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "What you found": "Assess",
         "What you did": "Act",
         "Ownership": "Govern",
-    },
-    ("equipment-maintenance", "Equipment"): {
-        "The item": "Identify",
-        "The schedule": "Assess",
-        "In service": "Govern",
-    },
-    ("equipment-maintenance", "MaintenanceEvent"): {
-        "The work": "Identify",
-        "Outcome": "Assess",
-        "Evidence": "Govern",
-    },
-    ("incident-management", "Incident"): {
-        "What happened": "Identify",
-        "Triage": "Assess",
-        "Resolution": "Act",
-        "Ownership": "Govern",
-        "System": "System",
-    },
-    ("incident-management", "CorrectiveAction"): {
-        "The action": "Identify",
-        "Progress": "Act",
-        "Ownership": "Govern",
-    },
-    ("switchboard-log", "CodeEvent"): {
-        "The code": "Identify",
-        "Times": "Assess",
-        "What switchboard did": "Act",
-        "Ownership": "Govern",
-        "System": "System",
-    },
-    ("switchboard-log", "MessageLog"): {
-        "The call": "Identify",
-        "Urgency": "Assess",
-        "Relay": "Act",
-        "Ownership": "Govern",
-        "System": "System",
-    },
-    ("switchboard-log", "Key"): {
-        "The key": "Identify",
-        "Who may take it": "Govern",
-    },
-    ("switchboard-log", "KeyMovement"): {
-        "The movement": "Identify",
-        "Out and back": "Act",
-        "Ownership": "Govern",
-    },
-    # === Service evidence register ==========================================
-    # Two consecutive Identify sections, which §1.2 permits and this register
-    # depends on: "What happened" is the fact and "How you know" is its
-    # provenance. Merging them is exactly the collapse the whole design exists
-    # to prevent - a row where the account and how you came by it are one
-    # paragraph is an anecdote.
-    ("service-evidence-register", "ServiceEvent"): {
-        "What happened": "Identify",
-        "How you know": "Identify",
-        "Impact": "Assess",
-        "Chasing and resolution": "Act",
-        "Review and escalation": "Govern",
-        "System": "System",
-    },
-    # A chase is a small, complete arc: who you asked and what you asked
-    # (Identify), what came back (Assess), and the artefact that proves it
-    # (Act). No Govern beat - a follow-up is not governed, it is evidence, and
-    # the governing happens on the event and on the theme.
-    ("service-evidence-register", "FollowUp"): {
-        "The chase": "Identify",
-        "What came back": "Assess",
-        "Evidence": "Act",
-        "System": "System",
-    },
-    # An issue is a theme rather than an occurrence, so the arc runs whole and
-    # spends two consecutive sections on Act. Splitting the raise from the
-    # response is what lets the response half stay off the form until there is
-    # a response to record.
-    ("service-evidence-register", "ServiceIssue"): {
-        "The pattern": "Identify",
-        "Weight and evidence": "Assess",
-        "Raising it": "Act",
-        "Response and remedy": "Act",
-        "Ownership and closure": "Govern",
-        "System": "System",
-    },
-    # A vocabulary list, not a process one: it collapses to Identify ->
-    # Govern. There is no Assess beat because nothing about a party is
-    # rated, and no System beat because nothing is auto-stamped.
-    # The full five-beat arc. "Classify it" is the Assess beat: ActivityKind
-    # and Criticality are the two judgements made about an activity, and
-    # Criticality drives the confirmation cadence.
-    # Collapses to Identify -> Act. There is no Assess beat because an
-    # involvement is not rated, and no System beat because nothing is
-    # auto-stamped. "State the input" is Identify and is named as an
-    # instruction on purpose: the mandatory Title is the whole
-    # counter-measure against a consulted list of everyone who asked.
-    # Consecutive Assess sections are permitted by §1.2.
-    # "Can it keep a record" holds capability questions; "Evidence and method" qualifies them.
-    # System holds the assessment provenance typed after the verdict.
-    ("records-digitisation", "Platform"): {
-        "The platform": "Identify",
-        "Can it keep a record": "Assess",
-        "Evidence and method": "Assess",
-        "Verdict and follow-up": "Govern",
-        "System": "System",
     },
     # Two consecutive Identify sections, which §1.2 permits: a stamp is
     # identified by what happened AND by where it happened, and a fleet log
@@ -837,11 +310,6 @@ def test_the_roster_names_only_real_templates() -> None:
     assert not unknown, f"NOT_YET_UPLIFTED names templates that do not exist: {sorted(unknown)}"
 
 
-def test_at_least_the_exemplars_are_uplifted() -> None:
-    """The two templates every theme branch copies from are always in scope."""
-    assert set(_uplifted()) >= {"risk-register", "tiered-huddle"}
-
-
 # The roster's floor, pinned. Every template on NOT_YET_UPLIFTED needs a
 # reason recorded here beside it, not "we ran out of time" and not "this
 # one is awkward". Empty, and adding to it is a reviewable act.
@@ -889,6 +357,12 @@ def test_the_declared_section_beats_are_arc_beats() -> None:
         if beat not in SECTION_ARC
     }
     assert not bad, f"section beats outside the arc {SECTION_ARC}: {sorted(bad)}"
+
+
+def test_the_declared_section_beats_name_shipped_templates() -> None:
+    """An entry for a template that does not ship here checks nothing and reads as if it did."""
+    stale = sorted({template for template, _ in SECTION_BEATS} - set(_all_templates()))
+    assert not stale, f"SECTION_BEATS names templates this package does not ship: {stale}"
 
 
 # === §3.1, one test per assertion ===========================================
@@ -979,8 +453,8 @@ def test_a_next_review_due_declares_who_sets_it(template: str) -> None:
     The divergence is deliberate. The name states WHEN the next review falls,
     which is the same fact everywhere; the mechanism differs because a cadence
     formula needs a written review policy to encode, and a backlog sweep or an
-    evidence theme has none. `programme-governance` ships both shapes in one
-    family for exactly that reason.
+    evidence theme has none. One family can ship both shapes for exactly
+    that reason.
 
     What must never diverge is whether the column says which it is, because
     the note becomes the column's Description and is the only part of this
@@ -1361,9 +835,7 @@ def _is_icon(node: dict[str, Any]) -> bool:
 # shipped before the header probe existed, and `library-header-token-probe.js`
 # has no text column in its typed battery, so round five settles it. A new
 # entry needs that measurement first, not a precedent.
-_UNMEASURED_SHIPPED_LIBRARY_TOKENS = {
-    ("legal-compliance-register", "Document"): "[$TopicName]",
-}
+_UNMEASURED_SHIPPED_LIBRARY_TOKENS: dict[tuple[str, str], str] = {}
 
 
 def _header_identity_tokens(loaded: Loaded, template: str, entity: str) -> frozenset[str]:
@@ -2018,22 +1490,10 @@ def test_the_documented_exception_is_still_an_exception() -> None:
 #              parallel theme branches, and editing one from this branch would
 #              collide. See the template-family-standard work.
 ACCEPTED_THRESHOLD_EXPOSURE: dict[tuple[str, str], str] = {
-    ("service-requests", "views[Request].My requests"):
-        "DEFERRED: RequestedBy is a Person column and carries NO index. An "
-        "indexed Person is served past the threshold, so this wants an index "
-        "rather than acceptance.",
-    ("switchboard-log", "views[CodeEvent].Still running"):
-        "NULL-TEST: AllClearAt is_null means the code event has not stood down.",
     ("training-register", "views[Course].Never expires"):
         "NULL-TEST: ValidityMonths is_null means the completion never expires.",
-    ("vehicle-log", "views[Trip].Out now"):
-        "NULL-TEST: ReturnedAt is_null means the vehicle is still out.",
     ("visitor-log", "views[Visit].On site now"):
         "NULL-TEST: SignedOutAt is_null means the visitor is still on site.",
-    ("tiered-huddle", "views[Escalation].Escalated up"):
-        "DEFERRED: Direction is a three-value Choice and can carry an index.",
-    ("tiered-huddle", "views[Escalation].Delegated down"):
-        "DEFERRED: same Direction column as 'Escalated up'; one index clears both.",
     ("training-register", "views[Course].Mandatory catalogue"):
         "DEFERRED: Mandatory is Yes/No; indexable, but a course catalogue is "
         "small enough that an index would spend one of twenty slots for nothing.",
@@ -2128,7 +1588,7 @@ def test_no_template_performs_too_many_joins(template: str) -> None:
     )
 
 
-def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
+def test_the_worst_generated_all_items_is_four_of_twelve() -> None:
     """The spec's survey number, pinned. It is the whole reason this check can
     ship silently, and the parametrized test above cannot hold it: that one
     only fires at 11, so a template could climb from 6 to 10 unnoticed and the
@@ -2140,180 +1600,16 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     passing against its OWN arithmetic even if the validator's copy silently
     dropped `SYSTEM_COLUMNS` or the `hide_from_all_items` subtraction.
 
-    Measured 2026-07-31 across 30 templates / 53 entities: the distribution was
-    2 -> 7, 3 -> 27, 4 -> 18, 5 -> 1, and the 5 was
-    opportunities-register/Opportunity (DecisionMaker, OpportunityOwner,
-    ProjectContact, plus Author and Editor).
-
-    RE-MEASURED 2026-08-10 across 31 templates / 54 entities, when
-    research-ethics-register-simple joined the roster: 2 -> 7, 3 -> 28,
-    4 -> 18, 5 -> 1. The whole delta is the one new entity, which lands at 3
-    (SiteInvestigator plus Author and Editor). A single-list template carries
-    no Lookup at all, so it cannot move the ceiling. The worst is unchanged
-    and is still the same opportunities-register entity, re-derived rather
-    than assumed.
-
-    RE-MEASURED 2026-08-12 across 32 templates / 55 entities, when
-    raci-matrix's Party list joined the roster: 2 -> 7, 3 -> 29, 4 -> 18,
-    5 -> 1. Party lands at 3 (Contact plus Author and Editor). The worst is
-    unchanged and is still the same opportunities-register entity.
-
-    RE-MEASURED 2026-08-12 across 32 templates / 56 entities, when
-    raci-matrix's Activity register joined the roster: 2 -> 7, 3 -> 29,
-    4 -> 18, 5 -> 1, 6 -> 1. The new worst is raci-matrix/Activity at 6
-    (Accountable, AccountableForum, Author, ConfirmedBy, Editor, Responsible).
-    A register whose subject IS people carries more person columns than
-    most. Still three clear of the nine-column warning band.
-
-    RE-MEASURED 2026-08-12 across 32 templates / 57 entities, when
-    raci-matrix's Involvement child list joined the roster: 2 -> 7, 3 -> 29,
-    4 -> 19, 5 -> 1, 6 -> 1. Involvement lands at 4 (Activity, Party, Author,
-    Editor). The worst is unchanged and is still raci-matrix/Activity at 6.
-
-    RE-MEASURED 2026-08-18 across 33 templates / 58 entities, when
-    records-digitisation's Platform register joined the roster: 2 -> 7,
-    3 -> 29, 4 -> 20, 5 -> 1, 6 -> 1. Platform lands at 4 (AssessedBy,
-    PlatformCustodian, Author, Editor). Its three multi-value columns cost
-    nothing: a Choice (multi-valued) is not a Lookup and carries no join. The
-    worst is unchanged and is still raci-matrix/Activity at 6.
-
-    RE-MEASURED 2026-08-26 across 34 templates / 62 entities, when raid-log
-    joined the roster: 2 -> 7, 3 -> 31, 4 -> 22, 5 -> 1, 6 -> 1. The four
-    raid-log lists land at 3 (ProjectRisk, ProjectDecision: one person column
-    plus Author and Editor) and 4 (ProjectAction, ProjectIssue: one person
-    column plus the one RelatedRisk Lookup). The worst is unchanged and is
-    still raci-matrix/Activity at 6.
-
-    RE-MEASURED 2026-08-28 across 35 templates / 71 entities, when
-    programme-governance joined the roster: 2 -> 8, 3 -> 32, 4 -> 25,
-    5 -> 2, 6 -> 2, 7 -> 2. The new worst is 7, shared by
-    programme-governance/ProgramActivity (Responsible, Accountable,
-    ConfirmedBy, the Workstream and AccountableForum Lookups, Author and
-    Editor) and programme-governance/TenantRequest (RequestedBy,
-    InternalAccountable, AuthorisedBy, EscalatedBy, the Workstream Lookup,
-    Author and Editor). Both are raci-matrix/Activity's shape with a
-    workstream added: a family that merges an accountability register with an
-    authorisation record carries person columns from both halves. Still two
-    clear of the nine-column warning band, and this is the first family to
-    reach 7, so the next one to add a person column to either entity should
-    check `hide_from_all_items` rather than the ceiling.
-
-    RE-MEASURED 2026-08-28 after programme-governance added four nullable
-    reporting joins: 2 -> 8, 3 -> 32, 4 -> 23, 5 -> 4, 6 -> 1, 7 -> 2,
-    8 -> 1. TenantRequest is the new worst at 8 after adding its authorising
-    decision. ProgramAction moves from 6 to 7, while ProgramRisk and
-    ProgramDecision move from 4 to 5. Eight remains below the warning band;
-    `hide_from_all_items` is reserved for an entity that would otherwise
-    exceed the measured ceiling and would warn as unnecessary here.
-
-    RE-MEASURED 2026-08-28 after programme-governance added the decision
-    route: 2 -> 8, 3 -> 32, 4 -> 23, 5 -> 3, 6 -> 1, 8 -> 4. The band at 7
-    empties and four entities now sit at 8: ProgramActivity (DecisionRoute),
-    ProgramAction (AuthorisingDecision), ProgramDecision (Activity,
-    DecidedByForum, RecommendedByForum) and TenantRequest, unchanged. The
-    worst is unchanged at 8 and still one clear of the nine-column warning
-    band, but four entities now sit on that edge rather than one, so the next
-    join-bearing column added to any of them warns. Lookup PROJECTIONS are
-    what kept it there: the four decision lookups each project the target's
-    Title, and a projection is a dependent field that costs no join.
-
-    RE-MEASURED 2026-09-02 after programme-governance made TenantRequest
-    the ServiceRequest surface: 2 -> 8, 3 -> 32, 4 -> 23, 5 -> 3, 6 -> 1,
-    8 -> 3, 9 -> 1. ServiceRequest is the new worst at 9 (RequestedBy,
-    InternalAccountable, AuthorisedBy, EscalatedBy, AssignedTo, the
-    Workstream and AuthorisingDecision lookups, Author and Editor): a
-    request that is asked for, authorised, worked and escalated on one row
-    carries a person column for each of those acts. The warning band now
-    starts at 11, so the worst is two clear of it, and the three entities
-    at 8 (Activity, Action, Decision) are three clear.
-
-    RE-MEASURED 2026-09-04 across 33 templates / 65 entities, when raid-log
-    and raci-matrix were retired into programme-governance: 2 -> 8, 3 -> 29,
-    4 -> 21, 5 -> 3, 8 -> 2, 9 -> 2. Seven lists left the roster, three from
-    band 3 (raid-log ProjectRisk and ProjectDecision, raci-matrix Party),
-    three from band 4 (raid-log ProjectAction and ProjectIssue, raci-matrix
-    Involvement) and one from band 6 (raci-matrix Activity), which empties
-    band 6 entirely.
-
-    Two corrections fall out of the same pass, because the entry above was
-    already stale. BusinessProcess had joined at 4 and was never counted, and
-    programme-governance/Activity moved from 8 to 9 when its Process lookup
-    was added, so the worst is now SHARED by Activity (Accountable,
-    AccountableForum, ConfirmedBy, DecisionRoute, Process, Responsible,
-    Workstream, Author, Editor) and ServiceRequest, not held by ServiceRequest
-    alone. Still two clear of the eleven-column warning band, with Action and
-    Decision behind them at 8.
-
-    RE-MEASURED 2026-09-05 across 35 templates / 67 entities, when
-    deployment-log and column-history joined the roster together: 2 -> 9,
-    3 -> 30, 4 -> 21, 5 -> 3, 8 -> 2, 9 -> 2. The two new entities land at
-    the floor end by design: deployment-log's stamp carries no person
-    column and no Lookup at all (every column is text or a date written by
-    a script), and column-history lands at 3 (ChangedBy plus Author and
-    Editor), its site and list columns being text rather than lookups
-    because the list they name lives on another site entirely -- the one
-    family that references every other list in the estate carries no joins
-    for doing it. The worst is unchanged and is still shared by
-    programme-governance/Activity and /ServiceRequest at 9, re-derived
-    rather than assumed.
-
-    RE-MEASURED 2026-09-07 across 35 templates / 68 entities, when
-    deployment-log split its one combined list into `Deployments` and
-    `Changes`: 2 -> 10, 3 -> 30, 4 -> 20, 5 -> 4, 8 -> 2, 9 -> 2. Both halves
-    land in the floor band for the same reason the combined list did:
-    neither carries a person column or a Lookup. Re-measuring surfaced that
-    the entry above was already stale on two counts unrelated to this split
-    -- band 4 was 20, not 21, and band 5 was 4, not 3 -- which this entry
-    corrects rather than propagates. The worst is unchanged at 9.
-
-    RE-MEASURED 2026-09-13 across 36 templates / 70 entities, when
-    legal-compliance-register joined the roster as the first family with a
-    document library: 2 -> 10, 3 -> 30, 4 -> 20, 5 -> 6, 8 -> 2, 9 -> 2.
-    Both of its entities land at 5: Topic (BusinessOwner,
-    ExecutiveResponsible, LicenceHolder, Author, Editor) and SAQ (the Topic
-    lookup, BusinessOwner, ExecutiveResponsible, Author, Editor). The same
-    pass stops this survey skipping a DocumentLibrary: since #14 closed the
-    generator builds All Items for a library too, leading with the file name,
-    and the validator counts it, so a survey that skipped one would be
-    measuring a view the deploy creates and the validator judges. The worst
-    is unchanged at 9.
-
-    RE-MEASURED 2026-09-14 across 36 templates / 69 entities: replacing
-    Topic and SAQ with Document removes one entity in band 5. Document
-    remains at 5 (three assigned people plus Author and Editor). The
-    distribution is 2 -> 10, 3 -> 30, 4 -> 20, 5 -> 5, 8 -> 2, 9 -> 2.
-
-    RE-MEASURED 2026-09-17 across 37 templates / 71 entities:
-    digital-innovation-log adds Pattern at 3 (BuildOwner, Author, Editor)
-    and Opportunity at 7 (four people, the Pattern lookup, Author, Editor;
-    a MergedInto self-lookup was dropped in review because no probe has
-    measured one). The distribution is 2 -> 10, 3 -> 31, 4 -> 20, 5 -> 5,
-    7 -> 1, 8 -> 2, 9 -> 2. The worst is unchanged at 9.
-
-    RE-MEASURED 2026-09-23 across 38 templates / 80 entities, when
-    seam-register joined the roster with eight lists and a library and no
-    person column anywhere, because its rows describe roles rather than
-    people. Provider and WeeklyUpdate land at 2 (Author, Editor). Every
-    other entity lands at 4: Service (RunByProvider, SupportProvider),
-    Evidence (Service, Artefact), Seam (Service, the multi-value
-    EvidenceInConflict), DocumentRequest (HolderProvider, the multi-value
-    Services), Artefact (Request, the multi-value Services), Interview
-    (IntervieweeProvider, NotesFile) and Incident (Service,
-    ResolverProvider), each plus Author and Editor. The distribution is
-    2 -> 12, 3 -> 31, 4 -> 27, 5 -> 5, 7 -> 1, 8 -> 2, 9 -> 2. The worst is
-    unchanged at 9.
-
-    RE-MEASURED 2026-09-24 across 38 templates / 80 entities, when
-    programme-governance/Issue gained the ResolvingDecision lookup: Issue
-    moves from 5 to 6 (Owner, the Workstream, RelatedRisk and
-    ResolvingDecision lookups, Author and Editor). The distribution is
-    2 -> 12, 3 -> 31, 4 -> 27, 5 -> 4, 6 -> 1, 7 -> 1, 8 -> 2, 9 -> 2. The
-    worst is unchanged at 9, and Issue is five clear of the warning band."""
+    Measured 2026-09-28 across the 6 starter blueprints / 10 entities:
+    2 -> 4, 3 -> 3, 4 -> 3. The worst is 4, shared by asset-register/Asset
+    (AssignedTo, Location), routine-checks/CheckEntry (CheckPoint, CheckedBy)
+    and training-register/TrainingRecord (Course, Person), each two lookups
+    plus Author and Editor."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
-    assert len(templates) == 38, (
-        f"{len(templates)} templates discovered, not the 38 this survey was "
+    assert len(templates) == 6, (
+        f"{len(templates)} templates discovered, not the 6 this survey was "
         f"measured against. A template appeared or disappeared from the "
         f"roster. Re-measure the distribution and the worst count below "
         f"before trusting either."
@@ -2339,14 +1635,14 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     # LIST keeps the roster at 34 while the distribution above moves under it,
     # and the docstring's entity total was wrong for exactly that reason
     # before this pin existed.
-    assert counted == 80, (
-        f"{counted} entities were surveyed, not the 80 the distribution above "
+    assert counted == 10, (
+        f"{counted} entities were surveyed, not the 10 the distribution above "
         f"was measured over. An entity appeared or disappeared inside a "
         f"template that is still on the roster. Re-measure the distribution "
         f"and the worst count before trusting either."
     )
-    assert worst == 9, (
-        f"worst generated 'All Items' is now {worst} of 12, not the pinned 9. "
+    assert worst == 4, (
+        f"worst generated 'All Items' is now {worst} of 12, not the pinned 4. "
         f"If this ROSE, a template grew a join-bearing column on its worst "
         f"entity. Update the number here DELIBERATELY, and check the spec's "
         f"survey paragraph with it. If it FELL, a formula term (SYSTEM_COLUMNS "
@@ -2665,7 +1961,7 @@ def test_every_family_declares_the_shared_groups_identically(
 
     The security phase writes every one of these fields on every run. If
     `risk-register` says the administrators group hides its membership and
-    `incident-management` says it does not, then whichever deploy the
+    `contract-register` says it does not, then whichever deploy the
     operator pastes second changes the site's behaviour for the other -- with
     nothing in either build able to notice, because a build sees one mapping.
 
@@ -2962,171 +2258,3 @@ def test_no_shipped_level_description_exceeds_the_role_definition_ceiling() -> N
     assert families_with_levels, "no family declares a level, the sweep visited nothing"
     assert levels_checked, "no levels discovered, the sweep visited nothing"
     assert not offenders, "level descriptions over budget:\n" + "\n".join(offenders)
-
-
-# The file library's two handoff routes must agree with its recording view.
-def _legal_assessment(**changes: Any) -> dict[str, Any]:
-    return {
-        "ItemType": "SAQ", "TopicName": "VIC - Privacy",
-        "Division": "Clinical services",
-        "Status": "Complete", "CompletedDate": "today-1",
-        "ReviewRequirement": "Not required", **changes,
-    }
-
-
-def _legal_rule_accepts(row: dict[str, Any]) -> bool | None:
-    from dbml_sharepoint.analysis.save_rules import effective_list_validation
-
-    loaded = _load("legal-compliance-register")
-    types = loaded.column_types("Document")
-    rule = effective_list_validation(loaded.mapping, "Document", types)
-    assert rule is not None
-    return _evaluate(normalise(rule.when), row, types)
-
-
-@pytest.mark.parametrize(("changes", "accepted"), [
-    ({}, True),
-    ({"ExternalRecorded": "today"}, True),
-    ({"ReviewRequirement": "Required"}, True),
-    ({"ReviewRequirement": "Required", "ExternalRecorded": "today"}, False),
-    ({"ReviewRequirement": "Required", "ReviewedDate": "today", "ExternalRecorded": "today"}, True),
-    ({"CompletedDate": None}, False),
-    ({"Status": None}, False),
-    ({"ReviewRequirement": None}, False),
-    ({"ReviewRequirement": None, "ReviewedDate": "today", "ExternalRecorded": "today"}, False),
-    ({"Status": "In progress", "ExternalRecorded": "today"}, False),
-    ({"Status": "In progress", "ReviewedDate": "today"}, False),
-    ({"CompletedDate": "today+1"}, False),
-    ({"ReviewedDate": "today+1"}, False),
-    ({"ExternalRecorded": "today+1"}, False),
-    ({"TopicName": None}, False),
-    ({"Division": None}, False),
-])
-def test_legal_assessment_handoffs(changes: dict[str, Any], accepted: bool) -> None:
-    assert _legal_rule_accepts(_legal_assessment(**changes)) is accepted
-
-
-def test_legal_reference_and_cancelled_files_need_no_assessment_dates() -> None:
-    assert _legal_rule_accepts({"ItemType": "REG"}) is True
-    assert _legal_rule_accepts({"ItemType": "SAQ", "Status": "No longer required"}) is True
-    assert _legal_rule_accepts({"ItemType": "SAQ", "Status": "Required"}) is True
-
-
-def test_legal_blank_workflow_fields_are_allowed_only_outside_active_handoffs() -> None:
-    assert _legal_rule_accepts({"ItemType": "SAQ"}) is False
-    assert _legal_rule_accepts({
-        "ItemType": "REG", "Status": None, "ReviewRequirement": None,
-    }) is True
-    assert _legal_rule_accepts(_legal_assessment(
-        Status="In progress", CompletedDate=None, ReviewRequirement=None,
-    )) is True
-
-
-@pytest.mark.parametrize("status", ["Required", "In progress"])
-def test_legal_reopened_assessment_must_clear_completion_date(status: str) -> None:
-    assert _legal_rule_accepts(_legal_assessment(Status=status)) is False
-    assert _legal_rule_accepts(_legal_assessment(Status=status, CompletedDate=None)) is True
-
-
-@pytest.mark.parametrize("reviewed", [None, "today-1"])
-def test_legal_cancelled_assessment_can_retain_completion_history(reviewed: str | None) -> None:
-    assert _legal_rule_accepts(_legal_assessment(
-        Status="No longer required", ReviewedDate=reviewed,
-    )) is True
-    assert _legal_rule_accepts(_legal_assessment(
-        Status="No longer required", ReviewedDate=reviewed, CompletedDate=None,
-    )) is (reviewed is None)
-
-
-def test_legal_date_order_remains_a_governance_check() -> None:
-    assert _legal_rule_accepts(_legal_assessment(
-        CompletedDate="today", ReviewedDate="today-1", ExternalRecorded="today-2",
-        ReviewRequirement="Required",
-    )) is True
-
-
-@pytest.mark.parametrize(("changes", "ready", "awaiting_review"), [
-    ({}, True, False),
-    ({"ReviewRequirement": "Required"}, False, True),
-    ({"ReviewRequirement": "Required", "ReviewedDate": "today"}, True, False),
-    ({"ExternalRecorded": "today"}, False, False),
-    ({"Status": "In progress", "CompletedDate": None}, False, False),
-    ({"Status": "No longer required"}, False, False),
-    ({"ItemType": "REG"}, False, False),
-])
-def test_legal_recording_worklists_follow_the_review_choice(
-    changes: dict[str, Any], ready: bool, awaiting_review: bool,
-) -> None:
-    loaded = _load("legal-compliance-register")
-    views = {v.title: v for v in loaded.mapping.views["Document"]}
-    expectations = (("To record in the portal", ready), ("Awaiting review", awaiting_review))
-    for name, expected in expectations:
-        where = views[name].where
-        assert where is not None
-        assert _evaluate(
-            normalise(where), _legal_assessment(**changes), loaded.column_types("Document"),
-        ) is expected
-
-
-def test_legal_regs_never_enter_assessment_worklists() -> None:
-    loaded = _load("legal-compliance-register")
-    for view in loaded.mapping.views["Document"]:
-        if view.title in {"Platform owner", "Folder View"}:
-            continue
-        assert view.where is not None
-        assert _evaluate(
-            normalise(view.where), _legal_assessment(ItemType="REG"),
-            loaded.column_types("Document"),
-        ) is (view.title == "Reference regulations")
-
-
-def test_legal_library_keeps_content_in_excel_and_issuance_independent() -> None:
-    loaded = _load("legal-compliance-register")
-    assert list(loaded.mapping.entities) == ["Document"]
-    assert loaded.mapping.entities["Document"].kind == "DocumentLibrary"
-    assert all(c.ref is None for t in loaded.schema.tables for c in t.columns)
-    assert not loaded.mapping.default_formulas
-    assert not loaded.mapping.derived_columns
-    columns = {c.name: c for t in loaded.schema.tables for c in t.columns}
-    assert columns["Status"].default is None
-    assert columns["ReviewRequirement"].default is None
-    types = loaded.column_types("Document")
-    assert {"IssuedYear", "IssuedQuarter"} <= types.keys()
-    assert not {"PlatformOwner", "AssessmentRef", "DueDate"} & types.keys()
-    assert not {"Compliance", "RiskLevel", "Controls", "ActionUrl", "IdentifiedGaps"} & types.keys()
-    year_rule = loaded.mapping.column_validation["Document"].columns["IssuedYear"]
-    assert _evaluate(normalise(year_rule.when), {"IssuedYear": 2016}, types) is True
-    assert _evaluate(normalise(year_rule.when), {"IssuedYear": 26}, types) is False
-    workflow = ("Status", "CompletedDate", "ReviewRequirement", "ReviewedDate", "ExternalRecorded")
-    for field in workflow:
-        rule = loaded.mapping.form_visibility["Document"].columns[field]
-        assert rule.when is not None
-        assert _evaluate(normalise(rule.when), {"ItemType": "REG"}, types) is False
-        assert _evaluate(normalise(rule.when), {"ItemType": "SAQ"}, types) is True
-
-
-def test_legal_platform_owner_workspace_keeps_unclassified_uploads_visible() -> None:
-    loaded = _load("legal-compliance-register")
-    view = next(v for v in loaded.mapping.views["Document"] if v.title == "Platform owner")
-    assert view.scope == "recursive"
-    assert view.where is None
-    assert view.group_by is None
-    assert [(sort.field, sort.direction) for sort in view.sort] == [("Modified", "desc")]
-    assert {
-        "FileLeafRef", "ItemType", "TopicName", "PortalTopicId", "Division",
-        "ExecutiveResponsible", "BusinessOwner", "ExternalRecorded",
-    } <= set(view.fields)
-
-
-@pytest.mark.parametrize("review", ["Not required", "Required"])
-def test_cancelled_assessments_retain_recording_prerequisites(review: str) -> None:
-    row = _legal_assessment(
-        Status="No longer required", ExternalRecorded="today",
-        ReviewRequirement=review, ReviewedDate="today-1" if review == "Required" else None,
-    )
-    assert _legal_rule_accepts(row) is True
-    assert _legal_rule_accepts({**row, "CompletedDate": None}) is False
-    assert _legal_rule_accepts({**row, "ReviewRequirement": None}) is False
-    assert _legal_rule_accepts({**row, "ExternalRecorded": "today+1"}) is False
-    if review == "Required":
-        assert _legal_rule_accepts({**row, "ReviewedDate": None}) is False

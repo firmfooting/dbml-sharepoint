@@ -1,7 +1,0 @@
-id = "seam-register"
-title = "Seam register"
-summary = "One register for finding what your organisation depends on its providers for, where the joins are, and which of them nobody can describe."
-license = "MIT"
-origin = "firmfooting"
-notice = ""
-min_core = ">=0.5,<1"

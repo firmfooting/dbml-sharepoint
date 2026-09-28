@@ -1087,12 +1087,12 @@ def test_display_names_parsed(tmp_path: Path) -> None:
           mode: auto
           overrides:
             Project:
-              RiskManReference: "RiskMan Reference"
+              RegisterReference: "Register Reference"
     """))
     bundle = load_mapping(tmp_path / "m.yaml")
     assert bundle.mapping.display_name_mode == "auto"
     assert bundle.mapping.display_name_overrides == {
-        "Project": {"RiskManReference": "RiskMan Reference"},
+        "Project": {"RegisterReference": "Register Reference"},
     }
 
 
@@ -2736,7 +2736,7 @@ def test_folders_parse_as_a_list_or_as_an_enum_reference(tmp_path: Path) -> None
             kind: DocumentLibrary
             base_template: 101
             site_role: default
-            folders: [Clinical services, Corporate & community services]
+            folders: [Operations, Corporate & community]
           Derived:
             kind: DocumentLibrary
             base_template: 101
@@ -2746,7 +2746,7 @@ def test_folders_parse_as_a_list_or_as_an_enum_reference(tmp_path: Path) -> None
     mapping = load_mapping(tmp_path / "m.yaml").mapping
     assert mapping.entities["Plain"].folder_source == ()
     assert mapping.entities["Named"].folder_source == (
-        "Clinical services", "Corporate & community services",
+        "Operations", "Corporate & community",
     )
     assert mapping.entities["Derived"].folder_source == FoldersFromEnum(enum="division")
 

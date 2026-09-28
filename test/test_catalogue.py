@@ -10,7 +10,7 @@ from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 
 import pytest
-from _catalogue_fixtures import CORE_LICENSE, manifest_text, write_family
+from _catalogue_fixtures import CORE_LICENSE, install, manifest_text, write_family
 from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint import catalogue
@@ -45,6 +45,40 @@ def test_every_shipped_family_is_offered() -> None:
     assert {s.id for s in available_solutions()} == on_disk
 
 
+#: Pinned rather than globbed. Every other pack ships in a separate package, and
+#: core wins a duplicate id, so a pack that reappeared here would hide that copy.
+CORE_STARTER_SET = frozenset({
+    "asset-register", "contract-register", "deployment-log",
+    "routine-checks", "training-register", "visitor-log",
+})
+
+
+def test_the_starter_journey_names_exactly_the_starter_set() -> None:
+    """Somebody who installs only the engine still has one place to start."""
+    starter = next(j for j in available_journeys() if j.id == "replacing-the-paper-books")
+    assert set(starter.solution_ids) == CORE_STARTER_SET
+
+
+def test_core_ships_exactly_its_starter_set() -> None:
+    on_disk = {
+        path.parent.parent.name
+        for path in SOLUTION_TEMPLATES.glob("*/10-design/schema.dbml")
+    }
+    assert on_disk == CORE_STARTER_SET
+
+
+def test_with_no_provider_the_starter_set_and_its_journey_are_complete(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """What somebody who installs only the engine is offered: nothing refused, nothing missing."""
+    install(monkeypatch, tmp_path)
+    found = read_catalogue()
+    assert {solution.id for solution in found.solutions} == CORE_STARTER_SET
+    assert [journey.id for journey in found.journeys] == ["replacing-the-paper-books"]
+    assert found.refused == ()
+    assert found.shadowed == ()
+
+
 def test_the_catalogue_ships_inside_the_package() -> None:
     """The whole reason the templates moved.
 
@@ -60,8 +94,8 @@ def test_the_catalogue_ships_inside_the_package() -> None:
 def test_each_solution_describes_itself(solution: catalogue.Solution) -> None:
     """A blank cell in the picker is indistinguishable from a broken one.
 
-    The prefix may legitimately be empty (programme-governance declares
-    `prefix: ""` and the picker shows "(none)"), so what is pinned is that
+    The prefix may legitimately be empty (a blueprint may declare
+    `prefix: ""`, and the picker then shows "(none)"), so what is pinned is that
     the mapping DECLARES the key: an empty cell is a decision, never an
     omission the catalogue papered over."""
     assert solution.title
@@ -94,7 +128,7 @@ def test_each_solution_ships_all_three_build_inputs(
 def test_the_collection_readmes_are_not_offered_as_templates() -> None:
     ids = {s.id for s in available_solutions()}
     assert "README.md" not in ids
-    assert "healthcare.md" not in ids
+    assert not {"journeys", "sectors"} & ids
 
 
 def test_a_directory_without_a_schema_is_not_a_solution(
@@ -201,13 +235,13 @@ def test_a_journey_declaring_a_key_twice_is_refused(
 def test_load_solution_names_the_alternatives() -> None:
     """A typo'd template name should not make the user go and list them."""
     with pytest.raises(UnknownSolutionError) as caught:
-        load_solution("risk-registry")
-    assert "risk-register" in str(caught.value)
-    assert caught.value.name == "risk-registry"
+        load_solution("visitor-logs")
+    assert "visitor-log" in str(caught.value)
+    assert caught.value.name == "visitor-logs"
 
 
 def test_load_solution_returns_the_named_family() -> None:
-    assert load_solution("risk-register").id == "risk-register"
+    assert load_solution("visitor-log").id == "visitor-log"
 
 
 def test_a_missing_solutions_directory_is_empty_not_an_error(

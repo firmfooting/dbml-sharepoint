@@ -9,8 +9,10 @@ limit passed every local gate and failed only in CI (2026-09-02).
 from pathlib import Path
 
 import pytest
+from _paths import FIXTURES, TEST_BLUEPRINTS
 
 import dbml_sharepoint
+from dbml_sharepoint.bundle import DEMO_SCRIPT
 from dbml_sharepoint.pipeline import execute_build
 
 SOLUTIONS = Path(dbml_sharepoint.__file__).parent / "solutions"
@@ -34,3 +36,36 @@ def test_every_shipped_solution_builds_the_way_ci_builds_it(family: str, tmp_pat
         out=tmp_path / family,
     )
     assert (tmp_path / family / "deploy.js.txt").is_file()
+
+
+def test_the_reporting_sample_builds_seeded_the_way_ci_builds_it(tmp_path: Path) -> None:
+    """A seeded build of a pack whose reporting and demo rows sit in side files.
+
+    No shipped pack reaches these paths: derived lookups and counts with no
+    description of their own, view totals in the manifest, and the demo
+    script with its index row.
+    """
+    root = TEST_BLUEPRINTS / "reporting-sample"
+    execute_build(
+        schema=root / "10-design" / "schema.dbml",
+        mapping=root / "20-configure" / "mapping.yaml",
+        release=FIXTURES / "release.yaml",
+        site_url="https://example.sharepoint.com/sites/ci",
+        time_zone="UTC",
+        site_role="default",
+        out=tmp_path,
+        seed=True,
+    )
+    assert (tmp_path / DEMO_SCRIPT).is_file()
+    assert f"`{DEMO_SCRIPT}`" in (tmp_path / "index.md").read_text(encoding="utf-8")
+    # A lookup demo value is a demo reference the script resolves to the created
+    # item's id; a literal key would be posted as text and refused by SharePoint.
+    script = (tmp_path / DEMO_SCRIPT).read_text(encoding="utf-8")
+    planned = '"kind": "ref",\n        "name": "RelatedRisk",\n        "value": "risk-open"'
+    assert script.count(planned) == 2
+    assert '"kind": "literal",\n        "name": "RelatedRisk"' not in script
+    assert "totals: Minutes sum" in (tmp_path / "deploy-manifest.md").read_text(encoding="utf-8")
+    dictionary = (tmp_path / "reporting" / "data-dictionary.md").read_text(encoding="utf-8")
+    assert "Score read from the matching Risk row, through the report's own keys." in dictionary
+    assert "The count of rows of Action pointing at this one through RelatedRisk." in dictionary
+    assert "Computed in the report query; no SharePoint column behind it." in dictionary

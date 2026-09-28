@@ -5,88 +5,23 @@ Each template is a complete, working input set for `dbml-sharepoint build`
 **plus** the organisational material a real rollout needs: an administrator
 deployment guide, staff education, and governance resources.
 
-The library is organised into four themes below, plus sector guides
-(currently: [regional healthcare](sectors/healthcare.md): NSQHS mapping,
-statutory-system boundaries, and a first-90-days sequence). For a reading
-ORDER rather than a subject index, see [journeys](journeys/): one file per
-route through the library, and what the wizard offers first. Every template
-appears in at least one, which a test enforces; these four theme tables are
-prose and do not. Templates interconnect across
-themes by *process hand-off* (documented in their governance files), never
-by list lookups. Every template deploys and stands alone.
-
-*Theme: Process digitisation & improvement.*
-
-The improvement engine: inventory your processes, digitise the painful
-ones, measure what matters, and close the loop.
+The templates below are the starter set that ships with the engine. For a
+reading ORDER rather than a subject index, see [journeys](journeys/): what the
+wizard offers first. Every template appears in at least one journey, which a
+test enforces. More templates ship in separate packages; once one is
+installed, the wizard and `dbml-sharepoint blueprints` list its templates
+beside these, each with its package and licence. Templates interconnect by
+*process hand-off* (documented in their governance files), never by list
+lookups. Every template deploys and stands alone.
 
 | Template | Process | Highlights |
 | --- | --- | --- |
-| [process-register](process-register/) | Business-process inventory | The digitisation backbone: calculated digitisation-priority score (criticality x pain) |
-| [improvement-register](improvement-register/) | Continuous improvement log | Idea -> test -> adopt/abandon stages; before/after measures; fed by complaints, incidents and audits |
-| [measures-register](measures-register/) | KPI / measures catalogue | Definitions with numerator/denominator discipline, making "improved" provable |
-| [opportunities-register](opportunities-register/) | Project-discovered business problems | Safety-first, one-minute capture -> existing-system routing -> selective assessment and hand-off |
-| [digital-innovation-log](digital-innovation-log/) | M365 asks heard during a rollout | Champions capture; route before score; Value x Ease bands; a pattern built once, adoption recorded per team |
-| [project-pipeline](project-pipeline/) | Project ideas to decisions | Calculated benefit x feasibility priority score; gate + graveyard discipline |
-| [change-register](change-register/) | Change requests & approvals | Submit-only intake, decision authority trail, days-to-decision |
-| [deployment-log](deployment-log/) | What this tool deployed, where, by whom | The fleet's own record of itself: one list every other family's deploy stamps from wherever it runs, so an aborted run or a site left on an old schema version is visible in one place |
-
-**The digitisation journey, using this theme:** inventory processes and
-score the pain (*process-register*) -> deploy quick-win templates or build
-your own schema for the worst ones -> define how you'll know it worked
-(*measures-register*) -> run the smaller fixes as improvement cycles
-(*improvement-register*) and the bigger ones through *project-pipeline* /
-*change-register*. When a delivery team discovers a worthwhile business
-problem outside its authority, *opportunities-register* captures it once,
-routes known destinations immediately, and assesses only the remainder before
-hand-off into that same improvement/investment chain. During an M365
-rollout, *digital-innovation-log* is where champions put what they hear, and
-its routes point at the same chain.
-
-*Theme: Governance, risk & compliance.*
-
-| Template | Process | Highlights |
-| --- | --- | --- |
-| [risk-register](risk-register/) | Organisational risk | **Self-rating 5x5 matrix**: rating and score calculated, matrix-inconsistent entries impossible |
-| [audit-actions](audit-actions/) | Audit recommendations to closure | Closure-evidence standard, guarded DaysLate metric, committee-pack view |
-| [declarations-register](declarations-register/) | Conflicts of interest + gifts & benefits | Two standalone compliance lists; declare-only staff level |
-| [contract-register](contract-register/) | Contracts & renewals | Calculated term length, renewal pipeline views |
-| [service-evidence-register](service-evidence-register/) | Evidence of service-provider performance | Contemporaneous event log -> dated chase trail -> raised theme; how promptly the record was made is itself a column |
-| [compliance-obligations](compliance-obligations/) | Legislation / standards / funding obligations | The accreditation backbone: obligation -> owner -> evidence -> review |
-| [legal-compliance-register](legal-compliance-register/) | Portal-issued legal compliance questionnaires | One library for a new SAQ file per assessment and REG references, tracking assignment, completion, optional executive review and portal recording |
-| [grants-register](grants-register/) | Funding submissions & acquittals | The post-award obligations everyone else drops, as a due-date view |
-| [delegations-register](delegations-register/) | Who may approve what | The searchable mirror of your instrument of delegation, the lookup every other register's "per your delegations" points at |
-| [research-ethics-register-simple](research-ethics-register-simple/) | Projects referred to a partner HREC | The single-list register for a service referring to a partner's HREC: two separate gates on one row, calculated site readiness, closed work filtered out of the default view |
-| [records-digitisation](records-digitisation/) | Can a digitised record be kept in this platform? | Platform-by-platform capability assessment: six answers that can each say *Unknown*, three multi-value evidence lists, and a verdict a person types |
-| [programme-governance](programme-governance/) | Programme delivery, accountability and provider requests | Nine lists on one site: RAID and RACI merged, plus the service requests only the provider can action |
-| [column-history](column-history/) | Change history for any register, across every site | One list on the central logging site that Power Automate writes into, so a register that only stores today's value can still be reported on over time |
-| [seam-register](seam-register/) | What we depend on our providers for | A provider list, one row per service with evidence against it, every disagreement as a seam, the files in a library; the seam map is a view grouped by which side runs each service |
-
-*Theme: Operations & service.*
-
-| Template | Process | Highlights |
-| --- | --- | --- |
-| [service-requests](service-requests/) | Internal helpdesk (facilities/IT/admin) | Per-team queues from one intake; highest goodwill-per-hour in the set |
-| [incident-management](incident-management/) | Incidents & corrective actions | Two linked lists, report-only staff permission level |
-| [complaints-feedback](complaints-feedback/) | External complaints & feedback | Two calculated response clocks; no-members-access privacy posture |
 | [asset-register](asset-register/) | Equipment / IT assets | Location lookup, unique asset tags, assignment tracking |
-| [equipment-maintenance](equipment-maintenance/) | Testing / preventive maintenance | Next-due schedule with evidence-linked history; the Overdue view's target is empty |
+| [contract-register](contract-register/) | Contracts & renewals | Calculated term length, renewal pipeline views |
+| [deployment-log](deployment-log/) | What this tool deployed, where, by whom | The fleet's own record of itself: one list every other family's deploy stamps from wherever it runs, so an aborted run or a site left on an old schema version is visible in one place |
 | [routine-checks](routine-checks/) | Digitised paper checklists | Fridge temps, trolley checks, rounds: timestamped, attributed, acted on |
-| [switchboard-log](switchboard-log/) | Switchboard / after-hours desk | The three paper books digitised: code log (calculated duration), message book (relay times), key register |
-| [visitor-log](visitor-log/) | Front-desk sign-in | The On-site now view is your evacuation muster list, live at the desk; contractor induction flag |
-| [vehicle-log](vehicle-log/) | Pool-car log books | Calculated kilometres from odometer readings; the Purpose column is your FBT substantiation |
-
-*Theme: People & relationships.*
-
-| Template | Process | Highlights |
-| --- | --- | --- |
-| [meeting-actions](meeting-actions/) | Meetings, decisions, actions | The fastest payback in the library: deploy before your next meeting |
-| [tiered-huddle](tiered-huddle/) | Daily tiered huddle boards + escalation | The wall chart, live: one row per day per tier, one column per stream, and a blank cell that means *unreported*; add or retire a stream without losing history |
-| [onboarding-tracker](onboarding-tracker/) | New-starter coordination | HR + IT + facilities + finance queues from one record |
 | [training-register](training-register/) | Training & certification compliance | Course catalogue + per-person records, expiry tracking |
-| [stakeholder-contacts](stakeholder-contacts/) | External relationships & interactions | CRM-shaped without CRM weight; privacy governance included |
-| [credentialing-register](credentialing-register/) | Practitioner credentials & scope of practice | Who may do what, on whose decision, until when, with evidence |
-| [volunteer-register](volunteer-register/) | Volunteers & their checks | Police/WWCC expiry sweeps; privacy-first, no general access |
+| [visitor-log](visitor-log/) | Front-desk sign-in | The On-site now view is your evacuation muster list, live at the desk; contractor induction flag |
 
 ## What every template ships
 
@@ -107,8 +42,8 @@ title line that names the record as it is typed, and one sentence saying
 the single thing that makes this list work. The body follows one arc:
 identify the thing, assess it, act on it, govern it, and last the
 system-stamped columns nobody authors, named in each template's own
-language, so risk-register reads *Describe the risk / Assess the risk /
-Response and controls / Governance / System*.
+language, so contract-register reads *The contract / Term and value /
+Ownership / System*.
 
 **Spaced column titles.** `ReceivedDate` deploys as "Received Date"
 everywhere a person sees it, with per-column overrides where splitting
@@ -122,11 +57,11 @@ Submitted wear the same neutral grey wherever you meet them, and Overdue,
 Breached and Non-compliant the same red. A due date stops shouting once
 the item is closed; a score renders as a bar that takes its fill from the
 rating column beside it, so the two can never disagree. See
-[the style guide](../website/docs/reference/style-guide.md).
+[the style guide](../../../website/docs/reference/style-guide.md).
 
 **At most one row-level signal per list**, and only where a genuinely
-worst state exists: risk-register's Extreme wash. The restraint is the
-point: a second row colour competing with the first turns both into
+worst state exists; none of the templates here has one. The restraint is
+the point: a second row colour competing with the first turns both into
 decoration.
 
 **Fields that appear when they are relevant, and save rules that hold.**
@@ -175,7 +110,7 @@ prune what you don't need), **configure** it for your site (prefix, security),
 template declares `display_names:`, so a column declared `ReceivedDate`
 reaches the form, the views and the reporting bundle as "Received Date",
 with per-column overrides wherever splitting PascalCase reads badly
-(`TripKm`, `WWCCExpiry`, `DocumentUrl`):
+(contract-register's `DocumentUrl`, for one):
 
 ```yaml
 display_names:
@@ -233,7 +168,7 @@ Python find it instead. This works from anywhere, clone or install:
 ```bash
 python -c "import dbml_sharepoint, pathlib, shutil, sys; \
 shutil.copytree(pathlib.Path(dbml_sharepoint.__file__).parent / 'solutions' / sys.argv[1], sys.argv[2])" \
-  risk-register ./my-project
+  visitor-log ./my-project
 
 cd ./my-project
 ```
@@ -276,7 +211,7 @@ a directory the next upgrade replaces.
 
 **Views arrive with the paste.** Every list's views are declared in
 `mapping.yaml` under
-[`views:`](../website/docs/reference/mapping.md#views), and the deploy
+[`views:`](../../../website/docs/reference/mapping.md#views), and the deploy
 creates them: title, filter, sort, grouping, row limit, per-column pixel
 widths and any row formatting, each verified by read-back. Nothing in a
 template's DEPLOY, STAFF-GUIDE or GOVERNANCE file waits on a step you have
@@ -286,20 +221,19 @@ that view exists as soon as the script finishes.
 **No exceptions.** Every entity in every template declares its views, its
 form header and its demo rows, and a test over every template says so.
 
-One family, `legal-compliance-register`, deploys a single document library,
-and the library is held to the same standard as every list:
-declared views (recursive, so a file is found whichever folder it was filed
-in), a form header that displays the ordinary `TopicName` field because file
-identity tokens render empty, demo files uploaded into declared folders under `--seed`,
-and folders created and verified by the deploy. A library is accepted only
-as `kind: DocumentLibrary` with `base_template: 101`, each of its demo items
-names a file, and the settings the deploy does not make (the Document ID
-feature, a retention label, per-folder column defaults, hiding the New
-Folder command) are listed in that family's `30-deploy/deploy.md` as manual
-steps a redeploy does not check. Where the metadata is the point and the
-documents are incidental, modelling the metadata as a `List` with a
-hyperlink to a library you manage separately is still the simpler shape,
-and it is the one every other family uses.
+A mapping may also declare a document library, and a library is held to the
+same standard as every list: declared views (recursive, so a file is found
+whichever folder it was filed in), a form header that displays an ordinary
+field because file identity tokens render empty, demo files uploaded into
+declared folders under `--seed`, and folders created and verified by the
+deploy. A library is accepted only as `kind: DocumentLibrary` with
+`base_template: 101`, each of its demo items names a file, and the settings
+the deploy does not make (the Document ID feature, a retention label,
+per-folder column defaults, hiding the New Folder command) belong in its
+`30-deploy/deploy.md` as manual steps a redeploy does not check. Where the
+metadata is the point and the documents are incidental, modelling the
+metadata as a `List` with a hyperlink to a library you manage separately is
+still the simpler shape, and it is the one every template here uses.
 
 The declaration stays authoritative afterwards. A redeploy reconciles each
 declared view back to what the mapping says, so a view somebody widened,
@@ -340,7 +274,7 @@ Description, and a same-named group without that marker is refused unless it
 holds no members. That guards a hand-made group the tool never touched; it
 does not enforce emptiness on the groups it does adopt. Once stamped, `dbml
 List Administrators` is adopted and granted Full Control with any membership
-at all. See [the group-adoption gate](../website/docs/reference/mapping.md#the-site-wide-groups)
+at all. See [the group-adoption gate](../../../website/docs/reference/mapping.md#the-site-wide-groups)
 for what that means when redeploying to a site provisioned before this was
 added.
 
@@ -389,7 +323,7 @@ hid by hand through the designer is not. The two states look identical to
 someone filling in the form, which is the argument for declaring the
 behaviour you want rather than leaving it to whoever last opened the
 designer. See
-[the mapping reference](../website/docs/reference/mapping.md#form_visibility).
+[the mapping reference](../../../website/docs/reference/mapping.md#form_visibility).
 
 **One open question, recorded rather than answered.** A site that was
 deployed by an older version of this tool using the removed
@@ -411,7 +345,7 @@ queries and keep it on the report's documentation page.
 
 Status columns across the templates render as SharePoint's own severity
 boxes with icons per the deployer's style standard (see
-[the style guide](../website/docs/reference/style-guide.md)), consistent
+[the style guide](../../../website/docs/reference/style-guide.md)), consistent
 colours and iconography fleet-wide, using only Microsoft's documented
 formatting classes.
 
@@ -427,7 +361,7 @@ formatting classes.
 - **Columns**: delete what you won't use *before* first deploy. Afterwards,
   deleting the declaration strands a live column the schema no longer knows
   about. Retire it instead, with
-  [`retired_columns:`](../website/docs/reference/mapping.md#retired_columns),
+  [`retired_columns:`](../../../website/docs/reference/mapping.md#retired_columns),
   which keeps the data and the drift audit intact.
 - **Choices**: edit enum members in `schema.dbml` to your organisation's
   vocabulary now. Renaming a choice later strands existing rows on the old

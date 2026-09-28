@@ -99,7 +99,7 @@ def test_the_script_names_itself_for_the_file_the_cli_writes() -> None:
 def test_a_marker_built_by_the_authority_is_what_the_script_looks_for() -> None:
     """Pins the two halves together: the string the deploy writes for a list
     has to be the string this script's prefix matches."""
-    marker = marker_for_object(kind="list", name="GOV_Risk", family="programme-governance")
+    marker = marker_for_object(kind="list", name="PT_Risk", family="project-tracker")
     js = _identify_js()
     assert marker.startswith(MARKER_PREFIX)
     assert MARKER_PREFIX in js

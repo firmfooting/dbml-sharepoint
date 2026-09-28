@@ -128,20 +128,20 @@ def test_core_wins_a_duplicate_id_and_the_loser_is_named_once(
 ) -> None:
     """Every id repeats while a provider and core both ship the same packs."""
     packs = tmp_path / "packs"
-    for pack_id in ("risk-register", "visitor-log"):
+    for pack_id in ("asset-register", "visitor-log"):
         write_family(packs, pack_id, {"license": "BUSL-1.1"})
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
 
     found = read_catalogue()
-    assert load_solution("risk-register").distribution == CORE_DISTRIBUTION
+    assert load_solution("asset-register").distribution == CORE_DISTRIBUTION
     assert set(found.shadowed) == {
-        Shadowed("blueprint", "risk-register", "acme-packs", CORE_DISTRIBUTION),
+        Shadowed("blueprint", "asset-register", "acme-packs", CORE_DISTRIBUTION),
         Shadowed("blueprint", "visitor-log", "acme-packs", CORE_DISTRIBUTION),
     }
     assert [line for line in notices(found) if line.startswith("Hidden:")] == [
         (
             "Hidden: 2 blueprints from acme-packs share an id with one from dbml-sharepoint, "
-            "which is offered instead: risk-register, visitor-log"
+            "which is offered instead: asset-register, visitor-log"
         ),
     ]
 
@@ -168,14 +168,16 @@ def test_a_provider_s_journeys_are_offered_and_core_wins_a_duplicate(
 ) -> None:
     packs = tmp_path / "packs"
     write_journey(packs, "acme-journey", ["acme-thing"])
-    write_journey(packs, "the-front-desk", ["acme-thing"])
+    write_journey(packs, "replacing-the-paper-books", ["acme-thing"])
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
 
     found = read_catalogue()
     by_id = {j.id: j for j in found.journeys}
     assert by_id["acme-journey"].distribution == "acme-packs"
-    assert by_id["the-front-desk"].distribution == CORE_DISTRIBUTION
-    assert Shadowed("journey", "the-front-desk", "acme-packs", CORE_DISTRIBUTION) in found.shadowed
+    assert by_id["replacing-the-paper-books"].distribution == CORE_DISTRIBUTION
+    assert Shadowed(
+        "journey", "replacing-the-paper-books", "acme-packs", CORE_DISTRIBUTION,
+    ) in found.shadowed
 
 
 def test_a_provider_whose_entry_point_raises_is_refused_by_name(

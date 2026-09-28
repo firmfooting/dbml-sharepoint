@@ -161,9 +161,9 @@ def parse_list_url(url: str) -> ListUrl:
             f"{url!r} has no /Lists/<name>/ segment and no /<library>/Forms/"
             "<page> one, so it names neither a list nor a document library. "
             "Open it in SharePoint and copy the URL from the address bar; a "
-            "list looks like https://contoso.sharepoint.com/sites/Risk/Lists/"
-            "RG_Project/AllItems.aspx and a library like https://contoso."
-            "sharepoint.com/sites/Risk/RG_Evidence/Forms/AllItems.aspx",
+            "list looks like https://contoso.sharepoint.com/sites/Projects/Lists/"
+            "PT_Project/AllItems.aspx and a library like https://contoso."
+            "sharepoint.com/sites/Projects/PT_Evidence/Forms/AllItems.aspx",
         )
     # The library marker sits AFTER the name it identifies, so what follows it
     # is what separates a forms folder from a site segment of the same name:
