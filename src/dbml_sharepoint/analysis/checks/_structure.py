@@ -1255,6 +1255,8 @@ def _calculated_formulas(vc: ValidationContext) -> list[Finding]:
         xcols = vc.cross_site_columns(table.name)
         rendered = rendered_columns(table, xcols)
         columns_by_name = {candidate.name: candidate for candidate in table.columns}
+        entity = vc.bundle.mapping.entities.get(table.name)
+        builtins = CALCULATED_FORMULA_BUILTINS if entity and entity.is_library else frozenset()
         for col in table.columns:
             if col.type not in CALCULATED_TYPES:
                 continue
@@ -1262,13 +1264,13 @@ def _calculated_formulas(vc: ValidationContext) -> list[Finding]:
                 table.name, {},
             ).get(col.name)
             findings += _calculated_formula(
-                table, col, formula, rendered, columns_by_name, deferred,
+                table, col, formula, rendered, columns_by_name, deferred, builtins,
             )
     return findings
 
 
-# `=[Created]+14` was confirmed on a live library 2026-09-28; other built-ins are unmeasured.
-FORMULA_BUILTINS: frozenset[str] = frozenset({"Created"})
+# `=[Created]+14` was confirmed on a live library 2026-09-28; lists and the rest are unmeasured.
+CALCULATED_FORMULA_BUILTINS: frozenset[str] = frozenset({"Created"})
 
 
 def _calculated_formula(
@@ -1278,6 +1280,7 @@ def _calculated_formula(
     rendered: set[str],
     columns_by_name: dict[str, Column],
     deferred: dict[str, set[str]],
+    builtins: AbstractSet[str] = frozenset(),
 ) -> list[Finding]:
     """One calculated column's formula: its presence, shape and references."""
     if formula is None:
@@ -1324,7 +1327,7 @@ def _calculated_formula(
                 Section.CALCULATED_FORMULAS, entity=table.name, column=col.name,
             ),
         ))
-    for ref in sorted(refs - rendered - FORMULA_BUILTINS):
+    for ref in sorted(refs - rendered - builtins):
         findings.append(Finding(
             FindingCode.CALCULATED_FORMULA_UNKNOWN_COLUMN,
             f"{table.name}.{col.name}: calculated formula references "
