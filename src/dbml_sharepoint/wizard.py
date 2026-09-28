@@ -63,6 +63,7 @@ from dbml_sharepoint.bundle import (
 from dbml_sharepoint.catalogue import (
     BROWSE_ALL,
     MAPPING_RELPATH,
+    NEVER_COPIED,
     PLACEHOLDER_SITE_URL,
     PLACEHOLDER_TIME_ZONE,
     RELEASE_RELPATH,
@@ -100,7 +101,7 @@ from dbml_sharepoint.project import (
 #: gitignored in the repository, so they exist only in a contributor's
 #: checkout -- but that is exactly where the wizard gets run during
 #: development, and a stale deploy script in a new project is worse than none.
-_NEVER_COPY = ("build", "reports", "__pycache__")
+_NEVER_COPY = NEVER_COPIED
 
 #: Refuses only what cannot be a filename component or would corrupt the
 #: YAML line the prefix is written into. NOT a SharePoint rule.
@@ -1257,6 +1258,21 @@ def _check_reads(solution: Solution, read: list[Path]) -> None:
             )
 
 
+def _check_links(solution: Solution) -> None:
+    """Refuse a template holding a link out of itself, since the copy follows links."""
+    root = solution.root.resolve()
+    for path in sorted(solution.root.rglob("*")):
+        inside = path.relative_to(solution.root)
+        if set(inside.parts) & set(_NEVER_COPY):
+            continue
+        if path.is_symlink() and not path.resolve().is_relative_to(root):
+            name = inside.as_posix()
+            raise WizardError(
+                f"the {solution.id} template's {name} links outside the template, and the "
+                "copy would bring whatever it points at into the project",
+            )
+
+
 def _check_inputs(solution: Solution) -> None:
     """Load the schema and release the build will read, so a bad one is refused before any copy.
 
@@ -1282,7 +1298,11 @@ def _check_docs(solution: Solution) -> None:
     the rewrite runs after the project is written.
     """
     for doc in sorted(solution.root.rglob("*.md")):
-        name = doc.relative_to(solution.root).as_posix()
+        inside = doc.relative_to(solution.root)
+        # The copy leaves these out, so `_repoint_docs` never reads them.
+        if set(inside.parts) & set(_NEVER_COPY):
+            continue
+        name = inside.as_posix()
         try:
             doc.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
@@ -1311,6 +1331,7 @@ def _read_facts(solution: Solution) -> _TemplateFacts:
             f"the {solution.id} template's mapping could not be loaded: {exc}",
         ) from exc
     _check_reads(solution, read)
+    _check_links(solution)
     _check_inputs(solution)
     _check_docs(solution)
     permissions = bundle.mapping.permissions

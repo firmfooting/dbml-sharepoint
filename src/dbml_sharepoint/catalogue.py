@@ -101,6 +101,9 @@ _MANIFEST_KEYS = ("id", "title", "summary", "license", "origin", "notice", "min_
 #: may take it.
 BROWSE_ALL = "all"
 
+#: Directory names the wizard never copies into a project, at any depth.
+NEVER_COPIED = ("build", "reports", "__pycache__")
+
 #: The origin of a blueprint designed by this project, which needs no notice.
 ORIGIN_OWN = "firmfooting"
 
@@ -357,6 +360,11 @@ def _check_notice(blueprint_dir: Path, notice: str, path: Path) -> None:
         raise BlueprintManifestError(
             f"{path}: notice {notice!r} is not a file inside the blueprint",
         )
+    if set(target.relative_to(blueprint_dir.resolve()).parts) & set(NEVER_COPIED):
+        raise BlueprintManifestError(
+            f"{path}: notice {notice!r} is in a directory the wizard never copies "
+            f"({', '.join(NEVER_COPIED)} are never copied)",
+        )
 
 
 def _unprintable(text: str) -> str:
@@ -407,6 +415,8 @@ def _taken_by_the_wizard(item_id: str) -> str:
         return f"the id {BROWSE_ALL!r} is reserved: the wizard reads it as every blueprint"
     if item_id.isdigit():
         return f"the id {item_id!r} is only digits, which the wizard reads as a row number"
+    if item_id != item_id.strip():
+        return f"the id {item_id!r} has leading or trailing whitespace, which the wizard trims"
     return ""
 
 
@@ -731,6 +741,13 @@ def _provider_root(point: EntryPoint) -> BlueprintRoot:
         raise BlueprintRootError(
             f"entry point {point.name} ({point.value}) in {BLUEPRINT_ROOTS_GROUP}: its "
             "distribution's metadata declares no Name",
+        )
+    # Printed beside every blueprint the distribution ships, so held to their rule.
+    if found := _unprintable(distribution):
+        raise BlueprintRootError(
+            f"entry point {point.name} ({point.value}) in {BLUEPRINT_ROOTS_GROUP}: its "
+            f"distribution's Name {distribution!r} carries characters a console may not "
+            f"print: {found}",
         )
     licence = _declared_licence(distribution, declared)
     # Any failure inside a provider's own code is that provider's, and named as such.

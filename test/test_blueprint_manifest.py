@@ -237,3 +237,16 @@ def test_an_id_of_only_digits_is_refused(tmp_path: Path) -> None:
     """The wizard's pickers take a row number at the same prompt as an id."""
     with pytest.raises(BlueprintManifestError, match="only digits"):
         read_blueprint_manifest(_pack(tmp_path, manifest_text("2"), name="2"), CORE_LICENSE)
+
+
+@pytest.mark.parametrize("folder", ["build", "reports", "__pycache__"])
+def test_a_notice_in_a_directory_the_wizard_never_copies_is_refused(
+    tmp_path: Path, folder: str,
+) -> None:
+    """The copied manifest would name release terms the copy left behind."""
+    overrides = {"origin": "acme-released", "notice": f"{folder}/NOTICE"}
+    pack_dir = _pack(tmp_path, manifest_text("acme-thing", overrides))
+    (pack_dir / folder).mkdir()
+    (pack_dir / folder / "NOTICE").write_text("terms\n", encoding="utf-8")
+    with pytest.raises(BlueprintManifestError, match="never copied"):
+        read_blueprint_manifest(pack_dir, CORE_LICENSE)

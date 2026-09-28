@@ -420,3 +420,30 @@ def test_a_provider_journey_whose_id_is_a_row_number_is_refused(
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
     with pytest.raises(BlueprintRootError, match="only digits"):
         read_catalogue()
+
+
+def test_a_provider_journey_id_the_wizard_would_trim_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The picker strips an answer, so ` all` would browse everything and `2 ` pick row 2."""
+    packs = tmp_path / "packs"
+    write_journey(packs, " x", ["acme-thing"])
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+    with pytest.raises(BlueprintRootError, match="leading or trailing whitespace"):
+        read_catalogue()
+
+
+def test_a_provider_whose_name_a_console_cannot_print_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The distribution name is printed beside every blueprint it ships."""
+    packs = tmp_path / "packs"
+    packs.mkdir()
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+    (tmp_path / "site" / "acme_packs-1.0.dist-info" / "METADATA").write_text(
+        "Metadata-Version: 2.4\nName: acme-pack" + chr(0xE9) + "\nVersion: 1.0\n"
+        "License-Expression: BUSL-1.1\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(BlueprintRootError, match=r"Name .* U\+00E9"):
+        read_catalogue()

@@ -98,6 +98,12 @@ BLUEPRINT_MANIFEST = 'blueprint.toml'
 BROWSE_ALL = 'all'
 ```
 
+### `NEVER_COPIED`
+
+```python
+NEVER_COPIED = ('build', 'reports', '__pycache__')
+```
+
 ### `ORIGIN_OWN`
 
 ```python

@@ -3835,3 +3835,42 @@ def test_a_journey_id_with_markup_names_no_installed_blueprint_without_crashing(
     console = ScriptedConsole(["[/red]x", *_answers(tmp_path / "proj")])
     assert wizard.run_wizard(console) == 0
     assert "Journey '[/red]x' names no blueprint that is installed" in _collapsed(console)
+
+
+def test_undecodable_documentation_the_copy_leaves_out_is_not_a_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The preflight reads exactly the docs the copy carries and the rewrite reads."""
+    solution = _fake_family(tmp_path / "fake")
+    (solution.root / "build").mkdir()
+    (solution.root / "build" / "notes.md").write_bytes(b"caf\xe9\n")
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 0
+    assert not (destination / "fake-template" / "build").exists()
+
+
+def test_a_template_with_a_link_out_of_it_is_refused_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The copy follows links, so a link out of the template would copy whatever it points at."""
+    solution = _fake_family(tmp_path / "fake")
+    private = tmp_path / "private"
+    private.mkdir()
+    (private / "secret.txt").write_text("not for the project\n", encoding="utf-8")
+    try:
+        (solution.root / "docs").symlink_to(private, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"this platform will not create a symlink here: {exc}")
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    shown = _collapsed(console)
+    assert "links outside the template" in shown
+    assert not destination.exists()
