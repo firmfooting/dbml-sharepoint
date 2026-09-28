@@ -68,8 +68,9 @@ from dbml_sharepoint.catalogue import (
     SCHEMA_RELPATH,
     Journey,
     Solution,
-    available_journeys,
-    available_solutions,
+    SolutionRootError,
+    notices,
+    read_catalogue,
 )
 from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.env_file import (
@@ -237,7 +238,15 @@ def _catalogue_table(solutions: list[Solution]) -> Table:
     table.add_column("Template", no_wrap=True)
     table.add_column("Lists", justify="right", no_wrap=True)
     table.add_column("Title")
+    current = ""
     for index, solution in enumerate(solutions, start=1):
+        if solution.distribution != current:
+            current = solution.distribution
+            # One row per package, because every pack in a package carries its licence.
+            table.add_row(
+                "", f"[bold]{escape(current)}[/bold]", "",
+                f"Licence: {escape(solution.license)}",
+            )
         table.add_row(
             str(index), solution.id, str(len(solution.lists)), solution.title,
         )
@@ -1422,11 +1431,16 @@ def _next_panel(answers: Answers) -> Panel:
 
 
 def _run(console: Console) -> int:
-    solutions = available_solutions()
+    try:
+        found = read_catalogue()
+    except SolutionRootError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        return 1
+    solutions = list(found.solutions)
     # A journey is navigation, not a template. A build that shipped without
     # any still offers every template, so this never turns a cosmetic problem
     # into a wizard that refuses to run.
-    journeys = available_journeys()
+    journeys = list(found.journeys)
     if not solutions:
         console.print(
             "[red]No templates found.[/red] This build of dbml-sharepoint "
@@ -1444,6 +1458,9 @@ def _run(console: Console) -> int:
             border_style="green",
         ),
     )
+    # Once per run, before any question: what was refused, and what another root hid.
+    for line in notices(found):
+        console.print(f"[yellow]{escape(line)}[/yellow]")
 
     # rich degrades a rule to ASCII by itself: `Rule.__rich_console__`
     # substitutes "-" when `options.ascii_only` and the configured characters

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import override
 
 import pytest
-from _catalogue_fixtures import CORE_LICENSE
+from _catalogue_fixtures import CORE_LICENSE, Provider, install, write_family
 from _console import ScriptedConsole
 from _console import collapsed as _collapsed
 
@@ -31,6 +31,7 @@ from dbml_sharepoint.catalogue import (
     Solution,
     available_solutions,
     load_solution,
+    read_catalogue,
 )
 from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.env_file import ENV_FILENAME, read_env_file
@@ -293,7 +294,8 @@ def test_several_templates_nest_by_id(tmp_path: Path) -> None:
 
 
 def _offer_only(monkeypatch: pytest.MonkeyPatch, solution: Solution) -> None:
-    monkeypatch.setattr(wizard, "available_solutions", lambda: [solution])
+    offered = replace(read_catalogue(), solutions=(solution,))
+    monkeypatch.setattr(wizard, "read_catalogue", lambda: offered)
 
 
 def _capture_build(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
@@ -929,7 +931,8 @@ def test_a_refused_build_passes_its_exit_code_through(
 def test_no_shipped_templates_is_reported_not_a_crash(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(wizard, "available_solutions", list)
+    empty = replace(read_catalogue(), solutions=())
+    monkeypatch.setattr(wizard, "read_catalogue", lambda: empty)
     console = ScriptedConsole([])
     assert wizard.run_wizard(console) == 1
     assert "shipped without them" in console.text
@@ -3596,3 +3599,45 @@ def test_the_scaffolded_project_carries_the_pack_s_licence(tmp_path: Path) -> No
     assert wizard.run_wizard(ScriptedConsole(_answers(destination))) == 0
     manifest = tomllib.loads((destination / PACK_MANIFEST).read_text(encoding="utf-8"))
     assert (manifest["id"], manifest["license"]) == ("risk-register", CORE_LICENSE)
+
+
+def test_the_table_groups_templates_by_package_and_names_each_licence() -> None:
+    core = load_solution("risk-register")
+    other = replace(
+        core, id="acme-thing", title="Acme thing", distribution="acme-packs", license="BUSL-1.1",
+    )
+    console = ScriptedConsole([])
+    console.print(wizard._catalogue_table([core, other]))
+    shown = _collapsed(console)
+    assert f"Licence: {CORE_LICENSE}" in shown
+    assert "Licence: BUSL-1.1" in shown
+    assert (
+        shown.index(CORE_DISTRIBUTION)
+        < shown.index("risk-register")
+        < shown.index("acme-packs")
+        < shown.index("acme-thing")
+    )
+
+
+def test_a_provider_that_cannot_be_read_stops_the_wizard_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", tmp_path / "missing"))
+    console = ScriptedConsole([])
+    assert wizard.run_wizard(console) == 1
+    shown = _collapsed(console)
+    assert "acme-packs:" in shown
+    assert "is not a directory" in shown
+
+
+def test_a_refused_pack_is_named_before_the_first_question(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packs = tmp_path / "packs"
+    write_family(packs, "acme-thing")  # core's licence, inside a BUSL-1.1 distribution
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+    console = ScriptedConsole(_answers(tmp_path / "proj"))
+    assert wizard.run_wizard(console) == 0
+    shown = _collapsed(console)
+    assert "Not offered: acme-packs:" in shown
+    assert shown.index("Not offered") < shown.index("Where to start")
