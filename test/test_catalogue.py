@@ -45,6 +45,20 @@ def test_every_shipped_family_is_offered() -> None:
     assert {s.id for s in available_solutions()} == on_disk
 
 
+#: Pinned rather than globbed. Every other pack ships in a separate package, and
+#: core wins a duplicate id, so a pack that reappeared here would hide that copy.
+CORE_STARTER_SET = frozenset({
+    "asset-register", "contract-register", "deployment-log",
+    "routine-checks", "training-register", "visitor-log",
+})
+
+
+def test_the_starter_journey_names_exactly_the_starter_set() -> None:
+    """Somebody who installs only the engine still has one place to start."""
+    starter = next(j for j in available_journeys() if j.id == "replacing-the-paper-books")
+    assert set(starter.solution_ids) == CORE_STARTER_SET
+
+
 def test_the_catalogue_ships_inside_the_package() -> None:
     """The whole reason the templates moved.
 
