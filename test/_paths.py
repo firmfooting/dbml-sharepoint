@@ -61,3 +61,20 @@ JINJA_TEMPLATES = PACKAGE / "templates"
 #: files under the package directory reach the wheel, so a solution template
 #: outside it exists for contributors and for nobody else.
 SOLUTION_TEMPLATES = PACKAGE / "solutions"
+
+#: Blueprints written for the suite, offered to the wizard tests and read by the engine sweeps.
+TEST_BLUEPRINTS = FIXTURES / "blueprints"
+
+
+def engine_blueprints() -> dict[str, Path]:
+    """{id: directory} for every blueprint a sweep over the engine's output reads.
+
+    Core's own blueprints first, then the ones written for the suite; a name
+    core ships is read from core. A sweep over what a shipped blueprint must
+    satisfy globs `SOLUTION_TEMPLATES` alone.
+    """
+    found: dict[str, Path] = {}
+    for root in (SOLUTION_TEMPLATES, TEST_BLUEPRINTS):
+        for schema in sorted(root.glob("*/10-design/schema.dbml")):
+            found.setdefault(schema.parent.parent.name, schema.parent.parent)
+    return found

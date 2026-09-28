@@ -1,0 +1,32 @@
+// A stand-in risk register for the wizard tests: one list, rated against a target.
+Project risk_register { database_type: 'SharePoint Online Lists' }
+
+Enum risk_rating {
+  "Low"
+  "Medium"
+  "High"
+}
+
+Enum risk_status {
+  "Open"
+  "Closed"
+}
+
+Table Risk {
+  Id                int             [pk, increment]
+  Title             nvarchar        [not null, note: 'The risk, stated as an uncertain event']
+  Detail            richtext        [note: 'What could trigger it and what happens if it does']
+  CurrentRating     risk_rating     [note: 'The rating with current controls in effect']
+  TargetRating      risk_rating     [note: 'The rating the owner is working towards']
+  LevelsAboveTarget calculated_number [note: 'Calculated: how many levels the current rating sits above the target. Blank until both are set']
+  RiskOwner         person          [note: 'Who is accountable for treating it']
+  Status            risk_status     [not null, default: 'Open', note: 'Whether the risk is still live']
+  LastReviewedDate  date            [note: 'When the owner last reviewed it']
+
+  indexes {
+    Status
+    CurrentRating
+  }
+
+  Note: 'Risks the organisation has chosen to track, each rated against a target and reviewed by its owner.'
+}

@@ -1,0 +1,124 @@
+# Risk register stand-in: physical mapping.
+#
+# Written for the test suite. The wizard tests count this file's comment
+# lines after a scaffold to prove the copy kept them, so the comments are
+# part of the fixture.
+prefix: "RR_"
+
+entities:
+  Risk: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+# The shared security model, as every starter blueprint declares it. The
+# enterprise reader group is what makes the wizard ask for a reporting
+# account, which the wizard tests answer.
+groups:
+  - name: "dbml List Administrators"
+    description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: true
+    enroll_operator_during_deploy: true
+  - name: "dbml Enterprise Readers"
+    description: "Read-only accounts for aggregated cross-site reporting. Empty by default; membership is operator-owned."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    enroll_enterprise_reader: true
+
+permission_levels: []
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "dbml List Administrators" }
+        level: "Full Control"
+      - principal: { kind: associated_member_group }
+        level: "Contribute"
+      - principal: { kind: associated_owner_group }
+        level: "Contribute"
+      - principal: { kind: group, name: "dbml Enterprise Readers" }
+        level: "Read"
+
+# LevelsAboveTarget reads the two ratings; blank until both are set.
+calculated_formulas:
+  Risk:
+    LevelsAboveTarget: '=IF(OR(ISBLANK([CurrentRating]),ISBLANK([TargetRating])),"",IF([CurrentRating]="Low",1,IF([CurrentRating]="Medium",2,3))-IF([TargetRating]="Low",1,IF([TargetRating]="Medium",2,3)))'
+
+display_names:
+  mode: auto
+
+# The numeric-severity style is what test_styles.py reads from this file.
+column_formatting:
+  Risk:
+    CurrentRating:
+      style: severity
+      map:
+        "Low": good
+        "Medium": warning
+        "High": severe
+    LevelsAboveTarget:
+      style: numeric-severity
+      calculated: true
+      bands:
+        - { max: 0, token: good }
+        - { max: 1, token: warning }
+      otherwise: severe
+
+# One default view, filtered, so the view sweeps have a filter to read.
+views:
+  Risk:
+    - title: "Open risks"
+      default: true
+      fields: [Title, CurrentRating, TargetRating, LevelsAboveTarget, RiskOwner, Status, LastReviewedDate]
+      where:
+        - { field: Status, op: neq, value: "Closed" }
+      sort:
+        - { field: LastReviewedDate, direction: asc }
+      widths:
+        Title: 300
+        CurrentRating: 120
+        TargetRating: 120
+        LevelsAboveTarget: 150
+        RiskOwner: 160
+        Status: 100
+        LastReviewedDate: 160
+
+# Demo rows, emitted only under --seed. Every Title starts "[DEMO] ".
+demo_items:
+  Risk:
+    - key: rr-above-target
+      values:
+        Title: "[DEMO] Key supplier fails mid-contract"
+        Detail: "Demo row. A single-source consumable with a four-week lead time."
+        CurrentRating: "High"
+        TargetRating: "Low"
+        RiskOwner: "@me"
+        Status: "Open"
+        LastReviewedDate: "today-30"
+    - key: rr-at-target
+      values:
+        Title: "[DEMO] Server room air conditioning fails"
+        Detail: "Demo row. The second unit was fitted last quarter."
+        CurrentRating: "Low"
+        TargetRating: "Low"
+        RiskOwner: "@me"
+        Status: "Open"
+        LastReviewedDate: "today-7"
+    - key: rr-closed
+      values:
+        Title: "[DEMO] Lease expires before the move"
+        Detail: "Demo row. The move completed and the lease was surrendered."
+        CurrentRating: "Low"
+        TargetRating: "Low"
+        RiskOwner: "@me"
+        Status: "Closed"
+        LastReviewedDate: "today-60"

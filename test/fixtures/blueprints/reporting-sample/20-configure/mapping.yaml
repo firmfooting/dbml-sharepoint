@@ -1,0 +1,46 @@
+# A fixture family, not a shipped blueprint. Its reporting and demo rows sit in
+# side files, one lookup projects its target's title, and one view's widths
+# override a merged anchor.
+prefix: "RS_"
+
+entities:
+  Risk: { kind: List, base_template: 100, site_role: default }
+  Action: { kind: List, base_template: 100, site_role: default }
+
+display_names:
+  mode: auto
+
+views:
+  Risk:
+    - title: "Open risks"
+      default: true
+      fields: [Title, Score, Status]
+      where:
+        - { field: Status, op: eq, value: "Open" }
+  Action:
+    - title: "Open actions"
+      default: true
+      fields: [Title, Status, Minutes, RelatedRisk]
+      where:
+        - { field: Status, op: eq, value: "Open" }
+      widths: &spine
+        Title: 260
+        Status: 120
+        Minutes: 100
+        RelatedRisk: 200
+    - title: "Done"
+      fields: [Title, Status, Minutes, RelatedRisk]
+      where:
+        - { field: Status, op: eq, value: "Done" }
+      totals:
+        Minutes: sum
+      widths:
+        <<: *spine
+        Title: 300
+
+lookup_projections:
+  Action:
+    RelatedRisk: [Title]
+
+reporting_source: reporting.yaml
+demo_source: demo.yaml

@@ -1,0 +1,20 @@
+demo_items:
+  Risk:
+    - key: risk-open
+      values:
+        Title: "[DEMO] Supplier fails to deliver"
+        Score: 12
+        Status: Open
+  Action:
+    - key: action-open
+      values:
+        Title: "[DEMO] Name a second supplier"
+        Status: Open
+        Minutes: 30
+        RelatedRisk: risk-open
+    - key: action-done
+      values:
+        Title: "[DEMO] Review the contract"
+        Status: Done
+        Minutes: 90
+        RelatedRisk: risk-open

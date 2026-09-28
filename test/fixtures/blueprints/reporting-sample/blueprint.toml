@@ -1,0 +1,7 @@
+id = "reporting-sample"
+title = "Reporting sample"
+summary = "Two lists that read each other, written for the reporting sweeps: not a shipped blueprint."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"
