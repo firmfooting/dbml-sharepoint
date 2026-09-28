@@ -2,22 +2,27 @@
 """The reverse direction: a list's field XML back to schema + mapping.
 
 Everything here is tested against `sample-list-extract.json`, a synthetic
-read of a project tracker's list. Its field grammar was borrowed type by
-type and shape by shape from a live read of a list built with this tool,
-so each element is spelled the way SharePoint stores one rather than as
-XML written here from memory; every name, choice, description, formula and
-formatter in it is the sample's own. It is not a real read, and nothing in
-it names a tenant, a site or a list anyone runs.
+read of the list the shipped `contract-register` blueprint deploys. Every
+name, title, description, choice, default, formula, formatter, view and
+form section in it is that blueprint's, rendered by the shipped forward
+generator; the field grammar around them (attribute names and order, the
+SharePoint-owned attributes, the child elements and the escaping) was
+borrowed type by type from a live read of a list built with this tool, so
+each element is spelled the way SharePoint stores one rather than as XML
+written here from memory. It is not a real read, and nothing in it names
+a tenant, a site or a list anyone runs. The blueprint's one URL column is
+absent, because no read in this repository shows a URL element to borrow.
 
-The list exercises both halves of the recovery rule. One single-comparison
-validation rule and one form-visibility formula are recovered and then
-re-composed by the shipped forward generator; a pill, six severity chains,
-two overdue-date formatters and a data-bar formatter are not ones the
-current style vocabulary emits and are preserved verbatim; three
-`OR(ISBLANK(...))` validation rules and a two-clause visibility formula
-are refused and reported. A test below runs the forward generator over
-each recovered declaration and compares the result to what the fixture
-stores, which is the property the whole extractor rests on.
+The list exercises both halves of the recovery rule. Two severity chains,
+an overdue-date formatter with a guard and one form-visibility formula are
+recovered and then re-composed by the shipped forward generator; a
+data-bar formatter is not one the style vocabulary re-derives and is
+preserved verbatim; two `OR(ISBLANK(...))` validation rules are refused
+and reported. A test below runs the forward generator over each recovered
+declaration and compares the result to what the fixture stores, which is
+the property the whole extractor rests on. The single-comparison rules the
+fixture's list has none of are round-tripped through the same generator
+from builder XML further down.
 """
 
 import functools
@@ -32,11 +37,12 @@ from typing import Any, override
 import pytest
 from _console import ScriptedConsole, collapsed
 from _node import NODE
-from _paths import FIXTURES
+from _paths import FIXTURES, SOLUTION_TEMPLATES
 from typer.testing import CliRunner, Result
 
 from dbml_sharepoint.analysis.condition_rendering import to_validation
 from dbml_sharepoint.analysis.form_rendering import compose_visibility
+from dbml_sharepoint.analysis.styles import expand_style
 from dbml_sharepoint.cli import app
 from dbml_sharepoint.extract.decode import (
     DecodedEntity,
@@ -95,17 +101,23 @@ from dbml_sharepoint.generators.extractgen import (
 from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.conditions import parse_condition
 from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import parse_dbml
 
 SAMPLE = FIXTURES / "sample-list-extract.json"
 
+#: The blueprint the fixture's list was rendered from, and the table name
+#: it gives that list. The fixture is checked against this mapping rather
+#: than against strings copied out of it.
+BLUEPRINT = SOLUTION_TEMPLATES / "contract-register"
 #: The one list the fixture describes, and the table name every test here
-#: gives it.
-LIST_TITLE = "PT_Project"
+#: gives it: the blueprint's own, so the recovered declarations diff
+#: against the shipped mapping.
+LIST_TITLE = "CT_Contract"
 #: The server-relative URL that list is served at, which is what the
 #: emitted script resolves by.
 LIST_PATH = f"/sites/Risk/Lists/{LIST_TITLE}"
-ENTITY = "Project"
+ENTITY = "Contract"
 
 #: A site and the address-bar URL of `LIST_TITLE` on it. Not the fixture's
 #: own site: nothing here reads the list, and an invented tenant keeps the
@@ -173,6 +185,12 @@ def _entity() -> DecodedEntity:
     return _extraction().entities[0]
 
 
+@functools.lru_cache(maxsize=1)
+def _blueprint() -> MappingBundle:
+    """The shipped mapping the fixture's list was rendered from."""
+    return load_mapping(BLUEPRINT / "20-configure" / "mapping.yaml")
+
+
 def _stored(attribute: str) -> dict[str, str]:
     """{internal name: attribute} for every field that carries one.
 
@@ -200,7 +218,7 @@ def _live_payload() -> dict[str, Any]:
 #: The only hosts and site segments a scrubbed fixture may name. Everything
 #: else under a Microsoft tenant domain is somebody's real tenant.
 _PLACEHOLDER_HOSTS = frozenset({"example.sharepoint.com", "contoso.sharepoint.com"})
-_PLACEHOLDER_SITES = frozenset({"projects", "example", "team-a"})
+_PLACEHOLDER_SITES = frozenset({"contracts", "example", "team-a"})
 
 #: A tenant host, a site segment, and the federated user key SharePoint mints
 #: for a guest. The last one embeds the account it was minted for, so it is a
@@ -263,7 +281,7 @@ def test_the_fixture_carries_no_tenant_data() -> None:
     assert not _FEDERATED_USER_KEY.search(text), "a federated user key names an account"
     assert not re.findall(r"[\w.%+-]+@[\w.-]+\.\w{2,}", text)
     assert _forbidden_stem(text) is None, "the fixture names the list its grammar came from"
-    assert _source().site_url == "https://example.sharepoint.com/sites/Projects"
+    assert _source().site_url == "https://example.sharepoint.com/sites/Contracts"
     assert "\r" not in text, "the fixture must be LF; see AGENTS.md on generated files"
     assert not text.startswith("\ufeff")
 
@@ -274,19 +292,19 @@ def test_the_download_is_read_with_a_byte_order_mark(tmp_path: Path) -> None:
     that would fail if it stopped being."""
     path = tmp_path / "download.json"
     path.write_bytes(b"\xef\xbb\xbf" + SAMPLE.read_bytes())
-    assert len(load_source(path).lists[0].fields) == 117
+    assert len(load_source(path).lists[0].fields) == 98
 
 
 def test_every_field_in_the_fixture_decodes() -> None:
     fields = _source().lists[0].fields
-    assert len(fields) == 117
+    assert len(fields) == 98
     assert all(f.sp_type for f in fields)
     assert _source().lists[0].title == LIST_TITLE
 
 
 def test_the_built_ins_are_skipped_and_title_is_not() -> None:
-    """Eighty-five of the hundred and seventeen fields on an ordinary list
-    are SharePoint's own. `Title` satisfies every built-in test and is
+    """Eighty-five of the ninety-eight fields on an ordinary list are
+    SharePoint's own. `Title` satisfies every built-in test and is
     still the one this tool manages, so it is kept."""
     entity = _entity()
     assert len(entity.skipped) == 85
@@ -322,46 +340,32 @@ def test_a_non_field_element_is_refused_by_name() -> None:
 #: to the branch, so a change to the table is checked against stored XML.
 EXPECTED_TYPES = {
     "Title": "nvarchar",
-    "Category": "category",
-    "BusinessUnit": "nvarchar",
-    "Sponsor": "nvarchar",
-    "ProjectManager": "person",
-    "CostCentre": "nvarchar",
-    "Objective": "richtext",
-    "Priority": "priority",
-    "DeliveryModel": "delivery_model",
-    "Portfolio": "nvarchar",
-    "ApprovalStatus": "approval_status",
-    "CaseReference": "nvarchar",
-    "RaisedOn": "date",
-    "DecidedOn": "date",
-    "FundingExpires": "date",
-    "RiskRating": "risk_rating",
-    "RiskNotes": "richtext",
-    "FundingStatus": "funding_status",
-    "FundingRequestedOn": "date",
-    "FundedOn": "date",
-    "FundingReference": "nvarchar",
-    "ReleasedBy": "nvarchar",
-    "Phase": "phase",
-    "NextCheckpoint": "date",
-    "LastCheckpointHeld": "date",
-    "LatestChangeReference": "nvarchar",
-    "LatestChangeStatus": "latest_change_status",
-    "LatestChangeDate": "date",
-    "ChangeCount": "number",
-    "TrackerNotes": "richtext",
-    "ClosedOn": "date",
-    "Readiness": "calculated_text",
+    "Counterparty": "nvarchar",
+    "ContractRef": "nvarchar",
+    "ContractType": "contract_type",
+    "Status": "status",
+    "Owner": "person",
+    "StartDate": "date",
+    "EndDate": "date",
+    "RenewalType": "renewal_type",
+    "NoticePeriodDays": "number",
+    "AnnualValue": "number",
+    "Summary": "richtext",
+    "TermMonths": "calculated_number",
 }
 
 
 def test_the_fixture_decodes_to_the_expected_types() -> None:
     entity = _entity()
     assert {c.name: c.dbml_type for c in entity.columns} == EXPECTED_TYPES
-    assert entity.indexes == [
-        "ApprovalStatus", "FundingStatus", "Phase", "NextCheckpoint",
-    ]
+    # The three the blueprint's DBML indexes plus the unique column, which
+    # SharePoint indexes to enforce uniqueness; in field order.
+    assert entity.indexes == ["ContractRef", "ContractType", "Status", "EndDate"]
+    (table,) = parse_dbml(BLUEPRINT / "10-design" / "schema.dbml").tables
+    assert set(entity.indexes) == {i.columns[0] for i in table.indexes} | {
+        c.name for c in table.columns if c.unique
+    }
+    assert {c.name for c in entity.columns if c.unique} == {"ContractRef"}
 
 
 @pytest.mark.parametrize(("xml", "expected"), [
@@ -536,11 +540,8 @@ def test_an_enum_name_that_would_collide_with_a_type_is_qualified() -> None:
     assert decoded.columns[0].dbml_type == "risk_date"
 
 
-def test_the_fixture_yields_eight_enums_named_from_their_columns() -> None:
-    assert _extraction().enum_names() == {
-        "category", "priority", "delivery_model", "approval_status",
-        "risk_rating", "funding_status", "phase", "latest_change_status",
-    }
+def test_the_fixture_yields_three_enums_named_from_their_columns() -> None:
+    assert _extraction().enum_names() == {"contract_type", "status", "renewal_type"}
 
 
 # --- Verification: the forward generator re-run over what was recovered ----
@@ -551,52 +552,78 @@ def test_the_fixture_yields_eight_enums_named_from_their_columns() -> None:
 # against the strings the fixture stores.
 
 
-def test_historical_formatters_are_preserved_without_silent_rewrites() -> None:
+def test_the_recovered_formatting_reproduces_the_stored_json() -> None:
+    """Three of the four formatters are ones the style vocabulary emits, so
+    each recovered spec is re-expanded here, independently of `inverse.py`,
+    and compared to the JSON the fixture stores. The data bar is the one
+    that is not, and it is preserved whole rather than re-derived."""
     entity = _entity()
     stored = _stored("custom_formatter")
-    assert entity.column_formatting == {}
-    assert set(entity.preserved_formatters) == set(stored)
-    for column, raw in entity.preserved_formatters.items():
-        assert json.loads(raw) == json.loads(stored[column])
+    assert set(stored) == {"Status", "RenewalType", "EndDate", "TermMonths"}
+    assert set(entity.column_formatting) == {"Status", "RenewalType", "EndDate"}
+    for column, spec in entity.column_formatting.items():
+        expanded = expand_style(spec, f"{ENTITY}.{column}")
+        assert expanded == json.loads(stored[column]), column
+    assert set(entity.preserved_formatters) == {"TermMonths"}
+    assert json.loads(entity.preserved_formatters["TermMonths"]) == json.loads(
+        stored["TermMonths"],
+    )
 
 
-def test_the_recovered_validation_reproduces_the_stored_formula() -> None:
-    """One of the four validation rules is a single comparison, which is
-    all `column_validation` declares. Re-rendering it has to give back what
-    the fixture stores.
+def test_the_recovered_formatting_is_the_blueprints_declaration() -> None:
+    """The list was deployed from the shipped mapping, so each recovered
+    spec must expand to the JSON the loader expanded that mapping's
+    declaration to."""
+    declared = _blueprint().mapping.column_formatting[ENTITY]
+    for column, spec in _entity().column_formatting.items():
+        assert expand_style(spec, f"{ENTITY}.{column}") == declared[column], column
 
-    Compared with the brackets stripped that SharePoint strips on save.
-    That normalisation is recorded, live-verified, in
+
+def test_the_stored_validation_is_the_blueprints_rule_and_is_refused() -> None:
+    """Both stored rules are `any_of [is_null, geq 0]`, which the shipped
+    generator renders as `OR(ISBLANK(...), ...)`. The inverter accepts one
+    comparison and nothing else, so both are refused rather than guessed
+    at, and the fixture is checked to be what the blueprint deploys.
+
+    Compared with the brackets and whitespace stripped that SharePoint
+    strips on save. That normalisation is recorded, live-verified, in
     `templates/deploy/_field_reconcile.js.j2`; it is applied here rather
     than borrowed from `inverse.py`, so this test would still fail if the
     inverter's own comparison went wrong.
     """
     entity = _entity()
     types = {c.name: c.dbml_type for c in entity.columns}
-    assert set(entity.column_validation) == {"ChangeCount"}
-    declared = entity.column_validation["ChangeCount"]
-    assert declared["message"]
-    condition = parse_condition(declared["when"], f"{ENTITY}.ChangeCount")
-    rendered = f"={to_validation(condition, types)}"
-    stripped = re.sub(r"\[([A-Za-z0-9_]+)\]", r"\1", rendered)
-    assert stripped == _stored("validation_formula")["ChangeCount"]
+    stored = _stored("validation_formula")
+    declared = _blueprint().mapping.column_validation[ENTITY].columns
+    assert set(stored) == {"NoticePeriodDays", "AnnualValue"} == set(declared)
+    assert entity.column_validation == {}
+    for column, rule in declared.items():
+        rendered = f"={to_validation(rule.when, types)}"
+        stripped = re.sub(r"\s+", "", re.sub(r"\[([A-Za-z0-9_]+)\]", r"\1", rendered))
+        assert stripped == stored[column], column
+        assert _stored("validation_message")[column] == rule.message
 
 
 def test_the_recovered_visibility_reproduces_the_stored_formula() -> None:
     """`compose_visibility` renders the gate and the condition together, so
-    re-running it is an exact comparison rather than a normalised one."""
+    re-running it is an exact comparison rather than a normalised one. The
+    recovered declaration is also the blueprint's own."""
     entity = _entity()
     types = {c.name: c.dbml_type for c in entity.columns}
-    assert set(entity.form_visibility) == {"RiskNotes"}
-    declared = entity.form_visibility["RiskNotes"]
+    assert set(entity.form_visibility) == {"NoticePeriodDays"}
+    declared = entity.form_visibility["NoticePeriodDays"]
     # Neither form is turned off, so the declaration spells only `when`.
     assert set(declared) == {"when"}
     rendered = compose_visibility(
         new=True, existing=True,
-        when=parse_condition(declared["when"], f"{ENTITY}.RiskNotes"),
+        when=parse_condition(declared["when"], f"{ENTITY}.NoticePeriodDays"),
         types=types,
     )
-    assert rendered == _stored("client_validation_formula")["RiskNotes"]
+    assert rendered == _stored("client_validation_formula")["NoticePeriodDays"]
+    shipped = _blueprint().mapping.form_visibility[ENTITY].columns["NoticePeriodDays"]
+    assert rendered == compose_visibility(
+        new=shipped.new, existing=shipped.existing, when=shipped.when, types=types,
+    )
 
 
 #: The declaration shapes `form_visibility` and `column_validation` accept.
@@ -637,6 +664,22 @@ def test_a_visibility_declaration_survives_the_round_trip(
         types=types,
     )
     assert invert_form_visibility(observed, types, context) == declared
+
+
+def test_a_two_clause_visibility_formula_is_refused_rather_than_guessed() -> None:
+    """The fixture's one visibility formula is recovered, so the refuse path
+    is exercised here on builder input: a formula with a second clause the
+    condition grammar has no spelling for."""
+    from dbml_sharepoint.extract.inverse import invert_form_visibility
+    formula = "=if([$Stage] == 'Open' || [$Count] > 3, 'true', 'false')"
+    assert invert_form_visibility(formula, _TYPES, "T.Notes") is None
+    unrecovered: list[Unrecovered] = []
+    decoded = _decode(
+        field_xml("Note", f"<ClientValidationFormula>{formula}</ClientValidationFormula>"),
+        unrecovered=unrecovered,
+    )
+    assert decoded.form_visibility == {}
+    assert [(u.kind, u.subject) for u in unrecovered] == [("form-visibility", "T.A")]
 
 
 @pytest.mark.parametrize("when", [
@@ -692,18 +735,21 @@ def test_the_calculated_formula_comes_back_from_the_read() -> None:
     """The formula is the part somebody modifying the list most needs, and
     it is in the field XML of a live read."""
     formulas = _entity().calculated_formulas
-    assert set(formulas) == {"Readiness"}
-    assert formulas["Readiness"].startswith('=IF(ApprovalStatus="Abandoned"')
-    assert "FundingStatus" in formulas["Readiness"]
+    assert set(formulas) == {"TermMonths"}
+    assert formulas["TermMonths"].startswith("=IF(OR(ISBLANK(StartDate)")
+    # The blueprint writes `[StartDate]`; the site stores the bare internal
+    # name, and the read carries the stored spelling.
+    declared = _blueprint().mapping.calculated_formulas[ENTITY]["TermMonths"]
+    assert formulas["TermMonths"] == re.sub(r"\[([A-Za-z0-9_]+)\]", r"\1", declared)
 
 
 def test_what_the_inverters_refused_is_reported_and_not_in_the_mapping() -> None:
     """The refuse path, checked on the same fixture.
 
-    A data-bar formatter, three `OR(ISBLANK(...))` validation rules and a
-    two-clause visibility formula are outside what this tool re-derives. A
-    regression that started accepting one of them shows up here as a
-    missing entry rather than as a mapping nobody checked.
+    A data-bar formatter and two `OR(ISBLANK(...))` validation rules are
+    outside what this tool re-derives. A regression that started accepting
+    one of them shows up here as a missing entry rather than as a mapping
+    nobody checked.
     """
     extraction = _extraction()
     entity = extraction.entities[0]
@@ -711,20 +757,18 @@ def test_what_the_inverters_refused_is_reported_and_not_in_the_mapping() -> None
     for item in extraction.unrecovered:
         refused.setdefault(item.kind, set()).add(item.subject)
 
-    assert refused["column-formatting"] == {
-        f"{ENTITY}.{column}" for column in _stored("custom_formatter")
-    }
+    assert refused["column-formatting"] == {f"{ENTITY}.TermMonths"}
     assert refused["column-validation"] == {
-        f"{ENTITY}.RaisedOn", f"{ENTITY}.DecidedOn", f"{ENTITY}.FundedOn",
+        f"{ENTITY}.NoticePeriodDays", f"{ENTITY}.AnnualValue",
     }
-    assert refused["form-visibility"] == {f"{ENTITY}.ClosedOn"}
+    assert "form-visibility" not in refused
 
     for kind, section in (
         ("column-formatting", entity.column_formatting),
         ("column-validation", entity.column_validation),
         ("form-visibility", entity.form_visibility),
     ):
-        assert not {f"{ENTITY}.{c}" for c in section} & refused[kind], kind
+        assert not {f"{ENTITY}.{c}" for c in section} & refused.get(kind, set()), kind
 
 
 def test_the_data_bar_formatter_is_preserved_verbatim() -> None:
@@ -732,10 +776,10 @@ def test_the_data_bar_formatter_is_preserved_verbatim() -> None:
     nothing else, so a data bar is kept whole rather than re-derived into a
     style spec that would deploy something else."""
     preserved = _entity().preserved_formatters
-    assert set(preserved) == set(_stored("custom_formatter"))
-    assert "sp-field-dataBars" in preserved["ChangeCount"]
-    assert json.loads(preserved["ChangeCount"]) == json.loads(
-        _stored("custom_formatter")["ChangeCount"],
+    assert set(preserved) == {"TermMonths"}
+    assert "sp-field-dataBars" in preserved["TermMonths"]
+    assert json.loads(preserved["TermMonths"]) == json.loads(
+        _stored("custom_formatter")["TermMonths"],
     )
 
 
@@ -782,7 +826,7 @@ def test_the_emitted_schema_parses(tmp_path: Path) -> None:
     path.write_text(render_schema(_extraction(), project="project"), newline="\n")
     schema = parse_dbml(path)
     assert [t.name for t in schema.tables] == [ENTITY]
-    assert len(schema.enums) == 8
+    assert len(schema.enums) == 3
     assert {c.name for c in schema.tables[0].columns} >= set(EXPECTED_TYPES)
 
 
@@ -795,8 +839,8 @@ def test_the_emitted_mapping_loads(tmp_path: Path) -> None:
     assert set(bundle.mapping.column_formatting.get(ENTITY, {})) == set(
         _entity().column_formatting,
     )
-    assert set(bundle.mapping.form_visibility[ENTITY].columns) == {"RiskNotes"}
-    assert set(bundle.mapping.column_validation[ENTITY].columns) == {"ChangeCount"}
+    assert set(bundle.mapping.form_visibility[ENTITY].columns) == {"NoticePeriodDays"}
+    assert ENTITY not in bundle.mapping.column_validation
 
 
 def test_the_emitted_release_loads(tmp_path: Path) -> None:
@@ -856,10 +900,11 @@ def test_display_names_are_declared_only_when_a_title_differs() -> None:
     already holds.
 
     An override is recorded only for a title `auto` would not produce. The
-    fixture carries exactly one, the column an operator retitled after the
-    list was built; every other title reads back as `auto` derives it.
+    fixture's list was deployed with `mode: auto` and carries none: every
+    title reads back as `auto` derives it, which is the evidence that the
+    list came from a schema rather than from the browser.
     """
-    assert _entity().display_overrides == {"Sponsor": "Executive sponsor"}
+    assert _entity().display_overrides == {}
 
     plain = _decode(field_xml("Text", StaticName="Owner"))
     assert "display_names" not in _yaml.safe_load(
@@ -1375,8 +1420,8 @@ def test_extract_writes_the_whole_project(tmp_path: Path) -> None:
     out = tmp_path / "project"
     result = _run("extract", str(SAMPLE), "--out", str(out), "--entity", ENTITY)
     assert result.exit_code == 0, result.output
-    assert "32 column(s)" in result.output
-    assert "8 enum(s)" in result.output
+    assert "13 column(s)" in result.output
+    assert "3 enum(s)" in result.output
     assert LIVE_KIND in result.output
     assert "EXTRACTION-NOTES.md" in result.output
     for relpath in (
@@ -1386,9 +1431,9 @@ def test_extract_writes_the_whole_project(tmp_path: Path) -> None:
         NOTES_RELPATH,
     ):
         assert (out / relpath).is_file(), relpath
-    for column in ("ChangeCount", "Priority"):
-        preserved = out / "20-configure" / "formatting" / f"{ENTITY}.{column}.json"
-        assert preserved.is_file(), preserved
+    preserved = out / "20-configure" / "formatting" / f"{ENTITY}.TermMonths.json"
+    assert preserved.is_file(), preserved
+    assert not (out / "20-configure" / "formatting" / f"{ENTITY}.Status.json").exists()
 
 
 def test_extract_writes_into_the_folder_named_for_the_list(
@@ -1465,7 +1510,7 @@ def test_extract_refuses_an_entity_name_for_several_lists(tmp_path: Path) -> Non
     """One flag cannot name two tables, and picking one of them silently is
     how a second list ends up merged into the first."""
     payload = _live_payload()
-    payload["lists"].append({**payload["lists"][0], "title": "PT_Change"})
+    payload["lists"].append({**payload["lists"][0], "title": "CT_Amendment"})
     path = tmp_path / "download.json"
     path.write_text(json.dumps(payload), newline="\n")
     result = _run(
@@ -1696,7 +1741,7 @@ def test_the_wizard_passes_a_usage_error_through(
     what the second prompt can be pointed at."""
     monkeypatch.chdir(tmp_path)
     payload = _live_payload()
-    payload["lists"].append({**payload["lists"][0], "title": "PT_Change"})
+    payload["lists"].append({**payload["lists"][0], "title": "CT_Amendment"})
     folder = tmp_path / LIST_TITLE
     folder.mkdir()
     (folder / download_name([LIST_TITLE])).write_text(
@@ -1977,7 +2022,7 @@ _HOST = "example.sharepoint.com"
 @pytest.mark.parametrize(("what", "dirty"), [
     ("a real tenant host", lambda s: s.replace(_HOST, "acme.sharepoint.com", 1)),
     ("an onmicrosoft host", lambda s: s.replace(_HOST, "acme.onmicrosoft.com", 1)),
-    ("a real site name", lambda s: s.replace("/sites/Projects", "/sites/AcmeProject", 1)),
+    ("a real site name", lambda s: s.replace("/sites/Contracts", "/sites/AcmeContract", 1)),
     ("a federated user key", lambda s: s.replace('"Title"', '"msteams_ABC123"', 1)),
     ("an email address", lambda s: s.replace('"Title"', '"someone@acme.org"', 1)),
 ])
