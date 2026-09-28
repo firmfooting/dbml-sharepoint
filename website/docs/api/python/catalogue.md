@@ -115,6 +115,9 @@ class Solution:
     lists: tuple[str, ...]
     prefix: str
     root: Path
+    distribution: str
+    license: str
+    origin: str
 ```
 
 One shipped list family.
@@ -132,15 +135,16 @@ class Journey:
     summary: str
     solution_ids: tuple[str, ...]
     path: Path
+    distribution: str
 ```
 
 One curated reading order over the families.
 
 The wizard's first step. Grouping is DECLARED here rather than derived
-from a family's own prose: `catalogue._lead_sentence` explains why the
-READMEs' `*Theme:*` line was never consistent enough to key off, and a
-grouping nothing verifies is a grouping that goes stale, which is how one
-shipped family came to sit in no theme at all.
+from a family's own prose: the READMEs' `*Theme:*` line was never
+consistent enough to key off, and a grouping nothing verifies is a
+grouping that goes stale, which is how one shipped family came to sit in
+no theme at all.
 
 ### `PackManifest`
 
@@ -157,6 +161,42 @@ class PackManifest:
 ```
 
 What a pack declares about itself in pack.toml, checked.
+
+### `SolutionRoot`
+
+Where one installed distribution keeps its packs, and the licence it declares.
+
+### `SolutionRootError`
+
+A solution root cannot be read, so no licence the catalogue would print is certain.
+
+Always names the distribution, so the operator knows what to reinstall or remove.
+
+### `Refusal`
+
+```python
+@dataclass(frozen=True)
+class Refusal:
+    distribution: str
+    path: Path
+    reason: str
+```
+
+A pack directory the catalogue will not offer, and the named error why.
+
+### `Catalogue`
+
+```python
+@dataclass(frozen=True)
+class Catalogue:
+    solutions: tuple[dbml_sharepoint.catalogue.Solution, ...]
+    journeys: tuple[dbml_sharepoint.catalogue.Journey, ...]
+    refused: tuple[dbml_sharepoint.catalogue.Refusal, ...]
+```
+
+Everything offered from every root, and what was refused.
+
+Read once per command, so the wizard and `solutions` report the same thing.
 
 ### `read_pack_manifest`
 
@@ -176,12 +216,9 @@ listing shows is the one the installed package was published under.
 def available_solutions() -> list[dbml_sharepoint.catalogue.Solution]
 ```
 
-Every shipped family, ordered by id.
+Every template offered, core's first, each root's ordered by id.
 
-A directory only counts when it carries a `schema.dbml` at the family
-standard's path. That keeps a stray directory -- a leftover `build/`,
-an editor's backup -- from appearing in the picker as a template the
-user can choose and then fail to deploy.
+A refused pack is left out; `read_catalogue` says which and why.
 
 ### `available_journeys`
 
@@ -195,6 +232,33 @@ Unlike `available_solutions`, a malformed file RAISES rather than being
 skipped. A family that will not load is one template out of the picker;
 a journey that will not load is a grouping silently missing its members,
 and the guard that would have caught it is the one being bypassed.
+
+### `solution_roots`
+
+```python
+def solution_roots() -> list[dbml_sharepoint.catalogue.SolutionRoot]
+```
+
+Where packs are read from, core first. Raises `SolutionRootError`.
+
+### `read_catalogue`
+
+```python
+def read_catalogue() -> dbml_sharepoint.catalogue.Catalogue
+```
+
+Every root's templates and journeys, and the packs refused.
+
+Raises `SolutionRootError` when a root cannot be read, and `ValueError` for
+a malformed journey, as `available_journeys` does.
+
+### `notices`
+
+```python
+def notices(found: dbml_sharepoint.catalogue.Catalogue) -> list[str]
+```
+
+What an interface prints once per run: one line per refused pack.
 
 ### `load_solution`
 

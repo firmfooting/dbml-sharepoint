@@ -1375,9 +1375,6 @@ PINNED: dict[str, list[str]] = {
         "c6dca4c1db7a",
         "d765b685da53",
     ],
-    "test/test_catalogue.py": [
-        "ba9fe6f2e4b2",
-    ],
     "test/test_cli.py": [
         "e66734918850",
         "fbb5f6f5eb9d",

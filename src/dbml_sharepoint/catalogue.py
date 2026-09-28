@@ -17,8 +17,9 @@ is somebody who ran `uvx dbml-sharepoint` and has no checkout.
 import re
 import tomllib
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, metadata
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from dbml_sharepoint.model import _yaml
 
@@ -138,6 +139,12 @@ class Solution:
     lists: tuple[str, ...]
     prefix: str
     root: Path
+    #: The distribution whose solution root holds this pack.
+    distribution: str
+    #: The SPDX licence the pack declares, equal to its distribution's.
+    license: str
+    #: Who designed the pack: `firmfooting`, `<organisation>-released` or `<organisation>-held`.
+    origin: str
 
     @property
     def schema_path(self) -> Path:
@@ -157,10 +164,10 @@ class Journey:
     """One curated reading order over the families.
 
     The wizard's first step. Grouping is DECLARED here rather than derived
-    from a family's own prose: `catalogue._lead_sentence` explains why the
-    READMEs' `*Theme:*` line was never consistent enough to key off, and a
-    grouping nothing verifies is a grouping that goes stale, which is how one
-    shipped family came to sit in no theme at all.
+    from a family's own prose: the READMEs' `*Theme:*` line was never
+    consistent enough to key off, and a grouping nothing verifies is a
+    grouping that goes stale, which is how one shipped family came to sit in
+    no theme at all.
     """
 
     id: str
@@ -169,6 +176,8 @@ class Journey:
     #: Declared order, which is the order to deploy in. Not sorted.
     solution_ids: tuple[str, ...]
     path: Path
+    #: The distribution whose solution root holds this journey file.
+    distribution: str
 
 
 @dataclass(frozen=True)
@@ -188,6 +197,43 @@ class PackManifest:
     notice: str
     #: The core version range the pack was tested against. Stored, not evaluated.
     min_core: str
+
+
+class SolutionRoot(NamedTuple):
+    """Where one installed distribution keeps its packs, and the licence it declares."""
+
+    distribution: str
+    root: Path
+    #: The distribution's License-Expression, which each of its packs must repeat.
+    license: str
+
+
+class SolutionRootError(RuntimeError):
+    """A solution root cannot be read, so no licence the catalogue would print is certain.
+
+    Always names the distribution, so the operator knows what to reinstall or remove.
+    """
+
+
+@dataclass(frozen=True)
+class Refusal:
+    """A pack directory the catalogue will not offer, and the named error why."""
+
+    distribution: str
+    path: Path
+    reason: str
+
+
+@dataclass(frozen=True)
+class Catalogue:
+    """Everything offered from every root, and what was refused.
+
+    Read once per command, so the wizard and `solutions` report the same thing.
+    """
+
+    solutions: tuple[Solution, ...]
+    journeys: tuple[Journey, ...]
+    refused: tuple[Refusal, ...]
 
 
 #: Typographic characters a README may use, and their terminal spellings.
@@ -346,81 +392,12 @@ def read_pack_manifest(pack_dir: Path, distribution_licence: str) -> PackManifes
     )
 
 
-def _lead_sentence(readme: str) -> str:
-    """The first sentence of the README's lead paragraph, terminal-safe.
-
-    Split out of `_summary` so the wizard's detail panel can show the whole
-    sentence. `_SUMMARY_MAX` exists because a summary is rendered into a
-    TABLE CELL; a Panel has no such constraint, and reusing the capped text
-    there cut `...SharePoint calculates Resi...` out of risk-register.
-
-    Many, but not all, READMEs open with a `*Theme: ...*` line, which
-    sometimes wraps onto a second line and sometimes carries a trailing
-    qualifier. It is not consistent enough to key a grouping off, so it is
-    skipped rather than parsed.
-
-    Returns "" when there is nothing usable. The caller decides what an
-    empty summary looks like; `test_catalogue` asserts no shipped family
-    actually produces one, so an empty string means a NEW template broke
-    the convention rather than that this is a normal state.
-    """
-    lines = readme.splitlines()
-    # Drop the H1 and anything before it.
-    for index, line in enumerate(lines):
-        if line.startswith("# "):
-            lines = lines[index + 1 :]
-            break
-
-    paragraph: list[str] = []
-    in_theme = False
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            if paragraph:
-                break
-            in_theme = False
-            continue
-        if stripped.startswith("*Theme:"):
-            # May wrap; keep skipping until the emphasis closes or the
-            # paragraph ends.
-            in_theme = not stripped.endswith("*") or stripped == "*Theme:"
-            continue
-        if in_theme:
-            in_theme = not stripped.endswith("*")
-            continue
-        if stripped.startswith(("#", ">", "|", "-", "```")):
-            break
-        paragraph.append(stripped)
-
-    text = _clean(" ".join(paragraph))
-    if not text:
-        return ""
-    # First sentence, but only when the full stop is followed by a space --
-    # otherwise `5x5.` inside a phrase, or a version number, cuts it short.
-    match = re.search(r"\.(?:\s|$)", text)
-    if match:
-        text = text[: match.start() + 1]
-    return text
-
-
-def _summary(readme: str) -> str:
-    """`_lead_sentence` capped to fit the wizard's table cell."""
-    text = _lead_sentence(readme)
+def _cap(text: str) -> str:
+    """`text` capped to fit the wizard's table cell; `detail` keeps the whole sentence."""
     if len(text) > _SUMMARY_MAX:
-        # Reserve exactly as many characters as the marker occupies. This read
-        # `- 1` while the marker was a one-character ellipsis; ASCII-ifying it
-        # to "..." for the wizard's table made every truncated summary two
-        # characters over the cap, which `test_each_summary_fits_a_terminal`
-        # caught on fifteen templates.
-        text = text[: _SUMMARY_MAX - len(_ELLIPSIS)].rstrip() + _ELLIPSIS
+        # Reserve exactly as many characters as the marker occupies.
+        return text[: _SUMMARY_MAX - len(_ELLIPSIS)].rstrip() + _ELLIPSIS
     return text
-
-
-def _title(readme: str, fallback: str) -> str:
-    for line in readme.splitlines():
-        if line.startswith("# "):
-            return _clean(line[2:])
-    return fallback
 
 
 def _mapping_facts(mapping_path: Path) -> tuple[tuple[str, ...], str]:
@@ -447,39 +424,59 @@ def _mapping_facts(mapping_path: Path) -> tuple[tuple[str, ...], str]:
     return names, prefix if isinstance(prefix, str) else ""
 
 
-def _build(root: Path) -> Solution:
-    readme_path = root / "README.md"
-    readme = (
-        readme_path.read_text(encoding="utf-8") if readme_path.is_file() else ""
-    )
-    lists, prefix = _mapping_facts(root / MAPPING_RELPATH)
+def _family_dirs(root: Path) -> list[Path]:
+    """Every directory under `root` with a schema at the family standard's path.
+
+    That keeps a stray directory (a leftover `build/`, an editor's backup) from
+    appearing in the picker as a template the user can choose and then fail
+    to deploy.
+    """
+    if not root.is_dir():
+        return []
+    return [
+        path.parent.parent
+        for path in sorted(root.glob(f"*/{SCHEMA_RELPATH.as_posix()}"))
+        if path.parent.parent.name not in _NOT_A_SOLUTION
+    ]
+
+
+def _build(family: Path, source: SolutionRoot) -> Solution:
+    """One pack, described by its pack.toml. Raises `PackManifestError`."""
+    manifest = read_pack_manifest(family, source.license)
+    lists, prefix = _mapping_facts(family / MAPPING_RELPATH)
     return Solution(
-        id=root.name,
-        title=_title(readme, root.name),
-        summary=_summary(readme),
-        detail=_lead_sentence(readme),
+        id=manifest.id,
+        title=manifest.title,
+        summary=_cap(manifest.summary),
+        detail=manifest.summary,
         lists=lists,
         prefix=prefix,
-        root=root,
+        root=family,
+        distribution=source.distribution,
+        license=manifest.license,
+        origin=manifest.origin,
     )
+
+
+def _gather_solutions(roots: list[SolutionRoot]) -> tuple[list[Solution], list[Refusal]]:
+    """Every pack in every root, in root order then by id, and the packs refused."""
+    solutions: list[Solution] = []
+    refused: list[Refusal] = []
+    for source in roots:
+        for family in _family_dirs(source.root):
+            try:
+                solutions.append(_build(family, source))
+            except PackManifestError as exc:
+                refused.append(Refusal(source.distribution, family, str(exc)))
+    return solutions, refused
 
 
 def available_solutions() -> list[Solution]:
-    """Every shipped family, ordered by id.
+    """Every template offered, core's first, each root's ordered by id.
 
-    A directory only counts when it carries a `schema.dbml` at the family
-    standard's path. That keeps a stray directory -- a leftover `build/`,
-    an editor's backup -- from appearing in the picker as a template the
-    user can choose and then fail to deploy.
+    A refused pack is left out; `read_catalogue` says which and why.
     """
-    if not SOLUTIONS_DIR.is_dir():
-        return []
-    found = [
-        path.parent.parent
-        for path in sorted(SOLUTIONS_DIR.glob(f"*/{SCHEMA_RELPATH.as_posix()}"))
-        if path.parent.parent.name not in _NOT_A_SOLUTION
-    ]
-    return [_build(root) for root in found]
+    return _gather_solutions(solution_roots())[0]
 
 
 #: Opens and closes a journey file's YAML front matter.
@@ -515,7 +512,7 @@ def _front_matter(text: str, path: Path) -> dict[str, Any]:
     return loaded
 
 
-def _build_journey(path: Path) -> Journey:
+def _build_journey(path: Path, distribution: str) -> Journey:
     raw = _front_matter(path.read_text(encoding="utf-8"), path)
     unknown = set(raw) - {"title", "summary", "solutions"}
     if unknown:
@@ -536,7 +533,21 @@ def _build_journey(path: Path) -> Journey:
         summary=_clean(str(raw["summary"])),
         solution_ids=tuple(solutions),
         path=path,
+        distribution=distribution,
     )
+
+
+def _gather_journeys(roots: list[SolutionRoot]) -> list[Journey]:
+    """Every journey in every root, ordered by id."""
+    journeys: list[Journey] = []
+    for source in roots:
+        directory = source.root / JOURNEYS_DIRNAME
+        if directory.is_dir():
+            journeys.extend(
+                _build_journey(path, source.distribution)
+                for path in sorted(directory.glob("*.md"))
+            )
+    return sorted(journeys, key=lambda journey: journey.id)
 
 
 def available_journeys() -> list[Journey]:
@@ -547,10 +558,56 @@ def available_journeys() -> list[Journey]:
     a journey that will not load is a grouping silently missing its members,
     and the guard that would have caught it is the one being bypassed.
     """
-    directory = SOLUTIONS_DIR / JOURNEYS_DIRNAME
-    if not directory.is_dir():
-        return []
-    return [_build_journey(path) for path in sorted(directory.glob("*.md"))]
+    return _gather_journeys(solution_roots())
+
+
+def _declared_licence(distribution: str, declared: str | None) -> str:
+    """The License-Expression a distribution publishes, or `SolutionRootError`."""
+    if not declared:
+        raise SolutionRootError(
+            f"{distribution} declares no License-Expression in its metadata, so the "
+            "licence of its packs cannot be checked",
+        )
+    return declared
+
+
+def _core_root() -> SolutionRoot:
+    """Core's own packs. `SOLUTIONS_DIR` is read here so a test can point it elsewhere."""
+    try:
+        declared = metadata(CORE_DISTRIBUTION).get("License-Expression")
+    except PackageNotFoundError as exc:
+        raise SolutionRootError(
+            f"{CORE_DISTRIBUTION} is not installed, so the licence of its packs cannot "
+            "be read; install it (uv sync, or uvx) rather than importing a source tree",
+        ) from exc
+    return SolutionRoot(
+        CORE_DISTRIBUTION, SOLUTIONS_DIR, _declared_licence(CORE_DISTRIBUTION, declared),
+    )
+
+
+def solution_roots() -> list[SolutionRoot]:
+    """Where packs are read from, core first. Raises `SolutionRootError`."""
+    return [_core_root()]
+
+
+def read_catalogue() -> Catalogue:
+    """Every root's templates and journeys, and the packs refused.
+
+    Raises `SolutionRootError` when a root cannot be read, and `ValueError` for
+    a malformed journey, as `available_journeys` does.
+    """
+    roots = solution_roots()
+    solutions, refused = _gather_solutions(roots)
+    return Catalogue(
+        solutions=tuple(solutions),
+        journeys=tuple(_gather_journeys(roots)),
+        refused=tuple(refused),
+    )
+
+
+def notices(found: Catalogue) -> list[str]:
+    """What an interface prints once per run: one line per refused pack."""
+    return [f"Not offered: {r.distribution}: {r.reason}" for r in found.refused]
 
 
 def load_solution(name: str) -> Solution:

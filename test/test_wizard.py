@@ -12,17 +12,21 @@ import hashlib
 import shutil
 import sys
 import tempfile
+import tomllib
 from dataclasses import replace
 from pathlib import Path
 from typing import override
 
 import pytest
+from _catalogue_fixtures import CORE_LICENSE
 from _console import ScriptedConsole
 from _console import collapsed as _collapsed
 
 from dbml_sharepoint import wizard
 from dbml_sharepoint.catalogue import (
+    CORE_DISTRIBUTION,
     MAPPING_RELPATH,
+    PACK_MANIFEST,
     PLACEHOLDER_SITE_URL,
     Solution,
     available_solutions,
@@ -178,6 +182,9 @@ def _fake_family(root: Path, mapping: str = _ONE_ENTITY) -> Solution:
         lists=("Risk",),
         prefix="OLD_",
         root=root,
+        distribution=CORE_DISTRIBUTION,
+        license=CORE_LICENSE,
+        origin="firmfooting",
     )
 
 
@@ -198,6 +205,7 @@ def _choice(prefix: str = "RR_", *, lists: tuple[str, ...] = ("Risk",),
         solution=Solution(
             id=id_, title="T", summary="s", detail="s",
             lists=lists, prefix=prefix, root=Path("unused"),
+            distribution=CORE_DISTRIBUTION, license=CORE_LICENSE, origin="firmfooting",
         ),
         prefix=prefix,
         entity_roles=tuple(zip(lists, roles, strict=True)),
@@ -404,15 +412,11 @@ def test_a_previous_build_is_not_copied_into_the_new_project(
     )
     (source / "20-configure" / "release.yaml").write_text("", encoding="utf-8")
 
-    solution = load_solution("risk-register")
-    monkeypatch.setattr(
-        wizard, "available_solutions", lambda: [
-            type(solution)(
-                id="fake-template", title="Fake", summary="s", detail="s",
-                lists=("Risk",), prefix="OLD_", root=source,
-            ),
-        ],
-    )
+    _offer_only(monkeypatch, replace(
+        load_solution("risk-register"),
+        id="fake-template", title="Fake", summary="s", detail="s",
+        lists=("Risk",), prefix="OLD_", root=source,
+    ))
 
     destination = tmp_path / "proj"
     console = ScriptedConsole(
@@ -2060,6 +2064,7 @@ def test_the_template_summary_names_the_declared_prefix() -> None:
     declared = Solution(
         id="x", title="Fake", summary="s", detail="",
         lists=("Risk",), prefix="RR_", root=Path("unused"),
+        distribution=CORE_DISTRIBUTION, license=CORE_LICENSE, origin="firmfooting",
     )
     with_prefix = ScriptedConsole([])
     wizard._describe(with_prefix, declared)
@@ -2071,11 +2076,11 @@ def test_the_template_summary_names_the_declared_prefix() -> None:
 
 
 def test_a_template_with_no_detail_sentence_prints_no_empty_line() -> None:
-    """`_lead_sentence` returns "" for a README it cannot parse.
+    """A `Solution` built with an empty `detail` prints no blank line.
 
-    Every shipped family has one, so nothing else reaches the empty arm --
-    but a new template whose README opens with a table would print a blank
-    dim line under its title, which reads like a rendering fault. Asserted
+    pack.toml refuses an empty summary, so no discovered template reaches the
+    empty arm, but a caller constructing a `Solution` can, and a blank dim
+    line under its title would read like a rendering fault. Asserted
     as a LINE COUNT against the same solution with a detail, because the
     difference between the two arms is a line that is there or is not:
     a substring assertion cannot see a blank one.
@@ -2083,6 +2088,7 @@ def test_a_template_with_no_detail_sentence_prints_no_empty_line() -> None:
     solution = Solution(
         id="x", title="Fake", summary="s", detail="",
         lists=("Risk", "Control"), prefix="", root=Path("unused"),
+        distribution=CORE_DISTRIBUTION, license=CORE_LICENSE, origin="firmfooting",
     )
     without = ScriptedConsole([])
     wizard._describe(without, solution)
@@ -2116,6 +2122,7 @@ def test_the_describe_detail_sentence_indents_every_wrapped_line() -> None:
         detail="A genuinely long detail sentence written to wrap across "
         "several lines once the console is narrow enough to force it.",
         lists=("Risk",), prefix="RR_", root=Path("unused"),
+        distribution=CORE_DISTRIBUTION, license=CORE_LICENSE, origin="firmfooting",
     )
     console = ScriptedConsole([], width=50)
     wizard._describe(console, solution)
@@ -3581,3 +3588,11 @@ def test_the_built_bundle_carries_the_answered_site_url(tmp_path: Path) -> None:
     deploy_js = (destination / "build" / "deploy.js.txt").read_text(encoding="utf-8")
     assert site_url in deploy_js
     assert "sites/example" not in deploy_js
+
+
+def test_the_scaffolded_project_carries_the_pack_s_licence(tmp_path: Path) -> None:
+    """A copied project still says what it was made from and under which licence."""
+    destination = tmp_path / "proj"
+    assert wizard.run_wizard(ScriptedConsole(_answers(destination))) == 0
+    manifest = tomllib.loads((destination / PACK_MANIFEST).read_text(encoding="utf-8"))
+    assert (manifest["id"], manifest["license"]) == ("risk-register", CORE_LICENSE)
