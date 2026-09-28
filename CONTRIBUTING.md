@@ -41,6 +41,7 @@ uv run ruff check src test website/scripts scripts  # lint
 uv run pyrefly check                        # strict typing: src, test, website/scripts
 uv run j2lint --ignore jinja-statements-indentation single-statement-per-line -- src/dbml_sharepoint/templates
 uv run prek run --all-files markdownlint-cli2  # markdown style; config in .markdownlint-cli2.yaml
+uv run prek run --all-files zizmor          # workflow security audit
 ```
 
 Notes that save you a round-trip:

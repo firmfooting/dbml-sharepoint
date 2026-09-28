@@ -1,6 +1,5 @@
-# Static security audit of the workflows themselves (zizmor). Fails the run
-# on any finding: unpinned actions, excessive permissions, credential
-# persistence, template injection, cache poisoning in release paths, etc.
+# The org's workflow security audit; the check itself, and why it exists, live
+# in firmfooting/.github's zizmor.yml so every repository runs the same one.
 name: Workflow security
 
 on:
@@ -12,15 +11,6 @@ permissions: {}
 
 jobs:
   zizmor:
-    runs-on: ubuntu-latest
     permissions:
       contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
-      - name: Audit workflows
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: uvx zizmor .github/workflows
+    uses: firmfooting/.github/.github/workflows/zizmor.yml@7b967509aeb2c27564751d4afb8ef989a28afbad # v1.2.0

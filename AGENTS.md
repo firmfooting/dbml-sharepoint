@@ -55,15 +55,21 @@ uv run ruff check src test website/scripts scripts
 uv run pyrefly check
 uv run j2lint --ignore jinja-statements-indentation single-statement-per-line -- src/dbml_sharepoint/templates
 uv run prek run --all-files markdownlint-cli2
+uv run prek run --all-files zizmor
 ```
 
-Markdown is the one gate not pinned by `pyproject.toml`. markdownlint-cli2 is a
-node package, so prek installs it from the `rev:` in `.pre-commit-config.yaml`
-and CI runs the same version through `npx`. Those two numbers are held equal by
-`test/test_markdownlint_version.py`; bump them together. Rules and exclusions
-live in `.markdownlint-cli2.yaml`, which both sides read. Generated pages
-(`website/docs/api/**`, `website/docs/reference/findings.md`) are excluded there,
-because a violation in one of those can only be fixed in its generator.
+Two gates are not pinned by `pyproject.toml`. The first is markdown:
+markdownlint-cli2 is a node package, so prek installs it from the `rev:` in
+`.pre-commit-config.yaml` and CI runs the same version through `npx`. Those two
+numbers are held equal by `test/test_markdownlint_version.py`; bump them
+together. Rules and exclusions live in `.markdownlint-cli2.yaml`, which both
+sides read. Generated pages (`website/docs/api/**`,
+`website/docs/reference/findings.md`) are excluded there, because a violation
+in one of those can only be fixed in its generator.
+
+The second is zizmor, the workflow audit. The hook's `rev:` in
+`.pre-commit-config.yaml` is its only version: firmfooting/.github's shared
+`zizmor.yml` runs that same hook in CI, online with a token.
 
 Install the git hooks once with `uv run prek install`. Hooks are run by
 [prek](https://prek.j178.dev/), pinned in the `dev` group; classic `pre-commit`
