@@ -3858,11 +3858,10 @@ def test_a_template_with_a_link_out_of_it_is_refused_before_writing(
 ) -> None:
     """The copy follows links, so a link out of the template would copy whatever it points at."""
     solution = _fake_family(tmp_path / "fake")
-    private = tmp_path / "private"
-    private.mkdir()
-    (private / "secret.txt").write_text("not for the project\n", encoding="utf-8")
+    secret = tmp_path / "secret.txt"
+    secret.write_text("not for the project\n", encoding="utf-8")
     try:
-        (solution.root / "docs").symlink_to(private, target_is_directory=True)
+        (solution.root / "notes.txt").symlink_to(secret)
     except OSError as exc:
         pytest.skip(f"this platform will not create a symlink here: {exc}")
     _offer_only(monkeypatch, solution)
@@ -3873,4 +3872,24 @@ def test_a_template_with_a_link_out_of_it_is_refused_before_writing(
     assert wizard.run_wizard(console) == 1
     shown = _collapsed(console)
     assert "links outside the template" in shown
+    assert not destination.exists()
+
+
+def test_a_template_with_a_link_to_a_directory_is_refused_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A link back to the template stays inside it, but the copy would follow it for ever."""
+    solution = _fake_family(tmp_path / "fake")
+    (solution.root / "docs").mkdir()
+    try:
+        (solution.root / "docs" / "loop").symlink_to(solution.root, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"this platform will not create a symlink here: {exc}")
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    assert "docs/loop is a link to a directory" in _collapsed(console)
     assert not destination.exists()

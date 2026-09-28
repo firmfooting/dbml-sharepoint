@@ -1,6 +1,7 @@
 """Pack providers: installed distributions that register a solution root."""
 
 import io
+import os
 import zipfile
 from collections.abc import Iterator
 from importlib.metadata import EntryPoint
@@ -447,3 +448,33 @@ def test_a_provider_whose_name_a_console_cannot_print_is_refused(
     )
     with pytest.raises(BlueprintRootError, match=r"Name .* U\+00E9"):
         read_catalogue()
+
+
+def test_a_provider_whose_licence_expression_a_console_cannot_print_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The licence is printed beside every blueprint the distribution ships."""
+    packs = tmp_path / "packs"
+    packs.mkdir()
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs, "BUSL-1.1" + chr(0x1B)))
+    with pytest.raises(BlueprintRootError, match=r"License-Expression .* U\+001B"):
+        read_catalogue()
+
+
+@pytest.mark.skipif(
+    os.name == "nt" or os.geteuid() == 0, reason="needs POSIX permissions that bind this user",
+)
+def test_a_provider_blueprint_directory_that_cannot_be_searched_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A glob skips a directory it cannot enter, which would drop the blueprint without a word."""
+    packs = tmp_path / "packs"
+    family = write_family(packs, "acme-thing", {"license": "BUSL-1.1"})
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+    family.chmod(0)
+    try:
+        found = read_catalogue()
+    finally:
+        family.chmod(0o755)
+    assert [(r.distribution, r.path.name) for r in found.refused] == [("acme-packs", "acme-thing")]
+    assert "cannot be listed" in found.refused[0].reason

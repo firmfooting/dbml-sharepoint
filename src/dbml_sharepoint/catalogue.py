@@ -524,11 +524,25 @@ def _family_dirs(root: Path) -> list[Path]:
         return []
     families = {path.parent.parent for path in root.glob(f"*/{SCHEMA_RELPATH.as_posix()}")}
     families |= {path.parent for path in root.glob(f"*/{BLUEPRINT_MANIFEST}")}
+    # A glob skips a directory it cannot enter, so one is kept here for `_build` to refuse.
+    families |= {child for child in root.iterdir() if _unlistable(child)}
     return sorted(family for family in families if family.name not in _NOT_A_SOLUTION)
+
+
+def _unlistable(path: Path) -> str:
+    """Why the directory at `path` cannot be listed, or "" when it can or is not a directory."""
+    try:
+        if path.is_dir():
+            next(path.iterdir(), None)
+    except OSError as exc:
+        return str(exc)
+    return ""
 
 
 def _build(family: Path, source: BlueprintRoot) -> Solution:
     """One blueprint, described by its blueprint.toml. Raises `BlueprintManifestError`."""
+    if reason := _unlistable(family):
+        raise BlueprintManifestError(f"{family}: cannot be listed: {reason}")
     missing = [
         relpath.as_posix()
         for relpath in (SCHEMA_RELPATH, MAPPING_RELPATH, RELEASE_RELPATH)
@@ -703,6 +717,12 @@ def _declared_licence(distribution: str, declared: str | None) -> str:
         raise BlueprintRootError(
             f"{distribution} declares no License-Expression in its metadata, so the "
             "licence of its blueprints cannot be checked",
+        )
+    # Printed beside every blueprint the distribution ships, so held to their rule.
+    if found := _unprintable(declared):
+        raise BlueprintRootError(
+            f"{distribution}: License-Expression {declared!r} carries characters a console "
+            f"may not print: {found}",
         )
     return declared
 

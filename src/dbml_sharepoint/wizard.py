@@ -1259,12 +1259,21 @@ def _check_reads(solution: Solution, read: list[Path]) -> None:
 
 
 def _check_links(solution: Solution) -> None:
-    """Refuse a template holding a link out of itself, since the copy follows links."""
+    """Refuse a template holding a link out of itself or to any directory; the copy follows links.
+
+    A directory link that stays inside the template can still point at an
+    ancestor, which the copy would follow until the path grew too long.
+    """
     root = solution.root.resolve()
     for path in sorted(solution.root.rglob("*")):
         inside = path.relative_to(solution.root)
         if set(inside.parts) & set(_NEVER_COPY):
             continue
+        if path.is_symlink() and path.is_dir():
+            raise WizardError(
+                f"the {solution.id} template's {inside.as_posix()} is a link to a directory, "
+                "which the copy would follow",
+            )
         if path.is_symlink() and not path.resolve().is_relative_to(root):
             name = inside.as_posix()
             raise WizardError(
