@@ -39,6 +39,7 @@ uv run ruff check src test website/scripts scripts # lint
 uv run pyrefly check                       # strict typing: src, test, website/scripts
 uv run j2lint --ignore jinja-statements-indentation single-statement-per-line -- src/dbml_sharepoint/templates
 uv run prek run --all-files markdownlint-cli2 # markdown style; see .markdownlint-cli2.yaml
+uv run prek run --all-files zizmor         # workflow security audit
 ```
 
 - **Template lint (two layers).** `test/test_template_lint.py` lints

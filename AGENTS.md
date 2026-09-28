@@ -48,6 +48,7 @@ uv run ruff check src test website/scripts scripts
 uv run pyrefly check
 uv run j2lint --ignore jinja-statements-indentation single-statement-per-line -- src/dbml_sharepoint/templates
 uv run prek run --all-files markdownlint-cli2
+uv run prek run --all-files zizmor
 ```
 
 Markdown is the one gate not pinned by `pyproject.toml`. markdownlint-cli2 is a
@@ -57,6 +58,10 @@ and CI runs the same version through `npx`. Those two numbers are held equal by
 live in `.markdownlint-cli2.yaml`, which both sides read. Generated pages
 (`website/docs/api/**`, `website/docs/reference/findings.md`) are excluded there,
 because a violation in one of those can only be fixed in its generator.
+
+zizmor, the workflow audit, is not pinned by `pyproject.toml` either. The hook's
+`rev:` pins the offline audit run here, and firmfooting/.github's shared
+`zizmor.yml` pins the online one CI runs; bump them together.
 
 Install the git hooks once with `uv run prek install`. Hooks are run by
 [prek](https://prek.j178.dev/), pinned in the `dev` group; classic `pre-commit`
