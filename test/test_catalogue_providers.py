@@ -2,6 +2,7 @@
 
 import io
 import os
+import sys
 import zipfile
 from collections.abc import Iterator
 from importlib.metadata import EntryPoint
@@ -22,6 +23,12 @@ from dbml_sharepoint.catalogue import (
     notices,
     read_catalogue,
 )
+
+# Windows has no mode bits and root ignores them, so a permission test cannot bind there.
+if sys.platform == "win32":
+    _PERMISSIONS_BIND = False
+else:
+    _PERMISSIONS_BIND = os.geteuid() != 0
 
 
 def test_providers_are_found_under_the_documented_group(
@@ -461,9 +468,7 @@ def test_a_provider_whose_licence_expression_a_console_cannot_print_is_refused(
         read_catalogue()
 
 
-@pytest.mark.skipif(
-    os.name == "nt" or os.geteuid() == 0, reason="needs POSIX permissions that bind this user",
-)
+@pytest.mark.skipif(not _PERMISSIONS_BIND, reason="needs POSIX permissions that bind this user")
 def test_a_provider_blueprint_directory_that_cannot_be_searched_is_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
