@@ -202,6 +202,7 @@ max-complexity = 54
 "test/manual/make_threshold_rows.py" = ["T20"]  # generator script, reports via print
 "test/test_probes.py" = ["S603", "S607"]     # runs `node --check` on our own files
 "test/test_family_count_prose.py" = ["S603", "S607"]  # runs `git ls-files` on this repo
+"test/test_markdown_links.py" = ["S603", "S607"]  # runs `git ls-files` on this repo
 "test/test_text_encoding.py" = ["S603", "S607"]       # runs `git ls-files` on this repo
 "test/test_boundary.py" = ["S603", "S607"]            # runs `git ls-files` on this repo
 "test/_comment_runs.py" = ["S603", "S607"]            # runs `git ls-files` on this repo

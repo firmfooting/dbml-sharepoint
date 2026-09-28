@@ -1,7 +1,0 @@
-id = "opportunities-register"
-title = "Opportunities register"
-summary = "A thin routing layer for business problems that a project discovers but is not authorised or funded to fix."
-license = "MIT"
-origin = "firmfooting"
-notice = ""
-min_core = ">=0.5,<1"

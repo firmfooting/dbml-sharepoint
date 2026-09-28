@@ -1,7 +1,0 @@
-id = "meeting-actions"
-title = "Meeting actions"
-summary = "Meetings, the decisions they made, and the actions they produced, linked."
-license = "MIT"
-origin = "firmfooting"
-notice = ""
-min_core = ">=0.5,<1"

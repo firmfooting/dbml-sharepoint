@@ -106,192 +106,6 @@ MAX_BODY_SECTIONS = 8
 # section name is a failure, not a pass, because that is the only thing
 # standing between five beats and 102 section vocabularies.
 SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
-    ("risk-register", "Risk"): {
-        "Describe the risk": "Identify",
-        "Assess the risk": "Assess",
-        "Response and controls": "Act",
-        "Governance": "Govern",
-        "System": "System",
-    },
-    # The three boards are the same artefact at three levels, so they share
-    # one vocabulary deliberately. "Streams" is the Assess beat: the whole
-    # form is a per-stream rating, and a blank cell means unreported.
-    **{
-        ("tiered-huddle", entity): {
-            "Header": "Identify",
-            "Streams": "Assess",
-            "Wrap-up": "Govern",
-        }
-        for entity in ("Tier1Board", "Tier2Board", "Tier3Board")
-    },
-    # Seven sections, two of them Assess. Triage routes every opportunity;
-    # the deeper scoring pass only runs when the triage outcome is "Assess
-    # here", and splitting them is what makes the second one skippable
-    # rather than a wall of fields everyone scrolls past. Consecutive, so
-    # the reader still meets the beats in order.
-    #
-    # "Stop and route safely" is Identify: the screening question that
-    # decides whether this register is the right home at all, and it comes
-    # before capture because a safety or privacy matter must not be typed
-    # in here first and rerouted afterwards.
-    ("digital-innovation-log", "Opportunity"): {
-        "What we heard": "Identify",
-        "Triage and score": "Assess",
-        "Decision and delivery": "Act",
-        "Adoption": "Govern",
-        "System": "System",
-    },
-    ("digital-innovation-log", "Pattern"): {
-        "What it is": "Identify",
-        "Readiness and effort": "Assess",
-        "Build and release": "Act",
-        "System": "System",
-    },
-    # Nine entities, no calculated columns, so no System beat anywhere.
-    ("seam-register", "Provider"): {
-        "The provider": "Identify",
-        "How we work with them": "Assess",
-        "The agreement": "Govern",
-    },
-    # The register's two Assess sections are consecutive: who runs it is
-    # the assessment, and documentation and failures are what backs it.
-    ("seam-register", "Service"): {
-        "The service": "Identify",
-        "Who runs it and who to call": "Assess",
-        "Documentation and failures": "Assess",
-        "Confidence and scope": "Govern",
-    },
-    ("seam-register", "Evidence"): {
-        "The claim": "Identify",
-        "The source": "Assess",
-        "Agreement": "Govern",
-    },
-    ("seam-register", "Seam"): {
-        "The seam": "Identify",
-        "Resolution": "Act",
-    },
-    ("seam-register", "DocumentRequest"): {
-        "The document": "Identify",
-        "The ask": "Act",
-        "What it covers": "Govern",
-    },
-    ("seam-register", "Artefact"): {
-        "The file": "Identify",
-        "What it bears on": "Assess",
-    },
-    # Three Assess sections: the eight questions in the three groups the
-    # interviewer asks them in, so the form reads like the script.
-    ("seam-register", "Interview"): {
-        "The conversation": "Identify",
-        "What they run and use": "Assess",
-        "What they depend on": "Assess",
-        "What worries them": "Assess",
-        "Afterwards": "Act",
-    },
-    ("seam-register", "Incident"): {
-        "The incident": "Identify",
-        "Who resolved it": "Assess",
-        "Where it came from": "Govern",
-    },
-    ("seam-register", "WeeklyUpdate"): {
-        "The week": "Identify",
-        "Five lines": "Assess",
-    },
-    ("opportunities-register", "Opportunity"): {
-        "Stop and route safely": "Identify",
-        "Capture once": "Identify",
-        "Triage and route": "Assess",
-        "Assess only if needed": "Assess",
-        "Own the next step": "Act",
-        "Decide and hand off": "Govern",
-        "System": "System",
-    },
-    # The audit row is a header record (a report and who answers for it),
-    # so it collapses to Identify -> Govern. The recommendation carries the
-    # whole arc except Assess: the rating comes FROM the report rather than
-    # from anything done here.
-    ("audit-actions", "Audit"): {
-        "The review": "Identify",
-        "Response": "Govern",
-    },
-    ("audit-actions", "Recommendation"): {
-        "The finding": "Identify",
-        "The agreed action": "Act",
-        "Closure": "Govern",
-        "System": "System",
-    },
-    # Two standalone registers with no link between them, and the same
-    # shape either way: the person declares, somebody else decides. The
-    # beat boundary is the permission boundary. Everything after the
-    # first section is off the New form.
-    ("declarations-register", "Interest"): {
-        "The interest": "Identify",
-        "Assessment": "Assess",
-        "Review and cessation": "Govern",
-    },
-    ("declarations-register", "GiftBenefit"): {
-        "The offer": "Identify",
-        "Value and context": "Assess",
-        "The decision": "Act",
-    },
-    # Both halves of the grant lifecycle run Identify -> Act -> Govern.
-    # There is no Assess beat on either: the bid/no-bid assessment happens
-    # before a row exists (50-govern's ten-minute test), and an obligation
-    # is not assessed at all. It is either filed or it is not.
-    ("grants-register", "Submission"): {
-        "The bid": "Identify",
-        "Submission and outcome": "Act",
-        "Delivery": "Govern",
-    },
-    ("grants-register", "Acquittal"): {
-        "The obligation": "Identify",
-        "Preparing and filing": "Act",
-        "Escalation notes": "Govern",
-    },
-    # Three beats. There is no Act on a register that transcribes rather
-    # than decides (the doctrine is that authority is created in the
-    # instrument and only mirrored here), and nothing is auto-stamped, so
-    # no System either.
-    ("delegations-register", "Delegation"): {
-        "The authority": "Identify",
-        "Limit and conditions": "Assess",
-        "Source and review": "Govern",
-    },
-    # No System beat: nothing on this list is auto-stamped. Every column is
-    # authored by a coordinator or an obligation owner, so a System section
-    # would be a heading over nothing.
-    ("compliance-obligations", "Obligation"): {
-        "The duty": "Identify",
-        "Assessment and evidence": "Assess",
-        "Gaps and remediation": "Act",
-        "Ownership and cycle": "Govern",
-    },
-    # Workbook content stays in Excel; these sections track the handoffs.
-    ("legal-compliance-register", "Document"): {
-        "The document": "Identify",
-        "Assign and complete": "Act",
-        "Optional executive review": "Govern",
-        "Record in the portal": "Govern",
-    },
-    # Two consecutive Act sections, which §1.2 permits and this register
-    # depends on: "Ethics decision" and "Site authorisation" are two
-    # authorities, two reference numbers and two sets of dates, and the form's
-    # own shape has to say so before anybody reads a word. Merging them into
-    # one "Approvals" block would be the collapse the template exists to
-    # prevent.
-    #
-    # "Oversight and what is owed" is the Govern beat and it carries the
-    # recurring facts this single-list design collapses onto the project row
-    # (the next report, the last one filed, the latest amendment and the
-    # history note that is all the earlier ones leave behind).
-    ("research-ethics-register-simple", "Project"): {
-        "The project": "Identify",
-        "Review pathway": "Assess",
-        "Ethics decision": "Act",
-        "Site authorisation": "Act",
-        "Oversight and what is owed": "Govern",
-        "System": "System",
-    },
     # A contract has no assessment step and no treatment step: the middle of
     # the arc collapses to the commercial terms, which are what the register
     # weighs. Identify -> Assess -> Govern -> System.
@@ -300,70 +114,6 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Term and value": "Assess",
         "Ownership": "Govern",
         "System": "System",
-    },
-    # No Act beat, and there cannot be one: nobody acts on a row here. A
-    # flow writes the row and the response, where there is one, happens on
-    # the register the row describes. "Reporting key" is the System beat
-    # because ChangeKey is a machine join and not a fact about the change.
-    ("column-history", "ColumnHistory"): {
-        "Which item changed": "Identify",
-        "What changed": "Assess",
-        "When and who": "Govern",
-        "Reporting key": "System",
-    },
-    ("tiered-huddle", "Escalation"): {
-        "The issue": "Identify",
-        "Where it goes": "Act",
-        "Outcome": "Govern",
-    },
-    # === Process digitisation & improvement ==================================
-    # Five single-list templates that deliberately read as siblings: name the
-    # thing, assess it against the definitions, act, govern, and a System
-    # section holding the calculated score where one exists. measures-register
-    # has no calculated column and no auto-stamp, so it collapses System away
-    # rather than shipping an empty heading.
-    ("measures-register", "Measure"): {
-        "Name the measure": "Identify",
-        "Define it": "Assess",
-        "Report it": "Act",
-        "Govern it": "Govern",
-    },
-    # Decision and implementation are one beat here, not two: the register's
-    # governance IS its decision trail, and splitting them left the New form
-    # showing a heading with one hidden date under it.
-    ("change-register", "ChangeRequest"): {
-        "Describe the change": "Identify",
-        "Triage": "Assess",
-        "Decision and implementation": "Act",
-        "System": "System",
-    },
-    ("project-pipeline", "Proposal"): {
-        "The idea": "Identify",
-        "Scoping": "Assess",
-        "Decision and delivery": "Act",
-        "System": "System",
-    },
-    ("improvement-register", "Improvement"): {
-        "The idea": "Identify",
-        "Plan the test": "Assess",
-        "Test and outcome": "Act",
-        "System": "System",
-    },
-    ("process-register", "BusinessProcess"): {
-        "Name the process": "Identify",
-        "Score it": "Assess",
-        "Digitise it": "Act",
-        "Review": "Govern",
-        "System": "System",
-    },
-    # People & relationships. "Checks and clearances" is the Assess beat
-    # even though nothing is scored there: the checks ARE the assessment
-    # this register performs, and Active is the decision they gate.
-    ("volunteer-register", "Volunteer"): {
-        "Who they are": "Identify",
-        "Checks and clearances": "Assess",
-        "In the programme": "Act",
-        "Coordination": "Govern",
     },
     # The catalogue never reaches Govern: a Course row is a definition, and
     # the governance that acts on it lives on TrainingRecord.
@@ -378,158 +128,6 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Evidence": "Act",
         "Currency and notes": "Govern",
     },
-    # Both lists collapse Assess: an onboarding record is not rated, it is
-    # scheduled. The middle beat is where the work is scheduled and owned.
-    ("onboarding-tracker", "Starter"): {
-        "The hire": "Identify",
-        "Start and ownership": "Act",
-        "Progress": "Govern",
-    },
-    ("onboarding-tracker", "OnboardingTask"): {
-        "The task": "Identify",
-        "Who and when": "Act",
-        "Outcome": "Govern",
-    },
-    # "Registration" and "Issue and expiry" are the Assess beat: on this
-    # register the assessment IS the documentary evidence, and the Act beat
-    # is what the organisation then does with it (grant a scope, or link
-    # the sighted proof).
-    ("credentialing-register", "Practitioner"): {
-        "The practitioner": "Identify",
-        "Registration": "Assess",
-        "Scope of practice": "Act",
-        "Standing": "Govern",
-    },
-    ("credentialing-register", "Credential"): {
-        "The credential": "Identify",
-        "Issue and expiry": "Assess",
-        "Evidence": "Act",
-        "Standing": "Govern",
-    },
-    # Meeting collapses to two beats and Decision to two, in both cases
-    # because there is genuinely nothing in the middle: a meeting is a fact
-    # plus its record, and a decision is a statement plus its reasoning.
-    ("meeting-actions", "Meeting"): {
-        "The meeting": "Identify",
-        "The record": "Govern",
-    },
-    ("meeting-actions", "Decision"): {
-        "The decision": "Identify",
-        "Why": "Assess",
-    },
-    ("meeting-actions", "ActionItem"): {
-        "The action": "Identify",
-        "Owner and date": "Act",
-        "Progress": "Govern",
-    },
-    # The RAID log borrows its neighbours' vocabularies on purpose rather
-    # than inventing a fifth one. ProjectRisk is risk-register's arc with
-    # the two sections it trimmed renamed to what is left in them
-    # ("Response and owner" has no controls, "Review and closure" has no
-    # sponsor or tolerance window). ProjectAction and ProjectDecision are
-    # meeting-actions' ActionItem and Decision unchanged, because they are
-    # the same artefact and a project member reading both should not have
-    # to learn two names for one section.
-    #
-    # ProjectIssue is the only new shape: Progress is its own Act section
-    # holding just Status, because on an issue the progress IS the status,
-    # and the resolution fields below it are conditional on that value.
-    # programme-governance merged two vocabularies rather than inventing a
-    # third. Its four delivery lists carry the section names the project RAID
-    # log used, and Activity, Involvement and Stakeholder carry the ones the
-    # standing accountability register used. Both families were retired into
-    # this one on 2026-09-04; the names stayed so that anyone who had used
-    # either read the merged family without relearning it.
-    #
-    # Only Workstream and ServiceRequest are new shapes. Workstream has no
-    # Assess beat: a stream of work is not rated, it is sequenced and dated.
-    # ServiceRequest spends three consecutive sections on Govern, which §1.2
-    # permits, because its whole tail is governance: who authorised it, who
-    # is handling it, and how far it was escalated. Splitting them gives the
-    # escalation block a heading somebody can ignore on the nine requests in
-    # ten that never escalate.
-    # The same five beats process-register declares for the same table. The
-    # arc is a property of the shape, so two families carrying it should not
-    # tell the reader two different stories about it.
-    # A mapping backlog, not process-register's digitisation inventory, so the
-    # Act beat is split: deciding the order is one act, doing the mapping is
-    # another, and the register records both.
-    ("programme-governance", "BusinessProcess"): {
-        "Name the process": "Identify",
-        "Score it": "Assess",
-        "Decide the order": "Act",
-        "Map it": "Act",
-        "Review": "Govern",
-        "System": "System",
-    },
-    ("programme-governance", "Workstream"): {
-        "Name the workstream": "Identify",
-        "Sequence and dates": "Act",
-        "Phase and closure": "Govern",
-    },
-    ("programme-governance", "Stakeholder"): {
-        "Name the stakeholder": "Identify",
-        "How to reach them": "Act",
-        "Status and notes": "Govern",
-    },
-    ("programme-governance", "Activity"): {
-        "Describe the activity": "Identify",
-        "Classify it": "Assess",
-        "Assign it": "Act",
-        "Keep it current": "Govern",
-        "System": "System",
-    },
-    ("programme-governance", "Involvement"): {
-        "State the input": "Identify",
-        "How they are involved": "Act",
-    },
-    ("programme-governance", "ServiceRequest"): {
-        "Describe the request": "Identify",
-        "Who needs it and when": "Act",
-        "Internal authorisation": "Govern",
-        "Handling": "Govern",
-        "Escalation": "Govern",
-    },
-    ("programme-governance", "Risk"): {
-        "Describe the risk": "Identify",
-        "Assess the risk": "Assess",
-        "Response and owner": "Act",
-        "Review and closure": "Govern",
-        "System": "System",
-    },
-    ("programme-governance", "Action"): {
-        "The action": "Identify",
-        "Owner and date": "Act",
-        "Progress": "Govern",
-    },
-    ("programme-governance", "Issue"): {
-        "Describe the issue": "Identify",
-        "Severity and owner": "Assess",
-        "Progress": "Act",
-        "Resolution and closure": "Govern",
-    },
-    ("programme-governance", "Decision"): {
-        "The decision": "Identify",
-        "Why": "Assess",
-        "Endorsement route": "Govern",
-    },
-    # "What was said" is the Assess beat on a log whose whole job is
-    # judgement: the summary is what a colleague picking up the thread
-    # actually reads.
-    ("stakeholder-contacts", "Organisation"): {
-        "The organisation": "Identify",
-        "Ownership": "Govern",
-    },
-    ("stakeholder-contacts", "Contact"): {
-        "The person": "Identify",
-        "How to reach them": "Act",
-        "Standing and notes": "Govern",
-    },
-    ("stakeholder-contacts", "Interaction"): {
-        "What happened": "Identify",
-        "What was said": "Assess",
-        "Our record": "Govern",
-    },
     # --- Operations & service ------------------------------------------
     # A visit has nothing to assess: the middle beat collapses, which §1.2
     # permits and names visitor-log as the case for.
@@ -537,20 +135,6 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Who is visiting": "Identify",
         "On site": "Act",
         "Induction": "Govern",
-    },
-    ("service-requests", "Request"): {
-        "Describe the request": "Identify",
-        "Triage": "Assess",
-        "Resolution": "Act",
-        "Ownership": "Govern",
-        "System": "System",
-    },
-    ("complaints-feedback", "Feedback"): {
-        "What was raised": "Identify",
-        "Triage": "Assess",
-        "Response": "Act",
-        "Ownership": "Govern",
-        "System": "System",
     },
     # A reference list has one idea, so it gets one section. Collapsing to
     # a single beat is what §1.2 permits at the small end.
@@ -563,15 +147,6 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Purchase and warranty": "Govern",
         "System": "System",
     },
-    ("vehicle-log", "Vehicle"): {
-        "The vehicle": "Identify",
-        "In service": "Govern",
-    },
-    ("vehicle-log", "Trip"): {
-        "The trip": "Identify",
-        "Out and back": "Act",
-        "System": "System",
-    },
     ("routine-checks", "CheckPoint"): {
         "The checkpoint": "Identify",
         "What good looks like": "Assess",
@@ -582,108 +157,6 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "What you found": "Assess",
         "What you did": "Act",
         "Ownership": "Govern",
-    },
-    ("equipment-maintenance", "Equipment"): {
-        "The item": "Identify",
-        "The schedule": "Assess",
-        "In service": "Govern",
-    },
-    ("equipment-maintenance", "MaintenanceEvent"): {
-        "The work": "Identify",
-        "Outcome": "Assess",
-        "Evidence": "Govern",
-    },
-    ("incident-management", "Incident"): {
-        "What happened": "Identify",
-        "Triage": "Assess",
-        "Resolution": "Act",
-        "Ownership": "Govern",
-        "System": "System",
-    },
-    ("incident-management", "CorrectiveAction"): {
-        "The action": "Identify",
-        "Progress": "Act",
-        "Ownership": "Govern",
-    },
-    ("switchboard-log", "CodeEvent"): {
-        "The code": "Identify",
-        "Times": "Assess",
-        "What switchboard did": "Act",
-        "Ownership": "Govern",
-        "System": "System",
-    },
-    ("switchboard-log", "MessageLog"): {
-        "The call": "Identify",
-        "Urgency": "Assess",
-        "Relay": "Act",
-        "Ownership": "Govern",
-        "System": "System",
-    },
-    ("switchboard-log", "Key"): {
-        "The key": "Identify",
-        "Who may take it": "Govern",
-    },
-    ("switchboard-log", "KeyMovement"): {
-        "The movement": "Identify",
-        "Out and back": "Act",
-        "Ownership": "Govern",
-    },
-    # === Service evidence register ==========================================
-    # Two consecutive Identify sections, which §1.2 permits and this register
-    # depends on: "What happened" is the fact and "How you know" is its
-    # provenance. Merging them is exactly the collapse the whole design exists
-    # to prevent - a row where the account and how you came by it are one
-    # paragraph is an anecdote.
-    ("service-evidence-register", "ServiceEvent"): {
-        "What happened": "Identify",
-        "How you know": "Identify",
-        "Impact": "Assess",
-        "Chasing and resolution": "Act",
-        "Review and escalation": "Govern",
-        "System": "System",
-    },
-    # A chase is a small, complete arc: who you asked and what you asked
-    # (Identify), what came back (Assess), and the artefact that proves it
-    # (Act). No Govern beat - a follow-up is not governed, it is evidence, and
-    # the governing happens on the event and on the theme.
-    ("service-evidence-register", "FollowUp"): {
-        "The chase": "Identify",
-        "What came back": "Assess",
-        "Evidence": "Act",
-        "System": "System",
-    },
-    # An issue is a theme rather than an occurrence, so the arc runs whole and
-    # spends two consecutive sections on Act. Splitting the raise from the
-    # response is what lets the response half stay off the form until there is
-    # a response to record.
-    ("service-evidence-register", "ServiceIssue"): {
-        "The pattern": "Identify",
-        "Weight and evidence": "Assess",
-        "Raising it": "Act",
-        "Response and remedy": "Act",
-        "Ownership and closure": "Govern",
-        "System": "System",
-    },
-    # A vocabulary list, not a process one: it collapses to Identify ->
-    # Govern. There is no Assess beat because nothing about a party is
-    # rated, and no System beat because nothing is auto-stamped.
-    # The full five-beat arc. "Classify it" is the Assess beat: ActivityKind
-    # and Criticality are the two judgements made about an activity, and
-    # Criticality drives the confirmation cadence.
-    # Collapses to Identify -> Act. There is no Assess beat because an
-    # involvement is not rated, and no System beat because nothing is
-    # auto-stamped. "State the input" is Identify and is named as an
-    # instruction on purpose: the mandatory Title is the whole
-    # counter-measure against a consulted list of everyone who asked.
-    # Consecutive Assess sections are permitted by §1.2.
-    # "Can it keep a record" holds capability questions; "Evidence and method" qualifies them.
-    # System holds the assessment provenance typed after the verdict.
-    ("records-digitisation", "Platform"): {
-        "The platform": "Identify",
-        "Can it keep a record": "Assess",
-        "Evidence and method": "Assess",
-        "Verdict and follow-up": "Govern",
-        "System": "System",
     },
     # Two consecutive Identify sections, which §1.2 permits: a stamp is
     # identified by what happened AND by where it happened, and a fleet log
@@ -837,11 +310,6 @@ def test_the_roster_names_only_real_templates() -> None:
     assert not unknown, f"NOT_YET_UPLIFTED names templates that do not exist: {sorted(unknown)}"
 
 
-def test_at_least_the_exemplars_are_uplifted() -> None:
-    """The two templates every theme branch copies from are always in scope."""
-    assert set(_uplifted()) >= {"risk-register", "tiered-huddle"}
-
-
 # The roster's floor, pinned. Every template on NOT_YET_UPLIFTED needs a
 # reason recorded here beside it, not "we ran out of time" and not "this
 # one is awkward". Empty, and adding to it is a reviewable act.
@@ -889,6 +357,12 @@ def test_the_declared_section_beats_are_arc_beats() -> None:
         if beat not in SECTION_ARC
     }
     assert not bad, f"section beats outside the arc {SECTION_ARC}: {sorted(bad)}"
+
+
+def test_the_declared_section_beats_name_shipped_templates() -> None:
+    """An entry for a template that does not ship here checks nothing and reads as if it did."""
+    stale = sorted({template for template, _ in SECTION_BEATS} - set(_all_templates()))
+    assert not stale, f"SECTION_BEATS names templates this package does not ship: {stale}"
 
 
 # === §3.1, one test per assertion ===========================================
@@ -1361,9 +835,7 @@ def _is_icon(node: dict[str, Any]) -> bool:
 # shipped before the header probe existed, and `library-header-token-probe.js`
 # has no text column in its typed battery, so round five settles it. A new
 # entry needs that measurement first, not a precedent.
-_UNMEASURED_SHIPPED_LIBRARY_TOKENS = {
-    ("legal-compliance-register", "Document"): "[$TopicName]",
-}
+_UNMEASURED_SHIPPED_LIBRARY_TOKENS: dict[tuple[str, str], str] = {}
 
 
 def _header_identity_tokens(loaded: Loaded, template: str, entity: str) -> frozenset[str]:
@@ -2018,22 +1490,10 @@ def test_the_documented_exception_is_still_an_exception() -> None:
 #              parallel theme branches, and editing one from this branch would
 #              collide. See the template-family-standard work.
 ACCEPTED_THRESHOLD_EXPOSURE: dict[tuple[str, str], str] = {
-    ("service-requests", "views[Request].My requests"):
-        "DEFERRED: RequestedBy is a Person column and carries NO index. An "
-        "indexed Person is served past the threshold, so this wants an index "
-        "rather than acceptance.",
-    ("switchboard-log", "views[CodeEvent].Still running"):
-        "NULL-TEST: AllClearAt is_null means the code event has not stood down.",
     ("training-register", "views[Course].Never expires"):
         "NULL-TEST: ValidityMonths is_null means the completion never expires.",
-    ("vehicle-log", "views[Trip].Out now"):
-        "NULL-TEST: ReturnedAt is_null means the vehicle is still out.",
     ("visitor-log", "views[Visit].On site now"):
         "NULL-TEST: SignedOutAt is_null means the visitor is still on site.",
-    ("tiered-huddle", "views[Escalation].Escalated up"):
-        "DEFERRED: Direction is a three-value Choice and can carry an index.",
-    ("tiered-huddle", "views[Escalation].Delegated down"):
-        "DEFERRED: same Direction column as 'Escalated up'; one index clears both.",
     ("training-register", "views[Course].Mandatory catalogue"):
         "DEFERRED: Mandatory is Yes/No; indexable, but a course catalogue is "
         "small enough that an index would spend one of twenty slots for nothing.",
@@ -2128,7 +1588,7 @@ def test_no_template_performs_too_many_joins(template: str) -> None:
     )
 
 
-def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
+def test_the_worst_generated_all_items_is_four_of_twelve() -> None:
     """The spec's survey number, pinned. It is the whole reason this check can
     ship silently, and the parametrized test above cannot hold it: that one
     only fires at 11, so a template could climb from 6 to 10 unnoticed and the
@@ -2308,12 +1768,19 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     moves from 5 to 6 (Owner, the Workstream, RelatedRisk and
     ResolvingDecision lookups, Author and Editor). The distribution is
     2 -> 12, 3 -> 31, 4 -> 27, 5 -> 4, 6 -> 1, 7 -> 1, 8 -> 2, 9 -> 2. The
-    worst is unchanged at 9, and Issue is five clear of the warning band."""
+    worst is unchanged at 9, and Issue is five clear of the warning band.
+
+    RE-MEASURED 2026-09-28 across 6 templates / 10 entities, when every
+    family but core's starter set left for a separate package:
+    2 -> 4, 3 -> 3, 4 -> 3. The worst is 4, shared by asset-register/Asset
+    (AssignedTo, Location), routine-checks/CheckEntry (CheckPoint, CheckedBy)
+    and training-register/TrainingRecord (Course, Person), each plus Author
+    and Editor. Every entry above describes families that no longer ship here."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
-    assert len(templates) == 38, (
-        f"{len(templates)} templates discovered, not the 38 this survey was "
+    assert len(templates) == 6, (
+        f"{len(templates)} templates discovered, not the 6 this survey was "
         f"measured against. A template appeared or disappeared from the "
         f"roster. Re-measure the distribution and the worst count below "
         f"before trusting either."
@@ -2339,14 +1806,14 @@ def test_the_worst_generated_all_items_is_nine_of_twelve() -> None:
     # LIST keeps the roster at 34 while the distribution above moves under it,
     # and the docstring's entity total was wrong for exactly that reason
     # before this pin existed.
-    assert counted == 80, (
-        f"{counted} entities were surveyed, not the 80 the distribution above "
+    assert counted == 10, (
+        f"{counted} entities were surveyed, not the 10 the distribution above "
         f"was measured over. An entity appeared or disappeared inside a "
         f"template that is still on the roster. Re-measure the distribution "
         f"and the worst count before trusting either."
     )
-    assert worst == 9, (
-        f"worst generated 'All Items' is now {worst} of 12, not the pinned 9. "
+    assert worst == 4, (
+        f"worst generated 'All Items' is now {worst} of 12, not the pinned 4. "
         f"If this ROSE, a template grew a join-bearing column on its worst "
         f"entity. Update the number here DELIBERATELY, and check the spec's "
         f"survey paragraph with it. If it FELL, a formula term (SYSTEM_COLUMNS "

@@ -749,7 +749,7 @@ escapes instead.
 `CustomFormatter` and a form's `ClientFormCustomFormatter` keeping `&`, `<`,
 `>` and both quotes **literally, unchanged**. Neither is XML-stored, neither
 carries any restriction, and a column formatter comparing with `<` (which
-`risk-register` ships) is safe.
+the risk-register template ships) is safe.
 
 That also settles a quiet asymmetry in the deploy script, which XML-decodes a
 view formatter's read-back before comparing and does not decode a column
@@ -1051,7 +1051,7 @@ moves, it does not disappear. Two consequences are enforced:
 - **A section whose every column is hidden from every form is an error**.
   It renders as a heading with nothing under it. This is *not* asserted of
   the **last** section, because unreferenced columns land there, so only an
-  earlier section can be provably empty. `solutions/risk-register`'s
+  earlier section can be provably empty. The risk-register template's
   **System** section is exactly that shape: it is last, it holds only
   `MatrixVersion`, and its deploy.md documents the bare heading on the New
   form as cosmetic and expected.

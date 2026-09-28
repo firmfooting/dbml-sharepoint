@@ -10,7 +10,7 @@ from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 
 import pytest
-from _catalogue_fixtures import CORE_LICENSE, manifest_text, write_family
+from _catalogue_fixtures import CORE_LICENSE, install, manifest_text, write_family
 from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint import catalogue
@@ -57,6 +57,26 @@ def test_the_starter_journey_names_exactly_the_starter_set() -> None:
     """Somebody who installs only the engine still has one place to start."""
     starter = next(j for j in available_journeys() if j.id == "replacing-the-paper-books")
     assert set(starter.solution_ids) == CORE_STARTER_SET
+
+
+def test_core_ships_exactly_its_starter_set() -> None:
+    on_disk = {
+        path.parent.parent.name
+        for path in SOLUTION_TEMPLATES.glob("*/10-design/schema.dbml")
+    }
+    assert on_disk == CORE_STARTER_SET
+
+
+def test_with_no_provider_the_starter_set_and_its_journey_are_complete(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """What somebody who installs only the engine is offered: nothing refused, nothing missing."""
+    install(monkeypatch, tmp_path)
+    found = read_catalogue()
+    assert {solution.id for solution in found.solutions} == CORE_STARTER_SET
+    assert [journey.id for journey in found.journeys] == ["replacing-the-paper-books"]
+    assert found.refused == ()
+    assert found.shadowed == ()
 
 
 def test_the_catalogue_ships_inside_the_package() -> None:

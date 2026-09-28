@@ -1,7 +1,0 @@
-id = "switchboard-log"
-title = "Switchboard log"
-summary = "The switchboard's three paper books, digitised: the emergency code log (SBCodeEvent, announcements, locations, all-clears, drills, with duration calculated), the message book (SBMessageLog, after-hours calls taken and relayed, with time-to-relay calculated), and the key register (SBKey catalogue + SBKeyMovement, who has which key right now)."
-license = "MIT"
-origin = "firmfooting"
-notice = ""
-min_core = ">=0.5,<1"

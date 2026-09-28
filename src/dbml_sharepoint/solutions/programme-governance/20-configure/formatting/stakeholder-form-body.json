@@ -1,7 +1,0 @@
-{
-  "sections": [
-    { "displayname": "Name the stakeholder", "fields": ["Title", "StakeholderKind"] },
-    { "displayname": "How to reach them", "fields": ["Contact", "ExternalContactDetails"] },
-    { "displayname": "Status and notes", "fields": ["Status", "Notes"] }
-  ]
-}

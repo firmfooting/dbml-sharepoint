@@ -1,7 +1,0 @@
-id = "declarations-register"
-title = "Declarations register"
-summary = "The two compliance registers almost every organisation is asked to produce: conflicts of interest (DRInterest) and gifts, benefits & hospitality (DRGiftBenefit)."
-license = "MIT"
-origin = "firmfooting"
-notice = ""
-min_core = ">=0.5,<1"

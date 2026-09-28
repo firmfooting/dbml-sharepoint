@@ -655,9 +655,11 @@ def test_every_shipped_view_filter_is_emitted_protected(solution_id: str) -> Non
 def test_the_shipped_corpus_still_declares_filtered_views() -> None:
     """The per-solution test above passes vacuously on a corpus with none.
 
-    Measured 2026-08-17: 192 filtered views. The floor is well under that,
-    because the real number moves whenever a family gains a view and pinning
-    it exactly would fail for the wrong reason.
+    Measured 2026-08-17: 192 filtered views. RE-MEASURED 2026-09-28, once
+    core kept only its starter blueprints and the sweep read the suite's blueprints
+    beside them: 31. The floor is under that, because the real number moves
+    whenever a family gains a view and pinning it exactly would fail for the
+    wrong reason.
     """
     total = sum(
         1
@@ -665,7 +667,7 @@ def test_the_shipped_corpus_still_declares_filtered_views() -> None:
         for view in _schema_json_for(solution_id)["views"]
         if "<Where>" in view["caml_query"]
     )
-    assert total > 100, total
+    assert total > 25, total
 
 
 def test_every_declared_view_filter_is_emitted_protected() -> None:

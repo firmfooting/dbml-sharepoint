@@ -1,7 +1,0 @@
-id = "tiered-huddle"
-title = "Tiered huddle boards"
-summary = "The daily operating system, as four lists: THTier1Board (team), THTier2Board (department or service), THTier3Board (site or executive), and THEscalation for everything that cannot be resolved at the tier that raised it."
-license = "MIT"
-origin = "firmfooting"
-notice = ""
-min_core = ">=0.5,<1"

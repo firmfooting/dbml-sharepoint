@@ -19,7 +19,13 @@ from pathlib import Path
 from typing import override
 
 import pytest
-from _catalogue_fixtures import CORE_LICENSE, Provider, install, write_family
+from _catalogue_fixtures import (
+    CORE_LICENSE,
+    Provider,
+    install,
+    offer_test_blueprints,
+    write_family,
+)
 from _console import ScriptedConsole
 from _console import collapsed as _collapsed
 
@@ -40,6 +46,14 @@ from dbml_sharepoint.model.env_file import ENV_FILENAME, read_env_file
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.prefix import previous_object_names
 from dbml_sharepoint.project import ENTERPRISE_READER_DECLINED, NO_SAFE_DEFAULT
+
+
+@pytest.fixture(autouse=True)
+def _test_blueprints_are_offered(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """risk-register left core; the wizard is driven through the stand-in written for the suite."""
+    offer_test_blueprints(monkeypatch, tmp_path_factory.mktemp("frozen-site"))
 
 
 @pytest.fixture(autouse=True)
@@ -2878,8 +2892,8 @@ def test_the_facts_match_between_the_shipped_family_and_the_copy(
     # over an empty roster, proving nothing while looking like it walked
     # every family. `test_every_family_appears_in_at_least_one_journey`
     # in test_journeys.py uses the same shape for the same reason.
-    assert len(solutions) == 38, (
-        f"{len(solutions)} templates discovered, not the 38 this walk was "
+    assert len(solutions) == 8, (
+        f"{len(solutions)} templates discovered, not the 8 this walk was "
         "measured against -- re-verify the invariant before trusting an "
         "empty roster as a pass."
     )

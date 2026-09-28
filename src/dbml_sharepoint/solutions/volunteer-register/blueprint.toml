@@ -1,7 +1,0 @@
-id = "volunteer-register"
-title = "Volunteer register"
-summary = "Every volunteer, their role, and the compliance that keeps them (and the people they serve) safe: police check and Working with Children Check expiries, induction status, and an honest active/inactive picture."
-license = "MIT"
-origin = "firmfooting"
-notice = ""
-min_core = ">=0.5,<1"

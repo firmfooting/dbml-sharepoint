@@ -1,7 +1,0 @@
-id = "compliance-obligations"
-title = "Compliance obligations"
-summary = "Every obligation the organisation must meet (legislation, accreditation standards, funding agreements, formal commitments) with an owner, a compliance status, linked evidence and a review date."
-license = "MIT"
-origin = "firmfooting"
-notice = ""
-min_core = ">=0.5,<1"

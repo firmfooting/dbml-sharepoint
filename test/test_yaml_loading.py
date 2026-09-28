@@ -206,7 +206,8 @@ _ROOTS = _roots()
 _DOCUMENTS = sorted({path for found in _ROOTS.values() for path in found})
 
 # Raised as documents are added and never lowered to pass: a drop means a glob stopped matching.
-_FLOOR = 103
+# Lowered once, 2026-09-28, from 103: the blueprints that left core took their files with them.
+_FLOOR = 32
 
 
 def test_the_round_trip_covers_every_kind_of_document() -> None:
