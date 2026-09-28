@@ -95,3 +95,29 @@ def test_execute_solutions_reports_whether_every_pack_was_offered(
     text, every_pack_offered = execute_solutions()
     assert every_pack_offered
     assert text.splitlines()[0].split() == _HEADER
+
+
+def test_a_provider_that_fails_to_load_exits_1_with_its_name_on_stderr(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", ImportError("gone")))
+
+    result = runner.invoke(app, ["solutions"])
+
+    assert result.exit_code == 1
+    assert result.stderr.startswith("acme-packs: ")
+    assert "failed to load: ImportError: gone" in result.stderr
+
+
+def test_a_provider_journey_that_will_not_parse_exits_1_naming_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packs = tmp_path / "packs"
+    (packs / "journeys").mkdir(parents=True)
+    (packs / "journeys" / "broken.md").write_text("no front matter\n", encoding="utf-8")
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+
+    result = runner.invoke(app, ["solutions"])
+
+    assert result.exit_code == 1
+    assert result.stderr.startswith("acme-packs: ")

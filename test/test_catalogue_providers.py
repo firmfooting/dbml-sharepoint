@@ -167,3 +167,69 @@ def test_a_provider_s_journeys_are_offered_and_core_wins_a_duplicate(
     assert by_id["acme-journey"].distribution == "acme-packs"
     assert by_id["the-front-desk"].distribution == CORE_DISTRIBUTION
     assert Shadowed("journey", "the-front-desk", "acme-packs", CORE_DISTRIBUTION) in found.shadowed
+
+
+def test_a_provider_whose_entry_point_raises_is_refused_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A partial install or a renamed module should read as a named line, not a traceback."""
+    broken = ImportError("No module named 'acme_packs.data'")
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", broken))
+    with pytest.raises(
+        SolutionRootError,
+        match=r"^acme-packs: .* failed to load: ImportError: No module named 'acme_packs.data'",
+    ):
+        read_catalogue()
+
+
+def test_a_provider_journey_that_will_not_parse_is_refused_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packs = tmp_path / "packs"
+    (packs / "journeys").mkdir(parents=True)
+    (packs / "journeys" / "broken.md").write_text("no front matter\n", encoding="utf-8")
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+    with pytest.raises(SolutionRootError, match=r"^acme-packs: .*broken\.md: no YAML front matter"):
+        read_catalogue()
+
+
+def test_a_provider_journey_that_is_not_utf8_is_refused_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packs = tmp_path / "packs"
+    (packs / "journeys").mkdir(parents=True)
+    (packs / "journeys" / "latin.md").write_bytes(b"---\ntitle: caf\xe9\n---\n")
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+    with pytest.raises(SolutionRootError, match=r"^acme-packs: "):
+        read_catalogue()
+
+
+def test_a_provider_journey_a_console_cannot_print_is_refused_by_codepoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Journey text reaches the same terminal table as pack text, so it meets the same rule."""
+    packs = tmp_path / "packs"
+    path = write_journey(packs, "acme-journey", ["acme-thing"])
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("A journey for a test.", "Caf" + chr(0xE9) + "."),
+        encoding="utf-8", newline="\n",
+    )
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+    with pytest.raises(SolutionRootError, match=r"'summary' carries .* U\+00E9"):
+        read_catalogue()
+
+
+def test_typography_in_a_journey_is_still_folded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packs = tmp_path / "packs"
+    path = write_journey(packs, "acme-journey", ["acme-thing"])
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "for a test", "for a test " + chr(0x2014) + " folded",
+        ),
+        encoding="utf-8", newline="\n",
+    )
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+    by_id = {j.id: j for j in read_catalogue().journeys}
+    assert by_id["acme-journey"].summary == "A journey for a test -- folded."

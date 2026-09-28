@@ -3680,3 +3680,13 @@ def test_a_journey_with_nothing_installed_shows_the_hint_and_asks_again(
     assert "0 of 2" in shown
     assert "names acme-thing, acme-other, which are not installed" in shown
     assert "Journey 'ghost' names no template that is installed" in shown
+
+
+def test_a_provider_that_fails_to_load_stops_the_wizard_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", ImportError("gone")))
+    console = ScriptedConsole([])
+    assert wizard.run_wizard(console) == 1
+    assert "acme-packs:" in _collapsed(console)
+    assert "failed to load" in _collapsed(console)

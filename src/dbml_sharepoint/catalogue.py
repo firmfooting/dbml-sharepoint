@@ -345,11 +345,15 @@ def _check_notice(pack_dir: Path, notice: str, path: Path) -> None:
         raise PackManifestError(f"{path}: notice {notice!r} is not a file inside the pack")
 
 
+def _unencodable(text: str) -> str:
+    """The codepoints in `text` with no ASCII spelling, joined, or "" when there are none."""
+    return ", ".join(sorted({f"U+{ord(c):04X}" for c in text if not c.isascii()}))
+
+
 def _terminal_text(value: str, key: str, path: Path) -> str:
     """`value` folded to ASCII, or refused when a character has no ASCII spelling."""
     folded = _fold(value)
-    if not folded.isascii():
-        found = ", ".join(sorted({f"U+{ord(c):04X}" for c in folded if not c.isascii()}))
+    if found := _unencodable(folded):
         raise PackManifestError(
             f"{path}: '{key}' carries characters a console may not encode: {found}",
         )
@@ -560,10 +564,17 @@ def _build_journey(path: Path, distribution: str) -> Journey:
     for key in ("title", "summary"):
         if not isinstance(raw.get(key), str) or not raw[key].strip():
             raise ValueError(f"{path}: '{key}' must be a non-empty string")
+    shown = {key: _clean(str(raw[key])) for key in ("title", "summary")}
+    for key, text in shown.items():
+        # Rendered into the same terminal table as a pack's title, so held to the same rule.
+        if found := _unencodable(text):
+            raise ValueError(
+                f"{path}: '{key}' carries characters a console may not encode: {found}",
+            )
     return Journey(
         id=path.stem,
-        title=_clean(str(raw["title"])),
-        summary=_clean(str(raw["summary"])),
+        title=shown["title"],
+        summary=shown["summary"],
         solution_ids=tuple(solutions),
         path=path,
         distribution=distribution,
@@ -579,7 +590,13 @@ def _gather_journeys(roots: list[SolutionRoot]) -> tuple[list[Journey], list[Sha
         if not directory.is_dir():
             continue
         for path in sorted(directory.glob("*.md")):
-            journey = _build_journey(path, source.distribution)
+            try:
+                journey = _build_journey(path, source.distribution)
+            except ValueError as exc:
+                # Core's journeys are guarded by its tests; a provider's reach the operator.
+                if source.distribution == CORE_DISTRIBUTION:
+                    raise
+                raise SolutionRootError(f"{source.distribution}: {exc}") from exc
             if journey.id in journeys:
                 kept = journeys[journey.id].distribution
                 shadowed.append(Shadowed("journey", journey.id, source.distribution, kept))
@@ -632,7 +649,13 @@ def _provider_root(point: EntryPoint) -> SolutionRoot:
         )
     distribution = point.dist.name
     licence = _declared_licence(distribution, point.dist.metadata.get("License-Expression"))
-    root: object = point.load()()
+    # Any failure inside a provider's own code is that provider's, and named as such.
+    try:
+        root: object = point.load()()
+    except Exception as exc:
+        raise SolutionRootError(
+            f"{distribution}: {point.value} failed to load: {type(exc).__name__}: {exc}",
+        ) from exc
     if not isinstance(root, Path):
         kind = f"{type(root).__module__}.{type(root).__qualname__}"
         raise SolutionRootError(
@@ -658,8 +681,8 @@ def solution_roots() -> list[SolutionRoot]:
 def read_catalogue() -> Catalogue:
     """Every root's templates and journeys, what was refused, and what was hidden.
 
-    Raises `SolutionRootError` when a root cannot be read, and `ValueError` for
-    a malformed journey, as `available_journeys` does.
+    Raises `SolutionRootError` when a root cannot be read or a provider's
+    journey is malformed, and `ValueError` for a malformed journey of core's own.
     """
     roots = solution_roots()
     solutions, refused, hidden = _gather_solutions(roots)

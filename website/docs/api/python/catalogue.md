@@ -277,8 +277,8 @@ def read_catalogue() -> dbml_sharepoint.catalogue.Catalogue
 
 Every root's templates and journeys, what was refused, and what was hidden.
 
-Raises `SolutionRootError` when a root cannot be read, and `ValueError` for
-a malformed journey, as `available_journeys` does.
+Raises `SolutionRootError` when a root cannot be read or a provider's
+journey is malformed, and `ValueError` for a malformed journey of core's own.
 
 ### `notices`
 

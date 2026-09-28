@@ -76,14 +76,21 @@ _ROOTS: dict[str, object] = {}
 _TARGETS = ("first_root", "second_root")
 
 
+def _returned(value: object) -> object:
+    """`value`, or raised when it is an exception, as a broken provider would."""
+    if isinstance(value, BaseException):
+        raise value
+    return value
+
+
 def first_root() -> object:
     """The target of the first installed provider's entry point."""
-    return _ROOTS["first_root"]
+    return _returned(_ROOTS["first_root"])
 
 
 def second_root() -> object:
     """The target of the second installed provider's entry point."""
-    return _ROOTS["second_root"]
+    return _returned(_ROOTS["second_root"])
 
 
 @dataclass(frozen=True)
@@ -91,6 +98,7 @@ class Provider:
     """One installed distribution registering a solution root."""
 
     name: str
+    #: What the entry point returns; an exception instance is raised instead.
     root: object
     #: None writes metadata with no License-Expression at all.
     licence: str | None = "BUSL-1.1"
