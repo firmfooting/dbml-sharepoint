@@ -1,0 +1,7 @@
+id = "change-register"
+title = "Change register"
+summary = "One intake for change requests (IT systems, processes, documents, organisational) with a visible decision trail."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

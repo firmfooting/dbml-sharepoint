@@ -1,0 +1,7 @@
+id = "column-history"
+title = "Column history"
+summary = "One list (dbmlColumnHistory), deployed once to your central logging site, that Power Automate flows write into."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

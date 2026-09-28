@@ -1,0 +1,7 @@
+id = "delegations-register"
+title = "Delegations register"
+summary = "Who may approve what, up to what limit, under which instrument."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

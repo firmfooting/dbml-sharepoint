@@ -1,0 +1,7 @@
+id = "audit-actions"
+title = "Audit actions"
+summary = "Audit findings and the recommendations they produced, tracked to closure with evidence."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

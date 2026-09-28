@@ -1,0 +1,7 @@
+id = "risk-register"
+title = "Risk register"
+summary = "A single-list organisational risk register with a self-rating 5x5 matrix: pick Likelihood and Consequence, and SharePoint calculates ResidualRiskRating (Low/Medium/High/Extreme) and a 1-25 RiskScore."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

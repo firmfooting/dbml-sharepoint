@@ -1,0 +1,7 @@
+id = "deployment-log"
+title = "Deployment log"
+summary = "The fleet's own record of itself: two lists, firmfootingDeployments and firmfootingChanges, holding a row for every deploy run any firmfooting application performs anywhere in the tenant, saying what was deployed, to which site, by whom, from which release, whether the run finished, and what it changed."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

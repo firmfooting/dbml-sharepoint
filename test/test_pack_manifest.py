@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from _catalogue_fixtures import CORE_LICENSE, manifest_text, without
-from _paths import REPO_ROOT
+from _paths import REPO_ROOT, SOLUTION_TEMPLATES
 
 from dbml_sharepoint.catalogue import (
     ORIGIN_OWN,
@@ -156,3 +156,18 @@ def test_typography_in_a_title_is_folded_to_ascii(tmp_path: Path) -> None:
 def test_a_character_with_no_console_spelling_is_refused(tmp_path: Path) -> None:
     with pytest.raises(PackManifestError, match=r"'summary' carries .* U\+00E9"):
         _read(tmp_path, {"summary": "Caf" + chr(0x00E9) + " bookings."})
+
+
+def _shipped_packs() -> list[Path]:
+    return sorted(p.parent.parent for p in SOLUTION_TEMPLATES.glob("*/10-design/schema.dbml"))
+
+
+def test_the_shipped_sweep_reads_packs() -> None:
+    """Core keeps six starter packs after the split, so fewer means the glob broke."""
+    assert len(_shipped_packs()) >= 6
+
+
+@pytest.mark.parametrize("pack_dir", _shipped_packs(), ids=lambda p: p.name)
+def test_every_shipped_pack_has_a_valid_manifest(pack_dir: Path) -> None:
+    manifest = read_pack_manifest(pack_dir, CORE_LICENSE)
+    assert manifest.origin == ORIGIN_OWN

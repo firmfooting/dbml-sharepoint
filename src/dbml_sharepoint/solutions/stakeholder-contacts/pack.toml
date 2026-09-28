@@ -1,0 +1,7 @@
+id = "stakeholder-contacts"
+title = "Stakeholder contacts"
+summary = "A shared organisational memory of who you deal with and what was said."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

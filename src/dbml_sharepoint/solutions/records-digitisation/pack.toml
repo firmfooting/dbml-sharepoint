@@ -1,0 +1,7 @@
+id = "records-digitisation"
+title = "Records digitisation: platform capability assessment"
+summary = "One row per business platform, answering one question: whether a digitised record can be kept there for as long as the record has to last."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

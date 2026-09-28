@@ -1,0 +1,7 @@
+id = "training-register"
+title = "Training register"
+summary = "Who is trained in what, when it was done, and when it expires."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"

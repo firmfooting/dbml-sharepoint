@@ -1,0 +1,7 @@
+id = "credentialing-register"
+title = "Credentialing register"
+summary = "Who is credentialed to do what, on whose decision, until when."
+license = "MIT"
+origin = "firmfooting"
+notice = ""
+min_core = ">=0.5,<1"
