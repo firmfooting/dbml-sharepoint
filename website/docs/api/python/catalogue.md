@@ -7,19 +7,23 @@ sidebar_position: 54
 
 *Packaging: the shipped solution templates, as data*
 
-The shipped solution templates, as data the wizard can offer.
+The solution templates the wizard can offer, as data.
 
-One `Solution` per directory under `solutions/`. Everything here is
-read-only discovery: nothing in this module writes, validates or deploys.
+Templates come from solution roots: core's own `solutions/` directory first,
+then the directory each installed distribution registers under the
+`dbml_sharepoint.solution_roots` entry-point group. One `Solution` per pack
+directory in any root. Everything here is read-only discovery: nothing in
+this module writes, validates a mapping or deploys.
 
 Discovered by glob, never by roster. A hardcoded list of names fails open.
 A new template is simply never offered, and every test stays green saying
-so. `.github/workflows/ci.yml` builds the same set the same way, and
+so. `.github/workflows/ci.yml` builds core's set the same way, and
 `test_template_standard.py` derives its conformance cases from it.
 
-The directory is located the way `templating.py` locates the Jinja
-templates, relative to this file, inside the installed package. That is
-the whole reason the templates were moved here: the audience for the wizard
+Each pack declares its id, title, summary and licence in `pack.toml`. A pack
+whose manifest is missing, or claims a licence its distribution does not
+declare, is refused rather than offered. Core's root is located relative to
+this file, inside the installed package, because the audience for the wizard
 is somebody who ran `uvx dbml-sharepoint` and has no checkout.
 
 ### `SOLUTIONS_DIR`
@@ -74,6 +78,12 @@ SECTORS_DIRNAME = 'sectors'
 
 ```python
 CORE_DISTRIBUTION = 'dbml-sharepoint'
+```
+
+### `SOLUTION_ROOTS_GROUP`
+
+```python
+SOLUTION_ROOTS_GROUP = 'dbml_sharepoint.solution_roots'
 ```
 
 ### `PACK_MANIFEST`
@@ -184,6 +194,19 @@ class Refusal:
 
 A pack directory the catalogue will not offer, and the named error why.
 
+### `Shadowed`
+
+```python
+@dataclass(frozen=True)
+class Shadowed:
+    kind: str
+    id: str
+    distribution: str
+    kept_from: str
+```
+
+A template or journey not offered because an earlier root offers the same id.
+
 ### `Catalogue`
 
 ```python
@@ -192,6 +215,7 @@ class Catalogue:
     solutions: tuple[dbml_sharepoint.catalogue.Solution, ...]
     journeys: tuple[dbml_sharepoint.catalogue.Journey, ...]
     refused: tuple[dbml_sharepoint.catalogue.Refusal, ...]
+    shadowed: tuple[dbml_sharepoint.catalogue.Shadowed, ...]
 ```
 
 Everything offered from every root, and what was refused.
@@ -239,7 +263,11 @@ and the guard that would have caught it is the one being bypassed.
 def solution_roots() -> list[dbml_sharepoint.catalogue.SolutionRoot]
 ```
 
-Where packs are read from, core first. Raises `SolutionRootError`.
+Where packs are read from: core first, then each provider by distribution name.
+
+Raises `SolutionRootError` when any root cannot be read. A provider that is
+installed but unreadable makes every licence the catalogue would print
+uncertain, so nothing is offered until it is fixed or removed.
 
 ### `read_catalogue`
 
@@ -247,7 +275,7 @@ Where packs are read from, core first. Raises `SolutionRootError`.
 def read_catalogue() -> dbml_sharepoint.catalogue.Catalogue
 ```
 
-Every root's templates and journeys, and the packs refused.
+Every root's templates and journeys, what was refused, and what was hidden.
 
 Raises `SolutionRootError` when a root cannot be read, and `ValueError` for
 a malformed journey, as `available_journeys` does.
@@ -258,7 +286,10 @@ a malformed journey, as `available_journeys` does.
 def notices(found: dbml_sharepoint.catalogue.Catalogue) -> list[str]
 ```
 
-What an interface prints once per run: one line per refused pack.
+What an interface prints once per run: each refused pack, then each hidden group.
+
+Hidden ids are grouped by package, so a provider that repeats every core
+pack costs one line rather than one per pack.
 
 ### `load_solution`
 

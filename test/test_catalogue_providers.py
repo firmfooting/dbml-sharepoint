@@ -1,0 +1,169 @@
+"""Pack providers: installed distributions that register a solution root."""
+
+import io
+import zipfile
+from importlib.metadata import EntryPoint
+from pathlib import Path
+
+import pytest
+from _catalogue_fixtures import CORE_LICENSE, Provider, install, write_family, write_journey
+
+from dbml_sharepoint import catalogue
+from dbml_sharepoint.catalogue import (
+    CORE_DISTRIBUTION,
+    SOLUTION_ROOTS_GROUP,
+    Shadowed,
+    SolutionRootError,
+    available_solutions,
+    load_solution,
+    notices,
+    read_catalogue,
+    solution_roots,
+)
+
+
+def test_providers_are_found_under_the_documented_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asked: list[str] = []
+
+    def spy(*, group: str) -> list[EntryPoint]:
+        asked.append(group)
+        return []
+
+    monkeypatch.setattr(catalogue, "entry_points", spy)
+    solution_roots()
+    assert asked == ["dbml_sharepoint.solution_roots"]
+
+
+def test_with_no_provider_only_core_is_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install(monkeypatch, tmp_path / "site")
+    assert [r.distribution for r in solution_roots()] == [CORE_DISTRIBUTION]
+
+
+def test_a_provider_s_packs_follow_core_s_with_its_package_and_licence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packs = tmp_path / "packs"
+    write_family(packs, "acme-thing", {"license": "BUSL-1.1"})
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+
+    solutions = available_solutions()
+    assert solutions[-1].id == "acme-thing"
+    assert (solutions[-1].distribution, solutions[-1].license) == ("acme-packs", "BUSL-1.1")
+    assert {s.distribution for s in solutions[:-1]} == {CORE_DISTRIBUTION}
+
+
+def test_a_provider_pack_must_carry_its_distribution_s_licence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packs = tmp_path / "packs"
+    write_family(packs, "acme-thing")  # core's licence, inside a BUSL-1.1 distribution
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+
+    found = read_catalogue()
+    assert "acme-thing" not in {s.id for s in found.solutions}
+    assert [(r.distribution, r.path.name) for r in found.refused] == [
+        ("acme-packs", "acme-thing"),
+    ]
+    assert f"license '{CORE_LICENSE}' differs from 'BUSL-1.1'" in found.refused[0].reason
+
+
+def test_a_provider_without_a_licence_expression_is_refused_whole(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packs = tmp_path / "packs"
+    packs.mkdir()
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs, licence=None))
+    with pytest.raises(SolutionRootError, match="acme-packs declares no License-Expression"):
+        read_catalogue()
+
+
+def test_a_provider_root_inside_a_zip_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Packs are copied and built as real files, so a zipped install fails closed."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("packs/acme-thing/pack.toml", "")
+    with zipfile.ZipFile(buffer) as archive:
+        zipped = zipfile.Path(archive, "packs/")
+        install(monkeypatch, tmp_path / "site", Provider("acme-packs", zipped))
+        with pytest.raises(SolutionRootError, match=r"acme-packs: .* not a directory on disk"):
+            read_catalogue()
+
+
+def test_a_provider_root_that_does_not_exist_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", tmp_path / "missing"))
+    with pytest.raises(SolutionRootError, match="is not a directory"):
+        read_catalogue()
+
+
+def test_an_entry_point_outside_any_distribution_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    point = EntryPoint(
+        name="packs", value="_catalogue_fixtures:first_root", group=SOLUTION_ROOTS_GROUP,
+    )
+    monkeypatch.setattr(catalogue, "entry_points", lambda *, group: [point])
+    with pytest.raises(SolutionRootError, match="belongs to no distribution"):
+        read_catalogue()
+
+
+def test_core_wins_a_duplicate_id_and_the_loser_is_named_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every id repeats while a provider and core both ship the same packs."""
+    packs = tmp_path / "packs"
+    for pack_id in ("risk-register", "visitor-log"):
+        write_family(packs, pack_id, {"license": "BUSL-1.1"})
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+
+    found = read_catalogue()
+    assert load_solution("risk-register").distribution == CORE_DISTRIBUTION
+    assert set(found.shadowed) == {
+        Shadowed("template", "risk-register", "acme-packs", CORE_DISTRIBUTION),
+        Shadowed("template", "visitor-log", "acme-packs", CORE_DISTRIBUTION),
+    }
+    assert [line for line in notices(found) if line.startswith("Hidden:")] == [
+        (
+            "Hidden: 2 templates from acme-packs share an id with one from dbml-sharepoint, "
+            "which is offered instead: risk-register, visitor-log"
+        ),
+    ]
+
+
+def test_between_providers_the_first_by_name_wins(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    later, earlier = tmp_path / "b", tmp_path / "a"
+    write_family(later, "acme-thing", {"license": "BUSL-1.1"})
+    write_family(earlier, "acme-thing", {"license": "BUSL-1.1"})
+    install(
+        monkeypatch, tmp_path / "site",
+        Provider("b-packs", later), Provider("a-packs", earlier),
+    )
+
+    assert [r.distribution for r in solution_roots()] == [
+        CORE_DISTRIBUTION, "a-packs", "b-packs",
+    ]
+    assert load_solution("acme-thing").distribution == "a-packs"
+
+
+def test_a_provider_s_journeys_are_offered_and_core_wins_a_duplicate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packs = tmp_path / "packs"
+    write_journey(packs, "acme-journey", ["acme-thing"])
+    write_journey(packs, "the-front-desk", ["acme-thing"])
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+
+    found = read_catalogue()
+    by_id = {j.id: j for j in found.journeys}
+    assert by_id["acme-journey"].distribution == "acme-packs"
+    assert by_id["the-front-desk"].distribution == CORE_DISTRIBUTION
+    assert Shadowed("journey", "the-front-desk", "acme-packs", CORE_DISTRIBUTION) in found.shadowed

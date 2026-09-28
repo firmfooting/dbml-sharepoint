@@ -1,23 +1,27 @@
-"""The shipped solution templates, as data the wizard can offer.
+"""The solution templates the wizard can offer, as data.
 
-One `Solution` per directory under `solutions/`. Everything here is
-read-only discovery: nothing in this module writes, validates or deploys.
+Templates come from solution roots: core's own `solutions/` directory first,
+then the directory each installed distribution registers under the
+`dbml_sharepoint.solution_roots` entry-point group. One `Solution` per pack
+directory in any root. Everything here is read-only discovery: nothing in
+this module writes, validates a mapping or deploys.
 
 Discovered by glob, never by roster. A hardcoded list of names fails open.
 A new template is simply never offered, and every test stays green saying
-so. `.github/workflows/ci.yml` builds the same set the same way, and
+so. `.github/workflows/ci.yml` builds core's set the same way, and
 `test_template_standard.py` derives its conformance cases from it.
 
-The directory is located the way `templating.py` locates the Jinja
-templates, relative to this file, inside the installed package. That is
-the whole reason the templates were moved here: the audience for the wizard
+Each pack declares its id, title, summary and licence in `pack.toml`. A pack
+whose manifest is missing, or claims a licence its distribution does not
+declare, is refused rather than offered. Core's root is located relative to
+this file, inside the installed package, because the audience for the wizard
 is somebody who ran `uvx dbml-sharepoint` and has no checkout.
 """
 
 import re
 import tomllib
 from dataclasses import dataclass
-from importlib.metadata import PackageNotFoundError, metadata
+from importlib.metadata import EntryPoint, PackageNotFoundError, entry_points, metadata
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -83,6 +87,9 @@ _ELLIPSIS = "..."
 
 #: The distribution this module ships in. Its packs win a duplicate id.
 CORE_DISTRIBUTION = "dbml-sharepoint"
+
+#: The entry-point group a pack provider registers a zero-argument callable under.
+SOLUTION_ROOTS_GROUP = "dbml_sharepoint.solution_roots"
 
 #: The file every pack directory carries beside its README.
 PACK_MANIFEST = "pack.toml"
@@ -225,6 +232,19 @@ class Refusal:
 
 
 @dataclass(frozen=True)
+class Shadowed:
+    """A template or journey not offered because an earlier root offers the same id."""
+
+    #: "template" or "journey".
+    kind: str
+    id: str
+    #: The distribution whose copy is hidden.
+    distribution: str
+    #: The distribution whose copy is offered instead.
+    kept_from: str
+
+
+@dataclass(frozen=True)
 class Catalogue:
     """Everything offered from every root, and what was refused.
 
@@ -234,6 +254,7 @@ class Catalogue:
     solutions: tuple[Solution, ...]
     journeys: tuple[Journey, ...]
     refused: tuple[Refusal, ...]
+    shadowed: tuple[Shadowed, ...]
 
 
 #: Typographic characters a README may use, and their terminal spellings.
@@ -458,17 +479,29 @@ def _build(family: Path, source: SolutionRoot) -> Solution:
     )
 
 
-def _gather_solutions(roots: list[SolutionRoot]) -> tuple[list[Solution], list[Refusal]]:
-    """Every pack in every root, in root order then by id, and the packs refused."""
+def _gather_solutions(
+    roots: list[SolutionRoot],
+) -> tuple[list[Solution], list[Refusal], list[Shadowed]]:
+    """Every pack in every root, in root order then by id; a repeated id is hidden."""
     solutions: list[Solution] = []
     refused: list[Refusal] = []
+    shadowed: list[Shadowed] = []
+    kept: dict[str, str] = {}
     for source in roots:
         for family in _family_dirs(source.root):
             try:
-                solutions.append(_build(family, source))
+                solution = _build(family, source)
             except PackManifestError as exc:
                 refused.append(Refusal(source.distribution, family, str(exc)))
-    return solutions, refused
+                continue
+            if solution.id in kept:
+                shadowed.append(
+                    Shadowed("template", solution.id, source.distribution, kept[solution.id]),
+                )
+                continue
+            kept[solution.id] = source.distribution
+            solutions.append(solution)
+    return solutions, refused, shadowed
 
 
 def available_solutions() -> list[Solution]:
@@ -537,17 +570,22 @@ def _build_journey(path: Path, distribution: str) -> Journey:
     )
 
 
-def _gather_journeys(roots: list[SolutionRoot]) -> list[Journey]:
-    """Every journey in every root, ordered by id."""
-    journeys: list[Journey] = []
+def _gather_journeys(roots: list[SolutionRoot]) -> tuple[list[Journey], list[Shadowed]]:
+    """Every journey in every root, ordered by id; a repeated id is hidden."""
+    journeys: dict[str, Journey] = {}
+    shadowed: list[Shadowed] = []
     for source in roots:
         directory = source.root / JOURNEYS_DIRNAME
-        if directory.is_dir():
-            journeys.extend(
-                _build_journey(path, source.distribution)
-                for path in sorted(directory.glob("*.md"))
-            )
-    return sorted(journeys, key=lambda journey: journey.id)
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob("*.md")):
+            journey = _build_journey(path, source.distribution)
+            if journey.id in journeys:
+                kept = journeys[journey.id].distribution
+                shadowed.append(Shadowed("journey", journey.id, source.distribution, kept))
+                continue
+            journeys[journey.id] = journey
+    return sorted(journeys.values(), key=lambda journey: journey.id), shadowed
 
 
 def available_journeys() -> list[Journey]:
@@ -558,7 +596,7 @@ def available_journeys() -> list[Journey]:
     a journey that will not load is a grouping silently missing its members,
     and the guard that would have caught it is the one being bypassed.
     """
-    return _gather_journeys(solution_roots())
+    return _gather_journeys(solution_roots())[0]
 
 
 def _declared_licence(distribution: str, declared: str | None) -> str:
@@ -585,29 +623,74 @@ def _core_root() -> SolutionRoot:
     )
 
 
+def _provider_root(point: EntryPoint) -> SolutionRoot:
+    """One provider's root, checked, or `SolutionRootError` naming the distribution."""
+    if point.dist is None:
+        raise SolutionRootError(
+            f"entry point {point.name} ({point.value}) in {SOLUTION_ROOTS_GROUP} belongs "
+            "to no distribution, so its packs have no licence to check",
+        )
+    distribution = point.dist.name
+    licence = _declared_licence(distribution, point.dist.metadata.get("License-Expression"))
+    root: object = point.load()()
+    if not isinstance(root, Path):
+        kind = f"{type(root).__module__}.{type(root).__qualname__}"
+        raise SolutionRootError(
+            f"{distribution}: {point.value} returned a {kind}, not a directory on disk. "
+            "Packs are copied and built as real files, so install the distribution unpacked",
+        )
+    if not root.is_dir():
+        raise SolutionRootError(f"{distribution}: {root} is not a directory")
+    return SolutionRoot(distribution, root, licence)
+
+
 def solution_roots() -> list[SolutionRoot]:
-    """Where packs are read from, core first. Raises `SolutionRootError`."""
-    return [_core_root()]
+    """Where packs are read from: core first, then each provider by distribution name.
+
+    Raises `SolutionRootError` when any root cannot be read. A provider that is
+    installed but unreadable makes every licence the catalogue would print
+    uncertain, so nothing is offered until it is fixed or removed.
+    """
+    providers = [_provider_root(point) for point in entry_points(group=SOLUTION_ROOTS_GROUP)]
+    return [_core_root(), *sorted(providers, key=lambda root: root.distribution)]
 
 
 def read_catalogue() -> Catalogue:
-    """Every root's templates and journeys, and the packs refused.
+    """Every root's templates and journeys, what was refused, and what was hidden.
 
     Raises `SolutionRootError` when a root cannot be read, and `ValueError` for
     a malformed journey, as `available_journeys` does.
     """
     roots = solution_roots()
-    solutions, refused = _gather_solutions(roots)
+    solutions, refused, hidden = _gather_solutions(roots)
+    journeys, hidden_journeys = _gather_journeys(roots)
     return Catalogue(
         solutions=tuple(solutions),
-        journeys=tuple(_gather_journeys(roots)),
+        journeys=tuple(journeys),
         refused=tuple(refused),
+        shadowed=(*hidden, *hidden_journeys),
     )
 
 
 def notices(found: Catalogue) -> list[str]:
-    """What an interface prints once per run: one line per refused pack."""
-    return [f"Not offered: {r.distribution}: {r.reason}" for r in found.refused]
+    """What an interface prints once per run: each refused pack, then each hidden group.
+
+    Hidden ids are grouped by package, so a provider that repeats every core
+    pack costs one line rather than one per pack.
+    """
+    lines = [f"Not offered: {r.distribution}: {r.reason}" for r in found.refused]
+    grouped: dict[tuple[str, str, str], list[str]] = {}
+    for hidden in found.shadowed:
+        grouped.setdefault((hidden.kind, hidden.distribution, hidden.kept_from), []).append(
+            hidden.id,
+        )
+    for (kind, distribution, kept_from), ids in grouped.items():
+        noun, verb = (kind, "shares") if len(ids) == 1 else (f"{kind}s", "share")
+        lines.append(
+            f"Hidden: {len(ids)} {noun} from {distribution} {verb} an id with one from "
+            f"{kept_from}, which is offered instead: {', '.join(sorted(ids))}",
+        )
+    return lines
 
 
 def load_solution(name: str) -> Solution:

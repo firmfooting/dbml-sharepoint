@@ -1,10 +1,19 @@
 """Pack directories and pack.toml text for the catalogue tests, written to tmp_path."""
 
 import json
-from importlib.metadata import metadata
+from dataclasses import dataclass
+from importlib.metadata import EntryPoint, PathDistribution, metadata
 from pathlib import Path
 
-from dbml_sharepoint.catalogue import CORE_DISTRIBUTION, PACK_MANIFEST
+import pytest
+
+from dbml_sharepoint import catalogue
+from dbml_sharepoint.catalogue import (
+    CORE_DISTRIBUTION,
+    JOURNEYS_DIRNAME,
+    PACK_MANIFEST,
+    SOLUTION_ROOTS_GROUP,
+)
 
 #: Core's licence as its installed metadata declares it; test_pack_manifest ties it to pyproject.
 CORE_LICENSE = metadata(CORE_DISTRIBUTION)["License-Expression"]
@@ -45,3 +54,66 @@ def write_family(parent: Path, pack_id: str, overrides: dict[str, str] | None = 
         manifest_text(pack_id, overrides), encoding="utf-8", newline="\n",
     )
     return root
+
+
+def write_journey(root: Path, journey_id: str, members: list[str]) -> Path:
+    """A journey file under `root/journeys/` naming `members` in order."""
+    directory = root / JOURNEYS_DIRNAME
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{journey_id}.md"
+    path.write_text(
+        f"---\ntitle: {journey_id}\nsummary: A journey for a test.\n"
+        f"solutions: [{', '.join(members)}]\n---\n",
+        encoding="utf-8", newline="\n",
+    )
+    return path
+
+
+#: What each fake provider's entry point returns, keyed by the function it names.
+_ROOTS: dict[str, object] = {}
+
+#: The entry-point targets, one per provider a test may install.
+_TARGETS = ("first_root", "second_root")
+
+
+def first_root() -> object:
+    """The target of the first installed provider's entry point."""
+    return _ROOTS["first_root"]
+
+
+def second_root() -> object:
+    """The target of the second installed provider's entry point."""
+    return _ROOTS["second_root"]
+
+
+@dataclass(frozen=True)
+class Provider:
+    """One installed distribution registering a solution root."""
+
+    name: str
+    root: object
+    #: None writes metadata with no License-Expression at all.
+    licence: str | None = "BUSL-1.1"
+
+
+def install(monkeypatch: pytest.MonkeyPatch, site: Path, *providers: Provider) -> None:
+    """Make exactly `providers` visible to the catalogue, each through real dist-info metadata."""
+    points: list[EntryPoint] = []
+    for target, provider in zip(_TARGETS[: len(providers)], providers, strict=True):
+        monkeypatch.setitem(_ROOTS, target, provider.root)
+        dist_info = site / f"{provider.name.replace('-', '_')}-1.0.dist-info"
+        dist_info.mkdir(parents=True)
+        fields = ["Metadata-Version: 2.4", f"Name: {provider.name}", "Version: 1.0"]
+        if provider.licence is not None:
+            fields.append(f"License-Expression: {provider.licence}")
+        (dist_info / "METADATA").write_text("\n".join(fields) + "\n", encoding="utf-8")
+        (dist_info / "entry_points.txt").write_text(
+            f"[{SOLUTION_ROOTS_GROUP}]\npacks = _catalogue_fixtures:{target}\n",
+            encoding="utf-8",
+        )
+        points.extend(PathDistribution(dist_info).entry_points.select(group=SOLUTION_ROOTS_GROUP))
+
+    def installed(*, group: str) -> list[EntryPoint]:
+        return points if group == SOLUTION_ROOTS_GROUP else []
+
+    monkeypatch.setattr(catalogue, "entry_points", installed)
