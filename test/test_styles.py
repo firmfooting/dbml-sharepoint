@@ -643,11 +643,11 @@ const choose = (condition, yes, no) => condition ? yes : no;
 
 
 def test_levels_above_target_uses_numeric_severity() -> None:
-    from _paths import PACKAGE
+    from _paths import TEST_BLUEPRINTS
 
     from dbml_sharepoint.model.mapping_loader import load_mapping
 
-    bundle = load_mapping(PACKAGE / "solutions/risk-register/20-configure/mapping.yaml")
+    bundle = load_mapping(TEST_BLUEPRINTS / "risk-register/20-configure/mapping.yaml")
     spec = bundle.mapping.column_style_specs["Risk"]["LevelsAboveTarget"]
     assert spec == {"style": "numeric-severity", "calculated": True,
                     "bands": [{"max": 0, "token": "good"}, {"max": 1, "token": "warning"}],

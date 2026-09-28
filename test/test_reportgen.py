@@ -13,7 +13,7 @@ from _model import ref as make_ref
 from _model import schema as make_schema
 from _model import table as make_table
 from _packs import pack
-from _paths import FIXTURES, SOLUTION_TEMPLATES
+from _paths import FIXTURES, engine_blueprints
 
 from dbml_sharepoint.analysis.report_columns import LIBRARY_REPORT_COLUMNS
 from dbml_sharepoint.analysis.reporting import dictionary as reporting_dictionary
@@ -51,11 +51,9 @@ from dbml_sharepoint.model.parser import Column, Schema, TableIndex, parse_dbml
 from dbml_sharepoint.model.release import load_release
 
 #: Globbed rather than listed, so a new family joins the sweeps below without
-#: anybody remembering to add it.
-FAMILIES = sorted(
-    path.parent.parent.name
-    for path in SOLUTION_TEMPLATES.glob("*/10-design/schema.dbml")
-)
+#: anybody remembering to add it. Core's packs and the test packs.
+BLUEPRINTS = engine_blueprints()
+FAMILIES = sorted(BLUEPRINTS)
 
 
 def _simple() -> tuple[Schema, MappingBundle]:
@@ -1356,7 +1354,7 @@ def test_every_field_kind_contributes_the_columns_the_query_types(
 
 @pytest.mark.parametrize("family", FAMILIES)
 def test_shipped_families_agree_about_their_report_columns(family: str) -> None:
-    root = SOLUTION_TEMPLATES / family
+    root = BLUEPRINTS[family]
     _assert_declared_outputs_match(
         parse_dbml(root / "10-design" / "schema.dbml"),
         load_mapping(root / "20-configure" / "mapping.yaml"),
@@ -2968,7 +2966,7 @@ def test_no_shipped_query_selects_a_column_the_expand_refuses(family: str) -> No
     A single refused path returns HTTP 400 for the whole request, so this
     is not a missing column, it is a list that does not load.
     """
-    root = SOLUTION_TEMPLATES / family
+    root = BLUEPRINTS[family]
     schema = parse_dbml(root / "10-design/schema.dbml")
     bundle = load_mapping(root / "20-configure/mapping.yaml")
     enums = {e.name for e in schema.enums}

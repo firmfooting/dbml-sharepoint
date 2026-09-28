@@ -16,7 +16,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
-from _paths import FIXTURES, REPO_ROOT, SOLUTION_TEMPLATES
+from _paths import FIXTURES, REPO_ROOT, SOLUTION_TEMPLATES, TEST_BLUEPRINTS
 from ruamel.yaml import YAML
 from ruamel.yaml.constructor import ConstructorError
 from ruamel.yaml.nodes import ScalarNode
@@ -109,7 +109,7 @@ def test_keys_of_different_types_are_distinct() -> None:
 
 def test_a_key_beside_a_merge_overrides_it() -> None:
     """The merge-key spec lets a key written beside `<<` override the merged
-    one, and the shipped programme-governance mapping does that."""
+    one, and the reporting-sample test blueprint's mapping does that."""
     assert _yaml.safe_load("base: &b {x: 1}\nuse: {<<: *b, x: 2}\n")["use"] == {"x": 2}
     merged = _yaml.safe_load("a: &a {x: 1}\nb: &b {y: 1}\nuse: {<<: [*a, *b], x: 2, y: 3}\n")
     assert merged["use"] == {"x": 2, "y": 3}
@@ -173,23 +173,19 @@ def test_every_shipped_yaml_file_loads_unchanged() -> None:
     """An enforced rule must not be stronger than the reference implementation.
 
     Every shipped file loads unrefused, to what ruamel.yaml's own safe loader
-    reads. The programme-governance mapping overrides a merged width, which
-    is the case a naive repeat check refuses, so it is named as well as
-    globbed, with the widths PyYAML read there.
+    reads. No shipped mapping overrides a merged width any more, which is the
+    case a naive repeat check refuses, so the reporting-sample test blueprint's
+    mapping carries one and is named as well as globbed.
     """
-    shipped = sorted(SOLUTION_TEMPLATES.rglob("*.yaml"))
-    governance = SOLUTION_TEMPLATES / "programme-governance" / "20-configure" / "mapping.yaml"
-    assert governance in shipped
-    assert "<<: *action_spine\n        Title: 300\n" in governance.read_text(encoding="utf-8")
-    for path in shipped:
+    sample = TEST_BLUEPRINTS / "reporting-sample" / "20-configure" / "mapping.yaml"
+    read = sorted({*SOLUTION_TEMPLATES.rglob("*.yaml"), sample})
+    assert "<<: *spine\n        Title: 300\n" in sample.read_text(encoding="utf-8")
+    for path in read:
         text = path.read_text(encoding="utf-8")
         assert _yaml.safe_load(text) == YAML(typ="safe", pure=True).load(text), path
-    views = _yaml.safe_load(governance.read_text(encoding="utf-8"))["views"]["Action"]
-    overdue = next(view for view in views if view["title"] == "Overdue")
-    assert overdue["widths"] == {
-        "Title": 300, "Workstream": 180, "WorkstreamPhase": 130, "AssignedTo": 160,
-        "DueDate": 160, "Status": 120, "RelatedRiskTitle": 220, "CompletedDate": 160,
-    }
+    views = _yaml.safe_load(sample.read_text(encoding="utf-8"))["views"]["Action"]
+    done = next(view for view in views if view["title"] == "Done")
+    assert done["widths"] == {"Title": 300, "Status": 120, "Minutes": 100, "RelatedRisk": 200}
 
 
 def _roots() -> dict[str, set[Path]]:

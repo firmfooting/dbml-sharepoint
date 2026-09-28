@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from _builders import ID_PK, TITLE, table
 from _packs import blocks, entities, entity, pack, with_tail, write_dbml, write_mapping
-from _paths import FIXTURES, SOLUTION_TEMPLATES
+from _paths import FIXTURES, engine_blueprints
 from test_jsgen import _generate_simple_js, _generate_views_js, _schema_json_for
 
 from dbml_sharepoint.analysis.condition_rendering import CAML_VIEW_FILTER_GUARD
@@ -629,11 +629,8 @@ def test_an_entity_declaring_no_views_still_gets_all_items(tmp_path: Path) -> No
 
 
 def _shipped_solution_ids() -> list[str]:
-    """Discovered, never listed. A hardcoded roster fails open."""
-    return sorted(
-        path.parent.parent.name
-        for path in SOLUTION_TEMPLATES.glob("*/10-design/schema.dbml")
-    )
+    """Discovered, never listed. A hardcoded roster fails open. Core's and the test packs."""
+    return sorted(engine_blueprints())
 
 
 @pytest.mark.parametrize("solution_id", _shipped_solution_ids())

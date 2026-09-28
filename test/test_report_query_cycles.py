@@ -30,7 +30,7 @@ from _model import ref as make_ref
 from _model import schema as make_schema
 from _model import table as make_table
 from _packs import pack
-from _paths import SOLUTION_TEMPLATES
+from _paths import engine_blueprints
 
 from dbml_sharepoint.analysis.reporting.names import (
     BASE_SUFFIX,
@@ -42,16 +42,15 @@ from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import DerivedColumn, MappingBundle
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 
-FAMILIES = sorted(
-    path.parent.parent.name
-    for path in SOLUTION_TEMPLATES.glob("*/10-design/schema.dbml")
-)
+#: Core's blueprints and the suite's: this sweeps the engine's output, not the shipped set.
+BLUEPRINTS = engine_blueprints()
+FAMILIES = sorted(BLUEPRINTS)
 
 _QUERY_REF = re.compile(r'#"([^"]+)"')
 
 
 def _family(name: str) -> tuple[Schema, MappingBundle]:
-    root = SOLUTION_TEMPLATES / name
+    root = BLUEPRINTS[name]
     return (
         parse_dbml(root / "10-design" / "schema.dbml"),
         load_mapping(root / "20-configure" / "mapping.yaml"),
@@ -97,20 +96,6 @@ def test_no_shipped_pack_has_a_cycle_and_every_name_read_is_shipped(
         for reader, read in graph.items():
             missing = read - set(graph)
             assert not missing, f"{family}/{role}: {reader} reads {missing}"
-
-
-def test_the_reported_pairs_are_read_through_base_functions() -> None:
-    """The instance that surfaced the class. Risk counts Actions and Action
-    looks up its Risk; both reads now call the other's base, and neither
-    query names the other."""
-    queries = generate_powerquery(*_family("programme-governance"), "default")
-    risk, action = queries["GOV_Risk.pq"], queries["GOV_Action.pq"]
-    assert '#"GOV_Action_Base"(SiteRoot)' in risk
-    assert '#"GOV_Risk_Base"(SiteRoot)' in action
-    assert '#"GOV_Action"' not in risk
-    assert '#"GOV_Risk"' not in action
-    for name in ("GOV_Action_Base.pq", "GOV_Risk_Base.pq"):
-        assert name in queries
 
 
 # ------------------------------------------------------ the pair, minimal

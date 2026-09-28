@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 from _packs import pack
-from _paths import SOLUTION_TEMPLATES
+from _paths import TEST_BLUEPRINTS, engine_blueprints
 
 from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.validator import validate_against_mapping
@@ -30,10 +30,9 @@ from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 
-FAMILIES = sorted(
-    path.parent.parent.name
-    for path in SOLUTION_TEMPLATES.glob("*/10-design/schema.dbml")
-)
+#: Core's blueprints and the suite's: this sweeps the engine's output, not the shipped set.
+BLUEPRINTS = engine_blueprints()
+FAMILIES = sorted(BLUEPRINTS)
 
 _SELF_REF_DBML = """
 Table Risk {
@@ -78,7 +77,7 @@ def _own_query(tmp_path: Path) -> str:
 
 @pytest.mark.parametrize("family", FAMILIES)
 def test_no_shipped_query_names_itself(family: str) -> None:
-    root = SOLUTION_TEMPLATES / family
+    root = BLUEPRINTS[family]
     schema = parse_dbml(root / "10-design" / "schema.dbml")
     bundle = load_mapping(root / "20-configure" / "mapping.yaml")
     for filename, text in generate_powerquery(schema, bundle, "default").items():
@@ -111,33 +110,22 @@ def test_a_self_read_uses_the_names_the_step_above_carries(tmp_path: Path) -> No
     assert '{"Status", "State"}' in query
 
 
-def test_the_superseding_decision_is_read_without_a_cycle() -> None:
-    """The declaration that surfaced the defect, on the shipped family."""
-    root = SOLUTION_TEMPLATES / "programme-governance"
-    schema = parse_dbml(root / "10-design" / "schema.dbml")
-    bundle = load_mapping(root / "20-configure" / "mapping.yaml")
-    decision = generate_powerquery(schema, bundle, "default")["GOV_Decision.pq"]
-    assert '#"GOV_Decision"' not in decision
-    assert '"SupersededByKey"' in decision
-    assert "Reads this query's own rows" in decision
-
-
-def test_the_guide_names_what_each_query_reads() -> None:
+def test_the_guide_names_what_each_query_reads(tmp_path: Path) -> None:
     """The consumer that loads the files under names of its own learns the
     dependencies from the guide, not from the refresh one import at a
     time. A query's read of its own rows is a step, not a name, and is not
     listed."""
-    root = SOLUTION_TEMPLATES / "programme-governance"
+    root = TEST_BLUEPRINTS / "reporting-sample"
     schema = parse_dbml(root / "10-design" / "schema.dbml")
     bundle = load_mapping(root / "20-configure" / "mapping.yaml")
     guide = generate_reporting_md(schema, bundle, "default")
-    line = next(
-        row for row in guide.splitlines() if row.startswith("- `GOV_Decision` reads ")
-    )
-    assert "`GOV_Action_Base`" in line
+    line = next(row for row in guide.splitlines() if row.startswith("- `RS_Risk` reads "))
     read = line.split(" reads ", 1)[1]
-    assert "`GOV_Action`" not in read, "another list is read through its base"
-    assert "GOV_Decision" not in read
+    assert "`RS_Action_Base`" in read
+    assert "`RS_Action`" not in read, "another list is read through its base"
+    own_schema, own_bundle = pack(tmp_path, _SELF_REF_DBML, _SELF_REF_MAPPING)
+    own_guide = generate_reporting_md(own_schema, own_bundle, "default")
+    assert not [row for row in own_guide.splitlines() if row.startswith("- `APP_Risk` reads ")]
 
 
 # --------------------------------------------- what a self-read can see
