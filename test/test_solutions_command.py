@@ -1,0 +1,97 @@
+"""`dbml-sharepoint solutions`: every installed template, its package and its licence."""
+
+from pathlib import Path
+
+import pytest
+from _catalogue_fixtures import CORE_LICENSE, Provider, install, write_family
+from typer.testing import CliRunner
+
+from dbml_sharepoint.catalogue import CORE_DISTRIBUTION, available_solutions
+from dbml_sharepoint.cli import app
+from dbml_sharepoint.pipeline import execute_solutions
+
+runner = CliRunner()
+
+_HEADER = ["Template", "Title", "Package", "Licence"]
+
+
+def test_core_alone_lists_every_template_with_core_s_package_and_licence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install(monkeypatch, tmp_path / "site")
+    result = runner.invoke(app, ["solutions"])
+
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    assert lines[0].split() == _HEADER
+    assert len(lines) == 1 + len(available_solutions())
+    row = next(line for line in lines if line.startswith("risk-register "))
+    assert row.split()[-2:] == [CORE_DISTRIBUTION, CORE_LICENSE]
+
+
+def test_a_provider_s_templates_are_listed_after_core_s(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packs = tmp_path / "packs"
+    write_family(packs, "acme-thing", {"license": "BUSL-1.1"})
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+
+    result = runner.invoke(app, ["solutions"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines()[-1].split() == [
+        "acme-thing", "Acme", "thing", "acme-packs", "BUSL-1.1",
+    ]
+
+
+def test_a_hidden_template_is_named_once_and_is_not_a_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Expected while a provider and core both ship a pack, so it informs rather than fails."""
+    packs = tmp_path / "packs"
+    write_family(packs, "risk-register", {"license": "BUSL-1.1"})
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+
+    result = runner.invoke(app, ["solutions"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.count("Hidden:") == 1
+    assert (
+        "Hidden: 1 template from acme-packs shares an id with one from dbml-sharepoint, "
+        "which is offered instead: risk-register"
+    ) in result.stdout
+
+
+def test_a_refused_pack_is_named_and_exits_1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packs = tmp_path / "packs"
+    write_family(packs, "acme-thing")  # core's licence, inside a BUSL-1.1 distribution
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+
+    result = runner.invoke(app, ["solutions"])
+
+    assert result.exit_code == 1
+    assert "Not offered: acme-packs:" in result.stdout
+    assert not any(line.startswith("acme-thing ") for line in result.stdout.splitlines())
+
+
+def test_an_unreadable_provider_exits_1_with_its_name_on_stderr(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", tmp_path / "missing"))
+
+    result = runner.invoke(app, ["solutions"])
+
+    assert result.exit_code == 1
+    assert result.stderr.startswith("acme-packs: ")
+    assert result.stdout == ""
+
+
+def test_execute_solutions_reports_whether_every_pack_was_offered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install(monkeypatch, tmp_path / "site")
+    text, every_pack_offered = execute_solutions()
+    assert every_pack_offered
+    assert text.splitlines()[0].split() == _HEADER

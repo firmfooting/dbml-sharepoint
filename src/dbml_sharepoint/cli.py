@@ -26,6 +26,7 @@ from dbml_sharepoint.catalogue import (
     MAPPING_RELPATH,
     RELEASE_RELPATH,
     SCHEMA_RELPATH,
+    SolutionRootError,
 )
 from dbml_sharepoint.extract.emit import DEFAULT_PREFIX
 from dbml_sharepoint.extract.folder import (
@@ -60,6 +61,7 @@ from dbml_sharepoint.pipeline import (
     execute_explain,
     execute_extraction,
     execute_report,
+    execute_solutions,
     execute_validation,
 )
 from dbml_sharepoint.project import (
@@ -410,6 +412,24 @@ def explain(
     except UnknownFindingCodeError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
+
+
+@app.command()
+def solutions() -> None:
+    """List every installed template with the package it came from and its licence.
+
+    Exits 1 when a pack was refused or a pack provider cannot be read, so the
+    listing also checks that every installed pack is offered. A template hidden
+    by another package's template of the same id is reported but is not a failure.
+    """
+    try:
+        text, every_pack_offered = execute_solutions()
+    except SolutionRootError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(text)
+    if not every_pack_offered:
+        raise typer.Exit(code=1)
 
 
 @app.command()

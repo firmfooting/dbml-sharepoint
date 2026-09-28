@@ -106,6 +106,18 @@ now the only place to look it up was a website.
 The catalogue lookup is `execute_explain`; this is the terminal it
 reaches, and the exit code an unknown token earns.
 
+### `solutions`
+
+```python
+def solutions() -> None
+```
+
+List every installed template with the package it came from and its licence.
+
+Exits 1 when a pack was refused or a pack provider cannot be read, so the
+listing also checks that every installed pack is offered. A template hidden
+by another package's template of the same id is reported but is not a failure.
+
 ### `report`
 
 ```python

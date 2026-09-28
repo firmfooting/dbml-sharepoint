@@ -78,6 +78,18 @@ no such code" from any other lookup failure, and carries the message
 the command prints, suggestion included, because composing that needs
 the catalogue this side already holds.
 
+### `execute_solutions`
+
+```python
+def execute_solutions() -> tuple[str, bool]
+```
+
+What `solutions` prints, and whether every installed pack was offered.
+
+Returns the text rather than echoing it, as `execute_explain` does, so a
+test can read the listing without a terminal. Raises `SolutionRootError`
+when a solution root cannot be read.
+
 ### `execute_explain`
 
 ```python
