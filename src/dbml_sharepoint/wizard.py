@@ -257,7 +257,7 @@ def _catalogue_table(solutions: list[Solution]) -> Table:
 _BROWSE_ALL = "all"
 
 
-def _journey_table(journeys: list[Journey]) -> Table:
+def _journey_table(journeys: list[Journey], installed: set[str]) -> Table:
     table = Table(
         title="Where to start",
         header_style="bold",
@@ -270,9 +270,11 @@ def _journey_table(journeys: list[Journey]) -> Table:
     table.add_column("Templates", justify="right", no_wrap=True)
     table.add_column("What it covers")
     for index, journey in enumerate(journeys, start=1):
-        table.add_row(
-            str(index), journey.id, str(len(journey.solution_ids)), journey.summary,
-        )
+        total = len(journey.solution_ids)
+        have = sum(1 for i in journey.solution_ids if i in installed)
+        # "1 of 2" says part of a journey is not installed before anyone picks it.
+        count = str(total) if have == total else f"{have} of {total}"
+        table.add_row(str(index), journey.id, count, journey.summary)
     table.add_row("", _BROWSE_ALL, "", "Every template, in one list")
     return table
 
@@ -296,7 +298,7 @@ def _pick_journey(
     if not journeys:
         return solutions
     by_id = {s.id: s for s in solutions}
-    console.print(_journey_table(journeys))
+    console.print(_journey_table(journeys, set(by_id)))
     while True:
         answer = Prompt.ask(
             f"[bold]Journey[/bold] (number, name, {_BROWSE_ALL}, or a template)",
@@ -317,12 +319,18 @@ def _pick_journey(
                 f"Pick a number, a name, or {_BROWSE_ALL}.",
             )
             continue
-        # A journey names ids; anything it names that is not on the shelf is
-        # a broken journey, and `test_journeys.py` fails the build for it. Be
-        # forgiving here anyway rather than crash a picker over a doc file.
+        # A provider's journey may name another package's templates: say so, never hide them.
+        missing = [i for i in chosen.solution_ids if i not in by_id]
+        if missing:
+            console.print(
+                f"[yellow]Journey {escape(chosen.id)} names {escape(', '.join(missing))}, "
+                f"which {'is' if len(missing) == 1 else 'are'} not installed.[/yellow] "
+                "They come from another package; `dbml-sharepoint solutions` lists "
+                "what is installed here.",
+            )
         narrowed = [by_id[i] for i in chosen.solution_ids if i in by_id]
         if not narrowed:
-            console.print(f"[red]Journey {answer!r} names no template that exists.[/red]")
+            console.print(f"[red]Journey {answer!r} names no template that is installed.[/red]")
             continue
         return narrowed
 

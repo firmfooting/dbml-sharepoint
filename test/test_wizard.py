@@ -28,6 +28,7 @@ from dbml_sharepoint.catalogue import (
     MAPPING_RELPATH,
     PACK_MANIFEST,
     PLACEHOLDER_SITE_URL,
+    Journey,
     Solution,
     available_solutions,
     load_solution,
@@ -3641,3 +3642,41 @@ def test_a_refused_pack_is_named_before_the_first_question(
     shown = _collapsed(console)
     assert "Not offered: acme-packs:" in shown
     assert shown.index("Not offered") < shown.index("Where to start")
+
+
+def _with_journey(monkeypatch: pytest.MonkeyPatch, journey: Journey) -> None:
+    offered = replace(read_catalogue(), journeys=(journey,))
+    monkeypatch.setattr(wizard, "read_catalogue", lambda: offered)
+
+
+def _journey(journey_id: str, *members: str) -> Journey:
+    return Journey(
+        id=journey_id, title=journey_id, summary="A journey for a test.",
+        solution_ids=members, path=Path("unused"), distribution="acme-packs",
+    )
+
+
+def test_a_journey_naming_an_uninstalled_template_says_so_and_offers_the_rest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _with_journey(monkeypatch, _journey("partial", "visitor-log", "acme-thing"))
+    console = ScriptedConsole([
+        "partial", *_answers(tmp_path / "proj", template="visitor-log", prefix="VI_"),
+    ])
+    assert wizard.run_wizard(console) == 0
+    shown = _collapsed(console)
+    assert "1 of 2" in shown
+    assert "names acme-thing, which is not installed" in shown
+    assert "dbml-sharepoint solutions" in shown
+
+
+def test_a_journey_with_nothing_installed_shows_the_hint_and_asks_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _with_journey(monkeypatch, _journey("ghost", "acme-thing", "acme-other"))
+    console = ScriptedConsole(["ghost", *_answers(tmp_path / "proj")])
+    assert wizard.run_wizard(console) == 0
+    shown = _collapsed(console)
+    assert "0 of 2" in shown
+    assert "names acme-thing, acme-other, which are not installed" in shown
+    assert "Journey 'ghost' names no template that is installed" in shown
