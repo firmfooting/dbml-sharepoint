@@ -6,7 +6,10 @@ from collections import Counter
 from collections.abc import Set as AbstractSet
 
 from dbml_sharepoint.analysis.checks.context import IndexTarget, ValidationContext
-from dbml_sharepoint.analysis.column_refs import formula_column_refs
+from dbml_sharepoint.analysis.column_refs import (
+    calculated_formula_builtins,
+    formula_column_refs,
+)
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import (
     INDEX_WARN_AT,
@@ -1255,6 +1258,8 @@ def _calculated_formulas(vc: ValidationContext) -> list[Finding]:
         xcols = vc.cross_site_columns(table.name)
         rendered = rendered_columns(table, xcols)
         columns_by_name = {candidate.name: candidate for candidate in table.columns}
+        entity = vc.bundle.mapping.entities.get(table.name)
+        is_library = entity is not None and entity.is_library
         for col in table.columns:
             if col.type not in CALCULATED_TYPES:
                 continue
@@ -1263,6 +1268,7 @@ def _calculated_formulas(vc: ValidationContext) -> list[Finding]:
             ).get(col.name)
             findings += _calculated_formula(
                 table, col, formula, rendered, columns_by_name, deferred,
+                calculated_formula_builtins(is_library=is_library, column_type=col.type),
             )
     return findings
 
@@ -1274,6 +1280,7 @@ def _calculated_formula(
     rendered: set[str],
     columns_by_name: dict[str, Column],
     deferred: dict[str, set[str]],
+    builtins: AbstractSet[str],
 ) -> list[Finding]:
     """One calculated column's formula: its presence, shape and references."""
     if formula is None:
@@ -1320,7 +1327,7 @@ def _calculated_formula(
                 Section.CALCULATED_FORMULAS, entity=table.name, column=col.name,
             ),
         ))
-    for ref in sorted(refs - rendered):
+    for ref in sorted(refs - rendered - builtins):
         findings.append(Finding(
             FindingCode.CALCULATED_FORMULA_UNKNOWN_COLUMN,
             f"{table.name}.{col.name}: calculated formula references "

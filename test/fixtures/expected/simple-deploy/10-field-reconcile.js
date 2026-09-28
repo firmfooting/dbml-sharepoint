@@ -363,6 +363,46 @@
     return `${m.property}: declared ${JSON.stringify(m.declared)}, readback ${JSON.stringify(m.actual)} (${m.message})`;
   }
 
+  // A formula's [Created] resolves by display title, measured only where that title is 'Created' (2026-09-28).
+  // Read from the list itself, never inferred from the site's column, which nothing has measured against it.
+  async function builtinTitleMismatch(listName, builtin) {
+    const property = `Title of [${builtin}]`;
+    const notChecked = (why) => ({
+      property, declared: builtin, actual: null, checked: false,
+      message: `the column '${builtin}' of '${listName}' ${why}`,
+    });
+    let title;
+    try {
+      const shapes = await listFieldShapes(listName);
+      const field = shapes.get(builtin);
+      if (field) {
+        title = field.Title;
+      } else if (shapes.truncated) {
+        // Missing from a page that may have ended early is not missing from the list (#577).
+        const fieldPath = fieldShapePath(listName, builtin);
+        const r = await fetchWithRetry(apiUrl(`${fieldPath}?$select=Title`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!r.ok) {
+          const text = await r.text();
+          if (r.status === 404 || isAbsent400(r.status, text)) return notChecked('was not found');
+          return notChecked(`could not be read: HTTP ${r.status} ${text}`);
+        }
+        const j = await r.json();
+        title = j && j.d ? j.d.Title : undefined;
+      } else {
+        return notChecked('was not found');
+      }
+    } catch (err) {
+      return notChecked(`could not be read: ${err.message}`);
+    }
+    if (title === builtin) return null;
+    return {
+      property, declared: builtin, actual: title ?? null, checked: true,
+      message: `SharePoint resolves [${builtin}] in a calculated formula by display title, and only the title '${builtin}' has been measured`,
+    };
+  }
+
   // One entry per mismatched property. The throwing wrapper below keeps every
   // caller's semantics; nothing else reads the returned array yet.
   function immutableListMismatches(list, actual) {

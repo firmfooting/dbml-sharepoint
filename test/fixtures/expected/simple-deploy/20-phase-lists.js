@@ -420,6 +420,12 @@
             summary.columnsSkipped += 1;
             continue;
           }
+          // A list created by this run had no column for the preflight to read, so this is its only check.
+          for (const { builtin, columns } of (list.builtin_formula_refs || [])) {
+            if (!columns.includes(col.title)) continue;
+            const mismatch = await builtinTitleMismatch(list.title, builtin);
+            if (mismatch) throw new Error(`${describeMismatch(mismatch)}; the column was not created.`);
+          }
           const createOp = declaredFieldCreateOp(list.title, col, null);
           await postJson(apiUrl(createOp.path), createOp.body, laneDigest);
           invalidateFieldShapes();  // new field: the next probe re-enumerates
