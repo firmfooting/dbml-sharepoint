@@ -2348,17 +2348,12 @@ def test_the_uppercase_id_run_is_recorded_where_the_selection_lives() -> None:
     assert '"ID 2"' in task
 
 
-# --- Defects reported by the first model built on a generated pack ----------
-#
-# Reported 2026-09-07 against 0.4.0 by the consumer of a `programme-governance`
-# 2.4.0 pack, building a Power BI model on a live site. Three of the four items
-# are fixed here; the fourth (every date-only column one day early east of UTC)
-# needs the site's time zone measured first and is issue #467.
-#
-# The unifying fault is that the pack is generated open-loop from the DECLARED
-# schema and never reconciled against a live feed, so each item is a place
-# where what SharePoint actually serves differs from what the declaration says
-# and nothing in the build can see it.
+# --- Defects reported by the first model built on generated queries ---------
+# Reported against 0.4.0 by the first Power BI model built on generated
+# reporting queries against a live site. Three of the four items are fixed
+# here; the fourth (every date-only column one day early east of UTC) is #467.
+# The queries are generated open-loop from the DECLARED schema and never
+# reconciled against a live feed, so nothing in the build sees the difference.
 
 
 def _accumulated_names(query: str, step: str) -> list[str]:
@@ -2551,12 +2546,12 @@ def test_a_document_library_query_carries_the_file_name_and_path() -> None:
 
 
 def test_a_document_library_dictionary_says_a_row_is_a_file() -> None:
-    schema, bundle = _with_task_as_library(folders=("Clinical services", "Corporate"))
+    schema, bundle = _with_task_as_library(folders=("Operations", "Corporate"))
     dictionary = generate_data_dictionary(
         schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
     )
     assert "each row is a file, named by FileLeafRef" in dictionary
-    assert "filed in one of: Clinical services, Corporate." in dictionary
+    assert "filed in one of: Operations, Corporate." in dictionary
 
 
 def test_a_server_relative_folder_is_made_absolute_by_the_site_origin() -> None:

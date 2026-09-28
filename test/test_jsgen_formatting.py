@@ -41,7 +41,7 @@ def _display_names_inputs(tmp_path: Path) -> tuple[Schema, MappingBundle]:
             table(
                 "Risk", ID_PK, TITLE,
                 "MatrixVersion matrix_version",
-                "RiskManReference nvarchar",
+                "RegisterRef nvarchar",
                 "RiskScore calculated_number",
             ),
         ),
@@ -50,10 +50,10 @@ def _display_names_inputs(tmp_path: Path) -> tuple[Schema, MappingBundle]:
           mode: auto
           overrides:
             Risk:
-              RiskManReference: "RiskMan Reference"
+              RegisterRef: "Register Reference"
         calculated_formulas:
           Risk:
-            RiskScore: '=IF([MatrixVersion]="13.0",1,IF([RiskManReference]="[MatrixVersion]",2,3))'
+            RiskScore: '=IF([MatrixVersion]="13.0",1,IF([RegisterRef]="[MatrixVersion]",2,3))'
         """),
     )
 
@@ -74,7 +74,7 @@ def test_fields_carry_display_titles_and_create_with_internal_name(
     )
     by_title = {f["title"]: f for f in risk["fields_phase1"]}
     assert by_title["MatrixVersion"]["display_title"] == "Matrix Version"
-    assert by_title["RiskManReference"]["display_title"] == "RiskMan Reference"
+    assert by_title["RegisterRef"]["display_title"] == "Register Reference"
     assert by_title["RiskScore"]["display_title"] == "Risk Score"
     # CREATE bodies keep the internal name so InternalName stays clean.
     assert by_title["MatrixVersion"]["body"]["Title"] == "MatrixVersion"
@@ -106,7 +106,7 @@ def test_formula_references_rewritten_to_display_names(tmp_path: Path) -> None:
         f["body"]["Formula"] for f in risk["fields_phase1"] if f["title"] == "RiskScore"
     )
     assert "[Matrix Version]" in formula
-    assert "[RiskMan Reference]" in formula
+    assert "[Register Reference]" in formula
     # The string literal "[MatrixVersion]" is data and stays verbatim.
     assert '"[MatrixVersion]"' in formula
 

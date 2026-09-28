@@ -43,13 +43,13 @@ def test_the_library_family_builds(built: Path) -> None:
 def test_the_manifest_names_the_folder_phase_and_its_folders(built: Path) -> None:
     manifest = (built / "deploy-manifest.md").read_text(encoding="utf-8")
     assert f"## Phase {phase_number('folders')}: declared folders" in manifest
-    assert "**LIB_Doc**: Clinical services, Corporate services" in manifest
+    assert "**LIB_Doc**: Operations, Corporate" in manifest
 
 
 def test_the_deploy_carries_the_library_facts(built: Path) -> None:
     deploy = (built / "deploy.js.txt").read_text(encoding="utf-8")
     assert '"is_library": true' in deploy
-    assert '"Clinical services",\n        "Corporate services"' in deploy
+    assert '"Operations",\n        "Corporate"' in deploy
     assert '"scope": 1' in deploy
     assert "FileLeafRef" in deploy
 

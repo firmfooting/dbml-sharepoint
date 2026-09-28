@@ -453,8 +453,8 @@ def test_a_next_review_due_declares_who_sets_it(template: str) -> None:
     The divergence is deliberate. The name states WHEN the next review falls,
     which is the same fact everywhere; the mechanism differs because a cadence
     formula needs a written review policy to encode, and a backlog sweep or an
-    evidence theme has none. `programme-governance` ships both shapes in one
-    family for exactly that reason.
+    evidence theme has none. One family can ship both shapes for exactly
+    that reason.
 
     What must never diverge is whether the column says which it is, because
     the note becomes the column's Description and is the only part of this
@@ -1600,182 +1600,11 @@ def test_the_worst_generated_all_items_is_four_of_twelve() -> None:
     passing against its OWN arithmetic even if the validator's copy silently
     dropped `SYSTEM_COLUMNS` or the `hide_from_all_items` subtraction.
 
-    Measured 2026-07-31 across 30 templates / 53 entities: the distribution was
-    2 -> 7, 3 -> 27, 4 -> 18, 5 -> 1, and the 5 was
-    opportunities-register/Opportunity (DecisionMaker, OpportunityOwner,
-    ProjectContact, plus Author and Editor).
-
-    RE-MEASURED 2026-08-10 across 31 templates / 54 entities, when
-    research-ethics-register-simple joined the roster: 2 -> 7, 3 -> 28,
-    4 -> 18, 5 -> 1. The whole delta is the one new entity, which lands at 3
-    (SiteInvestigator plus Author and Editor). A single-list template carries
-    no Lookup at all, so it cannot move the ceiling. The worst is unchanged
-    and is still the same opportunities-register entity, re-derived rather
-    than assumed.
-
-    RE-MEASURED 2026-08-12 across 32 templates / 55 entities, when
-    raci-matrix's Party list joined the roster: 2 -> 7, 3 -> 29, 4 -> 18,
-    5 -> 1. Party lands at 3 (Contact plus Author and Editor). The worst is
-    unchanged and is still the same opportunities-register entity.
-
-    RE-MEASURED 2026-08-12 across 32 templates / 56 entities, when
-    raci-matrix's Activity register joined the roster: 2 -> 7, 3 -> 29,
-    4 -> 18, 5 -> 1, 6 -> 1. The new worst is raci-matrix/Activity at 6
-    (Accountable, AccountableForum, Author, ConfirmedBy, Editor, Responsible).
-    A register whose subject IS people carries more person columns than
-    most. Still three clear of the nine-column warning band.
-
-    RE-MEASURED 2026-08-12 across 32 templates / 57 entities, when
-    raci-matrix's Involvement child list joined the roster: 2 -> 7, 3 -> 29,
-    4 -> 19, 5 -> 1, 6 -> 1. Involvement lands at 4 (Activity, Party, Author,
-    Editor). The worst is unchanged and is still raci-matrix/Activity at 6.
-
-    RE-MEASURED 2026-08-18 across 33 templates / 58 entities, when
-    records-digitisation's Platform register joined the roster: 2 -> 7,
-    3 -> 29, 4 -> 20, 5 -> 1, 6 -> 1. Platform lands at 4 (AssessedBy,
-    PlatformCustodian, Author, Editor). Its three multi-value columns cost
-    nothing: a Choice (multi-valued) is not a Lookup and carries no join. The
-    worst is unchanged and is still raci-matrix/Activity at 6.
-
-    RE-MEASURED 2026-08-26 across 34 templates / 62 entities, when raid-log
-    joined the roster: 2 -> 7, 3 -> 31, 4 -> 22, 5 -> 1, 6 -> 1. The four
-    raid-log lists land at 3 (ProjectRisk, ProjectDecision: one person column
-    plus Author and Editor) and 4 (ProjectAction, ProjectIssue: one person
-    column plus the one RelatedRisk Lookup). The worst is unchanged and is
-    still raci-matrix/Activity at 6.
-
-    RE-MEASURED 2026-08-28 across 35 templates / 71 entities, when
-    programme-governance joined the roster: 2 -> 8, 3 -> 32, 4 -> 25,
-    5 -> 2, 6 -> 2, 7 -> 2. The new worst is 7, shared by
-    programme-governance/ProgramActivity (Responsible, Accountable,
-    ConfirmedBy, the Workstream and AccountableForum Lookups, Author and
-    Editor) and programme-governance/TenantRequest (RequestedBy,
-    InternalAccountable, AuthorisedBy, EscalatedBy, the Workstream Lookup,
-    Author and Editor). Both are raci-matrix/Activity's shape with a
-    workstream added: a family that merges an accountability register with an
-    authorisation record carries person columns from both halves. Still two
-    clear of the nine-column warning band, and this is the first family to
-    reach 7, so the next one to add a person column to either entity should
-    check `hide_from_all_items` rather than the ceiling.
-
-    RE-MEASURED 2026-08-28 after programme-governance added four nullable
-    reporting joins: 2 -> 8, 3 -> 32, 4 -> 23, 5 -> 4, 6 -> 1, 7 -> 2,
-    8 -> 1. TenantRequest is the new worst at 8 after adding its authorising
-    decision. ProgramAction moves from 6 to 7, while ProgramRisk and
-    ProgramDecision move from 4 to 5. Eight remains below the warning band;
-    `hide_from_all_items` is reserved for an entity that would otherwise
-    exceed the measured ceiling and would warn as unnecessary here.
-
-    RE-MEASURED 2026-08-28 after programme-governance added the decision
-    route: 2 -> 8, 3 -> 32, 4 -> 23, 5 -> 3, 6 -> 1, 8 -> 4. The band at 7
-    empties and four entities now sit at 8: ProgramActivity (DecisionRoute),
-    ProgramAction (AuthorisingDecision), ProgramDecision (Activity,
-    DecidedByForum, RecommendedByForum) and TenantRequest, unchanged. The
-    worst is unchanged at 8 and still one clear of the nine-column warning
-    band, but four entities now sit on that edge rather than one, so the next
-    join-bearing column added to any of them warns. Lookup PROJECTIONS are
-    what kept it there: the four decision lookups each project the target's
-    Title, and a projection is a dependent field that costs no join.
-
-    RE-MEASURED 2026-09-02 after programme-governance made TenantRequest
-    the ServiceRequest surface: 2 -> 8, 3 -> 32, 4 -> 23, 5 -> 3, 6 -> 1,
-    8 -> 3, 9 -> 1. ServiceRequest is the new worst at 9 (RequestedBy,
-    InternalAccountable, AuthorisedBy, EscalatedBy, AssignedTo, the
-    Workstream and AuthorisingDecision lookups, Author and Editor): a
-    request that is asked for, authorised, worked and escalated on one row
-    carries a person column for each of those acts. The warning band now
-    starts at 11, so the worst is two clear of it, and the three entities
-    at 8 (Activity, Action, Decision) are three clear.
-
-    RE-MEASURED 2026-09-04 across 33 templates / 65 entities, when raid-log
-    and raci-matrix were retired into programme-governance: 2 -> 8, 3 -> 29,
-    4 -> 21, 5 -> 3, 8 -> 2, 9 -> 2. Seven lists left the roster, three from
-    band 3 (raid-log ProjectRisk and ProjectDecision, raci-matrix Party),
-    three from band 4 (raid-log ProjectAction and ProjectIssue, raci-matrix
-    Involvement) and one from band 6 (raci-matrix Activity), which empties
-    band 6 entirely.
-
-    Two corrections fall out of the same pass, because the entry above was
-    already stale. BusinessProcess had joined at 4 and was never counted, and
-    programme-governance/Activity moved from 8 to 9 when its Process lookup
-    was added, so the worst is now SHARED by Activity (Accountable,
-    AccountableForum, ConfirmedBy, DecisionRoute, Process, Responsible,
-    Workstream, Author, Editor) and ServiceRequest, not held by ServiceRequest
-    alone. Still two clear of the eleven-column warning band, with Action and
-    Decision behind them at 8.
-
-    RE-MEASURED 2026-09-05 across 35 templates / 67 entities, when
-    deployment-log and column-history joined the roster together: 2 -> 9,
-    3 -> 30, 4 -> 21, 5 -> 3, 8 -> 2, 9 -> 2. The two new entities land at
-    the floor end by design: deployment-log's stamp carries no person
-    column and no Lookup at all (every column is text or a date written by
-    a script), and column-history lands at 3 (ChangedBy plus Author and
-    Editor), its site and list columns being text rather than lookups
-    because the list they name lives on another site entirely -- the one
-    family that references every other list in the estate carries no joins
-    for doing it. The worst is unchanged and is still shared by
-    programme-governance/Activity and /ServiceRequest at 9, re-derived
-    rather than assumed.
-
-    RE-MEASURED 2026-09-07 across 35 templates / 68 entities, when
-    deployment-log split its one combined list into `Deployments` and
-    `Changes`: 2 -> 10, 3 -> 30, 4 -> 20, 5 -> 4, 8 -> 2, 9 -> 2. Both halves
-    land in the floor band for the same reason the combined list did:
-    neither carries a person column or a Lookup. Re-measuring surfaced that
-    the entry above was already stale on two counts unrelated to this split
-    -- band 4 was 20, not 21, and band 5 was 4, not 3 -- which this entry
-    corrects rather than propagates. The worst is unchanged at 9.
-
-    RE-MEASURED 2026-09-13 across 36 templates / 70 entities, when
-    legal-compliance-register joined the roster as the first family with a
-    document library: 2 -> 10, 3 -> 30, 4 -> 20, 5 -> 6, 8 -> 2, 9 -> 2.
-    Both of its entities land at 5: Topic (BusinessOwner,
-    ExecutiveResponsible, LicenceHolder, Author, Editor) and SAQ (the Topic
-    lookup, BusinessOwner, ExecutiveResponsible, Author, Editor). The same
-    pass stops this survey skipping a DocumentLibrary: since #14 closed the
-    generator builds All Items for a library too, leading with the file name,
-    and the validator counts it, so a survey that skipped one would be
-    measuring a view the deploy creates and the validator judges. The worst
-    is unchanged at 9.
-
-    RE-MEASURED 2026-09-14 across 36 templates / 69 entities: replacing
-    Topic and SAQ with Document removes one entity in band 5. Document
-    remains at 5 (three assigned people plus Author and Editor). The
-    distribution is 2 -> 10, 3 -> 30, 4 -> 20, 5 -> 5, 8 -> 2, 9 -> 2.
-
-    RE-MEASURED 2026-09-17 across 37 templates / 71 entities:
-    digital-innovation-log adds Pattern at 3 (BuildOwner, Author, Editor)
-    and Opportunity at 7 (four people, the Pattern lookup, Author, Editor;
-    a MergedInto self-lookup was dropped in review because no probe has
-    measured one). The distribution is 2 -> 10, 3 -> 31, 4 -> 20, 5 -> 5,
-    7 -> 1, 8 -> 2, 9 -> 2. The worst is unchanged at 9.
-
-    RE-MEASURED 2026-09-23 across 38 templates / 80 entities, when
-    seam-register joined the roster with eight lists and a library and no
-    person column anywhere, because its rows describe roles rather than
-    people. Provider and WeeklyUpdate land at 2 (Author, Editor). Every
-    other entity lands at 4: Service (RunByProvider, SupportProvider),
-    Evidence (Service, Artefact), Seam (Service, the multi-value
-    EvidenceInConflict), DocumentRequest (HolderProvider, the multi-value
-    Services), Artefact (Request, the multi-value Services), Interview
-    (IntervieweeProvider, NotesFile) and Incident (Service,
-    ResolverProvider), each plus Author and Editor. The distribution is
-    2 -> 12, 3 -> 31, 4 -> 27, 5 -> 5, 7 -> 1, 8 -> 2, 9 -> 2. The worst is
-    unchanged at 9.
-
-    RE-MEASURED 2026-09-24 across 38 templates / 80 entities, when
-    programme-governance/Issue gained the ResolvingDecision lookup: Issue
-    moves from 5 to 6 (Owner, the Workstream, RelatedRisk and
-    ResolvingDecision lookups, Author and Editor). The distribution is
-    2 -> 12, 3 -> 31, 4 -> 27, 5 -> 4, 6 -> 1, 7 -> 1, 8 -> 2, 9 -> 2. The
-    worst is unchanged at 9, and Issue is five clear of the warning band.
-
-    RE-MEASURED 2026-09-28 across 6 templates / 10 entities, when every
-    family but core's starter set left for a separate package:
+    Measured 2026-09-28 across the 6 starter blueprints / 10 entities:
     2 -> 4, 3 -> 3, 4 -> 3. The worst is 4, shared by asset-register/Asset
     (AssignedTo, Location), routine-checks/CheckEntry (CheckPoint, CheckedBy)
-    and training-register/TrainingRecord (Course, Person), each plus Author
-    and Editor. Every entry above describes families that no longer ship here."""
+    and training-register/TrainingRecord (Course, Person), each two lookups
+    plus Author and Editor."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
@@ -2132,7 +1961,7 @@ def test_every_family_declares_the_shared_groups_identically(
 
     The security phase writes every one of these fields on every run. If
     `risk-register` says the administrators group hides its membership and
-    `incident-management` says it does not, then whichever deploy the
+    `contract-register` says it does not, then whichever deploy the
     operator pastes second changes the site's behaviour for the other -- with
     nothing in either build able to notice, because a build sees one mapping.
 

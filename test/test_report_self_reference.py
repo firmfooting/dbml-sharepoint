@@ -1,12 +1,11 @@
 # test/test_report_self_reference.py
 """A derived step over a list's own rows must not name its own query.
 
-Reported 2026-09-17 against release 4.0.0 by the consumer of a
-`programme-governance` reporting pack: `GOV_Decision.pq` named
-`#"GOV_Decision"` twice, once to read its own site and once to group itself
-by `SupersedesDecision Key` for the back-reference to the superseding
-decision. In M a query whose expression names itself is a cyclic reference
-and the refresh fails.
+Reported against release 4.0.0 from a generated set of reporting queries:
+`APP_Decision.pq` named `#"APP_Decision"` twice, once to read its own site
+and once to group itself by `SupersedesDecision Key` for the back-reference
+to the superseding decision. In M a query whose expression names itself is
+a cyclic reference and the refresh fails.
 
 Nothing short of a refresh sees it. The text parses, the model loads and a
 name-resolution pass sees the name resolve, to the query being defined. So

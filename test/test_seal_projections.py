@@ -6,7 +6,7 @@ projection is "checked for existence only, never reconciled" because a
 read-only field does not drift, which is a statement about RECONCILIATION.
 Sealing answers a different question: whether a site owner can delete the
 column through the UI. Measured on a live site 2026-09-06, all seven
-projections in `programme-governance` read back `Sealed: false` and
+projections in one shipped family read back `Sealed: false` and
 `CanBeDeleted: true`, while every declared and calculated column on the same
 lists read `Sealed: true` and `CanBeDeleted: false`.
 

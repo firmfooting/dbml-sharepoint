@@ -359,7 +359,7 @@ def two_libraries_with_list_and_folder_scopes(tmp_path: Path) -> tuple[Schema, M
     return pack(
         tmp_path,
         dbml=(
-            'Enum division {\n  "Clinical services"\n  "Corporate services"\n}\n'
+            'Enum division {\n  "Operations"\n  "Corporate"\n}\n'
             + table("Docs", ID_PK, TITLE, "Division division")
             + table("Policies", ID_PK, TITLE, "Division division")
         ),

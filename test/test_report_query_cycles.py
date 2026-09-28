@@ -1,14 +1,13 @@
 # test/test_report_query_cycles.py
 """No reporting query may read, by any chain of names, a query that reads it.
 
-Reported 2026-09-18 against release 4.0.0 of the `programme-governance`
-pack, the day after its self-reference was fixed: the ten list queries
-formed six mutual pairs and twelve cycles, because a `count` over a child
-list read the child's QUERY while a `lookup` on the child read the
-parent's, and each query carried the other's read. In M two queries that
-name each other are a cyclic reference (Learn, M specification, operator
-behavior), and the refresh fails naming neither. Nine of the ten queries
-could not refresh.
+Reported against release 4.0.0, the day after the self-reference was fixed:
+a ten-list family's queries formed six mutual pairs and twelve cycles,
+because a `count` over a child list read the child's QUERY while a `lookup`
+on the child read the parent's, and each query carried the other's read. In
+M two queries that name each other are a cyclic reference (Learn, M
+specification, operator behavior), and the refresh fails naming neither.
+Nine of the ten queries could not refresh.
 
 The fix is a base function per list that another list reads: the rows
 fetched and keyed exactly as the list's query fetches them, under the

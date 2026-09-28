@@ -963,10 +963,10 @@ def test_a_declared_default_formula_rides_the_create_body_and_the_defaults_phase
     mirrored into the field_defaults entry the defaults phase re-applies."""
     schema, bundle = pack(
         tmp_path,
-        dbml=table("Saq", ID_PK, TITLE, "PeriodYear int", "Due date"),
-        mapping=blocks(entities("Saq"), """
+        dbml=table("Return", ID_PK, TITLE, "PeriodYear int", "Due date"),
+        mapping=blocks(entities("Return"), """
             default_formulas:
-              Saq:
+              Return:
                 PeriodYear: "=YEAR(TODAY())"
                 Due: "=TODAY()"
         """),
@@ -978,11 +978,11 @@ def test_a_declared_default_formula_rides_the_create_body_and_the_defaults_phase
     assert bodies["PeriodYear"]["DefaultFormula"] == "=YEAR(TODAY())"
     assert "DefaultValue" not in bodies["PeriodYear"]
     assert {
-        "list": "APP_Saq", "field": "PeriodYear", "metadata_type": "SP.FieldNumber",
+        "list": "APP_Return", "field": "PeriodYear", "metadata_type": "SP.FieldNumber",
         "default_value": None, "default_formula": "=YEAR(TODAY())",
     } in schema_json["field_defaults"]
     assert {
-        "list": "APP_Saq", "field": "Due", "metadata_type": "SP.FieldDateTime",
+        "list": "APP_Return", "field": "Due", "metadata_type": "SP.FieldDateTime",
         "default_value": None, "default_formula": "=TODAY()",
     } in schema_json["field_defaults"]
 
@@ -1024,7 +1024,7 @@ def test_the_deploy_reconciles_and_reads_back_the_default_formula() -> None:
 # `Title [unique]` produced no uniqueness constraint on the deployed list, saved,
 # read back clean and passed every deploy phase, because jsgen routes Title into
 # `title_patch` and `continue`s past the field-body builder where
-# `EnforceUniqueValues` is written (#307). `programme-governance` declares one,
+# `EnforceUniqueValues` is written (#307). A shipped blueprint declared one,
 # so this was shipping.
 #
 # NOT a claim that SharePoint accepts the write. Nothing has measured a MERGE of

@@ -668,7 +668,7 @@ def test_the_reader_flag_accepts_a_group_generated_from_a_one_member_enum(
     """
     schema = write_dbml(tmp_path, blocks("""
         Enum division {
-          "Clinical services"
+          "Operations"
         }
 
         Table Docs {
@@ -732,7 +732,7 @@ def test_an_unknown_reader_group_enum_is_reported_by_validation(
     """
     schema = write_dbml(tmp_path, blocks("""
         Enum division {
-          "Clinical services"
+          "Operations"
         }
 
         Table Docs {
@@ -785,7 +785,7 @@ def test_an_unknown_folder_enum_is_reported_by_validation_not_by_the_reader_gate
     """
     schema = write_dbml(tmp_path, blocks("""
         Enum division {
-          "Clinical services"
+          "Operations"
         }
 
         Table Docs {
@@ -866,7 +866,7 @@ def test_the_reader_gate_does_not_raise_for_a_library_with_no_folder_policy(
     """
     schema = write_dbml(tmp_path, blocks("""
         Enum division {
-          "Clinical services"
+          "Operations"
         }
 
         Table Docs {
@@ -930,8 +930,8 @@ def test_a_multi_member_reader_enum_is_reported_by_validation_not_by_the_gate(
     """
     schema = write_dbml(tmp_path, blocks("""
         Enum division {
-          "Clinical services"
-          "Corporate services"
+          "Operations"
+          "Corporate"
         }
 
         Table Docs {
@@ -2446,8 +2446,8 @@ def test_report_refusal_over_an_unknown_folder_enum_clears_the_stale_pack(
     """
     dbml = blocks("""
         Enum division {
-          "Clinical services"
-          "Corporate services"
+          "Operations"
+          "Corporate"
         }
 
         Table Docs {

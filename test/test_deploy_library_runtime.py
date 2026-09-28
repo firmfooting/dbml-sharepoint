@@ -36,7 +36,7 @@ entities:
     kind: DocumentLibrary
     base_template: 101
     site_role: default
-    folders: ["Clinical services"]
+    folders: ["Operations"]
 """
 
 #: A library whose one folder carries its own ACL. The folder policy names
@@ -57,7 +57,7 @@ groups:
   - name: "List Maintainer"
     description: "Test group."
     owner_group: "Site Owners"
-  - name: "Clinical services Editors"
+  - name: "Operations Editors"
     description: "One folder's editors."
     owner_group: "Site Owners"
 
@@ -90,7 +90,7 @@ permission_levels:
       - EditListItems
 
 groups:
-  - name: "Clinical services Editors"
+  - name: "Operations Editors"
     description: "One folder's editors."
     owner_group: "Site Owners"
 
@@ -127,7 +127,7 @@ groups:
   - name: "List Maintainer"
     description: "Test group."
     owner_group: "Site Owners"
-  - name: "Clinical services Editors"
+  - name: "Operations Editors"
     description: "One folder's editors."
     owner_group: "Site Owners"
 
@@ -271,20 +271,20 @@ _FOLDER_JS = r"""globalThis.fetch = async (url, opts = {}) => {
       url: requested, method: opts.method || 'GET', body: opts.body || null,
     });
     globalThis.__folderCreated = true;
-    return folderAnswer({ d: { Name: 'Clinical services' } });
+    return folderAnswer({ d: { Name: 'Operations' } });
   }
   if (requested.includes('/ListItemAllFields')) {
     // Id is what the ACL phase addresses the folder by; __folderIdMissing
     // models a tenant that answers the read without it.
     const item = { FileSystemObjectType: 1,
-      FileRef: '/sites/test/APP_Escalation/Clinical services' };
+      FileRef: '/sites/test/APP_Escalation/Operations' };
     if (!globalThis.__folderIdMissing) item.Id = 1;
     return folderAnswer({ d: item });
   }
   if (requested.includes('GetFolderByServerRelativeUrl(')) {
     return folderAnswer({ d: {
-      Exists: Boolean(globalThis.__folderCreated), Name: 'Clinical services',
-      ServerRelativeUrl: '/sites/test/APP_Escalation/Clinical services',
+      Exists: Boolean(globalThis.__folderCreated), Name: 'Operations',
+      ServerRelativeUrl: '/sites/test/APP_Escalation/Operations',
     } });
   }
   // ONE item, re-read inside the ownership bracket before the folder is
@@ -295,14 +295,14 @@ _FOLDER_JS = r"""globalThis.fetch = async (url, opts = {}) => {
     globalThis.__calls.push({ url: requested, method: opts.method || 'GET', body: null });
     return folderAnswer({ d: globalThis.__folderIdentity || {
       FileSystemObjectType: 1,
-      FileRef: '/sites/test/APP_Escalation/Clinical services',
+      FileRef: '/sites/test/APP_Escalation/Operations',
     } });
   }
   if (requested.includes('FileSystemObjectType')) {
     globalThis.__calls.push({ url: requested, method: opts.method || 'GET', body: null });
     const rows = (globalThis.__folderCreated && !globalThis.__folderMissing)
-      ? [{ Id: 1, FileSystemObjectType: 1, FileLeafRef: 'Clinical services',
-          FileRef: '/sites/test/APP_Escalation/Clinical services',
+      ? [{ Id: 1, FileSystemObjectType: 1, FileLeafRef: 'Operations',
+          FileRef: '/sites/test/APP_Escalation/Operations',
           HasUniqueRoleAssignments: Boolean(globalThis.__folderScoped) }] : [];
     // A file somebody shared by hand: a descendant scope this bundle never
     // declared, which the ACL phase must still refuse to run past.
@@ -385,7 +385,7 @@ def _library_deploy_js(
 ) -> str:
     """`titled` declares a Title column, which is what puts a `title_patch` on
     the list. A library naming its files through FileLeafRef declares none, and
-    the shipped legal-compliance-register library is one, so `titled=False` is
+    a shipped document library is one, so `titled=False` is
     the shape that reaches the branches a null patch takes."""
     from dbml_sharepoint.generators.jsgen import generate_deploy_js
     from dbml_sharepoint.model.release import load_release
@@ -715,7 +715,7 @@ def test_a_declared_folder_is_created_by_the_whole_deploy(tmp_path: Path) -> Non
         _library_harness(declared_folder=True), _library_deploy_js(tmp_path, _FOLDERED_LIBRARY),
     )
     assert summary["errors"] == [], summary["errors"]
-    assert summary["foldersCreated"] == ["APP_Escalation/Clinical services"]
+    assert summary["foldersCreated"] == ["APP_Escalation/Operations"]
 
 
 @pytest.mark.parametrize("types", [[1, 0], [0, 1]])
@@ -725,7 +725,7 @@ def test_folder_deploy_diagnoses_the_root_collision_after_a_refused_create(
     rows = [
         {"FileSystemObjectType": value,
          "FileRef": "/sites/test/APP_Escalation/"
-         + ("Nested/Clinical services" if value else "Clinical services")}
+         + ("Nested/Operations" if value else "Operations")}
         for value in types
     ]
     harness = _library_harness(declared_folder=True).replace(
@@ -745,7 +745,7 @@ def test_folder_deploy_diagnoses_the_root_collision_after_a_refused_create(
 
 @pytest.mark.parametrize("payload", [
     None, [], "bad", 0, {}, {"FileSystemObjectType": 1},
-    {"FileSystemObjectType": 0, "FileRef": "/sites/test/APP_Escalation/Clinical services"},
+    {"FileSystemObjectType": 0, "FileRef": "/sites/test/APP_Escalation/Operations"},
     {"FileSystemObjectType": 1, "FileRef": "/wrong"},
 ])
 @pytest.mark.parametrize("after_create", [False, True])
@@ -777,7 +777,7 @@ def test_whole_deploy_verifies_folder_paths_without_unindexed_queries(
     summary, _calls, _reads = _run(harness, _library_deploy_js(tmp_path, _FOLDERED_LIBRARY))
     assert summary["errors"] == [], summary["errors"]
     key = "foldersVerified" if existing else "foldersCreated"
-    assert summary[key] == ["APP_Escalation/Clinical services"]
+    assert summary[key] == ["APP_Escalation/Operations"]
 
 
 @pytest.mark.parametrize("next_page", [False, True, 0, 1, [], {}])
@@ -1098,7 +1098,7 @@ def test_a_library_naming_files_by_leafref_declares_no_title_patch(
     """The state the branches below exist for. A library whose Title carries no
     display rename gets no patch, because its built-in Title reads Sealed and
     the maintenance unseal of it is refused HTTP 400 (MEASURED 2026-09-13).
-    The shipped legal-compliance-register library is exactly this shape.
+    A shipped document library is exactly this shape.
     """
     untitled = _schema_lists(_library_deploy_js(tmp_path, _RECURSIVE_VIEW, titled=False))
     assert [lst["title_patch"] for lst in untitled] == [None]
@@ -1150,13 +1150,13 @@ def test_a_declared_title_column_is_still_preflighted_on_a_library(
     ), "a declared Title column was never read during the run"
 
 
-@pytest.mark.parametrize("root", ["LegislativeCompliance", "WrongRoot", None])
+@pytest.mark.parametrize("root", ["PolicyDocuments", "WrongRoot", None])
 @pytest.mark.parametrize("existing", [True, False])
 def test_declared_library_url_is_created_and_verified(
     tmp_path: Path, root: str | None, existing: bool,
 ) -> None:
     mapping = _RECURSIVE_VIEW.replace(
-        "base_template: 101,", "base_template: 101, internal_name: LegislativeCompliance,",
+        "base_template: 101,", "base_template: 101, internal_name: PolicyDocuments,",
     )
     harness = _library_harness()
     harness = f"globalThis.__libraryCreated = {json.dumps(existing)};\n" + harness
@@ -1187,12 +1187,12 @@ def test_declared_library_url_is_created_and_verified(
     if creates:
         assert json.loads(creates[0]["body"])["parameters"] == {
             "__metadata": {"type": "SP.ListCreationInformation"},
-            "Title": "APP_Escalation", "Url": "LegislativeCompliance", "TemplateType": 101,
+            "Title": "APP_Escalation", "Url": "PolicyDocuments", "TemplateType": 101,
             "Description": next(row["description"] for row in _schema_lists(
                 _library_deploy_js(tmp_path, mapping),
             )),
         }
-    if root == "LegislativeCompliance":
+    if root == "PolicyDocuments":
         assert summary["errors"] == [], summary["errors"]
         assert any("RootFolder/ServerRelativeUrl" in c["url"] for c in calls)
     else:
@@ -1513,10 +1513,10 @@ def test_a_folder_that_no_longer_reads_back_at_its_path_is_refused(
 #: scope, which is the shape that made the enrolment preflight read an empty
 #: level list and enrol the account without judging any bitmap.
 _FOLDER_ONLY_READER_LIBRARY = _TWO_LEVEL_CONFIGURED_LIBRARY.replace(
-    '  - name: "Clinical services Editors"\n'
+    '  - name: "Operations Editors"\n'
     "    description: \"One folder's editors.\"\n"
     '    owner_group: "Site Owners"\n',
-    '  - name: "Clinical services Editors"\n'
+    '  - name: "Operations Editors"\n'
     "    description: \"One folder's editors.\"\n"
     '    owner_group: "Site Owners"\n'
     "    enroll_enterprise_reader: true\n",
@@ -1675,6 +1675,6 @@ def test_a_declared_folder_that_does_not_exist_is_refused(tmp_path: Path) -> Non
     """
     summary, calls = _folder_acl_run(tmp_path, missing=True)
     messages = [e["error"] for e in summary["errors"]]
-    assert any("declared folder 'Clinical services' was not found" in m for m in messages), \
+    assert any("declared folder 'Operations' was not found" in m for m in messages), \
         messages
     assert not any("items(undefined)" in c["url"] for c in calls)

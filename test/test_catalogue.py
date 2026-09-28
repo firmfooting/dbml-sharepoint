@@ -94,8 +94,8 @@ def test_the_catalogue_ships_inside_the_package() -> None:
 def test_each_solution_describes_itself(solution: catalogue.Solution) -> None:
     """A blank cell in the picker is indistinguishable from a broken one.
 
-    The prefix may legitimately be empty (programme-governance declares
-    `prefix: ""` and the picker shows "(none)"), so what is pinned is that
+    The prefix may legitimately be empty (a blueprint may declare
+    `prefix: ""`, and the picker then shows "(none)"), so what is pinned is that
     the mapping DECLARES the key: an empty cell is a decision, never an
     omission the catalogue papered over."""
     assert solution.title
@@ -128,7 +128,7 @@ def test_each_solution_ships_all_three_build_inputs(
 def test_the_collection_readmes_are_not_offered_as_templates() -> None:
     ids = {s.id for s in available_solutions()}
     assert "README.md" not in ids
-    assert "healthcare.md" not in ids
+    assert not {"journeys", "sectors"} & ids
 
 
 def test_a_directory_without_a_schema_is_not_a_solution(

@@ -34,7 +34,7 @@ _DEFAULT_FORMULA_CODES = frozenset(
 def _schema() -> Schema:
     return make_schema(
         make_table(
-            "Saq",
+            "Return",
             column("Title", required=True),
             column("PeriodYear", "int"),
             column("Score", "number"),
@@ -47,7 +47,7 @@ def _schema() -> Schema:
             column("Notes", "longtext"),
             column("Link", "hyperlink"),
             person("Owner"),
-            make_ref("Parent", "Saq.Id"),
+            make_ref("Parent", "Return.Id"),
             column("Band", "calculated_text"),
             column("Seeded", "nvarchar", default="x"),
             note="The standard fixture list.",
@@ -60,9 +60,9 @@ def _formula_findings(
     formulas: dict[str, str], *, cross_site_reference_columns: list[CrossSiteRef] | None = None,
 ) -> list[Finding]:
     bundle = make_bundle(
-        entities=["Saq"],
-        default_formulas={"Saq": formulas},
-        calculated_formulas={"Saq": {"Band": '="x"'}},
+        entities=["Return"],
+        default_formulas={"Return": formulas},
+        calculated_formulas={"Return": {"Band": '="x"'}},
         cross_site_reference_columns=cross_site_reference_columns or [],
     )
     return validate_against_mapping(_schema(), bundle)
@@ -100,7 +100,7 @@ def test_an_enum_column_is_accepted_with_a_warning_about_the_result() -> None:
 
 
 def test_the_section_is_optional() -> None:
-    bundle = make_bundle(entities=["Saq"], calculated_formulas={"Saq": {"Band": '="x"'}})
+    bundle = make_bundle(entities=["Return"], calculated_formulas={"Return": {"Band": '="x"'}})
     assert _own(validate_against_mapping(_schema(), bundle)) == []
 
 
@@ -114,7 +114,7 @@ def test_a_formula_without_a_leading_equals_is_refused() -> None:
     )
     assert finding.location is not None
     assert finding.location.section is Section.DEFAULT_FORMULAS
-    assert finding.location.entity == "Saq"
+    assert finding.location.entity == "Return"
     assert finding.location.column == "Due"
 
 
@@ -227,7 +227,7 @@ def test_a_column_kind_that_cannot_take_a_formula_is_refused(col: str, reason: s
 def test_a_cross_site_reference_column_is_refused_by_kind() -> None:
     findings = _formula_findings(
         {"Parent": "=TODAY()"},
-        cross_site_reference_columns=[CrossSiteRef(entity="Saq", column="Parent")],
+        cross_site_reference_columns=[CrossSiteRef(entity="Return", column="Parent")],
     )
     finding = only(findings, FindingCode.DEFAULT_FORMULA_COLUMN_KIND_UNSUPPORTED)
     assert "cross-site" in finding.message
@@ -237,7 +237,7 @@ def test_a_derived_cross_site_column_is_refused_by_kind() -> None:
     """The deploy creates ParentAbbreviation, so "unknown" would be false."""
     findings = _formula_findings(
         {"ParentAbbreviation": "=TODAY()"},
-        cross_site_reference_columns=[CrossSiteRef(entity="Saq", column="Parent")],
+        cross_site_reference_columns=[CrossSiteRef(entity="Return", column="Parent")],
     )
     finding = only(findings, FindingCode.DEFAULT_FORMULA_COLUMN_KIND_UNSUPPORTED)
     assert "derives" in finding.message
@@ -269,9 +269,9 @@ def test_the_text_rules_and_the_column_rules_report_together() -> None:
 
 def test_an_unknown_entity_is_reported_under_this_section() -> None:
     bundle = make_bundle(
-        entities=["Saq"],
+        entities=["Return"],
         default_formulas={"Nope": {"Due": "=TODAY()"}},
-        calculated_formulas={"Saq": {"Band": '="x"'}},
+        calculated_formulas={"Return": {"Band": '="x"'}},
     )
     findings = [
         f for f in validate_against_mapping(_schema(), bundle)

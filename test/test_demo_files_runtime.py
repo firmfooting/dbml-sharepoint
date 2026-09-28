@@ -28,7 +28,7 @@ from dbml_sharepoint.model.release import load_release
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
 _ROOT = "/sites/test/APP_Doc"
-_FOLDER = "Clinical services"
+_FOLDER = "Operations"
 _NAME = "[DEMO] Privacy - 2026 Q3.txt"
 
 
@@ -39,7 +39,7 @@ def _demo_js() -> str:
             column("Status", "doc_status"),
         ),
         enums=[
-            enum("division", "Clinical services", "Corporate services"),
+            enum("division", "Operations", "Corporate"),
             enum("doc_status", "Required", "Complete"),
         ],
     )
@@ -47,7 +47,7 @@ def _demo_js() -> str:
         entities={
             "Doc": EntityMapping(
                 name="Doc", kind="DocumentLibrary", base_template=101,
-                site_role="default", folder_source=(_FOLDER, "Corporate services"),
+                site_role="default", folder_source=(_FOLDER, "Corporate"),
             ),
         },
         demo_items={
@@ -55,7 +55,7 @@ def _demo_js() -> str:
                 DemoItem(
                     key="d1",
                     values={"Division": _FOLDER, "Status": "Required"},
-                    file=DemoFile(name=_NAME, folder=_FOLDER, content="Sample SAQ."),
+                    file=DemoFile(name=_NAME, folder=_FOLDER, content="Sample return."),
                 ),
             ],
         },
@@ -186,7 +186,7 @@ def test_a_library_row_is_uploaded_into_its_folder_and_its_values_set() -> None:
         f"GetFolderByServerRelativeUrl('{_ROOT}/{_FOLDER}')"
         f"/Files/add(url='{_NAME}',overwrite=false)"
     )
-    assert upload["body"] == "Sample SAQ."
+    assert upload["body"] == "Sample return."
     (merge,) = _posts(calls, "/items(9)")
     assert json.loads(merge["body"]) == {
         "__metadata": {"type": "SP.Data.APP_DocItem"}, "Division": _FOLDER, "Status": "Required",
@@ -254,7 +254,7 @@ def test_demo_file_paths_work_when_unindexed_queries_are_throttled(present: bool
     assert len(summary["skipped"]) == int(present)
     assert len(summary["created"]) == int(not present)
     reads = [c["url"] for c in calls if "GetFileByServerRelativeUrl" in c["url"]]
-    assert reads and all("Original Library Slug/Clinical services/" in url for url in reads)
+    assert reads and all("Original Library Slug/Operations/" in url for url in reads)
     assert any("/ListItemAllFields?" in url for url in reads)
     assert not any("$filter=" in c["url"] for c in calls)
 
@@ -324,7 +324,7 @@ def _rich_demo_js(written: str = _RICH_WRITTEN) -> str:
             column("Status", "doc_status"), column("Notes", "richtext"),
         ),
         enums=[
-            enum("division", "Clinical services", "Corporate services"),
+            enum("division", "Operations", "Corporate"),
             enum("doc_status", "Required", "Complete"),
         ],
     )
@@ -332,7 +332,7 @@ def _rich_demo_js(written: str = _RICH_WRITTEN) -> str:
         entities={
             "Doc": EntityMapping(
                 name="Doc", kind="DocumentLibrary", base_template=101,
-                site_role="default", folder_source=(_FOLDER, "Corporate services"),
+                site_role="default", folder_source=(_FOLDER, "Corporate"),
             ),
         },
         demo_items={
@@ -340,7 +340,7 @@ def _rich_demo_js(written: str = _RICH_WRITTEN) -> str:
                 DemoItem(
                     key="d1",
                     values={"Division": _FOLDER, "Status": "Required", "Notes": written},
-                    file=DemoFile(name=_NAME, folder=_FOLDER, content="Sample SAQ."),
+                    file=DemoFile(name=_NAME, folder=_FOLDER, content="Sample return."),
                 ),
             ],
         },

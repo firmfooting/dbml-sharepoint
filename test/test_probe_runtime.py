@@ -3879,7 +3879,7 @@ def test_cleanup_resets_the_lookup_target_as_well_as_the_library() -> None:
         cleanup=True,
         existingLibrary=True,
         existingTarget=True,
-        targetRows=[{"Id": 91, "Title": "Privacy and health records"}],
+        targetRows=[{"Id": 91, "Title": "Records management policy"}],
     )
 
     assert site["recycled"] == [_HEADER_LIB, _HEADER_TARGET]

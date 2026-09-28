@@ -120,11 +120,11 @@ def _library_schema_json(
 def test_a_library_list_carries_its_folders_and_kind_flag(tmp_path: Path) -> None:
     """The folder phase and the seeding script key on these two fields."""
     schema_json = _library_schema_json(
-        tmp_path, "DocumentLibrary", 101, 'folders: ["Clinical services", "Corporate"]',
+        tmp_path, "DocumentLibrary", 101, 'folders: ["Operations", "Corporate"]',
     )
     doc = next(lst for lst in schema_json["lists"] if lst["title"] == "APP_Doc")
     assert doc["is_library"] is True
-    assert doc["folders"] == ["Clinical services", "Corporate"]
+    assert doc["folders"] == ["Operations", "Corporate"]
     as_list = _library_schema_json(tmp_path / "list", "List", 100)
     plain = next(lst for lst in as_list["lists"] if lst["title"] == "APP_Doc")
     assert plain["is_library"] is False
@@ -145,7 +145,7 @@ def test_a_library_takes_its_folders_from_the_named_enum(tmp_path: Path) -> None
     schema, bundle = pack(
         tmp_path,
         dbml=(
-            'Enum division {\n  "Clinical services"\n  "Corporate & community services"\n}\n'
+            'Enum division {\n  "Operations"\n  "Corporate & community"\n}\n'
             + table("Doc", ID_PK, TITLE, "Division division")
         ),
         mapping="""
@@ -163,7 +163,7 @@ def test_a_library_takes_its_folders_from_the_named_enum(tmp_path: Path) -> None
     doc = next(lst for lst in schema_json["lists"] if lst["title"] == "APP_Doc")
     members = next(e.members for e in schema.enums if e.name == "division")
     assert doc["folders"] == list(members) == [
-        "Clinical services", "Corporate & community services",
+        "Operations", "Corporate & community",
     ]
 
 
@@ -407,7 +407,7 @@ def test_previous_prefixes_multiply_the_previous_titles_of_every_list() -> None:
     its own entity name produces, and the current title is never a candidate."""
     schema = make_schema(make_table("Risk", "Title", note="Risks."))
     bundle = make_bundle(
-        prefix="GOV_", previous_prefixes=("", "ADOPT_"),
+        prefix="APP_", previous_prefixes=("", "ADOPT_"),
         entities={
             "Risk": EntityMapping(
                 name="Risk", kind="List", base_template=100, site_role="default",
@@ -419,7 +419,7 @@ def test_previous_prefixes_multiply_the_previous_titles_of_every_list() -> None:
     family = family_for(schema)
     risk, program = marker_for(family, "Risk"), marker_for(family, "ProgramRisk")
     assert built["lists"][0]["renamed_from"] == [
-        {"title": "GOV_ProgramRisk", "expected_marker": program},
+        {"title": "APP_ProgramRisk", "expected_marker": program},
         {"title": "Risk", "expected_marker": risk},
         {"title": "ProgramRisk", "expected_marker": program},
         {"title": "ADOPT_Risk", "expected_marker": risk},
