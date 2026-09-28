@@ -9,6 +9,7 @@ before each calculated create. Node is required; the module skips without it.
 """
 
 import json
+import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -145,25 +146,38 @@ _FORMULA = """
 
 
 def _run_adopted(
-    tmp_path: Path, *, at_preflight: str, afterwards: str,
+    tmp_path: Path, *, at_preflight: str | None, afterwards: str | None,
+    display_names: bool = False,
 ) -> tuple[dict[str, Any], list[Any], str]:
-    """Deploy to an existing list whose `Created` title is `at_preflight`, then `afterwards`."""
+    """Deploy to an existing list whose `Created` title is `at_preflight`, then `afterwards`.
+
+    None leaves `Created` out of the list's field enumeration for that span.
+    `display_names` gives every declared column a display title unlike its name.
+    """
     held = _declared_list_descriptions(tmp_path)
     created = (
         "{ Id: '22222222-2222-2222-2222-222222222222', InternalName: 'Created', "
         "TypeAsString: 'DateTime', ReadOnlyField: true, Sealed: false, "
-        f"Title: mockPhase === {json.dumps(pn('preflight'))} "
-        f"? {json.dumps(at_preflight)} : {json.dumps(afterwards)} }}"
+        "Title: CREATED_TITLE() }"
     )
-    harness = _ADOPTED_HARNESS.replace(
+    title_of = (
+        f"const CREATED_TITLE = () => (mockPhase === {json.dumps(pn('preflight'))} "
+        f"? {json.dumps(at_preflight)} : {json.dumps(afterwards)});\n"
+    )
+    harness = title_of + _ADOPTED_HARNESS.replace(
         "const LIST_DESCRIPTIONS = new Map([]);",
         f"const LIST_DESCRIPTIONS = new Map({json.dumps(list(held.items()))});",
     ).replace(
         "return { d: { results: [titleField(listTitle), ...own] } };",
-        f"return {{ d: {{ results: [titleField(listTitle), {created}, ...own] }} }};",
+        "return { d: { results: [titleField(listTitle), "
+        f"...(CREATED_TITLE() === null ? [] : [{created}]), ...own] }} }};",
     )
     assert "InternalName: 'Created'" in harness, "the Created column was not spliced in"
-    js = _declared_deploy_js(tmp_path, _FORMULA, extra_lines=("DueDate calculated_date",))
+    renames = "display_names:\n  mode: auto\n" if display_names else ""
+    section = renames + textwrap.dedent(_FORMULA)
+    js = _declared_deploy_js(tmp_path, section, extra_lines=("DueDate calculated_date",))
+    if display_names:
+        assert '"display_title": "Due Date"' in js, "DueDate was not given a display title"
     script = harness + "\n" + js.replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
@@ -215,3 +229,33 @@ def test_the_measured_title_creates_the_column(tmp_path: Path) -> None:
     assert summary.get("errors") == [], output[-3000:]
     (create,) = _due_date_creates(calls)
     assert json.loads(create["body"])["Formula"] == "=[Created]+14"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_renamed_calculated_column_is_still_guarded(tmp_path: Path) -> None:
+    """The guard keys on the column the create sends, not on its display title."""
+    summary, calls, _ = _run_adopted(
+        tmp_path, at_preflight="Created", afterwards="Erstellt", display_names=True,
+    )
+    assert not _due_date_creates(calls), _due_date_creates(calls)
+    (refusal,) = [e for e in summary["errors"] if e.get("column") == "DueDate"]
+    assert "Erstellt" in refusal["error"], refusal
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_created_column_the_preflight_cannot_find_stops_the_run(tmp_path: Path) -> None:
+    summary, calls, output = _run_adopted(tmp_path, at_preflight=None, afterwards="Created")
+    assert summary.get("aborted") == "existing-schema-shape-errors", output[-3000:]
+    assert not _deployment_writes(calls), _deployment_writes(calls)
+    (refusal,) = [e for e in summary["errors"] if e.get("column") == "DueDate"]
+    assert refusal["mismatches"][0]["checked"] is False, refusal
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_created_column_missing_at_the_create_refuses_it(tmp_path: Path) -> None:
+    summary, calls, output = _run_adopted(tmp_path, at_preflight="Created", afterwards=None)
+    assert not _due_date_creates(calls), _due_date_creates(calls)
+    (refusal,) = [e for e in summary["errors"] if e.get("column") == "DueDate"]
+    assert refusal["phase"] == pn("lists"), refusal
+    assert "NOT CHECKED" in refusal["error"], refusal
+    assert summary.get("aborted") == "phase-1-schema-errors", output[-3000:]
