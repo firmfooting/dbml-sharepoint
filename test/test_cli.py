@@ -2712,7 +2712,7 @@ def _project(tmp_path: Path) -> Path:
     which is the situation this default exists for.
     """
     root = tmp_path / "proj"
-    shutil.copytree(SOLUTION_TEMPLATES / "risk-register", root)
+    shutil.copytree(SOLUTION_TEMPLATES / "visitor-log", root)
     return root
 
 

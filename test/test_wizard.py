@@ -423,8 +423,10 @@ def test_a_previous_build_is_not_copied_into_the_new_project(
     )
     (source / "20-configure" / "release.yaml").write_text(_RELEASE, encoding="utf-8")
 
+    # Based on a core blueprint: a provider's blueprint is validated before the copy,
+    # and an empty schema is exactly what that check refuses.
     _offer_only(monkeypatch, replace(
-        load_solution("risk-register"),
+        load_solution("visitor-log"),
         id="fake-template", title="Fake", summary="s", detail="s",
         lists=("Risk",), prefix="OLD_", root=source,
     ))
@@ -551,24 +553,24 @@ def test_each_template_repoints_only_its_own_documentation(
     `answers.destination` (the bug this test exists to catch), the test
     still passed, because each iteration's substitution list only ever
     contains that template's OWN old/new strings -- `ACME_` and `RR_` never
-    appear in audit-actions' substitution list at all, so scanning a wider
+    appear in visitor-log's substitution list at all, so scanning a wider
     tree for them finds nothing there either way.
 
     The fix is to make one template's substitution *become* the next
     template's target text, so a wrongly-scoped scan has something to find.
     Order matters, which is why risk-register goes first:
 
-    * risk-register ships prefix `RR_`; it is repointed to `AU_` -- the
-      prefix audit-actions ships as. After this step, risk's docs say
-      `AU_Risk` (correct: risk's OWN new prefix) which is also, not
-      coincidentally, the OLD value audit-actions is about to be repointed
+    * risk-register ships prefix `RR_`; it is repointed to `VI_` -- the
+      prefix visitor-log ships as. After this step, risk's docs say
+      `VI_Risk` (correct: risk's OWN new prefix) which is also, not
+      coincidentally, the OLD value visitor-log is about to be repointed
       away from.
-    * audit-actions ships `AU_` and is repointed to `ZZ_`. Correctly scoped,
-      this only touches audit's own tree, so risk's `AU_Risk` is untouched.
-      Scoped to the whole destination, `AU_` also matches the `AU_Risk` this
+    * visitor-log ships `VI_` and is repointed to `ZZ_`. Correctly scoped,
+      this only touches the visitor tree, so risk's `VI_Risk` is untouched.
+      Scoped to the whole destination, `VI_` also matches the `VI_Risk` this
       step just produced, silently rewriting risk's docs to `ZZ_Risk`.
 
-    So after `_scaffold`, risk-register's docs must say `AU_Risk` and must
+    So after `_scaffold`, risk-register's docs must say `VI_Risk` and must
     never say `ZZ_Risk`. If a future edit "simplifies" these three prefixes
     back to something arbitrary, this collision -- and the guard -- disappear
     without a failure to announce it.
@@ -577,14 +579,14 @@ def test_each_template_repoints_only_its_own_documentation(
     # `entity_roles` is empty because `_scaffold` never reads it -- only the
     # Review panel does, through `list_titles`. Filling it would imply this
     # test cares which role deploys what, and it does not.
-    risk = wizard.TemplateChoice(load_solution("risk-register"), "AU_", ())
-    audit = wizard.TemplateChoice(load_solution("audit-actions"), "ZZ_", ())
+    risk = wizard.TemplateChoice(load_solution("risk-register"), "VI_", ())
+    visitor = wizard.TemplateChoice(load_solution("visitor-log"), "ZZ_", ())
     answers = wizard.Answers(
         destination=destination,
         site_url="https://contoso.sharepoint.com/sites/x",
         time_zone="Europe/London",
         site_role="default",
-        templates=(risk, audit),
+        templates=(risk, visitor),
         build=False,
         reader="",
         seed=False,
@@ -596,7 +598,7 @@ def test_each_template_repoints_only_its_own_documentation(
         p.read_text(encoding="utf-8")
         for p in (destination / "risk-register").rglob("*.md")
     )
-    assert "AU_Risk" in risk_docs
+    assert "VI_Risk" in risk_docs
     assert "ZZ_Risk" not in risk_docs
     # A wrongly-scoped scan also revisits files it already rewrote in an
     # earlier iteration, so the same path is reported changed twice. Correct
@@ -607,27 +609,28 @@ def test_each_template_repoints_only_its_own_documentation(
 def test_a_cross_site_link_in_the_docs_is_not_repointed(tmp_path: Path) -> None:
     """Only the deploy target is substituted, not every SharePoint URL.
 
-    credentialing-register's deploy.md carries a formatting-JSON example
-    whose `href` points at a by-laws page on a *governance* site -- a
-    deliberately different site from the one being deployed to. A fuzzy
-    "rewrite anything that looks like a SharePoint URL" would silently
-    repoint it at the deploy target, inventing a link to a page that does
-    not exist there.
+    A deploy.md may link a page on another site, such as by-laws on a
+    governance site. A fuzzy "rewrite anything that looks like a SharePoint
+    URL" would repoint it at the deploy target, inventing a link to a page
+    that does not exist there.
     """
-    destination = tmp_path / "proj"
-    console = ScriptedConsole(
-        _answers(
-            destination,
-            template="credentialing-register",
-            prefix="CR_",
-            site_url="https://contoso.sharepoint.com/sites/ops",
-        ),
+    deploy_md = tmp_path / "30-deploy" / "deploy.md"
+    deploy_md.parent.mkdir()
+    cross_site = "https://yourtenant.sharepoint.com/sites/governance/by-laws.aspx"
+    deploy_md.write_text(
+        f"--site-url {PLACEHOLDER_SITE_URL}\n\n[By-laws]({cross_site})\n",
+        encoding="utf-8", newline="\n",
+    )
+    site = wizard._Substitution(
+        "site URL", PLACEHOLDER_SITE_URL, "https://contoso.sharepoint.com/sites/ops",
     )
 
-    assert wizard.run_wizard(console) == 0
+    changed, applied = wizard._repoint_docs(tmp_path, [site])
 
-    deploy_md = (destination / "30-deploy" / "deploy.md").read_text(encoding="utf-8")
-    assert "sites/governance/credentialing-by-laws.aspx" in deploy_md
+    text = deploy_md.read_text(encoding="utf-8")
+    assert (changed, applied) == ([deploy_md], [site])
+    assert "--site-url https://contoso.sharepoint.com/sites/ops" in text
+    assert cross_site in text
 
 
 def test_keeping_the_default_prefix_reports_no_prefix_change(
@@ -784,17 +787,17 @@ def test_a_template_can_be_picked_by_number(tmp_path: Path) -> None:
 
 def test_a_journey_narrows_the_table_to_its_own_templates(tmp_path: Path) -> None:
     """The step exists to make the shelf approachable, so it must actually
-    narrow. `the-front-desk` names three; nothing outside them may appear in
-    the table it opens."""
+    narrow. `replacing-the-paper-books` names core's templates; the frozen
+    packs offered beside them may not appear in the table it opens."""
     destination = tmp_path / "proj"
     console = ScriptedConsole([
-        "the-front-desk",
+        "replacing-the-paper-books",
         *_answers(destination, template="visitor-log", prefix="VI_"),
     ])
 
     assert wizard.run_wizard(console) == 0
     rendered = _collapsed(console)
-    assert "switchboard-log" in rendered and "service-requests" in rendered
+    assert "routine-checks" in rendered and "deployment-log" in rendered
     assert "risk-register" not in rendered, (
         "a template outside the chosen journey reached the table"
     )
@@ -860,10 +863,10 @@ def test_a_blank_template_answer_reprompts_rather_than_picking_the_first(
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "",   # Enter -- must not be taken as an answer at all
-        "audit-actions",
+        "visitor-log",
         str(destination),
         "y",   # prefix gate
-        "AU_",
+        "VI_",
         "https://contoso.sharepoint.com/sites/x",
         "Europe/London",
         "n",   # build
@@ -875,7 +878,7 @@ def test_a_blank_template_answer_reprompts_rather_than_picking_the_first(
     # catalogue table names every template, so a console assertion alone
     # would hold whichever family the blank answer scaffolded.
     copied = load_mapping(destination / "20-configure" / "mapping.yaml")
-    assert tuple(copied.mapping.entities) == load_solution("audit-actions").lists
+    assert tuple(copied.mapping.entities) == load_solution("visitor-log").lists
 
 
 def test_running_out_of_input_exits_without_a_traceback(tmp_path: Path) -> None:
@@ -970,29 +973,42 @@ def test_a_mapping_with_no_prefix_line_is_refused(tmp_path: Path) -> None:
         wizard._rewrite_prefix(mapping, "NEW_")
 
 
-def _shipped_mapping(solution_id: str, tmp_path: Path) -> Path:
-    """A writable copy of one shipped family's mapping.
+def _adopting_copy(tmp_path: Path) -> Path:
+    """A writable copy of visitor-log that also lists "" and ADOPT_ as previous prefixes.
 
-    The whole directory, because a mapping names its formatter JSON and its
-    enum sources by a path relative to itself, and the loader reads them.
+    The shape of a template whose first site was provisioned unprefixed. The
+    whole pack, because a mapping names its formatter JSON by a path relative
+    to itself, and the loader reads them.
     """
-    source = load_solution(solution_id).root / MAPPING_RELPATH
-    shutil.copytree(source.parent, tmp_path / source.parent.name)
-    return tmp_path / source.parent.name / source.name
+    root = tmp_path / "adopting"
+    shutil.copytree(load_solution("visitor-log").root, root)
+    mapping = root / MAPPING_RELPATH
+    text = mapping.read_text(encoding="utf-8")
+    assert text.count('\nprefix: "VI_"\n') == 1
+    mapping.write_text(
+        text.replace('\nprefix: "VI_"\n', '\nprefix: "VI_"\nprevious_prefixes: ["", "ADOPT_"]\n'),
+        encoding="utf-8", newline="\n",
+    )
+    return root
+
+
+def _adopting_mapping(tmp_path: Path) -> Path:
+    """The mapping of `_adopting_copy`."""
+    return _adopting_copy(tmp_path) / MAPPING_RELPATH
 
 
 def test_the_chosen_prefix_stops_being_a_previous_one(tmp_path: Path) -> None:
     """#378, and it fires on the gate's OWN DEFAULT, not on an odd answer.
 
-    `programme-governance` declares "" among its previous prefixes because
-    its live site was provisioned unprefixed, and the prefix gate defaults
+    A template may declare "" among its previous prefixes because its first
+    site was provisioned unprefixed, and the prefix gate defaults
     to no prefix -- so pressing Enter chose a prefix the same file already
     listed as previous. `_parse_previous_prefixes` refuses that pair, so the
     wizard wrote the copy and then failed loading it back, reporting the
     loader's sentence about a prefix "still in use" for a project that had
     never been deployed anywhere.
     """
-    mapping = _shipped_mapping("programme-governance", tmp_path)
+    mapping = _adopting_mapping(tmp_path)
     assert load_mapping(mapping).mapping.previous_prefixes == ("", "ADOPT_")
 
     assert wizard._rewrite_prefix(mapping, "") == ("",)
@@ -1006,7 +1022,7 @@ def test_the_prefix_rewrites_change_their_two_lines_and_nothing_else(tmp_path: P
     """Each rewrite edits one line in place, so every other line, comments
     included, is the template's own, and the file reads back as the
     template's document but for the two keys set."""
-    mapping = _shipped_mapping("programme-governance", tmp_path)
+    mapping = _adopting_mapping(tmp_path)
     before = mapping.read_text(encoding="utf-8")
     assert wizard._rewrite_prefix(mapping, "") == ("",)
     after = mapping.read_text(encoding="utf-8")
@@ -1014,7 +1030,7 @@ def test_the_prefix_rewrites_change_their_two_lines_and_nothing_else(tmp_path: P
         was for was, now in zip(before.splitlines(), after.splitlines(), strict=True)
         if was != now
     ]
-    assert changed == ['prefix: "GOV_"', 'previous_prefixes: ["", "ADOPT_"]']
+    assert changed == ['prefix: "VI_"', 'previous_prefixes: ["", "ADOPT_"]']
     was, now = _yaml.safe_load(before), _yaml.safe_load(after)
     assert (now.pop("prefix"), now.pop("previous_prefixes")) == ("", ["ADOPT_"])
     del was["prefix"], was["previous_prefixes"]
@@ -1033,7 +1049,7 @@ def test_dropping_the_chosen_prefix_removes_no_rename_candidate(
     the first stem tried. The refused shape is built with `replace`, since
     the loader is what refuses it and the point is what it would have meant.
     """
-    shipped = load_mapping(_shipped_mapping("programme-governance", tmp_path)).mapping
+    shipped = load_mapping(_adopting_mapping(tmp_path)).mapping
     # What the wizard writes, against what it wrote before #378.
     written = replace(shipped, prefix="", previous_prefixes=("ADOPT_",))
     refused = replace(shipped, prefix="", previous_prefixes=("", "ADOPT_"))
@@ -1054,13 +1070,13 @@ def test_dropping_the_chosen_prefix_removes_no_rename_candidate(
 def test_a_previous_prefix_that_is_not_the_chosen_one_is_kept(
     tmp_path: Path,
 ) -> None:
-    """The filter is exact. Choosing GOV_ leaves the declaration alone, and
+    """The filter is exact. Choosing VI_ leaves the declaration alone, and
     choosing ADOPT_ drops only that entry."""
-    mapping = _shipped_mapping("programme-governance", tmp_path)
-    assert wizard._rewrite_prefix(mapping, "GOV_") == ()
+    mapping = _adopting_mapping(tmp_path)
+    assert wizard._rewrite_prefix(mapping, "VI_") == ()
     assert load_mapping(mapping).mapping.previous_prefixes == ("", "ADOPT_")
 
-    other = _shipped_mapping("programme-governance", tmp_path / "other")
+    other = _adopting_mapping(tmp_path / "other")
     assert wizard._rewrite_prefix(other, "ADOPT_") == ("ADOPT_",)
     assert load_mapping(other).mapping.previous_prefixes == ("",)
 
@@ -1120,7 +1136,8 @@ def test_the_dropped_previous_prefix_is_reported_not_silent(
     """A mapping that no longer matches the template it was copied from is
     said out loud, because the copy is the operator's to maintain."""
     destination = tmp_path / "site"
-    choice = wizard.TemplateChoice(load_solution("programme-governance"), "", ())
+    adopting = replace(load_solution("visitor-log"), id="adopting", root=_adopting_copy(tmp_path))
+    choice = wizard.TemplateChoice(adopting, "", ())
     answers = wizard.Answers(
         destination=destination,
         site_url="https://contoso.sharepoint.com/sites/x",
@@ -1135,7 +1152,7 @@ def test_the_dropped_previous_prefix_is_reported_not_silent(
     _, _, dropped = wizard._scaffold(answers)
 
     assert dropped == [(
-        "programme-governance: dropped the unprefixed entry from "
+        "adopting: dropped the unprefixed entry from "
         "previous_prefixes, since that is the prefix you chose. "
         "Existing lists are still found under it"
     )]
@@ -3611,7 +3628,7 @@ def test_the_scaffolded_project_carries_the_pack_s_licence(tmp_path: Path) -> No
 
 
 def test_the_table_groups_templates_by_package_and_names_each_licence() -> None:
-    core = load_solution("risk-register")
+    core = load_solution("visitor-log")
     other = replace(
         core, id="acme-thing", title="Acme thing", distribution="acme-packs", license="BUSL-1.1",
     )
@@ -3622,7 +3639,7 @@ def test_the_table_groups_templates_by_package_and_names_each_licence() -> None:
     assert "Licence: BUSL-1.1" in shown
     assert (
         shown.index(CORE_DISTRIBUTION)
-        < shown.index("risk-register")
+        < shown.index("visitor-log")
         < shown.index("acme-packs")
         < shown.index("acme-thing")
     )
@@ -3645,7 +3662,7 @@ def test_a_refused_pack_is_named_before_the_first_question(
     packs = tmp_path / "packs"
     write_family(packs, "acme-thing")  # core's licence, inside a BUSL-1.1 distribution
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
-    console = ScriptedConsole(_answers(tmp_path / "proj"))
+    console = ScriptedConsole(_answers(tmp_path / "proj", template="visitor-log", prefix="VI_"))
     assert wizard.run_wizard(console) == 0
     shown = _collapsed(console)
     assert "Not offered: acme-packs:" in shown

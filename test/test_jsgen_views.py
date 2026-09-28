@@ -680,7 +680,7 @@ def test_every_declared_view_filter_is_emitted_protected() -> None:
     right child as what the editor refuses.
     """
     filtered = 0
-    for view in _schema_json_for("risk-register")["views"]:
+    for view in _schema_json_for("contract-register")["views"]:
         if "<Where>" not in view["caml_query"]:
             continue
         filtered += 1
@@ -700,7 +700,7 @@ def test_a_view_with_no_filter_gains_no_where_clause() -> None:
     for a view whose author declared none.
     """
     unfiltered = [
-        view for view in _schema_json_for("risk-register")["views"]
+        view for view in _schema_json_for("contract-register")["views"]
         if "<Where>" not in view["caml_query"]
     ]
     # `assert unfiltered` is the whole test: the comprehension already

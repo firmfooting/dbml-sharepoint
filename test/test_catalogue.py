@@ -215,13 +215,13 @@ def test_a_journey_declaring_a_key_twice_is_refused(
 def test_load_solution_names_the_alternatives() -> None:
     """A typo'd template name should not make the user go and list them."""
     with pytest.raises(UnknownSolutionError) as caught:
-        load_solution("risk-registry")
-    assert "risk-register" in str(caught.value)
-    assert caught.value.name == "risk-registry"
+        load_solution("visitor-logs")
+    assert "visitor-log" in str(caught.value)
+    assert caught.value.name == "visitor-logs"
 
 
 def test_load_solution_returns_the_named_family() -> None:
-    assert load_solution("risk-register").id == "risk-register"
+    assert load_solution("visitor-log").id == "visitor-log"
 
 
 def test_a_missing_solutions_directory_is_empty_not_an_error(
