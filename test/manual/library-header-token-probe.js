@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHICH TOKENS A LIBRARY FORM HEADER CAN READ
  *
- * REVISION: 983f3cba
+ * REVISION: a0dc858f
  *
  * ONE QUESTION:
  *   A document library's form header is stored and read back byte-identical
@@ -549,7 +549,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 983f3cba. Quote this when reporting results.');
+  log('INFO', 'probe revision a0dc858f. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe Header Tokens';
   const libPath = `web/lists/getbytitle('${LIB}')`;
@@ -574,6 +574,12 @@
       RichText: false, NumberOfLines: 4 }, 'A note the header may or may not read'],
     ['dbmlspPerson', { __metadata: { type: 'SP.FieldUser' }, FieldTypeKind: 20,
       SelectionMode: 0 }, null],
+    ['dbmlspText', { __metadata: { type: 'SP.Field' }, FieldTypeKind: 2 }, '401'],
+    ['dbmlspUrl', { __metadata: { type: 'SP.FieldUrl' }, FieldTypeKind: 11, DisplayFormat: 0 },
+      { __metadata: { type: 'SP.FieldUrlValue' }, Url: 'https://example.invalid/previous',
+        Description: 'Previous period' }],
+    // Left blank on purpose: N5 asks how a header compares an empty date.
+    ['dbmlspDateBlank', { __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4 }, null],
   ];
 
   // THE CONTROLS, and all that is left of the identity battery. Rounds one
@@ -648,6 +654,19 @@
     ['T5 Person', "=' T5 Person -> [' + [$dbmlspPerson] + ']'"],
     ['T6 Person.title', "=' T6 Person.title -> [' + [$dbmlspPerson.title] + ']'"],
     ['T7 Person.email', "=' T7 Person.email -> [' + [$dbmlspPerson.email] + ']'"],
+
+    // ---- N: what the legal register's new header would read -------------
+    // Expected, never asserted: 401, a URL, Previous period, set, blank, the
+    // site URL, and the site URL followed by /x.aspx?FilterValue1=401.
+    ['N1 Text', "=' N1 Text -> [' + [$dbmlspText] + ']'"],
+    ['N2 Url', "=' N2 Url -> [' + [$dbmlspUrl] + ']'"],
+    ['N3 Url.desc', "=' N3 Url.desc -> [' + [$dbmlspUrl.desc] + ']'"],
+    ['N4 date set?', "=' N4 date set? -> [' + if([$dbmlspDate] == '', 'blank', 'set') + ']'"],
+    ['N5 blank date?',
+      "=' N5 blank date? -> [' + if([$dbmlspDateBlank] == '', 'blank', 'set') + ']'"],
+    ['N6 currentWeb', "=' N6 currentWeb -> [' + @currentWeb + ']'"],
+    ['N7 filter url',
+      "=' N7 filter url -> [' + @currentWeb + '/x.aspx?FilterValue1=' + [$dbmlspText] + ']'"],
   ];
 
   const Q = {
@@ -657,6 +676,7 @@
     typed: 'MANUAL: which declared column TYPES carry a value in that same header',
     expressions: 'MANUAL: which expression functions, lookup routes, date spellings'
       + ' and column types the header evaluates',
+    newArrival: 'MANUAL: which N lines carry the value shown in the probe source comment',
   };
 
   if (!CONFIRMED) {
@@ -690,6 +710,7 @@
   expect('library.form.header-token-battery-renders', Q.renders);
   expect('library.form.header-typed-column-battery-renders', Q.typed);
   expect('library.form.header-expression-battery-renders', Q.expressions);
+  expect('library.form.header-new-arrival-battery-renders', Q.newArrival);
 
   // The three rows a person answers off the rendered form. Every one of them
   // depends on the battery being the thing stored, so they are named once and
@@ -698,6 +719,7 @@
     'library.form.header-token-battery-renders',
     'library.form.header-typed-column-battery-renders',
     'library.form.header-expression-battery-renders',
+    'library.form.header-new-arrival-battery-renders',
   ];
   const IDS = ['library.form.header-token-battery-stored', ...MANUAL_IDS];
   const voidAll = (ids, reason) => {
@@ -739,6 +761,7 @@
   const sameValue = (sent, got) => {
     if (got === null || got === undefined || got === '') return false;
     if (typeof sent === 'number' || typeof sent === 'boolean') return got === sent;
+    if (sent && typeof sent === 'object') return Boolean(got.Url) && got.Url === sent.Url;
     const instant = Date.parse(sent);
     if (!Number.isNaN(instant)) return Date.parse(got) === instant;
     return String(got) === String(sent);
@@ -1071,6 +1094,13 @@
              + 'come first: if they render and a later line does not, that line is the '
              + 'finding; if nothing renders at all, one expression discarded the whole '
              + 'header and that is the finding instead.'
+           : `read these with care, the fixture did not fully build: ${typedNotes.join('; ')}`);
+
+  record('library.form.header-new-arrival-battery-renders', Q.newArrival,
+         typedNotes.length === 0 ? 'MANUAL' : 'MANUAL (fixture incomplete)',
+         typedNotes.length === 0
+           ? 'the same look answers N1 to N7; the expected reading of each is in the '
+             + 'probe source beside the N block.'
            : `read these with care, the fixture did not fully build: ${typedNotes.join('; ')}`);
 
   console.log('\n============ EYES-ON ============');

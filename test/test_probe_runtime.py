@@ -3519,6 +3519,7 @@ _HEADER_MANUAL_ROWS = (
     "library.form.header-token-battery-renders",
     "library.form.header-typed-column-battery-renders",
     "library.form.header-expression-battery-renders",
+    "library.form.header-new-arrival-battery-renders",
 )
 
 #: A SharePoint that serves a library the way one behaves when this probe is
@@ -3938,6 +3939,7 @@ def test_a_value_the_merge_accepted_and_dropped_is_reported_as_an_incomplete_fix
     for row_id in (
         "library.form.header-typed-column-battery-renders",
         "library.form.header-expression-battery-renders",
+        "library.form.header-new-arrival-battery-renders",
     ):
         assert rows[row_id]["outcome"] == "MANUAL (fixture incomplete)", row_id
         assert "dbmlspChoice" in rows[row_id]["evidence"], row_id
