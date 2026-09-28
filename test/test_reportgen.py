@@ -3122,7 +3122,8 @@ entities:
 
 def test_the_loading_warning_names_the_builds_own_base_function(tmp_path: Path) -> None:
     """The example in the guide's warning is a file of this build, so the reader can
-    check it against the folder; a build in which no list reads another gets a neutral name."""
+    check it against the folder; a build in which no list reads another has no base
+    function to load and gets no warning."""
     root = BLUEPRINTS["reporting-sample"]
     schema = parse_dbml(root / "10-design" / "schema.dbml")
     bundle = load_mapping(root / "20-configure" / "mapping.yaml")
@@ -3133,6 +3134,6 @@ def test_the_loading_warning_names_the_builds_own_base_function(tmp_path: Path) 
     ) in guide
     schema, bundle = pack(tmp_path, _ONE_LIST_DBML, _ONE_LIST_MAPPING)
     guide = generate_reporting_md(schema, bundle, "default")
-    assert (
-        "so `Risk_Base.pq` must be loaded as `Risk_Base` for a query that reads `Risk` to resolve"
-    ) in guide
+    assert not generate_powerquery(schema, bundle, "default").keys() & {"Risk_Base.pq"}
+    assert "Load each query under the name of its file" not in guide
+    assert "_Base" not in guide
