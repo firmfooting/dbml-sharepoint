@@ -94,9 +94,31 @@ def test_a_library_reading_no_builtin_carries_no_entry(tmp_path: Path) -> None:
 _TITLE_STUBS = """
     let LIST_FIELDS = new Map();
     let ENUMERATION_FAILS = false;
+    let TRUNCATED = false;
+    // What a by-name read of the column answers: a title, 'absent', or an HTTP status.
+    let BY_NAME = 'absent';
+    const byNameReads = [];
     const listFieldShapes = async () => {
       if (ENUMERATION_FAILS) throw new Error('HTTP 500 refused');
-      return { get: (name) => LIST_FIELDS.get(name), size: LIST_FIELDS.size, truncated: false };
+      return {
+        get: (name) => LIST_FIELDS.get(name), size: LIST_FIELDS.size, truncated: TRUNCATED,
+      };
+    };
+    const apiUrl = (path) => `/_api/${path}`;
+    const odataName = (s) => String(s).replace(/'/g, "''");
+    const fieldShapePath = (listName, columnName) =>
+      `web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(columnName)}')`;
+    const isAbsent400 = (status, text) => status === 400 && text.includes('-2147024809');
+    const fetchWithRetry = async (url) => {
+      byNameReads.push(url);
+      if (typeof BY_NAME === 'number') {
+        return { ok: false, status: BY_NAME, text: async () => 'refused' };
+      }
+      if (BY_NAME === 'absent') {
+        return { ok: false, status: 400,
+          text: async () => '{"error":{"code":"-2147024809, System.ArgumentException"}}' };
+      }
+      return { ok: true, status: 200, json: async () => ({ d: { Title: BY_NAME } }) };
     };
 """
 
@@ -109,6 +131,17 @@ _TITLE_SCENARIOS = """
       out.localised = await builtinTitleMismatch('APP_Escalation', 'Created');
       LIST_FIELDS = new Map();
       out.lacksIt = await builtinTitleMismatch('APP_Escalation', 'Created');
+      out.readsByNameOnAWholePage = byNameReads.length;
+      TRUNCATED = true;
+      BY_NAME = 'Created';
+      out.pastThePage = await builtinTitleMismatch('APP_Escalation', 'Created');
+      BY_NAME = 'Erstellt';
+      out.pastThePageLocalised = await builtinTitleMismatch('APP_Escalation', 'Created');
+      BY_NAME = 'absent';
+      out.pastThePageAbsent = await builtinTitleMismatch('APP_Escalation', 'Created');
+      BY_NAME = 500;
+      out.pastThePageRefused = await builtinTitleMismatch('APP_Escalation', 'Created');
+      out.byNameReads = byNameReads;
       ENUMERATION_FAILS = true;
       out.unreadable = await builtinTitleMismatch('APP_Escalation', 'Created');
       console.log('__OUT__' + JSON.stringify(out));
@@ -131,8 +164,31 @@ def test_only_the_measured_title_passes(tmp_path: Path) -> None:
 
     assert out["matches"] is None
     assert (out["localised"]["checked"], out["localised"]["actual"]) == (True, "Erstellt")
-    for key in ("lacksIt", "unreadable"):
+    for key in ("lacksIt", "unreadable", "pastThePageAbsent", "pastThePageRefused"):
         assert out[key]["checked"] is False, out[key]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_created_column_past_a_full_field_page_is_read_by_name(tmp_path: Path) -> None:
+    """#577: a name missing from a page that may have ended early is asked for directly."""
+    program = "\n".join([
+        _TITLE_STUBS,
+        _lifted(_deploy_js(tmp_path), "async function builtinTitleMismatch"),
+        _TITLE_SCENARIOS,
+    ])
+    output = _run(program)
+    line = next((ln for ln in output.splitlines() if ln.startswith("__OUT__")), None)
+    assert line is not None, output
+    out = json.loads(line.removeprefix("__OUT__"))
+
+    assert out["readsByNameOnAWholePage"] == 0, "a complete page was second-guessed"
+    assert out["pastThePage"] is None, out["pastThePage"]
+    localised = out["pastThePageLocalised"]
+    assert (localised["checked"], localised["actual"]) == (True, "Erstellt"), localised
+    assert all(
+        url.endswith("getbyinternalnameortitle('Created')?$select=Title")
+        for url in out["byNameReads"]
+    ), out["byNameReads"]
 
 
 # The adopted harness serves generic lists only. The generator collects a

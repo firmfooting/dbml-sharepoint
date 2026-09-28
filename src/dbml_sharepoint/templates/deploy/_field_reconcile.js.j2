@@ -384,9 +384,26 @@
     });
     let title;
     try {
-      const field = (await listFieldShapes(listName)).get(builtin);
-      if (!field) return notChecked('was not found');
-      title = field.Title;
+      const shapes = await listFieldShapes(listName);
+      const field = shapes.get(builtin);
+      if (field) {
+        title = field.Title;
+      } else if (shapes.truncated) {
+        // Missing from a page that may have ended early is not missing from the list (#577).
+        const fieldPath = fieldShapePath(listName, builtin);
+        const r = await fetchWithRetry(apiUrl(`${fieldPath}?$select=Title`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!r.ok) {
+          const text = await r.text();
+          if (r.status === 404 || isAbsent400(r.status, text)) return notChecked('was not found');
+          return notChecked(`could not be read: HTTP ${r.status} ${text}`);
+        }
+        const j = await r.json();
+        title = j && j.d ? j.d.Title : undefined;
+      } else {
+        return notChecked('was not found');
+      }
     } catch (err) {
       return notChecked(`could not be read: ${err.message}`);
     }
