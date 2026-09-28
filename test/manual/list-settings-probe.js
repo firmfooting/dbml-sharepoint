@@ -1,15 +1,15 @@
-/**
- * dbml-sharepoint PROBE: WHICH SP.List SETTINGS ACTUALLY STICK?
+
+/** ---- dbml-sharepoint PROBE: WHICH SP.List SETTINGS ACTUALLY STICK? ----
  *
  * ONE QUESTION:
  *   For each writeable setting on SP.List, does writing a non-default value
  *   through the ordinary MERGE path actually change the container, on a
  *   GENERIC LIST and on a DOCUMENT LIBRARY, which may not answer the same?
  *
- * REVISION: 7d36ee80
+ * REVISION: 6a34d5e6
  *
  * WHY: attachments are disabled on every list before go-live as a MANUAL
- * step, on ten lists in programme-governance alone, because there is no
+ * step, on the ten lists of one blueprint alone, because there is no
  * `attachments` key in mapping.yaml and the deployer neither sets nor
  * reconciles the setting. The declarative `attachments:` setting that would
  * replace that step has been designed but never measured, and the same is
@@ -454,7 +454,7 @@
   // up. Destructive, so it ships false like every other guard.
   const CLEANUP_AT_END = false;
 
-  log('INFO', 'probe revision 7d36ee80. Quote this when reporting results.');
+  log('INFO', 'probe revision 6a34d5e6. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe ListSettings';
   const LIB = 'dbmlsp Probe ListSettings Lib';

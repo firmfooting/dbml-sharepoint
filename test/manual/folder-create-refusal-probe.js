@@ -1,7 +1,7 @@
-/**
- * dbml-sharepoint PROBE: WHY A DECLARED FOLDER CREATE IS REFUSED
+
+/** ---- dbml-sharepoint PROBE: WHY A DECLARED FOLDER CREATE IS REFUSED ----
  *
- * REVISION: 13ae0222
+ * REVISION: 86d4b94f
  *
  * ONE QUESTION:
  *   folders/add(url=) is measured working. On a live deploy it answered
@@ -14,8 +14,8 @@
  * created by POSTing `{Title, BaseTemplate: 101, Description}`. What the
  * deploy sends differs in two ways at once, and either could be the cause:
  *
- *   1. The folder NAME carries spaces. Every folder the shipped
- *      legal-compliance-register declares does ("Clinical services"), and no
+ *   1. The folder NAME carries spaces. Every folder a shipped library
+ *      declares does ("Records management"), and no
  *      probe has created a folder whose name is not a single hyphenated word.
  *   2. The LIBRARY was created with `ContentTypesEnabled: false`, which
  *      generators/jsgen.py sets on every list it declares and which no probe
@@ -409,7 +409,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 13ae0222. Quote this when reporting results.');
+  log('INFO', 'probe revision 86d4b94f. Quote this when reporting results.');
 
   const LIB_DEFAULT = 'dbmlsp Probe Folder Default';
   const LIB_NOCT = 'dbmlsp Probe Folder NoCT';

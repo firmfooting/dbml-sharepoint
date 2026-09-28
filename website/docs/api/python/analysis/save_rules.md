@@ -52,7 +52,7 @@ Sydney", at 10:57 local, with the server clock correct:
   and saved. Not yet observed: grid view refusing tomorrow, and the bulk
   Edit pane. SharePoint reads `[DM]<=[Modified]` back as `DM<=Modified`.
 
-CORROBORATED in production 2026-09-12, on a live programme-governance site:
+CORROBORATED on a live site:
 actions saved with `CompletedDate` blank, under the rule this module hoists
 and guards. That exercises the GUARD, so it says nothing about an unguarded
 blank operand, which stays unmeasured for the numeric columns issue #156

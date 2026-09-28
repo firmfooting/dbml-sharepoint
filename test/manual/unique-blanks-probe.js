@@ -1,7 +1,7 @@
-/**
- * dbml-sharepoint PROBE: DOES A UNIQUE TEXT COLUMN ACCEPT MORE THAN ONE BLANK
+
+/** ---- dbml-sharepoint PROBE: DOES A UNIQUE TEXT COLUMN ACCEPT MORE THAN ONE BLANK ----
  *
- * REVISION: 513f271b
+ * REVISION: ee4412b2
  *
  * ONE QUESTION:
  *   On a single-line text column with EnforceUniqueValues, do two items that
@@ -10,8 +10,8 @@
  *
  * A `[unique]` column without `[not null]` is a shape the validator warns on
  * (`unique_without_not_null`: "uniqueness enforced only on populated
- * values") and a shipped family relies on: legal-compliance-register's
- * `Topic.ExternalRef` is unique and its note says to leave it blank when the
+ * values") and a shipped blueprint relies on: its `Topic.ExternalRef` is
+ * unique and its note says to leave it blank when the
  * portal export has no identifier. That wording is a claim about what the
  * platform does with two blanks under the constraint, and nothing has
  * measured it. SQL Server, which backs the content database, treats two
@@ -395,7 +395,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision 513f271b. Quote this when reporting results.');
+  log('INFO', 'probe revision ee4412b2. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Unique List';
   const listPath = `web/lists/getbytitle('${LIST}')`;

@@ -68,8 +68,8 @@ DEFAULT_FORMULA_TYPES: frozenset[str] = frozenset({
 #: as pending until default-formula-functions-probe.js measured each on the
 #: same date: one column per function, every one stored as sent and filled on
 #: a bare item create (`field.default-formula.function-day-fills` and its six
-#: neighbours). The same run measured the two financial-year formulas the
-#: legal-compliance-register README offers
+#: neighbours). The same run measured the two financial-year formulas a
+#: shipped README offered
 #: (`field.default-formula.shipped-financial-year-fills`,
 #: `field.default-formula.shipped-financial-quarter-fills`).
 DEFAULT_FORMULA_FUNCTIONS: frozenset[str] = frozenset({

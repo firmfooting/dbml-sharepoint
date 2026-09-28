@@ -579,10 +579,9 @@ def _base_call(name: str) -> str:
     so two queries whose reporting-only columns read each other would name
     each other, which in M is a cyclic reference and fails only at refresh:
     the text parses, the model loads and every name resolves. Reported
-    2026-09-18 against 4.0.0 by a consumer of programme-governance, whose
-    ten queries formed six mutual pairs and twelve cycles, and nine could
-    not refresh. A base function reads no query, so no chain of reads can
-    return to where it started.
+    against 4.0.0 from a blueprint whose ten queries formed six mutual
+    pairs and twelve cycles, and nine could not refresh. A base function
+    reads no query, so no chain of reads can return to where it started.
 
     Called with `SiteRoot`, this query's own site, rather than the raw
     `SiteUrl`: the function normalises what it is given by the same steps,
@@ -648,9 +647,8 @@ def _derived_m(plan: ListPlan, prev: str) -> tuple[list[str], str]:
         # name: in M a query whose expression names itself is a cyclic
         # reference, and the refresh fails. Nothing short of a refresh can
         # see it: the text parses, the model loads, and the name resolves,
-        # to the query being defined. Reported 2026-09-17 against 4.0.0 by
-        # a consumer of programme-governance, whose Decision list reads its
-        # own rows to find the decision that superseded each one.
+        # to the query being defined. Reported against 4.0.0 by a list
+        # reading its own rows to find the row that superseded each one.
         if not entry.reads:
             lines += [
                 "    // Reads this query's own rows as they stand at the step",

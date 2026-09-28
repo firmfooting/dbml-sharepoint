@@ -42,7 +42,7 @@ def base_query_name(title: str) -> str:
     columns, and two lists whose reporting-only columns read each other
     would name each other, which in M is a cyclic reference that fails only
     at refresh. The base reads no other query, so no chain of reads can
-    return to where it started. Reported 2026-09-18 against a
-    programme-governance pack whose ten queries formed twelve such cycles.
+    return to where it started. Reported against a blueprint whose ten
+    queries formed twelve such cycles.
     """
     return query_name(title, BASE_SUFFIX)

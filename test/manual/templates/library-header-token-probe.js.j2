@@ -1,6 +1,6 @@
 {# test/manual/templates/library-header-token-probe.js.j2 #}
-/**
- * dbml-sharepoint PROBE: WHICH TOKENS A LIBRARY FORM HEADER CAN READ
+
+/** ---- dbml-sharepoint PROBE: WHICH TOKENS A LIBRARY FORM HEADER CAN READ ----
  *
  * REVISION: {{ revision }}
  *
@@ -9,10 +9,10 @@
  *   and renders nothing. Which column tokens does that header actually
  *   resolve at render time?
  *
- * OBSERVED on a live display form 2026-09-13: the shipped
- * legal-compliance-register library's header title line reads
- * `=if([$FileLeafRef] == '', 'New SAQ', [$FileLeafRef])` and rendered EMPTY,
- * collapsing the header so its description line sat beside the icon.
+ * OBSERVED on a live display form 2026-09-13: a shipped library's header
+ * title line reads `=if([$FileLeafRef] == '', 'New policy', [$FileLeafRef])`
+ * and rendered EMPTY, collapsing the header so its description line sat
+ * beside the icon.
  *
  * What had been measured is only that a library content type ACCEPTS such a
  * header: `library.doc-lib.header-fileleafref` in document-library-probe.js,
@@ -77,7 +77,7 @@
  *     dbmlspChoice              -> [Q3]
  *     dbmlspNumber              -> [2026]
  *     (the dbmlspDate line)        the WHOLE line rendered `Invalid Date`
- *     dbmlspLookup              -> [1;#Privacy and health records]
+ *     dbmlspLookup              -> [1;#Records management policy]
  *     dbmlspLookup.lookupValue  -> []
  *
  * So a header CAN read a declared column, which is what makes a meaningful
@@ -234,10 +234,10 @@
   const FILE = 'dbmlsp-header-probe.txt';
   // Round three. Every file-identity spelling is dead, so the only header a
   // family can build is one made of its own declared columns. These are the
-  // TYPES the shipped legal-compliance-register header would need, each
+  // TYPES a shipped library's header would need, each
   // created on the library and given a value before the header is asked.
   const TARGET = 'dbmlsp Probe Header Lookup Target';
-  const TARGET_ROW = 'Privacy and health records';
+  const TARGET_ROW = 'Records management policy';
   // Every entity type and FieldTypeKind here is the one analysis/typemap.py
   // already maps that column kind to, so the fixture is the shape the deploy
   // would really create rather than a probe-only approximation.
@@ -297,7 +297,7 @@
     ['K2 Modified', "=' K2 Modified -> [' + [$Modified] + ']'"],
 
     // ---- L: getting a display value out of a lookup ---------------------
-    // L1 measured `1;#Privacy and health records` and L2 measured empty
+    // L1 measured `1;#Records management policy` and L2 measured empty
     // (revision 24752514). The rest are every remaining route to the value
     // without the `<id>;#` prefix. L5 is the one the deploy could already
     // build today: a read-only projected lookup, which is how it ships

@@ -231,13 +231,13 @@ filter) or a smaller curated target list. Neither is expressible in
 
 ```yaml
 entities:
-  SAQ:
+  Policy:
     kind: DocumentLibrary
     base_template: 101
     site_role: default
     folders:
-      - "Clinical services"
-      - "Corporate services"
+      - "Operations"
+      - "Corporate"
 ```
 
 Where the folders are the values of one of the library's own Choice columns,
@@ -245,7 +245,7 @@ name the enum instead of writing them out again:
 
 ```yaml
 entities:
-  SAQ:
+  Policy:
     kind: DocumentLibrary
     base_template: 101
     site_role: default
@@ -258,7 +258,7 @@ that is not a move: the folder phase creates a declared folder it cannot find
 and never renames or removes one, so renaming a member adds the new folder
 and leaves the old one and its files where they are. Move the content and
 delete the old folder by hand. Written out twice they drift silently:
-the shipped legislative compliance register declared four divisions in its
+a shipped library declared four divisions in its
 DBML and the same four in its `folders`, an edit to the enum left the list
 behind, and the deploy created four folders no `Division` value could match.
 Nothing in the build, the assessment or the deploy could see the
@@ -866,7 +866,7 @@ display_names:
   mode: auto
   overrides:
     Risk:
-      RiskManReference: "RiskMan Ref"
+      RegisterReference: "Register Ref"
 ```
 
 Internal names stay authoritative (they are what the schema, lookups
@@ -1583,7 +1583,7 @@ live-verified operand matrix is in the
 
 ```yaml
 default_formulas:
-  SAQ:
+  Return:
     PeriodYear: "=YEAR(TODAY())"
     Quarter: "=\"Q\"&ROUNDUP(MONTH(TODAY())/3,0)"
 ```
@@ -1791,7 +1791,7 @@ no SQL to translate to.
 
 :::warning Load each query under the name of its file
 A query that reads another list calls that list's base function, so
-`GOV_Risk_Base.pq` must be loaded as `GOV_Risk_Base` beside `GOV_Risk`. The
+`APP_Risk_Base.pq` must be loaded as `APP_Risk_Base` beside `APP_Risk`. The
 function fetches the list's rows for the site URL it is given, and Power BI
 does not load a function to the model. A duplicated query pointed at another
 site calls each base with that site, so its reporting-only columns follow the
@@ -2542,16 +2542,16 @@ live in a file beside the mapping; see [`demo_source`](#demo_source).
 
 ```yaml
 demo_items:
-  SAQ:
-    - key: saq-privacy
+  Policy:
+    - key: policy-records
       values:
-        Topic: { demo_ref: topic-privacy }
-        Division: "Clinical services"
+        Topic: { demo_ref: topic-records }
+        Division: "Operations"
         Status: "Required"
       file:
-        name: "[DEMO] Privacy and health records - 2026 Q3.txt"
-        folder: "Clinical services"
-        content: "Sample self-assessment questionnaire."
+        name: "[DEMO] Records management policy - 2026 Q3.txt"
+        folder: "Operations"
+        content: "Sample policy document."
 ```
 
 A row on a `DocumentLibrary` must declare `file` (a row on a list may

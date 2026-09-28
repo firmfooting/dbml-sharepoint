@@ -264,7 +264,6 @@ PINNED: dict[str, list[str]] = {
         "f7d51c22b7dc",
     ],
     "src/dbml_sharepoint/generators/report_m.py": [
-        "1567cfe6030a",
         "5b2cf0023b4f",
         "5d89bffa66da",
         "663a1f5f56e2",
@@ -364,9 +363,6 @@ PINNED: dict[str, list[str]] = {
     "src/dbml_sharepoint/templates/_formula_canonical.js.j2": [
         "16a09e9bd77b",
         "b996efcc0363",
-    ],
-    "src/dbml_sharepoint/templates/_get_list_by_path.js.j2": [
-        "48050c3bfba2",
     ],
     "src/dbml_sharepoint/templates/_guid.js.j2": [
         "a8f846ac59ad",
@@ -683,9 +679,6 @@ PINNED: dict[str, list[str]] = {
         "3561bb539f61",
         "5d644db0574b",
     ],
-    "test/manual/templates/default-formula-functions-probe.js.j2": [
-        "df4d4369995a",
-    ],
     "test/manual/templates/default-formula-readback-probe.js.j2": [
         "97889a9e69c0",
     ],
@@ -713,9 +706,6 @@ PINNED: dict[str, list[str]] = {
     ],
     "test/manual/templates/file-operations-probe.js.j2": [
         "24c6f5e35302",
-    ],
-    "test/manual/templates/folder-create-refusal-probe.js.j2": [
-        "d74e1d94195a",
     ],
     "test/manual/templates/folder-probe.js.j2": [
         "a4112e55237c",
@@ -786,7 +776,6 @@ PINNED: dict[str, list[str]] = {
         "c5f5742b5465",
     ],
     "test/manual/templates/library-header-token-probe.js.j2": [
-        "088d41e35bb8",
         "172fbd0e450d",
         "34316fd94c13",
         "6a149528323a",
@@ -878,7 +867,6 @@ PINNED: dict[str, list[str]] = {
     "test/manual/templates/list-settings-probe.js.j2": [
         "4246187b54c8",
         "6f5605730047",
-        "ef9d4c417528",
     ],
     "test/manual/templates/lookup-acl-probe.js.j2": [
         "5d673630030c",
@@ -995,9 +983,6 @@ PINNED: dict[str, list[str]] = {
     "test/manual/templates/today-source-probe.js.j2": [
         "2e5e465528d9",
     ],
-    "test/manual/templates/unique-blanks-probe.js.j2": [
-        "d815aa8b3e7e",
-    ],
     "test/manual/templates/unique-transition-probe.js.j2": [
         "aa2d1b30fea6",
     ],
@@ -1016,7 +1001,6 @@ PINNED: dict[str, list[str]] = {
     "test/manual/title-rename-probe.js": [
         "660d382fcf68",
         "d6d9cee2d95f",
-        "e1172e243c78",
     ],
     "test/manual/title-seal-probe.js": [
         "660d382fcf68",

@@ -857,12 +857,12 @@ def _drop_chosen_from_previous_prefixes(
     """`text` with `prefix` removed from its `previous_prefixes` declaration.
 
     The prefix gate can hand the copy the very stem the template already
-    lists as a previous one. `programme-governance` declares
-    `previous_prefixes: ["", "ADOPT_"]` because its live site was
-    provisioned unprefixed, and pressing Enter at the gate (the default)
-    chooses "". `_parse_previous_prefixes` refuses that pair, so the wizard
-    wrote the mapping and then failed loading it back, naming the loader
-    rather than the answer that caused it (#378).
+    lists as a previous one. A blueprint whose first site was provisioned
+    unprefixed declares "" among its previous prefixes, and pressing Enter
+    at the gate (the default) chooses "". `_parse_previous_prefixes`
+    refuses that pair, so the wizard wrote the mapping and then failed
+    loading it back, naming the loader rather than the answer that caused
+    it (#378).
 
     DROPPING THE ENTRY LOSES NO MIGRATION PATH. Both consumers build their
     candidate stems as `[prefix, *previous_prefixes]` -- `previous_titles`

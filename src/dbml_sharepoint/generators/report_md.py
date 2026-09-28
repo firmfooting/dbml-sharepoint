@@ -29,8 +29,13 @@ from dbml_sharepoint.analysis.reporting.dictionary import (
     metadata_rows,
     users_dictionary_rows,
 )
-from dbml_sharepoint.analysis.reporting.names import query_name
-from dbml_sharepoint.analysis.reporting.plan import ListPlan, build_plans, tables_for_role
+from dbml_sharepoint.analysis.reporting.names import base_query_name, query_name
+from dbml_sharepoint.analysis.reporting.plan import (
+    ListPlan,
+    build_plans,
+    read_by_another,
+    tables_for_role,
+)
 from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.analysis.timezones import WINDOW_END, WINDOW_START, zone_table
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
@@ -131,6 +136,7 @@ def generate_reporting_md(
     with.
     """
     plans = build_plans(schema, bundle, site_role, time_zone=time_zone)
+    example_title, example_base = _base_example(plans)
     system_columns = bundle.mapping.reporting.system_columns
     users_table = bundle.mapping.reporting.users_table
     setup_step = (
@@ -327,11 +333,11 @@ def generate_reporting_md(
         "",
         ":::warning Load each query under the name of its file",
         ("A query that reads another list calls that list's base function "
-         "by name, so `GOV_Risk_Base.pq` must be loaded as `GOV_Risk_Base` "
-         "for a query that reads Risk to resolve. Renaming it breaks every "
-         "derived column that reads it, at refresh, and the error names "
-         "only the first missing import. A base function fetches the "
-         "list's rows for the site URL it is given, keyed like the list's "
+         f"by name, so `{example_base}.pq` must be loaded as `{example_base}` "
+         f"for a query that reads `{example_title}` to resolve. Renaming it "
+         "breaks every derived column that reads it, at refresh, and the "
+         "error names only the first missing import. A base function fetches "
+         "the list's rows for the site URL it is given, keyed like the list's "
          "query and without its reporting-only columns. No query reads "
          "another query, because two queries that read each other are a "
          "cyclic reference that only a refresh can see. Power BI does not "
@@ -391,6 +397,19 @@ def generate_reporting_md(
 
 
 # ---------------------------------------------------------- Data dictionary
+
+
+def _base_example(plans: list[ListPlan]) -> tuple[str, str]:
+    """A list of this build that has a base function, with that function's name.
+
+    The loading warning names a real file of the pack, so the operator can
+    check it against the folder rather than translate an invented one. A
+    build in which no query reads another list gets a neutral name.
+    """
+    based = read_by_another(plans)
+    if not based:
+        return "Risk", "Risk_Base"
+    return based[0].list_title, base_query_name(based[0].list_title)
 
 
 def _reads_paragraphs(plans: list[ListPlan]) -> list[str]:

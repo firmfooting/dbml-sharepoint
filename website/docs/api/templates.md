@@ -147,7 +147,7 @@ Shared formula canonicalisation: how a stored Formula or ValidationFormula is co
 
 Included by: `_maintain_list.js.j2`, `extract.js.j2`
 
-Resolve one list by its server-relative URL rather than by its title. Expects `apiUrl` and `odataName`, both emitted by `_site_guard.js.j2`. WHY NOT getbytitle. A list renamed in place keeps the slug it was created with, which is this project's own documented behaviour and the point of `renamed_from`. So on any site that has been through a rename, the segment the address bar shows is NOT the list's title, and every script that resolves by that segment 404s on its first read. Seen live 2026-09-03 (issue #385): lists answering at /Lists/ProgramRisk/ titled GOV_Risk. `web/GetList` takes the server-relative URL instead, which is the string the operator actually copied. Microsoft Learn, "Working with lists and list items with REST", documents the alias-parameter form used here. The deploy, rollback, verify and assess scripts keep getbytitle and are right to: the mapping DECLARES those titles and the deploy renames lists to match. Only the operator-pasted scripts infer a name from a URL.
+Resolve one list by its server-relative URL rather than by its title. Expects `apiUrl` and `odataName`, both emitted by `_site_guard.js.j2`. A list renamed in place keeps the slug it was created with, which is the documented point of `renamed_from`, so after a rename the segment the address bar shows is NOT the title and a by-title read 404s. Seen live (issue #385): lists answering at their original slug under a new title.
 
 ### `_guid.js.j2`
 
