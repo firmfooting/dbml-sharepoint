@@ -672,7 +672,6 @@ PINNED: dict[str, list[str]] = {
     ],
     "test/manual/templates/date-storage-probe.js.j2": [
         "6ae03025a8d2",
-        "f73e0dc737e6",
     ],
     "test/manual/templates/datetime-sentinel-probe.js.j2": [
         "29e37175490c",

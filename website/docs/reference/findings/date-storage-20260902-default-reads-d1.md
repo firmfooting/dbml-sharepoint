@@ -16,6 +16,6 @@ lanes: machine
 ## machine
 
 - Outcome: `FAIL`
-- Evidence: could not read 'ADOPT\_ProgramAction': HTTP 404
+- Evidence: could not read 'APP\_Action': HTTP 404
 
 [All findings](../live-findings)

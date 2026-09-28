@@ -57,9 +57,11 @@ _FORBIDDEN: dict[int, frozenset[str]] = {
         "67521ce791506a8273d7308b1bcd6e566f1b376b7a83bf4511927addd9f74678",
     }),
     17: frozenset({
+        "5e550e62ffed7a2f84e0abe4cc72595c74cfa75be408546c1b1198f65dc0e8ef",
         "93075575be307a2e8e7190917ac42f2f452078653efd959b38143e4e4be66469",
     }),
     18: frozenset({
+        "24fb5e9e616c6da1f8a089839e60b6aecf6e8652fb5cfc1f1707bab510afaf44",
         "520a72c3256bcf3c18827c331cf10fa997255f19e1990d6f58b01087083b59d7",
     }),
     19: frozenset({
@@ -170,7 +172,7 @@ def test_nothing_tracked_names_the_customer_or_a_held_blueprint() -> None:
 def test_the_forbidden_names_are_pinned_in_number_and_shape() -> None:
     """An emptied table would pass every file, so pin its size and shape."""
     digests = [d for group in _FORBIDDEN.values() for d in group]
-    assert len(digests) == 29
+    assert len(digests) == 31
     assert all(re.fullmatch(r"[0-9a-f]{64}", d) for d in digests)
     assert all(3 <= length <= 40 for length in _FORBIDDEN)
 

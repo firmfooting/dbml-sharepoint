@@ -1,5 +1,5 @@
-/**
- * dbml-sharepoint PROBE (READ-ONLY): WHAT INSTANT A DATE-ONLY COLUMN STORES
+
+/** ---- dbml-sharepoint PROBE (READ-ONLY): WHAT INSTANT A DATE-ONLY COLUMN STORES ----
  *
  * QUESTION: when the modern form saves a date-only value, does SharePoint
  * store it as midnight in the SITE's zone, or as midnight UTC (which reads
@@ -23,7 +23,7 @@
  * midnight, 10:00 local. Compare a form-picked date with a server-filled one.
  *
  * HOW TO RUN: set LIST1 and LIST2 to name two lists on the site (the defaults
- * are the adoption program's); the date columns printed follow READS below.
+ * are placeholders); the date columns printed follow READS below.
  * F12 -> Console, paste, Enter; set CONFIRMED = true and paste again. Copy the
  * RESULTS block back.
  */
@@ -353,8 +353,8 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  const LIST1 = 'ADOPT_ProgramAction';
-  const LIST2 = 'ADOPT_ProgramIssue';
+  const LIST1 = 'APP_Action';
+  const LIST2 = 'APP_Issue';
   const COLUMNS1 = 'DueDate,CompletedDate';
   const COLUMNS2 = 'RaisedDate,ResolvedDate';
 
