@@ -34,8 +34,12 @@ Corollaries:
   values it **observes**. Asserting over the second kind makes the experiment
   kill itself the moment it starts working, and that looks identical to a real
   failure.
-- If a live run teaches you something, encode it: a dated comment, a pinned test,
-  a design-doc revision.
+- If a live run teaches you something, encode it: record the evidence in the
+  findings records (an evidence package in the probes repository, which feeds
+  `website/docs/reference/live-findings.md`), pin the behaviour with a test, and
+  revise the design doc.
+  Keep the evidence itself (dates, observed values, which site) out of comments
+  and code; a comment may name the finding or probe it relies on.
 
 ## Gates
 
