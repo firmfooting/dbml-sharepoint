@@ -2546,12 +2546,12 @@ def test_a_document_library_query_carries_the_file_name_and_path() -> None:
 
 
 def test_a_document_library_dictionary_says_a_row_is_a_file() -> None:
-    schema, bundle = _with_task_as_library(folders=("Operations", "Corporate"))
+    schema, bundle = _with_task_as_library(folders=("Field operations", "Corporate"))
     dictionary = generate_data_dictionary(
         schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
     )
     assert "each row is a file, named by FileLeafRef" in dictionary
-    assert "filed in one of: Operations, Corporate." in dictionary
+    assert "filed in one of: Field operations, Corporate." in dictionary
 
 
 def test_a_server_relative_folder_is_made_absolute_by_the_site_origin() -> None:

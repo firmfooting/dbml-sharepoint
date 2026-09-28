@@ -7,7 +7,7 @@ entities:
     base_template: 101
     site_role: default
     folders:
-      - "Operations"
+      - "Field operations"
       - "Corporate"
 
 cross_site_reference_columns: []

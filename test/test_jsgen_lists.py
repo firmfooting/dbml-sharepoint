@@ -120,11 +120,11 @@ def _library_schema_json(
 def test_a_library_list_carries_its_folders_and_kind_flag(tmp_path: Path) -> None:
     """The folder phase and the seeding script key on these two fields."""
     schema_json = _library_schema_json(
-        tmp_path, "DocumentLibrary", 101, 'folders: ["Operations", "Corporate"]',
+        tmp_path, "DocumentLibrary", 101, 'folders: ["Field operations", "Corporate"]',
     )
     doc = next(lst for lst in schema_json["lists"] if lst["title"] == "APP_Doc")
     assert doc["is_library"] is True
-    assert doc["folders"] == ["Operations", "Corporate"]
+    assert doc["folders"] == ["Field operations", "Corporate"]
     as_list = _library_schema_json(tmp_path / "list", "List", 100)
     plain = next(lst for lst in as_list["lists"] if lst["title"] == "APP_Doc")
     assert plain["is_library"] is False
@@ -145,7 +145,7 @@ def test_a_library_takes_its_folders_from_the_named_enum(tmp_path: Path) -> None
     schema, bundle = pack(
         tmp_path,
         dbml=(
-            'Enum division {\n  "Operations"\n  "Corporate & community"\n}\n'
+            'Enum division {\n  "Field operations"\n  "Corporate & community"\n}\n'
             + table("Doc", ID_PK, TITLE, "Division division")
         ),
         mapping="""
@@ -163,7 +163,7 @@ def test_a_library_takes_its_folders_from_the_named_enum(tmp_path: Path) -> None
     doc = next(lst for lst in schema_json["lists"] if lst["title"] == "APP_Doc")
     members = next(e.members for e in schema.enums if e.name == "division")
     assert doc["folders"] == list(members) == [
-        "Operations", "Corporate & community",
+        "Field operations", "Corporate & community",
     ]
 
 

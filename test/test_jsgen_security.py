@@ -106,10 +106,10 @@ def test_acl_scopes_emits_each_list_scope_before_its_own_folder_scopes(
     shape = [(row["list"], row.get("folder")) for row in out["acl_scopes"]]
     assert shape == [
         (docs, None),
-        (docs, "Operations"),
+        (docs, "Field operations"),
         (docs, "Corporate"),
         (policies, None),
-        (policies, "Operations"),
+        (policies, "Field operations"),
         (policies, "Corporate"),
     ], shape
     # Absent, not null: every JavaScript consumer filters on `!s.folder`.

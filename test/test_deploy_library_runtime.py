@@ -36,7 +36,7 @@ entities:
     kind: DocumentLibrary
     base_template: 101
     site_role: default
-    folders: ["Operations"]
+    folders: ["Field operations"]
 """
 
 #: A library whose one folder carries its own ACL. The folder policy names
@@ -57,7 +57,7 @@ groups:
   - name: "List Maintainer"
     description: "Test group."
     owner_group: "Site Owners"
-  - name: "Operations Editors"
+  - name: "Field operations Editors"
     description: "One folder's editors."
     owner_group: "Site Owners"
 
@@ -90,7 +90,7 @@ permission_levels:
       - EditListItems
 
 groups:
-  - name: "Operations Editors"
+  - name: "Field operations Editors"
     description: "One folder's editors."
     owner_group: "Site Owners"
 
@@ -127,7 +127,7 @@ groups:
   - name: "List Maintainer"
     description: "Test group."
     owner_group: "Site Owners"
-  - name: "Operations Editors"
+  - name: "Field operations Editors"
     description: "One folder's editors."
     owner_group: "Site Owners"
 
@@ -271,20 +271,20 @@ _FOLDER_JS = r"""globalThis.fetch = async (url, opts = {}) => {
       url: requested, method: opts.method || 'GET', body: opts.body || null,
     });
     globalThis.__folderCreated = true;
-    return folderAnswer({ d: { Name: 'Operations' } });
+    return folderAnswer({ d: { Name: 'Field operations' } });
   }
   if (requested.includes('/ListItemAllFields')) {
     // Id is what the ACL phase addresses the folder by; __folderIdMissing
     // models a tenant that answers the read without it.
     const item = { FileSystemObjectType: 1,
-      FileRef: '/sites/test/APP_Escalation/Operations' };
+      FileRef: '/sites/test/APP_Escalation/Field operations' };
     if (!globalThis.__folderIdMissing) item.Id = 1;
     return folderAnswer({ d: item });
   }
   if (requested.includes('GetFolderByServerRelativeUrl(')) {
     return folderAnswer({ d: {
-      Exists: Boolean(globalThis.__folderCreated), Name: 'Operations',
-      ServerRelativeUrl: '/sites/test/APP_Escalation/Operations',
+      Exists: Boolean(globalThis.__folderCreated), Name: 'Field operations',
+      ServerRelativeUrl: '/sites/test/APP_Escalation/Field operations',
     } });
   }
   // ONE item, re-read inside the ownership bracket before the folder is
@@ -295,14 +295,14 @@ _FOLDER_JS = r"""globalThis.fetch = async (url, opts = {}) => {
     globalThis.__calls.push({ url: requested, method: opts.method || 'GET', body: null });
     return folderAnswer({ d: globalThis.__folderIdentity || {
       FileSystemObjectType: 1,
-      FileRef: '/sites/test/APP_Escalation/Operations',
+      FileRef: '/sites/test/APP_Escalation/Field operations',
     } });
   }
   if (requested.includes('FileSystemObjectType')) {
     globalThis.__calls.push({ url: requested, method: opts.method || 'GET', body: null });
     const rows = (globalThis.__folderCreated && !globalThis.__folderMissing)
-      ? [{ Id: 1, FileSystemObjectType: 1, FileLeafRef: 'Operations',
-          FileRef: '/sites/test/APP_Escalation/Operations',
+      ? [{ Id: 1, FileSystemObjectType: 1, FileLeafRef: 'Field operations',
+          FileRef: '/sites/test/APP_Escalation/Field operations',
           HasUniqueRoleAssignments: Boolean(globalThis.__folderScoped) }] : [];
     // A file somebody shared by hand: a descendant scope this bundle never
     // declared, which the ACL phase must still refuse to run past.
@@ -715,7 +715,7 @@ def test_a_declared_folder_is_created_by_the_whole_deploy(tmp_path: Path) -> Non
         _library_harness(declared_folder=True), _library_deploy_js(tmp_path, _FOLDERED_LIBRARY),
     )
     assert summary["errors"] == [], summary["errors"]
-    assert summary["foldersCreated"] == ["APP_Escalation/Operations"]
+    assert summary["foldersCreated"] == ["APP_Escalation/Field operations"]
 
 
 @pytest.mark.parametrize("types", [[1, 0], [0, 1]])
@@ -725,7 +725,7 @@ def test_folder_deploy_diagnoses_the_root_collision_after_a_refused_create(
     rows = [
         {"FileSystemObjectType": value,
          "FileRef": "/sites/test/APP_Escalation/"
-         + ("Nested/Operations" if value else "Operations")}
+         + ("Nested/Field operations" if value else "Field operations")}
         for value in types
     ]
     harness = _library_harness(declared_folder=True).replace(
@@ -745,7 +745,7 @@ def test_folder_deploy_diagnoses_the_root_collision_after_a_refused_create(
 
 @pytest.mark.parametrize("payload", [
     None, [], "bad", 0, {}, {"FileSystemObjectType": 1},
-    {"FileSystemObjectType": 0, "FileRef": "/sites/test/APP_Escalation/Operations"},
+    {"FileSystemObjectType": 0, "FileRef": "/sites/test/APP_Escalation/Field operations"},
     {"FileSystemObjectType": 1, "FileRef": "/wrong"},
 ])
 @pytest.mark.parametrize("after_create", [False, True])
@@ -777,7 +777,7 @@ def test_whole_deploy_verifies_folder_paths_without_unindexed_queries(
     summary, _calls, _reads = _run(harness, _library_deploy_js(tmp_path, _FOLDERED_LIBRARY))
     assert summary["errors"] == [], summary["errors"]
     key = "foldersVerified" if existing else "foldersCreated"
-    assert summary[key] == ["APP_Escalation/Operations"]
+    assert summary[key] == ["APP_Escalation/Field operations"]
 
 
 @pytest.mark.parametrize("next_page", [False, True, 0, 1, [], {}])
@@ -1513,10 +1513,10 @@ def test_a_folder_that_no_longer_reads_back_at_its_path_is_refused(
 #: scope, which is the shape that made the enrolment preflight read an empty
 #: level list and enrol the account without judging any bitmap.
 _FOLDER_ONLY_READER_LIBRARY = _TWO_LEVEL_CONFIGURED_LIBRARY.replace(
-    '  - name: "Operations Editors"\n'
+    '  - name: "Field operations Editors"\n'
     "    description: \"One folder's editors.\"\n"
     '    owner_group: "Site Owners"\n',
-    '  - name: "Operations Editors"\n'
+    '  - name: "Field operations Editors"\n'
     "    description: \"One folder's editors.\"\n"
     '    owner_group: "Site Owners"\n'
     "    enroll_enterprise_reader: true\n",
@@ -1675,6 +1675,6 @@ def test_a_declared_folder_that_does_not_exist_is_refused(tmp_path: Path) -> Non
     """
     summary, calls = _folder_acl_run(tmp_path, missing=True)
     messages = [e["error"] for e in summary["errors"]]
-    assert any("declared folder 'Operations' was not found" in m for m in messages), \
+    assert any("declared folder 'Field operations' was not found" in m for m in messages), \
         messages
     assert not any("items(undefined)" in c["url"] for c in calls)

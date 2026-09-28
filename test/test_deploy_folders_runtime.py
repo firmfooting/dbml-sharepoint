@@ -229,17 +229,17 @@ def test_a_declared_folder_is_created_under_the_root_and_read_back() -> None:
     """MEASURED 2026-09-03, `library.folder.creation-path`: the create is a
     POST to folders/add(url=) under the library root, and the folder reads
     back as an SP.Folder with a list item of FileSystemObjectType 1."""
-    result = _run_phase(_state(), [_library("Operations", "Corporate")])
+    result = _run_phase(_state(), [_library("Field operations", "Corporate")])
     assert result["summary"]["errors"] == []
-    assert result["summary"]["foldersCreated"] == ["APP_Doc/Operations", "APP_Doc/Corporate"]
+    assert result["summary"]["foldersCreated"] == ["APP_Doc/Field operations", "APP_Doc/Corporate"]
     assert result["summary"]["foldersVerified"] == []
     root_api = "https://example.sharepoint.com/sites/test/_api/web/GetFolderByServerRelativeUrl"
     assert result["posts"] == [
-        f"{root_api}('/sites/test/APP_Doc')/folders/add(url='Operations')",
+        f"{root_api}('/sites/test/APP_Doc')/folders/add(url='Field operations')",
         f"{root_api}('/sites/test/APP_Doc')/folders/add(url='Corporate')",
     ]
     assert [c["key"] for c in result["changes"]] == [
-        "folder: APP_Doc/Operations", "folder: APP_Doc/Corporate",
+        "folder: APP_Doc/Field operations", "folder: APP_Doc/Corporate",
     ]
 
 
@@ -256,12 +256,12 @@ _ABSENT_READS = {
 def test_a_folder_read_answering_absent_creates_the_folder(absence: str) -> None:
     """`readFolder` takes a 404 or an absent-400 as "no folder", so it is created (#632)."""
     result = _run_phase(
-        _state(absentReadAs=_ABSENT_READS[absence]), [_library("Operations")],
+        _state(absentReadAs=_ABSENT_READS[absence]), [_library("Field operations")],
     )
     assert result["summary"]["errors"] == []
-    assert result["summary"]["foldersCreated"] == ["APP_Doc/Operations"]
+    assert result["summary"]["foldersCreated"] == ["APP_Doc/Field operations"]
     (post,) = result["posts"]
-    assert "folders/add(url='Operations')" in post
+    assert "folders/add(url='Field operations')" in post
 
 
 def test_an_existing_folder_is_verified_and_not_recreated() -> None:
@@ -273,10 +273,10 @@ def test_an_existing_folder_is_verified_and_not_recreated() -> None:
     folder already holds answers HTTP 200 and returns that folder, so a read
     that raced one would cost nothing either.
     """
-    result = _run_phase(_state(existing=["Operations"]), [_library("Operations")])
+    result = _run_phase(_state(existing=["Field operations"]), [_library("Field operations")])
     assert result["summary"]["errors"] == []
     assert result["summary"]["foldersCreated"] == []
-    assert result["summary"]["foldersVerified"] == ["APP_Doc/Operations"]
+    assert result["summary"]["foldersVerified"] == ["APP_Doc/Field operations"]
     assert result["posts"] == []
 
 
@@ -287,34 +287,34 @@ def test_a_file_where_a_folder_was_declared_is_refused_and_nothing_is_written() 
     Found". The phase must name the file rather than repeat that.
     """
     result = _run_phase(
-        _state(filesNamed=["Operations"]), [_library("Operations")],
+        _state(filesNamed=["Field operations"]), [_library("Field operations")],
     )
     (error,) = result["summary"]["errors"]
-    assert error["list"] == "APP_Doc" and error["folder"] == "Operations"
+    assert error["list"] == "APP_Doc" and error["folder"] == "Field operations"
     assert "a file where a folder was declared" in error["error"]
     assert "File Not Found" not in error["error"]
 
 
 def test_a_root_that_does_not_read_back_fails_the_library_not_the_run() -> None:
-    result = _run_phase(_state(rootMissing=True), [_library("Operations")])
+    result = _run_phase(_state(rootMissing=True), [_library("Field operations")])
     assert result["posts"] == []
     (error,) = result["summary"]["errors"]
     assert error["list"] == "APP_Doc" and "RootFolder" in error["error"]
 
 
 def test_a_refused_create_is_reported_against_the_folder() -> None:
-    result = _run_phase(_state(refuseCreate=True), [_library("Operations")])
+    result = _run_phase(_state(refuseCreate=True), [_library("Field operations")])
     (error,) = result["summary"]["errors"]
-    assert error["folder"] == "Operations"
+    assert error["folder"] == "Field operations"
     assert result["summary"]["foldersCreated"] == []
 
 
 def test_a_folder_that_does_not_read_back_after_creation_is_reported() -> None:
     """The create answered 200 and the read-back finds nothing, so the
     phase reports the folder rather than recording one nobody can see."""
-    result = _run_phase(_state(vanishAfterCreate=True), [_library("Operations")])
+    result = _run_phase(_state(vanishAfterCreate=True), [_library("Field operations")])
     (error,) = result["summary"]["errors"]
-    assert error["folder"] == "Operations"
+    assert error["folder"] == "Field operations"
     assert "did not read back" in error["error"]
     assert result["summary"]["foldersCreated"] == []
     assert result["changes"] == []
@@ -323,9 +323,9 @@ def test_a_folder_that_does_not_read_back_after_creation_is_reported() -> None:
 def test_a_create_that_reads_back_as_a_file_is_reported() -> None:
     """The path exists after the create but its item reads
     FileSystemObjectType 0, so the shape check refuses to count it."""
-    result = _run_phase(_state(createdAsFile=True), [_library("Operations")])
+    result = _run_phase(_state(createdAsFile=True), [_library("Field operations")])
     (error,) = result["summary"]["errors"]
-    assert error["folder"] == "Operations"
+    assert error["folder"] == "Field operations"
     assert "not a folder" in error["error"]
     assert result["summary"]["foldersCreated"] == []
     assert result["changes"] == []
@@ -335,12 +335,12 @@ def test_a_shape_read_that_fails_on_an_existing_folder_writes_nothing() -> None:
     """An existing folder whose item probe answers 500 is neither verified
     nor recreated: the phase cannot tell a folder from a file and stops."""
     result = _run_phase(
-        _state(existing=["Operations"], refuseShapeRead=True),
-        [_library("Operations")],
+        _state(existing=["Field operations"], refuseShapeRead=True),
+        [_library("Field operations")],
     )
     assert result["posts"] == []
     (error,) = result["summary"]["errors"]
-    assert error["folder"] == "Operations"
+    assert error["folder"] == "Field operations"
     assert "folder item probe failed" in error["error"]
     assert result["summary"]["foldersVerified"] == []
 
@@ -357,20 +357,20 @@ def test_lists_and_libraries_without_folders_are_left_alone() -> None:
 
 def test_a_library_with_no_save_rule_has_its_rule_left_alone() -> None:
     """Nothing to lift, so nothing is written to the list at all."""
-    result = _run_phase(_state(), [_library("Operations")])
+    result = _run_phase(_state(), [_library("Field operations")])
     assert result["listWrites"] == []
-    assert result["summary"]["foldersCreated"] == ["APP_Doc/Operations"]
+    assert result["summary"]["foldersCreated"] == ["APP_Doc/Field operations"]
 
 
 def test_declared_folders_that_all_exist_never_touch_the_save_rule() -> None:
     """The missing set is asked for BEFORE anything is written, so a
     steady-state redeploy of a guarded library writes nothing here."""
     result = _run_phase(
-        _guarded(existing=["Operations"]), [_library("Operations")],
+        _guarded(existing=["Field operations"]), [_library("Field operations")],
     )
     assert result["listWrites"] == []
     assert result["posts"] == []
-    assert result["summary"]["foldersVerified"] == ["APP_Doc/Operations"]
+    assert result["summary"]["foldersVerified"] == ["APP_Doc/Field operations"]
 
 
 def test_a_save_rule_is_lifted_for_the_create_and_put_straight_back() -> None:
@@ -378,10 +378,10 @@ def test_a_save_rule_is_lifted_for_the_create_and_put_straight_back() -> None:
     three rows after it in folder-under-schema-probe.js: a list save rule
     refuses a folder create outright, a cleared list accepts it, and the rule
     goes back onto a library that now holds folders."""
-    result = _run_phase(_guarded(), [_library("Operations", "Corporate")])
+    result = _run_phase(_guarded(), [_library("Field operations", "Corporate")])
     assert result["summary"]["errors"] == []
     assert result["summary"]["foldersCreated"] == [
-        "APP_Doc/Operations", "APP_Doc/Corporate",
+        "APP_Doc/Field operations", "APP_Doc/Corporate",
     ]
     # Lifted once for both folders, not once each, and put back as it was.
     assert result["listWrites"] == [
@@ -394,9 +394,9 @@ def test_a_save_rule_is_lifted_for_the_create_and_put_straight_back() -> None:
 def test_a_save_rule_is_put_back_when_a_folder_create_fails() -> None:
     """The restore is a finally: a create that throws must not carry the
     lifted rule out of the phase with it."""
-    result = _run_phase(_guarded(refuseCreate=True), [_library("Operations")])
+    result = _run_phase(_guarded(refuseCreate=True), [_library("Field operations")])
     (error,) = result["summary"]["errors"]
-    assert error["folder"] == "Operations"
+    assert error["folder"] == "Field operations"
     assert result["listWrites"][-1] == {
         "ValidationFormula": _RULE, "ValidationMessage": _RULE_MESSAGE,
     }
@@ -407,7 +407,7 @@ def test_a_lift_that_does_not_take_creates_no_folder() -> None:
     """The MERGE answers and the rule stays on. Without the read-back the
     phase would go on to a create the rule refuses and report the folder
     rather than the lift."""
-    result = _run_phase(_guarded(liftDoesNothing=True), [_library("Operations")])
+    result = _run_phase(_guarded(liftDoesNothing=True), [_library("Field operations")])
     (error,) = result["summary"]["errors"]
     assert "did not lift" in error["error"]
     assert "folder" not in error
@@ -416,7 +416,7 @@ def test_a_lift_that_does_not_take_creates_no_folder() -> None:
 
 
 def test_a_refused_lift_reports_the_list_and_creates_nothing() -> None:
-    result = _run_phase(_guarded(refuseLift=True), [_library("Operations")])
+    result = _run_phase(_guarded(refuseLift=True), [_library("Field operations")])
     (error,) = result["summary"]["errors"]
     assert "lift refused" in error["error"]
     assert result["posts"] == []
@@ -427,8 +427,8 @@ def test_a_refused_restore_is_reported_and_left_for_exit_cleanup() -> None:
     """The folder is created and the rule will not go back. The phase says
     so in the operator's own terms, and the list stays registered so the
     finally in deploy.js.j2 tries again on the way out."""
-    result = _run_phase(_guarded(refuseRestore=True), [_library("Operations")])
-    assert result["summary"]["foldersCreated"] == ["APP_Doc/Operations"]
+    result = _run_phase(_guarded(refuseRestore=True), [_library("Field operations")])
+    assert result["summary"]["foldersCreated"] == ["APP_Doc/Field operations"]
     (error,) = result["summary"]["errors"]
     assert error["error"].startswith("restore the save rule: ")
     assert "restore refused" in error["error"]
@@ -438,7 +438,7 @@ def test_a_refused_restore_is_reported_and_left_for_exit_cleanup() -> None:
 @pytest.mark.parametrize("root_type", [None, 0, 1])
 def test_folder_shape_is_scoped_to_root_across_all_pages(root_type: int | None) -> None:
     root = "/sites/test/OriginalLibrarySlug"
-    name = "Operations"
+    name = "Field operations"
     next_url = "https://example.sharepoint.com/sites/test/_api/folder-items-page2"
     nested = [
         {"FileSystemObjectType": kind, "FileRef": f"{root}/Nested{index}/{name}"}
@@ -473,17 +473,17 @@ def test_folder_shape_is_scoped_to_root_across_all_pages(root_type: int | None) 
     *[[200, {"d": {"results": [{"FileSystemObjectType": 1, "FileRef": path}]}}]
       for path in [None, "relative/name", "/sites/test/", 42]],
     [200, {"d": {"results": [
-        {"FileSystemObjectType": 1, "FileRef": f"{_ROOT}/Operations"},
+        {"FileSystemObjectType": 1, "FileRef": f"{_ROOT}/Field operations"},
     ]}}],
 ])
 def test_folder_collision_diagnosis_rejects_unreadable_later_pages(later_page: Any) -> None:
     next_url = "https://example.sharepoint.com/sites/test/_api/page2"
     result = _run_phase(_guarded(
         refuseCreate=True, firstShapePage=[200, {"d": {"results": [
-            {"FileSystemObjectType": 1, "FileRef": f"{_ROOT}/Operations"},
+            {"FileSystemObjectType": 1, "FileRef": f"{_ROOT}/Field operations"},
         ], "__next": next_url}}],
         shapePages={next_url: later_page},
-    ), [_library("Operations")])
+    ), [_library("Field operations")])
     assert "folder item probe" in result["summary"]["errors"][0]["error"]
     assert result["summary"]["foldersCreated"] == []
     assert result["summary"]["foldersVerified"] == []
@@ -504,7 +504,7 @@ def test_folder_shape_refuses_a_collection_exceeding_the_page_limit() -> None:
         refuseCreate=True, firstShapePage=[200, {"d": {
             "results": [], "__next": "https://example.sharepoint.com/sites/test/_api/page1",
         }}], shapePages=pages,
-    ), [_library("Operations")])
+    ), [_library("Field operations")])
     assert "incomplete folder collection" in result["summary"]["errors"][0]["error"]
     assert len(result["posts"]) == 1
     assert result["listWrites"][-1]["ValidationFormula"] == _RULE
@@ -513,7 +513,7 @@ def test_folder_shape_refuses_a_collection_exceeding_the_page_limit() -> None:
 
 @pytest.mark.parametrize("existing", [False, True])
 def test_folder_paths_work_when_unindexed_queries_are_throttled(existing: bool) -> None:
-    name = "Operations"
+    name = "Field operations"
     result = _run_phase(_guarded(
         root="/sites/test/Original Library Slug", threshold=True,
         existing=[name] if existing else [],
@@ -532,8 +532,8 @@ def test_folder_paths_work_when_unindexed_queries_are_throttled(existing: bool) 
                                      {"FileSystemObjectType": 1, "FileRef": "/wrong"}])
 def test_malformed_folder_path_reads_do_not_allow_writes(property_name: str, payload: Any) -> None:
     result = _run_phase(_guarded(
-        existing=["Operations"], **{property_name: payload},
-    ), [_library("Operations")])
+        existing=["Field operations"], **{property_name: payload},
+    ), [_library("Field operations")])
     assert result["summary"]["errors"]
     assert result["summary"]["foldersVerified"] == []
     assert result["posts"] == [] and result["listWrites"] == []
@@ -541,7 +541,7 @@ def test_malformed_folder_path_reads_do_not_allow_writes(property_name: str, pay
 
 def test_throttled_collision_diagnosis_keeps_the_create_error_and_restores_the_rule() -> None:
     result = _run_phase(
-        _guarded(refuseCreate=True, threshold=True), [_library("Operations")],
+        _guarded(refuseCreate=True, threshold=True), [_library("Field operations")],
     )
     error = result["summary"]["errors"][0]["error"]
     assert "refused" in error and "collision diagnosis unavailable" in error

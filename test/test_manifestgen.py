@@ -413,7 +413,7 @@ def test_the_manifest_says_a_reader_grant_is_folder_scoped(tmp_path: Path) -> No
     schema, bundle = pack(
         tmp_path,
         dbml=(
-            'Enum division {\n  "Operations"\n}\n'
+            'Enum division {\n  "Field operations"\n}\n'
             + table("Docs", ID_PK, TITLE, "Division division")
         ),
         mapping="""
@@ -1436,8 +1436,8 @@ def test_the_manifest_splits_one_acl_collection_into_its_two_tables(
     per_folder = md.split("### Per-folder assignments")[1].split("\n###")[0]
 
     assert "Librarians (group)" in per_list
-    assert "Operations Editors" not in per_list
-    assert "Operations Editors (group)" in per_folder
+    assert "Field operations Editors" not in per_list
+    assert "Field operations Editors (group)" in per_folder
     assert "Librarians (group)" not in per_folder
     assert "_(no per-list assignments configured)_" not in per_list
     assert "_(no per-folder assignments configured)_" not in per_folder
@@ -1454,7 +1454,7 @@ def test_manifest_inventories_folder_scopes(tmp_path: Path) -> None:
     schema, bundle = pack(
         tmp_path,
         dbml=(
-            'Enum division {\n  "Operations"\n}\n'
+            'Enum division {\n  "Field operations"\n}\n'
             + table("Docs", ID_PK, TITLE, "Division division")
         ),
         mapping="""
@@ -1503,7 +1503,7 @@ def test_manifest_inventories_folder_scopes(tmp_path: Path) -> None:
 
     per_folder = md.split("### Per-folder assignments")[1].split("\n###")[0]
 
-    assert "Operations Editors (group)" in per_folder
+    assert "Field operations Editors (group)" in per_folder
     assert "Folder Editor" in per_folder
     assert "_(no per-folder assignments configured)_" not in per_folder
 
@@ -1514,7 +1514,7 @@ def _acl_manifest(tmp_path: Path, mode: str) -> str:
     schema, bundle = pack(
         tmp_path,
         dbml=(
-            'Enum division {\n  "Operations"\n}\n'
+            'Enum division {\n  "Field operations"\n}\n'
             + table("Docs", ID_PK, TITLE, "Division division")
         ),
         mapping=f"""
@@ -1607,7 +1607,7 @@ def test_a_folder_policy_granting_nothing_still_names_its_folder(
     schema, bundle = pack(
         tmp_path,
         dbml=(
-            'Enum division {\n  "Operations"\n}\n'
+            'Enum division {\n  "Field operations"\n}\n'
             + table("Docs", ID_PK, TITLE, "Division division")
         ),
         mapping="""
@@ -1641,7 +1641,7 @@ def test_a_folder_policy_granting_nothing_still_names_its_folder(
         generated_at="2026-05-04T00:00:00Z",
     )
 
-    assert "APP_Docs/Operations" in md
+    assert "APP_Docs/Field operations" in md
     assert "every direct grant on this folder is removed" in md
 
 
@@ -1658,7 +1658,7 @@ def test_a_folder_the_deploy_does_not_break_is_not_called_inherited(
     schema, bundle = pack(
         tmp_path,
         dbml=(
-            'Enum division {\n  "Operations"\n}\n'
+            'Enum division {\n  "Field operations"\n}\n'
             + table("Docs", ID_PK, TITLE, "Division division")
         ),
         mapping="""

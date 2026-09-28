@@ -3,7 +3,7 @@
 Project library_fixture { database_type: 'SharePoint Online Lists' }
 
 Enum division {
-  "Operations"
+  "Field operations"
   "Corporate"
 }
 

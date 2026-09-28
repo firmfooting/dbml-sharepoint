@@ -74,9 +74,9 @@ def test_library_folders_are_assessed_and_required() -> None:
     from dbml_sharepoint.generators.assessgen import assess_targets
 
     schema, bundle = _simple()
-    bundle = as_library(bundle, "Task", ("Operations", "Corporate"))
+    bundle = as_library(bundle, "Task", ("Field operations", "Corporate"))
     targets = assess_targets(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
-    assert targets["library_folders"] == [["APP_Task", ["Operations", "Corporate"]]]
+    assert targets["library_folders"] == [["APP_Task", ["Field operations", "Corporate"]]]
     assert 101 in targets["base_templates"]
     keys = {r.key for r in derive_requirements(
         schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
@@ -691,7 +691,7 @@ def test_assess_reports_a_provisioned_list_whose_marker_is_missing() -> None:
 def _library_pack() -> tuple[Any, Any]:
     """The simple fixture with Task declared as a library holding one folder."""
     schema, bundle = _simple()
-    return schema, as_library(bundle, "Task", ("Operations",))
+    return schema, as_library(bundle, "Task", ("Field operations",))
 
 
 def _library_assess_js() -> str:
@@ -722,7 +722,7 @@ def _folder_harness(
     object_type: int | None, *, unreadable: bool = False, root_url: str = "/sites/test/APP_Task",
 ) -> str:
     """Answer path reads for a folder, a file, absence, or a refusal."""
-    path = root_url + "/Operations"
+    path = root_url + "/Field operations"
     body_head = "const body = (url) => {\n"
     shape_read = (
         f"{body_head}  if (url.includes('/RootFolder?')) {{\n"
@@ -769,7 +769,7 @@ def test_assess_blocks_a_file_where_a_folder_is_declared() -> None:
     folder's name would stop the folder phase, so it blocks the verdict."""
     summary = _run_assess(_library_markers(), harness=_folder_harness(0), js=_library_assess_js())
     finding = _folder_finding(summary)
-    assert finding["level"] == "BLOCKED" and "Operations" in finding["detail"]
+    assert finding["level"] == "BLOCKED" and "Field operations" in finding["detail"]
     assert summary["verdict"] == "BLOCKED"
 
 

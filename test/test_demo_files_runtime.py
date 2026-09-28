@@ -28,7 +28,7 @@ from dbml_sharepoint.model.release import load_release
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
 _ROOT = "/sites/test/APP_Doc"
-_FOLDER = "Operations"
+_FOLDER = "Field operations"
 _NAME = "[DEMO] Privacy - 2026 Q3.txt"
 
 
@@ -39,7 +39,7 @@ def _demo_js() -> str:
             column("Status", "doc_status"),
         ),
         enums=[
-            enum("division", "Operations", "Corporate"),
+            enum("division", "Field operations", "Corporate"),
             enum("doc_status", "Required", "Complete"),
         ],
     )
@@ -254,7 +254,7 @@ def test_demo_file_paths_work_when_unindexed_queries_are_throttled(present: bool
     assert len(summary["skipped"]) == int(present)
     assert len(summary["created"]) == int(not present)
     reads = [c["url"] for c in calls if "GetFileByServerRelativeUrl" in c["url"]]
-    assert reads and all("Original Library Slug/Operations/" in url for url in reads)
+    assert reads and all("Original Library Slug/Field operations/" in url for url in reads)
     assert any("/ListItemAllFields?" in url for url in reads)
     assert not any("$filter=" in c["url"] for c in calls)
 
@@ -324,7 +324,7 @@ def _rich_demo_js(written: str = _RICH_WRITTEN) -> str:
             column("Status", "doc_status"), column("Notes", "richtext"),
         ),
         enums=[
-            enum("division", "Operations", "Corporate"),
+            enum("division", "Field operations", "Corporate"),
             enum("doc_status", "Required", "Complete"),
         ],
     )
