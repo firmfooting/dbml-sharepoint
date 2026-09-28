@@ -43,6 +43,14 @@ Recording happens only inside `recording_blank_defaults()`, which
 `load_mapping` opens around the section families. Outside it a blank still
 takes its default, without a record.
 
+### `recording_reads`
+
+```python
+def recording_reads() -> collections.abc.Generator[list[pathlib.Path]]
+```
+
+Collect every file one load reads, so a caller can check where each lives.
+
 ### `recording_blank_defaults`
 
 ```python

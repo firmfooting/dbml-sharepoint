@@ -92,6 +92,12 @@ BLUEPRINT_ROOTS_GROUP = 'dbml_sharepoint.blueprint_roots'
 BLUEPRINT_MANIFEST = 'blueprint.toml'
 ```
 
+### `BROWSE_ALL`
+
+```python
+BROWSE_ALL = 'all'
+```
+
 ### `ORIGIN_OWN`
 
 ```python

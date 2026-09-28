@@ -22,7 +22,7 @@ from _catalogue_fixtures import CORE_LICENSE, Provider, install, write_family
 from _console import ScriptedConsole
 from _console import collapsed as _collapsed
 
-from dbml_sharepoint import wizard
+from dbml_sharepoint import catalogue, wizard
 from dbml_sharepoint.catalogue import (
     BLUEPRINT_MANIFEST,
     CORE_DISTRIBUTION,
@@ -3754,3 +3754,27 @@ def test_the_journey_hint_does_not_claim_where_a_missing_blueprint_comes_from(
     assert "names acme-thing, which is not available here" in shown
     assert "refused" in shown
     assert "They come from another package" not in shown
+
+
+def test_the_browse_all_answer_is_the_id_the_catalogue_reserves() -> None:
+    assert wizard._BROWSE_ALL == catalogue.BROWSE_ALL
+
+
+def test_a_template_whose_mapping_reads_a_file_outside_it_is_refused_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the template directory is copied, so a file the mapping reads from elsewhere is lost."""
+    (tmp_path / "outside.yaml").write_text("choices: [Red]\n", encoding="utf-8")
+    solution = _fake_family(
+        tmp_path / "fake", _ONE_ENTITY + "enum_sources:\n  Colour: ../../outside.yaml\n",
+    )
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    shown = _collapsed(console)
+    assert "outside.yaml" in shown
+    assert "outside the template" in shown
+    assert not destination.exists()

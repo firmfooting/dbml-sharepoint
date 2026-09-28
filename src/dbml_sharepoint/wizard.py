@@ -61,6 +61,7 @@ from dbml_sharepoint.bundle import (
     write_artifact,
 )
 from dbml_sharepoint.catalogue import (
+    BROWSE_ALL,
     MAPPING_RELPATH,
     PLACEHOLDER_SITE_URL,
     PLACEHOLDER_TIME_ZONE,
@@ -82,6 +83,7 @@ from dbml_sharepoint.model.env_file import (
 )
 from dbml_sharepoint.model.errors import MappingError
 from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.reading import recording_reads
 from dbml_sharepoint.pipeline import execute_build
 from dbml_sharepoint.project import (
     ENTERPRISE_READER_DECLINED,
@@ -255,7 +257,7 @@ def _catalogue_table(solutions: list[Solution]) -> Table:
 
 
 #: What the journey step accepts to mean "show me everything".
-_BROWSE_ALL = "all"
+_BROWSE_ALL = BROWSE_ALL
 
 
 def _journey_table(journeys: list[Journey], installed: set[str]) -> Table:
@@ -1260,11 +1262,20 @@ def _read_facts(solution: Solution) -> _TemplateFacts:
     the caller prints before writing anything.
     """
     try:
-        bundle = load_mapping(solution.mapping_path)
+        with recording_reads() as read:
+            bundle = load_mapping(solution.mapping_path)
     except (OSError, KeyError, ValueError, *_yaml.PARSE_ERRORS) as exc:
         raise WizardError(
             f"the {solution.id} template's mapping could not be loaded: {exc}",
         ) from exc
+    # Only the template directory is copied, so a file read from elsewhere would not travel.
+    root = solution.root.resolve()
+    for path in read:
+        if not path.resolve().is_relative_to(root):
+            raise WizardError(
+                f"the {solution.id} template's mapping reads {path}, which is outside the "
+                "template, so the copy would not carry it",
+            )
     _check_docs(solution)
     permissions = bundle.mapping.permissions
     return _TemplateFacts(

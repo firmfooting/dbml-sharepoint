@@ -97,6 +97,10 @@ BLUEPRINT_MANIFEST = "blueprint.toml"
 #: Every key a blueprint.toml carries, each one required.
 _MANIFEST_KEYS = ("id", "title", "summary", "license", "origin", "notice", "min_core")
 
+#: The wizard's answer for "every blueprint", read before any id, so no blueprint or journey
+#: may take it.
+BROWSE_ALL = "all"
+
 #: The origin of a blueprint designed by this project, which needs no notice.
 ORIGIN_OWN = "firmfooting"
 
@@ -394,6 +398,22 @@ def _manifest_table(blueprint_dir: Path, path: Path) -> dict[str, Any]:
         raise BlueprintManifestError(f"{path}: not valid TOML: {exc}") from exc
 
 
+def _check_id(blueprint_id: str, blueprint_dir: Path, path: Path) -> None:
+    """The id is the directory name, printable, and not the wizard's browse-all answer."""
+    if blueprint_id != blueprint_dir.name:
+        raise BlueprintManifestError(
+            f"{path}: id {blueprint_id!r} is not the directory name {blueprint_dir.name!r}",
+        )
+    if found := _unprintable(blueprint_id):
+        raise BlueprintManifestError(
+            f"{path}: 'id' carries characters a console may not print: {found}",
+        )
+    if blueprint_id == BROWSE_ALL:
+        raise BlueprintManifestError(
+            f"{path}: the id {BROWSE_ALL!r} is reserved: the wizard reads it as every blueprint",
+        )
+
+
 def read_blueprint_manifest(blueprint_dir: Path, distribution_licence: str) -> BlueprintManifest:
     """Read and check `blueprint_dir/blueprint.toml`, or raise `BlueprintManifestError`.
 
@@ -407,14 +427,7 @@ def read_blueprint_manifest(blueprint_dir: Path, distribution_licence: str) -> B
     if unknown:
         raise BlueprintManifestError(f"{path}: unknown key(s) {unknown}")
     values = {key: _manifest_string(raw, key, path) for key in _MANIFEST_KEYS}
-    if values["id"] != blueprint_dir.name:
-        raise BlueprintManifestError(
-            f"{path}: id {values['id']!r} is not the directory name {blueprint_dir.name!r}",
-        )
-    if found := _unprintable(values["id"]):
-        raise BlueprintManifestError(
-            f"{path}: 'id' carries characters a console may not print: {found}",
-        )
+    _check_id(values["id"], blueprint_dir, path)
     if values["license"] != distribution_licence:
         raise BlueprintManifestError(
             f"{path}: license {values['license']!r} differs from {distribution_licence!r}, "
@@ -505,6 +518,13 @@ def _build(family: Path, source: BlueprintRoot) -> Solution:
         )
     manifest = read_blueprint_manifest(family, source.license)
     lists, prefix = _mapping_facts(family / MAPPING_RELPATH)
+    # Printed when the blueprint is chosen, before the mapping loader ever sees them.
+    for key, text in (("prefix", prefix), *(("list", name) for name in lists)):
+        if found := _unprintable(text):
+            raise BlueprintManifestError(
+                f"{family / MAPPING_RELPATH}: {key} {text!r} carries characters a console "
+                f"may not print: {found}",
+            )
     return Solution(
         id=manifest.id,
         title=manifest.title,
@@ -601,12 +621,16 @@ def _build_journey(path: Path, distribution: str) -> Journey:
         if not isinstance(raw.get(key), str) or not raw[key].strip():
             raise ValueError(f"{path}: '{key}' must be a non-empty string")
     shown = {key: _clean(str(raw[key])) for key in ("title", "summary")}
-    for key, text in {"id": path.stem, **shown}.items():
-        # Rendered into the same terminal table as a blueprint's title, so held to the same rule.
+    # Rendered into the same terminal as a blueprint's title, so held to the same rule.
+    for key, text in {"id": path.stem, **shown, "solutions": "".join(solutions)}.items():
         if found := _unprintable(text):
             raise ValueError(
                 f"{path}: '{key}' carries characters a console may not print: {found}",
             )
+    if path.stem == BROWSE_ALL:
+        raise ValueError(
+            f"{path}: the id {BROWSE_ALL!r} is reserved: the wizard reads it as every blueprint",
+        )
     return Journey(
         id=path.stem,
         title=shown["title"],
@@ -683,8 +707,15 @@ def _provider_root(point: EntryPoint) -> BlueprintRoot:
             f"entry point {point.name} ({point.value}) in {BLUEPRINT_ROOTS_GROUP} belongs "
             "to no distribution, so its blueprints have no licence to check",
         )
-    distribution = point.dist.name
-    licence = _declared_licence(distribution, point.dist.metadata.get("License-Expression"))
+    try:
+        distribution = point.dist.name
+        declared = point.dist.metadata.get("License-Expression")
+    except (OSError, ValueError) as exc:
+        raise BlueprintRootError(
+            f"entry point {point.name} ({point.value}) in {BLUEPRINT_ROOTS_GROUP}: its "
+            f"distribution's metadata cannot be read: {type(exc).__name__}: {exc}",
+        ) from exc
+    licence = _declared_licence(distribution, declared)
     # Any failure inside a provider's own code is that provider's, and named as such.
     try:
         root: object = point.load()()

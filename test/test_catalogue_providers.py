@@ -328,3 +328,53 @@ def test_a_provider_journey_sharing_a_blueprint_s_id_is_hidden(
 def test_no_core_journey_shares_a_core_blueprint_s_id() -> None:
     found = read_catalogue()
     assert not {j.id for j in found.journeys} & {s.id for s in found.solutions}
+
+
+def test_a_provider_mapping_a_console_cannot_print_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The prefix and list names are printed when the blueprint is chosen, before any load."""
+    packs = tmp_path / "packs"
+    family = write_family(packs, "acme-thing", {"license": "BUSL-1.1"})
+    (family / "20-configure" / "mapping.yaml").write_text(
+        'prefix: "X\\e[2J"\nentities:\n  "Thing\\a": {}\n', encoding="utf-8", newline="\n",
+    )
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+
+    found = read_catalogue()
+    assert "acme-thing" not in {s.id for s in found.solutions}
+    assert "U+001B" in found.refused[0].reason
+
+
+def test_a_provider_journey_member_a_console_cannot_print_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A member that is not installed is printed back in the wizard's hint."""
+    packs = tmp_path / "packs"
+    write_journey(packs, "acme-journey", ["acme-thing", '"\\e[2J"'])
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+    with pytest.raises(BlueprintRootError, match=r"'solutions' carries .* U\+001B"):
+        read_catalogue()
+
+
+def test_a_provider_journey_named_all_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The wizard reads `all` as "show everything", so a journey by that name could never open."""
+    packs = tmp_path / "packs"
+    write_journey(packs, "all", ["acme-thing"])
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+    with pytest.raises(BlueprintRootError, match=r"^acme-packs: .*'all' is reserved"):
+        read_catalogue()
+
+
+def test_a_provider_whose_metadata_cannot_be_decoded_is_refused_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packs = tmp_path / "packs"
+    packs.mkdir()
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+    (tmp_path / "site" / "acme_packs-1.0.dist-info" / "METADATA").write_bytes(b"Name: acme\xe9\n")
+    expected = r"\(_catalogue_fixtures:first_root\).* metadata cannot be read: UnicodeDecodeError"
+    with pytest.raises(BlueprintRootError, match=expected):
+        read_catalogue()

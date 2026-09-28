@@ -225,3 +225,9 @@ def test_an_absolute_notice_is_refused_even_inside_the_blueprint(tmp_path: Path)
     notice.write_text("terms\n", encoding="utf-8")
     with pytest.raises(BlueprintManifestError, match="must be a path relative to the blueprint"):
         read_blueprint_manifest(pack_dir, CORE_LICENSE)
+
+
+def test_the_wizard_s_browse_all_answer_is_not_a_blueprint_id(tmp_path: Path) -> None:
+    """The wizard reads `all` as "show everything" before it looks for a blueprint by name."""
+    with pytest.raises(BlueprintManifestError, match="'all' is reserved"):
+        read_blueprint_manifest(_pack(tmp_path, manifest_text("all"), name="all"), CORE_LICENSE)

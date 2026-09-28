@@ -37,7 +37,7 @@ takes its default, without a record.
 """
 
 import json
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
@@ -58,6 +58,27 @@ from dbml_sharepoint.model.mapping_types import BlankDefault
 _BLANK_DEFAULTS: ContextVar[list[BlankDefault] | None] = ContextVar(
     "blank_defaults", default=None,
 )
+
+#: Every file the load in progress has read, when a caller is recording.
+_READS: ContextVar[list[Path] | None] = ContextVar("reads", default=None)
+
+
+@contextmanager
+def recording_reads() -> Generator[list[Path]]:
+    """Collect every file one load reads, so a caller can check where each lives."""
+    recorded: list[Path] = []
+    token = _READS.set(recorded)
+    try:
+        yield recorded
+    finally:
+        _READS.reset(token)
+
+
+def _read(path: Path) -> None:
+    """Record that the load in progress reads `path`, if a caller is recording."""
+    recorded = _READS.get()
+    if recorded is not None:
+        recorded.append(path)
 
 
 @contextmanager
@@ -149,6 +170,7 @@ def read_yaml_document(path: Path, named_by: str | None = None) -> Any:
     what `MappingReferenceError` documents; a path the caller supplied has
     no declaration to blame, so it is the document itself that failed.
     """
+    _read(path)
     try:
         with path.open(encoding="utf-8") as fh:
             return _yaml.safe_load(fh)
@@ -191,6 +213,7 @@ def load_json_value(base_dir: Path, value: Any, context: str) -> dict[str, Any]:
         return dict(value)
     if isinstance(value, str):
         path = (base_dir / value).resolve()
+        _read(path)
         try:
             text = path.read_text(encoding="utf-8")
         except OSError as exc:
