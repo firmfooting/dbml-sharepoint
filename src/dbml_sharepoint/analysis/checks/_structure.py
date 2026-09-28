@@ -1267,6 +1267,10 @@ def _calculated_formulas(vc: ValidationContext) -> list[Finding]:
     return findings
 
 
+# `=[Created]+14` was confirmed on a live library 2026-09-28; other built-ins are unmeasured.
+FORMULA_BUILTINS: frozenset[str] = frozenset({"Created"})
+
+
 def _calculated_formula(
     table: Table,
     col: Column,
@@ -1320,7 +1324,7 @@ def _calculated_formula(
                 Section.CALCULATED_FORMULAS, entity=table.name, column=col.name,
             ),
         ))
-    for ref in sorted(refs - rendered):
+    for ref in sorted(refs - rendered - FORMULA_BUILTINS):
         findings.append(Finding(
             FindingCode.CALCULATED_FORMULA_UNKNOWN_COLUMN,
             f"{table.name}.{col.name}: calculated formula references "

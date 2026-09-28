@@ -208,6 +208,26 @@ def test_calculated_formula_at_the_sp_limit_is_accepted() -> None:
         FindingCode.CALCULATED_FORMULA_TOO_LONG,
     )
 
+def test_calculated_formula_may_read_the_created_date() -> None:
+    """Confirmed by the operator on a live tenant, 2026-09-28: a library accepts
+    `=[Created]+14`, reads it back and renders it as a date."""
+    schema, bundle = _calc_inputs()
+    bundle.mapping.calculated_formulas["Risk"]["RiskScore"] = "=[Created]+14"
+    none_of(
+        validate_against_mapping(schema, bundle),
+        FindingCode.CALCULATED_FORMULA_UNKNOWN_COLUMN,
+    )
+
+
+def test_calculated_formula_may_not_read_an_unmeasured_builtin() -> None:
+    # Only [Created] has live evidence; [Modified] waits for its own.
+    schema, bundle = _calc_inputs()
+    bundle.mapping.calculated_formulas["Risk"]["RiskScore"] = "=[Modified]+14"
+    assert FindingCode.CALCULATED_FORMULA_UNKNOWN_COLUMN in {
+        f.code for f in validate_against_mapping(schema, bundle)
+    }
+
+
 def test_calculated_formula_unknown_column_reference_is_error() -> None:
     """SharePoint validates a formula's [Column] references when the field is
     created, so a reference that resolves to nothing fails the deployment with
