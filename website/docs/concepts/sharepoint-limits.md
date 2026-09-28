@@ -157,12 +157,13 @@ column name fail for a related but distinct reason: they are not row
 columns at all, and the same Microsoft formula reference's "own row" rule
 above is why a calculated formula has no way to name them.
 
-The one exception is `[Created]` in a document library. It is a column every
-item has without being declared, and a library accepted `=[Created]+14`,
-read it back and rendered the result as a date (measured on a live tenant,
-2026-09-28). A generic list's `[Created]`, and other built-in columns such as
-`[Modified]`, have not been measured in a calculated formula and are still
-refused.
+The one exception is `[Created]` in a document library's `calculated_date`
+column. It is a column every item has without being declared, and a library
+accepted `=[Created]+14`, read it back and rendered the result as a date
+(measured on a live tenant, 2026-09-28). A generic list's `[Created]`, a
+`calculated_text` or `calculated_number` column reading it, and other built-in
+columns such as `[Modified]` have not been measured in a calculated formula
+and are still refused.
 
 **How it maps here.** Every `calculated_text`, `calculated_number` and
 `calculated_date` column's formula, declared in `mapping.yaml`'s
@@ -172,11 +173,11 @@ refused.
 emitted. `calculated_formula_unsupported_operand` and
 `multi_value_operand_unsupported` name the forbidden operand and column;
 `calculated_formula_unknown_column` catches `[Today]`, `[Me]` and any typo,
-because none of them names a declared column of the entity; a library's
-`[Created]` is the one undeclared name it lets through. The build
-refuses the formula at build time rather than letting SharePoint refuse the
-field creation at HTTP 500, part-way through a deploy that has already
-written earlier phases.
+because none of them names a declared column of the entity; `[Created]` in a
+library's `calculated_date` column is the one undeclared name it lets through.
+The build refuses the formula at build time rather than letting SharePoint
+refuse the field creation at HTTP 500, part-way through a deploy that has
+already written earlier phases.
 
 **Mitigation.** Compute from a supported operand type (text, number, date,
 choice, boolean or another calculated column) instead. See [DBML reference:

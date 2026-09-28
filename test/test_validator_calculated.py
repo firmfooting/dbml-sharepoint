@@ -208,25 +208,45 @@ def test_calculated_formula_at_the_sp_limit_is_accepted() -> None:
         FindingCode.CALCULATED_FORMULA_TOO_LONG,
     )
 
+def _created_reader(calculated_type: str, *, library: bool) -> tuple[Schema, MappingBundle]:
+    """One calculated column of `calculated_type` whose formula is `=[Created]+14`."""
+    schema = make_schema(make_table(
+        "Risk",
+        make_column("Title", required=True),
+        make_column("DueDate", calculated_type),
+    ))
+    bundle = make_bundle(
+        entities=["Risk"], calculated_formulas={"Risk": {"DueDate": "=[Created]+14"}},
+    )
+    return schema, as_library(bundle, "Risk") if library else bundle
+
+
 def test_calculated_formula_may_read_the_created_date_in_a_library() -> None:
     """Confirmed by the operator on a live tenant, 2026-09-28: a library accepts
-    `=[Created]+14`, reads it back and renders it as a date."""
-    schema, loaded = _calc_inputs()
-    bundle = as_library(loaded, "Risk")
-    bundle.mapping.calculated_formulas["Risk"]["RiskScore"] = "=[Created]+14"
+    `=[Created]+14` in a date column, reads it back and renders it as a date."""
     none_of(
-        validate_against_mapping(schema, bundle),
+        validate_against_mapping(*_created_reader("calculated_date", library=True)),
+        FindingCode.CALCULATED_FORMULA_UNKNOWN_COLUMN,
+    )
+
+
+@pytest.mark.parametrize(
+    "calculated_type", sorted(CALCULATED_TYPES - {"calculated_date"}),
+)
+def test_a_library_formula_reads_created_only_into_a_date(calculated_type: str) -> None:
+    # Each output type is its own create request; only the date one was measured.
+    only(
+        validate_against_mapping(*_created_reader(calculated_type, library=True)),
         FindingCode.CALCULATED_FORMULA_UNKNOWN_COLUMN,
     )
 
 
 def test_a_list_formula_may_not_read_created_until_measured() -> None:
     # The live evidence is from a library; a list waits for its own.
-    schema, bundle = _calc_inputs()
-    bundle.mapping.calculated_formulas["Risk"]["RiskScore"] = "=[Created]+14"
-    assert FindingCode.CALCULATED_FORMULA_UNKNOWN_COLUMN in {
-        f.code for f in validate_against_mapping(schema, bundle)
-    }
+    only(
+        validate_against_mapping(*_created_reader("calculated_date", library=False)),
+        FindingCode.CALCULATED_FORMULA_UNKNOWN_COLUMN,
+    )
 
 
 def test_calculated_formula_may_not_read_an_unmeasured_builtin() -> None:

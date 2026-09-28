@@ -13,6 +13,8 @@ or the cycle this module exists to close would move rather than close.
 
 import re
 
+from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, DATE_TYPES
+
 _FORMULA_STRING_LITERAL = re.compile(r'"[^"]*"')
 FORMULA_COLUMN_REF = re.compile(r"\[([^\[\]]+)\]")
 
@@ -51,6 +53,22 @@ def formula_column_refs(formula: str) -> frozenset[str]:
     return frozenset(
         FORMULA_COLUMN_REF.findall(_FORMULA_STRING_LITERAL.sub("", formula)),
     )
+
+
+# `=[Created]+14` was confirmed in a library's calculated_date column on a live tenant, 2026-09-28.
+CALCULATED_FORMULA_BUILTINS: frozenset[str] = frozenset({"Created"})
+
+
+def calculated_formula_builtins(*, is_library: bool, column_type: str) -> frozenset[str]:
+    """Built-in columns a calculated formula may name without declaring them.
+
+    Only the measured combination is admitted: a library's `calculated_date`.
+    A list, and the text and number output types, are each a different
+    create request and have no evidence yet.
+    """
+    if is_library and column_type in CALCULATED_TYPES and column_type in DATE_TYPES:
+        return CALCULATED_FORMULA_BUILTINS
+    return frozenset()
 
 
 # SP formula string literals use Excel-style "" escaping; odd split indices

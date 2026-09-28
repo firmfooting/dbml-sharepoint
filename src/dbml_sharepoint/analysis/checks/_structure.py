@@ -6,7 +6,10 @@ from collections import Counter
 from collections.abc import Set as AbstractSet
 
 from dbml_sharepoint.analysis.checks.context import IndexTarget, ValidationContext
-from dbml_sharepoint.analysis.column_refs import formula_column_refs
+from dbml_sharepoint.analysis.column_refs import (
+    calculated_formula_builtins,
+    formula_column_refs,
+)
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import (
     INDEX_WARN_AT,
@@ -1256,7 +1259,7 @@ def _calculated_formulas(vc: ValidationContext) -> list[Finding]:
         rendered = rendered_columns(table, xcols)
         columns_by_name = {candidate.name: candidate for candidate in table.columns}
         entity = vc.bundle.mapping.entities.get(table.name)
-        builtins = CALCULATED_FORMULA_BUILTINS if entity and entity.is_library else frozenset()
+        is_library = entity is not None and entity.is_library
         for col in table.columns:
             if col.type not in CALCULATED_TYPES:
                 continue
@@ -1264,13 +1267,10 @@ def _calculated_formulas(vc: ValidationContext) -> list[Finding]:
                 table.name, {},
             ).get(col.name)
             findings += _calculated_formula(
-                table, col, formula, rendered, columns_by_name, deferred, builtins,
+                table, col, formula, rendered, columns_by_name, deferred,
+                calculated_formula_builtins(is_library=is_library, column_type=col.type),
             )
     return findings
-
-
-# `=[Created]+14` was confirmed on a live library 2026-09-28; lists and the rest are unmeasured.
-CALCULATED_FORMULA_BUILTINS: frozenset[str] = frozenset({"Created"})
 
 
 def _calculated_formula(
