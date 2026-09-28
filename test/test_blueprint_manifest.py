@@ -206,3 +206,22 @@ def test_the_manifest_file_is_blueprint_toml() -> None:
 
 def test_no_shipped_blueprint_keeps_the_old_manifest_name() -> None:
     assert not sorted(SOLUTION_TEMPLATES.glob("*/pack.toml"))
+
+
+@pytest.mark.parametrize("control", [0x1B, 0x07, 0x7F])
+def test_a_control_character_in_manifest_text_is_refused(tmp_path: Path, control: int) -> None:
+    """An escape sequence in a title could clear or rewrite the operator's terminal."""
+    title = "Risk" + chr(control) + "[2J register"
+    with pytest.raises(BlueprintManifestError, match=rf"'title' carries .* U\+{control:04X}"):
+        _read(tmp_path, {"title": title})
+
+
+def test_an_absolute_notice_is_refused_even_inside_the_blueprint(tmp_path: Path) -> None:
+    """Copied into a project, an absolute notice would still point at the provider's install."""
+    pack_dir = tmp_path / "acme-thing"
+    notice = pack_dir / "NOTICE"
+    overrides = {"origin": "acme-released", "notice": str(notice)}
+    _pack(tmp_path, manifest_text("acme-thing", overrides))
+    notice.write_text("terms\n", encoding="utf-8")
+    with pytest.raises(BlueprintManifestError, match="must be a path relative to the blueprint"):
+        read_blueprint_manifest(pack_dir, CORE_LICENSE)

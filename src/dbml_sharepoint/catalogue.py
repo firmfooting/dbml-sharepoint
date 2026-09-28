@@ -22,7 +22,7 @@ import re
 import tomllib
 from dataclasses import dataclass
 from importlib.metadata import EntryPoint, PackageNotFoundError, entry_points, metadata
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, NamedTuple
 
 from dbml_sharepoint.model import _yaml
@@ -343,6 +343,11 @@ def _manifest_string(raw: dict[str, Any], key: str, path: Path) -> str:
 
 def _check_notice(blueprint_dir: Path, notice: str, path: Path) -> None:
     """A notice names a file inside the blueprint, so it travels wherever the blueprint goes."""
+    # Windows rules read both separators, so this refuses `/x`, `\\x` and `C:x` on every platform.
+    if PureWindowsPath(notice).anchor:
+        raise BlueprintManifestError(
+            f"{path}: notice {notice!r} must be a path relative to the blueprint",
+        )
     target = (blueprint_dir / notice).resolve()
     if not target.is_relative_to(blueprint_dir.resolve()) or not target.is_file():
         raise BlueprintManifestError(
@@ -350,17 +355,21 @@ def _check_notice(blueprint_dir: Path, notice: str, path: Path) -> None:
         )
 
 
-def _unencodable(text: str) -> str:
-    """The codepoints in `text` with no ASCII spelling, joined, or "" when there are none."""
-    return ", ".join(sorted({f"U+{ord(c):04X}" for c in text if not c.isascii()}))
+def _unprintable(text: str) -> str:
+    """The codepoints in `text` outside printable ASCII, joined, or "" when there are none.
+
+    Control characters are refused with the rest: an escape sequence in a
+    title would clear or rewrite the terminal it is printed to.
+    """
+    return ", ".join(sorted({f"U+{ord(c):04X}" for c in text if not " " <= c <= "~"}))
 
 
 def _terminal_text(value: str, key: str, path: Path) -> str:
     """`value` folded to ASCII, or refused when a character has no ASCII spelling."""
     folded = _fold(value)
-    if found := _unencodable(folded):
+    if found := _unprintable(folded):
         raise BlueprintManifestError(
-            f"{path}: '{key}' carries characters a console may not encode: {found}",
+            f"{path}: '{key}' carries characters a console may not print: {found}",
         )
     return folded
 
@@ -402,9 +411,9 @@ def read_blueprint_manifest(blueprint_dir: Path, distribution_licence: str) -> B
         raise BlueprintManifestError(
             f"{path}: id {values['id']!r} is not the directory name {blueprint_dir.name!r}",
         )
-    if found := _unencodable(values["id"]):
+    if found := _unprintable(values["id"]):
         raise BlueprintManifestError(
-            f"{path}: 'id' carries characters a console may not encode: {found}",
+            f"{path}: 'id' carries characters a console may not print: {found}",
         )
     if values["license"] != distribution_licence:
         raise BlueprintManifestError(
@@ -594,9 +603,9 @@ def _build_journey(path: Path, distribution: str) -> Journey:
     shown = {key: _clean(str(raw[key])) for key in ("title", "summary")}
     for key, text in {"id": path.stem, **shown}.items():
         # Rendered into the same terminal table as a blueprint's title, so held to the same rule.
-        if found := _unencodable(text):
+        if found := _unprintable(text):
             raise ValueError(
-                f"{path}: '{key}' carries characters a console may not encode: {found}",
+                f"{path}: '{key}' carries characters a console may not print: {found}",
             )
     return Journey(
         id=path.stem,
@@ -619,7 +628,7 @@ def _gather_journeys(roots: list[BlueprintRoot]) -> tuple[list[Journey], list[Sh
         for path in sorted(directory.glob("*.md")):
             try:
                 journey = _build_journey(path, source.distribution)
-            except ValueError as exc:
+            except (ValueError, OSError) as exc:
                 # Core's journeys are guarded by its tests; a provider's reach the operator.
                 if source.distribution == CORE_DISTRIBUTION:
                     raise
@@ -691,6 +700,11 @@ def _provider_root(point: EntryPoint) -> BlueprintRoot:
         )
     if not root.is_dir():
         raise BlueprintRootError(f"{distribution}: {root} is not a directory")
+    # A directory denied to this user globs as empty, which would hide every blueprint in it.
+    try:
+        next(root.iterdir(), None)
+    except OSError as exc:
+        raise BlueprintRootError(f"{distribution}: {root} cannot be listed: {exc}") from exc
     return BlueprintRoot(distribution, root, licence)
 
 
@@ -714,9 +728,16 @@ def read_catalogue() -> Catalogue:
     roots = blueprint_roots()
     solutions, refused, hidden = _gather_solutions(roots)
     journeys, hidden_journeys = _gather_journeys(roots)
+    # One wizard prompt takes a blueprint id or a journey id, and a blueprint id wins it.
+    offered = {s.id: s.distribution for s in solutions}
+    hidden_journeys += [
+        Shadowed("journey", journey.id, journey.distribution, offered[journey.id])
+        for journey in journeys
+        if journey.id in offered
+    ]
     return Catalogue(
         solutions=tuple(solutions),
-        journeys=tuple(journeys),
+        journeys=tuple(j for j in journeys if j.id not in offered),
         refused=tuple(refused),
         shadowed=(*hidden, *hidden_journeys),
     )

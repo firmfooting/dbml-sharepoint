@@ -2,6 +2,7 @@
 
 import io
 import zipfile
+from collections.abc import Iterator
 from importlib.metadata import EntryPoint
 from pathlib import Path
 
@@ -272,3 +273,58 @@ def test_a_provider_journey_id_a_console_cannot_print_is_refused(
     install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
     with pytest.raises(BlueprintRootError, match=r"'id' carries .* U\+00E9"):
         read_catalogue()
+
+
+def test_a_provider_root_that_cannot_be_listed_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A directory denied to this user globs as empty, which would hide every blueprint in it."""
+    packs = tmp_path / "packs"
+    write_family(packs, "acme-thing", {"license": "BUSL-1.1"})
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+    real = Path.iterdir
+
+    def denied(self: Path) -> Iterator[Path]:
+        if self == packs:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real(self)
+
+    monkeypatch.setattr(Path, "iterdir", denied)
+    with pytest.raises(BlueprintRootError, match=r"^acme-packs: .* cannot be listed: .*denied"):
+        read_catalogue()
+
+
+def test_a_provider_journey_that_cannot_be_read_is_refused_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packs = tmp_path / "packs"
+    write_journey(packs, "locked", ["acme-thing"])
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+    real = Path.read_text
+
+    def locked(self: Path, encoding: str | None = None, errors: str | None = None) -> str:
+        if self.name == "locked.md":
+            raise PermissionError(13, "Permission denied", str(self))
+        return real(self, encoding=encoding, errors=errors)
+
+    monkeypatch.setattr(Path, "read_text", locked)
+    with pytest.raises(BlueprintRootError, match=r"^acme-packs: .*Permission denied"):
+        read_catalogue()
+
+
+def test_a_provider_journey_sharing_a_blueprint_s_id_is_hidden(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One prompt takes both, and a blueprint id wins it, so the journey could never be chosen."""
+    packs = tmp_path / "packs"
+    write_journey(packs, "visitor-log", ["visitor-log"])
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+
+    found = read_catalogue()
+    assert "visitor-log" not in {j.id for j in found.journeys}
+    assert Shadowed("journey", "visitor-log", "acme-packs", CORE_DISTRIBUTION) in found.shadowed
+
+
+def test_no_core_journey_shares_a_core_blueprint_s_id() -> None:
+    found = read_catalogue()
+    assert not {j.id for j in found.journeys} & {s.id for s in found.solutions}

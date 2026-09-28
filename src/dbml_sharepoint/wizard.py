@@ -325,9 +325,10 @@ def _pick_journey(
         if missing:
             console.print(
                 f"[yellow]Journey {escape(chosen.id)} names {escape(', '.join(missing))}, "
-                f"which {'is' if len(missing) == 1 else 'are'} not installed.[/yellow] "
-                "They come from another package; `dbml-sharepoint blueprints` lists "
-                "what is installed here.",
+                f"which {'is' if len(missing) == 1 else 'are'} not available here.[/yellow] "
+                f"{'It' if len(missing) == 1 else 'They'} may come from another package, "
+                "have been refused above, or be misspelt in the journey; "
+                "`dbml-sharepoint blueprints` lists what is installed here.",
             )
         narrowed = [by_id[i] for i in chosen.solution_ids if i in by_id]
         if not narrowed:
@@ -1230,6 +1231,25 @@ class _TemplateFacts:
     entity_titles: tuple[tuple[str, str], ...] = ()
 
 
+def _check_docs(solution: Solution) -> None:
+    """Refuse a template whose documentation `_repoint_docs` could not read, before any copy.
+
+    A blueprint from another package is not held to core's encoding gate, and
+    the rewrite runs after the project is written.
+    """
+    for doc in sorted(solution.root.rglob("*.md")):
+        name = doc.relative_to(solution.root).as_posix()
+        try:
+            doc.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise WizardError(
+                f"the {solution.id} template's {name} is not UTF-8: "
+                f"{exc.reason} at byte {exc.start}",
+            ) from exc
+        except OSError as exc:
+            raise WizardError(f"the {solution.id} template's {name} cannot be read: {exc}") from exc
+
+
 def _read_facts(solution: Solution) -> _TemplateFacts:
     """Load one template's mapping, or refuse by name.
 
@@ -1245,6 +1265,7 @@ def _read_facts(solution: Solution) -> _TemplateFacts:
         raise WizardError(
             f"the {solution.id} template's mapping could not be loaded: {exc}",
         ) from exc
+    _check_docs(solution)
     permissions = bundle.mapping.permissions
     return _TemplateFacts(
         roles=frozenset(e.site_role for e in bundle.mapping.entities.values()),

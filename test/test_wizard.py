@@ -3666,7 +3666,7 @@ def test_a_journey_naming_an_uninstalled_template_says_so_and_offers_the_rest(
     assert wizard.run_wizard(console) == 0
     shown = _collapsed(console)
     assert "1 of 2" in shown
-    assert "names acme-thing, which is not installed" in shown
+    assert "names acme-thing, which is not available here" in shown
     assert "dbml-sharepoint blueprints" in shown
 
 
@@ -3678,7 +3678,7 @@ def test_a_journey_with_nothing_installed_shows_the_hint_and_asks_again(
     assert wizard.run_wizard(console) == 0
     shown = _collapsed(console)
     assert "0 of 2" in shown
-    assert "names acme-thing, acme-other, which are not installed" in shown
+    assert "names acme-thing, acme-other, which are not available here" in shown
     assert "Journey 'ghost' names no blueprint that is installed" in shown
 
 
@@ -3720,3 +3720,37 @@ def test_a_journey_s_text_is_shown_literally_not_as_markup() -> None:
     console.print(wizard._journey_table([journey], {"visitor-log"}))
     assert "acme[1]" in console.text
     assert _MARKUP in _collapsed(console)
+
+
+def test_a_template_with_undecodable_documentation_is_refused_before_anything_is_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The docs are rewritten after the copy, so a bad one must be found before the copy."""
+    solution = _fake_family(tmp_path / "fake")
+    (solution.root / "30-deploy").mkdir()
+    (solution.root / "30-deploy" / "deploy.md").write_bytes(b"caf\xe9\n")
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    shown = _collapsed(console)
+    assert "30-deploy/deploy.md" in shown
+    assert "not UTF-8" in shown
+    assert not destination.exists()
+
+
+def test_the_journey_hint_does_not_claim_where_a_missing_blueprint_comes_from(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A member can be missing because it was refused or misspelt, not only uninstalled."""
+    _with_journey(monkeypatch, _journey("partial", "visitor-log", "acme-thing"))
+    console = ScriptedConsole([
+        "partial", *_answers(tmp_path / "proj", template="visitor-log", prefix="VI_"),
+    ])
+    assert wizard.run_wizard(console) == 0
+    shown = _collapsed(console)
+    assert "names acme-thing, which is not available here" in shown
+    assert "refused" in shown
+    assert "They come from another package" not in shown
