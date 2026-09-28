@@ -367,6 +367,16 @@ def _check_notice(blueprint_dir: Path, notice: str, path: Path) -> None:
         )
 
 
+def terminal_safe(text: str) -> str:
+    """`text` with every character outside printable ASCII written as a Python escape.
+
+    For messages that carry a path or a name from another package: a refusal
+    quotes the very value it refuses, and that value must not reach the
+    terminal raw.
+    """
+    return "".join(c if " " <= c <= "~" else c.encode("unicode_escape").decode() for c in text)
+
+
 def _unprintable(text: str) -> str:
     """The codepoints in `text` outside printable ASCII, joined, or "" when there are none.
 
@@ -541,6 +551,11 @@ def _unlistable(path: Path) -> str:
 
 def _build(family: Path, source: BlueprintRoot) -> Solution:
     """One blueprint, described by its blueprint.toml. Raises `BlueprintManifestError`."""
+    if family.is_symlink():
+        raise BlueprintManifestError(
+            f"{family}: is a link, and the wizard would copy whatever it points at; "
+            "a blueprint is a real directory inside its package",
+        )
     if reason := _unlistable(family):
         raise BlueprintManifestError(f"{family}: cannot be listed: {reason}")
     missing = [
@@ -684,6 +699,11 @@ def _gather_journeys(roots: list[BlueprintRoot]) -> tuple[list[Journey], list[Sh
         directory = source.root / JOURNEYS_DIRNAME
         if not directory.is_dir():
             continue
+        # A glob skips a directory it cannot enter, which would drop every journey unsaid.
+        if reason := _unlistable(directory):
+            raise BlueprintRootError(
+                f"{source.distribution}: {directory} cannot be listed: {reason}",
+            )
         for path in sorted(directory.glob("*.md")):
             try:
                 journey = _build_journey(path, source.distribution)
@@ -834,7 +854,7 @@ def notices(found: Catalogue) -> list[str]:
     Hidden ids are grouped by package, so a provider that repeats every core
     blueprint costs one line rather than one per blueprint.
     """
-    lines = [f"Not offered: {r.distribution}: {r.reason}" for r in found.refused]
+    lines = [f"Not offered: {r.distribution}: {terminal_safe(r.reason)}" for r in found.refused]
     grouped: dict[tuple[str, str, str], list[str]] = {}
     for hidden in found.shadowed:
         grouped.setdefault((hidden.kind, hidden.distribution, hidden.kept_from), []).append(

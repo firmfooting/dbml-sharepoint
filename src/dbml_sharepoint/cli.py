@@ -27,6 +27,7 @@ from dbml_sharepoint.catalogue import (
     RELEASE_RELPATH,
     SCHEMA_RELPATH,
     BlueprintRootError,
+    terminal_safe,
 )
 from dbml_sharepoint.extract.emit import DEFAULT_PREFIX
 from dbml_sharepoint.extract.folder import (
@@ -426,7 +427,7 @@ def blueprints() -> None:
     try:
         text, clean = execute_blueprints()
     except BlueprintRootError as exc:
-        typer.echo(str(exc), err=True)
+        typer.echo(terminal_safe(str(exc)), err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(text)
     if not clean:

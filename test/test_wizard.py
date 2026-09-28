@@ -9,6 +9,7 @@ answer -- under test.
 
 import ast
 import hashlib
+import os
 import shutil
 import sys
 import tempfile
@@ -3892,4 +3893,51 @@ def test_a_template_with_a_link_to_a_directory_is_refused_before_writing(
 
     assert wizard.run_wizard(console) == 1
     assert "docs/loop is a link to a directory" in _collapsed(console)
+    assert not destination.exists()
+
+
+# Windows has no mode bits and root ignores them, so a permission test cannot bind there.
+if sys.platform == "win32":
+    _PERMISSIONS_BIND = False
+else:
+    _PERMISSIONS_BIND = os.geteuid() != 0
+
+
+@pytest.mark.skipif(not _PERMISSIONS_BIND, reason="needs POSIX permissions that bind this user")
+def test_a_template_with_a_file_that_cannot_be_read_is_refused_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The copy would stop part-way on it and leave a partial project."""
+    solution = _fake_family(tmp_path / "fake")
+    notice = solution.root / "NOTICE"
+    notice.write_text("terms\n", encoding="utf-8")
+    notice.chmod(0)
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+    try:
+        assert wizard.run_wizard(console) == 1
+    finally:
+        notice.chmod(0o644)
+    assert "NOTICE cannot be read" in _collapsed(console)
+    assert not destination.exists()
+
+
+def test_a_provider_template_that_fails_validation_is_refused_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Another package's blueprint is not built by core's CI, so its findings are checked here."""
+    solution = replace(
+        _fake_family(tmp_path / "fake"), distribution="acme-packs", license="BUSL-1.1",
+    )
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    shown = _collapsed(console)
+    assert "fails validation" in shown
+    assert "entity_not_in_schema" in shown
     assert not destination.exists()

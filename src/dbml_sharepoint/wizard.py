@@ -39,7 +39,7 @@ import json
 import re
 import shutil
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -54,6 +54,7 @@ from rich.table import Table
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.groups import declaring_groups
 from dbml_sharepoint.analysis.timezones import local_zone_name
+from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.bundle import (
     ASSESS_SCRIPT,
     DEMO_SCRIPT,
@@ -62,6 +63,7 @@ from dbml_sharepoint.bundle import (
 )
 from dbml_sharepoint.catalogue import (
     BROWSE_ALL,
+    CORE_DISTRIBUTION,
     MAPPING_RELPATH,
     NEVER_COPIED,
     PLACEHOLDER_SITE_URL,
@@ -73,7 +75,9 @@ from dbml_sharepoint.catalogue import (
     Solution,
     notices,
     read_catalogue,
+    terminal_safe,
 )
+from dbml_sharepoint.extension import UnknownExtensionError, resolve_extension
 from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.env_file import (
     ENTERPRISE_READER_KEY,
@@ -84,6 +88,7 @@ from dbml_sharepoint.model.env_file import (
 )
 from dbml_sharepoint.model.errors import MappingError
 from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import parse_dbml
 from dbml_sharepoint.model.reading import recording_reads
 from dbml_sharepoint.model.release import load_release
@@ -1258,11 +1263,12 @@ def _check_reads(solution: Solution, read: list[Path]) -> None:
             )
 
 
-def _check_links(solution: Solution) -> None:
-    """Refuse a template holding a link out of itself or to any directory; the copy follows links.
+def _check_tree(solution: Solution) -> None:
+    """Refuse a template the copy would stop part-way through, or would carry too much of.
 
-    A directory link that stays inside the template can still point at an
-    ancestor, which the copy would follow until the path grew too long.
+    The copy follows links, so a link out of the template, or to any directory
+    (one pointing at an ancestor stays inside and never ends), is refused; so is
+    a file this user cannot read, which would leave a partial project.
     """
     root = solution.root.resolve()
     for path in sorted(solution.root.rglob("*")):
@@ -1280,24 +1286,45 @@ def _check_links(solution: Solution) -> None:
                 f"the {solution.id} template's {name} links outside the template, and the "
                 "copy would bring whatever it points at into the project",
             )
+        if path.is_file():
+            try:
+                path.open("rb").close()
+            except OSError as exc:
+                raise WizardError(
+                    f"the {solution.id} template's {inside.as_posix()} cannot be read: {exc}",
+                ) from exc
 
 
-def _check_inputs(solution: Solution) -> None:
+def _check_inputs(solution: Solution, bundle: MappingBundle) -> None:
     """Load the schema and release the build will read, so a bad one is refused before any copy.
 
-    A blueprint from another package is not held to core's template gates.
+    A blueprint from another package is not held to core's template gates, so
+    its schema and mapping are also validated together, as the build would.
     """
-    loaders: tuple[tuple[str, Callable[[Path], object], Path], ...] = (
-        ("schema", parse_dbml, solution.schema_path),
-        ("release", load_release, solution.release_path),
-    )
-    for what, load, path in loaders:
-        try:
-            load(path)
-        except CONFIG_ERRORS as exc:
-            raise WizardError(
-                f"the {solution.id} template's {what} could not be loaded: {exc}",
-            ) from exc
+    try:
+        schema = parse_dbml(solution.schema_path)
+    except CONFIG_ERRORS as exc:
+        raise WizardError(
+            f"the {solution.id} template's schema could not be loaded: {exc}",
+        ) from exc
+    try:
+        load_release(solution.release_path)
+    except CONFIG_ERRORS as exc:
+        raise WizardError(
+            f"the {solution.id} template's release could not be loaded: {exc}",
+        ) from exc
+    if solution.distribution == CORE_DISTRIBUTION:
+        # Core's own are built end to end by its CI, so their findings are already known.
+        return
+    try:
+        extension = resolve_extension(bundle.mapping.extension)
+    except UnknownExtensionError as exc:
+        raise WizardError(f"the {solution.id} template names {exc}") from exc
+    errors = [f for f in validate_all(schema, bundle, extension) if f.severity == "error"]
+    if errors:
+        shown = "; ".join(f"{f.code}: {f.message}" for f in errors[:3])
+        more = f" (and {len(errors) - 3} more)" if len(errors) > 3 else ""
+        raise WizardError(f"the {solution.id} template fails validation: {shown}{more}")
 
 
 def _check_docs(solution: Solution) -> None:
@@ -1340,8 +1367,8 @@ def _read_facts(solution: Solution) -> _TemplateFacts:
             f"the {solution.id} template's mapping could not be loaded: {exc}",
         ) from exc
     _check_reads(solution, read)
-    _check_links(solution)
-    _check_inputs(solution)
+    _check_tree(solution)
+    _check_inputs(solution, bundle)
     _check_docs(solution)
     permissions = bundle.mapping.permissions
     return _TemplateFacts(
@@ -1541,7 +1568,7 @@ def _run(console: Console) -> int:
     try:
         found = read_catalogue()
     except BlueprintRootError as exc:
-        console.print(f"[red]{escape(str(exc))}[/red]")
+        console.print(f"[red]{escape(terminal_safe(str(exc)))}[/red]")
         return 1
     solutions = list(found.solutions)
     # A journey is navigation, not a template. A build that shipped without

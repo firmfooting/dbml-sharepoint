@@ -483,3 +483,55 @@ def test_a_provider_blueprint_directory_that_cannot_be_searched_is_refused(
         family.chmod(0o755)
     assert [(r.distribution, r.path.name) for r in found.refused] == [("acme-packs", "acme-thing")]
     assert "cannot be listed" in found.refused[0].reason
+
+
+def test_a_provider_blueprint_directory_that_is_a_link_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The wizard copies what the link points at, which is not what the package installed."""
+    outside = write_family(tmp_path / "elsewhere", "acme-thing", {"license": "BUSL-1.1"})
+    packs = tmp_path / "packs"
+    packs.mkdir()
+    try:
+        (packs / "acme-thing").symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"this platform will not create a symlink here: {exc}")
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+
+    found = read_catalogue()
+    assert "acme-thing" not in {s.id for s in found.solutions}
+    assert "is a link" in found.refused[0].reason
+
+
+def test_a_refusal_naming_an_unprintable_path_is_printed_safely(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reason quotes the path of the name it refuses, which must not reach a terminal raw."""
+    packs = tmp_path / "packs"
+    name = "acme" + chr(0x1B) + "[2J"
+    try:
+        write_family(packs, name, {"license": "BUSL-1.1"})
+    except OSError as exc:
+        pytest.skip(f"this platform will not name a directory that way: {exc}")
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+
+    lines = notices(read_catalogue())
+    assert lines
+    assert all(chr(0x1B) not in line for line in lines)
+    assert any("acme\\x1b[2J" in line for line in lines)
+
+
+@pytest.mark.skipif(not _PERMISSIONS_BIND, reason="needs POSIX permissions that bind this user")
+def test_a_provider_journeys_directory_that_cannot_be_listed_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A glob skips a directory it cannot enter, which would drop every journey without a word."""
+    packs = tmp_path / "packs"
+    write_journey(packs, "acme-journey", ["acme-thing"])
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+    (packs / "journeys").chmod(0)
+    try:
+        with pytest.raises(BlueprintRootError, match=r"^acme-packs: .*journeys cannot be listed"):
+            read_catalogue()
+    finally:
+        (packs / "journeys").chmod(0o755)

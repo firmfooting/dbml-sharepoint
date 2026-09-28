@@ -235,6 +235,18 @@ Everything offered from every root, and what was refused.
 
 Read once per command, so the wizard and `blueprints` report the same thing.
 
+### `terminal_safe`
+
+```python
+def terminal_safe(text: str) -> str
+```
+
+`text` with every character outside printable ASCII written as a Python escape.
+
+For messages that carry a path or a name from another package: a refusal
+quotes the very value it refuses, and that value must not reach the
+terminal raw.
+
 ### `read_blueprint_manifest`
 
 ```python

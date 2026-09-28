@@ -135,3 +135,16 @@ def test_an_installation_offering_no_template_exits_1(
 
     assert result.exit_code == 1
     assert "No blueprint is offered" in result.stdout
+
+
+def test_a_provider_error_naming_an_unprintable_path_is_printed_safely(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    missing = tmp_path / ("miss" + chr(0x1B) + "[2Jing")
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", missing))
+
+    result = runner.invoke(app, ["blueprints"])
+
+    assert result.exit_code == 1
+    assert chr(0x1B) not in result.stderr
+    assert "miss\\x1b[2Jing" in result.stderr
