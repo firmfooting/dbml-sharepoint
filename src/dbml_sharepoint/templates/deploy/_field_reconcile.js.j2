@@ -374,6 +374,39 @@
     return `${m.property}: declared ${JSON.stringify(m.declared)}, readback ${JSON.stringify(m.actual)} (${m.message})`;
   }
 
+  // A formula's [Created] resolves by display title, measured only where that title is 'Created' (2026-09-28).
+  // A null listName reads the site's own column, because the list is not created yet.
+  async function builtinTitleMismatch(listName, builtin) {
+    const property = `Title of [${builtin}]`;
+    const where = listName === null ? 'the site' : `'${listName}'`;
+    const notChecked = (why) => ({
+      property, declared: builtin, actual: null, checked: false,
+      message: `the column '${builtin}' of ${where} ${why}`,
+    });
+    let title;
+    try {
+      if (listName === null) {
+        const r = await fetchWithRetry(apiUrl(`web/availablefields/getbyinternalnameortitle('${odataName(builtin)}')?$select=Title`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!r.ok) return notChecked(`could not be read: HTTP ${r.status} ${await r.text()}`);
+        const j = await r.json();
+        title = j && j.d ? j.d.Title : undefined;
+      } else {
+        const field = (await listFieldShapes(listName)).get(builtin);
+        if (!field) return notChecked('was not found');
+        title = field.Title;
+      }
+    } catch (err) {
+      return notChecked(`could not be read: ${err.message}`);
+    }
+    if (title === builtin) return null;
+    return {
+      property, declared: builtin, actual: title ?? null, checked: true,
+      message: `SharePoint resolves [${builtin}] in a calculated formula by display title, and only the title '${builtin}' has been measured`,
+    };
+  }
+
   // One entry per mismatched property. The throwing wrapper below keeps every
   // caller's semantics; nothing else reads the returned array yet.
   function immutableListMismatches(list, actual) {

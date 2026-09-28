@@ -11,6 +11,7 @@ from dbml_sharepoint.analysis.column_projection import (
     system_column_types_for,
 )
 from dbml_sharepoint.analysis.column_refs import (
+    CALCULATED_FORMULA_BUILTINS,
     formula_column_refs,
     rewrite_formula_refs,
 )
@@ -862,6 +863,14 @@ def build_schema_json(
                 title_patch["Title"] = title_display
 
         declared_validation = effective_validation
+        # The preflight reads each built-in's live display title, which the formula resolves by.
+        builtin_readers: dict[str, list[str]] = {}
+        for column in table.columns:
+            formula = calculated_here.get(column.name)
+            if formula is None:
+                continue
+            for builtin in sorted(formula_column_refs(formula) & CALCULATED_FORMULA_BUILTINS):
+                builtin_readers.setdefault(builtin, []).append(column.name)
         lists.append({
             "title": list_title,
             "kind": entity.kind,
@@ -887,6 +896,10 @@ def build_schema_json(
             "major_version_limit": versioning.major_version_limit,
             "enable_minor_versions": versioning.enable_minor_versions,
             "fields_phase1": fields_phase1,
+            **({"builtin_formula_refs": [
+                {"builtin": builtin, "columns": columns}
+                for builtin, columns in sorted(builtin_readers.items())
+            ]} if builtin_readers else {}),
             "title_patch": title_patch,
             "validation_formula": (
                 # SP resolves validation formulas by DISPLAY name, like

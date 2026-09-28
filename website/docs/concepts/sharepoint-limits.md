@@ -165,6 +165,13 @@ accepted `=[Created]+14`, read it back and rendered the result as a date
 columns such as `[Modified]` have not been measured in a calculated formula
 and are still refused.
 
+That measurement was made where the built-in column is titled `Created`, and
+the reference resolves by display title. The deploy's preflight therefore reads
+the column's title, from the library when it exists and from the site's own
+`Created` column when it does not, and stops before any write if the title is
+anything else. A site in another language may title it differently, and no such
+site has been measured.
+
 **How it maps here.** Every `calculated_text`, `calculated_number` and
 `calculated_date` column's formula, declared in `mapping.yaml`'s
 `calculated_formulas`, is checked against this matrix.

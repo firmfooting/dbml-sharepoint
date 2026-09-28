@@ -152,6 +152,23 @@
     if (deleteBehaviours.length > 0) adoptedDeleteBehaviours[list.title] = deleteBehaviours;
   }, 4);
 
+  // Refused here because the calculated create comes after the list phase has written.
+  for (const list of SCHEMA.lists) {
+    if (listOutcomes[list.title] === 'unreadable') continue;
+    for (const { builtin, columns } of (list.builtin_formula_refs || [])) {
+      const listName = preflightListShapes[list.title] ? probeTitleFor(list) : null;
+      const mismatch = await builtinTitleMismatch(listName, builtin);
+      if (!mismatch) continue;
+      for (const column of columns) {
+        log('ERROR', `Calculated formula '${list.title}.${column}': ${describeMismatch(mismatch)}`);
+        summary.errors.push({
+          phase: 'preflight', list: list.title, column,
+          error: mismatch.message, mismatches: [mismatch],
+        });
+      }
+    }
+  }
+
   // #576: an adopted lookup keeps whatever delete behaviour it was given, since
   // nothing here writes it. Reported, not fatal, so it goes to warnings.
   const listsWithDeleteBehaviour = SCHEMA.lists.filter((list) => adoptedDeleteBehaviours[list.title]);
