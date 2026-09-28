@@ -92,7 +92,7 @@ def test_a_calculated_column_without_a_formula_is_reported_by_the_helper_alone()
     bundle, which is what the signature change was for."""
     table = make_table("Risk", make_column("Score", "calculated_number"))
     col = table.columns[-1]
-    findings = _calculated_formula(table, col, None, set(), {}, {})
+    findings = _calculated_formula(table, col, None, set(), {}, {}, frozenset())
     only(findings, FindingCode.CALCULATED_COLUMN_HAS_NO_FORMULA)
 
 def test_orphan_calculated_formula_is_error() -> None:

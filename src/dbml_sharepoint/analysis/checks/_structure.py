@@ -1280,7 +1280,7 @@ def _calculated_formula(
     rendered: set[str],
     columns_by_name: dict[str, Column],
     deferred: dict[str, set[str]],
-    builtins: AbstractSet[str] = frozenset(),
+    builtins: AbstractSet[str],
 ) -> list[Finding]:
     """One calculated column's formula: its presence, shape and references."""
     if formula is None:
