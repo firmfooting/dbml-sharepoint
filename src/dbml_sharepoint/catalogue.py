@@ -15,6 +15,7 @@ is somebody who ran `uvx dbml-sharepoint` and has no checkout.
 """
 
 import re
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -79,6 +80,21 @@ _SUMMARY_MAX = 140
 #: `test_messages_bound_for_a_console_are_ascii`.
 _ELLIPSIS = "..."
 
+#: The distribution this module ships in. Its packs win a duplicate id.
+CORE_DISTRIBUTION = "dbml-sharepoint"
+
+#: The file every pack directory carries beside its README.
+PACK_MANIFEST = "pack.toml"
+
+#: Every key a pack.toml carries, each one required.
+_MANIFEST_KEYS = ("id", "title", "summary", "license", "origin", "notice", "min_core")
+
+#: The origin of a pack designed by this project, which needs no notice.
+ORIGIN_OWN = "firmfooting"
+
+#: `<organisation>-released` needs a notice file; `<organisation>-held` is never released.
+_ORIGIN_DERIVED = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*-(released|held)")
+
 
 class UnknownSolutionError(LookupError):
     """Named solution does not exist. Carries the available names.
@@ -95,6 +111,14 @@ class UnknownSolutionError(LookupError):
             f"unknown solution template {name!r}. Available: "
             f"{', '.join(available) or '(none)'}",
         )
+
+
+class PackManifestError(ValueError):
+    """A pack's pack.toml is missing, malformed, or claims what the catalogue refuses.
+
+    Named so the catalogue can refuse that one pack and keep offering the rest,
+    and so the reason reaches the operator rather than a traceback.
+    """
 
 
 @dataclass(frozen=True)
@@ -145,6 +169,25 @@ class Journey:
     #: Declared order, which is the order to deploy in. Not sorted.
     solution_ids: tuple[str, ...]
     path: Path
+
+
+@dataclass(frozen=True)
+class PackManifest:
+    """What a pack declares about itself in pack.toml, checked."""
+
+    id: str
+    #: Folded to ASCII, because it is rendered into a terminal table.
+    title: str
+    #: The whole lead sentence; the catalogue caps it for the table itself.
+    summary: str
+    #: An SPDX expression, equal to the License-Expression of its distribution.
+    license: str
+    #: `firmfooting`, `<organisation>-released` or `<organisation>-held`.
+    origin: str
+    #: A file inside the pack carrying release terms, or "".
+    notice: str
+    #: The core version range the pack was tested against. Stored, not evaluated.
+    min_core: str
 
 
 #: Typographic characters a README may use, and their terminal spellings.
@@ -206,10 +249,101 @@ def _clean(text: str) -> str:
     console cannot encode is worse than noise, so typographic punctuation is
     folded to its ASCII spelling on the way through.
     """
-    text = re.sub(r"[*_`]+", "", text)
+    return _fold(re.sub(r"[*_`]+", "", text))
+
+
+def _fold(text: str) -> str:
+    """Typography folded to its ASCII spelling and whitespace collapsed; markdown untouched."""
     for fancy, plain in _TERMINAL_SPELLINGS.items():
         text = text.replace(fancy, plain)
     return re.sub(r"\s+", " ", text).strip()
+
+
+def _manifest_string(raw: dict[str, Any], key: str, path: Path) -> str:
+    """One required string value of a pack.toml, stripped."""
+    if key not in raw:
+        raise PackManifestError(f"{path}: declares no '{key}'")
+    value = raw[key]
+    if not isinstance(value, str):
+        raise PackManifestError(f"{path}: '{key}' must be a string, not {type(value).__name__}")
+    if not value.strip() and key != "notice":
+        raise PackManifestError(f"{path}: '{key}' is empty")
+    return value.strip()
+
+
+def _check_notice(pack_dir: Path, notice: str, path: Path) -> None:
+    """A notice names a file inside the pack, so it travels wherever the pack is copied."""
+    target = (pack_dir / notice).resolve()
+    if not target.is_relative_to(pack_dir.resolve()) or not target.is_file():
+        raise PackManifestError(f"{path}: notice {notice!r} is not a file inside the pack")
+
+
+def _terminal_text(value: str, key: str, path: Path) -> str:
+    """`value` folded to ASCII, or refused when a character has no ASCII spelling."""
+    folded = _fold(value)
+    if not folded.isascii():
+        found = ", ".join(sorted({f"U+{ord(c):04X}" for c in folded if not c.isascii()}))
+        raise PackManifestError(
+            f"{path}: '{key}' carries characters a console may not encode: {found}",
+        )
+    return folded
+
+
+def read_pack_manifest(pack_dir: Path, distribution_licence: str) -> PackManifest:
+    """Read and check `pack_dir/pack.toml`, or raise `PackManifestError`.
+
+    `distribution_licence` is the License-Expression of the distribution the
+    pack was found in. A pack may not claim a different one, so the licence a
+    listing shows is the one the installed package was published under.
+    """
+    path = pack_dir / PACK_MANIFEST
+    if not path.is_file():
+        raise PackManifestError(
+            f"{pack_dir}: no {PACK_MANIFEST}; every pack declares its id, title, "
+            "summary and licence there",
+        )
+    try:
+        # utf-8-sig: an editor on Windows may save a byte-order mark, which TOML does not allow.
+        raw = tomllib.loads(path.read_text(encoding="utf-8-sig"))
+    except UnicodeDecodeError as exc:
+        raise PackManifestError(f"{path}: not UTF-8: {exc.reason} at byte {exc.start}") from exc
+    except tomllib.TOMLDecodeError as exc:
+        raise PackManifestError(f"{path}: not valid TOML: {exc}") from exc
+    unknown = sorted(set(raw) - set(_MANIFEST_KEYS))
+    if unknown:
+        raise PackManifestError(f"{path}: unknown key(s) {unknown}")
+    values = {key: _manifest_string(raw, key, path) for key in _MANIFEST_KEYS}
+    if values["id"] != pack_dir.name:
+        raise PackManifestError(
+            f"{path}: id {values['id']!r} is not the directory name {pack_dir.name!r}",
+        )
+    if values["license"] != distribution_licence:
+        raise PackManifestError(
+            f"{path}: license {values['license']!r} differs from {distribution_licence!r}, "
+            "the License-Expression of the distribution that ships it",
+        )
+    origin = values["origin"]
+    derived = _ORIGIN_DERIVED.fullmatch(origin)
+    if origin != ORIGIN_OWN and derived is None:
+        raise PackManifestError(
+            f"{path}: origin {origin!r} is not {ORIGIN_OWN!r}, "
+            "'<organisation>-released' or '<organisation>-held'",
+        )
+    if derived is not None and derived.group(1) == "released" and not values["notice"]:
+        raise PackManifestError(
+            f"{path}: origin {origin!r} needs a notice file carrying the release terms",
+        )
+    if values["notice"]:
+        _check_notice(pack_dir, values["notice"], path)
+    return PackManifest(
+        id=values["id"],
+        title=_terminal_text(values["title"], "title", path),
+        summary=_terminal_text(values["summary"], "summary", path),
+        license=values["license"],
+        origin=origin,
+        notice=values["notice"],
+        min_core=values["min_core"],
+    )
 
 
 def _lead_sentence(readme: str) -> str:

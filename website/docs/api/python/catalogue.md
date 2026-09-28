@@ -70,6 +70,24 @@ JOURNEYS_DIRNAME = 'journeys'
 SECTORS_DIRNAME = 'sectors'
 ```
 
+### `CORE_DISTRIBUTION`
+
+```python
+CORE_DISTRIBUTION = 'dbml-sharepoint'
+```
+
+### `PACK_MANIFEST`
+
+```python
+PACK_MANIFEST = 'pack.toml'
+```
+
+### `ORIGIN_OWN`
+
+```python
+ORIGIN_OWN = 'firmfooting'
+```
+
 ### `UnknownSolutionError`
 
 Named solution does not exist. Carries the available names.
@@ -77,6 +95,13 @@ Named solution does not exist. Carries the available names.
 A `LookupError` rather than a bare `ValueError` so a caller can
 distinguish "no such template" from "this template is malformed", which
 fail in completely different ways and want different messages.
+
+### `PackManifestError`
+
+A pack's pack.toml is missing, malformed, or claims what the catalogue refuses.
+
+Named so the catalogue can refuse that one pack and keep offering the rest,
+and so the reason reaches the operator rather than a traceback.
 
 ### `Solution`
 
@@ -116,6 +141,34 @@ from a family's own prose: `catalogue._lead_sentence` explains why the
 READMEs' `*Theme:*` line was never consistent enough to key off, and a
 grouping nothing verifies is a grouping that goes stale, which is how one
 shipped family came to sit in no theme at all.
+
+### `PackManifest`
+
+```python
+@dataclass(frozen=True)
+class PackManifest:
+    id: str
+    title: str
+    summary: str
+    license: str
+    origin: str
+    notice: str
+    min_core: str
+```
+
+What a pack declares about itself in pack.toml, checked.
+
+### `read_pack_manifest`
+
+```python
+def read_pack_manifest(pack_dir: pathlib.Path, distribution_licence: str) -> dbml_sharepoint.catalogue.PackManifest
+```
+
+Read and check `pack_dir/pack.toml`, or raise `PackManifestError`.
+
+`distribution_licence` is the License-Expression of the distribution the
+pack was found in. A pack may not claim a different one, so the licence a
+listing shows is the one the installed package was published under.
 
 ### `available_solutions`
 
