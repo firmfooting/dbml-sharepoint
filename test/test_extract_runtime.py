@@ -24,10 +24,10 @@ GENERATED_AT = "2026-09-06T12:00:00+00:00"
 SITE = "https://example.sharepoint.com/sites/risk"
 WEB = "/sites/risk"
 
-#: The fixture list is SERVED at /Lists/OldRisk and TITLED RG_Risk, which is
+#: The fixture list is SERVED at /Lists/OldRisk and TITLED PT_Risk, which is
 #: what a list that has been through a `renamed_from` migration looks like.
 LIST_PATH = f"{WEB}/Lists/OldRisk"
-LIST_TITLE = "RG_Risk"
+LIST_TITLE = "PT_Risk"
 MISSING_PATH = f"{WEB}/Lists/Gone"
 
 _HARNESS = textwrap.dedent(r"""
@@ -86,7 +86,7 @@ _HARNESS = textwrap.dedent(r"""
 def _config() -> dict[str, Any]:
     return {
         "web": WEB,
-        "titles": [LIST_TITLE, "RG_Project"],
+        "titles": [LIST_TITLE, "PT_Project"],
         "list": {
             "Id": "aaaaaaaa-0000-0000-0000-000000000001",
             "Title": LIST_TITLE,
@@ -157,7 +157,7 @@ def test_the_abort_names_the_lists_that_do_exist() -> None:
     assert MISSING_PATH in out
     # Sorted, so the titles are named in their own order rather than the
     # fixture's.
-    assert "Lists on this web: RG_Project, RG_Risk" in out
+    assert "Lists on this web: PT_Project, PT_Risk" in out
 
 
 def test_a_list_that_reads_cleanly_still_extracts() -> None:

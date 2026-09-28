@@ -74,8 +74,8 @@ def folder_for_download(source: Path, list_title: str) -> Path:
     normal one: `extract-script` makes the folder, and the readme in it says
     to save the download there.
 
-    So `extract RG_Project/RG_Project-extract.json` from the parent and
-    `extract RG_Project-extract.json` from inside the folder both write to
+    So `extract PT_Project/PT_Project-extract.json` from the parent and
+    `extract PT_Project-extract.json` from inside the folder both write to
     the same place, which is what an operator following either instruction
     expects. The second spelling has no directory in it at all, so the
     comparison is against the RESOLVED parent, which is the current
