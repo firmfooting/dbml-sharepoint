@@ -157,6 +157,24 @@ column name fail for a related but distinct reason: they are not row
 columns at all, and the same Microsoft formula reference's "own row" rule
 above is why a calculated formula has no way to name them.
 
+The one exception is `[Created]` in a document library's `calculated_date`
+column. It is a column every item has without being declared, and a library
+accepted `=[Created]+14`, read it back and rendered the result as a date
+(measured on a live tenant, 2026-09-28). A generic list's `[Created]`, a
+`calculated_text` or `calculated_number` column reading it, and other built-in
+columns such as `[Modified]` have not been measured in a calculated formula
+and are still refused.
+
+That measurement was made where the built-in column is titled `Created`, and
+the reference resolves by display title. The deploy therefore reads the
+library's own `Created` column and refuses the formula if its title is anything
+else. For a library that already exists this happens in the preflight, before
+any write. A library the deploy creates has no column to read until it exists,
+so it is checked after the library is created and before the calculated column
+is, and a refusal there stops the run with the column not created. A site in
+another language may title the column differently, and no such site has been
+measured.
+
 **How it maps here.** Every `calculated_text`, `calculated_number` and
 `calculated_date` column's formula, declared in `mapping.yaml`'s
 `calculated_formulas`, is checked against this matrix.
@@ -165,10 +183,11 @@ above is why a calculated formula has no way to name them.
 emitted. `calculated_formula_unsupported_operand` and
 `multi_value_operand_unsupported` name the forbidden operand and column;
 `calculated_formula_unknown_column` catches `[Today]`, `[Me]` and any typo,
-because none of them names a declared column of the entity. The build
-refuses the formula at build time rather than letting SharePoint refuse the
-field creation at HTTP 500, part-way through a deploy that has already
-written earlier phases.
+because none of them names a declared column of the entity; `[Created]` in a
+library's `calculated_date` column is the one undeclared name it lets through.
+The build refuses the formula at build time rather than letting SharePoint
+refuse the field creation at HTTP 500, part-way through a deploy that has
+already written earlier phases.
 
 **Mitigation.** Compute from a supported operand type (text, number, date,
 choice, boolean or another calculated column) instead. See [DBML reference:

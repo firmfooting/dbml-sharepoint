@@ -152,6 +152,21 @@
     if (deleteBehaviours.length > 0) adoptedDeleteBehaviours[list.title] = deleteBehaviours;
   }, 4);
 
+  // An existing list is checked here, before any write; every list is checked again before each create.
+  for (const list of SCHEMA.lists.filter((candidate) => preflightListShapes[candidate.title])) {
+    for (const { builtin, columns } of (list.builtin_formula_refs || [])) {
+      const mismatch = await builtinTitleMismatch(probeTitleFor(list), builtin);
+      if (!mismatch) continue;
+      for (const column of columns) {
+        log('ERROR', `Calculated formula '${list.title}.${column}': ${describeMismatch(mismatch)}`);
+        summary.errors.push({
+          phase: 'preflight', list: list.title, column,
+          error: mismatch.message, mismatches: [mismatch],
+        });
+      }
+    }
+  }
+
   // #576: an adopted lookup keeps whatever delete behaviour it was given, since
   // nothing here writes it. Reported, not fatal, so it goes to warnings.
   const listsWithDeleteBehaviour = SCHEMA.lists.filter((list) => adoptedDeleteBehaviours[list.title]);

@@ -45,6 +45,24 @@ String literals are stripped first so bracket text inside a quoted
 constant is not misread as a reference. Shared with jsgen, which orders
 Phase-1 field creation by these references.
 
+### `CALCULATED_FORMULA_BUILTINS`
+
+```python
+CALCULATED_FORMULA_BUILTINS = frozenset({'Created'})
+```
+
+### `calculated_formula_builtins`
+
+```python
+def calculated_formula_builtins(*, is_library: bool, column_type: str) -> frozenset[str]
+```
+
+Built-in columns a calculated formula may name without declaring them.
+
+Only the measured combination is admitted: a library's `calculated_date`.
+A list, and the text and number output types, are each a different
+create request and have no evidence yet.
+
 ### `formula_function_names`
 
 ```python
