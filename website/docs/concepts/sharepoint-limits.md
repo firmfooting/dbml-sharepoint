@@ -166,11 +166,14 @@ columns such as `[Modified]` have not been measured in a calculated formula
 and are still refused.
 
 That measurement was made where the built-in column is titled `Created`, and
-the reference resolves by display title. The deploy's preflight therefore reads
-the column's title, from the library when it exists and from the site's own
-`Created` column when it does not, and stops before any write if the title is
-anything else. A site in another language may title it differently, and no such
-site has been measured.
+the reference resolves by display title. The deploy therefore reads the
+library's own `Created` column and refuses the formula if its title is anything
+else. For a library that already exists this happens in the preflight, before
+any write. A library the deploy creates has no column to read until it exists,
+so it is checked after the library is created and before the calculated column
+is, and a refusal there stops the run with the column not created. A site in
+another language may title the column differently, and no such site has been
+measured.
 
 **How it maps here.** Every `calculated_text`, `calculated_number` and
 `calculated_date` column's formula, declared in `mapping.yaml`'s

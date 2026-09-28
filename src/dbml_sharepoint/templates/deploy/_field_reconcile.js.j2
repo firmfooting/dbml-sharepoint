@@ -375,28 +375,18 @@
   }
 
   // A formula's [Created] resolves by display title, measured only where that title is 'Created' (2026-09-28).
-  // A null listName reads the site's own column, because the list is not created yet.
+  // Read from the list itself, never inferred from the site's column, which nothing has measured against it.
   async function builtinTitleMismatch(listName, builtin) {
     const property = `Title of [${builtin}]`;
-    const where = listName === null ? 'the site' : `'${listName}'`;
     const notChecked = (why) => ({
       property, declared: builtin, actual: null, checked: false,
-      message: `the column '${builtin}' of ${where} ${why}`,
+      message: `the column '${builtin}' of '${listName}' ${why}`,
     });
     let title;
     try {
-      if (listName === null) {
-        const r = await fetchWithRetry(apiUrl(`web/availablefields/getbyinternalnameortitle('${odataName(builtin)}')?$select=Title`), {
-          headers: { 'Accept': 'application/json;odata=verbose' },
-        });
-        if (!r.ok) return notChecked(`could not be read: HTTP ${r.status} ${await r.text()}`);
-        const j = await r.json();
-        title = j && j.d ? j.d.Title : undefined;
-      } else {
-        const field = (await listFieldShapes(listName)).get(builtin);
-        if (!field) return notChecked('was not found');
-        title = field.Title;
-      }
+      const field = (await listFieldShapes(listName)).get(builtin);
+      if (!field) return notChecked('was not found');
+      title = field.Title;
     } catch (err) {
       return notChecked(`could not be read: ${err.message}`);
     }

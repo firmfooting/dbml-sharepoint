@@ -150,12 +150,10 @@
     if (deleteBehaviours.length > 0) adoptedDeleteBehaviours[list.title] = deleteBehaviours;
   }, 4);
 
-  // Refused here because the calculated create comes after the list phase has written.
-  for (const list of SCHEMA.lists) {
-    if (listOutcomes[list.title] === 'unreadable') continue;
+  // An existing list is checked here, before any write; every list is checked again before each create.
+  for (const list of SCHEMA.lists.filter((candidate) => preflightListShapes[candidate.title])) {
     for (const { builtin, columns } of (list.builtin_formula_refs || [])) {
-      const listName = preflightListShapes[list.title] ? probeTitleFor(list) : null;
-      const mismatch = await builtinTitleMismatch(listName, builtin);
+      const mismatch = await builtinTitleMismatch(probeTitleFor(list), builtin);
       if (!mismatch) continue;
       for (const column of columns) {
         log('ERROR', `Calculated formula '${list.title}.${column}': ${describeMismatch(mismatch)}`);

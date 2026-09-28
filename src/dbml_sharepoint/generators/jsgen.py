@@ -863,7 +863,7 @@ def build_schema_json(
                 title_patch["Title"] = title_display
 
         declared_validation = effective_validation
-        # The preflight reads each built-in's live display title, which the formula resolves by.
+        # Any kind and type, on purpose: the runtime guard must never be narrower than the rule.
         builtin_readers: dict[str, list[str]] = {}
         for column in table.columns:
             formula = calculated_here.get(column.name)
