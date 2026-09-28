@@ -3105,3 +3105,34 @@ def test_sqlcmd_syntax_in_library_root_is_refused() -> None:
     )
     with pytest.raises(ValueError, match="SQLCMD"):
         generate_sql_views(schema, bundle, "default")
+
+
+_ONE_LIST_DBML = """
+Table Risk {
+  Id int [pk, increment]
+  Title nvarchar
+}
+"""
+
+_ONE_LIST_MAPPING = """
+entities:
+  Risk: {kind: List, base_template: 100, site_role: default}
+"""
+
+
+def test_the_loading_warning_names_the_builds_own_base_function(tmp_path: Path) -> None:
+    """The example in the guide's warning is a file of this build, so the reader can
+    check it against the folder; a build in which no list reads another gets a neutral name."""
+    root = BLUEPRINTS["reporting-sample"]
+    schema = parse_dbml(root / "10-design" / "schema.dbml")
+    bundle = load_mapping(root / "20-configure" / "mapping.yaml")
+    guide = generate_reporting_md(schema, bundle, "default")
+    assert (
+        "so `RS_Risk_Base.pq` must be loaded as `RS_Risk_Base` for a query that reads "
+        "`RS_Risk` to resolve"
+    ) in guide
+    schema, bundle = pack(tmp_path, _ONE_LIST_DBML, _ONE_LIST_MAPPING)
+    guide = generate_reporting_md(schema, bundle, "default")
+    assert (
+        "so `Risk_Base.pq` must be loaded as `Risk_Base` for a query that reads `Risk` to resolve"
+    ) in guide
