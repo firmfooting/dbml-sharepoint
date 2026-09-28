@@ -398,6 +398,18 @@ def _manifest_table(blueprint_dir: Path, path: Path) -> dict[str, Any]:
         raise BlueprintManifestError(f"{path}: not valid TOML: {exc}") from exc
 
 
+def _taken_by_the_wizard(item_id: str) -> str:
+    """Why the wizard's pickers would read `item_id` as something else, or "" when they would not.
+
+    Both pickers take `all` and a row number at the same prompt as an id, and read those first.
+    """
+    if item_id == BROWSE_ALL:
+        return f"the id {BROWSE_ALL!r} is reserved: the wizard reads it as every blueprint"
+    if item_id.isdigit():
+        return f"the id {item_id!r} is only digits, which the wizard reads as a row number"
+    return ""
+
+
 def _check_id(blueprint_id: str, blueprint_dir: Path, path: Path) -> None:
     """The id is the directory name, printable, and not the wizard's browse-all answer."""
     if blueprint_id != blueprint_dir.name:
@@ -408,10 +420,8 @@ def _check_id(blueprint_id: str, blueprint_dir: Path, path: Path) -> None:
         raise BlueprintManifestError(
             f"{path}: 'id' carries characters a console may not print: {found}",
         )
-    if blueprint_id == BROWSE_ALL:
-        raise BlueprintManifestError(
-            f"{path}: the id {BROWSE_ALL!r} is reserved: the wizard reads it as every blueprint",
-        )
+    if reason := _taken_by_the_wizard(blueprint_id):
+        raise BlueprintManifestError(f"{path}: {reason}")
 
 
 def read_blueprint_manifest(blueprint_dir: Path, distribution_licence: str) -> BlueprintManifest:
@@ -484,7 +494,10 @@ def _mapping_facts(mapping_path: Path) -> tuple[tuple[str, ...], str]:
     if not isinstance(raw, dict):
         return (), ""
     entities = raw.get("entities")
-    names = tuple(entities) if isinstance(entities, dict) else ()
+    # A key that is not text is one the loader refuses, so offer no lists, as for any refusal.
+    if not isinstance(entities, dict) or not all(isinstance(name, str) for name in entities):
+        return (), ""
+    names = tuple(entities)
     prefix = raw.get("prefix")
     return names, prefix if isinstance(prefix, str) else ""
 
@@ -627,10 +640,8 @@ def _build_journey(path: Path, distribution: str) -> Journey:
             raise ValueError(
                 f"{path}: '{key}' carries characters a console may not print: {found}",
             )
-    if path.stem == BROWSE_ALL:
-        raise ValueError(
-            f"{path}: the id {BROWSE_ALL!r} is reserved: the wizard reads it as every blueprint",
-        )
+    if reason := _taken_by_the_wizard(path.stem):
+        raise ValueError(f"{path}: {reason}")
     return Journey(
         id=path.stem,
         title=shown["title"],
@@ -708,13 +719,19 @@ def _provider_root(point: EntryPoint) -> BlueprintRoot:
             "to no distribution, so its blueprints have no licence to check",
         )
     try:
-        distribution = point.dist.name
+        # `.get`, not `.name`: a missing Name header warns today and raises KeyError later.
+        distribution = point.dist.metadata.get("Name")
         declared = point.dist.metadata.get("License-Expression")
     except (OSError, ValueError) as exc:
         raise BlueprintRootError(
             f"entry point {point.name} ({point.value}) in {BLUEPRINT_ROOTS_GROUP}: its "
             f"distribution's metadata cannot be read: {type(exc).__name__}: {exc}",
         ) from exc
+    if not distribution:
+        raise BlueprintRootError(
+            f"entry point {point.name} ({point.value}) in {BLUEPRINT_ROOTS_GROUP}: its "
+            "distribution's metadata declares no Name",
+        )
     licence = _declared_licence(distribution, declared)
     # Any failure inside a provider's own code is that provider's, and named as such.
     try:

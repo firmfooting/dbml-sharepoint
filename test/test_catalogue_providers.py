@@ -378,3 +378,45 @@ def test_a_provider_whose_metadata_cannot_be_decoded_is_refused_by_name(
     expected = r"\(_catalogue_fixtures:first_root\).* metadata cannot be read: UnicodeDecodeError"
     with pytest.raises(BlueprintRootError, match=expected):
         read_catalogue()
+
+
+def test_a_provider_whose_metadata_names_no_distribution_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packs = tmp_path / "packs"
+    packs.mkdir()
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+    (tmp_path / "site" / "acme_packs-1.0.dist-info" / "METADATA").write_text(
+        "Metadata-Version: 2.4\nVersion: 1.0\nLicense-Expression: BUSL-1.1\n", encoding="utf-8",
+    )
+    with pytest.raises(BlueprintRootError, match="declares no Name"):
+        read_catalogue()
+
+
+def test_a_provider_mapping_with_a_non_text_entity_key_does_not_break_the_catalogue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Offered with no lists, like any mapping the build will refuse; the wizard refuses it."""
+    packs = tmp_path / "packs"
+    family = write_family(packs, "acme-thing", {"license": "BUSL-1.1"})
+    (family / "20-configure" / "mapping.yaml").write_text(
+        'prefix: "X_"\nentities:\n  1: {}\n', encoding="utf-8", newline="\n",
+    )
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+    offered = {s.id: s for s in read_catalogue().solutions}
+    assert (offered["acme-thing"].prefix, offered["acme-thing"].lists) == ("", ())
+
+
+def test_a_provider_journey_whose_id_is_a_row_number_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The wizard would read the id as a row number or the row number as the id."""
+    packs = tmp_path / "packs"
+    path = write_journey(packs, "2", ["acme-thing"])
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("title: 2", 'title: "Two"'),
+        encoding="utf-8", newline="\n",
+    )
+    install(monkeypatch, tmp_path / "site", Provider("acme-packs", packs))
+    with pytest.raises(BlueprintRootError, match="only digits"):
+        read_catalogue()

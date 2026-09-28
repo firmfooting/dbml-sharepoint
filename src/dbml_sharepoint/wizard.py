@@ -39,7 +39,7 @@ import json
 import re
 import shutil
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -83,9 +83,12 @@ from dbml_sharepoint.model.env_file import (
 )
 from dbml_sharepoint.model.errors import MappingError
 from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.parser import parse_dbml
 from dbml_sharepoint.model.reading import recording_reads
+from dbml_sharepoint.model.release import load_release
 from dbml_sharepoint.pipeline import execute_build
 from dbml_sharepoint.project import (
+    CONFIG_ERRORS,
     ENTERPRISE_READER_DECLINED,
     site_url_notice,
     validate_enterprise_reader,
@@ -334,7 +337,10 @@ def _pick_journey(
             )
         narrowed = [by_id[i] for i in chosen.solution_ids if i in by_id]
         if not narrowed:
-            console.print(f"[red]Journey {answer!r} names no blueprint that is installed.[/red]")
+            console.print(
+                f"[red]Journey {escape(repr(chosen.id))} names no blueprint that is "
+                "installed.[/red]",
+            )
             continue
         return narrowed
 
@@ -1233,6 +1239,42 @@ class _TemplateFacts:
     entity_titles: tuple[tuple[str, str], ...] = ()
 
 
+def _check_reads(solution: Solution, read: list[Path]) -> None:
+    """Refuse a mapping that reads a file the copy would not carry into the project."""
+    root = solution.root.resolve()
+    for path in read:
+        resolved = path.resolve()
+        if not resolved.is_relative_to(root):
+            raise WizardError(
+                f"the {solution.id} template's mapping reads {path}, which is outside the "
+                "template, so the copy would not carry it",
+            )
+        inside = resolved.relative_to(root)
+        if set(inside.parts) & set(_NEVER_COPY):
+            raise WizardError(
+                f"the {solution.id} template's mapping reads {inside.as_posix()}, which the "
+                f"copy leaves out ({', '.join(_NEVER_COPY)} are never copied)",
+            )
+
+
+def _check_inputs(solution: Solution) -> None:
+    """Load the schema and release the build will read, so a bad one is refused before any copy.
+
+    A blueprint from another package is not held to core's template gates.
+    """
+    loaders: tuple[tuple[str, Callable[[Path], object], Path], ...] = (
+        ("schema", parse_dbml, solution.schema_path),
+        ("release", load_release, solution.release_path),
+    )
+    for what, load, path in loaders:
+        try:
+            load(path)
+        except CONFIG_ERRORS as exc:
+            raise WizardError(
+                f"the {solution.id} template's {what} could not be loaded: {exc}",
+            ) from exc
+
+
 def _check_docs(solution: Solution) -> None:
     """Refuse a template whose documentation `_repoint_docs` could not read, before any copy.
 
@@ -1268,14 +1310,8 @@ def _read_facts(solution: Solution) -> _TemplateFacts:
         raise WizardError(
             f"the {solution.id} template's mapping could not be loaded: {exc}",
         ) from exc
-    # Only the template directory is copied, so a file read from elsewhere would not travel.
-    root = solution.root.resolve()
-    for path in read:
-        if not path.resolve().is_relative_to(root):
-            raise WizardError(
-                f"the {solution.id} template's mapping reads {path}, which is outside the "
-                "template, so the copy would not carry it",
-            )
+    _check_reads(solution, read)
+    _check_inputs(solution)
     _check_docs(solution)
     permissions = bundle.mapping.permissions
     return _TemplateFacts(

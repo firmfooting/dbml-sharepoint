@@ -156,6 +156,13 @@ _ONE_ENTITY = (
 )
 
 
+#: A release.yaml the loader accepts, for a stand-in family.
+_RELEASE = (
+    'release: "1.0.0"\ndate: "2026-09-28"\n'
+    'deployer_version: "dbml-sharepoint/0.1.0"\nschema_version: "1.0.0"\n'
+)
+
+
 def _fake_family(root: Path, mapping: str = _ONE_ENTITY) -> Solution:
     """A minimal stand-in for a shipped family, and the `Solution` for it.
 
@@ -175,7 +182,7 @@ def _fake_family(root: Path, mapping: str = _ONE_ENTITY) -> Solution:
     (root / "20-configure" / "mapping.yaml").write_text(
         mapping, encoding="utf-8", newline="\n",
     )
-    (root / "20-configure" / "release.yaml").write_text("", encoding="utf-8")
+    (root / "20-configure" / "release.yaml").write_text(_RELEASE, encoding="utf-8", newline="\n")
     return Solution(
         id="fake-template",
         title="Fake",
@@ -413,7 +420,7 @@ def test_a_previous_build_is_not_copied_into_the_new_project(
         "site_role: default }\n",
         encoding="utf-8",
     )
-    (source / "20-configure" / "release.yaml").write_text("", encoding="utf-8")
+    (source / "20-configure" / "release.yaml").write_text(_RELEASE, encoding="utf-8")
 
     _offer_only(monkeypatch, replace(
         load_solution("risk-register"),
@@ -3778,3 +3785,53 @@ def test_a_template_whose_mapping_reads_a_file_outside_it_is_refused_before_writ
     assert "outside.yaml" in shown
     assert "outside the template" in shown
     assert not destination.exists()
+
+
+@pytest.mark.parametrize(
+    ("relpath", "text"),
+    [("10-design/schema.dbml", "Table Risk {\n"), ("20-configure/release.yaml", "release: [\n")],
+)
+def test_a_template_whose_schema_or_release_will_not_load_is_refused_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, relpath: str, text: str,
+) -> None:
+    """A blueprint from another package is not held to core's template gates."""
+    solution = _fake_family(tmp_path / "fake")
+    (solution.root / relpath).write_text(text, encoding="utf-8")
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    assert "could not be loaded" in _collapsed(console)
+    assert not destination.exists()
+
+
+def test_a_template_whose_mapping_reads_a_file_the_copy_leaves_out_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`build/` is never copied, so a mapping source under it would not travel either."""
+    solution = _fake_family(
+        tmp_path / "fake", _ONE_ENTITY + "enum_sources:\n  Colour: ../build/enums.yaml\n",
+    )
+    (solution.root / "build").mkdir()
+    (solution.root / "build" / "enums.yaml").write_text("choices: [Red]\n", encoding="utf-8")
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    shown = _collapsed(console)
+    assert "build/enums.yaml" in shown
+    assert "the copy leaves out" in shown
+    assert not destination.exists()
+
+
+def test_a_journey_id_with_markup_names_no_installed_blueprint_without_crashing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _with_journey(monkeypatch, _journey("[/red]x", "acme-thing"))
+    console = ScriptedConsole(["[/red]x", *_answers(tmp_path / "proj")])
+    assert wizard.run_wizard(console) == 0
+    assert "Journey '[/red]x' names no blueprint that is installed" in _collapsed(console)

@@ -231,3 +231,9 @@ def test_the_wizard_s_browse_all_answer_is_not_a_blueprint_id(tmp_path: Path) ->
     """The wizard reads `all` as "show everything" before it looks for a blueprint by name."""
     with pytest.raises(BlueprintManifestError, match="'all' is reserved"):
         read_blueprint_manifest(_pack(tmp_path, manifest_text("all"), name="all"), CORE_LICENSE)
+
+
+def test_an_id_of_only_digits_is_refused(tmp_path: Path) -> None:
+    """The wizard's pickers take a row number at the same prompt as an id."""
+    with pytest.raises(BlueprintManifestError, match="only digits"):
+        read_blueprint_manifest(_pack(tmp_path, manifest_text("2"), name="2"), CORE_LICENSE)
