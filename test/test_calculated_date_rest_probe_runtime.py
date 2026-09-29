@@ -69,7 +69,8 @@ _MOCK = textwrap.dedent("""
       const wall = /^web\\/RegionalSettings\\/TimeZone\\/utctolocaltime\\('([^']+)'\\)$/.exec(path);
       if (wall) {
         const local = new Date(Date.parse(wall[1]) + 600 * 60000).toISOString().slice(0, 19);
-        return answer(200, { value: local });
+        const shape = CONFIG.wallShape || 'value';
+        return answer(200, shape === 'bare' ? JSON.stringify(local) : { [shape]: local });
       }
       if (path === 'web/lists' && verb === 'POST') {
         list = { Id: 'list-1', BaseTemplate: sent.BaseTemplate, Description: sent.Description };
@@ -427,3 +428,11 @@ def test_an_early_return_whose_recycle_fails_says_so_before_the_results_block() 
     marker = "Copy this whole block back verbatim."
     assert output.count(marker) == 1
     assert output.index(told) < output.index("==================== RESULTS") < output.index(marker)
+
+
+@pytest.mark.parametrize("shape", ["value", "bare", "UTCToLocalTime"])
+def test_the_site_clock_is_read_in_each_answer_shape_the_zone_probe_accepts(shape: str) -> None:
+    rows, _, _ = _run(wallShape=shape)
+
+    assert rows[DIFFER]["outcome"] == "DATES DIFFER", rows[DIFFER]
+    assert "the site's clock reads 2026-09-29T01:30:00" in rows[DIFFER]["evidence"]

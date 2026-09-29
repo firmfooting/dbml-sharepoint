@@ -188,7 +188,7 @@
       return;
     }
 
-    // The site's own conversion, in the two GET shapes site-zone-transitions-probe.js asks.
+    // The site's own conversion, in the two GET shapes and three answer shapes site-zone-transitions-probe.js reads.
     const stamp = encodeURIComponent(new Date(createdAt).toISOString());
     let wall = null;
     let wallSaid = '';
@@ -199,7 +199,10 @@
     ]) {
       const res = await sendRaw(`web/RegionalSettings/TimeZone/${query}`);
       const head = rawHead(res);
-      const value = res.parsed && typeof res.parsed === 'object' ? res.parsed.value : undefined;
+      const parsed = res.parsed;
+      const value = typeof parsed === 'string' ? parsed
+        : !parsed || typeof parsed !== 'object' ? undefined
+          : parsed.value !== undefined ? parsed.value : parsed.UTCToLocalTime;
       if (!head && typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
         wall = value;
         wallSaid = said(res);

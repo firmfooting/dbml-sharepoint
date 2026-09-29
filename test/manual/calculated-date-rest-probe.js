@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: THE RAW VALUE REST RETURNS FOR A CALCULATED DATE ----
  *
- * REVISION: 55702554
+ * REVISION: dfc0b0ac
  *
  * QUESTION: what raw value does the list items endpoint return for a
  * calculated date column (`=[Created]+14`, OutputType DateTime), under
@@ -422,7 +422,7 @@
       ? info.FormDigestValue : null;
     return { res, digest };
   };
-  log('INFO', 'probe revision 55702554. Quote this when reporting results.');
+  log('INFO', 'probe revision dfc0b0ac. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe CalcDate';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -571,7 +571,7 @@
       return;
     }
 
-    // The site's own conversion, in the two GET shapes site-zone-transitions-probe.js asks.
+    // The site's own conversion, in the two GET shapes and three answer shapes site-zone-transitions-probe.js reads.
     const stamp = encodeURIComponent(new Date(createdAt).toISOString());
     let wall = null;
     let wallSaid = '';
@@ -582,7 +582,10 @@
     ]) {
       const res = await sendRaw(`web/RegionalSettings/TimeZone/${query}`);
       const head = rawHead(res);
-      const value = res.parsed && typeof res.parsed === 'object' ? res.parsed.value : undefined;
+      const parsed = res.parsed;
+      const value = typeof parsed === 'string' ? parsed
+        : !parsed || typeof parsed !== 'object' ? undefined
+          : parsed.value !== undefined ? parsed.value : parsed.UTCToLocalTime;
       if (!head && typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
         wall = value;
         wallSaid = said(res);
