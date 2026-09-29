@@ -1,0 +1,545 @@
+
+/** ---- dbml-sharepoint PROBE (READ-ONLY): THE POST FORM OF UTCToLocalTime ----
+ *
+ * REVISION: 34f15c64
+ *
+ * QUESTION: which POST spelling of SP.TimeZone.UTCToLocalTime does the site
+ * accept, and what does it answer for one instant? Learn documents the CSOM
+ * method (TimeZone.UTCToLocalTime) and the REST resource
+ * (_api/web/RegionalSettings/TimeZones), and not the POST spelling of the
+ * method, which is what a flow's "Send an HTTP request to SharePoint" sends.
+ *
+ * WHY: a flow that compares the site's own conversion of now with
+ * convertFromUtc(utcNow(), zone) needs the exact path, body and response
+ * shape. site-zone-transitions-probe.js asks the GET form of the same
+ * conversion (field.date.control-utctolocaltime-answers); a POST is a
+ * different method, so each spelling here takes its own id.
+ *
+ * DEPENDS ON (stated in the evidence, never compared with an expected value)
+ *   field.date.control-site-time-zone      the site's zone, and the instant
+ *       every form is asked about: the server's Date header, or this
+ *       browser's clock when the answer carried none
+ *   field.date.control-form-digest-issued  contextinfo issues a digest;
+ *       without one no POST form is asked. A FAIL voids every form row; a
+ *       NOT ESTABLISHED (throttled, denied, timed out, no response) leaves
+ *       them open, since a re-run can ask them
+ *
+ * OBSERVES (one row per spelling: the status, the head, the value or the text)
+ *   field.date.utctolocaltime-post-quoted-literal    utcToLocalTime('<instant>')
+ *   field.date.utctolocaltime-post-alias-parameter   utcToLocalTime(@d)?@d='<instant>'
+ *   field.date.utctolocaltime-post-body-date         body {"date": "<instant>"}
+ *   field.date.utctolocaltime-post-body-utctime      body {"utcTime": "<instant>"}
+ *   field.date.utctolocaltime-post-datetime-literal  utcToLocalTime(datetime'<instant>')
+ *   field.date.localtimetoutc-post-quoted-literal    localTimeToUTC('<instant>'), the
+ *       inverse method in the first spelling
+ *
+ * HOW TO READ IT: ACCEPTED carries the value; compare it with the instant
+ * and the zone's bias by hand. REFUSED is the server rejecting the spelling,
+ * and its text says how. NOT ESTABLISHED is about who asked or when (401,
+ * 403, 408, 429, 503), a request that never answered, or a 2xx carrying no
+ * JSON value.
+ *
+ * READ-ONLY: each POST calls a conversion method of the site's time zone;
+ * nothing on the site is created, changed or deleted.
+ *
+ * HOW TO RUN: F12 -> Console on any page of the site, paste, Enter; it prints
+ * its plan and stops. Set CONFIRMED = true and paste again. Copy the RESULTS
+ * block back verbatim.
+ */
+(async () => {
+  // ---- Operator gate -------------------------------------------------
+  // All default false. Pasting an unedited probe prints its plan and
+  // stops; nothing touches the tenant until the operator opts in.
+  const CONFIRMED = false;
+  const ALLOW_WRITES = false;
+
+  // CLEANUP deletes the probe's own list BEFORE the run, so every question
+  // is answered by actually creating something rather than reporting
+  // "already present" from a previous run, which is much weaker evidence.
+  //
+  // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
+  // ever touches the explicitly named probe-owned list or lists; it never
+  // enumerates or deletes anything else. Each list is RECYCLED, not purged,
+  // so a mistake is recoverable from the site recycle bin.
+  const CLEANUP = false;
+
+  // No SITE_URL constant, deliberately. The probe reads the site it was
+  // pasted into. A tenant URL committed to this repo has leaked twice, and
+  // the field was the vector both times.
+  const pageCtx = window._spPageContextInfo;
+  if (!pageCtx) {
+    console.error('[FATAL] No _spPageContextInfo. Paste this into a SharePoint page.');
+    return;
+  }
+  const WEB = pageCtx.webAbsoluteUrl;
+
+  const log = (level, msg) => console.log(`[${level}] ${msg}`);
+
+  const getDigest = async () => {
+    const res = await fetch(`${WEB}/_api/contextinfo`, {
+      method: 'POST', headers: { Accept: 'application/json;odata=verbose' },
+    });
+    if (!res.ok) throw new Error(`contextinfo failed: HTTP ${res.status}`);
+    const body = await res.json();
+    return body.d.GetContextWebInformation.FormDigestValue;
+  };
+
+  const spGet = async (path) => {
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      headers: { Accept: 'application/json;odata=nometadata' },
+    });
+    return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
+  };
+
+  // NOTE the contract, because getting it wrong has produced false verdicts
+  // here twice: `body` is the PARSED payload whether or not the request
+  // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
+  // so `body !== null` says the response was JSON, never that the call
+  // worked. Anything asking "did I actually read this?" must test `ok`.
+  const readFailed = (r) => !r.ok || r.body === null;
+
+  // Was this request REFUSED (the server saying no to what was sent) or
+  // did it merely fail? A negative control that cannot tell the difference
+  // certifies the surface as observable on the strength of a throttle, and
+  // every row it guards is then read as evidence.
+  //
+  // Defined by what it EXCLUDES, because the tempting definition is wrong
+  // here. "400 means bad request" is the HTTP convention and it is not what
+  // this tenant does: every SharePoint refusal this project has recorded
+  // came back 500:
+  //
+  //   "To add an item to a document library, use SPFileCollection.Add()"
+  //   "One or more column references are not allowed, because the columns
+  //    are defined as a data type that is not supported in formulas"
+  //   "The formula refers to a column that does not exist"
+  //   "This field type does not support..."
+  //
+  // (analysis/checks/_structure.py, analysis/conditions.py, generators/
+  // jsgen.py, each dated and cited to a live run). A 400-only test would
+  // therefore have reported NOT ESTABLISHED for every negative control on a
+  // tenant behaving exactly as recorded, which is the opposite failure and a
+  // worse one: it would quietly retire the controls the stack's own evidence
+  // rests on.
+  //
+  // So: 401/403 are about WHO is asking and 408/429 about the moment; those
+  // are never refusals. Everything else non-2xx is treated as the server
+  // rejecting the content, and the response TEXT is always printed beside
+  // the verdict so a reader can see which it was.
+  const isRefusal = (status) =>
+    status >= 400 && status !== 401 && status !== 403
+    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
+
+  // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
+  // both through POST rather than accepting them as real verbs.
+  const spPost = async (path, payload, digest, extraHeaders = {}) => {
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json;odata=nometadata',
+        'Content-Type': 'application/json;odata=nometadata',
+        'X-RequestDigest': digest,
+        ...extraHeaders,
+      },
+      body: JSON.stringify(payload),
+    });
+    // The interesting result is often the REFUSAL, so the response text is
+    // returned rather than thrown: a 400 here is the finding, not a crash.
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* SharePoint sent plain text */ }
+    return { ok: res.ok, status: res.status, body: parsed, text };
+  };
+
+  // ---- Pre-run reset --------------------------------------------------
+  // Call this before bootstrapping. A no-op unless CLEANUP is on, so the
+  // probe body reads the same either way.
+  //
+  // expectedId is OPTIONAL because most callers have no claimed Id to bracket
+  // with, and the behaviour without one is unchanged. Supply one and every
+  // request below addresses that list Id instead of the title, so a title
+  // rebound mid-run cannot redirect the deletes or the recycle onto a list
+  // this run never owned.
+  //
+  // DOCUMENTED: `web/lists(guid'<id>')` is the list resource, and `/items`
+  // and `/items(<id>)` hang off it (Working with lists and list items with
+  // REST, and the CSOM/REST API index, both checked 2026-09-23).
+  // NOT DOCUMENTED: `/recycle` on the by-Id form appears on no Learn page.
+  // It is the call this project has live evidence for with only the
+  // addressing changed, and an unsupported URL fails visibly here rather
+  // than losing somebody's list. One CLEANUP run settles it; see issue #611.
+  const resetList = async (title, expectedId = null) => {
+    if (!CLEANUP) return false;
+    if (!ALLOW_WRITES) {
+      log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
+      return false;
+    }
+    // An Id that is not a GUID would be spliced into a URL that addresses
+    // something else, so it fails closed instead of being sent.
+    const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (expectedId !== null && !GUID.test(String(expectedId))) {
+      log('FAIL', `CLEANUP: '${expectedId}' is not a list Id, so nothing was deleted or `
+                  + `recycled under '${title}'.`);
+      return false;
+    }
+    const listPath = expectedId === null
+      ? `web/lists/getbytitle('${title}')`
+      : `web/lists(guid'${expectedId}')`;
+    const found = await spGet(expectedId === null ? listPath : `${listPath}?$select=Id`);
+    if (!found.ok) {
+      log('INFO', `CLEANUP: no list named '${title}' to remove.`);
+      return false;
+    }
+    // Addressing by Id still gets read back, because every destructive
+    // request below rests on this one answer.
+    const answeredId = found.body && found.body.Id
+      ? String(found.body.Id).replace(/[{}]/g, '').toLowerCase() : null;
+    if (expectedId !== null && answeredId !== String(expectedId).toLowerCase()) {
+      log('FAIL', `CLEANUP: list ${expectedId} answered as ${answeredId}, so nothing was `
+                  + `deleted or recycled under '${title}'.`);
+      return false;
+    }
+    log('INFO', `CLEANUP: removing list '${title}' and its items.`);
+
+    // Items first. Recycling the list takes them with it, but doing this
+    // explicitly still clears the data if the list itself cannot be
+    // removed. A locked or no-delete list would otherwise leave rows from
+    // a previous run answering this run's questions.
+    let digest = await getDigest();
+    const items = await spGet(`${listPath}/items?$select=Id&$top=5000`);
+    const rows = (items.ok && items.body && items.body.value) || [];
+    for (const row of rows) {
+      digest = await getDigest();
+      await spPost(`${listPath}/items(${row.Id})`, {}, digest,
+                   { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
+    }
+    if (rows.length) log('INFO', `CLEANUP: deleted ${rows.length} item(s).`);
+    if (rows.length === 5000) {
+      log('INFO', 'CLEANUP: hit the 5000-row page limit; re-run to clear the rest.');
+    }
+
+    digest = await getDigest();
+    const gone = await spPost(`${listPath}/recycle`, {}, digest);
+    // The Id is named where there is one, because a repair by hand off the
+    // title would go to whatever the title resolves to now.
+    const which = expectedId === null ? `'${title}'` : `'${title}' (list ${expectedId})`;
+    if (gone.ok) {
+      log('OK', `CLEANUP: recycled list ${which}. It is restorable from the recycle bin.`);
+    } else {
+      log('FAIL', `CLEANUP: could not recycle ${which}: HTTP ${gone.status} ${gone.text.slice(0, 200)}`);
+    }
+    return gone.ok;
+  };
+
+  // ---- Result table --------------------------------------------------
+  // A probe answers questions. Outcome and EVIDENCE are recorded
+  // separately so a run cannot be summarised as a verdict with nothing
+  // behind it.
+  //
+  // Every question is REGISTERED UP FRONT as NOT ESTABLISHED, and record()
+  // overwrites. Appending as you go looks equivalent and is not: a probe
+  // that aborts early then reports only what it reached, and prints
+  // "0 not established" while most of its questions were never asked.
+  //
+  // STATE carries the coarse answer alongside the prose, from the five-value
+  // vocabulary in test/manual/SURFACES.md: settled, open, awaiting-capture,
+  // void, needs-human. There are 83 distinct outcome heads across the
+  // committed evidence, which is good prose and a bad enum, so a reader
+  // downstream sorts on state and quotes outcome. record() takes an explicit
+  // state and that always wins; the classifier below is the default for the
+  // rows nobody has ruled on yet, and it reproduces exactly what report()
+  // used to derive from the outcome head.
+  //
+  // ABORTED is open, not settled. It is the head a probe records when its
+  // fixture never built, so the question it names was never asked; classifying
+  // it settled printed "N answered, 0 open" for a run that measured nothing.
+  const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT', 'ABORTED'];
+  const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
+  const stateFor = (outcome) => {
+    if (AWAITING_CAPTURE_HEADS.some((p) => outcome.startsWith(p))) return 'awaiting-capture';
+    if (OPEN_HEADS.some((p) => outcome.startsWith(p))) return 'open';
+    return 'settled';
+  };
+  const RESULTS = [];
+  const expect = (id, question) => {
+    RESULTS.push({
+      id, question, outcome: 'NOT ESTABLISHED',
+      evidence: 'the run did not reach this question', state: 'open',
+    });
+  };
+  const record = (id, question, outcome, evidence, state) => {
+    const next = { question, outcome, evidence, state: state || stateFor(outcome) };
+    const row = RESULTS.find((r) => r.id === id);
+    if (row) {
+      Object.assign(row, next);
+    } else {
+      RESULTS.push({ id, ...next });
+    }
+    const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
+    log(level, `${id}: ${outcome}. ${question}`);
+    if (evidence) console.log(`      evidence: ${evidence}`);
+  };
+
+  // ---- Fixtures (#559) -----------------------------------------------
+  // Why a response carries no reading, or null when it does. Learn documents
+  // 429 and 503 as the two SharePoint Online throttle statuses.
+  const unanswered = (r) => {
+    if (r.ok) {
+      return r.body !== null && typeof r.body === 'object'
+        ? null : `answered HTTP ${r.status} with no payload`;
+    }
+    if (r.status === 429 || r.status === 503) return `was throttled (HTTP ${r.status})`;
+    if (r.status === 408) return 'timed out (HTTP 408)';
+    if (r.status === 401 || r.status === 403) return `was not authorised (HTTP ${r.status})`;
+    return isRefusal(r.status) ? `was refused (HTTP ${r.status})` : `did not answer (HTTP ${r.status})`;
+  };
+
+  // A voided row keeps its question and is counted apart from open and answered.
+  const voidDependents = (ids, reason) => {
+    for (const id of ids) {
+      const row = RESULTS.find((r) => r.id === id);
+      record(id, row ? row.question : id, 'NOT ESTABLISHED', reason, 'void');
+    }
+  };
+
+  // `read` resolves to a harness response ({ ok, status, body }). `declared`
+  // maps each property the measurement depends on to a value or a predicate.
+  // PASS needs every one read back; otherwise FAIL, void `dependents`, false.
+  const establishFixture = async (id, read, declared, dependents) => {
+    const row = RESULTS.find((r) => r.id === id);
+    const question = row ? row.question : id;
+    const problems = [];
+    const seen = [];
+    let got = null;
+    let threw = false;
+    try {
+      got = await read();
+    } catch (err) {
+      threw = true;
+      problems.push(`the read threw: ${err && err.message ? err.message : String(err)}`);
+    }
+    if (!threw) {
+      const silent = got && typeof got === 'object' ? unanswered(got) : 'returned no response';
+      if (silent) problems.push(`the read ${silent}`);
+    }
+    if (!problems.length) {
+      for (const [name, want] of Object.entries(declared)) {
+        if (!Object.prototype.hasOwnProperty.call(got.body, name) || got.body[name] === undefined) {
+          problems.push(`${name} is absent from the payload`);
+          continue;
+        }
+        const value = got.body[name];
+        seen.push(`${name}=${JSON.stringify(value)}`);
+        const held = typeof want === 'function' ? want(value) === true : value === want;
+        if (!held) {
+          problems.push(`${name} differs: read ${JSON.stringify(value)}, declared `
+            + (typeof want === 'function' ? 'by a predicate it fails' : JSON.stringify(want)));
+        }
+      }
+    }
+    if (!problems.length) {
+      record(id, question, 'PASS', `read back ${seen.join(', ')}`);
+      return true;
+    }
+    record(id, question, 'FAIL', problems.join('; ') + (seen.length ? `; read ${seen.join(', ')}` : ''));
+    voidDependents(dependents, `the fixture ${id} did not hold: ${problems.join('; ')}`);
+    return false;
+  };
+
+  const report = () => {
+    console.log('\n==================== RESULTS ====================');
+    for (const r of RESULTS) {
+      console.log(`${r.id.padEnd(6)} ${r.state.padEnd(16)} ${r.outcome.padEnd(16)} ${r.question}`);
+      if (r.evidence) console.log(`       ${r.evidence}`);
+    }
+    console.log('=================================================');
+    // Counted off state rather than off the outcome head, so the summary and
+    // the per-row state can never disagree. awaiting-capture stays open until
+    // a person records the observation. void does NOT: the control row names a
+    // reason this identity can never answer, so counting it open reports work
+    // that no re-run can clear, and counting it answered claims a measurement
+    // nobody made. It gets its own number.
+    const voided = RESULTS.filter((r) => r.state === 'void').length;
+    const open = RESULTS.filter((r) => r.state !== 'settled' && r.state !== 'void').length;
+    const waiting = RESULTS.filter((r) => r.state === 'awaiting-capture').length;
+    const answered = RESULTS.length - open - voided;
+    console.log(`${RESULTS.length} question(s); ${answered} answered, ${open} open, ${voided} voided.`);
+    if (waiting) {
+      console.log(`${waiting} of those are waiting on an observation somebody has to make.`);
+    }
+    if (open) {
+      console.log('A question with no observation is NOT a pass. Report it as open.');
+    }
+    console.log('Copy this whole block back verbatim.');
+  };
+  // ---- Raw requests (v1) ----------------------------------------------
+  // The text is kept whole, since a refusal is often not JSON and its text is the finding.
+  const sendRaw = async (path, options = {}) => {
+    const method = options.method || 'GET';
+    const accept = options.accept || 'application/json;odata=nometadata';
+    let res;
+    try {
+      res = await fetch(`${WEB}/_api/${path}`, {
+        method,
+        headers: { Accept: accept, ...(options.headers || {}) },
+        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      });
+    } catch (err) {
+      // A request that never answered is a row with no status, so the table still prints.
+      return { ok: false, status: null, parsed: null, date: null,
+        text: `no response: ${err && err.message ? err.message : String(err)}` };
+    }
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* not JSON; the text is kept */ }
+    const date = res.headers && typeof res.headers.get === 'function' ? res.headers.get('date') : null;
+    return { ok: res.ok, status: res.status, text, parsed, date };
+  };
+
+  // An error message can quote the request URL, and evidence must not name the tenant.
+  const TENANT_ORIGIN = (() => {
+    const scheme = WEB.indexOf('//');
+    const slash = scheme === -1 ? -1 : WEB.indexOf('/', scheme + 2);
+    return slash === -1 ? WEB : WEB.slice(0, slash);
+  })();
+  // A JSON body can escape the origin's slashes, and a host can appear with no scheme at all.
+  const TENANT_PATTERN = (() => {
+    const scheme = TENANT_ORIGIN.indexOf('//');
+    const host = scheme === -1 ? '' : TENANT_ORIGIN.slice(scheme + 2);
+    const needles = [TENANT_ORIGIN, TENANT_ORIGIN.replace(/\//g, '\\/'), host].filter((n) => n);
+    const literal = (n) => n.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
+    return needles.length ? new RegExp(needles.map(literal).join('|'), 'gi') : null;
+  })();
+  const redactTenant = (value) => {
+    const text = String(value);
+    return TENANT_PATTERN ? text.replace(TENANT_PATTERN, '[TENANT]') : text;
+  };
+
+  // The head a non-2xx or unanswered request earns, or null when its payload decides.
+  const rawHead = (res) => {
+    if (res.status === null) return { outcome: 'NOT ESTABLISHED', why: redactTenant(res.text) };
+    if (res.ok) return null;
+    const said = redactTenant(res.text).slice(0, 400);
+    if (isRefusal(res.status)) return { outcome: 'REFUSED', why: `HTTP ${res.status}: ${said}` };
+    const reason = unanswered({ ok: false, status: res.status, body: res.parsed });
+    return { outcome: 'NOT ESTABLISHED', why: `the request ${reason}: ${said}` };
+  };
+
+  // contextinfo wraps its answer in d under odata=verbose and not under nometadata.
+  const issueDigest = async () => {
+    const res = await sendRaw('contextinfo', { method: 'POST', accept: 'application/json;odata=verbose' });
+    const parsed = res.parsed && typeof res.parsed === 'object' ? res.parsed : null;
+    const info = parsed && parsed.d ? parsed.d.GetContextWebInformation : parsed;
+    const digest = res.ok && info && typeof info.FormDigestValue === 'string'
+      ? info.FormDigestValue : null;
+    return { res, digest };
+  };
+  log('INFO', 'probe revision 34f15c64. Quote this when reporting results.');
+
+  const CANDIDATES = [
+    { id: 'field.date.utctolocaltime-post-quoted-literal',
+      form: "utcToLocalTime('<instant>')", path: (u) => `utcToLocalTime('${u}')` },
+    { id: 'field.date.utctolocaltime-post-alias-parameter',
+      form: "utcToLocalTime(@d)?@d='<instant>'", path: (u) => `utcToLocalTime(@d)?@d='${u}'` },
+    { id: 'field.date.utctolocaltime-post-body-date',
+      form: 'utcToLocalTime, body {"date": "<instant>"}', path: () => 'utcToLocalTime',
+      body: (u) => ({ date: u }) },
+    { id: 'field.date.utctolocaltime-post-body-utctime',
+      form: 'utcToLocalTime, body {"utcTime": "<instant>"}', path: () => 'utcToLocalTime',
+      body: (u) => ({ utcTime: u }) },
+    { id: 'field.date.utctolocaltime-post-datetime-literal',
+      form: "utcToLocalTime(datetime'<instant>')", path: (u) => `utcToLocalTime(datetime'${u}')` },
+    { id: 'field.date.localtimetoutc-post-quoted-literal',
+      form: "localTimeToUTC('<instant>')", path: (u) => `localTimeToUTC('${u}')` },
+  ];
+  const Q_ZONE = 'the site zone, and the instant every form is asked about';
+  const Q_DIGEST = 'contextinfo issues a form digest for the POST forms';
+  const questionOf = (candidate) => `what the site answers to POST ${candidate.form}`;
+
+  expect('field.date.control-site-time-zone', Q_ZONE);
+  expect('field.date.control-form-digest-issued', Q_DIGEST);
+  for (const candidate of CANDIDATES) expect(candidate.id, questionOf(candidate));
+
+  if (!CONFIRMED) {
+    log('INFO', `Would read the site zone on ${WEB}, POST _api/contextinfo for a digest,`);
+    log('INFO', 'then POST each of these six forms once:');
+    for (const candidate of CANDIDATES) log('INFO', `  ${candidate.form}`);
+    log('INFO', 'Nothing is written by this probe. Set CONFIRMED = true and paste again.');
+    return;
+  }
+
+  const zone = await sendRaw('web/RegionalSettings/TimeZone');
+  const zoneBody = zone.ok && zone.parsed && typeof zone.parsed === 'object' ? zone.parsed : null;
+  const info = zoneBody && zoneBody.Information ? zoneBody.Information : null;
+  // The server's clock when the answer carries a Date header, the browser's otherwise.
+  const serverInstant = zone.date && !Number.isNaN(Date.parse(zone.date)) ? new Date(zone.date) : null;
+  const instant = (serverInstant || new Date()).toISOString();
+  const instantSource = serverInstant ? 'the server Date header' : 'this browser\'s clock';
+  const asked = `asked about ${instant}, from ${instantSource}; browser offset `
+    + `${-new Date().getTimezoneOffset()} min`;
+  const zoneHead = rawHead(zone);
+  if (info) {
+    record('field.date.control-site-time-zone', Q_ZONE, 'PASS',
+      `site zone "${zoneBody.Description}" Id=${zoneBody.Id} bias=${info.Bias} `
+      + `standard=${info.StandardBias} daylight=${info.DaylightBias}; ${asked}`);
+  } else {
+    const unread = zoneHead && zoneHead.outcome === 'NOT ESTABLISHED';
+    record('field.date.control-site-time-zone', Q_ZONE, unread ? 'NOT ESTABLISHED' : 'FAIL',
+      `${zoneHead ? zoneHead.why : `HTTP ${zone.status} carried no Information`}; ${asked}`);
+  }
+
+  const issued = await issueDigest();
+  if (!issued.digest) {
+    const head = rawHead(issued.res);
+    const why = head ? head.why : `contextinfo answered HTTP ${issued.res.status} with no FormDigestValue`;
+    const unread = head && head.outcome === 'NOT ESTABLISHED';
+    record('field.date.control-form-digest-issued', Q_DIGEST, unread ? 'NOT ESTABLISHED' : 'FAIL', why);
+    if (!unread) {
+      voidDependents(CANDIDATES.map((candidate) => candidate.id),
+        'no form digest was issued, so no POST form could be asked');
+      return report();
+    }
+    // A throttle, a denial or a lost request can clear on a re-run, so the forms stay open.
+    for (const candidate of CANDIDATES) {
+      record(candidate.id, questionOf(candidate), 'NOT ESTABLISHED',
+        `not asked: contextinfo issued no digest (${why}); a re-run can ask it`);
+    }
+    return report();
+  }
+  record('field.date.control-form-digest-issued', Q_DIGEST, 'PASS',
+    `contextinfo answered HTTP ${issued.res.status} with a FormDigestValue`);
+
+  // nometadata answers {value}; a verbose answer names the method under d.
+  const valueOf = (parsed) => {
+    if (!parsed || typeof parsed !== 'object') return undefined;
+    if (parsed.value !== undefined) return parsed.value;
+    if (parsed.d && typeof parsed.d === 'object') {
+      if (parsed.d.UTCToLocalTime !== undefined) return parsed.d.UTCToLocalTime;
+      if (parsed.d.LocalTimeToUTC !== undefined) return parsed.d.LocalTimeToUTC;
+    }
+    return undefined;
+  };
+
+  for (const candidate of CANDIDATES) {
+    const body = candidate.body ? candidate.body(instant) : undefined;
+    const headers = { 'X-RequestDigest': issued.digest };
+    if (body !== undefined) headers['Content-Type'] = 'application/json;odata=nometadata';
+    const res = await sendRaw(
+      `web/RegionalSettings/TimeZone/${candidate.path(encodeURIComponent(instant))}`,
+      { method: 'POST', headers, body });
+    const head = rawHead(res);
+    const value = valueOf(res.parsed);
+    const sent = `POST ${candidate.form} about ${instant} (from ${instantSource})`;
+    if (head) {
+      record(candidate.id, questionOf(candidate), head.outcome, `${sent}: ${head.why}`);
+    } else if (value === undefined) {
+      record(candidate.id, questionOf(candidate), 'NOT ESTABLISHED',
+        `${sent}: HTTP ${res.status} carried no JSON value: ${redactTenant(res.text).slice(0, 400)}`);
+    } else {
+      // The raw text keeps the envelope, so a reader sees which key a flow must read.
+      record(candidate.id, questionOf(candidate), 'ACCEPTED',
+        `${sent}: HTTP ${res.status}, value ${redactTenant(JSON.stringify(value))}; `
+        + `answered ${redactTenant(res.text).slice(0, 400)}`);
+    }
+  }
+  return report();
+})();

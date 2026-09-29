@@ -1,0 +1,162 @@
+{# test/manual/templates/utctolocaltime-rest-form-probe.js.j2 #}
+
+/** ---- dbml-sharepoint PROBE (READ-ONLY): THE POST FORM OF UTCToLocalTime ----
+ *
+ * REVISION: {{ revision }}
+ *
+ * QUESTION: which POST spelling of SP.TimeZone.UTCToLocalTime does the site
+ * accept, and what does it answer for one instant? Learn documents the CSOM
+ * method (TimeZone.UTCToLocalTime) and the REST resource
+ * (_api/web/RegionalSettings/TimeZones), and not the POST spelling of the
+ * method, which is what a flow's "Send an HTTP request to SharePoint" sends.
+ *
+ * WHY: a flow that compares the site's own conversion of now with
+ * convertFromUtc(utcNow(), zone) needs the exact path, body and response
+ * shape. site-zone-transitions-probe.js asks the GET form of the same
+ * conversion (field.date.control-utctolocaltime-answers); a POST is a
+ * different method, so each spelling here takes its own id.
+ *
+ * DEPENDS ON (stated in the evidence, never compared with an expected value)
+ *   field.date.control-site-time-zone      the site's zone, and the instant
+ *       every form is asked about: the server's Date header, or this
+ *       browser's clock when the answer carried none
+ *   field.date.control-form-digest-issued  contextinfo issues a digest;
+ *       without one no POST form is asked. A FAIL voids every form row; a
+ *       NOT ESTABLISHED (throttled, denied, timed out, no response) leaves
+ *       them open, since a re-run can ask them
+ *
+ * OBSERVES (one row per spelling: the status, the head, the value or the text)
+ *   field.date.utctolocaltime-post-quoted-literal    utcToLocalTime('<instant>')
+ *   field.date.utctolocaltime-post-alias-parameter   utcToLocalTime(@d)?@d='<instant>'
+ *   field.date.utctolocaltime-post-body-date         body {"date": "<instant>"}
+ *   field.date.utctolocaltime-post-body-utctime      body {"utcTime": "<instant>"}
+ *   field.date.utctolocaltime-post-datetime-literal  utcToLocalTime(datetime'<instant>')
+ *   field.date.localtimetoutc-post-quoted-literal    localTimeToUTC('<instant>'), the
+ *       inverse method in the first spelling
+ *
+ * HOW TO READ IT: ACCEPTED carries the value; compare it with the instant
+ * and the zone's bias by hand. REFUSED is the server rejecting the spelling,
+ * and its text says how. NOT ESTABLISHED is about who asked or when (401,
+ * 403, 408, 429, 503), a request that never answered, or a 2xx carrying no
+ * JSON value.
+ *
+ * READ-ONLY: each POST calls a conversion method of the site's time zone;
+ * nothing on the site is created, changed or deleted.
+ *
+ * HOW TO RUN: F12 -> Console on any page of the site, paste, Enter; it prints
+ * its plan and stops. Set CONFIRMED = true and paste again. Copy the RESULTS
+ * block back verbatim.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+{% include "_probe_raw_request_v1.js.j2" %}
+  log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
+
+  const CANDIDATES = [
+    { id: 'field.date.utctolocaltime-post-quoted-literal',
+      form: "utcToLocalTime('<instant>')", path: (u) => `utcToLocalTime('${u}')` },
+    { id: 'field.date.utctolocaltime-post-alias-parameter',
+      form: "utcToLocalTime(@d)?@d='<instant>'", path: (u) => `utcToLocalTime(@d)?@d='${u}'` },
+    { id: 'field.date.utctolocaltime-post-body-date',
+      form: 'utcToLocalTime, body {"date": "<instant>"}', path: () => 'utcToLocalTime',
+      body: (u) => ({ date: u }) },
+    { id: 'field.date.utctolocaltime-post-body-utctime',
+      form: 'utcToLocalTime, body {"utcTime": "<instant>"}', path: () => 'utcToLocalTime',
+      body: (u) => ({ utcTime: u }) },
+    { id: 'field.date.utctolocaltime-post-datetime-literal',
+      form: "utcToLocalTime(datetime'<instant>')", path: (u) => `utcToLocalTime(datetime'${u}')` },
+    { id: 'field.date.localtimetoutc-post-quoted-literal',
+      form: "localTimeToUTC('<instant>')", path: (u) => `localTimeToUTC('${u}')` },
+  ];
+  const Q_ZONE = 'the site zone, and the instant every form is asked about';
+  const Q_DIGEST = 'contextinfo issues a form digest for the POST forms';
+  const questionOf = (candidate) => `what the site answers to POST ${candidate.form}`;
+
+  expect('field.date.control-site-time-zone', Q_ZONE);
+  expect('field.date.control-form-digest-issued', Q_DIGEST);
+  for (const candidate of CANDIDATES) expect(candidate.id, questionOf(candidate));
+
+  if (!CONFIRMED) {
+    log('INFO', `Would read the site zone on ${WEB}, POST _api/contextinfo for a digest,`);
+    log('INFO', 'then POST each of these six forms once:');
+    for (const candidate of CANDIDATES) log('INFO', `  ${candidate.form}`);
+    log('INFO', 'Nothing is written by this probe. Set CONFIRMED = true and paste again.');
+    return;
+  }
+
+  const zone = await sendRaw('web/RegionalSettings/TimeZone');
+  const zoneBody = zone.ok && zone.parsed && typeof zone.parsed === 'object' ? zone.parsed : null;
+  const info = zoneBody && zoneBody.Information ? zoneBody.Information : null;
+  // The server's clock when the answer carries a Date header, the browser's otherwise.
+  const serverInstant = zone.date && !Number.isNaN(Date.parse(zone.date)) ? new Date(zone.date) : null;
+  const instant = (serverInstant || new Date()).toISOString();
+  const instantSource = serverInstant ? 'the server Date header' : 'this browser\'s clock';
+  const asked = `asked about ${instant}, from ${instantSource}; browser offset `
+    + `${-new Date().getTimezoneOffset()} min`;
+  const zoneHead = rawHead(zone);
+  if (info) {
+    record('field.date.control-site-time-zone', Q_ZONE, 'PASS',
+      `site zone "${zoneBody.Description}" Id=${zoneBody.Id} bias=${info.Bias} `
+      + `standard=${info.StandardBias} daylight=${info.DaylightBias}; ${asked}`);
+  } else {
+    const unread = zoneHead && zoneHead.outcome === 'NOT ESTABLISHED';
+    record('field.date.control-site-time-zone', Q_ZONE, unread ? 'NOT ESTABLISHED' : 'FAIL',
+      `${zoneHead ? zoneHead.why : `HTTP ${zone.status} carried no Information`}; ${asked}`);
+  }
+
+  const issued = await issueDigest();
+  if (!issued.digest) {
+    const head = rawHead(issued.res);
+    const why = head ? head.why : `contextinfo answered HTTP ${issued.res.status} with no FormDigestValue`;
+    const unread = head && head.outcome === 'NOT ESTABLISHED';
+    record('field.date.control-form-digest-issued', Q_DIGEST, unread ? 'NOT ESTABLISHED' : 'FAIL', why);
+    if (!unread) {
+      voidDependents(CANDIDATES.map((candidate) => candidate.id),
+        'no form digest was issued, so no POST form could be asked');
+      return report();
+    }
+    // A throttle, a denial or a lost request can clear on a re-run, so the forms stay open.
+    for (const candidate of CANDIDATES) {
+      record(candidate.id, questionOf(candidate), 'NOT ESTABLISHED',
+        `not asked: contextinfo issued no digest (${why}); a re-run can ask it`);
+    }
+    return report();
+  }
+  record('field.date.control-form-digest-issued', Q_DIGEST, 'PASS',
+    `contextinfo answered HTTP ${issued.res.status} with a FormDigestValue`);
+
+  // nometadata answers {value}; a verbose answer names the method under d.
+  const valueOf = (parsed) => {
+    if (!parsed || typeof parsed !== 'object') return undefined;
+    if (parsed.value !== undefined) return parsed.value;
+    if (parsed.d && typeof parsed.d === 'object') {
+      if (parsed.d.UTCToLocalTime !== undefined) return parsed.d.UTCToLocalTime;
+      if (parsed.d.LocalTimeToUTC !== undefined) return parsed.d.LocalTimeToUTC;
+    }
+    return undefined;
+  };
+
+  for (const candidate of CANDIDATES) {
+    const body = candidate.body ? candidate.body(instant) : undefined;
+    const headers = { 'X-RequestDigest': issued.digest };
+    if (body !== undefined) headers['Content-Type'] = 'application/json;odata=nometadata';
+    const res = await sendRaw(
+      `web/RegionalSettings/TimeZone/${candidate.path(encodeURIComponent(instant))}`,
+      { method: 'POST', headers, body });
+    const head = rawHead(res);
+    const value = valueOf(res.parsed);
+    const sent = `POST ${candidate.form} about ${instant} (from ${instantSource})`;
+    if (head) {
+      record(candidate.id, questionOf(candidate), head.outcome, `${sent}: ${head.why}`);
+    } else if (value === undefined) {
+      record(candidate.id, questionOf(candidate), 'NOT ESTABLISHED',
+        `${sent}: HTTP ${res.status} carried no JSON value: ${redactTenant(res.text).slice(0, 400)}`);
+    } else {
+      // The raw text keeps the envelope, so a reader sees which key a flow must read.
+      record(candidate.id, questionOf(candidate), 'ACCEPTED',
+        `${sent}: HTTP ${res.status}, value ${redactTenant(JSON.stringify(value))}; `
+        + `answered ${redactTenant(res.text).slice(0, 400)}`);
+    }
+  }
+  return report();
+})();

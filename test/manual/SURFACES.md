@@ -163,7 +163,7 @@ returned*, not the view object that stores the predicate.
 
 Scopes: `caml`, `caml-adhoc`, `view-query`, `odata`
 
-Probes: `caml-chain-depth-probe.js`
+Probes: `caml-chain-depth-probe.js`, `calculated-filter-probe.js`
 
 ### 4. `view`: the `SP.View` object and its rendered page
 
@@ -208,7 +208,8 @@ Probes: `multi-value-probe.js`, `projected-lookup-probe.js`,
 `title-rename-probe.js`, `title-seal-probe.js`,
 `site-zone-transitions-probe.js`, `default-formula-readback-probe.js`,
 `default-formula-functions-probe.js`, `unique-blanks-probe.js`,
-`unique-transition-probe.js`, `field-sealed-probe.js`
+`unique-transition-probe.js`, `field-sealed-probe.js`,
+`utctolocaltime-rest-form-probe.js`, `calculated-date-rest-probe.js`
 
 `site-zone-transitions-probe.js` files under `date` because its subject is
 the relation between a stored UTC instant and the site-local clock, which is
@@ -219,6 +220,24 @@ transitions the reporting pack generates from the IANA database
 (`analysis/timezones.py`) with what `utctolocaltime` applies one minute
 before and at each sampled transition, and its offsets row is the check the
 emitted `Zone[resolved]` makes, asked of the platform directly.
+
+`utctolocaltime-rest-form-probe.js` files under `date` for the same reason:
+`SP.TimeZone.UTCToLocalTime` is the site's own conversion of a UTC instant
+to its local clock. It reuses `control-site-time-zone`, the same read of the
+same resource. Its six rows POST the two conversion methods in six
+spellings, which is a different method from the GET that
+`control-utctolocaltime-answers` asks, so each spelling takes its own
+`utctolocaltime-post-` or `localtimetoutc-post-` id.
+`control-form-digest-issued` is the one control they rest on, because a POST
+without a digest answers nothing about its spelling.
+
+`calculated-date-rest-probe.js` files under `date` because its subject is
+the value a calculated date carries over REST, read against the item's
+Created in UTC and on the site's clock. It reuses `control-site-time-zone`
+and asks the site's clock through the GET shapes that
+`site-zone-transitions-probe.js` uses. It reads one item in both OData
+metadata levels, which take one id each because a verbose and a nometadata
+answer are different envelopes.
 
 `sealed` is separate from `title` because the two ask opposite questions about
 the same flag. `title-seal-probe.js` asks whether the built-in Title column can
@@ -762,6 +781,8 @@ different questions and take different ids. They do not merge.
 | Does a save rule refuse an item whose operand is blank | the same rule hoisted onto the list, which is where `analysis/save_rules.py` puts every clock comparison | `formula.validation.blank-omitted-under-bare-list-rule` |
 | Is a probe-created column sealed by a field MERGE and read back | on the list built for the Title experiment, where it is that probe's control | `field.title.seal-control-declared` |
 | Is a probe-created column sealed by a field MERGE and read back | on the list built for the CanBeDeleted measurement, where it is the dependency every observation rests on | `field.sealed.seal-write-readback` |
+| Does the site convert a UTC instant to its local clock | a GET of `utctolocaltime` in two URL shapes | `field.date.control-utctolocaltime-answers` |
+| Does the site convert a UTC instant to its local clock | a POST of `utcToLocalTime` in five spellings, with a digest | `field.date.utctolocaltime-post-quoted-literal` and its four siblings |
 
 `native-index-probe.js` and `threshold-index-probe.js` both emitted `CMPIDX` and
 `NULIDX`, and their four system-column checks (`NATCRE`/`SYSCRE` and siblings)

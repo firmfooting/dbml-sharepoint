@@ -11916,6 +11916,281 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "utctolocaltime-rest-form-probe.js",
+      "surface": "field",
+      "harness": "shared-v1",
+      "authority": "read-only",
+      "writes": [],
+      "cleanup": {
+        "policy": "none"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.date.control-site-time-zone",
+              "depends_on": []
+            },
+            {
+              "id": "field.date.control-form-digest-issued",
+              "depends_on": []
+            },
+            {
+              "id": "field.date.utctolocaltime-post-quoted-literal",
+              "depends_on": [
+                "field.date.control-form-digest-issued"
+              ]
+            },
+            {
+              "id": "field.date.utctolocaltime-post-alias-parameter",
+              "depends_on": [
+                "field.date.control-form-digest-issued"
+              ]
+            },
+            {
+              "id": "field.date.utctolocaltime-post-body-date",
+              "depends_on": [
+                "field.date.control-form-digest-issued"
+              ]
+            },
+            {
+              "id": "field.date.utctolocaltime-post-body-utctime",
+              "depends_on": [
+                "field.date.control-form-digest-issued"
+              ]
+            },
+            {
+              "id": "field.date.utctolocaltime-post-datetime-literal",
+              "depends_on": [
+                "field.date.control-form-digest-issued"
+              ]
+            },
+            {
+              "id": "field.date.localtimetoutc-post-quoted-literal",
+              "depends_on": [
+                "field.date.control-form-digest-issued"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.date.control-site-time-zone",
+            "field.date.control-form-digest-issued"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "calculated-filter-probe.js",
+      "surface": "query",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch generic list with a Yes/No, a Choice, a date-only and two calculated date columns, and three items on it; the list is recycled before the probe reports"
+      ],
+      "cleanup": {
+        "policy": "after"
+      },
+      "prerequisites": [
+        "permission to create and recycle lists on the site"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "query",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "query.odata.fixture-calc-filter-list",
+              "depends_on": []
+            },
+            {
+              "id": "query.odata.fixture-calc-filter-columns",
+              "depends_on": [
+                "query.odata.fixture-calc-filter-list"
+              ]
+            },
+            {
+              "id": "query.odata.fixture-calc-filter-items",
+              "depends_on": [
+                "query.odata.fixture-calc-filter-list",
+                "query.odata.fixture-calc-filter-columns"
+              ]
+            },
+            {
+              "id": "query.odata.control-stored-boolean-eq-filter",
+              "depends_on": [
+                "query.odata.fixture-calc-filter-list",
+                "query.odata.fixture-calc-filter-columns",
+                "query.odata.fixture-calc-filter-items"
+              ]
+            },
+            {
+              "id": "query.odata.control-stored-choice-eq-filter",
+              "depends_on": [
+                "query.odata.fixture-calc-filter-list",
+                "query.odata.fixture-calc-filter-columns",
+                "query.odata.fixture-calc-filter-items"
+              ]
+            },
+            {
+              "id": "query.odata.control-stored-date-ne-null-filter",
+              "depends_on": [
+                "query.odata.fixture-calc-filter-list",
+                "query.odata.fixture-calc-filter-columns",
+                "query.odata.fixture-calc-filter-items"
+              ]
+            },
+            {
+              "id": "query.odata.control-stored-date-le-datetime-filter",
+              "depends_on": [
+                "query.odata.fixture-calc-filter-list",
+                "query.odata.fixture-calc-filter-columns",
+                "query.odata.fixture-calc-filter-items"
+              ]
+            },
+            {
+              "id": "query.odata.calc-over-created-ne-null-filter",
+              "depends_on": [
+                "query.odata.fixture-calc-filter-list",
+                "query.odata.fixture-calc-filter-columns",
+                "query.odata.fixture-calc-filter-items",
+                "query.odata.control-stored-boolean-eq-filter",
+                "query.odata.control-stored-choice-eq-filter",
+                "query.odata.control-stored-date-ne-null-filter"
+              ]
+            },
+            {
+              "id": "query.odata.calc-over-created-le-datetime-filter",
+              "depends_on": [
+                "query.odata.fixture-calc-filter-list",
+                "query.odata.fixture-calc-filter-columns",
+                "query.odata.fixture-calc-filter-items",
+                "query.odata.control-stored-boolean-eq-filter",
+                "query.odata.control-stored-choice-eq-filter",
+                "query.odata.control-stored-date-le-datetime-filter"
+              ]
+            },
+            {
+              "id": "query.odata.calc-over-stored-ne-null-filter",
+              "depends_on": [
+                "query.odata.fixture-calc-filter-list",
+                "query.odata.fixture-calc-filter-columns",
+                "query.odata.fixture-calc-filter-items",
+                "query.odata.control-stored-boolean-eq-filter",
+                "query.odata.control-stored-choice-eq-filter",
+                "query.odata.control-stored-date-ne-null-filter"
+              ]
+            },
+            {
+              "id": "query.odata.calc-over-created-orderby",
+              "depends_on": [
+                "query.odata.fixture-calc-filter-list",
+                "query.odata.fixture-calc-filter-columns",
+                "query.odata.fixture-calc-filter-items",
+                "query.odata.control-stored-boolean-eq-filter",
+                "query.odata.control-stored-choice-eq-filter"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "query.odata.fixture-calc-filter-list",
+            "query.odata.fixture-calc-filter-columns",
+            "query.odata.fixture-calc-filter-items",
+            "query.odata.control-stored-boolean-eq-filter",
+            "query.odata.control-stored-choice-eq-filter",
+            "query.odata.control-stored-date-ne-null-filter",
+            "query.odata.control-stored-date-le-datetime-filter"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "file": "calculated-date-rest-probe.js",
+      "surface": "field",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch generic list with one calculated date column and one item on it; the list is recycled before the probe reports"
+      ],
+      "cleanup": {
+        "policy": "after"
+      },
+      "prerequisites": [
+        "permission to create and recycle lists on the site",
+        "a site zone away from UTC, run while the local and UTC dates differ"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.date.control-site-time-zone",
+              "depends_on": []
+            },
+            {
+              "id": "field.date.fixture-calc-date-list",
+              "depends_on": []
+            },
+            {
+              "id": "field.date.fixture-calc-date-column",
+              "depends_on": [
+                "field.date.fixture-calc-date-list"
+              ]
+            },
+            {
+              "id": "field.date.fixture-calc-date-item",
+              "depends_on": [
+                "field.date.fixture-calc-date-list",
+                "field.date.fixture-calc-date-column"
+              ]
+            },
+            {
+              "id": "field.date.calc-date-local-and-utc-dates-differ",
+              "depends_on": [
+                "field.date.fixture-calc-date-list",
+                "field.date.fixture-calc-date-column",
+                "field.date.fixture-calc-date-item"
+              ]
+            },
+            {
+              "id": "field.date.calc-date-rest-nometadata",
+              "depends_on": [
+                "field.date.fixture-calc-date-list",
+                "field.date.fixture-calc-date-column",
+                "field.date.fixture-calc-date-item"
+              ]
+            },
+            {
+              "id": "field.date.calc-date-rest-verbose",
+              "depends_on": [
+                "field.date.fixture-calc-date-list",
+                "field.date.fixture-calc-date-column",
+                "field.date.fixture-calc-date-item"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.date.control-site-time-zone",
+            "field.date.fixture-calc-date-list",
+            "field.date.fixture-calc-date-column",
+            "field.date.fixture-calc-date-item"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }

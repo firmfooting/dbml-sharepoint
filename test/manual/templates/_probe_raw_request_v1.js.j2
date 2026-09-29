@@ -1,0 +1,64 @@
+{# test/manual/templates/_probe_raw_request_v1.js.j2 #}
+{# Included after _probe_harness.js.j2, whose WEB, isRefusal and unanswered it uses. #}
+  // ---- Raw requests (v1) ----------------------------------------------
+  // The text is kept whole, since a refusal is often not JSON and its text is the finding.
+  const sendRaw = async (path, options = {}) => {
+    const method = options.method || 'GET';
+    const accept = options.accept || 'application/json;odata=nometadata';
+    let res;
+    try {
+      res = await fetch(`${WEB}/_api/${path}`, {
+        method,
+        headers: { Accept: accept, ...(options.headers || {}) },
+        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      });
+    } catch (err) {
+      // A request that never answered is a row with no status, so the table still prints.
+      return { ok: false, status: null, parsed: null, date: null,
+        text: `no response: ${err && err.message ? err.message : String(err)}` };
+    }
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* not JSON; the text is kept */ }
+    const date = res.headers && typeof res.headers.get === 'function' ? res.headers.get('date') : null;
+    return { ok: res.ok, status: res.status, text, parsed, date };
+  };
+
+  // An error message can quote the request URL, and evidence must not name the tenant.
+  const TENANT_ORIGIN = (() => {
+    const scheme = WEB.indexOf('//');
+    const slash = scheme === -1 ? -1 : WEB.indexOf('/', scheme + 2);
+    return slash === -1 ? WEB : WEB.slice(0, slash);
+  })();
+  // A JSON body can escape the origin's slashes, and a host can appear with no scheme at all.
+  const TENANT_PATTERN = (() => {
+    const scheme = TENANT_ORIGIN.indexOf('//');
+    const host = scheme === -1 ? '' : TENANT_ORIGIN.slice(scheme + 2);
+    const needles = [TENANT_ORIGIN, TENANT_ORIGIN.replace(/\//g, '\\/'), host].filter((n) => n);
+    const literal = (n) => n.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
+    return needles.length ? new RegExp(needles.map(literal).join('|'), 'gi') : null;
+  })();
+  const redactTenant = (value) => {
+    const text = String(value);
+    return TENANT_PATTERN ? text.replace(TENANT_PATTERN, '[TENANT]') : text;
+  };
+
+  // The head a non-2xx or unanswered request earns, or null when its payload decides.
+  const rawHead = (res) => {
+    if (res.status === null) return { outcome: 'NOT ESTABLISHED', why: redactTenant(res.text) };
+    if (res.ok) return null;
+    const said = redactTenant(res.text).slice(0, 400);
+    if (isRefusal(res.status)) return { outcome: 'REFUSED', why: `HTTP ${res.status}: ${said}` };
+    const reason = unanswered({ ok: false, status: res.status, body: res.parsed });
+    return { outcome: 'NOT ESTABLISHED', why: `the request ${reason}: ${said}` };
+  };
+
+  // contextinfo wraps its answer in d under odata=verbose and not under nometadata.
+  const issueDigest = async () => {
+    const res = await sendRaw('contextinfo', { method: 'POST', accept: 'application/json;odata=verbose' });
+    const parsed = res.parsed && typeof res.parsed === 'object' ? res.parsed : null;
+    const info = parsed && parsed.d ? parsed.d.GetContextWebInformation : parsed;
+    const digest = res.ok && info && typeof info.FormDigestValue === 'string'
+      ? info.FormDigestValue : null;
+    return { res, digest };
+  };

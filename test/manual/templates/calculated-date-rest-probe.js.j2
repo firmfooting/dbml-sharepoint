@@ -1,0 +1,262 @@
+{# test/manual/templates/calculated-date-rest-probe.js.j2 #}
+
+/** ---- dbml-sharepoint PROBE: THE RAW VALUE REST RETURNS FOR A CALCULATED DATE ----
+ *
+ * REVISION: {{ revision }}
+ *
+ * QUESTION: what raw value does the list items endpoint return for a
+ * calculated date column (`=[Created]+14`, OutputType DateTime), under
+ * odata=nometadata and under odata=verbose, for an item created now?
+ *
+ * WHY: a flow reduces every calculated date to a site-local date before it
+ * compares it. Whether SharePoint returns the value as an instant or as a
+ * local calendar date decides how. The answer only discriminates when the
+ * item's Created falls on different dates in UTC and in the site's zone,
+ * which the evidence states.
+ *
+ * DEPENDS ON (read back, and voiding what rests on them when they do not hold)
+ *   field.date.fixture-calc-date-list    a generic list this probe created
+ *   field.date.fixture-calc-date-column  CalcDue reads back Calculated,
+ *       OutputType 4 (DateTime) and the formula =Created+14
+ *   field.date.fixture-calc-date-item    one item, whose Id and Created read back
+ *   field.date.control-site-time-zone    the site's zone and biases, recorded
+ *
+ * OBSERVES (recorded verbatim with the raw answer, never compared with an expected value)
+ *   field.date.calc-date-local-and-utc-dates-differ  Created's date in UTC and
+ *       on the site's own clock (utctolocaltime), and whether they differ
+ *   field.date.calc-date-rest-nometadata  CalcDue and Created as odata=nometadata returns them
+ *   field.date.calc-date-rest-verbose     CalcDue and Created as odata=verbose returns them
+ *
+ * HOW TO RUN: on a site in a zone away from UTC, at a time when the local
+ * and UTC dates differ (a UTC+10 site before 10:00 local, for example), F12
+ * -> Console, paste, Enter; it prints its plan and stops. Set CONFIRMED and
+ * ALLOW_WRITES to true and paste again (CLEANUP = true recycles a list left
+ * by an earlier run first). Copy the RESULTS block back verbatim.
+ *
+ * WHEN FINISHED: nothing to delete. The probe recycles its list before it
+ * reports.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+{% include "_probe_raw_request_v1.js.j2" %}
+  log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
+
+  const LIST = 'dbmlsp Probe CalcDate';
+  // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
+  const OWNERSHIP_DESCRIPTION = 'dbml-sharepoint calculated-date probe scratch list. Safe to delete.';
+  const listPath = `web/lists/getbytitle('${LIST}')`;
+  const CALC = 'CalcDue';
+  const FORMULA = '=[Created]+14';
+
+  const Q = {
+    list: 'a generic list this probe created, carrying its ownership description',
+    column: `${CALC} reads back Calculated, OutputType 4 and the formula ${FORMULA}`,
+    item: 'one item created now, whose Id and Created read back',
+    zone: 'the site zone and its biases',
+    differ: 'do Created\'s UTC date and its date on the site\'s own clock differ',
+    nometadata: `the raw ${CALC} and Created that odata=nometadata returns`,
+    verbose: `the raw ${CALC} and Created that odata=verbose returns`,
+  };
+  expect('field.date.fixture-calc-date-list', Q.list);
+  expect('field.date.fixture-calc-date-column', Q.column);
+  expect('field.date.fixture-calc-date-item', Q.item);
+  expect('field.date.control-site-time-zone', Q.zone);
+  expect('field.date.calc-date-local-and-utc-dates-differ', Q.differ);
+  expect('field.date.calc-date-rest-nometadata', Q.nometadata);
+  expect('field.date.calc-date-rest-verbose', Q.verbose);
+
+  const AFTER_ITEM = ['field.date.calc-date-local-and-utc-dates-differ',
+    'field.date.calc-date-rest-nometadata', 'field.date.calc-date-rest-verbose'];
+  const AFTER_COLUMN = ['field.date.fixture-calc-date-item', ...AFTER_ITEM];
+  const AFTER_LIST = ['field.date.fixture-calc-date-column', ...AFTER_COLUMN];
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create a list '${LIST}' on ${WEB} with one calculated date column`);
+    log('INFO', `(${CALC} ${FORMULA}), create one item, and read it back under odata=nometadata`);
+    log('INFO', 'and odata=verbose. The list is recycled on the way out.');
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write. Stopping.');
+    return;
+  }
+
+  const VERBOSE = { 'Content-Type': 'application/json;odata=verbose' };
+  const canonical = (formula) => String(formula).replace(/[[\]]/g, '');
+  const show = (value) => (value === undefined ? '(absent)' : JSON.stringify(value));
+  const said = (res) => redactTenant(res.text).slice(0, 400);
+  // A fixture read keeps its answer, so a refusal is never mistaken for a missing column or item.
+  const readBack = async (path) => {
+    const res = await sendRaw(path);
+    const head = rawHead(res);
+    const parsed = !head && res.parsed && typeof res.parsed === 'object' ? res.parsed : null;
+    return { parsed, read: head ? head.why
+      : parsed ? `HTTP ${res.status}` : `HTTP ${res.status} carried no JSON: ${said(res)}` };
+  };
+  let created = false;
+  let dateFormat;
+  let itemId = null;
+
+  try {
+    const zone = await sendRaw('web/RegionalSettings/TimeZone');
+    const zoneBody = zone.ok && zone.parsed && typeof zone.parsed === 'object' ? zone.parsed : null;
+    const info = zoneBody && zoneBody.Information ? zoneBody.Information : null;
+    const zoneHead = rawHead(zone);
+    record('field.date.control-site-time-zone', Q.zone,
+      info ? 'PASS' : (zoneHead && zoneHead.outcome === 'NOT ESTABLISHED' ? 'NOT ESTABLISHED' : 'FAIL'),
+      info
+        ? `site zone "${zoneBody.Description}" bias=${info.Bias} standard=${info.StandardBias} `
+          + `daylight=${info.DaylightBias}; browser offset ${-new Date().getTimezoneOffset()} min`
+        : (zoneHead ? zoneHead.why : `HTTP ${zone.status} carried no Information: ${said(zone)}`));
+
+    const pre = await spGet(`${listPath}?$select=Id,Description`);
+    if (pre.ok) {
+      if (!pre.body || pre.body.Description !== OWNERSHIP_DESCRIPTION) {
+        record('field.date.fixture-calc-date-list', Q.list, 'FAIL',
+          `a list named '${LIST}' exists without this probe's ownership description; refusing to modify it`);
+        voidDependents(AFTER_LIST, 'the scratch list is not one this probe created');
+        return;
+      }
+      if (!CLEANUP) {
+        record('field.date.fixture-calc-date-list', Q.list, 'FAIL',
+          `a list '${LIST}' from an earlier run is standing and CLEANUP is off`);
+        voidDependents(AFTER_LIST, 'a leftover list would answer this run\'s questions');
+        return;
+      }
+      await resetList(LIST);
+    }
+    const made = await spPost('web/lists',
+      { Title: LIST, BaseTemplate: 100, Description: OWNERSHIP_DESCRIPTION }, await getDigest());
+    created = made.ok;
+    if (!made.ok) {
+      record('field.date.fixture-calc-date-list', Q.list, 'FAIL',
+        `the list create answered HTTP ${made.status}: ${redactTenant(made.text).slice(0, 300)}`);
+      voidDependents(AFTER_LIST, 'the scratch list was not created');
+      return;
+    }
+    if (!await establishFixture('field.date.fixture-calc-date-list',
+      () => spGet(`${listPath}?$select=BaseTemplate,Description`),
+      { BaseTemplate: 100, Description: OWNERSHIP_DESCRIPTION }, AFTER_LIST)) {
+      return;
+    }
+
+    // The deploy's create body for a calculated date (generators/jsgen.py), DateFormat left to SharePoint.
+    const column = await spPost(`${listPath}/fields`, {
+      __metadata: { type: 'SP.FieldCalculated' }, Title: CALC, FieldTypeKind: 17, Required: false,
+      OutputType: 4, Formula: FORMULA,
+    }, await getDigest(), VERBOSE);
+    log('INFO', `create ${CALC}: HTTP ${column.status}${column.ok ? '' : ` ${redactTenant(column.text).slice(0, 200)}`}`);
+    const fieldPath = `${listPath}/fields/getbyinternalnameortitle('${CALC}')`;
+    if (!await establishFixture('field.date.fixture-calc-date-column', async () => {
+      const typed = await readBack(`${fieldPath}?$select=InternalName,TypeAsString`);
+      const body = { Read: typed.read };
+      if (!typed.parsed) return { ok: true, status: 200, body };
+      body.TypeAsString = typed.parsed.TypeAsString;
+      // OutputType, Formula and DateFormat are SP.FieldCalculated's, so another type is never asked.
+      if (body.TypeAsString !== 'Calculated') return { ok: true, status: 200, body };
+      const calc = await readBack(`${fieldPath}?$select=OutputType,Formula,DateFormat`);
+      body.CalculatedRead = calc.read;
+      if (calc.parsed) {
+        body.OutputType = calc.parsed.OutputType;
+        body.Formula = calc.parsed.Formula;
+        dateFormat = calc.parsed.DateFormat;
+      }
+      return { ok: true, status: 200, body };
+    }, { Read: 'HTTP 200', TypeAsString: 'Calculated', CalculatedRead: 'HTTP 200', OutputType: 4,
+      Formula: (v) => canonical(v) === canonical(FORMULA) }, AFTER_COLUMN)) {
+      return;
+    }
+
+    const item = await spPost(`${listPath}/items`, { Title: 'dbmlsp calc date 1' }, await getDigest());
+    const body = item.body && typeof item.body === 'object' ? item.body : {};
+    itemId = body.Id !== undefined ? body.Id : (body.d && body.d.Id !== undefined ? body.d.Id : null);
+    log('INFO', `create item: HTTP ${item.status}, Id ${show(itemId)}`);
+    let createdAt = null;
+    if (!await establishFixture('field.date.fixture-calc-date-item', async () => {
+      // With no Id there is nothing to read, so the create's own answer stands in the evidence.
+      if (itemId === null) {
+        const answered = `the item create answered HTTP ${item.status}: ${said(item)}`;
+        return { ok: true, status: 200, body: { Read: answered } };
+      }
+      const read = await readBack(`${listPath}/items(${itemId})?$select=Id,Created`);
+      if (!read.parsed) return { ok: true, status: 200, body: { Read: read.read } };
+      createdAt = read.parsed.Created;
+      return { ok: true, status: 200, body: { Read: read.read, Id: read.parsed.Id, Created: createdAt } };
+    }, { Read: 'HTTP 200', Id: itemId,
+      Created: (v) => typeof v === 'string' && !Number.isNaN(Date.parse(v)) }, AFTER_ITEM)) {
+      return;
+    }
+
+    // The site's own conversion, in the two GET shapes and three answer shapes site-zone-transitions-probe.js reads.
+    const stamp = encodeURIComponent(new Date(createdAt).toISOString());
+    let wall = null;
+    let wallSaid = '';
+    const wallMisses = [];
+    for (const [shape, query] of [
+      [`utctolocaltime('${decodeURIComponent(stamp)}')`, `utctolocaltime('${stamp}')`],
+      ['utctolocaltime(@d)', `utctolocaltime(@d)?@d='${stamp}'`],
+    ]) {
+      const res = await sendRaw(`web/RegionalSettings/TimeZone/${query}`);
+      const head = rawHead(res);
+      const parsed = res.parsed;
+      const value = typeof parsed === 'string' ? parsed
+        : !parsed || typeof parsed !== 'object' ? undefined
+          : parsed.value !== undefined ? parsed.value : parsed.UTCToLocalTime;
+      if (!head && typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
+        wall = value;
+        wallSaid = said(res);
+        break;
+      }
+      wallMisses.push(`${shape}: `
+        + (head ? head.why : `HTTP ${res.status} carried no wall clock: ${said(res)}`));
+    }
+    const utcDate = new Date(createdAt).toISOString().slice(0, 10);
+    record('field.date.calc-date-local-and-utc-dates-differ', Q.differ,
+      wall === null ? 'NOT ESTABLISHED' : (wall.slice(0, 10) === utcDate ? 'SAME DATE' : 'DATES DIFFER'),
+      wall === null
+        ? `neither utctolocaltime shape answered a parseable wall clock: ${wallMisses.join('; ')}`
+        : `Created ${createdAt}: UTC date ${utcDate}; the site's clock reads ${wall}, `
+          + `date ${wall.slice(0, 10)}; answered ${wallSaid}`);
+
+    const itemPath = `${listPath}/items(${itemId})?$select=Id,Created,${CALC}`;
+    for (const [id, question, accept, pick] of [
+      ['field.date.calc-date-rest-nometadata', Q.nometadata, 'application/json;odata=nometadata',
+        (parsed) => parsed],
+      ['field.date.calc-date-rest-verbose', Q.verbose, 'application/json;odata=verbose',
+        (parsed) => (parsed.d && typeof parsed.d === 'object' ? parsed.d : null)],
+    ]) {
+      const res = await sendRaw(itemPath, { accept });
+      const head = rawHead(res);
+      const entity = !head && res.parsed && typeof res.parsed === 'object' ? pick(res.parsed) : null;
+      if (head) {
+        record(id, question, head.outcome, head.why);
+      } else if (!entity || entity[CALC] === undefined) {
+        record(id, question, 'NOT ESTABLISHED', `HTTP ${res.status} carried no ${CALC}: ${said(res)}`);
+      } else {
+        record(id, question, 'OBSERVED', `HTTP ${res.status}: ${CALC}=${show(entity[CALC])} `
+          + `(${typeof entity[CALC]}), Created=${show(entity.Created)}; the column reads `
+          + `DateFormat=${show(dateFormat)}; answered ${said(res)}`);
+      }
+    }
+  } catch (err) {
+    log('FAIL', `probe aborted: ${redactTenant(String((err && err.message) || err)).slice(0, 240)}. `
+      + 'The unasked rows stay open.');
+  } finally {
+    if (created) {
+      let gone;
+      try {
+        gone = await spPost(`${listPath}/recycle`, {}, await getDigest());
+      } catch (err) {
+        gone = { ok: false, status: null, text: String((err && err.message) || err) };
+      }
+      // A request that threw has no status, so its message is what the operator is shown.
+      const why = gone.status === null ? redactTenant(gone.text).slice(0, 240) : `HTTP ${gone.status}`;
+      log(gone.ok ? 'OK' : 'FAIL', gone.ok
+        ? `recycled '${LIST}'; it is restorable from the recycle bin.`
+        : `could not recycle '${LIST}' (${why}); recycle it by hand.`);
+    }
+    // Reported here, after the recycle, so every path prints the recycle line above the table.
+    report();
+  }
+})();
