@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE (READ-ONLY): THE POST FORM OF UTCToLocalTime ----
  *
- * REVISION: c3c1bcab
+ * REVISION: b8f1a2ad
  *
  * QUESTION: which POST spelling of SP.TimeZone.UTCToLocalTime does the site
  * accept, and what does it answer for one instant? Learn documents the CSOM
@@ -399,18 +399,17 @@
     const slash = scheme === -1 ? -1 : WEB.indexOf('/', scheme + 2);
     return slash === -1 ? WEB : WEB.slice(0, slash);
   })();
+  // A JSON body can escape the origin's slashes, and a host can appear with no scheme at all.
+  const TENANT_PATTERN = (() => {
+    const scheme = TENANT_ORIGIN.indexOf('//');
+    const host = scheme === -1 ? '' : TENANT_ORIGIN.slice(scheme + 2);
+    const needles = [TENANT_ORIGIN, TENANT_ORIGIN.replace(/\//g, '\\/'), host].filter((n) => n);
+    const literal = (n) => n.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
+    return needles.length ? new RegExp(needles.map(literal).join('|'), 'gi') : null;
+  })();
   const redactTenant = (value) => {
     const text = String(value);
-    if (!TENANT_ORIGIN) return text;
-    const needle = TENANT_ORIGIN.toLowerCase();
-    let out = '';
-    let from = 0;
-    for (;;) {
-      const hit = text.toLowerCase().indexOf(needle, from);
-      if (hit === -1) return out + text.slice(from);
-      out += `${text.slice(from, hit)}[TENANT]`;
-      from = hit + TENANT_ORIGIN.length;
-    }
+    return TENANT_PATTERN ? text.replace(TENANT_PATTERN, '[TENANT]') : text;
   };
 
   // The head a non-2xx or unanswered request earns, or null when its payload decides.
@@ -432,7 +431,7 @@
       ? info.FormDigestValue : null;
     return { res, digest };
   };
-  log('INFO', 'probe revision c3c1bcab. Quote this when reporting results.');
+  log('INFO', 'probe revision b8f1a2ad. Quote this when reporting results.');
 
   const CANDIDATES = [
     { id: 'field.date.utctolocaltime-post-quoted-literal',

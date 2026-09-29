@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: THE RAW VALUE REST RETURNS FOR A CALCULATED DATE ----
  *
- * REVISION: 94504b44
+ * REVISION: a183bae5
  *
  * QUESTION: what raw value does the list items endpoint return for a
  * calculated date column (`=[Created]+14`, OutputType DateTime), under
@@ -390,18 +390,17 @@
     const slash = scheme === -1 ? -1 : WEB.indexOf('/', scheme + 2);
     return slash === -1 ? WEB : WEB.slice(0, slash);
   })();
+  // A JSON body can escape the origin's slashes, and a host can appear with no scheme at all.
+  const TENANT_PATTERN = (() => {
+    const scheme = TENANT_ORIGIN.indexOf('//');
+    const host = scheme === -1 ? '' : TENANT_ORIGIN.slice(scheme + 2);
+    const needles = [TENANT_ORIGIN, TENANT_ORIGIN.replace(/\//g, '\\/'), host].filter((n) => n);
+    const literal = (n) => n.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
+    return needles.length ? new RegExp(needles.map(literal).join('|'), 'gi') : null;
+  })();
   const redactTenant = (value) => {
     const text = String(value);
-    if (!TENANT_ORIGIN) return text;
-    const needle = TENANT_ORIGIN.toLowerCase();
-    let out = '';
-    let from = 0;
-    for (;;) {
-      const hit = text.toLowerCase().indexOf(needle, from);
-      if (hit === -1) return out + text.slice(from);
-      out += `${text.slice(from, hit)}[TENANT]`;
-      from = hit + TENANT_ORIGIN.length;
-    }
+    return TENANT_PATTERN ? text.replace(TENANT_PATTERN, '[TENANT]') : text;
   };
 
   // The head a non-2xx or unanswered request earns, or null when its payload decides.
@@ -423,7 +422,7 @@
       ? info.FormDigestValue : null;
     return { res, digest };
   };
-  log('INFO', 'probe revision 94504b44. Quote this when reporting results.');
+  log('INFO', 'probe revision a183bae5. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe CalcDate';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.

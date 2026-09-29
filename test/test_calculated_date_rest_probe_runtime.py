@@ -304,6 +304,28 @@ def test_an_observed_answer_that_names_the_tenant_is_redacted() -> None:
     assert "example.sharepoint.com" not in json.dumps(rows)
 
 
+#: Built by hand, because json.dumps does not escape a slash and SharePoint may.
+ESCAPED_URI = "https:\\/\\/example.sharepoint.com/sites/probe/_api/Web/Lists(guid'1')/Items(1)"
+ESCAPED_BODY = ('{"d": {"__metadata": {"uri": "' + ESCAPED_URI + '", '
+                '"host": "example.sharepoint.com"}, "Id": 1, "Created": "2026-09-28T15:30:00Z", '
+                '"CalcDue": "2026-10-12T14:00:00Z"}}')
+
+
+# The shared mock re-serialises a 2xx $select answer, so only the refusal keeps the escapes intact.
+@pytest.mark.parametrize(("status", "outcome"), [(500, "REFUSED"), (200, "OBSERVED")],
+                         ids=["refused-verbatim", "observed"])
+def test_a_json_escaped_uri_and_a_bare_host_are_redacted(status: int, outcome: str) -> None:
+    assert "\\/\\/example" in ESCAPED_BODY
+    rows, _, _ = _run(rules=[{"contains": "Id,Created,CalcDue", "accept": "verbose",
+                              "status": status, "text": ESCAPED_BODY}])
+
+    evidence = rows[VERBOSE]["evidence"]
+    assert rows[VERBOSE]["outcome"] == outcome
+    assert "[TENANT]/sites/probe/_api/Web/Lists" in evidence
+    assert '"host": "[TENANT]"' in evidence or '"host":"[TENANT]"' in evidence
+    assert "example.sharepoint.com" not in json.dumps(rows).lower()
+
+
 def test_the_calculated_only_properties_are_asked_only_of_a_calculated_column() -> None:
     _, sent, _ = _run()
 

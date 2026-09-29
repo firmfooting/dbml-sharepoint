@@ -103,6 +103,26 @@ def test_a_refusal_heads_refused_and_quotes_the_text_without_the_tenant() -> Non
     assert out["why"] == "HTTP 500: The URL [TENANT]/sites/test/_api/web/x is not valid"
 
 
+#: A JSON-escaped origin as SharePoint can write it; the backslashes are literal in the text.
+ESCAPED = "https:\\/\\/EXAMPLE.sharepoint.com/sites/test"
+
+
+@pytest.mark.parametrize(
+    ("text", "said"),
+    [
+        (f'{{"uri":"{ESCAPED}/_api/web"}}', '{"uri":"[TENANT]/sites/test/_api/web"}'),
+        ("served by Example.SharePoint.com today", "served by [TENANT] today"),
+        (f"both {ESCAPED} and example.sharepoint.com", "both [TENANT]/sites/test and [TENANT]"),
+    ],
+    ids=["json-escaped-origin", "bare-host", "both"],
+)
+def test_an_escaped_origin_and_a_bare_host_are_redacted(text: str, said: str) -> None:
+    out = _run("rawHead(await sendRaw('web/x'))", status=500, text=text)
+
+    assert out["why"] == f"HTTP 500: {said}"
+    assert "example.sharepoint.com" not in json.dumps(out).lower()
+
+
 @pytest.mark.parametrize(
     ("status", "named"),
     [
