@@ -209,7 +209,7 @@ Probes: `multi-value-probe.js`, `projected-lookup-probe.js`,
 `site-zone-transitions-probe.js`, `default-formula-readback-probe.js`,
 `default-formula-functions-probe.js`, `unique-blanks-probe.js`,
 `unique-transition-probe.js`, `field-sealed-probe.js`,
-`utctolocaltime-rest-form-probe.js`
+`utctolocaltime-rest-form-probe.js`, `calculated-date-rest-probe.js`
 
 `site-zone-transitions-probe.js` files under `date` because its subject is
 the relation between a stored UTC instant and the site-local clock, which is
@@ -230,6 +230,14 @@ spellings, which is a different method from the GET that
 `utctolocaltime-post-` or `localtimetoutc-post-` id.
 `control-form-digest-issued` is the one control they rest on, because a POST
 without a digest answers nothing about its spelling.
+
+`calculated-date-rest-probe.js` files under `date` because its subject is
+the value a calculated date carries over REST, read against the item's
+Created in UTC and on the site's clock. It reuses `control-site-time-zone`
+and asks the site's clock through the GET shapes that
+`site-zone-transitions-probe.js` uses. It reads one item in both OData
+metadata levels, which take one id each because a verbose and a nometadata
+answer are different envelopes.
 
 `sealed` is separate from `title` because the two ask opposite questions about
 the same flag. `title-seal-probe.js` asks whether the built-in Title column can

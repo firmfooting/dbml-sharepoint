@@ -12105,6 +12105,84 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "calculated-date-rest-probe.js",
+      "surface": "field",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch generic list with one calculated date column and one item on it; the list is recycled before the probe reports"
+      ],
+      "cleanup": {
+        "policy": "after"
+      },
+      "prerequisites": [
+        "permission to create and recycle lists on the site",
+        "a site zone away from UTC, run while the local and UTC dates differ"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.date.control-site-time-zone",
+              "depends_on": []
+            },
+            {
+              "id": "field.date.fixture-calc-date-list",
+              "depends_on": []
+            },
+            {
+              "id": "field.date.fixture-calc-date-column",
+              "depends_on": [
+                "field.date.fixture-calc-date-list"
+              ]
+            },
+            {
+              "id": "field.date.fixture-calc-date-item",
+              "depends_on": [
+                "field.date.fixture-calc-date-list",
+                "field.date.fixture-calc-date-column"
+              ]
+            },
+            {
+              "id": "field.date.calc-date-local-and-utc-dates-differ",
+              "depends_on": [
+                "field.date.fixture-calc-date-list",
+                "field.date.fixture-calc-date-column",
+                "field.date.fixture-calc-date-item"
+              ]
+            },
+            {
+              "id": "field.date.calc-date-rest-nometadata",
+              "depends_on": [
+                "field.date.fixture-calc-date-list",
+                "field.date.fixture-calc-date-column",
+                "field.date.fixture-calc-date-item"
+              ]
+            },
+            {
+              "id": "field.date.calc-date-rest-verbose",
+              "depends_on": [
+                "field.date.fixture-calc-date-list",
+                "field.date.fixture-calc-date-column",
+                "field.date.fixture-calc-date-item"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.date.control-site-time-zone",
+            "field.date.fixture-calc-date-list",
+            "field.date.fixture-calc-date-column",
+            "field.date.fixture-calc-date-item"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
