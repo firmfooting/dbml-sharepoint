@@ -163,7 +163,7 @@ returned*, not the view object that stores the predicate.
 
 Scopes: `caml`, `caml-adhoc`, `view-query`, `odata`
 
-Probes: `caml-chain-depth-probe.js`
+Probes: `caml-chain-depth-probe.js`, `calculated-filter-probe.js`
 
 ### 4. `view`: the `SP.View` object and its rendered page
 
