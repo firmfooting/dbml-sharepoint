@@ -103,7 +103,7 @@ def test_a_refusal_heads_refused_and_quotes_the_text_without_the_tenant() -> Non
     assert out["why"] == "HTTP 500: The URL [TENANT]/sites/test/_api/web/x is not valid"
 
 
-#: A JSON-escaped origin as SharePoint can write it; the backslashes are literal in the text.
+#: A JSON-escaped origin as a JSON writer may spell it; the backslashes are literal in the text.
 ESCAPED = "https:\\/\\/EXAMPLE.sharepoint.com/sites/test"
 
 
