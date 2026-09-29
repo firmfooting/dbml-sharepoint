@@ -220,14 +220,26 @@ def test_the_evidence_never_names_the_tenant() -> None:
     assert "example.sharepoint.com" not in json.dumps(rows)
 
 
-def test_a_verbose_shaped_answer_is_read_as_the_value() -> None:
-    rows, _, _ = _run([{"contains": "localTimeToUTC('", "status": 200,
-                        "text": '{"d": {"LocalTimeToUTC": "2026-09-28T14:00:00Z"}}'}])
+@pytest.mark.parametrize(
+    ("form", "marker", "key", "value"),
+    [
+        ("field.date.utctolocaltime-post-quoted-literal", "utcToLocalTime('", "UTCToLocalTime",
+         "2026-09-29T10:00:00"),
+        ("field.date.localtimetoutc-post-quoted-literal", "localTimeToUTC('", "LocalTimeToUTC",
+         "2026-09-28T14:00:00Z"),
+    ],
+    ids=["UTCToLocalTime", "LocalTimeToUTC"],
+)
+def test_a_verbose_shaped_answer_is_read_as_the_value(
+    form: str, marker: str, key: str, value: str,
+) -> None:
+    said = json.dumps({"d": {key: value}})
+    rows, _, _ = _run([{"contains": marker, "status": 200, "text": said}])
 
-    row = rows["field.date.localtimetoutc-post-quoted-literal"]
-    assert row["outcome"] == "ACCEPTED"
-    assert 'value "2026-09-28T14:00:00Z"' in row["evidence"]
-    assert 'answered {"d": {"LocalTimeToUTC": ' in row["evidence"]
+    row = rows[form]
+    assert row["outcome"] == "ACCEPTED", row
+    assert f'value "{value}"' in row["evidence"]
+    assert f'answered {{"d": {{"{key}": ' in row["evidence"]
 
 
 def test_an_accepted_answer_that_names_the_tenant_is_redacted() -> None:
