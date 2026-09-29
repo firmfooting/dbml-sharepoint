@@ -11916,6 +11916,76 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "utctolocaltime-rest-form-probe.js",
+      "surface": "field",
+      "harness": "shared-v1",
+      "authority": "read-only",
+      "writes": [],
+      "cleanup": {
+        "policy": "none"
+      },
+      "prerequisites": [],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.date.control-site-time-zone",
+              "depends_on": []
+            },
+            {
+              "id": "field.date.control-form-digest-issued",
+              "depends_on": []
+            },
+            {
+              "id": "field.date.utctolocaltime-post-quoted-literal",
+              "depends_on": [
+                "field.date.control-form-digest-issued"
+              ]
+            },
+            {
+              "id": "field.date.utctolocaltime-post-alias-parameter",
+              "depends_on": [
+                "field.date.control-form-digest-issued"
+              ]
+            },
+            {
+              "id": "field.date.utctolocaltime-post-body-date",
+              "depends_on": [
+                "field.date.control-form-digest-issued"
+              ]
+            },
+            {
+              "id": "field.date.utctolocaltime-post-body-utctime",
+              "depends_on": [
+                "field.date.control-form-digest-issued"
+              ]
+            },
+            {
+              "id": "field.date.utctolocaltime-post-datetime-literal",
+              "depends_on": [
+                "field.date.control-form-digest-issued"
+              ]
+            },
+            {
+              "id": "field.date.localtimetoutc-post-quoted-literal",
+              "depends_on": [
+                "field.date.control-form-digest-issued"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.date.control-site-time-zone",
+            "field.date.control-form-digest-issued"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
