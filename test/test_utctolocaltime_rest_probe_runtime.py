@@ -186,20 +186,56 @@ def test_a_2xx_with_no_json_value_is_not_an_acceptance() -> None:
 
 
 @pytest.mark.parametrize(
-    "rule",
+    ("rule", "said"),
     [
-        {"contains": "contextinfo", "status": 403, "text": "denied"},
-        {"contains": "contextinfo", "reject": True},
-        {"contains": "contextinfo", "status": 200, "text": "{}"},
+        ({"contains": "contextinfo", "status": 200, "text": "{}"},
+         "contextinfo answered HTTP 200 with no FormDigestValue"),
+        ({"contains": "contextinfo", "status": 500, "text": "refused"}, "HTTP 500: refused"),
     ],
-    ids=["denied", "no-response", "no-digest"],
+    ids=["no-digest", "refused"],
 )
-def test_without_a_digest_every_form_is_void_and_none_is_sent(rule: dict[str, Any]) -> None:
+def test_without_a_digest_every_form_is_void_when_contextinfo_fails(
+    rule: dict[str, Any], said: str,
+) -> None:
     rows, sent, _ = _run([rule])
 
-    assert rows[DIGEST]["outcome"] in {"FAIL", "NOT ESTABLISHED"}
+    assert rows[DIGEST]["outcome"] == "FAIL"
+    assert rows[DIGEST]["evidence"] == said
     for form in FORMS:
+        assert rows[form]["outcome"] == "NOT ESTABLISHED", rows[form]
         assert rows[form]["state"] == "void", rows[form]
+    assert not [r for r in sent if r["path"].startswith("web/RegionalSettings/TimeZone/")]
+
+
+@pytest.mark.parametrize(
+    ("rule", "said"),
+    [
+        ({"contains": "contextinfo", "status": 403, "text": "denied"},
+         "the request was not authorised (HTTP 403): denied"),
+        ({"contains": "contextinfo", "status": 401, "text": "denied"},
+         "the request was not authorised (HTTP 401): denied"),
+        ({"contains": "contextinfo", "status": 429, "text": "busy"},
+         "the request was throttled (HTTP 429): busy"),
+        ({"contains": "contextinfo", "status": 503, "text": "busy"},
+         "the request was throttled (HTTP 503): busy"),
+        ({"contains": "contextinfo", "status": 408, "text": "late"},
+         "the request timed out (HTTP 408): late"),
+        ({"contains": "contextinfo", "reject": True}, "no response: Failed to fetch"),
+    ],
+    ids=["denied", "unauthenticated", "throttled", "unavailable", "timed-out", "no-response"],
+)
+def test_without_a_digest_every_form_stays_open_when_contextinfo_is_not_established(
+    rule: dict[str, Any], said: str,
+) -> None:
+    rows, sent, _ = _run([rule])
+
+    assert rows[DIGEST]["outcome"] == "NOT ESTABLISHED"
+    assert rows[DIGEST]["state"] == "open"
+    assert rows[DIGEST]["evidence"] == said
+    for form in FORMS:
+        assert rows[form]["outcome"] == "NOT ESTABLISHED", rows[form]
+        assert rows[form]["state"] == "open", rows[form]
+        assert said in rows[form]["evidence"], rows[form]
     assert not [r for r in sent if r["path"].startswith("web/RegionalSettings/TimeZone/")]
 
 

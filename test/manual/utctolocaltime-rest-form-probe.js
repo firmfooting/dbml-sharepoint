@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE (READ-ONLY): THE POST FORM OF UTCToLocalTime ----
  *
- * REVISION: b8f1a2ad
+ * REVISION: 34f15c64
  *
  * QUESTION: which POST spelling of SP.TimeZone.UTCToLocalTime does the site
  * accept, and what does it answer for one instant? Learn documents the CSOM
@@ -20,7 +20,9 @@
  *       every form is asked about: the server's Date header, or this
  *       browser's clock when the answer carried none
  *   field.date.control-form-digest-issued  contextinfo issues a digest;
- *       without one no POST form can be asked, so every form row is void
+ *       without one no POST form is asked. A FAIL voids every form row; a
+ *       NOT ESTABLISHED (throttled, denied, timed out, no response) leaves
+ *       them open, since a re-run can ask them
  *
  * OBSERVES (one row per spelling: the status, the head, the value or the text)
  *   field.date.utctolocaltime-post-quoted-literal    utcToLocalTime('<instant>')
@@ -431,7 +433,7 @@
       ? info.FormDigestValue : null;
     return { res, digest };
   };
-  log('INFO', 'probe revision b8f1a2ad. Quote this when reporting results.');
+  log('INFO', 'probe revision 34f15c64. Quote this when reporting results.');
 
   const CANDIDATES = [
     { id: 'field.date.utctolocaltime-post-quoted-literal',
@@ -488,11 +490,19 @@
   const issued = await issueDigest();
   if (!issued.digest) {
     const head = rawHead(issued.res);
-    record('field.date.control-form-digest-issued', Q_DIGEST,
-      head && head.outcome === 'NOT ESTABLISHED' ? 'NOT ESTABLISHED' : 'FAIL',
-      head ? head.why : `contextinfo answered HTTP ${issued.res.status} with no FormDigestValue`);
-    voidDependents(CANDIDATES.map((candidate) => candidate.id),
-      'no form digest was issued, so no POST form could be asked');
+    const why = head ? head.why : `contextinfo answered HTTP ${issued.res.status} with no FormDigestValue`;
+    const unread = head && head.outcome === 'NOT ESTABLISHED';
+    record('field.date.control-form-digest-issued', Q_DIGEST, unread ? 'NOT ESTABLISHED' : 'FAIL', why);
+    if (!unread) {
+      voidDependents(CANDIDATES.map((candidate) => candidate.id),
+        'no form digest was issued, so no POST form could be asked');
+      return report();
+    }
+    // A throttle, a denial or a lost request can clear on a re-run, so the forms stay open.
+    for (const candidate of CANDIDATES) {
+      record(candidate.id, questionOf(candidate), 'NOT ESTABLISHED',
+        `not asked: contextinfo issued no digest (${why}); a re-run can ask it`);
+    }
     return report();
   }
   record('field.date.control-form-digest-issued', Q_DIGEST, 'PASS',
