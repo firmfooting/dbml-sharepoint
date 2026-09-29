@@ -68,7 +68,9 @@ _MOCK = textwrap.dedent("""
       for (const rule of CONFIG.rules || []) {
         if (!path.includes(rule.contains) || (rule.verb && rule.verb !== verb)) continue;
         if (rule.title && rule.title !== sent.Title) continue;
-        if (rule.reject) throw new TypeError('Failed to fetch');
+        if (rule.reject) {
+          throw new TypeError(typeof rule.reject === 'string' ? rule.reject : 'Failed to fetch');
+        }
         return answer(rule.status, rule.text);
       }
       if (path === 'contextinfo') {
@@ -495,3 +497,14 @@ def test_an_early_return_whose_recycle_fails_says_so_before_the_results_block() 
     marker = "Copy this whole block back verbatim."
     assert output.count(marker) == 1
     assert output.index(told) < output.index("==================== RESULTS") < output.index(marker)
+
+
+def test_a_recycle_that_throws_names_the_reason_without_the_tenant() -> None:
+    thrown = "Failed to reach https://example.sharepoint.com/sites/probe/_api/web"
+    _, _, output = _run(rules=[{"contains": "/recycle", "reject": thrown}])
+
+    [told] = [line for line in output.splitlines() if "could not recycle" in line]
+    assert told.endswith("could not recycle 'dbmlsp Probe CalcFilter' "
+                         "(Failed to reach [TENANT]/sites/probe/_api/web); recycle it by hand.")
+    assert "HTTP null" not in output
+    assert "example.sharepoint.com" not in told

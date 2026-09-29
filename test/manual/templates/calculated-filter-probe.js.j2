@@ -330,11 +330,13 @@
       try {
         gone = await spPost(`${listPath}/recycle`, {}, await getDigest());
       } catch (err) {
-        gone = { ok: false, status: null, text: String(err) };
+        gone = { ok: false, status: null, text: String((err && err.message) || err) };
       }
+      // A request that threw has no status, so its message is what the operator is shown.
+      const why = gone.status === null ? redactTenant(gone.text).slice(0, 240) : `HTTP ${gone.status}`;
       log(gone.ok ? 'OK' : 'FAIL', gone.ok
         ? `recycled '${LIST}'; it is restorable from the recycle bin.`
-        : `could not recycle '${LIST}' (HTTP ${gone.status}); recycle it by hand.`);
+        : `could not recycle '${LIST}' (${why}); recycle it by hand.`);
     }
     // Reported here, after the recycle, so every path prints the recycle line above the table.
     report();

@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ODATA FILTER ON A CALCULATED COLUMN ----
  *
- * REVISION: 28764cea
+ * REVISION: 4ca95440
  *
  * QUESTION: what does the list items endpoint answer when `$filter` or
  * `$orderby` names a calculated date column, beside the stored-column filter
@@ -438,7 +438,7 @@
       ? info.FormDigestValue : null;
     return { res, digest };
   };
-  log('INFO', 'probe revision 28764cea. Quote this when reporting results.');
+  log('INFO', 'probe revision 4ca95440. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe CalcFilter';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -713,11 +713,13 @@
       try {
         gone = await spPost(`${listPath}/recycle`, {}, await getDigest());
       } catch (err) {
-        gone = { ok: false, status: null, text: String(err) };
+        gone = { ok: false, status: null, text: String((err && err.message) || err) };
       }
+      // A request that threw has no status, so its message is what the operator is shown.
+      const why = gone.status === null ? redactTenant(gone.text).slice(0, 240) : `HTTP ${gone.status}`;
       log(gone.ok ? 'OK' : 'FAIL', gone.ok
         ? `recycled '${LIST}'; it is restorable from the recycle bin.`
-        : `could not recycle '${LIST}' (HTTP ${gone.status}); recycle it by hand.`);
+        : `could not recycle '${LIST}' (${why}); recycle it by hand.`);
     }
     // Reported here, after the recycle, so every path prints the recycle line above the table.
     report();
