@@ -32,6 +32,12 @@ SUBJECTS = [
     "query.odata.calc-over-created-orderby",
 ]
 OWNED = "dbml-sharepoint calculated-filter probe scratch list. Safe to delete."
+SUBJECT_SENDS = {
+    "query.odata.calc-over-created-ne-null-filter": "$filter=ProbeCalcCreated ne null",
+    "query.odata.calc-over-created-le-datetime-filter": "$filter=ProbeCalcCreated le datetime",
+    "query.odata.calc-over-stored-ne-null-filter": "$filter=ProbeCalcStored ne null",
+    "query.odata.calc-over-created-orderby": "$orderby=ProbeCalcCreated desc",
+}
 
 _MOCK = textwrap.dedent("""
     const CONFIG = __CONFIG__;
@@ -259,6 +265,42 @@ def test_a_failed_date_control_voids_only_the_subjects_sharing_its_operator(
     assert _catalogued_dependents(control) == voided
     for row_id in set(SUBJECTS) - voided:
         assert rows[row_id]["outcome"] == "ACCEPTED", rows[row_id]
+
+
+@pytest.mark.parametrize(("rule", "said"), [
+    ({"status": 401, "text": "denied"}, "the request was not authorised (HTTP 401): denied"),
+    ({"status": 403, "text": "denied"}, "the request was not authorised (HTTP 403): denied"),
+    ({"status": 408, "text": "late"}, "the request timed out (HTTP 408): late"),
+    ({"status": 429, "text": "busy"}, "the request was throttled (HTTP 429): busy"),
+    ({"status": 503, "text": "busy"}, "the request was throttled (HTTP 503): busy"),
+    ({"reject": True}, "no response: Failed to fetch"),
+], ids=["unauthenticated", "denied", "timed-out", "throttled", "unavailable", "no-response"])
+@pytest.mark.parametrize(("control", "sent", "dependents"), [
+    ("query.odata.control-stored-date-ne-null-filter", "ProbeDate ne null",
+     {"query.odata.calc-over-created-ne-null-filter",
+      "query.odata.calc-over-stored-ne-null-filter"}),
+    ("query.odata.control-stored-date-le-datetime-filter", "ProbeDate le datetime",
+     {"query.odata.calc-over-created-le-datetime-filter"}),
+], ids=["ne-null", "le-datetime"])
+def test_a_control_not_established_leaves_its_subjects_open_and_unasked(
+    rule: dict[str, Any], said: str, control: str, sent: str, dependents: set[str],
+) -> None:
+    rows, requests, _ = _run(rules=[{"contains": sent, **rule}])
+
+    assert rows[control]["outcome"] == "NOT ESTABLISHED", rows[control]
+    assert rows[control]["state"] == "open"
+    assert _catalogued_dependents(control) == dependents
+    for row_id in dependents:
+        assert rows[row_id]["outcome"] == "NOT ESTABLISHED", rows[row_id]
+        assert rows[row_id]["state"] == "open", rows[row_id]
+        assert rows[row_id]["evidence"].startswith(
+            f"not asked: control {control} not established ({said})"), rows[row_id]
+    assert not {row_id for row_id, row in rows.items() if row["state"] == "void"}
+    for row_id in set(SUBJECTS) - dependents:
+        assert rows[row_id]["outcome"] == "ACCEPTED", rows[row_id]
+    for row_id in SUBJECTS:
+        asked = [r for r in requests if SUBJECT_SENDS[row_id] in r["path"]]
+        assert len(asked) == (0 if row_id in dependents else 1), (row_id, asked)
 
 
 def test_the_le_control_sends_the_subject_s_datetime_literal_on_a_stored_date() -> None:

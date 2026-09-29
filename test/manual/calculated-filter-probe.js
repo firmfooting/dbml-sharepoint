@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ODATA FILTER ON A CALCULATED COLUMN ----
  *
- * REVISION: 2737a65e
+ * REVISION: 28764cea
  *
  * QUESTION: what does the list items endpoint answer when `$filter` or
  * `$orderby` names a calculated date column, beside the stored-column filter
@@ -27,7 +27,8 @@
  *   query.odata.control-stored-date-le-datetime-filter  ProbeDate le the subject's
  *       datetime literal serves A and C
  *   The Boolean and Choice controls gate every subject; each date control
- *   gates only the subjects that send its operator.
+ *   gates only the subjects that send its operator. A control that FAILs voids
+ *   the subjects it gates; one NOT ESTABLISHED leaves them open and unasked.
  *
  * OBSERVES (status, head, the rows served, the raw answer and the unfiltered fill count)
  *   query.odata.calc-over-created-ne-null-filter     ProbeCalcCreated ne null
@@ -437,7 +438,7 @@
       ? info.FormDigestValue : null;
     return { res, digest };
   };
-  log('INFO', 'probe revision 2737a65e. Quote this when reporting results.');
+  log('INFO', 'probe revision 28764cea. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe CalcFilter';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -643,7 +644,8 @@
 
     // The subject's own literal, so a refusal of the literal shows on a stored date first.
     const ahead = `datetime'${new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)}T00:00:00Z'`;
-    const unheld = new Set();
+    const failedControls = new Set();
+    const unreadControls = new Map();
     for (const [id, question, option, value, want] of [
       [GENERAL[0], Q.boolean, '$filter', `${FLAG} eq 0`, ['A', 'C']],
       [GENERAL[1], Q.choice, '$filter', `${CHOICE} eq 'Q1'`, ['A']],
@@ -658,7 +660,8 @@
         + (head ? head.why : keys === null
           ? `HTTP ${res.status} carried no rows: ${redactTenant(res.text).slice(0, 400)}`
           : `HTTP ${res.status}, served ${keys.join(', ') || 'no rows'}; written ${want.join(', ')}`));
-      if (!held) unheld.add(id);
+      if (outcome === 'FAIL') failedControls.add(id);
+      if (outcome === 'NOT ESTABLISHED') unreadControls.set(id, head.why);
     }
 
     const fillOf = (column) => `the unfiltered read holds ${seeded.filter((item) => filled(item[column])).length}`
@@ -674,10 +677,17 @@
       ['query.odata.calc-over-created-orderby', Q.createdOrderBy, '$orderby',
         `${CALC_CREATED} desc`, CALC_CREATED, GENERAL],
     ]) {
-      const failed = rests.filter((control) => unheld.has(control));
+      const failed = rests.filter((control) => failedControls.has(control));
       if (failed.length) {
         voidDependents([id], `the stored-column control ${failed.join(', ')} did not serve the rows `
           + 'written, so a calculated-column answer would say nothing about the column');
+        continue;
+      }
+      // A throttle, a denial or a lost request can clear on a re-run, so the subject stays open.
+      const unread = rests.filter((control) => unreadControls.has(control));
+      if (unread.length) {
+        record(id, question, 'NOT ESTABLISHED', unread.map((control) => `not asked: control ${control} `
+          + `not established (${unreadControls.get(control)})`).join('; ') + '; a re-run can ask it');
         continue;
       }
       const { res, keys } = await query(option, value);
