@@ -1,12 +1,12 @@
 
 /** ---- dbml-sharepoint PROBE: AN ODATA FILTER ON A CALCULATED COLUMN ----
  *
- * REVISION: a8cf4ebb
+ * REVISION: 59d46c0c
  *
  * QUESTION: what does the list items endpoint answer when `$filter` or
- * `$orderby` names a calculated date column, beside the three stored-column
- * filter forms a reminder flow sends (a Yes/No column `eq 0`, a date
- * `ne null`, and Choice equality)?
+ * `$orderby` names a calculated date column, beside the stored-column filter
+ * forms a reminder flow sends (a Yes/No column `eq 0`, a date `ne null`,
+ * Choice equality, and a date `le` a datetime literal)?
  *
  * WHY: a flow that filters stored columns on the server and calculated
  * columns in the flow rests on the server not serving the second kind.
@@ -24,6 +24,10 @@
  *   query.odata.control-stored-boolean-eq-filter  ProbeFlag eq 0 serves A and C
  *   query.odata.control-stored-choice-eq-filter   ProbeChoice eq 'Q1' serves A
  *   query.odata.control-stored-date-ne-null-filter  ProbeDate ne null serves A and C
+ *   query.odata.control-stored-date-le-datetime-filter  ProbeDate le the subject's
+ *       datetime literal serves A and C
+ *   The Boolean and Choice controls gate every subject; each date control
+ *   gates only the subjects that send its operator.
  *
  * OBSERVES (status, head, the rows served, the raw answer and the unfiltered fill count)
  *   query.odata.calc-over-created-ne-null-filter     ProbeCalcCreated ne null
@@ -434,7 +438,7 @@
       ? info.FormDigestValue : null;
     return { res, digest };
   };
-  log('INFO', 'probe revision a8cf4ebb. Quote this when reporting results.');
+  log('INFO', 'probe revision 59d46c0c. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe CalcFilter';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -470,6 +474,7 @@
     boolean: `CONTROL: $filter=${FLAG} eq 0 serves the items written false`,
     choice: `CONTROL: $filter=${CHOICE} eq 'Q1' serves the item written Q1`,
     date: `CONTROL: $filter=${DATE} ne null serves the items written a date`,
+    dateLe: `CONTROL: $filter=${DATE} le a date thirty days ahead serves the items written a date`,
     createdNeNull: `what $filter=${CALC_CREATED} ne null answers, the column calculated over Created`,
     createdLe: `what $filter=${CALC_CREATED} le a date thirty days ahead answers`,
     storedNeNull: `what $filter=${CALC_STORED} ne null answers, the column calculated over a stored date`,
@@ -481,6 +486,7 @@
   expect('query.odata.control-stored-boolean-eq-filter', Q.boolean);
   expect('query.odata.control-stored-choice-eq-filter', Q.choice);
   expect('query.odata.control-stored-date-ne-null-filter', Q.date);
+  expect('query.odata.control-stored-date-le-datetime-filter', Q.dateLe);
   expect('query.odata.calc-over-created-ne-null-filter', Q.createdNeNull);
   expect('query.odata.calc-over-created-le-datetime-filter', Q.createdLe);
   expect('query.odata.calc-over-stored-ne-null-filter', Q.storedNeNull);
@@ -492,18 +498,18 @@
     'query.odata.calc-over-stored-ne-null-filter',
     'query.odata.calc-over-created-orderby',
   ];
-  const CONTROLS = [
-    'query.odata.control-stored-boolean-eq-filter',
-    'query.odata.control-stored-choice-eq-filter',
-    'query.odata.control-stored-date-ne-null-filter',
-  ];
+  // Boolean and Choice gate every subject; a date control gates the subjects sending its operator.
+  const GENERAL = ['query.odata.control-stored-boolean-eq-filter', 'query.odata.control-stored-choice-eq-filter'];
+  const DATE_NE_NULL = 'query.odata.control-stored-date-ne-null-filter';
+  const DATE_LE = 'query.odata.control-stored-date-le-datetime-filter';
+  const CONTROLS = [...GENERAL, DATE_NE_NULL, DATE_LE];
   const AFTER_ITEMS = [...CONTROLS, ...SUBJECTS];
   const AFTER_COLUMNS = ['query.odata.fixture-calc-filter-items', ...AFTER_ITEMS];
   const AFTER_LIST = ['query.odata.fixture-calc-filter-columns', ...AFTER_COLUMNS];
 
   if (!CONFIRMED) {
     log('INFO', `Would create a list '${LIST}' on ${WEB} with a Yes/No, a Choice and a date column`);
-    log('INFO', 'and two calculated date columns, seed three items, then send three stored-column');
+    log('INFO', 'and two calculated date columns, seed three items, then send four stored-column');
     log('INFO', 'filters and four calculated-column queries. The list is recycled on the way out.');
     log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
     return;
@@ -636,11 +642,14 @@
       return { res, keys: rows ? rows.map((row) => keyOf(row.Id)) : null };
     };
 
-    const controlsHeld = [];
+    // The subject's own literal, so a refusal of the literal shows on a stored date first.
+    const ahead = `datetime'${new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)}T00:00:00Z'`;
+    const unheld = new Set();
     for (const [id, question, option, value, want] of [
-      ['query.odata.control-stored-boolean-eq-filter', Q.boolean, '$filter', `${FLAG} eq 0`, ['A', 'C']],
-      ['query.odata.control-stored-choice-eq-filter', Q.choice, '$filter', `${CHOICE} eq 'Q1'`, ['A']],
-      ['query.odata.control-stored-date-ne-null-filter', Q.date, '$filter', `${DATE} ne null`, ['A', 'C']],
+      [GENERAL[0], Q.boolean, '$filter', `${FLAG} eq 0`, ['A', 'C']],
+      [GENERAL[1], Q.choice, '$filter', `${CHOICE} eq 'Q1'`, ['A']],
+      [DATE_NE_NULL, Q.date, '$filter', `${DATE} ne null`, ['A', 'C']],
+      [DATE_LE, Q.dateLe, '$filter', `${DATE} le ${ahead}`, ['A', 'C']],
     ]) {
       const { res, keys } = await query(option, value);
       const head = rawHead(res);
@@ -650,28 +659,28 @@
         + (head ? head.why : keys === null
           ? `HTTP ${res.status} carried no rows: ${redactTenant(res.text).slice(0, 400)}`
           : `HTTP ${res.status}, served ${keys.join(', ') || 'no rows'}; written ${want.join(', ')}`));
-      controlsHeld.push(held);
-    }
-    if (controlsHeld.includes(false)) {
-      voidDependents(SUBJECTS, 'a stored-column filter did not serve the rows written, '
-        + 'so a calculated-column answer would say nothing about the column');
-      return report();
+      if (!held) unheld.add(id);
     }
 
     const fillOf = (column) => `the unfiltered read holds ${seeded.filter((item) => filled(item[column])).length}`
       + ` of ${seeded.length} item(s) with ${column} filled (${seeded.map((item) => `${keyOf(item.Id)}=`
       + `${JSON.stringify(item[column] === undefined ? null : item[column])}`).join(', ')})`;
-    const ahead = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
-    for (const [id, question, option, value, column] of [
+    for (const [id, question, option, value, column, rests] of [
       ['query.odata.calc-over-created-ne-null-filter', Q.createdNeNull, '$filter',
-        `${CALC_CREATED} ne null`, CALC_CREATED],
+        `${CALC_CREATED} ne null`, CALC_CREATED, [...GENERAL, DATE_NE_NULL]],
       ['query.odata.calc-over-created-le-datetime-filter', Q.createdLe, '$filter',
-        `${CALC_CREATED} le datetime'${ahead}T00:00:00Z'`, CALC_CREATED],
+        `${CALC_CREATED} le ${ahead}`, CALC_CREATED, [...GENERAL, DATE_LE]],
       ['query.odata.calc-over-stored-ne-null-filter', Q.storedNeNull, '$filter',
-        `${CALC_STORED} ne null`, CALC_STORED],
+        `${CALC_STORED} ne null`, CALC_STORED, [...GENERAL, DATE_NE_NULL]],
       ['query.odata.calc-over-created-orderby', Q.createdOrderBy, '$orderby',
-        `${CALC_CREATED} desc`, CALC_CREATED],
+        `${CALC_CREATED} desc`, CALC_CREATED, GENERAL],
     ]) {
+      const failed = rests.filter((control) => unheld.has(control));
+      if (failed.length) {
+        voidDependents([id], `the stored-column control ${failed.join(', ')} did not serve the rows `
+          + 'written, so a calculated-column answer would say nothing about the column');
+        continue;
+      }
       const { res, keys } = await query(option, value);
       const head = rawHead(res);
       if (head) {

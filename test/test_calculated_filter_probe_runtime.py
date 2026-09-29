@@ -23,6 +23,7 @@ CONTROLS = [
     "query.odata.control-stored-boolean-eq-filter",
     "query.odata.control-stored-choice-eq-filter",
     "query.odata.control-stored-date-ne-null-filter",
+    "query.odata.control-stored-date-le-datetime-filter",
 ]
 SUBJECTS = [
     "query.odata.calc-over-created-ne-null-filter",
@@ -124,6 +125,8 @@ _MOCK = textwrap.dedent("""
           'ProbeDate ne null': (row) => Boolean(row.ProbeDate),
         }[filter];
         if (stored) return served(items.filter(stored));
+        const bound = /^ProbeDate le datetime'([^']+)'$/.exec(filter);
+        if (bound) return served(items.filter((row) => row.ProbeDate && row.ProbeDate <= bound[1]));
       }
       return answer(404, 'no such endpoint in the mock: ' + path);
     };
@@ -237,6 +240,34 @@ def test_a_failed_control_voids_every_calculated_row() -> None:
     assert rows[CONTROLS[0]]["outcome"] == "FAIL"
     assert {row_id for row_id in SUBJECTS if rows[row_id]["state"] == "void"} == set(SUBJECTS)
     assert set(SUBJECTS) <= _catalogued_dependents(CONTROLS[0])
+
+
+@pytest.mark.parametrize(("control", "sent", "voided"), [
+    ("query.odata.control-stored-date-ne-null-filter", "ProbeDate ne null",
+     {"query.odata.calc-over-created-ne-null-filter",
+      "query.odata.calc-over-stored-ne-null-filter"}),
+    ("query.odata.control-stored-date-le-datetime-filter", "ProbeDate le datetime",
+     {"query.odata.calc-over-created-le-datetime-filter"}),
+], ids=["ne-null", "le-datetime"])
+def test_a_failed_date_control_voids_only_the_subjects_sharing_its_operator(
+    control: str, sent: str, voided: set[str],
+) -> None:
+    rows, _, _ = _run(rules=[{"contains": sent, "status": 500, "text": "no"}])
+
+    assert rows[control]["outcome"] == "FAIL", rows[control]
+    assert {row_id for row_id, row in rows.items() if row["state"] == "void"} == voided
+    assert _catalogued_dependents(control) == voided
+    for row_id in set(SUBJECTS) - voided:
+        assert rows[row_id]["outcome"] == "ACCEPTED", rows[row_id]
+
+
+def test_the_le_control_sends_the_subject_s_datetime_literal_on_a_stored_date() -> None:
+    rows, sent, _ = _run()
+
+    [control] = [r["path"] for r in sent if "ProbeDate le datetime'" in r["path"]]
+    [subject] = [r["path"] for r in sent if "ProbeCalcCreated le datetime'" in r["path"]]
+    assert control.split("ProbeDate le ")[1] == subject.split("ProbeCalcCreated le ")[1]
+    assert "served A, C; written A, C" in rows[CONTROLS[3]]["evidence"]
 
 
 def test_a_calculated_column_of_the_wrong_output_type_voids_everything_after_it() -> None:
