@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE (READ-ONLY): THE POST FORM OF UTCToLocalTime ----
  *
- * REVISION: 87d7cc82
+ * REVISION: c3c1bcab
  *
  * QUESTION: which POST spelling of SP.TimeZone.UTCToLocalTime does the site
  * accept, and what does it answer for one instant? Learn documents the CSOM
@@ -432,7 +432,7 @@
       ? info.FormDigestValue : null;
     return { res, digest };
   };
-  log('INFO', 'probe revision 87d7cc82. Quote this when reporting results.');
+  log('INFO', 'probe revision c3c1bcab. Quote this when reporting results.');
 
   const CANDIDATES = [
     { id: 'field.date.utctolocaltime-post-quoted-literal',
@@ -526,8 +526,10 @@
       record(candidate.id, questionOf(candidate), 'NOT ESTABLISHED',
         `${sent}: HTTP ${res.status} carried no JSON value: ${redactTenant(res.text).slice(0, 400)}`);
     } else {
+      // The raw text keeps the envelope, so a reader sees which key a flow must read.
       record(candidate.id, questionOf(candidate), 'ACCEPTED',
-        `${sent}: HTTP ${res.status}, value ${JSON.stringify(value)}`);
+        `${sent}: HTTP ${res.status}, value ${redactTenant(JSON.stringify(value))}; `
+        + `answered ${redactTenant(res.text).slice(0, 400)}`);
     }
   }
   return report();

@@ -142,8 +142,10 @@
       record(candidate.id, questionOf(candidate), 'NOT ESTABLISHED',
         `${sent}: HTTP ${res.status} carried no JSON value: ${redactTenant(res.text).slice(0, 400)}`);
     } else {
+      // The raw text keeps the envelope, so a reader sees which key a flow must read.
       record(candidate.id, questionOf(candidate), 'ACCEPTED',
-        `${sent}: HTTP ${res.status}, value ${JSON.stringify(value)}`);
+        `${sent}: HTTP ${res.status}, value ${redactTenant(JSON.stringify(value))}; `
+        + `answered ${redactTenant(res.text).slice(0, 400)}`);
     }
   }
   return report();

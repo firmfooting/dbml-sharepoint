@@ -121,6 +121,7 @@ def test_a_healthy_run_records_every_form_accepted_with_its_value() -> None:
         assert rows[form]["outcome"] == "ACCEPTED", rows[form]
         assert rows[form]["state"] == "settled"
         assert 'value "2026-09-29T10:00:00"' in rows[form]["evidence"]
+        assert 'answered {"value":"2026-09-29T10:00:00"}' in rows[form]["evidence"]
     posts = [r for r in sent if r["path"].startswith("web/RegionalSettings/TimeZone/")]
     assert len(posts) == 6
     assert all(r["method"] == "POST" and r["digest"] == "digest" for r in posts)
@@ -226,3 +227,14 @@ def test_a_verbose_shaped_answer_is_read_as_the_value() -> None:
     row = rows["field.date.localtimetoutc-post-quoted-literal"]
     assert row["outcome"] == "ACCEPTED"
     assert 'value "2026-09-28T14:00:00Z"' in row["evidence"]
+    assert 'answered {"d": {"LocalTimeToUTC": ' in row["evidence"]
+
+
+def test_an_accepted_answer_that_names_the_tenant_is_redacted() -> None:
+    said = '{"value": {"Url": "https://example.sharepoint.com/sites/probe"}}'
+    rows, _, _ = _run([{"contains": "utcToLocalTime('", "status": 200, "text": said}])
+
+    row = rows["field.date.utctolocaltime-post-quoted-literal"]
+    assert row["outcome"] == "ACCEPTED"
+    assert 'value {"Url":"[TENANT]/sites/probe"}' in row["evidence"]
+    assert "example.sharepoint.com" not in json.dumps(rows)
