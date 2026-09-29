@@ -440,3 +440,16 @@ def test_a_field_read_that_fails_keeps_its_answer_in_the_fixture_evidence(
     assert {row_id for row_id, row in rows.items() if row["state"] == "void"} == (
         _catalogued_dependents(COLUMNS))
     assert sent[-1]["path"].endswith("/recycle")
+
+
+def test_an_early_return_whose_recycle_fails_says_so_before_the_results_block() -> None:
+    rows, _, output = _run(rules=[
+        {"contains": "/recycle", "status": 500, "text": "locked"},
+        {"contains": "/fields", "verb": "POST", "status": 400, "text": "Invalid field type."},
+    ])
+
+    assert rows[COLUMNS]["outcome"] == "FAIL"
+    told = "could not recycle 'dbmlsp Probe CalcFilter' (HTTP 500); recycle it by hand."
+    marker = "Copy this whole block back verbatim."
+    assert output.count(marker) == 1
+    assert output.index(told) < output.index("==================== RESULTS") < output.index(marker)

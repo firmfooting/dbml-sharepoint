@@ -416,3 +416,14 @@ def test_a_digest_lost_only_at_the_recycle_keeps_every_answer_and_asks_for_a_rec
     assert all(row["state"] == "settled" for row in rows.values()), rows
     assert "recycle it by hand" in output
     assert not [r for r in sent if r["path"].endswith("/recycle")]
+
+
+def test_an_early_return_whose_recycle_fails_says_so_before_the_results_block() -> None:
+    rows, _, output = _run(fieldShape={"OutputType": 2},
+                           rules=[{"contains": "/recycle", "status": 500, "text": "locked"}])
+
+    assert rows[COLUMN]["outcome"] == "FAIL"
+    told = "could not recycle 'dbmlsp Probe CalcDate' (HTTP 500); recycle it by hand."
+    marker = "Copy this whole block back verbatim."
+    assert output.count(marker) == 1
+    assert output.index(told) < output.index("==================== RESULTS") < output.index(marker)

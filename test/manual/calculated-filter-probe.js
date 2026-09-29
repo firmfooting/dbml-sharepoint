@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ODATA FILTER ON A CALCULATED COLUMN ----
  *
- * REVISION: 77d451eb
+ * REVISION: 2737a65e
  *
  * QUESTION: what does the list items endpoint answer when `$filter` or
  * `$orderby` names a calculated date column, beside the stored-column filter
@@ -437,7 +437,7 @@
       ? info.FormDigestValue : null;
     return { res, digest };
   };
-  log('INFO', 'probe revision 77d451eb. Quote this when reporting results.');
+  log('INFO', 'probe revision 2737a65e. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe CalcFilter';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -531,13 +531,13 @@
         record('query.odata.fixture-calc-filter-list', Q.list, 'FAIL',
           `a list named '${LIST}' exists without this probe's ownership description; refusing to modify it`);
         voidDependents(AFTER_LIST, 'the scratch list is not one this probe created');
-        return report();
+        return;
       }
       if (!CLEANUP) {
         record('query.odata.fixture-calc-filter-list', Q.list, 'FAIL',
           `a list '${LIST}' from an earlier run is standing and CLEANUP is off`);
         voidDependents(AFTER_LIST, 'a leftover list would answer this run\'s questions');
-        return report();
+        return;
       }
       await resetList(LIST);
     }
@@ -548,12 +548,12 @@
       record('query.odata.fixture-calc-filter-list', Q.list, 'FAIL',
         `the list create answered HTTP ${made.status}: ${redactTenant(made.text).slice(0, 300)}`);
       voidDependents(AFTER_LIST, 'the scratch list was not created');
-      return report();
+      return;
     }
     if (!await establishFixture('query.odata.fixture-calc-filter-list',
       () => spGet(`${listPath}?$select=BaseTemplate,Description`),
       { BaseTemplate: 100, Description: OWNERSHIP_DESCRIPTION }, AFTER_LIST)) {
-      return report();
+      return;
     }
 
     for (const column of COLUMNS) {
@@ -592,7 +592,7 @@
       }
       return { ok: true, status: 200, body };
     }, declaredColumns, AFTER_COLUMNS)) {
-      return report();
+      return;
     }
 
     for (const seed of SEEDS) {
@@ -623,7 +623,7 @@
       }
       return { ok: true, status: 200, body };
     }, declaredItems, AFTER_ITEMS)) {
-      return report();
+      return;
     }
 
     const idOf = (key) => {
@@ -709,6 +709,7 @@
         ? `recycled '${LIST}'; it is restorable from the recycle bin.`
         : `could not recycle '${LIST}' (HTTP ${gone.status}); recycle it by hand.`);
     }
+    // Reported here, after the recycle, so every path prints the recycle line above the table.
+    report();
   }
-  return report();
 })();

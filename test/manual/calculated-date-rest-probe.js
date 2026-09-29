@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: THE RAW VALUE REST RETURNS FOR A CALCULATED DATE ----
  *
- * REVISION: a183bae5
+ * REVISION: 55702554
  *
  * QUESTION: what raw value does the list items endpoint return for a
  * calculated date column (`=[Created]+14`, OutputType DateTime), under
@@ -422,7 +422,7 @@
       ? info.FormDigestValue : null;
     return { res, digest };
   };
-  log('INFO', 'probe revision a183bae5. Quote this when reporting results.');
+  log('INFO', 'probe revision 55702554. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe CalcDate';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -499,13 +499,13 @@
         record('field.date.fixture-calc-date-list', Q.list, 'FAIL',
           `a list named '${LIST}' exists without this probe's ownership description; refusing to modify it`);
         voidDependents(AFTER_LIST, 'the scratch list is not one this probe created');
-        return report();
+        return;
       }
       if (!CLEANUP) {
         record('field.date.fixture-calc-date-list', Q.list, 'FAIL',
           `a list '${LIST}' from an earlier run is standing and CLEANUP is off`);
         voidDependents(AFTER_LIST, 'a leftover list would answer this run\'s questions');
-        return report();
+        return;
       }
       await resetList(LIST);
     }
@@ -516,12 +516,12 @@
       record('field.date.fixture-calc-date-list', Q.list, 'FAIL',
         `the list create answered HTTP ${made.status}: ${redactTenant(made.text).slice(0, 300)}`);
       voidDependents(AFTER_LIST, 'the scratch list was not created');
-      return report();
+      return;
     }
     if (!await establishFixture('field.date.fixture-calc-date-list',
       () => spGet(`${listPath}?$select=BaseTemplate,Description`),
       { BaseTemplate: 100, Description: OWNERSHIP_DESCRIPTION }, AFTER_LIST)) {
-      return report();
+      return;
     }
 
     // The deploy's create body for a calculated date (generators/jsgen.py), DateFormat left to SharePoint.
@@ -548,7 +548,7 @@
       return { ok: true, status: 200, body };
     }, { Read: 'HTTP 200', TypeAsString: 'Calculated', CalculatedRead: 'HTTP 200', OutputType: 4,
       Formula: (v) => canonical(v) === canonical(FORMULA) }, AFTER_COLUMN)) {
-      return report();
+      return;
     }
 
     const item = await spPost(`${listPath}/items`, { Title: 'dbmlsp calc date 1' }, await getDigest());
@@ -568,7 +568,7 @@
       return { ok: true, status: 200, body: { Read: read.read, Id: read.parsed.Id, Created: createdAt } };
     }, { Read: 'HTTP 200', Id: itemId,
       Created: (v) => typeof v === 'string' && !Number.isNaN(Date.parse(v)) }, AFTER_ITEM)) {
-      return report();
+      return;
     }
 
     // The site's own conversion, in the two GET shapes site-zone-transitions-probe.js asks.
@@ -636,6 +636,7 @@
         ? `recycled '${LIST}'; it is restorable from the recycle bin.`
         : `could not recycle '${LIST}' (${why}); recycle it by hand.`);
     }
+    // Reported here, after the recycle, so every path prints the recycle line above the table.
+    report();
   }
-  return report();
 })();
