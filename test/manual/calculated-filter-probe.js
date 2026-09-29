@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ODATA FILTER ON A CALCULATED COLUMN ----
  *
- * REVISION: 15a77e43
+ * REVISION: a8cf4ebb
  *
  * QUESTION: what does the list items endpoint answer when `$filter` or
  * `$orderby` names a calculated date column, beside the three stored-column
@@ -434,7 +434,7 @@
       ? info.FormDigestValue : null;
     return { res, digest };
   };
-  log('INFO', 'probe revision 15a77e43. Quote this when reporting results.');
+  log('INFO', 'probe revision a8cf4ebb. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe CalcFilter';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -557,7 +557,10 @@
       log('INFO', `create ${column.name}: HTTP ${sent.status}${sent.ok ? '' : ` ${redactTenant(sent.text).slice(0, 200)}`}`);
     }
     const declaredColumns = {};
-    for (const column of COLUMNS) declaredColumns[`${column.name}.TypeAsString`] = column.type;
+    for (const column of COLUMNS) {
+      declaredColumns[`${column.name}.Read`] = 'HTTP 200';
+      declaredColumns[`${column.name}.TypeAsString`] = column.type;
+    }
     for (const name of [CALC_CREATED, CALC_STORED]) {
       declaredColumns[`${name}.OutputType`] = 4;
       declaredColumns[`${name}.Formula`] = (v) => canonical(v) === canonical(CALC_FORMULAS[name]);
@@ -565,17 +568,21 @@
     if (!await establishFixture('query.odata.fixture-calc-filter-columns', async () => {
       const body = {};
       for (const column of COLUMNS) {
-        const read = await spGet(`${listPath}/fields/getbyinternalnameortitle('${column.name}')`
-          + '?$select=InternalName,TypeAsString,OutputType,Formula');
-        // A column absent by name answers 400; its properties then stay absent and fail the fixture.
-        if (unanswered(read) !== null) {
-          if (read.status === 400 || read.status === 404) continue;
-          return read;
-        }
-        body[`${column.name}.TypeAsString`] = read.body.TypeAsString;
+        // OutputType and Formula belong to SP.FieldCalculated, so a stored column is never asked for them.
+        const select = column.type === 'Calculated'
+          ? 'InternalName,TypeAsString,OutputType,Formula' : 'InternalName,TypeAsString';
+        const res = await sendRaw(`${listPath}/fields/getbyinternalnameortitle('${column.name}')`
+          + `?$select=${select}`);
+        const head = rawHead(res);
+        const field = !head && res.parsed && typeof res.parsed === 'object' ? res.parsed : null;
+        // The answer is kept, so a refused read is not mistaken for a column that was never created.
+        body[`${column.name}.Read`] = head ? head.why : field ? `HTTP ${res.status}`
+          : `HTTP ${res.status} carried no JSON: ${redactTenant(res.text).slice(0, 400)}`;
+        if (!field) continue;
+        body[`${column.name}.TypeAsString`] = field.TypeAsString;
         if (column.type === 'Calculated') {
-          body[`${column.name}.OutputType`] = read.body.OutputType;
-          body[`${column.name}.Formula`] = read.body.Formula;
+          body[`${column.name}.OutputType`] = field.OutputType;
+          body[`${column.name}.Formula`] = field.Formula;
         }
       }
       return { ok: true, status: 200, body };

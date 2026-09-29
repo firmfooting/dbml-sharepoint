@@ -86,6 +86,11 @@ _MOCK = textwrap.dedent("""
       const named = /^\\/fields\\/getbyinternalnameortitle\\('([^']+)'\\)/.exec(rest);
       if (named) {
         const field = fields.get(named[1]);
+        // One answer a site might give; the probe must never select these on a stored column.
+        if (field && field.TypeAsString !== 'Calculated' && /OutputType|Formula/.test(rest)) {
+          return answer(400, { 'odata.error': { message: {
+            value: "The property 'OutputType' does not exist on type 'SP.Field'." } } });
+        }
         return field ? answer(200, field)
           : answer(400, { 'odata.error': { message: { value: 'Column does not exist.' } } });
       }
@@ -372,3 +377,35 @@ def test_a_control_answered_without_rows_keeps_the_answer_text() -> None:
     assert row["outcome"] == "FAIL"
     assert "HTTP 200 carried no rows: not a feed" in row["evidence"]
     assert {row_id for row_id in SUBJECTS if rows[row_id]["state"] == "void"} == set(SUBJECTS)
+
+
+def test_a_stored_column_is_read_without_the_calculated_only_properties() -> None:
+    rows, sent, _ = _run()
+
+    reads = {r["path"].split("getbyinternalnameortitle('")[1].split("'")[0]: r["path"]
+             for r in sent if r["verb"] == "GET" and "getbyinternalnameortitle(" in r["path"]}
+    for stored in ("ProbeFlag", "ProbeChoice", "ProbeDate"):
+        assert "OutputType" not in reads[stored] and "Formula" not in reads[stored], reads[stored]
+    for calculated in ("ProbeCalcCreated", "ProbeCalcStored"):
+        assert "OutputType,Formula" in reads[calculated], reads[calculated]
+    assert rows[COLUMNS]["outcome"] == "PASS", rows[COLUMNS]
+
+
+@pytest.mark.parametrize(("rule", "said"), [
+    ({"status": 400, "text": "Refused at https://example.sharepoint.com/sites/probe/_api/web"},
+     "HTTP 400: Refused at [TENANT]/sites/probe/_api/web"),
+    ({"reject": True}, "no response: Failed to fetch"),
+], ids=["refused", "no-response"])
+def test_a_field_read_that_fails_keeps_its_answer_in_the_fixture_evidence(
+    rule: dict[str, Any], said: str,
+) -> None:
+    rows, sent, _ = _run(rules=[{"contains": "getbyinternalnameortitle('ProbeChoice')",
+                                 "verb": "GET", **rule}])
+
+    evidence = rows[COLUMNS]["evidence"]
+    assert rows[COLUMNS]["outcome"] == "FAIL"
+    assert f"ProbeChoice.Read differs: read {json.dumps(said)}" in evidence
+    assert "example.sharepoint.com" not in json.dumps(rows)
+    assert {row_id for row_id, row in rows.items() if row["state"] == "void"} == (
+        _catalogued_dependents(COLUMNS))
+    assert sent[-1]["path"].endswith("/recycle")
