@@ -40,6 +40,7 @@ OWNED = "dbml-sharepoint batch-item-create probe scratch list. Safe to delete."
 CONTROL_CALL = "')/AddValidateUpdateItemUsingPath"
 FIELD = {"FieldName": "Title", "ErrorMessage": None, "FieldValue": "x"}
 NO_COLUMN = "Column 'dbmlspNoSuchColumn' does not exist."
+ID_FIELD = {"FieldName": "Id", "FieldValue": "6", "HasException": False, "ErrorMessage": None}
 
 _MOCK = textwrap.dedent(r"""
     const CONFIG = __CONFIG__;
@@ -633,7 +634,7 @@ def test_the_evidence_never_names_the_tenant() -> None:
     pytest.param({"contains": "/RootFolder", "status": 429, "text": "busy"}, "NOT ESTABLISHED",
                  "the root folder read: the request ", id="root-throttled"),
     pytest.param({"contains": CONTROL_CALL, "status": 200,
-                  "text": json.dumps({"value": [{**FIELD, "HasException": True}]})},
+                  "text": json.dumps({"value": [{**FIELD, "HasException": True}, ID_FIELD]})},
                  "FAIL", "the call answered HTTP 200: ", id="field-exception"),
     pytest.param({"contains": CONTROL_CALL, "status": 200,
                   "text": json.dumps({"value": [{**FIELD, "HasException": False}]})},
@@ -676,6 +677,30 @@ def test_a_missing_field_refused_by_status_passes_the_control() -> None:
     assert rows[AV_UNKNOWN]["outcome"] == "PASS"
     assert rows[AV_UNKNOWN]["evidence"] == f"HTTP 400: {NO_COLUMN}"
     assert rows[AV_FAILED]["outcome"] == "FIELD REFUSED"
+    assert voided(rows) == set()
+    assert ended_with_report(output)
+
+
+def test_a_missing_field_control_answered_with_no_field_list_voids_the_failed_part() -> None:
+    rows, _, output = _run(rules=[{"contains": CONTROL_CALL, "bodyContains": "dbmlspNoSuchColumn",
+                                   "status": 200, "text": '{"d": 1}'}])
+
+    assert rows[AV_UNKNOWN]["outcome"] == "FAIL"
+    assert rows[AV_UNKNOWN]["evidence"] == 'HTTP 200: {"d": 1}'
+    assert voided(rows) == _deps(AV_UNKNOWN) == {AV_FAILED}
+    assert ended_with_report(output)
+
+
+def test_a_failing_addvalidate_part_answered_400_is_part_refused() -> None:
+    rows, _, output = _run(partRules=[{"bodyContains": "addvalidate part missing column",
+                                       "status": 400, "reason": "Bad Request", "text": NO_COLUMN}])
+
+    assert rows[AV_FAILED]["outcome"] == "PART REFUSED"
+    assert rows[AV_FAILED]["state"] == "settled"
+    assert rows[AV_FAILED]["evidence"].startswith(f"HTTP 400 Bad Request; body {NO_COLUMN}")
+    assert rows[AV_FAILED]["evidence"].endswith(
+        "neighbours landed dbmlsp addvalidate no folder yes, dbmlsp addvalidate claims yes, "
+        "dbmlsp addvalidate iso date yes")
     assert voided(rows) == set()
     assert ended_with_report(output)
 
