@@ -404,3 +404,20 @@ def test_a_when_missing_its_value_is_refused_by_the_build() -> None:
     finding = only(_validate(_on_status(use)), FindingCode.CONDITION_VALUE_MISSING)
 
     assert finding.location == Location(Section.WATCHED_LISTS, sub="[0].uses[0].when.Note")
+
+
+def test_a_condition_every_target_refuses_is_refused_rather_than_left_unjudged() -> None:
+    # Each renderer stops at the control character, so none reaches the number check.
+    findings = condition_findings(
+        Leaf("N", "eq", "\x01abc"),
+        target=None,
+        rendered=set(_TYPED),
+        types=_TYPED,
+        lookups=set(),
+        enum_members={},
+        at=Location(Section.WATCHED_LISTS, sub="[0].uses[0].when"),
+    )
+
+    finding = only(findings, FindingCode.CONDITION_VALUE_HAS_A_CONTROL_CHARACTER)
+    assert finding.location == Location(Section.WATCHED_LISTS, sub="[0].uses[0].when.N")
+    assert "(target:" not in finding.message

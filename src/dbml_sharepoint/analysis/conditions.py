@@ -173,7 +173,8 @@ def condition_findings(
     `target=None` is for a condition this package never renders, such as a
     watched column's `when`: the bounds, columns, operators, operands and
     Choice members are judged, and so is each value against its column's
-    type. A refusal that depends on what one target can render is not made.
+    type. A refusal that depends on what one target can render is not made,
+    unless every target refuses the leaf before judging its value.
     """
     return [
         Finding(
@@ -728,18 +729,19 @@ def _schema_value_problems(
     """The first schema refusal any renderer makes of a leaf nothing renders.
 
     Every target is asked, because a renderer stops at its first refusal and
-    a target's own limit can come before the value is read. The message loses
-    its `(target: ...)` suffix, since no target is involved.
-
-    Known misses: a value fault behind a control character, which every
-    renderer refuses first, and `includes` with a property on a single-value
-    person or lookup column.
+    a target's own limit can come before the value is read. When every target
+    refuses before reading the value, the first refusal stands, since nothing
+    judged the value. The message loses its `(target: ...)` suffix, since no
+    target is involved.
     """
+    refusals: list[tuple[FindingCode, str]] = []
     for target in _RENDERERS:
         for code, message in _render_problems(leaf, target, types, context):
+            refusal = (code, message.removesuffix(f" (target: {target})"))
             if code in _SCHEMA_REFUSALS:
-                return [(code, message.removesuffix(f" (target: {target})"))]
-    return []
+                return [refusal]
+            refusals.append(refusal)
+    return refusals[:1] if len(refusals) == len(_RENDERERS) else []
 
 
 def _dedupe(problems: list[_Problem]) -> list[_Problem]:

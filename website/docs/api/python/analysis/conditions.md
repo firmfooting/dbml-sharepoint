@@ -99,5 +99,6 @@ consistency rule and makes no claim about SharePoint's comparison casing.
 `target=None` is for a condition this package never renders, such as a
 watched column's `when`: the bounds, columns, operators, operands and
 Choice members are judged, and so is each value against its column's
-type. A refusal that depends on what one target can render is not made.
+type. A refusal that depends on what one target can render is not made,
+unless every target refuses the leaf before judging its value.
 
