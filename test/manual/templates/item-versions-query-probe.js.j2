@@ -27,7 +27,7 @@
  * OBSERVES (named from what came back, never compared with an expected value)
  *   query.odata.versions-default-order  the VersionIds in the order the plain read answered
  *   query.odata.versions-select         $select=VersionId,VersionLabel,ProbeChoice: the
- *       property names each entry carried
+ *       property names each entry carried, beside those the plain read carried beyond them
  *   query.odata.versions-filter         $filter=VersionId gt <the lowest>: the VersionIds served
  *   query.odata.versions-top            $top=1: how many entries were served
  *   query.odata.versions-orderby        $orderby=VersionId in the direction opposite to the
@@ -136,7 +136,9 @@
       }
     }
     if (!await establishFixture('query.odata.fixture-versions-query-items', async () => {
-      const body = { Written: written };
+      // The column create's answer joins the read-back, so a refused create shows its reason in RESULTS.
+      const body = { Column: `HTTP ${column.status}${column.ok ? '' : `: ${said(column).slice(0, 200)}`}`,
+        Written: written };
       for (const key of ['A', 'B']) {
         if (ids[key] === undefined) continue;
         const read = await sendRaw(`${listPath}/items(${ids[key]})?$select=Id,${CHOICE}`);
@@ -145,7 +147,8 @@
           : read.parsed && typeof read.parsed === 'object' ? read.parsed[CHOICE] : `no JSON: ${said(read)}`;
       }
       return { ok: true, status: 200, body };
-    }, { Written: 4, [`A.${CHOICE}`]: 'Q3', [`B.${CHOICE}`]: 'Q1' }, AFTER_ITEMS)) {
+    }, { Column: (v) => typeof v === 'string', Written: 4, [`A.${CHOICE}`]: 'Q3', [`B.${CHOICE}`]: 'Q1' },
+    AFTER_ITEMS)) {
       return;
     }
 
@@ -194,12 +197,13 @@
     const filterControl = await controlOf(FILTER_CONTROL, Q.filterControl, `$filter=Id eq ${ids.A}`, ids.A);
     const topControl = await controlOf(TOP_CONTROL, Q.topControl, '$orderby=Id desc&$top=1', ids.B);
 
+    // `control` is null for an option no item-list control asks first.
     const ask = async (id, question, control, query, describe) => {
-      if (control.outcome === 'FAIL') {
+      if (control !== null && control.outcome === 'FAIL') {
         voidDependents([id], 'the item-list control asking the same option did not serve the rows written');
         return;
       }
-      if (control.outcome === 'NOT ESTABLISHED') {
+      if (control !== null && control.outcome === 'NOT ESTABLISHED') {
         record(id, question, 'NOT ESTABLISHED',
           `not asked: its item-list control was not established (${control.why}); a re-run can ask it`);
         return;
@@ -220,13 +224,20 @@
     };
 
     const SELECTED = ['VersionId', 'VersionLabel', CHOICE];
-    await ask('query.odata.versions-select', Q.select, { outcome: 'PASS' }, `$select=${SELECTED.join(',')}`,
+    const keysOf = (rows) => [...new Set(rows.flatMap((row) => Object.keys(row)))].sort();
+    const beyondSelected = (keys) => keys.filter((key) => !SELECTED.includes(key) && !key.startsWith('odata.')
+      && !key.startsWith('@odata.') && key !== '__metadata');
+    // Narrowing is judged against what the plain read carried beyond the selected names.
+    const baseline = beyondSelected(keysOf(plain.rows));
+    await ask('query.odata.versions-select', Q.select, null, `$select=${SELECTED.join(',')}`,
       (rows) => {
-        const keys = [...new Set(rows.flatMap((row) => Object.keys(row)))].sort();
-        const extra = keys.filter((key) => !SELECTED.includes(key) && !key.startsWith('odata.')
-          && !key.startsWith('@odata.') && key !== '__metadata');
-        return [extra.length ? 'NOT NARROWED' : 'NARROWED',
-          `${entries(rows.length)} carrying ${keys.join(', ')}`];
+        const keys = keysOf(rows);
+        const extra = beyondSelected(keys);
+        const head = !baseline.length ? 'NOT COMPARABLE' : !rows.length ? 'NO VERSIONS'
+          : extra.length ? 'NOT NARROWED' : 'NARROWED';
+        const why = !baseline.length ? 'the plain read carried nothing beyond the selected names, '
+          + 'so an ignored $select would look the same' : `the plain read also carried ${baseline.join(', ')}`;
+        return [head, `${entries(rows.length)} carrying ${keys.length ? keys.join(', ') : 'nothing'}; ${why}`];
       });
     const lowest = Math.min(...plainIds);
     await ask('query.odata.versions-filter', Q.filter, filterControl, `$filter=VersionId gt ${lowest}`,

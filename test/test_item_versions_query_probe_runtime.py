@@ -55,6 +55,8 @@ def test_a_site_honouring_every_option_is_recorded_as_such() -> None:
     assert rows[ORDER]["outcome"] == "DESCENDING"
     assert "VersionIds in the order answered: [1536,1024,512]" in rows[ORDER]["evidence"]
     assert rows[SELECT]["outcome"] == "NARROWED"
+    assert "the plain read also carried" in rows[SELECT]["evidence"]
+    assert "HTTP 201" in rows[ITEMS]["evidence"]
     assert rows[FILTER]["outcome"] == "FILTERED"
     assert "served VersionIds [1536,1024]" in rows[FILTER]["evidence"]
     assert rows[TOP]["outcome"] == "TOPPED"
@@ -74,6 +76,31 @@ def test_a_site_ignoring_every_option_is_recorded_as_such() -> None:
     assert rows[ORDERBY]["outcome"] == "DESCENDING"
     for row_id in SUBJECTS:
         assert rows[row_id]["state"] == "settled"
+
+
+def test_a_plain_read_carrying_only_the_selected_names_is_not_comparable() -> None:
+    narrow = ('{"value": [{"VersionId": 1024, "VersionLabel": "2.0", "ProbeChoice": "Q2"},'
+              ' {"VersionId": 512, "VersionLabel": "1.0", "ProbeChoice": "Q1"}]}')
+    rows, _, _ = _run(rules=[{"contains": "items(1)/versions", "status": 200, "text": narrow}])
+
+    assert rows[READ]["outcome"] == "PASS"
+    assert rows[SELECT]["outcome"] == "NOT COMPARABLE"
+    assert "carried nothing beyond the selected names" in rows[SELECT]["evidence"]
+
+
+def test_an_empty_select_answer_is_not_called_narrowed() -> None:
+    rows, _, _ = _run(rules=[{"contains": "/versions?$select", "status": 200,
+                              "text": '{"value": []}'}])
+
+    assert rows[SELECT]["outcome"] == "NO VERSIONS"
+    assert "0 entries carrying nothing" in rows[SELECT]["evidence"]
+
+
+def test_a_refused_column_create_is_kept_in_the_items_evidence() -> None:
+    rows, _, _ = _run(rules=[{"contains": "/fields", "verb": "POST", "status": 400,
+                              "text": "The column is not valid."}])
+
+    assert "HTTP 400: The column is not valid." in rows[ITEMS]["evidence"]
 
 
 def test_an_ascending_plain_read_asks_for_the_opposite_order() -> None:
