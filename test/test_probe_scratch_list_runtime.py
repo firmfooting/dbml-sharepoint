@@ -189,6 +189,12 @@ def test_with_cleanup_a_leftover_is_recycled_by_the_id_its_ownership_read_found(
     assert out["held"] is True
     assert _recycles(out) == [f"web/lists(guid'{OTHER}')/recycle",
                               f"web/lists(guid'{CLAIMED}')/recycle"]
+    paths = [r["path"] for r in out["sent"]]
+    confirm = paths.index(f"web/lists(guid'{OTHER}')?$select=Id")
+    assert confirm == paths.index(f"web/lists(guid'{OTHER}')/recycle") + 1
+    assert f"[OK] recycled '{TITLE}' (list {OTHER})" in out["console"]
+    # The harness's resetList is not used, so nothing reports the recycle before that read.
+    assert "CLEANUP: recycled list" not in out["console"]
 
 
 def test_a_leftover_that_is_not_recycled_is_not_built_over() -> None:
@@ -297,8 +303,12 @@ def test_a_leftover_that_answered_its_recycle_but_still_stands_is_not_built_over
 
     assert out["held"] is False
     assert out["rows"][FIXTURE]["outcome"] == "FAIL"
-    assert (f"the leftover list '{TITLE}' (list {OTHER}) answered its recycle, but it still reads "
-            "back by its Id (HTTP 200); recycle it by hand") in out["rows"][FIXTURE]["evidence"]
+    assert (f"the leftover list '{TITLE}' (list {OTHER}) was not recycled: its recycle answered "
+            "HTTP 200, but it still reads back by its Id (HTTP 200); recycle it by hand") in (
+        out["rows"][FIXTURE]["evidence"])
+    # No line claims the leftover recycled, since the read after the recycle found it standing.
+    assert "recycled list" not in out["console"]
+    assert f"[OK] recycled '{TITLE}' (list {OTHER})" not in out["console"]
     assert out["rows"][DEPENDENT]["state"] == "void"
     assert _creates(out) == []
 
@@ -307,7 +317,7 @@ def test_a_leftover_whose_recycle_cannot_be_confirmed_leaves_the_rows_open() -> 
     leftover = {"Id": OTHER, "BaseTemplate": 100, "Description": "owned", "fields": {},
                 "items": []}
     out = _claim(None, cleanup=True, lists={TITLE: leftover},
-                 rules=[{"contains": f"guid'{OTHER}')?$select=Id", "nth": 2, "status": 503,
+                 rules=[{"contains": f"guid'{OTHER}')?$select=Id", "status": 503,
                          "text": "busy"}])
 
     assert out["held"] is False

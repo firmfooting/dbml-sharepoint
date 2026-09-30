@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: 27cbcace
+ * REVISION: 65524eca
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -476,6 +476,27 @@
       && code.includes('System.ArgumentException'))) return { gone: true, why: null };
     return { gone: null, why: `the read-back that would confirm it ${unanswered(res)}` };
   };
+  // Recycles one list by its Id and logs OK only once a by-Id read shows it gone; gone is as listGone's.
+  const recycleList = async (title, listId) => {
+    let sent;
+    try {
+      sent = await spPost(`web/lists(guid'${listId}')/recycle`, {}, await getDigest());
+    } catch (err) {
+      sent = { ok: false, status: null, text: String((err && err.message) || err) };
+    }
+    // A request that threw has no status, so its message is what the operator is shown.
+    const why = sent.status === null ? scrub(sent.text).slice(0, 240) : `HTTP ${sent.status}`;
+    if (!sent.ok) {
+      log('FAIL', `could not recycle '${title}' (list ${listId}, ${why}); recycle it by hand.`);
+      return { gone: false, why: `its recycle was not answered 2xx (${why})` };
+    }
+    const after = await listGone(listId);
+    log(after.gone ? 'OK' : 'FAIL', after.gone
+      ? `recycled '${title}' (list ${listId}); it is restorable from the recycle bin.`
+      : `the recycle of '${title}' (list ${listId}) answered ${why}, but ${after.why}; `
+        + 'check it and recycle it by hand.');
+    return { gone: after.gone, why: after.gone ? null : `its recycle answered ${why}, but ${after.why}` };
+  };
 
   // Creates a list or library (generic unless `baseTemplate` says otherwise) owned by `description`, then reads it back.
   const claimScratchList = async ({ id, question, title, description, dependents,
@@ -510,25 +531,20 @@
         voidDependents(dependents, 'a leftover list would answer this run\'s questions');
         return { held: false, merge: null, body: null };
       }
-      // The recycle is pinned to the Id this read found, so a title rebound meanwhile cannot redirect it.
+      // Recycled by the Id this read found, so a title rebound meanwhile cannot redirect it. The harness's
+      // resetList is not used, since it reports a recycle done before any read confirms the list gone.
       const leftover = guidOf(pre.body.Id);
-      if (leftover === null || !await resetList(title, leftover)) {
-        record(id, question, 'FAIL', `the leftover list '${title}' `
-          + `${leftover === null ? 'answered no list Id to recycle it by' : `(list ${leftover}) was not recycled`}`);
+      const reset = leftover === null ? null : await recycleList(title, leftover);
+      if (reset === null || reset.gone === false) {
+        record(id, question, 'FAIL', `the leftover list '${title}' ${reset === null
+          ? 'answered no list Id to recycle it by' : `(list ${leftover}) was not recycled: ${reset.why}`}`
+          + `${reset === null ? '' : '; recycle it by hand'}`);
         voidDependents(dependents, 'a leftover list would answer this run\'s questions');
         return { held: false, merge: null, body: null };
       }
-      // A recycle answered 2xx is not the list gone, and a create over a standing leftover would not be new.
-      const after = await listGone(leftover);
-      if (after.gone === false) {
-        record(id, question, 'FAIL', `the leftover list '${title}' (list ${leftover}) answered its recycle, `
-          + `but ${after.why}; recycle it by hand`);
-        voidDependents(dependents, 'a leftover list would answer this run\'s questions');
-        return { held: false, merge: null, body: null };
-      }
-      if (after.gone === null) {
-        return leaveOpen(`the leftover list '${title}' (list ${leftover}) answered its recycle, but ${after.why}; `
-          + 'nothing was created');
+      // A create over a leftover whose absence cannot be read would not be known to be new.
+      if (reset.gone === null) {
+        return leaveOpen(`the leftover list '${title}' (list ${leftover}) ${reset.why}; nothing was created`);
       }
     } else if (pre.status !== 404) {
       // A by-title read answers an absent list 404 (the live finding rollback.js.j2 cites); anything else is unknown.
@@ -594,25 +610,8 @@
         log('FAIL', `'${title}' never answered a list Id, so it was not recycled; if it stands, recycle it by hand.`);
         continue;
       }
-      let gone;
-      try {
-        // The by-Id recycle is the one resetList sends, so a title rebound cannot redirect it.
-        gone = await spPost(`web/lists(guid'${id}')/recycle`, {}, await getDigest());
-      } catch (err) {
-        gone = { ok: false, status: null, text: String((err && err.message) || err) };
-      }
-      // A request that threw has no status, so its message is what the operator is shown.
-      const why = gone.status === null ? scrub(gone.text).slice(0, 240) : `HTTP ${gone.status}`;
-      if (!gone.ok) {
-        log('FAIL', `could not recycle '${title}' (list ${id}, ${why}); recycle it by hand.`);
-        continue;
-      }
-      // A recycle answered 2xx is reported done only once the list no longer reads back by its Id.
-      const after = await listGone(id);
-      log(after.gone ? 'OK' : 'FAIL', after.gone
-        ? `recycled '${title}' (list ${id}); it is restorable from the recycle bin.`
-        : `the recycle of '${title}' (list ${id}) answered ${why}, but ${after.why}; `
-          + 'check it and recycle it by hand.');
+      // By Id, so a title rebound cannot redirect it.
+      await recycleList(title, id);
     }
   };
   // ---- Item versions (v1) ---------------------------------------------
@@ -649,7 +648,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 27cbcace. Quote this when reporting results.');
+  log('INFO', 'probe revision 65524eca. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsTrim';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
