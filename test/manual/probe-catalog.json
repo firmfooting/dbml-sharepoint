@@ -12533,6 +12533,7 @@
           "controls": [
             "field.version.control-current-user",
             "field.version.fixture-payload-target-list",
+            "field.version.fixture-payload-target-items",
             "field.version.fixture-payload-list",
             "field.version.fixture-payload-columns",
             "field.version.fixture-payload-people-column",
