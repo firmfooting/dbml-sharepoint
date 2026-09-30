@@ -479,3 +479,19 @@ def test_a_404_read_after_an_unanswered_write_is_that_write_unanswered() -> None
     assert rows[ITEMS]["outcome"] == "NOT ESTABLISHED", rows[ITEMS]
     assert "after a write that went unanswered" in rows[ITEMS]["evidence"]
     assert voided(rows) == set()
+
+
+@pytest.mark.parametrize(("query", "control", "row_id"), [
+    ("/items?$select=Id&$filter", FILTER_CONTROL, FILTER),
+    ("/items?$select=Id&$top", TOP_CONTROL, TOP),
+    ("/items?$select=Id&$orderby=Id asc", ORDERBY_CONTROL, ORDERBY),
+], ids=["filter", "top", "orderby"])
+def test_an_item_list_control_answered_with_a_continuation_link_is_not_established(
+        query: str, control: str, row_id: str) -> None:
+    paged = json.dumps({"value": [{"Id": 1}], **NEXT})
+    rows, _, _ = _run(rules=[{"contains": query, "status": 200, "text": paged}])
+
+    assert rows[control]["outcome"] == "NOT ESTABLISHED", rows[control]
+    assert "carried a continuation link" in rows[control]["evidence"]
+    assert rows[row_id]["state"] == "open"
+    assert voided(rows) == set()

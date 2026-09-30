@@ -313,12 +313,10 @@ _LINK = "https://example.sharepoint.com/sites/probe/_api/web/lists/versions?$ski
 
 
 @pytest.mark.parametrize(("status", "body", "reason"), [
-    (200, json.dumps({"value": [{"VersionId": 512}], "odata.nextLink": _LINK}),
-     "the answer carried a continuation link"),
     (200, json.dumps({"value": [{"VersionId": 512}, {"VersionId": 512}]}),
      "it listed a VersionId more than once"),
     (200, json.dumps({"value": [{"VersionLabel": "1.0"}]}), "an entry carried no VersionId"),
-], ids=["paged", "repeated", "no-id"])
+], ids=["repeated", "no-id"])
 def test_a_versions_read_between_the_writes_that_cannot_be_counted_fails_the_item(
         status: int, body: str, reason: str) -> None:
     rows, _, output = _run(rules=[{"contains": "/versions", "nth": 1, "status": status,
@@ -446,3 +444,13 @@ def test_a_refused_ownership_read_fails_the_list_and_creates_nothing() -> None:
     assert "HTTP 400" in rows[LIST]["evidence"]
     assert voided(rows) == _deps(LIST)
     assert not [r for r in sent if r["path"] == "web/lists" and r["verb"] == "POST"]
+
+
+def test_a_paged_versions_read_after_a_write_leaves_the_item_open() -> None:
+    # A page the read did not follow may hold the new version, so the read is no answer.
+    paged = json.dumps({"value": [{"VersionId": 512}], "odata.nextLink": _LINK})
+    rows, _, _ = _run(rules=[{"contains": "/versions", "nth": 1, "status": 200, "text": paged}])
+
+    assert rows[ITEM]["outcome"] == "NOT ESTABLISHED", rows[ITEM]
+    assert "the answer carried a continuation link" in rows[ITEM]["evidence"]
+    assert voided(rows) == set()

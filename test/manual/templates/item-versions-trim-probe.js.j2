@@ -171,6 +171,10 @@
       const after = await readVersions(listPath, itemId);
       // A 2xx whose entries cannot be read says nothing about the versions, so it is no answer rather than a miss.
       if (!after.head && after.rows === null) UNHEARD.push(`the versions read after ${what} ${after.shape}`);
+      // A page the read did not follow may hold the new version, so a paged read is no answer either.
+      if (!after.head && after.rows !== null && after.next !== null) {
+        UNHEARD.push(`the versions read after ${what}: ${pagedSaid(after)}`);
+      }
       const blocked = after.head ? scrub(after.head.why) : after.rows === null
         ? `HTTP ${after.res.status} ${after.shape}` : after.next !== null ? pagedSaid(after)
           : repeatedIds(after.rows).length ? 'it listed a VersionId more than once'

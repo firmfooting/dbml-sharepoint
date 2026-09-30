@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: 2f28bc3a
+ * REVISION: a8ead199
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -822,7 +822,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 2f28bc3a. Quote this when reporting results.');
+  log('INFO', 'probe revision a8ead199. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsTrim');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
@@ -939,6 +939,10 @@
       const after = await readVersions(listPath, itemId);
       // A 2xx whose entries cannot be read says nothing about the versions, so it is no answer rather than a miss.
       if (!after.head && after.rows === null) UNHEARD.push(`the versions read after ${what} ${after.shape}`);
+      // A page the read did not follow may hold the new version, so a paged read is no answer either.
+      if (!after.head && after.rows !== null && after.next !== null) {
+        UNHEARD.push(`the versions read after ${what}: ${pagedSaid(after)}`);
+      }
       const blocked = after.head ? scrub(after.head.why) : after.rows === null
         ? `HTTP ${after.res.status} ${after.shape}` : after.next !== null ? pagedSaid(after)
           : repeatedIds(after.rows).length ? 'it listed a VersionId more than once'

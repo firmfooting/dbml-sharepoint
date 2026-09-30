@@ -247,7 +247,11 @@
       for (const { query, holds, want } of reads) {
         const res = await sendRaw(`${listPath}/items?$select=Id&${query}`);
         const head = maskedHead(res);
-        const { rows, shape } = head ? { rows: null, shape: null } : entriesOf(res.parsed);
+        const entries = head ? { rows: null, shape: null } : entriesOf(res.parsed);
+        const next = entries.rows === null ? null : continuationOf(res.parsed);
+        // Rows from a page the read did not follow are not all the rows served, so they are no answer.
+        const { rows, shape } = next === null ? entries : { rows: null, shape: `carried a continuation link `
+          + `(${scrub(next).slice(0, 200)}), which this probe does not follow` };
         const served = rows === null ? null : rows.map((row) => row.Id);
         // A 2xx with no rows is not an answer about the option, so it is left open like a throttle.
         const outcome = served !== null && holds(served) ? 'PASS'

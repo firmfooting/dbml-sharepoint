@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: e385be5e
+ * REVISION: 828fb899
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -830,7 +830,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision e385be5e. Quote this when reporting results.');
+  log('INFO', 'probe revision 828fb899. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsQuery');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
@@ -1015,7 +1015,11 @@
       for (const { query, holds, want } of reads) {
         const res = await sendRaw(`${listPath}/items?$select=Id&${query}`);
         const head = maskedHead(res);
-        const { rows, shape } = head ? { rows: null, shape: null } : entriesOf(res.parsed);
+        const entries = head ? { rows: null, shape: null } : entriesOf(res.parsed);
+        const next = entries.rows === null ? null : continuationOf(res.parsed);
+        // Rows from a page the read did not follow are not all the rows served, so they are no answer.
+        const { rows, shape } = next === null ? entries : { rows: null, shape: `carried a continuation link `
+          + `(${scrub(next).slice(0, 200)}), which this probe does not follow` };
         const served = rows === null ? null : rows.map((row) => row.Id);
         // A 2xx with no rows is not an answer about the option, so it is left open like a throttle.
         const outcome = served !== null && holds(served) ? 'PASS'
