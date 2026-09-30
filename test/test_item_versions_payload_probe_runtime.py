@@ -708,6 +708,36 @@ def test_two_entries_at_the_greatest_label_leave_no_entry_named() -> None:
     assert "The entry with the greatest VersionLabel" not in evidence
 
 
+@pytest.mark.parametrize(("entries", "why"), [
+    pytest.param([(1536, "3.0"), (1537, "3.0"), (512, "1.0")],
+                 "more than one entry carries VersionLabel 3.0", id="same-label"),
+    pytest.param([(1536, "3.0"), (1537, "03.0"), (512, "1.0")],
+                 "more than one entry carries VersionLabel 3.0", id="same-pair-spelled-apart"),
+    pytest.param([(512, "1.0"), (512, "2.0"), (1536, "3.0")],
+                 "VersionId 512 answered more than once", id="same-versionid"),
+])
+def test_a_tie_in_label_or_versionid_leaves_the_order_not_comparable(
+        entries: list[tuple[int, str]], why: str) -> None:
+    body = json.dumps({"value": [{"VersionId": v, "VersionLabel": label} for v, label in entries]})
+    rows, _, _ = _run(rules=[{"contains": LIST_READ_RULE, "status": 200, "text": body}])
+
+    assert rows[ORDER]["outcome"] == "NOT COMPARABLE", rows[ORDER]
+    assert rows[ORDER]["state"] == "settled"
+    assert f"{why}, so the order among them is not measured" in rows[ORDER]["evidence"]
+
+
+def test_a_greatest_label_spelled_two_ways_names_no_entry() -> None:
+    tied = json.dumps({"value": [
+        {"VersionId": 1536, "VersionLabel": "3.0", "A": 1},
+        {"VersionId": 1537, "VersionLabel": "03.0", "B": 1},
+        {"VersionId": 512, "VersionLabel": "1.0"}]})
+    rows, _, _ = _run(rules=[{"contains": LIST_READ_RULE, "status": 200, "text": tied}])
+
+    evidence = rows[FIELDS]["evidence"]
+    assert "2 entries carry the greatest VersionLabel" in evidence
+    assert "The entry with the greatest VersionLabel" not in evidence
+
+
 def test_an_unpinned_run_titles_all_three_lists_with_one_token_of_its_own() -> None:
     rows, sent, _ = run_probe(VERSIONS_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"), {}, pin=False)
 

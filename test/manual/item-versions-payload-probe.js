@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: 86bd4144
+ * REVISION: f95dd491
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -682,7 +682,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 86bd4144. Quote this when reporting results.');
+  log('INFO', 'probe revision f95dd491. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe Versions');
   const TARGET = runTitle('dbmlsp Probe VersionsTarget');
@@ -857,6 +857,7 @@
     const match = /^(\d+)\.(\d+)$/.exec(String(row.VersionLabel));
     return match ? [Number(match[1]), Number(match[2])] : null;
   };
+  const comparePairs = (a, b) => a[0] - b[0] || a[1] - b[1];
   // A versions read is the control its observations rest on: a refusal voids them, a throttle leaves them open.
   const recordVersionsRead = (id, question, versions, observed, what) => {
     const held = versions.rows !== null && versions.rows.length > 0;
@@ -1114,10 +1115,10 @@
     const perVersion = rows.map((row) => FOUR.map((key) => `${key}=${show(row[key])}`).join(', '));
     // Named by its label, never by its place in the answer, since the order versions come back in is a question.
     const labelled = rows.every((row) => labelPair(row) !== null);
-    const top = labelled ? rows.reduce((best, row) => (labelPair(row)[0] - labelPair(best)[0]
-      || labelPair(row)[1] - labelPair(best)[1]) > 0 ? row : best) : null;
+    const top = labelled ? rows.reduce((best, row) => (comparePairs(labelPair(row), labelPair(best)) > 0
+      ? row : best)) : null;
     // Two entries at the greatest label leave no one entry to name, so neither is picked by its place.
-    const ties = top ? rows.filter((row) => labelOf(row) === labelOf(top)).length : 0;
+    const ties = top ? rows.filter((row) => comparePairs(labelPair(row), labelPair(top)) === 0).length : 0;
     const greatest = ties === 1 ? top : null;
     const together = `${[...new Set(rows.flatMap((row) => Object.keys(row)))].sort().join(', ')}`;
     const named = greatest
@@ -1130,12 +1131,19 @@
 
     const pairs = rows.map((row) => ({ at: labelPair(row), id: versionIdOf(row), label: labelOf(row) }));
     const comparable = rows.length > 1 && pairs.every((p) => p.at !== null && typeof p.id === 'number');
-    const byLabel = comparable ? [...pairs].sort((a, b) => a.at[0] - b.at[0] || a.at[1] - b.at[1]) : pairs;
+    const byLabel = comparable ? [...pairs].sort((a, b) => comparePairs(a.at, b.at)) : pairs;
+    // Tied labels or a repeated VersionId leave the order among those entries unmeasured, so none is named.
+    const tied = comparable ? byLabel.slice(1).filter((p, i) => comparePairs(p.at, byLabel[i].at) === 0) : [];
+    const again = comparable ? repeatedIds(rows) : [];
+    const tie = tied.length ? `more than one entry carries VersionLabel ${[...new Set(tied
+      .map((p) => p.at.join('.')))].join(', ')}` : again.length ? `VersionId ${again.join(', ')} answered `
+      + 'more than once' : null;
     const rising = comparable && byLabel.slice(1).every((p, i) => p.id > byLabel[i].id);
-    record(SUBJECTS.order, Q.order,
-      !comparable ? 'NOT COMPARABLE' : rising ? 'INCREASES WITH LABEL' : 'DOES NOT INCREASE WITH LABEL',
+    record(SUBJECTS.order, Q.order, !comparable || tie ? 'NOT COMPARABLE'
+      : rising ? 'INCREASES WITH LABEL' : 'DOES NOT INCREASE WITH LABEL',
       `${rows.length} version(s)${comparable ? ', in label order' : ', in the order answered'}: `
-      + `${byLabel.map((p) => `${p.label}=${show(p.id)}`).join(', ')}`);
+      + `${byLabel.map((p) => `${p.label}=${show(p.id)}`).join(', ')}`
+      + `${tie ? `; ${tie}, so the order among them is not measured` : ''}`);
   };
 
   // A file's content goes as text, so the body is never JSON-encoded as spPost would.
@@ -1246,7 +1254,7 @@
     }
     const rows = versions.rows;
     const ordered = rows.every((row) => labelPair(row) !== null)
-      ? [...rows].sort((a, b) => labelPair(a)[0] - labelPair(b)[0] || labelPair(a)[1] - labelPair(b)[1]) : rows;
+      ? [...rows].sort((a, b) => comparePairs(labelPair(a), labelPair(b))) : rows;
     const sequence = ordered.map((row) => `${labelOf(row)}=${show(row[LIB_COLUMN])}`).join(', ');
     const after = `after the second edit, ${ordered === rows ? 'in the order answered' : 'in label order'}: `
       + sequence;
