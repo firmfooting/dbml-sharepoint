@@ -260,3 +260,43 @@ def test_every_request_after_the_claim_goes_by_the_list_id() -> None:
     assert titled
     assert all("?$select=Id,Description" in path or "?$select=Id,BaseTemplate" in path
                for path in titled), titled
+
+
+def test_a_write_answered_2xx_that_did_not_land_stops_the_writes_and_fails_the_items() -> None:
+    rows, sent, _ = _run(rules=[{"contains": "items(1)", "verb": "MERGE",
+                                 "bodyContains": '"ProbeChoice":"Q2"', "status": 204, "text": ""}])
+
+    assert rows[ITEMS]["outcome"] == "FAIL"
+    assert "Written differs: read 2, declared 4" in rows[ITEMS]["evidence"]
+    assert "A's write of Q2: HTTP 204, but ProbeChoice reads back \\\"Q1\\\"" in (
+        rows[ITEMS]["evidence"])
+    assert voided(rows) == _deps(ITEMS)
+    assert len([r for r in sent if r["verb"] == "MERGE" and "items(1)" in r["path"]]) == 1
+
+
+def test_a_write_whose_read_back_went_unanswered_is_not_counted() -> None:
+    rows, _, _ = _run(rules=[{"contains": "items(1)?$select=Id,Title,ProbeChoice", "nth": 1,
+                              "status": 429, "text": "busy"}])
+
+    assert rows[ITEMS]["outcome"] == "FAIL"
+    assert "the create of A: HTTP 201, but the read-back " in rows[ITEMS]["evidence"]
+    assert voided(rows) == _deps(ITEMS)
+
+
+def test_a_plain_read_answered_2xx_with_no_value_array_leaves_everything_after_it_open() -> None:
+    rows, _, _ = _run(rules=[{"contains": "items(1)/versions", "nth": 1, "status": 200,
+                              "text": '{"d": "x"}'}])
+
+    assert rows[READ]["outcome"] == "NOT ESTABLISHED"
+    for row_id in (FILTER_CONTROL, TOP_CONTROL, *SUBJECTS):
+        assert rows[row_id]["state"] == "open", rows[row_id]
+    assert voided(rows) == set()
+
+
+def test_an_item_list_control_answered_2xx_with_no_rows_leaves_its_row_open() -> None:
+    rows, _, _ = _run(rules=[{"contains": "/items?$select=Id&$filter", "status": 200,
+                              "text": '{"d": 1}'}])
+
+    assert rows[FILTER_CONTROL]["outcome"] == "NOT ESTABLISHED"
+    assert rows[FILTER]["state"] == "open"
+    assert voided(rows) == set()

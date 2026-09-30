@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: fd4f0c72
+ * REVISION: 512f384d
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -14,7 +14,7 @@
  * DEPENDS ON (read back, and voiding what rests on them when they do not hold)
  *   query.odata.fixture-versions-query-list   a generic list with versioning on
  *   query.odata.fixture-versions-query-items  item A created and written twice, item B
- *       created once, their last values read back
+ *       created once, each write read back before the next is sent
  *   query.odata.control-versions-read        A's versions read with no options answers
  *       at least two entries, each carrying a numeric VersionId
  *   query.odata.control-versions-items-filter      $filter=Id eq A serves A alone
@@ -651,7 +651,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision fd4f0c72. Quote this when reporting results.');
+  log('INFO', 'probe revision 512f384d. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsQuery';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -660,7 +660,7 @@
 
   const Q = {
     list: 'a generic list this probe created, with versioning on',
-    items: 'item A created and written twice, item B created once, their last values read back',
+    items: 'item A created and written twice, item B created once, each write read back before the next',
     read: 'CONTROL: A\'s versions read with no options answers at least two entries, '
       + 'each carrying a numeric VersionId',
     filterControl: 'CONTROL: $filter=Id eq A on the list\'s items serves A alone',
@@ -722,23 +722,44 @@
 
     const ids = {};
     let written = 0;
+    const missed = [];
+    // A write counts once the item reads back what it set, since the option rows rest on A's three versions.
+    const landed = async (what, sent, itemId, want) => {
+      if (!sent.ok || itemId === undefined) {
+        missed.push(`${what}: HTTP ${sent.status}`
+          + `${sent.ok ? ' carried no numeric Id' : `: ${said(sent).slice(0, 160)}`}`);
+        return false;
+      }
+      const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title,${CHOICE}`);
+      const head = rawHead(read);
+      const got = !head && read.parsed && typeof read.parsed === 'object' ? read.parsed : null;
+      const off = got === null ? null : Object.keys(want).filter((key) => got[key] !== want[key]);
+      if (got !== null && off.length === 0) {
+        written += 1;
+        return true;
+      }
+      missed.push(`${what}: HTTP ${sent.status}, but ${got === null ? `the read-back ${head ? scrub(head.why)
+        : `answered HTTP ${read.status} with no JSON`}` : off.map((key) => `${key} reads back `
+        + `${JSON.stringify(got[key])}`).join(', ')}`.slice(0, 240));
+      return false;
+    };
     for (const [key, title] of [['A', 'dbmlsp versions query A'], ['B', 'dbmlsp versions query B']]) {
       const made = await spPost(`${listPath}/items`, { __metadata: { type: itemType }, Title: title,
         [CHOICE]: 'Q1' }, await getDigest(), VERBOSE_WRITE);
-      if (made.ok) written += 1;
       if (made.ok && made.body && Number.isInteger(made.body.Id)) ids[key] = made.body.Id;
+      await landed(`the create of ${key}`, made, ids[key], { Title: title, [CHOICE]: 'Q1' });
     }
     if (ids.A !== undefined) {
       for (const value of ['Q2', 'Q3']) {
         const sent = await spPost(`${listPath}/items(${ids.A})`, { __metadata: { type: itemType },
           [CHOICE]: value }, await getDigest(), { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
-        if (sent.ok) written += 1;
+        if (!await landed(`A's write of ${value}`, sent, ids.A, { [CHOICE]: value })) break;
       }
     }
     if (!await establishFixture('query.odata.fixture-versions-query-items', async () => {
       // The column create's answer joins the read-back, so a refused create shows its reason in RESULTS.
       const body = { Column: `HTTP ${column.status}${column.ok ? '' : `: ${said(column).slice(0, 200)}`}`,
-        Written: written };
+        Written: written, Missed: missed.join('; ') || 'none' };
       for (const key of ['A', 'B']) {
         if (ids[key] === undefined) continue;
         const read = await sendRaw(`${listPath}/items(${ids[key]})?$select=Id,${CHOICE}`);
@@ -747,7 +768,8 @@
           : read.parsed && typeof read.parsed === 'object' ? read.parsed[CHOICE] : `no JSON: ${said(read)}`;
       }
       return { ok: true, status: 200, body };
-    }, { Column: (v) => typeof v === 'string', Written: 4, [`A.${CHOICE}`]: 'Q3', [`B.${CHOICE}`]: 'Q1' },
+    }, { Column: (v) => typeof v === 'string', Written: 4, Missed: (v) => typeof v === 'string',
+      [`A.${CHOICE}`]: 'Q3', [`B.${CHOICE}`]: 'Q1' },
     AFTER_ITEMS)) {
       return;
     }
@@ -757,8 +779,9 @@
     // The option rows need two numeric VersionIds; how many an item answers is the payload probe's question.
     const readHeld = plain.rows !== null && plain.rows.length >= 2
       && plainIds.every((v) => typeof v === 'number');
-    const readOutcome = readHeld ? 'PASS'
-      : (plain.head && plain.head.outcome === 'NOT ESTABLISHED' ? 'NOT ESTABLISHED' : 'FAIL');
+    // A 2xx with no value array is not an answer about the versions, so it is left open like a throttle.
+    const plainUnread = plain.head ? plain.head.outcome === 'NOT ESTABLISHED' : plain.rows === null;
+    const readOutcome = readHeld ? 'PASS' : plainUnread ? 'NOT ESTABLISHED' : 'FAIL';
     const entries = (n) => `${n} ${n === 1 ? 'entry' : 'entries'}`;
     record('query.odata.control-versions-read', Q.read, readOutcome, plain.head ? scrub(plain.head.why)
       : `HTTP ${plain.res.status}, ${plain.rows === null ? `no value array: ${said(plain.res)}`
@@ -772,7 +795,8 @@
       for (const id of AFTER_READ) {
         const row = RESULTS.find((r) => r.id === id);
         record(id, row.question, 'NOT ESTABLISHED', 'not asked: the plain versions read was not established '
-          + `(${scrub(plain.head.why)}); a re-run can ask it`);
+          + `(${plain.head ? scrub(plain.head.why) : `HTTP ${plain.res.status} carried no value array`}); `
+          + 'a re-run can ask it');
       }
       return;
     }
@@ -798,11 +822,12 @@
       const head = rawHead(res);
       const rows = !head && res.parsed && Array.isArray(res.parsed.value) ? res.parsed.value : null;
       const served = rows === null ? null : rows.map((row) => row.Id);
+      // A 2xx with no rows is not an answer about the option, so it is left open like a throttle.
       const outcome = served !== null && served.join(',') === String(want) ? 'PASS'
-        : (head && head.outcome === 'NOT ESTABLISHED' ? 'NOT ESTABLISHED' : 'FAIL');
-      record(id, question, outcome, `${query}: ${head ? scrub(head.why) : served === null
-        ? `HTTP ${res.status} carried no rows: ${said(res)}` : `served ${JSON.stringify(served)}, want [${want}]`}`);
-      return { outcome, why: head ? scrub(head.why) : '' };
+        : (head ? head.outcome === 'NOT ESTABLISHED' : served === null) ? 'NOT ESTABLISHED' : 'FAIL';
+      const why = head ? scrub(head.why) : served === null ? `HTTP ${res.status} carried no rows: ${said(res)}` : '';
+      record(id, question, outcome, `${query}: ${why || `served ${JSON.stringify(served)}, want [${want}]`}`);
+      return { outcome, why };
     };
     const filterControl = await controlOf(FILTER_CONTROL, Q.filterControl, `$filter=Id eq ${ids.A}`, ids.A);
     const topControl = await controlOf(TOP_CONTROL, Q.topControl, '$orderby=Id desc&$top=1', ids.B);
