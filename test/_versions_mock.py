@@ -116,7 +116,7 @@ const mockFetch = async (url, opts = {}) => {
   if (path === 'web/lists' && verb === 'POST') {
     // `listIds`: by title, the Id a create answers in place of its own, so two lists can share one.
     const listId = (CONFIG.listIds || {})[sent.Title] || guid(sent.Title);
-    lists.set(sent.Title, { Id: listId, BaseTemplate: sent.BaseTemplate,
+    lists.set(sent.Title, { Id: listId, Title: sent.Title, BaseTemplate: sent.BaseTemplate,
       Description: sent.Description, EnableVersioning: false, EnableMinorVersions: false,
       MajorVersionLimit: 50,
       ListItemEntityTypeFullName: `SP.Data.${sent.Title.replace(/ /g, '')}ListItem`,

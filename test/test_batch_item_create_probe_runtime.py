@@ -182,7 +182,8 @@ _MOCK = textwrap.dedent(r"""
       if (path.startsWith('web/currentuser')) return answer(200, ME);
       if (path === 'web/lists' && verb === 'POST') {
         const sent = JSON.parse(raw);
-        list = { Id: CREATED_ID, BaseTemplate: sent.BaseTemplate, Description: sent.Description,
+        list = { Id: CREATED_ID, Title: sent.Title, BaseTemplate: sent.BaseTemplate,
+          Description: sent.Description,
           ListItemEntityTypeFullName: 'SP.Data.dbmlspProbeBatchItemsListItem' };
         return answer(201, { Id: CREATED_ID });
       }

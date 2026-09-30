@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: 02a5c14f
+ * REVISION: daac7ac6
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -807,14 +807,43 @@
       voidRows(dependents, 'the scratch list answered the Id of another list this run created');
       return { held: false, merge: null, body: null };
     }
-    CREATED_LISTS.push(created);
     // Without the create's own Id a title read could name a rebound list, so nothing more is written.
     if (created.id === null) {
+      CREATED_LISTS.push(created);
       record(id, question, 'FAIL', `the list create answered HTTP ${made.status} with no list Id, so nothing `
         + `ties '${title}' to the list it made; nothing was written to it`);
       voidRows(dependents, 'the scratch list answered no Id to address it by');
       return { held: false, merge: null, body: null };
     }
+    // The answered Id is written to or recycled only once it reads back this run's title and this probe's
+    // Description, since a wrong Id would point both at a list this run did not make.
+    let mine;
+    try {
+      mine = await spGet(`web/lists(guid'${created.id}')?$select=Id,Title,Description`);
+    } catch (err) {
+      mine = { ok: false, status: null, why: `never answered (${scrub(String((err && err.message) || err))})` };
+    }
+    const own = mine.ok ? recordBody({ parsed: mine.body }) : null;
+    const proved = own !== null && own.Title === title && own.Description === description
+      && guidOf(own.Id) === created.id;
+    if (!proved) {
+      const said = mine.why || (own !== null ? `reads back Title ${quoteValue(own.Title)} and `
+        + `${own.Description === description ? 'this probe\'s Description' : 'another Description'}, not '${title}' `
+        + 'with this probe\'s' : mine.ok ? `answered HTTP ${mine.status} with no JSON object`
+        : absenceOf(mine.status, mine.body) ? 'answered that no list holds it' : unanswered(mine));
+      const why = own !== null ? `list ${created.id} ${said}` : `the read of list ${created.id} ${said}`;
+      // Named for a check by hand, never recycled by an Id this run did not prove its own.
+      CREATED_LISTS.push({ title, id: null, why: `answered list ${created.id}, which did not read back as this `
+        + 'run\'s list' });
+      // A contradicting read or a refusal settles it; a read that said nothing leaves it open.
+      if (own === null && (mine.why || mine.ok || !isRefusal(mine.status))) {
+        return leaveOpen(`${why}, so nothing was written to it`);
+      }
+      record(id, question, 'FAIL', `${why}; nothing was written to it`);
+      voidRows(dependents, 'the scratch list did not read back as this run\'s');
+      return { held: false, merge: null, body: null };
+    }
+    CREATED_LISTS.push(created);
     let merge = null;
     beginFixture();
     if (settings !== null) {
@@ -847,9 +876,10 @@
 
   // Recycles every list this run created by its Id, newest first, and says which one to recycle by hand.
   const recycleScratchLists = async () => {
-    for (const { title, id } of [...CREATED_LISTS].reverse()) {
+    for (const { title, id, why } of [...CREATED_LISTS].reverse()) {
       if (id === null) {
-        log('FAIL', `'${title}' never answered a list Id, so it was not recycled; if it stands, recycle it by hand.`);
+        log('FAIL', `'${title}' ${why || 'never answered a list Id'}, so it was not recycled; if it stands, `
+          + 'recycle it by hand.');
         continue;
       }
       // By Id, so a title rebound cannot redirect it.
@@ -895,7 +925,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 02a5c14f. Quote this when reporting results.');
+  log('INFO', 'probe revision daac7ac6. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe Versions');
   const TARGET = runTitle('dbmlsp Probe VersionsTarget');

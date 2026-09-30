@@ -257,8 +257,9 @@ def test_a_recycle_answered_2xx_whose_list_still_stands_is_not_reported_recycled
 
 
 def test_a_recycle_whose_confirming_read_went_unanswered_is_not_reported_recycled() -> None:
-    out = _claim(None, rules=[{"contains": f"guid'{CLAIMED}')?$select=Id", "status": 429,
-                               "text": "busy"}])
+    # Past the first match, the read proving the list this run's before anything is written.
+    out = _claim(None, rules=[{"contains": f"guid'{CLAIMED}')?$select=Id", "after": 1,
+                               "status": 429, "text": "busy"}])
 
     assert "[OK] recycled" not in out["console"]
     assert ("answered HTTP 200, but the read-back that would confirm it was throttled (HTTP 429); "
@@ -373,3 +374,58 @@ def test_once_text_is_withheld_a_refused_merge_is_quoted_by_status_only() -> Non
     assert "Zed Sentinel" not in json.dumps(out["rows"]) + out["console"]
     assert ("Settings=\"HTTP 400: (text withheld: this account's display name was not learned)\""
             in out["rows"][FIXTURE]["evidence"])
+
+
+VERIFY = f"web/lists(guid'{CLAIMED}')?$select=Id,Title,Description"
+SOMEBODYS = {"Id": CLAIMED, "Title": "Somebody's list", "BaseTemplate": 100,
+             "Description": "theirs", "fields": {}, "items": []}
+
+
+def _writes(out: dict[str, Any]) -> list[str]:
+    return [r["path"] for r in out["sent"]
+            if r["verb"] != "GET" and r["path"] != "contextinfo"
+            and not (r["path"] == "web/lists" and r["verb"] == "POST")]
+
+
+def test_the_id_a_create_answered_is_read_back_before_anything_is_written_to_it() -> None:
+    out = _claim({"EnableVersioning": True}, declared=VERSIONING)
+
+    paths = [r["path"] for r in out["sent"]]
+    assert paths.index(VERIFY) < paths.index(f"web/lists(guid'{CLAIMED}')")
+    assert out["held"] is True
+
+
+def test_an_answered_id_naming_another_list_is_never_written_to_or_recycled() -> None:
+    # The create answers the Id of a list that already stood under another title.
+    out = _claim({"EnableVersioning": True}, declared=VERSIONING,
+                 lists={"Somebody's list": SOMEBODYS})
+
+    assert out["held"] is False
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert (f"list {CLAIMED} reads back Title \"Somebody's list\" and another Description, "
+            f"not '{TITLE}' with this probe's; nothing was written to it") in (
+        out["rows"][FIXTURE]["evidence"])
+    assert out["rows"][DEPENDENT]["state"] == "void"
+    assert _writes(out) == []
+    assert (f"'{TITLE}' answered list {CLAIMED}, which did not read back as this run's list, "
+            "so it was not recycled; if it stands, recycle it by hand.") in out["console"]
+
+
+@pytest.mark.parametrize(("rule", "outcome", "said"), [
+    ({"status": 429, "text": "busy"}, "NOT ESTABLISHED", "was throttled (HTTP 429)"),
+    ({"status": 200, "text": "not json"}, "NOT ESTABLISHED",
+     "answered HTTP 200 with no JSON object"),
+    ({"reject": True}, "NOT ESTABLISHED", "never answered (Failed to fetch)"),
+    ({"status": 404, "text": "List does not exist."}, "FAIL", "answered that no list holds it"),
+    ({"status": 500, "text": "Refused."}, "FAIL", "was refused (HTTP 500)"),
+], ids=["throttled", "no-json", "thrown", "absent", "refused"])
+def test_an_answered_id_that_cannot_be_verified_is_never_written_to_or_recycled(
+        rule: dict[str, Any], outcome: str, said: str) -> None:
+    out = _claim({"EnableVersioning": True}, declared=VERSIONING,
+                 rules=[{"contains": VERIFY, **rule}])
+
+    assert out["held"] is False
+    assert out["rows"][FIXTURE]["outcome"] == outcome
+    assert f"the read of list {CLAIMED} {said}" in out["rows"][FIXTURE]["evidence"]
+    assert _writes(out) == []
+    assert "recycle it by hand" in out["console"]
