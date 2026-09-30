@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: ebf8dde0
+ * REVISION: c4896c75
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -508,14 +508,30 @@
     for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
     return out;
   };
-  // Every answer maskedHead found unanswered, and every write spWrite found refused, so a fixture can tell an
-  // unanswered request, which leaves it open, from a refused write, which is settled.
+  // Every answer maskedHead found unanswered or refused, so a fixture can tell an unanswered request, which
+  // leaves it open, from a refusal, which is settled.
   const UNHEARD = [];
   const REFUSED = [];
+  // Set by an unanswered write and cleared by beginFixture, since an absence after one may be that write unlanded.
+  let writeUnheard = false;
+  // An answer that a thing is not there: a 404, or the absent-field 400 that rollback.js.j2 also accepts.
+  const absenceOf = (status, parsed) => {
+    const error = parsed && typeof parsed === 'object' ? parsed['odata.error'] || parsed.error : null;
+    const code = String((error && error.code) || '');
+    return status === 404 || (status === 400 && code.includes('-2147024809')
+      && code.includes('System.ArgumentException'));
+  };
   // rawHead cuts a response's text short, so the text is masked first and a cut never splits a name unmasked.
-  const maskedHead = (res) => {
+  const maskedHead = (res, write = false) => {
     const head = rawHead({ ...res, text: scrub(res.text) });
-    if (head && head.outcome === 'NOT ESTABLISHED') UNHEARD.push(head.why);
+    if (head && head.outcome === 'NOT ESTABLISHED') {
+      UNHEARD.push(head.why);
+      if (write) writeUnheard = true;
+    } else if (head && head.outcome === 'REFUSED') {
+      if (write || !writeUnheard || !absenceOf(res.status, res.parsed !== undefined ? res.parsed : res.body)) {
+        REFUSED.push(head.why);
+      } else UNHEARD.push(`${head.why}, after a write that went unanswered`);
+    }
     return head;
   };
   // A single-entity read's body when it is a JSON object, or null, so no property is read off anything else.
@@ -591,12 +607,12 @@
   const beginFixture = () => {
     fixtureStart = UNHEARD.length;
     refusedStart = REFUSED.length;
+    writeUnheard = false;
   };
   // A write's answer is noted, so a fixture can tell an unanswered write from a refused one.
   const spWrite = async (...args) => {
     const res = await spPost(...args);
-    const head = maskedHead(res);
-    if (head && head.outcome === 'REFUSED') REFUSED.push(head.why);
+    maskedHead(res, true);
     return res;
   };
   // establishFixture, except that a fixture any of whose requests since beginFixture went unanswered is left
@@ -618,7 +634,7 @@
     const held = await establishFixture(id, heard, declared, dependents);
     const restore = () => earlier.forEach((was) => Object.assign(RESULTS.find((r) => r.id === was.id), was));
     if (held) return true;
-    // A refused write is a settled answer, so it keeps the FAIL even beside a request that went unanswered.
+    // A refusal is a settled answer, so it keeps the FAIL even beside a request that went unanswered.
     if (UNHEARD.length === start || REFUSED.length > refusedFrom) {
       restore();
       return false;
@@ -645,11 +661,7 @@
       return { gone: null, why: `the read-back never answered (${scrub(String((err && err.message) || err))})` };
     }
     if (res.ok) return { gone: false, why: `it still reads back by its Id (HTTP ${res.status})` };
-    const error = res.body && typeof res.body === 'object' ? res.body['odata.error'] || res.body.error : null;
-    const code = String((error && error.code) || '');
-    // Absent is what rollback.js.j2 accepts for a by-Id list read: a 404, or this one ArgumentException 400.
-    if (res.status === 404 || (res.status === 400 && code.includes('-2147024809')
-      && code.includes('System.ArgumentException'))) return { gone: true, why: null };
+    if (absenceOf(res.status, res.body)) return { gone: true, why: null };
     return { gone: null, why: `the read-back that would confirm it ${unanswered(res)}` };
   };
   // Recycles one list by its Id and logs OK only once a by-Id read shows it gone; gone is as listGone's.
@@ -816,7 +828,7 @@
       await recycleList(title, id);
     }
   };
-  log('INFO', 'probe revision ebf8dde0. Quote this when reporting results.');
+  log('INFO', 'probe revision c4896c75. Quote this when reporting results.');
 
   // The parts name the list by title, the form a history write sends and these rows measure; the run's token
   // means no other list holds it, and none can take it between a check and a use.

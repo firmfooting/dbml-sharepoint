@@ -23,14 +23,30 @@
     for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
     return out;
   };
-  // Every answer maskedHead found unanswered, and every write spWrite found refused, so a fixture can tell an
-  // unanswered request, which leaves it open, from a refused write, which is settled.
+  // Every answer maskedHead found unanswered or refused, so a fixture can tell an unanswered request, which
+  // leaves it open, from a refusal, which is settled.
   const UNHEARD = [];
   const REFUSED = [];
+  // Set by an unanswered write and cleared by beginFixture, since an absence after one may be that write unlanded.
+  let writeUnheard = false;
+  // An answer that a thing is not there: a 404, or the absent-field 400 that rollback.js.j2 also accepts.
+  const absenceOf = (status, parsed) => {
+    const error = parsed && typeof parsed === 'object' ? parsed['odata.error'] || parsed.error : null;
+    const code = String((error && error.code) || '');
+    return status === 404 || (status === 400 && code.includes('-2147024809')
+      && code.includes('System.ArgumentException'));
+  };
   // rawHead cuts a response's text short, so the text is masked first and a cut never splits a name unmasked.
-  const maskedHead = (res) => {
+  const maskedHead = (res, write = false) => {
     const head = rawHead({ ...res, text: scrub(res.text) });
-    if (head && head.outcome === 'NOT ESTABLISHED') UNHEARD.push(head.why);
+    if (head && head.outcome === 'NOT ESTABLISHED') {
+      UNHEARD.push(head.why);
+      if (write) writeUnheard = true;
+    } else if (head && head.outcome === 'REFUSED') {
+      if (write || !writeUnheard || !absenceOf(res.status, res.parsed !== undefined ? res.parsed : res.body)) {
+        REFUSED.push(head.why);
+      } else UNHEARD.push(`${head.why}, after a write that went unanswered`);
+    }
     return head;
   };
   // A single-entity read's body when it is a JSON object, or null, so no property is read off anything else.

@@ -215,7 +215,9 @@ const mockFetch = async (url, opts = {}) => {
   if (field) {
     const found = list.fields[field[1]];
     if (!found) {
-      return answer(400, { 'odata.error': { message: { value: 'Column does not exist.' } } });
+      // The absent-field 400 that rollback.js.j2 accepts as absence.
+      return answer(400, { 'odata.error': { code: '-2147024809, System.ArgumentException',
+        message: { value: 'Column does not exist.' } } });
     }
     return answer(200, found);
   }

@@ -209,7 +209,9 @@ _MOCK = textwrap.dedent(r"""
       const field = /^\/fields\/getbyinternalnameortitle\('([^']+)'\)/.exec(rest);
       if (field) {
         return fields[field[1]] ? answer(200, fields[field[1]])
-          : answer(400, { 'odata.error': { message: { value: 'Column does not exist.' } } });
+          // The absent-field 400 that rollback.js.j2 accepts as absence.
+          : answer(400, { 'odata.error': { code: '-2147024809, System.ArgumentException',
+            message: { value: 'Column does not exist.' } } });
       }
       if (rest.startsWith('/RootFolder')) {
         return answer(200, { ServerRelativeUrl: '/sites/probe/Lists/dbmlsp Probe BatchItems' });
@@ -1055,3 +1057,29 @@ def test_a_refused_control_passes_only_once_its_title_is_absent() -> None:
     for row_id in (UNKNOWN, AV_UNKNOWN):
         assert rows[row_id]["outcome"] == "PASS"
         assert "landed no" in rows[row_id]["evidence"]
+
+
+WHO_READ = "getbyinternalnameortitle('ProbeWho')"
+WHEN_READ = "getbyinternalnameortitle('ProbeWhen')"
+WHEN_THROTTLED = {"contains": "/fields", "verb": "POST", "bodyContains": "ProbeWhen", "status": 429,
+                  "text": "busy"}
+
+
+@pytest.mark.parametrize(("rules", "outcome"), [
+    ([WHEN_THROTTLED], "NOT ESTABLISHED"),
+    ([WHEN_THROTTLED, {"contains": WHEN_READ, "status": 404, "text": "Gone."}], "NOT ESTABLISHED"),
+    ([WHEN_THROTTLED, {"contains": WHEN_READ, "status": 400, "text": "Bad request."}], "FAIL"),
+    ([WHEN_THROTTLED, {"contains": WHO_READ, "status": 500, "text": "Refused."}], "FAIL"),
+    ([{"contains": WHO_READ, "status": 404, "text": "Gone."},
+      {"contains": WHEN_READ, "status": 429, "text": "busy"}], "FAIL"),
+    ([{"contains": WHO_READ, "status": 429, "text": "busy"},
+      {"contains": WHEN_READ, "status": 404, "text": "Gone."}], "FAIL"),
+], ids=["absent-400-after-an-unanswered-write", "404-after-an-unanswered-write",
+        "other-400-after-an-unanswered-write", "500-beside-an-unanswered-write",
+        "404-then-an-unanswered-read", "an-unanswered-read-then-404"])
+def test_a_refused_read_beside_an_unanswered_request_is_settled_unless_a_write_caused_it(
+        rules: list[dict[str, Any]], outcome: str) -> None:
+    rows, _, _ = _run(rules=rules)
+
+    assert rows[COLUMNS]["outcome"] == outcome, rows[COLUMNS]
+    assert voided(rows) == (_deps(COLUMNS) if outcome == "FAIL" else set())

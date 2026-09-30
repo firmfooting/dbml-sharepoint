@@ -421,3 +421,24 @@ def test_a_malformed_item_list_control_answer_is_not_established() -> None:
     assert rows[FILTER_CONTROL]["outcome"] == "NOT ESTABLISHED"
     assert "carried entry 1 of its value array as null" in rows[FILTER_CONTROL]["evidence"]
     assert ended_with_report(output)
+
+
+MERGE_THROTTLED = {"contains": "items(1)", "verb": "MERGE", "bodyContains": '"ProbeChoice":"Q2"',
+                   "status": 429, "text": "busy"}
+
+
+def test_a_404_read_before_an_unanswered_write_is_a_settled_refusal() -> None:
+    rows, _, _ = _run(rules=[{"contains": "items(1)?$select=Id,Title,ProbeChoice", "nth": 1,
+                              "status": 404, "text": "Item does not exist."}, MERGE_THROTTLED])
+
+    assert rows[ITEMS]["outcome"] == "FAIL", rows[ITEMS]
+    assert voided(rows) == _deps(ITEMS)
+
+
+def test_a_404_read_after_an_unanswered_write_is_that_write_unanswered() -> None:
+    rows, _, _ = _run(rules=[MERGE_THROTTLED, {"contains": "items(1)?$select=Id,ProbeChoice",
+                                               "status": 404, "text": "Item does not exist."}])
+
+    assert rows[ITEMS]["outcome"] == "NOT ESTABLISHED", rows[ITEMS]
+    assert "after a write that went unanswered" in rows[ITEMS]["evidence"]
+    assert voided(rows) == set()

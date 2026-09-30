@@ -585,8 +585,7 @@
     const res = await fetch(`${WEB}/_api/${path}`, { method: 'POST', body: text, headers: {
       Accept: 'application/json;odata=nometadata', 'X-RequestDigest': await getDigest(), ...extraHeaders } });
     const sent = { ok: res.ok, status: res.status, text: await res.text() };
-    const head = maskedHead(sent);
-    if (head && head.outcome === 'REFUSED') REFUSED.push(head.why);
+    maskedHead(sent, true);
     return sent;
   };
   const answered = (res) => `HTTP ${res.status}`;

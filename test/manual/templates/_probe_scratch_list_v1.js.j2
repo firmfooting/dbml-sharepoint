@@ -44,12 +44,12 @@
   const beginFixture = () => {
     fixtureStart = UNHEARD.length;
     refusedStart = REFUSED.length;
+    writeUnheard = false;
   };
   // A write's answer is noted, so a fixture can tell an unanswered write from a refused one.
   const spWrite = async (...args) => {
     const res = await spPost(...args);
-    const head = maskedHead(res);
-    if (head && head.outcome === 'REFUSED') REFUSED.push(head.why);
+    maskedHead(res, true);
     return res;
   };
   // establishFixture, except that a fixture any of whose requests since beginFixture went unanswered is left
@@ -71,7 +71,7 @@
     const held = await establishFixture(id, heard, declared, dependents);
     const restore = () => earlier.forEach((was) => Object.assign(RESULTS.find((r) => r.id === was.id), was));
     if (held) return true;
-    // A refused write is a settled answer, so it keeps the FAIL even beside a request that went unanswered.
+    // A refusal is a settled answer, so it keeps the FAIL even beside a request that went unanswered.
     if (UNHEARD.length === start || REFUSED.length > refusedFrom) {
       restore();
       return false;
@@ -98,11 +98,7 @@
       return { gone: null, why: `the read-back never answered (${scrub(String((err && err.message) || err))})` };
     }
     if (res.ok) return { gone: false, why: `it still reads back by its Id (HTTP ${res.status})` };
-    const error = res.body && typeof res.body === 'object' ? res.body['odata.error'] || res.body.error : null;
-    const code = String((error && error.code) || '');
-    // Absent is what rollback.js.j2 accepts for a by-Id list read: a 404, or this one ArgumentException 400.
-    if (res.status === 404 || (res.status === 400 && code.includes('-2147024809')
-      && code.includes('System.ArgumentException'))) return { gone: true, why: null };
+    if (absenceOf(res.status, res.body)) return { gone: true, why: null };
     return { gone: null, why: `the read-back that would confirm it ${unanswered(res)}` };
   };
   // Recycles one list by its Id and logs OK only once a by-Id read shows it gone; gone is as listGone's.
