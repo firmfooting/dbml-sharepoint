@@ -641,11 +641,27 @@ def test_a_single_create_that_does_not_land_voids_every_batch_row() -> None:
     assert _batches(sent) == []
 
 
-def test_an_items_read_back_that_fails_says_so_rather_than_guessing() -> None:
-    rows, _, _ = _run(rules=[{"contains": "items?$select=Id,Title", "status": 500, "text": "no"}])
+@pytest.mark.parametrize(("status", "said"), [(500, "HTTP 500: no"), (429, "the request ")])
+def test_an_items_read_back_that_fails_leaves_every_row_it_informs_open(
+        status: int, said: str) -> None:
+    rows, _, _ = _run(rules=[{"contains": "items?$select=Id,Title", "status": status,
+                              "text": "no"}])
 
     assert "landed A unknown" in rows[PARTS]["evidence"]
-    assert "the items read-back failed: HTTP 500: no" in rows[PARTS]["evidence"]
+    assert f"the items read-back failed: {said}" in rows[PARTS]["evidence"]
+    for row_id in (*OBSERVED, AV_FAILED, *ADDVALIDATED):
+        assert rows[row_id]["state"] == "open", rows[row_id]
+    # The part's own answer still heads the row; only its state waits for a read of what landed.
+    assert rows[VERBOSE]["outcome"] == "PART ANSWERED 2XX"
+
+
+def test_a_single_create_whose_read_back_carried_no_json_leaves_the_batch_rows_open() -> None:
+    rows, sent, _ = _run(rules=[{"contains": f"{CREATED_ID}')/items(1)", "status": 200,
+                                 "text": "not json"}])
+
+    assert rows[SINGLE]["outcome"] == "NOT ESTABLISHED"
+    assert voided(rows) == set()
+    assert _batches(sent) == []
 
 
 def test_a_foreign_list_holding_the_title_is_never_written_to() -> None:
@@ -709,6 +725,12 @@ def test_the_evidence_never_names_the_tenant() -> None:
     pytest.param({"contains": f"{CREATED_ID}')/items(6)", "status": 503, "text": "busy"},
                  "NOT ESTABLISHED", "created Id 6; the read-back: the request ",
                  id="read-back-throttled"),
+    pytest.param({"contains": f"{CREATED_ID}')/items(6)", "status": 200, "text": "not json"},
+                 "NOT ESTABLISHED", "created Id 6; the read-back answered HTTP 200 with no JSON",
+                 id="read-back-no-json"),
+    pytest.param({"contains": "/RootFolder", "status": 200, "text": "not json"},
+                 "NOT ESTABLISHED", "the root folder read: HTTP 200 carried no ServerRelativeUrl",
+                 id="root-no-json"),
     pytest.param({"contains": f"{CREATED_ID}')/items(6)", "status": 200,
                   "text": '{"Id": 6, "Title": "another title"}'},
                  "FAIL", 'created Id 6; it reads back Title "another title"', id="other-title"),

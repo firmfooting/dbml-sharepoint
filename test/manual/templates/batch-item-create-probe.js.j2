@@ -67,7 +67,8 @@
  *
  * HOW TO READ IT: PART ANSWERED 2XX and PART REFUSED are what one part's status
  * line said, beside whether its item exists afterwards; a part throttled or not
- * authorised is NOT ESTABLISHED, left open. OUTER REQUEST REFUSED
+ * authorised is NOT ESTABLISHED, left open, and any row whose items read (which
+ * says what landed) went unanswered keeps its head and is left open. OUTER REQUEST REFUSED
  * is the whole $batch refused, and its text says why. ANSWERS NOT MATCHED, left
  * open, is a $batch whose answers cannot be matched to its parts: their count
  * differs from the parts sent, an AddValidate answer names other fields than
@@ -396,8 +397,10 @@
     const back = madeId === null ? null : await sendRaw(`${listPath}/items(${madeId})?$select=Id,Title`);
     const backHead = back === null ? null : headOf(back);
     const singleHeld = back !== null && !backHead && back.parsed && back.parsed.Title === TITLES.single;
-    const singleOutcome = singleHeld ? 'PASS'
-      : [madeHead, backHead].some((h) => h && h.outcome === 'NOT ESTABLISHED') ? 'NOT ESTABLISHED' : 'FAIL';
+    // A read-back answered 2xx with no JSON says nothing about the Title, so it leaves the control open.
+    const backUnread = back !== null && !backHead && !(back.parsed && typeof back.parsed === 'object');
+    const singleOutcome = singleHeld ? 'PASS' : backUnread
+      || [madeHead, backHead].some((h) => h && h.outcome === 'NOT ESTABLISHED') ? 'NOT ESTABLISHED' : 'FAIL';
     record(SINGLE, Q.single, singleOutcome, madeHead ? `the create: ${madeHead.why}`
       : madeId === null ? `the create answered HTTP ${made.status} with no Id: ${said(made.text)}`
         : backHead ? `created Id ${madeId}; the read-back: ${backHead.why}`
@@ -447,7 +450,9 @@
       const root = await sendRaw(`${listPath}/RootFolder?$select=ServerRelativeUrl`);
       const rootHead = headOf(root);
       if (rootHead || !root.parsed || typeof root.parsed.ServerRelativeUrl !== 'string') {
-        return { outcome: rootHead ? headOutcome(rootHead) : 'FAIL', folder: null, evidence: 'the root folder '
+        // A 2xx with no JSON settles nothing; JSON without the URL is an answer.
+        const outcome = rootHead ? headOutcome(rootHead) : root.parsed ? 'FAIL' : 'NOT ESTABLISHED';
+        return { outcome, folder: null, evidence: 'the root folder '
           + `read: ${rootHead ? rootHead.why : `HTTP ${root.status} carried no ServerRelativeUrl`}` };
       }
       const folder = `${new URL(WEB).origin}${root.parsed.ServerRelativeUrl}`;
@@ -467,7 +472,11 @@
       const backHead = headOf(back);
       if (backHead) return { outcome: headOutcome(backHead), folder, evidence: `created Id ${madeAt}; the `
         + `read-back: ${backHead.why}` };
-      const title = back.parsed ? back.parsed.Title : undefined;
+      if (!back.parsed || typeof back.parsed !== 'object') {
+        return { outcome: 'NOT ESTABLISHED', folder, evidence: `created Id ${madeAt}; the read-back answered `
+          + `HTTP ${back.status} with no JSON: ${said(back.text)}` };
+      }
+      const title = back.parsed.Title;
       return { outcome: title === TITLES.addvalidate ? 'PASS' : 'FAIL', folder,
         evidence: `created Id ${madeAt}; it reads back Title ${JSON.stringify(title)}` };
     };
@@ -509,6 +518,8 @@
     const landed = (title) => (present === null ? 'unknown' : present.has(title) ? 'yes' : 'no');
     const titlesSaid = present === null ? `; the items read-back failed: ${titlesHead ? titlesHead.why
       : `HTTP ${titles.status} carried no rows`}` : '';
+    // A row that reports whether items landed stays open when the read that would say so failed.
+    const landing = present === null ? 'open' : undefined;
 
     const threeHead = outerHead(three);
     // Matched by the Title each answer names, since no document says the answers come back in part order.
@@ -527,7 +538,7 @@
       record('transport.batch.changeset-item-creates-per-part', Q.parts, threeHead ? threeHead.outcome : 'RECORDED',
         threeHead ? threeHead.why : `outer HTTP ${three.status}, ${three.parts.length} part answer(s) matched by `
           + `Title: ${[0, 1, 2].map((k) => `part ${k + 1} (answer ${threeMatch.answerOf[k] + 1}): `
-            + partSaid(threeAnswer(k))).join(' | ')}${inferredSaid}; ${threeLanded}`);
+            + partSaid(threeAnswer(k))).join(' | ')}${inferredSaid}; ${threeLanded}`, threeHead ? undefined : landing);
     }
 
     if (refusedOutcome === 'FAIL') {
@@ -544,7 +555,7 @@
         threeHead ? threeHead.outcome : partHead(middle),
         threeHead ? threeHead.why : `answer ${threeMatch.answerOf[1] + 1}: ${partSaid(middle)}${inferredSaid}; `
           + `landed B ${landed(TITLES.b)}; neighbours landed A ${landed(TITLES.a)}, C ${landed(TITLES.c)}`
-          + titlesSaid);
+          + titlesSaid, threeHead ? undefined : landing);
     }
 
     for (const [id, question, batch, title] of [
@@ -560,7 +571,7 @@
         continue;
       }
       record(id, question, head ? head.outcome : partHead(batch.parts[0]), head ? head.why
-        : `${partSaid(batch.parts[0])}; landed ${landed(title)}${titlesSaid}`);
+        : `${partSaid(batch.parts[0])}; landed ${landed(title)}${titlesSaid}`, head ? undefined : landing);
     }
 
     if (control.outcome === 'FAIL') {
@@ -638,7 +649,7 @@
         if (one.id === AV_FAILED) {
           const missing = fields !== null && fields.some((f) => f.FieldName === MISSING && f.HasException === true);
           record(AV_FAILED, Q.avfailed, ok2xx(part.status) ? (missing ? 'FIELD REFUSED' : 'PART ANSWERED 2XX')
-            : partHead(part), `${answer}; neighbours landed ${neighbours}${titlesSaid}`);
+            : partHead(part), `${answer}; neighbours landed ${neighbours}${titlesSaid}`, landing);
           return;
         }
         const why = !ok2xx(part.status) ? (isRefusal(part.status) ? 'the write was refused'
