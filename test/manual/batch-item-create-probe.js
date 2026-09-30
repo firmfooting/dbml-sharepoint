@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: d7619e80
+ * REVISION: 84daa1c1
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -72,7 +72,7 @@
  * is the whole $batch refused, and its text says why. ANSWERS NOT MATCHED, left
  * open, is a $batch whose answers cannot be matched to its parts: their count
  * differs from the parts sent, an AddValidate answer names other fields than
- * its part sent, or the three typed creates' answers cannot be paired with
+ * its part sent, more than one AddValidate answer carries no per-field list, or the three typed creates' answers cannot be paired with
  * their parts by the Title each names (one answer naming no Title is paired
  * with the one part left, and the evidence says so). FIELD REFUSED is a 2xx
  * AddValidate answer with HasException on the missing column. Any other
@@ -669,7 +669,7 @@
       await recycleList(title, id);
     }
   };
-  log('INFO', 'probe revision d7619e80. Quote this when reporting results.');
+  log('INFO', 'probe revision 84daa1c1. Quote this when reporting results.');
 
   // The parts name the list by title, the form a history write sends and these rows measure, so the title
   // carries a token unique to the run: no other list holds it, and none can take it between a check and a use.
@@ -869,6 +869,10 @@
   // one per part in order. `names[i]`, when given, are the fields part i sent, which an answer's field list must name.
   const unmatched = (batch, names = null) => {
     if (batch.parts.length !== batch.sent) return `${batch.sent} part(s) sent, ${batch.parts.length} answer(s)`;
+    // An answer with no per-field list names no fields, so only one such answer can be placed, by elimination.
+    const fieldless = names === null ? 0
+      : batch.parts.filter((part) => fieldsOf(parsedOf(part.body)) === null).length;
+    if (fieldless > 1) return `${fieldless} answers carry no per-field list, so which part each answers is unknown`;
     const differ = (names || []).map((sent, i) => {
       const fields = fieldsOf(parsedOf(batch.parts[i].body));
       if (fields === null) return null;

@@ -917,3 +917,17 @@ def test_each_run_names_its_list_with_a_title_no_other_run_uses() -> None:
         # The space stays, so the parts still send it as %20 (ruling D18 in the watch-flow plans).
         assert re.fullmatch(r"dbmlsp Probe BatchItems [a-z0-9]{6,}", title), title
     assert titles[0] != titles[1]
+
+
+def test_two_addvalidate_answers_with_no_field_list_leave_every_addvalidate_row_unmatched() -> None:
+    rows, _, _ = _run(partRules=[
+        {"bodyContains": "addvalidate part missing column", "status": 400, "reason": "Bad Request",
+         "text": NO_COLUMN},
+        {"bodyContains": "addvalidate claims", "status": 429, "reason": "Too Many Requests",
+         "text": "busy"}])
+
+    for row_id in (AV_FAILED, *ADDVALIDATED):
+        assert rows[row_id]["outcome"] == "ANSWERS NOT MATCHED", rows[row_id]
+        assert rows[row_id]["state"] == "open"
+        assert "2 answers carry no per-field list" in rows[row_id]["evidence"]
+
