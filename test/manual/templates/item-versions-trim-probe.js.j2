@@ -131,6 +131,7 @@
   };
 
   try {
+    await learnIdentity();
     const list = await claimScratchList({ id: 'field.version.fixture-trim-list', question: Q.list,
       title: LIST, description: OWNERSHIP, dependents: AFTER_LIST,
       settings: { EnableVersioning: true, MajorVersionLimit: ASKED_LIMIT },
@@ -160,7 +161,7 @@
         return;
       }
       const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title`);
-      const head = rawHead(read);
+      const head = maskedHead(read);
       const title = !head && read.parsed && typeof read.parsed === 'object' ? read.parsed.Title : undefined;
       if (title !== titleOf(n)) {
         missed.push(`${what}: HTTP ${sent.status}, but ${head ? `the read-back ${scrub(head.why)}`
@@ -199,7 +200,7 @@
       const body = { Written: written, Missed: shown || 'none' };
       if (itemId === null) return { ok: true, status: 200, body };
       const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title`);
-      const head = rawHead(read);
+      const head = maskedHead(read);
       body.Title = head ? scrub(head.why) : read.parsed && typeof read.parsed === 'object' ? read.parsed.Title
         : `no JSON: ${said(read.text)}`;
       return { ok: true, status: 200, body };

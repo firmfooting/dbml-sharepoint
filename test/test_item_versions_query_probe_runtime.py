@@ -352,3 +352,11 @@ def test_a_plain_read_repeating_a_versionid_voids_the_option_rows() -> None:
     assert rows[READ]["outcome"] == "FAIL"
     assert voided(rows) == _deps(READ)
     assert "none repeated" in rows[FILTER]["evidence"]
+
+
+def test_a_refusal_naming_this_account_by_display_name_is_masked() -> None:
+    rows, _, output = _run(rules=[{"contains": "/versions?$filter", "status": 400,
+                                   "text": "Refused while Ada Probe holds the item."}])
+
+    assert "HTTP 400: Refused while <name> holds the item." in rows[FILTER]["evidence"]
+    assert "Ada Probe" not in output.split("__SENT__")[0]

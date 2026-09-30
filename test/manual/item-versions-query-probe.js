@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: 60f911ff
+ * REVISION: 777c9458
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -455,13 +455,29 @@
   const pattern = ({ text, whole }) => (whole
     ? new RegExp(`(?<![\\p{L}\\p{N}_])${literal(text)}(?![\\p{L}\\p{N}_])`, 'giu')
     : new RegExp(literal(text), 'gi'));
-  // Logins and emails the probe never learned are masked too; a match stops at a backslash so JSON escapes survive.
+  // Logins and emails go first, even ones never learned, so a display name inside one cannot break it up.
+  // A match stops at a backslash so JSON escapes survive.
   const scrub = (value) => {
-    let out = redactTenant(value);
-    for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
-    return out
+    let out = redactTenant(value)
       .replace(/(i:0[^|\s'"]*\|([^|\s'"]+\|)?)[^\s'"|\\]+/gi, '$1<account>')
       .replace(/[^\s'"|:<>\\]+@[^\s'"<>\\]+/gi, '<account>');
+    for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
+    return out;
+  };
+  // rawHead cuts a response's text short, so the text is masked first and a cut never splits a name unmasked.
+  const maskedHead = (res) => rawHead({ ...res, text: scrub(res.text) });
+  // For a probe with no current-user fixture: learns this account so its display name is masked too.
+  const learnIdentity = async () => {
+    const read = await sendRaw('web/currentuser?$select=Email,LoginName,Title');
+    if (read.ok && read.parsed && typeof read.parsed === 'object') {
+      knowIdentity(read.parsed.Email, '<account>');
+      knowIdentity(read.parsed.LoginName, '<account>');
+      knowIdentity(read.parsed.Title, '<name>', true);
+      return;
+    }
+    const head = maskedHead(read);
+    log('INFO', `this account did not read back (${head ? head.why : `HTTP ${read.status} carried no JSON`}), `
+      + 'so a display name in an answer is not masked; logins and emails still are.');
   };
   // ---- Scratch lists (v1) ---------------------------------------------
   // Lists this run created, by title and Id, so the recycle touches those and never a list it only found.
@@ -621,7 +637,7 @@
   // One read of an item's versions; `rows` is the value array, or null when the answer carried none.
   const readVersions = async (listPath, itemId, query = '') => {
     const res = await sendRaw(`${listPath}/items(${itemId})/versions${query ? `?${query}` : ''}`);
-    const head = rawHead(res);
+    const head = maskedHead(res);
     const rows = !head && res.parsed && Array.isArray(res.parsed.value) ? res.parsed.value : null;
     return { res, head, rows, next: head ? null : continuationOf(res.parsed) };
   };
@@ -655,7 +671,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 60f911ff. Quote this when reporting results.');
+  log('INFO', 'probe revision 777c9458. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsQuery');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
@@ -711,6 +727,7 @@
   const said = (res) => scrub(res.text).slice(0, 400);
 
   try {
+    await learnIdentity();
     const list = await claimScratchList({ id: 'query.odata.fixture-versions-query-list', question: Q.list,
       title: LIST, description: OWNERSHIP, dependents: AFTER_LIST, settings: { EnableVersioning: true },
       declared: { EnableVersioning: true,
@@ -736,7 +753,7 @@
         return false;
       }
       const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title,${CHOICE}`);
-      const head = rawHead(read);
+      const head = maskedHead(read);
       const got = !head && read.parsed && typeof read.parsed === 'object' ? read.parsed : null;
       const off = got === null ? null : Object.keys(want).filter((key) => got[key] !== want[key]);
       if (got !== null && off.length === 0) {
@@ -768,7 +785,7 @@
       for (const key of ['A', 'B']) {
         if (ids[key] === undefined) continue;
         const read = await sendRaw(`${listPath}/items(${ids[key]})?$select=Id,${CHOICE}`);
-        const head = rawHead(read);
+        const head = maskedHead(read);
         body[`${key}.${CHOICE}`] = head ? scrub(head.why)
           : read.parsed && typeof read.parsed === 'object' ? read.parsed[CHOICE] : `no JSON: ${said(read)}`;
       }
@@ -826,7 +843,7 @@
     // What the item-list controls serve decides which option rows are asked at all.
     const controlOf = async (id, question, query, want) => {
       const res = await sendRaw(`${listPath}/items?$select=Id&${query}`);
-      const head = rawHead(res);
+      const head = maskedHead(res);
       const rows = !head && res.parsed && Array.isArray(res.parsed.value) ? res.parsed.value : null;
       const served = rows === null ? null : rows.map((row) => row.Id);
       // A 2xx with no rows is not an answer about the option, so it is left open like a throttle.

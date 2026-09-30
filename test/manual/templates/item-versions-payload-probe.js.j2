@@ -247,7 +247,7 @@
   // A read keeps its answer, so a refused read is never mistaken for a missing object.
   const readBack = async (path) => {
     const res = await sendRaw(path);
-    const head = rawHead(res);
+    const head = maskedHead(res);
     const parsed = !head && res.parsed && typeof res.parsed === 'object' ? res.parsed : null;
     return { parsed, read: head ? scrub(head.why) : parsed ? `HTTP ${res.status}`
       : `HTTP ${res.status} carried no JSON: ${scrub(res.text).slice(0, 400)}` };

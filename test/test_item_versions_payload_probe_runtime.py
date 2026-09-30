@@ -511,7 +511,8 @@ def test_a_read_after_the_upload_without_the_choice_fails_the_fixture_not_the_va
                  "set A: HTTP 400: Invalid data for <account>", id="item-merge"),
     pytest.param({"contains": "/fields", "verb": "POST", "bodyContains": "ProbeFlag", "status": 500,
                   "text": "Refused for i:0#.f|membership|ada@example.com"},
-                 "create ProbeFlag: HTTP 500 Refused for <account>", id="column-create"),
+                 "create ProbeFlag: HTTP 500 Refused for i:0#.f|membership|<account>",
+                 id="column-create"),
 ])
 def test_a_refusal_quoting_an_account_is_masked_everywhere_it_is_printed(
         rule: dict[str, Any], quoted: str) -> None:

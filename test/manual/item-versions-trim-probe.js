@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: c3ef2c42
+ * REVISION: 9da67095
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -448,13 +448,29 @@
   const pattern = ({ text, whole }) => (whole
     ? new RegExp(`(?<![\\p{L}\\p{N}_])${literal(text)}(?![\\p{L}\\p{N}_])`, 'giu')
     : new RegExp(literal(text), 'gi'));
-  // Logins and emails the probe never learned are masked too; a match stops at a backslash so JSON escapes survive.
+  // Logins and emails go first, even ones never learned, so a display name inside one cannot break it up.
+  // A match stops at a backslash so JSON escapes survive.
   const scrub = (value) => {
-    let out = redactTenant(value);
-    for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
-    return out
+    let out = redactTenant(value)
       .replace(/(i:0[^|\s'"]*\|([^|\s'"]+\|)?)[^\s'"|\\]+/gi, '$1<account>')
       .replace(/[^\s'"|:<>\\]+@[^\s'"<>\\]+/gi, '<account>');
+    for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
+    return out;
+  };
+  // rawHead cuts a response's text short, so the text is masked first and a cut never splits a name unmasked.
+  const maskedHead = (res) => rawHead({ ...res, text: scrub(res.text) });
+  // For a probe with no current-user fixture: learns this account so its display name is masked too.
+  const learnIdentity = async () => {
+    const read = await sendRaw('web/currentuser?$select=Email,LoginName,Title');
+    if (read.ok && read.parsed && typeof read.parsed === 'object') {
+      knowIdentity(read.parsed.Email, '<account>');
+      knowIdentity(read.parsed.LoginName, '<account>');
+      knowIdentity(read.parsed.Title, '<name>', true);
+      return;
+    }
+    const head = maskedHead(read);
+    log('INFO', `this account did not read back (${head ? head.why : `HTTP ${read.status} carried no JSON`}), `
+      + 'so a display name in an answer is not masked; logins and emails still are.');
   };
   // ---- Scratch lists (v1) ---------------------------------------------
   // Lists this run created, by title and Id, so the recycle touches those and never a list it only found.
@@ -614,7 +630,7 @@
   // One read of an item's versions; `rows` is the value array, or null when the answer carried none.
   const readVersions = async (listPath, itemId, query = '') => {
     const res = await sendRaw(`${listPath}/items(${itemId})/versions${query ? `?${query}` : ''}`);
-    const head = rawHead(res);
+    const head = maskedHead(res);
     const rows = !head && res.parsed && Array.isArray(res.parsed.value) ? res.parsed.value : null;
     return { res, head, rows, next: head ? null : continuationOf(res.parsed) };
   };
@@ -648,7 +664,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision c3ef2c42. Quote this when reporting results.');
+  log('INFO', 'probe revision 9da67095. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsTrim');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
@@ -725,6 +741,7 @@
   };
 
   try {
+    await learnIdentity();
     const list = await claimScratchList({ id: 'field.version.fixture-trim-list', question: Q.list,
       title: LIST, description: OWNERSHIP, dependents: AFTER_LIST,
       settings: { EnableVersioning: true, MajorVersionLimit: ASKED_LIMIT },
@@ -754,7 +771,7 @@
         return;
       }
       const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title`);
-      const head = rawHead(read);
+      const head = maskedHead(read);
       const title = !head && read.parsed && typeof read.parsed === 'object' ? read.parsed.Title : undefined;
       if (title !== titleOf(n)) {
         missed.push(`${what}: HTTP ${sent.status}, but ${head ? `the read-back ${scrub(head.why)}`
@@ -793,7 +810,7 @@
       const body = { Written: written, Missed: shown || 'none' };
       if (itemId === null) return { ok: true, status: 200, body };
       const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title`);
-      const head = rawHead(read);
+      const head = maskedHead(read);
       body.Title = head ? scrub(head.why) : read.parsed && typeof read.parsed === 'object' ? read.parsed.Title
         : `no JSON: ${said(read.text)}`;
       return { ok: true, status: 200, body };

@@ -347,3 +347,21 @@ def test_a_versions_answer_listing_a_version_no_write_created_is_not_called_trim
         assert rows[row_id]["state"] == "settled"
         assert "VersionId 9728 answered, which no write was seen to create" in (
             rows[row_id]["evidence"])
+
+
+def test_a_refusal_naming_this_account_by_display_name_is_masked() -> None:
+    rows, _, output = _run(rules=[{"contains": "/versions", "after": WRITE_READS, "status": 500,
+                                   "text": "Locked by Ada Probe."}])
+
+    assert "HTTP 500: Locked by <name>." in rows[ONCE]["evidence"]
+    assert "Ada Probe" not in output.split("__SENT__")[0]
+
+
+def test_an_account_that_does_not_read_back_is_said_and_the_run_goes_on() -> None:
+    rows, _, output = _run(trimToLimit=True, rules=[{"contains": "web/currentuser", "status": 503,
+                                                     "text": "busy"}])
+
+    assert "this account did not read back (the request was throttled (HTTP 503): busy)" in output
+    assert "a display name in an answer is not masked" in output
+    assert rows[ONCE]["outcome"] == "TRIMMED"
+    assert ended_with_report(output)

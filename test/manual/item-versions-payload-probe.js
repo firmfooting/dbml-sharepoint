@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: f95dd491
+ * REVISION: bad8ef71
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -482,13 +482,29 @@
   const pattern = ({ text, whole }) => (whole
     ? new RegExp(`(?<![\\p{L}\\p{N}_])${literal(text)}(?![\\p{L}\\p{N}_])`, 'giu')
     : new RegExp(literal(text), 'gi'));
-  // Logins and emails the probe never learned are masked too; a match stops at a backslash so JSON escapes survive.
+  // Logins and emails go first, even ones never learned, so a display name inside one cannot break it up.
+  // A match stops at a backslash so JSON escapes survive.
   const scrub = (value) => {
-    let out = redactTenant(value);
-    for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
-    return out
+    let out = redactTenant(value)
       .replace(/(i:0[^|\s'"]*\|([^|\s'"]+\|)?)[^\s'"|\\]+/gi, '$1<account>')
       .replace(/[^\s'"|:<>\\]+@[^\s'"<>\\]+/gi, '<account>');
+    for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
+    return out;
+  };
+  // rawHead cuts a response's text short, so the text is masked first and a cut never splits a name unmasked.
+  const maskedHead = (res) => rawHead({ ...res, text: scrub(res.text) });
+  // For a probe with no current-user fixture: learns this account so its display name is masked too.
+  const learnIdentity = async () => {
+    const read = await sendRaw('web/currentuser?$select=Email,LoginName,Title');
+    if (read.ok && read.parsed && typeof read.parsed === 'object') {
+      knowIdentity(read.parsed.Email, '<account>');
+      knowIdentity(read.parsed.LoginName, '<account>');
+      knowIdentity(read.parsed.Title, '<name>', true);
+      return;
+    }
+    const head = maskedHead(read);
+    log('INFO', `this account did not read back (${head ? head.why : `HTTP ${read.status} carried no JSON`}), `
+      + 'so a display name in an answer is not masked; logins and emails still are.');
   };
   // ---- Scratch lists (v1) ---------------------------------------------
   // Lists this run created, by title and Id, so the recycle touches those and never a list it only found.
@@ -648,7 +664,7 @@
   // One read of an item's versions; `rows` is the value array, or null when the answer carried none.
   const readVersions = async (listPath, itemId, query = '') => {
     const res = await sendRaw(`${listPath}/items(${itemId})/versions${query ? `?${query}` : ''}`);
-    const head = rawHead(res);
+    const head = maskedHead(res);
     const rows = !head && res.parsed && Array.isArray(res.parsed.value) ? res.parsed.value : null;
     return { res, head, rows, next: head ? null : continuationOf(res.parsed) };
   };
@@ -682,7 +698,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision f95dd491. Quote this when reporting results.');
+  log('INFO', 'probe revision bad8ef71. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe Versions');
   const TARGET = runTitle('dbmlsp Probe VersionsTarget');
@@ -841,7 +857,7 @@
   // A read keeps its answer, so a refused read is never mistaken for a missing object.
   const readBack = async (path) => {
     const res = await sendRaw(path);
-    const head = rawHead(res);
+    const head = maskedHead(res);
     const parsed = !head && res.parsed && typeof res.parsed === 'object' ? res.parsed : null;
     return { parsed, read: head ? scrub(head.why) : parsed ? `HTTP ${res.status}`
       : `HTTP ${res.status} carried no JSON: ${scrub(res.text).slice(0, 400)}` };

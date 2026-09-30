@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: 50199aae
+ * REVISION: e24882b6
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -497,13 +497,29 @@
   const pattern = ({ text, whole }) => (whole
     ? new RegExp(`(?<![\\p{L}\\p{N}_])${literal(text)}(?![\\p{L}\\p{N}_])`, 'giu')
     : new RegExp(literal(text), 'gi'));
-  // Logins and emails the probe never learned are masked too; a match stops at a backslash so JSON escapes survive.
+  // Logins and emails go first, even ones never learned, so a display name inside one cannot break it up.
+  // A match stops at a backslash so JSON escapes survive.
   const scrub = (value) => {
-    let out = redactTenant(value);
-    for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
-    return out
+    let out = redactTenant(value)
       .replace(/(i:0[^|\s'"]*\|([^|\s'"]+\|)?)[^\s'"|\\]+/gi, '$1<account>')
       .replace(/[^\s'"|:<>\\]+@[^\s'"<>\\]+/gi, '<account>');
+    for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
+    return out;
+  };
+  // rawHead cuts a response's text short, so the text is masked first and a cut never splits a name unmasked.
+  const maskedHead = (res) => rawHead({ ...res, text: scrub(res.text) });
+  // For a probe with no current-user fixture: learns this account so its display name is masked too.
+  const learnIdentity = async () => {
+    const read = await sendRaw('web/currentuser?$select=Email,LoginName,Title');
+    if (read.ok && read.parsed && typeof read.parsed === 'object') {
+      knowIdentity(read.parsed.Email, '<account>');
+      knowIdentity(read.parsed.LoginName, '<account>');
+      knowIdentity(read.parsed.Title, '<name>', true);
+      return;
+    }
+    const head = maskedHead(read);
+    log('INFO', `this account did not read back (${head ? head.why : `HTTP ${read.status} carried no JSON`}), `
+      + 'so a display name in an answer is not masked; logins and emails still are.');
   };
   // ---- Scratch lists (v1) ---------------------------------------------
   // Lists this run created, by title and Id, so the recycle touches those and never a list it only found.
@@ -652,7 +668,7 @@
       await recycleList(title, id);
     }
   };
-  log('INFO', 'probe revision 50199aae. Quote this when reporting results.');
+  log('INFO', 'probe revision e24882b6. Quote this when reporting results.');
 
   // The parts name the list by title, the form a history write sends and these rows measure; the run's token
   // means no other list holds it, and none can take it between a check and a use.
@@ -743,12 +759,6 @@
 
   const said = (text) => scrub(text).slice(0, 300);
   const ok2xx = (status) => status >= 200 && status < 300;
-  // rawHead masks only the tenant, and a refusal can quote an account.
-  const headOf = (res) => {
-    const head = rawHead(res);
-    return head && { outcome: head.outcome, why: scrub(head.why) };
-  };
-
   // Each part's status line, headers and body, read line by line so a nested ChangeSet answer is walked too.
   const batchParts = (text) => {
     const parts = [];
@@ -797,7 +807,7 @@
   const sendChangeSet = async (ops) => {
     // The parts name the list by title, as a history write does, so that title must still name this run's list.
     const named = await sendRaw(`web/lists/getbytitle('${LIST}')?$select=Id,Title`);
-    const namedHead = rawHead(named);
+    const namedHead = maskedHead(named);
     const namedId = !namedHead && named.parsed && typeof named.parsed === 'object' ? guidOf(named.parsed.Id) : null;
     if (namedId === null || namedId !== claimed) {
       return { ok: false, status: null, parts: [], sent: ops.length, text: `not sent: the title read `
@@ -900,7 +910,7 @@
   try {
     const userHeld = await establishFixture(USER, async () => {
       const read = await sendRaw('web/currentuser?$select=Id,Email,LoginName,Title');
-      const head = headOf(read);
+      const head = maskedHead(read);
       if (head || !read.parsed) {
         return { ok: true, status: 200, body: { Read: head ? head.why : `HTTP ${read.status} carried no JSON` } };
       }
@@ -944,7 +954,7 @@
       for (const name of [WHO, WHEN]) {
         // The whole field is read, as datetime-sentinel-probe does, since $select of a subtype property can 400.
         const read = await sendRaw(`${listPath}/fields/getbyinternalnameortitle('${name}')`);
-        const head = headOf(read);
+        const head = maskedHead(read);
         body[`${name}.Read`] = head ? head.why : `HTTP ${read.status}`;
         if (!head && read.parsed) body[`${name}.TypeAsString`] = read.parsed.TypeAsString;
         if (!head && read.parsed && name === WHEN) body[`${name}.DisplayFormat`] = read.parsed.DisplayFormat;
@@ -957,10 +967,10 @@
     [CLAIMS, ISO]);
 
     const made = await single(typed(TITLES.single));
-    const madeHead = headOf(made);
+    const madeHead = maskedHead(made);
     const madeId = !madeHead && made.parsed && Number.isInteger(made.parsed.Id) ? made.parsed.Id : null;
     const back = madeId === null ? null : await sendRaw(`${listPath}/items(${madeId})?$select=Id,Title`);
-    const backHead = back === null ? null : headOf(back);
+    const backHead = back === null ? null : maskedHead(back);
     const singleHeld = back !== null && !backHead && back.parsed && back.parsed.Title === TITLES.single;
     // A read-back answered 2xx with no JSON says nothing about the Title, so it leaves the control open.
     const backUnread = back !== null && !backHead && !(back.parsed && typeof back.parsed === 'object');
@@ -1013,7 +1023,7 @@
     // The control: Learn's form, sent alone, with the list's root folder as an absolute FolderPath.
     const addValidateControl = async () => {
       const root = await sendRaw(`${listPath}/RootFolder?$select=ServerRelativeUrl`);
-      const rootHead = headOf(root);
+      const rootHead = maskedHead(root);
       if (rootHead || !root.parsed || typeof root.parsed.ServerRelativeUrl !== 'string') {
         // A 2xx with no JSON settles nothing; JSON without the URL is an answer.
         const outcome = rootHead ? headOutcome(rootHead) : root.parsed ? 'FAIL' : 'NOT ESTABLISHED';
@@ -1024,7 +1034,7 @@
       const sent = await sendRaw(`${listPath}/AddValidateUpdateItemUsingPath`, { method: 'POST',
         headers: { 'Content-Type': NOMETADATA, 'X-RequestDigest': await getDigest() },
         body: addValidateBody(folder, { Title: TITLES.addvalidate }) });
-      const head = headOf(sent);
+      const head = maskedHead(sent);
       if (head) return { outcome: headOutcome(head), folder, evidence: `the call: ${head.why}` };
       const fields = fieldsOf(sent.parsed);
       const idField = fields ? fields.find((f) => f.FieldName === 'Id') : null;
@@ -1034,7 +1044,7 @@
           + `${scrub(sent.text).slice(0, 400)}` };
       }
       const back = await sendRaw(`${listPath}/items(${madeAt})?$select=Id,Title`);
-      const backHead = headOf(back);
+      const backHead = maskedHead(back);
       if (backHead) return { outcome: headOutcome(backHead), folder, evidence: `created Id ${madeAt}; the `
         + `read-back: ${backHead.why}` };
       if (!back.parsed || typeof back.parsed !== 'object') {
@@ -1052,7 +1062,7 @@
       const sent = await sendRaw(`${listPath}/AddValidateUpdateItemUsingPath`, { method: 'POST',
         headers: { 'Content-Type': NOMETADATA, 'X-RequestDigest': await getDigest() },
         body: addValidateBody(control.folder, { Title: TITLES.avunknown, [MISSING]: 'x' }) });
-      const head = headOf(sent);
+      const head = maskedHead(sent);
       const fields = head ? null : fieldsOf(sent.parsed);
       const fieldRefused = fields !== null && fields.some((f) => f.FieldName === MISSING && f.HasException === true);
       avUnknown = head ? (head.outcome === 'NOT ESTABLISHED' ? 'NOT ESTABLISHED' : 'PASS')
@@ -1077,7 +1087,7 @@
 
     const select = columnsHeld ? `Id,Title,${WHO}Id,${WHEN}` : 'Id,Title';
     const titles = await sendRaw(`${listPath}/items?$select=${select}&$top=100`);
-    const titlesHead = headOf(titles);
+    const titlesHead = maskedHead(titles);
     // Every item under each Title, so an item created twice is counted and never collapsed into one.
     const present = !titlesHead && titles.parsed && Array.isArray(titles.parsed.value) ? new Map() : null;
     for (const row of present === null ? [] : titles.parsed.value) {

@@ -1,5 +1,5 @@
 {# test/manual/templates/_probe_item_versions_v1.js.j2 #}
-{# Included after _probe_raw_request_v1.js.j2 and _probe_identity_v1.js.j2, whose sendRaw, rawHead
+{# Included after _probe_raw_request_v1.js.j2 and _probe_identity_v1.js.j2, whose sendRaw, maskedHead
    and scrub it uses. #}
   // ---- Item versions (v1) ---------------------------------------------
   // A continuation link in the three spellings the search-discovery probe reads plus a bare __next, or null.
@@ -12,7 +12,7 @@
   // One read of an item's versions; `rows` is the value array, or null when the answer carried none.
   const readVersions = async (listPath, itemId, query = '') => {
     const res = await sendRaw(`${listPath}/items(${itemId})/versions${query ? `?${query}` : ''}`);
-    const head = rawHead(res);
+    const head = maskedHead(res);
     const rows = !head && res.parsed && Array.isArray(res.parsed.value) ? res.parsed.value : null;
     return { res, head, rows, next: head ? null : continuationOf(res.parsed) };
   };

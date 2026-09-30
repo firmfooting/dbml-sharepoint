@@ -22,10 +22,12 @@ SAMPLES = {
     "Written=3, ProbeITem, it_1": "Written=3, ProbeITem, it_1",
     "mail it@example.com as i:0#.f|membership|it@example.com": (
         "mail <account> as i:0#.f|membership|<account>"),
+    # An address the probe never learned, whose local part is the display name.
+    "copied to it@elsewhere.org": "copied to <account>",
 }
 
 
-def _scrubbed(samples: list[str]) -> list[str]:
+def _evaluated(expression: str) -> object:
     spec = importlib.util.spec_from_file_location(
         "dbmlsp_render_probes_identity", MANUAL / "render_probes.py")
     assert spec and spec.loader
@@ -39,12 +41,26 @@ def _scrubbed(samples: list[str]) -> list[str]:
         VERSIONS_MOCK.replace("__CONFIG__", "{}") + "(async () => {\n" + body
         + "  knowIdentity('it@example.com', '<account>');\n"
         + "  knowIdentity('It', '<name>', true);\n"
-        + f"  console.log('__OUT__' + JSON.stringify({json.dumps(samples)}.map(scrub)));\n"
+        + f"  console.log('__OUT__' + JSON.stringify({expression}));\n"
         + "})();\n")
     line = next(ln for ln in output.splitlines() if ln.startswith("__OUT__"))
-    out: list[str] = json.loads(line.removeprefix("__OUT__"))
+    return json.loads(line.removeprefix("__OUT__"))
+
+
+def _scrubbed(samples: list[str]) -> list[str]:
+    out = _evaluated(f"{json.dumps(samples)}.map(scrub)")
+    assert isinstance(out, list)
     return out
 
 
 def test_a_display_name_is_masked_as_a_whole_token_and_nowhere_else() -> None:
     assert _scrubbed(list(SAMPLES)) == list(SAMPLES.values())
+
+
+def test_a_refusal_is_masked_before_it_is_cut_short() -> None:
+    # The name straddles the 400-character cut, so masking after the cut would leave "I" showing.
+    text = "x" * 398 + " It"
+    head = _evaluated(f"maskedHead({{ ok: false, status: 500, text: {json.dumps(text)} }})")
+
+    assert isinstance(head, dict)
+    assert head["why"].endswith("x" * 10 + " <"), head["why"]
