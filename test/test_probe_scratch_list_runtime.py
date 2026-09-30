@@ -28,6 +28,7 @@ SAID = "HTTP 400: The value is out of range at [TENANT]/sites/probe."
 VERSIONING = "{ EnableVersioning: true }"
 CLAIMED = mock_list_id(TITLE)
 OTHER = "00000000-0000-4000-8000-00000000abcd"
+PREFLIGHT = f"getbytitle('{TITLE}')?$select=Id,Description"
 
 
 def _load_renderer() -> ModuleType:
@@ -42,7 +43,8 @@ def _load_renderer() -> ModuleType:
 
 
 def _claim(
-    settings: dict[str, Any] | None, declared: str = "{}", cleanup: bool = False, **config: Any,
+    settings: dict[str, Any] | None, declared: str = "{}", cleanup: bool = False,
+    prelude: str = "", **config: Any,
 ) -> dict[str, Any]:
     """Claim one scratch list with `settings`, recycle what was made, and return what came back."""
     env = _load_renderer()._env()
@@ -56,6 +58,7 @@ def _claim(
         + "(async () => {\n" + body
         + f"  expect('{FIXTURE}', 'the scratch list');\n"
         + f"  expect('{DEPENDENT}', 'a question resting on it');\n"
+        + f"  {prelude}\n"
         + f"  const got = await claimScratchList({{ id: '{FIXTURE}', question: 'the scratch list',"
         + f" title: '{TITLE}', description: 'owned', dependents: ['{DEPENDENT}'],"
         + f" settings: {json.dumps(settings)}, declared: {declared} }});\n"
@@ -200,3 +203,40 @@ def test_a_leftover_that_is_not_recycled_is_not_built_over() -> None:
         out["rows"][FIXTURE]["evidence"])
     assert out["rows"][DEPENDENT]["state"] == "void"
     assert _creates(out) == []
+
+
+@pytest.mark.parametrize(("status", "said"), [
+    (429, "was throttled (HTTP 429)"), (503, "was throttled (HTTP 503)"),
+    (403, "was not authorised (HTTP 403)"), (500, "was refused (HTTP 500)"),
+])
+def test_an_ownership_read_that_is_not_a_404_creates_nothing_and_leaves_the_rows_open(
+        status: int, said: str) -> None:
+    out = _claim(None, rules=[{"contains": PREFLIGHT, "status": status,
+                               "text": '{"odata.error": "busy for ada@example.com"}'}])
+
+    assert out["held"] is False
+    for row_id in (FIXTURE, DEPENDENT):
+        assert out["rows"][row_id]["outcome"] == "NOT ESTABLISHED"
+        assert out["rows"][row_id]["state"] == "open"
+        assert f"the ownership read of '{TITLE}' {said}" in out["rows"][row_id]["evidence"]
+        assert "a re-run can ask it" in out["rows"][row_id]["evidence"]
+    assert "ada@example.com" not in json.dumps(out["rows"])
+    assert _creates(out) == []
+    assert _recycles(out) == []
+
+
+def test_an_ownership_read_answering_404_goes_on_to_create_the_list() -> None:
+    out = _claim(None)
+
+    assert next(r for r in out["sent"] if PREFLIGHT in r["path"])
+    assert len(_creates(out)) == 1
+    assert out["held"] is True
+
+
+def test_a_row_an_earlier_fixture_voided_keeps_its_reason() -> None:
+    out = _claim(None, rules=[{"contains": PREFLIGHT, "status": 429, "text": "busy"}],
+                 prelude=f"voidDependents(['{DEPENDENT}'], 'an earlier fixture failed');")
+
+    assert out["rows"][FIXTURE]["state"] == "open"
+    assert out["rows"][DEPENDENT]["state"] == "void"
+    assert out["rows"][DEPENDENT]["evidence"] == "an earlier fixture failed"

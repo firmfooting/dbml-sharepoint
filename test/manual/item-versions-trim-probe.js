@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: 17ad6b99
+ * REVISION: 80d49d8b
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -480,6 +480,18 @@
         voidDependents(dependents, 'a leftover list would answer this run\'s questions');
         return { held: false, merge: null, body: null };
       }
+    } else if (pre.status !== 404) {
+      // A by-title read answers an absent list 404 (the live finding rollback.js.j2 cites); anything else is unknown.
+      const why = `the ownership read of '${title}' ${unanswered(pre)}`
+        + `${pre.body ? `: ${scrub(JSON.stringify(pre.body)).slice(0, 200)}` : ''}`;
+      record(id, question, 'NOT ESTABLISHED', `${why}; nothing was created, and a re-run can ask it`);
+      for (const one of dependents) {
+        const row = RESULTS.find((r) => r.id === one);
+        // A row an earlier fixture voided keeps its reason.
+        if (row && row.state === 'void') continue;
+        record(one, row ? row.question : one, 'NOT ESTABLISHED', `not asked: ${why}; a re-run can ask it`);
+      }
+      return { held: false, merge: null, body: null };
     }
     const made = await spPost('web/lists',
       { Title: title, BaseTemplate: baseTemplate, Description: description }, await getDigest());
@@ -563,7 +575,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 17ad6b99. Quote this when reporting results.');
+  log('INFO', 'probe revision 80d49d8b. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsTrim';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.

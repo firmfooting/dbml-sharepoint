@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: c4c96240
+ * REVISION: e338b147
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -528,6 +528,18 @@
         voidDependents(dependents, 'a leftover list would answer this run\'s questions');
         return { held: false, merge: null, body: null };
       }
+    } else if (pre.status !== 404) {
+      // A by-title read answers an absent list 404 (the live finding rollback.js.j2 cites); anything else is unknown.
+      const why = `the ownership read of '${title}' ${unanswered(pre)}`
+        + `${pre.body ? `: ${scrub(JSON.stringify(pre.body)).slice(0, 200)}` : ''}`;
+      record(id, question, 'NOT ESTABLISHED', `${why}; nothing was created, and a re-run can ask it`);
+      for (const one of dependents) {
+        const row = RESULTS.find((r) => r.id === one);
+        // A row an earlier fixture voided keeps its reason.
+        if (row && row.state === 'void') continue;
+        record(one, row ? row.question : one, 'NOT ESTABLISHED', `not asked: ${why}; a re-run can ask it`);
+      }
+      return { held: false, merge: null, body: null };
     }
     const made = await spPost('web/lists',
       { Title: title, BaseTemplate: baseTemplate, Description: description }, await getDigest());
@@ -588,7 +600,7 @@
         : `could not recycle '${title}' (list ${id}, ${why}); recycle it by hand.`);
     }
   };
-  log('INFO', 'probe revision c4c96240. Quote this when reporting results.');
+  log('INFO', 'probe revision e338b147. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe BatchItems';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
