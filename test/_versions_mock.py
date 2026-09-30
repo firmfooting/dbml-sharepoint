@@ -90,8 +90,8 @@ const mockFetch = async (url, opts = {}) => {
   const raw = opts.body ? String(opts.body) : '';
   let sent = {};
   try { sent = raw ? JSON.parse(raw) : {}; } catch { sent = {}; }
-  SENT.push({ verb, path, body: raw });
-  for (const rule of CONFIG.rules || []) {
+  if (!opts.landing) SENT.push({ verb, path, body: raw });
+  for (const rule of opts.landing ? [] : CONFIG.rules || []) {
     if (!path.includes(rule.contains)) continue;
     if (rule.verb && rule.verb !== verb) continue;
     if (rule.bodyContains && !raw.includes(rule.bodyContains)) continue;
@@ -101,6 +101,8 @@ const mockFetch = async (url, opts = {}) => {
     // `after` answers only the requests the rule matches past the first `after` of them.
     if (rule.after && rule.seen <= rule.after) continue;
     if (rule.reject) throw new TypeError('Failed to fetch');
+    // `lands`: the request is carried out as if no rule matched, then answers the rule's status.
+    if (rule.lands) await mockFetch(url, { ...opts, landing: true });
     return answer(rule.status, rule.text);
   }
   if (path === 'contextinfo') {

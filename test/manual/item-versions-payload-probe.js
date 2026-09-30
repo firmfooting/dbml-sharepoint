@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: 87a01242
+ * REVISION: 82e16a2f
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -33,6 +33,7 @@
  *   field.version.fixture-payload-people-write  the multi-person column written as
  *       { results: [Id] } in both writes and read back after each; a refusal leaves it and
  *       field.version.payload-people NOT ESTABLISHED, and the other kinds are written without it
+ *       only once the item's versions and values read back unchanged by the refused write
  *   field.version.control-payload-versions-read the versions read answers a list of entries
  *   The library case, each row resting on every one before it:
  *   field.version.fixture-library               a document library (BaseTemplate 101) this
@@ -858,7 +859,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 87a01242. Quote this when reporting results.');
+  log('INFO', 'probe revision 82e16a2f. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe Versions');
   const TARGET = runTitle('dbmlsp Probe VersionsTarget');
@@ -1224,18 +1225,65 @@
     }
     const merge = async (set, withPeople) => spWrite(`${listPath}/items(${itemId})`, bodyOf(set, withPeople),
       await getDigest(), { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
+    // Two read values alike, arrays by element and objects by key, never through a serialised form.
+    const sameValue = (a, b) => {
+      if (Array.isArray(a) || Array.isArray(b)) {
+        return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => sameValue(x, b[i]));
+      }
+      if (a && b && typeof a === 'object' && typeof b === 'object') {
+        return sameElements(Object.keys(a).sort(), Object.keys(b).sort())
+          && Object.keys(a).every((key) => sameValue(a[key], b[key]));
+      }
+      return a === b;
+    };
+    // The item's VersionIds and the values of `keys`, or `why` it could not be read whole.
+    const snapshot = async (keys) => {
+      const versions = await readVersions(listPath, itemId);
+      const values = await readBack(`${listPath}/items(${itemId})?$select=Id,${keys.join(',')}`);
+      const ids = versions.rows === null || versions.next !== null ? null : versions.rows.map(versionIdOf);
+      const why = versions.head ? `the versions read ${scrub(versions.head.why)}`
+        : versions.rows === null ? `the versions read ${versions.shape}`
+          : versions.next !== null ? `the versions read: ${pagedSaid(versions)}`
+            : values.parsed ? null : `the item read ${values.read}`;
+      return { ids, values: values.parsed, why };
+    };
     // Each set is read back before the next is sent, so set B never replaces a set A that did not land.
     // No set is sent to an item whose create did not read back.
     for (const [i, set] of (written === 1 ? SETS : []).entries()) {
       const withPeople = peopleHeld && peopleRefusal === null;
+      // What the item held before a write carrying the people value, so a refused one can be shown unlanded.
+      const keys = [PEOPLE_KEY, ...Object.keys(wantOf(set, before))];
+      const prior = withPeople ? await snapshot(keys) : null;
       let sent = await merge(set, withPeople);
       if (withPeople && !sent.ok && isRefusal(sent.status)) {
+        const refusedAt = REFUSED.length - 1;
+        const refusal = `HTTP ${sent.status}: ${scrub(sent.text).slice(0, 300)}`;
+        // A refused write may still have landed, so the set is sent again only once nothing is shown to have.
+        const now = await snapshot(keys);
+        const unknown = prior.why || now.why;
+        const changed = unknown ? [] : [...(sameElements(prior.ids, now.ids) ? [] : [`VersionIds `
+          + `${JSON.stringify(prior.ids)} became ${JSON.stringify(now.ids)}`]),
+        ...keys.filter((key) => !sameValue(prior.values[key], now.values[key])).map((key) => `${key} changed`)];
+        const refused = `set ${'AB'[i]}: the ${PEOPLE_KEY} write was refused (${refusal})`;
+        if (unknown) {
+          // The refusal is the people write's own; the item is left open, since what it holds is not known.
+          REFUSED.splice(refusedAt, 1);
+          const why = `${refused}, and whether it landed is unknown (${unknown}), so the set was not sent again`;
+          UNHEARD.push(why);
+          missed.push(why);
+          break;
+        }
+        if (changed.length) {
+          missed.push(`${refused}, but it landed anyway (${changed.join('; ')}), so the item no longer holds `
+            + 'one version per set and the set was not sent again');
+          break;
+        }
         // Sent again without the people value, so a refusal is pinned on it and the other kinds still land.
         const without = await merge(set, false);
         if (without.ok) {
           // The refusal is the people write's own answer, recorded on its row, so it is not the item's.
-          REFUSED.pop();
-          peopleRefusal = `HTTP ${sent.status}: ${scrub(sent.text).slice(0, 300)}`;
+          REFUSED.splice(refusedAt, 1);
+          peopleRefusal = refusal;
           log('INFO', `the ${PEOPLE}Id write was refused (${peopleRefusal}); the set was sent again `
             + 'without it and is read back before it counts');
         }

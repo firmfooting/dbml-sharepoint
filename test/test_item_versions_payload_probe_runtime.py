@@ -967,3 +967,40 @@ def test_a_refused_versions_read_voids_the_people_row_its_fixture_left_open() ->
     assert rows[PEOPLE_COLUMN]["state"] == "open"
     assert rows[READ]["outcome"] == "FAIL"
     assert voided(rows) == _deps(READ)
+
+
+PEOPLE_REFUSED = {"contains": f"{LIST_AT}/items(1)", "verb": "MERGE",
+                  "bodyContains": "ProbePeopleId", "status": 400, "text": "Invalid data"}
+
+
+def _merges(sent: list[dict[str, str]]) -> list[bool]:
+    return ["ProbePeopleId" in r["body"] for r in sent
+            if r["verb"] == "MERGE" and f"{LIST_AT}/items(1)" in r["path"]]
+
+
+def test_a_refused_people_write_that_landed_anyway_is_not_sent_again() -> None:
+    rows, sent, _ = _run(rules=[{**PEOPLE_REFUSED, "nth": 1, "lands": True}])
+
+    assert rows[ITEM]["outcome"] == "FAIL", rows[ITEM]
+    assert "the ProbePeopleId write was refused (HTTP 400: Invalid data), but it landed anyway" in (
+        rows[ITEM]["evidence"])
+    assert voided(rows) == _deps(ITEM)
+    assert _merges(sent) == [True]
+
+
+def test_a_refused_people_write_whose_landing_is_unknown_is_not_sent_again() -> None:
+    rows, sent, _ = _run(rules=[
+        PEOPLE_REFUSED, {"contains": LIST_READ_RULE, "nth": 2, "status": 429, "text": "busy"}])
+
+    assert rows[ITEM]["outcome"] == "NOT ESTABLISHED", rows[ITEM]
+    assert "whether it landed is unknown" in rows[ITEM]["evidence"]
+    assert voided(rows) == set()
+    assert _merges(sent) == [True]
+
+
+def test_a_refused_people_write_that_landed_nothing_is_sent_again_without_it() -> None:
+    rows, sent, _ = _run(rules=[PEOPLE_REFUSED])
+
+    assert rows[ITEM]["outcome"] == "PASS"
+    assert "3 version(s)" in rows["field.version.payload-choice"]["evidence"]
+    assert _merges(sent) == [True, False, False]
