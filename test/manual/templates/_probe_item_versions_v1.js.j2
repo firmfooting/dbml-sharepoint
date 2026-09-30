@@ -2,7 +2,7 @@
 {# Included after _probe_raw_request_v1.js.j2 and _probe_identity_v1.js.j2, whose sendRaw, rawHead
    and scrub it uses. #}
   // ---- Item versions (v1) ---------------------------------------------
-  // A continuation link in any spelling the search-discovery probe reads, or null when there is none.
+  // A continuation link in the three spellings the search-discovery probe reads plus a bare __next, or null.
   const continuationOf = (parsed) => {
     if (!parsed || typeof parsed !== 'object') return null;
     const link = parsed['odata.nextLink'] || parsed['@odata.nextLink'] || parsed.__next

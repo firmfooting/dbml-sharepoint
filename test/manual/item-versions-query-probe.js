@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: 5b37dc5c
+ * REVISION: 72107da6
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -569,7 +569,7 @@
     }
   };
   // ---- Item versions (v1) ---------------------------------------------
-  // A continuation link in any spelling the search-discovery probe reads, or null when there is none.
+  // A continuation link in the three spellings the search-discovery probe reads plus a bare __next, or null.
   const continuationOf = (parsed) => {
     if (!parsed || typeof parsed !== 'object') return null;
     const link = parsed['odata.nextLink'] || parsed['@odata.nextLink'] || parsed.__next
@@ -602,7 +602,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 5b37dc5c. Quote this when reporting results.');
+  log('INFO', 'probe revision 72107da6. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsQuery';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.

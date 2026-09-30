@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: 42d31962
+ * REVISION: 5a106d74
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -599,7 +599,7 @@
     }
   };
   // ---- Item versions (v1) ---------------------------------------------
-  // A continuation link in any spelling the search-discovery probe reads, or null when there is none.
+  // A continuation link in the three spellings the search-discovery probe reads plus a bare __next, or null.
   const continuationOf = (parsed) => {
     if (!parsed || typeof parsed !== 'object') return null;
     const link = parsed['odata.nextLink'] || parsed['@odata.nextLink'] || parsed.__next
@@ -632,7 +632,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 42d31962. Quote this when reporting results.');
+  log('INFO', 'probe revision 5a106d74. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Versions';
   const TARGET = 'dbmlsp Probe VersionsTarget';
