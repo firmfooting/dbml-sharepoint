@@ -18,8 +18,9 @@
  *   field.version.fixture-trim-list  a generic list with versioning on whose
  *       MajorVersionLimit, after asking for 2, reads back a whole number from 1 to 100
  *   field.version.fixture-trim-item  one item created and then written the list's
- *       limit plus three times, every write answered 2xx and its Title read back
- *       before the next was sent
+ *       limit plus three times; every write answered 2xx, its Title read back, and a
+ *       versions read after it listed exactly one VersionId no earlier read had,
+ *       before the next was sent. That counts the versions created
  *
  * OBSERVES (recorded verbatim, never compared with an expected value)
  *   field.version.trim-limit-taken          the MajorVersionLimit the list took, and
@@ -28,12 +29,14 @@
  *   field.version.trim-versions-after-wait  the same read after TRIM_WAIT_MS
  *
  * HOW TO READ IT: TRIMMED is as many versions answered as the limit reads
- * back, fewer than the writes that landed. FEWER THAN WRITTEN is a shortfall
- * of any other size, UNTRIMMED is as many as landed. Each carries the
- * VersionIds, labels and Titles, and the property names of the version with
- * the lowest VersionId answered. NOT COMPARABLE, left open, is an answer carrying
- * a continuation link, which the probe records and does not follow; NOT
- * COMPARABLE, settled, is an answer listing one VersionId more than once.
+ * back, every one of them a version the writes were seen to create, and fewer
+ * than they created, so at least one created version is no longer answered.
+ * FEWER THAN WRITTEN is a shortfall of any other size, UNTRIMMED is every
+ * created version answered. Each carries the VersionIds, labels and Titles,
+ * and the property names of the version with the lowest VersionId answered.
+ * NOT COMPARABLE, left open, is an answer carrying a continuation link, which
+ * the probe records and does not follow; NOT COMPARABLE, settled, is an answer
+ * listing one VersionId more than once, or one no write was seen to create.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
  * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again.
@@ -66,8 +69,8 @@
     list: `a generic list with versioning on whose MajorVersionLimit, after asking for ${ASKED_LIMIT}, `
       + `reads back a whole number from 1 to ${MAX_LIMIT}`,
     limit: `the MajorVersionLimit the list took after asking for ${ASKED_LIMIT}`,
-    item: 'one item created and written the limit plus three times, every write answered 2xx '
-      + 'and its Title read back before the next',
+    item: 'one item created and written the limit plus three times, every write answered 2xx, its Title '
+      + 'read back and one new VersionId listed after it, before the next',
     once: 'what items(id)/versions answers straight after the last write',
     wait: `what items(id)/versions answers ${TRIM_WAIT_MS / 1000} seconds later`,
   };
@@ -96,7 +99,8 @@
   // Refusal text can name the tenant or an account, so it is scrubbed before it is shown.
   const said = (text) => scrub(text).slice(0, 300);
   const titleOf = (n) => `dbmlsp versions trim ${n}`;
-  const describe = (got, written, limit) => {
+  // `created` holds the VersionIds the writes were each seen to add, the baseline every count is judged by.
+  const describe = (got, written, limit, created) => {
     if (got.head) return [got.head.outcome, scrub(got.head.why)];
     if (got.rows === null) {
       return ['NOT ESTABLISHED', `HTTP ${got.res.status} carried no value array: ${said(got.res.text)}`];
@@ -104,9 +108,11 @@
     const rows = got.rows;
     // A repeated VersionId would be counted as two versions, so no count is compared when one repeats.
     const again = repeatedIds(rows);
+    // Only versions the writes were seen to create are counted, so a shortfall is created versions gone.
+    const unknown = rows.map((row) => JSON.stringify(versionIdOf(row))).filter((key) => !created.has(key));
     // TRIMMED needs the limit as its baseline: a shortfall of any other size is described, not explained.
-    const head = got.next !== null || again.length ? 'NOT COMPARABLE' : rows.length === written ? 'UNTRIMMED'
-      : rows.length > written ? 'MORE THAN WRITTEN' : rows.length === limit ? 'TRIMMED' : 'FEWER THAN WRITTEN';
+    const head = got.next !== null || again.length || unknown.length ? 'NOT COMPARABLE'
+      : rows.length === written ? 'UNTRIMMED' : rows.length === limit ? 'TRIMMED' : 'FEWER THAN WRITTEN';
     const listed = rows.map((row) => `${JSON.stringify(row.VersionLabel)}/${JSON.stringify(versionIdOf(row))}`
       + `/${JSON.stringify(row.Title)}`).join(', ');
     // A lowest VersionId is named only when every one answered is a number, since only then is it measured.
@@ -115,8 +121,10 @@
     const carried = lowest ? `; the lowest VersionId answered carries ${Object.keys(lowest).sort().join(', ')}`
       : rows.length ? '; the VersionIds answered are not all numbers, so no lowest is named' : '';
     const paged = got.next !== null ? `${pagedSaid(got)}; `
-      : again.length ? `VersionId ${again.join(', ')} answered more than once; ` : '';
-    return [head, `${paged}${rows.length} of ${written} version(s) answered, in order: ${listed}${carried}`,
+      : again.length ? `VersionId ${again.join(', ')} answered more than once; `
+        : unknown.length ? `VersionId ${unknown.join(', ')} answered, which no write was seen to create; ` : '';
+    return [head, `${paged}${rows.length} of the ${written} version(s) the writes created answered, in order: `
+      + `${listed}${carried}`,
       got.next === null ? undefined : 'open'];
   };
 
@@ -142,7 +150,8 @@
     let itemId = null;
     let written = 0;
     const missed = [];
-    // A 2xx write counts once its Title reads back, since TRIMMED is measured against writes that landed.
+    const created = new Set();
+    // A 2xx write counts once its Title reads back and it adds one VersionId, the versions TRIMMED is judged by.
     const landed = async (n, sent, what) => {
       if (!sent.ok) {
         missed.push(`${what}: HTTP ${sent.status}: ${said(sent.text)}`);
@@ -151,11 +160,25 @@
       const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title`);
       const head = rawHead(read);
       const title = !head && read.parsed && typeof read.parsed === 'object' ? read.parsed.Title : undefined;
-      if (title === titleOf(n)) written += 1;
-      else {
+      if (title !== titleOf(n)) {
         missed.push(`${what}: HTTP ${sent.status}, but ${head ? `the read-back ${scrub(head.why)}`
           : `Title reads back ${JSON.stringify(title)}`}`);
+        return;
       }
+      const after = await readVersions(listPath, itemId);
+      const blocked = after.head ? scrub(after.head.why) : after.rows === null
+        ? `HTTP ${after.res.status} carried no value array` : after.next !== null ? pagedSaid(after)
+          : repeatedIds(after.rows).length ? 'it listed a VersionId more than once'
+            : after.rows.some((row) => versionIdOf(row) === null) ? 'an entry carried no VersionId' : null;
+      const fresh = blocked ? [] : after.rows.map((row) => JSON.stringify(versionIdOf(row)))
+        .filter((key) => !created.has(key));
+      if (blocked || fresh.length !== 1) {
+        missed.push(`${what}: HTTP ${sent.status} and its Title read back, but the versions read after it`
+          + `${blocked ? `: ${blocked}` : ` listed ${fresh.length} VersionId(s) no earlier read had`}`);
+        return;
+      }
+      created.add(fresh[0]);
+      written += 1;
     };
     const made = await spPost(`${listPath}/items`, { __metadata: { type: itemType }, Title: titleOf(1) },
       digest, VERBOSE_WRITE);
@@ -183,12 +206,12 @@
       return;
     }
 
-    const [onceHead, onceSaid, onceState] = describe(await readVersions(listPath, itemId), written, limit);
+    const [onceHead, onceSaid, onceState] = describe(await readVersions(listPath, itemId), written, limit, created);
     record('field.version.trim-versions-at-once', Q.once, onceHead, `limit ${limit}; ${onceSaid}`, onceState);
     log('INFO', `waiting ${TRIM_WAIT_MS / 1000} seconds before the second read.`);
     const firstRead = Date.now();
     await new Promise((resolve) => { setTimeout(resolve, TRIM_WAIT_MS); });
-    const [waitHead, waitSaid, waitState] = describe(await readVersions(listPath, itemId), written, limit);
+    const [waitHead, waitSaid, waitState] = describe(await readVersions(listPath, itemId), written, limit, created);
     // The wait is measured rather than assumed, so the row says how long it actually was.
     const waited = Math.round((Date.now() - firstRead) / 1000);
     record('field.version.trim-versions-after-wait', Q.wait, waitHead,

@@ -96,6 +96,8 @@ const mockFetch = async (url, opts = {}) => {
     // `nth` answers only the nth request the rule matches, counting from 1.
     rule.seen = (rule.seen || 0) + 1;
     if (rule.nth && rule.seen !== rule.nth) continue;
+    // `after` answers only the requests the rule matches past the first `after` of them.
+    if (rule.after && rule.seen <= rule.after) continue;
     if (rule.reject) throw new TypeError('Failed to fetch');
     return answer(rule.status, rule.text);
   }
@@ -236,7 +238,9 @@ const mockFetch = async (url, opts = {}) => {
       const values = plain(sent);
       for (const name of (CONFIG.mergeDrops || {})[item.merges] || []) delete values[name];
       Object.assign(item.values, values);
-      item.history.push({ ...item.values });
+      // `mergesWithoutVersion`: per item MERGE counts that store their values and add no version.
+      const versionless = (CONFIG.mergesWithoutVersion || []).includes(item.merges);
+      if (!versionless) item.history.push({ ...item.values });
       return answer(204, '');
     }
     if (one[2].startsWith('/versions')) {

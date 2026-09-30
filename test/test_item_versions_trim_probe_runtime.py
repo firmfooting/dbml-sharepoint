@@ -29,6 +29,8 @@ LIMIT = "field.version.trim-limit-taken"
 ITEM = "field.version.fixture-trim-item"
 ONCE = "field.version.trim-versions-at-once"
 WAIT = "field.version.trim-versions-after-wait"
+# The create and the five writes after it each take one versions read before the rows' reads.
+WRITE_READS = 6
 NO_WAIT = {"  const TRIM_WAIT_MS = 60000;": "  const TRIM_WAIT_MS = 0;"}
 
 
@@ -60,8 +62,9 @@ def test_a_list_that_trims_on_write_is_recorded_trimmed_both_times() -> None:
     for row_id in (ONCE, WAIT):
         assert rows[row_id]["outcome"] == "TRIMMED", rows[row_id]
         assert rows[row_id]["evidence"].startswith(
-            'limit 2; 2 of 6 version(s) answered, in order: "6.0"/3072/"dbmlsp versions trim 6", '
-            '"5.0"/2560/"dbmlsp versions trim 5"; the lowest VersionId answered carries ')
+            'limit 2; 2 of the 6 version(s) the writes created answered, in order: '
+            '"6.0"/3072/"dbmlsp versions trim 6", "5.0"/2560/"dbmlsp versions trim 5"; '
+            'the lowest VersionId answered carries ')
     assert "after the first read" in rows[WAIT]["evidence"]
     assert len([r for r in sent if r["verb"] == "MERGE" and "items(1)" in r["path"]]) == 5
     assert recycled_last(sent)
@@ -71,11 +74,12 @@ def test_a_list_that_keeps_every_version_is_recorded_untrimmed() -> None:
     rows, _, _ = _run()
 
     assert rows[ONCE]["outcome"] == "UNTRIMMED"
-    assert "6 of 6 version(s) answered" in rows[ONCE]["evidence"]
+    assert "6 of the 6 version(s) the writes created answered" in rows[ONCE]["evidence"]
 
 
 def test_a_trim_that_lands_after_the_first_read_shows_in_the_second() -> None:
-    rows, _, _ = _run(trimToLimit=True, trimAfterReads=1)
+    # The six writes each take one versions read, so the first read the rows record is the seventh.
+    rows, _, _ = _run(trimToLimit=True, trimAfterReads=WRITE_READS + 1)
 
     assert rows[ONCE]["outcome"] == "UNTRIMMED"
     assert rows[WAIT]["outcome"] == "TRIMMED"
@@ -96,7 +100,7 @@ def test_a_list_that_took_another_limit_is_measured_at_that_limit() -> None:
     assert "asked 2" in rows[LIMIT]["evidence"]
     assert "MajorVersionLimit reads back 5" in rows[LIMIT]["evidence"]
     assert len([r for r in sent if r["verb"] == "MERGE" and "items(1)" in r["path"]]) == 8
-    assert "5 of 9 version(s) answered" in rows[ONCE]["evidence"]
+    assert "5 of the 9 version(s) the writes created answered" in rows[ONCE]["evidence"]
 
 
 def test_a_limit_past_what_the_run_will_write_voids_everything_after_the_list() -> None:
@@ -151,7 +155,8 @@ def test_a_shortfall_that_is_not_the_limit_is_described_not_called_trimmed() -> 
     rows, _, _ = _run(keepVersions=3)
 
     assert rows[ONCE]["outcome"] == "FEWER THAN WRITTEN"
-    assert rows[ONCE]["evidence"].startswith("limit 2; 3 of 6 version(s) answered")
+    assert rows[ONCE]["evidence"].startswith(
+        "limit 2; 3 of the 6 version(s) the writes created answered")
 
 
 def test_a_write_that_did_not_land_voids_the_reads() -> None:
@@ -182,7 +187,8 @@ def test_a_write_whose_read_back_went_unanswered_is_not_counted() -> None:
                               "text": "busy"}])
 
     assert rows[ITEM]["outcome"] == "FAIL"
-    assert "Written differs: read 5, declared 6" in rows[ITEM]["evidence"]
+    # Write 2's version is never attributed, so no later version can be pinned to one write either.
+    assert "Written differs: read 1, declared 6" in rows[ITEM]["evidence"]
     assert "write 2: HTTP 204, but the read-back " in rows[ITEM]["evidence"]
     assert voided(rows) == _deps(ITEM)
 
@@ -198,7 +204,8 @@ def test_a_refused_create_is_kept_in_the_evidence() -> None:
 
 
 def test_a_refused_versions_read_is_recorded_with_its_text() -> None:
-    rows, _, _ = _run(rules=[{"contains": "/versions", "status": 500, "text": "Unexpected."}])
+    rows, _, _ = _run(rules=[{"contains": "/versions", "after": WRITE_READS, "status": 500,
+                              "text": "Unexpected."}])
 
     assert rows[ONCE]["outcome"] == "REFUSED"
     assert "HTTP 500: Unexpected." in rows[ONCE]["evidence"]
@@ -206,7 +213,7 @@ def test_a_refused_versions_read_is_recorded_with_its_text() -> None:
 
 
 def test_refusal_text_naming_an_account_is_masked() -> None:
-    rows, _, output = _run(rules=[{"contains": "/versions", "status": 500,
+    rows, _, output = _run(rules=[{"contains": "/versions", "after": WRITE_READS, "status": 500,
                                    "text": "Locked by i:0#.f|membership|ada@example.com."}])
 
     assert "i:0#.f|membership|<account>" in rows[ONCE]["evidence"]
@@ -215,7 +222,8 @@ def test_refusal_text_naming_an_account_is_masked() -> None:
 
 @pytest.mark.parametrize("status", [429, 503])
 def test_a_throttled_versions_read_is_left_open(status: int) -> None:
-    rows, _, _ = _run(rules=[{"contains": "/versions", "status": status, "text": "busy"}])
+    rows, _, _ = _run(rules=[{"contains": "/versions", "after": WRITE_READS, "status": status,
+                              "text": "busy"}])
 
     assert rows[ONCE]["outcome"] == "NOT ESTABLISHED"
     assert rows[ONCE]["state"] == "open"
@@ -232,7 +240,7 @@ def test_a_digest_lost_before_the_writes_leaves_them_open_and_asks_for_a_recycle
 
 
 def test_a_versions_read_answered_2xx_with_no_value_array_is_left_open() -> None:
-    rows, _, output = _run(rules=[{"contains": "/versions", "status": 200,
+    rows, _, output = _run(rules=[{"contains": "/versions", "after": WRITE_READS, "status": 200,
                                    "text": '{"d": "not a list"}'}])
 
     for row_id in (ONCE, WAIT):
@@ -251,7 +259,11 @@ def test_a_versions_read_answered_2xx_with_no_value_array_is_left_open() -> None
 ], ids=["odata", "at-odata", "verbose"])
 def test_a_versions_answer_with_a_continuation_link_is_not_called_trimmed(
         spelling: dict[str, Any]) -> None:
-    rows, _, output = _run(trimToLimit=True, versionsNext=spelling)
+    # A rule rather than `versionsNext`, so the reads between the writes stay unpaged.
+    newest = [{"VersionId": 3072, "VersionLabel": "6.0", "Title": "dbmlsp versions trim 6"},
+              {"VersionId": 2560, "VersionLabel": "5.0", "Title": "dbmlsp versions trim 5"}]
+    rows, _, output = _run(rules=[{"contains": "/versions", "after": WRITE_READS, "status": 200,
+                                   "text": json.dumps({"value": newest, **spelling})}])
 
     for row_id in (ONCE, WAIT):
         assert rows[row_id]["outcome"] == "NOT COMPARABLE", rows[row_id]
@@ -276,9 +288,59 @@ def test_a_versions_answer_repeating_a_versionid_is_not_counted() -> None:
     repeated = json.dumps({"value": [
         {"VersionId": 3072, "VersionLabel": "6.0", "Title": "dbmlsp versions trim 6"},
         {"VersionId": 3072, "VersionLabel": "6.0", "Title": "dbmlsp versions trim 6"}]})
-    rows, _, _ = _run(rules=[{"contains": "/versions", "status": 200, "text": repeated}])
+    rows, _, _ = _run(rules=[{"contains": "/versions", "after": WRITE_READS, "status": 200,
+                              "text": repeated}])
 
     for row_id in (ONCE, WAIT):
         assert rows[row_id]["outcome"] == "NOT COMPARABLE", rows[row_id]
         assert rows[row_id]["state"] == "settled"
         assert "VersionId 3072 answered more than once" in rows[row_id]["evidence"]
+
+
+def test_a_write_that_landed_without_a_new_version_is_not_counted() -> None:
+    # The mock's second MERGE, write 3, stores its Title and adds no version.
+    rows, _, _ = _run(trimToLimit=True, mergesWithoutVersion=[2])
+
+    assert rows[ITEM]["outcome"] == "FAIL"
+    assert ("write 3: HTTP 204 and its Title read back, but the versions read after it listed 0 "
+            "VersionId(s) no earlier read had") in rows[ITEM]["evidence"]
+    assert voided(rows) == _deps(ITEM)
+
+
+_LINK = "https://example.sharepoint.com/sites/probe/_api/web/lists/versions?$skiptoken=2"
+
+
+@pytest.mark.parametrize(("status", "body", "reason"), [
+    (429, "busy", "throttled"),
+    (200, '{"d": "not a list"}', "HTTP 200 carried no value array"),
+    (200, json.dumps({"value": [{"VersionId": 512}], "odata.nextLink": _LINK}),
+     "the answer carried a continuation link"),
+    (200, json.dumps({"value": [{"VersionId": 512}, {"VersionId": 512}]}),
+     "it listed a VersionId more than once"),
+    (200, json.dumps({"value": [{"VersionLabel": "1.0"}]}), "an entry carried no VersionId"),
+], ids=["throttled", "no-value", "paged", "repeated", "no-id"])
+def test_a_versions_read_between_the_writes_that_cannot_be_counted_fails_the_item(
+        status: int, body: str, reason: str) -> None:
+    rows, _, output = _run(rules=[{"contains": "/versions", "nth": 1, "status": status,
+                                   "text": body}])
+
+    assert rows[ITEM]["outcome"] == "FAIL"
+    assert "the create: HTTP 201 and its Title read back, but the versions read after it: " in (
+        rows[ITEM]["evidence"])
+    assert reason in rows[ITEM]["evidence"]
+    assert voided(rows) == _deps(ITEM)
+    assert ended_with_report(output)
+
+
+def test_a_versions_answer_listing_a_version_no_write_created_is_not_called_trimmed() -> None:
+    foreign = json.dumps({"value": [
+        {"VersionId": 3072, "VersionLabel": "6.0", "Title": "dbmlsp versions trim 6"},
+        {"VersionId": 9728, "VersionLabel": "19.0", "Title": "dbmlsp versions trim 6"}]})
+    rows, _, _ = _run(rules=[{"contains": "/versions", "after": WRITE_READS, "status": 200,
+                              "text": foreign}])
+
+    for row_id in (ONCE, WAIT):
+        assert rows[row_id]["outcome"] == "NOT COMPARABLE", rows[row_id]
+        assert rows[row_id]["state"] == "settled"
+        assert "VersionId 9728 answered, which no write was seen to create" in (
+            rows[row_id]["evidence"])
