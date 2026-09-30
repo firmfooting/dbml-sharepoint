@@ -726,7 +726,8 @@ def _schema_value_problems(
     types: dict[str, str],
     context: str,
 ) -> list[tuple[FindingCode, str]]:
-    """The first schema refusal any renderer makes of a leaf nothing renders.
+    """The first schema refusal any renderer makes of a leaf nothing renders,
+    or the first refusal when every renderer refuses it.
 
     Every target is asked, because a renderer stops at its first refusal and
     a target's own limit can come before the value is read. When every target
