@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: 84daa1c1
+ * REVISION: 09ac0e78
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -669,7 +669,7 @@
       await recycleList(title, id);
     }
   };
-  log('INFO', 'probe revision 84daa1c1. Quote this when reporting results.');
+  log('INFO', 'probe revision 09ac0e78. Quote this when reporting results.');
 
   // The parts name the list by title, the form a history write sends and these rows measure, so the title
   // carries a token unique to the run: no other list holds it, and none can take it between a check and a use.
@@ -1096,9 +1096,15 @@
     const select = columnsHeld ? `Id,Title,${WHO}Id,${WHEN}` : 'Id,Title';
     const titles = await sendRaw(`${listPath}/items?$select=${select}&$top=100`);
     const titlesHead = headOf(titles);
-    const present = !titlesHead && titles.parsed && Array.isArray(titles.parsed.value)
-      ? new Map(titles.parsed.value.map((row) => [row.Title, row])) : null;
-    const landed = (title) => (present === null ? 'unknown' : present.has(title) ? 'yes' : 'no');
+    // Every item under each Title, so an item created twice is counted and never collapsed into one.
+    const present = !titlesHead && titles.parsed && Array.isArray(titles.parsed.value) ? new Map() : null;
+    for (const row of present === null ? [] : titles.parsed.value) {
+      present.set(row.Title, [...(present.get(row.Title) || []), row]);
+    }
+    const landed = (title) => {
+      const count = present === null ? null : (present.get(title) || []).length;
+      return count === null ? 'unknown' : count === 0 ? 'no' : count === 1 ? 'yes' : `${count} times`;
+    };
     const titlesSaid = present === null ? `; the items read-back failed: ${titlesHead ? titlesHead.why
       : `HTTP ${titles.status} carried no rows`}` : '';
     // A row that reports whether items landed stays open when the read that would say so failed.
@@ -1169,7 +1175,8 @@
     } else {
       // What reads back for the value a part wrote, against what it sent; `head` is null when WRITTEN applies.
       const readsBack = (one) => {
-        const row = present === null ? null : present.get(one.title);
+        // Only a Title held by exactly one item says which item the part wrote.
+        const row = landed(one.title) === 'yes' ? present.get(one.title)[0] : null;
         if (!row || (one.id !== CLAIMS && one.id !== ISO)) return { said: '', head: null };
         const shown = (value) => (value === undefined ? '(absent)' : JSON.stringify(value));
         if (one.id === CLAIMS) {
@@ -1240,7 +1247,7 @@
         const why = !ok2xx(part.status) ? (isRefusal(part.status) ? 'the write was refused'
           : 'the part was not answered; a re-run can ask it')
           : fields === null ? 'the part answered with no per-field list'
-            : refused ? 'a field was refused' : landed(one.title) !== 'yes' ? 'no item with its Title is known to exist'
+            : refused ? 'a field was refused' : landed(one.title) !== 'yes' ? 'no single item with its Title is known to exist'
               : null;
         // A refused write leaves the spelling not established; it is recorded and the probe goes on.
         const head = why !== null ? 'NOT ESTABLISHED' : kept.head || 'WRITTEN';

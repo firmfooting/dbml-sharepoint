@@ -931,3 +931,13 @@ def test_two_addvalidate_answers_with_no_field_list_leave_every_addvalidate_row_
         assert rows[row_id]["state"] == "open"
         assert "2 answers carry no per-field list" in rows[row_id]["evidence"]
 
+
+def test_a_title_held_by_two_items_is_not_read_as_the_part_that_wrote_it() -> None:
+    twice = [{"Id": n, "Title": "dbmlsp addvalidate claims", "ProbeWhoId": 7, "ProbeWhen": None}
+             for n in (1, 2)]
+    rows, _, _ = _run(rules=[{"contains": "items?$select=Id,Title", "status": 200,
+                              "text": json.dumps({"value": twice})}])
+
+    assert rows[CLAIMS]["outcome"] == "NOT ESTABLISHED"
+    assert "no single item with its Title is known to exist" in rows[CLAIMS]["evidence"]
+    assert "landed 2 times" in rows[CLAIMS]["evidence"]
