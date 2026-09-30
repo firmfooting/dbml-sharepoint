@@ -1,0 +1,320 @@
+{# test/manual/templates/_probe_scratch_list_v1.js.j2 #}
+{# Included after _probe_harness.js.j2, _probe_raw_request_v1.js.j2 and _probe_identity_v1.js.j2,
+   whose helpers it uses. #}
+  // ---- Scratch lists (v1) ---------------------------------------------
+  // Lists this run created, by title and Id, so the recycle touches those and never a list it only found.
+  const CREATED_LISTS = [];
+  // A token drawn once per run and ending every scratch title, so no run finds, reuses or recycles another's list.
+  const RUN = Math.random().toString(36).slice(2, 10);
+  const runTitle = (base) => `${base} ${RUN}`;
+  // A list Id as a bare lower-case GUID, or null when the value is not one.
+  const guidOf = (value) => {
+    const bare = value === null || value === undefined ? '' : String(value).replace(/[{}]/g, '').toLowerCase();
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(bare) ? bare : null;
+  };
+  // Whether two arrays hold the same elements as often each, compared by ===, never by a serialised form.
+  const sameElements = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length
+    && a.every((x) => a.filter((y) => y === x).length === b.filter((y) => y === x).length);
+  // A title or server-relative path inside an OData string literal, its apostrophes doubled as deploy/_folders does.
+  const pathLiteral = (path) => String(path).replace(/'/g, "''");
+  // A 2xx body's value array when every entry is a JSON object; otherwise rows is null and shape says why.
+  const entriesOf = (parsed) => {
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.value)) {
+      return { rows: null, shape: 'carried no value array' };
+    }
+    const bad = parsed.value.findIndex((row) => !row || typeof row !== 'object' || Array.isArray(row));
+    return bad === -1 ? { rows: parsed.value, shape: null } : { rows: null, shape: `carried entry ${bad + 1} `
+      + `of its value array as ${quoteValue(parsed.value[bad]).slice(0, 80)}, not an object` };
+  };
+  // A continuation link in the three spellings the search-discovery probe reads plus a bare __next, or null.
+  const continuationOf = (parsed) => {
+    if (!parsed || typeof parsed !== 'object') return null;
+    const link = parsed['odata.nextLink'] || parsed['@odata.nextLink'] || parsed.__next
+      || (parsed.d && typeof parsed.d === 'object' ? parsed.d.__next : undefined);
+    return typeof link === 'string' && link ? link : null;
+  };
+  // voidDependents, except that a row already void keeps its first reason: void is terminal.
+  const voidRows = (ids, reason) => voidDependents(ids.filter((one) => {
+    const row = RESULTS.find((r) => r.id === one);
+    return !row || row.state !== 'void';
+  }), reason);
+  // The numeric Id a 2xx create answered, or null; a 2xx with no JSON object is noted as unanswered.
+  const createdId = (made) => {
+    if (!made.ok) return null;
+    const body = recordBody({ parsed: made.body });
+    if (body === null) UNHEARD.push(`the create answered HTTP ${made.status} with no JSON object`);
+    return body && Number.isInteger(body.Id) ? body.Id : null;
+  };
+  // Where the requests of the fixture about to be established begin in UNHEARD.
+  let fixtureStart = 0;
+  let refusedStart = 0;
+  const beginFixture = () => {
+    fixtureStart = UNHEARD.length;
+    refusedStart = REFUSED.length;
+    writeUnheard = false;
+  };
+  // A write's answer is noted, so a fixture can tell an unanswered write from a refused one.
+  const spWrite = async (...args) => {
+    const res = await spPost(...args);
+    maskedHead(res, true);
+    return res;
+  };
+  // establishFixture, except that a fixture any of whose requests since beginFixture went unanswered is left
+  // open with its dependents, since an unanswered request says nothing about the fixture.
+  const settleFixture = async (id, read, declared, dependents) => {
+    const start = fixtureStart;
+    const refusedFrom = refusedStart;
+    // Rows an earlier fixture voided are put back as they were, since establishFixture voids them again.
+    const earlier = RESULTS.filter((r) => dependents.includes(r.id) && r.state === 'void').map((r) => ({ ...r }));
+    // The harness prints every value it reads, so once text is withheld a declared value holding text found in
+    // an answer is judged here and handed on as a verdict; one equal to its declared literal stays.
+    const HELD = '(text withheld; it held)';
+    const textsOf = (v) => (typeof v === 'string' ? [v]
+      : v && typeof v === 'object' ? Object.values(v).flatMap(textsOf) : []);
+    const answered = (value) => textsOf(value).some((s) => s.length > 0
+      && ANSWERS.some((a) => a.includes(s) || a.includes(JSON.stringify(s).slice(1, -1))));
+    const judged = (body) => (!withheld || !body || typeof body !== 'object' ? body
+      : Object.fromEntries(Object.entries(body).map(([name, value]) => {
+        const want = declared[name];
+        if (want === undefined || value === want || !answered(value)) return [name, value];
+        return [name, typeof want === 'function' && want(value) === true ? HELD : WITHHELD];
+      })));
+    const verdicts = Object.fromEntries(Object.entries(declared).map(([name, want]) => [name,
+      typeof want === 'function' ? (v) => v === HELD || (v !== WITHHELD && want(v)) : want]));
+    // A read that throws never answered, so it counts as unanswered like a throttle.
+    const heard = async () => {
+      try {
+        const got = await read();
+        return got && typeof got === 'object' ? { ...got, body: judged(got.body) } : got;
+      } catch (err) {
+        UNHEARD.push(`the read never answered (${scrub(String((err && err.message) || err)).slice(0, 200)})`);
+        throw err;
+      }
+    };
+    const held = await establishFixture(id, heard, verdicts, dependents);
+    const restore = () => earlier.forEach((was) => Object.assign(RESULTS.find((r) => r.id === was.id), was));
+    if (held) return true;
+    // A refusal is a settled answer, so it keeps the FAIL even beside a request that went unanswered.
+    if (UNHEARD.length === start || REFUSED.length > refusedFrom) {
+      restore();
+      return false;
+    }
+    const why = `${[...new Set(UNHEARD.slice(start))].join('; ')}; a re-run can ask it`;
+    const row = RESULTS.find((r) => r.id === id);
+    record(id, row ? row.question : id, 'NOT ESTABLISHED', why);
+    for (const one of dependents) {
+      if (earlier.some((was) => was.id === one)) continue;
+      const dependent = RESULTS.find((r) => r.id === one);
+      record(one, dependent ? dependent.question : one, 'NOT ESTABLISHED', `not asked: ${why}`);
+    }
+    restore();
+    return false;
+  };
+  // __metadata is verbose OData, so every write carrying it declares the verbose content type.
+  const VERBOSE_WRITE = { 'Content-Type': 'application/json;odata=verbose' };
+  // A list read by its Id after a recycle: gone true, false, or null with the reason it cannot say.
+  const listGone = async (listId) => {
+    let res;
+    try {
+      res = await spGet(`web/lists(guid'${listId}')?$select=Id`);
+    } catch (err) {
+      return { gone: null, why: `the read-back never answered (${scrub(String((err && err.message) || err))})` };
+    }
+    if (res.ok) return { gone: false, why: `it still reads back by its Id (HTTP ${res.status})` };
+    if (absenceOf(res.status, res.body)) return { gone: true, why: null };
+    return { gone: null, why: `the read-back that would confirm it ${unanswered(res)}` };
+  };
+  // Recycles one list by its Id and logs OK only once a by-Id read shows it gone; gone is as listGone's.
+  const recycleList = async (title, listId) => {
+    let sent;
+    try {
+      sent = await spPost(`web/lists(guid'${listId}')/recycle`, {}, await getDigest());
+    } catch (err) {
+      sent = { ok: false, status: null, text: String((err && err.message) || err) };
+    }
+    // A request that threw has no status, so its message is what the operator is shown.
+    const why = sent.status === null ? scrub(sent.text).slice(0, 240) : `HTTP ${sent.status}`;
+    if (!sent.ok) {
+      log('FAIL', `could not recycle '${title}' (list ${listId}, ${why}); recycle it by hand.`);
+      return { gone: false, why: `its recycle was not answered 2xx (${why})` };
+    }
+    const after = await listGone(listId);
+    log(after.gone ? 'OK' : 'FAIL', after.gone
+      ? `recycled '${title}' (list ${listId}); it is restorable from the recycle bin.`
+      : `the recycle of '${title}' (list ${listId}) answered ${why}, but ${after.why}; `
+        + 'check it and recycle it by hand.');
+    return { gone: after.gone, why: after.gone ? null : `its recycle answered ${why}, but ${after.why}` };
+  };
+
+  // Creates a list or library (generic unless `baseTemplate` says otherwise) owned by `description`, then reads it back.
+  const claimScratchList = async ({ id, question, title, description, dependents,
+    settings = null, declared = {}, baseTemplate = 100 }) => {
+    const path = `web/lists/getbytitle('${pathLiteral(title)}')`;
+    // An answer that settles nothing leaves the fixture and its dependents open for a re-run.
+    const leaveOpen = (why) => {
+      record(id, question, 'NOT ESTABLISHED', `${why}; a re-run can ask it`);
+      for (const one of dependents) {
+        const row = RESULTS.find((r) => r.id === one);
+        // A row an earlier fixture voided keeps its reason.
+        if (row && row.state === 'void') continue;
+        record(one, row ? row.question : one, 'NOT ESTABLISHED', `not asked: ${why}; a re-run can ask it`);
+      }
+      return { held: false, merge: null, body: null };
+    };
+    const pre = await spGet(`${path}?$select=Id,Description`);
+    // A 2xx with no JSON says nothing about whose list it is, so it is neither refused nor built over.
+    if (pre.ok && recordBody({ parsed: pre.body }) === null) {
+      return leaveOpen(`the ownership read of '${title}' answered HTTP ${pre.status} with no JSON; `
+        + 'nothing was created');
+    }
+    if (pre.ok) {
+      // A title ending in this run's token names no list before this run makes one, so a list found here is
+      // not this run's, whatever its description, and is never recycled or built over.
+      record(id, question, 'FAIL', `a list named '${title}' already exists`
+        + `${pre.body.Description === description ? ' with this probe\'s description' : ''}; refusing to modify it`);
+      voidRows(dependents, 'the scratch list is not one this run created');
+      return { held: false, merge: null, body: null };
+    } else if (isRefusal(pre.status) && pre.status !== 404) {
+      // A refused ownership read is an answer, so nothing is created and the claim fails with its reason.
+      record(id, question, 'FAIL', `the ownership read of '${title}' was refused (HTTP ${pre.status})`
+        + `${pre.body ? `: ${quoteValue(pre.body).slice(0, 200)}` : ''}; nothing was created`);
+      voidRows(dependents, 'the scratch list was not created');
+      return { held: false, merge: null, body: null };
+    } else if (pre.status !== 404) {
+      // A by-title read answers an absent list 404 (the live finding rollback.js.j2 cites); anything else is unknown.
+      return leaveOpen(`the ownership read of '${title}' ${unanswered(pre)}`
+        + `${pre.body ? `: ${quoteValue(pre.body).slice(0, 200)}` : ''}; nothing was created`);
+    }
+    const digest = await getDigest();
+    let made;
+    try {
+      made = await spPost('web/lists', { Title: title, BaseTemplate: baseTemplate, Description: description },
+        digest);
+    } catch (err) {
+      // The create may have reached the server, so the title is kept for the recycle line to name.
+      CREATED_LISTS.push({ title, id: null });
+      return leaveOpen(`the list create never answered (${scrub(String((err && err.message) || err))}), so a `
+        + `list '${title}' may now exist`);
+    }
+    if (!made.ok && isRefusal(made.status)) {
+      // A refused create may still have made the list, so its title is read back before it is let go.
+      let back;
+      try {
+        back = await spGet(`${path}?$select=Id,Description`);
+      } catch (err) {
+        back = { ok: false, status: null, why: `never answered (${scrub(String((err && err.message) || err))})` };
+      }
+      const found = back.ok ? recordBody({ parsed: back.body }) : null;
+      const landedId = found && found.Description === description ? guidOf(found.Id) : null;
+      if (landedId !== null) CREATED_LISTS.push({ title, id: landedId });
+      else if (back.status !== 404) CREATED_LISTS.push({ title, id: null });
+      const unknown = back.why || (!back.ok ? unanswered(back) : found === null
+        ? `answered HTTP ${back.status} with no JSON object` : 'found it with another description');
+      const landing = landedId !== null ? `, but a list '${title}' with this probe's description reads back `
+        + `(list ${landedId}), so it is recycled` : back.status === 404 ? `; no list holds '${title}'`
+        : `; whether a list '${title}' landed is unknown (the read-back ${unknown}), so check it by hand`;
+      record(id, question, 'FAIL',
+        `the list create answered HTTP ${made.status}: ${quote(made.text).slice(0, 300)}${landing}`);
+      voidRows(dependents, 'the scratch list was not created');
+      return { held: false, merge: null, body: null };
+    }
+    if (!made.ok) {
+      // Throttled, unauthorised or unavailable is no answer, and the list may exist, so the title is kept.
+      CREATED_LISTS.push({ title, id: null });
+      return leaveOpen(`the list create ${unanswered({ ok: false, status: made.status })}: `
+        + `${quote(made.text).slice(0, 200)}, so a list '${title}' may now exist`);
+    }
+    if (recordBody({ parsed: made.body }) === null) {
+      CREATED_LISTS.push({ title, id: null });
+      return leaveOpen(`the list create answered HTTP ${made.status} with no JSON object, so a list '${title}' `
+        + 'may now exist');
+    }
+    const created = { title, id: guidOf(made.body.Id) };
+    // Two creates answering one Id would send both lists' writes to one list, so the second is not built on.
+    if (created.id !== null && CREATED_LISTS.some((one) => one.id === created.id)) {
+      log('FAIL', `'${title}' answered list ${created.id}, which another list this run created holds; `
+        + `recycle '${title}' by hand.`);
+      record(id, question, 'FAIL', `the list create answered HTTP ${made.status} with the Id of another list `
+        + `this run created (${created.id}), so nothing was written to it; recycle it by hand`);
+      voidRows(dependents, 'the scratch list answered the Id of another list this run created');
+      return { held: false, merge: null, body: null };
+    }
+    // Without the create's own Id a title read could name a rebound list, so nothing more is written.
+    if (created.id === null) {
+      CREATED_LISTS.push(created);
+      record(id, question, 'FAIL', `the list create answered HTTP ${made.status} with no list Id, so nothing `
+        + `ties '${title}' to the list it made; nothing was written to it`);
+      voidRows(dependents, 'the scratch list answered no Id to address it by');
+      return { held: false, merge: null, body: null };
+    }
+    // The answered Id is written to or recycled only once it reads back this run's title and this probe's
+    // Description, since a wrong Id would point both at a list this run did not make.
+    let mine;
+    try {
+      mine = await spGet(`web/lists(guid'${created.id}')?$select=Id,Title,Description`);
+    } catch (err) {
+      mine = { ok: false, status: null, why: `never answered (${scrub(String((err && err.message) || err))})` };
+    }
+    const own = mine.ok ? recordBody({ parsed: mine.body }) : null;
+    const proved = own !== null && own.Title === title && own.Description === description
+      && guidOf(own.Id) === created.id;
+    if (!proved) {
+      const said = mine.why || (own !== null ? `reads back Title ${quoteValue(own.Title)} and `
+        + `${own.Description === description ? 'this probe\'s Description' : 'another Description'}, not '${title}' `
+        + 'with this probe\'s' : mine.ok ? `answered HTTP ${mine.status} with no JSON object`
+        : absenceOf(mine.status, mine.body) ? 'answered that no list holds it' : unanswered(mine));
+      const why = own !== null ? `list ${created.id} ${said}` : `the read of list ${created.id} ${said}`;
+      // Named for a check by hand, never recycled by an Id this run did not prove its own.
+      CREATED_LISTS.push({ title, id: null, why: `answered list ${created.id}, which did not read back as this `
+        + 'run\'s list' });
+      // A contradicting read or a refusal settles it; a read that said nothing leaves it open.
+      if (own === null && (mine.why || mine.ok || !isRefusal(mine.status))) {
+        return leaveOpen(`${why}, so nothing was written to it`);
+      }
+      record(id, question, 'FAIL', `${why}; nothing was written to it`);
+      voidRows(dependents, 'the scratch list did not read back as this run\'s');
+      return { held: false, merge: null, body: null };
+    }
+    CREATED_LISTS.push(created);
+    let merge = null;
+    beginFixture();
+    if (settings !== null) {
+      // Sent by Id, so a title rebound cannot take this list's settings.
+      merge = await spWrite(`web/lists(guid'${created.id}')`, { __metadata: { type: 'SP.List' }, ...settings },
+        await getDigest(), { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
+      log('INFO', `list settings MERGE on '${title}': HTTP ${merge.status}`
+        + `${merge.ok ? '' : ` ${quote(merge.text).slice(0, 200)}`}`);
+    }
+    const select = [...new Set(['Id', 'BaseTemplate', 'Description', ...Object.keys(declared)])].join(',');
+    // The MERGE's answer joins the read-back, so a refused setting shows its reason in RESULTS.
+    const answered = merge === null ? {} : { Settings: `HTTP ${merge.status}`
+      + `${merge.ok ? '' : `: ${quote(merge.text).slice(0, 200)}`}` };
+    // Recorded, never judged: what the MERGE answered is an observation, and the read-back decides.
+    const settled = merge === null ? {} : { Settings: (v) => typeof v === 'string' };
+    let read = null;
+    const held = await settleFixture(id, async () => {
+      read = await spGet(`${path}?$select=${select}`);
+      readHead({ ...read, parsed: read.body, text: JSON.stringify(read.body) });
+      // A body that is not a JSON object is no answer; the harness would read a property off it.
+      if (read.ok && recordBody({ parsed: read.body }) === null) read = { ...read, body: null };
+      return read.ok && read.body && typeof read.body === 'object'
+        ? { ...read, body: { ...read.body, ...answered } } : read;
+    }, { BaseTemplate: baseTemplate, Description: description, ...declared, ...settled,
+      // The title must still name the list this run created, so every write after it reaches that list.
+      Id: (v) => guidOf(v) !== null && guidOf(v) === created.id }, dependents);
+    // The read-back is handed on, so a caller uses the values the fixture certified, and writes by its Id.
+    return { held, merge, body: held ? read.body : null, path: held ? `web/lists(guid'${created.id}')` : null };
+  };
+
+  // Recycles every list this run created by its Id, newest first, and says which one to recycle by hand.
+  const recycleScratchLists = async () => {
+    for (const { title, id, why } of [...CREATED_LISTS].reverse()) {
+      if (id === null) {
+        log('FAIL', `'${title}' ${why || 'never answered a list Id'}, so it was not recycled; if it stands, `
+          + 'recycle it by hand.');
+        continue;
+      }
+      // By Id, so a title rebound cannot redirect it.
+      await recycleList(title, id);
+    }
+  };

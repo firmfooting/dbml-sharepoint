@@ -1,0 +1,385 @@
+{# test/manual/templates/item-versions-query-probe.js.j2 #}
+
+/** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
+ *
+ * REVISION: {{ revision }}
+ *
+ * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
+ * `$orderby`, and in what order does it return versions when asked for none?
+ *
+ * WHY: a flow that reads an item's versions once per run would narrow the
+ * read on the server if it could, and pairs consecutive versions by order.
+ * "Use OData query operations in SharePoint REST requests" documents these
+ * options for list items and says nothing about item versions.
+ *
+ * DEPENDS ON (read back, and voiding what rests on them when they do not hold)
+ *   query.odata.fixture-versions-query-list   a generic list with versioning on
+ *   query.odata.fixture-versions-query-items  item A created and written twice, item B
+ *       created once under its own Id, each write read back before the next is sent
+ *   query.odata.control-versions-read        A's versions read with no options answers
+ *       at least two entries, each carrying a numeric VersionId, none repeated
+ *   query.odata.control-versions-items-filter      $filter=Id eq A serves A alone
+ *   query.odata.control-versions-items-top      $top=1 serves one of A and B, alone, on its
+ *       first page
+ *   query.odata.control-versions-items-orderby  $orderby=Id asc serves A and B in rising Id
+ *       order and $orderby=Id desc in falling order, over the Ids read back, so an
+ *       ignored $orderby fails one of the two whatever order the list keeps
+ *   Each item-list control gates the versions row asking the same option. A control
+ *   that FAILs voids it; one NOT ESTABLISHED leaves it open and unasked.
+ *
+ * OBSERVES (named from what came back, never compared with an expected value)
+ *   query.odata.versions-default-order  the VersionIds in the order the plain read answered
+ *   query.odata.versions-select         $select=VersionId,VersionLabel,ProbeChoice: the
+ *       property names each entry carried, beside those the plain read carried beyond them
+ *   query.odata.versions-filter         $filter=VersionId gt <the lowest>: the VersionIds served
+ *   query.odata.versions-top            $top=1: how many entries were served
+ *   query.odata.versions-orderby        $orderby=VersionId in the direction opposite to the
+ *       plain read's, or ascending when the plain read has no order: the VersionIds in the
+ *       order served
+ *
+ * HOW TO READ IT: each observed row is headed by what the answer looked like
+ * (NARROWED, FILTERED, TOPPED and so on) beside the plain read's answer, and
+ * REFUSED is a refusal whose text says why. NARROWED needs every entry to carry
+ * nothing beyond the selected names and every selected name the plain read
+ * carried on all its entries; SELECTED MISSING is an answer lacking one.
+ * OTHER ROWS on the select, top and orderby rows is an answer serving
+ * versions the plain read did not, or not serving all of those it did.
+ * NOT COMPARABLE, left open, is an answer carrying a continuation link, which
+ * the probe records and does not follow; on the plain read it holds every
+ * option row. A $top read is the exception: Learn ("Use OData query operations
+ * in SharePoint REST requests") documents $top on list items as paging with
+ * $skiptoken, so its first page is judged and its link recorded.
+ *
+ * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
+ * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again.
+ * Copy the RESULTS block back verbatim.
+ *
+ * WHEN FINISHED: nothing to delete. The probe recycles its list before it
+ * reports. Each title ends in a token unique to the run, so no run finds,
+ * reuses or recycles another run's list; one a run could not recycle is
+ * named on the console, with its Id, to recycle by hand.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+{% include "_probe_raw_request_v1.js.j2" %}
+{% include "_probe_identity_v1.js.j2" %}
+{% include "_probe_scratch_list_v1.js.j2" %}
+{% include "_probe_item_versions_v1.js.j2" %}
+  log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
+
+  const LIST = runTitle('dbmlsp Probe VersionsQuery');
+  // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
+  const OWNERSHIP = 'dbml-sharepoint versions-query probe scratch list. Safe to delete.';
+  const CHOICE = 'ProbeChoice';
+
+  const Q = {
+    list: 'a generic list this probe created, with versioning on',
+    items: 'item A created and written twice, item B created once under its own Id, each write read back '
+      + 'before the next',
+    read: 'CONTROL: A\'s versions read with no options answers at least two entries, '
+      + 'each carrying a numeric VersionId, none repeated',
+    filterControl: 'CONTROL: $filter=Id eq A on the list\'s items serves A alone',
+    topControl: 'CONTROL: $top=1 on the list\'s items serves one of A and B alone',
+    orderbyControl: 'CONTROL: $orderby=Id asc and $orderby=Id desc on the list\'s items serve A and B in opposite '
+      + 'orders, rising and falling by Id',
+    order: 'the order the versions read answers when asked for none',
+    select: `what $select=VersionId,VersionLabel,${CHOICE} on the versions read answers`,
+    filter: 'what $filter=VersionId gt the lowest VersionId on the versions read answers',
+    top: 'what $top=1 on the versions read answers',
+    orderby: 'what $orderby=VersionId on the versions read answers, asked opposite to the plain read\'s order, '
+      + 'or ascending when that read has none',
+  };
+  expect('query.odata.fixture-versions-query-list', Q.list);
+  expect('query.odata.fixture-versions-query-items', Q.items);
+  expect('query.odata.control-versions-read', Q.read);
+  expect('query.odata.control-versions-items-filter', Q.filterControl);
+  expect('query.odata.control-versions-items-top', Q.topControl);
+  expect('query.odata.control-versions-items-orderby', Q.orderbyControl);
+  expect('query.odata.versions-default-order', Q.order);
+  expect('query.odata.versions-select', Q.select);
+  expect('query.odata.versions-filter', Q.filter);
+  expect('query.odata.versions-top', Q.top);
+  expect('query.odata.versions-orderby', Q.orderby);
+
+  const FILTER_CONTROL = 'query.odata.control-versions-items-filter';
+  const TOP_CONTROL = 'query.odata.control-versions-items-top';
+  const ORDERBY_CONTROL = 'query.odata.control-versions-items-orderby';
+  const SUBJECTS = ['query.odata.versions-default-order', 'query.odata.versions-select',
+    'query.odata.versions-filter', 'query.odata.versions-top', 'query.odata.versions-orderby'];
+  const AFTER_READ = [FILTER_CONTROL, TOP_CONTROL, ORDERBY_CONTROL, ...SUBJECTS];
+  const AFTER_ITEMS = ['query.odata.control-versions-read', ...AFTER_READ];
+  const AFTER_LIST = ['query.odata.fixture-versions-query-items', ...AFTER_ITEMS];
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create a list '${LIST}' on ${WEB} with versioning on and one Choice column,`);
+    log('INFO', 'create item A and write it twice, create item B, then read A\'s versions with no');
+    log('INFO', 'options and with each of $select, $filter, $top and $orderby. The list is recycled');
+    log('INFO', 'on the way out. Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write. Stopping.');
+    return;
+  }
+
+  // Refusal text can name the tenant or an account, so it is scrubbed before it is shown.
+  const said = (res) => quote(res.text).slice(0, 400);
+
+  try {
+    await learnIdentity();
+    const list = await claimScratchList({ id: 'query.odata.fixture-versions-query-list', question: Q.list,
+      title: LIST, description: OWNERSHIP, dependents: AFTER_LIST, settings: { EnableVersioning: true },
+      declared: { EnableVersioning: true,
+        ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 } });
+    if (!list.held) return;
+    const listPath = list.path;
+    const itemType = list.body.ListItemEntityTypeFullName;
+
+    // The deploy's Choice create body (generators/jsgen.py).
+    beginFixture();
+    const column = await spWrite(`${listPath}/fields`, { __metadata: { type: 'SP.FieldChoice' },
+      Title: CHOICE, FieldTypeKind: 6, Required: false, Choices: { results: ['Q1', 'Q2', 'Q3'] },
+      FillInChoice: false }, await getDigest(), VERBOSE_WRITE);
+    log('INFO', `create ${CHOICE}: HTTP ${column.status}${column.ok ? '' : ` ${said(column)}`}`);
+
+    const ids = {};
+    let written = 0;
+    const missed = [];
+    // A write counts once the item reads back what it set, since the option rows rest on A's three versions.
+    const landed = async (what, sent, itemId, want) => {
+      if (!sent.ok || itemId === undefined) {
+        missed.push(`${what}: HTTP ${sent.status}`
+          + `${sent.ok ? ' carried no numeric Id' : `: ${said(sent).slice(0, 160)}`}`);
+        return false;
+      }
+      const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title,${CHOICE}`);
+      const head = readHead(read);
+      const got = head ? null : recordBody(read);
+      const off = got === null ? null : Object.keys(want).filter((key) => got[key] !== want[key]);
+      if (got !== null && off.length === 0) {
+        written += 1;
+        return true;
+      }
+      missed.push(`${what}: HTTP ${sent.status}, but ${got === null ? `the read-back ${head ? scrub(head.why)
+        : `answered HTTP ${read.status} with no JSON`}` : off.map((key) => `${key} reads back `
+        + `${quoteValue(got[key])}`).join(', ')}`.slice(0, 240));
+      return false;
+    };
+    for (const [key, title] of [['A', 'dbmlsp versions query A'], ['B', 'dbmlsp versions query B']]) {
+      const made = await spWrite(`${listPath}/items`, { __metadata: { type: itemType }, Title: title,
+        [CHOICE]: 'Q1' }, await getDigest(), VERBOSE_WRITE);
+      const madeId = createdId(made);
+      if (madeId !== null) ids[key] = madeId;
+      await landed(`the create of ${key}`, made, ids[key], { Title: title, [CHOICE]: 'Q1' });
+    }
+    if (ids.A !== undefined) {
+      for (const value of ['Q2', 'Q3']) {
+        const sent = await spWrite(`${listPath}/items(${ids.A})`, { __metadata: { type: itemType },
+          [CHOICE]: value }, await getDigest(), { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
+        if (!await landed(`A's write of ${value}`, sent, ids.A, { [CHOICE]: value })) break;
+      }
+    }
+    if (!await settleFixture('query.odata.fixture-versions-query-items', async () => {
+      // The column create's answer joins the read-back, so a refused create shows its reason in RESULTS.
+      // A and B answering one Id would make every item-list control compare an item with itself.
+      const body = { Column: `HTTP ${column.status}${column.ok ? '' : `: ${said(column).slice(0, 200)}`}`,
+        Written: written, Distinct: ids.A !== ids.B, Missed: missed.join('; ') || 'none' };
+      for (const key of ['A', 'B']) {
+        if (ids[key] === undefined) continue;
+        const read = await sendRaw(`${listPath}/items(${ids[key]})?$select=Id,${CHOICE}`);
+        const head = readHead(read);
+        body[`${key}.${CHOICE}`] = head ? scrub(head.why)
+          : recordBody(read) ? recordBody(read)[CHOICE] : `no JSON object: ${said(read)}`;
+      }
+      return { ok: true, status: 200, body };
+    }, { Column: (v) => typeof v === 'string', Written: 4, Distinct: true,
+      Missed: (v) => typeof v === 'string',
+      [`A.${CHOICE}`]: 'Q3', [`B.${CHOICE}`]: 'Q1' },
+    AFTER_ITEMS)) {
+      return;
+    }
+
+    const plain = await readVersions(listPath, ids.A);
+    const plainIds = plain.rows === null ? [] : plain.rows.map(versionIdOf);
+    // The option rows need two numeric VersionIds; how many an item answers is the payload probe's question.
+    // Each version must be listed once, since every option row compares against these VersionIds as a set.
+    const readHeld = plain.rows !== null && plain.rows.length >= 2
+      && plainIds.every((v) => typeof v === 'number') && repeatedIds(plain.rows).length === 0;
+    // A 2xx with no value array is not an answer about the versions, so it is left open like a throttle.
+    const plainUnread = plain.head ? plain.head.outcome === 'NOT ESTABLISHED' : plain.rows === null;
+    const readOutcome = readHeld ? 'PASS' : plainUnread ? 'NOT ESTABLISHED' : 'FAIL';
+    const entries = (n) => `${n} ${n === 1 ? 'entry' : 'entries'}`;
+    record('query.odata.control-versions-read', Q.read, readOutcome, plain.head ? scrub(plain.head.why)
+      : `HTTP ${plain.res.status}, ${plain.rows === null ? `${plain.shape}: ${said(plain.res)}`
+        : `${entries(plain.rows.length)}, VersionIds ${quoteValue(plainIds)}`}`);
+    if (readOutcome === 'FAIL') {
+      voidRows(AFTER_READ,
+        'the plain versions read did not answer at least two entries each carrying a numeric VersionId, '
+          + 'none repeated');
+      return;
+    }
+    if (readOutcome === 'NOT ESTABLISHED') {
+      for (const id of AFTER_READ) {
+        const row = RESULTS.find((r) => r.id === id);
+        record(id, row.question, 'NOT ESTABLISHED', 'not asked: the plain versions read was not established '
+          + `(${plain.head ? scrub(plain.head.why) : `HTTP ${plain.res.status} ${plain.shape}`}); `
+          + 'a re-run can ask it');
+      }
+      return;
+    }
+
+    if (plain.next !== null) {
+      // Every option row compares against the plain read, which a continuation link leaves incomplete.
+      const why = `the plain versions read is not known to be complete: ${pagedSaid(plain)}`;
+      for (const id of AFTER_READ) {
+        const row = RESULTS.find((r) => r.id === id);
+        if (SUBJECTS.includes(id)) record(id, row.question, 'NOT COMPARABLE', why, 'open');
+        else record(id, row.question, 'NOT ESTABLISHED', `not asked: ${why}`);
+      }
+      return;
+    }
+    const defaultOrder = orderOf(plainIds);
+    record('query.odata.versions-default-order', Q.order, defaultOrder,
+      `VersionIds in the order answered: ${quoteValue(plainIds)}; labels `
+      + `${quoteValue(plain.rows.map((row) => row.VersionLabel))}`);
+
+    // A first-page answer's continuation link, as the evidence records it; empty when there is none.
+    const alsoLinked = (next) => (next === null ? '' : `; the answer also carried a continuation link `
+      + `(${quote(next).slice(0, 200)}), recorded and not followed`);
+    // What the item-list controls serve decides which option rows are asked at all. Each read is judged alone:
+    // a refusal or a contradicting answer fails the control, and otherwise an unanswered read leaves it open.
+    // A read marked `firstPage` asks about $top, which Learn documents as paging with $skiptoken on list items
+    // ("Use OData query operations in SharePoint REST requests"), so its first page is judged alone.
+    const controlOf = async (id, question, reads) => {
+      const verdicts = [];
+      for (const { query, holds, want, firstPage = false } of reads) {
+        const res = await sendRaw(`${listPath}/items?$select=Id&${query}`);
+        const head = maskedHead(res);
+        const entries = head ? { rows: null, shape: null } : entriesOf(res.parsed);
+        const next = entries.rows === null ? null : continuationOf(res.parsed);
+        // Elsewhere rows from a page the read did not follow are not all the rows served, so they are no answer.
+        const { rows, shape } = next === null || firstPage ? entries : { rows: null,
+          shape: `carried a continuation link (${quote(next).slice(0, 200)}), which this probe does not follow` };
+        const served = rows === null ? null : rows.map((row) => row.Id);
+        // A 2xx with no rows is not an answer about the option, so it is left open like a throttle.
+        const outcome = served !== null && holds(served) ? 'PASS'
+          : (head ? head.outcome === 'NOT ESTABLISHED' : served === null) ? 'NOT ESTABLISHED' : 'FAIL';
+        const why = head ? scrub(head.why) : served === null ? `HTTP ${res.status} ${shape}: ${said(res)}` : '';
+        verdicts.push({ outcome, said: `${query}: ${why || `served ${quoteValue(served)}, want ${want}`}`
+          + `${firstPage && served !== null ? alsoLinked(next) : ''}` });
+      }
+      const outcome = verdicts.some((v) => v.outcome === 'FAIL') ? 'FAIL'
+        : verdicts.some((v) => v.outcome === 'NOT ESTABLISHED') ? 'NOT ESTABLISHED' : 'PASS';
+      const why = verdicts.map((v) => v.said).join('; ');
+      record(id, question, outcome, why);
+      return { outcome, why };
+    };
+    // Exactly these Ids in exactly this order.
+    const inOrder = (want) => (served) => served.length === want.length && served.every((v, i) => v === want[i]);
+    const filterControl = await controlOf(FILTER_CONTROL, Q.filterControl, [{ query: `$filter=Id eq ${ids.A}`,
+      holds: (served) => sameElements(served, [ids.A]), want: `[${ids.A}]` }]);
+    const topControl = await controlOf(TOP_CONTROL, Q.topControl, [{ query: '$top=1',
+      holds: (served) => served.length === 1 && [ids.A, ids.B].includes(served[0]),
+      want: `one of [${ids.A},${ids.B}]`, firstPage: true }]);
+    // Both directions over the Ids read back, since an ignored $orderby serves one order for both.
+    const rising = [ids.A, ids.B].sort((a, b) => a - b);
+    const falling = [...rising].reverse();
+    const orderbyControl = await controlOf(ORDERBY_CONTROL, Q.orderbyControl, [
+      { query: '$orderby=Id asc', holds: inOrder(rising), want: JSON.stringify(rising) },
+      { query: '$orderby=Id desc', holds: inOrder(falling), want: JSON.stringify(falling) },
+    ]);
+
+    // `control` is null for an option no item-list control asks first.
+    // `firstPage` judges a $top answer on its first page, since Learn documents $top on list items as paging.
+    const ask = async (id, question, control, query, describe, firstPage = false) => {
+      if (control !== null && control.outcome === 'FAIL') {
+        voidRows([id], 'the item-list control asking the same option did not serve the rows written');
+        return;
+      }
+      if (control !== null && control.outcome === 'NOT ESTABLISHED') {
+        record(id, question, 'NOT ESTABLISHED',
+          `not asked: its item-list control was not established (${control.why}); a re-run can ask it`);
+        return;
+      }
+      const got = await readVersions(listPath, ids.A, query);
+      if (got.head) {
+        record(id, question, got.head.outcome, `${query}: ${scrub(got.head.why)}`);
+        return;
+      }
+      if (got.rows === null) {
+        record(id, question, 'NOT ESTABLISHED', `${query}: HTTP ${got.res.status} ${got.shape}: `
+          + `${said(got.res)}`);
+        return;
+      }
+      if (got.next !== null && !firstPage) {
+        record(id, question, 'NOT COMPARABLE', `${query}: ${pagedSaid(got)}; served VersionIds `
+          + `${quoteValue(got.rows.map(versionIdOf))}`, 'open');
+        return;
+      }
+      const [head, evidence] = describe(got.rows);
+      record(id, question, head, `${query}: ${evidence}${alsoLinked(got.next)}; the plain read answered VersionIds `
+        + `${quoteValue(plainIds)}`);
+    };
+
+    const SELECTED = ['VersionId', 'VersionLabel', CHOICE];
+    const keysOf = (rows) => [...new Set(rows.flatMap((row) => Object.keys(row)))].sort();
+    const beyondSelected = (keys) => keys.filter((key) => !SELECTED.includes(key) && !key.startsWith('odata.')
+      && !key.startsWith('@odata.') && key !== '__metadata');
+    // Narrowing is judged against what the plain read carried beyond the selected names.
+    const baseline = beyondSelected(keysOf(plain.rows));
+    const carries = (row, key) => Object.prototype.hasOwnProperty.call(row, key);
+    // Whether an answer served exactly the versions the plain read did, by VersionId.
+    const sameVersions = (rows) => sameElements(rows.map(versionIdOf), plainIds);
+    // A selected name the plain read carried on every entry must come back on every entry.
+    const owed = SELECTED.filter((key) => plain.rows.every((row) => carries(row, key)));
+    await ask('query.odata.versions-select', Q.select, null, `$select=${SELECTED.join(',')}`,
+      (rows) => {
+        const keys = keysOf(rows);
+        const extra = beyondSelected(keys);
+        const missing = owed.filter((key) => !rows.every((row) => carries(row, key)));
+        // VersionId is selected, so an answer lacking it heads SELECTED MISSING before its versions are compared.
+        const head = !baseline.length ? 'NOT COMPARABLE' : !rows.length ? 'NO VERSIONS'
+          : extra.length ? 'NOT NARROWED' : missing.length ? 'SELECTED MISSING'
+            : !sameVersions(rows) ? 'OTHER ROWS' : 'NARROWED';
+        const why = !baseline.length ? 'the plain read carried nothing beyond the selected names, '
+          + 'so an ignored $select would look the same' : `the plain read also carried ${baseline.join(', ')}`;
+        const lacking = missing.length ? `; not every entry carries ${missing.join(', ')}, which every entry of `
+          + 'the plain read carried' : '';
+        return [head, `${entries(rows.length)} carrying ${keys.length ? keys.join(', ') : 'nothing'}; ${why}`
+          + `${lacking}; served VersionIds ${quoteValue(rows.map(versionIdOf))}`];
+      });
+    const lowest = Math.min(...plainIds);
+    await ask('query.odata.versions-filter', Q.filter, filterControl, `$filter=VersionId gt ${lowest}`,
+      (rows) => {
+        const served = rows.map(versionIdOf);
+        const rest = plainIds.filter((v) => v > lowest);
+        const head = sameElements(served, rest) ? 'FILTERED' : sameElements(served, plainIds) ? 'UNFILTERED'
+          : 'OTHER ROWS';
+        return [head, `served VersionIds ${quoteValue(served)}`];
+      });
+    // A served version the plain read did not answer is not one of this item's versions topped.
+    const known = (rows) => rows.every((row) => plainIds.includes(versionIdOf(row)));
+    await ask('query.odata.versions-top', Q.top, topControl, '$top=1',
+      (rows) => [!known(rows) ? 'OTHER ROWS' : rows.length === 1 ? 'TOPPED' : 'NOT TOPPED',
+        `served ${entries(rows.length)}, VersionIds ${quoteValue(rows.map(versionIdOf))}`], true);
+    // Only an ordered plain read has an opposite, so an unordered one is asked ascending and said so.
+    const opposite = defaultOrder === 'ASCENDING' ? 'desc' : defaultOrder === 'DESCENDING' ? 'asc' : null;
+    const direction = opposite || 'asc';
+    const askedSaid = opposite ? `asked ${direction}, opposite to the plain read's ${defaultOrder}`
+      : `asked asc, since the plain read was ${defaultOrder} and has no opposite`;
+    await ask('query.odata.versions-orderby', Q.orderby, orderbyControl, `$orderby=VersionId ${direction}`,
+      (rows) => {
+        const served = rows.map(versionIdOf);
+        // An order is named only over the same versions the plain read answered.
+        return [sameVersions(rows) ? orderOf(served) : 'OTHER ROWS',
+          `${askedSaid}; served VersionIds ${quoteValue(served)}`];
+      });
+  } catch (err) {
+    log('FAIL', `probe aborted: ${scrub(String((err && err.message) || err)).slice(0, 240)}. `
+      + 'The unasked rows stay open.');
+  } finally {
+    await recycleScratchLists();
+    // Reported here, after the recycle, so every path prints the recycle line above the table.
+    report();
+  }
+})();

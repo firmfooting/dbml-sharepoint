@@ -163,7 +163,14 @@ returned*, not the view object that stores the predicate.
 
 Scopes: `caml`, `caml-adhoc`, `view-query`, `odata`
 
-Probes: `caml-chain-depth-probe.js`, `calculated-filter-probe.js`
+Probes: `caml-chain-depth-probe.js`, `calculated-filter-probe.js`,
+`item-versions-query-probe.js`
+
+`item-versions-query-probe.js` files under `odata` because its questions are
+which versions `items(id)/versions` returns for `$select`, `$filter`, `$top`
+and `$orderby`, and in what order. Its two item-list controls ask the same
+options of the list's items first, so a refusal on the versions read comes
+from an option the items accepted.
 
 ### 4. `view`: the `SP.View` object and its rendered page
 
@@ -200,7 +207,10 @@ column's `DefaultFormula` property, what it fills at item create, and what
 to a column that already holds items does), `sealed` (a
 column's `Sealed` flag, what SharePoint reports about deleting the column in
 each state, and what it does with a write of the read-only `CanBeDeleted`),
-`cross-web` (a Lookup whose target list is in another web)
+`cross-web` (a Lookup whose target list is in another web), `version` (an
+item's history as `items(id)/versions` returns it: what each version
+carries for a column kind, and what remains once the list's version limit
+trims)
 
 Probes: `multi-value-probe.js`, `projected-lookup-probe.js`,
 `date-storage-probe.js`, `multilookup-probe.js`, `list-settings-probe.js`,
@@ -209,7 +219,8 @@ Probes: `multi-value-probe.js`, `projected-lookup-probe.js`,
 `site-zone-transitions-probe.js`, `default-formula-readback-probe.js`,
 `default-formula-functions-probe.js`, `unique-blanks-probe.js`,
 `unique-transition-probe.js`, `field-sealed-probe.js`,
-`utctolocaltime-rest-form-probe.js`, `calculated-date-rest-probe.js`
+`utctolocaltime-rest-form-probe.js`, `calculated-date-rest-probe.js`,
+`item-versions-payload-probe.js`, `item-versions-trim-probe.js`
 
 `site-zone-transitions-probe.js` files under `date` because its subject is
 the relation between a stored UTC instant and the site-local clock, which is
@@ -266,6 +277,19 @@ operator supplies a web in another site collection, and those two topologies
 are not the same measurement. `projected-lookup-probe.js` carries the arm
 because it already builds a two-list lookup fixture, and issue #184 is the
 evidence question it answers.
+
+`version` is separate from the column kinds because its subject is the
+item's history rather than one column's value. `item-versions-payload-probe.js`
+writes one item three times across nine column kinds and records what each
+version carries per kind, with VersionId, VersionLabel, Editor and Modified,
+and whether VersionId rises as VersionLabel does. Its library case edits a
+file in a library's folder, replaces the file's content, and edits it again,
+and records whether the content-only upload added a version and what that
+version carries.
+`item-versions-trim-probe.js` writes past the list's MajorVersionLimit and
+records what the versions read answers at once and a minute later. The limit
+the list takes is a fixture only in its range, because the run has to be able
+to write past it; the value itself is `trim-limit-taken`, an observation.
 
 ### 7. `text`: does a string survive a write and read back byte-identical
 
@@ -632,7 +656,17 @@ Ids without the list having changed.
 Scopes: `batch`, `throttle`, `retry`, `cache`
 
 Probes: `throttle-batch-probe.js`, `batch-field-create-probe.js`,
-`list-identity-cache-probe.js`
+`list-identity-cache-probe.js`, `batch-item-create-probe.js`
+
+`batch-item-create-probe.js` files under `batch` beside
+`batch-field-create-probe.js`, and takes its own `item-` ids because an item
+create is a different request from a field create. It records each part's
+status line, headers and body, and whether a part may omit the list's
+ListItemEntityTypeFullName in a verbose part and in a nometadata part. Its
+`addvalidate` rows ask the same of a ChangeSet of parts calling
+AddValidateUpdateItemUsingPath, one made to fail: whether a part may omit
+`listItemCreateInfo.FolderPath`, and whether `formValues` takes a person as
+claims and a date as ISO 8601 text.
 
 ## Checks that file under a different surface than their probe
 
@@ -783,6 +817,9 @@ different questions and take different ids. They do not merge.
 | Is a probe-created column sealed by a field MERGE and read back | on the list built for the CanBeDeleted measurement, where it is the dependency every observation rests on | `field.sealed.seal-write-readback` |
 | Does the site convert a UTC instant to its local clock | a GET of `utctolocaltime` in two URL shapes | `field.date.control-utctolocaltime-answers` |
 | Does the site convert a UTC instant to its local clock | a POST of `utcToLocalTime` in five spellings, with a digest | `field.date.utctolocaltime-post-quoted-literal` and its four siblings |
+| Does `items(id)/versions` answer an item's versions | a plain read answering any entries, before the payload is recorded | `field.version.control-payload-versions-read` |
+| Does `items(id)/versions` answer an item's versions | a plain read answering at least two versions, each with a numeric VersionId | `query.odata.control-versions-read` |
+| Does `items(id)/versions` answer a library file's versions | a plain read of the file's item answering any entries, before the upload's version is looked for | `field.version.control-library-versions-read` |
 
 `native-index-probe.js` and `threshold-index-probe.js` both emitted `CMPIDX` and
 `NULIDX`, and their four system-column checks (`NATCRE`/`SYSCRE` and siblings)

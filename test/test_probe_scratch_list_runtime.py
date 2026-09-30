@@ -1,0 +1,431 @@
+"""Execute the shared scratch-list partial on its own, behind the versions mock.
+
+A probe that applies list settings certifies them by read-back. The settings MERGE's answer is
+recorded beside that read-back, so a refused MERGE is shown with its reason in RESULTS and not
+only on the console, but it never fails the fixture on its own account. The list is recycled by
+the Id this run claimed, never by its title, so a title rebound cannot redirect the recycle.
+"""
+
+import importlib.util
+import json
+import re
+import sys
+from types import ModuleType
+from typing import Any
+
+import pytest
+from _node import NODE, run_node
+from _paths import MANUAL
+from _versions_mock import VERSIONS_MOCK, mock_list_id
+
+pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
+
+FIXTURE = "test.scratch.fixture-list"
+DEPENDENT = "test.scratch.dependent"
+TITLE = "dbmlsp Probe Scratch"
+REFUSAL = "The value is out of range at https://example.sharepoint.com/sites/probe."
+REFUSED = {"contains": "web/lists(guid'", "verb": "MERGE", "status": 400, "text": REFUSAL}
+SAID = "HTTP 400: The value is out of range at [TENANT]/sites/probe."
+VERSIONING = "{ EnableVersioning: true }"
+CLAIMED = mock_list_id(TITLE)
+OTHER = "00000000-0000-4000-8000-00000000abcd"
+PREFLIGHT = f"getbytitle('{TITLE}')?$select=Id,Description"
+
+
+def _load_renderer() -> ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        "dbmlsp_render_probes_scratch", MANUAL / "render_probes.py",
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _claim(
+    settings: dict[str, Any] | None, declared: str = "{}", cleanup: bool = False,
+    prelude: str = "", **config: Any,
+) -> dict[str, Any]:
+    """Claim one scratch list with `settings`, recycle what was made, and return what came back."""
+    env = _load_renderer()._env()
+    body = "".join(env.get_template(name).render() for name in (
+        "_probe_harness.js.j2", "_probe_raw_request_v1.js.j2", "_probe_identity_v1.js.j2",
+        "_probe_scratch_list_v1.js.j2"))
+    for gate in ("CONFIRMED", "ALLOW_WRITES", *(("CLEANUP",) if cleanup else ())):
+        body = body.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
+    script = (
+        VERSIONS_MOCK.replace("__CONFIG__", json.dumps(config))
+        + "(async () => {\n" + body
+        + f"  expect('{FIXTURE}', 'the scratch list');\n"
+        + f"  expect('{DEPENDENT}', 'a question resting on it');\n"
+        + f"  {prelude}\n"
+        + f"  const got = await claimScratchList({{ id: '{FIXTURE}', question: 'the scratch list',"
+        + f" title: '{TITLE}', description: 'owned', dependents: ['{DEPENDENT}'],"
+        + f" settings: {json.dumps(settings)}, declared: {declared} }});\n"
+        + "  await recycleScratchLists();\n"
+        + "  console.log('__OUT__' + JSON.stringify({ held: got.held, body: got.body,"
+        + " merge: got.merge && got.merge.status, rows: RESULTS }));\n"
+        + "})();\n"
+    )
+    output = run_node(script)
+    line = next((ln for ln in output.splitlines() if ln.startswith("__OUT__")), None)
+    assert line is not None, output[-2000:]
+    out: dict[str, Any] = json.loads(line.removeprefix("__OUT__"))
+    out["rows"] = {row["id"]: row for row in out["rows"]}
+    out["console"] = output.split("__SENT__")[0]
+    sent_line = next(ln for ln in output.splitlines() if ln.startswith("__SENT__"))
+    out["sent"] = json.loads(sent_line.removeprefix("__SENT__"))
+    return out
+
+
+def _recycles(out: dict[str, Any]) -> list[str]:
+    return [r["path"] for r in out["sent"] if r["path"].endswith("/recycle")]
+
+
+def _creates(out: dict[str, Any]) -> list[dict[str, str]]:
+    return [r for r in out["sent"] if r["path"] == "web/lists" and r["verb"] == "POST"]
+
+
+def test_an_accepted_settings_merge_is_read_back_with_its_status() -> None:
+    out = _claim({"EnableVersioning": True}, declared=VERSIONING)
+
+    assert out["held"] is True
+    assert out["merge"] == 204
+    assert out["rows"][FIXTURE]["outcome"] == "PASS"
+    assert 'Settings="HTTP 204"' in out["rows"][FIXTURE]["evidence"]
+    # The body handed on is the site's read-back; the MERGE's answer is evidence only.
+    assert "Settings" not in out["body"]
+
+
+def test_a_refused_merge_alone_is_recorded_and_the_fixture_still_holds() -> None:
+    # Nothing is declared from the settings, so the MERGE's answer is the only thing that differs.
+    out = _claim({"EnableVersioning": True}, rules=[REFUSED])
+
+    evidence = out["rows"][FIXTURE]["evidence"]
+    assert out["held"] is True
+    assert out["merge"] == 400
+    assert out["rows"][FIXTURE]["outcome"] == "PASS"
+    assert SAID in evidence
+    assert "example.sharepoint.com" not in evidence
+    assert out["rows"][DEPENDENT]["state"] == "open"
+
+
+def test_a_refused_merge_that_leaves_a_setting_unapplied_fails_on_that_setting() -> None:
+    out = _claim({"EnableVersioning": True}, declared=VERSIONING, rules=[REFUSED])
+
+    evidence = out["rows"][FIXTURE]["evidence"]
+    assert out["held"] is False
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert "EnableVersioning differs" in evidence
+    assert "Settings differs" not in evidence
+    assert SAID in evidence
+    assert "example.sharepoint.com" not in evidence
+    assert out["rows"][DEPENDENT]["state"] == "void"
+
+
+def test_a_refused_merge_naming_an_account_is_masked() -> None:
+    naming = {**REFUSED,
+              "text": "Refused for i:0#.f|membership|ada@example.com by bob@example.com."}
+    out = _claim({"EnableVersioning": True}, rules=[naming])
+
+    evidence = out["rows"][FIXTURE]["evidence"]
+    assert "HTTP 400: Refused for i:0#.f|membership|<account> by <account>" in evidence
+    assert "ada@example.com" not in out["console"]
+    assert "bob@example.com" not in out["console"]
+
+
+def test_a_list_claimed_without_settings_declares_no_merge() -> None:
+    out = _claim(None)
+
+    assert out["held"] is True
+    assert out["merge"] is None
+    assert "Settings" not in out["rows"][FIXTURE]["evidence"]
+
+
+def test_the_list_made_is_recycled_by_its_id_and_never_by_its_title() -> None:
+    out = _claim(None)
+
+    assert out["held"] is True
+    assert f"Id={json.dumps(CLAIMED)}" in out["rows"][FIXTURE]["evidence"]
+    assert _recycles(out) == [f"web/lists(guid'{CLAIMED}')/recycle"]
+    assert f"recycled '{TITLE}' (list {CLAIMED})" in out["console"]
+
+
+def test_a_title_rebound_before_the_read_back_fails_the_fixture_and_spares_the_other_list() -> None:
+    rebound = json.dumps({"Id": OTHER, "BaseTemplate": 100, "Description": "owned"})
+    out = _claim(None, rules=[{"contains": f"getbytitle('{TITLE}')?$select=Id,BaseTemplate",
+                               "status": 200, "text": rebound}])
+
+    assert out["held"] is False
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert "Id differs" in out["rows"][FIXTURE]["evidence"]
+    assert out["rows"][DEPENDENT]["state"] == "void"
+    assert _recycles(out) == [f"web/lists(guid'{CLAIMED}')/recycle"]
+
+
+@pytest.mark.parametrize("settings", [None, {"EnableVersioning": True}])
+def test_a_create_answering_no_id_fails_closed_and_writes_nothing_by_title(
+        settings: dict[str, Any] | None) -> None:
+    out = _claim(settings, createAnswersNoId=True)
+
+    assert out["held"] is False
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert out["rows"][FIXTURE]["evidence"] == (
+        f"the list create answered HTTP 201 with no list Id, so nothing ties '{TITLE}' to the "
+        "list it made; nothing was written to it")
+    assert out["rows"][DEPENDENT]["state"] == "void"
+    assert [r for r in out["sent"] if r["verb"] == "MERGE"] == []
+    assert [r for r in out["sent"] if "$select=Id,BaseTemplate" in r["path"]] == []
+    assert _recycles(out) == []
+    assert (f"'{TITLE}' never answered a list Id, so it was not recycled; if it stands, recycle it "
+            "by hand.") in out["console"]
+
+
+@pytest.mark.parametrize(("status", "said"), [
+    (429, "was throttled (HTTP 429)"), (503, "was throttled (HTTP 503)"),
+    (403, "was not authorised (HTTP 403)"),
+])
+def test_an_ownership_read_that_is_not_a_404_creates_nothing_and_leaves_the_rows_open(
+        status: int, said: str) -> None:
+    out = _claim(None, rules=[{"contains": PREFLIGHT, "status": status,
+                               "text": '{"odata.error": "busy for ada@example.com"}'}])
+
+    assert out["held"] is False
+    for row_id in (FIXTURE, DEPENDENT):
+        assert out["rows"][row_id]["outcome"] == "NOT ESTABLISHED"
+        assert out["rows"][row_id]["state"] == "open"
+        assert f"the ownership read of '{TITLE}' {said}" in out["rows"][row_id]["evidence"]
+        assert "a re-run can ask it" in out["rows"][row_id]["evidence"]
+    assert "ada@example.com" not in json.dumps(out["rows"])
+    assert _creates(out) == []
+    assert _recycles(out) == []
+
+
+def test_a_refused_ownership_read_fails_the_claim_and_creates_nothing() -> None:
+    out = _claim(None, rules=[{"contains": PREFLIGHT, "status": 500,
+                               "text": '{"odata.error": "refused for ada@example.com"}'}])
+
+    assert out["held"] is False
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert f"the ownership read of '{TITLE}' was refused (HTTP 500)" in (
+        out["rows"][FIXTURE]["evidence"])
+    assert out["rows"][DEPENDENT]["state"] == "void"
+    assert "ada@example.com" not in json.dumps(out["rows"])
+    assert _creates(out) == []
+
+
+def test_an_ownership_read_answering_404_goes_on_to_create_the_list() -> None:
+    out = _claim(None)
+
+    assert next(r for r in out["sent"] if PREFLIGHT in r["path"])
+    assert len(_creates(out)) == 1
+    assert out["held"] is True
+
+
+def test_a_row_an_earlier_fixture_voided_keeps_its_reason() -> None:
+    out = _claim(None, rules=[{"contains": PREFLIGHT, "status": 429, "text": "busy"}],
+                 prelude=f"voidDependents(['{DEPENDENT}'], 'an earlier fixture failed');")
+
+    assert out["rows"][FIXTURE]["state"] == "open"
+    assert out["rows"][DEPENDENT]["state"] == "void"
+    assert out["rows"][DEPENDENT]["evidence"] == "an earlier fixture failed"
+
+
+def test_a_refused_recycle_names_the_list_and_id_to_recycle_by_hand() -> None:
+    out = _claim(None, rules=[{"contains": "/recycle", "status": 400, "text": "no"}])
+
+    assert out["held"] is True
+    assert _recycles(out) == [f"web/lists(guid'{CLAIMED}')/recycle"]
+    assert (f"[FAIL] could not recycle '{TITLE}' (list {CLAIMED}, HTTP 400); "
+            "recycle it by hand.") in out["console"]
+
+
+def test_the_settings_merge_goes_by_the_id_the_create_answered() -> None:
+    out = _claim({"EnableVersioning": True}, declared=VERSIONING)
+
+    merges = [r["path"] for r in out["sent"] if r["verb"] == "MERGE"]
+    assert merges == [f"web/lists(guid'{CLAIMED}')"]
+
+
+def test_a_recycle_answered_2xx_whose_list_still_stands_is_not_reported_recycled() -> None:
+    out = _claim(None, rules=[{"contains": "/recycle", "status": 200, "text": "{}"}])
+
+    assert "[OK] recycled" not in out["console"]
+    assert (f"[FAIL] the recycle of '{TITLE}' (list {CLAIMED}) answered HTTP 200, but it still "
+            "reads back by its Id (HTTP 200); check it and recycle it by hand.") in out["console"]
+
+
+def test_a_recycle_whose_confirming_read_went_unanswered_is_not_reported_recycled() -> None:
+    # Past the first match, the read proving the list this run's before anything is written.
+    out = _claim(None, rules=[{"contains": f"guid'{CLAIMED}')?$select=Id", "after": 1,
+                               "status": 429, "text": "busy"}])
+
+    assert "[OK] recycled" not in out["console"]
+    assert ("answered HTTP 200, but the read-back that would confirm it was throttled (HTTP 429); "
+            "check it and recycle it by hand.") in out["console"]
+
+
+def test_a_create_that_never_answered_is_left_open_and_named_for_a_check_by_hand() -> None:
+    out = _claim({"EnableVersioning": True}, rules=[{"contains": "web/lists", "verb": "POST",
+                                                     "bodyContains": '"BaseTemplate"',
+                                                     "reject": True}])
+
+    assert out["held"] is False
+    for row_id in (FIXTURE, DEPENDENT):
+        assert out["rows"][row_id]["outcome"] == "NOT ESTABLISHED"
+        assert out["rows"][row_id]["state"] == "open"
+    assert (f"the list create never answered (Failed to fetch), so a list '{TITLE}' may now "
+            "exist") in out["rows"][FIXTURE]["evidence"]
+    assert [r for r in out["sent"] if r["verb"] == "MERGE"] == []
+    assert (f"'{TITLE}' never answered a list Id, so it was not recycled; if it stands, recycle it "
+            "by hand.") in out["console"]
+
+
+def test_an_ownership_read_answered_2xx_with_no_json_creates_nothing_and_stays_open() -> None:
+    out = _claim(None, rules=[{"contains": PREFLIGHT, "status": 200, "text": "not json"}])
+
+    assert out["held"] is False
+    for row_id in (FIXTURE, DEPENDENT):
+        assert out["rows"][row_id]["state"] == "open"
+    assert f"the ownership read of '{TITLE}' answered HTTP 200 with no JSON" in (
+        out["rows"][FIXTURE]["evidence"])
+    assert _creates(out) == []
+
+
+@pytest.mark.parametrize("description", ["owned", "somebody else's"])
+def test_a_list_already_holding_the_title_is_never_recycled_or_built_over(
+        description: str) -> None:
+    standing = {"Id": OTHER, "BaseTemplate": 100, "Description": description, "fields": {},
+                "items": []}
+    out = _claim(None, cleanup=True, lists={TITLE: standing})
+
+    assert out["held"] is False
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert "refusing to modify it" in out["rows"][FIXTURE]["evidence"]
+    assert out["rows"][DEPENDENT]["state"] == "void"
+    assert _creates(out) == []
+    assert _recycles(out) == []
+
+
+def test_every_run_draws_its_own_title_token() -> None:
+    env = _load_renderer()._env()
+    body = env.get_template("_probe_scratch_list_v1.js.j2").render()
+    script = ("(() => {\n" + body
+              + "  console.log('__T__' + runTitle('dbmlsp Probe Scratch'));\n})();\n")
+    titles = []
+    for _ in range(2):
+        line = next(ln for ln in run_node(script).splitlines() if ln.startswith("__T__"))
+        titles.append(line.removeprefix("__T__"))
+    for title in titles:
+        assert re.fullmatch(r"dbmlsp Probe Scratch [a-z0-9]{6,}", title), title
+    assert titles[0] != titles[1]
+
+
+CREATE_REFUSED = {"contains": "web/lists", "verb": "POST", "status": 500, "text": "Refused."}
+
+
+def test_a_refused_create_whose_list_landed_anyway_is_recycled_by_its_id() -> None:
+    out = _claim(None, createRefused={"status": 500, "text": "Refused."})
+
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert (f"but a list '{TITLE}' with this probe's description reads back (list {CLAIMED}), "
+            "so it is recycled") in out["rows"][FIXTURE]["evidence"]
+    assert out["rows"][DEPENDENT]["state"] == "void"
+    assert _recycles(out) == [f"web/lists(guid'{CLAIMED}')/recycle"]
+    assert "[OK] recycled" in out["console"]
+
+
+def test_a_refused_create_whose_title_reads_back_absent_names_nothing_to_recycle() -> None:
+    out = _claim(None, rules=[CREATE_REFUSED])
+
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert out["rows"][FIXTURE]["evidence"] == (
+        f"the list create answered HTTP 500: Refused.; no list holds '{TITLE}'")
+    assert _recycles(out) == []
+    assert "recycle it by hand" not in out["console"]
+
+
+@pytest.mark.parametrize(("rule", "said"), [
+    ({"status": 429, "text": "busy"}, "the read-back was throttled (HTTP 429)"),
+    ({"status": 200, "text": "not json"}, "the read-back answered HTTP 200 with no JSON object"),
+    ({"status": 200, "text": json.dumps({"Id": OTHER, "Description": "somebody else's"})},
+     "the read-back found it with another description"),
+    ({"reject": True}, "the read-back never answered (Failed to fetch)"),
+], ids=["throttled", "no-json", "not-owned", "thrown"])
+def test_a_refused_create_whose_landing_is_unknown_names_the_title_for_a_check_by_hand(
+        rule: dict[str, Any], said: str) -> None:
+    out = _claim(None, rules=[CREATE_REFUSED, {"contains": PREFLIGHT, "nth": 2, **rule}])
+
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert (f"whether a list '{TITLE}' landed is unknown ({said}), so check it by hand") in (
+        out["rows"][FIXTURE]["evidence"])
+    assert out["rows"][DEPENDENT]["state"] == "void"
+    assert _recycles(out) == []
+    assert (f"'{TITLE}' never answered a list Id, so it was not recycled; if it stands, recycle it "
+            "by hand.") in out["console"]
+
+
+def test_once_text_is_withheld_a_refused_merge_is_quoted_by_status_only() -> None:
+    refused = {**REFUSED, "text": "Zed Sentinel may not change it."}
+    out = _claim({"EnableVersioning": True}, declared=VERSIONING, prelude="withheld = true;",
+                 rules=[refused], listDefaults={"EnableVersioning": True})
+
+    assert "Zed Sentinel" not in json.dumps(out["rows"]) + out["console"]
+    assert ("Settings=\"HTTP 400: (text withheld: this account's display name was not learned)\""
+            in out["rows"][FIXTURE]["evidence"])
+
+
+VERIFY = f"web/lists(guid'{CLAIMED}')?$select=Id,Title,Description"
+SOMEBODYS = {"Id": CLAIMED, "Title": "Somebody's list", "BaseTemplate": 100,
+             "Description": "theirs", "fields": {}, "items": []}
+
+
+def _writes(out: dict[str, Any]) -> list[str]:
+    return [r["path"] for r in out["sent"]
+            if r["verb"] != "GET" and r["path"] != "contextinfo"
+            and not (r["path"] == "web/lists" and r["verb"] == "POST")]
+
+
+def test_the_id_a_create_answered_is_read_back_before_anything_is_written_to_it() -> None:
+    out = _claim({"EnableVersioning": True}, declared=VERSIONING)
+
+    paths = [r["path"] for r in out["sent"]]
+    assert paths.index(VERIFY) < paths.index(f"web/lists(guid'{CLAIMED}')")
+    assert out["held"] is True
+
+
+def test_an_answered_id_naming_another_list_is_never_written_to_or_recycled() -> None:
+    # The create answers the Id of a list that already stood under another title.
+    out = _claim({"EnableVersioning": True}, declared=VERSIONING,
+                 lists={"Somebody's list": SOMEBODYS})
+
+    assert out["held"] is False
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert (f"list {CLAIMED} reads back Title \"Somebody's list\" and another Description, "
+            f"not '{TITLE}' with this probe's; nothing was written to it") in (
+        out["rows"][FIXTURE]["evidence"])
+    assert out["rows"][DEPENDENT]["state"] == "void"
+    assert _writes(out) == []
+    assert (f"'{TITLE}' answered list {CLAIMED}, which did not read back as this run's list, "
+            "so it was not recycled; if it stands, recycle it by hand.") in out["console"]
+
+
+@pytest.mark.parametrize(("rule", "outcome", "said"), [
+    ({"status": 429, "text": "busy"}, "NOT ESTABLISHED", "was throttled (HTTP 429)"),
+    ({"status": 200, "text": "not json"}, "NOT ESTABLISHED",
+     "answered HTTP 200 with no JSON object"),
+    ({"reject": True}, "NOT ESTABLISHED", "never answered (Failed to fetch)"),
+    ({"status": 404, "text": "List does not exist."}, "FAIL", "answered that no list holds it"),
+    ({"status": 500, "text": "Refused."}, "FAIL", "was refused (HTTP 500)"),
+], ids=["throttled", "no-json", "thrown", "absent", "refused"])
+def test_an_answered_id_that_cannot_be_verified_is_never_written_to_or_recycled(
+        rule: dict[str, Any], outcome: str, said: str) -> None:
+    out = _claim({"EnableVersioning": True}, declared=VERSIONING,
+                 rules=[{"contains": VERIFY, **rule}])
+
+    assert out["held"] is False
+    assert out["rows"][FIXTURE]["outcome"] == outcome
+    assert f"the read of list {CLAIMED} {said}" in out["rows"][FIXTURE]["evidence"]
+    assert _writes(out) == []
+    assert "recycle it by hand" in out["console"]

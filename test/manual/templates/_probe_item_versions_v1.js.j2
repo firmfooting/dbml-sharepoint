@@ -1,0 +1,42 @@
+{# test/manual/templates/_probe_item_versions_v1.js.j2 #}
+{# Included after _probe_raw_request_v1.js.j2, _probe_identity_v1.js.j2 and _probe_scratch_list_v1.js.j2,
+   whose sendRaw, maskedHead, scrub, entriesOf and continuationOf it uses. #}
+  // ---- Item versions (v1) ---------------------------------------------
+  // One read of an item's versions; `rows` is the value array of objects, or null with `shape` saying why.
+  const readVersions = async (listPath, itemId, query = '') => {
+    const res = await sendRaw(`${listPath}/items(${itemId})/versions${query ? `?${query}` : ''}`);
+    const head = maskedHead(res);
+    const { rows, shape } = head ? { rows: null, shape: null } : entriesOf(res.parsed);
+    return { res, head, rows, shape, next: head ? null : continuationOf(res.parsed) };
+  };
+  // Learn documents no paging for item versions, so a continuation link is reported and never followed.
+  const pagedSaid = (versions) => (versions.next === null ? null
+    : `the answer carried a continuation link (${quote(versions.next).slice(0, 200)}), which this probe `
+      + `does not follow, so its ${versions.rows ? versions.rows.length : 0} entries may not be every version`);
+
+  // A version's VersionId as the answer spelled it, or null when the entry carried none.
+  const versionIdOf = (row) => (row && typeof row === 'object' && row.VersionId !== undefined
+    ? row.VersionId : null);
+  // The VersionIds an answer lists more than once, since a count or a set over them would take a repeat for one.
+  const repeatedIds = (rows) => {
+    const seen = new Set();
+    const again = new Set();
+    for (const row of rows) {
+      const key = JSON.stringify(versionIdOf(row));
+      if (seen.has(key)) again.add(key);
+      seen.add(key);
+    }
+    // Quoted from their keys, so a VersionId that is text is withheld like any other.
+    return [...again].map((key) => quoteValue(JSON.parse(key)));
+  };
+
+  // Names the order a run of VersionIds came back in; it describes and never judges.
+  const orderOf = (ids) => {
+    if (!ids.length) return 'NO VERSIONS';
+    if (ids.length === 1) return 'ONE VERSION';
+    if (ids.some((v) => typeof v !== 'number')) return 'NOT NUMBERS';
+    const pairs = ids.slice(1).map((v, i) => v - ids[i]);
+    if (pairs.every((d) => d > 0)) return 'ASCENDING';
+    if (pairs.every((d) => d < 0)) return 'DESCENDING';
+    return 'UNORDERED';
+  };

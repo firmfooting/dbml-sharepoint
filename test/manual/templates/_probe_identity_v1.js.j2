@@ -1,0 +1,104 @@
+{# test/manual/templates/_probe_identity_v1.js.j2 #}
+{# Included after _probe_raw_request_v1.js.j2, whose redactTenant it uses. #}
+  // ---- Identity masking (v1) ------------------------------------------
+  // Strings that name a person, masked wherever evidence quotes an answer.
+  const IDENTITIES = [];
+  // `whole` masks the value only where no letter, digit or underscore adjoins it, as a display name needs.
+  const knowIdentity = (value, mask, whole = false) => {
+    const text = value === null || value === undefined ? '' : String(value);
+    if (text.length < 2) return;
+    IDENTITIES.push({ text, mask, whole });
+    // An answer's JSON may spell a non-ASCII letter as a \u escape, so that spelling is masked too.
+    const escaped = text.replace(/[^\x20-\x7e]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+    if (escaped !== text) IDENTITIES.push({ text: escaped, mask, whole });
+    IDENTITIES.sort((a, b) => b.text.length - a.text.length);
+  };
+  const literal = (text) => text.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
+  const pattern = ({ text, whole }) => (whole
+    ? new RegExp(`(?<![\\p{L}\\p{N}_])${literal(text)}(?![\\p{L}\\p{N}_])`, 'giu')
+    : new RegExp(literal(text), 'gi'));
+  // Logins and emails go first, even ones never learned, so a display name inside one cannot break it up.
+  // A login's value runs through apostrophes and a backslash before a letter or digit (a Windows claim's
+  // domain\user, escaped or not), and stops at a backslash before anything else, so JSON escapes survive.
+  // An address's local part is RFC 5322's atext and dots, with any letter or digit (RFC 6531).
+  const scrub = (value) => {
+    let out = redactTenant(value)
+      .replace(/(i:0[^|\s'"]*\|([^|\s'"]+\|)?)(?:[^\s"|\\]|\\+(?=[\p{L}\p{N}]))+/giu, '$1<account>')
+      .replace(/[\p{L}\p{N}!#$%&'*+/=?^_`{|}~.-]+@[^\s'"<>\\]+/giu, '<account>');
+    for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
+    return out;
+  };
+  // The one switch: set once this account's display name is not learned, since no mask can then be complete.
+  let withheld = false;
+  const WITHHELD = '(text withheld: this account\'s display name was not learned)';
+  // Text from an answer, masked, or withheld once masking cannot be complete.
+  const quote = (text) => (withheld ? WITHHELD : scrub(text));
+  // Every answer's text once text is withheld, so a fixture can tell a value read from one from its own.
+  const ANSWERS = [];
+  // A value from an answer as JSON; one holding any text is withheld with it, since a number names nobody.
+  const quoteValue = (value) => {
+    const json = JSON.stringify(value);
+    return withheld && typeof json === 'string' && json.includes('"') ? WITHHELD : scrub(json);
+  };
+  // Every answer maskedHead found unanswered or refused, so a fixture can tell an unanswered request, which
+  // leaves it open, from a refusal, which is settled.
+  const UNHEARD = [];
+  const REFUSED = [];
+  // Set by an unanswered write and cleared by beginFixture, since an absence after one may be that write unlanded.
+  let writeUnheard = false;
+  // An answer that a thing is not there: a 404, or the absent-field 400 that rollback.js.j2 also accepts.
+  const absenceOf = (status, parsed) => {
+    const error = parsed && typeof parsed === 'object' ? parsed['odata.error'] || parsed.error : null;
+    const code = String((error && error.code) || '');
+    return status === 404 || (status === 400 && code.includes('-2147024809')
+      && code.includes('System.ArgumentException'));
+  };
+  // rawHead cuts a response's text short, so the text is masked first and a cut never splits a name unmasked.
+  const maskedHead = (res, write = false) => {
+    // A request that never answered carries its error, not an answer, in its text.
+    const head = rawHead({ ...res, text: res.status === null ? scrub(res.text) : quote(res.text) });
+    if (withheld && res.status !== null) ANSWERS.push(String(res.text));
+    if (head && head.outcome === 'NOT ESTABLISHED') {
+      UNHEARD.push(head.why);
+      if (write) writeUnheard = true;
+    } else if (head && head.outcome === 'REFUSED') {
+      if (write || !writeUnheard || !absenceOf(res.status, res.parsed !== undefined ? res.parsed : res.body)) {
+        REFUSED.push(head.why);
+      } else UNHEARD.push(`${head.why}, after a write that went unanswered`);
+    }
+    return head;
+  };
+  // A single-entity read's body when it is a JSON object, or null, so no property is read off anything else.
+  const recordBody = (res) => (res.parsed && typeof res.parsed === 'object' && !Array.isArray(res.parsed)
+    ? res.parsed : null);
+  // A read answered 2xx with no JSON object has nothing to read, which the harness's unanswered counts as none.
+  const readHead = (res) => {
+    const head = maskedHead(res);
+    if (!head && recordBody(res) === null) UNHEARD.push(`the read answered HTTP ${res.status} with no JSON object`);
+    return head;
+  };
+  // Reads this account before any mask for its display name exists, so nothing of a failed answer is quoted,
+  // and withholds every later answer's text when no display name of two or more characters comes back.
+  const readAccount = async () => {
+    const res = await sendRaw('web/currentuser?$select=Id,Email,LoginName,Title');
+    const account = res.ok ? recordBody(res) : null;
+    const said = res.status === null ? 'the account read never answered'
+      : `the account read answered HTTP ${res.status}${res.ok && !account ? ' with no JSON object' : ''}`;
+    if (!account && (res.status === null || res.ok || !isRefusal(res.status))) UNHEARD.push(said);
+    if (account) {
+      knowIdentity(account.Email, '<account>');
+      knowIdentity(account.LoginName, '<account>');
+      knowIdentity(account.Title, '<name>', true);
+    }
+    const named = account && typeof account.Title === 'string' && account.Title.length >= 2;
+    if (!named) {
+      withheld = true;
+      log('INFO', `this account's display name was not learned (${account ? 'no display name to mask came back'
+        : said}), so no text from an answer is quoted for the rest of this run; statuses still are.`);
+    }
+    return { account, said: account ? `HTTP ${res.status}` : said };
+  };
+  // For a probe with no current-user fixture: learns this account so its display name is masked too.
+  const learnIdentity = async () => {
+    await readAccount();
+  };
