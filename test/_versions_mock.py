@@ -133,6 +133,8 @@ const mockFetch = async (url, opts = {}) => {
     if (!found) return answer(404, 'File Not Found.');
     if (fileOf[2] === '/$value' && verb === 'PUT') {
       found.item.content = raw;
+      // `uploadSetsValues` is a site whose upload changes a property, which the probe records.
+      Object.assign(found.item.values, CONFIG.uploadSetsValues || {});
       // Whether an upload makes a version is the probe's question; the mock takes either side.
       if (!CONFIG.uploadAddsNoVersion) found.item.history.push({ ...found.item.values });
       return answer(204, '');

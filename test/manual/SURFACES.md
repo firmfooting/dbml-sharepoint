@@ -200,7 +200,10 @@ column's `DefaultFormula` property, what it fills at item create, and what
 to a column that already holds items does), `sealed` (a
 column's `Sealed` flag, what SharePoint reports about deleting the column in
 each state, and what it does with a write of the read-only `CanBeDeleted`),
-`cross-web` (a Lookup whose target list is in another web)
+`cross-web` (a Lookup whose target list is in another web), `version` (an
+item's history as `items(id)/versions` returns it: what each version
+carries for a column kind, and what remains once the list's version limit
+trims)
 
 Probes: `multi-value-probe.js`, `projected-lookup-probe.js`,
 `date-storage-probe.js`, `multilookup-probe.js`, `list-settings-probe.js`,
@@ -209,7 +212,8 @@ Probes: `multi-value-probe.js`, `projected-lookup-probe.js`,
 `site-zone-transitions-probe.js`, `default-formula-readback-probe.js`,
 `default-formula-functions-probe.js`, `unique-blanks-probe.js`,
 `unique-transition-probe.js`, `field-sealed-probe.js`,
-`utctolocaltime-rest-form-probe.js`, `calculated-date-rest-probe.js`
+`utctolocaltime-rest-form-probe.js`, `calculated-date-rest-probe.js`,
+`item-versions-payload-probe.js`
 
 `site-zone-transitions-probe.js` files under `date` because its subject is
 the relation between a stored UTC instant and the site-local clock, which is
@@ -266,6 +270,15 @@ operator supplies a web in another site collection, and those two topologies
 are not the same measurement. `projected-lookup-probe.js` carries the arm
 because it already builds a two-list lookup fixture, and issue #184 is the
 evidence question it answers.
+
+`version` is separate from the column kinds because its subject is the
+item's history rather than one column's value. `item-versions-payload-probe.js`
+writes one item three times across nine column kinds and records what each
+version carries per kind, with VersionId, VersionLabel, Editor and Modified,
+and whether VersionId rises as VersionLabel does. Its library case edits a
+file in a library's folder, replaces the file's content, and edits it again,
+and records whether the content-only upload added a version and what that
+version carries.
 
 ### 7. `text`: does a string survive a write and read back byte-identical
 
@@ -783,6 +796,8 @@ different questions and take different ids. They do not merge.
 | Is a probe-created column sealed by a field MERGE and read back | on the list built for the CanBeDeleted measurement, where it is the dependency every observation rests on | `field.sealed.seal-write-readback` |
 | Does the site convert a UTC instant to its local clock | a GET of `utctolocaltime` in two URL shapes | `field.date.control-utctolocaltime-answers` |
 | Does the site convert a UTC instant to its local clock | a POST of `utcToLocalTime` in five spellings, with a digest | `field.date.utctolocaltime-post-quoted-literal` and its four siblings |
+| Does `items(id)/versions` answer an item's versions | a plain read answering any entries, before the payload is recorded | `field.version.control-payload-versions-read` |
+| Does `items(id)/versions` answer a library file's versions | a plain read of the file's item answering any entries, before the upload's version is looked for | `field.version.control-library-versions-read` |
 
 `native-index-probe.js` and `threshold-index-probe.js` both emitted `CMPIDX` and
 `NULIDX`, and their four system-column checks (`NATCRE`/`SYSCRE` and siblings)

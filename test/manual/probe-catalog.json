@@ -12191,6 +12191,342 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "item-versions-payload-probe.js",
+      "surface": "field",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "two scratch generic lists, a lookup target holding two items and a versioned list with nine columns and one item written three times, and a scratch document library with a Choice column, one folder and one file in it, edited twice and uploaded once; all three are recycled before the probe reports"
+      ],
+      "cleanup": {
+        "policy": "after"
+      },
+      "prerequisites": [
+        "permission to create and recycle lists on the site"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.version.control-current-user",
+              "depends_on": []
+            },
+            {
+              "id": "field.version.fixture-payload-target-list",
+              "depends_on": [
+                "field.version.control-current-user"
+              ]
+            },
+            {
+              "id": "field.version.fixture-payload-list",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-payload-target-list"
+              ]
+            },
+            {
+              "id": "field.version.fixture-payload-columns",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-payload-target-list",
+                "field.version.fixture-payload-list"
+              ]
+            },
+            {
+              "id": "field.version.fixture-payload-people-column",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-payload-target-list",
+                "field.version.fixture-payload-list",
+                "field.version.fixture-payload-columns"
+              ]
+            },
+            {
+              "id": "field.version.fixture-payload-item",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-payload-target-list",
+                "field.version.fixture-payload-list",
+                "field.version.fixture-payload-columns"
+              ]
+            },
+            {
+              "id": "field.version.fixture-payload-people-write",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-payload-target-list",
+                "field.version.fixture-payload-list",
+                "field.version.fixture-payload-columns",
+                "field.version.fixture-payload-people-column",
+                "field.version.fixture-payload-item"
+              ]
+            },
+            {
+              "id": "field.version.control-payload-versions-read",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-payload-target-list",
+                "field.version.fixture-payload-list",
+                "field.version.fixture-payload-columns",
+                "field.version.fixture-payload-item"
+              ]
+            },
+            {
+              "id": "field.version.payload-choice",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-payload-target-list",
+                "field.version.fixture-payload-list",
+                "field.version.fixture-payload-columns",
+                "field.version.fixture-payload-item",
+                "field.version.control-payload-versions-read"
+              ]
+            },
+            {
+              "id": "field.version.payload-multichoice",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-payload-target-list",
+                "field.version.fixture-payload-list",
+                "field.version.fixture-payload-columns",
+                "field.version.fixture-payload-item",
+                "field.version.control-payload-versions-read"
+              ]
+            },
+            {
+              "id": "field.version.payload-person",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-payload-target-list",
+                "field.version.fixture-payload-list",
+                "field.version.fixture-payload-columns",
+                "field.version.fixture-payload-item",
+                "field.version.control-payload-versions-read"
+              ]
+            },
+            {
+              "id": "field.version.payload-people",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-payload-target-list",
+                "field.version.fixture-payload-list",
+                "field.version.fixture-payload-columns",
+                "field.version.fixture-payload-item",
+                "field.version.control-payload-versions-read",
+                "field.version.fixture-payload-people-column",
+                "field.version.fixture-payload-people-write"
+              ]
+            },
+            {
+              "id": "field.version.payload-lookup",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-payload-target-list",
+                "field.version.fixture-payload-list",
+                "field.version.fixture-payload-columns",
+                "field.version.fixture-payload-item",
+                "field.version.control-payload-versions-read"
+              ]
+            },
+            {
+              "id": "field.version.payload-date",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-payload-target-list",
+                "field.version.fixture-payload-list",
+                "field.version.fixture-payload-columns",
+                "field.version.fixture-payload-item",
+                "field.version.control-payload-versions-read"
+              ]
+            },
+            {
+              "id": "field.version.payload-datetime",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-payload-target-list",
+                "field.version.fixture-payload-list",
+                "field.version.fixture-payload-columns",
+                "field.version.fixture-payload-item",
+                "field.version.control-payload-versions-read"
+              ]
+            },
+            {
+              "id": "field.version.payload-number",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-payload-target-list",
+                "field.version.fixture-payload-list",
+                "field.version.fixture-payload-columns",
+                "field.version.fixture-payload-item",
+                "field.version.control-payload-versions-read"
+              ]
+            },
+            {
+              "id": "field.version.payload-boolean",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-payload-target-list",
+                "field.version.fixture-payload-list",
+                "field.version.fixture-payload-columns",
+                "field.version.fixture-payload-item",
+                "field.version.control-payload-versions-read"
+              ]
+            },
+            {
+              "id": "field.version.payload-version-fields",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-payload-target-list",
+                "field.version.fixture-payload-list",
+                "field.version.fixture-payload-columns",
+                "field.version.fixture-payload-item",
+                "field.version.control-payload-versions-read"
+              ]
+            },
+            {
+              "id": "field.version.versionid-follows-label",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-payload-target-list",
+                "field.version.fixture-payload-list",
+                "field.version.fixture-payload-columns",
+                "field.version.fixture-payload-item",
+                "field.version.control-payload-versions-read"
+              ]
+            },
+            {
+              "id": "field.version.fixture-library",
+              "depends_on": [
+                "field.version.control-current-user"
+              ]
+            },
+            {
+              "id": "field.version.fixture-library-column",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-library"
+              ]
+            },
+            {
+              "id": "field.version.fixture-library-folder",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-library",
+                "field.version.fixture-library-column"
+              ]
+            },
+            {
+              "id": "field.version.fixture-library-file",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-library",
+                "field.version.fixture-library-column",
+                "field.version.fixture-library-folder"
+              ]
+            },
+            {
+              "id": "field.version.fixture-library-edit-first",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-library",
+                "field.version.fixture-library-column",
+                "field.version.fixture-library-folder",
+                "field.version.fixture-library-file"
+              ]
+            },
+            {
+              "id": "field.version.fixture-library-upload",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-library",
+                "field.version.fixture-library-column",
+                "field.version.fixture-library-folder",
+                "field.version.fixture-library-file",
+                "field.version.fixture-library-edit-first"
+              ]
+            },
+            {
+              "id": "field.version.fixture-library-edit-second",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-library",
+                "field.version.fixture-library-column",
+                "field.version.fixture-library-folder",
+                "field.version.fixture-library-file",
+                "field.version.fixture-library-edit-first",
+                "field.version.fixture-library-upload"
+              ]
+            },
+            {
+              "id": "field.version.control-library-versions-read",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-library",
+                "field.version.fixture-library-column",
+                "field.version.fixture-library-folder",
+                "field.version.fixture-library-file",
+                "field.version.fixture-library-edit-first",
+                "field.version.fixture-library-upload",
+                "field.version.fixture-library-edit-second"
+              ]
+            },
+            {
+              "id": "field.version.library-upload-adds-version",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-library",
+                "field.version.fixture-library-column",
+                "field.version.fixture-library-folder",
+                "field.version.fixture-library-file",
+                "field.version.fixture-library-edit-first",
+                "field.version.fixture-library-upload",
+                "field.version.fixture-library-edit-second",
+                "field.version.control-library-versions-read"
+              ]
+            },
+            {
+              "id": "field.version.library-upload-version-fields",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-library",
+                "field.version.fixture-library-column",
+                "field.version.fixture-library-folder",
+                "field.version.fixture-library-file",
+                "field.version.fixture-library-edit-first",
+                "field.version.fixture-library-upload",
+                "field.version.fixture-library-edit-second",
+                "field.version.control-library-versions-read",
+                "field.version.library-upload-adds-version"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.version.control-current-user",
+            "field.version.fixture-payload-target-list",
+            "field.version.fixture-payload-list",
+            "field.version.fixture-payload-columns",
+            "field.version.fixture-payload-people-column",
+            "field.version.fixture-payload-item",
+            "field.version.fixture-payload-people-write",
+            "field.version.control-payload-versions-read",
+            "field.version.fixture-library",
+            "field.version.fixture-library-column",
+            "field.version.fixture-library-folder",
+            "field.version.fixture-library-file",
+            "field.version.fixture-library-edit-first",
+            "field.version.fixture-library-upload",
+            "field.version.fixture-library-edit-second",
+            "field.version.control-library-versions-read"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }

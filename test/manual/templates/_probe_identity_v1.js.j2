@@ -1,0 +1,20 @@
+{# test/manual/templates/_probe_identity_v1.js.j2 #}
+{# Included after _probe_raw_request_v1.js.j2, whose redactTenant it uses. #}
+  // ---- Identity masking (v1) ------------------------------------------
+  // Strings that name a person, masked wherever evidence quotes an answer.
+  const IDENTITIES = [];
+  const knowIdentity = (value, mask) => {
+    const text = value === null || value === undefined ? '' : String(value);
+    if (text.length < 2) return;
+    IDENTITIES.push({ text, mask });
+    IDENTITIES.sort((a, b) => b.text.length - a.text.length);
+  };
+  const literal = (text) => text.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
+  // Logins and emails the probe never learned are masked too; a match stops at a backslash so JSON escapes survive.
+  const scrub = (value) => {
+    let out = redactTenant(value);
+    for (const { text, mask } of IDENTITIES) out = out.replace(new RegExp(literal(text), 'gi'), mask);
+    return out
+      .replace(/(i:0[^|\s'"]*\|([^|\s'"]+\|)?)[^\s'"|\\]+/gi, '$1<account>')
+      .replace(/[^\s'"|:<>\\]+@[^\s'"<>\\]+/gi, '<account>');
+  };
