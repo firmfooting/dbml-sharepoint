@@ -1017,3 +1017,15 @@ def test_an_account_with_no_display_name_withholds_every_later_answer_text() -> 
     assert ("the write was refused: HTTP 400: (text withheld: this account's display name was not "
             "learned)") in rows[PEOPLE_WRITE]["evidence"]
     assert "display name was not learned (no display name to mask came back)" in output
+
+
+def test_an_unanswered_resend_after_a_refusal_that_landed_nothing_leaves_the_item_open() -> None:
+    # The refused write was shown to land nothing, so its refusal no longer settles the item.
+    rows, sent, _ = _run(rules=[
+        PEOPLE_REFUSED, {"contains": f"{LIST_AT}/items(1)", "verb": "MERGE", "nth": 1,
+                         "status": 429, "text": "busy"}])
+
+    assert rows[ITEM]["outcome"] == "NOT ESTABLISHED", rows[ITEM]
+    assert "was throttled (HTTP 429)" in rows[ITEM]["evidence"]
+    assert voided(rows) == set()
+    assert _merges(sent) == [True, False]

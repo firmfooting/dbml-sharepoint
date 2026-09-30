@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: daac7ac6
+ * REVISION: e088d047
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -925,7 +925,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision daac7ac6. Quote this when reporting results.');
+  log('INFO', 'probe revision e088d047. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe Versions');
   const TARGET = runTitle('dbmlsp Probe VersionsTarget');
@@ -1345,11 +1345,11 @@
             + 'one version per set and the set was not sent again');
           break;
         }
+        // Nothing landed, so the refusal is the people write's own answer and no longer the item's.
+        REFUSED.splice(refusedAt, 1);
         // Sent again without the people value, so a refusal is pinned on it and the other kinds still land.
         const without = await merge(set, false);
         if (without.ok) {
-          // The refusal is the people write's own answer, recorded on its row, so it is not the item's.
-          REFUSED.splice(refusedAt, 1);
           peopleRefusal = refusal;
           log('INFO', `the ${PEOPLE}Id write was refused (${peopleRefusal}); the set was sent again `
             + 'without it and is read back before it counts');
