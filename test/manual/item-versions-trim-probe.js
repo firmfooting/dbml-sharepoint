@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: a8c479d7
+ * REVISION: 397a2259
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -502,6 +502,11 @@
     && a.every((x) => a.filter((y) => y === x).length === b.filter((y) => y === x).length);
   // A title or server-relative path inside an OData string literal, its apostrophes doubled as deploy/_folders does.
   const pathLiteral = (path) => String(path).replace(/'/g, "''");
+  // voidDependents, except that a row already void keeps its first reason: void is terminal.
+  const voidRows = (ids, reason) => voidDependents(ids.filter((one) => {
+    const row = RESULTS.find((r) => r.id === one);
+    return !row || row.state !== 'void';
+  }), reason);
   // Where the requests of the fixture about to be established begin in UNHEARD.
   let fixtureStart = 0;
   const beginFixture = () => { fixtureStart = UNHEARD.length; };
@@ -515,15 +520,24 @@
   // open with its dependents, since an unanswered request says nothing about the fixture.
   const settleFixture = async (id, read, declared, dependents) => {
     const start = fixtureStart;
-    if (await establishFixture(id, read, declared, dependents)) return true;
-    if (UNHEARD.length === start) return false;
+    // Rows an earlier fixture voided are put back as they were, since establishFixture voids them again.
+    const earlier = RESULTS.filter((r) => dependents.includes(r.id) && r.state === 'void').map((r) => ({ ...r }));
+    const held = await establishFixture(id, read, declared, dependents);
+    const restore = () => earlier.forEach((was) => Object.assign(RESULTS.find((r) => r.id === was.id), was));
+    if (held) return true;
+    if (UNHEARD.length === start) {
+      restore();
+      return false;
+    }
     const why = `${[...new Set(UNHEARD.slice(start))].join('; ')}; a re-run can ask it`;
     const row = RESULTS.find((r) => r.id === id);
     record(id, row ? row.question : id, 'NOT ESTABLISHED', why);
     for (const one of dependents) {
+      if (earlier.some((was) => was.id === one)) continue;
       const dependent = RESULTS.find((r) => r.id === one);
       record(one, dependent ? dependent.question : one, 'NOT ESTABLISHED', `not asked: ${why}`);
     }
+    restore();
     return false;
   };
   // __metadata is verbose OData, so every write carrying it declares the verbose content type.
@@ -592,7 +606,7 @@
       // not this run's, whatever its description, and is never recycled or built over.
       record(id, question, 'FAIL', `a list named '${title}' already exists`
         + `${pre.body.Description === description ? ' with this probe\'s description' : ''}; refusing to modify it`);
-      voidDependents(dependents, 'the scratch list is not one this run created');
+      voidRows(dependents, 'the scratch list is not one this run created');
       return { held: false, merge: null, body: null };
     } else if (pre.status !== 404) {
       // A by-title read answers an absent list 404 (the live finding rollback.js.j2 cites); anything else is unknown.
@@ -613,7 +627,7 @@
     if (!made.ok && isRefusal(made.status)) {
       record(id, question, 'FAIL',
         `the list create answered HTTP ${made.status}: ${scrub(made.text).slice(0, 300)}`);
-      voidDependents(dependents, 'the scratch list was not created');
+      voidRows(dependents, 'the scratch list was not created');
       return { held: false, merge: null, body: null };
     }
     if (!made.ok) {
@@ -629,7 +643,7 @@
         + `recycle '${title}' by hand.`);
       record(id, question, 'FAIL', `the list create answered HTTP ${made.status} with the Id of another list `
         + `this run created (${created.id}), so nothing was written to it; recycle it by hand`);
-      voidDependents(dependents, 'the scratch list answered the Id of another list this run created');
+      voidRows(dependents, 'the scratch list answered the Id of another list this run created');
       return { held: false, merge: null, body: null };
     }
     CREATED_LISTS.push(created);
@@ -637,7 +651,7 @@
     if (created.id === null) {
       record(id, question, 'FAIL', `the list create answered HTTP ${made.status} with no list Id, so nothing `
         + `ties '${title}' to the list it made; nothing was written to it`);
-      voidDependents(dependents, 'the scratch list answered no Id to address it by');
+      voidRows(dependents, 'the scratch list answered no Id to address it by');
       return { held: false, merge: null, body: null };
     }
     let merge = null;
@@ -724,7 +738,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision a8c479d7. Quote this when reporting results.');
+  log('INFO', 'probe revision 397a2259. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsTrim');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.

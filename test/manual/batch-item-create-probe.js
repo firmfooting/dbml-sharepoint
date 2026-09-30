@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: 707bc095
+ * REVISION: e2321afb
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -551,6 +551,11 @@
     && a.every((x) => a.filter((y) => y === x).length === b.filter((y) => y === x).length);
   // A title or server-relative path inside an OData string literal, its apostrophes doubled as deploy/_folders does.
   const pathLiteral = (path) => String(path).replace(/'/g, "''");
+  // voidDependents, except that a row already void keeps its first reason: void is terminal.
+  const voidRows = (ids, reason) => voidDependents(ids.filter((one) => {
+    const row = RESULTS.find((r) => r.id === one);
+    return !row || row.state !== 'void';
+  }), reason);
   // Where the requests of the fixture about to be established begin in UNHEARD.
   let fixtureStart = 0;
   const beginFixture = () => { fixtureStart = UNHEARD.length; };
@@ -564,15 +569,24 @@
   // open with its dependents, since an unanswered request says nothing about the fixture.
   const settleFixture = async (id, read, declared, dependents) => {
     const start = fixtureStart;
-    if (await establishFixture(id, read, declared, dependents)) return true;
-    if (UNHEARD.length === start) return false;
+    // Rows an earlier fixture voided are put back as they were, since establishFixture voids them again.
+    const earlier = RESULTS.filter((r) => dependents.includes(r.id) && r.state === 'void').map((r) => ({ ...r }));
+    const held = await establishFixture(id, read, declared, dependents);
+    const restore = () => earlier.forEach((was) => Object.assign(RESULTS.find((r) => r.id === was.id), was));
+    if (held) return true;
+    if (UNHEARD.length === start) {
+      restore();
+      return false;
+    }
     const why = `${[...new Set(UNHEARD.slice(start))].join('; ')}; a re-run can ask it`;
     const row = RESULTS.find((r) => r.id === id);
     record(id, row ? row.question : id, 'NOT ESTABLISHED', why);
     for (const one of dependents) {
+      if (earlier.some((was) => was.id === one)) continue;
       const dependent = RESULTS.find((r) => r.id === one);
       record(one, dependent ? dependent.question : one, 'NOT ESTABLISHED', `not asked: ${why}`);
     }
+    restore();
     return false;
   };
   // __metadata is verbose OData, so every write carrying it declares the verbose content type.
@@ -641,7 +655,7 @@
       // not this run's, whatever its description, and is never recycled or built over.
       record(id, question, 'FAIL', `a list named '${title}' already exists`
         + `${pre.body.Description === description ? ' with this probe\'s description' : ''}; refusing to modify it`);
-      voidDependents(dependents, 'the scratch list is not one this run created');
+      voidRows(dependents, 'the scratch list is not one this run created');
       return { held: false, merge: null, body: null };
     } else if (pre.status !== 404) {
       // A by-title read answers an absent list 404 (the live finding rollback.js.j2 cites); anything else is unknown.
@@ -662,7 +676,7 @@
     if (!made.ok && isRefusal(made.status)) {
       record(id, question, 'FAIL',
         `the list create answered HTTP ${made.status}: ${scrub(made.text).slice(0, 300)}`);
-      voidDependents(dependents, 'the scratch list was not created');
+      voidRows(dependents, 'the scratch list was not created');
       return { held: false, merge: null, body: null };
     }
     if (!made.ok) {
@@ -678,7 +692,7 @@
         + `recycle '${title}' by hand.`);
       record(id, question, 'FAIL', `the list create answered HTTP ${made.status} with the Id of another list `
         + `this run created (${created.id}), so nothing was written to it; recycle it by hand`);
-      voidDependents(dependents, 'the scratch list answered the Id of another list this run created');
+      voidRows(dependents, 'the scratch list answered the Id of another list this run created');
       return { held: false, merge: null, body: null };
     }
     CREATED_LISTS.push(created);
@@ -686,7 +700,7 @@
     if (created.id === null) {
       record(id, question, 'FAIL', `the list create answered HTTP ${made.status} with no list Id, so nothing `
         + `ties '${title}' to the list it made; nothing was written to it`);
-      voidDependents(dependents, 'the scratch list answered no Id to address it by');
+      voidRows(dependents, 'the scratch list answered no Id to address it by');
       return { held: false, merge: null, body: null };
     }
     let merge = null;
@@ -728,7 +742,7 @@
       await recycleList(title, id);
     }
   };
-  log('INFO', 'probe revision 707bc095. Quote this when reporting results.');
+  log('INFO', 'probe revision e2321afb. Quote this when reporting results.');
 
   // The parts name the list by title, the form a history write sends and these rows measure; the run's token
   // means no other list holds it, and none can take it between a check and a use.
@@ -1043,7 +1057,7 @@
         : backHead ? `created Id ${madeId}; the read-back: ${backHead.why}`
           : `created Id ${madeId}; it reads back Title ${JSON.stringify(back.parsed && back.parsed.Title)}`);
     if (singleOutcome === 'FAIL') {
-      voidDependents(AFTER_SINGLE, 'a single typed create did not land, so a batch answer '
+      voidRows(AFTER_SINGLE, 'a single typed create did not land, so a batch answer '
         + 'would say nothing about the transport');
       return;
     }
@@ -1186,7 +1200,7 @@
     }
 
     if (refusedOutcome === 'FAIL') {
-      voidDependents(['transport.batch.changeset-item-create-failed-part'], 'a single create naming '
+      voidRows(['transport.batch.changeset-item-create-failed-part'], 'a single create naming '
         + `${MISSING} was not refused, so the middle part is not a known failing request`);
     } else if (refusedOutcome === 'NOT ESTABLISHED') {
       record('transport.batch.changeset-item-create-failed-part', Q.failed, 'NOT ESTABLISHED',
@@ -1219,7 +1233,7 @@
     }
 
     if (control.outcome === 'FAIL') {
-      voidDependents([AV_UNKNOWN, ...asked.map((one) => one.id)], 'the single AddValidateUpdateItemUsingPath '
+      voidRows([AV_UNKNOWN, ...asked.map((one) => one.id)], 'the single AddValidateUpdateItemUsingPath '
         + 'call in Learn\'s form did not land, so a part calling it says nothing about the question');
     } else if (control.outcome === 'NOT ESTABLISHED') {
       for (const [id, question] of [[AV_UNKNOWN, Q.avunknown], ...asked.map((one) => [one.id, one.question])]) {
@@ -1265,7 +1279,7 @@
         .map((one) => `${one.title} ${landed(one.title)}`).join(', ');
       asked.forEach((one, i) => {
         if (one.id === AV_FAILED && avUnknown === 'FAIL') {
-          voidDependents([AV_FAILED], `a single call naming ${MISSING} was not refused, so the second part `
+          voidRows([AV_FAILED], `a single call naming ${MISSING} was not refused, so the second part `
             + 'is not a known failing request');
           return;
         }

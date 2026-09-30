@@ -204,7 +204,7 @@
       : `HTTP ${plain.res.status}, ${plain.rows === null ? `no value array: ${said(plain.res)}`
         : `${entries(plain.rows.length)}, VersionIds ${JSON.stringify(plainIds)}`}`);
     if (readOutcome === 'FAIL') {
-      voidDependents(AFTER_READ,
+      voidRows(AFTER_READ,
         'the plain versions read did not answer at least two entries each carrying a numeric VersionId, '
           + 'none repeated');
       return;
@@ -254,7 +254,7 @@
     // `control` is null for an option no item-list control asks first.
     const ask = async (id, question, control, query, describe) => {
       if (control !== null && control.outcome === 'FAIL') {
-        voidDependents([id], 'the item-list control asking the same option did not serve the rows written');
+        voidRows([id], 'the item-list control asking the same option did not serve the rows written');
         return;
       }
       if (control !== null && control.outcome === 'NOT ESTABLISHED') {

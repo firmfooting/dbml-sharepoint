@@ -971,3 +971,14 @@ def test_a_throttled_column_create_leaves_the_columns_open() -> None:
     assert rows[COLUMNS]["outcome"] == "NOT ESTABLISHED"
     assert "was throttled (HTTP 429)" in rows[COLUMNS]["evidence"]
     assert voided(rows) == set()
+
+
+def test_a_fixture_left_open_keeps_a_row_an_earlier_fixture_voided() -> None:
+    rows, _, _ = _run(rules=[{"contains": "web/currentuser", "status": 200, "text": '{"Id": 0}'},
+                             {"contains": "/fields", "verb": "POST", "bodyContains": "ProbeWhen",
+                              "status": 429, "text": "busy"}])
+
+    assert rows[COLUMNS]["outcome"] == "NOT ESTABLISHED"
+    assert rows[CLAIMS]["state"] == "void"
+    assert USER in rows[CLAIMS]["evidence"]
+    assert rows[ISO]["state"] == "open"

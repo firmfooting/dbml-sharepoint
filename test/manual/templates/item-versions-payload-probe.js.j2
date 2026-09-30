@@ -279,7 +279,7 @@
       ? scrub(versions.head.why)
       : `HTTP ${versions.res.status}, ${versions.rows === null ? 'no value array' : `${versions.rows.length} entries`}`
         + `: ${scrub(versions.res.text).slice(0, 400)}`);
-    if (outcome === 'FAIL') voidDependents(observed, `the ${what} answered no version entries`);
+    if (outcome === 'FAIL') voidRows(observed, `the ${what} answered no version entries`);
     if (outcome === 'NOT ESTABLISHED') {
       for (const one of observed) {
         const row = RESULTS.find((r) => r.id === one);

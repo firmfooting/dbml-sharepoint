@@ -417,7 +417,7 @@
         : backHead ? `created Id ${madeId}; the read-back: ${backHead.why}`
           : `created Id ${madeId}; it reads back Title ${JSON.stringify(back.parsed && back.parsed.Title)}`);
     if (singleOutcome === 'FAIL') {
-      voidDependents(AFTER_SINGLE, 'a single typed create did not land, so a batch answer '
+      voidRows(AFTER_SINGLE, 'a single typed create did not land, so a batch answer '
         + 'would say nothing about the transport');
       return;
     }
@@ -560,7 +560,7 @@
     }
 
     if (refusedOutcome === 'FAIL') {
-      voidDependents(['transport.batch.changeset-item-create-failed-part'], 'a single create naming '
+      voidRows(['transport.batch.changeset-item-create-failed-part'], 'a single create naming '
         + `${MISSING} was not refused, so the middle part is not a known failing request`);
     } else if (refusedOutcome === 'NOT ESTABLISHED') {
       record('transport.batch.changeset-item-create-failed-part', Q.failed, 'NOT ESTABLISHED',
@@ -593,7 +593,7 @@
     }
 
     if (control.outcome === 'FAIL') {
-      voidDependents([AV_UNKNOWN, ...asked.map((one) => one.id)], 'the single AddValidateUpdateItemUsingPath '
+      voidRows([AV_UNKNOWN, ...asked.map((one) => one.id)], 'the single AddValidateUpdateItemUsingPath '
         + 'call in Learn\'s form did not land, so a part calling it says nothing about the question');
     } else if (control.outcome === 'NOT ESTABLISHED') {
       for (const [id, question] of [[AV_UNKNOWN, Q.avunknown], ...asked.map((one) => [one.id, one.question])]) {
@@ -639,7 +639,7 @@
         .map((one) => `${one.title} ${landed(one.title)}`).join(', ');
       asked.forEach((one, i) => {
         if (one.id === AV_FAILED && avUnknown === 'FAIL') {
-          voidDependents([AV_FAILED], `a single call naming ${MISSING} was not refused, so the second part `
+          voidRows([AV_FAILED], `a single call naming ${MISSING} was not refused, so the second part `
             + 'is not a known failing request');
           return;
         }
