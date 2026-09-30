@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: 8fa4d4dd
+ * REVISION: 524baed9
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -30,7 +30,8 @@
  *   query.odata.versions-filter         $filter=VersionId gt <the lowest>: the VersionIds served
  *   query.odata.versions-top            $top=1: how many entries were served
  *   query.odata.versions-orderby        $orderby=VersionId in the direction opposite to the
- *       plain read's: the VersionIds in the order served
+ *       plain read's, or ascending when the plain read has no order: the VersionIds in the
+ *       order served
  *
  * HOW TO READ IT: each observed row is headed by what the answer looked like
  * (NARROWED, FILTERED, TOPPED and so on) beside the plain read's answer, and
@@ -659,7 +660,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 8fa4d4dd. Quote this when reporting results.');
+  log('INFO', 'probe revision 524baed9. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsQuery';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -677,7 +678,8 @@
     select: `what $select=VersionId,VersionLabel,${CHOICE} on the versions read answers`,
     filter: 'what $filter=VersionId gt the lowest VersionId on the versions read answers',
     top: 'what $top=1 on the versions read answers',
-    orderby: 'what $orderby=VersionId, opposite to the plain read\'s order, on the versions read answers',
+    orderby: 'what $orderby=VersionId on the versions read answers, asked opposite to the plain read\'s order, '
+      + 'or ascending when that read has none',
   };
   expect('query.odata.fixture-versions-query-list', Q.list);
   expect('query.odata.fixture-versions-query-items', Q.items);
@@ -913,13 +915,17 @@
     await ask('query.odata.versions-top', Q.top, topControl, '$top=1',
       (rows) => [!known(rows) ? 'OTHER ROWS' : rows.length === 1 ? 'TOPPED' : 'NOT TOPPED',
         `served ${entries(rows.length)}, VersionIds ${JSON.stringify(rows.map(versionIdOf))}`]);
-    const direction = defaultOrder === 'ASCENDING' ? 'desc' : 'asc';
+    // Only an ordered plain read has an opposite, so an unordered one is asked ascending and said so.
+    const opposite = defaultOrder === 'ASCENDING' ? 'desc' : defaultOrder === 'DESCENDING' ? 'asc' : null;
+    const direction = opposite || 'asc';
+    const askedSaid = opposite ? `asked ${direction}, opposite to the plain read's ${defaultOrder}`
+      : `asked asc, since the plain read was ${defaultOrder} and has no opposite`;
     await ask('query.odata.versions-orderby', Q.orderby, topControl, `$orderby=VersionId ${direction}`,
       (rows) => {
         const served = rows.map(versionIdOf);
         // An order is named only over the same versions the plain read answered.
         return [sameVersions(rows) ? orderOf(served) : 'OTHER ROWS',
-          `asked ${direction}, served VersionIds ${JSON.stringify(served)}`];
+          `${askedSaid}; served VersionIds ${JSON.stringify(served)}`];
       });
   } catch (err) {
     log('FAIL', `probe aborted: ${scrub(String((err && err.message) || err)).slice(0, 240)}. `

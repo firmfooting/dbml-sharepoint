@@ -316,3 +316,18 @@ def test_an_item_list_control_answered_2xx_with_no_rows_leaves_its_row_open() ->
     assert rows[FILTER_CONTROL]["outcome"] == "NOT ESTABLISHED"
     assert rows[FILTER]["state"] == "open"
     assert voided(rows) == set()
+
+
+def test_an_unordered_plain_read_asks_ascending_and_does_not_call_it_opposite() -> None:
+    unordered = json.dumps({"value": [
+        {"VersionId": 1024, "VersionLabel": "2.0", "ProbeChoice": "Q2"},
+        {"VersionId": 1536, "VersionLabel": "3.0", "ProbeChoice": "Q3"},
+        {"VersionId": 512, "VersionLabel": "1.0", "ProbeChoice": "Q1"}]})
+    rows, _, _ = _run(rules=[{"contains": "items(1)/versions", "nth": 1, "status": 200,
+                              "text": unordered}])
+
+    assert rows[ORDER]["outcome"] == "UNORDERED"
+    assert rows[ORDERBY]["outcome"] == "ASCENDING"
+    assert rows[ORDERBY]["evidence"].startswith(
+        "$orderby=VersionId asc: asked asc, since the plain read was UNORDERED and has no opposite")
+    assert "opposite to" not in rows[ORDERBY]["evidence"]
