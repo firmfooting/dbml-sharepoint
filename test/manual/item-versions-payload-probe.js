@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: 1cc26e75
+ * REVISION: 24d55df4
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -549,7 +549,9 @@
     CREATED_LISTS.push(created);
     let merge = null;
     if (settings !== null) {
-      merge = await spPost(path, { __metadata: { type: 'SP.List' }, ...settings }, await getDigest(),
+      // Sent by Id when the create answered one, so a title rebound cannot take this list's settings.
+      const target = created.id === null ? path : `web/lists(guid'${created.id}')`;
+      merge = await spPost(target, { __metadata: { type: 'SP.List' }, ...settings }, await getDigest(),
         { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
       log('INFO', `list settings MERGE on '${title}': HTTP ${merge.status}`
         + `${merge.ok ? '' : ` ${scrub(merge.text).slice(0, 200)}`}`);
@@ -629,7 +631,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 1cc26e75. Quote this when reporting results.');
+  log('INFO', 'probe revision 24d55df4. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Versions';
   const TARGET = 'dbmlsp Probe VersionsTarget';

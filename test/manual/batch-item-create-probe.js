@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: 8012ff61
+ * REVISION: f63b2867
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -560,7 +560,9 @@
     CREATED_LISTS.push(created);
     let merge = null;
     if (settings !== null) {
-      merge = await spPost(path, { __metadata: { type: 'SP.List' }, ...settings }, await getDigest(),
+      // Sent by Id when the create answered one, so a title rebound cannot take this list's settings.
+      const target = created.id === null ? path : `web/lists(guid'${created.id}')`;
+      merge = await spPost(target, { __metadata: { type: 'SP.List' }, ...settings }, await getDigest(),
         { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
       log('INFO', `list settings MERGE on '${title}': HTTP ${merge.status}`
         + `${merge.ok ? '' : ` ${scrub(merge.text).slice(0, 200)}`}`);
@@ -606,7 +608,7 @@
         : `could not recycle '${title}' (list ${id}, ${why}); recycle it by hand.`);
     }
   };
-  log('INFO', 'probe revision 8012ff61. Quote this when reporting results.');
+  log('INFO', 'probe revision f63b2867. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe BatchItems';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.

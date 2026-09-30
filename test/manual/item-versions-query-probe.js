@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: 047f0a6c
+ * REVISION: 5b37dc5c
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -520,7 +520,9 @@
     CREATED_LISTS.push(created);
     let merge = null;
     if (settings !== null) {
-      merge = await spPost(path, { __metadata: { type: 'SP.List' }, ...settings }, await getDigest(),
+      // Sent by Id when the create answered one, so a title rebound cannot take this list's settings.
+      const target = created.id === null ? path : `web/lists(guid'${created.id}')`;
+      merge = await spPost(target, { __metadata: { type: 'SP.List' }, ...settings }, await getDigest(),
         { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
       log('INFO', `list settings MERGE on '${title}': HTTP ${merge.status}`
         + `${merge.ok ? '' : ` ${scrub(merge.text).slice(0, 200)}`}`);
@@ -600,7 +602,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 047f0a6c. Quote this when reporting results.');
+  log('INFO', 'probe revision 5b37dc5c. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsQuery';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.

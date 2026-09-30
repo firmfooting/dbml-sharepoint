@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: 1d4921ff
+ * REVISION: 870c87c6
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -511,7 +511,9 @@
     CREATED_LISTS.push(created);
     let merge = null;
     if (settings !== null) {
-      merge = await spPost(path, { __metadata: { type: 'SP.List' }, ...settings }, await getDigest(),
+      // Sent by Id when the create answered one, so a title rebound cannot take this list's settings.
+      const target = created.id === null ? path : `web/lists(guid'${created.id}')`;
+      merge = await spPost(target, { __metadata: { type: 'SP.List' }, ...settings }, await getDigest(),
         { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
       log('INFO', `list settings MERGE on '${title}': HTTP ${merge.status}`
         + `${merge.ok ? '' : ` ${scrub(merge.text).slice(0, 200)}`}`);
@@ -591,7 +593,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 1d4921ff. Quote this when reporting results.');
+  log('INFO', 'probe revision 870c87c6. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsTrim';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.

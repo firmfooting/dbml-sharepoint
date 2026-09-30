@@ -23,7 +23,7 @@ FIXTURE = "test.scratch.fixture-list"
 DEPENDENT = "test.scratch.dependent"
 TITLE = "dbmlsp Probe Scratch"
 REFUSAL = "The value is out of range at https://example.sharepoint.com/sites/probe."
-REFUSED = {"contains": f"getbytitle('{TITLE}')", "verb": "MERGE", "status": 400, "text": REFUSAL}
+REFUSED = {"contains": "web/lists(guid'", "verb": "MERGE", "status": 400, "text": REFUSAL}
 SAID = "HTTP 400: The value is out of range at [TENANT]/sites/probe."
 VERSIONING = "{ EnableVersioning: true }"
 CLAIMED = mock_list_id(TITLE)
@@ -263,3 +263,18 @@ def test_a_refused_recycle_names_the_list_and_id_to_recycle_by_hand() -> None:
     assert _recycles(out) == [f"web/lists(guid'{CLAIMED}')/recycle"]
     assert (f"[FAIL] could not recycle '{TITLE}' (list {CLAIMED}, HTTP 400); "
             "recycle it by hand.") in out["console"]
+
+
+def test_the_settings_merge_goes_by_the_id_the_create_answered() -> None:
+    out = _claim({"EnableVersioning": True}, declared=VERSIONING)
+
+    merges = [r["path"] for r in out["sent"] if r["verb"] == "MERGE"]
+    assert merges == [f"web/lists(guid'{CLAIMED}')"]
+
+
+def test_the_settings_merge_goes_by_title_when_the_create_answered_no_id() -> None:
+    out = _claim({"EnableVersioning": True}, declared=VERSIONING, createAnswersNoId=True)
+
+    assert out["held"] is True
+    merges = [r["path"] for r in out["sent"] if r["verb"] == "MERGE"]
+    assert merges == [f"web/lists/getbytitle('{TITLE}')"]

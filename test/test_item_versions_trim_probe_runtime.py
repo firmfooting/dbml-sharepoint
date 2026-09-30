@@ -104,8 +104,7 @@ def test_a_limit_past_what_the_run_will_write_voids_everything_after_the_list() 
 
 
 def test_a_refused_settings_merge_is_kept_in_the_evidence() -> None:
-    rows, _, _ = _run(rules=[{"contains": "getbytitle('dbmlsp Probe VersionsTrim')",
-                              "verb": "MERGE", "status": 400,
+    rows, _, _ = _run(rules=[{"contains": "web/lists(guid'", "verb": "MERGE", "status": 400,
                               "text": "The value is out of range."}])
 
     assert rows[LIST]["outcome"] == "FAIL"
@@ -116,7 +115,7 @@ def test_a_refused_settings_merge_is_kept_in_the_evidence() -> None:
 def test_a_refused_settings_merge_on_a_list_still_in_range_is_observed_not_voided() -> None:
     rows, _, _ = _run(listDefaults={"EnableVersioning": True, "MajorVersionLimit": 2},
                       trimToLimit=True,
-                      rules=[{"contains": "getbytitle('dbmlsp Probe VersionsTrim')",
+                      rules=[{"contains": "web/lists(guid'",
                               "verb": "MERGE", "bodyContains": "MajorVersionLimit", "status": 400,
                               "text": "The value is out of range."}])
 
@@ -132,7 +131,7 @@ def test_a_refused_settings_merge_on_a_list_still_in_range_is_observed_not_voide
 
 def test_a_refused_settings_merge_naming_an_account_is_masked() -> None:
     rows, _, output = _run(listDefaults={"EnableVersioning": True, "MajorVersionLimit": 2},
-                           rules=[{"contains": "getbytitle('dbmlsp Probe VersionsTrim')",
+                           rules=[{"contains": "web/lists(guid'",
                                    "verb": "MERGE", "bodyContains": "MajorVersionLimit",
                                    "status": 400, "text": "Refused for ada@example.com."}])
 
