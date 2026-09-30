@@ -730,6 +730,10 @@ def _schema_value_problems(
     Every target is asked, because a renderer stops at its first refusal and
     a target's own limit can come before the value is read. The message loses
     its `(target: ...)` suffix, since no target is involved.
+
+    Known misses: a value fault behind a control character, which every
+    renderer refuses first, and `includes` with a property on a single-value
+    person or lookup column.
     """
     for target in _RENDERERS:
         for code, message in _render_problems(leaf, target, types, context):

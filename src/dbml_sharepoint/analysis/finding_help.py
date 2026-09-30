@@ -1673,12 +1673,13 @@ FINDING_HELP: dict[FindingCode, str] = {
         "creates."
     ),
     FindingCode.WATCH_USE_ID_DUPLICATE: (
-        "Two uses on the same entity's watched columns share an `id`, which must name "
-        "one use so a consumer can tell them apart."
+        "More than one use on the same entity's watched columns shares an `id`, which "
+        "must name one use so a consumer can tell them apart."
     ),
     FindingCode.WATCH_USE_ID_INVALID: (
         "A watched column's use `id` is not lowercase letters, digits and hyphens "
-        "starting with a letter, the spelling of a use name, since it names what is built."
+        "starting with a letter. An id names what the consumer builds, so it takes a "
+        "use name's spelling."
     ),
     FindingCode.WATCH_USE_NAME_INVALID: (
         "A watched column's use name is not lowercase letters, digits and hyphens "
