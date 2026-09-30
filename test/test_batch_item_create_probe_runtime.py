@@ -600,6 +600,8 @@ def test_a_2xx_batch_with_no_parts_is_named_so() -> None:
     rows, _, _ = _run(batchText="nothing here")
 
     assert rows[PARTS]["outcome"] == "NO PART STATUS"
+    for row_id in (*OBSERVED, AV_FAILED, *ADDVALIDATED):
+        assert rows[row_id]["state"] == "open", rows[row_id]
 
 
 def test_a_missing_column_the_site_accepts_voids_the_failed_part_row() -> None:

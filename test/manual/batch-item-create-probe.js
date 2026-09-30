@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: c0c304b4
+ * REVISION: bed65ea0
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -662,7 +662,7 @@
         : `the recycle of '${title}' (list ${id}) answered ${why}, but ${after.why}; check it and recycle it by hand.`);
     }
   };
-  log('INFO', 'probe revision c0c304b4. Quote this when reporting results.');
+  log('INFO', 'probe revision bed65ea0. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe BatchItems';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -837,7 +837,10 @@
   const outerHead = (batch) => {
     if (batch.status === null) return { outcome: 'NOT ESTABLISHED', why: scrub(batch.text) };
     if (batch.ok && batch.parts.length) return null;
-    if (batch.ok) return { outcome: 'NO PART STATUS', why: `HTTP ${batch.status} carried no part: ${said(batch.text)}` };
+    // A 2xx whose text this probe found no part status line in says nothing about the parts, so it stays open.
+    if (batch.ok) {
+      return { outcome: 'NO PART STATUS', why: `HTTP ${batch.status} carried no part: ${said(batch.text)}`, state: 'open' };
+    }
     if (isRefusal(batch.status)) {
       return { outcome: 'OUTER REQUEST REFUSED', why: `HTTP ${batch.status}: ${said(batch.text)}` };
     }
@@ -1100,7 +1103,8 @@
       record('transport.batch.changeset-item-creates-per-part', Q.parts, threeHead ? threeHead.outcome : 'RECORDED',
         threeHead ? threeHead.why : `outer HTTP ${three.status}, ${three.parts.length} part answer(s) matched by `
           + `Title: ${[0, 1, 2].map((k) => `part ${k + 1} (answer ${threeMatch.answerOf[k] + 1}): `
-            + partSaid(threeAnswer(k))).join(' | ')}${inferredSaid}; ${threeLanded}`, threeHead ? undefined : landing);
+            + partSaid(threeAnswer(k))).join(' | ')}${inferredSaid}; ${threeLanded}`,
+        threeHead ? threeHead.state : landing);
     }
 
     if (refusedOutcome === 'FAIL') {
@@ -1117,7 +1121,7 @@
         threeHead ? threeHead.outcome : partHead(middle),
         threeHead ? threeHead.why : `answer ${threeMatch.answerOf[1] + 1}: ${partSaid(middle)}${inferredSaid}; `
           + `landed B ${landed(TITLES.b)}; neighbours landed A ${landed(TITLES.a)}, C ${landed(TITLES.c)}`
-          + titlesSaid, threeHead ? undefined : landing);
+          + titlesSaid, threeHead ? threeHead.state : landing);
     }
 
     for (const [id, question, batch, title] of [
@@ -1133,7 +1137,7 @@
         continue;
       }
       record(id, question, head ? head.outcome : partHead(batch.parts[0]), head ? head.why
-        : `${partSaid(batch.parts[0])}; landed ${landed(title)}${titlesSaid}`, head ? undefined : landing);
+        : `${partSaid(batch.parts[0])}; landed ${landed(title)}${titlesSaid}`, head ? head.state : landing);
     }
 
     if (control.outcome === 'FAIL') {
@@ -1194,7 +1198,8 @@
         if (outer) {
           // The failing part keeps the batch's own head; a write under question is not established.
           record(one.id, one.question, one.id === AV_FAILED ? outer.outcome : 'NOT ESTABLISHED',
-            `the $batch was not answered part by part: ${outer.outcome}: ${outer.why}`);
+            `the $batch was not answered part by part: ${outer.outcome}: ${outer.why}`,
+            one.id === AV_FAILED ? outer.state : undefined);
           return;
         }
         if (avUnmatched) {
