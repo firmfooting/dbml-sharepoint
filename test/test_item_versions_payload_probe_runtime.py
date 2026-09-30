@@ -127,10 +127,12 @@ def test_a_person_value_is_recorded_with_the_account_masked() -> None:
 
 
 def test_an_email_the_probe_did_not_learn_is_still_masked() -> None:
-    rows, _, _ = _run(me={"Id": 7, "Email": "", "LoginName": "", "Title": "x"})
+    rows, _, _ = _run(versionEmail="bob@example.com")
 
     assert rows[USER]["outcome"] == "PASS"
-    assert "@" not in rows["field.version.payload-person"]["evidence"]
+    person = rows["field.version.payload-person"]["evidence"]
+    assert '"Email":"<account>"' in person
+    assert "bob@example.com" not in json.dumps(rows)
 
 
 def test_a_column_no_version_carries_is_recorded_absent_not_failed() -> None:

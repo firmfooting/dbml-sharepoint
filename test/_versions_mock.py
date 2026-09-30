@@ -27,7 +27,9 @@ let digests = 0;
 let versionReads = 0;
 const KINDS = { 2: 'Text', 4: 'DateTime', 6: 'Choice', 7: 'Lookup', 8: 'Boolean', 9: 'Number',
   15: 'MultiChoice', 20: 'User' };
-const person = (id) => ({ LookupId: id, LookupValue: ME.Title, Email: ME.Email });
+// `versionEmail` spells a version's person with an email the probe never learned.
+const person = (id) => ({ LookupId: id, LookupValue: ME.Title,
+  Email: CONFIG.versionEmail === undefined ? ME.Email : CONFIG.versionEmail });
 // One version entry as this mock spells it; the omit list lets a test drop a column.
 const versionOf = (list, item, n) => {
   // `versionIds` lets a test make the VersionIds fall, or spell them as text.
