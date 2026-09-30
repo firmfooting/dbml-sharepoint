@@ -53,7 +53,6 @@
   const LIST = 'dbmlsp Probe VersionsTrim';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
   const OWNERSHIP = 'dbml-sharepoint versions-trim probe scratch list. Safe to delete.';
-  const listPath = `web/lists/getbytitle('${LIST}')`;
   const ASKED_LIMIT = 2;
   // The most writes the run will send is this plus EXTRA_WRITES, so a list that keeps more is not measured.
   const MAX_LIMIT = 100;
@@ -123,6 +122,7 @@
         MajorVersionLimit: (v) => Number.isInteger(v) && v >= 1 && v <= MAX_LIMIT,
         ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 } });
     if (!list.held) return;
+    const listPath = list.path;
     const limit = list.body.MajorVersionLimit;
     // Recorded whatever the MERGE answered, since the read-back and not the MERGE says which limit holds.
     record('field.version.trim-limit-taken', Q.limit, limit === ASKED_LIMIT ? 'TAKEN AS ASKED' : 'OTHER LIMIT',

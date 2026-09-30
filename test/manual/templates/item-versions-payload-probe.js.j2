@@ -93,12 +93,9 @@
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
   const OWNERSHIP = 'dbml-sharepoint item-versions probe scratch list. Safe to delete.';
   const TARGET_OWNERSHIP = 'dbml-sharepoint item-versions probe lookup target. Safe to delete.';
-  const listPath = `web/lists/getbytitle('${LIST}')`;
-  const targetPath = `web/lists/getbytitle('${TARGET}')`;
   const PEOPLE = 'ProbePeople';
   const LIBRARY = 'dbmlsp Probe VersionsLibrary';
   const LIBRARY_OWNERSHIP = 'dbml-sharepoint item-versions probe scratch library. Safe to delete.';
-  const libraryPath = `web/lists/getbytitle('${LIBRARY}')`;
   const LIB_COLUMN = 'ProbeLibChoice';
   const FOLDER_NAME = 'dbmlsp-subfolder';
   const FILE_NAME = 'dbmlsp-versions.txt';
@@ -289,6 +286,7 @@
       question: Q.target, title: TARGET, description: TARGET_OWNERSHIP, dependents: AFTER_TARGET,
       declared: { ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 } });
     if (!target.held) return;
+    const targetPath = target.path;
     const targetIds = [];
     for (const title of ['dbmlsp versions target A', 'dbmlsp versions target B']) {
       const made = await spPost(`${targetPath}/items`,
@@ -309,6 +307,7 @@
       declared: { EnableVersioning: true,
         ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 } });
     if (!list.held) return;
+    const listPath = list.path;
     const itemType = list.body.ListItemEntityTypeFullName;
 
     for (const column of COLUMNS) {
@@ -521,6 +520,7 @@
       declared: { EnableVersioning: true, EnableMinorVersions: false,
         ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 } });
     if (!library.held) return;
+    const libraryPath = library.path;
     const itemType = library.body.ListItemEntityTypeFullName;
 
     const choice = COLUMNS.find((column) => column.kind === 'choice').body;

@@ -61,7 +61,6 @@
   const LIST = 'dbmlsp Probe VersionsQuery';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
   const OWNERSHIP = 'dbml-sharepoint versions-query probe scratch list. Safe to delete.';
-  const listPath = `web/lists/getbytitle('${LIST}')`;
   const CHOICE = 'ProbeChoice';
 
   const Q = {
@@ -117,6 +116,7 @@
       declared: { EnableVersioning: true,
         ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 } });
     if (!list.held) return;
+    const listPath = list.path;
     const itemType = list.body.ListItemEntityTypeFullName;
 
     // The deploy's Choice create body (generators/jsgen.py).

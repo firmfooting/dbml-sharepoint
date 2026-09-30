@@ -129,8 +129,8 @@
     }, { BaseTemplate: baseTemplate, Description: description, ...declared, ...settled,
       // The title must still name the list this run created, so every write after it reaches that list.
       Id: (v) => guidOf(v) !== null && guidOf(v) === created.id }, dependents);
-    // The read-back is handed on, so a caller uses the values the fixture certified.
-    return { held, merge, body: held ? read.body : null };
+    // The read-back is handed on, so a caller uses the values the fixture certified, and writes by its Id.
+    return { held, merge, body: held ? read.body : null, path: held ? `web/lists(guid'${created.id}')` : null };
   };
 
   // Recycles every list this run created by its Id, newest first, and says which one to recycle by hand.

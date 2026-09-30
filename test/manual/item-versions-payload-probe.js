@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: 8920f785
+ * REVISION: b0b2d544
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -616,8 +616,8 @@
     }, { BaseTemplate: baseTemplate, Description: description, ...declared, ...settled,
       // The title must still name the list this run created, so every write after it reaches that list.
       Id: (v) => guidOf(v) !== null && guidOf(v) === created.id }, dependents);
-    // The read-back is handed on, so a caller uses the values the fixture certified.
-    return { held, merge, body: held ? read.body : null };
+    // The read-back is handed on, so a caller uses the values the fixture certified, and writes by its Id.
+    return { held, merge, body: held ? read.body : null, path: held ? `web/lists(guid'${created.id}')` : null };
   };
 
   // Recycles every list this run created by its Id, newest first, and says which one to recycle by hand.
@@ -681,19 +681,16 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 8920f785. Quote this when reporting results.');
+  log('INFO', 'probe revision b0b2d544. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Versions';
   const TARGET = 'dbmlsp Probe VersionsTarget';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
   const OWNERSHIP = 'dbml-sharepoint item-versions probe scratch list. Safe to delete.';
   const TARGET_OWNERSHIP = 'dbml-sharepoint item-versions probe lookup target. Safe to delete.';
-  const listPath = `web/lists/getbytitle('${LIST}')`;
-  const targetPath = `web/lists/getbytitle('${TARGET}')`;
   const PEOPLE = 'ProbePeople';
   const LIBRARY = 'dbmlsp Probe VersionsLibrary';
   const LIBRARY_OWNERSHIP = 'dbml-sharepoint item-versions probe scratch library. Safe to delete.';
-  const libraryPath = `web/lists/getbytitle('${LIBRARY}')`;
   const LIB_COLUMN = 'ProbeLibChoice';
   const FOLDER_NAME = 'dbmlsp-subfolder';
   const FILE_NAME = 'dbmlsp-versions.txt';
@@ -884,6 +881,7 @@
       question: Q.target, title: TARGET, description: TARGET_OWNERSHIP, dependents: AFTER_TARGET,
       declared: { ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 } });
     if (!target.held) return;
+    const targetPath = target.path;
     const targetIds = [];
     for (const title of ['dbmlsp versions target A', 'dbmlsp versions target B']) {
       const made = await spPost(`${targetPath}/items`,
@@ -904,6 +902,7 @@
       declared: { EnableVersioning: true,
         ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 } });
     if (!list.held) return;
+    const listPath = list.path;
     const itemType = list.body.ListItemEntityTypeFullName;
 
     for (const column of COLUMNS) {
@@ -1116,6 +1115,7 @@
       declared: { EnableVersioning: true, EnableMinorVersions: false,
         ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 } });
     if (!library.held) return;
+    const libraryPath = library.path;
     const itemType = library.body.ListItemEntityTypeFullName;
 
     const choice = COLUMNS.find((column) => column.kind === 'choice').body;

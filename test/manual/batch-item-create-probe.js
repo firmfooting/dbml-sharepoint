@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: 04ffb66a
+ * REVISION: 2b1fccb9
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -50,7 +50,9 @@
  *       part headers and no __metadata
  *   transport.batch.changeset-item-create-untyped-nometadata  one create with
  *       nometadata part headers and no type
- *   Every part's request line names the list by its title URL-encoded, its space as %20.
+ *   Every part's request line names the list by its title URL-encoded, its space as %20,
+ *   and each $batch is sent only while that title still names the list this run created;
+ *   otherwise its rows are NOT ESTABLISHED, left open. Every other request goes by the list's Id.
  *   One ChangeSet of four nometadata AddValidateUpdateItemUsingPath parts, the shape a
  *   history write sends, each recorded with its per-field answer, whether it landed, and
  *   what reads back:
@@ -628,8 +630,8 @@
     }, { BaseTemplate: baseTemplate, Description: description, ...declared, ...settled,
       // The title must still name the list this run created, so every write after it reaches that list.
       Id: (v) => guidOf(v) !== null && guidOf(v) === created.id }, dependents);
-    // The read-back is handed on, so a caller uses the values the fixture certified.
-    return { held, merge, body: held ? read.body : null };
+    // The read-back is handed on, so a caller uses the values the fixture certified, and writes by its Id.
+    return { held, merge, body: held ? read.body : null, path: held ? `web/lists(guid'${created.id}')` : null };
   };
 
   // Recycles every list this run created by its Id, newest first, and says which one to recycle by hand.
@@ -659,12 +661,11 @@
         : `the recycle of '${title}' (list ${id}) answered ${why}, but ${after.why}; check it and recycle it by hand.`);
     }
   };
-  log('INFO', 'probe revision 04ffb66a. Quote this when reporting results.');
+  log('INFO', 'probe revision 2b1fccb9. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe BatchItems';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
   const OWNERSHIP = 'dbml-sharepoint batch-item-create probe scratch list. Safe to delete.';
-  const listPath = `web/lists/getbytitle('${LIST}')`;
   // A part's request line carries the title quoted then URL-encoded, as a history write sends it.
   const partPath = `web/lists/getbytitle('${encodeURIComponent(LIST.replace(/'/g, "''"))}')`;
   const MISSING = 'dbmlspNoSuchColumn';
@@ -797,8 +798,19 @@
       + `${JSON.stringify(op.body)}\r\n`;
   };
   const token = () => Math.random().toString(36).slice(2, 10);
+  // The Id the scratch list was certified with, which the title must still name when a $batch is sent.
+  let claimed = null;
   // One $batch request holding one ChangeSet of `ops`, with no retry, since a retry would hide the answer.
   const sendChangeSet = async (ops) => {
+    // The parts name the list by title, as a history write does, so that title must still name this run's list.
+    const named = await sendRaw(`web/lists/getbytitle('${LIST}')?$select=Id,Title`);
+    const namedHead = rawHead(named);
+    const namedId = !namedHead && named.parsed && typeof named.parsed === 'object' ? guidOf(named.parsed.Id) : null;
+    if (namedId === null || namedId !== claimed) {
+      return { ok: false, status: null, parts: [], sent: ops.length, text: `not sent: the title read `
+        + `${namedHead ? namedHead.why : `answered ${namedId === null ? 'no list Id' : `list ${namedId}`}`}, `
+        + `where the list this run created is ${claimed}` };
+    }
     const digest = await getDigest();
     const outer = `batch_${token()}${token()}`;
     const inner = `changeset_${token()}${token()}`;
@@ -904,6 +916,9 @@
       title: LIST, description: OWNERSHIP, dependents: AFTER_LIST,
       declared: { ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 } });
     if (!list.held) return;
+    // Every write that does not ask about title addressing goes by the certified Id.
+    const listPath = list.path;
+    claimed = guidOf(list.body.Id);
     const itemType = list.body.ListItemEntityTypeFullName;
     const typed = (title, extra = {}) => ({ __metadata: { type: itemType }, Title: title, ...extra });
     const single = async (body) => sendRaw(`${listPath}/items`, { method: 'POST',

@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: 815887f2
+ * REVISION: fd4f0c72
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -586,8 +586,8 @@
     }, { BaseTemplate: baseTemplate, Description: description, ...declared, ...settled,
       // The title must still name the list this run created, so every write after it reaches that list.
       Id: (v) => guidOf(v) !== null && guidOf(v) === created.id }, dependents);
-    // The read-back is handed on, so a caller uses the values the fixture certified.
-    return { held, merge, body: held ? read.body : null };
+    // The read-back is handed on, so a caller uses the values the fixture certified, and writes by its Id.
+    return { held, merge, body: held ? read.body : null, path: held ? `web/lists(guid'${created.id}')` : null };
   };
 
   // Recycles every list this run created by its Id, newest first, and says which one to recycle by hand.
@@ -651,12 +651,11 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 815887f2. Quote this when reporting results.');
+  log('INFO', 'probe revision fd4f0c72. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsQuery';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
   const OWNERSHIP = 'dbml-sharepoint versions-query probe scratch list. Safe to delete.';
-  const listPath = `web/lists/getbytitle('${LIST}')`;
   const CHOICE = 'ProbeChoice';
 
   const Q = {
@@ -712,6 +711,7 @@
       declared: { EnableVersioning: true,
         ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 } });
     if (!list.held) return;
+    const listPath = list.path;
     const itemType = list.body.ListItemEntityTypeFullName;
 
     // The deploy's Choice create body (generators/jsgen.py).

@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: 34a2a368
+ * REVISION: f561f330
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -578,8 +578,8 @@
     }, { BaseTemplate: baseTemplate, Description: description, ...declared, ...settled,
       // The title must still name the list this run created, so every write after it reaches that list.
       Id: (v) => guidOf(v) !== null && guidOf(v) === created.id }, dependents);
-    // The read-back is handed on, so a caller uses the values the fixture certified.
-    return { held, merge, body: held ? read.body : null };
+    // The read-back is handed on, so a caller uses the values the fixture certified, and writes by its Id.
+    return { held, merge, body: held ? read.body : null, path: held ? `web/lists(guid'${created.id}')` : null };
   };
 
   // Recycles every list this run created by its Id, newest first, and says which one to recycle by hand.
@@ -643,12 +643,11 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 34a2a368. Quote this when reporting results.');
+  log('INFO', 'probe revision f561f330. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsTrim';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
   const OWNERSHIP = 'dbml-sharepoint versions-trim probe scratch list. Safe to delete.';
-  const listPath = `web/lists/getbytitle('${LIST}')`;
   const ASKED_LIMIT = 2;
   // The most writes the run will send is this plus EXTRA_WRITES, so a list that keeps more is not measured.
   const MAX_LIMIT = 100;
@@ -718,6 +717,7 @@
         MajorVersionLimit: (v) => Number.isInteger(v) && v >= 1 && v <= MAX_LIMIT,
         ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 } });
     if (!list.held) return;
+    const listPath = list.path;
     const limit = list.body.MajorVersionLimit;
     // Recorded whatever the MERGE answered, since the read-back and not the MERGE says which limit holds.
     record('field.version.trim-limit-taken', Q.limit, limit === ASKED_LIMIT ? 'TAKEN AS ASKED' : 'OTHER LIMIT',

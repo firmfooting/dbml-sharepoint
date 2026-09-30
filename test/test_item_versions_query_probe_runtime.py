@@ -251,3 +251,12 @@ def test_an_option_answer_with_a_continuation_link_is_not_compared() -> None:
     assert rows[TOP]["state"] == "open"
     assert rows[TOP]["evidence"].startswith("$top=1: the answer carried a continuation link")
     assert rows[FILTER]["outcome"] == "FILTERED"
+
+
+def test_every_request_after_the_claim_goes_by_the_list_id() -> None:
+    _, sent, _ = _run()
+
+    titled = [r["path"] for r in sent if "getbytitle" in r["path"]]
+    assert titled
+    assert all("?$select=Id,Description" in path or "?$select=Id,BaseTemplate" in path
+               for path in titled), titled

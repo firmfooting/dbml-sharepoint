@@ -469,7 +469,7 @@ def test_a_failed_part_refused_on_another_field_is_not_called_field_refused() ->
 
 def test_a_throttled_single_create_keeps_what_an_earlier_fixture_voided() -> None:
     rows, _, _ = _run(rules=[{"contains": "web/currentuser", "status": 403, "text": "denied"},
-                             {"contains": "BatchItems')/items", "verb": "POST", "status": 429,
+                             {"contains": f"{CREATED_ID}')/items", "verb": "POST", "status": 429,
                               "text": "busy"}])
 
     assert rows[SINGLE]["outcome"] == "NOT ESTABLISHED"
@@ -613,7 +613,7 @@ def test_a_missing_column_the_site_accepts_voids_the_failed_part_row() -> None:
 
 
 def test_a_throttled_missing_column_control_leaves_the_failed_part_row_open() -> None:
-    rows, _, _ = _run(rules=[{"contains": "BatchItems')/items", "verb": "POST",
+    rows, _, _ = _run(rules=[{"contains": f"{CREATED_ID}')/items", "verb": "POST",
                               "bodyContains": "dbmlspNoSuchColumn", "status": 429, "text": "busy"}])
 
     assert rows[UNKNOWN]["outcome"] == "NOT ESTABLISHED"
@@ -623,7 +623,7 @@ def test_a_throttled_missing_column_control_leaves_the_failed_part_row_open() ->
 
 
 def test_a_throttled_single_create_leaves_every_batch_row_open() -> None:
-    rows, sent, _ = _run(rules=[{"contains": "BatchItems')/items", "verb": "POST", "status": 429,
+    rows, sent, _ = _run(rules=[{"contains": f"{CREATED_ID}')/items", "verb": "POST", "status": 429,
                                  "text": "busy"}])
 
     assert rows[SINGLE]["outcome"] == "NOT ESTABLISHED"
@@ -633,7 +633,8 @@ def test_a_throttled_single_create_leaves_every_batch_row_open() -> None:
 
 
 def test_a_single_create_that_does_not_land_voids_every_batch_row() -> None:
-    rows, sent, _ = _run(rules=[{"contains": "BatchItems')/items(1)", "status": 200, "text": "{}"}])
+    rows, sent, _ = _run(rules=[{"contains": f"{CREATED_ID}')/items(1)", "status": 200,
+                                 "text": "{}"}])
 
     assert rows[SINGLE]["outcome"] == "FAIL"
     assert voided(rows) == _deps(SINGLE)
@@ -703,12 +704,12 @@ def test_the_evidence_never_names_the_tenant() -> None:
                  "FAIL", "the call answered HTTP 200: ", id="no-id"),
     pytest.param({"contains": CONTROL_CALL, "status": 200, "text": '{"d": 1}'},
                  "FAIL", 'the call answered HTTP 200: {"d": 1}', id="no-field-list"),
-    pytest.param({"contains": "BatchItems')/items(6)", "status": 500, "text": "no"}, "FAIL",
+    pytest.param({"contains": f"{CREATED_ID}')/items(6)", "status": 500, "text": "no"}, "FAIL",
                  "created Id 6; the read-back: HTTP 500: no", id="read-back-refused"),
-    pytest.param({"contains": "BatchItems')/items(6)", "status": 503, "text": "busy"},
+    pytest.param({"contains": f"{CREATED_ID}')/items(6)", "status": 503, "text": "busy"},
                  "NOT ESTABLISHED", "created Id 6; the read-back: the request ",
                  id="read-back-throttled"),
-    pytest.param({"contains": "BatchItems')/items(6)", "status": 200,
+    pytest.param({"contains": f"{CREATED_ID}')/items(6)", "status": 200,
                   "text": '{"Id": 6, "Title": "another title"}'},
                  "FAIL", 'created Id 6; it reads back Title "another title"', id="other-title"),
 ])
@@ -838,4 +839,29 @@ def test_a_digest_lost_mid_run_is_caught_and_the_rest_left_open() -> None:
         assert rows[row_id]["state"] == "open", rows[row_id]
     assert "recycle it by hand" in output
     assert not [r for r in sent if r["path"].endswith("/recycle")]
+    assert ended_with_report(output)
+
+
+def test_the_writes_after_the_claim_go_by_the_created_list_id() -> None:
+    _, sent, _ = _run()
+
+    after = [r for r in sent
+             if r["verb"] != "GET" and r["path"] not in ("contextinfo", "web/lists")]
+    titled = [r["path"] for r in after if "getbytitle" in r["path"]]
+    assert titled == []
+    assert all(r["path"] == "$batch" or f"guid'{CREATED_ID}')" in r["path"] for r in after), after
+
+
+@pytest.mark.parametrize("answer", [
+    {"status": 200, "text": json.dumps({"Id": LEFTOVER_ID, "Title": "dbmlsp Probe BatchItems"})},
+    {"status": 429, "text": "busy"},
+], ids=["rebound", "throttled"])
+def test_a_title_that_no_longer_names_the_claimed_list_sends_no_batch(
+        answer: dict[str, Any]) -> None:
+    rows, sent, output = _run(rules=[{"contains": "BatchItems')?$select=Id,Title", **answer}])
+
+    assert _batches(sent) == []
+    for row_id in (*OBSERVED, AV_FAILED, *ADDVALIDATED):
+        assert rows[row_id]["state"] == "open", rows[row_id]
+        assert "not sent: the title read " in rows[row_id]["evidence"]
     assert ended_with_report(output)

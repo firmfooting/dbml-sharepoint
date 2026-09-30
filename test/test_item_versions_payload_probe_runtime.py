@@ -45,7 +45,11 @@ TITLES = ("dbmlsp Probe VersionsLibrary", "dbmlsp Probe Versions", "dbmlsp Probe
 RECYCLED = [f"web/lists(guid'{mock_list_id(title)}')/recycle" for title in TITLES]
 LEFTOVER_ID = "00000000-0000-4000-8000-00000000abcd"
 OWNED = "dbml-sharepoint item-versions probe scratch list. Safe to delete."
-LIST_READ_RULE = "Versions')/items(1)/versions"
+# Where the mock serves each scratch list by the Id it gave it, which is how the probe writes to it.
+LIST_AT = f"{mock_list_id('dbmlsp Probe Versions')}')"
+TARGET_AT = f"{mock_list_id('dbmlsp Probe VersionsTarget')}')"
+LIB_AT = f"{mock_list_id('dbmlsp Probe VersionsLibrary')}')"
+LIST_READ_RULE = f"{LIST_AT}/items(1)/versions"
 TENANT_TEXT = "Refused at https://example.sharepoint.com/sites/probe/_api/web"
 
 
@@ -174,7 +178,7 @@ def test_a_refused_multi_person_column_voids_only_its_own_row() -> None:
 
 
 def test_a_refused_multi_person_write_leaves_its_question_open_and_the_probe_going() -> None:
-    rows, sent, _ = _run(rules=[{"contains": "Versions')/items(1)", "verb": "MERGE",
+    rows, sent, _ = _run(rules=[{"contains": f"{LIST_AT}/items(1)", "verb": "MERGE",
                                  "bodyContains": "ProbePeopleId", "status": 400,
                                  "text": "Invalid data for ada@example.com"}])
 
@@ -190,7 +194,7 @@ def test_a_refused_multi_person_write_leaves_its_question_open_and_the_probe_goi
     assert "3 version(s)" in rows["field.version.payload-choice"]["evidence"]
     assert voided(rows) == set()
     merges = [r["body"] for r in sent
-              if r["verb"] == "MERGE" and "Versions')/items(1)" in r["path"]]
+              if r["verb"] == "MERGE" and f"{LIST_AT}/items(1)" in r["path"]]
     assert ["ProbePeopleId" in body for body in merges] == [True, False, False]
 
 
@@ -244,7 +248,7 @@ def test_an_unread_account_voids_everything_and_writes_nothing() -> None:
 
 
 def test_a_target_item_without_an_id_voids_what_follows_and_recycles_the_target() -> None:
-    rows, sent, _ = _run(rules=[{"contains": "VersionsTarget')/items", "status": 400,
+    rows, sent, _ = _run(rules=[{"contains": f"{TARGET_AT}/items", "status": 400,
                                  "text": "no"}])
 
     assert rows[TARGET]["outcome"] == "FAIL"
@@ -254,7 +258,7 @@ def test_a_target_item_without_an_id_voids_what_follows_and_recycles_the_target(
 
 
 def test_a_refused_item_write_fails_the_item_and_voids_the_versions_rows() -> None:
-    rows, _, _ = _run(rules=[{"contains": "Versions')/items(1)", "verb": "MERGE", "status": 400,
+    rows, _, _ = _run(rules=[{"contains": f"{LIST_AT}/items(1)", "verb": "MERGE", "status": 400,
                               "text": "The property does not exist."}])
 
     assert rows[ITEM]["outcome"] == "FAIL"
@@ -264,25 +268,25 @@ def test_a_refused_item_write_fails_the_item_and_voids_the_versions_rows() -> No
 
 def test_a_first_set_answered_2xx_that_did_not_land_fails_the_item_before_the_second() -> None:
     # The rule answers 204 and never reaches the mock's store, so set A is never stored.
-    rows, sent, _ = _run(rules=[{"contains": "Versions')/items(1)", "verb": "MERGE",
+    rows, sent, _ = _run(rules=[{"contains": f"{LIST_AT}/items(1)", "verb": "MERGE",
                                  "bodyContains": '"ProbeChoice":"Q1"', "status": 204, "text": ""}])
 
     assert rows[ITEM]["outcome"] == "FAIL"
     assert "Written differs: read 1, declared 3" in rows[ITEM]["evidence"]
     assert "set A: HTTP 204, but ProbeChoice reads back (absent)" in rows[ITEM]["evidence"]
     assert voided(rows) == _deps(ITEM)
-    merges = [r for r in sent if r["verb"] == "MERGE" and "Versions')/items(1)" in r["path"]]
+    merges = [r for r in sent if r["verb"] == "MERGE" and f"{LIST_AT}/items(1)" in r["path"]]
     assert len(merges) == 1
 
 
 def test_a_first_set_whose_read_back_went_unanswered_is_not_built_on() -> None:
-    rows, sent, _ = _run(rules=[{"contains": "Versions')/items(1)?$select=Id,ProbeChoice",
+    rows, sent, _ = _run(rules=[{"contains": f"{LIST_AT}/items(1)?$select=Id,ProbeChoice",
                                  "nth": 1, "status": 429, "text": "busy"}])
 
     assert rows[ITEM]["outcome"] == "FAIL"
     assert "set A: HTTP 204, but the read-back " in rows[ITEM]["evidence"]
     assert voided(rows) == _deps(ITEM)
-    merges = [r for r in sent if r["verb"] == "MERGE" and "Versions')/items(1)" in r["path"]]
+    merges = [r for r in sent if r["verb"] == "MERGE" and f"{LIST_AT}/items(1)" in r["path"]]
     assert len(merges) == 1
 
 
@@ -292,14 +296,14 @@ def test_a_first_set_whose_read_back_went_unanswered_is_not_built_on() -> None:
 ])
 def test_an_item_create_that_answered_no_id_sends_no_set(status: int, text: str,
                                                          said: str) -> None:
-    rows, sent, _ = _run(rules=[{"contains": "Versions')/items", "verb": "POST",
+    rows, sent, _ = _run(rules=[{"contains": f"{LIST_AT}/items", "verb": "POST",
                                  "status": status, "text": text}])
 
     assert rows[ITEM]["outcome"] == "FAIL"
     assert said in rows[ITEM]["evidence"]
     assert "ada@example.com" not in json.dumps(rows)
     assert voided(rows) == _deps(ITEM)
-    assert not [r for r in sent if r["verb"] == "MERGE" and "Versions')/items(" in r["path"]]
+    assert not [r for r in sent if r["verb"] == "MERGE" and f"{LIST_AT}/items(" in r["path"]]
 
 
 def test_a_list_whose_versioning_does_not_stick_voids_everything_after_it() -> None:
@@ -318,7 +322,8 @@ def test_a_foreign_list_holding_the_title_is_never_written_to() -> None:
 
     assert rows[LIST]["outcome"] == "FAIL"
     assert "refusing to modify it" in rows[LIST]["evidence"]
-    assert not [r for r in sent if "Probe Versions')" in r["path"] and r["verb"] != "GET"]
+    assert not [r for r in sent if ("Probe Versions')" in r["path"] or LEFTOVER_ID in r["path"])
+                and r["verb"] != "GET"]
     assert _recycled(sent) == [RECYCLED[0], RECYCLED[2]]
 
 
@@ -417,7 +422,7 @@ def test_labels_that_do_not_order_still_find_the_upload_by_its_entry() -> None:
 
 
 # The file's versions are read before the upload, after it, and after the second edit.
-LIB_VERSIONS = "Library')/items(1)/versions"
+LIB_VERSIONS = f"{LIB_AT}/items(1)/versions"
 
 
 def test_an_earlier_version_gone_after_the_upload_is_not_compared() -> None:
@@ -505,7 +510,7 @@ def test_a_read_after_the_upload_without_the_choice_fails_the_fixture_not_the_va
                   "text": "Invalid data for ada@example.com"},
                  'ProbeFlag.Read differs: read "HTTP 400: Invalid data for <account>"',
                  id="column-read"),
-    pytest.param({"contains": "Versions')/items(1)", "verb": "MERGE", "status": 400,
+    pytest.param({"contains": f"{LIST_AT}/items(1)", "verb": "MERGE", "status": 400,
                   "text": "Invalid data for ada@example.com"},
                  "set A: HTTP 400: Invalid data for <account>", id="item-merge"),
     pytest.param({"contains": "/fields", "verb": "POST", "bodyContains": "ProbeFlag", "status": 500,
@@ -553,7 +558,7 @@ def test_a_library_with_minor_versions_on_is_not_used() -> None:
 
 
 def test_a_refused_library_versions_read_voids_only_the_library_observations() -> None:
-    rows, _, _ = _run(rules=[{"contains": "Library')/items(1)/versions", "status": 400,
+    rows, _, _ = _run(rules=[{"contains": f"{LIB_AT}/items(1)/versions", "status": 400,
                               "text": "no"}])
 
     assert rows[LIB_READ]["outcome"] == "FAIL"
@@ -562,19 +567,19 @@ def test_a_refused_library_versions_read_voids_only_the_library_observations() -
 
 
 @pytest.mark.parametrize(("rule", "fixture", "said"), [
-    pytest.param({"contains": "VersionsLibrary')/fields", "verb": "POST", "status": 500,
+    pytest.param({"contains": f"{LIB_AT}/fields", "verb": "POST", "status": 500,
                   "text": "no"}, "field.version.fixture-library-column",
                  'Read differs: read "HTTP 400', id="column"),
-    pytest.param({"contains": "VersionsLibrary')/RootFolder", "status": 400, "text": "no"},
+    pytest.param({"contains": f"{LIB_AT}/RootFolder", "status": 400, "text": "no"},
                  LIB_FOLDER, 'RootRead differs: read "HTTP 400', id="root-folder"),
     pytest.param({"contains": "/Files/add", "verb": "POST", "status": 500, "text": "no"},
                  "field.version.fixture-library-file", 'Added differs: read "HTTP 500"', id="file"),
-    pytest.param({"contains": "VersionsLibrary')/items(1)", "verb": "MERGE", "bodyContains": "Q1",
+    pytest.param({"contains": f"{LIB_AT}/items(1)", "verb": "MERGE", "bodyContains": "Q1",
                   "status": 500, "text": "no"}, "field.version.fixture-library-edit-first",
                  'Written differs: read "HTTP 500"', id="first-edit"),
     pytest.param({"contains": "/$value", "verb": "GET", "status": 500, "text": "no"},
                  LIB_UPLOAD, 'Content differs: read "HTTP 500"', id="content-read"),
-    pytest.param({"contains": "VersionsLibrary')/items(1)", "verb": "MERGE", "bodyContains": "Q2",
+    pytest.param({"contains": f"{LIB_AT}/items(1)", "verb": "MERGE", "bodyContains": "Q2",
                   "status": 500, "text": "no"}, "field.version.fixture-library-edit-second",
                  'Written differs: read "HTTP 500"', id="second-edit"),
 ])
@@ -594,7 +599,7 @@ NEXT = {"odata.nextLink": "https://example.sharepoint.com/sites/probe/_api/web/l
 
 
 def test_a_list_versions_read_with_a_continuation_link_leaves_the_observations_open() -> None:
-    rows, _, output = _run(versionsNext=NEXT, versionsNextFor="Versions')/items(1)")
+    rows, _, output = _run(versionsNext=NEXT, versionsNextFor=f"{LIST_AT}/items(1)")
 
     assert rows[READ]["outcome"] == "PASS"
     for row_id in (*PAYLOAD, FIELDS, ORDER):
@@ -606,10 +611,19 @@ def test_a_list_versions_read_with_a_continuation_link_leaves_the_observations_o
 
 
 def test_a_library_versions_read_with_a_continuation_link_leaves_its_rows_open() -> None:
-    rows, _, output = _run(versionsNext=NEXT, versionsNextFor="Library')/items(1)")
+    rows, _, output = _run(versionsNext=NEXT, versionsNextFor=f"{LIB_AT}/items(1)")
 
     for row_id in (LIB_ADDS, LIB_FIELDS):
         assert rows[row_id]["outcome"] == "NOT COMPARABLE", rows[row_id]
         assert rows[row_id]["state"] == "open"
     assert rows["field.version.payload-choice"]["outcome"] == "OBSERVED"
     assert ended_with_report(output)
+
+
+def test_every_request_after_the_claim_goes_by_the_list_id() -> None:
+    _, sent, _ = _run()
+
+    titled = [r["path"] for r in sent if "getbytitle" in r["path"]]
+    assert titled
+    assert all("?$select=Id,Description" in path or "?$select=Id,BaseTemplate" in path
+               for path in titled), titled

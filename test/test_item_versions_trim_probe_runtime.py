@@ -260,3 +260,12 @@ def test_a_versions_answer_with_a_continuation_link_is_not_called_trimmed(
                 "not be every version") in rows[row_id]["evidence"]
     assert "example.sharepoint.com" not in str(rows)
     assert ended_with_report(output)
+
+
+def test_every_request_after_the_claim_goes_by_the_list_id() -> None:
+    _, sent, _ = _run(trimToLimit=True)
+
+    titled = [r["path"] for r in sent if "getbytitle" in r["path"]]
+    assert titled
+    assert all("?$select=Id,Description" in path or "?$select=Id,BaseTemplate" in path
+               for path in titled), titled
