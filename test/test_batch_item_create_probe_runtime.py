@@ -8,6 +8,7 @@ question, not this mock's claim.
 """
 
 import json
+import re
 import textwrap
 from typing import Any
 
@@ -227,9 +228,14 @@ _MOCK = textwrap.dedent(r"""
 """)
 
 
+# The run's token is pinned so the mock can answer for the title; one test runs it unpinned.
+PINNED = {"  const LIST = `dbmlsp Probe BatchItems ${RUN}`;":
+          "  const LIST = 'dbmlsp Probe BatchItems';"}
+
+
 def _run(gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: Any,
          ) -> tuple[dict[str, dict[str, str]], list[dict[str, str]], str]:
-    return run_probe(_MOCK, PROBE, gates, config)
+    return run_probe(_MOCK, PROBE, gates, config, PINNED)
 
 
 def _deps(fixture: str) -> set[str]:
@@ -361,9 +367,7 @@ def test_a_date_read_back_without_its_time_is_compared_as_a_date(stored: str, sa
 
 
 def test_a_date_and_time_without_a_zone_gets_the_same_head_in_every_zone() -> None:
-    runs = [run_probe(_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"),
-                      {"storedWhen": "2026-01-15T09:30:00", "tz": tz})
-            for tz in ("UTC", "Australia/Sydney")]
+    runs = [_run(storedWhen="2026-01-15T09:30:00", tz=tz) for tz in ("UTC", "Australia/Sydney")]
 
     local = {next(ln for ln in output.splitlines() if ln.startswith("__LOCAL__"))
              for _, _, output in runs}
@@ -487,7 +491,7 @@ def test_a_throttled_single_create_keeps_what_an_earlier_fixture_voided() -> Non
 ])
 def test_a_refused_addvalidate_write_is_not_established_and_the_probe_goes_on(
         setting: str, row_id: str, said: str) -> None:
-    rows, sent, _ = run_probe(_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"), {setting: True})
+    rows, sent, _ = run_probe(_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"), {setting: True}, PINNED)
 
     assert rows[row_id]["outcome"] == "NOT ESTABLISHED"
     assert rows[row_id]["state"] == "open"
@@ -555,7 +559,8 @@ def test_the_parts_carry_the_type_only_where_the_question_does() -> None:
     ("refuseUntypedVerbose", VERBOSE), ("refuseUntypedNometadata", NOMETADATA),
 ])
 def test_a_refused_untyped_part_is_recorded_with_its_answer(setting: str, row_id: str) -> None:
-    rows, _, _ = run_probe(_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"), {setting: True})
+    rows, _, _ = run_probe(_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"), {setting: True},
+                           PINNED)
 
     assert rows[row_id]["outcome"] == "PART REFUSED"
     assert "A type is required." in rows[row_id]["evidence"]
@@ -900,3 +905,15 @@ def test_a_date_column_that_did_not_take_date_and_time_voids_the_iso_row() -> No
     assert rows[COLUMNS]["outcome"] == "FAIL"
     assert "ProbeWhen.DisplayFormat differs: read 0, declared 1" in rows[COLUMNS]["evidence"]
     assert rows[ISO]["state"] == "void"
+
+
+def test_each_run_names_its_list_with_a_title_no_other_run_uses() -> None:
+    titles = []
+    for _ in range(2):
+        _, sent, _ = run_probe(_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"), {})
+        [create] = [r for r in sent if r["path"] == "web/lists" and r["verb"] == "POST"]
+        titles.append(json.loads(create["body"])["Title"])
+    for title in titles:
+        # The space stays, so the parts still send it as %20 (ruling D18 in the watch-flow plans).
+        assert re.fullmatch(r"dbmlsp Probe BatchItems [a-z0-9]{6,}", title), title
+    assert titles[0] != titles[1]

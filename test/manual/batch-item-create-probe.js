@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: a045ba98
+ * REVISION: 268d519e
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -88,12 +88,13 @@
  * Email addresses, claims logins and this account's display name are masked.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
- * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again
- * (CLEANUP = true recycles a list left by an earlier run first). Copy the
- * RESULTS block back verbatim.
+ * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again.
+ * Copy the RESULTS block back verbatim.
  *
  * WHEN FINISHED: nothing to delete. The probe recycles its list before it
- * reports.
+ * reports. Its title ends in a token unique to the run, so no run reuses an
+ * earlier run's list; one a run could not recycle is named on the console,
+ * with its Id, to recycle by hand.
  */
 (async () => {
   // ---- Operator gate -------------------------------------------------
@@ -669,9 +670,12 @@
           + 'check it and recycle it by hand.');
     }
   };
-  log('INFO', 'probe revision a045ba98. Quote this when reporting results.');
+  log('INFO', 'probe revision 268d519e. Quote this when reporting results.');
 
-  const LIST = 'dbmlsp Probe BatchItems';
+  // The parts name the list by title, the form a history write sends and these rows measure, so the title
+  // carries a token unique to the run: no other list holds it, and none can take it between a check and a use.
+  const RUN = Math.random().toString(36).slice(2, 10);
+  const LIST = `dbmlsp Probe BatchItems ${RUN}`;
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
   const OWNERSHIP = 'dbml-sharepoint batch-item-create probe scratch list. Safe to delete.';
   // A part's request line carries the title quoted then URL-encoded, as a history write sends it.
