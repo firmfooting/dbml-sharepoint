@@ -627,3 +627,42 @@ def test_every_request_after_the_claim_goes_by_the_list_id() -> None:
     assert titled
     assert all("?$select=Id,Description" in path or "?$select=Id,BaseTemplate" in path
                for path in titled), titled
+
+
+def test_a_set_a_people_value_that_was_never_stored_fails_only_the_people_write() -> None:
+    rows, _, _ = _run(mergeDrops={"1": ["ProbePeopleId"]})
+
+    assert rows[ITEM]["outcome"] == "PASS"
+    assert rows[PEOPLE_WRITE]["outcome"] == "FAIL"
+    assert 'Missed differs: read "set A: ProbePeopleId reads back (absent)"' in (
+        rows[PEOPLE_WRITE]["evidence"])
+    assert voided(rows) == {"field.version.payload-people"}
+
+
+@pytest.mark.parametrize("name", ["ProbeDate", "ProbeStamp"])
+def test_a_set_b_date_left_at_set_a_value_fails_the_item(name: str) -> None:
+    rows, _, _ = _run(mergeDrops={"2": [name]})
+
+    assert rows[ITEM]["outcome"] == "FAIL"
+    assert f"set B: HTTP 204, but {name} reads back " in rows[ITEM]["evidence"]
+    assert voided(rows) == _deps(ITEM)
+
+
+def test_a_target_seed_that_does_not_read_back_its_title_fails_the_target() -> None:
+    rows, _, _ = _run(rules=[{"contains": f"{TARGET_AT}/items(1)?$select=Id,Title", "status": 200,
+                              "text": json.dumps({"Id": 1, "Title": "another title"})}])
+
+    assert rows[TARGET]["outcome"] == "FAIL"
+    assert "1 of its two items answered an Id and read back their Title" in rows[TARGET]["evidence"]
+    assert voided(rows) == _deps(TARGET)
+
+
+def test_a_list_versions_read_answered_2xx_with_no_value_array_is_left_open() -> None:
+    rows, _, output = _run(rules=[{"contains": LIST_READ_RULE, "status": 200,
+                                   "text": '{"d": "x"}'}])
+
+    assert rows[READ]["outcome"] == "NOT ESTABLISHED"
+    for row_id in (READ, *PAYLOAD, FIELDS, ORDER):
+        assert rows[row_id]["state"] == "open", rows[row_id]
+    assert "HTTP 200 carried no value array" in rows[FIELDS]["evidence"]
+    assert ended_with_report(output)

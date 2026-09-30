@@ -226,7 +226,11 @@ const mockFetch = async (url, opts = {}) => {
     const item = list.items[Number(one[1]) - 1];
     if (!item) return answer(404, 'Item does not exist.');
     if (one[2] === '' && verb === 'MERGE') {
-      Object.assign(item.values, plain(sent));
+      // `mergeDrops`: per item MERGE count from 1, names that MERGE answers 204 and never stores.
+      item.merges = (item.merges || 0) + 1;
+      const values = plain(sent);
+      for (const name of (CONFIG.mergeDrops || {})[item.merges] || []) delete values[name];
+      Object.assign(item.values, values);
       item.history.push({ ...item.values });
       return answer(204, '');
     }

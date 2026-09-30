@@ -29,7 +29,7 @@
  *   field.version.fixture-payload-item          one item created empty and then written
  *       twice, each set of values read back before the next is sent
  *   field.version.fixture-payload-people-write  the multi-person column written as
- *       { results: [Id] } in both writes and read back; a refusal leaves it and
+ *       { results: [Id] } in both writes and read back after each; a refusal leaves it and
  *       field.version.payload-people NOT ESTABLISHED, and the other kinds are written without it
  *   field.version.control-payload-versions-read the versions read answers a list of entries
  *   The library case, each row resting on every one before it:
@@ -127,7 +127,7 @@
     columns: 'the eight columns read back with their declared TypeAsString',
     peopleColumn: `${PEOPLE} reads back as a multi-person column (UserMulti, AllowMultipleValues true)`,
     item: 'one item created empty and written twice, each set of values read back before the next',
-    peopleWrite: `${PEOPLE}Id written as { results: [this account's Id] } in both writes, read back`,
+    peopleWrite: `${PEOPLE}Id written as { results: [this account's Id] } in both writes, read back after each`,
     read: 'CONTROL: items(id)/versions answers a list of version entries',
     choice: 'what each version carries for a Choice column',
     multichoice: 'what each version carries for a multi-choice column',
@@ -263,8 +263,9 @@
   // A versions read is the control its observations rest on: a refusal voids them, a throttle leaves them open.
   const recordVersionsRead = (id, question, versions, observed, what) => {
     const held = versions.rows !== null && versions.rows.length > 0;
-    const outcome = held ? 'PASS'
-      : (versions.head && versions.head.outcome === 'NOT ESTABLISHED' ? 'NOT ESTABLISHED' : 'FAIL');
+    // A 2xx with no value array is not an answer about the versions, so it is left open like a throttle.
+    const unread = versions.head ? versions.head.outcome === 'NOT ESTABLISHED' : versions.rows === null;
+    const outcome = held ? 'PASS' : unread ? 'NOT ESTABLISHED' : 'FAIL';
     record(id, question, outcome, versions.head
       ? scrub(versions.head.why)
       : `HTTP ${versions.res.status}, ${versions.rows === null ? 'no value array' : `${versions.rows.length} entries`}`
@@ -273,8 +274,9 @@
     if (outcome === 'NOT ESTABLISHED') {
       for (const one of observed) {
         const row = RESULTS.find((r) => r.id === one);
+        const why = versions.head ? scrub(versions.head.why) : `HTTP ${versions.res.status} carried no value array`;
         record(one, row.question, 'NOT ESTABLISHED',
-          `not asked: the ${what} was not established (${scrub(versions.head.why)}); a re-run can ask it`);
+          `not asked: the ${what} was not established (${why}); a re-run can ask it`);
       }
     }
     return held;
@@ -293,11 +295,19 @@
         { __metadata: { type: target.body.ListItemEntityTypeFullName }, Title: title },
         await getDigest(), VERBOSE_WRITE);
       log('INFO', `seed ${title}: HTTP ${made.status}`);
-      if (made.ok && made.body && Number.isInteger(made.body.Id)) targetIds.push(made.body.Id);
+      if (!made.ok || !made.body || !Number.isInteger(made.body.Id)) continue;
+      // A seed counts once its Title reads back by the Id answered, since the lookup is written to that Id.
+      const back = await readBack(`${targetPath}/items(${made.body.Id})?$select=Id,Title`);
+      if (back.parsed && back.parsed.Title === title) targetIds.push(made.body.Id);
+      else {
+        log('INFO', `seed ${title}: item ${made.body.Id} read back `
+          + `${back.parsed ? show(back.parsed.Title) : back.read}`);
+      }
     }
     if (targetIds.length !== 2) {
       record('field.version.fixture-payload-target-list', Q.target, 'FAIL',
-        `the target list was created but ${targetIds.length} of its two items answered an Id`);
+        `the target list was created but ${targetIds.length} of its two items answered an Id and read back `
+        + 'their Title');
       voidDependents(AFTER_TARGET, 'the lookup target does not hold the two items the lookup is written to');
       return;
     }
@@ -370,25 +380,34 @@
       // The multi-value lookup shape; for a multi-person column it is the question the people write asks.
       ...(withPeople ? { [`${PEOPLE}Id`]: { results: [meId] } } : {}),
     });
-    // What a set reads back as once written; a date only needs a value, since its stored form is a question.
-    // The people value is left to its own fixture, so a refusal of that shape never fails the other kinds.
-    const wantOf = (set) => ({
+    // What a set reads back as once written. A date is compared only with what the item held before the
+    // write, never with the text sent, since its stored form is what the versions are read for.
+    const wantOf = (set, before) => ({
       ProbeChoice: set.ProbeChoice, ProbeMulti: (v) => sameMembers(v, set.ProbeMulti), ProbePersonId: meId,
-      ProbeLookupId: set.ProbeLookupId, ProbeDate: (v) => typeof v === 'string' && v.length > 0,
-      ProbeStamp: (v) => typeof v === 'string' && v.length > 0, ProbeNumber: set.ProbeNumber,
-      ProbeFlag: set.ProbeFlag,
+      ProbeLookupId: set.ProbeLookupId,
+      ProbeDate: (v) => typeof v === 'string' && v.length > 0 && v !== before.ProbeDate,
+      ProbeStamp: (v) => typeof v === 'string' && v.length > 0 && v !== before.ProbeStamp,
+      ProbeNumber: set.ProbeNumber, ProbeFlag: set.ProbeFlag,
     });
-    // What differs between the item and a set just written, or null when the whole set reads back.
-    const unlanded = async (set) => {
-      const want = wantOf(set);
-      const read = await readBack(`${listPath}/items(${itemId})?$select=Id,${Object.keys(want).join(',')}`);
-      if (!read.parsed) return `the read-back ${read.read}`;
+    const PEOPLE_KEY = `${PEOPLE}Id`;
+    // The item after a set is written: what differs from the set, what the people value read, and the read.
+    const unlanded = async (set, before, withPeople) => {
+      const want = wantOf(set, before);
+      const keys = [...Object.keys(want), ...(withPeople ? [PEOPLE_KEY] : [])];
+      const read = await readBack(`${listPath}/items(${itemId})?$select=Id,${keys.join(',')}`);
+      if (!read.parsed) return { off: `the read-back ${read.read}`, people: null, parsed: null };
       const off = Object.entries(want).filter(([key, value]) => (typeof value === 'function'
         ? value(read.parsed[key]) !== true : read.parsed[key] !== value));
-      return off.length ? off.map(([key]) => `${key} reads back ${show(read.parsed[key])}`).join(', ') : null;
+      // The people value is judged by its own fixture, so a shape that is not stored never fails the other kinds.
+      const people = withPeople && !sameMembers(read.parsed[PEOPLE_KEY], [meId])
+        ? `${PEOPLE_KEY} reads back ${show(read.parsed[PEOPLE_KEY])}` : null;
+      return { off: off.length ? off.map(([key]) => `${key} reads back ${show(read.parsed[key])}`).join(', ')
+        : null, people, parsed: read.parsed };
     };
     let written = 0;
     const missed = [];
+    const peopleMissed = [];
+    let before = {};
     let itemId = null;
     let peopleRefusal = null;
     const made = await spPost(`${listPath}/items`, { __metadata: { type: itemType },
@@ -415,16 +434,19 @@
         sent = without;
       }
       const what = `set ${'AB'[i]}: HTTP ${sent.status}`;
-      const off = sent.ok ? await unlanded(set) : scrub(sent.text).slice(0, 300);
-      if (sent.ok && off === null) {
+      const carried = withPeople && peopleRefusal === null;
+      const got = sent.ok ? await unlanded(set, before, carried) : null;
+      if (got && got.off === null) {
         written += 1;
+        before = got.parsed;
+        if (got.people) peopleMissed.push(`set ${'AB'[i]}: ${got.people}`);
         continue;
       }
-      missed.push(`${what}${sent.ok ? `, but ${off}` : `: ${off}`}`);
+      missed.push(`${what}${got ? `, but ${got.off}` : `: ${scrub(sent.text).slice(0, 300)}`}`);
       break;
     }
     const last = SETS[1];
-    const declaredItem = { Written: 3, Missed: (v) => typeof v === 'string', ...wantOf(last) };
+    const declaredItem = { Written: 3, Missed: (v) => typeof v === 'string', ...wantOf(last, {}) };
     const selected = Object.keys(declaredItem).filter((key) => key !== 'Written' && key !== 'Missed');
     if (!await establishFixture('field.version.fixture-payload-item', async () => {
       // The sets that did not land join the read-back, so each shows its reason in RESULTS.
@@ -446,10 +468,13 @@
         + 'refused, so no version carries a value written to it; a re-run with another shape can ask it');
     } else if (peopleHeld) {
       peopleWritten = await establishFixture(PEOPLE_WRITE, async () => {
+        // A set whose people value did not read back straight after its write fails this, not the item.
+        const missedSaid = peopleMissed.join('; ') || 'none';
         const read = await readBack(`${listPath}/items(${itemId})?$select=Id,${PEOPLE}Id`);
-        if (!read.parsed) return { ok: true, status: 200, body: { Read: read.read } };
-        return { ok: true, status: 200, body: { Read: read.read, [`${PEOPLE}Id`]: read.parsed[`${PEOPLE}Id`] } };
-      }, { Read: 'HTTP 200', [`${PEOPLE}Id`]: (v) => sameMembers(v, [meId]) }, [SUBJECTS.people]);
+        if (!read.parsed) return { ok: true, status: 200, body: { Missed: missedSaid, Read: read.read } };
+        return { ok: true, status: 200, body: { Missed: missedSaid, Read: read.read,
+          [`${PEOPLE}Id`]: read.parsed[`${PEOPLE}Id`] } };
+      }, { Missed: 'none', Read: 'HTTP 200', [`${PEOPLE}Id`]: (v) => sameMembers(v, [meId]) }, [SUBJECTS.people]);
     }
 
     const versions = await readVersions(listPath, itemId);
