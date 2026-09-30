@@ -332,3 +332,14 @@ def test_a_create_that_never_answered_is_left_open_and_named_for_a_check_by_hand
     assert [r for r in out["sent"] if r["verb"] == "MERGE"] == []
     assert (f"'{TITLE}' never answered a list Id, so it was not recycled; if it stands, recycle it "
             "by hand.") in out["console"]
+
+
+def test_an_ownership_read_answered_2xx_with_no_json_creates_nothing_and_stays_open() -> None:
+    out = _claim(None, rules=[{"contains": PREFLIGHT, "status": 200, "text": "not json"}])
+
+    assert out["held"] is False
+    for row_id in (FIXTURE, DEPENDENT):
+        assert out["rows"][row_id]["state"] == "open"
+    assert f"the ownership read of '{TITLE}' answered HTTP 200 with no JSON" in (
+        out["rows"][FIXTURE]["evidence"])
+    assert _creates(out) == []

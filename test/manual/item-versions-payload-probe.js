@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: f0a5ddfa
+ * REVISION: d54b4209
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -531,8 +531,13 @@
       return { held: false, merge: null, body: null };
     };
     const pre = await spGet(`${path}?$select=Id,Description`);
+    // A 2xx with no JSON says nothing about whose list it is, so it is neither refused nor built over.
+    if (pre.ok && (pre.body === null || typeof pre.body !== 'object')) {
+      return leaveOpen(`the ownership read of '${title}' answered HTTP ${pre.status} with no JSON; `
+        + 'nothing was created');
+    }
     if (pre.ok) {
-      if (!pre.body || pre.body.Description !== description) {
+      if (pre.body.Description !== description) {
         record(id, question, 'FAIL',
           `a list named '${title}' exists without this probe's ownership description; refusing to modify it`);
         voidDependents(dependents, 'the scratch list is not one this probe created');
@@ -597,8 +602,8 @@
     let merge = null;
     if (settings !== null) {
       // Sent by Id, so a title rebound cannot take this list's settings.
-      merge = await spPost(`web/lists(guid'${created.id}')`, { __metadata: { type: 'SP.List' }, ...settings }, await getDigest(),
-        { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
+      merge = await spPost(`web/lists(guid'${created.id}')`, { __metadata: { type: 'SP.List' }, ...settings },
+        await getDigest(), { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
       log('INFO', `list settings MERGE on '${title}': HTTP ${merge.status}`
         + `${merge.ok ? '' : ` ${scrub(merge.text).slice(0, 200)}`}`);
     }
@@ -644,7 +649,8 @@
       const after = await listGone(id);
       log(after.gone ? 'OK' : 'FAIL', after.gone
         ? `recycled '${title}' (list ${id}); it is restorable from the recycle bin.`
-        : `the recycle of '${title}' (list ${id}) answered ${why}, but ${after.why}; check it and recycle it by hand.`);
+        : `the recycle of '${title}' (list ${id}) answered ${why}, but ${after.why}; `
+          + 'check it and recycle it by hand.');
     }
   };
   // ---- Item versions (v1) ---------------------------------------------
@@ -681,7 +687,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision f0a5ddfa. Quote this when reporting results.');
+  log('INFO', 'probe revision d54b4209. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Versions';
   const TARGET = 'dbmlsp Probe VersionsTarget';

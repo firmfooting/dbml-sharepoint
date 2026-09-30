@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: bed65ea0
+ * REVISION: 0f295d41
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -546,8 +546,13 @@
       return { held: false, merge: null, body: null };
     };
     const pre = await spGet(`${path}?$select=Id,Description`);
+    // A 2xx with no JSON says nothing about whose list it is, so it is neither refused nor built over.
+    if (pre.ok && (pre.body === null || typeof pre.body !== 'object')) {
+      return leaveOpen(`the ownership read of '${title}' answered HTTP ${pre.status} with no JSON; `
+        + 'nothing was created');
+    }
     if (pre.ok) {
-      if (!pre.body || pre.body.Description !== description) {
+      if (pre.body.Description !== description) {
         record(id, question, 'FAIL',
           `a list named '${title}' exists without this probe's ownership description; refusing to modify it`);
         voidDependents(dependents, 'the scratch list is not one this probe created');
@@ -612,8 +617,8 @@
     let merge = null;
     if (settings !== null) {
       // Sent by Id, so a title rebound cannot take this list's settings.
-      merge = await spPost(`web/lists(guid'${created.id}')`, { __metadata: { type: 'SP.List' }, ...settings }, await getDigest(),
-        { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
+      merge = await spPost(`web/lists(guid'${created.id}')`, { __metadata: { type: 'SP.List' }, ...settings },
+        await getDigest(), { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
       log('INFO', `list settings MERGE on '${title}': HTTP ${merge.status}`
         + `${merge.ok ? '' : ` ${scrub(merge.text).slice(0, 200)}`}`);
     }
@@ -659,10 +664,11 @@
       const after = await listGone(id);
       log(after.gone ? 'OK' : 'FAIL', after.gone
         ? `recycled '${title}' (list ${id}); it is restorable from the recycle bin.`
-        : `the recycle of '${title}' (list ${id}) answered ${why}, but ${after.why}; check it and recycle it by hand.`);
+        : `the recycle of '${title}' (list ${id}) answered ${why}, but ${after.why}; `
+          + 'check it and recycle it by hand.');
     }
   };
-  log('INFO', 'probe revision bed65ea0. Quote this when reporting results.');
+  log('INFO', 'probe revision 0f295d41. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe BatchItems';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
