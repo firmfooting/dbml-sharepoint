@@ -14,6 +14,7 @@ from _findings import codes, none_of, only
 from _model import bundle as make_bundle
 from _model import column as make_column
 from _model import enum as make_enum
+from _model import ref as make_ref
 from _model import schema as make_schema
 from _model import table as make_table
 from _packs import blocks, entities, write_mapping
@@ -346,6 +347,26 @@ def test_a_when_on_an_unrendered_column_is_left_to_the_column_finding() -> None:
 
     only(findings, FindingCode.WATCHED_COLUMN_NOT_RENDERED)
     none_of(findings, FindingCode.CONDITION_FIELD_NOT_RENDERED)
+
+
+def test_a_when_on_a_lookup_projection_is_accepted() -> None:
+    schema = make_schema(
+        make_table("Project", make_column("Title", required=True),
+                   make_column("Status", "project_status"), make_ref("Owner", "Task.Id"),
+                   note="Projects."),
+        make_table("Task", make_column("Title", required=True), note="Tasks."),
+        enums=[make_enum("project_status", "Open", "Closed")],
+    )
+    use = WatchUse("alert", when=Leaf("OwnerTitle", "eq", "Ada"))
+
+    findings = validate_against_mapping(schema, make_bundle(
+        entities=["Project", "Task"],
+        lookup_projections={"Project": {"Owner": ["Title"]}},
+        watched_lists=[_on_status(use)],
+    ))
+
+    assert not [f for f in findings
+                if f.location is not None and f.location.section is Section.WATCHED_LISTS]
 
 
 def _judged(target: str | None) -> list[Finding]:
