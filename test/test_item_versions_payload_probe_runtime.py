@@ -87,14 +87,31 @@ def test_a_healthy_run_records_every_kind_as_each_version_carried_it() -> None:
     assert _recycled(sent) == RECYCLED
 
 
-def test_the_version_fields_row_counts_each_of_the_four_and_lists_the_first_entry() -> None:
+def test_the_version_fields_row_counts_each_of_the_four_and_names_the_greatest_label() -> None:
     rows, _, _ = _run()
 
     said = rows[FIELDS]["evidence"]
     assert said.startswith("VersionId on 3 of 3; VersionLabel on 3 of 3; Editor on 3 of 3; "
                            "Modified on 3 of 3. Per version: VersionId=1536, VersionLabel=\"3.0\"")
-    assert ("The first entry answered carries: Editor, IsCurrentVersion, Modified, ProbeChoice"
-            in said)
+    assert ("The entry with the greatest VersionLabel, 3.0, carries: Editor, IsCurrentVersion, "
+            "Modified, ProbeChoice" in said)
+
+
+def test_an_oldest_first_answer_still_names_the_greatest_label() -> None:
+    rows, _, _ = _run(versionsAscending=True)
+
+    said = rows[FIELDS]["evidence"]
+    assert "Per version: VersionId=512, VersionLabel=\"1.0\"" in said
+    assert "The entry with the greatest VersionLabel, 3.0, carries: " in said
+
+
+def test_labels_that_do_not_order_name_no_entry_the_greatest() -> None:
+    rows, _, _ = _run(labelsUnparsed=True)
+
+    said = rows[FIELDS]["evidence"]
+    assert rows[FIELDS]["outcome"] == "OBSERVED"
+    assert ("Not every VersionLabel is major.minor, so no entry is named the greatest; the entries "
+            "together carry: Editor, IsCurrentVersion, Modified, ProbeChoice") in said
 
 
 @pytest.mark.parametrize(("versions", "outcome", "evidence"), [

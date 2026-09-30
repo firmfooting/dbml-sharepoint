@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: 92f035b1
+ * REVISION: cd073151
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -49,7 +49,8 @@
  *       -datetime, -number, -boolean   every property of each version whose name
  *       begins with the column's name, and its raw value
  *   field.version.payload-version-fields  VersionId, VersionLabel, Editor and Modified
- *       on each version, and every property name the newest version carries
+ *       on each version, and every property name the version with the greatest
+ *       VersionLabel carries
  *   field.version.versionid-follows-label  whether VersionId rises as VersionLabel does
  *   field.version.library-upload-adds-version  the Choice as read after the upload, the
  *       file's versions in label order with the Choice each holds, and whether a version
@@ -615,7 +616,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 92f035b1. Quote this when reporting results.');
+  log('INFO', 'probe revision cd073151. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Versions';
   const TARGET = 'dbmlsp Probe VersionsTarget';
@@ -670,7 +671,8 @@
     datetime: 'what each version carries for a date-and-time column',
     number: 'what each version carries for a Number column',
     boolean: 'what each version carries for a Yes/No column',
-    fields: 'VersionId, VersionLabel, Editor and Modified on each version, and the newest version\'s property names',
+    fields: 'VersionId, VersionLabel, Editor and Modified on each version, and the property names of the version '
+      + 'with the greatest VersionLabel',
     order: 'whether VersionId rises as VersionLabel does across the versions answered',
     library: 'a document library this probe created, with versioning on and minor versions off',
     libraryColumn: `${LIB_COLUMN} reads back as a Choice column on the library`,
@@ -982,8 +984,16 @@
     const presence = FOUR.map((key) => `${key} on ${rows.filter((row) => row[key] !== undefined).length}`
       + ` of ${rows.length}`);
     const perVersion = rows.map((row) => FOUR.map((key) => `${key}=${show(row[key])}`).join(', '));
+    // Named by its label, never by its place in the answer, since the order versions come back in is a question.
+    const labelled = rows.every((row) => labelPair(row) !== null);
+    const greatest = labelled ? rows.reduce((top, row) => (labelPair(row)[0] - labelPair(top)[0]
+      || labelPair(row)[1] - labelPair(top)[1]) > 0 ? row : top) : null;
+    const named = greatest
+      ? `The entry with the greatest VersionLabel, ${labelOf(greatest)}, carries: ${Object.keys(greatest).sort().join(', ')}`
+      : 'Not every VersionLabel is major.minor, so no entry is named the greatest; the entries together carry: '
+        + `${[...new Set(rows.flatMap((row) => Object.keys(row)))].sort().join(', ')}`;
     record(SUBJECTS.fields, Q.fields, 'OBSERVED', `${presence.join('; ')}. Per version: `
-      + `${perVersion.join(' | ')}. The first entry answered carries: ${Object.keys(rows[0]).sort().join(', ')}`);
+      + `${perVersion.join(' | ')}. ${named}`);
 
     const pairs = rows.map((row) => ({ at: labelPair(row), id: versionIdOf(row), label: labelOf(row) }));
     const comparable = rows.length > 1 && pairs.every((p) => p.at !== null && typeof p.id === 'number');
