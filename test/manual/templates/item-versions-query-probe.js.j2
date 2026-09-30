@@ -48,9 +48,9 @@
 (async () => {
 {% include "_probe_harness.js.j2" %}
 {% include "_probe_raw_request_v1.js.j2" %}
+{% include "_probe_identity_v1.js.j2" %}
 {% include "_probe_scratch_list_v1.js.j2" %}
 {% include "_probe_item_versions_v1.js.j2" %}
-{% include "_probe_identity_v1.js.j2" %}
   log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsQuery';

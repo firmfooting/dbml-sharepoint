@@ -44,7 +44,8 @@ def _claim(
     """Claim one scratch list with `settings`, and return what came back and the result rows."""
     env = _load_renderer()._env()
     body = "".join(env.get_template(name).render() for name in (
-        "_probe_harness.js.j2", "_probe_raw_request_v1.js.j2", "_probe_scratch_list_v1.js.j2"))
+        "_probe_harness.js.j2", "_probe_raw_request_v1.js.j2", "_probe_identity_v1.js.j2",
+        "_probe_scratch_list_v1.js.j2"))
     script = (
         VERSIONS_MOCK.replace("__CONFIG__", json.dumps(config))
         + "(async () => {\n" + body
@@ -62,6 +63,7 @@ def _claim(
     assert line is not None, output[-2000:]
     out: dict[str, Any] = json.loads(line.removeprefix("__OUT__"))
     out["rows"] = {row["id"]: row for row in out["rows"]}
+    out["console"] = output.split("__SENT__")[0]
     return out
 
 
@@ -100,6 +102,17 @@ def test_a_refused_merge_that_leaves_a_setting_unapplied_fails_on_that_setting()
     assert SAID in evidence
     assert "example.sharepoint.com" not in evidence
     assert out["rows"][DEPENDENT]["state"] == "void"
+
+
+def test_a_refused_merge_naming_an_account_is_masked() -> None:
+    naming = {**REFUSED,
+              "text": "Refused for i:0#.f|membership|ada@example.com by bob@example.com."}
+    out = _claim({"EnableVersioning": True}, rules=[naming])
+
+    evidence = out["rows"][FIXTURE]["evidence"]
+    assert "HTTP 400: Refused for i:0#.f|membership|<account> by <account>" in evidence
+    assert "ada@example.com" not in out["console"]
+    assert "bob@example.com" not in out["console"]
 
 
 def test_a_list_claimed_without_settings_declares_no_merge() -> None:

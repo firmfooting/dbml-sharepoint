@@ -130,6 +130,17 @@ def test_a_refused_settings_merge_on_a_list_still_in_range_is_observed_not_voide
     assert voided(rows) == set()
 
 
+def test_a_refused_settings_merge_naming_an_account_is_masked() -> None:
+    rows, _, output = _run(listDefaults={"EnableVersioning": True, "MajorVersionLimit": 2},
+                           rules=[{"contains": "getbytitle('dbmlsp Probe VersionsTrim')",
+                                   "verb": "MERGE", "bodyContains": "MajorVersionLimit",
+                                   "status": 400, "text": "Refused for ada@example.com."}])
+
+    assert 'Settings="HTTP 400: Refused for <account>"' in rows[LIST]["evidence"]
+    assert "HTTP 400: Refused for <account>" in rows[LIMIT]["evidence"]
+    assert "ada@example.com" not in output.split("__SENT__")[0]
+
+
 def test_a_shortfall_that_is_not_the_limit_is_described_not_called_trimmed() -> None:
     rows, _, _ = _run(keepVersions=3)
 

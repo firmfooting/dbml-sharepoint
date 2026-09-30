@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: 33d644bf
+ * REVISION: 282f807b
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -431,6 +431,24 @@
       ? info.FormDigestValue : null;
     return { res, digest };
   };
+  // ---- Identity masking (v1) ------------------------------------------
+  // Strings that name a person, masked wherever evidence quotes an answer.
+  const IDENTITIES = [];
+  const knowIdentity = (value, mask) => {
+    const text = value === null || value === undefined ? '' : String(value);
+    if (text.length < 2) return;
+    IDENTITIES.push({ text, mask });
+    IDENTITIES.sort((a, b) => b.text.length - a.text.length);
+  };
+  const literal = (text) => text.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
+  // Logins and emails the probe never learned are masked too; a match stops at a backslash so JSON escapes survive.
+  const scrub = (value) => {
+    let out = redactTenant(value);
+    for (const { text, mask } of IDENTITIES) out = out.replace(new RegExp(literal(text), 'gi'), mask);
+    return out
+      .replace(/(i:0[^|\s'"]*\|([^|\s'"]+\|)?)[^\s'"|\\]+/gi, '$1<account>')
+      .replace(/[^\s'"|:<>\\]+@[^\s'"<>\\]+/gi, '<account>');
+  };
   // ---- Scratch lists (v1) ---------------------------------------------
   // Titles this run created, so the recycle touches those and never a list it only found.
   const CREATED_LISTS = [];
@@ -460,7 +478,7 @@
       { Title: title, BaseTemplate: baseTemplate, Description: description }, await getDigest());
     if (!made.ok) {
       record(id, question, 'FAIL',
-        `the list create answered HTTP ${made.status}: ${redactTenant(made.text).slice(0, 300)}`);
+        `the list create answered HTTP ${made.status}: ${scrub(made.text).slice(0, 300)}`);
       voidDependents(dependents, 'the scratch list was not created');
       return { held: false, merge: null, body: null };
     }
@@ -470,12 +488,12 @@
       merge = await spPost(path, { __metadata: { type: 'SP.List' }, ...settings }, await getDigest(),
         { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
       log('INFO', `list settings MERGE on '${title}': HTTP ${merge.status}`
-        + `${merge.ok ? '' : ` ${redactTenant(merge.text).slice(0, 200)}`}`);
+        + `${merge.ok ? '' : ` ${scrub(merge.text).slice(0, 200)}`}`);
     }
     const select = ['BaseTemplate', 'Description', ...Object.keys(declared)].join(',');
     // The MERGE's answer joins the read-back, so a refused setting shows its reason in RESULTS.
     const answered = merge === null ? {} : { Settings: `HTTP ${merge.status}`
-      + `${merge.ok ? '' : `: ${redactTenant(merge.text).slice(0, 200)}`}` };
+      + `${merge.ok ? '' : `: ${scrub(merge.text).slice(0, 200)}`}` };
     // Recorded, never judged: what the MERGE answered is an observation, and the read-back decides.
     const settled = merge === null ? {} : { Settings: (v) => typeof v === 'string' };
     let read = null;
@@ -498,7 +516,7 @@
         gone = { ok: false, status: null, text: String((err && err.message) || err) };
       }
       // A request that threw has no status, so its message is what the operator is shown.
-      const why = gone.status === null ? redactTenant(gone.text).slice(0, 240) : `HTTP ${gone.status}`;
+      const why = gone.status === null ? scrub(gone.text).slice(0, 240) : `HTTP ${gone.status}`;
       log(gone.ok ? 'OK' : 'FAIL', gone.ok
         ? `recycled '${title}'; it is restorable from the recycle bin.`
         : `could not recycle '${title}' (${why}); recycle it by hand.`);
@@ -527,25 +545,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  // ---- Identity masking (v1) ------------------------------------------
-  // Strings that name a person, masked wherever evidence quotes an answer.
-  const IDENTITIES = [];
-  const knowIdentity = (value, mask) => {
-    const text = value === null || value === undefined ? '' : String(value);
-    if (text.length < 2) return;
-    IDENTITIES.push({ text, mask });
-    IDENTITIES.sort((a, b) => b.text.length - a.text.length);
-  };
-  const literal = (text) => text.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
-  // Logins and emails the probe never learned are masked too; a match stops at a backslash so JSON escapes survive.
-  const scrub = (value) => {
-    let out = redactTenant(value);
-    for (const { text, mask } of IDENTITIES) out = out.replace(new RegExp(literal(text), 'gi'), mask);
-    return out
-      .replace(/(i:0[^|\s'"]*\|([^|\s'"]+\|)?)[^\s'"|\\]+/gi, '$1<account>')
-      .replace(/[^\s'"|:<>\\]+@[^\s'"<>\\]+/gi, '<account>');
-  };
-  log('INFO', 'probe revision 33d644bf. Quote this when reporting results.');
+  log('INFO', 'probe revision 282f807b. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsQuery';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
