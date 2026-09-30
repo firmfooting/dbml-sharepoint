@@ -38,6 +38,8 @@
  * REFUSED is a refusal whose text says why. NARROWED needs every entry to carry
  * nothing beyond the selected names and every selected name the plain read
  * carried on all its entries; SELECTED MISSING is an answer lacking one.
+ * OTHER ROWS on the select, top and orderby rows is an answer serving
+ * versions the plain read did not, or not serving all of those it did.
  * NOT COMPARABLE, left open, is an answer carrying a continuation link, which
  * the probe records and does not follow; on the plain read it holds every
  * option row.
@@ -275,6 +277,9 @@
     // Narrowing is judged against what the plain read carried beyond the selected names.
     const baseline = beyondSelected(keysOf(plain.rows));
     const carries = (row, key) => Object.prototype.hasOwnProperty.call(row, key);
+    // Whether an answer served exactly the versions the plain read did, by VersionId.
+    const sameVersions = (rows) => JSON.stringify(rows.map(versionIdOf).map(String).sort())
+      === JSON.stringify(plainIds.map(String).sort());
     // A selected name the plain read carried on every entry must come back on every entry.
     const owed = SELECTED.filter((key) => plain.rows.every((row) => carries(row, key)));
     await ask('query.odata.versions-select', Q.select, null, `$select=${SELECTED.join(',')}`,
@@ -282,14 +287,16 @@
         const keys = keysOf(rows);
         const extra = beyondSelected(keys);
         const missing = owed.filter((key) => !rows.every((row) => carries(row, key)));
+        // VersionId is selected, so an answer lacking it heads SELECTED MISSING before its versions are compared.
         const head = !baseline.length ? 'NOT COMPARABLE' : !rows.length ? 'NO VERSIONS'
-          : extra.length ? 'NOT NARROWED' : missing.length ? 'SELECTED MISSING' : 'NARROWED';
+          : extra.length ? 'NOT NARROWED' : missing.length ? 'SELECTED MISSING'
+            : !sameVersions(rows) ? 'OTHER ROWS' : 'NARROWED';
         const why = !baseline.length ? 'the plain read carried nothing beyond the selected names, '
           + 'so an ignored $select would look the same' : `the plain read also carried ${baseline.join(', ')}`;
         const lacking = missing.length ? `; not every entry carries ${missing.join(', ')}, which every entry of `
           + 'the plain read carried' : '';
         return [head, `${entries(rows.length)} carrying ${keys.length ? keys.join(', ') : 'nothing'}; ${why}`
-          + lacking];
+          + `${lacking}; served VersionIds ${JSON.stringify(rows.map(versionIdOf))}`];
       });
     const lowest = Math.min(...plainIds);
     await ask('query.odata.versions-filter', Q.filter, filterControl, `$filter=VersionId gt ${lowest}`,
@@ -300,14 +307,18 @@
         const head = same(served, rest) ? 'FILTERED' : same(served, plainIds) ? 'UNFILTERED' : 'OTHER ROWS';
         return [head, `served VersionIds ${JSON.stringify(served)}`];
       });
+    // A served version the plain read did not answer is not one of this item's versions topped.
+    const known = (rows) => rows.every((row) => plainIds.some((v) => String(v) === String(versionIdOf(row))));
     await ask('query.odata.versions-top', Q.top, topControl, '$top=1',
-      (rows) => [rows.length === 1 ? 'TOPPED' : 'NOT TOPPED',
+      (rows) => [!known(rows) ? 'OTHER ROWS' : rows.length === 1 ? 'TOPPED' : 'NOT TOPPED',
         `served ${entries(rows.length)}, VersionIds ${JSON.stringify(rows.map(versionIdOf))}`]);
     const direction = defaultOrder === 'ASCENDING' ? 'desc' : 'asc';
     await ask('query.odata.versions-orderby', Q.orderby, topControl, `$orderby=VersionId ${direction}`,
       (rows) => {
         const served = rows.map(versionIdOf);
-        return [orderOf(served), `asked ${direction}, served VersionIds ${JSON.stringify(served)}`];
+        // An order is named only over the same versions the plain read answered.
+        return [sameVersions(rows) ? orderOf(served) : 'OTHER ROWS',
+          `asked ${direction}, served VersionIds ${JSON.stringify(served)}`];
       });
   } catch (err) {
     log('FAIL', `probe aborted: ${scrub(String((err && err.message) || err)).slice(0, 240)}. `

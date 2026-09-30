@@ -6,6 +6,7 @@ test prelude projects every GET to its `$select`; the case for a site that ignor
 turns that off in the mock.
 """
 
+import json
 from typing import Any
 
 import pytest
@@ -281,6 +282,21 @@ def test_a_write_whose_read_back_went_unanswered_is_not_counted() -> None:
     assert rows[ITEMS]["outcome"] == "FAIL"
     assert "the create of A: HTTP 201, but the read-back " in rows[ITEMS]["evidence"]
     assert voided(rows) == _deps(ITEMS)
+
+
+@pytest.mark.parametrize(("option", "row_id", "answer"), [
+    ("$select", SELECT, [{"VersionId": 1536, "VersionLabel": "3.0", "ProbeChoice": "Q3"},
+                         {"VersionId": 1024, "VersionLabel": "2.0", "ProbeChoice": "Q2"}]),
+    ("$top", TOP, [{"VersionId": 9999, "VersionLabel": "9.0", "ProbeChoice": "Q3"}]),
+    ("$orderby", ORDERBY, [{"VersionId": 512, "VersionLabel": "1.0", "ProbeChoice": "Q1"},
+                           {"VersionId": 1536, "VersionLabel": "3.0", "ProbeChoice": "Q3"}]),
+], ids=["select-subset", "top-unknown", "orderby-subset"])
+def test_an_option_serving_other_versions_than_the_plain_read_is_named_so(
+        option: str, row_id: str, answer: list[dict[str, Any]]) -> None:
+    rows, _, _ = _run(rules=[{"contains": f"/versions?{option}", "status": 200,
+                              "text": json.dumps({"value": answer})}])
+
+    assert rows[row_id]["outcome"] == "OTHER ROWS", rows[row_id]
 
 
 def test_a_plain_read_answered_2xx_with_no_value_array_leaves_everything_after_it_open() -> None:
