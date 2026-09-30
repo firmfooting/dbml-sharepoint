@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: 99a1bbf0
+ * REVISION: c3ef2c42
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -648,7 +648,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 99a1bbf0. Quote this when reporting results.');
+  log('INFO', 'probe revision c3ef2c42. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsTrim');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
@@ -709,11 +709,13 @@
       : rows.length === written ? 'UNTRIMMED' : rows.length === limit ? 'TRIMMED' : 'FEWER THAN WRITTEN';
     const listed = rows.map((row) => `${JSON.stringify(row.VersionLabel)}/${JSON.stringify(versionIdOf(row))}`
       + `/${JSON.stringify(row.Title)}`).join(', ');
-    // A lowest VersionId is named only when every one answered is a number, since only then is it measured.
+    // A lowest VersionId is named only when every one answered is a number, and none repeats, so one entry holds it.
     const numeric = rows.length > 0 && rows.every((row) => typeof versionIdOf(row) === 'number');
-    const lowest = numeric ? rows.reduce((low, row) => (versionIdOf(row) < versionIdOf(low) ? row : low)) : null;
+    const lowest = numeric && !again.length
+      ? rows.reduce((low, row) => (versionIdOf(row) < versionIdOf(low) ? row : low)) : null;
     const carried = lowest ? `; the lowest VersionId answered carries ${Object.keys(lowest).sort().join(', ')}`
-      : rows.length ? '; the VersionIds answered are not all numbers, so no lowest is named' : '';
+      : numeric ? '; a VersionId repeats, so no lowest is named'
+        : rows.length ? '; the VersionIds answered are not all numbers, so no lowest is named' : '';
     const paged = got.next !== null ? `${pagedSaid(got)}; `
       : again.length ? `VersionId ${again.join(', ')} answered more than once; `
         : unknown.length ? `VersionId ${unknown.join(', ')} answered, which no write was seen to create; ` : '';

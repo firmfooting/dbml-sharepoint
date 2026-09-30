@@ -295,6 +295,9 @@ def test_a_versions_answer_repeating_a_versionid_is_not_counted() -> None:
         assert rows[row_id]["outcome"] == "NOT COMPARABLE", rows[row_id]
         assert rows[row_id]["state"] == "settled"
         assert "VersionId 3072 answered more than once" in rows[row_id]["evidence"]
+        # The lowest VersionId is the repeated one, so no single entry is named for it.
+        assert "the lowest VersionId answered carries" not in rows[row_id]["evidence"]
+        assert "a VersionId repeats, so no lowest is named" in rows[row_id]["evidence"]
 
 
 def test_a_write_that_landed_without_a_new_version_is_not_counted() -> None:
