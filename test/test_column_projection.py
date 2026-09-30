@@ -36,6 +36,7 @@ _INTENDED_IMPORTERS: dict[str, set[str]] = {
     "analysis/checks/_views.py": {"effective_column_types", "system_column_types_for"},
     "analysis/checks/_formatting.py": {"effective_column_types", "system_column_types_for"},
     "analysis/checks/_retirement.py": {"effective_column_types"},
+    "analysis/checks/_watched.py": {"effective_column_types"},
     "analysis/joins.py": {"SYSTEM_COLUMN_TYPES"},
     "analysis/clock_usage.py": {"SYSTEM_COLUMN_TYPES"},
 }

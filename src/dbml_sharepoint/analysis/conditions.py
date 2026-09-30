@@ -151,7 +151,7 @@ type _Problem = tuple[FindingCode, str, str | None]
 def condition_findings(
     condition: Condition,
     *,
-    target: str,
+    target: str | None,
     rendered: set[str],
     types: dict[str, str],
     lookups: set[str],
@@ -169,6 +169,10 @@ def condition_findings(
     `enum_members` is the ordered schema projection for Choice columns.
     Whole-member operands must use the declared spelling. This is a schema
     consistency rule and makes no claim about SharePoint's comparison casing.
+
+    `target=None` is for a condition this package never renders, such as a
+    watched column's `when`: the bounds, columns, operators, operands and
+    Choice members are judged, and no renderer is consulted.
     """
     return [
         Finding(
@@ -203,7 +207,7 @@ def _dealias(node: Condition) -> Condition:
 def _condition_problems(
     condition: Condition,
     *,
-    target: str,
+    target: str | None,
     rendered: set[str],
     types: dict[str, str],
     lookups: set[str],
@@ -308,6 +312,22 @@ def _condition_problems(
         # over a tree containing one it does not know. The unknown operator
         # is already reported above; raising here instead would turn a typo
         # into a traceback.
+        return _dedupe(problems)
+
+    if target is None:
+        # Nothing renders this condition, so only the renderer-free Choice rule remains.
+        for leaf in leaves(condition):
+            if id(leaf) in suppressed or leaf.field not in rendered:
+                continue
+            problems.extend(
+                (code, message, leaf.field)
+                for code, message in _choice_member_problems(
+                    leaf,
+                    where=f"{context}.{leaf.field}",
+                    types=types,
+                    enum_members=enum_members,
+                )
+            )
         return _dedupe(problems)
 
     flipped = _flipped_by_normalisation(condition)
@@ -620,7 +640,7 @@ def _choice_member_problems(
 def _lookup_problem(
     leaf: Leaf,
     where: str,
-    target: str,
+    target: str | None,
     lookups: set[str],
 ) -> tuple[FindingCode, str] | None:
     """Lookups are int-typed in DBML, so the type map alone cannot see them.

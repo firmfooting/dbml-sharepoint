@@ -1672,6 +1672,26 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A `watched_lists:` entry names a column the deploy never "
         "creates."
     ),
+    FindingCode.WATCH_USE_ID_DUPLICATE: (
+        "Two uses on the same entity's watched columns share an `id`, which must name "
+        "one use so a consumer can tell them apart."
+    ),
+    FindingCode.WATCH_USE_ID_INVALID: (
+        "A watched column's use `id` is not lowercase letters, digits and hyphens "
+        "starting with a letter, the spelling of a use name, since it names what is built."
+    ),
+    FindingCode.WATCH_USE_NAME_INVALID: (
+        "A watched column's use name is not lowercase letters, digits and hyphens "
+        "starting with a letter."
+    ),
+    FindingCode.WATCH_USE_REPEATED_WITHOUT_ID: (
+        "A use name appears more than once on one entity's watched columns and this "
+        "occurrence has no `id` to tell it from the others."
+    ),
+    FindingCode.WATCH_USE_WHEN_REQUIRED: (
+        "A use with `on: enter` or `on: leave` has no `when`, so there is no condition "
+        "for the column's value to enter or leave."
+    ),
     FindingCode.VIEW_FILTER_EXCEEDS_EDITOR_CAPACITY: (
         f"A view's `where` renders more than {MAX_FILTER_EDITOR_CONDITIONS} "
         "comparisons, which is more than the classic filter editor can show. "

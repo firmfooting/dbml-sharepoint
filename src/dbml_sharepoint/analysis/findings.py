@@ -580,6 +580,13 @@ class FindingCode(StrEnum):
     DEFAULT_FORMULA_TYPE_UNSUPPORTED = "default_formula_type_unsupported", "error"
     DEFAULT_FORMULA_UNKNOWN_COLUMN = "default_formula_unknown_column", "error"
 
+    # --- checks/_watched.py: the uses on a watched column -------------------
+    WATCH_USE_ID_DUPLICATE = "watch_use_id_duplicate", "error"
+    WATCH_USE_ID_INVALID = "watch_use_id_invalid", "error"
+    WATCH_USE_NAME_INVALID = "watch_use_name_invalid", "error"
+    WATCH_USE_REPEATED_WITHOUT_ID = "watch_use_repeated_without_id", "error"
+    WATCH_USE_WHEN_REQUIRED = "watch_use_when_required", "error"
+
     # --- schema-only rules, from validator.validate() ---
     AUTO_INCREMENT_PK_MUST_BE_ID = "auto_increment_pk_must_be_id", "error"
     COLUMN_NAME_TOO_LONG = "column_name_too_long", "error"
