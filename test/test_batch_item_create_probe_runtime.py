@@ -82,6 +82,8 @@ _MOCK = textwrap.dedent(r"""
       const typed = sent.__metadata && sent.__metadata.type === list.ListItemEntityTypeFullName;
       const unknown = Object.keys(sent).find((key) => !['__metadata', 'Title'].includes(key));
       if (unknown && !CONFIG.acceptUnknown) {
+        // `landRefused`: a refused create that still stores its item.
+        if (CONFIG.landRefused) items.push({ Id: items.length + 1, Title: sent.Title });
         const type = list.ListItemEntityTypeFullName;
         return refuse(`The property '${unknown}' does not exist on type '${type}'.`);
       }
@@ -116,6 +118,7 @@ _MOCK = textwrap.dedent(r"""
         if (!CONFIG.acceptUnknown) bad(name, `Column '${name}' does not exist.`);
       }
       if (answers.some((a) => a.HasException)) {
+        if (CONFIG.landRefused) items.push({ Id: items.length + 1, Title: values.Title });
         return { status: 200, reason: 'OK', body: { value: answers } };
       }
       items.push({ Id: items.length + 1, Title: values.Title,
@@ -780,7 +783,7 @@ def test_a_missing_field_refused_by_status_passes_the_control() -> None:
 
     assert rows[ADDVALIDATE]["outcome"] == "PASS"
     assert rows[AV_UNKNOWN]["outcome"] == "PASS"
-    assert rows[AV_UNKNOWN]["evidence"] == f"HTTP 400: {NO_COLUMN}"
+    assert rows[AV_UNKNOWN]["evidence"] == f"HTTP 400: {NO_COLUMN}; landed no"
     assert rows[AV_FAILED]["outcome"] == "FIELD REFUSED"
     assert voided(rows) == set()
     assert ended_with_report(output)
@@ -792,7 +795,7 @@ def test_a_missing_field_control_answered_with_no_field_list_leaves_the_failed_p
                                    "status": 200, "text": '{"d": 1}'}])
 
     assert rows[AV_UNKNOWN]["outcome"] == "NOT ESTABLISHED"
-    assert rows[AV_UNKNOWN]["evidence"] == 'HTTP 200: {"d": 1}'
+    assert rows[AV_UNKNOWN]["evidence"] == 'HTTP 200: {"d": 1}; landed no'
     assert voided(rows) == set()
     assert rows[AV_FAILED]["state"] == "open"
     assert ended_with_report(output)
@@ -1027,3 +1030,28 @@ def test_a_single_create_answered_2xx_with_no_json_leaves_the_control_open() -> 
 
     assert rows[SINGLE]["outcome"] == "NOT ESTABLISHED"
     assert voided(rows) == set()
+
+
+@pytest.mark.parametrize("row_id", [UNKNOWN, AV_UNKNOWN])
+def test_a_refusal_whose_item_landed_anyway_fails_its_control(row_id: str) -> None:
+    rows, _, _ = _run(landRefused=True)
+
+    assert rows[row_id]["outcome"] == "FAIL", rows[row_id]
+    assert "landed yes" in rows[row_id]["evidence"]
+
+
+@pytest.mark.parametrize("row_id", [UNKNOWN, AV_UNKNOWN])
+def test_a_refusal_whose_landing_is_unknown_leaves_its_control_open(row_id: str) -> None:
+    rows, _, _ = _run(rules=[{"contains": "/items?$select=Id,Title", "status": 429,
+                              "text": "busy"}])
+
+    assert rows[row_id]["outcome"] == "NOT ESTABLISHED", rows[row_id]
+    assert "landed unknown" in rows[row_id]["evidence"]
+
+
+def test_a_refused_control_passes_only_once_its_title_is_absent() -> None:
+    rows, _, _ = _run()
+
+    for row_id in (UNKNOWN, AV_UNKNOWN):
+        assert rows[row_id]["outcome"] == "PASS"
+        assert "landed no" in rows[row_id]["evidence"]

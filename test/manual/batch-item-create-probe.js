@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: a2f11b31
+ * REVISION: dbc50c7c
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -29,7 +29,8 @@
  *   transport.batch.control-single-item-create  one single typed create lands and
  *       its Title reads back; without it a batch answer says nothing about the transport
  *   transport.batch.control-single-item-unknown-property-refused  a single typed
- *       create naming a column the list lacks is refused; the failed-part row rests on it
+ *       create naming a column the list lacks is refused, and the items read shows no
+ *       item under its Title; the failed-part row rests on it
  *   transport.batch.fixture-item-batch-columns  a person column and a date-and-time
  *       column read back with their TypeAsString, the date column with DisplayFormat 1;
  *       the claims and date rows rest on it
@@ -38,7 +39,8 @@
  *   transport.batch.control-single-addvalidate-create  one AddValidateUpdateItemUsingPath
  *       call in Learn's form (FolderPath given, Title only) lands; the four rows below rest on it
  *   transport.batch.control-single-addvalidate-unknown-field-refused  one such call naming
- *       the missing column in formValues is refused; the failed-part row rests on it
+ *       the missing column in formValues is refused, and the items read shows no item under
+ *       its Title; the failed-part row rests on it
  *   A control that FAILs voids what rests on it; one NOT ESTABLISHED leaves it open.
  *
  * OBSERVES (recorded verbatim, never compared with an expected value)
@@ -798,7 +800,7 @@
       await recycleList(title, id);
     }
   };
-  log('INFO', 'probe revision a2f11b31. Quote this when reporting results.');
+  log('INFO', 'probe revision dbc50c7c. Quote this when reporting results.');
 
   // The parts name the list by title, the form a history write sends and these rows measure; the run's token
   // means no other list holds it, and none can take it between a check and a use.
@@ -824,7 +826,8 @@
   const Q = {
     list: 'a generic list this probe created, whose ListItemEntityTypeFullName reads back',
     single: 'CONTROL: one single typed item create lands and its Title reads back',
-    unknown: `CONTROL: a single typed create naming ${MISSING}, which the list lacks, is refused`,
+    unknown: `CONTROL: a single typed create naming ${MISSING}, which the list lacks, is refused and its Title `
+      + 'is absent from the items read',
     parts: 'three typed creates in one ChangeSet, the middle one naming the missing column: what each part answered',
     failed: 'what the middle part answered, and whether its neighbours landed',
     verbose: 'what a create part with verbose headers and no __metadata answered',
@@ -832,7 +835,8 @@
     columns: `${WHO} (User) and ${WHEN} (DateTime, DisplayFormat 1) read back with their TypeAsString`,
     user: 'this account\'s Id and Email read back from web/currentuser',
     addvalidate: 'CONTROL: one AddValidateUpdateItemUsingPath call with FolderPath and a Title lands',
-    avunknown: `CONTROL: one AddValidateUpdateItemUsingPath call naming ${MISSING} in formValues is refused`,
+    avunknown: `CONTROL: one AddValidateUpdateItemUsingPath call naming ${MISSING} in formValues is refused and `
+      + 'its Title is absent from the items read',
     avfailed: `what an AddValidateUpdateItemUsingPath part naming ${MISSING} answered, and whether its neighbours landed`,
     folder: 'what an AddValidateUpdateItemUsingPath part with no listItemCreateInfo.FolderPath answered',
     claims: `what an AddValidateUpdateItemUsingPath part writing ${WHO} as claims in formValues answered`,
@@ -1126,10 +1130,11 @@
     }
 
     const refused = await single(typed(TITLES.unknown, { [MISSING]: 'x' }));
-    const refusedOutcome = refused.status !== null && isRefusal(refused.status) ? 'PASS'
+    // Recorded once the items read says whether its Title landed, since a refusal alone proves nothing stored.
+    const refusedAnswer = refused.status !== null && isRefusal(refused.status) ? 'PASS'
       : refused.status !== null && ok2xx(refused.status) ? 'FAIL' : 'NOT ESTABLISHED';
-    record(UNKNOWN, Q.unknown, refusedOutcome, refused.status === null ? scrub(refused.text)
-      : `HTTP ${refused.status}: ${said(refused.text)}`);
+    const refusedSaid = refused.status === null ? scrub(refused.text)
+      : `HTTP ${refused.status}: ${said(refused.text)}`;
 
     const three = await sendChangeSet([
       { odata: 'verbose', body: typed(TITLES.a) },
@@ -1194,6 +1199,7 @@
     const control = await addValidateControl();
     record(ADDVALIDATE, Q.addvalidate, control.outcome, control.evidence);
     let avUnknown = null;
+    let avSaid = null;
     if (control.outcome === 'PASS') {
       const sent = await sendRaw(`${listPath}/AddValidateUpdateItemUsingPath`, { method: 'POST',
         headers: { 'Content-Type': NOMETADATA, 'X-RequestDigest': await getDigest() },
@@ -1204,8 +1210,8 @@
       // A 2xx with no readable per-field list says nothing about the field, so it is left open.
       avUnknown = head ? (head.outcome === 'NOT ESTABLISHED' ? 'NOT ESTABLISHED' : 'PASS')
         : fieldRefused ? 'PASS' : fields === null ? 'NOT ESTABLISHED' : 'FAIL';
-      record(AV_UNKNOWN, Q.avunknown, avUnknown, head ? head.why : `HTTP ${sent.status}: `
-        + `${fields ? `fields ${fieldsSaid(fields)}` : scrub(sent.text).slice(0, 400)}`);
+      avSaid = head ? head.why : `HTTP ${sent.status}: `
+        + `${fields ? `fields ${fieldsSaid(fields)}` : scrub(sent.text).slice(0, 400)}`;
     }
     // Each part asked only when what it rests on held, so a voided row is never overwritten.
     const asked = [
@@ -1239,6 +1245,15 @@
       : `HTTP ${titles.status} ${titleRows.shape}`}` : '';
     // A row that reports whether items landed stays open when the read that would say so failed.
     const landing = present === null ? 'open' : undefined;
+    // A refused control passes only once its Title is absent; unknown landing leaves it open.
+    const absentOr = (answer, title) => (answer !== 'PASS' ? answer : landed(title) === 'no' ? 'PASS'
+      : landed(title) === 'unknown' ? 'NOT ESTABLISHED' : 'FAIL');
+    const refusedOutcome = absentOr(refusedAnswer, TITLES.unknown);
+    record(UNKNOWN, Q.unknown, refusedOutcome, `${refusedSaid}; landed ${landed(TITLES.unknown)}${titlesSaid}`);
+    if (avUnknown !== null) {
+      avUnknown = absentOr(avUnknown, TITLES.avunknown);
+      record(AV_UNKNOWN, Q.avunknown, avUnknown, `${avSaid}; landed ${landed(TITLES.avunknown)}${titlesSaid}`);
+    }
 
     const threeHead = outerHead(three);
     // Matched by the Title each answer names, since no document says the answers come back in part order.
