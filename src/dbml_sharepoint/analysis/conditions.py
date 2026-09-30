@@ -741,7 +741,17 @@ def _schema_value_problems(
             if code in _SCHEMA_REFUSALS:
                 return [refusal]
             refusals.append(refusal)
-    return refusals[:1] if len(refusals) == len(_RENDERERS) else []
+    if len(refusals) < len(_RENDERERS):
+        return []
+    code, message = refusals[0]
+    # One target's reason alone reads as though that target were the one in use.
+    if any(other != code for other, _ in refusals):
+        where = f"{context}.{leaf.field}: "
+        message = message.replace(
+            where, f"{where}no rendering target accepts this condition, so its value "
+            f"cannot be judged. The first to refuse it says: ", 1,
+        )
+    return [(code, message)]
 
 
 def _dedupe(problems: list[_Problem]) -> list[_Problem]:

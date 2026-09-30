@@ -461,3 +461,21 @@ def test_a_condition_every_target_refuses_is_refused_rather_than_left_unjudged()
     finding = only(findings, FindingCode.CONDITION_VALUE_HAS_A_CONTROL_CHARACTER)
     assert finding.location == Location(Section.WATCHED_LISTS, sub="[0].uses[0].when.N")
     assert "(target:" not in finding.message
+
+
+def test_a_condition_the_targets_refuse_for_different_reasons_says_none_accepts_it() -> None:
+    findings = condition_findings(
+        Leaf("P", "includes", "Ada", property="title"),
+        target=None,
+        rendered={"P"},
+        types={"P": "person"},
+        lookups=set(),
+        enum_members={},
+        at=Location(Section.WATCHED_LISTS, sub="[0].uses[0].when"),
+    )
+
+    finding = only(findings, FindingCode.CONDITION_PROPERTY_UNRENDERABLE)
+    assert finding.message.startswith(
+        "watched_lists[0].uses[0].when.P: no rendering target accepts this condition, so its "
+        "value cannot be judged. The first to refuse it says: ",
+    )
