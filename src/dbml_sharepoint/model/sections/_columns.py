@@ -20,6 +20,7 @@ from dbml_sharepoint.model.mapping_types import (
     WatchUse,
 )
 from dbml_sharepoint.model.reading import optional_str, optional_value, require_str, strict_str
+from dbml_sharepoint.model.sections._extensions import _extension_config
 from dbml_sharepoint.model.sections.context import SectionContext
 
 
@@ -128,6 +129,7 @@ def _read_uses(block: object, column: str, context: str) -> tuple[WatchUse, ...]
             when=None if raw_when is None else parse_condition(
                 raw_when, f"{at}.when", default_field=column,
             ),
-            settings=_require_mapping(settings.get("with"), f"{at}.with"),
+            # Consumer-owned like an extension's block, so its keys pass untouched.
+            settings=_extension_config(settings.get("with"), f"{at}.with"),
         ))
     return tuple(uses)

@@ -95,6 +95,18 @@ def test_a_use_with_no_settings_takes_the_defaults(tmp_path: Path) -> None:
     assert uses[0].settings == {}
 
 
+def test_a_with_block_keeps_keys_that_are_not_text(tmp_path: Path) -> None:
+    uses = _load(tmp_path, """
+        watched_lists:
+          - entity: Project
+            column: Status
+            uses:
+              - alert: { with: { 2026: x, false: y } }
+    """)
+
+    assert uses[0].settings == {2026: "x", False: "y"}
+
+
 def test_a_use_and_its_entry_stay_hashable() -> None:
     use = WatchUse("alert", id="closed", on="enter", when=Leaf("Status", "eq", "Closed"),
                    settings={"notify": ["Owner"]})
