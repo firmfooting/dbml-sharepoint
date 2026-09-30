@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: 42c0d3b5
+ * REVISION: 20c6f7da
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -858,7 +858,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 42c0d3b5. Quote this when reporting results.');
+  log('INFO', 'probe revision 20c6f7da. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe Versions');
   const TARGET = runTitle('dbmlsp Probe VersionsTarget');
@@ -1038,7 +1038,8 @@
   };
   const comparePairs = (a, b) => a[0] - b[0] || a[1] - b[1];
   // A versions read is the control its observations rest on: a refusal voids them, a throttle leaves them open.
-  const recordVersionsRead = (id, question, versions, observed, what) => {
+  // A refusal voids `all`, every row resting on it, including one an earlier fixture left open and unasked.
+  const recordVersionsRead = (id, question, versions, observed, what, all = observed) => {
     const held = versions.rows !== null && versions.rows.length > 0;
     // A 2xx with no value array is not an answer about the versions, so it is left open like a throttle.
     const unread = versions.head ? versions.head.outcome === 'NOT ESTABLISHED' : versions.rows === null;
@@ -1047,7 +1048,7 @@
       ? scrub(versions.head.why)
       : `HTTP ${versions.res.status}, ${versions.rows === null ? versions.shape : `${versions.rows.length} entries`}`
         + `: ${scrub(versions.res.text).slice(0, 400)}`);
-    if (outcome === 'FAIL') voidRows(observed, `the ${what} answered no version entries`);
+    if (outcome === 'FAIL') voidRows(all, `the ${what} answered no version entries`);
     if (outcome === 'NOT ESTABLISHED') {
       for (const one of observed) {
         const row = RESULTS.find((r) => r.id === one);
@@ -1288,7 +1289,7 @@
     const versions = await readVersions(listPath, itemId);
     const asked = AFTER_READ.filter((id) => peopleWritten || id !== SUBJECTS.people);
     if (!recordVersionsRead('field.version.control-payload-versions-read', Q.read, versions, asked,
-      'versions read')) {
+      'versions read', AFTER_READ)) {
       return;
     }
 

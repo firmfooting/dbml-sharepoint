@@ -957,3 +957,13 @@ def test_a_refused_people_write_resent_without_it_is_not_the_items_refusal() -> 
 
     assert rows[ITEM]["outcome"] == "NOT ESTABLISHED"
     assert voided(rows) == set()
+
+
+def test_a_refused_versions_read_voids_the_people_row_its_fixture_left_open() -> None:
+    rows, _, _ = _run(rules=[
+        {"contains": "createfieldasxml", "status": 429, "text": "busy"},
+        {"contains": LIST_READ_RULE, "status": 500, "text": "Refused."}])
+
+    assert rows[PEOPLE_COLUMN]["state"] == "open"
+    assert rows[READ]["outcome"] == "FAIL"
+    assert voided(rows) == _deps(READ)

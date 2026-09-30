@@ -176,7 +176,9 @@
   const FOLDER = 'transport.batch.changeset-addvalidate-folderpath-omitted';
   const CLAIMS = 'transport.batch.changeset-addvalidate-person-claims';
   const ISO = 'transport.batch.changeset-addvalidate-date-iso';
-  const AFTER_SINGLE = [UNKNOWN, ...OBSERVED, ADDVALIDATE, AV_UNKNOWN, AV_FAILED, FOLDER, CLAIMS, ISO];
+  // Every row resting on the AddValidate control, asked or not, as the catalogue declares them.
+  const AFTER_ADDVALIDATE = [AV_UNKNOWN, AV_FAILED, FOLDER, CLAIMS, ISO];
+  const AFTER_SINGLE = [UNKNOWN, ...OBSERVED, ADDVALIDATE, ...AFTER_ADDVALIDATE];
   const AFTER_LIST = [COLUMNS, SINGLE, ...AFTER_SINGLE];
 
   if (!CONFIRMED) {
@@ -614,7 +616,7 @@
     }
 
     if (control.outcome === 'FAIL') {
-      voidRows([AV_UNKNOWN, ...asked.map((one) => one.id)], 'the single AddValidateUpdateItemUsingPath '
+      voidRows(AFTER_ADDVALIDATE, 'the single AddValidateUpdateItemUsingPath '
         + 'call in Learn\'s form did not land, so a part calling it says nothing about the question');
     } else if (control.outcome === 'NOT ESTABLISHED') {
       for (const [id, question] of [[AV_UNKNOWN, Q.avunknown], ...asked.map((one) => [one.id, one.question])]) {

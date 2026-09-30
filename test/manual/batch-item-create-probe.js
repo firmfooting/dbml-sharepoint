@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: c4896c75
+ * REVISION: c0aaea7a
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -828,7 +828,7 @@
       await recycleList(title, id);
     }
   };
-  log('INFO', 'probe revision c4896c75. Quote this when reporting results.');
+  log('INFO', 'probe revision c0aaea7a. Quote this when reporting results.');
 
   // The parts name the list by title, the form a history write sends and these rows measure; the run's token
   // means no other list holds it, and none can take it between a check and a use.
@@ -900,7 +900,9 @@
   const FOLDER = 'transport.batch.changeset-addvalidate-folderpath-omitted';
   const CLAIMS = 'transport.batch.changeset-addvalidate-person-claims';
   const ISO = 'transport.batch.changeset-addvalidate-date-iso';
-  const AFTER_SINGLE = [UNKNOWN, ...OBSERVED, ADDVALIDATE, AV_UNKNOWN, AV_FAILED, FOLDER, CLAIMS, ISO];
+  // Every row resting on the AddValidate control, asked or not, as the catalogue declares them.
+  const AFTER_ADDVALIDATE = [AV_UNKNOWN, AV_FAILED, FOLDER, CLAIMS, ISO];
+  const AFTER_SINGLE = [UNKNOWN, ...OBSERVED, ADDVALIDATE, ...AFTER_ADDVALIDATE];
   const AFTER_LIST = [COLUMNS, SINGLE, ...AFTER_SINGLE];
 
   if (!CONFIRMED) {
@@ -1338,7 +1340,7 @@
     }
 
     if (control.outcome === 'FAIL') {
-      voidRows([AV_UNKNOWN, ...asked.map((one) => one.id)], 'the single AddValidateUpdateItemUsingPath '
+      voidRows(AFTER_ADDVALIDATE, 'the single AddValidateUpdateItemUsingPath '
         + 'call in Learn\'s form did not land, so a part calling it says nothing about the question');
     } else if (control.outcome === 'NOT ESTABLISHED') {
       for (const [id, question] of [[AV_UNKNOWN, Q.avunknown], ...asked.map((one) => [one.id, one.question])]) {

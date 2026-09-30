@@ -1083,3 +1083,16 @@ def test_a_refused_read_beside_an_unanswered_request_is_settled_unless_a_write_c
 
     assert rows[COLUMNS]["outcome"] == outcome, rows[COLUMNS]
     assert voided(rows) == (_deps(COLUMNS) if outcome == "FAIL" else set())
+
+
+@pytest.mark.parametrize("rule", [
+    {"contains": "web/currentuser", "status": 429, "text": "busy"},
+    WHEN_THROTTLED,
+], ids=["account-open", "columns-open"])
+def test_a_refused_addvalidate_control_voids_every_row_the_catalogue_rests_on_it(
+        rule: dict[str, Any]) -> None:
+    # A part that was never asked is still void once the call it would have made is refused.
+    rows, _, _ = _run(rules=[rule, {"contains": CONTROL_CALL, "status": 500, "text": "no"}])
+
+    assert rows[ADDVALIDATE]["outcome"] == "FAIL"
+    assert voided(rows) == _deps(ADDVALIDATE)
