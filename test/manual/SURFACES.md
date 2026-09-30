@@ -163,7 +163,14 @@ returned*, not the view object that stores the predicate.
 
 Scopes: `caml`, `caml-adhoc`, `view-query`, `odata`
 
-Probes: `caml-chain-depth-probe.js`, `calculated-filter-probe.js`
+Probes: `caml-chain-depth-probe.js`, `calculated-filter-probe.js`,
+`item-versions-query-probe.js`
+
+`item-versions-query-probe.js` files under `odata` because its questions are
+which versions `items(id)/versions` returns for `$select`, `$filter`, `$top`
+and `$orderby`, and in what order. Its two item-list controls ask the same
+options of the list's items first, so a refusal on the versions read comes
+from an option the items accepted.
 
 ### 4. `view`: the `SP.View` object and its rendered page
 
@@ -797,6 +804,7 @@ different questions and take different ids. They do not merge.
 | Does the site convert a UTC instant to its local clock | a GET of `utctolocaltime` in two URL shapes | `field.date.control-utctolocaltime-answers` |
 | Does the site convert a UTC instant to its local clock | a POST of `utcToLocalTime` in five spellings, with a digest | `field.date.utctolocaltime-post-quoted-literal` and its four siblings |
 | Does `items(id)/versions` answer an item's versions | a plain read answering any entries, before the payload is recorded | `field.version.control-payload-versions-read` |
+| Does `items(id)/versions` answer an item's versions | a plain read answering at least two versions, each with a numeric VersionId | `query.odata.control-versions-read` |
 | Does `items(id)/versions` answer a library file's versions | a plain read of the file's item answering any entries, before the upload's version is looked for | `field.version.control-library-versions-read` |
 
 `native-index-probe.js` and `threshold-index-probe.js` both emitted `CMPIDX` and

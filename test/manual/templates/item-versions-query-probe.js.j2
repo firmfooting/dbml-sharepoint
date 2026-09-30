@@ -1,0 +1,257 @@
+{# test/manual/templates/item-versions-query-probe.js.j2 #}
+
+/** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
+ *
+ * REVISION: {{ revision }}
+ *
+ * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
+ * `$orderby`, and in what order does it return versions when asked for none?
+ *
+ * WHY: a flow that reads an item's versions once per run would narrow the
+ * read on the server if it could, and pairs consecutive versions by order.
+ * "Use OData query operations in SharePoint REST requests" documents these
+ * options for list items and says nothing about item versions.
+ *
+ * DEPENDS ON (read back, and voiding what rests on them when they do not hold)
+ *   query.odata.fixture-versions-query-list   a generic list with versioning on
+ *   query.odata.fixture-versions-query-items  item A created and written twice, item B
+ *       created once, their last values read back
+ *   query.odata.control-versions-read        A's versions read with no options answers
+ *       at least two entries, each carrying a numeric VersionId
+ *   query.odata.control-versions-items-filter      $filter=Id eq A serves A alone
+ *   query.odata.control-versions-items-top-orderby $orderby=Id desc&$top=1 serves B alone
+ *   The filter control gates the filter row, the top-and-orderby control gates the
+ *   top and orderby rows. A control that FAILs voids them; one NOT ESTABLISHED leaves
+ *   them open and unasked.
+ *
+ * OBSERVES (named from what came back, never compared with an expected value)
+ *   query.odata.versions-default-order  the VersionIds in the order the plain read answered
+ *   query.odata.versions-select         $select=VersionId,VersionLabel,ProbeChoice: the
+ *       property names each entry carried
+ *   query.odata.versions-filter         $filter=VersionId gt <the lowest>: the VersionIds served
+ *   query.odata.versions-top            $top=1: how many entries were served
+ *   query.odata.versions-orderby        $orderby=VersionId in the direction opposite to the
+ *       plain read's: the VersionIds in the order served
+ *
+ * HOW TO READ IT: each observed row is headed by what the answer looked like
+ * (NARROWED, FILTERED, TOPPED and so on) beside the plain read's answer, and
+ * REFUSED is a refusal whose text says why.
+ *
+ * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
+ * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again
+ * (CLEANUP = true recycles a list left by an earlier run first). Copy the
+ * RESULTS block back verbatim.
+ *
+ * WHEN FINISHED: nothing to delete. The probe recycles its list before it
+ * reports.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+{% include "_probe_raw_request_v1.js.j2" %}
+{% include "_probe_scratch_list_v1.js.j2" %}
+{% include "_probe_item_versions_v1.js.j2" %}
+{% include "_probe_identity_v1.js.j2" %}
+  log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
+
+  const LIST = 'dbmlsp Probe VersionsQuery';
+  // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
+  const OWNERSHIP = 'dbml-sharepoint versions-query probe scratch list. Safe to delete.';
+  const listPath = `web/lists/getbytitle('${LIST}')`;
+  const CHOICE = 'ProbeChoice';
+
+  const Q = {
+    list: 'a generic list this probe created, with versioning on',
+    items: 'item A created and written twice, item B created once, their last values read back',
+    read: 'CONTROL: A\'s versions read with no options answers at least two entries, '
+      + 'each carrying a numeric VersionId',
+    filterControl: 'CONTROL: $filter=Id eq A on the list\'s items serves A alone',
+    topControl: 'CONTROL: $orderby=Id desc&$top=1 on the list\'s items serves B alone',
+    order: 'the order the versions read answers when asked for none',
+    select: `what $select=VersionId,VersionLabel,${CHOICE} on the versions read answers`,
+    filter: 'what $filter=VersionId gt the lowest VersionId on the versions read answers',
+    top: 'what $top=1 on the versions read answers',
+    orderby: 'what $orderby=VersionId, opposite to the plain read\'s order, on the versions read answers',
+  };
+  expect('query.odata.fixture-versions-query-list', Q.list);
+  expect('query.odata.fixture-versions-query-items', Q.items);
+  expect('query.odata.control-versions-read', Q.read);
+  expect('query.odata.control-versions-items-filter', Q.filterControl);
+  expect('query.odata.control-versions-items-top-orderby', Q.topControl);
+  expect('query.odata.versions-default-order', Q.order);
+  expect('query.odata.versions-select', Q.select);
+  expect('query.odata.versions-filter', Q.filter);
+  expect('query.odata.versions-top', Q.top);
+  expect('query.odata.versions-orderby', Q.orderby);
+
+  const FILTER_CONTROL = 'query.odata.control-versions-items-filter';
+  const TOP_CONTROL = 'query.odata.control-versions-items-top-orderby';
+  const SUBJECTS = ['query.odata.versions-default-order', 'query.odata.versions-select',
+    'query.odata.versions-filter', 'query.odata.versions-top', 'query.odata.versions-orderby'];
+  const AFTER_READ = [FILTER_CONTROL, TOP_CONTROL, ...SUBJECTS];
+  const AFTER_ITEMS = ['query.odata.control-versions-read', ...AFTER_READ];
+  const AFTER_LIST = ['query.odata.fixture-versions-query-items', ...AFTER_ITEMS];
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create a list '${LIST}' on ${WEB} with versioning on and one Choice column,`);
+    log('INFO', 'create item A and write it twice, create item B, then read A\'s versions with no');
+    log('INFO', 'options and with each of $select, $filter, $top and $orderby. The list is recycled');
+    log('INFO', 'on the way out. Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write. Stopping.');
+    return;
+  }
+
+  // Refusal text can name the tenant or an account, so it is scrubbed before it is shown.
+  const said = (res) => scrub(res.text).slice(0, 400);
+
+  try {
+    const list = await claimScratchList({ id: 'query.odata.fixture-versions-query-list', question: Q.list,
+      title: LIST, description: OWNERSHIP, dependents: AFTER_LIST, settings: { EnableVersioning: true },
+      declared: { EnableVersioning: true,
+        ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 } });
+    if (!list.held) return;
+    const itemType = list.body.ListItemEntityTypeFullName;
+
+    // The deploy's Choice create body (generators/jsgen.py).
+    const column = await spPost(`${listPath}/fields`, { __metadata: { type: 'SP.FieldChoice' },
+      Title: CHOICE, FieldTypeKind: 6, Required: false, Choices: { results: ['Q1', 'Q2', 'Q3'] },
+      FillInChoice: false }, await getDigest(), VERBOSE_WRITE);
+    log('INFO', `create ${CHOICE}: HTTP ${column.status}${column.ok ? '' : ` ${said(column)}`}`);
+
+    const ids = {};
+    let written = 0;
+    for (const [key, title] of [['A', 'dbmlsp versions query A'], ['B', 'dbmlsp versions query B']]) {
+      const made = await spPost(`${listPath}/items`, { __metadata: { type: itemType }, Title: title,
+        [CHOICE]: 'Q1' }, await getDigest(), VERBOSE_WRITE);
+      if (made.ok) written += 1;
+      if (made.ok && made.body && Number.isInteger(made.body.Id)) ids[key] = made.body.Id;
+    }
+    if (ids.A !== undefined) {
+      for (const value of ['Q2', 'Q3']) {
+        const sent = await spPost(`${listPath}/items(${ids.A})`, { __metadata: { type: itemType },
+          [CHOICE]: value }, await getDigest(), { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
+        if (sent.ok) written += 1;
+      }
+    }
+    if (!await establishFixture('query.odata.fixture-versions-query-items', async () => {
+      const body = { Written: written };
+      for (const key of ['A', 'B']) {
+        if (ids[key] === undefined) continue;
+        const read = await sendRaw(`${listPath}/items(${ids[key]})?$select=Id,${CHOICE}`);
+        const head = rawHead(read);
+        body[`${key}.${CHOICE}`] = head ? scrub(head.why)
+          : read.parsed && typeof read.parsed === 'object' ? read.parsed[CHOICE] : `no JSON: ${said(read)}`;
+      }
+      return { ok: true, status: 200, body };
+    }, { Written: 4, [`A.${CHOICE}`]: 'Q3', [`B.${CHOICE}`]: 'Q1' }, AFTER_ITEMS)) {
+      return;
+    }
+
+    const plain = await readVersions(listPath, ids.A);
+    const plainIds = plain.rows === null ? [] : plain.rows.map(versionIdOf);
+    // The option rows need two numeric VersionIds; how many an item answers is the payload probe's question.
+    const readHeld = plain.rows !== null && plain.rows.length >= 2
+      && plainIds.every((v) => typeof v === 'number');
+    const readOutcome = readHeld ? 'PASS'
+      : (plain.head && plain.head.outcome === 'NOT ESTABLISHED' ? 'NOT ESTABLISHED' : 'FAIL');
+    const entries = (n) => `${n} ${n === 1 ? 'entry' : 'entries'}`;
+    record('query.odata.control-versions-read', Q.read, readOutcome, plain.head ? scrub(plain.head.why)
+      : `HTTP ${plain.res.status}, ${plain.rows === null ? `no value array: ${said(plain.res)}`
+        : `${entries(plain.rows.length)}, VersionIds ${JSON.stringify(plainIds)}`}`);
+    if (readOutcome === 'FAIL') {
+      voidDependents(AFTER_READ,
+        'the plain versions read did not answer at least two entries each carrying a numeric VersionId');
+      return;
+    }
+    if (readOutcome === 'NOT ESTABLISHED') {
+      for (const id of AFTER_READ) {
+        const row = RESULTS.find((r) => r.id === id);
+        record(id, row.question, 'NOT ESTABLISHED', 'not asked: the plain versions read was not established '
+          + `(${scrub(plain.head.why)}); a re-run can ask it`);
+      }
+      return;
+    }
+
+    const defaultOrder = orderOf(plainIds);
+    record('query.odata.versions-default-order', Q.order, defaultOrder,
+      `VersionIds in the order answered: ${JSON.stringify(plainIds)}; labels `
+      + `${JSON.stringify(plain.rows.map((row) => row.VersionLabel))}`);
+
+    // What the item-list controls serve decides which option rows are asked at all.
+    const controlOf = async (id, question, query, want) => {
+      const res = await sendRaw(`${listPath}/items?$select=Id&${query}`);
+      const head = rawHead(res);
+      const rows = !head && res.parsed && Array.isArray(res.parsed.value) ? res.parsed.value : null;
+      const served = rows === null ? null : rows.map((row) => row.Id);
+      const outcome = served !== null && served.join(',') === String(want) ? 'PASS'
+        : (head && head.outcome === 'NOT ESTABLISHED' ? 'NOT ESTABLISHED' : 'FAIL');
+      record(id, question, outcome, `${query}: ${head ? scrub(head.why) : served === null
+        ? `HTTP ${res.status} carried no rows: ${said(res)}` : `served ${JSON.stringify(served)}, want [${want}]`}`);
+      return { outcome, why: head ? scrub(head.why) : '' };
+    };
+    const filterControl = await controlOf(FILTER_CONTROL, Q.filterControl, `$filter=Id eq ${ids.A}`, ids.A);
+    const topControl = await controlOf(TOP_CONTROL, Q.topControl, '$orderby=Id desc&$top=1', ids.B);
+
+    const ask = async (id, question, control, query, describe) => {
+      if (control.outcome === 'FAIL') {
+        voidDependents([id], 'the item-list control asking the same option did not serve the rows written');
+        return;
+      }
+      if (control.outcome === 'NOT ESTABLISHED') {
+        record(id, question, 'NOT ESTABLISHED',
+          `not asked: its item-list control was not established (${control.why}); a re-run can ask it`);
+        return;
+      }
+      const got = await readVersions(listPath, ids.A, query);
+      if (got.head) {
+        record(id, question, got.head.outcome, `${query}: ${scrub(got.head.why)}`);
+        return;
+      }
+      if (got.rows === null) {
+        record(id, question, 'NOT ESTABLISHED', `${query}: HTTP ${got.res.status} carried no value array: `
+          + `${said(got.res)}`);
+        return;
+      }
+      const [head, evidence] = describe(got.rows);
+      record(id, question, head, `${query}: ${evidence}; the plain read answered VersionIds `
+        + `${JSON.stringify(plainIds)}`);
+    };
+
+    const SELECTED = ['VersionId', 'VersionLabel', CHOICE];
+    await ask('query.odata.versions-select', Q.select, { outcome: 'PASS' }, `$select=${SELECTED.join(',')}`,
+      (rows) => {
+        const keys = [...new Set(rows.flatMap((row) => Object.keys(row)))].sort();
+        const extra = keys.filter((key) => !SELECTED.includes(key) && !key.startsWith('odata.')
+          && !key.startsWith('@odata.') && key !== '__metadata');
+        return [extra.length ? 'NOT NARROWED' : 'NARROWED',
+          `${entries(rows.length)} carrying ${keys.join(', ')}`];
+      });
+    const lowest = Math.min(...plainIds);
+    await ask('query.odata.versions-filter', Q.filter, filterControl, `$filter=VersionId gt ${lowest}`,
+      (rows) => {
+        const served = rows.map(versionIdOf);
+        const rest = plainIds.filter((v) => v > lowest);
+        const same = (a, b) => [...a].sort().join(',') === [...b].sort().join(',');
+        const head = same(served, rest) ? 'FILTERED' : same(served, plainIds) ? 'UNFILTERED' : 'OTHER ROWS';
+        return [head, `served VersionIds ${JSON.stringify(served)}`];
+      });
+    await ask('query.odata.versions-top', Q.top, topControl, '$top=1',
+      (rows) => [rows.length === 1 ? 'TOPPED' : 'NOT TOPPED',
+        `served ${entries(rows.length)}, VersionIds ${JSON.stringify(rows.map(versionIdOf))}`]);
+    const direction = defaultOrder === 'ASCENDING' ? 'desc' : 'asc';
+    await ask('query.odata.versions-orderby', Q.orderby, topControl, `$orderby=VersionId ${direction}`,
+      (rows) => {
+        const served = rows.map(versionIdOf);
+        return [orderOf(served), `asked ${direction}, served VersionIds ${JSON.stringify(served)}`];
+      });
+  } catch (err) {
+    log('FAIL', `probe aborted: ${scrub(String((err && err.message) || err)).slice(0, 240)}. `
+      + 'The unasked rows stay open.');
+  } finally {
+    await recycleScratchLists();
+    // Reported here, after the recycle, so every path prints the recycle line above the table.
+    report();
+  }
+})();
