@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: 9da67095
+ * REVISION: af25261e
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -483,6 +483,8 @@
     const bare = value === null || value === undefined ? '' : String(value).replace(/[{}]/g, '').toLowerCase();
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(bare) ? bare : null;
   };
+  // A title or server-relative path inside an OData string literal, its apostrophes doubled as deploy/_folders does.
+  const pathLiteral = (path) => String(path).replace(/'/g, "''");
   // __metadata is verbose OData, so every write carrying it declares the verbose content type.
   const VERBOSE_WRITE = { 'Content-Type': 'application/json;odata=verbose' };
   // A list read by its Id after a recycle: gone true, false, or null with the reason it cannot say.
@@ -526,7 +528,7 @@
   // Creates a list or library (generic unless `baseTemplate` says otherwise) owned by `description`, then reads it back.
   const claimScratchList = async ({ id, question, title, description, dependents,
     settings = null, declared = {}, baseTemplate = 100 }) => {
-    const path = `web/lists/getbytitle('${title}')`;
+    const path = `web/lists/getbytitle('${pathLiteral(title)}')`;
     // An answer that settles nothing leaves the fixture and its dependents open for a re-run.
     const leaveOpen = (why) => {
       record(id, question, 'NOT ESTABLISHED', `${why}; a re-run can ask it`);
@@ -664,7 +666,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 9da67095. Quote this when reporting results.');
+  log('INFO', 'probe revision af25261e. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsTrim');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.

@@ -82,6 +82,8 @@ const orderQuery = (rest) => {
   }
   return params;
 };
+// An OData literal's content with each doubled apostrophe read as one, as a server reads it.
+const unquote = (text) => text.replace(/''/g, "'");
 const mockFetch = async (url, opts = {}) => {
   const path = decodeURIComponent(String(url).split('/_api/')[1] || '');
   const verb = (opts.headers || {})['X-HTTP-Method'] || opts.method || 'GET';
@@ -114,7 +116,8 @@ const mockFetch = async (url, opts = {}) => {
       Description: sent.Description, EnableVersioning: false, EnableMinorVersions: false,
       MajorVersionLimit: 50,
       ListItemEntityTypeFullName: `SP.Data.${sent.Title.replace(/ /g, '')}ListItem`,
-      root: `/sites/probe/${sent.Title}`, fields: {}, items: [] });
+      // `siteRoot`: the site's server-relative path, so a test can give it an apostrophe.
+      root: `${CONFIG.siteRoot || '/sites/probe'}/${sent.Title}`, fields: {}, items: [] });
     // `listDefaults`: values a new list starts with, so a refused MERGE can still leave it usable.
     Object.assign(lists.get(sent.Title), CONFIG.listDefaults || {});
     // `createAnswersNoId`: a create answering no Id, which the claim refuses to build on.
@@ -132,9 +135,10 @@ const mockFetch = async (url, opts = {}) => {
     }
     return null;
   };
-  const folderAt = /^web\/GetFolderByServerRelativeUrl\('([^']+)'\)(.*)$/.exec(path);
+  const folderAt = /^web\/GetFolderByServerRelativeUrl\('((?:[^']|'')+)'\)(.*)$/.exec(path);
   if (folderAt) {
-    const [, url, tail] = folderAt;
+    const [, quoted, tail] = folderAt;
+    const url = unquote(quoted);
     if (!folders.has(url)) return answer(404, 'File Not Found.');
     const add = /^\/Files\/add\(url='([^']+)',overwrite=(true|false)\)$/.exec(tail);
     if (add && verb === 'POST') {
@@ -146,9 +150,9 @@ const mockFetch = async (url, opts = {}) => {
     }
     return answer(200, { Name: url.slice(url.lastIndexOf('/') + 1), ServerRelativeUrl: url });
   }
-  const fileOf = /^web\/GetFileByServerRelativeUrl\('([^']+)'\)(.*)$/.exec(path);
+  const fileOf = /^web\/GetFileByServerRelativeUrl\('((?:[^']|'')+)'\)(.*)$/.exec(path);
   if (fileOf) {
-    const found = fileAt(fileOf[1]);
+    const found = fileAt(unquote(fileOf[1]));
     if (!found) return answer(404, 'File Not Found.');
     if (fileOf[2] === '/$value' && verb === 'PUT') {
       found.item.content = raw;
@@ -165,11 +169,11 @@ const mockFetch = async (url, opts = {}) => {
     }
     return answer(200, { Name: found.item.url.slice(found.item.url.lastIndexOf('/') + 1) });
   }
-  const at = /^web\/lists\/getbytitle\('([^']+)'\)(.*)$/.exec(path);
+  const at = /^web\/lists\/getbytitle\('((?:[^']|'')+)'\)(.*)$/.exec(path);
   const byId = /^web\/lists\(guid'([^']+)'\)(.*)$/.exec(path);
   if (!at && !byId) return answer(404, 'no such endpoint in the mock: ' + path);
   const named = (id) => [...lists.keys()].find((name) => lists.get(name).Id === id);
-  const [, title, rest] = at || [null, named(byId[1]), byId[2]];
+  const [, title, rest] = at ? [null, unquote(at[1]), at[2]] : [null, named(byId[1]), byId[2]];
   const list = lists.get(title);
   if (!list) return answer(404, 'List does not exist.');
   if (rest === '' && verb === 'MERGE') {

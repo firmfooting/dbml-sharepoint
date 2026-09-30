@@ -65,7 +65,8 @@ _MOCK = textwrap.dedent(r"""
       return { ok: status >= 200 && status < 300, status, headers: { get: () => null },
         text: async () => text, json: async () => JSON.parse(text) };
     };
-    const LIST = "web/lists/getbytitle('dbmlsp Probe BatchItems')";
+    // `listPath`: the by-title path this mock answers, for a probe whose title a test swaps.
+    const LIST = CONFIG.listPath || "web/lists/getbytitle('dbmlsp Probe BatchItems')";
     const CREATED_ID = '00000000-0000-4000-8000-000000000001';
     const ME = { Id: 7, Email: 'ada@example.com', LoginName: 'i:0#.f|membership|ada@example.com',
       Title: 'Ada Probe' };
@@ -936,3 +937,19 @@ def test_a_title_held_by_two_items_is_not_read_as_the_part_that_wrote_it() -> No
     assert rows[CLAIMS]["outcome"] == "NOT ESTABLISHED"
     assert "no single item with its Title is known to exist" in rows[CLAIMS]["evidence"]
     assert "landed 2 times" in rows[CLAIMS]["evidence"]
+
+
+def test_a_title_with_an_apostrophe_is_doubled_in_every_title_literal() -> None:
+    swaps = {"  const LIST = runTitle('dbmlsp Probe BatchItems');":
+             "  const LIST = runTitle(\"dbmlsp Probe's BatchItems\");"}
+    rows, sent, _ = run_probe(
+        _MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"),
+        {"listPath": "web/lists/getbytitle('dbmlsp Probe''s BatchItems')"}, swaps)
+
+    assert rows[LIST]["outcome"] == "PASS", rows[LIST]
+    titled = [r["path"] for r in sent if r["path"].startswith("web/lists/getbytitle(")]
+    assert len(titled) >= 3
+    assert all(path.startswith("web/lists/getbytitle('dbmlsp Probe''s BatchItems')")
+               for path in titled), titled
+    parts = "".join(_batches(sent))
+    assert "getbytitle('dbmlsp%20Probe''s%20BatchItems')" in parts

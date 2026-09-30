@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: bad8ef71
+ * REVISION: cb0c76c8
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -517,6 +517,8 @@
     const bare = value === null || value === undefined ? '' : String(value).replace(/[{}]/g, '').toLowerCase();
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(bare) ? bare : null;
   };
+  // A title or server-relative path inside an OData string literal, its apostrophes doubled as deploy/_folders does.
+  const pathLiteral = (path) => String(path).replace(/'/g, "''");
   // __metadata is verbose OData, so every write carrying it declares the verbose content type.
   const VERBOSE_WRITE = { 'Content-Type': 'application/json;odata=verbose' };
   // A list read by its Id after a recycle: gone true, false, or null with the reason it cannot say.
@@ -560,7 +562,7 @@
   // Creates a list or library (generic unless `baseTemplate` says otherwise) owned by `description`, then reads it back.
   const claimScratchList = async ({ id, question, title, description, dependents,
     settings = null, declared = {}, baseTemplate = 100 }) => {
-    const path = `web/lists/getbytitle('${title}')`;
+    const path = `web/lists/getbytitle('${pathLiteral(title)}')`;
     // An answer that settles nothing leaves the fixture and its dependents open for a re-run.
     const leaveOpen = (why) => {
       record(id, question, 'NOT ESTABLISHED', `${why}; a re-run can ask it`);
@@ -698,7 +700,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision bad8ef71. Quote this when reporting results.');
+  log('INFO', 'probe revision cb0c76c8. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe Versions');
   const TARGET = runTitle('dbmlsp Probe VersionsTarget');
@@ -1205,7 +1207,7 @@
       const sent = await spPost('web/folders', { __metadata: { type: 'SP.Folder' }, ServerRelativeUrl: folder },
         await getDigest(), VERBOSE_WRITE);
       log('INFO', `create folder ${FOLDER_NAME}: HTTP ${sent.status}`);
-      const read = await readBack(`web/GetFolderByServerRelativeUrl('${folder}')?$select=Name,ServerRelativeUrl`);
+      const read = await readBack(`web/GetFolderByServerRelativeUrl('${pathLiteral(folder)}')?$select=Name,ServerRelativeUrl`);
       return { ok: true, status: 200, body: { RootRead: root.read, Read: read.read,
         Name: read.parsed ? read.parsed.Name : undefined } };
     }, { RootRead: 'HTTP 200', Read: 'HTTP 200', Name: FOLDER_NAME }, afterLib(LIB.libraryFolder))) {
@@ -1214,10 +1216,10 @@
 
     const file = `${folder}/${FILE_NAME}`;
     let fileId = null;
-    const added = await sendText(`web/GetFolderByServerRelativeUrl('${folder}')/Files/add(url='${FILE_NAME}',`
+    const added = await sendText(`web/GetFolderByServerRelativeUrl('${pathLiteral(folder)}')/Files/add(url='${pathLiteral(FILE_NAME)}',`
       + 'overwrite=false)', CONTENT[0]);
     if (!await establishFixture(LIB.libraryFile, async () => {
-      const read = await readBack(`web/GetFileByServerRelativeUrl('${file}')/ListItemAllFields?$select=Id`);
+      const read = await readBack(`web/GetFileByServerRelativeUrl('${pathLiteral(file)}')/ListItemAllFields?$select=Id`);
       if (read.parsed && Number.isInteger(read.parsed.Id)) fileId = read.parsed.Id;
       return { ok: true, status: 200, body: { Added: answered(added), Read: read.read,
         Id: read.parsed ? read.parsed.Id : undefined } };
@@ -1240,12 +1242,12 @@
     if (!await edit(LIB.libraryFirst, 'Q1')) return;
     // The upload's version is what the reads either side of it differ by, never a value it holds.
     const beforeUpload = await readVersions(libraryPath, fileId);
-    const uploaded = await sendText(`web/GetFileByServerRelativeUrl('${file}')/$value`, CONTENT[1],
+    const uploaded = await sendText(`web/GetFileByServerRelativeUrl('${pathLiteral(file)}')/$value`, CONTENT[1],
       { 'X-HTTP-Method': 'PUT' });
     // The read must carry the Choice, but its value is observed, never declared: the upload's version is asked.
     let afterUpload;
     if (!await establishFixture(LIB.libraryUpload, async () => {
-      const res = await fetch(`${WEB}/_api/web/GetFileByServerRelativeUrl('${file}')/$value`);
+      const res = await fetch(`${WEB}/_api/web/GetFileByServerRelativeUrl('${pathLiteral(file)}')/$value`);
       const content = res.ok ? await res.text() : `HTTP ${res.status}`;
       const now = await choiceNow();
       afterUpload = now[LIB_COLUMN];

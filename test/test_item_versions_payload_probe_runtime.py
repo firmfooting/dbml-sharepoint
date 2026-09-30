@@ -749,3 +749,13 @@ def test_an_unpinned_run_titles_all_three_lists_with_one_token_of_its_own() -> N
         "dbmlsp Probe VersionsTarget", "dbmlsp Probe Versions", "dbmlsp Probe VersionsLibrary"]
     assert len(tokens) == 1
     assert rows[LIST]["outcome"] == "PASS"
+
+
+def test_a_site_path_with_an_apostrophe_is_doubled_inside_every_path_literal() -> None:
+    rows, sent, _ = _run(siteRoot="/sites/O'Brien")
+
+    for row_id in LIB_FIXTURES:
+        assert rows[row_id]["outcome"] == "PASS", (row_id, rows[row_id])
+    literal = [r["path"] for r in sent if "ServerRelativeUrl('" in r["path"]]
+    assert literal
+    assert all("/sites/O''Brien/" in path for path in literal), literal

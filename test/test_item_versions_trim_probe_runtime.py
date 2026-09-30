@@ -349,6 +349,19 @@ def test_a_versions_answer_listing_a_version_no_write_created_is_not_called_trim
             rows[row_id]["evidence"])
 
 
+def test_a_title_with_an_apostrophe_is_doubled_inside_the_title_literal() -> None:
+    swaps = {**NO_WAIT, "  const LIST = runTitle('dbmlsp Probe VersionsTrim');":
+             "  const LIST = runTitle(\"dbmlsp Probe's VersionsTrim\");"}
+    rows, sent, _ = run_probe(VERSIONS_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"),
+                              {"trimToLimit": True}, swaps)
+
+    assert rows[LIST]["outcome"] == "PASS", rows[LIST]
+    titled = [r["path"] for r in sent if "getbytitle" in r["path"]]
+    assert titled
+    assert all("getbytitle('dbmlsp Probe''s VersionsTrim')" in path for path in titled), titled
+    assert rows[ONCE]["outcome"] == "TRIMMED"
+
+
 def test_a_refusal_naming_this_account_by_display_name_is_masked() -> None:
     rows, _, output = _run(rules=[{"contains": "/versions", "after": WRITE_READS, "status": 500,
                                    "text": "Locked by Ada Probe."}])

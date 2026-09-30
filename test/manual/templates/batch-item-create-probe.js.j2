@@ -110,7 +110,7 @@
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
   const OWNERSHIP = 'dbml-sharepoint batch-item-create probe scratch list. Safe to delete.';
   // A part's request line carries the title quoted then URL-encoded, as a history write sends it.
-  const partPath = `web/lists/getbytitle('${encodeURIComponent(LIST.replace(/'/g, "''"))}')`;
+  const partPath = `web/lists/getbytitle('${encodeURIComponent(pathLiteral(LIST))}')`;
   const MISSING = 'dbmlspNoSuchColumn';
   const WHO = 'ProbeWho';
   const WHEN = 'ProbeWhen';
@@ -240,7 +240,7 @@
   // One $batch request holding one ChangeSet of `ops`, with no retry, since a retry would hide the answer.
   const sendChangeSet = async (ops) => {
     // The parts name the list by title, as a history write does, so that title must still name this run's list.
-    const named = await sendRaw(`web/lists/getbytitle('${LIST}')?$select=Id,Title`);
+    const named = await sendRaw(`web/lists/getbytitle('${pathLiteral(LIST)}')?$select=Id,Title`);
     const namedHead = maskedHead(named);
     const namedId = !namedHead && named.parsed && typeof named.parsed === 'object' ? guidOf(named.parsed.Id) : null;
     if (namedId === null || namedId !== claimed) {

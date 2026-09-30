@@ -595,7 +595,7 @@
       const sent = await spPost('web/folders', { __metadata: { type: 'SP.Folder' }, ServerRelativeUrl: folder },
         await getDigest(), VERBOSE_WRITE);
       log('INFO', `create folder ${FOLDER_NAME}: HTTP ${sent.status}`);
-      const read = await readBack(`web/GetFolderByServerRelativeUrl('${folder}')?$select=Name,ServerRelativeUrl`);
+      const read = await readBack(`web/GetFolderByServerRelativeUrl('${pathLiteral(folder)}')?$select=Name,ServerRelativeUrl`);
       return { ok: true, status: 200, body: { RootRead: root.read, Read: read.read,
         Name: read.parsed ? read.parsed.Name : undefined } };
     }, { RootRead: 'HTTP 200', Read: 'HTTP 200', Name: FOLDER_NAME }, afterLib(LIB.libraryFolder))) {
@@ -604,10 +604,10 @@
 
     const file = `${folder}/${FILE_NAME}`;
     let fileId = null;
-    const added = await sendText(`web/GetFolderByServerRelativeUrl('${folder}')/Files/add(url='${FILE_NAME}',`
+    const added = await sendText(`web/GetFolderByServerRelativeUrl('${pathLiteral(folder)}')/Files/add(url='${pathLiteral(FILE_NAME)}',`
       + 'overwrite=false)', CONTENT[0]);
     if (!await establishFixture(LIB.libraryFile, async () => {
-      const read = await readBack(`web/GetFileByServerRelativeUrl('${file}')/ListItemAllFields?$select=Id`);
+      const read = await readBack(`web/GetFileByServerRelativeUrl('${pathLiteral(file)}')/ListItemAllFields?$select=Id`);
       if (read.parsed && Number.isInteger(read.parsed.Id)) fileId = read.parsed.Id;
       return { ok: true, status: 200, body: { Added: answered(added), Read: read.read,
         Id: read.parsed ? read.parsed.Id : undefined } };
@@ -630,12 +630,12 @@
     if (!await edit(LIB.libraryFirst, 'Q1')) return;
     // The upload's version is what the reads either side of it differ by, never a value it holds.
     const beforeUpload = await readVersions(libraryPath, fileId);
-    const uploaded = await sendText(`web/GetFileByServerRelativeUrl('${file}')/$value`, CONTENT[1],
+    const uploaded = await sendText(`web/GetFileByServerRelativeUrl('${pathLiteral(file)}')/$value`, CONTENT[1],
       { 'X-HTTP-Method': 'PUT' });
     // The read must carry the Choice, but its value is observed, never declared: the upload's version is asked.
     let afterUpload;
     if (!await establishFixture(LIB.libraryUpload, async () => {
-      const res = await fetch(`${WEB}/_api/web/GetFileByServerRelativeUrl('${file}')/$value`);
+      const res = await fetch(`${WEB}/_api/web/GetFileByServerRelativeUrl('${pathLiteral(file)}')/$value`);
       const content = res.ok ? await res.text() : `HTTP ${res.status}`;
       const now = await choiceNow();
       afterUpload = now[LIB_COLUMN];

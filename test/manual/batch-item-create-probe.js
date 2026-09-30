@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: e24882b6
+ * REVISION: d4db0162
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -532,6 +532,8 @@
     const bare = value === null || value === undefined ? '' : String(value).replace(/[{}]/g, '').toLowerCase();
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(bare) ? bare : null;
   };
+  // A title or server-relative path inside an OData string literal, its apostrophes doubled as deploy/_folders does.
+  const pathLiteral = (path) => String(path).replace(/'/g, "''");
   // __metadata is verbose OData, so every write carrying it declares the verbose content type.
   const VERBOSE_WRITE = { 'Content-Type': 'application/json;odata=verbose' };
   // A list read by its Id after a recycle: gone true, false, or null with the reason it cannot say.
@@ -575,7 +577,7 @@
   // Creates a list or library (generic unless `baseTemplate` says otherwise) owned by `description`, then reads it back.
   const claimScratchList = async ({ id, question, title, description, dependents,
     settings = null, declared = {}, baseTemplate = 100 }) => {
-    const path = `web/lists/getbytitle('${title}')`;
+    const path = `web/lists/getbytitle('${pathLiteral(title)}')`;
     // An answer that settles nothing leaves the fixture and its dependents open for a re-run.
     const leaveOpen = (why) => {
       record(id, question, 'NOT ESTABLISHED', `${why}; a re-run can ask it`);
@@ -668,7 +670,7 @@
       await recycleList(title, id);
     }
   };
-  log('INFO', 'probe revision e24882b6. Quote this when reporting results.');
+  log('INFO', 'probe revision d4db0162. Quote this when reporting results.');
 
   // The parts name the list by title, the form a history write sends and these rows measure; the run's token
   // means no other list holds it, and none can take it between a check and a use.
@@ -676,7 +678,7 @@
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
   const OWNERSHIP = 'dbml-sharepoint batch-item-create probe scratch list. Safe to delete.';
   // A part's request line carries the title quoted then URL-encoded, as a history write sends it.
-  const partPath = `web/lists/getbytitle('${encodeURIComponent(LIST.replace(/'/g, "''"))}')`;
+  const partPath = `web/lists/getbytitle('${encodeURIComponent(pathLiteral(LIST))}')`;
   const MISSING = 'dbmlspNoSuchColumn';
   const WHO = 'ProbeWho';
   const WHEN = 'ProbeWhen';
@@ -806,7 +808,7 @@
   // One $batch request holding one ChangeSet of `ops`, with no retry, since a retry would hide the answer.
   const sendChangeSet = async (ops) => {
     // The parts name the list by title, as a history write does, so that title must still name this run's list.
-    const named = await sendRaw(`web/lists/getbytitle('${LIST}')?$select=Id,Title`);
+    const named = await sendRaw(`web/lists/getbytitle('${pathLiteral(LIST)}')?$select=Id,Title`);
     const namedHead = maskedHead(named);
     const namedId = !namedHead && named.parsed && typeof named.parsed === 'object' ? guidOf(named.parsed.Id) : null;
     if (namedId === null || namedId !== claimed) {
