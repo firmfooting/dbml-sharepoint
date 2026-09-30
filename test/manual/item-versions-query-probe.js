@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: acbd0d79
+ * REVISION: a6f447d6
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -18,7 +18,8 @@
  *   query.odata.control-versions-read        A's versions read with no options answers
  *       at least two entries, each carrying a numeric VersionId, none repeated
  *   query.odata.control-versions-items-filter      $filter=Id eq A serves A alone
- *   query.odata.control-versions-items-top      $top=1 serves one of A and B, alone
+ *   query.odata.control-versions-items-top      $top=1 serves one of A and B, alone, on its
+ *       first page
  *   query.odata.control-versions-items-orderby  $orderby=Id asc serves A and B in rising Id
  *       order and $orderby=Id desc in falling order, over the Ids read back, so an
  *       ignored $orderby fails one of the two whatever order the list keeps
@@ -44,7 +45,9 @@
  * versions the plain read did not, or not serving all of those it did.
  * NOT COMPARABLE, left open, is an answer carrying a continuation link, which
  * the probe records and does not follow; on the plain read it holds every
- * option row.
+ * option row. A $top read is the exception: Learn ("Use OData query operations
+ * in SharePoint REST requests") documents $top on list items as paging with
+ * $skiptoken, so its first page is judged and its link recorded.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
  * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again.
@@ -865,7 +868,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision acbd0d79. Quote this when reporting results.');
+  log('INFO', 'probe revision a6f447d6. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsQuery');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
@@ -1043,24 +1046,30 @@
       `VersionIds in the order answered: ${quoteValue(plainIds)}; labels `
       + `${quoteValue(plain.rows.map((row) => row.VersionLabel))}`);
 
+    // A first-page answer's continuation link, as the evidence records it; empty when there is none.
+    const alsoLinked = (next) => (next === null ? '' : `; the answer also carried a continuation link `
+      + `(${quote(next).slice(0, 200)}), recorded and not followed`);
     // What the item-list controls serve decides which option rows are asked at all. Each read is judged alone:
     // a refusal or a contradicting answer fails the control, and otherwise an unanswered read leaves it open.
+    // A read marked `firstPage` asks about $top, which Learn documents as paging with $skiptoken on list items
+    // ("Use OData query operations in SharePoint REST requests"), so its first page is judged alone.
     const controlOf = async (id, question, reads) => {
       const verdicts = [];
-      for (const { query, holds, want } of reads) {
+      for (const { query, holds, want, firstPage = false } of reads) {
         const res = await sendRaw(`${listPath}/items?$select=Id&${query}`);
         const head = maskedHead(res);
         const entries = head ? { rows: null, shape: null } : entriesOf(res.parsed);
         const next = entries.rows === null ? null : continuationOf(res.parsed);
-        // Rows from a page the read did not follow are not all the rows served, so they are no answer.
-        const { rows, shape } = next === null ? entries : { rows: null, shape: `carried a continuation link `
-          + `(${scrub(next).slice(0, 200)}), which this probe does not follow` };
+        // Elsewhere rows from a page the read did not follow are not all the rows served, so they are no answer.
+        const { rows, shape } = next === null || firstPage ? entries : { rows: null,
+          shape: `carried a continuation link (${quote(next).slice(0, 200)}), which this probe does not follow` };
         const served = rows === null ? null : rows.map((row) => row.Id);
         // A 2xx with no rows is not an answer about the option, so it is left open like a throttle.
         const outcome = served !== null && holds(served) ? 'PASS'
           : (head ? head.outcome === 'NOT ESTABLISHED' : served === null) ? 'NOT ESTABLISHED' : 'FAIL';
         const why = head ? scrub(head.why) : served === null ? `HTTP ${res.status} ${shape}: ${said(res)}` : '';
-        verdicts.push({ outcome, said: `${query}: ${why || `served ${quoteValue(served)}, want ${want}`}` });
+        verdicts.push({ outcome, said: `${query}: ${why || `served ${quoteValue(served)}, want ${want}`}`
+          + `${firstPage && served !== null ? alsoLinked(next) : ''}` });
       }
       const outcome = verdicts.some((v) => v.outcome === 'FAIL') ? 'FAIL'
         : verdicts.some((v) => v.outcome === 'NOT ESTABLISHED') ? 'NOT ESTABLISHED' : 'PASS';
@@ -1074,7 +1083,7 @@
       holds: (served) => sameElements(served, [ids.A]), want: `[${ids.A}]` }]);
     const topControl = await controlOf(TOP_CONTROL, Q.topControl, [{ query: '$top=1',
       holds: (served) => served.length === 1 && [ids.A, ids.B].includes(served[0]),
-      want: `one of [${ids.A},${ids.B}]` }]);
+      want: `one of [${ids.A},${ids.B}]`, firstPage: true }]);
     // Both directions over the Ids read back, since an ignored $orderby serves one order for both.
     const rising = [ids.A, ids.B].sort((a, b) => a - b);
     const falling = [...rising].reverse();
@@ -1084,7 +1093,8 @@
     ]);
 
     // `control` is null for an option no item-list control asks first.
-    const ask = async (id, question, control, query, describe) => {
+    // `firstPage` judges a $top answer on its first page, since Learn documents $top on list items as paging.
+    const ask = async (id, question, control, query, describe, firstPage = false) => {
       if (control !== null && control.outcome === 'FAIL') {
         voidRows([id], 'the item-list control asking the same option did not serve the rows written');
         return;
@@ -1104,13 +1114,13 @@
           + `${said(got.res)}`);
         return;
       }
-      if (got.next !== null) {
+      if (got.next !== null && !firstPage) {
         record(id, question, 'NOT COMPARABLE', `${query}: ${pagedSaid(got)}; served VersionIds `
           + `${quoteValue(got.rows.map(versionIdOf))}`, 'open');
         return;
       }
       const [head, evidence] = describe(got.rows);
-      record(id, question, head, `${query}: ${evidence}; the plain read answered VersionIds `
+      record(id, question, head, `${query}: ${evidence}${alsoLinked(got.next)}; the plain read answered VersionIds `
         + `${quoteValue(plainIds)}`);
     };
 
@@ -1154,7 +1164,7 @@
     const known = (rows) => rows.every((row) => plainIds.includes(versionIdOf(row)));
     await ask('query.odata.versions-top', Q.top, topControl, '$top=1',
       (rows) => [!known(rows) ? 'OTHER ROWS' : rows.length === 1 ? 'TOPPED' : 'NOT TOPPED',
-        `served ${entries(rows.length)}, VersionIds ${quoteValue(rows.map(versionIdOf))}`]);
+        `served ${entries(rows.length)}, VersionIds ${quoteValue(rows.map(versionIdOf))}`], true);
     // Only an ordered plain read has an opposite, so an unordered one is asked ascending and said so.
     const opposite = defaultOrder === 'ASCENDING' ? 'desc' : defaultOrder === 'DESCENDING' ? 'asc' : null;
     const direction = opposite || 'asc';

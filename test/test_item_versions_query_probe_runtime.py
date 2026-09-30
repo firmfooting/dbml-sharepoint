@@ -251,12 +251,22 @@ def test_a_plain_read_with_a_continuation_link_leaves_every_option_row_open() ->
 
 
 def test_an_option_answer_with_a_continuation_link_is_not_compared() -> None:
+    rows, _, _ = _run(versionsNext=NEXT, versionsNextFor="$filter=VersionId")
+
+    assert rows[FILTER]["outcome"] == "NOT COMPARABLE"
+    assert rows[FILTER]["state"] == "open"
+    assert rows[FILTER]["evidence"].startswith(
+        "$filter=VersionId gt 512: the answer carried a continuation link")
+    assert rows[TOP]["outcome"] == "TOPPED"
+
+
+def test_a_versions_top_answer_is_judged_on_its_first_page_and_its_link_recorded() -> None:
+    # Learn documents $top on list items as paging with $skiptoken, so a link can come with it.
     rows, _, _ = _run(versionsNext=NEXT, versionsNextFor="$top=1")
 
-    assert rows[TOP]["outcome"] == "NOT COMPARABLE"
-    assert rows[TOP]["state"] == "open"
-    assert rows[TOP]["evidence"].startswith("$top=1: the answer carried a continuation link")
-    assert rows[FILTER]["outcome"] == "FILTERED"
+    assert rows[TOP]["outcome"] == "TOPPED", rows[TOP]
+    assert rows[TOP]["state"] == "settled"
+    assert "the answer also carried a continuation link" in rows[TOP]["evidence"]
 
 
 def test_every_request_after_the_claim_goes_by_the_list_id() -> None:
@@ -483,9 +493,8 @@ def test_a_404_read_after_an_unanswered_write_is_that_write_unanswered() -> None
 
 @pytest.mark.parametrize(("query", "control", "row_id"), [
     ("/items?$select=Id&$filter", FILTER_CONTROL, FILTER),
-    ("/items?$select=Id&$top", TOP_CONTROL, TOP),
     ("/items?$select=Id&$orderby=Id asc", ORDERBY_CONTROL, ORDERBY),
-], ids=["filter", "top", "orderby"])
+], ids=["filter", "orderby"])
 def test_an_item_list_control_answered_with_a_continuation_link_is_not_established(
         query: str, control: str, row_id: str) -> None:
     paged = json.dumps({"value": [{"Id": 1}], **NEXT})
@@ -525,3 +534,14 @@ def test_a_fixture_value_read_from_an_answer_is_withheld_where_the_harness_print
     assert rows[ITEMS]["outcome"] == "FAIL"
     assert f'ProbeChoice differs: read "{WITHHELD}", declared "Q3"' in rows[ITEMS]["evidence"]
     assert 'Column="HTTP 201"' in rows[ITEMS]["evidence"]
+
+
+def test_a_top_control_answered_with_one_item_and_a_continuation_link_passes() -> None:
+    # Learn documents $top on list items as paging with $skiptoken; the first page answers.
+    paged = json.dumps({"value": [{"Id": 1}], **NEXT})
+    rows, _, _ = _run(rules=[{"contains": "/items?$select=Id&$top", "status": 200,
+                              "text": paged}])
+
+    assert rows[TOP_CONTROL]["outcome"] == "PASS", rows[TOP_CONTROL]
+    assert "the answer also carried a continuation link" in rows[TOP_CONTROL]["evidence"]
+    assert rows[TOP]["outcome"] == "TOPPED"
