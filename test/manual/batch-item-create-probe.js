@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: a027129f
+ * REVISION: 52427cc1
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -63,7 +63,8 @@
  *       as ISO 8601 UTC text
  *
  * HOW TO READ IT: PART ANSWERED 2XX and PART REFUSED are what one part's status
- * line said, beside whether its item exists afterwards. OUTER REQUEST REFUSED
+ * line said, beside whether its item exists afterwards; a part throttled or not
+ * authorised is NOT ESTABLISHED, left open. OUTER REQUEST REFUSED
  * is the whole $batch refused, and its text says why. ANSWERS NOT MATCHED, left
  * open, is a $batch whose answers cannot be matched to its parts: their count
  * differs from the parts sent, an AddValidate answer names other fields than
@@ -609,7 +610,7 @@
         : `could not recycle '${title}' (list ${id}, ${why}); recycle it by hand.`);
     }
   };
-  log('INFO', 'probe revision a027129f. Quote this when reporting results.');
+  log('INFO', 'probe revision 52427cc1. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe BatchItems';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -783,8 +784,9 @@
   };
   const partSaid = (part) => `HTTP ${part.status} ${part.reason}; headers ${said(part.headers.join('; '))}; `
     + `body ${said(part.body) || '(none)'}`;
+  // A throttled or unauthorised part answered nothing about the question, so its head leaves the row open.
   const partHead = (part) => (!part ? 'NO PART STATUS' : ok2xx(part.status) ? 'PART ANSWERED 2XX'
-    : isRefusal(part.status) ? 'PART REFUSED' : 'PART NOT ANSWERED');
+    : isRefusal(part.status) ? 'PART REFUSED' : 'NOT ESTABLISHED');
   const fieldsOf = (parsed) => (parsed && Array.isArray(parsed.value) ? parsed.value : null);
   const parsedOf = (text) => { try { return JSON.parse(text); } catch { return null; } };
   // Why the answers cannot be matched to the parts by position, or null when they can; no document says they arrive

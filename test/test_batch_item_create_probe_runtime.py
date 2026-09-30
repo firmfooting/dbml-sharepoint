@@ -553,11 +553,18 @@ def test_a_refused_untyped_part_is_recorded_with_its_answer(setting: str, row_id
     assert "landed no" in rows[row_id]["evidence"]
 
 
-def test_a_part_throttled_inside_the_batch_is_not_called_refused() -> None:
-    rows, _, _ = _run(partRules=[{"bodyContains": "untyped verbose", "status": 429,
+@pytest.mark.parametrize(("status", "sent", "row_id"), [
+    (429, "untyped verbose", VERBOSE), (503, "untyped verbose", VERBOSE),
+    (429, "part B", FAILED), (429, "addvalidate part missing column", AV_FAILED),
+])
+def test_a_part_throttled_inside_the_batch_is_left_open(
+        status: int, sent: str, row_id: str) -> None:
+    rows, _, _ = _run(partRules=[{"bodyContains": sent, "status": status,
                                   "reason": "Too Many Requests", "text": "busy"}])
 
-    assert rows[VERBOSE]["outcome"] == "PART NOT ANSWERED"
+    assert rows[row_id]["outcome"] == "NOT ESTABLISHED", rows[row_id]
+    assert rows[row_id]["state"] == "open", rows[row_id]
+    assert f"HTTP {status} Too Many Requests" in rows[row_id]["evidence"]
 
 
 @pytest.mark.parametrize(("status", "outcome"), [(400, "OUTER REQUEST REFUSED"),

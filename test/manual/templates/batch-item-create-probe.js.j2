@@ -64,7 +64,8 @@
  *       as ISO 8601 UTC text
  *
  * HOW TO READ IT: PART ANSWERED 2XX and PART REFUSED are what one part's status
- * line said, beside whether its item exists afterwards. OUTER REQUEST REFUSED
+ * line said, beside whether its item exists afterwards; a part throttled or not
+ * authorised is NOT ESTABLISHED, left open. OUTER REQUEST REFUSED
  * is the whole $batch refused, and its text says why. ANSWERS NOT MATCHED, left
  * open, is a $batch whose answers cannot be matched to its parts: their count
  * differs from the parts sent, an AddValidate answer names other fields than
@@ -270,8 +271,9 @@
   };
   const partSaid = (part) => `HTTP ${part.status} ${part.reason}; headers ${said(part.headers.join('; '))}; `
     + `body ${said(part.body) || '(none)'}`;
+  // A throttled or unauthorised part answered nothing about the question, so its head leaves the row open.
   const partHead = (part) => (!part ? 'NO PART STATUS' : ok2xx(part.status) ? 'PART ANSWERED 2XX'
-    : isRefusal(part.status) ? 'PART REFUSED' : 'PART NOT ANSWERED');
+    : isRefusal(part.status) ? 'PART REFUSED' : 'NOT ESTABLISHED');
   const fieldsOf = (parsed) => (parsed && Array.isArray(parsed.value) ? parsed.value : null);
   const parsedOf = (text) => { try { return JSON.parse(text); } catch { return null; } };
   // Why the answers cannot be matched to the parts by position, or null when they can; no document says they arrive
