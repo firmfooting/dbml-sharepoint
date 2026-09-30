@@ -1029,3 +1029,22 @@ def test_an_unanswered_resend_after_a_refusal_that_landed_nothing_leaves_the_ite
     assert "was throttled (HTTP 429)" in rows[ITEM]["evidence"]
     assert voided(rows) == set()
     assert _merges(sent) == [True, False]
+
+
+@pytest.mark.parametrize(("nth", "answer", "said"), [
+    (1, [{"VersionId": 512, "VersionLabel": "1.0"}, {"VersionId": 512, "VersionLabel": "1.0"}],
+     "listed VersionId 512 more than once"),
+    (2, [{"VersionLabel": "2.0"}, {"VersionId": 512, "VersionLabel": "1.0"}],
+     "answered an entry with no VersionId"),
+], ids=["repeated-before", "missing-after"])
+def test_a_snapshot_that_cannot_name_its_versions_leaves_landing_unknown(
+        nth: int, answer: list[dict[str, Any]], said: str) -> None:
+    rows, sent, _ = _run(rules=[PEOPLE_REFUSED, {
+        "contains": LIST_READ_RULE, "nth": nth, "status": 200,
+        "text": json.dumps({"value": answer})}])
+
+    assert rows[ITEM]["outcome"] == "NOT ESTABLISHED", rows[ITEM]
+    assert "whether it landed is unknown" in rows[ITEM]["evidence"]
+    assert said in rows[ITEM]["evidence"]
+    assert voided(rows) == set()
+    assert _merges(sent) == [True]

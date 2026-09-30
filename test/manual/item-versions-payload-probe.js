@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: 634cc9f5
+ * REVISION: fea522d8
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -930,7 +930,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 634cc9f5. Quote this when reporting results.');
+  log('INFO', 'probe revision fea522d8. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe Versions');
   const TARGET = runTitle('dbmlsp Probe VersionsTarget');
@@ -1312,11 +1312,16 @@
     const snapshot = async (keys) => {
       const versions = await readVersions(listPath, itemId);
       const values = await readBack(`${listPath}/items(${itemId})?$select=Id,${keys.join(',')}`);
-      const ids = versions.rows === null || versions.next !== null ? null : versions.rows.map(versionIdOf);
+      // The VersionIds name the versions only when every entry carries one and none repeats, as everywhere else.
+      const again = versions.rows === null ? [] : repeatedIds(versions.rows);
+      const unnamed = versions.rows !== null && versions.rows.some((row) => versionIdOf(row) === null);
       const why = versions.head ? `the versions read ${scrub(versions.head.why)}`
         : versions.rows === null ? `the versions read ${versions.shape}`
           : versions.next !== null ? `the versions read: ${pagedSaid(versions)}`
-            : values.parsed ? null : `the item read ${values.read}`;
+            : unnamed ? 'the versions read answered an entry with no VersionId'
+              : again.length ? `the versions read listed VersionId ${again.join(', ')} more than once`
+                : values.parsed ? null : `the item read ${values.read}`;
+      const ids = why === null ? versions.rows.map(versionIdOf) : null;
       return { ids, values: values.parsed, why };
     };
     // Each set is read back before the next is sent, so set B never replaces a set A that did not land.
