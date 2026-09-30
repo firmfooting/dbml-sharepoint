@@ -368,7 +368,7 @@ def test_a_when_on_an_unrendered_column_is_left_to_the_column_finding() -> None:
     none_of(findings, FindingCode.CONDITION_FIELD_NOT_RENDERED)
 
 
-def test_a_when_on_a_lookup_projection_is_accepted() -> None:
+def _with_projection(*watched: WatchedList) -> list[Finding]:
     schema = make_schema(
         make_table("Project", make_column("Title", required=True),
                    make_column("Status", "project_status"), make_ref("Owner", "Task.Id"),
@@ -376,16 +376,33 @@ def test_a_when_on_a_lookup_projection_is_accepted() -> None:
         make_table("Task", make_column("Title", required=True), note="Tasks."),
         enums=[make_enum("project_status", "Open", "Closed")],
     )
-    use = WatchUse("alert", when=Leaf("OwnerTitle", "eq", "Ada"))
-
-    findings = validate_against_mapping(schema, make_bundle(
+    return validate_against_mapping(schema, make_bundle(
         entities=["Project", "Task"],
         lookup_projections={"Project": {"Owner": ["Title"]}},
-        watched_lists=[_on_status(use)],
+        watched_lists=list(watched),
     ))
 
-    assert not [f for f in findings
-                if f.location is not None and f.location.section is Section.WATCHED_LISTS]
+
+def _watched_findings(findings: list[Finding]) -> list[Finding]:
+    return [f for f in findings
+            if f.location is not None and f.location.section is Section.WATCHED_LISTS]
+
+
+def test_a_when_on_a_lookup_projection_is_accepted() -> None:
+    use = WatchUse("alert", when=Leaf("OwnerTitle", "eq", "Ada"))
+
+    assert not _watched_findings(_with_projection(_on_status(use)))
+
+
+def test_a_watched_lookup_projection_is_refused_once_and_its_when_left_unjudged() -> None:
+    use = WatchUse("alert", when=Leaf("Status", "eq", "Closd"))
+
+    findings = _watched_findings(_with_projection(
+        WatchedList(entity="Project", column="OwnerTitle", uses=(use,)),
+    ))
+
+    assert codes(findings) == {FindingCode.WATCHED_COLUMN_NOT_RENDERED}
+    assert len(findings) == 1
 
 
 def _judged(target: str | None) -> list[Finding]:

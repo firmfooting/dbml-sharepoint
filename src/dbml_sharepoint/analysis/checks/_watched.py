@@ -64,11 +64,11 @@ def _conditions(vc: ValidationContext, i: int) -> list[Finding]:
     if table is None:
         return []
     xcols = vc.cross_site_columns(watched.entity)
+    # _structure reports an unknown entity, or a column outside this set, as unrendered.
+    if watched.column not in rendered_columns(table, xcols):
+        return []
     projected = vc.projected_columns(watched.entity)
     rendered = rendered_columns(table, xcols, projected)
-    # _structure has already reported an unknown entity or an unrendered column.
-    if watched.column not in rendered:
-        return []
     types = effective_column_types({c.name: c.type for c in table.columns}, xcols, projected)
     lookups = {c.name for c in table.columns if c.ref is not None}
     findings: list[Finding] = []
