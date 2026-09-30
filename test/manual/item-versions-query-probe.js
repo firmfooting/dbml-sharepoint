@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: 72107da6
+ * REVISION: 0ac7f526
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -515,14 +515,19 @@
       voidDependents(dependents, 'the scratch list was not created');
       return { held: false, merge: null, body: null };
     }
-    // What a list POST answers is not measured, so a missing Id is taken from the read-back below.
     const created = { title, id: guidOf(made.body && made.body.Id) };
     CREATED_LISTS.push(created);
+    // Without the create's own Id a title read could name a rebound list, so nothing more is written.
+    if (created.id === null) {
+      record(id, question, 'FAIL', `the list create answered HTTP ${made.status} with no list Id, so nothing `
+        + `ties '${title}' to the list it made; nothing was written to it`);
+      voidDependents(dependents, 'the scratch list answered no Id to address it by');
+      return { held: false, merge: null, body: null };
+    }
     let merge = null;
     if (settings !== null) {
-      // Sent by Id when the create answered one, so a title rebound cannot take this list's settings.
-      const target = created.id === null ? path : `web/lists(guid'${created.id}')`;
-      merge = await spPost(target, { __metadata: { type: 'SP.List' }, ...settings }, await getDigest(),
+      // Sent by Id, so a title rebound cannot take this list's settings.
+      merge = await spPost(`web/lists(guid'${created.id}')`, { __metadata: { type: 'SP.List' }, ...settings }, await getDigest(),
         { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
       log('INFO', `list settings MERGE on '${title}': HTTP ${merge.status}`
         + `${merge.ok ? '' : ` ${scrub(merge.text).slice(0, 200)}`}`);
@@ -536,8 +541,6 @@
     let read = null;
     const held = await establishFixture(id, async () => {
       read = await spGet(`${path}?$select=${select}`);
-      const found = read.ok && read.body && typeof read.body === 'object' ? guidOf(read.body.Id) : null;
-      if (created.id === null) created.id = found;
       return read.ok && read.body && typeof read.body === 'object'
         ? { ...read, body: { ...read.body, ...answered } } : read;
     }, { BaseTemplate: baseTemplate, Description: description, ...declared, ...settled,
@@ -602,7 +605,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 72107da6. Quote this when reporting results.');
+  log('INFO', 'probe revision 0ac7f526. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsQuery';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.

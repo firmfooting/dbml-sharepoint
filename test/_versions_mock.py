@@ -115,7 +115,7 @@ const mockFetch = async (url, opts = {}) => {
       root: `/sites/probe/${sent.Title}`, fields: {}, items: [] });
     // `listDefaults`: values a new list starts with, so a refused MERGE can still leave it usable.
     Object.assign(lists.get(sent.Title), CONFIG.listDefaults || {});
-    // `createAnswersNoId`: a create whose answer carries no Id, so the read-back supplies it.
+    // `createAnswersNoId`: a create answering no Id, which the claim refuses to build on.
     return answer(201, CONFIG.createAnswersNoId ? {} : { Id: guid(sent.Title) });
   }
   if (path === 'web/folders' && verb === 'POST') {

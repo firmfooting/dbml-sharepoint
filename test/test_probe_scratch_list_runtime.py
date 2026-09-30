@@ -163,19 +163,19 @@ def test_a_title_rebound_before_the_read_back_fails_the_fixture_and_spares_the_o
     assert _recycles(out) == [f"web/lists(guid'{CLAIMED}')/recycle"]
 
 
-def test_a_create_answering_no_id_is_pinned_by_the_read_back() -> None:
-    out = _claim(None, createAnswersNoId=True)
+@pytest.mark.parametrize("settings", [None, {"EnableVersioning": True}])
+def test_a_create_answering_no_id_fails_closed_and_writes_nothing_by_title(
+        settings: dict[str, Any] | None) -> None:
+    out = _claim(settings, createAnswersNoId=True)
 
-    assert out["held"] is True
-    assert _recycles(out) == [f"web/lists(guid'{CLAIMED}')/recycle"]
-
-
-def test_a_list_that_never_answers_an_id_is_left_for_a_recycle_by_hand() -> None:
-    out = _claim(None, createAnswersNoId=True,
-                 rules=[{"contains": f"getbytitle('{TITLE}')?$select=Id,BaseTemplate",
-                         "status": 500, "text": "no"}])
-
+    assert out["held"] is False
     assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert out["rows"][FIXTURE]["evidence"] == (
+        f"the list create answered HTTP 201 with no list Id, so nothing ties '{TITLE}' to the "
+        "list it made; nothing was written to it")
+    assert out["rows"][DEPENDENT]["state"] == "void"
+    assert [r for r in out["sent"] if r["verb"] == "MERGE"] == []
+    assert [r for r in out["sent"] if "$select=Id,BaseTemplate" in r["path"]] == []
     assert _recycles(out) == []
     assert f"'{TITLE}' never answered a list Id, so it was not recycled; recycle it by hand." in (
         out["console"])
@@ -270,11 +270,3 @@ def test_the_settings_merge_goes_by_the_id_the_create_answered() -> None:
 
     merges = [r["path"] for r in out["sent"] if r["verb"] == "MERGE"]
     assert merges == [f"web/lists(guid'{CLAIMED}')"]
-
-
-def test_the_settings_merge_goes_by_title_when_the_create_answered_no_id() -> None:
-    out = _claim({"EnableVersioning": True}, declared=VERSIONING, createAnswersNoId=True)
-
-    assert out["held"] is True
-    merges = [r["path"] for r in out["sent"] if r["verb"] == "MERGE"]
-    assert merges == [f"web/lists/getbytitle('{TITLE}')"]
