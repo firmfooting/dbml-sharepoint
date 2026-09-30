@@ -1,8 +1,8 @@
 """Execute the shared scratch-list partial on its own, behind the versions mock.
 
-A probe that applies list settings certifies them by read-back, and the settings MERGE's
-answer is part of that read-back, so a refused MERGE is shown with its reason in RESULTS
-and not only on the console.
+A probe that applies list settings certifies them by read-back. The settings MERGE's answer is
+recorded beside that read-back, so a refused MERGE is shown with its reason in RESULTS and not
+only on the console, but it never fails the fixture on its own account.
 """
 
 import importlib.util
@@ -22,6 +22,9 @@ FIXTURE = "test.scratch.fixture-list"
 DEPENDENT = "test.scratch.dependent"
 TITLE = "dbmlsp Probe Scratch"
 REFUSAL = "The value is out of range at https://example.sharepoint.com/sites/probe."
+REFUSED = {"contains": f"getbytitle('{TITLE}')", "verb": "MERGE", "status": 400, "text": REFUSAL}
+SAID = "HTTP 400: The value is out of range at [TENANT]/sites/probe."
+VERSIONING = "{ EnableVersioning: true }"
 
 
 def _load_renderer() -> ModuleType:
@@ -35,12 +38,13 @@ def _load_renderer() -> ModuleType:
     return module
 
 
-def _claim(settings: dict[str, Any] | None, **config: Any) -> dict[str, Any]:
+def _claim(
+    settings: dict[str, Any] | None, declared: str = "{}", **config: Any,
+) -> dict[str, Any]:
     """Claim one scratch list with `settings`, and return what came back and the result rows."""
     env = _load_renderer()._env()
     body = "".join(env.get_template(name).render() for name in (
         "_probe_harness.js.j2", "_probe_raw_request_v1.js.j2", "_probe_scratch_list_v1.js.j2"))
-    declared = "{ EnableVersioning: true }" if settings else "{}"
     script = (
         VERSIONS_MOCK.replace("__CONFIG__", json.dumps(config))
         + "(async () => {\n" + body
@@ -62,7 +66,7 @@ def _claim(settings: dict[str, Any] | None, **config: Any) -> dict[str, Any]:
 
 
 def test_an_accepted_settings_merge_is_read_back_with_its_status() -> None:
-    out = _claim({"EnableVersioning": True})
+    out = _claim({"EnableVersioning": True}, declared=VERSIONING)
 
     assert out["held"] is True
     assert out["merge"] == 204
@@ -72,15 +76,28 @@ def test_an_accepted_settings_merge_is_read_back_with_its_status() -> None:
     assert "Settings" not in out["body"]
 
 
-def test_a_refused_settings_merge_fails_the_fixture_with_its_reason() -> None:
-    out = _claim({"EnableVersioning": True}, rules=[
-        {"contains": f"getbytitle('{TITLE}')", "verb": "MERGE", "status": 400, "text": REFUSAL}])
+def test_a_refused_merge_alone_is_recorded_and_the_fixture_still_holds() -> None:
+    # Nothing is declared from the settings, so the MERGE's answer is the only thing that differs.
+    out = _claim({"EnableVersioning": True}, rules=[REFUSED])
+
+    evidence = out["rows"][FIXTURE]["evidence"]
+    assert out["held"] is True
+    assert out["merge"] == 400
+    assert out["rows"][FIXTURE]["outcome"] == "PASS"
+    assert SAID in evidence
+    assert "example.sharepoint.com" not in evidence
+    assert out["rows"][DEPENDENT]["state"] == "open"
+
+
+def test_a_refused_merge_that_leaves_a_setting_unapplied_fails_on_that_setting() -> None:
+    out = _claim({"EnableVersioning": True}, declared=VERSIONING, rules=[REFUSED])
 
     evidence = out["rows"][FIXTURE]["evidence"]
     assert out["held"] is False
     assert out["rows"][FIXTURE]["outcome"] == "FAIL"
-    assert "Settings differs" in evidence
-    assert "HTTP 400: The value is out of range at [TENANT]/sites/probe." in evidence
+    assert "EnableVersioning differs" in evidence
+    assert "Settings differs" not in evidence
+    assert SAID in evidence
     assert "example.sharepoint.com" not in evidence
     assert out["rows"][DEPENDENT]["state"] == "void"
 

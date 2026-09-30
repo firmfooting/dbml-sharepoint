@@ -45,7 +45,8 @@
     // The MERGE's answer joins the read-back, so a refused setting shows its reason in RESULTS.
     const answered = merge === null ? {} : { Settings: `HTTP ${merge.status}`
       + `${merge.ok ? '' : `: ${redactTenant(merge.text).slice(0, 200)}`}` };
-    const settled = merge === null ? {} : { Settings: (v) => /^HTTP 2\d\d$/.test(v) };
+    // Recorded, never judged: what the MERGE answered is an observation, and the read-back decides.
+    const settled = merge === null ? {} : { Settings: (v) => typeof v === 'string' };
     let read = null;
     const held = await establishFixture(id, async () => {
       read = await spGet(`${path}?$select=${select}`);
