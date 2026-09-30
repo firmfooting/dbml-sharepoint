@@ -18,7 +18,8 @@
  *   field.version.fixture-trim-list  a generic list with versioning on whose
  *       MajorVersionLimit, after asking for 2, reads back a whole number from 1 to 100
  *   field.version.fixture-trim-item  one item created and then written the list's
- *       limit plus three times, every write answered 2xx and the last Title read back
+ *       limit plus three times, every write answered 2xx and its Title read back
+ *       before the next was sent
  *
  * OBSERVES (recorded verbatim, never compared with an expected value)
  *   field.version.trim-limit-taken          the MajorVersionLimit the list took, and
@@ -63,8 +64,8 @@
     list: `a generic list with versioning on whose MajorVersionLimit, after asking for ${ASKED_LIMIT}, `
       + `reads back a whole number from 1 to ${MAX_LIMIT}`,
     limit: `the MajorVersionLimit the list took after asking for ${ASKED_LIMIT}`,
-    item: 'one item created and written the limit plus three times, every write answered 2xx, '
-      + 'whose last Title reads back',
+    item: 'one item created and written the limit plus three times, every write answered 2xx '
+      + 'and its Title read back before the next',
     once: 'what items(id)/versions answers straight after the last write',
     wait: `what items(id)/versions answers ${TRIM_WAIT_MS / 1000} seconds later`,
   };
@@ -134,31 +135,44 @@
     const digest = await getDigest();
     let itemId = null;
     let written = 0;
-    const refused = [];
+    const missed = [];
+    // A 2xx write counts once its Title reads back, since TRIMMED is measured against writes that landed.
+    const landed = async (n, sent, what) => {
+      if (!sent.ok) {
+        missed.push(`${what}: HTTP ${sent.status}: ${said(sent.text)}`);
+        return;
+      }
+      const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title`);
+      const head = rawHead(read);
+      const title = !head && read.parsed && typeof read.parsed === 'object' ? read.parsed.Title : undefined;
+      if (title === titleOf(n)) written += 1;
+      else {
+        missed.push(`${what}: HTTP ${sent.status}, but ${head ? `the read-back ${scrub(head.why)}`
+          : `Title reads back ${JSON.stringify(title)}`}`);
+      }
+    };
     const made = await spPost(`${listPath}/items`, { __metadata: { type: itemType }, Title: titleOf(1) },
       digest, VERBOSE_WRITE);
-    if (made.ok) written += 1;
-    else refused.push(`the create: HTTP ${made.status}: ${said(made.text)}`);
     if (made.ok && made.body && Number.isInteger(made.body.Id)) itemId = made.body.Id;
-    else if (made.ok) refused.push(`the create: HTTP ${made.status} carried no numeric Id`);
+    if (made.ok && itemId === null) missed.push(`the create: HTTP ${made.status} carried no numeric Id`);
+    else await landed(1, made, 'the create');
     for (let n = 2; itemId !== null && n <= writes + 1; n += 1) {
       const sent = await spPost(`${listPath}/items(${itemId})`, { __metadata: { type: itemType },
         Title: titleOf(n) }, digest, { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
-      if (sent.ok) written += 1;
-      else refused.push(`write ${n}: HTTP ${sent.status}: ${said(sent.text)}`);
+      await landed(n, sent, `write ${n}`);
     }
     if (!await establishFixture('field.version.fixture-trim-item', async () => {
-      // The refused writes join the read-back, so a write that did not land shows its reason in RESULTS.
-      const shown = refused.slice(0, 3).map((line) => line.slice(0, 160)).join('; ')
-        + (refused.length > 3 ? `; and ${refused.length - 3} more` : '');
-      const body = { Written: written, Refused: shown || 'none' };
+      // The writes that did not land join the read-back, so each shows its reason in RESULTS.
+      const shown = missed.slice(0, 3).map((line) => line.slice(0, 160)).join('; ')
+        + (missed.length > 3 ? `; and ${missed.length - 3} more` : '');
+      const body = { Written: written, Missed: shown || 'none' };
       if (itemId === null) return { ok: true, status: 200, body };
       const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title`);
       const head = rawHead(read);
       body.Title = head ? scrub(head.why) : read.parsed && typeof read.parsed === 'object' ? read.parsed.Title
         : `no JSON: ${said(read.text)}`;
       return { ok: true, status: 200, body };
-    }, { Written: writes + 1, Refused: (v) => typeof v === 'string', Title: titleOf(writes + 1) },
+    }, { Written: writes + 1, Missed: (v) => typeof v === 'string', Title: titleOf(writes + 1) },
     AFTER_ITEM)) {
       return;
     }

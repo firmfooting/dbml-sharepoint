@@ -157,6 +157,29 @@ def test_a_write_that_did_not_land_voids_the_reads() -> None:
     assert voided(rows) == _deps(ITEM)
 
 
+def test_a_write_answered_2xx_that_did_not_land_is_not_counted() -> None:
+    # The rule answers 204 and never reaches the mock's store, so Title stays at write 2.
+    rows, _, _ = _run(trimToLimit=True, rules=[{"contains": "items(1)", "verb": "MERGE",
+                                                "bodyContains": "trim 3", "status": 204,
+                                                "text": ""}])
+
+    assert rows[ITEM]["outcome"] == "FAIL"
+    assert "Written differs: read 5, declared 6" in rows[ITEM]["evidence"]
+    assert 'write 3: HTTP 204, but Title reads back \\"dbmlsp versions trim 2\\"' in (
+        rows[ITEM]["evidence"])
+    assert voided(rows) == _deps(ITEM)
+
+
+def test_a_write_whose_read_back_went_unanswered_is_not_counted() -> None:
+    rows, _, _ = _run(rules=[{"contains": "items(1)?$select=Id,Title", "nth": 2, "status": 429,
+                              "text": "busy"}])
+
+    assert rows[ITEM]["outcome"] == "FAIL"
+    assert "Written differs: read 5, declared 6" in rows[ITEM]["evidence"]
+    assert "write 2: HTTP 204, but the read-back " in rows[ITEM]["evidence"]
+    assert voided(rows) == _deps(ITEM)
+
+
 def test_a_refused_create_is_kept_in_the_evidence() -> None:
     rows, _, _ = _run(rules=[{"contains": "/items", "verb": "POST", "status": 500,
                               "text": "Denied for ada@example.com."}])
