@@ -286,7 +286,8 @@ class WatchUse:
     name: str
     id: str | None = None
     on: WatchOn = "change"
-    when: Condition | None = None
+    # Out of the hash, as `settings` is: an `in` leaf holds a list.
+    when: Condition | None = field(default=None, hash=False)
     # `collections.abc.Mapping` because this module's own `Mapping` is the mapping file.
     settings: collections.abc.Mapping[str, Any] = field(default_factory=dict, hash=False)
 

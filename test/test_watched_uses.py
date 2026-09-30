@@ -105,6 +105,13 @@ def test_a_use_and_its_entry_stay_hashable() -> None:
     assert {entry, WatchedList(entity="Project", column="Status", uses=(use,))} == {entry}
 
 
+def test_a_use_with_a_list_valued_when_stays_hashable() -> None:
+    use = WatchUse("alert", on="enter", when=Leaf("Status", "in", ["Open", "Closed"]))
+
+    assert hash(use) == hash(WatchUse("alert", on="enter", when=Leaf("Status", "eq", "x")))
+    hash(WatchedList(entity="Project", column="Status", uses=(use,)))
+
+
 def test_every_leaf_without_a_field_compares_the_watched_column(tmp_path: Path) -> None:
     uses = _load(tmp_path, """
         watched_lists:
