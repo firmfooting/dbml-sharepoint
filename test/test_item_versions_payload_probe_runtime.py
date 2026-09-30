@@ -327,6 +327,8 @@ def test_an_upload_that_adds_no_version_is_named_so() -> None:
     assert rows[LIB_ADDS]["evidence"].endswith('1.0=(absent), 2.0="Q1", 3.0="Q2"')
     assert rows[LIB_FIELDS]["outcome"] == "NOT IDENTIFIED"
     assert rows[LIB_FIELDS]["state"] == "settled"
+    assert rows[LIB_FIELDS]["evidence"].startswith(
+        "no version is the upload's alone (UPLOAD ADDED NO VERSION); the versions: ")
 
 
 def test_an_upload_that_changes_the_value_is_recorded_not_failed() -> None:
@@ -339,8 +341,59 @@ def test_an_upload_that_changes_the_value_is_recorded_not_failed() -> None:
         '4 version(s) for an add, two edits and an upload, after which ProbeLibChoice read "Q2"; '
         'in label order: 1.0=(absent), 2.0="Q1", 3.0="Q2", 4.0="Q2"')
     assert rows[LIB_FIELDS]["outcome"] == "NOT IDENTIFIED"
-    assert "(UPLOAD CHANGED THE VALUE)" in rows[LIB_FIELDS]["evidence"]
+    assert rows[LIB_FIELDS]["evidence"] == (
+        "the versions were not searched for the upload's version, since the head is "
+        'UPLOAD CHANGED THE VALUE; the versions: 1.0=(absent), 2.0="Q1", 3.0="Q2", 4.0="Q2"')
     assert voided(rows) == set()
+
+
+@pytest.mark.parametrize(("config", "head"), [
+    pytest.param({}, "NOT COMPARABLE", id="kept"),
+    pytest.param({"uploadSetsValues": {"ProbeLibChoice": "Q2"}}, "UPLOAD CHANGED THE VALUE",
+                 id="changed"),
+])
+def test_labels_that_do_not_order_yield_to_a_changed_value(config: dict[str, Any], head: str,
+                                                            ) -> None:
+    rows, _, _ = _run(labelsUnparsed=True, **config)
+
+    assert rows[LIB_ADDS]["outcome"] == head
+    assert "in the order answered: v4=" in rows[LIB_ADDS]["evidence"]
+    assert rows[LIB_FIELDS]["outcome"] == "NOT IDENTIFIED"
+    assert rows[LIB_FIELDS]["evidence"].startswith(
+        f"the versions were not searched for the upload's version, since the head is {head}; ")
+    assert "alone" not in rows[LIB_FIELDS]["evidence"]
+
+
+def test_a_read_after_the_upload_without_the_choice_fails_the_fixture_not_the_value() -> None:
+    rows, _, _ = _run(uploadDropsValues=["ProbeLibChoice"])
+
+    assert rows[LIB_UPLOAD]["outcome"] == "FAIL"
+    assert "ProbeLibChoice is absent from the payload" in rows[LIB_UPLOAD]["evidence"]
+    assert voided(rows) == _deps(LIB_UPLOAD)
+    assert rows[LIB_ADDS]["outcome"] != "UPLOAD CHANGED THE VALUE"
+
+
+@pytest.mark.parametrize(("rule", "quoted"), [
+    pytest.param({"contains": "getbyinternalnameortitle('ProbeFlag')", "status": 400,
+                  "text": "Invalid data for ada@example.com"},
+                 'ProbeFlag.Read differs: read "HTTP 400: Invalid data for <account>"',
+                 id="column-read"),
+    pytest.param({"contains": "Versions')/items(1)", "verb": "MERGE", "status": 400,
+                  "text": "Invalid data for ada@example.com"},
+                 "item MERGE: HTTP 400 Invalid data for <account>", id="item-merge"),
+    pytest.param({"contains": "/fields", "verb": "POST", "bodyContains": "ProbeFlag", "status": 500,
+                  "text": "Refused for i:0#.f|membership|ada@example.com"},
+                 "create ProbeFlag: HTTP 500 Refused for <account>", id="column-create"),
+])
+def test_a_refusal_quoting_an_account_is_masked_everywhere_it_is_printed(
+        rule: dict[str, Any], quoted: str) -> None:
+    rows, _, output = _run(rules=[rule])
+
+    assert quoted in output
+    if rule["contains"].startswith("getbyinternalnameortitle"):
+        assert quoted in rows[COLUMNS]["evidence"]
+    assert "ada@example.com" not in output
+    assert "ada@example.com" not in json.dumps(rows)
 
 
 def test_a_refused_upload_voids_what_rests_on_it_and_nothing_in_the_list_case() -> None:

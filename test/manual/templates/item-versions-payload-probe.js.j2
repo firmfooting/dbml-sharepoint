@@ -41,7 +41,7 @@
  *       reads back through ListItemAllFields (the form Learn shows for a folder)
  *   field.version.fixture-library-edit-first    the file's Choice edited to Q1, read back
  *   field.version.fixture-library-upload        the file's content replaced by a PUT to
- *       $value; the new content reads back
+ *       $value; the new content reads back, and a read of the item carries the Choice
  *   field.version.fixture-library-edit-second   the file's Choice edited to Q2, read back
  *   field.version.control-library-versions-read the file's versions read answers entries
  *
@@ -244,8 +244,8 @@
     const res = await sendRaw(path);
     const head = rawHead(res);
     const parsed = !head && res.parsed && typeof res.parsed === 'object' ? res.parsed : null;
-    return { parsed, read: head ? head.why : parsed ? `HTTP ${res.status}`
-      : `HTTP ${res.status} carried no JSON: ${redactTenant(res.text).slice(0, 400)}` };
+    return { parsed, read: head ? scrub(head.why) : parsed ? `HTTP ${res.status}`
+      : `HTTP ${res.status} carried no JSON: ${scrub(res.text).slice(0, 400)}` };
   };
 
   let meId = null;
@@ -314,7 +314,7 @@
         : await spPost(`${listPath}/fields`, { ...column.body, Title: column.name, Required: false },
           await getDigest(), VERBOSE_WRITE);
       log('INFO', `create ${column.name}: HTTP ${sent.status}`
-        + `${sent.ok ? '' : ` ${redactTenant(sent.text).slice(0, 200)}`}`);
+        + `${sent.ok ? '' : ` ${scrub(sent.text).slice(0, 200)}`}`);
     }
     const declaredColumns = {};
     for (const column of COLUMNS) {
@@ -340,7 +340,7 @@
         + `Name="${PEOPLE}"/>`,
       Options: 8 } }, await getDigest());
     log('INFO', `create ${PEOPLE}: HTTP ${peopleSent.status}`
-      + `${peopleSent.ok ? '' : ` ${redactTenant(peopleSent.text).slice(0, 200)}`}`);
+      + `${peopleSent.ok ? '' : ` ${scrub(peopleSent.text).slice(0, 200)}`}`);
     peopleHeld = await establishFixture('field.version.fixture-payload-people-column', async () => {
       const read = await readBack(`${listPath}/fields/getbyinternalnameortitle('${PEOPLE}')`
         + '?$select=InternalName,TypeAsString,AllowMultipleValues');
@@ -390,7 +390,7 @@
           sent = without;
         }
         writes.push(sent.status);
-        if (!sent.ok) log('INFO', `item MERGE: HTTP ${sent.status} ${redactTenant(sent.text).slice(0, 200)}`);
+        if (!sent.ok) log('INFO', `item MERGE: HTTP ${sent.status} ${scrub(sent.text).slice(0, 200)}`);
       }
     }
     const last = SETS[1];
@@ -485,7 +485,7 @@
     const choice = COLUMNS.find((column) => column.kind === 'choice').body;
     const made = await spPost(`${libraryPath}/fields`, { ...choice, Title: LIB_COLUMN, Required: false },
       await getDigest(), VERBOSE_WRITE);
-    log('INFO', `create ${LIB_COLUMN}: HTTP ${made.status}${made.ok ? '' : ` ${redactTenant(made.text).slice(0, 200)}`}`);
+    log('INFO', `create ${LIB_COLUMN}: HTTP ${made.status}${made.ok ? '' : ` ${scrub(made.text).slice(0, 200)}`}`);
     if (!await establishFixture(LIB.libraryColumn, async () => {
       const read = await readBack(`${libraryPath}/fields/getbyinternalnameortitle('${LIB_COLUMN}')`
         + '?$select=InternalName,TypeAsString');
@@ -540,15 +540,16 @@
     if (!await edit(LIB.libraryFirst, 'Q1')) return;
     const uploaded = await sendText(`web/GetFileByServerRelativeUrl('${file}')/$value`, CONTENT[1],
       { 'X-HTTP-Method': 'PUT' });
-    // The Choice after the upload is observed, never declared, because what the upload's version holds is asked.
+    // The read must carry the Choice, but its value is observed, never declared: the upload's version is asked.
     let afterUpload;
     if (!await establishFixture(LIB.libraryUpload, async () => {
       const res = await fetch(`${WEB}/_api/web/GetFileByServerRelativeUrl('${file}')/$value`);
       const content = res.ok ? await res.text() : `HTTP ${res.status}`;
       const now = await choiceNow();
       afterUpload = now[LIB_COLUMN];
-      return { ok: true, status: 200, body: { Uploaded: answered(uploaded), Content: content, Read: now.Read } };
-    }, { Uploaded: is2xx, Content: CONTENT[1], Read: 'HTTP 200' }, afterLib(LIB.libraryUpload))) {
+      return { ok: true, status: 200, body: { Uploaded: answered(uploaded), Content: content, ...now } };
+    }, { Uploaded: is2xx, Content: CONTENT[1], Read: 'HTTP 200', [LIB_COLUMN]: () => true },
+    afterLib(LIB.libraryUpload))) {
       return;
     }
     if (!await edit(LIB.librarySecond, 'Q2')) return;
@@ -576,7 +577,10 @@
     record(LIB.libraryFields, Q.libraryFields, upload ? 'OBSERVED' : 'NOT IDENTIFIED', upload
       ? `${labelOf(upload)} carries: ${Object.keys(upload).sort().map((key) => `${key}=${show(upload[key])}`)
         .join('; ')}`.slice(0, 1500)
-      : `no version is the upload's alone (${head}); the versions: ${sequence}`);
+      : head === 'UPLOAD ADDED NO VERSION'
+        ? `no version is the upload's alone (${head}); the versions: ${sequence}`
+        : `the versions were not searched for the upload's version, since the head is ${head}; `
+          + `the versions: ${sequence}`);
   };
 
   try {
@@ -595,7 +599,7 @@
     await listCase();
     await libraryCase();
   } catch (err) {
-    log('FAIL', `probe aborted: ${redactTenant(String((err && err.message) || err)).slice(0, 240)}. `
+    log('FAIL', `probe aborted: ${scrub(String((err && err.message) || err)).slice(0, 240)}. `
       + 'The unasked rows stay open.');
   } finally {
     await recycleScratchLists();

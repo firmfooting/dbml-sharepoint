@@ -32,7 +32,9 @@ const person = (id) => ({ LookupId: id, LookupValue: ME.Title, Email: ME.Email }
 const versionOf = (list, item, n) => {
   // `versionIds` lets a test make the VersionIds fall, or spell them as text.
   const id = CONFIG.versionIds === 'falling' ? (item.history.length - n + 1) * 512 : n * 512;
-  const entry = { VersionId: CONFIG.versionIds === 'text' ? String(id) : id, VersionLabel: `${n}.0`,
+  // `labelsUnparsed` spells each label so it is not major.minor.
+  const label = CONFIG.labelsUnparsed ? `v${n}` : `${n}.0`;
+  const entry = { VersionId: CONFIG.versionIds === 'text' ? String(id) : id, VersionLabel: label,
     IsCurrentVersion: n === item.history.length, Modified: `2026-09-30T0${n}:00:00Z`,
     Editor: person(ME.Id) };
   for (const [name, value] of Object.entries(item.history[n - 1])) {
@@ -133,8 +135,9 @@ const mockFetch = async (url, opts = {}) => {
     if (!found) return answer(404, 'File Not Found.');
     if (fileOf[2] === '/$value' && verb === 'PUT') {
       found.item.content = raw;
-      // `uploadSetsValues` is a site whose upload changes a property, which the probe records.
+      // `uploadSetsValues` and `uploadDropsValues`: an upload that changes or drops a property.
       Object.assign(found.item.values, CONFIG.uploadSetsValues || {});
+      for (const name of CONFIG.uploadDropsValues || []) delete found.item.values[name];
       // Whether an upload makes a version is the probe's question; the mock takes either side.
       if (!CONFIG.uploadAddsNoVersion) found.item.history.push({ ...found.item.values });
       return answer(204, '');
