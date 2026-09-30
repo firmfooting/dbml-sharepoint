@@ -245,11 +245,22 @@ def test_a_versions_answer_with_no_entries_fails_the_control() -> None:
     assert voided(rows) == _deps(READ)
 
 
-def test_an_unread_account_voids_everything_and_writes_nothing() -> None:
-    rows, sent, _ = _run(rules=[{"contains": "web/currentuser", "status": 403, "text": "denied"}])
+def test_an_account_read_back_with_no_id_voids_everything_and_writes_nothing() -> None:
+    rows, sent, _ = _run(rules=[{"contains": "web/currentuser", "status": 200,
+                                 "text": '{"Id": 0}'}])
 
     assert rows[USER]["outcome"] == "FAIL"
     assert voided(rows) == _deps(USER)
+    assert not [r for r in sent if r["verb"] != "GET" and r["path"] != "contextinfo"]
+
+
+def test_an_unauthorised_account_read_leaves_everything_open_and_writes_nothing() -> None:
+    rows, sent, _ = _run(rules=[{"contains": "web/currentuser", "status": 403, "text": "denied"}])
+
+    assert rows[USER]["outcome"] == "NOT ESTABLISHED"
+    assert "was not authorised (HTTP 403)" in rows[USER]["evidence"]
+    assert voided(rows) == set()
+    assert all(rows[row_id]["state"] == "open" for row_id in _deps(USER))
     assert not [r for r in sent if r["verb"] != "GET" and r["path"] != "contextinfo"]
 
 
@@ -292,9 +303,11 @@ def test_a_first_set_whose_read_back_went_unanswered_is_not_built_on() -> None:
     rows, sent, _ = _run(rules=[{"contains": f"{LIST_AT}/items(1)?$select=Id,ProbeChoice",
                                  "nth": 1, "status": 429, "text": "busy"}])
 
-    assert rows[ITEM]["outcome"] == "FAIL"
-    assert "set A: HTTP 204, but the read-back " in rows[ITEM]["evidence"]
-    assert voided(rows) == _deps(ITEM)
+    # An unanswered read-back is no answer about the item, so it and its dependents are left open.
+    assert rows[ITEM]["outcome"] == "NOT ESTABLISHED"
+    assert "was throttled (HTTP 429)" in rows[ITEM]["evidence"]
+    assert voided(rows) == set()
+    assert all(rows[row_id]["state"] == "open" for row_id in _deps(ITEM))
     merges = [r for r in sent if r["verb"] == "MERGE" and f"{LIST_AT}/items(1)" in r["path"]]
     assert len(merges) == 1
 
@@ -836,3 +849,38 @@ def test_a_version_whose_label_turns_from_null_to_absent_is_not_kept() -> None:
 
     assert rows[LIB_ADDS]["outcome"] == "NOT COMPARABLE", rows[LIB_ADDS]
     assert "gone: null=512" in rows[LIB_ADDS]["evidence"]
+
+
+@pytest.mark.parametrize("status", [429, 503, 403])
+def test_a_list_create_that_goes_unanswered_is_left_open(status: int) -> None:
+    rows, _, output = _run(rules=[{"contains": "web/lists", "verb": "POST", "nth": 1,
+                                   "status": status, "text": "busy"}])
+
+    assert rows[TARGET]["outcome"] == "NOT ESTABLISHED"
+    assert "so a list 'dbmlsp Probe VersionsTarget' may now exist" in rows[TARGET]["evidence"]
+    assert all(rows[row_id]["state"] == "open" for row_id in _deps(TARGET))
+    assert "'dbmlsp Probe VersionsTarget' never answered a list Id" in output
+
+
+def test_a_throttled_seed_leaves_the_target_items_open() -> None:
+    rows, _, _ = _run(rules=[{"contains": f"{TARGET_AT}/items", "verb": "POST", "nth": 2,
+                              "status": 429, "text": "busy"}])
+
+    assert rows[TARGET_ITEMS]["outcome"] == "NOT ESTABLISHED"
+    assert "was throttled (HTTP 429)" in rows[TARGET_ITEMS]["evidence"]
+    assert voided(rows) == set()
+
+
+def test_an_unavailable_content_read_leaves_the_upload_open() -> None:
+    rows, _, _ = _run(rules=[{"contains": "/$value", "verb": "GET", "status": 503, "text": "busy"}])
+
+    assert rows[LIB_UPLOAD]["outcome"] == "NOT ESTABLISHED"
+    assert all(rows[row_id]["state"] == "open" for row_id in (LIB_READ, LIB_ADDS, LIB_FIELDS))
+
+
+def test_a_column_read_back_with_no_json_leaves_the_columns_open() -> None:
+    rows, _, _ = _run(rules=[{"contains": "getbyinternalnameortitle('ProbeFlag')", "status": 200,
+                              "text": "not json"}])
+
+    assert rows[COLUMNS]["outcome"] == "NOT ESTABLISHED"
+    assert "the read answered HTTP 200 with no JSON" in rows[COLUMNS]["evidence"]

@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: 72820ff6
+ * REVISION: ee9d53fd
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -493,8 +493,22 @@
     for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
     return out;
   };
+  // Every answer maskedHead found unanswered, in order, so a fixture can tell one from a refusal.
+  const UNHEARD = [];
   // rawHead cuts a response's text short, so the text is masked first and a cut never splits a name unmasked.
-  const maskedHead = (res) => rawHead({ ...res, text: scrub(res.text) });
+  const maskedHead = (res) => {
+    const head = rawHead({ ...res, text: scrub(res.text) });
+    if (head && head.outcome === 'NOT ESTABLISHED') UNHEARD.push(head.why);
+    return head;
+  };
+  // A read answered 2xx with no JSON has nothing to read, which the harness's unanswered counts as no answer.
+  const readHead = (res) => {
+    const head = maskedHead(res);
+    if (!head && !(res.parsed && typeof res.parsed === 'object')) {
+      UNHEARD.push(`the read answered HTTP ${res.status} with no JSON`);
+    }
+    return head;
+  };
   // For a probe with no current-user fixture: learns this account so its display name is masked too.
   const learnIdentity = async () => {
     const read = await sendRaw('web/currentuser?$select=Email,LoginName,Title');
@@ -524,6 +538,30 @@
     && a.every((x) => a.filter((y) => y === x).length === b.filter((y) => y === x).length);
   // A title or server-relative path inside an OData string literal, its apostrophes doubled as deploy/_folders does.
   const pathLiteral = (path) => String(path).replace(/'/g, "''");
+  // Where the requests of the fixture about to be established begin in UNHEARD.
+  let fixtureStart = 0;
+  const beginFixture = () => { fixtureStart = UNHEARD.length; };
+  // A write's answer is noted as a read's is, so a fixture can tell an unanswered write from a refused one.
+  const spWrite = async (...args) => {
+    const res = await spPost(...args);
+    maskedHead(res);
+    return res;
+  };
+  // establishFixture, except that a fixture any of whose requests since beginFixture went unanswered is left
+  // open with its dependents, since an unanswered request says nothing about the fixture.
+  const settleFixture = async (id, read, declared, dependents) => {
+    const start = fixtureStart;
+    if (await establishFixture(id, read, declared, dependents)) return true;
+    if (UNHEARD.length === start) return false;
+    const why = `${[...new Set(UNHEARD.slice(start))].join('; ')}; a re-run can ask it`;
+    const row = RESULTS.find((r) => r.id === id);
+    record(id, row ? row.question : id, 'NOT ESTABLISHED', why);
+    for (const one of dependents) {
+      const dependent = RESULTS.find((r) => r.id === one);
+      record(one, dependent ? dependent.question : one, 'NOT ESTABLISHED', `not asked: ${why}`);
+    }
+    return false;
+  };
   // __metadata is verbose OData, so every write carrying it declares the verbose content type.
   const VERBOSE_WRITE = { 'Content-Type': 'application/json;odata=verbose' };
   // A list read by its Id after a recycle: gone true, false, or null with the reason it cannot say.
@@ -608,11 +646,17 @@
       return leaveOpen(`the list create never answered (${scrub(String((err && err.message) || err))}), so a `
         + `list '${title}' may now exist`);
     }
-    if (!made.ok) {
+    if (!made.ok && isRefusal(made.status)) {
       record(id, question, 'FAIL',
         `the list create answered HTTP ${made.status}: ${scrub(made.text).slice(0, 300)}`);
       voidDependents(dependents, 'the scratch list was not created');
       return { held: false, merge: null, body: null };
+    }
+    if (!made.ok) {
+      // Throttled, unauthorised or unavailable is no answer, and the list may exist, so the title is kept.
+      CREATED_LISTS.push({ title, id: null });
+      return leaveOpen(`the list create ${unanswered({ ok: false, status: made.status })}: `
+        + `${scrub(made.text).slice(0, 200)}, so a list '${title}' may now exist`);
     }
     const created = { title, id: guidOf(made.body && made.body.Id) };
     // Two creates answering one Id would send both lists' writes to one list, so the second is not built on.
@@ -633,9 +677,10 @@
       return { held: false, merge: null, body: null };
     }
     let merge = null;
+    beginFixture();
     if (settings !== null) {
       // Sent by Id, so a title rebound cannot take this list's settings.
-      merge = await spPost(`web/lists(guid'${created.id}')`, { __metadata: { type: 'SP.List' }, ...settings },
+      merge = await spWrite(`web/lists(guid'${created.id}')`, { __metadata: { type: 'SP.List' }, ...settings },
         await getDigest(), { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
       log('INFO', `list settings MERGE on '${title}': HTTP ${merge.status}`
         + `${merge.ok ? '' : ` ${scrub(merge.text).slice(0, 200)}`}`);
@@ -647,8 +692,9 @@
     // Recorded, never judged: what the MERGE answered is an observation, and the read-back decides.
     const settled = merge === null ? {} : { Settings: (v) => typeof v === 'string' };
     let read = null;
-    const held = await establishFixture(id, async () => {
+    const held = await settleFixture(id, async () => {
       read = await spGet(`${path}?$select=${select}`);
+      readHead({ ...read, parsed: read.body, text: JSON.stringify(read.body) });
       return read.ok && read.body && typeof read.body === 'object'
         ? { ...read, body: { ...read.body, ...answered } } : read;
     }, { BaseTemplate: baseTemplate, Description: description, ...declared, ...settled,
@@ -714,7 +760,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 72820ff6. Quote this when reporting results.');
+  log('INFO', 'probe revision ee9d53fd. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe Versions');
   const TARGET = runTitle('dbmlsp Probe VersionsTarget');
@@ -876,7 +922,7 @@
   // A read keeps its answer, so a refused read is never mistaken for a missing object.
   const readBack = async (path) => {
     const res = await sendRaw(path);
-    const head = maskedHead(res);
+    const head = readHead(res);
     const parsed = !head && res.parsed && typeof res.parsed === 'object' ? res.parsed : null;
     return { parsed, read: head ? scrub(head.why) : parsed ? `HTTP ${res.status}`
       : `HTTP ${res.status} carried no JSON: ${scrub(res.text).slice(0, 400)}` };
@@ -924,8 +970,9 @@
     const targetPath = target.path;
     const targetIds = [];
     const seedMissed = [];
+    beginFixture();
     for (const title of ['dbmlsp versions target A', 'dbmlsp versions target B']) {
-      const made = await spPost(`${targetPath}/items`,
+      const made = await spWrite(`${targetPath}/items`,
         { __metadata: { type: target.body.ListItemEntityTypeFullName }, Title: title },
         await getDigest(), VERBOSE_WRITE);
       log('INFO', `seed ${title}: HTTP ${made.status}`);
@@ -944,7 +991,7 @@
     }
     // Recorded apart from the list's own row, which passes before any item exists. Two seeds answering one Id
     // would give the two lookup values one target, so the Ids must differ.
-    if (!await establishFixture(TARGET_ITEMS, async () => ({ ok: true, status: 200,
+    if (!await settleFixture(TARGET_ITEMS, async () => ({ ok: true, status: 200,
       body: { Seeded: targetIds.length, Distinct: new Set(targetIds).size === targetIds.length,
         Missed: seedMissed.join('; ') || 'none' } }),
     { Seeded: 2, Distinct: true, Missed: (v) => typeof v === 'string' }, AFTER_TARGET_ITEMS)) {
@@ -959,11 +1006,12 @@
     const listPath = list.path;
     const itemType = list.body.ListItemEntityTypeFullName;
 
+    beginFixture();
     for (const column of COLUMNS) {
       const sent = column.body === null
-        ? await spPost(`${listPath}/fields/addfield`, { parameters: { Title: column.name, FieldTypeKind: 7,
+        ? await spWrite(`${listPath}/fields/addfield`, { parameters: { Title: column.name, FieldTypeKind: 7,
           LookupListId: target.body.Id, LookupFieldName: 'Title' } }, await getDigest())
-        : await spPost(`${listPath}/fields`, { ...column.body, Title: column.name, Required: false },
+        : await spWrite(`${listPath}/fields`, { ...column.body, Title: column.name, Required: false },
           await getDigest(), VERBOSE_WRITE);
       log('INFO', `create ${column.name}: HTTP ${sent.status}`
         + `${sent.ok ? '' : ` ${scrub(sent.text).slice(0, 200)}`}`);
@@ -977,7 +1025,7 @@
       declaredColumns[`${column.name}.TypeAsString`] = column.type;
       if (formatOf(column) !== null) declaredColumns[`${column.name}.DisplayFormat`] = formatOf(column);
     }
-    if (!await establishFixture('field.version.fixture-payload-columns', async () => {
+    if (!await settleFixture('field.version.fixture-payload-columns', async () => {
       const body = {};
       for (const column of COLUMNS) {
         // The whole field is read, as datetime-sentinel-probe does, since $select of a subtype property can 400.
@@ -994,13 +1042,14 @@
     }
 
     // The schema XML route, as the deploy creates a multi-value lookup, since AddField has no arity.
-    const peopleSent = await spPost(`${listPath}/fields/createfieldasxml`, { parameters: {
+    beginFixture();
+    const peopleSent = await spWrite(`${listPath}/fields/createfieldasxml`, { parameters: {
       SchemaXml: `<Field Type="UserMulti" Mult="TRUE" UserSelectionMode="PeopleOnly" DisplayName="${PEOPLE}" `
         + `Name="${PEOPLE}"/>`,
       Options: 8 } }, await getDigest());
     log('INFO', `create ${PEOPLE}: HTTP ${peopleSent.status}`
       + `${peopleSent.ok ? '' : ` ${scrub(peopleSent.text).slice(0, 200)}`}`);
-    peopleHeld = await establishFixture('field.version.fixture-payload-people-column', async () => {
+    peopleHeld = await settleFixture('field.version.fixture-payload-people-column', async () => {
       const read = await readBack(`${listPath}/fields/getbyinternalnameortitle('${PEOPLE}')`
         + '?$select=InternalName,TypeAsString,AllowMultipleValues');
       if (!read.parsed) return { ok: true, status: 200, body: { Read: read.read } };
@@ -1057,7 +1106,8 @@
     let itemId = null;
     let peopleRefusal = null;
     const ITEM_TITLE = 'dbmlsp versions item';
-    const made = await spPost(`${listPath}/items`, { __metadata: { type: itemType },
+    beginFixture();
+    const made = await spWrite(`${listPath}/items`, { __metadata: { type: itemType },
       Title: ITEM_TITLE }, await getDigest(), VERBOSE_WRITE);
     if (made.ok && made.body && Number.isInteger(made.body.Id)) itemId = made.body.Id;
     if (itemId === null) {
@@ -1072,7 +1122,7 @@
           ? `Title reads back ${show(back.parsed.Title)}` : `the read-back ${back.read}`}`);
       }
     }
-    const merge = async (set, withPeople) => spPost(`${listPath}/items(${itemId})`, bodyOf(set, withPeople),
+    const merge = async (set, withPeople) => spWrite(`${listPath}/items(${itemId})`, bodyOf(set, withPeople),
       await getDigest(), { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
     // Each set is read back before the next is sent, so set B never replaces a set A that did not land.
     // No set is sent to an item whose create did not read back.
@@ -1104,7 +1154,7 @@
     const last = SETS[1];
     const declaredItem = { Written: 3, Missed: (v) => typeof v === 'string', ...wantOf(last, {}) };
     const selected = Object.keys(declaredItem).filter((key) => key !== 'Written' && key !== 'Missed');
-    if (!await establishFixture('field.version.fixture-payload-item', async () => {
+    if (!await settleFixture('field.version.fixture-payload-item', async () => {
       // The sets that did not land join the read-back, so each shows its reason in RESULTS.
       const body = { Written: written, Missed: missed.join('; ') || 'none' };
       if (itemId === null) return { ok: true, status: 200, body };
@@ -1123,7 +1173,8 @@
       record(SUBJECTS.people, Q.people, 'NOT ESTABLISHED', `not asked: the ${PEOPLE}Id write shape was `
         + 'refused, so no version carries a value written to it; a re-run with another shape can ask it');
     } else if (peopleHeld) {
-      peopleWritten = await establishFixture(PEOPLE_WRITE, async () => {
+      beginFixture();
+      peopleWritten = await settleFixture(PEOPLE_WRITE, async () => {
         // A set whose people value did not read back straight after its write fails this, not the item.
         const missedSaid = peopleMissed.join('; ') || 'none';
         const read = await readBack(`${listPath}/items(${itemId})?$select=Id,${PEOPLE}Id`);
@@ -1200,7 +1251,9 @@
   const sendText = async (path, text, extraHeaders = {}) => {
     const res = await fetch(`${WEB}/_api/${path}`, { method: 'POST', body: text, headers: {
       Accept: 'application/json;odata=nometadata', 'X-RequestDigest': await getDigest(), ...extraHeaders } });
-    return { ok: res.ok, status: res.status, text: await res.text() };
+    const sent = { ok: res.ok, status: res.status, text: await res.text() };
+    maskedHead(sent);
+    return sent;
   };
   const answered = (res) => `HTTP ${res.status}`;
   const is2xx = (v) => /^HTTP 2\d\d$/.test(v);
@@ -1217,10 +1270,11 @@
     const itemType = library.body.ListItemEntityTypeFullName;
 
     const choice = COLUMNS.find((column) => column.kind === 'choice').body;
-    const made = await spPost(`${libraryPath}/fields`, { ...choice, Title: LIB_COLUMN, Required: false },
+    beginFixture();
+    const made = await spWrite(`${libraryPath}/fields`, { ...choice, Title: LIB_COLUMN, Required: false },
       await getDigest(), VERBOSE_WRITE);
     log('INFO', `create ${LIB_COLUMN}: HTTP ${made.status}${made.ok ? '' : ` ${scrub(made.text).slice(0, 200)}`}`);
-    if (!await establishFixture(LIB.libraryColumn, async () => {
+    if (!await settleFixture(LIB.libraryColumn, async () => {
       const read = await readBack(`${libraryPath}/fields/getbyinternalnameortitle('${LIB_COLUMN}')`
         + '?$select=InternalName,TypeAsString');
       return { ok: true, status: 200, body: { Read: read.read,
@@ -1230,13 +1284,14 @@
     }
 
     let folder = null;
-    if (!await establishFixture(LIB.libraryFolder, async () => {
+    beginFixture();
+    if (!await settleFixture(LIB.libraryFolder, async () => {
       const root = await readBack(`${libraryPath}/RootFolder?$select=ServerRelativeUrl`);
       if (!root.parsed || typeof root.parsed.ServerRelativeUrl !== 'string') {
         return { ok: true, status: 200, body: { RootRead: root.read } };
       }
       folder = `${root.parsed.ServerRelativeUrl}/${FOLDER_NAME}`;
-      const sent = await spPost('web/folders', { __metadata: { type: 'SP.Folder' }, ServerRelativeUrl: folder },
+      const sent = await spWrite('web/folders', { __metadata: { type: 'SP.Folder' }, ServerRelativeUrl: folder },
         await getDigest(), VERBOSE_WRITE);
       log('INFO', `create folder ${FOLDER_NAME}: HTTP ${sent.status}`);
       const read = await readBack(`web/GetFolderByServerRelativeUrl('${pathLiteral(folder)}')?$select=Name,ServerRelativeUrl`);
@@ -1248,9 +1303,10 @@
 
     const file = `${folder}/${FILE_NAME}`;
     let fileId = null;
+    beginFixture();
     const added = await sendText(`web/GetFolderByServerRelativeUrl('${pathLiteral(folder)}')/Files/add(url='${pathLiteral(FILE_NAME)}',`
       + 'overwrite=false)', CONTENT[0]);
-    if (!await establishFixture(LIB.libraryFile, async () => {
+    if (!await settleFixture(LIB.libraryFile, async () => {
       const read = await readBack(`web/GetFileByServerRelativeUrl('${pathLiteral(file)}')/ListItemAllFields?$select=Id`);
       if (read.parsed && Number.isInteger(read.parsed.Id)) fileId = read.parsed.Id;
       return { ok: true, status: 200, body: { Added: answered(added), Read: read.read,
@@ -1265,22 +1321,26 @@
       return { Read: read.read, [LIB_COLUMN]: read.parsed ? read.parsed[LIB_COLUMN] : undefined };
     };
     const edit = async (id, value) => {
-      const sent = await spPost(itemPath, { __metadata: { type: itemType }, [LIB_COLUMN]: value },
+      beginFixture();
+      const sent = await spWrite(itemPath, { __metadata: { type: itemType }, [LIB_COLUMN]: value },
         await getDigest(), { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
-      return establishFixture(id, async () => ({ ok: true, status: 200,
+      return settleFixture(id, async () => ({ ok: true, status: 200,
         body: { Written: answered(sent), ...await choiceNow() } }),
       { Written: is2xx, Read: 'HTTP 200', [LIB_COLUMN]: value }, afterLib(id));
     };
     if (!await edit(LIB.libraryFirst, 'Q1')) return;
     // The upload's version is what the reads either side of it differ by, never a value it holds.
     const beforeUpload = await readVersions(libraryPath, fileId);
+    beginFixture();
     const uploaded = await sendText(`web/GetFileByServerRelativeUrl('${pathLiteral(file)}')/$value`, CONTENT[1],
       { 'X-HTTP-Method': 'PUT' });
     // The read must carry the Choice, but its value is observed, never declared: the upload's version is asked.
     let afterUpload;
-    if (!await establishFixture(LIB.libraryUpload, async () => {
+    if (!await settleFixture(LIB.libraryUpload, async () => {
       const res = await fetch(`${WEB}/_api/web/GetFileByServerRelativeUrl('${pathLiteral(file)}')/$value`);
-      const content = res.ok ? await res.text() : `HTTP ${res.status}`;
+      const text = await res.text();
+      maskedHead({ ok: res.ok, status: res.status, text });
+      const content = res.ok ? text : `HTTP ${res.status}`;
       const now = await choiceNow();
       afterUpload = now[LIB_COLUMN];
       return { ok: true, status: 200, body: { Uploaded: answered(uploaded), Content: content, ...now } };
@@ -1354,7 +1414,8 @@
   };
 
   try {
-    if (!await establishFixture('field.version.control-current-user', async () => {
+    beginFixture();
+    if (!await settleFixture('field.version.control-current-user', async () => {
       const me = await readBack('web/currentuser?$select=Id,Email,LoginName,Title');
       if (!me.parsed) return { ok: true, status: 200, body: { Read: me.read } };
       knowIdentity(me.parsed.Email, '<account>');

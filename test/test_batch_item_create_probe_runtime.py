@@ -471,7 +471,7 @@ def test_a_failed_part_refused_on_another_field_is_not_called_field_refused() ->
 
 
 def test_a_throttled_single_create_keeps_what_an_earlier_fixture_voided() -> None:
-    rows, _, _ = _run(rules=[{"contains": "web/currentuser", "status": 403, "text": "denied"},
+    rows, _, _ = _run(rules=[{"contains": "web/currentuser", "status": 200, "text": '{"Id": 0}'},
                              {"contains": f"{CREATED_ID}')/items", "verb": "POST", "status": 429,
                               "text": "busy"}])
 
@@ -531,11 +531,20 @@ def test_columns_that_do_not_read_back_void_the_claims_and_date_parts_only() -> 
     assert len(_batches(sent)[3].split("--changeset_")[1:-1]) == 2
 
 
-def test_an_unread_account_voids_only_the_claims_part() -> None:
-    rows, _, _ = _run(rules=[{"contains": "web/currentuser", "status": 403, "text": "denied"}])
+def test_an_account_read_back_with_no_id_voids_only_the_claims_part() -> None:
+    rows, _, _ = _run(rules=[{"contains": "web/currentuser", "status": 200, "text": '{"Id": 0}'}])
 
     assert rows[USER]["outcome"] == "FAIL"
     assert voided(rows) == _deps(USER) == {CLAIMS}
+    assert rows[ISO]["outcome"] == "WRITTEN"
+
+
+def test_an_unauthorised_account_read_leaves_only_the_claims_part_open() -> None:
+    rows, _, _ = _run(rules=[{"contains": "web/currentuser", "status": 403, "text": "denied"}])
+
+    assert rows[USER]["outcome"] == "NOT ESTABLISHED"
+    assert voided(rows) == set()
+    assert rows[CLAIMS]["state"] == "open"
     assert rows[ISO]["outcome"] == "WRITTEN"
 
 
@@ -953,3 +962,12 @@ def test_a_title_with_an_apostrophe_is_doubled_in_every_title_literal() -> None:
                for path in titled), titled
     parts = "".join(_batches(sent))
     assert "getbytitle('dbmlsp%20Probe''s%20BatchItems')" in parts
+
+
+def test_a_throttled_column_create_leaves_the_columns_open() -> None:
+    rows, _, _ = _run(rules=[{"contains": "/fields", "verb": "POST", "bodyContains": "ProbeWhen",
+                              "status": 429, "text": "busy"}])
+
+    assert rows[COLUMNS]["outcome"] == "NOT ESTABLISHED"
+    assert "was throttled (HTTP 429)" in rows[COLUMNS]["evidence"]
+    assert voided(rows) == set()

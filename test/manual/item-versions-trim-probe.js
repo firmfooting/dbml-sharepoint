@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: 5fe0b465
+ * REVISION: a8c479d7
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -457,8 +457,22 @@
     for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
     return out;
   };
+  // Every answer maskedHead found unanswered, in order, so a fixture can tell one from a refusal.
+  const UNHEARD = [];
   // rawHead cuts a response's text short, so the text is masked first and a cut never splits a name unmasked.
-  const maskedHead = (res) => rawHead({ ...res, text: scrub(res.text) });
+  const maskedHead = (res) => {
+    const head = rawHead({ ...res, text: scrub(res.text) });
+    if (head && head.outcome === 'NOT ESTABLISHED') UNHEARD.push(head.why);
+    return head;
+  };
+  // A read answered 2xx with no JSON has nothing to read, which the harness's unanswered counts as no answer.
+  const readHead = (res) => {
+    const head = maskedHead(res);
+    if (!head && !(res.parsed && typeof res.parsed === 'object')) {
+      UNHEARD.push(`the read answered HTTP ${res.status} with no JSON`);
+    }
+    return head;
+  };
   // For a probe with no current-user fixture: learns this account so its display name is masked too.
   const learnIdentity = async () => {
     const read = await sendRaw('web/currentuser?$select=Email,LoginName,Title');
@@ -488,6 +502,30 @@
     && a.every((x) => a.filter((y) => y === x).length === b.filter((y) => y === x).length);
   // A title or server-relative path inside an OData string literal, its apostrophes doubled as deploy/_folders does.
   const pathLiteral = (path) => String(path).replace(/'/g, "''");
+  // Where the requests of the fixture about to be established begin in UNHEARD.
+  let fixtureStart = 0;
+  const beginFixture = () => { fixtureStart = UNHEARD.length; };
+  // A write's answer is noted as a read's is, so a fixture can tell an unanswered write from a refused one.
+  const spWrite = async (...args) => {
+    const res = await spPost(...args);
+    maskedHead(res);
+    return res;
+  };
+  // establishFixture, except that a fixture any of whose requests since beginFixture went unanswered is left
+  // open with its dependents, since an unanswered request says nothing about the fixture.
+  const settleFixture = async (id, read, declared, dependents) => {
+    const start = fixtureStart;
+    if (await establishFixture(id, read, declared, dependents)) return true;
+    if (UNHEARD.length === start) return false;
+    const why = `${[...new Set(UNHEARD.slice(start))].join('; ')}; a re-run can ask it`;
+    const row = RESULTS.find((r) => r.id === id);
+    record(id, row ? row.question : id, 'NOT ESTABLISHED', why);
+    for (const one of dependents) {
+      const dependent = RESULTS.find((r) => r.id === one);
+      record(one, dependent ? dependent.question : one, 'NOT ESTABLISHED', `not asked: ${why}`);
+    }
+    return false;
+  };
   // __metadata is verbose OData, so every write carrying it declares the verbose content type.
   const VERBOSE_WRITE = { 'Content-Type': 'application/json;odata=verbose' };
   // A list read by its Id after a recycle: gone true, false, or null with the reason it cannot say.
@@ -572,11 +610,17 @@
       return leaveOpen(`the list create never answered (${scrub(String((err && err.message) || err))}), so a `
         + `list '${title}' may now exist`);
     }
-    if (!made.ok) {
+    if (!made.ok && isRefusal(made.status)) {
       record(id, question, 'FAIL',
         `the list create answered HTTP ${made.status}: ${scrub(made.text).slice(0, 300)}`);
       voidDependents(dependents, 'the scratch list was not created');
       return { held: false, merge: null, body: null };
+    }
+    if (!made.ok) {
+      // Throttled, unauthorised or unavailable is no answer, and the list may exist, so the title is kept.
+      CREATED_LISTS.push({ title, id: null });
+      return leaveOpen(`the list create ${unanswered({ ok: false, status: made.status })}: `
+        + `${scrub(made.text).slice(0, 200)}, so a list '${title}' may now exist`);
     }
     const created = { title, id: guidOf(made.body && made.body.Id) };
     // Two creates answering one Id would send both lists' writes to one list, so the second is not built on.
@@ -597,9 +641,10 @@
       return { held: false, merge: null, body: null };
     }
     let merge = null;
+    beginFixture();
     if (settings !== null) {
       // Sent by Id, so a title rebound cannot take this list's settings.
-      merge = await spPost(`web/lists(guid'${created.id}')`, { __metadata: { type: 'SP.List' }, ...settings },
+      merge = await spWrite(`web/lists(guid'${created.id}')`, { __metadata: { type: 'SP.List' }, ...settings },
         await getDigest(), { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
       log('INFO', `list settings MERGE on '${title}': HTTP ${merge.status}`
         + `${merge.ok ? '' : ` ${scrub(merge.text).slice(0, 200)}`}`);
@@ -611,8 +656,9 @@
     // Recorded, never judged: what the MERGE answered is an observation, and the read-back decides.
     const settled = merge === null ? {} : { Settings: (v) => typeof v === 'string' };
     let read = null;
-    const held = await establishFixture(id, async () => {
+    const held = await settleFixture(id, async () => {
       read = await spGet(`${path}?$select=${select}`);
+      readHead({ ...read, parsed: read.body, text: JSON.stringify(read.body) });
       return read.ok && read.body && typeof read.body === 'object'
         ? { ...read, body: { ...read.body, ...answered } } : read;
     }, { BaseTemplate: baseTemplate, Description: description, ...declared, ...settled,
@@ -678,7 +724,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 5fe0b465. Quote this when reporting results.');
+  log('INFO', 'probe revision a8c479d7. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsTrim');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
@@ -785,7 +831,7 @@
         return;
       }
       const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title`);
-      const head = maskedHead(read);
+      const head = readHead(read);
       const title = !head && read.parsed && typeof read.parsed === 'object' ? read.parsed.Title : undefined;
       if (title !== titleOf(n)) {
         missed.push(`${what}: HTTP ${sent.status}, but ${head ? `the read-back ${scrub(head.why)}`
@@ -793,6 +839,8 @@
         return;
       }
       const after = await readVersions(listPath, itemId);
+      // A 2xx with no value array says nothing about the versions, so it is no answer rather than a miss.
+      if (!after.head && after.rows === null) UNHEARD.push(`the versions read after ${what} carried no value array`);
       const blocked = after.head ? scrub(after.head.why) : after.rows === null
         ? `HTTP ${after.res.status} carried no value array` : after.next !== null ? pagedSaid(after)
           : repeatedIds(after.rows).length ? 'it listed a VersionId more than once'
@@ -807,24 +855,25 @@
       created.add(fresh[0]);
       written += 1;
     };
-    const made = await spPost(`${listPath}/items`, { __metadata: { type: itemType }, Title: titleOf(1) },
+    beginFixture();
+    const made = await spWrite(`${listPath}/items`, { __metadata: { type: itemType }, Title: titleOf(1) },
       digest, VERBOSE_WRITE);
     if (made.ok && made.body && Number.isInteger(made.body.Id)) itemId = made.body.Id;
     if (made.ok && itemId === null) missed.push(`the create: HTTP ${made.status} carried no numeric Id`);
     else await landed(1, made, 'the create');
     for (let n = 2; itemId !== null && n <= writes + 1; n += 1) {
-      const sent = await spPost(`${listPath}/items(${itemId})`, { __metadata: { type: itemType },
+      const sent = await spWrite(`${listPath}/items(${itemId})`, { __metadata: { type: itemType },
         Title: titleOf(n) }, digest, { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
       await landed(n, sent, `write ${n}`);
     }
-    if (!await establishFixture('field.version.fixture-trim-item', async () => {
+    if (!await settleFixture('field.version.fixture-trim-item', async () => {
       // The writes that did not land join the read-back, so each shows its reason in RESULTS.
       const shown = missed.slice(0, 3).map((line) => line.slice(0, 160)).join('; ')
         + (missed.length > 3 ? `; and ${missed.length - 3} more` : '');
       const body = { Written: written, Missed: shown || 'none' };
       if (itemId === null) return { ok: true, status: 200, body };
       const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title`);
-      const head = maskedHead(read);
+      const head = readHead(read);
       body.Title = head ? scrub(head.why) : read.parsed && typeof read.parsed === 'object' ? read.parsed.Title
         : `no JSON: ${said(read.text)}`;
       return { ok: true, status: 200, body };

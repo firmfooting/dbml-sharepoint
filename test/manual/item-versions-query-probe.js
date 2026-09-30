@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: 0663e01c
+ * REVISION: a1b554d6
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -464,8 +464,22 @@
     for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
     return out;
   };
+  // Every answer maskedHead found unanswered, in order, so a fixture can tell one from a refusal.
+  const UNHEARD = [];
   // rawHead cuts a response's text short, so the text is masked first and a cut never splits a name unmasked.
-  const maskedHead = (res) => rawHead({ ...res, text: scrub(res.text) });
+  const maskedHead = (res) => {
+    const head = rawHead({ ...res, text: scrub(res.text) });
+    if (head && head.outcome === 'NOT ESTABLISHED') UNHEARD.push(head.why);
+    return head;
+  };
+  // A read answered 2xx with no JSON has nothing to read, which the harness's unanswered counts as no answer.
+  const readHead = (res) => {
+    const head = maskedHead(res);
+    if (!head && !(res.parsed && typeof res.parsed === 'object')) {
+      UNHEARD.push(`the read answered HTTP ${res.status} with no JSON`);
+    }
+    return head;
+  };
   // For a probe with no current-user fixture: learns this account so its display name is masked too.
   const learnIdentity = async () => {
     const read = await sendRaw('web/currentuser?$select=Email,LoginName,Title');
@@ -495,6 +509,30 @@
     && a.every((x) => a.filter((y) => y === x).length === b.filter((y) => y === x).length);
   // A title or server-relative path inside an OData string literal, its apostrophes doubled as deploy/_folders does.
   const pathLiteral = (path) => String(path).replace(/'/g, "''");
+  // Where the requests of the fixture about to be established begin in UNHEARD.
+  let fixtureStart = 0;
+  const beginFixture = () => { fixtureStart = UNHEARD.length; };
+  // A write's answer is noted as a read's is, so a fixture can tell an unanswered write from a refused one.
+  const spWrite = async (...args) => {
+    const res = await spPost(...args);
+    maskedHead(res);
+    return res;
+  };
+  // establishFixture, except that a fixture any of whose requests since beginFixture went unanswered is left
+  // open with its dependents, since an unanswered request says nothing about the fixture.
+  const settleFixture = async (id, read, declared, dependents) => {
+    const start = fixtureStart;
+    if (await establishFixture(id, read, declared, dependents)) return true;
+    if (UNHEARD.length === start) return false;
+    const why = `${[...new Set(UNHEARD.slice(start))].join('; ')}; a re-run can ask it`;
+    const row = RESULTS.find((r) => r.id === id);
+    record(id, row ? row.question : id, 'NOT ESTABLISHED', why);
+    for (const one of dependents) {
+      const dependent = RESULTS.find((r) => r.id === one);
+      record(one, dependent ? dependent.question : one, 'NOT ESTABLISHED', `not asked: ${why}`);
+    }
+    return false;
+  };
   // __metadata is verbose OData, so every write carrying it declares the verbose content type.
   const VERBOSE_WRITE = { 'Content-Type': 'application/json;odata=verbose' };
   // A list read by its Id after a recycle: gone true, false, or null with the reason it cannot say.
@@ -579,11 +617,17 @@
       return leaveOpen(`the list create never answered (${scrub(String((err && err.message) || err))}), so a `
         + `list '${title}' may now exist`);
     }
-    if (!made.ok) {
+    if (!made.ok && isRefusal(made.status)) {
       record(id, question, 'FAIL',
         `the list create answered HTTP ${made.status}: ${scrub(made.text).slice(0, 300)}`);
       voidDependents(dependents, 'the scratch list was not created');
       return { held: false, merge: null, body: null };
+    }
+    if (!made.ok) {
+      // Throttled, unauthorised or unavailable is no answer, and the list may exist, so the title is kept.
+      CREATED_LISTS.push({ title, id: null });
+      return leaveOpen(`the list create ${unanswered({ ok: false, status: made.status })}: `
+        + `${scrub(made.text).slice(0, 200)}, so a list '${title}' may now exist`);
     }
     const created = { title, id: guidOf(made.body && made.body.Id) };
     // Two creates answering one Id would send both lists' writes to one list, so the second is not built on.
@@ -604,9 +648,10 @@
       return { held: false, merge: null, body: null };
     }
     let merge = null;
+    beginFixture();
     if (settings !== null) {
       // Sent by Id, so a title rebound cannot take this list's settings.
-      merge = await spPost(`web/lists(guid'${created.id}')`, { __metadata: { type: 'SP.List' }, ...settings },
+      merge = await spWrite(`web/lists(guid'${created.id}')`, { __metadata: { type: 'SP.List' }, ...settings },
         await getDigest(), { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
       log('INFO', `list settings MERGE on '${title}': HTTP ${merge.status}`
         + `${merge.ok ? '' : ` ${scrub(merge.text).slice(0, 200)}`}`);
@@ -618,8 +663,9 @@
     // Recorded, never judged: what the MERGE answered is an observation, and the read-back decides.
     const settled = merge === null ? {} : { Settings: (v) => typeof v === 'string' };
     let read = null;
-    const held = await establishFixture(id, async () => {
+    const held = await settleFixture(id, async () => {
       read = await spGet(`${path}?$select=${select}`);
+      readHead({ ...read, parsed: read.body, text: JSON.stringify(read.body) });
       return read.ok && read.body && typeof read.body === 'object'
         ? { ...read, body: { ...read.body, ...answered } } : read;
     }, { BaseTemplate: baseTemplate, Description: description, ...declared, ...settled,
@@ -685,7 +731,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 0663e01c. Quote this when reporting results.');
+  log('INFO', 'probe revision a1b554d6. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsQuery');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
@@ -752,7 +798,8 @@
     const itemType = list.body.ListItemEntityTypeFullName;
 
     // The deploy's Choice create body (generators/jsgen.py).
-    const column = await spPost(`${listPath}/fields`, { __metadata: { type: 'SP.FieldChoice' },
+    beginFixture();
+    const column = await spWrite(`${listPath}/fields`, { __metadata: { type: 'SP.FieldChoice' },
       Title: CHOICE, FieldTypeKind: 6, Required: false, Choices: { results: ['Q1', 'Q2', 'Q3'] },
       FillInChoice: false }, await getDigest(), VERBOSE_WRITE);
     log('INFO', `create ${CHOICE}: HTTP ${column.status}${column.ok ? '' : ` ${said(column)}`}`);
@@ -768,7 +815,7 @@
         return false;
       }
       const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title,${CHOICE}`);
-      const head = maskedHead(read);
+      const head = readHead(read);
       const got = !head && read.parsed && typeof read.parsed === 'object' ? read.parsed : null;
       const off = got === null ? null : Object.keys(want).filter((key) => got[key] !== want[key]);
       if (got !== null && off.length === 0) {
@@ -781,19 +828,19 @@
       return false;
     };
     for (const [key, title] of [['A', 'dbmlsp versions query A'], ['B', 'dbmlsp versions query B']]) {
-      const made = await spPost(`${listPath}/items`, { __metadata: { type: itemType }, Title: title,
+      const made = await spWrite(`${listPath}/items`, { __metadata: { type: itemType }, Title: title,
         [CHOICE]: 'Q1' }, await getDigest(), VERBOSE_WRITE);
       if (made.ok && made.body && Number.isInteger(made.body.Id)) ids[key] = made.body.Id;
       await landed(`the create of ${key}`, made, ids[key], { Title: title, [CHOICE]: 'Q1' });
     }
     if (ids.A !== undefined) {
       for (const value of ['Q2', 'Q3']) {
-        const sent = await spPost(`${listPath}/items(${ids.A})`, { __metadata: { type: itemType },
+        const sent = await spWrite(`${listPath}/items(${ids.A})`, { __metadata: { type: itemType },
           [CHOICE]: value }, await getDigest(), { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
         if (!await landed(`A's write of ${value}`, sent, ids.A, { [CHOICE]: value })) break;
       }
     }
-    if (!await establishFixture('query.odata.fixture-versions-query-items', async () => {
+    if (!await settleFixture('query.odata.fixture-versions-query-items', async () => {
       // The column create's answer joins the read-back, so a refused create shows its reason in RESULTS.
       // A and B answering one Id would make every item-list control compare an item with itself.
       const body = { Column: `HTTP ${column.status}${column.ok ? '' : `: ${said(column).slice(0, 200)}`}`,
@@ -801,7 +848,7 @@
       for (const key of ['A', 'B']) {
         if (ids[key] === undefined) continue;
         const read = await sendRaw(`${listPath}/items(${ids[key]})?$select=Id,${CHOICE}`);
-        const head = maskedHead(read);
+        const head = readHead(read);
         body[`${key}.${CHOICE}`] = head ? scrub(head.why)
           : read.parsed && typeof read.parsed === 'object' ? read.parsed[CHOICE] : `no JSON: ${said(read)}`;
       }

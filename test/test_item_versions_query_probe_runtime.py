@@ -279,9 +279,9 @@ def test_a_write_whose_read_back_went_unanswered_is_not_counted() -> None:
     rows, _, _ = _run(rules=[{"contains": "items(1)?$select=Id,Title,ProbeChoice", "nth": 1,
                               "status": 429, "text": "busy"}])
 
-    assert rows[ITEMS]["outcome"] == "FAIL"
-    assert "the create of A: HTTP 201, but the read-back " in rows[ITEMS]["evidence"]
-    assert voided(rows) == _deps(ITEMS)
+    assert rows[ITEMS]["outcome"] == "NOT ESTABLISHED"
+    assert "was throttled (HTTP 429)" in rows[ITEMS]["evidence"]
+    assert voided(rows) == set()
 
 
 @pytest.mark.parametrize(("option", "row_id", "answer"), [
@@ -391,3 +391,11 @@ def test_an_item_list_control_serving_the_id_as_text_fails() -> None:
                               "text": '{"value": [{"Id": "1"}]}'}])
 
     assert rows[FILTER_CONTROL]["outcome"] == "FAIL"
+
+
+def test_an_unavailable_item_write_leaves_the_items_open() -> None:
+    rows, _, _ = _run(rules=[{"contains": "items(1)", "verb": "MERGE", "status": 503,
+                              "text": "busy"}])
+
+    assert rows[ITEMS]["outcome"] == "NOT ESTABLISHED"
+    assert all(rows[row_id]["state"] == "open" for row_id in _deps(ITEMS))

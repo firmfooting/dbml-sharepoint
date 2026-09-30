@@ -23,8 +23,22 @@
     for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
     return out;
   };
+  // Every answer maskedHead found unanswered, in order, so a fixture can tell one from a refusal.
+  const UNHEARD = [];
   // rawHead cuts a response's text short, so the text is masked first and a cut never splits a name unmasked.
-  const maskedHead = (res) => rawHead({ ...res, text: scrub(res.text) });
+  const maskedHead = (res) => {
+    const head = rawHead({ ...res, text: scrub(res.text) });
+    if (head && head.outcome === 'NOT ESTABLISHED') UNHEARD.push(head.why);
+    return head;
+  };
+  // A read answered 2xx with no JSON has nothing to read, which the harness's unanswered counts as no answer.
+  const readHead = (res) => {
+    const head = maskedHead(res);
+    if (!head && !(res.parsed && typeof res.parsed === 'object')) {
+      UNHEARD.push(`the read answered HTTP ${res.status} with no JSON`);
+    }
+    return head;
+  };
   // For a probe with no current-user fixture: learns this account so its display name is masked too.
   const learnIdentity = async () => {
     const read = await sendRaw('web/currentuser?$select=Email,LoginName,Title');

@@ -186,11 +186,10 @@ def test_a_write_whose_read_back_went_unanswered_is_not_counted() -> None:
     rows, _, _ = _run(rules=[{"contains": "items(1)?$select=Id,Title", "nth": 2, "status": 429,
                               "text": "busy"}])
 
-    assert rows[ITEM]["outcome"] == "FAIL"
-    # Write 2's version is never attributed, so no later version can be pinned to one write either.
-    assert "Written differs: read 1, declared 6" in rows[ITEM]["evidence"]
-    assert "write 2: HTTP 204, but the read-back " in rows[ITEM]["evidence"]
-    assert voided(rows) == _deps(ITEM)
+    assert rows[ITEM]["outcome"] == "NOT ESTABLISHED"
+    assert "was throttled (HTTP 429)" in rows[ITEM]["evidence"]
+    assert voided(rows) == set()
+    assert all(rows[row_id]["state"] == "open" for row_id in _deps(ITEM))
 
 
 def test_a_refused_create_is_kept_in_the_evidence() -> None:
@@ -314,14 +313,12 @@ _LINK = "https://example.sharepoint.com/sites/probe/_api/web/lists/versions?$ski
 
 
 @pytest.mark.parametrize(("status", "body", "reason"), [
-    (429, "busy", "throttled"),
-    (200, '{"d": "not a list"}', "HTTP 200 carried no value array"),
     (200, json.dumps({"value": [{"VersionId": 512}], "odata.nextLink": _LINK}),
      "the answer carried a continuation link"),
     (200, json.dumps({"value": [{"VersionId": 512}, {"VersionId": 512}]}),
      "it listed a VersionId more than once"),
     (200, json.dumps({"value": [{"VersionLabel": "1.0"}]}), "an entry carried no VersionId"),
-], ids=["throttled", "no-value", "paged", "repeated", "no-id"])
+], ids=["paged", "repeated", "no-id"])
 def test_a_versions_read_between_the_writes_that_cannot_be_counted_fails_the_item(
         status: int, body: str, reason: str) -> None:
     rows, _, output = _run(rules=[{"contains": "/versions", "nth": 1, "status": status,
@@ -332,6 +329,21 @@ def test_a_versions_read_between_the_writes_that_cannot_be_counted_fails_the_ite
         rows[ITEM]["evidence"])
     assert reason in rows[ITEM]["evidence"]
     assert voided(rows) == _deps(ITEM)
+    assert ended_with_report(output)
+
+
+@pytest.mark.parametrize(("status", "body", "reason"), [
+    (429, "busy", "was throttled (HTTP 429)"),
+    (200, '{"d": "not a list"}', "the versions read after the create carried no value array"),
+], ids=["throttled", "no-value"])
+def test_a_versions_read_between_the_writes_that_went_unanswered_leaves_the_item_open(
+        status: int, body: str, reason: str) -> None:
+    rows, _, output = _run(rules=[{"contains": "/versions", "nth": 1, "status": status,
+                                   "text": body}])
+
+    assert rows[ITEM]["outcome"] == "NOT ESTABLISHED"
+    assert reason in rows[ITEM]["evidence"]
+    assert voided(rows) == set()
     assert ended_with_report(output)
 
 
@@ -378,3 +390,20 @@ def test_an_account_that_does_not_read_back_is_said_and_the_run_goes_on() -> Non
     assert "a display name in an answer is not masked" in output
     assert rows[ONCE]["outcome"] == "TRIMMED"
     assert ended_with_report(output)
+
+
+def test_a_throttled_settings_merge_leaves_the_list_open() -> None:
+    rows, _, _ = _run(rules=[{"contains": "web/lists(guid'", "verb": "MERGE", "status": 429,
+                              "text": "busy"}])
+
+    assert rows[LIST]["outcome"] == "NOT ESTABLISHED"
+    assert "was throttled (HTTP 429)" in rows[LIST]["evidence"]
+    assert voided(rows) == set()
+
+
+def test_a_list_read_back_with_no_json_leaves_the_list_open() -> None:
+    rows, _, _ = _run(rules=[{"contains": "?$select=Id,BaseTemplate", "status": 200,
+                              "text": "not json"}])
+
+    assert rows[LIST]["outcome"] == "NOT ESTABLISHED"
+    assert "the read answered HTTP 200 with no JSON" in rows[LIST]["evidence"]

@@ -128,7 +128,8 @@
     const itemType = list.body.ListItemEntityTypeFullName;
 
     // The deploy's Choice create body (generators/jsgen.py).
-    const column = await spPost(`${listPath}/fields`, { __metadata: { type: 'SP.FieldChoice' },
+    beginFixture();
+    const column = await spWrite(`${listPath}/fields`, { __metadata: { type: 'SP.FieldChoice' },
       Title: CHOICE, FieldTypeKind: 6, Required: false, Choices: { results: ['Q1', 'Q2', 'Q3'] },
       FillInChoice: false }, await getDigest(), VERBOSE_WRITE);
     log('INFO', `create ${CHOICE}: HTTP ${column.status}${column.ok ? '' : ` ${said(column)}`}`);
@@ -144,7 +145,7 @@
         return false;
       }
       const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title,${CHOICE}`);
-      const head = maskedHead(read);
+      const head = readHead(read);
       const got = !head && read.parsed && typeof read.parsed === 'object' ? read.parsed : null;
       const off = got === null ? null : Object.keys(want).filter((key) => got[key] !== want[key]);
       if (got !== null && off.length === 0) {
@@ -157,19 +158,19 @@
       return false;
     };
     for (const [key, title] of [['A', 'dbmlsp versions query A'], ['B', 'dbmlsp versions query B']]) {
-      const made = await spPost(`${listPath}/items`, { __metadata: { type: itemType }, Title: title,
+      const made = await spWrite(`${listPath}/items`, { __metadata: { type: itemType }, Title: title,
         [CHOICE]: 'Q1' }, await getDigest(), VERBOSE_WRITE);
       if (made.ok && made.body && Number.isInteger(made.body.Id)) ids[key] = made.body.Id;
       await landed(`the create of ${key}`, made, ids[key], { Title: title, [CHOICE]: 'Q1' });
     }
     if (ids.A !== undefined) {
       for (const value of ['Q2', 'Q3']) {
-        const sent = await spPost(`${listPath}/items(${ids.A})`, { __metadata: { type: itemType },
+        const sent = await spWrite(`${listPath}/items(${ids.A})`, { __metadata: { type: itemType },
           [CHOICE]: value }, await getDigest(), { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
         if (!await landed(`A's write of ${value}`, sent, ids.A, { [CHOICE]: value })) break;
       }
     }
-    if (!await establishFixture('query.odata.fixture-versions-query-items', async () => {
+    if (!await settleFixture('query.odata.fixture-versions-query-items', async () => {
       // The column create's answer joins the read-back, so a refused create shows its reason in RESULTS.
       // A and B answering one Id would make every item-list control compare an item with itself.
       const body = { Column: `HTTP ${column.status}${column.ok ? '' : `: ${said(column).slice(0, 200)}`}`,
@@ -177,7 +178,7 @@
       for (const key of ['A', 'B']) {
         if (ids[key] === undefined) continue;
         const read = await sendRaw(`${listPath}/items(${ids[key]})?$select=Id,${CHOICE}`);
-        const head = maskedHead(read);
+        const head = readHead(read);
         body[`${key}.${CHOICE}`] = head ? scrub(head.why)
           : read.parsed && typeof read.parsed === 'object' ? read.parsed[CHOICE] : `no JSON: ${said(read)}`;
       }

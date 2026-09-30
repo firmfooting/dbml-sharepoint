@@ -342,9 +342,10 @@
 
   let me = null;
   try {
-    const userHeld = await establishFixture(USER, async () => {
+    beginFixture();
+    const userHeld = await settleFixture(USER, async () => {
       const read = await sendRaw('web/currentuser?$select=Id,Email,LoginName,Title');
-      const head = maskedHead(read);
+      const head = readHead(read);
       if (head || !read.parsed) {
         return { ok: true, status: 200, body: { Read: head ? head.why : `HTTP ${read.status} carried no JSON` } };
       }
@@ -371,24 +372,25 @@
 
     // The deploy's create bodies for a person and a date-and-time column, which the AddValidate parts write.
     const created = {};
+    beginFixture();
     for (const [name, body] of [
       [WHO, { __metadata: { type: 'SP.FieldUser' }, FieldTypeKind: 20, SelectionMode: 0 }],
       [WHEN, { __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4, DisplayFormat: 1 }],
     ]) {
-      const sent = await spPost(`${listPath}/fields`, { ...body, Title: name, Required: false },
+      const sent = await spWrite(`${listPath}/fields`, { ...body, Title: name, Required: false },
         await getDigest(), VERBOSE_WRITE);
       created[`${name}.Create`] = `HTTP ${sent.status}${sent.ok ? '' : `: ${said(sent.text)}`}`;
       log('INFO', `create ${name}: ${created[`${name}.Create`]}`);
     }
     // Recorded, never judged: the read-back decides whether the columns hold.
     const recorded = (v) => typeof v === 'string';
-    const columnsHeld = await establishFixture(COLUMNS, async () => {
+    const columnsHeld = await settleFixture(COLUMNS, async () => {
       // The creates' answers join the read-back, so a refused column shows its reason in RESULTS.
       const body = { ...created };
       for (const name of [WHO, WHEN]) {
         // The whole field is read, as datetime-sentinel-probe does, since $select of a subtype property can 400.
         const read = await sendRaw(`${listPath}/fields/getbyinternalnameortitle('${name}')`);
-        const head = maskedHead(read);
+        const head = readHead(read);
         body[`${name}.Read`] = head ? head.why : `HTTP ${read.status}`;
         if (!head && read.parsed) body[`${name}.TypeAsString`] = read.parsed.TypeAsString;
         if (!head && read.parsed && name === WHEN) body[`${name}.DisplayFormat`] = read.parsed.DisplayFormat;

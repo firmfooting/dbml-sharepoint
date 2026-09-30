@@ -161,7 +161,7 @@
         return;
       }
       const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title`);
-      const head = maskedHead(read);
+      const head = readHead(read);
       const title = !head && read.parsed && typeof read.parsed === 'object' ? read.parsed.Title : undefined;
       if (title !== titleOf(n)) {
         missed.push(`${what}: HTTP ${sent.status}, but ${head ? `the read-back ${scrub(head.why)}`
@@ -169,6 +169,8 @@
         return;
       }
       const after = await readVersions(listPath, itemId);
+      // A 2xx with no value array says nothing about the versions, so it is no answer rather than a miss.
+      if (!after.head && after.rows === null) UNHEARD.push(`the versions read after ${what} carried no value array`);
       const blocked = after.head ? scrub(after.head.why) : after.rows === null
         ? `HTTP ${after.res.status} carried no value array` : after.next !== null ? pagedSaid(after)
           : repeatedIds(after.rows).length ? 'it listed a VersionId more than once'
@@ -183,24 +185,25 @@
       created.add(fresh[0]);
       written += 1;
     };
-    const made = await spPost(`${listPath}/items`, { __metadata: { type: itemType }, Title: titleOf(1) },
+    beginFixture();
+    const made = await spWrite(`${listPath}/items`, { __metadata: { type: itemType }, Title: titleOf(1) },
       digest, VERBOSE_WRITE);
     if (made.ok && made.body && Number.isInteger(made.body.Id)) itemId = made.body.Id;
     if (made.ok && itemId === null) missed.push(`the create: HTTP ${made.status} carried no numeric Id`);
     else await landed(1, made, 'the create');
     for (let n = 2; itemId !== null && n <= writes + 1; n += 1) {
-      const sent = await spPost(`${listPath}/items(${itemId})`, { __metadata: { type: itemType },
+      const sent = await spWrite(`${listPath}/items(${itemId})`, { __metadata: { type: itemType },
         Title: titleOf(n) }, digest, { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
       await landed(n, sent, `write ${n}`);
     }
-    if (!await establishFixture('field.version.fixture-trim-item', async () => {
+    if (!await settleFixture('field.version.fixture-trim-item', async () => {
       // The writes that did not land join the read-back, so each shows its reason in RESULTS.
       const shown = missed.slice(0, 3).map((line) => line.slice(0, 160)).join('; ')
         + (missed.length > 3 ? `; and ${missed.length - 3} more` : '');
       const body = { Written: written, Missed: shown || 'none' };
       if (itemId === null) return { ok: true, status: 200, body };
       const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title`);
-      const head = maskedHead(read);
+      const head = readHead(read);
       body.Title = head ? scrub(head.why) : read.parsed && typeof read.parsed === 'object' ? read.parsed.Title
         : `no JSON: ${said(read.text)}`;
       return { ok: true, status: 200, body };
