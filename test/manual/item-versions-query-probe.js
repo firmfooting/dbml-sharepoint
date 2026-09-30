@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: 325656a1
+ * REVISION: 72c3e1ad
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -681,8 +681,24 @@
         + `list '${title}' may now exist`);
     }
     if (!made.ok && isRefusal(made.status)) {
+      // A refused create may still have made the list, so its title is read back before it is let go.
+      let back;
+      try {
+        back = await spGet(`${path}?$select=Id,Description`);
+      } catch (err) {
+        back = { ok: false, status: null, why: `never answered (${scrub(String((err && err.message) || err))})` };
+      }
+      const found = back.ok ? recordBody({ parsed: back.body }) : null;
+      const landedId = found && found.Description === description ? guidOf(found.Id) : null;
+      if (landedId !== null) CREATED_LISTS.push({ title, id: landedId });
+      else if (back.status !== 404) CREATED_LISTS.push({ title, id: null });
+      const unknown = back.why || (!back.ok ? unanswered(back) : found === null
+        ? `answered HTTP ${back.status} with no JSON object` : 'found it with another description');
+      const landing = landedId !== null ? `, but a list '${title}' with this probe's description reads back `
+        + `(list ${landedId}), so it is recycled` : back.status === 404 ? `; no list holds '${title}'`
+        : `; whether a list '${title}' landed is unknown (the read-back ${unknown}), so check it by hand`;
       record(id, question, 'FAIL',
-        `the list create answered HTTP ${made.status}: ${scrub(made.text).slice(0, 300)}`);
+        `the list create answered HTTP ${made.status}: ${scrub(made.text).slice(0, 300)}${landing}`);
       voidRows(dependents, 'the scratch list was not created');
       return { held: false, merge: null, body: null };
     }
@@ -801,7 +817,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 325656a1. Quote this when reporting results.');
+  log('INFO', 'probe revision 72c3e1ad. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsQuery');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.

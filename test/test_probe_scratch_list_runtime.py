@@ -319,3 +319,47 @@ def test_every_run_draws_its_own_title_token() -> None:
     for title in titles:
         assert re.fullmatch(r"dbmlsp Probe Scratch [a-z0-9]{6,}", title), title
     assert titles[0] != titles[1]
+
+
+CREATE_REFUSED = {"contains": "web/lists", "verb": "POST", "status": 500, "text": "Refused."}
+
+
+def test_a_refused_create_whose_list_landed_anyway_is_recycled_by_its_id() -> None:
+    out = _claim(None, createRefused={"status": 500, "text": "Refused."})
+
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert (f"but a list '{TITLE}' with this probe's description reads back (list {CLAIMED}), "
+            "so it is recycled") in out["rows"][FIXTURE]["evidence"]
+    assert out["rows"][DEPENDENT]["state"] == "void"
+    assert _recycles(out) == [f"web/lists(guid'{CLAIMED}')/recycle"]
+    assert "[OK] recycled" in out["console"]
+
+
+def test_a_refused_create_whose_title_reads_back_absent_names_nothing_to_recycle() -> None:
+    out = _claim(None, rules=[CREATE_REFUSED])
+
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert out["rows"][FIXTURE]["evidence"] == (
+        f"the list create answered HTTP 500: Refused.; no list holds '{TITLE}'")
+    assert _recycles(out) == []
+    assert "recycle it by hand" not in out["console"]
+
+
+@pytest.mark.parametrize(("rule", "said"), [
+    ({"status": 429, "text": "busy"}, "the read-back was throttled (HTTP 429)"),
+    ({"status": 200, "text": "not json"}, "the read-back answered HTTP 200 with no JSON object"),
+    ({"status": 200, "text": json.dumps({"Id": OTHER, "Description": "somebody else's"})},
+     "the read-back found it with another description"),
+    ({"reject": True}, "the read-back never answered (Failed to fetch)"),
+], ids=["throttled", "no-json", "not-owned", "thrown"])
+def test_a_refused_create_whose_landing_is_unknown_names_the_title_for_a_check_by_hand(
+        rule: dict[str, Any], said: str) -> None:
+    out = _claim(None, rules=[CREATE_REFUSED, {"contains": PREFLIGHT, "nth": 2, **rule}])
+
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert (f"whether a list '{TITLE}' landed is unknown ({said}), so check it by hand") in (
+        out["rows"][FIXTURE]["evidence"])
+    assert out["rows"][DEPENDENT]["state"] == "void"
+    assert _recycles(out) == []
+    assert (f"'{TITLE}' never answered a list Id, so it was not recycled; if it stands, recycle it "
+            "by hand.") in out["console"]

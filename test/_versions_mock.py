@@ -122,6 +122,8 @@ const mockFetch = async (url, opts = {}) => {
       root: `${CONFIG.siteRoot || '/sites/probe'}/${sent.Title}`, fields: {}, items: [] });
     // `listDefaults`: values a new list starts with, so a refused MERGE can still leave it usable.
     Object.assign(lists.get(sent.Title), CONFIG.listDefaults || {});
+    // `createRefused`: a create that stores its list and still answers this refusal.
+    if (CONFIG.createRefused) return answer(CONFIG.createRefused.status, CONFIG.createRefused.text);
     // `createAnswersNoId`: a create answering no Id, which the claim refuses to build on.
     return answer(201, CONFIG.createAnswersNoId ? {} : { Id: listId });
   }
