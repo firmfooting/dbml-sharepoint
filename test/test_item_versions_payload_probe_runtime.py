@@ -404,17 +404,38 @@ def test_an_entry_with_no_versionid_around_the_upload_is_not_compared() -> None:
     assert ended_with_report(output)
 
 
-@pytest.mark.parametrize(("nth", "when"), [(1, "before"), (2, "after")])
-def test_an_unanswered_read_around_the_upload_leaves_both_rows_open(nth: int, when: str) -> None:
-    rows, _, output = _run(rules=[{"contains": LIB_VERSIONS, "nth": nth, "status": 429,
-                                   "text": "busy for ada@example.com"}])
+@pytest.mark.parametrize(("nth", "when", "status", "text", "said"), [
+    (1, "before", 429, "busy for ada@example.com", "was not answered"),
+    (2, "after", 429, "busy for ada@example.com", "was not answered"),
+    (1, "before", 200, '{"d": "x"}', "answered HTTP 200 with no value array"),
+    (2, "after", 200, '{"d": "x"}', "answered HTTP 200 with no value array"),
+], ids=["before-throttled", "after-throttled", "before-no-array", "after-no-array"])
+def test_an_unanswered_read_around_the_upload_leaves_both_rows_open(
+        nth: int, when: str, status: int, text: str, said: str) -> None:
+    rows, _, output = _run(rules=[{"contains": LIB_VERSIONS, "nth": nth, "status": status,
+                                   "text": text}])
 
     assert rows[LIB_READ]["outcome"] == "PASS"
     for row_id in (LIB_ADDS, LIB_FIELDS):
         assert rows[row_id]["outcome"] == "NOT ESTABLISHED", rows[row_id]
         assert rows[row_id]["state"] == "open"
-        assert f"the versions read {when} the upload was not answered" in rows[row_id]["evidence"]
+        assert f"the versions read {when} the upload {said}" in rows[row_id]["evidence"]
     assert "ada@example.com" not in json.dumps(rows)
+    assert ended_with_report(output)
+
+
+def test_an_upload_that_adds_two_entries_is_named_so_and_names_no_version() -> None:
+    four = json.dumps({"value": [
+        {"VersionId": 2048, "VersionLabel": "4.0"}, {"VersionId": 1536, "VersionLabel": "3.0"},
+        {"VersionId": 1024, "VersionLabel": "2.0"}, {"VersionId": 512, "VersionLabel": "1.0"}]})
+    rows, _, output = _run(rules=[{"contains": LIB_VERSIONS, "nth": 2, "status": 200,
+                                   "text": four}])
+
+    assert rows[LIB_ADDS]["outcome"] == "UPLOAD ADDED MORE THAN ONE VERSION"
+    assert "new: 4.0=2048, 3.0=1536;" in rows[LIB_ADDS]["evidence"]
+    assert rows[LIB_FIELDS]["outcome"] == "NOT IDENTIFIED"
+    assert rows[LIB_FIELDS]["evidence"] == (
+        "no version is the upload's alone (UPLOAD ADDED MORE THAN ONE VERSION)")
     assert ended_with_report(output)
 
 

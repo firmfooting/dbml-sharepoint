@@ -240,3 +240,26 @@ def test_a_row_an_earlier_fixture_voided_keeps_its_reason() -> None:
     assert out["rows"][FIXTURE]["state"] == "open"
     assert out["rows"][DEPENDENT]["state"] == "void"
     assert out["rows"][DEPENDENT]["evidence"] == "an earlier fixture failed"
+
+
+def test_a_leftover_answering_no_list_id_is_not_built_over() -> None:
+    leftover = {"Id": "not-a-guid", "BaseTemplate": 100, "Description": "owned", "fields": {},
+                "items": []}
+    out = _claim(None, cleanup=True, lists={TITLE: leftover})
+
+    assert out["held"] is False
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert out["rows"][FIXTURE]["evidence"] == (
+        f"the leftover list '{TITLE}' answered no list Id to recycle it by")
+    assert out["rows"][DEPENDENT]["state"] == "void"
+    assert _creates(out) == []
+    assert _recycles(out) == []
+
+
+def test_a_refused_recycle_names_the_list_and_id_to_recycle_by_hand() -> None:
+    out = _claim(None, rules=[{"contains": "/recycle", "status": 400, "text": "no"}])
+
+    assert out["held"] is True
+    assert _recycles(out) == [f"web/lists(guid'{CLAIMED}')/recycle"]
+    assert (f"[FAIL] could not recycle '{TITLE}' (list {CLAIMED}, HTTP 400); "
+            "recycle it by hand.") in out["console"]
