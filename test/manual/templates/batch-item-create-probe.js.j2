@@ -303,7 +303,7 @@
       const fields = fieldsOf(parsedOf(batch.parts[i].body));
       if (fields === null) return null;
       const answered = fields.map((f) => f.FieldName).filter((name) => name !== 'Id');
-      return JSON.stringify([...answered].sort()) === JSON.stringify([...sent].sort()) ? null
+      return sameElements(answered, sent) ? null
         : `answer ${i + 1} names ${JSON.stringify(answered)} where part ${i + 1} sent ${JSON.stringify(sent)}`;
     }).filter((problem) => problem !== null);
     return differ.length ? scrub(differ.join('; ')) : null;

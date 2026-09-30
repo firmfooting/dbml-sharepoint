@@ -367,3 +367,27 @@ def test_two_items_answered_one_id_fail_the_items_fixture() -> None:
 
     assert rows[ITEMS]["outcome"] == "FAIL"
     assert "Distinct differs: read false, declared true" in rows[ITEMS]["evidence"]
+
+
+@pytest.mark.parametrize(("contains", "text", "row_id"), [
+    pytest.param("/versions?$filter", '{"value": [{"VersionId": "1536"}, {"VersionId": "1024"}]}',
+                 FILTER, id="filter"),
+    pytest.param("/versions?$top", '{"value": [{"VersionId": "1536"}]}', TOP, id="top"),
+    pytest.param("/versions?$select",
+                 json.dumps({"value": [
+                     {"VersionId": str(v), "VersionLabel": f"{n}.0", "ProbeChoice": "Q"}
+                     for v, n in ((1536, 3), (1024, 2), (512, 1))]}),
+                 SELECT, id="select"),
+])
+def test_versionids_served_as_text_are_not_the_plain_reads_numbers(
+        contains: str, text: str, row_id: str) -> None:
+    rows, _, _ = _run(rules=[{"contains": contains, "status": 200, "text": text}])
+
+    assert rows[row_id]["outcome"] == "OTHER ROWS", rows[row_id]
+
+
+def test_an_item_list_control_serving_the_id_as_text_fails() -> None:
+    rows, _, _ = _run(rules=[{"contains": "/items?$select=Id&$filter", "status": 200,
+                              "text": '{"value": [{"Id": "1"}]}'}])
+
+    assert rows[FILTER_CONTROL]["outcome"] == "FAIL"

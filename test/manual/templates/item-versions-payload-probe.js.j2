@@ -248,10 +248,7 @@
   const show = (value) => (value === undefined ? '(absent)' : scrub(JSON.stringify(value)));
   const members = (value) => (Array.isArray(value) ? value
     : value && typeof value === 'object' && Array.isArray(value.results) ? value.results : null);
-  const sameMembers = (value, want) => {
-    const got = members(value);
-    return got !== null && [...got].sort().join('|') === [...want].sort().join('|');
-  };
+  const sameMembers = (value, want) => sameElements(members(value), want);
   // A read keeps its answer, so a refused read is never mistaken for a missing object.
   const readBack = async (path) => {
     const res = await sendRaw(path);
@@ -715,12 +712,10 @@
       return;
     }
     // A VersionId and VersionLabel together name an entry, so a renumbered one reads as gone, never as kept.
-    const keyOf = (row) => JSON.stringify([versionIdOf(row), row.VersionLabel]);
+    const sameEntry = (a, b) => versionIdOf(a) === versionIdOf(b) && a.VersionLabel === b.VersionLabel;
     const listed = (entries) => entries.map((row) => `${labelOf(row)}=${show(versionIdOf(row))}`).join(', ');
-    const had = new Set(beforeUpload.rows.map(keyOf));
-    const kept = new Set(afterUploadRead.rows.map(keyOf));
-    const fresh = afterUploadRead.rows.filter((row) => !had.has(keyOf(row)));
-    const lost = beforeUpload.rows.filter((row) => !kept.has(keyOf(row)));
+    const fresh = afterUploadRead.rows.filter((row) => !beforeUpload.rows.some((one) => sameEntry(one, row)));
+    const lost = beforeUpload.rows.filter((row) => !afterUploadRead.rows.some((one) => sameEntry(one, row)));
     const head = lost.length ? 'NOT COMPARABLE' : !fresh.length ? 'UPLOAD ADDED NO VERSION'
       : fresh.length === 1 ? 'UPLOAD ADDED A VERSION' : 'UPLOAD ADDED MORE THAN ONE VERSION';
     record(LIB.libraryAdds, Q.libraryAdds, head, `before the upload ${beforeUpload.rows.length} version(s) `

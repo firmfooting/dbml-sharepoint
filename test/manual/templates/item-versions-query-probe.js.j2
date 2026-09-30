@@ -240,7 +240,7 @@
       const rows = !head && res.parsed && Array.isArray(res.parsed.value) ? res.parsed.value : null;
       const served = rows === null ? null : rows.map((row) => row.Id);
       // A 2xx with no rows is not an answer about the option, so it is left open like a throttle.
-      const outcome = served !== null && served.join(',') === String(want) ? 'PASS'
+      const outcome = served !== null && sameElements(served, [want]) ? 'PASS'
         : (head ? head.outcome === 'NOT ESTABLISHED' : served === null) ? 'NOT ESTABLISHED' : 'FAIL';
       const why = head ? scrub(head.why) : served === null ? `HTTP ${res.status} carried no rows: ${said(res)}` : '';
       record(id, question, outcome, `${query}: ${why || `served ${JSON.stringify(served)}, want [${want}]`}`);
@@ -289,8 +289,7 @@
     const baseline = beyondSelected(keysOf(plain.rows));
     const carries = (row, key) => Object.prototype.hasOwnProperty.call(row, key);
     // Whether an answer served exactly the versions the plain read did, by VersionId.
-    const sameVersions = (rows) => JSON.stringify(rows.map(versionIdOf).map(String).sort())
-      === JSON.stringify(plainIds.map(String).sort());
+    const sameVersions = (rows) => sameElements(rows.map(versionIdOf), plainIds);
     // A selected name the plain read carried on every entry must come back on every entry.
     const owed = SELECTED.filter((key) => plain.rows.every((row) => carries(row, key)));
     await ask('query.odata.versions-select', Q.select, null, `$select=${SELECTED.join(',')}`,
@@ -314,12 +313,12 @@
       (rows) => {
         const served = rows.map(versionIdOf);
         const rest = plainIds.filter((v) => v > lowest);
-        const same = (a, b) => [...a].sort().join(',') === [...b].sort().join(',');
-        const head = same(served, rest) ? 'FILTERED' : same(served, plainIds) ? 'UNFILTERED' : 'OTHER ROWS';
+        const head = sameElements(served, rest) ? 'FILTERED' : sameElements(served, plainIds) ? 'UNFILTERED'
+          : 'OTHER ROWS';
         return [head, `served VersionIds ${JSON.stringify(served)}`];
       });
     // A served version the plain read did not answer is not one of this item's versions topped.
-    const known = (rows) => rows.every((row) => plainIds.some((v) => String(v) === String(versionIdOf(row))));
+    const known = (rows) => rows.every((row) => plainIds.includes(versionIdOf(row)));
     await ask('query.odata.versions-top', Q.top, topControl, '$top=1',
       (rows) => [!known(rows) ? 'OTHER ROWS' : rows.length === 1 ? 'TOPPED' : 'NOT TOPPED',
         `served ${entries(rows.length)}, VersionIds ${JSON.stringify(rows.map(versionIdOf))}`]);

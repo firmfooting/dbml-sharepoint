@@ -249,7 +249,8 @@ const mockFetch = async (url, opts = {}) => {
       item.merges = (item.merges || 0) + 1;
       const values = plain(sent);
       for (const name of (CONFIG.mergeDrops || {})[item.merges] || []) delete values[name];
-      Object.assign(item.values, values);
+      // `mergeTakes`: per item MERGE count, values that MERGE stores in place of the ones sent.
+      Object.assign(item.values, values, (CONFIG.mergeTakes || {})[item.merges] || {});
       // `mergesWithoutVersion`: per item MERGE counts that store their values and add no version.
       const versionless = (CONFIG.mergesWithoutVersion || []).includes(item.merges);
       if (!versionless) item.history.push({ ...item.values });

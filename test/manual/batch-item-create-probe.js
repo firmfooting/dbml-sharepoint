@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: 9f5e6dee
+ * REVISION: 761d149a
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -532,6 +532,9 @@
     const bare = value === null || value === undefined ? '' : String(value).replace(/[{}]/g, '').toLowerCase();
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(bare) ? bare : null;
   };
+  // Whether two arrays hold the same elements as often each, compared by ===, never by a serialised form.
+  const sameElements = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length
+    && a.every((x) => a.filter((y) => y === x).length === b.filter((y) => y === x).length);
   // A title or server-relative path inside an OData string literal, its apostrophes doubled as deploy/_folders does.
   const pathLiteral = (path) => String(path).replace(/'/g, "''");
   // __metadata is verbose OData, so every write carrying it declares the verbose content type.
@@ -679,7 +682,7 @@
       await recycleList(title, id);
     }
   };
-  log('INFO', 'probe revision 9f5e6dee. Quote this when reporting results.');
+  log('INFO', 'probe revision 761d149a. Quote this when reporting results.');
 
   // The parts name the list by title, the form a history write sends and these rows measure; the run's token
   // means no other list holds it, and none can take it between a check and a use.
@@ -880,7 +883,7 @@
       const fields = fieldsOf(parsedOf(batch.parts[i].body));
       if (fields === null) return null;
       const answered = fields.map((f) => f.FieldName).filter((name) => name !== 'Id');
-      return JSON.stringify([...answered].sort()) === JSON.stringify([...sent].sort()) ? null
+      return sameElements(answered, sent) ? null
         : `answer ${i + 1} names ${JSON.stringify(answered)} where part ${i + 1} sent ${JSON.stringify(sent)}`;
     }).filter((problem) => problem !== null);
     return differ.length ? scrub(differ.join('; ')) : null;

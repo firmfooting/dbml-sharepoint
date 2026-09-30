@@ -807,3 +807,32 @@ def test_a_list_create_answering_another_list_id_is_refused() -> None:
     assert voided(rows) == _deps(LIST)
     assert "recycle it by hand" in output
     assert _recycled(sent).count(f"web/lists(guid'{target}')/recycle") == 1
+
+
+def test_a_multichoice_stored_as_one_joined_value_is_not_the_two_sent() -> None:
+    # Joined with the delimiter a string comparison used, one stored value read as the two sent.
+    rows, _, _ = _run(mergeTakes={"2": {"ProbeMulti": ["Q1|Q2"]}})
+
+    assert rows[ITEM]["outcome"] == "FAIL"
+    assert 'ProbeMulti reads back [\\"Q1|Q2\\"]' in rows[ITEM]["evidence"]
+    assert voided(rows) == _deps(ITEM)
+
+
+def test_a_person_id_stored_as_text_is_not_this_account() -> None:
+    rows, _, _ = _run(mergeTakes={"1": {"ProbePeopleId": ["7"]}, "2": {"ProbePeopleId": ["7"]}})
+
+    assert rows[PEOPLE_WRITE]["outcome"] == "FAIL"
+    assert 'ProbePeopleId reads back [\\"7\\"]' in rows[PEOPLE_WRITE]["evidence"]
+
+
+def test_a_version_whose_label_turns_from_null_to_absent_is_not_kept() -> None:
+    before = json.dumps({"value": [{"VersionId": 512, "VersionLabel": None}]})
+    after = json.dumps({"value": [{"VersionId": 512},
+                                  {"VersionId": 1024, "VersionLabel": "2.0"}]})
+    # The first rule answers the read before the upload; the second counts what the first let by.
+    rows, _, _ = _run(rules=[
+        {"contains": LIB_VERSIONS, "nth": 1, "status": 200, "text": before},
+        {"contains": LIB_VERSIONS, "nth": 1, "status": 200, "text": after}])
+
+    assert rows[LIB_ADDS]["outcome"] == "NOT COMPARABLE", rows[LIB_ADDS]
+    assert "gone: null=512" in rows[LIB_ADDS]["evidence"]

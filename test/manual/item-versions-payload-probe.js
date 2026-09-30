@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: 650920da
+ * REVISION: 72820ff6
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -519,6 +519,9 @@
     const bare = value === null || value === undefined ? '' : String(value).replace(/[{}]/g, '').toLowerCase();
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(bare) ? bare : null;
   };
+  // Whether two arrays hold the same elements as often each, compared by ===, never by a serialised form.
+  const sameElements = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length
+    && a.every((x) => a.filter((y) => y === x).length === b.filter((y) => y === x).length);
   // A title or server-relative path inside an OData string literal, its apostrophes doubled as deploy/_folders does.
   const pathLiteral = (path) => String(path).replace(/'/g, "''");
   // __metadata is verbose OData, so every write carrying it declares the verbose content type.
@@ -711,7 +714,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 650920da. Quote this when reporting results.');
+  log('INFO', 'probe revision 72820ff6. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe Versions');
   const TARGET = runTitle('dbmlsp Probe VersionsTarget');
@@ -869,10 +872,7 @@
   const show = (value) => (value === undefined ? '(absent)' : scrub(JSON.stringify(value)));
   const members = (value) => (Array.isArray(value) ? value
     : value && typeof value === 'object' && Array.isArray(value.results) ? value.results : null);
-  const sameMembers = (value, want) => {
-    const got = members(value);
-    return got !== null && [...got].sort().join('|') === [...want].sort().join('|');
-  };
+  const sameMembers = (value, want) => sameElements(members(value), want);
   // A read keeps its answer, so a refused read is never mistaken for a missing object.
   const readBack = async (path) => {
     const res = await sendRaw(path);
@@ -1336,12 +1336,10 @@
       return;
     }
     // A VersionId and VersionLabel together name an entry, so a renumbered one reads as gone, never as kept.
-    const keyOf = (row) => JSON.stringify([versionIdOf(row), row.VersionLabel]);
+    const sameEntry = (a, b) => versionIdOf(a) === versionIdOf(b) && a.VersionLabel === b.VersionLabel;
     const listed = (entries) => entries.map((row) => `${labelOf(row)}=${show(versionIdOf(row))}`).join(', ');
-    const had = new Set(beforeUpload.rows.map(keyOf));
-    const kept = new Set(afterUploadRead.rows.map(keyOf));
-    const fresh = afterUploadRead.rows.filter((row) => !had.has(keyOf(row)));
-    const lost = beforeUpload.rows.filter((row) => !kept.has(keyOf(row)));
+    const fresh = afterUploadRead.rows.filter((row) => !beforeUpload.rows.some((one) => sameEntry(one, row)));
+    const lost = beforeUpload.rows.filter((row) => !afterUploadRead.rows.some((one) => sameEntry(one, row)));
     const head = lost.length ? 'NOT COMPARABLE' : !fresh.length ? 'UPLOAD ADDED NO VERSION'
       : fresh.length === 1 ? 'UPLOAD ADDED A VERSION' : 'UPLOAD ADDED MORE THAN ONE VERSION';
     record(LIB.libraryAdds, Q.libraryAdds, head, `before the upload ${beforeUpload.rows.length} version(s) `

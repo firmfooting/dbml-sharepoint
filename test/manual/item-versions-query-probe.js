@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: 1abb1e5d
+ * REVISION: 0663e01c
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -490,6 +490,9 @@
     const bare = value === null || value === undefined ? '' : String(value).replace(/[{}]/g, '').toLowerCase();
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(bare) ? bare : null;
   };
+  // Whether two arrays hold the same elements as often each, compared by ===, never by a serialised form.
+  const sameElements = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length
+    && a.every((x) => a.filter((y) => y === x).length === b.filter((y) => y === x).length);
   // A title or server-relative path inside an OData string literal, its apostrophes doubled as deploy/_folders does.
   const pathLiteral = (path) => String(path).replace(/'/g, "''");
   // __metadata is verbose OData, so every write carrying it declares the verbose content type.
@@ -682,7 +685,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 1abb1e5d. Quote this when reporting results.');
+  log('INFO', 'probe revision 0663e01c. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsQuery');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
@@ -861,7 +864,7 @@
       const rows = !head && res.parsed && Array.isArray(res.parsed.value) ? res.parsed.value : null;
       const served = rows === null ? null : rows.map((row) => row.Id);
       // A 2xx with no rows is not an answer about the option, so it is left open like a throttle.
-      const outcome = served !== null && served.join(',') === String(want) ? 'PASS'
+      const outcome = served !== null && sameElements(served, [want]) ? 'PASS'
         : (head ? head.outcome === 'NOT ESTABLISHED' : served === null) ? 'NOT ESTABLISHED' : 'FAIL';
       const why = head ? scrub(head.why) : served === null ? `HTTP ${res.status} carried no rows: ${said(res)}` : '';
       record(id, question, outcome, `${query}: ${why || `served ${JSON.stringify(served)}, want [${want}]`}`);
@@ -910,8 +913,7 @@
     const baseline = beyondSelected(keysOf(plain.rows));
     const carries = (row, key) => Object.prototype.hasOwnProperty.call(row, key);
     // Whether an answer served exactly the versions the plain read did, by VersionId.
-    const sameVersions = (rows) => JSON.stringify(rows.map(versionIdOf).map(String).sort())
-      === JSON.stringify(plainIds.map(String).sort());
+    const sameVersions = (rows) => sameElements(rows.map(versionIdOf), plainIds);
     // A selected name the plain read carried on every entry must come back on every entry.
     const owed = SELECTED.filter((key) => plain.rows.every((row) => carries(row, key)));
     await ask('query.odata.versions-select', Q.select, null, `$select=${SELECTED.join(',')}`,
@@ -935,12 +937,12 @@
       (rows) => {
         const served = rows.map(versionIdOf);
         const rest = plainIds.filter((v) => v > lowest);
-        const same = (a, b) => [...a].sort().join(',') === [...b].sort().join(',');
-        const head = same(served, rest) ? 'FILTERED' : same(served, plainIds) ? 'UNFILTERED' : 'OTHER ROWS';
+        const head = sameElements(served, rest) ? 'FILTERED' : sameElements(served, plainIds) ? 'UNFILTERED'
+          : 'OTHER ROWS';
         return [head, `served VersionIds ${JSON.stringify(served)}`];
       });
     // A served version the plain read did not answer is not one of this item's versions topped.
-    const known = (rows) => rows.every((row) => plainIds.some((v) => String(v) === String(versionIdOf(row))));
+    const known = (rows) => rows.every((row) => plainIds.includes(versionIdOf(row)));
     await ask('query.odata.versions-top', Q.top, topControl, '$top=1',
       (rows) => [!known(rows) ? 'OTHER ROWS' : rows.length === 1 ? 'TOPPED' : 'NOT TOPPED',
         `served ${entries(rows.length)}, VersionIds ${JSON.stringify(rows.map(versionIdOf))}`]);

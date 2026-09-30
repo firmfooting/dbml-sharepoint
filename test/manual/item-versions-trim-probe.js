@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: 900ec906
+ * REVISION: 5fe0b465
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -483,6 +483,9 @@
     const bare = value === null || value === undefined ? '' : String(value).replace(/[{}]/g, '').toLowerCase();
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(bare) ? bare : null;
   };
+  // Whether two arrays hold the same elements as often each, compared by ===, never by a serialised form.
+  const sameElements = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length
+    && a.every((x) => a.filter((y) => y === x).length === b.filter((y) => y === x).length);
   // A title or server-relative path inside an OData string literal, its apostrophes doubled as deploy/_folders does.
   const pathLiteral = (path) => String(path).replace(/'/g, "''");
   // __metadata is verbose OData, so every write carrying it declares the verbose content type.
@@ -675,7 +678,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 900ec906. Quote this when reporting results.');
+  log('INFO', 'probe revision 5fe0b465. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsTrim');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
