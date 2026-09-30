@@ -684,3 +684,17 @@ def test_the_columns_fixture_reads_back_each_date_column_display_format() -> Non
 
     assert "ProbeDate.DisplayFormat=0" in rows[COLUMNS]["evidence"]
     assert "ProbeStamp.DisplayFormat=1" in rows[COLUMNS]["evidence"]
+
+
+def test_a_versionid_repeated_after_the_upload_is_not_compared_as_a_set() -> None:
+    repeated = json.dumps({"value": [
+        {"VersionId": 1024, "VersionLabel": "2.0"}, {"VersionId": 1024, "VersionLabel": "2.0"},
+        {"VersionId": 512, "VersionLabel": "1.0"}]})
+    rows, _, _ = _run(rules=[{"contains": LIB_VERSIONS, "nth": 2, "status": 200,
+                              "text": repeated}])
+
+    assert rows[LIB_ADDS]["outcome"] == "NOT COMPARABLE"
+    assert ("the versions read after the upload answered VersionId 1024 more than once"
+            in rows[LIB_ADDS]["evidence"])
+    assert rows[LIB_FIELDS]["outcome"] == "NOT IDENTIFIED"
+

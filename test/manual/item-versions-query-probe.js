@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: 44aec708
+ * REVISION: fc7a072c
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -649,6 +649,17 @@
   // A version's VersionId as the answer spelled it, or null when the entry carried none.
   const versionIdOf = (row) => (row && typeof row === 'object' && row.VersionId !== undefined
     ? row.VersionId : null);
+  // The VersionIds an answer lists more than once, since a count or a set over them would take a repeat for one.
+  const repeatedIds = (rows) => {
+    const seen = new Set();
+    const again = new Set();
+    for (const row of rows) {
+      const key = JSON.stringify(versionIdOf(row));
+      if (seen.has(key)) again.add(key);
+      seen.add(key);
+    }
+    return [...again];
+  };
 
   // Names the order a run of VersionIds came back in; it describes and never judges.
   const orderOf = (ids) => {
@@ -660,7 +671,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 44aec708. Quote this when reporting results.');
+  log('INFO', 'probe revision fc7a072c. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsQuery';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.

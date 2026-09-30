@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: f9753863
+ * REVISION: 4efd6854
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -65,8 +65,8 @@
  * UPLOAD ADDED A VERSION, UPLOAD ADDED MORE THAN ONE VERSION and UPLOAD ADDED
  * NO VERSION count the entries (VersionId and VersionLabel together) that the
  * read just after the upload has and the read just before it lacks. There,
- * NOT COMPARABLE is an earlier entry gone from the later read or an entry with
- * no VersionId, and NOT ESTABLISHED, left open, is either read unanswered.
+ * NOT COMPARABLE is an earlier entry gone from the later read, an entry with
+ * no VersionId, or a VersionId listed more than once, and NOT ESTABLISHED, left open, is either read unanswered.
  * NOT IDENTIFIED is the fields row when no version is the upload's alone.
  * NOT COMPARABLE, left open, is a versions read carrying a continuation link,
  * which the probe records and does not follow.
@@ -676,6 +676,17 @@
   // A version's VersionId as the answer spelled it, or null when the entry carried none.
   const versionIdOf = (row) => (row && typeof row === 'object' && row.VersionId !== undefined
     ? row.VersionId : null);
+  // The VersionIds an answer lists more than once, since a count or a set over them would take a repeat for one.
+  const repeatedIds = (rows) => {
+    const seen = new Set();
+    const again = new Set();
+    for (const row of rows) {
+      const key = JSON.stringify(versionIdOf(row));
+      if (seen.has(key)) again.add(key);
+      seen.add(key);
+    }
+    return [...again];
+  };
 
   // Names the order a run of VersionIds came back in; it describes and never judges.
   const orderOf = (ids) => {
@@ -687,7 +698,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision f9753863. Quote this when reporting results.');
+  log('INFO', 'probe revision 4efd6854. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Versions';
   const TARGET = 'dbmlsp Probe VersionsTarget';
@@ -1259,8 +1270,14 @@
       if (read.next !== null) {
         return { head: 'NOT COMPARABLE', state: 'open', why: `the versions read ${when} the upload: ${pagedSaid(read)}` };
       }
-      return read.rows.some((row) => versionIdOf(row) === null) ? { head: 'NOT COMPARABLE', state: undefined,
-        why: `the versions read ${when} the upload answered an entry with no VersionId` } : null;
+      if (read.rows.some((row) => versionIdOf(row) === null)) {
+        return { head: 'NOT COMPARABLE', state: undefined,
+          why: `the versions read ${when} the upload answered an entry with no VersionId` };
+      }
+      // A repeated entry would collapse in the comparison below, hiding an entry gained or lost.
+      const again = repeatedIds(read.rows);
+      return again.length ? { head: 'NOT COMPARABLE', state: undefined,
+        why: `the versions read ${when} the upload answered VersionId ${again.join(', ')} more than once` } : null;
     };
     const blocked = unread(beforeUpload, 'before') || unread(afterUploadRead, 'after');
     if (blocked) {

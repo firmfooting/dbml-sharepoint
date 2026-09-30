@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: 65524eca
+ * REVISION: 4b3b5fdf
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -637,6 +637,17 @@
   // A version's VersionId as the answer spelled it, or null when the entry carried none.
   const versionIdOf = (row) => (row && typeof row === 'object' && row.VersionId !== undefined
     ? row.VersionId : null);
+  // The VersionIds an answer lists more than once, since a count or a set over them would take a repeat for one.
+  const repeatedIds = (rows) => {
+    const seen = new Set();
+    const again = new Set();
+    for (const row of rows) {
+      const key = JSON.stringify(versionIdOf(row));
+      if (seen.has(key)) again.add(key);
+      seen.add(key);
+    }
+    return [...again];
+  };
 
   // Names the order a run of VersionIds came back in; it describes and never judges.
   const orderOf = (ids) => {
@@ -648,7 +659,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 65524eca. Quote this when reporting results.');
+  log('INFO', 'probe revision 4b3b5fdf. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsTrim';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
