@@ -27,7 +27,7 @@
  *   field.version.fixture-payload-people-column a multi-person column (UserMulti); only
  *       the people write and field.version.payload-people rest on it
  *   field.version.fixture-payload-item          one item created empty and then written
- *       twice, whose last values read back
+ *       twice, each set of values read back before the next is sent
  *   field.version.fixture-payload-people-write  the multi-person column written as
  *       { results: [Id] } in both writes and read back; a refusal leaves it and
  *       field.version.payload-people NOT ESTABLISHED, and the other kinds are written without it
@@ -129,7 +129,7 @@
     list: 'a generic list this probe created, with versioning on',
     columns: 'the eight columns read back with their declared TypeAsString',
     peopleColumn: `${PEOPLE} reads back as a multi-person column (UserMulti, AllowMultipleValues true)`,
-    item: 'one item created empty and written twice, whose last values read back',
+    item: 'one item created empty and written twice, each set of values read back before the next',
     peopleWrite: `${PEOPLE}Id written as { results: [this account's Id] } in both writes, read back`,
     read: 'CONTROL: items(id)/versions answers a list of version entries',
     choice: 'what each version carries for a Choice column',
@@ -371,43 +371,65 @@
       // The multi-value lookup shape; for a multi-person column it is the question the people write asks.
       ...(withPeople ? { [`${PEOPLE}Id`]: { results: [meId] } } : {}),
     });
-    const writes = [];
+    // What a set reads back as once written; a date only needs a value, since its stored form is a question.
+    // The people value is left to its own fixture, so a refusal of that shape never fails the other kinds.
+    const wantOf = (set) => ({
+      ProbeChoice: set.ProbeChoice, ProbeMulti: (v) => sameMembers(v, set.ProbeMulti), ProbePersonId: meId,
+      ProbeLookupId: set.ProbeLookupId, ProbeDate: (v) => typeof v === 'string' && v.length > 0,
+      ProbeStamp: (v) => typeof v === 'string' && v.length > 0, ProbeNumber: set.ProbeNumber,
+      ProbeFlag: set.ProbeFlag,
+    });
+    // What differs between the item and a set just written, or null when the whole set reads back.
+    const unlanded = async (set) => {
+      const want = wantOf(set);
+      const read = await readBack(`${listPath}/items(${itemId})?$select=Id,${Object.keys(want).join(',')}`);
+      if (!read.parsed) return `the read-back ${read.read}`;
+      const off = Object.entries(want).filter(([key, value]) => (typeof value === 'function'
+        ? value(read.parsed[key]) !== true : read.parsed[key] !== value));
+      return off.length ? off.map(([key]) => `${key} reads back ${show(read.parsed[key])}`).join(', ') : null;
+    };
+    let written = 0;
+    const missed = [];
     let itemId = null;
     let peopleRefusal = null;
     const made = await spPost(`${listPath}/items`, { __metadata: { type: itemType },
       Title: 'dbmlsp versions item' }, await getDigest(), VERBOSE_WRITE);
-    writes.push(made.status);
     if (made.ok && made.body && Number.isInteger(made.body.Id)) itemId = made.body.Id;
+    if (itemId !== null) written += 1;
+    else {
+      missed.push(`the create: HTTP ${made.status}`
+        + `${made.ok ? ' carried no numeric Id' : `: ${scrub(made.text).slice(0, 300)}`}`);
+    }
     const merge = async (set, withPeople) => spPost(`${listPath}/items(${itemId})`, bodyOf(set, withPeople),
       await getDigest(), { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
-    if (itemId !== null) {
-      for (const set of SETS) {
-        const withPeople = peopleHeld && peopleRefusal === null;
-        let sent = await merge(set, withPeople);
-        if (withPeople && !sent.ok && isRefusal(sent.status)) {
-          // Sent again without the people value, so a refusal is pinned on it and the other kinds still land.
-          const without = await merge(set, false);
-          if (without.ok) {
-            peopleRefusal = `HTTP ${sent.status}: ${scrub(sent.text).slice(0, 300)}`;
-            log('INFO', `the ${PEOPLE}Id write was refused (${peopleRefusal}); the values were written without it`);
-          }
-          sent = without;
+    // Each set is read back before the next is sent, so set B never replaces a set A that did not land.
+    for (const [i, set] of (itemId === null ? [] : SETS).entries()) {
+      const withPeople = peopleHeld && peopleRefusal === null;
+      let sent = await merge(set, withPeople);
+      if (withPeople && !sent.ok && isRefusal(sent.status)) {
+        // Sent again without the people value, so a refusal is pinned on it and the other kinds still land.
+        const without = await merge(set, false);
+        if (without.ok) {
+          peopleRefusal = `HTTP ${sent.status}: ${scrub(sent.text).slice(0, 300)}`;
+          log('INFO', `the ${PEOPLE}Id write was refused (${peopleRefusal}); the values were written without it`);
         }
-        writes.push(sent.status);
-        if (!sent.ok) log('INFO', `item MERGE: HTTP ${sent.status} ${scrub(sent.text).slice(0, 200)}`);
+        sent = without;
       }
+      const what = `set ${'AB'[i]}: HTTP ${sent.status}`;
+      const off = sent.ok ? await unlanded(set) : scrub(sent.text).slice(0, 300);
+      if (sent.ok && off === null) {
+        written += 1;
+        continue;
+      }
+      missed.push(`${what}${sent.ok ? `, but ${off}` : `: ${off}`}`);
+      break;
     }
     const last = SETS[1];
-    const declaredItem = {
-      Written: 3, ProbeChoice: last.ProbeChoice,
-      ProbeMulti: (v) => sameMembers(v, last.ProbeMulti), ProbePersonId: meId,
-      ProbeLookupId: last.ProbeLookupId, ProbeDate: (v) => typeof v === 'string' && v.length > 0,
-      ProbeStamp: (v) => typeof v === 'string' && v.length > 0, ProbeNumber: last.ProbeNumber,
-      ProbeFlag: last.ProbeFlag,
-    };
-    const selected = Object.keys(declaredItem).filter((key) => key !== 'Written');
+    const declaredItem = { Written: 3, Missed: (v) => typeof v === 'string', ...wantOf(last) };
+    const selected = Object.keys(declaredItem).filter((key) => key !== 'Written' && key !== 'Missed');
     if (!await establishFixture('field.version.fixture-payload-item', async () => {
-      const body = { Written: writes.filter((status) => status >= 200 && status < 300).length };
+      // The sets that did not land join the read-back, so each shows its reason in RESULTS.
+      const body = { Written: written, Missed: missed.join('; ') || 'none' };
       if (itemId === null) return { ok: true, status: 200, body };
       const read = await readBack(`${listPath}/items(${itemId})?$select=Id,${selected.join(',')}`);
       if (!read.parsed) return { ok: true, status: 200, body: { ...body, Read: read.read } };

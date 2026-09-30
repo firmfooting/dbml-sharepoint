@@ -262,6 +262,46 @@ def test_a_refused_item_write_fails_the_item_and_voids_the_versions_rows() -> No
     assert voided(rows) == _deps(ITEM)
 
 
+def test_a_first_set_answered_2xx_that_did_not_land_fails_the_item_before_the_second() -> None:
+    # The rule answers 204 and never reaches the mock's store, so set A is never stored.
+    rows, sent, _ = _run(rules=[{"contains": "Versions')/items(1)", "verb": "MERGE",
+                                 "bodyContains": '"ProbeChoice":"Q1"', "status": 204, "text": ""}])
+
+    assert rows[ITEM]["outcome"] == "FAIL"
+    assert "Written differs: read 1, declared 3" in rows[ITEM]["evidence"]
+    assert "set A: HTTP 204, but ProbeChoice reads back (absent)" in rows[ITEM]["evidence"]
+    assert voided(rows) == _deps(ITEM)
+    merges = [r for r in sent if r["verb"] == "MERGE" and "Versions')/items(1)" in r["path"]]
+    assert len(merges) == 1
+
+
+def test_a_first_set_whose_read_back_went_unanswered_is_not_built_on() -> None:
+    rows, sent, _ = _run(rules=[{"contains": "Versions')/items(1)?$select=Id,ProbeChoice",
+                                 "nth": 1, "status": 429, "text": "busy"}])
+
+    assert rows[ITEM]["outcome"] == "FAIL"
+    assert "set A: HTTP 204, but the read-back " in rows[ITEM]["evidence"]
+    assert voided(rows) == _deps(ITEM)
+    merges = [r for r in sent if r["verb"] == "MERGE" and "Versions')/items(1)" in r["path"]]
+    assert len(merges) == 1
+
+
+@pytest.mark.parametrize(("status", "text", "said"), [
+    (201, "{}", "the create: HTTP 201 carried no numeric Id"),
+    (500, "Denied for ada@example.com", "the create: HTTP 500: Denied for <account>"),
+])
+def test_an_item_create_that_answered_no_id_sends_no_set(status: int, text: str,
+                                                         said: str) -> None:
+    rows, sent, _ = _run(rules=[{"contains": "Versions')/items", "verb": "POST",
+                                 "status": status, "text": text}])
+
+    assert rows[ITEM]["outcome"] == "FAIL"
+    assert said in rows[ITEM]["evidence"]
+    assert "ada@example.com" not in json.dumps(rows)
+    assert voided(rows) == _deps(ITEM)
+    assert not [r for r in sent if r["verb"] == "MERGE" and "Versions')/items(" in r["path"]]
+
+
 def test_a_list_whose_versioning_does_not_stick_voids_everything_after_it() -> None:
     rows, _, _ = _run(listMerge={"EnableVersioning": False})
 
@@ -467,7 +507,7 @@ def test_a_read_after_the_upload_without_the_choice_fails_the_fixture_not_the_va
                  id="column-read"),
     pytest.param({"contains": "Versions')/items(1)", "verb": "MERGE", "status": 400,
                   "text": "Invalid data for ada@example.com"},
-                 "item MERGE: HTTP 400 Invalid data for <account>", id="item-merge"),
+                 "set A: HTTP 400: Invalid data for <account>", id="item-merge"),
     pytest.param({"contains": "/fields", "verb": "POST", "bodyContains": "ProbeFlag", "status": 500,
                   "text": "Refused for i:0#.f|membership|ada@example.com"},
                  "create ProbeFlag: HTTP 500 Refused for <account>", id="column-create"),
