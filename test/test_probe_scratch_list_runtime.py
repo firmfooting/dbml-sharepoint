@@ -363,3 +363,13 @@ def test_a_refused_create_whose_landing_is_unknown_names_the_title_for_a_check_b
     assert _recycles(out) == []
     assert (f"'{TITLE}' never answered a list Id, so it was not recycled; if it stands, recycle it "
             "by hand.") in out["console"]
+
+
+def test_once_text_is_withheld_a_refused_merge_is_quoted_by_status_only() -> None:
+    refused = {**REFUSED, "text": "Zed Sentinel may not change it."}
+    out = _claim({"EnableVersioning": True}, declared=VERSIONING, prelude="withheld = true;",
+                 rules=[refused], listDefaults={"EnableVersioning": True})
+
+    assert "Zed Sentinel" not in json.dumps(out["rows"]) + out["console"]
+    assert ("Settings=\"HTTP 400: (text withheld: this account's display name was not learned)\""
+            in out["rows"][FIXTURE]["evidence"])

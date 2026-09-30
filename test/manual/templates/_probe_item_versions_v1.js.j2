@@ -11,7 +11,7 @@
   };
   // Learn documents no paging for item versions, so a continuation link is reported and never followed.
   const pagedSaid = (versions) => (versions.next === null ? null
-    : `the answer carried a continuation link (${scrub(versions.next).slice(0, 200)}), which this probe `
+    : `the answer carried a continuation link (${quote(versions.next).slice(0, 200)}), which this probe `
       + `does not follow, so its ${versions.rows ? versions.rows.length : 0} entries may not be every version`);
 
   // A version's VersionId as the answer spelled it, or null when the entry carried none.
@@ -26,7 +26,8 @@
       if (seen.has(key)) again.add(key);
       seen.add(key);
     }
-    return [...again];
+    // Quoted from their keys, so a VersionId that is text is withheld like any other.
+    return [...again].map((key) => quoteValue(JSON.parse(key)));
   };
 
   // Names the order a run of VersionIds came back in; it describes and never judges.

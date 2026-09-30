@@ -75,6 +75,7 @@
  * NOT COMPARABLE, left open, is a versions read carrying a continuation link,
  * which the probe records and does not follow.
  * Email addresses, claims logins and this account's display name are masked.
+ * When no display name comes back, no text from an answer is quoted, only statuses.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
  * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again.
@@ -246,7 +247,7 @@
     return;
   }
 
-  const show = (value) => (value === undefined ? '(absent)' : scrub(JSON.stringify(value)));
+  const show = (value) => (value === undefined ? '(absent)' : quoteValue(value));
   const members = (value) => (Array.isArray(value) ? value
     : value && typeof value === 'object' && Array.isArray(value.results) ? value.results : null);
   const sameMembers = (value, want) => sameElements(members(value), want);
@@ -256,14 +257,15 @@
     const head = readHead(res);
     const parsed = head ? null : recordBody(res);
     return { parsed, read: head ? scrub(head.why) : parsed ? `HTTP ${res.status}`
-      : `HTTP ${res.status} carried no JSON: ${scrub(res.text).slice(0, 400)}` };
+      : `HTTP ${res.status} carried no JSON: ${quote(res.text).slice(0, 400)}` };
   };
 
   let meId = null;
   let peopleHeld = false;
   let peopleWritten = false;
 
-  const labelOf = (row) => (row.VersionLabel === undefined ? '(no VersionLabel)' : String(row.VersionLabel));
+  const labelOf = (row) => (row.VersionLabel === undefined ? '(no VersionLabel)'
+    : typeof row.VersionLabel === 'string' ? quote(row.VersionLabel) : show(row.VersionLabel));
   // A label is major.minor, compared as a pair so that 10.0 follows 9.0.
   const labelPair = (row) => {
     const match = /^(\d+)\.(\d+)$/.exec(String(row.VersionLabel));
@@ -280,7 +282,7 @@
     record(id, question, outcome, versions.head
       ? scrub(versions.head.why)
       : `HTTP ${versions.res.status}, ${versions.rows === null ? versions.shape : `${versions.rows.length} entries`}`
-        + `: ${scrub(versions.res.text).slice(0, 400)}`);
+        + `: ${quote(versions.res.text).slice(0, 400)}`);
     if (outcome === 'FAIL') voidRows(all, `the ${what} answered no version entries`);
     if (outcome === 'NOT ESTABLISHED') {
       for (const one of observed) {
@@ -311,7 +313,7 @@
       const seedId = createdId(made);
       if (seedId === null) {
         seedMissed.push(`${title}: HTTP ${made.status}`
-          + `${made.ok ? ' carried no numeric Id' : `: ${scrub(made.text).slice(0, 160)}`}`);
+          + `${made.ok ? ' carried no numeric Id' : `: ${quote(made.text).slice(0, 160)}`}`);
         continue;
       }
       // A seed counts once its Title reads back by the Id answered, since the lookup is written to that Id.
@@ -347,7 +349,7 @@
         : await spWrite(`${listPath}/fields`, { ...column.body, Title: column.name, Required: false },
           await getDigest(), VERBOSE_WRITE);
       log('INFO', `create ${column.name}: HTTP ${sent.status}`
-        + `${sent.ok ? '' : ` ${scrub(sent.text).slice(0, 200)}`}`);
+        + `${sent.ok ? '' : ` ${quote(sent.text).slice(0, 200)}`}`);
     }
     const declaredColumns = {};
     // DisplayFormat is what makes a DateTime column date-only or date-and-time, which the two date rows report on.
@@ -381,7 +383,7 @@
         + `Name="${PEOPLE}"/>`,
       Options: 8 } }, await getDigest());
     log('INFO', `create ${PEOPLE}: HTTP ${peopleSent.status}`
-      + `${peopleSent.ok ? '' : ` ${scrub(peopleSent.text).slice(0, 200)}`}`);
+      + `${peopleSent.ok ? '' : ` ${quote(peopleSent.text).slice(0, 200)}`}`);
     peopleHeld = await settleFixture('field.version.fixture-payload-people-column', async () => {
       const read = await readBack(`${listPath}/fields/getbyinternalnameortitle('${PEOPLE}')`
         + '?$select=InternalName,TypeAsString,AllowMultipleValues');
@@ -445,7 +447,7 @@
     itemId = createdId(made);
     if (itemId === null) {
       missed.push(`the create: HTTP ${made.status}`
-        + `${made.ok ? ' carried no numeric Id' : `: ${scrub(made.text).slice(0, 300)}`}`);
+        + `${made.ok ? ' carried no numeric Id' : `: ${quote(made.text).slice(0, 300)}`}`);
     } else {
       // The create counts once its Title reads back by the Id answered, as each set after it does.
       const back = await readBack(`${listPath}/items(${itemId})?$select=Id,Title`);
@@ -489,12 +491,12 @@
       let sent = await merge(set, withPeople);
       if (withPeople && !sent.ok && isRefusal(sent.status)) {
         const refusedAt = REFUSED.length - 1;
-        const refusal = `HTTP ${sent.status}: ${scrub(sent.text).slice(0, 300)}`;
+        const refusal = `HTTP ${sent.status}: ${quote(sent.text).slice(0, 300)}`;
         // A refused write may still have landed, so the set is sent again only once nothing is shown to have.
         const now = await snapshot(keys);
         const unknown = prior.why || now.why;
         const changed = unknown ? [] : [...(sameElements(prior.ids, now.ids) ? [] : [`VersionIds `
-          + `${JSON.stringify(prior.ids)} became ${JSON.stringify(now.ids)}`]),
+          + `${quoteValue(prior.ids)} became ${quoteValue(now.ids)}`]),
         ...keys.filter((key) => !sameValue(prior.values[key], now.values[key])).map((key) => `${key} changed`)];
         const refused = `set ${'AB'[i]}: the ${PEOPLE_KEY} write was refused (${refusal})`;
         if (unknown) {
@@ -530,7 +532,7 @@
         if (got.people) peopleMissed.push(`set ${'AB'[i]}: ${got.people}`);
         continue;
       }
-      missed.push(`${what}${got ? `, but ${got.off}` : `: ${scrub(sent.text).slice(0, 300)}`}`);
+      missed.push(`${what}${got ? `, but ${got.off}` : `: ${quote(sent.text).slice(0, 300)}`}`);
       break;
     }
     const last = SETS[1];
@@ -655,7 +657,7 @@
     beginFixture();
     const made = await spWrite(`${libraryPath}/fields`, { ...choice, Title: LIB_COLUMN, Required: false },
       await getDigest(), VERBOSE_WRITE);
-    log('INFO', `create ${LIB_COLUMN}: HTTP ${made.status}${made.ok ? '' : ` ${scrub(made.text).slice(0, 200)}`}`);
+    log('INFO', `create ${LIB_COLUMN}: HTTP ${made.status}${made.ok ? '' : ` ${quote(made.text).slice(0, 200)}`}`);
     if (!await settleFixture(LIB.libraryColumn, async () => {
       const read = await readBack(`${libraryPath}/fields/getbyinternalnameortitle('${LIB_COLUMN}')`
         + '?$select=InternalName,TypeAsString');

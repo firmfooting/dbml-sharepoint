@@ -24,7 +24,7 @@
     }
     const bad = parsed.value.findIndex((row) => !row || typeof row !== 'object' || Array.isArray(row));
     return bad === -1 ? { rows: parsed.value, shape: null } : { rows: null, shape: `carried entry ${bad + 1} `
-      + `of its value array as ${scrub(JSON.stringify(parsed.value[bad])).slice(0, 80)}, not an object` };
+      + `of its value array as ${quoteValue(parsed.value[bad]).slice(0, 80)}, not an object` };
   };
   // A continuation link in the three spellings the search-discovery probe reads plus a bare __next, or null.
   const continuationOf = (parsed) => {
@@ -66,16 +66,32 @@
     const refusedFrom = refusedStart;
     // Rows an earlier fixture voided are put back as they were, since establishFixture voids them again.
     const earlier = RESULTS.filter((r) => dependents.includes(r.id) && r.state === 'void').map((r) => ({ ...r }));
+    // The harness prints every value it reads, so once text is withheld a declared value holding text found in
+    // an answer is judged here and handed on as a verdict; one equal to its declared literal stays.
+    const HELD = '(text withheld; it held)';
+    const textsOf = (v) => (typeof v === 'string' ? [v]
+      : v && typeof v === 'object' ? Object.values(v).flatMap(textsOf) : []);
+    const answered = (value) => textsOf(value).some((s) => s.length > 0
+      && ANSWERS.some((a) => a.includes(s) || a.includes(JSON.stringify(s).slice(1, -1))));
+    const judged = (body) => (!withheld || !body || typeof body !== 'object' ? body
+      : Object.fromEntries(Object.entries(body).map(([name, value]) => {
+        const want = declared[name];
+        if (want === undefined || value === want || !answered(value)) return [name, value];
+        return [name, typeof want === 'function' && want(value) === true ? HELD : WITHHELD];
+      })));
+    const verdicts = Object.fromEntries(Object.entries(declared).map(([name, want]) => [name,
+      typeof want === 'function' ? (v) => v === HELD || (v !== WITHHELD && want(v)) : want]));
     // A read that throws never answered, so it counts as unanswered like a throttle.
     const heard = async () => {
       try {
-        return await read();
+        const got = await read();
+        return got && typeof got === 'object' ? { ...got, body: judged(got.body) } : got;
       } catch (err) {
         UNHEARD.push(`the read never answered (${scrub(String((err && err.message) || err)).slice(0, 200)})`);
         throw err;
       }
     };
-    const held = await establishFixture(id, heard, declared, dependents);
+    const held = await establishFixture(id, heard, verdicts, dependents);
     const restore = () => earlier.forEach((was) => Object.assign(RESULTS.find((r) => r.id === was.id), was));
     if (held) return true;
     // A refusal is a settled answer, so it keeps the FAIL even beside a request that went unanswered.
@@ -161,13 +177,13 @@
     } else if (isRefusal(pre.status) && pre.status !== 404) {
       // A refused ownership read is an answer, so nothing is created and the claim fails with its reason.
       record(id, question, 'FAIL', `the ownership read of '${title}' was refused (HTTP ${pre.status})`
-        + `${pre.body ? `: ${scrub(JSON.stringify(pre.body)).slice(0, 200)}` : ''}; nothing was created`);
+        + `${pre.body ? `: ${quoteValue(pre.body).slice(0, 200)}` : ''}; nothing was created`);
       voidRows(dependents, 'the scratch list was not created');
       return { held: false, merge: null, body: null };
     } else if (pre.status !== 404) {
       // A by-title read answers an absent list 404 (the live finding rollback.js.j2 cites); anything else is unknown.
       return leaveOpen(`the ownership read of '${title}' ${unanswered(pre)}`
-        + `${pre.body ? `: ${scrub(JSON.stringify(pre.body)).slice(0, 200)}` : ''}; nothing was created`);
+        + `${pre.body ? `: ${quoteValue(pre.body).slice(0, 200)}` : ''}; nothing was created`);
     }
     const digest = await getDigest();
     let made;
@@ -198,7 +214,7 @@
         + `(list ${landedId}), so it is recycled` : back.status === 404 ? `; no list holds '${title}'`
         : `; whether a list '${title}' landed is unknown (the read-back ${unknown}), so check it by hand`;
       record(id, question, 'FAIL',
-        `the list create answered HTTP ${made.status}: ${scrub(made.text).slice(0, 300)}${landing}`);
+        `the list create answered HTTP ${made.status}: ${quote(made.text).slice(0, 300)}${landing}`);
       voidRows(dependents, 'the scratch list was not created');
       return { held: false, merge: null, body: null };
     }
@@ -206,7 +222,7 @@
       // Throttled, unauthorised or unavailable is no answer, and the list may exist, so the title is kept.
       CREATED_LISTS.push({ title, id: null });
       return leaveOpen(`the list create ${unanswered({ ok: false, status: made.status })}: `
-        + `${scrub(made.text).slice(0, 200)}, so a list '${title}' may now exist`);
+        + `${quote(made.text).slice(0, 200)}, so a list '${title}' may now exist`);
     }
     if (recordBody({ parsed: made.body }) === null) {
       CREATED_LISTS.push({ title, id: null });
@@ -238,12 +254,12 @@
       merge = await spWrite(`web/lists(guid'${created.id}')`, { __metadata: { type: 'SP.List' }, ...settings },
         await getDigest(), { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
       log('INFO', `list settings MERGE on '${title}': HTTP ${merge.status}`
-        + `${merge.ok ? '' : ` ${scrub(merge.text).slice(0, 200)}`}`);
+        + `${merge.ok ? '' : ` ${quote(merge.text).slice(0, 200)}`}`);
     }
     const select = [...new Set(['Id', 'BaseTemplate', 'Description', ...Object.keys(declared)])].join(',');
     // The MERGE's answer joins the read-back, so a refused setting shows its reason in RESULTS.
     const answered = merge === null ? {} : { Settings: `HTTP ${merge.status}`
-      + `${merge.ok ? '' : `: ${scrub(merge.text).slice(0, 200)}`}` };
+      + `${merge.ok ? '' : `: ${quote(merge.text).slice(0, 200)}`}` };
     // Recorded, never judged: what the MERGE answered is an observation, and the read-back decides.
     const settled = merge === null ? {} : { Settings: (v) => typeof v === 'string' };
     let read = null;

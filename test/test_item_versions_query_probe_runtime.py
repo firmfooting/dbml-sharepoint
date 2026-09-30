@@ -495,3 +495,33 @@ def test_an_item_list_control_answered_with_a_continuation_link_is_not_establish
     assert "carried a continuation link" in rows[control]["evidence"]
     assert rows[row_id]["state"] == "open"
     assert voided(rows) == set()
+
+
+WITHHELD = "(text withheld: this account's display name was not learned)"
+UNNAMED = {"contains": "web/currentuser", "status": 403, "text": "denied"}
+
+
+def test_once_the_display_name_is_not_learned_no_answer_text_is_quoted() -> None:
+    labelled = json.dumps({"value": [
+        {"VersionId": 1536, "VersionLabel": "Zed Sentinel 3.0", "ProbeChoice": "Q3"},
+        {"VersionId": 1024, "VersionLabel": "2.0", "ProbeChoice": "Q2"},
+        {"VersionId": 512, "VersionLabel": "1.0", "ProbeChoice": "Q1"}]})
+    rows, _, output = _run(rules=[
+        UNNAMED, {"contains": "items(1)/versions", "nth": 1, "status": 200, "text": labelled},
+        {"contains": "/versions?$filter", "status": 400, "text": "Zed Sentinel holds the item."}])
+
+    assert "Zed Sentinel" not in output
+    assert rows[ORDER]["evidence"].endswith(f"labels {WITHHELD}")
+    assert "VersionIds in the order answered: [1536,1024,512]" in rows[ORDER]["evidence"]
+    assert rows[FILTER]["evidence"] == f"$filter=VersionId gt 512: HTTP 400: {WITHHELD}"
+
+
+def test_a_fixture_value_read_from_an_answer_is_withheld_where_the_harness_prints_it() -> None:
+    rows, _, output = _run(rules=[
+        UNNAMED, {"contains": "items(1)?$select=Id,ProbeChoice", "status": 200,
+                  "text": json.dumps({"Id": 1, "ProbeChoice": "Zed Sentinel"})}])
+
+    assert "Zed Sentinel" not in output
+    assert rows[ITEMS]["outcome"] == "FAIL"
+    assert f'ProbeChoice differs: read "{WITHHELD}", declared "Q3"' in rows[ITEMS]["evidence"]
+    assert 'Column="HTTP 201"' in rows[ITEMS]["evidence"]

@@ -1108,3 +1108,16 @@ def test_a_paged_items_read_leaves_every_landing_unknown() -> None:
         assert rows[row_id]["outcome"] == "NOT ESTABLISHED", rows[row_id]
         assert "landed unknown" in rows[row_id]["evidence"]
         assert "carried a continuation link" in rows[row_id]["evidence"]
+
+
+def test_once_the_display_name_is_not_learned_no_answer_text_is_quoted() -> None:
+    rows, _, output = _run(rules=[
+        {"contains": "web/currentuser", "status": 403, "text": "denied"},
+        {"contains": CONTROL_CALL, "status": 500, "text": "Zed Sentinel refused it."},
+        {"contains": "/fields", "verb": "POST", "bodyContains": "ProbeWhen", "status": 400,
+         "text": "Zed Sentinel says no."}])
+
+    assert "Zed Sentinel" not in output
+    withheld = "(text withheld: this account's display name was not learned)"
+    assert rows[ADDVALIDATE]["evidence"] == f"the call: HTTP 500: {withheld}"
+    assert f"ProbeWhen.Create=\\\"HTTP 400: {withheld}\\\"" in json.dumps(rows[COLUMNS]["evidence"])

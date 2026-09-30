@@ -384,8 +384,8 @@ def test_an_account_that_does_not_read_back_is_said_and_the_run_goes_on() -> Non
     rows, _, output = _run(trimToLimit=True, rules=[{"contains": "web/currentuser", "status": 503,
                                                      "text": "busy"}])
 
-    assert "this account did not read back (the account read answered HTTP 503)" in output
-    assert "a display name in an answer is not masked" in output
+    assert ("this account's display name was not learned (the account read answered HTTP 503), so "
+            "no text from an answer is quoted for the rest of this run") in output
     assert rows[ONCE]["outcome"] == "TRIMMED"
     assert ended_with_report(output)
 
@@ -454,3 +454,14 @@ def test_a_paged_versions_read_after_a_write_leaves_the_item_open() -> None:
     assert rows[ITEM]["outcome"] == "NOT ESTABLISHED", rows[ITEM]
     assert "the answer carried a continuation link" in rows[ITEM]["evidence"]
     assert voided(rows) == set()
+
+
+def test_once_the_display_name_is_not_learned_a_refusal_is_quoted_by_status_only() -> None:
+    rows, _, output = _run(rules=[
+        {"contains": "web/currentuser", "status": 503, "text": "busy"},
+        {"contains": "items(1)", "verb": "MERGE", "nth": 1, "status": 400,
+         "text": "Zed Sentinel holds the item."}])
+
+    assert "Zed Sentinel" not in output
+    assert ("write 2: HTTP 400: (text withheld: this account's display name was not learned)"
+            in rows[ITEM]["evidence"])

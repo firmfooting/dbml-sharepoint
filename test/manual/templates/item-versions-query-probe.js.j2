@@ -120,7 +120,7 @@
   }
 
   // Refusal text can name the tenant or an account, so it is scrubbed before it is shown.
-  const said = (res) => scrub(res.text).slice(0, 400);
+  const said = (res) => quote(res.text).slice(0, 400);
 
   try {
     await learnIdentity();
@@ -159,7 +159,7 @@
       }
       missed.push(`${what}: HTTP ${sent.status}, but ${got === null ? `the read-back ${head ? scrub(head.why)
         : `answered HTTP ${read.status} with no JSON`}` : off.map((key) => `${key} reads back `
-        + `${JSON.stringify(got[key])}`).join(', ')}`.slice(0, 240));
+        + `${quoteValue(got[key])}`).join(', ')}`.slice(0, 240));
       return false;
     };
     for (const [key, title] of [['A', 'dbmlsp versions query A'], ['B', 'dbmlsp versions query B']]) {
@@ -208,7 +208,7 @@
     const entries = (n) => `${n} ${n === 1 ? 'entry' : 'entries'}`;
     record('query.odata.control-versions-read', Q.read, readOutcome, plain.head ? scrub(plain.head.why)
       : `HTTP ${plain.res.status}, ${plain.rows === null ? `${plain.shape}: ${said(plain.res)}`
-        : `${entries(plain.rows.length)}, VersionIds ${JSON.stringify(plainIds)}`}`);
+        : `${entries(plain.rows.length)}, VersionIds ${quoteValue(plainIds)}`}`);
     if (readOutcome === 'FAIL') {
       voidRows(AFTER_READ,
         'the plain versions read did not answer at least two entries each carrying a numeric VersionId, '
@@ -237,8 +237,8 @@
     }
     const defaultOrder = orderOf(plainIds);
     record('query.odata.versions-default-order', Q.order, defaultOrder,
-      `VersionIds in the order answered: ${JSON.stringify(plainIds)}; labels `
-      + `${JSON.stringify(plain.rows.map((row) => row.VersionLabel))}`);
+      `VersionIds in the order answered: ${quoteValue(plainIds)}; labels `
+      + `${quoteValue(plain.rows.map((row) => row.VersionLabel))}`);
 
     // What the item-list controls serve decides which option rows are asked at all. Each read is judged alone:
     // a refusal or a contradicting answer fails the control, and otherwise an unanswered read leaves it open.
@@ -257,7 +257,7 @@
         const outcome = served !== null && holds(served) ? 'PASS'
           : (head ? head.outcome === 'NOT ESTABLISHED' : served === null) ? 'NOT ESTABLISHED' : 'FAIL';
         const why = head ? scrub(head.why) : served === null ? `HTTP ${res.status} ${shape}: ${said(res)}` : '';
-        verdicts.push({ outcome, said: `${query}: ${why || `served ${JSON.stringify(served)}, want ${want}`}` });
+        verdicts.push({ outcome, said: `${query}: ${why || `served ${quoteValue(served)}, want ${want}`}` });
       }
       const outcome = verdicts.some((v) => v.outcome === 'FAIL') ? 'FAIL'
         : verdicts.some((v) => v.outcome === 'NOT ESTABLISHED') ? 'NOT ESTABLISHED' : 'PASS';
@@ -303,12 +303,12 @@
       }
       if (got.next !== null) {
         record(id, question, 'NOT COMPARABLE', `${query}: ${pagedSaid(got)}; served VersionIds `
-          + `${JSON.stringify(got.rows.map(versionIdOf))}`, 'open');
+          + `${quoteValue(got.rows.map(versionIdOf))}`, 'open');
         return;
       }
       const [head, evidence] = describe(got.rows);
       record(id, question, head, `${query}: ${evidence}; the plain read answered VersionIds `
-        + `${JSON.stringify(plainIds)}`);
+        + `${quoteValue(plainIds)}`);
     };
 
     const SELECTED = ['VersionId', 'VersionLabel', CHOICE];
@@ -336,7 +336,7 @@
         const lacking = missing.length ? `; not every entry carries ${missing.join(', ')}, which every entry of `
           + 'the plain read carried' : '';
         return [head, `${entries(rows.length)} carrying ${keys.length ? keys.join(', ') : 'nothing'}; ${why}`
-          + `${lacking}; served VersionIds ${JSON.stringify(rows.map(versionIdOf))}`];
+          + `${lacking}; served VersionIds ${quoteValue(rows.map(versionIdOf))}`];
       });
     const lowest = Math.min(...plainIds);
     await ask('query.odata.versions-filter', Q.filter, filterControl, `$filter=VersionId gt ${lowest}`,
@@ -345,13 +345,13 @@
         const rest = plainIds.filter((v) => v > lowest);
         const head = sameElements(served, rest) ? 'FILTERED' : sameElements(served, plainIds) ? 'UNFILTERED'
           : 'OTHER ROWS';
-        return [head, `served VersionIds ${JSON.stringify(served)}`];
+        return [head, `served VersionIds ${quoteValue(served)}`];
       });
     // A served version the plain read did not answer is not one of this item's versions topped.
     const known = (rows) => rows.every((row) => plainIds.includes(versionIdOf(row)));
     await ask('query.odata.versions-top', Q.top, topControl, '$top=1',
       (rows) => [!known(rows) ? 'OTHER ROWS' : rows.length === 1 ? 'TOPPED' : 'NOT TOPPED',
-        `served ${entries(rows.length)}, VersionIds ${JSON.stringify(rows.map(versionIdOf))}`]);
+        `served ${entries(rows.length)}, VersionIds ${quoteValue(rows.map(versionIdOf))}`]);
     // Only an ordered plain read has an opposite, so an unordered one is asked ascending and said so.
     const opposite = defaultOrder === 'ASCENDING' ? 'desc' : defaultOrder === 'DESCENDING' ? 'asc' : null;
     const direction = opposite || 'asc';
@@ -362,7 +362,7 @@
         const served = rows.map(versionIdOf);
         // An order is named only over the same versions the plain read answered.
         return [sameVersions(rows) ? orderOf(served) : 'OTHER ROWS',
-          `${askedSaid}; served VersionIds ${JSON.stringify(served)}`];
+          `${askedSaid}; served VersionIds ${quoteValue(served)}`];
       });
   } catch (err) {
     log('FAIL', `probe aborted: ${scrub(String((err && err.message) || err)).slice(0, 240)}. `

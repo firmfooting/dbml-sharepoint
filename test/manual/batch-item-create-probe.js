@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: 14b5de0c
+ * REVISION: bd2dbec0
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -88,6 +88,7 @@
  * A ZONE and is not compared, since the browser would read it in its own zone.
  * Any other answer is NOT ESTABLISHED, with the answer quoted, and the probe goes on.
  * Email addresses, claims logins and this account's display name are masked.
+ * When no display name comes back, no text from an answer is quoted, only statuses.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
  * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again.
@@ -508,6 +509,18 @@
     for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
     return out;
   };
+  // The one switch: set once this account's display name is not learned, since no mask can then be complete.
+  let withheld = false;
+  const WITHHELD = '(text withheld: this account\'s display name was not learned)';
+  // Text from an answer, masked, or withheld once masking cannot be complete.
+  const quote = (text) => (withheld ? WITHHELD : scrub(text));
+  // Every answer's text once text is withheld, so a fixture can tell a value read from one from its own.
+  const ANSWERS = [];
+  // A value from an answer as JSON; one holding any text is withheld with it, since a number names nobody.
+  const quoteValue = (value) => {
+    const json = JSON.stringify(value);
+    return withheld && typeof json === 'string' && json.includes('"') ? WITHHELD : scrub(json);
+  };
   // Every answer maskedHead found unanswered or refused, so a fixture can tell an unanswered request, which
   // leaves it open, from a refusal, which is settled.
   const UNHEARD = [];
@@ -523,7 +536,9 @@
   };
   // rawHead cuts a response's text short, so the text is masked first and a cut never splits a name unmasked.
   const maskedHead = (res, write = false) => {
-    const head = rawHead({ ...res, text: scrub(res.text) });
+    // A request that never answered carries its error, not an answer, in its text.
+    const head = rawHead({ ...res, text: res.status === null ? scrub(res.text) : quote(res.text) });
+    if (withheld && res.status !== null) ANSWERS.push(String(res.text));
     if (head && head.outcome === 'NOT ESTABLISHED') {
       UNHEARD.push(head.why);
       if (write) writeUnheard = true;
@@ -543,8 +558,8 @@
     if (!head && recordBody(res) === null) UNHEARD.push(`the read answered HTTP ${res.status} with no JSON object`);
     return head;
   };
-  // For a probe with no current-user fixture: learns this account so its display name is masked too.
-  // Reads this account before any mask for its display name exists, so nothing of a failed answer is quoted.
+  // Reads this account before any mask for its display name exists, so nothing of a failed answer is quoted,
+  // and withholds every later answer's text when no display name of two or more characters comes back.
   const readAccount = async () => {
     const res = await sendRaw('web/currentuser?$select=Id,Email,LoginName,Title');
     const account = res.ok ? recordBody(res) : null;
@@ -556,13 +571,17 @@
       knowIdentity(account.LoginName, '<account>');
       knowIdentity(account.Title, '<name>', true);
     }
+    const named = account && typeof account.Title === 'string' && account.Title.length >= 2;
+    if (!named) {
+      withheld = true;
+      log('INFO', `this account's display name was not learned (${account ? 'no display name to mask came back'
+        : said}), so no text from an answer is quoted for the rest of this run; statuses still are.`);
+    }
     return { account, said: account ? `HTTP ${res.status}` : said };
   };
+  // For a probe with no current-user fixture: learns this account so its display name is masked too.
   const learnIdentity = async () => {
-    const { account, said } = await readAccount();
-    if (account) return;
-    log('INFO', `this account did not read back (${said}), `
-      + 'so a display name in an answer is not masked; logins and emails still are.');
+    await readAccount();
   };
   // ---- Scratch lists (v1) ---------------------------------------------
   // Lists this run created, by title and Id, so the recycle touches those and never a list it only found.
@@ -587,7 +606,7 @@
     }
     const bad = parsed.value.findIndex((row) => !row || typeof row !== 'object' || Array.isArray(row));
     return bad === -1 ? { rows: parsed.value, shape: null } : { rows: null, shape: `carried entry ${bad + 1} `
-      + `of its value array as ${scrub(JSON.stringify(parsed.value[bad])).slice(0, 80)}, not an object` };
+      + `of its value array as ${quoteValue(parsed.value[bad]).slice(0, 80)}, not an object` };
   };
   // A continuation link in the three spellings the search-discovery probe reads plus a bare __next, or null.
   const continuationOf = (parsed) => {
@@ -629,16 +648,32 @@
     const refusedFrom = refusedStart;
     // Rows an earlier fixture voided are put back as they were, since establishFixture voids them again.
     const earlier = RESULTS.filter((r) => dependents.includes(r.id) && r.state === 'void').map((r) => ({ ...r }));
+    // The harness prints every value it reads, so once text is withheld a declared value holding text found in
+    // an answer is judged here and handed on as a verdict; one equal to its declared literal stays.
+    const HELD = '(text withheld; it held)';
+    const textsOf = (v) => (typeof v === 'string' ? [v]
+      : v && typeof v === 'object' ? Object.values(v).flatMap(textsOf) : []);
+    const answered = (value) => textsOf(value).some((s) => s.length > 0
+      && ANSWERS.some((a) => a.includes(s) || a.includes(JSON.stringify(s).slice(1, -1))));
+    const judged = (body) => (!withheld || !body || typeof body !== 'object' ? body
+      : Object.fromEntries(Object.entries(body).map(([name, value]) => {
+        const want = declared[name];
+        if (want === undefined || value === want || !answered(value)) return [name, value];
+        return [name, typeof want === 'function' && want(value) === true ? HELD : WITHHELD];
+      })));
+    const verdicts = Object.fromEntries(Object.entries(declared).map(([name, want]) => [name,
+      typeof want === 'function' ? (v) => v === HELD || (v !== WITHHELD && want(v)) : want]));
     // A read that throws never answered, so it counts as unanswered like a throttle.
     const heard = async () => {
       try {
-        return await read();
+        const got = await read();
+        return got && typeof got === 'object' ? { ...got, body: judged(got.body) } : got;
       } catch (err) {
         UNHEARD.push(`the read never answered (${scrub(String((err && err.message) || err)).slice(0, 200)})`);
         throw err;
       }
     };
-    const held = await establishFixture(id, heard, declared, dependents);
+    const held = await establishFixture(id, heard, verdicts, dependents);
     const restore = () => earlier.forEach((was) => Object.assign(RESULTS.find((r) => r.id === was.id), was));
     if (held) return true;
     // A refusal is a settled answer, so it keeps the FAIL even beside a request that went unanswered.
@@ -724,13 +759,13 @@
     } else if (isRefusal(pre.status) && pre.status !== 404) {
       // A refused ownership read is an answer, so nothing is created and the claim fails with its reason.
       record(id, question, 'FAIL', `the ownership read of '${title}' was refused (HTTP ${pre.status})`
-        + `${pre.body ? `: ${scrub(JSON.stringify(pre.body)).slice(0, 200)}` : ''}; nothing was created`);
+        + `${pre.body ? `: ${quoteValue(pre.body).slice(0, 200)}` : ''}; nothing was created`);
       voidRows(dependents, 'the scratch list was not created');
       return { held: false, merge: null, body: null };
     } else if (pre.status !== 404) {
       // A by-title read answers an absent list 404 (the live finding rollback.js.j2 cites); anything else is unknown.
       return leaveOpen(`the ownership read of '${title}' ${unanswered(pre)}`
-        + `${pre.body ? `: ${scrub(JSON.stringify(pre.body)).slice(0, 200)}` : ''}; nothing was created`);
+        + `${pre.body ? `: ${quoteValue(pre.body).slice(0, 200)}` : ''}; nothing was created`);
     }
     const digest = await getDigest();
     let made;
@@ -761,7 +796,7 @@
         + `(list ${landedId}), so it is recycled` : back.status === 404 ? `; no list holds '${title}'`
         : `; whether a list '${title}' landed is unknown (the read-back ${unknown}), so check it by hand`;
       record(id, question, 'FAIL',
-        `the list create answered HTTP ${made.status}: ${scrub(made.text).slice(0, 300)}${landing}`);
+        `the list create answered HTTP ${made.status}: ${quote(made.text).slice(0, 300)}${landing}`);
       voidRows(dependents, 'the scratch list was not created');
       return { held: false, merge: null, body: null };
     }
@@ -769,7 +804,7 @@
       // Throttled, unauthorised or unavailable is no answer, and the list may exist, so the title is kept.
       CREATED_LISTS.push({ title, id: null });
       return leaveOpen(`the list create ${unanswered({ ok: false, status: made.status })}: `
-        + `${scrub(made.text).slice(0, 200)}, so a list '${title}' may now exist`);
+        + `${quote(made.text).slice(0, 200)}, so a list '${title}' may now exist`);
     }
     if (recordBody({ parsed: made.body }) === null) {
       CREATED_LISTS.push({ title, id: null });
@@ -801,12 +836,12 @@
       merge = await spWrite(`web/lists(guid'${created.id}')`, { __metadata: { type: 'SP.List' }, ...settings },
         await getDigest(), { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
       log('INFO', `list settings MERGE on '${title}': HTTP ${merge.status}`
-        + `${merge.ok ? '' : ` ${scrub(merge.text).slice(0, 200)}`}`);
+        + `${merge.ok ? '' : ` ${quote(merge.text).slice(0, 200)}`}`);
     }
     const select = [...new Set(['Id', 'BaseTemplate', 'Description', ...Object.keys(declared)])].join(',');
     // The MERGE's answer joins the read-back, so a refused setting shows its reason in RESULTS.
     const answered = merge === null ? {} : { Settings: `HTTP ${merge.status}`
-      + `${merge.ok ? '' : `: ${scrub(merge.text).slice(0, 200)}`}` };
+      + `${merge.ok ? '' : `: ${quote(merge.text).slice(0, 200)}`}` };
     // Recorded, never judged: what the MERGE answered is an observation, and the read-back decides.
     const settled = merge === null ? {} : { Settings: (v) => typeof v === 'string' };
     let read = null;
@@ -835,7 +870,7 @@
       await recycleList(title, id);
     }
   };
-  log('INFO', 'probe revision 14b5de0c. Quote this when reporting results.');
+  log('INFO', 'probe revision bd2dbec0. Quote this when reporting results.');
 
   // The parts name the list by title, the form a history write sends and these rows measure; the run's token
   // means no other list holds it, and none can take it between a check and a use.
@@ -928,7 +963,7 @@
     return;
   }
 
-  const said = (text) => scrub(text).slice(0, 300);
+  const said = (text) => quote(text).slice(0, 300);
   const ok2xx = (status) => status >= 200 && status < 300;
   // Each part's status line, headers and body, read line by line so a nested ChangeSet answer is walked too.
   const batchParts = (text) => {
@@ -1041,7 +1076,7 @@
       if (fields === null) return null;
       const answered = fields.map((f) => f.FieldName).filter((name) => name !== 'Id');
       return sameElements(answered, sent) ? null
-        : `answer ${i + 1} names ${JSON.stringify(answered)} where part ${i + 1} sent ${JSON.stringify(sent)}`;
+        : `answer ${i + 1} names ${quoteValue(answered)} where part ${i + 1} sent ${JSON.stringify(sent)}`;
     }).filter((problem) => problem !== null);
     return differ.length ? scrub(differ.join('; ')) : null;
   };
@@ -1063,7 +1098,7 @@
       const named = titleOf(part);
       const k = named === null ? -1 : titles.indexOf(named);
       if (named === null) loose.push(i);
-      else if (k === -1) problems.push(`answer ${i + 1} names Title ${JSON.stringify(named)}, which no part sent`);
+      else if (k === -1) problems.push(`answer ${i + 1} names Title ${quoteValue(named)}, which no part sent`);
       else if (answerOf[k] !== null) problems.push(`answers ${answerOf[k] + 1} and ${i + 1} both name part ${k + 1}`);
       else answerOf[k] = i;
     });
@@ -1150,7 +1185,7 @@
     record(SINGLE, Q.single, singleOutcome, madeHead ? `the create: ${madeHead.why}`
       : madeId === null ? `the create answered HTTP ${made.status} with no Id: ${said(made.text)}`
         : backHead ? `created Id ${madeId}; the read-back: ${backHead.why}`
-          : `created Id ${madeId}; it reads back Title ${JSON.stringify(backBody && backBody.Title)}`);
+          : `created Id ${madeId}; it reads back Title ${quoteValue(backBody && backBody.Title)}`);
     if (singleOutcome === 'FAIL') {
       voidRows(AFTER_SINGLE, 'a single typed create did not land, so a batch answer '
         + 'would say nothing about the transport');
@@ -1188,7 +1223,7 @@
       formValues: Object.entries(values).map(([FieldName, FieldValue]) => ({ FieldName, FieldValue })),
       bNewDocumentUpdate: false,
     });
-    const fieldsSaid = (fields) => scrub(fields.map((f) => `${f.FieldName} HasException=`
+    const fieldsSaid = (fields) => quote(fields.map((f) => `${f.FieldName} HasException=`
       + `${JSON.stringify(f.HasException)} ErrorMessage=${JSON.stringify(f.ErrorMessage)} `
       + `FieldValue=${JSON.stringify(f.FieldValue)}`).join('; ')).slice(0, 600);
     const headOutcome = (head) => (head.outcome === 'NOT ESTABLISHED' ? 'NOT ESTABLISHED' : 'FAIL');
@@ -1213,13 +1248,13 @@
       // A 2xx whose per-field list cannot be read is no answer about the call, so it is left open.
       if (!fields) {
         return { outcome: 'NOT ESTABLISHED', folder, evidence: `the call answered HTTP ${sent.status} and ${shape}: `
-          + `${scrub(sent.text).slice(0, 400)}` };
+          + `${quote(sent.text).slice(0, 400)}` };
       }
       const idField = fields.find((f) => f.FieldName === 'Id');
       const madeAt = idField ? Number(idField.FieldValue) : NaN;
       if (fields.some((f) => f.HasException === true) || !Number.isInteger(madeAt) || madeAt < 1) {
         return { outcome: 'FAIL', folder, evidence: `the call answered HTTP ${sent.status}: `
-          + `${scrub(sent.text).slice(0, 400)}` };
+          + `${quote(sent.text).slice(0, 400)}` };
       }
       const back = await sendRaw(`${listPath}/items(${madeAt})?$select=Id,Title`);
       const backHead = maskedHead(back);
@@ -1231,7 +1266,7 @@
       }
       const title = recordBody(back).Title;
       return { outcome: title === TITLES.addvalidate ? 'PASS' : 'FAIL', folder,
-        evidence: `created Id ${madeAt}; it reads back Title ${JSON.stringify(title)}` };
+        evidence: `created Id ${madeAt}; it reads back Title ${quoteValue(title)}` };
     };
     const control = await addValidateControl();
     record(ADDVALIDATE, Q.addvalidate, control.outcome, control.evidence);
@@ -1248,7 +1283,7 @@
       avUnknown = head ? (head.outcome === 'NOT ESTABLISHED' ? 'NOT ESTABLISHED' : 'PASS')
         : fieldRefused ? 'PASS' : fields === null ? 'NOT ESTABLISHED' : 'FAIL';
       avSaid = head ? head.why : `HTTP ${sent.status}: `
-        + `${fields ? `fields ${fieldsSaid(fields)}` : scrub(sent.text).slice(0, 400)}`;
+        + `${fields ? `fields ${fieldsSaid(fields)}` : quote(sent.text).slice(0, 400)}`;
     }
     // Each part asked only when what it rests on held, so a voided row is never overwritten.
     const asked = [
@@ -1274,7 +1309,7 @@
     const titlesNext = titleRows.rows === null ? null : continuationOf(titles.parsed);
     if (titlesNext !== null) {
       titleRows.rows = null;
-      titleRows.shape = `carried a continuation link (${scrub(titlesNext).slice(0, 200)}), which this probe `
+      titleRows.shape = `carried a continuation link (${quote(titlesNext).slice(0, 200)}), which this probe `
         + 'does not follow';
     }
     const present = titleRows.rows === null ? null : new Map();
@@ -1367,7 +1402,7 @@
         // Only a Title held by exactly one item says which item the part wrote.
         const row = landed(one.title) === 'yes' ? present.get(one.title)[0] : null;
         if (!row || (one.id !== CLAIMS && one.id !== ISO)) return { said: '', head: null };
-        const shown = (value) => (value === undefined ? '(absent)' : JSON.stringify(value));
+        const shown = (value) => (value === undefined ? '(absent)' : quoteValue(value));
         if (one.id === CLAIMS) {
           const who = row[`${WHO}Id`];
           return { head: who === me.Id ? null : 'ACCEPTED, NOT STORED', said: `; ${WHO}Id reads back `

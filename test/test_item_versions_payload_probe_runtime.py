@@ -1004,3 +1004,16 @@ def test_a_refused_people_write_that_landed_nothing_is_sent_again_without_it() -
     assert rows[ITEM]["outcome"] == "PASS"
     assert "3 version(s)" in rows["field.version.payload-choice"]["evidence"]
     assert _merges(sent) == [True, False, False]
+
+
+def test_an_account_with_no_display_name_withholds_every_later_answer_text() -> None:
+    nameless = {"Id": 7, "Email": "ada@example.com",
+                "LoginName": "i:0#.f|membership|ada@example.com"}
+    rows, _, output = _run(me=nameless, rules=[
+        {**PEOPLE_REFUSED, "text": "Invalid data for Zed Sentinel"}])
+
+    assert "Zed Sentinel" not in output
+    assert rows[USER]["outcome"] == "PASS"
+    assert ("the write was refused: HTTP 400: (text withheld: this account's display name was not "
+            "learned)") in rows[PEOPLE_WRITE]["evidence"]
+    assert "display name was not learned (no display name to mask came back)" in output

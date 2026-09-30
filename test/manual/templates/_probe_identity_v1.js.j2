@@ -23,6 +23,18 @@
     for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
     return out;
   };
+  // The one switch: set once this account's display name is not learned, since no mask can then be complete.
+  let withheld = false;
+  const WITHHELD = '(text withheld: this account\'s display name was not learned)';
+  // Text from an answer, masked, or withheld once masking cannot be complete.
+  const quote = (text) => (withheld ? WITHHELD : scrub(text));
+  // Every answer's text once text is withheld, so a fixture can tell a value read from one from its own.
+  const ANSWERS = [];
+  // A value from an answer as JSON; one holding any text is withheld with it, since a number names nobody.
+  const quoteValue = (value) => {
+    const json = JSON.stringify(value);
+    return withheld && typeof json === 'string' && json.includes('"') ? WITHHELD : scrub(json);
+  };
   // Every answer maskedHead found unanswered or refused, so a fixture can tell an unanswered request, which
   // leaves it open, from a refusal, which is settled.
   const UNHEARD = [];
@@ -38,7 +50,9 @@
   };
   // rawHead cuts a response's text short, so the text is masked first and a cut never splits a name unmasked.
   const maskedHead = (res, write = false) => {
-    const head = rawHead({ ...res, text: scrub(res.text) });
+    // A request that never answered carries its error, not an answer, in its text.
+    const head = rawHead({ ...res, text: res.status === null ? scrub(res.text) : quote(res.text) });
+    if (withheld && res.status !== null) ANSWERS.push(String(res.text));
     if (head && head.outcome === 'NOT ESTABLISHED') {
       UNHEARD.push(head.why);
       if (write) writeUnheard = true;
@@ -58,8 +72,8 @@
     if (!head && recordBody(res) === null) UNHEARD.push(`the read answered HTTP ${res.status} with no JSON object`);
     return head;
   };
-  // For a probe with no current-user fixture: learns this account so its display name is masked too.
-  // Reads this account before any mask for its display name exists, so nothing of a failed answer is quoted.
+  // Reads this account before any mask for its display name exists, so nothing of a failed answer is quoted,
+  // and withholds every later answer's text when no display name of two or more characters comes back.
   const readAccount = async () => {
     const res = await sendRaw('web/currentuser?$select=Id,Email,LoginName,Title');
     const account = res.ok ? recordBody(res) : null;
@@ -71,11 +85,15 @@
       knowIdentity(account.LoginName, '<account>');
       knowIdentity(account.Title, '<name>', true);
     }
+    const named = account && typeof account.Title === 'string' && account.Title.length >= 2;
+    if (!named) {
+      withheld = true;
+      log('INFO', `this account's display name was not learned (${account ? 'no display name to mask came back'
+        : said}), so no text from an answer is quoted for the rest of this run; statuses still are.`);
+    }
     return { account, said: account ? `HTTP ${res.status}` : said };
   };
+  // For a probe with no current-user fixture: learns this account so its display name is masked too.
   const learnIdentity = async () => {
-    const { account, said } = await readAccount();
-    if (account) return;
-    log('INFO', `this account did not read back (${said}), `
-      + 'so a display name in an answer is not masked; logins and emails still are.');
+    await readAccount();
   };

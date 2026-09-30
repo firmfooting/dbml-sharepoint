@@ -89,6 +89,7 @@
  * A ZONE and is not compared, since the browser would read it in its own zone.
  * Any other answer is NOT ESTABLISHED, with the answer quoted, and the probe goes on.
  * Email addresses, claims logins and this account's display name are masked.
+ * When no display name comes back, no text from an answer is quoted, only statuses.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
  * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again.
@@ -197,7 +198,7 @@
     return;
   }
 
-  const said = (text) => scrub(text).slice(0, 300);
+  const said = (text) => quote(text).slice(0, 300);
   const ok2xx = (status) => status >= 200 && status < 300;
   // Each part's status line, headers and body, read line by line so a nested ChangeSet answer is walked too.
   const batchParts = (text) => {
@@ -310,7 +311,7 @@
       if (fields === null) return null;
       const answered = fields.map((f) => f.FieldName).filter((name) => name !== 'Id');
       return sameElements(answered, sent) ? null
-        : `answer ${i + 1} names ${JSON.stringify(answered)} where part ${i + 1} sent ${JSON.stringify(sent)}`;
+        : `answer ${i + 1} names ${quoteValue(answered)} where part ${i + 1} sent ${JSON.stringify(sent)}`;
     }).filter((problem) => problem !== null);
     return differ.length ? scrub(differ.join('; ')) : null;
   };
@@ -332,7 +333,7 @@
       const named = titleOf(part);
       const k = named === null ? -1 : titles.indexOf(named);
       if (named === null) loose.push(i);
-      else if (k === -1) problems.push(`answer ${i + 1} names Title ${JSON.stringify(named)}, which no part sent`);
+      else if (k === -1) problems.push(`answer ${i + 1} names Title ${quoteValue(named)}, which no part sent`);
       else if (answerOf[k] !== null) problems.push(`answers ${answerOf[k] + 1} and ${i + 1} both name part ${k + 1}`);
       else answerOf[k] = i;
     });
@@ -419,7 +420,7 @@
     record(SINGLE, Q.single, singleOutcome, madeHead ? `the create: ${madeHead.why}`
       : madeId === null ? `the create answered HTTP ${made.status} with no Id: ${said(made.text)}`
         : backHead ? `created Id ${madeId}; the read-back: ${backHead.why}`
-          : `created Id ${madeId}; it reads back Title ${JSON.stringify(backBody && backBody.Title)}`);
+          : `created Id ${madeId}; it reads back Title ${quoteValue(backBody && backBody.Title)}`);
     if (singleOutcome === 'FAIL') {
       voidRows(AFTER_SINGLE, 'a single typed create did not land, so a batch answer '
         + 'would say nothing about the transport');
@@ -457,7 +458,7 @@
       formValues: Object.entries(values).map(([FieldName, FieldValue]) => ({ FieldName, FieldValue })),
       bNewDocumentUpdate: false,
     });
-    const fieldsSaid = (fields) => scrub(fields.map((f) => `${f.FieldName} HasException=`
+    const fieldsSaid = (fields) => quote(fields.map((f) => `${f.FieldName} HasException=`
       + `${JSON.stringify(f.HasException)} ErrorMessage=${JSON.stringify(f.ErrorMessage)} `
       + `FieldValue=${JSON.stringify(f.FieldValue)}`).join('; ')).slice(0, 600);
     const headOutcome = (head) => (head.outcome === 'NOT ESTABLISHED' ? 'NOT ESTABLISHED' : 'FAIL');
@@ -482,13 +483,13 @@
       // A 2xx whose per-field list cannot be read is no answer about the call, so it is left open.
       if (!fields) {
         return { outcome: 'NOT ESTABLISHED', folder, evidence: `the call answered HTTP ${sent.status} and ${shape}: `
-          + `${scrub(sent.text).slice(0, 400)}` };
+          + `${quote(sent.text).slice(0, 400)}` };
       }
       const idField = fields.find((f) => f.FieldName === 'Id');
       const madeAt = idField ? Number(idField.FieldValue) : NaN;
       if (fields.some((f) => f.HasException === true) || !Number.isInteger(madeAt) || madeAt < 1) {
         return { outcome: 'FAIL', folder, evidence: `the call answered HTTP ${sent.status}: `
-          + `${scrub(sent.text).slice(0, 400)}` };
+          + `${quote(sent.text).slice(0, 400)}` };
       }
       const back = await sendRaw(`${listPath}/items(${madeAt})?$select=Id,Title`);
       const backHead = maskedHead(back);
@@ -500,7 +501,7 @@
       }
       const title = recordBody(back).Title;
       return { outcome: title === TITLES.addvalidate ? 'PASS' : 'FAIL', folder,
-        evidence: `created Id ${madeAt}; it reads back Title ${JSON.stringify(title)}` };
+        evidence: `created Id ${madeAt}; it reads back Title ${quoteValue(title)}` };
     };
     const control = await addValidateControl();
     record(ADDVALIDATE, Q.addvalidate, control.outcome, control.evidence);
@@ -517,7 +518,7 @@
       avUnknown = head ? (head.outcome === 'NOT ESTABLISHED' ? 'NOT ESTABLISHED' : 'PASS')
         : fieldRefused ? 'PASS' : fields === null ? 'NOT ESTABLISHED' : 'FAIL';
       avSaid = head ? head.why : `HTTP ${sent.status}: `
-        + `${fields ? `fields ${fieldsSaid(fields)}` : scrub(sent.text).slice(0, 400)}`;
+        + `${fields ? `fields ${fieldsSaid(fields)}` : quote(sent.text).slice(0, 400)}`;
     }
     // Each part asked only when what it rests on held, so a voided row is never overwritten.
     const asked = [
@@ -543,7 +544,7 @@
     const titlesNext = titleRows.rows === null ? null : continuationOf(titles.parsed);
     if (titlesNext !== null) {
       titleRows.rows = null;
-      titleRows.shape = `carried a continuation link (${scrub(titlesNext).slice(0, 200)}), which this probe `
+      titleRows.shape = `carried a continuation link (${quote(titlesNext).slice(0, 200)}), which this probe `
         + 'does not follow';
     }
     const present = titleRows.rows === null ? null : new Map();
@@ -636,7 +637,7 @@
         // Only a Title held by exactly one item says which item the part wrote.
         const row = landed(one.title) === 'yes' ? present.get(one.title)[0] : null;
         if (!row || (one.id !== CLAIMS && one.id !== ISO)) return { said: '', head: null };
-        const shown = (value) => (value === undefined ? '(absent)' : JSON.stringify(value));
+        const shown = (value) => (value === undefined ? '(absent)' : quoteValue(value));
         if (one.id === CLAIMS) {
           const who = row[`${WHO}Id`];
           return { head: who === me.Id ? null : 'ACCEPTED, NOT STORED', said: `; ${WHO}Id reads back `
