@@ -246,11 +246,14 @@ def test_each_part_answer_is_recorded_with_what_landed() -> None:
         assert rows[row_id]["outcome"] == "PASS", rows[row_id]
     parts = rows[PARTS]["evidence"]
     assert rows[PARTS]["outcome"] == "RECORDED"
-    assert parts.startswith("outer HTTP 200, 3 part answer(s): part 1: HTTP 201 Created; headers "
+    assert parts.startswith("outer HTTP 200, 3 part answer(s) matched by Title: part 1 (answer 1): "
+                            "HTTP 201 Created; headers "
                             "CONTENT-TYPE: application/json;odata=verbose;charset=utf-8; body ")
-    assert "part 2: HTTP 400 Bad Request" in parts
+    assert "part 2 (answer 2): HTTP 400 Bad Request" in parts
+    assert "answer 2 names no Title and is part 2's as the one part left" in parts
     assert parts.endswith("landed A yes, B no, C yes")
     assert rows[FAILED]["outcome"] == "PART REFUSED"
+    assert rows[FAILED]["evidence"].startswith("answer 2: HTTP 400 Bad Request")
     assert "The property 'dbmlspNoSuchColumn' does not exist" in rows[FAILED]["evidence"]
     assert "neighbours landed A yes, C yes" in rows[FAILED]["evidence"]
     assert rows[VERBOSE]["outcome"] == "PART ANSWERED 2XX"
@@ -398,6 +401,42 @@ def test_a_batch_answering_only_its_failed_part_leaves_every_part_row_unmatched(
         assert "4 part(s) sent, 1 answer(s); answer 1: HTTP 200 OK" in rows[row_id]["evidence"]
         refused = '"FieldName":"dbmlspNoSuchColumn","FieldValue":"x","HasException":true'
         assert refused in rows[row_id]["evidence"]
+
+
+def test_item_create_answers_in_another_order_are_matched_by_their_titles() -> None:
+    rows, _, output = _run(reverseAnswers=True)
+
+    parts = rows[PARTS]["evidence"]
+    assert rows[PARTS]["outcome"] == "RECORDED"
+    assert "part 1 (answer 3): HTTP 201 Created" in parts
+    assert "part 2 (answer 2): HTTP 400 Bad Request" in parts
+    assert "part 3 (answer 1): HTTP 201 Created" in parts
+    assert rows[FAILED]["outcome"] == "PART REFUSED"
+    assert rows[FAILED]["evidence"].startswith("answer 2: HTTP 400 Bad Request")
+    assert ended_with_report(output)
+
+
+@pytest.mark.parametrize(("part", "said"), [
+    pytest.param({"bodyContains": "part A", "status": 201, "reason": "Created", "text": "{}"},
+                 "2 answers name no Title, so which part each answers is unknown",
+                 id="two-untitled"),
+    pytest.param({"bodyContains": "part A", "status": 201, "reason": "Created",
+                  "text": '{"d": {"Title": "dbmlsp batch part C"}}'},
+                 "answers 1 and 3 both name part 3", id="one-title-twice"),
+    pytest.param({"bodyContains": "part A", "status": 201, "reason": "Created",
+                  "text": '{"d": {"Title": "another item"}}'},
+                 'answer 1 names Title "another item", which no part sent', id="unsent-title"),
+])
+def test_item_create_answers_that_cannot_be_paired_by_title_are_not_matched(
+        part: dict[str, Any], said: str) -> None:
+    rows, _, output = _run(partRules=[part])
+
+    for row_id in (PARTS, FAILED):
+        assert rows[row_id]["outcome"] == "ANSWERS NOT MATCHED", rows[row_id]
+        assert rows[row_id]["state"] == "open"
+        assert rows[row_id]["evidence"].startswith(said)
+    assert voided(rows) == set()
+    assert ended_with_report(output)
 
 
 def test_answers_naming_other_fields_than_their_parts_are_not_matched() -> None:

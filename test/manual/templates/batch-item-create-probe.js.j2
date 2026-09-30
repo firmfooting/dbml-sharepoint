@@ -67,8 +67,10 @@
  * line said, beside whether its item exists afterwards. OUTER REQUEST REFUSED
  * is the whole $batch refused, and its text says why. ANSWERS NOT MATCHED, left
  * open, is a $batch whose answers cannot be matched to its parts: their count
- * differs from the parts sent, or an AddValidate answer names other fields than
- * its part sent. FIELD REFUSED is a 2xx AddValidate answer with HasException on
+ * differs from the parts sent, an AddValidate answer names other fields than
+ * its part sent, or the three typed creates' answers cannot be paired with
+ * their parts by the Title each names (one answer naming no Title is paired
+ * with the one part left, and the evidence says so). FIELD REFUSED is a 2xx AddValidate answer with HasException on
  * the missing column. Any other AddValidate row is WRITTEN when its part answered
  * 2xx with no field exception, its item exists, and the value it wrote reads back:
  * the person as this account's Id, the date as the same UTC instant as the one
@@ -285,6 +287,35 @@
     return differ.length ? scrub(differ.join('; ')) : null;
   };
   const answersSaid = (batch) => batch.parts.map((part, i) => `answer ${i + 1}: ${partSaid(part)}`).join(' | ');
+  // The Title an item-create answer names, verbose or nometadata, or null when it names none.
+  const titleOf = (part) => {
+    const parsed = parsedOf(part.body);
+    const entity = parsed && parsed.d && typeof parsed.d === 'object' ? parsed.d : parsed;
+    return entity && typeof entity.Title === 'string' ? entity.Title : null;
+  };
+  // Pairs part k with the answer naming titles[k]; one answer naming no Title goes to the one part left.
+  const byTitle = (batch, titles) => {
+    const count = unmatched(batch);
+    if (count) return { why: count, answerOf: null, inferred: null };
+    const answerOf = titles.map(() => null);
+    const loose = [];
+    const problems = [];
+    batch.parts.forEach((part, i) => {
+      const named = titleOf(part);
+      const k = named === null ? -1 : titles.indexOf(named);
+      if (named === null) loose.push(i);
+      else if (k === -1) problems.push(`answer ${i + 1} names Title ${JSON.stringify(named)}, which no part sent`);
+      else if (answerOf[k] !== null) problems.push(`answers ${answerOf[k] + 1} and ${i + 1} both name part ${k + 1}`);
+      else answerOf[k] = i;
+    });
+    if (!problems.length && loose.length > 1) {
+      problems.push(`${loose.length} answers name no Title, so which part each answers is unknown`);
+    }
+    if (problems.length) return { why: scrub(problems.join('; ')), answerOf: null, inferred: null };
+    const left = answerOf.findIndex((i) => i === null);
+    if (left !== -1) answerOf[left] = loose[0];
+    return { why: null, answerOf, inferred: left === -1 ? null : left };
+  };
   const NOT_MATCHED = 'ANSWERS NOT MATCHED';
 
   let me = null;
@@ -462,15 +493,23 @@
       : `HTTP ${titles.status} carried no rows`}` : '';
 
     const threeHead = outerHead(three);
-    const threeUnmatched = threeHead ? null : unmatched(three);
+    // Matched by the Title each answer names, since no document says the answers come back in part order.
+    const threeMatch = threeHead ? null : byTitle(three, [TITLES.a, TITLES.b, TITLES.c]);
+    const threeUnmatched = threeMatch ? threeMatch.why : null;
+    const threeAnswer = (k) => three.parts[threeMatch.answerOf[k]];
     const threeLanded = `landed A ${landed(TITLES.a)}, B ${landed(TITLES.b)}, C ${landed(TITLES.c)}${titlesSaid}`;
     const threeSaid = `${threeUnmatched}; ${answersSaid(three)}; ${threeLanded}`;
+    // The one answer paired by elimination is named, since it names no Title of its own.
+    const inferredSaid = threeMatch && threeMatch.inferred !== null
+      ? `; answer ${threeMatch.answerOf[threeMatch.inferred] + 1} names no Title and is part `
+        + `${threeMatch.inferred + 1}'s as the one part left` : '';
     if (threeUnmatched) {
       record('transport.batch.changeset-item-creates-per-part', Q.parts, NOT_MATCHED, threeSaid, 'open');
     } else {
       record('transport.batch.changeset-item-creates-per-part', Q.parts, threeHead ? threeHead.outcome : 'RECORDED',
-        threeHead ? threeHead.why : `outer HTTP ${three.status}, ${three.parts.length} part answer(s): `
-          + three.parts.map((part, i) => `part ${i + 1}: ${partSaid(part)}`).join(' | ') + `; ${threeLanded}`);
+        threeHead ? threeHead.why : `outer HTTP ${three.status}, ${three.parts.length} part answer(s) matched by `
+          + `Title: ${[0, 1, 2].map((k) => `part ${k + 1} (answer ${threeMatch.answerOf[k] + 1}): `
+            + partSaid(threeAnswer(k))).join(' | ')}${inferredSaid}; ${threeLanded}`);
     }
 
     if (refusedOutcome === 'FAIL') {
@@ -482,10 +521,10 @@
     } else if (threeUnmatched) {
       record('transport.batch.changeset-item-create-failed-part', Q.failed, NOT_MATCHED, threeSaid, 'open');
     } else {
-      const middle = threeHead ? null : three.parts[1];
+      const middle = threeHead ? null : threeAnswer(1);
       record('transport.batch.changeset-item-create-failed-part', Q.failed,
         threeHead ? threeHead.outcome : partHead(middle),
-        threeHead ? threeHead.why : `${middle ? partSaid(middle) : `${three.parts.length} part answer(s)`}; `
+        threeHead ? threeHead.why : `answer ${threeMatch.answerOf[1] + 1}: ${partSaid(middle)}${inferredSaid}; `
           + `landed B ${landed(TITLES.b)}; neighbours landed A ${landed(TITLES.a)}, C ${landed(TITLES.c)}`
           + titlesSaid);
     }
