@@ -21,6 +21,7 @@ pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 PROBE = MANUAL / "item-versions-payload-probe.js"
 USER = "field.version.control-current-user"
 TARGET = "field.version.fixture-payload-target-list"
+TARGET_ITEMS = "field.version.fixture-payload-target-items"
 LIST = "field.version.fixture-payload-list"
 COLUMNS = "field.version.fixture-payload-columns"
 PEOPLE_COLUMN = "field.version.fixture-payload-people-column"
@@ -77,7 +78,8 @@ def test_without_both_gates_the_probe_sends_nothing(gates: tuple[str, ...]) -> N
 def test_a_healthy_run_records_every_kind_as_each_version_carried_it() -> None:
     rows, sent, _ = _run()
 
-    for row_id in (USER, TARGET, LIST, COLUMNS, PEOPLE_COLUMN, ITEM, PEOPLE_WRITE, READ):
+    for row_id in (USER, TARGET, TARGET_ITEMS, LIST, COLUMNS, PEOPLE_COLUMN, ITEM, PEOPLE_WRITE,
+                   READ):
         assert rows[row_id]["outcome"] == "PASS", rows[row_id]
     for row_id in PAYLOAD:
         assert rows[row_id]["outcome"] == "OBSERVED", rows[row_id]
@@ -255,9 +257,12 @@ def test_a_target_item_without_an_id_voids_what_follows_and_recycles_the_target(
     rows, sent, _ = _run(rules=[{"contains": f"{TARGET_AT}/items", "status": 400,
                                  "text": "no"}])
 
-    assert rows[TARGET]["outcome"] == "FAIL"
-    assert "0 of its two items answered an Id" in rows[TARGET]["evidence"]
-    assert voided(rows) == _deps(TARGET)
+    # The list itself stood; what failed is the two items the lookup is written to.
+    assert rows[TARGET]["outcome"] == "PASS"
+    assert rows[TARGET_ITEMS]["outcome"] == "FAIL"
+    assert "Seeded differs: read 0, declared 2" in rows[TARGET_ITEMS]["evidence"]
+    assert "dbmlsp versions target A: HTTP 400" in rows[TARGET_ITEMS]["evidence"]
+    assert voided(rows) == _deps(TARGET_ITEMS)
     assert _recycled(sent) == [RECYCLED[0], RECYCLED[2]]
 
 
@@ -649,9 +654,10 @@ def test_a_target_seed_that_does_not_read_back_its_title_fails_the_target() -> N
     rows, _, _ = _run(rules=[{"contains": f"{TARGET_AT}/items(1)?$select=Id,Title", "status": 200,
                               "text": json.dumps({"Id": 1, "Title": "another title"})}])
 
-    assert rows[TARGET]["outcome"] == "FAIL"
-    assert "1 of its two items answered an Id and read back their Title" in rows[TARGET]["evidence"]
-    assert voided(rows) == _deps(TARGET)
+    assert rows[TARGET]["outcome"] == "PASS"
+    assert rows[TARGET_ITEMS]["outcome"] == "FAIL"
+    assert "Seeded differs: read 1, declared 2" in rows[TARGET_ITEMS]["evidence"]
+    assert voided(rows) == _deps(TARGET_ITEMS)
 
 
 def test_a_list_versions_read_answered_2xx_with_no_value_array_is_left_open() -> None:
@@ -749,6 +755,16 @@ def test_an_unpinned_run_titles_all_three_lists_with_one_token_of_its_own() -> N
         "dbmlsp Probe VersionsTarget", "dbmlsp Probe Versions", "dbmlsp Probe VersionsLibrary"]
     assert len(tokens) == 1
     assert rows[LIST]["outcome"] == "PASS"
+
+
+def test_the_target_list_is_not_passed_before_its_items_read_back() -> None:
+    _, _, output = _run()
+
+    # The claim's PASS names only the list; the items' PASS follows their read-backs.
+    claimed = output.index(f"{TARGET}: PASS")
+    seeded = output.index(f"{TARGET_ITEMS}: PASS")
+    assert claimed < seeded
+    assert output.index("seed dbmlsp versions target B") < seeded
 
 
 def test_an_item_create_whose_title_does_not_read_back_is_not_counted() -> None:

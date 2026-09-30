@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: 469398e4
+ * REVISION: 10d59280
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -20,7 +20,9 @@
  *
  * DEPENDS ON (read back, and voiding what rests on them when they do not hold)
  *   field.version.control-current-user          this account's Id reads back
- *   field.version.fixture-payload-target-list   a list holding two items the lookup points at
+ *   field.version.fixture-payload-target-list   a list the lookup points at
+ *   field.version.fixture-payload-target-items  two items created in it, each answering an Id
+ *       and reading back its Title by that Id
  *   field.version.fixture-payload-list          a generic list with versioning on
  *   field.version.fixture-payload-columns       eight columns read back with their TypeAsString,
  *       and the date-only and date-and-time columns with DisplayFormat 0 and 1
@@ -700,7 +702,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 469398e4. Quote this when reporting results.');
+  log('INFO', 'probe revision 10d59280. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe Versions');
   const TARGET = runTitle('dbmlsp Probe VersionsTarget');
@@ -736,7 +738,8 @@
 
   const Q = {
     user: 'this account\'s Id reads back from web/currentuser',
-    target: 'a lookup target list this probe created, holding two items',
+    target: 'a lookup target list this probe created',
+    targetItems: 'two items created in the lookup target list, each answering an Id and reading back its Title',
     list: 'a generic list this probe created, with versioning on',
     columns: 'the eight columns read back with their declared TypeAsString, and each date column with its '
       + 'DisplayFormat (0 date only, 1 date and time)',
@@ -770,6 +773,7 @@
   };
   expect('field.version.control-current-user', Q.user);
   expect('field.version.fixture-payload-target-list', Q.target);
+  expect('field.version.fixture-payload-target-items', Q.targetItems);
   expect('field.version.fixture-payload-list', Q.list);
   expect('field.version.fixture-payload-columns', Q.columns);
   expect('field.version.fixture-payload-people-column', Q.peopleColumn);
@@ -832,7 +836,9 @@
   const AFTER_COLUMNS = ['field.version.fixture-payload-people-column', 'field.version.fixture-payload-item',
     ...AFTER_ITEM];
   const AFTER_LIST = ['field.version.fixture-payload-columns', ...AFTER_COLUMNS];
-  const AFTER_TARGET = ['field.version.fixture-payload-list', ...AFTER_LIST];
+  const AFTER_TARGET_ITEMS = ['field.version.fixture-payload-list', ...AFTER_LIST];
+  const TARGET_ITEMS = 'field.version.fixture-payload-target-items';
+  const AFTER_TARGET = [TARGET_ITEMS, ...AFTER_TARGET_ITEMS];
   const AFTER_USER = ['field.version.fixture-payload-target-list', ...AFTER_TARGET, ...LIB_CHAIN];
 
   if (!CONFIRMED) {
@@ -907,25 +913,29 @@
     if (!target.held) return;
     const targetPath = target.path;
     const targetIds = [];
+    const seedMissed = [];
     for (const title of ['dbmlsp versions target A', 'dbmlsp versions target B']) {
       const made = await spPost(`${targetPath}/items`,
         { __metadata: { type: target.body.ListItemEntityTypeFullName }, Title: title },
         await getDigest(), VERBOSE_WRITE);
       log('INFO', `seed ${title}: HTTP ${made.status}`);
-      if (!made.ok || !made.body || !Number.isInteger(made.body.Id)) continue;
+      if (!made.ok || !made.body || !Number.isInteger(made.body.Id)) {
+        seedMissed.push(`${title}: HTTP ${made.status}`
+          + `${made.ok ? ' carried no numeric Id' : `: ${scrub(made.text).slice(0, 160)}`}`);
+        continue;
+      }
       // A seed counts once its Title reads back by the Id answered, since the lookup is written to that Id.
       const back = await readBack(`${targetPath}/items(${made.body.Id})?$select=Id,Title`);
       if (back.parsed && back.parsed.Title === title) targetIds.push(made.body.Id);
       else {
-        log('INFO', `seed ${title}: item ${made.body.Id} read back `
+        seedMissed.push(`${title}: item ${made.body.Id} read back `
           + `${back.parsed ? show(back.parsed.Title) : back.read}`);
       }
     }
-    if (targetIds.length !== 2) {
-      record('field.version.fixture-payload-target-list', Q.target, 'FAIL',
-        `the target list was created but ${targetIds.length} of its two items answered an Id and read back `
-        + 'their Title');
-      voidDependents(AFTER_TARGET, 'the lookup target does not hold the two items the lookup is written to');
+    // Recorded apart from the list's own row, which passes before any item exists.
+    if (!await establishFixture(TARGET_ITEMS, async () => ({ ok: true, status: 200,
+      body: { Seeded: targetIds.length, Missed: seedMissed.join('; ') || 'none' } }),
+    { Seeded: 2, Missed: (v) => typeof v === 'string' }, AFTER_TARGET_ITEMS)) {
       return;
     }
 
