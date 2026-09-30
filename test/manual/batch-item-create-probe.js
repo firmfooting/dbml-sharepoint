@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: 9fb374e6
+ * REVISION: ffea73da
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -494,6 +494,9 @@
     const text = value === null || value === undefined ? '' : String(value);
     if (text.length < 2) return;
     IDENTITIES.push({ text, mask, whole });
+    // An answer's JSON may spell a non-ASCII letter as a \u escape, so that spelling is masked too.
+    const escaped = text.replace(/[^\x20-\x7e]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+    if (escaped !== text) IDENTITIES.push({ text: escaped, mask, whole });
     IDENTITIES.sort((a, b) => b.text.length - a.text.length);
   };
   const literal = (text) => text.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
@@ -501,11 +504,13 @@
     ? new RegExp(`(?<![\\p{L}\\p{N}_])${literal(text)}(?![\\p{L}\\p{N}_])`, 'giu')
     : new RegExp(literal(text), 'gi'));
   // Logins and emails go first, even ones never learned, so a display name inside one cannot break it up.
-  // A match stops at a backslash so JSON escapes survive.
+  // A login's value runs through apostrophes and a backslash before a letter or digit (a Windows claim's
+  // domain\user, escaped or not), and stops at a backslash before anything else, so JSON escapes survive.
+  // An address's local part is RFC 5322's atext and dots, with any letter or digit (RFC 6531).
   const scrub = (value) => {
     let out = redactTenant(value)
-      .replace(/(i:0[^|\s'"]*\|([^|\s'"]+\|)?)[^\s'"|\\]+/gi, '$1<account>')
-      .replace(/[^\s'"|:<>\\]+@[^\s'"<>\\]+/gi, '<account>');
+      .replace(/(i:0[^|\s'"]*\|([^|\s'"]+\|)?)(?:[^\s"|\\]|\\+(?=[\p{L}\p{N}]))+/giu, '$1<account>')
+      .replace(/[\p{L}\p{N}!#$%&'*+/=?^_`{|}~.-]+@[^\s'"<>\\]+/giu, '<account>');
     for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
     return out;
   };
@@ -900,7 +905,7 @@
       await recycleList(title, id);
     }
   };
-  log('INFO', 'probe revision 9fb374e6. Quote this when reporting results.');
+  log('INFO', 'probe revision ffea73da. Quote this when reporting results.');
 
   // The parts name the list by title, the form a history write sends and these rows measure; the run's token
   // means no other list holds it, and none can take it between a check and a use.
