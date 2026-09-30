@@ -1096,3 +1096,15 @@ def test_a_refused_addvalidate_control_voids_every_row_the_catalogue_rests_on_it
 
     assert rows[ADDVALIDATE]["outcome"] == "FAIL"
     assert voided(rows) == _deps(ADDVALIDATE)
+
+
+def test_a_paged_items_read_leaves_every_landing_unknown() -> None:
+    # A Title missing from a page the read did not follow is not absent, so no refusal passes on it.
+    paged = json.dumps({"value": [], "odata.nextLink": "https://example.sharepoint.com/next"})
+    rows, _, _ = _run(rules=[{"contains": "/items?$select=Id,Title", "status": 200,
+                              "text": paged}])
+
+    for row_id in (UNKNOWN, AV_UNKNOWN):
+        assert rows[row_id]["outcome"] == "NOT ESTABLISHED", rows[row_id]
+        assert "landed unknown" in rows[row_id]["evidence"]
+        assert "carried a continuation link" in rows[row_id]["evidence"]

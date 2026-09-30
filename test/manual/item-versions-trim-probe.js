@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: acaf3567
+ * REVISION: 2f28bc3a
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -538,6 +538,13 @@
     return bad === -1 ? { rows: parsed.value, shape: null } : { rows: null, shape: `carried entry ${bad + 1} `
       + `of its value array as ${scrub(JSON.stringify(parsed.value[bad])).slice(0, 80)}, not an object` };
   };
+  // A continuation link in the three spellings the search-discovery probe reads plus a bare __next, or null.
+  const continuationOf = (parsed) => {
+    if (!parsed || typeof parsed !== 'object') return null;
+    const link = parsed['odata.nextLink'] || parsed['@odata.nextLink'] || parsed.__next
+      || (parsed.d && typeof parsed.d === 'object' ? parsed.d.__next : undefined);
+    return typeof link === 'string' && link ? link : null;
+  };
   // voidDependents, except that a row already void keeps its first reason: void is terminal.
   const voidRows = (ids, reason) => voidDependents(ids.filter((one) => {
     const row = RESULTS.find((r) => r.id === one);
@@ -778,13 +785,6 @@
     }
   };
   // ---- Item versions (v1) ---------------------------------------------
-  // A continuation link in the three spellings the search-discovery probe reads plus a bare __next, or null.
-  const continuationOf = (parsed) => {
-    if (!parsed || typeof parsed !== 'object') return null;
-    const link = parsed['odata.nextLink'] || parsed['@odata.nextLink'] || parsed.__next
-      || (parsed.d && typeof parsed.d === 'object' ? parsed.d.__next : undefined);
-    return typeof link === 'string' && link ? link : null;
-  };
   // One read of an item's versions; `rows` is the value array of objects, or null with `shape` saying why.
   const readVersions = async (listPath, itemId, query = '') => {
     const res = await sendRaw(`${listPath}/items(${itemId})/versions${query ? `?${query}` : ''}`);
@@ -822,7 +822,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision acaf3567. Quote this when reporting results.');
+  log('INFO', 'probe revision 2f28bc3a. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsTrim');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.

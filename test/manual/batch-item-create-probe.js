@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: c0aaea7a
+ * REVISION: 14b5de0c
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -589,6 +589,13 @@
     return bad === -1 ? { rows: parsed.value, shape: null } : { rows: null, shape: `carried entry ${bad + 1} `
       + `of its value array as ${scrub(JSON.stringify(parsed.value[bad])).slice(0, 80)}, not an object` };
   };
+  // A continuation link in the three spellings the search-discovery probe reads plus a bare __next, or null.
+  const continuationOf = (parsed) => {
+    if (!parsed || typeof parsed !== 'object') return null;
+    const link = parsed['odata.nextLink'] || parsed['@odata.nextLink'] || parsed.__next
+      || (parsed.d && typeof parsed.d === 'object' ? parsed.d.__next : undefined);
+    return typeof link === 'string' && link ? link : null;
+  };
   // voidDependents, except that a row already void keeps its first reason: void is terminal.
   const voidRows = (ids, reason) => voidDependents(ids.filter((one) => {
     const row = RESULTS.find((r) => r.id === one);
@@ -828,7 +835,7 @@
       await recycleList(title, id);
     }
   };
-  log('INFO', 'probe revision c0aaea7a. Quote this when reporting results.');
+  log('INFO', 'probe revision 14b5de0c. Quote this when reporting results.');
 
   // The parts name the list by title, the form a history write sends and these rows measure; the run's token
   // means no other list holds it, and none can take it between a check and a use.
@@ -1263,6 +1270,13 @@
     const titlesHead = maskedHead(titles);
     // Every item under each Title, so an item created twice is counted and never collapsed into one.
     const titleRows = titlesHead ? { rows: null, shape: null } : entriesOf(titles.parsed);
+    // A page the read did not follow may hold any Title, so a paged read says nothing about what landed.
+    const titlesNext = titleRows.rows === null ? null : continuationOf(titles.parsed);
+    if (titlesNext !== null) {
+      titleRows.rows = null;
+      titleRows.shape = `carried a continuation link (${scrub(titlesNext).slice(0, 200)}), which this probe `
+        + 'does not follow';
+    }
     const present = titleRows.rows === null ? null : new Map();
     for (const row of titleRows.rows || []) {
       present.set(row.Title, [...(present.get(row.Title) || []), row]);

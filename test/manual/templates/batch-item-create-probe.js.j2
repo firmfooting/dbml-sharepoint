@@ -539,6 +539,13 @@
     const titlesHead = maskedHead(titles);
     // Every item under each Title, so an item created twice is counted and never collapsed into one.
     const titleRows = titlesHead ? { rows: null, shape: null } : entriesOf(titles.parsed);
+    // A page the read did not follow may hold any Title, so a paged read says nothing about what landed.
+    const titlesNext = titleRows.rows === null ? null : continuationOf(titles.parsed);
+    if (titlesNext !== null) {
+      titleRows.rows = null;
+      titleRows.shape = `carried a continuation link (${scrub(titlesNext).slice(0, 200)}), which this probe `
+        + 'does not follow';
+    }
     const present = titleRows.rows === null ? null : new Map();
     for (const row of titleRows.rows || []) {
       present.set(row.Title, [...(present.get(row.Title) || []), row]);
