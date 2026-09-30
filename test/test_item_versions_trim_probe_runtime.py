@@ -11,7 +11,13 @@ from typing import Any
 import pytest
 from _node import NODE
 from _paths import MANUAL
-from _probe_runs import catalogued_dependents, ended_with_report, run_probe, voided
+from _probe_runs import (
+    catalogued_dependents,
+    ended_with_report,
+    recycled_last,
+    run_probe,
+    voided,
+)
 from _versions_mock import VERSIONS_MOCK
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -57,7 +63,7 @@ def test_a_list_that_trims_on_write_is_recorded_trimmed_both_times() -> None:
             '"5.0"/2560/"dbmlsp versions trim 5"; the lowest VersionId answered carries ')
     assert "after the first read" in rows[WAIT]["evidence"]
     assert len([r for r in sent if r["verb"] == "MERGE" and "items(1)" in r["path"]]) == 5
-    assert sent[-1]["path"].endswith("/recycle")
+    assert recycled_last(sent)
 
 
 def test_a_list_that_keeps_every_version_is_recorded_untrimmed() -> None:
@@ -100,7 +106,7 @@ def test_a_limit_past_what_the_run_will_write_voids_everything_after_the_list() 
         rows[LIST]["evidence"])
     assert voided(rows) == _deps(LIST)
     assert not [r for r in sent if "/items" in r["path"]]
-    assert sent[-1]["path"].endswith("/recycle")
+    assert recycled_last(sent)
 
 
 def test_a_refused_settings_merge_is_kept_in_the_evidence() -> None:

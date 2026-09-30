@@ -177,8 +177,8 @@ def test_a_create_answering_no_id_fails_closed_and_writes_nothing_by_title(
     assert [r for r in out["sent"] if r["verb"] == "MERGE"] == []
     assert [r for r in out["sent"] if "$select=Id,BaseTemplate" in r["path"]] == []
     assert _recycles(out) == []
-    assert f"'{TITLE}' never answered a list Id, so it was not recycled; recycle it by hand." in (
-        out["console"])
+    assert (f"'{TITLE}' never answered a list Id, so it was not recycled; if it stands, recycle it "
+            "by hand.") in out["console"]
 
 
 def test_with_cleanup_a_leftover_is_recycled_by_the_id_its_ownership_read_found() -> None:
@@ -270,3 +270,65 @@ def test_the_settings_merge_goes_by_the_id_the_create_answered() -> None:
 
     merges = [r["path"] for r in out["sent"] if r["verb"] == "MERGE"]
     assert merges == [f"web/lists(guid'{CLAIMED}')"]
+
+
+def test_a_recycle_answered_2xx_whose_list_still_stands_is_not_reported_recycled() -> None:
+    out = _claim(None, rules=[{"contains": "/recycle", "status": 200, "text": "{}"}])
+
+    assert "[OK] recycled" not in out["console"]
+    assert (f"[FAIL] the recycle of '{TITLE}' (list {CLAIMED}) answered HTTP 200, but it still "
+            "reads back by its Id (HTTP 200); check it and recycle it by hand.") in out["console"]
+
+
+def test_a_recycle_whose_confirming_read_went_unanswered_is_not_reported_recycled() -> None:
+    out = _claim(None, rules=[{"contains": f"guid'{CLAIMED}')?$select=Id", "status": 429,
+                               "text": "busy"}])
+
+    assert "[OK] recycled" not in out["console"]
+    assert ("answered HTTP 200, but the read-back that would confirm it was throttled (HTTP 429); "
+            "check it and recycle it by hand.") in out["console"]
+
+
+def test_a_leftover_that_answered_its_recycle_but_still_stands_is_not_built_over() -> None:
+    leftover = {"Id": OTHER, "BaseTemplate": 100, "Description": "owned", "fields": {},
+                "items": []}
+    out = _claim(None, cleanup=True, lists={TITLE: leftover},
+                 rules=[{"contains": "/recycle", "status": 200, "text": "{}"}])
+
+    assert out["held"] is False
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert (f"the leftover list '{TITLE}' (list {OTHER}) answered its recycle, but it still reads "
+            "back by its Id (HTTP 200); recycle it by hand") in out["rows"][FIXTURE]["evidence"]
+    assert out["rows"][DEPENDENT]["state"] == "void"
+    assert _creates(out) == []
+
+
+def test_a_leftover_whose_recycle_cannot_be_confirmed_leaves_the_rows_open() -> None:
+    leftover = {"Id": OTHER, "BaseTemplate": 100, "Description": "owned", "fields": {},
+                "items": []}
+    out = _claim(None, cleanup=True, lists={TITLE: leftover},
+                 rules=[{"contains": f"guid'{OTHER}')?$select=Id", "nth": 2, "status": 503,
+                         "text": "busy"}])
+
+    assert out["held"] is False
+    for row_id in (FIXTURE, DEPENDENT):
+        assert out["rows"][row_id]["outcome"] == "NOT ESTABLISHED"
+        assert out["rows"][row_id]["state"] == "open"
+    assert "was throttled (HTTP 503); nothing was created" in out["rows"][FIXTURE]["evidence"]
+    assert _creates(out) == []
+
+
+def test_a_create_that_never_answered_is_left_open_and_named_for_a_check_by_hand() -> None:
+    out = _claim({"EnableVersioning": True}, rules=[{"contains": "web/lists", "verb": "POST",
+                                                     "bodyContains": '"BaseTemplate"',
+                                                     "reject": True}])
+
+    assert out["held"] is False
+    for row_id in (FIXTURE, DEPENDENT):
+        assert out["rows"][row_id]["outcome"] == "NOT ESTABLISHED"
+        assert out["rows"][row_id]["state"] == "open"
+    assert (f"the list create never answered (Failed to fetch), so a list '{TITLE}' may now "
+            "exist") in out["rows"][FIXTURE]["evidence"]
+    assert [r for r in out["sent"] if r["verb"] == "MERGE"] == []
+    assert (f"'{TITLE}' never answered a list Id, so it was not recycled; if it stands, recycle it "
+            "by hand.") in out["console"]

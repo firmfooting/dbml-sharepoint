@@ -64,3 +64,9 @@ def ended_with_report(output: str) -> bool:
     """Whether a run printed its whole report and nothing escaped the probe's own handling."""
     return ("Copy this whole block back verbatim." in output and "ReferenceError" not in output
             and "Node.js v" not in output)
+
+
+def recycled_last(sent: list[dict[str, str]]) -> bool:
+    """Whether a run ended with a list recycle and the by-Id read that confirms it."""
+    return (len(sent) >= 2 and sent[-2]["path"].endswith("/recycle")
+            and sent[-1]["path"].endswith("')?$select=Id"))

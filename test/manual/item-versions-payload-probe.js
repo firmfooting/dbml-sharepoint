@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: cc4b26eb
+ * REVISION: 8920f785
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -498,11 +498,38 @@
   };
   // __metadata is verbose OData, so every write carrying it declares the verbose content type.
   const VERBOSE_WRITE = { 'Content-Type': 'application/json;odata=verbose' };
+  // A list read by its Id after a recycle: gone true, false, or null with the reason it cannot say.
+  const listGone = async (listId) => {
+    let res;
+    try {
+      res = await spGet(`web/lists(guid'${listId}')?$select=Id`);
+    } catch (err) {
+      return { gone: null, why: `the read-back never answered (${scrub(String((err && err.message) || err))})` };
+    }
+    if (res.ok) return { gone: false, why: `it still reads back by its Id (HTTP ${res.status})` };
+    const error = res.body && typeof res.body === 'object' ? res.body['odata.error'] || res.body.error : null;
+    const code = String((error && error.code) || '');
+    // Absent is what rollback.js.j2 accepts for a by-Id list read: a 404, or this one ArgumentException 400.
+    if (res.status === 404 || (res.status === 400 && code.includes('-2147024809')
+      && code.includes('System.ArgumentException'))) return { gone: true, why: null };
+    return { gone: null, why: `the read-back that would confirm it ${unanswered(res)}` };
+  };
 
   // Creates a list or library (generic unless `baseTemplate` says otherwise) owned by `description`, then reads it back.
   const claimScratchList = async ({ id, question, title, description, dependents,
     settings = null, declared = {}, baseTemplate = 100 }) => {
     const path = `web/lists/getbytitle('${title}')`;
+    // An answer that settles nothing leaves the fixture and its dependents open for a re-run.
+    const leaveOpen = (why) => {
+      record(id, question, 'NOT ESTABLISHED', `${why}; a re-run can ask it`);
+      for (const one of dependents) {
+        const row = RESULTS.find((r) => r.id === one);
+        // A row an earlier fixture voided keeps its reason.
+        if (row && row.state === 'void') continue;
+        record(one, row ? row.question : one, 'NOT ESTABLISHED', `not asked: ${why}; a re-run can ask it`);
+      }
+      return { held: false, merge: null, body: null };
+    };
     const pre = await spGet(`${path}?$select=Id,Description`);
     if (pre.ok) {
       if (!pre.body || pre.body.Description !== description) {
@@ -524,21 +551,34 @@
         voidDependents(dependents, 'a leftover list would answer this run\'s questions');
         return { held: false, merge: null, body: null };
       }
+      // A recycle answered 2xx is not the list gone, and a create over a standing leftover would not be new.
+      const after = await listGone(leftover);
+      if (after.gone === false) {
+        record(id, question, 'FAIL', `the leftover list '${title}' (list ${leftover}) answered its recycle, `
+          + `but ${after.why}; recycle it by hand`);
+        voidDependents(dependents, 'a leftover list would answer this run\'s questions');
+        return { held: false, merge: null, body: null };
+      }
+      if (after.gone === null) {
+        return leaveOpen(`the leftover list '${title}' (list ${leftover}) answered its recycle, but ${after.why}; `
+          + 'nothing was created');
+      }
     } else if (pre.status !== 404) {
       // A by-title read answers an absent list 404 (the live finding rollback.js.j2 cites); anything else is unknown.
-      const why = `the ownership read of '${title}' ${unanswered(pre)}`
-        + `${pre.body ? `: ${scrub(JSON.stringify(pre.body)).slice(0, 200)}` : ''}`;
-      record(id, question, 'NOT ESTABLISHED', `${why}; nothing was created, and a re-run can ask it`);
-      for (const one of dependents) {
-        const row = RESULTS.find((r) => r.id === one);
-        // A row an earlier fixture voided keeps its reason.
-        if (row && row.state === 'void') continue;
-        record(one, row ? row.question : one, 'NOT ESTABLISHED', `not asked: ${why}; a re-run can ask it`);
-      }
-      return { held: false, merge: null, body: null };
+      return leaveOpen(`the ownership read of '${title}' ${unanswered(pre)}`
+        + `${pre.body ? `: ${scrub(JSON.stringify(pre.body)).slice(0, 200)}` : ''}; nothing was created`);
     }
-    const made = await spPost('web/lists',
-      { Title: title, BaseTemplate: baseTemplate, Description: description }, await getDigest());
+    const digest = await getDigest();
+    let made;
+    try {
+      made = await spPost('web/lists', { Title: title, BaseTemplate: baseTemplate, Description: description },
+        digest);
+    } catch (err) {
+      // The create may have reached the server, so the title is kept for the recycle line to name.
+      CREATED_LISTS.push({ title, id: null });
+      return leaveOpen(`the list create never answered (${scrub(String((err && err.message) || err))}), so a `
+        + `list '${title}' may now exist`);
+    }
     if (!made.ok) {
       record(id, question, 'FAIL',
         `the list create answered HTTP ${made.status}: ${scrub(made.text).slice(0, 300)}`);
@@ -584,7 +624,7 @@
   const recycleScratchLists = async () => {
     for (const { title, id } of [...CREATED_LISTS].reverse()) {
       if (id === null) {
-        log('FAIL', `'${title}' never answered a list Id, so it was not recycled; recycle it by hand.`);
+        log('FAIL', `'${title}' never answered a list Id, so it was not recycled; if it stands, recycle it by hand.`);
         continue;
       }
       let gone;
@@ -596,9 +636,15 @@
       }
       // A request that threw has no status, so its message is what the operator is shown.
       const why = gone.status === null ? scrub(gone.text).slice(0, 240) : `HTTP ${gone.status}`;
-      log(gone.ok ? 'OK' : 'FAIL', gone.ok
+      if (!gone.ok) {
+        log('FAIL', `could not recycle '${title}' (list ${id}, ${why}); recycle it by hand.`);
+        continue;
+      }
+      // A recycle answered 2xx is reported done only once the list no longer reads back by its Id.
+      const after = await listGone(id);
+      log(after.gone ? 'OK' : 'FAIL', after.gone
         ? `recycled '${title}' (list ${id}); it is restorable from the recycle bin.`
-        : `could not recycle '${title}' (list ${id}, ${why}); recycle it by hand.`);
+        : `the recycle of '${title}' (list ${id}) answered ${why}, but ${after.why}; check it and recycle it by hand.`);
     }
   };
   // ---- Item versions (v1) ---------------------------------------------
@@ -635,7 +681,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision cc4b26eb. Quote this when reporting results.');
+  log('INFO', 'probe revision 8920f785. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Versions';
   const TARGET = 'dbmlsp Probe VersionsTarget';

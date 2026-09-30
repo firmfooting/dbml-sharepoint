@@ -11,7 +11,13 @@ from typing import Any
 import pytest
 from _node import NODE
 from _paths import MANUAL
-from _probe_runs import catalogued_dependents, ended_with_report, run_probe, voided
+from _probe_runs import (
+    catalogued_dependents,
+    ended_with_report,
+    recycled_last,
+    run_probe,
+    voided,
+)
 from _versions_mock import VERSIONS_MOCK
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -62,7 +68,7 @@ def test_a_site_honouring_every_option_is_recorded_as_such() -> None:
     assert rows[TOP]["outcome"] == "TOPPED"
     assert rows[ORDERBY]["outcome"] == "ASCENDING"
     assert "asked asc" in rows[ORDERBY]["evidence"]
-    assert sent[-1]["path"].endswith("/recycle")
+    assert recycled_last(sent)
 
 
 def test_a_site_ignoring_every_option_is_recorded_as_such() -> None:
@@ -192,7 +198,7 @@ def test_a_list_that_will_not_take_versioning_voids_everything() -> None:
 
     assert rows[LIST]["outcome"] == "FAIL"
     assert voided(rows) == _deps(LIST)
-    assert sent[-1]["path"].endswith("/recycle")
+    assert recycled_last(sent)
 
 
 def test_an_option_answered_2xx_with_no_value_array_is_left_open() -> None:

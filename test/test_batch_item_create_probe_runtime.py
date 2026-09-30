@@ -14,7 +14,13 @@ from typing import Any
 import pytest
 from _node import NODE
 from _paths import MANUAL
-from _probe_runs import catalogued_dependents, ended_with_report, run_probe, voided
+from _probe_runs import (
+    catalogued_dependents,
+    ended_with_report,
+    recycled_last,
+    run_probe,
+    voided,
+)
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
@@ -260,7 +266,7 @@ def test_each_part_answer_is_recorded_with_what_landed() -> None:
     assert rows[NOMETADATA]["outcome"] == "PART ANSWERED 2XX"
     assert "landed yes" in rows[NOMETADATA]["evidence"]
     assert len(_batches(sent)) == 4
-    assert sent[-1]["path"].endswith("/recycle")
+    assert recycled_last(sent)
 
 
 def test_each_addvalidate_part_is_recorded_with_its_fields_and_what_reads_back() -> None:
@@ -487,7 +493,7 @@ def test_a_refused_addvalidate_write_is_not_established_and_the_probe_goes_on(
     assert all(rows[other]["outcome"] == "WRITTEN" for other in ADDVALIDATED if other != row_id)
     assert voided(rows) == set()
     assert "ada@example.com" not in json.dumps(rows)
-    assert sent[-1]["path"].endswith("/recycle")
+    assert recycled_last(sent)
 
 
 def test_an_addvalidate_control_that_is_refused_voids_every_addvalidate_row() -> None:
@@ -587,7 +593,7 @@ def test_a_batch_that_never_answered_is_a_row_and_the_list_is_still_recycled() -
 
     assert rows[PARTS]["outcome"] == "NOT ESTABLISHED"
     assert "no response: Failed to fetch" in rows[PARTS]["evidence"]
-    assert sent[-1]["path"].endswith("/recycle")
+    assert recycled_last(sent)
 
 
 def test_a_2xx_batch_with_no_parts_is_named_so() -> None:
@@ -721,7 +727,7 @@ def test_an_addvalidate_control_that_does_not_hold_leaves_no_addvalidate_row_ask
             assert "a re-run can ask it" in rows[row_id]["evidence"]
     assert rows[PARTS]["outcome"] == "RECORDED"
     assert len(_batches(sent)) == 3
-    assert sent[-1]["path"].endswith("/recycle")
+    assert recycled_last(sent)
     assert ended_with_report(output)
 
 
