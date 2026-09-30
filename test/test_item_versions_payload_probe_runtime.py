@@ -923,3 +923,37 @@ def test_an_account_read_that_fails_quotes_nothing_of_its_body(status: int, text
 
     assert f"the account read answered HTTP {status}" in rows[USER]["evidence"]
     assert "Ada Probe" not in output.split("__SENT__")[0]
+
+
+def test_a_refused_versions_read_around_the_upload_is_settled_and_named() -> None:
+    rows, _, _ = _run(rules=[{"contains": LIB_VERSIONS, "nth": 1, "status": 500,
+                              "text": "Unexpected."}])
+
+    assert rows[LIB_ADDS]["outcome"] == "REFUSED"
+    assert rows[LIB_ADDS]["state"] == "settled"
+    assert "the versions read before the upload was refused: HTTP 500: Unexpected." in (
+        rows[LIB_ADDS]["evidence"])
+    assert rows[LIB_FIELDS]["outcome"] == "NOT IDENTIFIED"
+    assert rows[LIB_FIELDS]["state"] == "settled"
+
+
+def test_a_refused_column_create_beside_a_throttled_read_back_still_fails_the_columns() -> None:
+    rows, _, _ = _run(rules=[
+        {"contains": "/fields", "verb": "POST", "bodyContains": "ProbeFlag", "status": 500,
+         "text": "Refused."},
+        {"contains": "getbyinternalnameortitle('ProbeNumber')", "status": 429, "text": "busy"}])
+
+    assert rows[COLUMNS]["outcome"] == "FAIL"
+    assert voided(rows) == _deps(COLUMNS)
+
+
+def test_a_refused_people_write_resent_without_it_is_not_the_items_refusal() -> None:
+    # The people refusal is the people write's own answer, so a later throttle leaves the item open.
+    rows, _, _ = _run(rules=[
+        {"contains": f"{LIST_AT}/items(1)", "verb": "MERGE", "bodyContains": "ProbePeopleId",
+         "status": 400, "text": "Invalid data"},
+        {"contains": f"{LIST_AT}/items(1)?$select=Id,ProbeChoice", "nth": 2, "status": 429,
+         "text": "busy"}])
+
+    assert rows[ITEM]["outcome"] == "NOT ESTABLISHED"
+    assert voided(rows) == set()

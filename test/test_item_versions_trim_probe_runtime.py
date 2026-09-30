@@ -436,3 +436,13 @@ def test_an_item_create_answered_2xx_with_no_json_leaves_the_item_open() -> None
     assert rows[ITEM]["outcome"] == "NOT ESTABLISHED"
     assert "the create answered HTTP 201 with no JSON object" in rows[ITEM]["evidence"]
     assert voided(rows) == set()
+
+
+def test_a_refused_ownership_read_fails_the_list_and_creates_nothing() -> None:
+    rows, sent, _ = _run(rules=[{"contains": "?$select=Id,Description", "status": 400,
+                                 "text": "Bad request."}])
+
+    assert rows[LIST]["outcome"] == "FAIL"
+    assert "HTTP 400" in rows[LIST]["evidence"]
+    assert voided(rows) == _deps(LIST)
+    assert not [r for r in sent if r["path"] == "web/lists" and r["verb"] == "POST"]

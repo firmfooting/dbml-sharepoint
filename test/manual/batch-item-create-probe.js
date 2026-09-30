@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: a7126d99
+ * REVISION: a2f11b31
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -506,8 +506,10 @@
     for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
     return out;
   };
-  // Every answer maskedHead found unanswered, in order, so a fixture can tell one from a refusal.
+  // Every answer maskedHead found unanswered, and every write spWrite found refused, so a fixture can tell an
+  // unanswered request, which leaves it open, from a refused write, which is settled.
   const UNHEARD = [];
+  const REFUSED = [];
   // rawHead cuts a response's text short, so the text is masked first and a cut never splits a name unmasked.
   const maskedHead = (res) => {
     const head = rawHead({ ...res, text: scrub(res.text) });
@@ -583,17 +585,23 @@
   };
   // Where the requests of the fixture about to be established begin in UNHEARD.
   let fixtureStart = 0;
-  const beginFixture = () => { fixtureStart = UNHEARD.length; };
-  // A write's answer is noted as a read's is, so a fixture can tell an unanswered write from a refused one.
+  let refusedStart = 0;
+  const beginFixture = () => {
+    fixtureStart = UNHEARD.length;
+    refusedStart = REFUSED.length;
+  };
+  // A write's answer is noted, so a fixture can tell an unanswered write from a refused one.
   const spWrite = async (...args) => {
     const res = await spPost(...args);
-    maskedHead(res);
+    const head = maskedHead(res);
+    if (head && head.outcome === 'REFUSED') REFUSED.push(head.why);
     return res;
   };
   // establishFixture, except that a fixture any of whose requests since beginFixture went unanswered is left
   // open with its dependents, since an unanswered request says nothing about the fixture.
   const settleFixture = async (id, read, declared, dependents) => {
     const start = fixtureStart;
+    const refusedFrom = refusedStart;
     // Rows an earlier fixture voided are put back as they were, since establishFixture voids them again.
     const earlier = RESULTS.filter((r) => dependents.includes(r.id) && r.state === 'void').map((r) => ({ ...r }));
     // A read that throws never answered, so it counts as unanswered like a throttle.
@@ -608,7 +616,8 @@
     const held = await establishFixture(id, heard, declared, dependents);
     const restore = () => earlier.forEach((was) => Object.assign(RESULTS.find((r) => r.id === was.id), was));
     if (held) return true;
-    if (UNHEARD.length === start) {
+    // A refused write is a settled answer, so it keeps the FAIL even beside a request that went unanswered.
+    if (UNHEARD.length === start || REFUSED.length > refusedFrom) {
       restore();
       return false;
     }
@@ -690,6 +699,12 @@
       record(id, question, 'FAIL', `a list named '${title}' already exists`
         + `${pre.body.Description === description ? ' with this probe\'s description' : ''}; refusing to modify it`);
       voidRows(dependents, 'the scratch list is not one this run created');
+      return { held: false, merge: null, body: null };
+    } else if (isRefusal(pre.status) && pre.status !== 404) {
+      // A refused ownership read is an answer, so nothing is created and the claim fails with its reason.
+      record(id, question, 'FAIL', `the ownership read of '${title}' was refused (HTTP ${pre.status})`
+        + `${pre.body ? `: ${scrub(JSON.stringify(pre.body)).slice(0, 200)}` : ''}; nothing was created`);
+      voidRows(dependents, 'the scratch list was not created');
       return { held: false, merge: null, body: null };
     } else if (pre.status !== 404) {
       // A by-title read answers an absent list 404 (the live finding rollback.js.j2 cites); anything else is unknown.
@@ -783,7 +798,7 @@
       await recycleList(title, id);
     }
   };
-  log('INFO', 'probe revision a7126d99. Quote this when reporting results.');
+  log('INFO', 'probe revision a2f11b31. Quote this when reporting results.');
 
   // The parts name the list by title, the form a history write sends and these rows measure; the run's token
   // means no other list holds it, and none can take it between a check and a use.

@@ -23,8 +23,10 @@
     for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
     return out;
   };
-  // Every answer maskedHead found unanswered, in order, so a fixture can tell one from a refusal.
+  // Every answer maskedHead found unanswered, and every write spWrite found refused, so a fixture can tell an
+  // unanswered request, which leaves it open, from a refused write, which is settled.
   const UNHEARD = [];
+  const REFUSED = [];
   // rawHead cuts a response's text short, so the text is masked first and a cut never splits a name unmasked.
   const maskedHead = (res) => {
     const head = rawHead({ ...res, text: scrub(res.text) });

@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: 4e8e0868
+ * REVISION: 94ec55d3
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -493,8 +493,10 @@
     for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
     return out;
   };
-  // Every answer maskedHead found unanswered, in order, so a fixture can tell one from a refusal.
+  // Every answer maskedHead found unanswered, and every write spWrite found refused, so a fixture can tell an
+  // unanswered request, which leaves it open, from a refused write, which is settled.
   const UNHEARD = [];
+  const REFUSED = [];
   // rawHead cuts a response's text short, so the text is masked first and a cut never splits a name unmasked.
   const maskedHead = (res) => {
     const head = rawHead({ ...res, text: scrub(res.text) });
@@ -570,17 +572,23 @@
   };
   // Where the requests of the fixture about to be established begin in UNHEARD.
   let fixtureStart = 0;
-  const beginFixture = () => { fixtureStart = UNHEARD.length; };
-  // A write's answer is noted as a read's is, so a fixture can tell an unanswered write from a refused one.
+  let refusedStart = 0;
+  const beginFixture = () => {
+    fixtureStart = UNHEARD.length;
+    refusedStart = REFUSED.length;
+  };
+  // A write's answer is noted, so a fixture can tell an unanswered write from a refused one.
   const spWrite = async (...args) => {
     const res = await spPost(...args);
-    maskedHead(res);
+    const head = maskedHead(res);
+    if (head && head.outcome === 'REFUSED') REFUSED.push(head.why);
     return res;
   };
   // establishFixture, except that a fixture any of whose requests since beginFixture went unanswered is left
   // open with its dependents, since an unanswered request says nothing about the fixture.
   const settleFixture = async (id, read, declared, dependents) => {
     const start = fixtureStart;
+    const refusedFrom = refusedStart;
     // Rows an earlier fixture voided are put back as they were, since establishFixture voids them again.
     const earlier = RESULTS.filter((r) => dependents.includes(r.id) && r.state === 'void').map((r) => ({ ...r }));
     // A read that throws never answered, so it counts as unanswered like a throttle.
@@ -595,7 +603,8 @@
     const held = await establishFixture(id, heard, declared, dependents);
     const restore = () => earlier.forEach((was) => Object.assign(RESULTS.find((r) => r.id === was.id), was));
     if (held) return true;
-    if (UNHEARD.length === start) {
+    // A refused write is a settled answer, so it keeps the FAIL even beside a request that went unanswered.
+    if (UNHEARD.length === start || REFUSED.length > refusedFrom) {
       restore();
       return false;
     }
@@ -677,6 +686,12 @@
       record(id, question, 'FAIL', `a list named '${title}' already exists`
         + `${pre.body.Description === description ? ' with this probe\'s description' : ''}; refusing to modify it`);
       voidRows(dependents, 'the scratch list is not one this run created');
+      return { held: false, merge: null, body: null };
+    } else if (isRefusal(pre.status) && pre.status !== 404) {
+      // A refused ownership read is an answer, so nothing is created and the claim fails with its reason.
+      record(id, question, 'FAIL', `the ownership read of '${title}' was refused (HTTP ${pre.status})`
+        + `${pre.body ? `: ${scrub(JSON.stringify(pre.body)).slice(0, 200)}` : ''}; nothing was created`);
+      voidRows(dependents, 'the scratch list was not created');
       return { held: false, merge: null, body: null };
     } else if (pre.status !== 404) {
       // A by-title read answers an absent list 404 (the live finding rollback.js.j2 cites); anything else is unknown.
@@ -815,7 +830,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 4e8e0868. Quote this when reporting results.');
+  log('INFO', 'probe revision 94ec55d3. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe Versions');
   const TARGET = runTitle('dbmlsp Probe VersionsTarget');
@@ -1189,6 +1204,8 @@
         // Sent again without the people value, so a refusal is pinned on it and the other kinds still land.
         const without = await merge(set, false);
         if (without.ok) {
+          // The refusal is the people write's own answer, recorded on its row, so it is not the item's.
+          REFUSED.pop();
           peopleRefusal = `HTTP ${sent.status}: ${scrub(sent.text).slice(0, 300)}`;
           log('INFO', `the ${PEOPLE}Id write was refused (${peopleRefusal}); the set was sent again `
             + 'without it and is read back before it counts');
@@ -1308,7 +1325,8 @@
     const res = await fetch(`${WEB}/_api/${path}`, { method: 'POST', body: text, headers: {
       Accept: 'application/json;odata=nometadata', 'X-RequestDigest': await getDigest(), ...extraHeaders } });
     const sent = { ok: res.ok, status: res.status, text: await res.text() };
-    maskedHead(sent);
+    const head = maskedHead(sent);
+    if (head && head.outcome === 'REFUSED') REFUSED.push(head.why);
     return sent;
   };
   const answered = (res) => `HTTP ${res.status}`;
@@ -1426,6 +1444,11 @@
       + sequence;
     // Why the reads either side of the upload cannot be compared, or null when they can.
     const unread = (read, when) => {
+      // A refusal is settled: it heads the row and is named, never left open like an unanswered read.
+      if (read.head && read.head.outcome === 'REFUSED') {
+        return { head: 'REFUSED', state: undefined,
+          why: `the versions read ${when} the upload was refused: ${scrub(read.head.why)}` };
+      }
       if (read.head || read.rows === null) {
         return { head: 'NOT ESTABLISHED', state: 'open', why: `the versions read ${when} the upload `
           + `${read.head ? `was not answered: ${scrub(read.head.why)}` : `answered HTTP ${read.res.status} that `

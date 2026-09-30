@@ -184,7 +184,7 @@ def test_a_create_answering_no_id_fails_closed_and_writes_nothing_by_title(
 
 @pytest.mark.parametrize(("status", "said"), [
     (429, "was throttled (HTTP 429)"), (503, "was throttled (HTTP 503)"),
-    (403, "was not authorised (HTTP 403)"), (500, "was refused (HTTP 500)"),
+    (403, "was not authorised (HTTP 403)"),
 ])
 def test_an_ownership_read_that_is_not_a_404_creates_nothing_and_leaves_the_rows_open(
         status: int, said: str) -> None:
@@ -200,6 +200,19 @@ def test_an_ownership_read_that_is_not_a_404_creates_nothing_and_leaves_the_rows
     assert "ada@example.com" not in json.dumps(out["rows"])
     assert _creates(out) == []
     assert _recycles(out) == []
+
+
+def test_a_refused_ownership_read_fails_the_claim_and_creates_nothing() -> None:
+    out = _claim(None, rules=[{"contains": PREFLIGHT, "status": 500,
+                               "text": '{"odata.error": "refused for ada@example.com"}'}])
+
+    assert out["held"] is False
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert f"the ownership read of '{TITLE}' was refused (HTTP 500)" in (
+        out["rows"][FIXTURE]["evidence"])
+    assert out["rows"][DEPENDENT]["state"] == "void"
+    assert "ada@example.com" not in json.dumps(out["rows"])
+    assert _creates(out) == []
 
 
 def test_an_ownership_read_answering_404_goes_on_to_create_the_list() -> None:
