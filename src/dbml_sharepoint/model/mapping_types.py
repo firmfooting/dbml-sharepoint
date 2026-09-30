@@ -8,6 +8,7 @@ reader answering "what does this section become?" does not have to read the
 parser to find out.
 """
 
+import collections.abc
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -274,17 +275,38 @@ class ItemSecurity:
 ITEM_SECURITY_SCOPES: frozenset[str] = frozenset({"all", "own"})
 
 
+type WatchOn = Literal["change", "enter", "leave"]
+WATCH_ON: tuple[WatchOn, ...] = ("change", "enter", "leave")
+
+
+@dataclass(frozen=True)
+class WatchUse:
+    """One Power Automate use of a watched column; core does not interpret `name` or `settings`."""
+
+    name: str
+    id: str | None = None
+    on: WatchOn = "change"
+    # Out of the hash, as `settings` is: an `in` leaf holds a list.
+    when: Condition | None = field(default=None, hash=False)
+    # `collections.abc.Mapping` because this module's own `Mapping` is the mapping file.
+    # Keys are `Any` because the loader keeps a key such as `2026:` or `false:` as written.
+    settings: collections.abc.Mapping[Any, Any] = field(default_factory=dict, hash=False)
+
+
 @dataclass(frozen=True)
 class WatchedList:
     """A column an external consumer, such as a flow, binds by internal name.
 
     The deploy does not read these. The validator refuses a pair naming a
     column the deploy would not create, so the column cannot be renamed in
-    the DBML or deleted from it without failing the build.
+    the DBML or deleted from it without failing the build. `uses` names what
+    a consumer does with the column; the validator checks their shape and
+    their conditions against the schema.
     """
 
     entity: str
     column: str
+    uses: tuple[WatchUse, ...] = ()
 
 
 @dataclass(frozen=True)

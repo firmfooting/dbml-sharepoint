@@ -81,7 +81,7 @@ Every leaf of a tree, in declaration order.
 ### `condition_findings`
 
 ```python
-def condition_findings(condition: Condition, *, target: str, rendered: set[str], types: dict[str, str], lookups: set[str], enum_members: collections.abc.Mapping[str, collections.abc.Sequence[str]], at: dbml_sharepoint.analysis.findings.Location) -> list[dbml_sharepoint.analysis.findings.Finding]
+def condition_findings(condition: Condition, *, target: str | None, rendered: set[str], types: dict[str, str], lookups: set[str], enum_members: collections.abc.Mapping[str, collections.abc.Sequence[str]], at: dbml_sharepoint.analysis.findings.Location) -> list[dbml_sharepoint.analysis.findings.Finding]
 ```
 
 Semantic problems with a declared condition, as classified Findings.
@@ -95,4 +95,10 @@ what the message prefix has always spelled by hand.
 `enum_members` is the ordered schema projection for Choice columns.
 Whole-member operands must use the declared spelling. This is a schema
 consistency rule and makes no claim about SharePoint's comparison casing.
+
+`target=None` is for a condition this package never renders, such as a
+watched column's `when`: the bounds, columns, operators, operands and
+Choice members are judged, and so is each value against its column's
+type. A refusal that depends on what one target can render is not made,
+unless every target refuses the leaf before judging its value.
 

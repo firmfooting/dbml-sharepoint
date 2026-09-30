@@ -1836,6 +1836,41 @@ depends on cannot be renamed in the DBML or deleted from it without failing
 the build. Change what people see through `display_names.overrides`, which
 leaves the internal name alone.
 
+An entry may also list `uses`: what a consumer does with the column. Each use
+is a bare name, or a mapping of one name to its settings.
+
+```yaml
+watched_lists:
+  - entity: Project
+    column: Status
+    uses:
+      - history
+      - alert:
+          id: closed
+          on: enter             # change (the default), enter or leave
+          when: { op: eq, value: Closed }
+          with: { to: owner }   # passed to the consumer untouched
+```
+
+The build checks a use's shape and nothing about what its name means, which
+belongs to the consumer that reads it. The build defines no use names and
+does not read `with:`; `history` and `alert` above stand for names an
+extension might register. A name is lowercase letters, digits
+and hyphens, starting with a letter (`watch_use_name_invalid`), and so is an
+`id` (`watch_use_id_invalid`), because a consumer may name what it builds
+after it. `on: enter` and `on: leave` need a `when` (`watch_use_when_required`).
+`on: change` may carry a `when` too; the build accepts it, and whether a use
+reads it is the consumer's decision. When one entity's watched columns use a
+name more than once, each of those uses needs an `id`
+(`watch_use_repeated_without_id`), and no two uses on one entity may share an
+`id` (`watch_use_id_duplicate`). A `when` is written in the
+[condition grammar](../api/conditions.md), where a condition with no `field`
+compares the watched column. It is checked against the schema: the columns,
+operators and Choice members it names, and each value against its column's
+type, so a missing value, a value of the wrong type, an empty needle and an
+`in` without a list are refused. A limit of one rendering target is not
+applied, because the build does not render a `when`.
+
 ## Protection
 
 ```yaml

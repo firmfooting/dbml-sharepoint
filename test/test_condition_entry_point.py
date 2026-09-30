@@ -29,6 +29,7 @@ _INTENDED_CALLERS = frozenset({
     "analysis/checks/_formatting.py",
     "analysis/checks/_retirement.py",
     "analysis/checks/_views.py",
+    "analysis/checks/_watched.py",
 })
 
 

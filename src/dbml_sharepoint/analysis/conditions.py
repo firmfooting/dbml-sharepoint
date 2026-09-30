@@ -151,7 +151,7 @@ type _Problem = tuple[FindingCode, str, str | None]
 def condition_findings(
     condition: Condition,
     *,
-    target: str,
+    target: str | None,
     rendered: set[str],
     types: dict[str, str],
     lookups: set[str],
@@ -169,6 +169,12 @@ def condition_findings(
     `enum_members` is the ordered schema projection for Choice columns.
     Whole-member operands must use the declared spelling. This is a schema
     consistency rule and makes no claim about SharePoint's comparison casing.
+
+    `target=None` is for a condition this package never renders, such as a
+    watched column's `when`: the bounds, columns, operators, operands and
+    Choice members are judged, and so is each value against its column's
+    type. A refusal that depends on what one target can render is not made,
+    unless every target refuses the leaf before judging its value.
     """
     return [
         Finding(
@@ -203,7 +209,7 @@ def _dealias(node: Condition) -> Condition:
 def _condition_problems(
     condition: Condition,
     *,
-    target: str,
+    target: str | None,
     rendered: set[str],
     types: dict[str, str],
     lookups: set[str],
@@ -308,6 +314,25 @@ def _condition_problems(
         # over a tree containing one it does not know. The unknown operator
         # is already reported above; raising here instead would turn a typo
         # into a traceback.
+        return _dedupe(problems)
+
+    if target is None:
+        # Nothing renders this condition, so only the schema's refusals apply.
+        for leaf in leaves(condition):
+            if id(leaf) in suppressed or leaf.field not in rendered:
+                continue
+            values = _schema_value_problems(leaf, types, context)
+            problems.extend((code, message, leaf.field) for code, message in values)
+            if not values:
+                problems.extend(
+                    (code, message, leaf.field)
+                    for code, message in _choice_member_problems(
+                        leaf,
+                        where=f"{context}.{leaf.field}",
+                        types=types,
+                        enum_members=enum_members,
+                    )
+                )
         return _dedupe(problems)
 
     flipped = _flipped_by_normalisation(condition)
@@ -620,7 +645,7 @@ def _choice_member_problems(
 def _lookup_problem(
     leaf: Leaf,
     where: str,
-    target: str,
+    target: str | None,
     lookups: set[str],
 ) -> tuple[FindingCode, str] | None:
     """Lookups are int-typed in DBML, so the type map alone cannot see them.
@@ -670,6 +695,64 @@ def _render_problems(
             message = message.replace(f"{exc.path}:", f"{context}.{exc.field}:", 1)
         return [(code, message)]
     return []
+
+
+#: The renderer refusals that judge a value against its column's type, and
+#: so hold whichever target renders it. The rest name a target's limits.
+_SCHEMA_REFUSALS = frozenset(
+    {
+        FindingCode.CONDITION_COLUMN_TYPE_UNKNOWN,
+        FindingCode.CONDITION_DATE_IS_AN_UNQUOTED_YAML_DATETIME,
+        FindingCode.CONDITION_DATE_UNPARSEABLE,
+        FindingCode.CONDITION_DATE_WEARS_WHITESPACE,
+        FindingCode.CONDITION_NEEDLE_EMPTY,
+        FindingCode.CONDITION_NOW_ON_A_DATE_COLUMN,
+        FindingCode.CONDITION_SENTINEL_WITH_A_SUBSTRING_OPERATOR,
+        FindingCode.CONDITION_SET_EMPTY,
+        FindingCode.CONDITION_SUBSTRING_TEST_ON_A_NON_TEXT_COLUMN,
+        FindingCode.CONDITION_VALUE_MISSING,
+        FindingCode.CONDITION_VALUE_NOT_ALLOWED,
+        FindingCode.CONDITION_VALUE_NOT_A_BOOLEAN,
+        FindingCode.CONDITION_VALUE_NOT_A_LIST,
+        FindingCode.CONDITION_VALUE_NOT_A_NUMBER,
+        FindingCode.CONDITION_VALUE_NOT_FINITE,
+        FindingCode.MULTI_VALUE_MEMBERSHIP_ON_A_SINGLE_VALUE_COLUMN,
+    }
+)
+
+
+def _schema_value_problems(
+    leaf: Leaf,
+    types: dict[str, str],
+    context: str,
+) -> list[tuple[FindingCode, str]]:
+    """The first schema refusal any renderer makes of a leaf nothing renders,
+    or the first refusal when every renderer refuses it.
+
+    Every target is asked, because a renderer stops at its first refusal and
+    a target's own limit can come before the value is read. When every target
+    refuses before reading the value, the first refusal stands, since nothing
+    judged the value. The message loses its `(target: ...)` suffix, since no
+    target is involved.
+    """
+    refusals: list[tuple[FindingCode, str]] = []
+    for target in _RENDERERS:
+        for code, message in _render_problems(leaf, target, types, context):
+            refusal = (code, message.removesuffix(f" (target: {target})"))
+            if code in _SCHEMA_REFUSALS:
+                return [refusal]
+            refusals.append(refusal)
+    if len(refusals) < len(_RENDERERS):
+        return []
+    code, message = refusals[0]
+    # One target's reason alone reads as though that target were the one in use.
+    if any(other != code for other, _ in refusals):
+        where = f"{context}.{leaf.field}: "
+        message = message.replace(
+            where, f"{where}no rendering target accepts this condition, so its value "
+            f"cannot be judged. The first to refuse it says: ", 1,
+        )
+    return [(code, message)]
 
 
 def _dedupe(problems: list[_Problem]) -> list[_Problem]:
