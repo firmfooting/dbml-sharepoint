@@ -211,7 +211,7 @@ class WatchUse:
     id: str | None = None
     on: WatchOn = 'change'
     when: Condition | None = None
-    settings: collections.abc.Mapping[str, typing.Any] = field(default_factory=dict)
+    settings: collections.abc.Mapping[typing.Any, typing.Any] = field(default_factory=dict)
 ```
 
 One Power Automate use of a watched column; core does not interpret `name` or `settings`.

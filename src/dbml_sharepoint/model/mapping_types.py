@@ -289,7 +289,8 @@ class WatchUse:
     # Out of the hash, as `settings` is: an `in` leaf holds a list.
     when: Condition | None = field(default=None, hash=False)
     # `collections.abc.Mapping` because this module's own `Mapping` is the mapping file.
-    settings: collections.abc.Mapping[str, Any] = field(default_factory=dict, hash=False)
+    # Keys are `Any` because the loader keeps a key such as `2026:` or `false:` as written.
+    settings: collections.abc.Mapping[Any, Any] = field(default_factory=dict, hash=False)
 
 
 @dataclass(frozen=True)
