@@ -751,6 +751,17 @@ def test_an_unpinned_run_titles_all_three_lists_with_one_token_of_its_own() -> N
     assert rows[LIST]["outcome"] == "PASS"
 
 
+def test_an_item_create_whose_title_does_not_read_back_is_not_counted() -> None:
+    rows, sent, _ = _run(rules=[{"contains": f"{LIST_AT}/items(1)?$select=Id,Title", "status": 200,
+                                 "text": '{"Id": 1, "Title": "another item"}'}])
+
+    assert rows[ITEM]["outcome"] == "FAIL"
+    assert "Written differs: read 0, declared 3" in rows[ITEM]["evidence"]
+    assert 'the create: HTTP 201, but Title reads back \\"another item\\"' in rows[ITEM]["evidence"]
+    assert not [r for r in sent if r["verb"] == "MERGE" and f"{LIST_AT}/items(1)" in r["path"]]
+    assert voided(rows) == _deps(ITEM)
+
+
 def test_a_site_path_with_an_apostrophe_is_doubled_inside_every_path_literal() -> None:
     rows, sent, _ = _run(siteRoot="/sites/O'Brien")
 

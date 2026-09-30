@@ -27,8 +27,8 @@
  *       and the date-only and date-and-time columns with DisplayFormat 0 and 1
  *   field.version.fixture-payload-people-column a multi-person column (UserMulti); only
  *       the people write and field.version.payload-people rest on it
- *   field.version.fixture-payload-item          one item created empty and then written
- *       twice, each set of values read back before the next is sent
+ *   field.version.fixture-payload-item          one item created with only a Title and then
+ *       written twice; the create and each set of values read back before the next is sent
  *   field.version.fixture-payload-people-write  the multi-person column written as
  *       { results: [Id] } in both writes and read back after each; a refusal leaves it and
  *       field.version.payload-people NOT ESTABLISHED, and the other kinds are written without it
@@ -129,7 +129,8 @@
     columns: 'the eight columns read back with their declared TypeAsString, and each date column with its '
       + 'DisplayFormat (0 date only, 1 date and time)',
     peopleColumn: `${PEOPLE} reads back as a multi-person column (UserMulti, AllowMultipleValues true)`,
-    item: 'one item created empty and written twice, each set of values read back before the next',
+    item: 'one item created with only a Title and written twice, the create and each set read back before '
+      + 'the next',
     peopleWrite: `${PEOPLE}Id written as { results: [this account's Id] } in both writes, read back after each`,
     read: 'CONTROL: items(id)/versions answers a list of version entries',
     choice: 'what each version carries for a Choice column',
@@ -421,18 +422,27 @@
     let before = {};
     let itemId = null;
     let peopleRefusal = null;
+    const ITEM_TITLE = 'dbmlsp versions item';
     const made = await spPost(`${listPath}/items`, { __metadata: { type: itemType },
-      Title: 'dbmlsp versions item' }, await getDigest(), VERBOSE_WRITE);
+      Title: ITEM_TITLE }, await getDigest(), VERBOSE_WRITE);
     if (made.ok && made.body && Number.isInteger(made.body.Id)) itemId = made.body.Id;
-    if (itemId !== null) written += 1;
-    else {
+    if (itemId === null) {
       missed.push(`the create: HTTP ${made.status}`
         + `${made.ok ? ' carried no numeric Id' : `: ${scrub(made.text).slice(0, 300)}`}`);
+    } else {
+      // The create counts once its Title reads back by the Id answered, as each set after it does.
+      const back = await readBack(`${listPath}/items(${itemId})?$select=Id,Title`);
+      if (back.parsed && back.parsed.Title === ITEM_TITLE) written += 1;
+      else {
+        missed.push(`the create: HTTP ${made.status}, but ${back.parsed
+          ? `Title reads back ${show(back.parsed.Title)}` : `the read-back ${back.read}`}`);
+      }
     }
     const merge = async (set, withPeople) => spPost(`${listPath}/items(${itemId})`, bodyOf(set, withPeople),
       await getDigest(), { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
     // Each set is read back before the next is sent, so set B never replaces a set A that did not land.
-    for (const [i, set] of (itemId === null ? [] : SETS).entries()) {
+    // No set is sent to an item whose create did not read back.
+    for (const [i, set] of (written === 1 ? SETS : []).entries()) {
       const withPeople = peopleHeld && peopleRefusal === null;
       let sent = await merge(set, withPeople);
       if (withPeople && !sent.ok && isRefusal(sent.status)) {
