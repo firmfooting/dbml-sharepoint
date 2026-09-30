@@ -438,7 +438,8 @@
         const without = await merge(set, false);
         if (without.ok) {
           peopleRefusal = `HTTP ${sent.status}: ${scrub(sent.text).slice(0, 300)}`;
-          log('INFO', `the ${PEOPLE}Id write was refused (${peopleRefusal}); the values were written without it`);
+          log('INFO', `the ${PEOPLE}Id write was refused (${peopleRefusal}); the set was sent again `
+            + 'without it and is read back before it counts');
         }
         sent = without;
       }

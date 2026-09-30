@@ -178,9 +178,13 @@ def test_a_refused_multi_person_column_voids_only_its_own_row() -> None:
 
 
 def test_a_refused_multi_person_write_leaves_its_question_open_and_the_probe_going() -> None:
-    rows, sent, _ = _run(rules=[{"contains": f"{LIST_AT}/items(1)", "verb": "MERGE",
-                                 "bodyContains": "ProbePeopleId", "status": 400,
-                                 "text": "Invalid data for ada@example.com"}])
+    rows, sent, output = _run(rules=[{"contains": f"{LIST_AT}/items(1)", "verb": "MERGE",
+                                      "bodyContains": "ProbePeopleId", "status": 400,
+                                      "text": "Invalid data for ada@example.com"}])
+
+    # The resend's 2xx is not reported as the values written; the read-back decides that.
+    assert "the set was sent again without it and is read back before it counts" in output
+    assert "were written without it" not in output
 
     assert rows[PEOPLE_WRITE]["outcome"] == "NOT ESTABLISHED"
     assert rows[PEOPLE_WRITE]["state"] == "open"

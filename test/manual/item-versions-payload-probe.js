@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: d5183879
+ * REVISION: 02270eb0
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -698,7 +698,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision d5183879. Quote this when reporting results.');
+  log('INFO', 'probe revision 02270eb0. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Versions';
   const TARGET = 'dbmlsp Probe VersionsTarget';
@@ -1049,7 +1049,8 @@
         const without = await merge(set, false);
         if (without.ok) {
           peopleRefusal = `HTTP ${sent.status}: ${scrub(sent.text).slice(0, 300)}`;
-          log('INFO', `the ${PEOPLE}Id write was refused (${peopleRefusal}); the values were written without it`);
+          log('INFO', `the ${PEOPLE}Id write was refused (${peopleRefusal}); the set was sent again `
+            + 'without it and is read back before it counts');
         }
         sent = without;
       }
