@@ -40,6 +40,9 @@ OWNED = "dbml-sharepoint batch-item-create probe scratch list. Safe to delete."
 
 _MOCK = textwrap.dedent(r"""
     const CONFIG = __CONFIG__;
+    // Node rereads TZ when it is assigned, so a test can run the probe in the zone it names.
+    if (CONFIG.tz) process.env.TZ = CONFIG.tz;
+    console.log('__LOCAL__' + new Date('2026-01-15T09:30:00').toISOString());
     globalThis.window = { _spPageContextInfo: {
       webAbsoluteUrl: 'https://example.sharepoint.com/sites/probe' } };
     const SENT = [];
@@ -118,10 +121,15 @@ _MOCK = textwrap.dedent(r"""
         const odata = /odata=nometadata/.test(head) ? 'nometadata' : 'verbose';
         const rule = (CONFIG.partRules || []).find((r) => body.includes(r.bodyContains));
         const sent = rule ? null : JSON.parse(body.trim());
-        parts.push(rule ? { status: rule.status, reason: rule.reason, body: rule.text }
+        const made = rule ? { status: rule.status, reason: rule.reason, body: rule.text }
           : /AddValidateUpdateItemUsingPath HTTP/.test(head) ? addValidate(sent)
-            : createItem(sent, odata));
+            : createItem(sent, odata);
+        // A part can be applied and still go unanswered, or be the only one answered.
+        const dropped = (CONFIG.dropAnswers || []).some((s) => body.includes(s));
+        const kept = !CONFIG.onlyAnswers || CONFIG.onlyAnswers.some((s) => body.includes(s));
+        if (!dropped && kept) parts.push(made);
       }
+      if (CONFIG.reverseAnswers) parts.reverse();
       return '--batchresponse_1\r\n'
         + 'Content-Type: multipart/mixed; boundary=changesetresponse_1\r\n\r\n'
         + parts.map((part) => '--changesetresponse_1\r\nContent-Type: application/http\r\n'
@@ -294,8 +302,9 @@ def test_a_person_accepted_but_not_read_back_as_this_account_is_named_so(
 
 @pytest.mark.parametrize(("stored", "instant"), [
     ("2026-01-15T19:30:00Z", "2026-01-15T19:30:00.000Z"),
-    ("2026-01-15", "2026-01-15T00:00:00.000Z"),
-    (None, "(not a date)"),
+    ("2026-01-15T09:30:00+01:00", "2026-01-15T08:30:00.000Z"),
+    (None, "(not a zoned date and time)"),
+    ("15/01/2026 09:30", "(not a zoned date and time)"),
 ])
 def test_a_date_accepted_but_read_back_as_another_instant_is_named_so(
         stored: str | None, instant: str) -> None:
@@ -315,6 +324,99 @@ def test_a_date_read_back_with_an_offset_is_compared_as_an_instant() -> None:
     assert rows[ISO]["outcome"] == "WRITTEN"
     assert ("as a UTC instant 2026-01-15T09:30:00.000Z against the sent "
             "2026-01-15T09:30:00.000Z: same") in rows[ISO]["evidence"]
+
+
+@pytest.mark.parametrize(("stored", "same"), [("2026-01-15", "same"), ("2026-01-16", "different")])
+def test_a_date_read_back_without_its_time_is_compared_as_a_date(stored: str, same: str) -> None:
+    rows, _, _ = _run(storedWhen=stored)
+
+    assert rows[ISO]["outcome"] == "ACCEPTED, STORED DIFFERENTLY"
+    assert (f'ProbeWhen reads back "{stored}", a date with no time; as a date against the sent '
+            f"2026-01-15: {same}") in rows[ISO]["evidence"]
+
+
+def test_a_date_and_time_without_a_zone_gets_the_same_head_in_every_zone() -> None:
+    runs = [run_probe(_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"),
+                      {"storedWhen": "2026-01-15T09:30:00", "tz": tz})
+            for tz in ("UTC", "Australia/Sydney")]
+
+    local = {next(ln for ln in output.splitlines() if ln.startswith("__LOCAL__"))
+             for _, _, output in runs}
+    assert len(local) == 2, "the two runs did not read a zone-less time in different zones"
+    for rows, _, _ in runs:
+        assert rows[ISO]["outcome"] == "STORED WITHOUT A ZONE"
+        assert ('ProbeWhen reads back "2026-01-15T09:30:00", a date and time with no zone; '
+                "not compared") in rows[ISO]["evidence"]
+    assert runs[0][0][ISO] == runs[1][0][ISO]
+
+
+def test_an_answer_missing_from_a_batch_leaves_every_part_row_unmatched() -> None:
+    rows, _, _ = _run(dropAnswers=["part B", "addvalidate part missing column"])
+
+    for row_id in (PARTS, FAILED):
+        assert rows[row_id]["outcome"] == "ANSWERS NOT MATCHED", rows[row_id]
+        assert rows[row_id]["state"] == "open"
+        assert rows[row_id]["evidence"].startswith(
+            "3 part(s) sent, 2 answer(s); answer 1: HTTP 201")
+        assert "part 2" not in rows[row_id]["evidence"]
+        assert rows[row_id]["evidence"].endswith("landed A yes, B no, C yes")
+    for row_id in (FOLDER, AV_FAILED, CLAIMS, ISO):
+        assert rows[row_id]["outcome"] == "ANSWERS NOT MATCHED", rows[row_id]
+        assert rows[row_id]["state"] == "open"
+        assert rows[row_id]["evidence"].startswith(
+            "4 part(s) sent, 3 answer(s); answer 1: HTTP 200")
+        assert rows[row_id]["evidence"].endswith(
+            "landed dbmlsp addvalidate no folder yes, dbmlsp addvalidate part missing column no, "
+            "dbmlsp addvalidate claims yes, dbmlsp addvalidate iso date yes")
+    assert rows[VERBOSE]["outcome"] == "PART ANSWERED 2XX"
+    assert voided(rows) == set()
+
+
+def test_a_batch_answering_only_its_failed_part_leaves_every_part_row_unmatched() -> None:
+    rows, _, _ = _run(onlyAnswers=["part B", "addvalidate part missing column"])
+
+    for row_id in (PARTS, FAILED):
+        assert rows[row_id]["outcome"] == "ANSWERS NOT MATCHED", rows[row_id]
+        assert rows[row_id]["evidence"].startswith(
+            "3 part(s) sent, 1 answer(s); answer 1: HTTP 400 Bad Request")
+    for row_id in (FOLDER, AV_FAILED, CLAIMS, ISO):
+        assert rows[row_id]["outcome"] == "ANSWERS NOT MATCHED", rows[row_id]
+        assert rows[row_id]["state"] == "open"
+        assert "4 part(s) sent, 1 answer(s); answer 1: HTTP 200 OK" in rows[row_id]["evidence"]
+        refused = '"FieldName":"dbmlspNoSuchColumn","FieldValue":"x","HasException":true'
+        assert refused in rows[row_id]["evidence"]
+
+
+def test_answers_naming_other_fields_than_their_parts_are_not_matched() -> None:
+    rows, _, _ = _run(reverseAnswers=True)
+
+    for row_id in (FOLDER, AV_FAILED, CLAIMS, ISO):
+        assert rows[row_id]["outcome"] == "ANSWERS NOT MATCHED", rows[row_id]
+        assert rows[row_id]["state"] == "open"
+        assert rows[row_id]["evidence"].startswith(
+            'answer 1 names ["Title","ProbeWhen"] where part 1 sent ["Title"]')
+    assert voided(rows) == set()
+
+
+def test_a_failed_part_refused_on_another_field_is_not_called_field_refused() -> None:
+    other = json.dumps({"value": [
+        {"FieldName": "Title", "HasException": True, "ErrorMessage": "no", "FieldValue": "x"},
+        {"FieldName": "dbmlspNoSuchColumn", "HasException": False, "ErrorMessage": None,
+         "FieldValue": "x"}]})
+    rows, _, _ = _run(partRules=[{"bodyContains": "addvalidate part missing column", "status": 200,
+                                  "reason": "OK", "text": other}])
+
+    assert rows[AV_FAILED]["outcome"] == "PART ANSWERED 2XX"
+
+
+def test_a_throttled_single_create_keeps_what_an_earlier_fixture_voided() -> None:
+    rows, _, _ = _run(rules=[{"contains": "web/currentuser", "status": 403, "text": "denied"},
+                             {"contains": "BatchItems')/items", "verb": "POST", "status": 429,
+                              "text": "busy"}])
+
+    assert rows[SINGLE]["outcome"] == "NOT ESTABLISHED"
+    assert voided(rows) == {CLAIMS}
+    assert rows[ISO]["state"] == "open"
 
 
 @pytest.mark.parametrize(("setting", "row_id", "said"), [

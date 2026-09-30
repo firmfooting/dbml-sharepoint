@@ -20,7 +20,9 @@
  * have to read it first. Its "Create list item in a folder" section documents
  * AddValidateUpdateItemUsingPath with FolderPath.DecodedUrl, formValues and a
  * per-field HasException; it shows neither FolderPath omitted, nor a person, nor
- * a date among the formValues.
+ * a date among the formValues. These rows measure the browser's form, a digest on
+ * every part and no Accept on the outer request; they do not cover a part sent
+ * without a digest, as a flow's connector may send it.
  *
  * DEPENDS ON (read back, and voiding what rests on them when they do not hold)
  *   transport.batch.fixture-item-batch-list  a generic list this probe created,
@@ -63,14 +65,19 @@
  *
  * HOW TO READ IT: PART ANSWERED 2XX and PART REFUSED are what one part's status
  * line said, beside whether its item exists afterwards. OUTER REQUEST REFUSED
- * is the whole $batch refused, and its text says why. FIELD REFUSED is a 2xx
- * AddValidate answer with HasException on a field. Any other AddValidate row is
- * WRITTEN when its part answered 2xx with no field exception, its item exists, and
- * the value it wrote reads back: the person as this account's Id, the date as the
- * same UTC instant as the one sent. When the item exists but the value does not read
- * back so, the claims row is ACCEPTED, NOT STORED and the date row is ACCEPTED,
- * STORED DIFFERENTLY, with both values quoted. Any other answer is NOT ESTABLISHED,
- * with the answer quoted, and the probe goes on.
+ * is the whole $batch refused, and its text says why. ANSWERS NOT MATCHED, left
+ * open, is a $batch whose answers cannot be matched to its parts: their count
+ * differs from the parts sent, or an AddValidate answer names other fields than
+ * its part sent. FIELD REFUSED is a 2xx AddValidate answer with HasException on
+ * the missing column. Any other AddValidate row is WRITTEN when its part answered
+ * 2xx with no field exception, its item exists, and the value it wrote reads back:
+ * the person as this account's Id, the date as the same UTC instant as the one
+ * sent. When the item exists but the value does not read back so, the claims row
+ * is ACCEPTED, NOT STORED and the date row is ACCEPTED, STORED DIFFERENTLY, with
+ * both values quoted; a date with no time is compared as a date and still heads
+ * ACCEPTED, STORED DIFFERENTLY. A date and time with no zone heads STORED WITHOUT
+ * A ZONE and is not compared, since the browser would read it in its own zone.
+ * Any other answer is NOT ESTABLISHED, with the answer quoted, and the probe goes on.
  * Email addresses, claims logins and this account's display name are masked.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
@@ -242,10 +249,10 @@
         headers: { 'Content-Type': `multipart/mixed; boundary=${outer}`, 'X-RequestDigest': digest }, body });
     } catch (err) {
       return { ok: false, status: null, text: `no response: ${err && err.message ? err.message : String(err)}`,
-        parts: [] };
+        parts: [], sent: ops.length };
     }
     const text = await res.text();
-    return { ok: res.ok, status: res.status, text, parts: batchParts(text) };
+    return { ok: res.ok, status: res.status, text, parts: batchParts(text), sent: ops.length };
   };
   // The head a whole $batch earns when it carried no part answers, or null when its parts decide.
   const outerHead = (batch) => {
@@ -262,6 +269,23 @@
     + `body ${said(part.body) || '(none)'}`;
   const partHead = (part) => (!part ? 'NO PART STATUS' : ok2xx(part.status) ? 'PART ANSWERED 2XX'
     : isRefusal(part.status) ? 'PART REFUSED' : 'PART NOT ANSWERED');
+  const fieldsOf = (parsed) => (parsed && Array.isArray(parsed.value) ? parsed.value : null);
+  const parsedOf = (text) => { try { return JSON.parse(text); } catch { return null; } };
+  // Why the answers cannot be matched to the parts by position, or null when they can; no document says they arrive
+  // one per part in order. `names[i]`, when given, are the fields part i sent, which an answer's field list must name.
+  const unmatched = (batch, names = null) => {
+    if (batch.parts.length !== batch.sent) return `${batch.sent} part(s) sent, ${batch.parts.length} answer(s)`;
+    const differ = (names || []).map((sent, i) => {
+      const fields = fieldsOf(parsedOf(batch.parts[i].body));
+      if (fields === null) return null;
+      const answered = fields.map((f) => f.FieldName).filter((name) => name !== 'Id');
+      return JSON.stringify([...answered].sort()) === JSON.stringify([...sent].sort()) ? null
+        : `answer ${i + 1} names ${JSON.stringify(answered)} where part ${i + 1} sent ${JSON.stringify(sent)}`;
+    }).filter((problem) => problem !== null);
+    return differ.length ? scrub(differ.join('; ')) : null;
+  };
+  const answersSaid = (batch) => batch.parts.map((part, i) => `answer ${i + 1}: ${partSaid(part)}`).join(' | ');
+  const NOT_MATCHED = 'ANSWERS NOT MATCHED';
 
   let me = null;
   try {
@@ -337,6 +361,7 @@
     if (singleOutcome === 'NOT ESTABLISHED') {
       for (const id of AFTER_SINGLE) {
         const row = RESULTS.find((r) => r.id === id);
+        if (row.state === 'void') continue;
         record(id, row.question, 'NOT ESTABLISHED', 'not asked: the single-create control was not '
           + 'established; a re-run can ask it');
       }
@@ -364,7 +389,6 @@
       formValues: Object.entries(values).map(([FieldName, FieldValue]) => ({ FieldName, FieldValue })),
       bNewDocumentUpdate: false,
     });
-    const fieldsOf = (parsed) => (parsed && Array.isArray(parsed.value) ? parsed.value : null);
     const fieldsSaid = (fields) => scrub(fields.map((f) => `${f.FieldName} HasException=`
       + `${JSON.stringify(f.HasException)} ErrorMessage=${JSON.stringify(f.ErrorMessage)} `
       + `FieldValue=${JSON.stringify(f.FieldValue)}`).join('; ')).slice(0, 600);
@@ -438,10 +462,16 @@
       : `HTTP ${titles.status} carried no rows`}` : '';
 
     const threeHead = outerHead(three);
-    record('transport.batch.changeset-item-creates-per-part', Q.parts, threeHead ? threeHead.outcome : 'RECORDED',
-      threeHead ? threeHead.why : `outer HTTP ${three.status}, ${three.parts.length} part answer(s): `
-        + three.parts.map((part, i) => `part ${i + 1}: ${partSaid(part)}`).join(' | ')
-        + `; landed A ${landed(TITLES.a)}, B ${landed(TITLES.b)}, C ${landed(TITLES.c)}${titlesSaid}`);
+    const threeUnmatched = threeHead ? null : unmatched(three);
+    const threeLanded = `landed A ${landed(TITLES.a)}, B ${landed(TITLES.b)}, C ${landed(TITLES.c)}${titlesSaid}`;
+    const threeSaid = `${threeUnmatched}; ${answersSaid(three)}; ${threeLanded}`;
+    if (threeUnmatched) {
+      record('transport.batch.changeset-item-creates-per-part', Q.parts, NOT_MATCHED, threeSaid, 'open');
+    } else {
+      record('transport.batch.changeset-item-creates-per-part', Q.parts, threeHead ? threeHead.outcome : 'RECORDED',
+        threeHead ? threeHead.why : `outer HTTP ${three.status}, ${three.parts.length} part answer(s): `
+          + three.parts.map((part, i) => `part ${i + 1}: ${partSaid(part)}`).join(' | ') + `; ${threeLanded}`);
+    }
 
     if (refusedOutcome === 'FAIL') {
       voidDependents(['transport.batch.changeset-item-create-failed-part'], 'a single create naming '
@@ -449,6 +479,8 @@
     } else if (refusedOutcome === 'NOT ESTABLISHED') {
       record('transport.batch.changeset-item-create-failed-part', Q.failed, 'NOT ESTABLISHED',
         'not asked: the missing-column control was not established; a re-run can ask it');
+    } else if (threeUnmatched) {
+      record('transport.batch.changeset-item-create-failed-part', Q.failed, NOT_MATCHED, threeSaid, 'open');
     } else {
       const middle = threeHead ? null : three.parts[1];
       record('transport.batch.changeset-item-create-failed-part', Q.failed,
@@ -464,6 +496,12 @@
         TITLES.nometadata],
     ]) {
       const head = outerHead(batch);
+      const apart = head ? null : unmatched(batch);
+      if (apart) {
+        record(id, question, NOT_MATCHED, `${apart}; ${answersSaid(batch)}; landed ${landed(title)}${titlesSaid}`,
+          'open');
+        continue;
+      }
       record(id, question, head ? head.outcome : partHead(batch.parts[0]), head ? head.why
         : `${partSaid(batch.parts[0])}; landed ${landed(title)}${titlesSaid}`);
     }
@@ -477,25 +515,39 @@
           + 'was not established; a re-run can ask it');
       }
     } else {
-      // What reads back for the value a part wrote, against what it sent; `stored` is null where no value is asked.
+      // What reads back for the value a part wrote, against what it sent; `head` is null when WRITTEN applies.
       const readsBack = (one) => {
         const row = present === null ? null : present.get(one.title);
-        if (!row || (one.id !== CLAIMS && one.id !== ISO)) return { said: '', stored: null };
+        if (!row || (one.id !== CLAIMS && one.id !== ISO)) return { said: '', head: null };
         const shown = (value) => (value === undefined ? '(absent)' : JSON.stringify(value));
         if (one.id === CLAIMS) {
           const who = row[`${WHO}Id`];
-          return { stored: who === me.Id, said: `; ${WHO}Id reads back ${shown(who)}, this account's Id: `
-            + `${who === me.Id ? 'yes' : 'no'} (the account read back Id ${me.Id})` };
+          return { head: who === me.Id ? null : 'ACCEPTED, NOT STORED', said: `; ${WHO}Id reads back `
+            + `${shown(who)}, this account's Id: ${who === me.Id ? 'yes' : 'no'} (the account read back Id ${me.Id})` };
         }
-        // Compared as instants, so a UTC answer spelled with an offset still counts as the same date.
         const when = row[WHEN];
-        const at = typeof when === 'string' ? Date.parse(when) : NaN;
+        const text = typeof when === 'string' ? when : '';
+        const read = `; ${WHEN} reads back ${shown(when)}`;
+        // A date alone has lost the time sent, so it is compared as a date and never heads WRITTEN.
+        if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+          return { head: 'ACCEPTED, STORED DIFFERENTLY', said: `${read}, a date with no time; as a date against `
+            + `the sent ${STAMP.slice(0, 10)}: ${text === STAMP.slice(0, 10) ? 'same' : 'different'}` };
+        }
+        // A date-time with no zone would be read in the browser's zone, so it is not compared at all.
+        if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(text)) {
+          return { head: 'STORED WITHOUT A ZONE', said: `${read}, a date and time with no zone; not compared` };
+        }
+        const zoned = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/i.test(text);
+        const at = zoned ? Date.parse(text) : NaN;
         const sent = Date.parse(STAMP);
-        return { stored: at === sent, said: `; ${WHEN} reads back ${shown(when)}; as a UTC instant `
-          + `${Number.isNaN(at) ? '(not a date)' : new Date(at).toISOString()} against the sent `
+        return { head: at === sent ? null : 'ACCEPTED, STORED DIFFERENTLY', said: `${read}; as a UTC instant `
+          + `${Number.isNaN(at) ? '(not a zoned date and time)' : new Date(at).toISOString()} against the sent `
           + `${new Date(sent).toISOString()}: ${at === sent ? 'same' : 'different'}` };
       };
       const outer = outerHead(addValidate);
+      const avUnmatched = outer ? null : unmatched(addValidate,
+        asked.map((one) => ['Title', ...Object.keys(one.values)]));
+      const avLanded = asked.map((one) => `${one.title} ${landed(one.title)}`).join(', ');
       const neighbours = asked.filter((one) => one.id !== AV_FAILED)
         .map((one) => `${one.title} ${landed(one.title)}`).join(', ');
       asked.forEach((one, i) => {
@@ -515,21 +567,20 @@
             `the $batch was not answered part by part: ${outer.outcome}: ${outer.why}`);
           return;
         }
-        const part = addValidate.parts[i];
-        if (!part) {
-          record(one.id, one.question, 'NOT ESTABLISHED', `no answer for part ${i + 1} among `
-            + `${addValidate.parts.length}; a re-run can ask it`);
+        if (avUnmatched) {
+          record(one.id, one.question, NOT_MATCHED, `${avUnmatched}; ${answersSaid(addValidate)}; landed `
+            + `${avLanded}${titlesSaid}`, 'open');
           return;
         }
-        let parsed = null;
-        try { parsed = JSON.parse(part.body); } catch { parsed = null; }
-        const fields = fieldsOf(parsed);
+        const part = addValidate.parts[i];
+        const fields = fieldsOf(parsedOf(part.body));
         const refused = fields !== null && fields.some((f) => f.HasException === true);
         const kept = readsBack(one);
         const answer = `HTTP ${part.status} ${part.reason}; ${fields ? `fields ${fieldsSaid(fields)}`
           : `body ${said(part.body) || '(none)'}`}; landed ${landed(one.title)}${kept.said}`;
         if (one.id === AV_FAILED) {
-          record(AV_FAILED, Q.avfailed, ok2xx(part.status) ? (refused ? 'FIELD REFUSED' : 'PART ANSWERED 2XX')
+          const missing = fields !== null && fields.some((f) => f.FieldName === MISSING && f.HasException === true);
+          record(AV_FAILED, Q.avfailed, ok2xx(part.status) ? (missing ? 'FIELD REFUSED' : 'PART ANSWERED 2XX')
             : partHead(part), `${answer}; neighbours landed ${neighbours}${titlesSaid}`);
           return;
         }
@@ -539,8 +590,7 @@
             : refused ? 'a field was refused' : landed(one.title) !== 'yes' ? 'no item with its Title is known to exist'
               : null;
         // A refused write leaves the spelling not established; it is recorded and the probe goes on.
-        const head = why !== null ? 'NOT ESTABLISHED' : kept.stored !== false ? 'WRITTEN'
-          : one.id === CLAIMS ? 'ACCEPTED, NOT STORED' : 'ACCEPTED, STORED DIFFERENTLY';
+        const head = why !== null ? 'NOT ESTABLISHED' : kept.head || 'WRITTEN';
         record(one.id, one.question, head,
           why === null ? `${answer}${titlesSaid}` : `${why}: ${answer}${titlesSaid}`);
       });
