@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: 68a948f0
+ * REVISION: 1abb1e5d
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -14,7 +14,7 @@
  * DEPENDS ON (read back, and voiding what rests on them when they do not hold)
  *   query.odata.fixture-versions-query-list   a generic list with versioning on
  *   query.odata.fixture-versions-query-items  item A created and written twice, item B
- *       created once, each write read back before the next is sent
+ *       created once under its own Id, each write read back before the next is sent
  *   query.odata.control-versions-read        A's versions read with no options answers
  *       at least two entries, each carrying a numeric VersionId, none repeated
  *   query.odata.control-versions-items-filter      $filter=Id eq A serves A alone
@@ -583,6 +583,15 @@
       return { held: false, merge: null, body: null };
     }
     const created = { title, id: guidOf(made.body && made.body.Id) };
+    // Two creates answering one Id would send both lists' writes to one list, so the second is not built on.
+    if (created.id !== null && CREATED_LISTS.some((one) => one.id === created.id)) {
+      log('FAIL', `'${title}' answered list ${created.id}, which another list this run created holds; `
+        + `recycle '${title}' by hand.`);
+      record(id, question, 'FAIL', `the list create answered HTTP ${made.status} with the Id of another list `
+        + `this run created (${created.id}), so nothing was written to it; recycle it by hand`);
+      voidDependents(dependents, 'the scratch list answered the Id of another list this run created');
+      return { held: false, merge: null, body: null };
+    }
     CREATED_LISTS.push(created);
     // Without the create's own Id a title read could name a rebound list, so nothing more is written.
     if (created.id === null) {
@@ -673,7 +682,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 68a948f0. Quote this when reporting results.');
+  log('INFO', 'probe revision 1abb1e5d. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsQuery');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
@@ -682,7 +691,8 @@
 
   const Q = {
     list: 'a generic list this probe created, with versioning on',
-    items: 'item A created and written twice, item B created once, each write read back before the next',
+    items: 'item A created and written twice, item B created once under its own Id, each write read back '
+      + 'before the next',
     read: 'CONTROL: A\'s versions read with no options answers at least two entries, '
       + 'each carrying a numeric VersionId, none repeated',
     filterControl: 'CONTROL: $filter=Id eq A on the list\'s items serves A alone',
@@ -782,8 +792,9 @@
     }
     if (!await establishFixture('query.odata.fixture-versions-query-items', async () => {
       // The column create's answer joins the read-back, so a refused create shows its reason in RESULTS.
+      // A and B answering one Id would make every item-list control compare an item with itself.
       const body = { Column: `HTTP ${column.status}${column.ok ? '' : `: ${said(column).slice(0, 200)}`}`,
-        Written: written, Missed: missed.join('; ') || 'none' };
+        Written: written, Distinct: ids.A !== ids.B, Missed: missed.join('; ') || 'none' };
       for (const key of ['A', 'B']) {
         if (ids[key] === undefined) continue;
         const read = await sendRaw(`${listPath}/items(${ids[key]})?$select=Id,${CHOICE}`);
@@ -792,7 +803,8 @@
           : read.parsed && typeof read.parsed === 'object' ? read.parsed[CHOICE] : `no JSON: ${said(read)}`;
       }
       return { ok: true, status: 200, body };
-    }, { Column: (v) => typeof v === 'string', Written: 4, Missed: (v) => typeof v === 'string',
+    }, { Column: (v) => typeof v === 'string', Written: 4, Distinct: true,
+      Missed: (v) => typeof v === 'string',
       [`A.${CHOICE}`]: 'Q3', [`B.${CHOICE}`]: 'Q1' },
     AFTER_ITEMS)) {
       return;

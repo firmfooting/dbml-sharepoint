@@ -360,3 +360,10 @@ def test_a_refusal_naming_this_account_by_display_name_is_masked() -> None:
 
     assert "HTTP 400: Refused while <name> holds the item." in rows[FILTER]["evidence"]
     assert "Ada Probe" not in output.split("__SENT__")[0]
+
+
+def test_two_items_answered_one_id_fail_the_items_fixture() -> None:
+    rows, _, _ = _run(itemIds=[1, 1], sameIdReplaces=True)
+
+    assert rows[ITEMS]["outcome"] == "FAIL"
+    assert "Distinct differs: read false, declared true" in rows[ITEMS]["evidence"]

@@ -15,7 +15,7 @@
  * DEPENDS ON (read back, and voiding what rests on them when they do not hold)
  *   query.odata.fixture-versions-query-list   a generic list with versioning on
  *   query.odata.fixture-versions-query-items  item A created and written twice, item B
- *       created once, each write read back before the next is sent
+ *       created once under its own Id, each write read back before the next is sent
  *   query.odata.control-versions-read        A's versions read with no options answers
  *       at least two entries, each carrying a numeric VersionId, none repeated
  *   query.odata.control-versions-items-filter      $filter=Id eq A serves A alone
@@ -70,7 +70,8 @@
 
   const Q = {
     list: 'a generic list this probe created, with versioning on',
-    items: 'item A created and written twice, item B created once, each write read back before the next',
+    items: 'item A created and written twice, item B created once under its own Id, each write read back '
+      + 'before the next',
     read: 'CONTROL: A\'s versions read with no options answers at least two entries, '
       + 'each carrying a numeric VersionId, none repeated',
     filterControl: 'CONTROL: $filter=Id eq A on the list\'s items serves A alone',
@@ -170,8 +171,9 @@
     }
     if (!await establishFixture('query.odata.fixture-versions-query-items', async () => {
       // The column create's answer joins the read-back, so a refused create shows its reason in RESULTS.
+      // A and B answering one Id would make every item-list control compare an item with itself.
       const body = { Column: `HTTP ${column.status}${column.ok ? '' : `: ${said(column).slice(0, 200)}`}`,
-        Written: written, Missed: missed.join('; ') || 'none' };
+        Written: written, Distinct: ids.A !== ids.B, Missed: missed.join('; ') || 'none' };
       for (const key of ['A', 'B']) {
         if (ids[key] === undefined) continue;
         const read = await sendRaw(`${listPath}/items(${ids[key]})?$select=Id,${CHOICE}`);
@@ -180,7 +182,8 @@
           : read.parsed && typeof read.parsed === 'object' ? read.parsed[CHOICE] : `no JSON: ${said(read)}`;
       }
       return { ok: true, status: 200, body };
-    }, { Column: (v) => typeof v === 'string', Written: 4, Missed: (v) => typeof v === 'string',
+    }, { Column: (v) => typeof v === 'string', Written: 4, Distinct: true,
+      Missed: (v) => typeof v === 'string',
       [`A.${CHOICE}`]: 'Q3', [`B.${CHOICE}`]: 'Q1' },
     AFTER_ITEMS)) {
       return;

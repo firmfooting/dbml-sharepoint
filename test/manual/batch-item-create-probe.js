@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: d4db0162
+ * REVISION: 9f5e6dee
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -625,6 +625,15 @@
       return { held: false, merge: null, body: null };
     }
     const created = { title, id: guidOf(made.body && made.body.Id) };
+    // Two creates answering one Id would send both lists' writes to one list, so the second is not built on.
+    if (created.id !== null && CREATED_LISTS.some((one) => one.id === created.id)) {
+      log('FAIL', `'${title}' answered list ${created.id}, which another list this run created holds; `
+        + `recycle '${title}' by hand.`);
+      record(id, question, 'FAIL', `the list create answered HTTP ${made.status} with the Id of another list `
+        + `this run created (${created.id}), so nothing was written to it; recycle it by hand`);
+      voidDependents(dependents, 'the scratch list answered the Id of another list this run created');
+      return { held: false, merge: null, body: null };
+    }
     CREATED_LISTS.push(created);
     // Without the create's own Id a title read could name a rebound list, so nothing more is written.
     if (created.id === null) {
@@ -670,7 +679,7 @@
       await recycleList(title, id);
     }
   };
-  log('INFO', 'probe revision d4db0162. Quote this when reporting results.');
+  log('INFO', 'probe revision 9f5e6dee. Quote this when reporting results.');
 
   // The parts name the list by title, the form a history write sends and these rows measure; the run's token
   // means no other list holds it, and none can take it between a check and a use.

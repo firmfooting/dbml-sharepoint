@@ -112,7 +112,9 @@ const mockFetch = async (url, opts = {}) => {
   }
   if (path.startsWith('web/currentuser')) return answer(200, ME);
   if (path === 'web/lists' && verb === 'POST') {
-    lists.set(sent.Title, { Id: guid(sent.Title), BaseTemplate: sent.BaseTemplate,
+    // `listIds`: by title, the Id a create answers in place of its own, so two lists can share one.
+    const listId = (CONFIG.listIds || {})[sent.Title] || guid(sent.Title);
+    lists.set(sent.Title, { Id: listId, BaseTemplate: sent.BaseTemplate,
       Description: sent.Description, EnableVersioning: false, EnableMinorVersions: false,
       MajorVersionLimit: 50,
       ListItemEntityTypeFullName: `SP.Data.${sent.Title.replace(/ /g, '')}ListItem`,
@@ -121,7 +123,7 @@ const mockFetch = async (url, opts = {}) => {
     // `listDefaults`: values a new list starts with, so a refused MERGE can still leave it usable.
     Object.assign(lists.get(sent.Title), CONFIG.listDefaults || {});
     // `createAnswersNoId`: a create answering no Id, which the claim refuses to build on.
-    return answer(201, CONFIG.createAnswersNoId ? {} : { Id: guid(sent.Title) });
+    return answer(201, CONFIG.createAnswersNoId ? {} : { Id: listId });
   }
   if (path === 'web/folders' && verb === 'POST') {
     folders.add(sent.ServerRelativeUrl);
@@ -218,9 +220,15 @@ const mockFetch = async (url, opts = {}) => {
   if (rest === '/items' && verb === 'POST') {
     const values = plain(sent);
     // `itemIds`: the Ids a list's item creates answer, in order, where the default is 1, 2, 3.
-    const item = { Id: (CONFIG.itemIds || [])[list.items.length] || list.items.length + 1, values,
+    list.creates = (list.creates || 0) + 1;
+    const item = { Id: (CONFIG.itemIds || [])[list.creates - 1] || list.creates, values,
       history: [{ ...values }] };
-    list.items.push(item);
+    // `sameIdReplaces`: a create answering an Id already held overwrites that item, as one item.
+    const held = CONFIG.sameIdReplaces ? list.items.find((each) => each.Id === item.Id) : null;
+    if (held) {
+      held.values = values;
+      held.history.push({ ...values });
+    } else list.items.push(item);
     return answer(201, { Id: item.Id, Title: values.Title });
   }
   if (rest.startsWith('/items?')) {

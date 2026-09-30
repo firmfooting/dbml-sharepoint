@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: 10d59280
+ * REVISION: 650920da
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -21,8 +21,8 @@
  * DEPENDS ON (read back, and voiding what rests on them when they do not hold)
  *   field.version.control-current-user          this account's Id reads back
  *   field.version.fixture-payload-target-list   a list the lookup points at
- *   field.version.fixture-payload-target-items  two items created in it, each answering an Id
- *       and reading back its Title by that Id
+ *   field.version.fixture-payload-target-items  two items created in it, each answering its
+ *       own Id and reading back its Title by that Id
  *   field.version.fixture-payload-list          a generic list with versioning on
  *   field.version.fixture-payload-columns       eight columns read back with their TypeAsString,
  *       and the date-only and date-and-time columns with DisplayFormat 0 and 1
@@ -612,6 +612,15 @@
       return { held: false, merge: null, body: null };
     }
     const created = { title, id: guidOf(made.body && made.body.Id) };
+    // Two creates answering one Id would send both lists' writes to one list, so the second is not built on.
+    if (created.id !== null && CREATED_LISTS.some((one) => one.id === created.id)) {
+      log('FAIL', `'${title}' answered list ${created.id}, which another list this run created holds; `
+        + `recycle '${title}' by hand.`);
+      record(id, question, 'FAIL', `the list create answered HTTP ${made.status} with the Id of another list `
+        + `this run created (${created.id}), so nothing was written to it; recycle it by hand`);
+      voidDependents(dependents, 'the scratch list answered the Id of another list this run created');
+      return { held: false, merge: null, body: null };
+    }
     CREATED_LISTS.push(created);
     // Without the create's own Id a title read could name a rebound list, so nothing more is written.
     if (created.id === null) {
@@ -702,7 +711,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 10d59280. Quote this when reporting results.');
+  log('INFO', 'probe revision 650920da. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe Versions');
   const TARGET = runTitle('dbmlsp Probe VersionsTarget');
@@ -739,7 +748,8 @@
   const Q = {
     user: 'this account\'s Id reads back from web/currentuser',
     target: 'a lookup target list this probe created',
-    targetItems: 'two items created in the lookup target list, each answering an Id and reading back its Title',
+    targetItems: 'two items created in the lookup target list, each answering its own Id and reading back its '
+      + 'Title',
     list: 'a generic list this probe created, with versioning on',
     columns: 'the eight columns read back with their declared TypeAsString, and each date column with its '
       + 'DisplayFormat (0 date only, 1 date and time)',
@@ -932,10 +942,12 @@
           + `${back.parsed ? show(back.parsed.Title) : back.read}`);
       }
     }
-    // Recorded apart from the list's own row, which passes before any item exists.
+    // Recorded apart from the list's own row, which passes before any item exists. Two seeds answering one Id
+    // would give the two lookup values one target, so the Ids must differ.
     if (!await establishFixture(TARGET_ITEMS, async () => ({ ok: true, status: 200,
-      body: { Seeded: targetIds.length, Missed: seedMissed.join('; ') || 'none' } }),
-    { Seeded: 2, Missed: (v) => typeof v === 'string' }, AFTER_TARGET_ITEMS)) {
+      body: { Seeded: targetIds.length, Distinct: new Set(targetIds).size === targetIds.length,
+        Missed: seedMissed.join('; ') || 'none' } }),
+    { Seeded: 2, Distinct: true, Missed: (v) => typeof v === 'string' }, AFTER_TARGET_ITEMS)) {
       return;
     }
 

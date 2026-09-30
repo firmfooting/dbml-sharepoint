@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: af25261e
+ * REVISION: 900ec906
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -576,6 +576,15 @@
       return { held: false, merge: null, body: null };
     }
     const created = { title, id: guidOf(made.body && made.body.Id) };
+    // Two creates answering one Id would send both lists' writes to one list, so the second is not built on.
+    if (created.id !== null && CREATED_LISTS.some((one) => one.id === created.id)) {
+      log('FAIL', `'${title}' answered list ${created.id}, which another list this run created holds; `
+        + `recycle '${title}' by hand.`);
+      record(id, question, 'FAIL', `the list create answered HTTP ${made.status} with the Id of another list `
+        + `this run created (${created.id}), so nothing was written to it; recycle it by hand`);
+      voidDependents(dependents, 'the scratch list answered the Id of another list this run created');
+      return { held: false, merge: null, body: null };
+    }
     CREATED_LISTS.push(created);
     // Without the create's own Id a title read could name a rebound list, so nothing more is written.
     if (created.id === null) {
@@ -666,7 +675,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision af25261e. Quote this when reporting results.');
+  log('INFO', 'probe revision 900ec906. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsTrim');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.

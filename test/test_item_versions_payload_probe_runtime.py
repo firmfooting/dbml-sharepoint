@@ -786,3 +786,24 @@ def test_a_site_path_with_an_apostrophe_is_doubled_inside_every_path_literal() -
     literal = [r["path"] for r in sent if "ServerRelativeUrl('" in r["path"]]
     assert literal
     assert all("/sites/O''Brien/" in path for path in literal), literal
+
+
+def test_two_target_seeds_answered_one_id_fail_the_target_items() -> None:
+    # The second seed's create answers the first one's Id, and overwrites it.
+    rows, _, _ = _run(itemIds=[1, 1], sameIdReplaces=True)
+
+    assert rows[TARGET_ITEMS]["outcome"] == "FAIL"
+    assert "Distinct differs: read false, declared true" in rows[TARGET_ITEMS]["evidence"]
+    assert voided(rows) == _deps(TARGET_ITEMS)
+
+
+def test_a_list_create_answering_another_list_id_is_refused() -> None:
+    target = mock_list_id("dbmlsp Probe VersionsTarget")
+    rows, sent, output = _run(listIds={"dbmlsp Probe Versions": target})
+
+    assert rows[TARGET]["outcome"] == "PASS"
+    assert rows[LIST]["outcome"] == "FAIL"
+    assert "the Id of another list this run created" in rows[LIST]["evidence"]
+    assert voided(rows) == _deps(LIST)
+    assert "recycle it by hand" in output
+    assert _recycled(sent).count(f"web/lists(guid'{target}')/recycle") == 1
