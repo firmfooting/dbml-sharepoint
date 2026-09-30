@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: d54b4209
+ * REVISION: 76e520e5
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -22,7 +22,8 @@
  *   field.version.control-current-user          this account's Id reads back
  *   field.version.fixture-payload-target-list   a list holding two items the lookup points at
  *   field.version.fixture-payload-list          a generic list with versioning on
- *   field.version.fixture-payload-columns       eight columns read back with their TypeAsString
+ *   field.version.fixture-payload-columns       eight columns read back with their TypeAsString,
+ *       and the date-only and date-and-time columns with DisplayFormat 0 and 1
  *   field.version.fixture-payload-people-column a multi-person column (UserMulti); only
  *       the people write and field.version.payload-people rest on it
  *   field.version.fixture-payload-item          one item created empty and then written
@@ -687,7 +688,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision d54b4209. Quote this when reporting results.');
+  log('INFO', 'probe revision 76e520e5. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Versions';
   const TARGET = 'dbmlsp Probe VersionsTarget';
@@ -725,7 +726,8 @@
     user: 'this account\'s Id reads back from web/currentuser',
     target: 'a lookup target list this probe created, holding two items',
     list: 'a generic list this probe created, with versioning on',
-    columns: 'the eight columns read back with their declared TypeAsString',
+    columns: 'the eight columns read back with their declared TypeAsString, and each date column with its '
+      + 'DisplayFormat (0 date only, 1 date and time)',
     peopleColumn: `${PEOPLE} reads back as a multi-person column (UserMulti, AllowMultipleValues true)`,
     item: 'one item created empty and written twice, each set of values read back before the next',
     peopleWrite: `${PEOPLE}Id written as { results: [this account's Id] } in both writes, read back after each`,
@@ -931,17 +933,24 @@
         + `${sent.ok ? '' : ` ${scrub(sent.text).slice(0, 200)}`}`);
     }
     const declaredColumns = {};
+    // DisplayFormat is what makes a DateTime column date-only or date-and-time, which the two date rows report on.
+    const formatOf = (column) => (column.body && column.body.DisplayFormat !== undefined
+      ? column.body.DisplayFormat : null);
     for (const column of COLUMNS) {
       declaredColumns[`${column.name}.Read`] = 'HTTP 200';
       declaredColumns[`${column.name}.TypeAsString`] = column.type;
+      if (formatOf(column) !== null) declaredColumns[`${column.name}.DisplayFormat`] = formatOf(column);
     }
     if (!await establishFixture('field.version.fixture-payload-columns', async () => {
       const body = {};
       for (const column of COLUMNS) {
-        const read = await readBack(`${listPath}/fields/getbyinternalnameortitle('${column.name}')`
-          + '?$select=InternalName,TypeAsString');
+        // The whole field is read, as datetime-sentinel-probe does, since $select of a subtype property can 400.
+        const read = await readBack(`${listPath}/fields/getbyinternalnameortitle('${column.name}')`);
         body[`${column.name}.Read`] = read.read;
         if (read.parsed) body[`${column.name}.TypeAsString`] = read.parsed.TypeAsString;
+        if (read.parsed && formatOf(column) !== null) {
+          body[`${column.name}.DisplayFormat`] = read.parsed.DisplayFormat;
+        }
       }
       return { ok: true, status: 200, body };
     }, declaredColumns, AFTER_COLUMNS)) {

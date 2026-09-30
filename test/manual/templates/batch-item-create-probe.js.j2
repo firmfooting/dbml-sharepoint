@@ -32,7 +32,8 @@
  *   transport.batch.control-single-item-unknown-property-refused  a single typed
  *       create naming a column the list lacks is refused; the failed-part row rests on it
  *   transport.batch.fixture-item-batch-columns  a person column and a date-and-time
- *       column read back with their TypeAsString; the claims and date rows rest on it
+ *       column read back with their TypeAsString, the date column with DisplayFormat 1;
+ *       the claims and date rows rest on it
  *   transport.batch.control-current-user  this account's Id and Email read back; the
  *       claims row rests on it
  *   transport.batch.control-single-addvalidate-create  one AddValidateUpdateItemUsingPath
@@ -129,7 +130,7 @@
     failed: 'what the middle part answered, and whether its neighbours landed',
     verbose: 'what a create part with verbose headers and no __metadata answered',
     nometadata: 'what a create part with nometadata headers and no type answered',
-    columns: `${WHO} (User) and ${WHEN} (DateTime) read back with their TypeAsString`,
+    columns: `${WHO} (User) and ${WHEN} (DateTime, DisplayFormat 1) read back with their TypeAsString`,
     user: 'this account\'s Id and Email read back from web/currentuser',
     addvalidate: 'CONTROL: one AddValidateUpdateItemUsingPath call with FolderPath and a Title lands',
     avunknown: `CONTROL: one AddValidateUpdateItemUsingPath call naming ${MISSING} in formValues is refused`,
@@ -277,7 +278,8 @@
     if (batch.ok && batch.parts.length) return null;
     // A 2xx whose text this probe found no part status line in says nothing about the parts, so it stays open.
     if (batch.ok) {
-      return { outcome: 'NO PART STATUS', why: `HTTP ${batch.status} carried no part: ${said(batch.text)}`, state: 'open' };
+      return { outcome: 'NO PART STATUS', why: `HTTP ${batch.status} carried no part: ${said(batch.text)}`,
+        state: 'open' };
     }
     if (isRefusal(batch.status)) {
       return { outcome: 'OUTER REQUEST REFUSED', why: `HTTP ${batch.status}: ${said(batch.text)}` };
@@ -383,15 +385,18 @@
       // The creates' answers join the read-back, so a refused column shows its reason in RESULTS.
       const body = { ...created };
       for (const name of [WHO, WHEN]) {
-        const read = await sendRaw(`${listPath}/fields/getbyinternalnameortitle('${name}')`
-          + '?$select=InternalName,TypeAsString');
+        // The whole field is read, as datetime-sentinel-probe does, since $select of a subtype property can 400.
+        const read = await sendRaw(`${listPath}/fields/getbyinternalnameortitle('${name}')`);
         const head = headOf(read);
         body[`${name}.Read`] = head ? head.why : `HTTP ${read.status}`;
         if (!head && read.parsed) body[`${name}.TypeAsString`] = read.parsed.TypeAsString;
+        if (!head && read.parsed && name === WHEN) body[`${name}.DisplayFormat`] = read.parsed.DisplayFormat;
       }
       return { ok: true, status: 200, body };
     }, { [`${WHO}.Create`]: recorded, [`${WHO}.Read`]: 'HTTP 200', [`${WHO}.TypeAsString`]: 'User',
-      [`${WHEN}.Create`]: recorded, [`${WHEN}.Read`]: 'HTTP 200', [`${WHEN}.TypeAsString`]: 'DateTime' },
+      [`${WHEN}.Create`]: recorded, [`${WHEN}.Read`]: 'HTTP 200', [`${WHEN}.TypeAsString`]: 'DateTime',
+      // DisplayFormat 1 is what makes it date and time, which the ISO row's comparison rests on.
+      [`${WHEN}.DisplayFormat`]: 1 },
     [CLAIMS, ISO]);
 
     const made = await single(typed(TITLES.single));

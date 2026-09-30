@@ -183,7 +183,10 @@ const mockFetch = async (url, opts = {}) => {
   if (rest.startsWith('/RootFolder')) return answer(200, { ServerRelativeUrl: list.root });
   if (rest === '/recycle') { lists.delete(title); return answer(200, {}); }
   if (rest === '/fields' && verb === 'POST') {
-    list.fields[sent.Title] = { InternalName: sent.Title, TypeAsString: KINDS[sent.FieldTypeKind] };
+    // `fieldsTake`: by column name, what a create stores in place of what it sent.
+    list.fields[sent.Title] = { InternalName: sent.Title, TypeAsString: KINDS[sent.FieldTypeKind],
+      ...(sent.DisplayFormat === undefined ? {} : { DisplayFormat: sent.DisplayFormat }),
+      ...((CONFIG.fieldsTake || {})[sent.Title] || {}) };
     return answer(201, { d: { Title: sent.Title } });
   }
   if (rest === '/fields/addfield' && verb === 'POST') {

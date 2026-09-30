@@ -194,8 +194,11 @@ _MOCK = textwrap.dedent(r"""
       if (rest === '/recycle') { list = null; return answer(200, {}); }
       if (rest === '/fields' && verb === 'POST') {
         const sent = JSON.parse(raw);
+        // `whenTakes`: the DisplayFormat the date column stores in place of the one sent.
         fields[sent.Title] = { InternalName: sent.Title,
-          TypeAsString: sent.FieldTypeKind === 20 ? 'User' : 'DateTime' };
+          TypeAsString: sent.FieldTypeKind === 20 ? 'User' : 'DateTime',
+          ...(sent.DisplayFormat === undefined ? {} : {
+            DisplayFormat: 'whenTakes' in CONFIG ? CONFIG.whenTakes : sent.DisplayFormat }) };
         return answer(201, { Title: sent.Title });
       }
       const field = /^\/fields\/getbyinternalnameortitle\('([^']+)'\)/.exec(rest);
@@ -889,3 +892,11 @@ def test_a_title_that_no_longer_names_the_claimed_list_sends_no_batch(
         assert rows[row_id]["state"] == "open", rows[row_id]
         assert "not sent: the title read " in rows[row_id]["evidence"]
     assert ended_with_report(output)
+
+
+def test_a_date_column_that_did_not_take_date_and_time_voids_the_iso_row() -> None:
+    rows, _, _ = _run(whenTakes=0)
+
+    assert rows[COLUMNS]["outcome"] == "FAIL"
+    assert "ProbeWhen.DisplayFormat differs: read 0, declared 1" in rows[COLUMNS]["evidence"]
+    assert rows[ISO]["state"] == "void"

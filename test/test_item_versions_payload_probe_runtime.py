@@ -666,3 +666,21 @@ def test_a_list_versions_read_answered_2xx_with_no_value_array_is_left_open() ->
         assert rows[row_id]["state"] == "open", rows[row_id]
     assert "HTTP 200 carried no value array" in rows[FIELDS]["evidence"]
     assert ended_with_report(output)
+
+
+@pytest.mark.parametrize(("name", "sent", "took"), [("ProbeDate", 0, 1), ("ProbeStamp", 1, 0)])
+def test_a_date_column_that_did_not_take_its_display_format_voids_the_list_rows(
+        name: str, sent: int, took: int) -> None:
+    rows, _, _ = _run(fieldsTake={name: {"DisplayFormat": took}})
+
+    assert rows[COLUMNS]["outcome"] == "FAIL"
+    assert f"{name}.DisplayFormat differs: read {took}, declared {sent}" in (
+        rows[COLUMNS]["evidence"])
+    assert voided(rows) == _deps(COLUMNS)
+
+
+def test_the_columns_fixture_reads_back_each_date_column_display_format() -> None:
+    rows, _, _ = _run()
+
+    assert "ProbeDate.DisplayFormat=0" in rows[COLUMNS]["evidence"]
+    assert "ProbeStamp.DisplayFormat=1" in rows[COLUMNS]["evidence"]
