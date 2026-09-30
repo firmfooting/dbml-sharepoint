@@ -10,7 +10,6 @@ import re
 from collections import Counter
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
-from dbml_sharepoint.analysis.column_projection import effective_column_types
 from dbml_sharepoint.analysis.conditions import condition_findings
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.rendered_columns import rendered_columns
@@ -63,13 +62,11 @@ def _conditions(vc: ValidationContext, i: int) -> list[Finding]:
     table = vc.tables_by_name.get(watched.entity)
     if table is None:
         return []
-    xcols = vc.cross_site_columns(watched.entity)
     # _structure reports an unknown entity, or a column outside this set, as unrendered.
-    if watched.column not in rendered_columns(table, xcols):
+    if watched.column not in rendered_columns(table, vc.cross_site_columns(watched.entity)):
         return []
-    projected = vc.projected_columns(watched.entity)
-    rendered = rendered_columns(table, xcols, projected)
-    types = effective_column_types({c.name: c.type for c in table.columns}, xcols, projected)
+    rendered = vc.list_columns(table)
+    types = vc.list_column_types(table)
     lookups = {c.name for c in table.columns if c.ref is not None}
     findings: list[Finding] = []
     for j, use in enumerate(watched.uses):

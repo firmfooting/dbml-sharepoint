@@ -14,8 +14,13 @@ tested one at a time.
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
+from dbml_sharepoint.analysis.column_projection import (
+    effective_column_types,
+    system_column_types_for,
+)
 from dbml_sharepoint.analysis.list_description import family_for
 from dbml_sharepoint.analysis.lookups import lookup_display_columns, lookup_target_entities
+from dbml_sharepoint.analysis.rendered_columns import rendered_columns, system_columns_for
 from dbml_sharepoint.analysis.reporting.plan import (
     VALIDATION_TIME_ZONE,
     ListPlan,
@@ -264,6 +269,30 @@ class ValidationContext:
     def projected_columns(self, entity_name: str) -> set[str]:
         """Projected (dependent) field names on one entity, empty when none."""
         return self.projected_by_entity.get(entity_name, set())
+
+    def list_columns(self, table: Table) -> set[str]:
+        """Every column a condition or field list on this entity's list may name.
+
+        The rendered DBML columns and projections, plus the built-in Title and
+        the kind's system columns, which every provisioned list has undeclared.
+        Not `joins.all_items_rendered`, which is the generated All Items view.
+        """
+        return (
+            rendered_columns(
+                table, self.cross_site_columns(table.name), self.projected_columns(table.name),
+            )
+            | {"Title"} | system_columns_for(self.kind_of(table.name))
+        )
+
+    def list_column_types(self, table: Table) -> dict[str, str]:
+        """A type for every name in `list_columns`, the declared type winning."""
+        return {
+            **system_column_types_for(self.kind_of(table.name)),
+            **effective_column_types(
+                {c.name: c.type for c in table.columns},
+                self.cross_site_columns(table.name), self.projected_columns(table.name),
+            ),
+        }
 
     def effective_indexes(self, entity_name: str) -> set[str]:
         """Declared and implicit SharePoint indexes for one entity."""

@@ -405,6 +405,14 @@ def test_a_watched_lookup_projection_is_refused_once_and_its_when_left_unjudged(
     assert len(findings) == 1
 
 
+@pytest.mark.parametrize("when", [
+    pytest.param(Leaf("Editor", "is_not_null"), id="editor"),
+    pytest.param(Leaf("Modified", "gt", "2026-01-01"), id="modified"),
+])
+def test_a_when_on_a_system_column_is_accepted(when: Leaf) -> None:
+    assert not _watched_findings(_validate(_on_status(WatchUse("alert", when=when))))
+
+
 def _judged(target: str | None) -> list[Finding]:
     return condition_findings(
         Leaf("Note", "not_contains", "draft"),

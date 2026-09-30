@@ -4,7 +4,6 @@
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.column_projection import (
     effective_column_types,
-    system_column_types_for,
 )
 from dbml_sharepoint.analysis.column_refs import formatter_field_refs
 from dbml_sharepoint.analysis.condition_rendering import (
@@ -36,7 +35,6 @@ from dbml_sharepoint.analysis.limits import (
 )
 from dbml_sharepoint.analysis.rendered_columns import (
     effective_view_fields,
-    rendered_columns,
     system_columns_for,
 )
 from dbml_sharepoint.analysis.typemap import (
@@ -461,7 +459,6 @@ def _field_set_findings(vc: ValidationContext) -> list[Finding]:
     """
     bundle = vc.bundle
     tables_by_name = vc.tables_by_name
-    cross_site_by_entity = vc.cross_site_by_entity
     findings: list[Finding] = []
     for entity_name, entity_sets in bundle.mapping.field_sets.items():
         set_table = tables_by_name.get(entity_name)
@@ -471,13 +468,7 @@ def _field_set_findings(vc: ValidationContext) -> list[Finding]:
                 location=Location(Section.FIELD_SETS, entity=entity_name),
             ))
             continue
-        set_rendered = (
-            rendered_columns(
-                set_table, cross_site_by_entity.get(entity_name, set()),
-                vc.projected_columns(entity_name),
-            )
-            | {"Title"} | system_columns_for(vc.kind_of(entity_name))
-        )
+        set_rendered = vc.list_columns(set_table)
         # A set is "referenced" if some view on this entity actually
         # expanded it. ViewDef.expanded_sets is the loader's record of
         # that, since the "@name" tokens themselves are gone by the time we
@@ -557,14 +548,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # about ONE view narrows it with `view=`.
         at_entity = Location(Section.VIEWS, entity=entity_name)
         xcols = cross_site_by_entity.get(entity_name, set())
-        # The built-in Title always exists on a provisioned list, declared or not.
-        # This is the DECLARED view's rendered set, not `joins.all_items_rendered`
-        # (the generated All Items one), same shape, different subject, kept
-        # separate on purpose; do not fold this into that helper.
-        view_rendered = (
-            rendered_columns(view_table, xcols, vc.projected_columns(entity_name))
-            | {"Title"} | system_columns_for(vc.kind_of(entity_name))
-        )
+        view_rendered = vc.list_columns(view_table)
         # The type map must cover everything view_rendered admits, or a
         # column that IS filterable reports "no declared type" and aborts the
         # build. Three are rendered without being DBML columns: the built-in
@@ -750,9 +734,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # rejections as distinct finding codes and locations: an
                 # unrenderable operator is not flattened into the same result
                 # as an unknown column.
-                where_types = {
-                    **system_column_types_for(vc.kind_of(entity_name)), **types_by_col,
-                }
+                where_types = vc.list_column_types(view_table)
                 where_findings = condition_findings(
                     view.where,
                     target=CAML,
@@ -1042,9 +1024,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # without their types they report as the empty string,
                 # which made Author escape the arithmetic rule and produced
                 # a message reading "is ." on every system column.
-                col_type = {
-                    **system_column_types_for(vc.kind_of(entity_name)), **types_by_col,
-                }.get(total_col, "")
+                col_type = vc.list_column_types(view_table).get(total_col, "")
                 if func != "count" and total_col in entity_lookups:
                     # A lookup is int-typed in DBML, so without this it
                     # walks straight through the numeric rule. SharePoint

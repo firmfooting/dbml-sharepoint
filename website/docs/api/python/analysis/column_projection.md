@@ -32,8 +32,8 @@ architecture work is removing.
 
 `effective_column_types` deliberately does NOT fold `SYSTEM_COLUMN_TYPES` in,
 and the two are separate names for that reason. Their callers differ:
-`generators.jsgen` and `checks/_views` merge the system types in where a view
-may filter on `Created`, while `checks/_formatting` and `checks/_retirement`
+`generators.jsgen` and `checks/context` merge the system types in where a view
+or a watched condition may filter on `Created`, while `checks/_formatting` and `checks/_retirement`
 pass the projection alone. Folding them in would change what every caller sees
 in order to save two of them a merge, so the composition stays at the call
 site. The absence is pinned by a test, because it reads like an oversight.
