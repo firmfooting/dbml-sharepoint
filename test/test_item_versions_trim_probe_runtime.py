@@ -416,3 +416,23 @@ def test_a_list_read_back_that_throws_leaves_the_list_open() -> None:
     assert "the read never answered (Failed to fetch)" in rows[LIST]["evidence"]
     assert voided(rows) == set()
     assert ended_with_report(output)
+
+
+def test_a_malformed_versions_answer_is_not_counted_and_the_run_goes_on() -> None:
+    rows, _, output = _run(rules=[{"contains": "/versions", "after": WRITE_READS, "status": 200,
+                                   "text": '{"value": [null, {"VersionId": 3072}]}'}])
+
+    for row_id in (ONCE, WAIT):
+        assert rows[row_id]["outcome"] == "NOT ESTABLISHED", rows[row_id]
+        assert "carried entry 1 of its value array as null, not an object" in (
+            rows[row_id]["evidence"])
+    assert ended_with_report(output)
+
+
+def test_an_item_create_answered_2xx_with_no_json_leaves_the_item_open() -> None:
+    rows, _, _ = _run(rules=[{"contains": "/items", "verb": "POST", "status": 201,
+                              "text": "created"}])
+
+    assert rows[ITEM]["outcome"] == "NOT ESTABLISHED"
+    assert "the create answered HTTP 201 with no JSON object" in rows[ITEM]["evidence"]
+    assert voided(rows) == set()

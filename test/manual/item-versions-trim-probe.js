@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: 25673c77
+ * REVISION: 0bae43d2
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -465,12 +465,13 @@
     if (head && head.outcome === 'NOT ESTABLISHED') UNHEARD.push(head.why);
     return head;
   };
-  // A read answered 2xx with no JSON has nothing to read, which the harness's unanswered counts as no answer.
+  // A single-entity read's body when it is a JSON object, or null, so no property is read off anything else.
+  const recordBody = (res) => (res.parsed && typeof res.parsed === 'object' && !Array.isArray(res.parsed)
+    ? res.parsed : null);
+  // A read answered 2xx with no JSON object has nothing to read, which the harness's unanswered counts as none.
   const readHead = (res) => {
     const head = maskedHead(res);
-    if (!head && !(res.parsed && typeof res.parsed === 'object')) {
-      UNHEARD.push(`the read answered HTTP ${res.status} with no JSON`);
-    }
+    if (!head && recordBody(res) === null) UNHEARD.push(`the read answered HTTP ${res.status} with no JSON object`);
     return head;
   };
   // For a probe with no current-user fixture: learns this account so its display name is masked too.
@@ -502,11 +503,27 @@
     && a.every((x) => a.filter((y) => y === x).length === b.filter((y) => y === x).length);
   // A title or server-relative path inside an OData string literal, its apostrophes doubled as deploy/_folders does.
   const pathLiteral = (path) => String(path).replace(/'/g, "''");
+  // A 2xx body's value array when every entry is a JSON object; otherwise rows is null and shape says why.
+  const entriesOf = (parsed) => {
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.value)) {
+      return { rows: null, shape: 'carried no value array' };
+    }
+    const bad = parsed.value.findIndex((row) => !row || typeof row !== 'object' || Array.isArray(row));
+    return bad === -1 ? { rows: parsed.value, shape: null } : { rows: null, shape: `carried entry ${bad + 1} `
+      + `of its value array as ${scrub(JSON.stringify(parsed.value[bad])).slice(0, 80)}, not an object` };
+  };
   // voidDependents, except that a row already void keeps its first reason: void is terminal.
   const voidRows = (ids, reason) => voidDependents(ids.filter((one) => {
     const row = RESULTS.find((r) => r.id === one);
     return !row || row.state !== 'void';
   }), reason);
+  // The numeric Id a 2xx create answered, or null; a 2xx with no JSON object is noted as unanswered.
+  const createdId = (made) => {
+    if (!made.ok) return null;
+    const body = recordBody({ parsed: made.body });
+    if (body === null) UNHEARD.push(`the create answered HTTP ${made.status} with no JSON object`);
+    return body && Number.isInteger(body.Id) ? body.Id : null;
+  };
   // Where the requests of the fixture about to be established begin in UNHEARD.
   let fixtureStart = 0;
   const beginFixture = () => { fixtureStart = UNHEARD.length; };
@@ -606,7 +623,7 @@
     };
     const pre = await spGet(`${path}?$select=Id,Description`);
     // A 2xx with no JSON says nothing about whose list it is, so it is neither refused nor built over.
-    if (pre.ok && (pre.body === null || typeof pre.body !== 'object')) {
+    if (pre.ok && recordBody({ parsed: pre.body }) === null) {
       return leaveOpen(`the ownership read of '${title}' answered HTTP ${pre.status} with no JSON; `
         + 'nothing was created');
     }
@@ -645,7 +662,12 @@
       return leaveOpen(`the list create ${unanswered({ ok: false, status: made.status })}: `
         + `${scrub(made.text).slice(0, 200)}, so a list '${title}' may now exist`);
     }
-    const created = { title, id: guidOf(made.body && made.body.Id) };
+    if (recordBody({ parsed: made.body }) === null) {
+      CREATED_LISTS.push({ title, id: null });
+      return leaveOpen(`the list create answered HTTP ${made.status} with no JSON object, so a list '${title}' `
+        + 'may now exist');
+    }
+    const created = { title, id: guidOf(made.body.Id) };
     // Two creates answering one Id would send both lists' writes to one list, so the second is not built on.
     if (created.id !== null && CREATED_LISTS.some((one) => one.id === created.id)) {
       log('FAIL', `'${title}' answered list ${created.id}, which another list this run created holds; `
@@ -682,6 +704,8 @@
     const held = await settleFixture(id, async () => {
       read = await spGet(`${path}?$select=${select}`);
       readHead({ ...read, parsed: read.body, text: JSON.stringify(read.body) });
+      // A body that is not a JSON object is no answer; the harness would read a property off it.
+      if (read.ok && recordBody({ parsed: read.body }) === null) read = { ...read, body: null };
       return read.ok && read.body && typeof read.body === 'object'
         ? { ...read, body: { ...read.body, ...answered } } : read;
     }, { BaseTemplate: baseTemplate, Description: description, ...declared, ...settled,
@@ -710,12 +734,12 @@
       || (parsed.d && typeof parsed.d === 'object' ? parsed.d.__next : undefined);
     return typeof link === 'string' && link ? link : null;
   };
-  // One read of an item's versions; `rows` is the value array, or null when the answer carried none.
+  // One read of an item's versions; `rows` is the value array of objects, or null with `shape` saying why.
   const readVersions = async (listPath, itemId, query = '') => {
     const res = await sendRaw(`${listPath}/items(${itemId})/versions${query ? `?${query}` : ''}`);
     const head = maskedHead(res);
-    const rows = !head && res.parsed && Array.isArray(res.parsed.value) ? res.parsed.value : null;
-    return { res, head, rows, next: head ? null : continuationOf(res.parsed) };
+    const { rows, shape } = head ? { rows: null, shape: null } : entriesOf(res.parsed);
+    return { res, head, rows, shape, next: head ? null : continuationOf(res.parsed) };
   };
   // Learn documents no paging for item versions, so a continuation link is reported and never followed.
   const pagedSaid = (versions) => (versions.next === null ? null
@@ -747,7 +771,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 25673c77. Quote this when reporting results.');
+  log('INFO', 'probe revision 0bae43d2. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsTrim');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
@@ -796,7 +820,7 @@
   const describe = (got, written, limit, created) => {
     if (got.head) return [got.head.outcome, scrub(got.head.why)];
     if (got.rows === null) {
-      return ['NOT ESTABLISHED', `HTTP ${got.res.status} carried no value array: ${said(got.res.text)}`];
+      return ['NOT ESTABLISHED', `HTTP ${got.res.status} ${got.shape}: ${said(got.res.text)}`];
     }
     const rows = got.rows;
     // A repeated VersionId would be counted as two versions, so no count is compared when one repeats.
@@ -855,17 +879,17 @@
       }
       const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title`);
       const head = readHead(read);
-      const title = !head && read.parsed && typeof read.parsed === 'object' ? read.parsed.Title : undefined;
+      const title = head || !recordBody(read) ? undefined : recordBody(read).Title;
       if (title !== titleOf(n)) {
         missed.push(`${what}: HTTP ${sent.status}, but ${head ? `the read-back ${scrub(head.why)}`
           : `Title reads back ${JSON.stringify(title)}`}`);
         return;
       }
       const after = await readVersions(listPath, itemId);
-      // A 2xx with no value array says nothing about the versions, so it is no answer rather than a miss.
-      if (!after.head && after.rows === null) UNHEARD.push(`the versions read after ${what} carried no value array`);
+      // A 2xx whose entries cannot be read says nothing about the versions, so it is no answer rather than a miss.
+      if (!after.head && after.rows === null) UNHEARD.push(`the versions read after ${what} ${after.shape}`);
       const blocked = after.head ? scrub(after.head.why) : after.rows === null
-        ? `HTTP ${after.res.status} carried no value array` : after.next !== null ? pagedSaid(after)
+        ? `HTTP ${after.res.status} ${after.shape}` : after.next !== null ? pagedSaid(after)
           : repeatedIds(after.rows).length ? 'it listed a VersionId more than once'
             : after.rows.some((row) => versionIdOf(row) === null) ? 'an entry carried no VersionId' : null;
       const fresh = blocked ? [] : after.rows.map((row) => JSON.stringify(versionIdOf(row)))
@@ -881,7 +905,7 @@
     beginFixture();
     const made = await spWrite(`${listPath}/items`, { __metadata: { type: itemType }, Title: titleOf(1) },
       digest, VERBOSE_WRITE);
-    if (made.ok && made.body && Number.isInteger(made.body.Id)) itemId = made.body.Id;
+    itemId = createdId(made);
     if (made.ok && itemId === null) missed.push(`the create: HTTP ${made.status} carried no numeric Id`);
     else await landed(1, made, 'the create');
     for (let n = 2; itemId !== null && n <= writes + 1; n += 1) {
@@ -897,8 +921,8 @@
       if (itemId === null) return { ok: true, status: 200, body };
       const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title`);
       const head = readHead(read);
-      body.Title = head ? scrub(head.why) : read.parsed && typeof read.parsed === 'object' ? read.parsed.Title
-        : `no JSON: ${said(read.text)}`;
+      body.Title = head ? scrub(head.why) : recordBody(read) ? recordBody(read).Title
+        : `no JSON object: ${said(read.text)}`;
       return { ok: true, status: 200, body };
     }, { Written: writes + 1, Missed: (v) => typeof v === 'string', Title: titleOf(writes + 1) },
     AFTER_ITEM)) {

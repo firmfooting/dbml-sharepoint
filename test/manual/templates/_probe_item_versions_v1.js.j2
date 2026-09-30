@@ -9,12 +9,12 @@
       || (parsed.d && typeof parsed.d === 'object' ? parsed.d.__next : undefined);
     return typeof link === 'string' && link ? link : null;
   };
-  // One read of an item's versions; `rows` is the value array, or null when the answer carried none.
+  // One read of an item's versions; `rows` is the value array of objects, or null with `shape` saying why.
   const readVersions = async (listPath, itemId, query = '') => {
     const res = await sendRaw(`${listPath}/items(${itemId})/versions${query ? `?${query}` : ''}`);
     const head = maskedHead(res);
-    const rows = !head && res.parsed && Array.isArray(res.parsed.value) ? res.parsed.value : null;
-    return { res, head, rows, next: head ? null : continuationOf(res.parsed) };
+    const { rows, shape } = head ? { rows: null, shape: null } : entriesOf(res.parsed);
+    return { res, head, rows, shape, next: head ? null : continuationOf(res.parsed) };
   };
   // Learn documents no paging for item versions, so a continuation link is reported and never followed.
   const pagedSaid = (versions) => (versions.next === null ? null

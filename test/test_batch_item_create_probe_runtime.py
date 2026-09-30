@@ -734,7 +734,9 @@ def test_the_evidence_never_names_the_tenant() -> None:
                   "text": json.dumps({"value": [{**FIELD, "HasException": False}]})},
                  "FAIL", "the call answered HTTP 200: ", id="no-id"),
     pytest.param({"contains": CONTROL_CALL, "status": 200, "text": '{"d": 1}'},
-                 "FAIL", 'the call answered HTTP 200: {"d": 1}', id="no-field-list"),
+                 "NOT ESTABLISHED",
+                 'the call answered HTTP 200 and carried no value array: {"d": 1}',
+                 id="no-field-list"),
     pytest.param({"contains": f"{CREATED_ID}')/items(6)", "status": 500, "text": "no"}, "FAIL",
                  "created Id 6; the read-back: HTTP 500: no", id="read-back-refused"),
     pytest.param({"contains": f"{CREATED_ID}')/items(6)", "status": 503, "text": "busy"},
@@ -781,12 +783,25 @@ def test_a_missing_field_refused_by_status_passes_the_control() -> None:
     assert ended_with_report(output)
 
 
-def test_a_missing_field_control_answered_with_no_field_list_voids_the_failed_part() -> None:
+def test_a_missing_field_control_answered_with_no_field_list_leaves_the_failed_part_open() -> None:
+    # A 2xx with no per-field list says nothing about the field, so nothing rests on it as refused.
     rows, _, output = _run(rules=[{"contains": CONTROL_CALL, "bodyContains": "dbmlspNoSuchColumn",
                                    "status": 200, "text": '{"d": 1}'}])
 
-    assert rows[AV_UNKNOWN]["outcome"] == "FAIL"
+    assert rows[AV_UNKNOWN]["outcome"] == "NOT ESTABLISHED"
     assert rows[AV_UNKNOWN]["evidence"] == 'HTTP 200: {"d": 1}'
+    assert voided(rows) == set()
+    assert rows[AV_FAILED]["state"] == "open"
+    assert ended_with_report(output)
+
+
+def test_a_missing_field_control_accepting_the_field_voids_the_failed_part() -> None:
+    accepted = json.dumps({"value": [{"FieldName": "dbmlspNoSuchColumn", "HasException": False,
+                                      "ErrorMessage": None, "FieldValue": "x", "ItemId": 0}]})
+    rows, _, output = _run(rules=[{"contains": CONTROL_CALL, "bodyContains": "dbmlspNoSuchColumn",
+                                   "status": 200, "text": accepted}])
+
+    assert rows[AV_UNKNOWN]["outcome"] == "FAIL"
     assert voided(rows) == _deps(AV_UNKNOWN) == {AV_FAILED}
     assert ended_with_report(output)
 
@@ -982,3 +997,30 @@ def test_a_fixture_left_open_keeps_a_row_an_earlier_fixture_voided() -> None:
     assert rows[CLAIMS]["state"] == "void"
     assert USER in rows[CLAIMS]["evidence"]
     assert rows[ISO]["state"] == "open"
+
+
+def test_a_malformed_items_read_leaves_landing_unknown_and_the_run_goes_on() -> None:
+    rows, _, output = _run(rules=[{"contains": "/items?$select=Id,Title", "status": 200,
+                                   "text": '{"value": [null]}'}])
+
+    assert "the items read-back failed: HTTP 200 carried entry 1 of its value array as null" in (
+        rows[FOLDER]["evidence"])
+    assert rows[FOLDER]["state"] == "open"
+    assert ended_with_report(output)
+
+
+def test_a_malformed_addvalidate_control_answer_is_not_established() -> None:
+    rows, _, output = _run(rules=[{"contains": "/AddValidateUpdateItemUsingPath", "verb": "POST",
+                                   "status": 200, "text": '{"value": [null]}'}])
+
+    assert rows[ADDVALIDATE]["outcome"] == "NOT ESTABLISHED"
+    assert "entry 1 of its value array as null" in rows[ADDVALIDATE]["evidence"]
+    assert ended_with_report(output)
+
+
+def test_a_single_create_answered_2xx_with_no_json_leaves_the_control_open() -> None:
+    rows, _, _ = _run(rules=[{"contains": f"{CREATED_ID}')/items", "verb": "POST", "status": 201,
+                              "text": "created"}])
+
+    assert rows[SINGLE]["outcome"] == "NOT ESTABLISHED"
+    assert voided(rows) == set()

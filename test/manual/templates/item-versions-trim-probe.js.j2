@@ -103,7 +103,7 @@
   const describe = (got, written, limit, created) => {
     if (got.head) return [got.head.outcome, scrub(got.head.why)];
     if (got.rows === null) {
-      return ['NOT ESTABLISHED', `HTTP ${got.res.status} carried no value array: ${said(got.res.text)}`];
+      return ['NOT ESTABLISHED', `HTTP ${got.res.status} ${got.shape}: ${said(got.res.text)}`];
     }
     const rows = got.rows;
     // A repeated VersionId would be counted as two versions, so no count is compared when one repeats.
@@ -162,17 +162,17 @@
       }
       const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title`);
       const head = readHead(read);
-      const title = !head && read.parsed && typeof read.parsed === 'object' ? read.parsed.Title : undefined;
+      const title = head || !recordBody(read) ? undefined : recordBody(read).Title;
       if (title !== titleOf(n)) {
         missed.push(`${what}: HTTP ${sent.status}, but ${head ? `the read-back ${scrub(head.why)}`
           : `Title reads back ${JSON.stringify(title)}`}`);
         return;
       }
       const after = await readVersions(listPath, itemId);
-      // A 2xx with no value array says nothing about the versions, so it is no answer rather than a miss.
-      if (!after.head && after.rows === null) UNHEARD.push(`the versions read after ${what} carried no value array`);
+      // A 2xx whose entries cannot be read says nothing about the versions, so it is no answer rather than a miss.
+      if (!after.head && after.rows === null) UNHEARD.push(`the versions read after ${what} ${after.shape}`);
       const blocked = after.head ? scrub(after.head.why) : after.rows === null
-        ? `HTTP ${after.res.status} carried no value array` : after.next !== null ? pagedSaid(after)
+        ? `HTTP ${after.res.status} ${after.shape}` : after.next !== null ? pagedSaid(after)
           : repeatedIds(after.rows).length ? 'it listed a VersionId more than once'
             : after.rows.some((row) => versionIdOf(row) === null) ? 'an entry carried no VersionId' : null;
       const fresh = blocked ? [] : after.rows.map((row) => JSON.stringify(versionIdOf(row)))
@@ -188,7 +188,7 @@
     beginFixture();
     const made = await spWrite(`${listPath}/items`, { __metadata: { type: itemType }, Title: titleOf(1) },
       digest, VERBOSE_WRITE);
-    if (made.ok && made.body && Number.isInteger(made.body.Id)) itemId = made.body.Id;
+    itemId = createdId(made);
     if (made.ok && itemId === null) missed.push(`the create: HTTP ${made.status} carried no numeric Id`);
     else await landed(1, made, 'the create');
     for (let n = 2; itemId !== null && n <= writes + 1; n += 1) {
@@ -204,8 +204,8 @@
       if (itemId === null) return { ok: true, status: 200, body };
       const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title`);
       const head = readHead(read);
-      body.Title = head ? scrub(head.why) : read.parsed && typeof read.parsed === 'object' ? read.parsed.Title
-        : `no JSON: ${said(read.text)}`;
+      body.Title = head ? scrub(head.why) : recordBody(read) ? recordBody(read).Title
+        : `no JSON object: ${said(read.text)}`;
       return { ok: true, status: 200, body };
     }, { Written: writes + 1, Missed: (v) => typeof v === 'string', Title: titleOf(writes + 1) },
     AFTER_ITEM)) {

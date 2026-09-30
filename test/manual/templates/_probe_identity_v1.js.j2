@@ -31,12 +31,13 @@
     if (head && head.outcome === 'NOT ESTABLISHED') UNHEARD.push(head.why);
     return head;
   };
-  // A read answered 2xx with no JSON has nothing to read, which the harness's unanswered counts as no answer.
+  // A single-entity read's body when it is a JSON object, or null, so no property is read off anything else.
+  const recordBody = (res) => (res.parsed && typeof res.parsed === 'object' && !Array.isArray(res.parsed)
+    ? res.parsed : null);
+  // A read answered 2xx with no JSON object has nothing to read, which the harness's unanswered counts as none.
   const readHead = (res) => {
     const head = maskedHead(res);
-    if (!head && !(res.parsed && typeof res.parsed === 'object')) {
-      UNHEARD.push(`the read answered HTTP ${res.status} with no JSON`);
-    }
+    if (!head && recordBody(res) === null) UNHEARD.push(`the read answered HTTP ${res.status} with no JSON object`);
     return head;
   };
   // For a probe with no current-user fixture: learns this account so its display name is masked too.

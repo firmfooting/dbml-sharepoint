@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: 034ae588
+ * REVISION: b3eac1de
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -514,12 +514,13 @@
     if (head && head.outcome === 'NOT ESTABLISHED') UNHEARD.push(head.why);
     return head;
   };
-  // A read answered 2xx with no JSON has nothing to read, which the harness's unanswered counts as no answer.
+  // A single-entity read's body when it is a JSON object, or null, so no property is read off anything else.
+  const recordBody = (res) => (res.parsed && typeof res.parsed === 'object' && !Array.isArray(res.parsed)
+    ? res.parsed : null);
+  // A read answered 2xx with no JSON object has nothing to read, which the harness's unanswered counts as none.
   const readHead = (res) => {
     const head = maskedHead(res);
-    if (!head && !(res.parsed && typeof res.parsed === 'object')) {
-      UNHEARD.push(`the read answered HTTP ${res.status} with no JSON`);
-    }
+    if (!head && recordBody(res) === null) UNHEARD.push(`the read answered HTTP ${res.status} with no JSON object`);
     return head;
   };
   // For a probe with no current-user fixture: learns this account so its display name is masked too.
@@ -551,11 +552,27 @@
     && a.every((x) => a.filter((y) => y === x).length === b.filter((y) => y === x).length);
   // A title or server-relative path inside an OData string literal, its apostrophes doubled as deploy/_folders does.
   const pathLiteral = (path) => String(path).replace(/'/g, "''");
+  // A 2xx body's value array when every entry is a JSON object; otherwise rows is null and shape says why.
+  const entriesOf = (parsed) => {
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.value)) {
+      return { rows: null, shape: 'carried no value array' };
+    }
+    const bad = parsed.value.findIndex((row) => !row || typeof row !== 'object' || Array.isArray(row));
+    return bad === -1 ? { rows: parsed.value, shape: null } : { rows: null, shape: `carried entry ${bad + 1} `
+      + `of its value array as ${scrub(JSON.stringify(parsed.value[bad])).slice(0, 80)}, not an object` };
+  };
   // voidDependents, except that a row already void keeps its first reason: void is terminal.
   const voidRows = (ids, reason) => voidDependents(ids.filter((one) => {
     const row = RESULTS.find((r) => r.id === one);
     return !row || row.state !== 'void';
   }), reason);
+  // The numeric Id a 2xx create answered, or null; a 2xx with no JSON object is noted as unanswered.
+  const createdId = (made) => {
+    if (!made.ok) return null;
+    const body = recordBody({ parsed: made.body });
+    if (body === null) UNHEARD.push(`the create answered HTTP ${made.status} with no JSON object`);
+    return body && Number.isInteger(body.Id) ? body.Id : null;
+  };
   // Where the requests of the fixture about to be established begin in UNHEARD.
   let fixtureStart = 0;
   const beginFixture = () => { fixtureStart = UNHEARD.length; };
@@ -655,7 +672,7 @@
     };
     const pre = await spGet(`${path}?$select=Id,Description`);
     // A 2xx with no JSON says nothing about whose list it is, so it is neither refused nor built over.
-    if (pre.ok && (pre.body === null || typeof pre.body !== 'object')) {
+    if (pre.ok && recordBody({ parsed: pre.body }) === null) {
       return leaveOpen(`the ownership read of '${title}' answered HTTP ${pre.status} with no JSON; `
         + 'nothing was created');
     }
@@ -694,7 +711,12 @@
       return leaveOpen(`the list create ${unanswered({ ok: false, status: made.status })}: `
         + `${scrub(made.text).slice(0, 200)}, so a list '${title}' may now exist`);
     }
-    const created = { title, id: guidOf(made.body && made.body.Id) };
+    if (recordBody({ parsed: made.body }) === null) {
+      CREATED_LISTS.push({ title, id: null });
+      return leaveOpen(`the list create answered HTTP ${made.status} with no JSON object, so a list '${title}' `
+        + 'may now exist');
+    }
+    const created = { title, id: guidOf(made.body.Id) };
     // Two creates answering one Id would send both lists' writes to one list, so the second is not built on.
     if (created.id !== null && CREATED_LISTS.some((one) => one.id === created.id)) {
       log('FAIL', `'${title}' answered list ${created.id}, which another list this run created holds; `
@@ -731,6 +753,8 @@
     const held = await settleFixture(id, async () => {
       read = await spGet(`${path}?$select=${select}`);
       readHead({ ...read, parsed: read.body, text: JSON.stringify(read.body) });
+      // A body that is not a JSON object is no answer; the harness would read a property off it.
+      if (read.ok && recordBody({ parsed: read.body }) === null) read = { ...read, body: null };
       return read.ok && read.body && typeof read.body === 'object'
         ? { ...read, body: { ...read.body, ...answered } } : read;
     }, { BaseTemplate: baseTemplate, Description: description, ...declared, ...settled,
@@ -751,7 +775,7 @@
       await recycleList(title, id);
     }
   };
-  log('INFO', 'probe revision 034ae588. Quote this when reporting results.');
+  log('INFO', 'probe revision b3eac1de. Quote this when reporting results.');
 
   // The parts name the list by title, the form a history write sends and these rows measure; the run's token
   // means no other list holds it, and none can take it between a check and a use.
@@ -891,7 +915,7 @@
     // The parts name the list by title, as a history write does, so that title must still name this run's list.
     const named = await sendRaw(`web/lists/getbytitle('${pathLiteral(LIST)}')?$select=Id,Title`);
     const namedHead = maskedHead(named);
-    const namedId = !namedHead && named.parsed && typeof named.parsed === 'object' ? guidOf(named.parsed.Id) : null;
+    const namedId = !namedHead && recordBody(named) ? guidOf(recordBody(named).Id) : null;
     if (namedId === null || namedId !== claimed) {
       return { ok: false, status: null, parts: [], sent: ops.length, text: `not sent: the title read `
         + `${namedHead ? namedHead.why : `answered ${namedId === null ? 'no list Id' : `list ${namedId}`}`}, `
@@ -938,7 +962,7 @@
   // A throttled or unauthorised part answered nothing about the question, so its head leaves the row open.
   const partHead = (part) => (!part ? 'NO PART STATUS' : ok2xx(part.status) ? 'PART ANSWERED 2XX'
     : isRefusal(part.status) ? 'PART REFUSED' : 'NOT ESTABLISHED');
-  const fieldsOf = (parsed) => (parsed && Array.isArray(parsed.value) ? parsed.value : null);
+  const fieldsOf = (parsed) => entriesOf(parsed).rows;
   const parsedOf = (text) => { try { return JSON.parse(text); } catch { return null; } };
   // Why the answers cannot be matched to the parts by position, or null when they can; no document says they arrive
   // one per part in order. `names[i]`, when given, are the fields part i sent, which an answer's field list must name.
@@ -995,16 +1019,17 @@
     const userHeld = await settleFixture(USER, async () => {
       const read = await sendRaw('web/currentuser?$select=Id,Email,LoginName,Title');
       const head = readHead(read);
-      if (head || !read.parsed) {
-        return { ok: true, status: 200, body: { Read: head ? head.why : `HTTP ${read.status} carried no JSON` } };
+      const account = head ? null : recordBody(read);
+      if (!account) {
+        return { ok: true, status: 200, body: { Read: head ? head.why : `HTTP ${read.status} carried no JSON object` } };
       }
-      knowIdentity(read.parsed.Email, '<account>');
-      knowIdentity(read.parsed.LoginName, '<account>');
-      knowIdentity(read.parsed.Title, '<name>', true);
-      me = read.parsed;
+      knowIdentity(account.Email, '<account>');
+      knowIdentity(account.LoginName, '<account>');
+      knowIdentity(account.Title, '<name>', true);
+      me = account;
       // The email itself is never put in the row; only that there is one to build claims from.
-      return { ok: true, status: 200, body: { Read: `HTTP ${read.status}`, Id: read.parsed.Id,
-        HasEmail: typeof read.parsed.Email === 'string' && read.parsed.Email.includes('@') } };
+      return { ok: true, status: 200, body: { Read: `HTTP ${read.status}`, Id: account.Id,
+        HasEmail: typeof account.Email === 'string' && account.Email.includes('@') } };
     }, { Read: 'HTTP 200', Id: (v) => Number.isInteger(v) && v > 0, HasEmail: true }, [CLAIMS]);
 
     const list = await claimScratchList({ id: 'transport.batch.fixture-item-batch-list', question: Q.list,
@@ -1041,8 +1066,9 @@
         const read = await sendRaw(`${listPath}/fields/getbyinternalnameortitle('${name}')`);
         const head = readHead(read);
         body[`${name}.Read`] = head ? head.why : `HTTP ${read.status}`;
-        if (!head && read.parsed) body[`${name}.TypeAsString`] = read.parsed.TypeAsString;
-        if (!head && read.parsed && name === WHEN) body[`${name}.DisplayFormat`] = read.parsed.DisplayFormat;
+        const field = head ? null : recordBody(read);
+        if (field) body[`${name}.TypeAsString`] = field.TypeAsString;
+        if (field && name === WHEN) body[`${name}.DisplayFormat`] = field.DisplayFormat;
       }
       return { ok: true, status: 200, body };
     }, { [`${WHO}.Create`]: recorded, [`${WHO}.Read`]: 'HTTP 200', [`${WHO}.TypeAsString`]: 'User',
@@ -1053,18 +1079,21 @@
 
     const made = await single(typed(TITLES.single));
     const madeHead = maskedHead(made);
-    const madeId = !madeHead && made.parsed && Number.isInteger(made.parsed.Id) ? made.parsed.Id : null;
+    const madeId = !madeHead && recordBody(made) && Number.isInteger(recordBody(made).Id) ? recordBody(made).Id : null;
     const back = madeId === null ? null : await sendRaw(`${listPath}/items(${madeId})?$select=Id,Title`);
     const backHead = back === null ? null : maskedHead(back);
-    const singleHeld = back !== null && !backHead && back.parsed && back.parsed.Title === TITLES.single;
-    // A read-back answered 2xx with no JSON says nothing about the Title, so it leaves the control open.
-    const backUnread = back !== null && !backHead && !(back.parsed && typeof back.parsed === 'object');
-    const singleOutcome = singleHeld ? 'PASS' : backUnread
+    const backBody = back === null || backHead ? null : recordBody(back);
+    const singleHeld = backBody !== null && backBody.Title === TITLES.single;
+    // A read-back answered 2xx with no JSON object says nothing about the Title, so it leaves the control open.
+    const backUnread = back !== null && !backHead && backBody === null;
+    // A create answered 2xx with no JSON object says nothing about the Id, so it too leaves the control open.
+    const madeUnread = !madeHead && recordBody(made) === null;
+    const singleOutcome = singleHeld ? 'PASS' : backUnread || madeUnread
       || [madeHead, backHead].some((h) => h && h.outcome === 'NOT ESTABLISHED') ? 'NOT ESTABLISHED' : 'FAIL';
     record(SINGLE, Q.single, singleOutcome, madeHead ? `the create: ${madeHead.why}`
       : madeId === null ? `the create answered HTTP ${made.status} with no Id: ${said(made.text)}`
         : backHead ? `created Id ${madeId}; the read-back: ${backHead.why}`
-          : `created Id ${madeId}; it reads back Title ${JSON.stringify(back.parsed && back.parsed.Title)}`);
+          : `created Id ${madeId}; it reads back Title ${JSON.stringify(backBody && backBody.Title)}`);
     if (singleOutcome === 'FAIL') {
       voidRows(AFTER_SINGLE, 'a single typed create did not land, so a batch answer '
         + 'would say nothing about the transport');
@@ -1109,22 +1138,28 @@
     const addValidateControl = async () => {
       const root = await sendRaw(`${listPath}/RootFolder?$select=ServerRelativeUrl`);
       const rootHead = maskedHead(root);
-      if (rootHead || !root.parsed || typeof root.parsed.ServerRelativeUrl !== 'string') {
-        // A 2xx with no JSON settles nothing; JSON without the URL is an answer.
-        const outcome = rootHead ? headOutcome(rootHead) : root.parsed ? 'FAIL' : 'NOT ESTABLISHED';
+      const rootBody = rootHead ? null : recordBody(root);
+      if (rootHead || !rootBody || typeof rootBody.ServerRelativeUrl !== 'string') {
+        // A 2xx with no JSON object settles nothing; an object without the URL is an answer.
+        const outcome = rootHead ? headOutcome(rootHead) : rootBody ? 'FAIL' : 'NOT ESTABLISHED';
         return { outcome, folder: null, evidence: 'the root folder '
           + `read: ${rootHead ? rootHead.why : `HTTP ${root.status} carried no ServerRelativeUrl`}` };
       }
-      const folder = `${new URL(WEB).origin}${root.parsed.ServerRelativeUrl}`;
+      const folder = `${new URL(WEB).origin}${rootBody.ServerRelativeUrl}`;
       const sent = await sendRaw(`${listPath}/AddValidateUpdateItemUsingPath`, { method: 'POST',
         headers: { 'Content-Type': NOMETADATA, 'X-RequestDigest': await getDigest() },
         body: addValidateBody(folder, { Title: TITLES.addvalidate }) });
       const head = maskedHead(sent);
       if (head) return { outcome: headOutcome(head), folder, evidence: `the call: ${head.why}` };
-      const fields = fieldsOf(sent.parsed);
-      const idField = fields ? fields.find((f) => f.FieldName === 'Id') : null;
+      const { rows: fields, shape } = entriesOf(sent.parsed);
+      // A 2xx whose per-field list cannot be read is no answer about the call, so it is left open.
+      if (!fields) {
+        return { outcome: 'NOT ESTABLISHED', folder, evidence: `the call answered HTTP ${sent.status} and ${shape}: `
+          + `${scrub(sent.text).slice(0, 400)}` };
+      }
+      const idField = fields.find((f) => f.FieldName === 'Id');
       const madeAt = idField ? Number(idField.FieldValue) : NaN;
-      if (!fields || fields.some((f) => f.HasException === true) || !Number.isInteger(madeAt) || madeAt < 1) {
+      if (fields.some((f) => f.HasException === true) || !Number.isInteger(madeAt) || madeAt < 1) {
         return { outcome: 'FAIL', folder, evidence: `the call answered HTTP ${sent.status}: `
           + `${scrub(sent.text).slice(0, 400)}` };
       }
@@ -1132,11 +1167,11 @@
       const backHead = maskedHead(back);
       if (backHead) return { outcome: headOutcome(backHead), folder, evidence: `created Id ${madeAt}; the `
         + `read-back: ${backHead.why}` };
-      if (!back.parsed || typeof back.parsed !== 'object') {
+      if (!recordBody(back)) {
         return { outcome: 'NOT ESTABLISHED', folder, evidence: `created Id ${madeAt}; the read-back answered `
-          + `HTTP ${back.status} with no JSON: ${said(back.text)}` };
+          + `HTTP ${back.status} with no JSON object: ${said(back.text)}` };
       }
-      const title = back.parsed.Title;
+      const title = recordBody(back).Title;
       return { outcome: title === TITLES.addvalidate ? 'PASS' : 'FAIL', folder,
         evidence: `created Id ${madeAt}; it reads back Title ${JSON.stringify(title)}` };
     };
@@ -1150,8 +1185,9 @@
       const head = maskedHead(sent);
       const fields = head ? null : fieldsOf(sent.parsed);
       const fieldRefused = fields !== null && fields.some((f) => f.FieldName === MISSING && f.HasException === true);
+      // A 2xx with no readable per-field list says nothing about the field, so it is left open.
       avUnknown = head ? (head.outcome === 'NOT ESTABLISHED' ? 'NOT ESTABLISHED' : 'PASS')
-        : fieldRefused ? 'PASS' : 'FAIL';
+        : fieldRefused ? 'PASS' : fields === null ? 'NOT ESTABLISHED' : 'FAIL';
       record(AV_UNKNOWN, Q.avunknown, avUnknown, head ? head.why : `HTTP ${sent.status}: `
         + `${fields ? `fields ${fieldsSaid(fields)}` : scrub(sent.text).slice(0, 400)}`);
     }
@@ -1174,8 +1210,9 @@
     const titles = await sendRaw(`${listPath}/items?$select=${select}&$top=100`);
     const titlesHead = maskedHead(titles);
     // Every item under each Title, so an item created twice is counted and never collapsed into one.
-    const present = !titlesHead && titles.parsed && Array.isArray(titles.parsed.value) ? new Map() : null;
-    for (const row of present === null ? [] : titles.parsed.value) {
+    const titleRows = titlesHead ? { rows: null, shape: null } : entriesOf(titles.parsed);
+    const present = titleRows.rows === null ? null : new Map();
+    for (const row of titleRows.rows || []) {
       present.set(row.Title, [...(present.get(row.Title) || []), row]);
     }
     const landed = (title) => {
@@ -1183,7 +1220,7 @@
       return count === null ? 'unknown' : count === 0 ? 'no' : count === 1 ? 'yes' : `${count} times`;
     };
     const titlesSaid = present === null ? `; the items read-back failed: ${titlesHead ? titlesHead.why
-      : `HTTP ${titles.status} carried no rows`}` : '';
+      : `HTTP ${titles.status} ${titleRows.shape}`}` : '';
     // A row that reports whether items landed stays open when the read that would say so failed.
     const landing = present === null ? 'open' : undefined;
 

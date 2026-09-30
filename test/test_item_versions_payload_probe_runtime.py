@@ -466,8 +466,8 @@ def test_an_entry_with_no_versionid_around_the_upload_is_not_compared() -> None:
 @pytest.mark.parametrize(("nth", "when", "status", "text", "said"), [
     (1, "before", 429, "busy for ada@example.com", "was not answered"),
     (2, "after", 429, "busy for ada@example.com", "was not answered"),
-    (1, "before", 200, '{"d": "x"}', "answered HTTP 200 with no value array"),
-    (2, "after", 200, '{"d": "x"}', "answered HTTP 200 with no value array"),
+    (1, "before", 200, '{"d": "x"}', "answered HTTP 200 that carried no value array"),
+    (2, "after", 200, '{"d": "x"}', "answered HTTP 200 that carried no value array"),
 ], ids=["before-throttled", "after-throttled", "before-no-array", "after-no-array"])
 def test_an_unanswered_read_around_the_upload_leaves_both_rows_open(
         nth: int, when: str, status: int, text: str, said: str) -> None:
@@ -886,9 +886,28 @@ def test_a_column_read_back_with_no_json_leaves_the_columns_open() -> None:
     assert "the read answered HTTP 200 with no JSON" in rows[COLUMNS]["evidence"]
 
 
+def test_a_versions_read_with_a_malformed_entry_passes_nothing() -> None:
+    rows, _, output = _run(rules=[{"contains": LIST_READ_RULE, "status": 200,
+                                   "text": '{"value": [null, {"VersionId": 512}]}'}])
+
+    assert rows[READ]["outcome"] == "NOT ESTABLISHED"
+    assert "entry 1 of its value array as null" in rows[READ]["evidence"]
+    assert all(rows[row_id]["state"] == "open" for row_id in (*PAYLOAD, FIELDS, ORDER))
+    assert ended_with_report(output)
+
+
 def test_an_upload_content_read_that_throws_leaves_the_upload_open() -> None:
     rows, _, output = _run(rules=[{"contains": "/$value", "verb": "GET", "reject": True}])
 
     assert rows[LIB_UPLOAD]["outcome"] == "NOT ESTABLISHED"
     assert "the read never answered (Failed to fetch)" in rows[LIB_UPLOAD]["evidence"]
     assert ended_with_report(output)
+
+
+def test_a_list_create_answered_2xx_with_no_json_is_left_open() -> None:
+    rows, _, output = _run(rules=[{"contains": "web/lists", "verb": "POST", "nth": 1,
+                                   "status": 201, "text": "created"}])
+
+    assert rows[TARGET]["outcome"] == "NOT ESTABLISHED"
+    assert "answered HTTP 201 with no JSON object" in rows[TARGET]["evidence"]
+    assert "'dbmlsp Probe VersionsTarget' never answered a list Id" in output

@@ -399,3 +399,25 @@ def test_an_unavailable_item_write_leaves_the_items_open() -> None:
 
     assert rows[ITEMS]["outcome"] == "NOT ESTABLISHED"
     assert all(rows[row_id]["state"] == "open" for row_id in _deps(ITEMS))
+
+
+@pytest.mark.parametrize(("contains", "row_id"), [
+    ("/versions?$top", TOP), ("/versions?$filter", FILTER), ("/versions?$select", SELECT),
+    ("/versions?$orderby", ORDERBY)])
+def test_an_option_answer_with_a_malformed_entry_is_not_established(
+        contains: str, row_id: str) -> None:
+    rows, _, output = _run(rules=[{"contains": contains, "status": 200,
+                                   "text": '{"value": [7]}'}])
+
+    assert rows[row_id]["outcome"] == "NOT ESTABLISHED", rows[row_id]
+    assert "carried entry 1 of its value array as 7, not an object" in rows[row_id]["evidence"]
+    assert ended_with_report(output)
+
+
+def test_a_malformed_item_list_control_answer_is_not_established() -> None:
+    rows, _, output = _run(rules=[{"contains": "/items?$select=Id&$filter", "status": 200,
+                                   "text": '{"value": [null]}'}])
+
+    assert rows[FILTER_CONTROL]["outcome"] == "NOT ESTABLISHED"
+    assert "carried entry 1 of its value array as null" in rows[FILTER_CONTROL]["evidence"]
+    assert ended_with_report(output)

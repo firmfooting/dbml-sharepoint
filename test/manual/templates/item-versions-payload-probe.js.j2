@@ -253,7 +253,7 @@
   const readBack = async (path) => {
     const res = await sendRaw(path);
     const head = readHead(res);
-    const parsed = !head && res.parsed && typeof res.parsed === 'object' ? res.parsed : null;
+    const parsed = head ? null : recordBody(res);
     return { parsed, read: head ? scrub(head.why) : parsed ? `HTTP ${res.status}`
       : `HTTP ${res.status} carried no JSON: ${scrub(res.text).slice(0, 400)}` };
   };
@@ -277,13 +277,13 @@
     const outcome = held ? 'PASS' : unread ? 'NOT ESTABLISHED' : 'FAIL';
     record(id, question, outcome, versions.head
       ? scrub(versions.head.why)
-      : `HTTP ${versions.res.status}, ${versions.rows === null ? 'no value array' : `${versions.rows.length} entries`}`
+      : `HTTP ${versions.res.status}, ${versions.rows === null ? versions.shape : `${versions.rows.length} entries`}`
         + `: ${scrub(versions.res.text).slice(0, 400)}`);
     if (outcome === 'FAIL') voidRows(observed, `the ${what} answered no version entries`);
     if (outcome === 'NOT ESTABLISHED') {
       for (const one of observed) {
         const row = RESULTS.find((r) => r.id === one);
-        const why = versions.head ? scrub(versions.head.why) : `HTTP ${versions.res.status} carried no value array`;
+        const why = versions.head ? scrub(versions.head.why) : `HTTP ${versions.res.status} ${versions.shape}`;
         record(one, row.question, 'NOT ESTABLISHED',
           `not asked: the ${what} was not established (${why}); a re-run can ask it`);
       }
@@ -306,16 +306,17 @@
         { __metadata: { type: target.body.ListItemEntityTypeFullName }, Title: title },
         await getDigest(), VERBOSE_WRITE);
       log('INFO', `seed ${title}: HTTP ${made.status}`);
-      if (!made.ok || !made.body || !Number.isInteger(made.body.Id)) {
+      const seedId = createdId(made);
+      if (seedId === null) {
         seedMissed.push(`${title}: HTTP ${made.status}`
           + `${made.ok ? ' carried no numeric Id' : `: ${scrub(made.text).slice(0, 160)}`}`);
         continue;
       }
       // A seed counts once its Title reads back by the Id answered, since the lookup is written to that Id.
-      const back = await readBack(`${targetPath}/items(${made.body.Id})?$select=Id,Title`);
-      if (back.parsed && back.parsed.Title === title) targetIds.push(made.body.Id);
+      const back = await readBack(`${targetPath}/items(${seedId})?$select=Id,Title`);
+      if (back.parsed && back.parsed.Title === title) targetIds.push(seedId);
       else {
-        seedMissed.push(`${title}: item ${made.body.Id} read back `
+        seedMissed.push(`${title}: item ${seedId} read back `
           + `${back.parsed ? show(back.parsed.Title) : back.read}`);
       }
     }
@@ -439,7 +440,7 @@
     beginFixture();
     const made = await spWrite(`${listPath}/items`, { __metadata: { type: itemType },
       Title: ITEM_TITLE }, await getDigest(), VERBOSE_WRITE);
-    if (made.ok && made.body && Number.isInteger(made.body.Id)) itemId = made.body.Id;
+    itemId = createdId(made);
     if (itemId === null) {
       missed.push(`the create: HTTP ${made.status}`
         + `${made.ok ? ' carried no numeric Id' : `: ${scrub(made.text).slice(0, 300)}`}`);
@@ -702,8 +703,8 @@
     const unread = (read, when) => {
       if (read.head || read.rows === null) {
         return { head: 'NOT ESTABLISHED', state: 'open', why: `the versions read ${when} the upload `
-          + `${read.head ? `was not answered: ${scrub(read.head.why)}` : `answered HTTP ${read.res.status} `
-            + 'with no value array'}; a re-run can ask it` };
+          + `${read.head ? `was not answered: ${scrub(read.head.why)}` : `answered HTTP ${read.res.status} that `
+            + read.shape}; a re-run can ask it` };
       }
       if (read.next !== null) {
         return { head: 'NOT COMPARABLE', state: 'open', why: `the versions read ${when} the upload: ${pagedSaid(read)}` };

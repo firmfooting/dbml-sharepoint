@@ -146,7 +146,7 @@
       }
       const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title,${CHOICE}`);
       const head = readHead(read);
-      const got = !head && read.parsed && typeof read.parsed === 'object' ? read.parsed : null;
+      const got = head ? null : recordBody(read);
       const off = got === null ? null : Object.keys(want).filter((key) => got[key] !== want[key]);
       if (got !== null && off.length === 0) {
         written += 1;
@@ -160,7 +160,8 @@
     for (const [key, title] of [['A', 'dbmlsp versions query A'], ['B', 'dbmlsp versions query B']]) {
       const made = await spWrite(`${listPath}/items`, { __metadata: { type: itemType }, Title: title,
         [CHOICE]: 'Q1' }, await getDigest(), VERBOSE_WRITE);
-      if (made.ok && made.body && Number.isInteger(made.body.Id)) ids[key] = made.body.Id;
+      const madeId = createdId(made);
+      if (madeId !== null) ids[key] = madeId;
       await landed(`the create of ${key}`, made, ids[key], { Title: title, [CHOICE]: 'Q1' });
     }
     if (ids.A !== undefined) {
@@ -180,7 +181,7 @@
         const read = await sendRaw(`${listPath}/items(${ids[key]})?$select=Id,${CHOICE}`);
         const head = readHead(read);
         body[`${key}.${CHOICE}`] = head ? scrub(head.why)
-          : read.parsed && typeof read.parsed === 'object' ? read.parsed[CHOICE] : `no JSON: ${said(read)}`;
+          : recordBody(read) ? recordBody(read)[CHOICE] : `no JSON object: ${said(read)}`;
       }
       return { ok: true, status: 200, body };
     }, { Column: (v) => typeof v === 'string', Written: 4, Distinct: true,
@@ -201,7 +202,7 @@
     const readOutcome = readHeld ? 'PASS' : plainUnread ? 'NOT ESTABLISHED' : 'FAIL';
     const entries = (n) => `${n} ${n === 1 ? 'entry' : 'entries'}`;
     record('query.odata.control-versions-read', Q.read, readOutcome, plain.head ? scrub(plain.head.why)
-      : `HTTP ${plain.res.status}, ${plain.rows === null ? `no value array: ${said(plain.res)}`
+      : `HTTP ${plain.res.status}, ${plain.rows === null ? `${plain.shape}: ${said(plain.res)}`
         : `${entries(plain.rows.length)}, VersionIds ${JSON.stringify(plainIds)}`}`);
     if (readOutcome === 'FAIL') {
       voidRows(AFTER_READ,
@@ -213,7 +214,7 @@
       for (const id of AFTER_READ) {
         const row = RESULTS.find((r) => r.id === id);
         record(id, row.question, 'NOT ESTABLISHED', 'not asked: the plain versions read was not established '
-          + `(${plain.head ? scrub(plain.head.why) : `HTTP ${plain.res.status} carried no value array`}); `
+          + `(${plain.head ? scrub(plain.head.why) : `HTTP ${plain.res.status} ${plain.shape}`}); `
           + 'a re-run can ask it');
       }
       return;
@@ -238,12 +239,12 @@
     const controlOf = async (id, question, query, want) => {
       const res = await sendRaw(`${listPath}/items?$select=Id&${query}`);
       const head = maskedHead(res);
-      const rows = !head && res.parsed && Array.isArray(res.parsed.value) ? res.parsed.value : null;
+      const { rows, shape } = head ? { rows: null, shape: null } : entriesOf(res.parsed);
       const served = rows === null ? null : rows.map((row) => row.Id);
       // A 2xx with no rows is not an answer about the option, so it is left open like a throttle.
       const outcome = served !== null && sameElements(served, [want]) ? 'PASS'
         : (head ? head.outcome === 'NOT ESTABLISHED' : served === null) ? 'NOT ESTABLISHED' : 'FAIL';
-      const why = head ? scrub(head.why) : served === null ? `HTTP ${res.status} carried no rows: ${said(res)}` : '';
+      const why = head ? scrub(head.why) : served === null ? `HTTP ${res.status} ${shape}: ${said(res)}` : '';
       record(id, question, outcome, `${query}: ${why || `served ${JSON.stringify(served)}, want [${want}]`}`);
       return { outcome, why };
     };
@@ -268,7 +269,7 @@
         return;
       }
       if (got.rows === null) {
-        record(id, question, 'NOT ESTABLISHED', `${query}: HTTP ${got.res.status} carried no value array: `
+        record(id, question, 'NOT ESTABLISHED', `${query}: HTTP ${got.res.status} ${got.shape}: `
           + `${said(got.res)}`);
         return;
       }
