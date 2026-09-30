@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: 59dcec81
+ * REVISION: 8425aa9f
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -34,7 +34,9 @@
  *
  * HOW TO READ IT: each observed row is headed by what the answer looked like
  * (NARROWED, FILTERED, TOPPED and so on) beside the plain read's answer, and
- * REFUSED is a refusal whose text says why.
+ * REFUSED is a refusal whose text says why. NARROWED needs every entry to carry
+ * nothing beyond the selected names and every selected name the plain read
+ * carried on all its entries; SELECTED MISSING is an answer lacking one.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
  * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again
@@ -584,7 +586,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 59dcec81. Quote this when reporting results.');
+  log('INFO', 'probe revision 8425aa9f. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsQuery';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -762,15 +764,22 @@
       && !key.startsWith('@odata.') && key !== '__metadata');
     // Narrowing is judged against what the plain read carried beyond the selected names.
     const baseline = beyondSelected(keysOf(plain.rows));
+    const carries = (row, key) => Object.prototype.hasOwnProperty.call(row, key);
+    // A selected name the plain read carried on every entry must come back on every entry.
+    const owed = SELECTED.filter((key) => plain.rows.every((row) => carries(row, key)));
     await ask('query.odata.versions-select', Q.select, null, `$select=${SELECTED.join(',')}`,
       (rows) => {
         const keys = keysOf(rows);
         const extra = beyondSelected(keys);
+        const missing = owed.filter((key) => !rows.every((row) => carries(row, key)));
         const head = !baseline.length ? 'NOT COMPARABLE' : !rows.length ? 'NO VERSIONS'
-          : extra.length ? 'NOT NARROWED' : 'NARROWED';
+          : extra.length ? 'NOT NARROWED' : missing.length ? 'SELECTED MISSING' : 'NARROWED';
         const why = !baseline.length ? 'the plain read carried nothing beyond the selected names, '
           + 'so an ignored $select would look the same' : `the plain read also carried ${baseline.join(', ')}`;
-        return [head, `${entries(rows.length)} carrying ${keys.length ? keys.join(', ') : 'nothing'}; ${why}`];
+        const lacking = missing.length ? `; not every entry carries ${missing.join(', ')}, which every entry of `
+          + 'the plain read carried' : '';
+        return [head, `${entries(rows.length)} carrying ${keys.length ? keys.join(', ') : 'nothing'}; ${why}`
+          + lacking];
       });
     const lowest = Math.min(...plainIds);
     await ask('query.odata.versions-filter', Q.filter, filterControl, `$filter=VersionId gt ${lowest}`,

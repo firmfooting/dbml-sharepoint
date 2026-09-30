@@ -88,6 +88,19 @@ def test_a_plain_read_carrying_only_the_selected_names_is_not_comparable() -> No
     assert "carried nothing beyond the selected names" in rows[SELECT]["evidence"]
 
 
+@pytest.mark.parametrize("answer", [
+    '{"value": [{"VersionId": 1536}, {"VersionId": 1024}, {"VersionId": 512}]}',
+    ('{"value": [{"VersionId": 1536, "VersionLabel": "3.0", "ProbeChoice": "Q3"},'
+     ' {"VersionId": 1024, "VersionLabel": "2.0"}]}'),
+], ids=["every-entry", "one-entry"])
+def test_a_select_answer_lacking_a_selected_name_is_not_called_narrowed(answer: str) -> None:
+    rows, _, _ = _run(rules=[{"contains": "/versions?$select", "status": 200, "text": answer}])
+
+    assert rows[SELECT]["outcome"] == "SELECTED MISSING"
+    assert rows[SELECT]["state"] == "settled"
+    assert "which every entry of the plain read carried" in rows[SELECT]["evidence"]
+
+
 def test_an_empty_select_answer_is_not_called_narrowed() -> None:
     rows, _, _ = _run(rules=[{"contains": "/versions?$select", "status": 200,
                               "text": '{"value": []}'}])
