@@ -33,7 +33,7 @@ everywhere else in this package.
 
 ## Operators
 
-`views[].where` renders to CAML, `form_visibility.when` to a list-formatting expression, and `column_validation.when` / `list_validation.when` to a classic validation formula.
+`views[].where` renders to CAML, `form_visibility.when` to a list-formatting expression, and `column_validation.when` / `list_validation.when` to a classic validation formula. `watched_lists[].uses[].when` is not rendered; its consumer reads it.
 
 | Declared | CAML | Expression | Validation |
 |---|---|---|---|
