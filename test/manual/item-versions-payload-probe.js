@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: cd073151
+ * REVISION: b29410aa
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -65,7 +65,8 @@
  * or one hold Q1, the value between the edits. UPLOAD CHANGED THE VALUE is a
  * Choice that read other than Q1 after the upload, so no version can be told
  * apart by it. NOT IDENTIFIED is the fields row when no version is the
- * upload's alone.
+ * upload's alone. NOT COMPARABLE, left open, is a versions read carrying a
+ * continuation link, which the probe records and does not follow.
  * Email addresses, claims logins and this account's display name are masked.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
@@ -594,13 +595,24 @@
     }
   };
   // ---- Item versions (v1) ---------------------------------------------
+  // A continuation link in any spelling the search-discovery probe reads, or null when there is none.
+  const continuationOf = (parsed) => {
+    if (!parsed || typeof parsed !== 'object') return null;
+    const link = parsed['odata.nextLink'] || parsed['@odata.nextLink'] || parsed.__next
+      || (parsed.d && typeof parsed.d === 'object' ? parsed.d.__next : undefined);
+    return typeof link === 'string' && link ? link : null;
+  };
   // One read of an item's versions; `rows` is the value array, or null when the answer carried none.
   const readVersions = async (listPath, itemId, query = '') => {
     const res = await sendRaw(`${listPath}/items(${itemId})/versions${query ? `?${query}` : ''}`);
     const head = rawHead(res);
     const rows = !head && res.parsed && Array.isArray(res.parsed.value) ? res.parsed.value : null;
-    return { res, head, rows };
+    return { res, head, rows, next: head ? null : continuationOf(res.parsed) };
   };
+  // Learn documents no paging for item versions, so a continuation link is reported and never followed.
+  const pagedSaid = (versions) => (versions.next === null ? null
+    : `the answer carried a continuation link (${scrub(versions.next).slice(0, 200)}), which this probe `
+      + `does not follow, so its ${versions.rows ? versions.rows.length : 0} entries may not be every version`);
 
   // A version's VersionId as the answer spelled it, or null when the entry carried none.
   const versionIdOf = (row) => (row && typeof row === 'object' && row.VersionId !== undefined
@@ -616,7 +628,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision cd073151. Quote this when reporting results.');
+  log('INFO', 'probe revision b29410aa. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Versions';
   const TARGET = 'dbmlsp Probe VersionsTarget';
@@ -968,6 +980,13 @@
       return;
     }
 
+    if (versions.next !== null) {
+      for (const id of asked) {
+        const row = RESULTS.find((r) => r.id === id);
+        record(id, row.question, 'NOT COMPARABLE', pagedSaid(versions), 'open');
+      }
+      return;
+    }
     const rows = versions.rows;
     const observed = [...COLUMNS.map((c) => ({ name: c.name, kind: c.kind })),
       ...(peopleWritten ? [{ name: PEOPLE, kind: 'people' }] : [])];
@@ -1102,6 +1121,11 @@
       return;
     }
 
+    if (versions.next !== null) {
+      record(LIB.libraryAdds, Q.libraryAdds, 'NOT COMPARABLE', pagedSaid(versions), 'open');
+      record(LIB.libraryFields, Q.libraryFields, 'NOT COMPARABLE', pagedSaid(versions), 'open');
+      return;
+    }
     const rows = versions.rows;
     const ordered = rows.every((row) => labelPair(row) !== null)
       ? [...rows].sort((a, b) => labelPair(a)[0] - labelPair(b)[0] || labelPair(a)[1] - labelPair(b)[1]) : rows;

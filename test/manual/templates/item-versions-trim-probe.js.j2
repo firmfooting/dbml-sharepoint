@@ -30,7 +30,8 @@
  * back, fewer than the writes that landed. FEWER THAN WRITTEN is a shortfall
  * of any other size, UNTRIMMED is as many as landed. Each carries the
  * VersionIds, labels and Titles, and the property names of the version with
- * the lowest VersionId answered.
+ * the lowest VersionId answered. NOT COMPARABLE, left open, is an answer carrying
+ * a continuation link, which the probe records and does not follow.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
  * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again
@@ -99,8 +100,8 @@
     }
     const rows = got.rows;
     // TRIMMED needs the limit as its baseline: a shortfall of any other size is described, not explained.
-    const head = rows.length === written ? 'UNTRIMMED' : rows.length > written ? 'MORE THAN WRITTEN'
-      : rows.length === limit ? 'TRIMMED' : 'FEWER THAN WRITTEN';
+    const head = got.next !== null ? 'NOT COMPARABLE' : rows.length === written ? 'UNTRIMMED'
+      : rows.length > written ? 'MORE THAN WRITTEN' : rows.length === limit ? 'TRIMMED' : 'FEWER THAN WRITTEN';
     const listed = rows.map((row) => `${JSON.stringify(row.VersionLabel)}/${JSON.stringify(versionIdOf(row))}`
       + `/${JSON.stringify(row.Title)}`).join(', ');
     // A lowest VersionId is named only when every one answered is a number, since only then is it measured.
@@ -108,7 +109,9 @@
     const lowest = numeric ? rows.reduce((low, row) => (versionIdOf(row) < versionIdOf(low) ? row : low)) : null;
     const carried = lowest ? `; the lowest VersionId answered carries ${Object.keys(lowest).sort().join(', ')}`
       : rows.length ? '; the VersionIds answered are not all numbers, so no lowest is named' : '';
-    return [head, `${rows.length} of ${written} version(s) answered, in order: ${listed}${carried}`];
+    const paged = got.next === null ? '' : `${pagedSaid(got)}; `;
+    return [head, `${paged}${rows.length} of ${written} version(s) answered, in order: ${listed}${carried}`,
+      got.next === null ? undefined : 'open'];
   };
 
   try {
@@ -160,16 +163,16 @@
       return;
     }
 
-    const [onceHead, onceSaid] = describe(await readVersions(listPath, itemId), written, limit);
-    record('field.version.trim-versions-at-once', Q.once, onceHead, `limit ${limit}; ${onceSaid}`);
+    const [onceHead, onceSaid, onceState] = describe(await readVersions(listPath, itemId), written, limit);
+    record('field.version.trim-versions-at-once', Q.once, onceHead, `limit ${limit}; ${onceSaid}`, onceState);
     log('INFO', `waiting ${TRIM_WAIT_MS / 1000} seconds before the second read.`);
     const firstRead = Date.now();
     await new Promise((resolve) => { setTimeout(resolve, TRIM_WAIT_MS); });
-    const [waitHead, waitSaid] = describe(await readVersions(listPath, itemId), written, limit);
+    const [waitHead, waitSaid, waitState] = describe(await readVersions(listPath, itemId), written, limit);
     // The wait is measured rather than assumed, so the row says how long it actually was.
     const waited = Math.round((Date.now() - firstRead) / 1000);
     record('field.version.trim-versions-after-wait', Q.wait, waitHead,
-      `limit ${limit}; ${waitSaid}; read ${waited} second(s) after the first read`);
+      `limit ${limit}; ${waitSaid}; read ${waited} second(s) after the first read`, waitState);
   } catch (err) {
     log('FAIL', `probe aborted: ${scrub(String((err && err.message) || err)).slice(0, 240)}. `
       + 'The unasked rows stay open.');

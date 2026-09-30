@@ -38,6 +38,9 @@
  * REFUSED is a refusal whose text says why. NARROWED needs every entry to carry
  * nothing beyond the selected names and every selected name the plain read
  * carried on all its entries; SELECTED MISSING is an answer lacking one.
+ * NOT COMPARABLE, left open, is an answer carrying a continuation link, which
+ * the probe records and does not follow; on the plain read it holds every
+ * option row.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
  * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again
@@ -179,6 +182,16 @@
       return;
     }
 
+    if (plain.next !== null) {
+      // Every option row compares against the plain read, which a continuation link leaves incomplete.
+      const why = `the plain versions read is not known to be complete: ${pagedSaid(plain)}`;
+      for (const id of AFTER_READ) {
+        const row = RESULTS.find((r) => r.id === id);
+        if (SUBJECTS.includes(id)) record(id, row.question, 'NOT COMPARABLE', why, 'open');
+        else record(id, row.question, 'NOT ESTABLISHED', `not asked: ${why}`);
+      }
+      return;
+    }
     const defaultOrder = orderOf(plainIds);
     record('query.odata.versions-default-order', Q.order, defaultOrder,
       `VersionIds in the order answered: ${JSON.stringify(plainIds)}; labels `
@@ -218,6 +231,11 @@
       if (got.rows === null) {
         record(id, question, 'NOT ESTABLISHED', `${query}: HTTP ${got.res.status} carried no value array: `
           + `${said(got.res)}`);
+        return;
+      }
+      if (got.next !== null) {
+        record(id, question, 'NOT COMPARABLE', `${query}: ${pagedSaid(got)}; served VersionIds `
+          + `${JSON.stringify(got.rows.map(versionIdOf))}`, 'open');
         return;
       }
       const [head, evidence] = describe(got.rows);

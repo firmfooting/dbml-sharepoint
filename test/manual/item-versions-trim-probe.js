@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: 3f997d9e
+ * REVISION: 1d4921ff
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -29,7 +29,8 @@
  * back, fewer than the writes that landed. FEWER THAN WRITTEN is a shortfall
  * of any other size, UNTRIMMED is as many as landed. Each carries the
  * VersionIds, labels and Titles, and the property names of the version with
- * the lowest VersionId answered.
+ * the lowest VersionId answered. NOT COMPARABLE, left open, is an answer carrying
+ * a continuation link, which the probe records and does not follow.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
  * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again
@@ -557,13 +558,24 @@
     }
   };
   // ---- Item versions (v1) ---------------------------------------------
+  // A continuation link in any spelling the search-discovery probe reads, or null when there is none.
+  const continuationOf = (parsed) => {
+    if (!parsed || typeof parsed !== 'object') return null;
+    const link = parsed['odata.nextLink'] || parsed['@odata.nextLink'] || parsed.__next
+      || (parsed.d && typeof parsed.d === 'object' ? parsed.d.__next : undefined);
+    return typeof link === 'string' && link ? link : null;
+  };
   // One read of an item's versions; `rows` is the value array, or null when the answer carried none.
   const readVersions = async (listPath, itemId, query = '') => {
     const res = await sendRaw(`${listPath}/items(${itemId})/versions${query ? `?${query}` : ''}`);
     const head = rawHead(res);
     const rows = !head && res.parsed && Array.isArray(res.parsed.value) ? res.parsed.value : null;
-    return { res, head, rows };
+    return { res, head, rows, next: head ? null : continuationOf(res.parsed) };
   };
+  // Learn documents no paging for item versions, so a continuation link is reported and never followed.
+  const pagedSaid = (versions) => (versions.next === null ? null
+    : `the answer carried a continuation link (${scrub(versions.next).slice(0, 200)}), which this probe `
+      + `does not follow, so its ${versions.rows ? versions.rows.length : 0} entries may not be every version`);
 
   // A version's VersionId as the answer spelled it, or null when the entry carried none.
   const versionIdOf = (row) => (row && typeof row === 'object' && row.VersionId !== undefined
@@ -579,7 +591,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 3f997d9e. Quote this when reporting results.');
+  log('INFO', 'probe revision 1d4921ff. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsTrim';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -632,8 +644,8 @@
     }
     const rows = got.rows;
     // TRIMMED needs the limit as its baseline: a shortfall of any other size is described, not explained.
-    const head = rows.length === written ? 'UNTRIMMED' : rows.length > written ? 'MORE THAN WRITTEN'
-      : rows.length === limit ? 'TRIMMED' : 'FEWER THAN WRITTEN';
+    const head = got.next !== null ? 'NOT COMPARABLE' : rows.length === written ? 'UNTRIMMED'
+      : rows.length > written ? 'MORE THAN WRITTEN' : rows.length === limit ? 'TRIMMED' : 'FEWER THAN WRITTEN';
     const listed = rows.map((row) => `${JSON.stringify(row.VersionLabel)}/${JSON.stringify(versionIdOf(row))}`
       + `/${JSON.stringify(row.Title)}`).join(', ');
     // A lowest VersionId is named only when every one answered is a number, since only then is it measured.
@@ -641,7 +653,9 @@
     const lowest = numeric ? rows.reduce((low, row) => (versionIdOf(row) < versionIdOf(low) ? row : low)) : null;
     const carried = lowest ? `; the lowest VersionId answered carries ${Object.keys(lowest).sort().join(', ')}`
       : rows.length ? '; the VersionIds answered are not all numbers, so no lowest is named' : '';
-    return [head, `${rows.length} of ${written} version(s) answered, in order: ${listed}${carried}`];
+    const paged = got.next === null ? '' : `${pagedSaid(got)}; `;
+    return [head, `${paged}${rows.length} of ${written} version(s) answered, in order: ${listed}${carried}`,
+      got.next === null ? undefined : 'open'];
   };
 
   try {
@@ -693,16 +707,16 @@
       return;
     }
 
-    const [onceHead, onceSaid] = describe(await readVersions(listPath, itemId), written, limit);
-    record('field.version.trim-versions-at-once', Q.once, onceHead, `limit ${limit}; ${onceSaid}`);
+    const [onceHead, onceSaid, onceState] = describe(await readVersions(listPath, itemId), written, limit);
+    record('field.version.trim-versions-at-once', Q.once, onceHead, `limit ${limit}; ${onceSaid}`, onceState);
     log('INFO', `waiting ${TRIM_WAIT_MS / 1000} seconds before the second read.`);
     const firstRead = Date.now();
     await new Promise((resolve) => { setTimeout(resolve, TRIM_WAIT_MS); });
-    const [waitHead, waitSaid] = describe(await readVersions(listPath, itemId), written, limit);
+    const [waitHead, waitSaid, waitState] = describe(await readVersions(listPath, itemId), written, limit);
     // The wait is measured rather than assumed, so the row says how long it actually was.
     const waited = Math.round((Date.now() - firstRead) / 1000);
     record('field.version.trim-versions-after-wait', Q.wait, waitHead,
-      `limit ${limit}; ${waitSaid}; read ${waited} second(s) after the first read`);
+      `limit ${limit}; ${waitSaid}; read ${waited} second(s) after the first read`, waitState);
   } catch (err) {
     log('FAIL', `probe aborted: ${scrub(String((err && err.message) || err)).slice(0, 240)}. `
       + 'The unasked rows stay open.');

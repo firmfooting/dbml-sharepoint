@@ -1,13 +1,25 @@
 {# test/manual/templates/_probe_item_versions_v1.js.j2 #}
-{# Included after _probe_raw_request_v1.js.j2, whose sendRaw and rawHead it uses. #}
+{# Included after _probe_raw_request_v1.js.j2 and _probe_identity_v1.js.j2, whose sendRaw, rawHead
+   and scrub it uses. #}
   // ---- Item versions (v1) ---------------------------------------------
+  // A continuation link in any spelling the search-discovery probe reads, or null when there is none.
+  const continuationOf = (parsed) => {
+    if (!parsed || typeof parsed !== 'object') return null;
+    const link = parsed['odata.nextLink'] || parsed['@odata.nextLink'] || parsed.__next
+      || (parsed.d && typeof parsed.d === 'object' ? parsed.d.__next : undefined);
+    return typeof link === 'string' && link ? link : null;
+  };
   // One read of an item's versions; `rows` is the value array, or null when the answer carried none.
   const readVersions = async (listPath, itemId, query = '') => {
     const res = await sendRaw(`${listPath}/items(${itemId})/versions${query ? `?${query}` : ''}`);
     const head = rawHead(res);
     const rows = !head && res.parsed && Array.isArray(res.parsed.value) ? res.parsed.value : null;
-    return { res, head, rows };
+    return { res, head, rows, next: head ? null : continuationOf(res.parsed) };
   };
+  // Learn documents no paging for item versions, so a continuation link is reported and never followed.
+  const pagedSaid = (versions) => (versions.next === null ? null
+    : `the answer carried a continuation link (${scrub(versions.next).slice(0, 200)}), which this probe `
+      + `does not follow, so its ${versions.rows ? versions.rows.length : 0} entries may not be every version`);
 
   // A version's VersionId as the answer spelled it, or null when the entry carried none.
   const versionIdOf = (row) => (row && typeof row === 'object' && row.VersionId !== undefined

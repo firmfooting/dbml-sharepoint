@@ -217,3 +217,31 @@ def test_a_digest_lost_mid_run_is_caught_and_the_rest_left_open() -> None:
     assert "recycle it by hand" in output
     assert not [r for r in sent if r["path"].endswith("/recycle")]
     assert ended_with_report(output)
+
+
+NEXT = {"odata.nextLink": "https://example.sharepoint.com/sites/probe/_api/web/lists/versions?$skiptoken=2"}
+
+
+def test_a_plain_read_with_a_continuation_link_leaves_every_option_row_open() -> None:
+    rows, _, output = _run(versionsNext=NEXT)
+
+    assert rows[READ]["outcome"] == "PASS"
+    for row_id in SUBJECTS:
+        assert rows[row_id]["outcome"] == "NOT COMPARABLE", rows[row_id]
+        assert rows[row_id]["state"] == "open"
+        assert "which this probe does not follow" in rows[row_id]["evidence"]
+    for row_id in (FILTER_CONTROL, TOP_CONTROL):
+        assert rows[row_id]["outcome"] == "NOT ESTABLISHED"
+        assert rows[row_id]["evidence"].startswith(
+            "not asked: the plain versions read is not known")
+    assert voided(rows) == set()
+    assert ended_with_report(output)
+
+
+def test_an_option_answer_with_a_continuation_link_is_not_compared() -> None:
+    rows, _, _ = _run(versionsNext=NEXT, versionsNextFor="$top=1")
+
+    assert rows[TOP]["outcome"] == "NOT COMPARABLE"
+    assert rows[TOP]["state"] == "open"
+    assert rows[TOP]["evidence"].startswith("$top=1: the answer carried a continuation link")
+    assert rows[FILTER]["outcome"] == "FILTERED"

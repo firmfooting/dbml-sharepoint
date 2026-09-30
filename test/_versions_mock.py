@@ -245,7 +245,10 @@ const mockFetch = async (url, opts = {}) => {
         if (order) entries.sort((a, b) => sign * (a.VersionId - b.VersionId));
         if (params.$top) entries = entries.slice(0, Number(params.$top));
       }
-      return answer(200, { value: entries });
+      // `versionsNext` adds a continuation link to the reads whose path holds `versionsNextFor`.
+      const paged = CONFIG.versionsNext && path.includes(CONFIG.versionsNextFor || '');
+      const next = paged ? CONFIG.versionsNext : {};
+      return answer(200, { value: entries, ...next });
     }
     return answer(200, { Id: item.Id, ...item.values });
   }

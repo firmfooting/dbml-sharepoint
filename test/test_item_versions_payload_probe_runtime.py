@@ -484,3 +484,28 @@ def test_a_failed_library_fixture_voids_what_rests_on_it_and_the_list_case_stand
     assert rows["field.version.payload-choice"]["outcome"] == "OBSERVED"
     assert _recycled(sent) == RECYCLED
     assert ended_with_report(output)
+
+
+NEXT = {"odata.nextLink": "https://example.sharepoint.com/sites/probe/_api/web/lists/versions?$skiptoken=2"}
+
+
+def test_a_list_versions_read_with_a_continuation_link_leaves_the_observations_open() -> None:
+    rows, _, output = _run(versionsNext=NEXT, versionsNextFor="Versions')/items(1)")
+
+    assert rows[READ]["outcome"] == "PASS"
+    for row_id in (*PAYLOAD, FIELDS, ORDER):
+        assert rows[row_id]["outcome"] == "NOT COMPARABLE", rows[row_id]
+        assert rows[row_id]["state"] == "open"
+        assert "which this probe does not follow" in rows[row_id]["evidence"]
+    assert rows[LIB_ADDS]["outcome"] == "UPLOAD ADDED A VERSION"
+    assert ended_with_report(output)
+
+
+def test_a_library_versions_read_with_a_continuation_link_leaves_its_rows_open() -> None:
+    rows, _, output = _run(versionsNext=NEXT, versionsNextFor="Library')/items(1)")
+
+    for row_id in (LIB_ADDS, LIB_FIELDS):
+        assert rows[row_id]["outcome"] == "NOT COMPARABLE", rows[row_id]
+        assert rows[row_id]["state"] == "open"
+    assert rows["field.version.payload-choice"]["outcome"] == "OBSERVED"
+    assert ended_with_report(output)

@@ -66,7 +66,8 @@
  * or one hold Q1, the value between the edits. UPLOAD CHANGED THE VALUE is a
  * Choice that read other than Q1 after the upload, so no version can be told
  * apart by it. NOT IDENTIFIED is the fields row when no version is the
- * upload's alone.
+ * upload's alone. NOT COMPARABLE, left open, is a versions read carrying a
+ * continuation link, which the probe records and does not follow.
  * Email addresses, claims logins and this account's display name are masked.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
@@ -435,6 +436,13 @@
       return;
     }
 
+    if (versions.next !== null) {
+      for (const id of asked) {
+        const row = RESULTS.find((r) => r.id === id);
+        record(id, row.question, 'NOT COMPARABLE', pagedSaid(versions), 'open');
+      }
+      return;
+    }
     const rows = versions.rows;
     const observed = [...COLUMNS.map((c) => ({ name: c.name, kind: c.kind })),
       ...(peopleWritten ? [{ name: PEOPLE, kind: 'people' }] : [])];
@@ -569,6 +577,11 @@
       return;
     }
 
+    if (versions.next !== null) {
+      record(LIB.libraryAdds, Q.libraryAdds, 'NOT COMPARABLE', pagedSaid(versions), 'open');
+      record(LIB.libraryFields, Q.libraryFields, 'NOT COMPARABLE', pagedSaid(versions), 'open');
+      return;
+    }
     const rows = versions.rows;
     const ordered = rows.every((row) => labelPair(row) !== null)
       ? [...rows].sort((a, b) => labelPair(a)[0] - labelPair(b)[0] || labelPair(a)[1] - labelPair(b)[1]) : rows;

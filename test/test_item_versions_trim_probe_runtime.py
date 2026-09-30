@@ -213,3 +213,22 @@ def test_a_versions_read_answered_2xx_with_no_value_array_is_left_open() -> None
             'limit 2; HTTP 200 carried no value array: {"d": "not a list"}')
     assert voided(rows) == set()
     assert ended_with_report(output)
+
+
+@pytest.mark.parametrize("spelling", [
+    {"odata.nextLink": "https://example.sharepoint.com/sites/probe/_api/web/lists/versions?$skiptoken=2"},
+    {"@odata.nextLink": "https://example.sharepoint.com/sites/probe/_api/web/lists/versions?$skiptoken=2"},
+    {"d": {"__next": "https://example.sharepoint.com/sites/probe/_api/web/lists/versions?$skiptoken=2"}},
+], ids=["odata", "at-odata", "verbose"])
+def test_a_versions_answer_with_a_continuation_link_is_not_called_trimmed(
+        spelling: dict[str, Any]) -> None:
+    rows, _, output = _run(trimToLimit=True, versionsNext=spelling)
+
+    for row_id in (ONCE, WAIT):
+        assert rows[row_id]["outcome"] == "NOT COMPARABLE", rows[row_id]
+        assert rows[row_id]["state"] == "open"
+        assert ("the answer carried a continuation link ([TENANT]/sites/probe/_api/web/lists/"
+                "versions?$skiptoken=2), which this probe does not follow, so its 2 entries may "
+                "not be every version") in rows[row_id]["evidence"]
+    assert "example.sharepoint.com" not in str(rows)
+    assert ended_with_report(output)

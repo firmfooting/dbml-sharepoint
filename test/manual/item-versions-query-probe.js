@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: 8425aa9f
+ * REVISION: 047f0a6c
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -37,6 +37,9 @@
  * REFUSED is a refusal whose text says why. NARROWED needs every entry to carry
  * nothing beyond the selected names and every selected name the plain read
  * carried on all its entries; SELECTED MISSING is an answer lacking one.
+ * NOT COMPARABLE, left open, is an answer carrying a continuation link, which
+ * the probe records and does not follow; on the plain read it holds every
+ * option row.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
  * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again
@@ -564,13 +567,24 @@
     }
   };
   // ---- Item versions (v1) ---------------------------------------------
+  // A continuation link in any spelling the search-discovery probe reads, or null when there is none.
+  const continuationOf = (parsed) => {
+    if (!parsed || typeof parsed !== 'object') return null;
+    const link = parsed['odata.nextLink'] || parsed['@odata.nextLink'] || parsed.__next
+      || (parsed.d && typeof parsed.d === 'object' ? parsed.d.__next : undefined);
+    return typeof link === 'string' && link ? link : null;
+  };
   // One read of an item's versions; `rows` is the value array, or null when the answer carried none.
   const readVersions = async (listPath, itemId, query = '') => {
     const res = await sendRaw(`${listPath}/items(${itemId})/versions${query ? `?${query}` : ''}`);
     const head = rawHead(res);
     const rows = !head && res.parsed && Array.isArray(res.parsed.value) ? res.parsed.value : null;
-    return { res, head, rows };
+    return { res, head, rows, next: head ? null : continuationOf(res.parsed) };
   };
+  // Learn documents no paging for item versions, so a continuation link is reported and never followed.
+  const pagedSaid = (versions) => (versions.next === null ? null
+    : `the answer carried a continuation link (${scrub(versions.next).slice(0, 200)}), which this probe `
+      + `does not follow, so its ${versions.rows ? versions.rows.length : 0} entries may not be every version`);
 
   // A version's VersionId as the answer spelled it, or null when the entry carried none.
   const versionIdOf = (row) => (row && typeof row === 'object' && row.VersionId !== undefined
@@ -586,7 +600,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 8425aa9f. Quote this when reporting results.');
+  log('INFO', 'probe revision 047f0a6c. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsQuery';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -712,6 +726,16 @@
       return;
     }
 
+    if (plain.next !== null) {
+      // Every option row compares against the plain read, which a continuation link leaves incomplete.
+      const why = `the plain versions read is not known to be complete: ${pagedSaid(plain)}`;
+      for (const id of AFTER_READ) {
+        const row = RESULTS.find((r) => r.id === id);
+        if (SUBJECTS.includes(id)) record(id, row.question, 'NOT COMPARABLE', why, 'open');
+        else record(id, row.question, 'NOT ESTABLISHED', `not asked: ${why}`);
+      }
+      return;
+    }
     const defaultOrder = orderOf(plainIds);
     record('query.odata.versions-default-order', Q.order, defaultOrder,
       `VersionIds in the order answered: ${JSON.stringify(plainIds)}; labels `
@@ -751,6 +775,11 @@
       if (got.rows === null) {
         record(id, question, 'NOT ESTABLISHED', `${query}: HTTP ${got.res.status} carried no value array: `
           + `${said(got.res)}`);
+        return;
+      }
+      if (got.next !== null) {
+        record(id, question, 'NOT COMPARABLE', `${query}: ${pagedSaid(got)}; served VersionIds `
+          + `${JSON.stringify(got.rows.map(versionIdOf))}`, 'open');
         return;
       }
       const [head, evidence] = describe(got.rows);
