@@ -196,6 +196,26 @@ the probe that has to run before any reader posture leans on it.
 ITEM_SECURITY_SCOPES = frozenset({'all', 'own'})
 ```
 
+### `WATCH_ON`
+
+```python
+WATCH_ON = ('change', 'enter', 'leave')
+```
+
+### `WatchUse`
+
+```python
+@dataclass(frozen=True)
+class WatchUse:
+    name: str
+    id: str | None = None
+    on: WatchOn = 'change'
+    when: Condition | None = None
+    settings: collections.abc.Mapping[str, typing.Any] = field(default_factory=dict)
+```
+
+One Power Automate use of a watched column; core does not interpret `name` or `settings`.
+
 ### `WatchedList`
 
 ```python
@@ -203,13 +223,16 @@ ITEM_SECURITY_SCOPES = frozenset({'all', 'own'})
 class WatchedList:
     entity: str
     column: str
+    uses: tuple[dbml_sharepoint.model.mapping_types.WatchUse, ...] = ()
 ```
 
 A column an external consumer, such as a flow, binds by internal name.
 
 The deploy does not read these. The validator refuses a pair naming a
 column the deploy would not create, so the column cannot be renamed in
-the DBML or deleted from it without failing the build.
+the DBML or deleted from it without failing the build. `uses` names what
+a consumer does with the column; the validator checks their shape and
+their conditions against the schema.
 
 ### `FormVisibility`
 

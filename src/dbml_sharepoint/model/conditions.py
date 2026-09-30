@@ -2,9 +2,9 @@
 """The shared condition grammar's types and structural parser.
 
 One grammar serves every conditional surface in the mapping
-(`views[].where`, `form_visibility.when`, `column_validation.when` and
-`list_validation.when`), because every SharePoint syntax difference the
-alternative exposes is a rendering concern the author should never meet.
+(`views[].where`, `form_visibility.when`, `column_validation.when`,
+`list_validation.when` and `watched_lists[].uses[].when`), because every SharePoint syntax
+difference the alternative exposes is a rendering concern the author should never meet.
 Those differences are not hypothetical: validation formulas reject single
 quotes and require double, conditional-visibility expressions require
 single and double an embedded apostrophe, one target spells booleans
@@ -76,15 +76,18 @@ class Group:
 type Condition = Leaf | Group
 
 
-def parse_condition(raw: Any, context: str) -> Condition:
+def parse_condition(raw: Any, context: str, *, default_field: str | None = None) -> Condition:
     """Parse a declared condition tree.
 
     A bare list is `all_of`: that is the spelling every existing
     `views[].where` already uses, so the grammar extends the flat list
     rather than replacing it.
+
+    `default_field` is the column a leaf with no `field` key compares. Only
+    an absent key takes it; a blank `field:` is still refused.
     """
     if isinstance(raw, list):
-        return _group("all_of", raw, context)
+        return _group("all_of", raw, context, default_field)
     if not isinstance(raw, dict):
         raise MappingShapeError(
             f"{context}: expected a mapping or a list of conditions, got {type(raw).__name__}",
@@ -106,7 +109,7 @@ def parse_condition(raw: Any, context: str) -> Condition:
             raise UnknownMappingKeyError(
                 f"{context}: unknown group key(s) {sorted(unknown, key=str)}",
             )
-        return _group(present[0], raw_map[present[0]], context)
+        return _group(present[0], raw_map[present[0]], context, default_field)
 
     unknown_leaf = set(raw_map) - _LEAF_KEYS
     if unknown_leaf:
@@ -116,6 +119,8 @@ def parse_condition(raw: Any, context: str) -> Condition:
     required: dict[str, str] = {}
     for key in ("field", "op"):
         value = raw_map.get(key)
+        if key == "field" and key not in raw_map:
+            value = default_field
         # The type first, so `op: no` is not called missing; `require_str` is an import cycle.
         if value is not None and not isinstance(value, str):
             raise MappingShapeError(f"{context}.{key} must be a string, got {value!r}")
@@ -137,7 +142,7 @@ def parse_condition(raw: Any, context: str) -> Condition:
     )
 
 
-def _group(kind: GroupKind, items: Any, context: str) -> Group:
+def _group(kind: GroupKind, items: Any, context: str, default_field: str | None) -> Group:
     if not isinstance(items, list):
         raise MappingShapeError(f"{context}.{kind}: expected a list of conditions")
     item_list: list[object] = items
@@ -146,7 +151,7 @@ def _group(kind: GroupKind, items: Any, context: str) -> Group:
             f"{context}.{kind}: empty group -- remove it or give it a condition",
         )
     children = tuple(
-        parse_condition(item, f"{context}.{kind}[{index}]")
+        parse_condition(item, f"{context}.{kind}[{index}]", default_field=default_field)
         for index, item in enumerate(item_list)
     )
     return Group(kind, children)

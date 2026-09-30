@@ -9,10 +9,17 @@ and the column exist is the validator's question.
 
 from typing import Any
 
-from dbml_sharepoint.model._keys import _known_keys, _require_list, _require_mapping
-from dbml_sharepoint.model.errors import MappingShapeError
-from dbml_sharepoint.model.mapping_types import CrossSiteRef, PolymorphicPattern, WatchedList
-from dbml_sharepoint.model.reading import require_str
+from dbml_sharepoint.model._keys import _known_keys, _require_list, _require_mapping, _text_key
+from dbml_sharepoint.model.conditions import parse_condition
+from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
+from dbml_sharepoint.model.mapping_types import (
+    WATCH_ON,
+    CrossSiteRef,
+    PolymorphicPattern,
+    WatchedList,
+    WatchUse,
+)
+from dbml_sharepoint.model.reading import optional_str, optional_value, require_str, strict_str
 from dbml_sharepoint.model.sections.context import SectionContext
 
 
@@ -62,10 +69,12 @@ def read(sc: SectionContext) -> dict[str, Any]:
     watched = []
     for i, item in enumerate(_require_list(sc.block("watched_lists"), "watched_lists")):
         where = f"watched_lists[{i}]"
-        entry = _known_keys(item, {"entity", "column"}, where)
+        entry = _known_keys(item, {"entity", "column", "uses"}, where)
+        column = require_str(entry, "column", where)
         watched.append(WatchedList(
             entity=require_str(entry, "entity", where),
-            column=require_str(entry, "column", where),
+            column=column,
+            uses=_read_uses(entry.get("uses"), column, f"{where}.uses"),
         ))
 
     calculated_formulas: dict[str, dict[str, str]] = {}
@@ -85,3 +94,40 @@ def read(sc: SectionContext) -> dict[str, Any]:
         "watched_lists": watched,
         "calculated_formulas": calculated_formulas,
     }
+
+
+def _read_uses(block: object, column: str, context: str) -> tuple[WatchUse, ...]:
+    """Each use is a bare name or a one-key mapping of its name to its settings."""
+    uses = []
+    for j, item in enumerate(_require_list(block, context)):
+        at = f"{context}[{j}]"
+        if isinstance(item, str):
+            uses.append(WatchUse(name=item))
+            continue
+        if not isinstance(item, dict) or len(item) != 1:
+            raise MappingShapeError(
+                f"{at}: expected a use name, or a mapping of one use name to its settings",
+            )
+        entry: dict[object, object] = item
+        [(raw_name, raw_settings)] = entry.items()
+        name = _text_key(raw_name, at)
+        settings = _known_keys(
+            {} if raw_settings is None else raw_settings, {"id", "on", "when", "with"}, at,
+        )
+        on = strict_str(settings, "on", at, default="change")
+        if on not in WATCH_ON:
+            raise MappingValueError(
+                f"{at}.on must be one of {', '.join(repr(o) for o in WATCH_ON)}, got {on!r}",
+            )
+        raw_when = optional_value(settings, "when", at)
+        uses.append(WatchUse(
+            name=name,
+            id=optional_str(settings, "id", at),
+            on=on,
+            # A leaf with no `field` compares the watched column itself.
+            when=None if raw_when is None else parse_condition(
+                raw_when, f"{at}.when", default_field=column,
+            ),
+            settings=_require_mapping(settings.get("with"), f"{at}.with"),
+        ))
+    return tuple(uses)

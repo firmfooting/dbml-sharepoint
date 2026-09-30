@@ -10,9 +10,9 @@ sidebar_position: 9
 The shared condition grammar's types and structural parser.
 
 One grammar serves every conditional surface in the mapping
-(`views[].where`, `form_visibility.when`, `column_validation.when` and
-`list_validation.when`), because every SharePoint syntax difference the
-alternative exposes is a rendering concern the author should never meet.
+(`views[].where`, `form_visibility.when`, `column_validation.when`,
+`list_validation.when` and `watched_lists[].uses[].when`), because every SharePoint syntax
+difference the alternative exposes is a rendering concern the author should never meet.
 Those differences are not hypothetical: validation formulas reject single
 quotes and require double, conditional-visibility expressions require
 single and double an embedded apostrophe, one target spells booleans
@@ -75,7 +75,7 @@ See `analysis.condition_rendering.normalise`.
 ### `parse_condition`
 
 ```python
-def parse_condition(raw: Any, context: str) -> Condition
+def parse_condition(raw: Any, context: str, *, default_field: str | None = None) -> Condition
 ```
 
 Parse a declared condition tree.
@@ -83,4 +83,7 @@ Parse a declared condition tree.
 A bare list is `all_of`: that is the spelling every existing
 `views[].where` already uses, so the grammar extends the flat list
 rather than replacing it.
+
+`default_field` is the column a leaf with no `field` key compares. Only
+an absent key takes it; a blank `field:` is still refused.
 

@@ -13,9 +13,9 @@ by hand; see `website/scripts/generate_api.py`.
 The shared condition grammar's types and structural parser.
 
 One grammar serves every conditional surface in the mapping
-(`views[].where`, `form_visibility.when`, `column_validation.when` and
-`list_validation.when`), because every SharePoint syntax difference the
-alternative exposes is a rendering concern the author should never meet.
+(`views[].where`, `form_visibility.when`, `column_validation.when`,
+`list_validation.when` and `watched_lists[].uses[].when`), because every SharePoint syntax
+difference the alternative exposes is a rendering concern the author should never meet.
 Those differences are not hypothetical: validation formulas reject single
 quotes and require double, conditional-visibility expressions require
 single and double an embedded apostrophe, one target spells booleans
