@@ -12636,6 +12636,66 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "item-versions-trim-probe.js",
+      "surface": "field",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch generic list with versioning on and a small MajorVersionLimit, and one item written up to 104 times; the list is recycled before the probe reports"
+      ],
+      "cleanup": {
+        "policy": "after"
+      },
+      "prerequisites": [
+        "permission to create and recycle lists on the site"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.version.fixture-trim-list",
+              "depends_on": []
+            },
+            {
+              "id": "field.version.trim-limit-taken",
+              "depends_on": [
+                "field.version.fixture-trim-list"
+              ]
+            },
+            {
+              "id": "field.version.fixture-trim-item",
+              "depends_on": [
+                "field.version.fixture-trim-list"
+              ]
+            },
+            {
+              "id": "field.version.trim-versions-at-once",
+              "depends_on": [
+                "field.version.fixture-trim-list",
+                "field.version.fixture-trim-item"
+              ]
+            },
+            {
+              "id": "field.version.trim-versions-after-wait",
+              "depends_on": [
+                "field.version.fixture-trim-list",
+                "field.version.fixture-trim-item"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.version.fixture-trim-list",
+            "field.version.fixture-trim-item"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }

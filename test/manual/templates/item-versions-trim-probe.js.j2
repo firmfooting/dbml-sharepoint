@@ -1,0 +1,177 @@
+{# test/manual/templates/item-versions-trim-probe.js.j2 #}
+
+/** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
+ *
+ * REVISION: {{ revision }}
+ *
+ * QUESTION: once an item has been written more times than its list's
+ * MajorVersionLimit, what does `items(id)/versions` return, straight away and
+ * a minute later?
+ *
+ * WHY: a flow that records every change reads the versions since the last one
+ * it recorded. When the limit trims versions between two runs, the flow must
+ * know which versions remain and what the oldest retained one carries.
+ * Learn documents version limits for document libraries and says nothing
+ * about what the versions endpoint answers after a list trims.
+ *
+ * DEPENDS ON (read back, and voiding what rests on them when they do not hold)
+ *   field.version.fixture-trim-list  a generic list with versioning on whose
+ *       MajorVersionLimit, after asking for 2, reads back a whole number from 1 to 100
+ *   field.version.fixture-trim-item  one item created and then written the list's
+ *       limit plus three times, every write answered 2xx and the last Title read back
+ *
+ * OBSERVES (recorded verbatim, never compared with an expected value)
+ *   field.version.trim-limit-taken          the MajorVersionLimit the list took, and
+ *       what the settings MERGE answered
+ *   field.version.trim-versions-at-once     the versions read straight after the last write
+ *   field.version.trim-versions-after-wait  the same read after TRIM_WAIT_MS
+ *
+ * HOW TO READ IT: TRIMMED is fewer versions answered than writes landed,
+ * UNTRIMMED is as many. Each carries the VersionIds, labels and Titles, and
+ * the property names of the version with the lowest VersionId answered.
+ *
+ * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
+ * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again
+ * (CLEANUP = true recycles a list left by an earlier run first). The run
+ * waits a minute before its second read. Copy the RESULTS block back verbatim.
+ *
+ * WHEN FINISHED: nothing to delete. The probe recycles its list before it
+ * reports.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+{% include "_probe_raw_request_v1.js.j2" %}
+{% include "_probe_scratch_list_v1.js.j2" %}
+{% include "_probe_item_versions_v1.js.j2" %}
+{% include "_probe_identity_v1.js.j2" %}
+  log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
+
+  const LIST = 'dbmlsp Probe VersionsTrim';
+  // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
+  const OWNERSHIP = 'dbml-sharepoint versions-trim probe scratch list. Safe to delete.';
+  const listPath = `web/lists/getbytitle('${LIST}')`;
+  const ASKED_LIMIT = 2;
+  // The most writes the run will send is this plus EXTRA_WRITES, so a list that keeps more is not measured.
+  const MAX_LIMIT = 100;
+  const EXTRA_WRITES = 3;
+  const TRIM_WAIT_MS = 60000;
+
+  const Q = {
+    list: `a generic list with versioning on whose MajorVersionLimit, after asking for ${ASKED_LIMIT}, `
+      + `reads back a whole number from 1 to ${MAX_LIMIT}`,
+    limit: `the MajorVersionLimit the list took after asking for ${ASKED_LIMIT}`,
+    item: 'one item created and written the limit plus three times, every write answered 2xx, '
+      + 'whose last Title reads back',
+    once: 'what items(id)/versions answers straight after the last write',
+    wait: `what items(id)/versions answers ${TRIM_WAIT_MS / 1000} seconds later`,
+  };
+  expect('field.version.fixture-trim-list', Q.list);
+  expect('field.version.trim-limit-taken', Q.limit);
+  expect('field.version.fixture-trim-item', Q.item);
+  expect('field.version.trim-versions-at-once', Q.once);
+  expect('field.version.trim-versions-after-wait', Q.wait);
+
+  const AFTER_ITEM = ['field.version.trim-versions-at-once', 'field.version.trim-versions-after-wait'];
+  const AFTER_LIST = ['field.version.trim-limit-taken', 'field.version.fixture-trim-item', ...AFTER_ITEM];
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create a list '${LIST}' on ${WEB} with versioning on, ask for a`);
+    log('INFO', `MajorVersionLimit of ${ASKED_LIMIT}, create one item and write it the limit plus`);
+    log('INFO', `${EXTRA_WRITES} times, then read its versions at once and ${TRIM_WAIT_MS / 1000} seconds later.`);
+    log('INFO', 'The list is recycled on the way out.');
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write. Stopping.');
+    return;
+  }
+
+  // Refusal text can name the tenant or an account, so it is scrubbed before it is shown.
+  const said = (text) => scrub(text).slice(0, 300);
+  const titleOf = (n) => `dbmlsp versions trim ${n}`;
+  const describe = (got, written) => {
+    if (got.head) return [got.head.outcome, scrub(got.head.why)];
+    if (got.rows === null) {
+      return ['NOT ESTABLISHED', `HTTP ${got.res.status} carried no value array: ${said(got.res.text)}`];
+    }
+    const rows = got.rows;
+    const head = rows.length < written ? 'TRIMMED' : rows.length === written ? 'UNTRIMMED' : 'MORE THAN WRITTEN';
+    const listed = rows.map((row) => `${JSON.stringify(row.VersionLabel)}/${JSON.stringify(versionIdOf(row))}`
+      + `/${JSON.stringify(row.Title)}`).join(', ');
+    // A lowest VersionId is named only when every one answered is a number, since only then is it measured.
+    const numeric = rows.length > 0 && rows.every((row) => typeof versionIdOf(row) === 'number');
+    const lowest = numeric ? rows.reduce((low, row) => (versionIdOf(row) < versionIdOf(low) ? row : low)) : null;
+    const carried = lowest ? `; the lowest VersionId answered carries ${Object.keys(lowest).sort().join(', ')}`
+      : rows.length ? '; the VersionIds answered are not all numbers, so no lowest is named' : '';
+    return [head, `${rows.length} of ${written} version(s) answered, in order: ${listed}${carried}`];
+  };
+
+  try {
+    const list = await claimScratchList({ id: 'field.version.fixture-trim-list', question: Q.list,
+      title: LIST, description: OWNERSHIP, dependents: AFTER_LIST,
+      settings: { EnableVersioning: true, MajorVersionLimit: ASKED_LIMIT },
+      declared: { EnableVersioning: true,
+        MajorVersionLimit: (v) => Number.isInteger(v) && v >= 1 && v <= MAX_LIMIT,
+        ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 } });
+    if (!list.held) return;
+    const limit = list.body.MajorVersionLimit;
+    // Recorded whatever the MERGE answered, since the read-back and not the MERGE says which limit holds.
+    record('field.version.trim-limit-taken', Q.limit, limit === ASKED_LIMIT ? 'TAKEN AS ASKED' : 'OTHER LIMIT',
+      `asked ${ASKED_LIMIT}; the settings MERGE answered HTTP ${list.merge.status}`
+      + `${list.merge.ok ? '' : `: ${said(list.merge.text)}`}; MajorVersionLimit reads back ${limit}`);
+
+    const itemType = list.body.ListItemEntityTypeFullName;
+    const writes = limit + EXTRA_WRITES;
+    // One digest for the run of writes, since a fresh one per write doubles the requests.
+    const digest = await getDigest();
+    let itemId = null;
+    let written = 0;
+    const refused = [];
+    const made = await spPost(`${listPath}/items`, { __metadata: { type: itemType }, Title: titleOf(1) },
+      digest, VERBOSE_WRITE);
+    if (made.ok) written += 1;
+    else refused.push(`the create: HTTP ${made.status}: ${said(made.text)}`);
+    if (made.ok && made.body && Number.isInteger(made.body.Id)) itemId = made.body.Id;
+    else if (made.ok) refused.push(`the create: HTTP ${made.status} carried no numeric Id`);
+    for (let n = 2; itemId !== null && n <= writes + 1; n += 1) {
+      const sent = await spPost(`${listPath}/items(${itemId})`, { __metadata: { type: itemType },
+        Title: titleOf(n) }, digest, { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
+      if (sent.ok) written += 1;
+      else refused.push(`write ${n}: HTTP ${sent.status}: ${said(sent.text)}`);
+    }
+    if (!await establishFixture('field.version.fixture-trim-item', async () => {
+      // The refused writes join the read-back, so a write that did not land shows its reason in RESULTS.
+      const shown = refused.slice(0, 3).map((line) => line.slice(0, 160)).join('; ')
+        + (refused.length > 3 ? `; and ${refused.length - 3} more` : '');
+      const body = { Written: written, Refused: shown || 'none' };
+      if (itemId === null) return { ok: true, status: 200, body };
+      const read = await sendRaw(`${listPath}/items(${itemId})?$select=Id,Title`);
+      const head = rawHead(read);
+      body.Title = head ? scrub(head.why) : read.parsed && typeof read.parsed === 'object' ? read.parsed.Title
+        : `no JSON: ${said(read.text)}`;
+      return { ok: true, status: 200, body };
+    }, { Written: writes + 1, Refused: (v) => typeof v === 'string', Title: titleOf(writes + 1) },
+    AFTER_ITEM)) {
+      return;
+    }
+
+    const [onceHead, onceSaid] = describe(await readVersions(listPath, itemId), written);
+    record('field.version.trim-versions-at-once', Q.once, onceHead, `limit ${limit}; ${onceSaid}`);
+    log('INFO', `waiting ${TRIM_WAIT_MS / 1000} seconds before the second read.`);
+    const firstRead = Date.now();
+    await new Promise((resolve) => { setTimeout(resolve, TRIM_WAIT_MS); });
+    const [waitHead, waitSaid] = describe(await readVersions(listPath, itemId), written);
+    // The wait is measured rather than assumed, so the row says how long it actually was.
+    const waited = Math.round((Date.now() - firstRead) / 1000);
+    record('field.version.trim-versions-after-wait', Q.wait, waitHead,
+      `limit ${limit}; ${waitSaid}; read ${waited} second(s) after the first read`);
+  } catch (err) {
+    log('FAIL', `probe aborted: ${scrub(String((err && err.message) || err)).slice(0, 240)}. `
+      + 'The unasked rows stay open.');
+  } finally {
+    await recycleScratchLists();
+    // Reported here, after the recycle, so every path prints the recycle line above the table.
+    report();
+  }
+})();

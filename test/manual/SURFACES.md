@@ -220,7 +220,7 @@ Probes: `multi-value-probe.js`, `projected-lookup-probe.js`,
 `default-formula-functions-probe.js`, `unique-blanks-probe.js`,
 `unique-transition-probe.js`, `field-sealed-probe.js`,
 `utctolocaltime-rest-form-probe.js`, `calculated-date-rest-probe.js`,
-`item-versions-payload-probe.js`
+`item-versions-payload-probe.js`, `item-versions-trim-probe.js`
 
 `site-zone-transitions-probe.js` files under `date` because its subject is
 the relation between a stored UTC instant and the site-local clock, which is
@@ -286,6 +286,10 @@ and whether VersionId rises as VersionLabel does. Its library case edits a
 file in a library's folder, replaces the file's content, and edits it again,
 and records whether the content-only upload added a version and what that
 version carries.
+`item-versions-trim-probe.js` writes past the list's MajorVersionLimit and
+records what the versions read answers at once and a minute later. The limit
+the list takes is a fixture only in its range, because the run has to be able
+to write past it; the value itself is `trim-limit-taken`, an observation.
 
 ### 7. `text`: does a string survive a write and read back byte-identical
 
