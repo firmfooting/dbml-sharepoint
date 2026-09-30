@@ -172,7 +172,8 @@ def condition_findings(
 
     `target=None` is for a condition this package never renders, such as a
     watched column's `when`: the bounds, columns, operators, operands and
-    Choice members are judged, and no renderer is consulted.
+    Choice members are judged, and so is each value against its column's
+    type. A refusal that depends on what one target can render is not made.
     """
     return [
         Finding(
@@ -315,19 +316,22 @@ def _condition_problems(
         return _dedupe(problems)
 
     if target is None:
-        # Nothing renders this condition, so only the renderer-free Choice rule remains.
+        # Nothing renders this condition, so only the schema's refusals apply.
         for leaf in leaves(condition):
             if id(leaf) in suppressed or leaf.field not in rendered:
                 continue
-            problems.extend(
-                (code, message, leaf.field)
-                for code, message in _choice_member_problems(
-                    leaf,
-                    where=f"{context}.{leaf.field}",
-                    types=types,
-                    enum_members=enum_members,
+            values = _schema_value_problems(leaf, types, context)
+            problems.extend((code, message, leaf.field) for code, message in values)
+            if not values:
+                problems.extend(
+                    (code, message, leaf.field)
+                    for code, message in _choice_member_problems(
+                        leaf,
+                        where=f"{context}.{leaf.field}",
+                        types=types,
+                        enum_members=enum_members,
+                    )
                 )
-            )
         return _dedupe(problems)
 
     flipped = _flipped_by_normalisation(condition)
@@ -689,6 +693,48 @@ def _render_problems(
         if exc.path is not None:
             message = message.replace(f"{exc.path}:", f"{context}.{exc.field}:", 1)
         return [(code, message)]
+    return []
+
+
+#: The renderer refusals that judge a value against its column's type, and
+#: so hold whichever target renders it. The rest name a target's limits.
+_SCHEMA_REFUSALS = frozenset(
+    {
+        FindingCode.CONDITION_COLUMN_TYPE_UNKNOWN,
+        FindingCode.CONDITION_DATE_IS_AN_UNQUOTED_YAML_DATETIME,
+        FindingCode.CONDITION_DATE_UNPARSEABLE,
+        FindingCode.CONDITION_DATE_WEARS_WHITESPACE,
+        FindingCode.CONDITION_NEEDLE_EMPTY,
+        FindingCode.CONDITION_NOW_ON_A_DATE_COLUMN,
+        FindingCode.CONDITION_SENTINEL_WITH_A_SUBSTRING_OPERATOR,
+        FindingCode.CONDITION_SET_EMPTY,
+        FindingCode.CONDITION_SUBSTRING_TEST_ON_A_NON_TEXT_COLUMN,
+        FindingCode.CONDITION_VALUE_MISSING,
+        FindingCode.CONDITION_VALUE_NOT_ALLOWED,
+        FindingCode.CONDITION_VALUE_NOT_A_BOOLEAN,
+        FindingCode.CONDITION_VALUE_NOT_A_LIST,
+        FindingCode.CONDITION_VALUE_NOT_A_NUMBER,
+        FindingCode.CONDITION_VALUE_NOT_FINITE,
+        FindingCode.MULTI_VALUE_MEMBERSHIP_ON_A_SINGLE_VALUE_COLUMN,
+    }
+)
+
+
+def _schema_value_problems(
+    leaf: Leaf,
+    types: dict[str, str],
+    context: str,
+) -> list[tuple[FindingCode, str]]:
+    """The first schema refusal any renderer makes of a leaf nothing renders.
+
+    Every target is asked, because a renderer stops at its first refusal and
+    a target's own limit can come before the value is read. The message loses
+    its `(target: ...)` suffix, since no target is involved.
+    """
+    for target in _RENDERERS:
+        for code, message in _render_problems(leaf, target, types, context):
+            if code in _SCHEMA_REFUSALS:
+                return [(code, message.removesuffix(f" (target: {target})"))]
     return []
 
 

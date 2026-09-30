@@ -363,3 +363,44 @@ def _judged(target: str | None) -> list[Finding]:
 def test_a_condition_nothing_renders_is_not_refused_for_an_operator_one_target_lacks() -> None:
     assert _judged(None) == []
     assert _judged(CAML) != []
+
+
+_TYPED = {"Due": "date", "N": "int", "B": "boolean", "T": "nvarchar"}
+
+
+@pytest.mark.parametrize(("leaf", "code"), [
+    pytest.param(Leaf("Due", "gt", "banana"), FindingCode.CONDITION_DATE_UNPARSEABLE, id="date"),
+    pytest.param(Leaf("N", "eq", "abc"), FindingCode.CONDITION_VALUE_NOT_A_NUMBER, id="number"),
+    pytest.param(Leaf("B", "eq", "maybe"), FindingCode.CONDITION_VALUE_NOT_A_BOOLEAN,
+                 id="boolean"),
+    pytest.param(Leaf("T", "eq", None), FindingCode.CONDITION_VALUE_MISSING, id="missing"),
+    pytest.param(Leaf("T", "contains", ""), FindingCode.CONDITION_NEEDLE_EMPTY, id="needle"),
+    pytest.param(Leaf("N", "in", "x"), FindingCode.CONDITION_VALUE_NOT_A_LIST, id="not-a-list"),
+    # CAML and the expression target refuse a measure before reading the value.
+    pytest.param(Leaf("T", "gt", "abc", measure="length"),
+                 FindingCode.CONDITION_VALUE_NOT_A_NUMBER, id="measured"),
+])
+def test_a_condition_nothing_renders_still_has_its_value_judged(
+        leaf: Leaf, code: FindingCode) -> None:
+    findings = condition_findings(
+        leaf,
+        target=None,
+        rendered=set(_TYPED),
+        types=_TYPED,
+        lookups=set(),
+        enum_members={},
+        at=Location(Section.WATCHED_LISTS, sub="[0].uses[0].when"),
+    )
+
+    finding = only(findings, code)
+    assert finding.location == Location(Section.WATCHED_LISTS, sub=f"[0].uses[0].when.{leaf.field}")
+    assert finding.message.startswith(f"watched_lists[0].uses[0].when.{leaf.field}: ")
+    assert "(target:" not in finding.message
+
+
+def test_a_when_missing_its_value_is_refused_by_the_build() -> None:
+    use = WatchUse("alert", on="enter", when=Leaf("Note", "eq", None))
+
+    finding = only(_validate(_on_status(use)), FindingCode.CONDITION_VALUE_MISSING)
+
+    assert finding.location == Location(Section.WATCHED_LISTS, sub="[0].uses[0].when.Note")
