@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: 0bd38b3c
+ * REVISION: 8012ff61
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -479,17 +479,21 @@
   // ---- Identity masking (v1) ------------------------------------------
   // Strings that name a person, masked wherever evidence quotes an answer.
   const IDENTITIES = [];
-  const knowIdentity = (value, mask) => {
+  // `whole` masks the value only where no letter, digit or underscore adjoins it, as a display name needs.
+  const knowIdentity = (value, mask, whole = false) => {
     const text = value === null || value === undefined ? '' : String(value);
     if (text.length < 2) return;
-    IDENTITIES.push({ text, mask });
+    IDENTITIES.push({ text, mask, whole });
     IDENTITIES.sort((a, b) => b.text.length - a.text.length);
   };
   const literal = (text) => text.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
+  const pattern = ({ text, whole }) => (whole
+    ? new RegExp(`(?<![\\p{L}\\p{N}_])${literal(text)}(?![\\p{L}\\p{N}_])`, 'giu')
+    : new RegExp(literal(text), 'gi'));
   // Logins and emails the probe never learned are masked too; a match stops at a backslash so JSON escapes survive.
   const scrub = (value) => {
     let out = redactTenant(value);
-    for (const { text, mask } of IDENTITIES) out = out.replace(new RegExp(literal(text), 'gi'), mask);
+    for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
     return out
       .replace(/(i:0[^|\s'"]*\|([^|\s'"]+\|)?)[^\s'"|\\]+/gi, '$1<account>')
       .replace(/[^\s'"|:<>\\]+@[^\s'"<>\\]+/gi, '<account>');
@@ -602,7 +606,7 @@
         : `could not recycle '${title}' (list ${id}, ${why}); recycle it by hand.`);
     }
   };
-  log('INFO', 'probe revision 0bd38b3c. Quote this when reporting results.');
+  log('INFO', 'probe revision 8012ff61. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe BatchItems';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -835,7 +839,7 @@
       }
       knowIdentity(read.parsed.Email, '<account>');
       knowIdentity(read.parsed.LoginName, '<account>');
-      knowIdentity(read.parsed.Title, '<name>');
+      knowIdentity(read.parsed.Title, '<name>', true);
       me = read.parsed;
       // The email itself is never put in the row; only that there is one to build claims from.
       return { ok: true, status: 200, body: { Read: `HTTP ${read.status}`, Id: read.parsed.Id,

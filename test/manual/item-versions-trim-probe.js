@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: 80d49d8b
+ * REVISION: 3f997d9e
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -429,17 +429,21 @@
   // ---- Identity masking (v1) ------------------------------------------
   // Strings that name a person, masked wherever evidence quotes an answer.
   const IDENTITIES = [];
-  const knowIdentity = (value, mask) => {
+  // `whole` masks the value only where no letter, digit or underscore adjoins it, as a display name needs.
+  const knowIdentity = (value, mask, whole = false) => {
     const text = value === null || value === undefined ? '' : String(value);
     if (text.length < 2) return;
-    IDENTITIES.push({ text, mask });
+    IDENTITIES.push({ text, mask, whole });
     IDENTITIES.sort((a, b) => b.text.length - a.text.length);
   };
   const literal = (text) => text.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
+  const pattern = ({ text, whole }) => (whole
+    ? new RegExp(`(?<![\\p{L}\\p{N}_])${literal(text)}(?![\\p{L}\\p{N}_])`, 'giu')
+    : new RegExp(literal(text), 'gi'));
   // Logins and emails the probe never learned are masked too; a match stops at a backslash so JSON escapes survive.
   const scrub = (value) => {
     let out = redactTenant(value);
-    for (const { text, mask } of IDENTITIES) out = out.replace(new RegExp(literal(text), 'gi'), mask);
+    for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
     return out
       .replace(/(i:0[^|\s'"]*\|([^|\s'"]+\|)?)[^\s'"|\\]+/gi, '$1<account>')
       .replace(/[^\s'"|:<>\\]+@[^\s'"<>\\]+/gi, '<account>');
@@ -575,7 +579,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 80d49d8b. Quote this when reporting results.');
+  log('INFO', 'probe revision 3f997d9e. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsTrim';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.

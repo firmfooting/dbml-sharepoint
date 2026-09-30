@@ -328,7 +328,7 @@
       }
       knowIdentity(read.parsed.Email, '<account>');
       knowIdentity(read.parsed.LoginName, '<account>');
-      knowIdentity(read.parsed.Title, '<name>');
+      knowIdentity(read.parsed.Title, '<name>', true);
       me = read.parsed;
       // The email itself is never put in the row; only that there is one to build claims from.
       return { ok: true, status: 200, body: { Read: `HTTP ${read.status}`, Id: read.parsed.Id,

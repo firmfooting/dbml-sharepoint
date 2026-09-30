@@ -588,7 +588,7 @@
       if (!me.parsed) return { ok: true, status: 200, body: { Read: me.read } };
       knowIdentity(me.parsed.Email, '<account>');
       knowIdentity(me.parsed.LoginName, '<account>');
-      knowIdentity(me.parsed.Title, '<name>');
+      knowIdentity(me.parsed.Title, '<name>', true);
       meId = me.parsed.Id;
       return { ok: true, status: 200, body: { Read: me.read, Id: me.parsed.Id } };
     }, { Read: 'HTTP 200', Id: (v) => Number.isInteger(v) && v > 0 }, AFTER_USER)) {

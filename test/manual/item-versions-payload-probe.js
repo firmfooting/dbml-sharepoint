@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: a246b96a
+ * REVISION: 92f035b1
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -465,17 +465,21 @@
   // ---- Identity masking (v1) ------------------------------------------
   // Strings that name a person, masked wherever evidence quotes an answer.
   const IDENTITIES = [];
-  const knowIdentity = (value, mask) => {
+  // `whole` masks the value only where no letter, digit or underscore adjoins it, as a display name needs.
+  const knowIdentity = (value, mask, whole = false) => {
     const text = value === null || value === undefined ? '' : String(value);
     if (text.length < 2) return;
-    IDENTITIES.push({ text, mask });
+    IDENTITIES.push({ text, mask, whole });
     IDENTITIES.sort((a, b) => b.text.length - a.text.length);
   };
   const literal = (text) => text.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
+  const pattern = ({ text, whole }) => (whole
+    ? new RegExp(`(?<![\\p{L}\\p{N}_])${literal(text)}(?![\\p{L}\\p{N}_])`, 'giu')
+    : new RegExp(literal(text), 'gi'));
   // Logins and emails the probe never learned are masked too; a match stops at a backslash so JSON escapes survive.
   const scrub = (value) => {
     let out = redactTenant(value);
-    for (const { text, mask } of IDENTITIES) out = out.replace(new RegExp(literal(text), 'gi'), mask);
+    for (const known of IDENTITIES) out = out.replace(pattern(known), known.mask);
     return out
       .replace(/(i:0[^|\s'"]*\|([^|\s'"]+\|)?)[^\s'"|\\]+/gi, '$1<account>')
       .replace(/[^\s'"|:<>\\]+@[^\s'"<>\\]+/gi, '<account>');
@@ -611,7 +615,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision a246b96a. Quote this when reporting results.');
+  log('INFO', 'probe revision 92f035b1. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Versions';
   const TARGET = 'dbmlsp Probe VersionsTarget';
@@ -1117,7 +1121,7 @@
       if (!me.parsed) return { ok: true, status: 200, body: { Read: me.read } };
       knowIdentity(me.parsed.Email, '<account>');
       knowIdentity(me.parsed.LoginName, '<account>');
-      knowIdentity(me.parsed.Title, '<name>');
+      knowIdentity(me.parsed.Title, '<name>', true);
       meId = me.parsed.Id;
       return { ok: true, status: 200, body: { Read: me.read, Id: me.parsed.Id } };
     }, { Read: 'HTTP 200', Id: (v) => Number.isInteger(v) && v > 0 }, AFTER_USER)) {
