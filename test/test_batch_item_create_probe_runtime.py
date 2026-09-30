@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 from _node import NODE
 from _paths import MANUAL
-from _probe_runs import catalogued_dependents, run_probe, voided
+from _probe_runs import catalogued_dependents, ended_with_report, run_probe, voided
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
@@ -37,6 +37,9 @@ CLAIMS = "transport.batch.changeset-addvalidate-person-claims"
 ISO = "transport.batch.changeset-addvalidate-date-iso"
 ADDVALIDATED = (FOLDER, CLAIMS, ISO)
 OWNED = "dbml-sharepoint batch-item-create probe scratch list. Safe to delete."
+CONTROL_CALL = "')/AddValidateUpdateItemUsingPath"
+FIELD = {"FieldName": "Title", "ErrorMessage": None, "FieldValue": "x"}
+NO_COLUMN = "Column 'dbmlspNoSuchColumn' does not exist."
 
 _MOCK = textwrap.dedent(r"""
     const CONFIG = __CONFIG__;
@@ -619,3 +622,133 @@ def test_the_evidence_never_names_the_tenant() -> None:
 
     assert "[TENANT]/sites/probe/_api" in rows[FAILED]["evidence"]
     assert "example.sharepoint.com" not in json.dumps(rows)
+
+
+@pytest.mark.parametrize(("rule", "outcome", "said"), [
+    pytest.param({"contains": "/RootFolder", "status": 400, "text": "no"}, "FAIL",
+                 "the root folder read: HTTP 400: no", id="root-refused"),
+    pytest.param({"contains": "/RootFolder", "status": 200, "text": '{"ServerRelativeUrl": null}'},
+                 "FAIL", "the root folder read: HTTP 200 carried no ServerRelativeUrl",
+                 id="root-without-url"),
+    pytest.param({"contains": "/RootFolder", "status": 429, "text": "busy"}, "NOT ESTABLISHED",
+                 "the root folder read: the request ", id="root-throttled"),
+    pytest.param({"contains": CONTROL_CALL, "status": 200,
+                  "text": json.dumps({"value": [{**FIELD, "HasException": True}]})},
+                 "FAIL", "the call answered HTTP 200: ", id="field-exception"),
+    pytest.param({"contains": CONTROL_CALL, "status": 200,
+                  "text": json.dumps({"value": [{**FIELD, "HasException": False}]})},
+                 "FAIL", "the call answered HTTP 200: ", id="no-id"),
+    pytest.param({"contains": CONTROL_CALL, "status": 200, "text": '{"d": 1}'},
+                 "FAIL", 'the call answered HTTP 200: {"d": 1}', id="no-field-list"),
+    pytest.param({"contains": "BatchItems')/items(6)", "status": 500, "text": "no"}, "FAIL",
+                 "created Id 6; the read-back: HTTP 500: no", id="read-back-refused"),
+    pytest.param({"contains": "BatchItems')/items(6)", "status": 503, "text": "busy"},
+                 "NOT ESTABLISHED", "created Id 6; the read-back: the request ",
+                 id="read-back-throttled"),
+    pytest.param({"contains": "BatchItems')/items(6)", "status": 200,
+                  "text": '{"Id": 6, "Title": "another title"}'},
+                 "FAIL", 'created Id 6; it reads back Title "another title"', id="other-title"),
+])
+def test_an_addvalidate_control_that_does_not_hold_leaves_no_addvalidate_row_asked(
+        rule: dict[str, Any], outcome: str, said: str) -> None:
+    rows, sent, output = _run(rules=[rule])
+
+    assert rows[ADDVALIDATE]["outcome"] == outcome
+    assert rows[ADDVALIDATE]["evidence"].startswith(said)
+    if outcome == "FAIL":
+        assert voided(rows) == _deps(ADDVALIDATE)
+    else:
+        assert voided(rows) == set()
+        for row_id in (AV_UNKNOWN, AV_FAILED, *ADDVALIDATED):
+            assert rows[row_id]["state"] == "open"
+            assert "a re-run can ask it" in rows[row_id]["evidence"]
+    assert rows[PARTS]["outcome"] == "RECORDED"
+    assert len(_batches(sent)) == 3
+    assert sent[-1]["path"].endswith("/recycle")
+    assert ended_with_report(output)
+
+
+def test_a_missing_field_refused_by_status_passes_the_control() -> None:
+    rows, _, output = _run(rules=[{"contains": CONTROL_CALL, "bodyContains": "dbmlspNoSuchColumn",
+                                   "status": 400, "text": NO_COLUMN}])
+
+    assert rows[ADDVALIDATE]["outcome"] == "PASS"
+    assert rows[AV_UNKNOWN]["outcome"] == "PASS"
+    assert rows[AV_UNKNOWN]["evidence"] == f"HTTP 400: {NO_COLUMN}"
+    assert rows[AV_FAILED]["outcome"] == "FIELD REFUSED"
+    assert voided(rows) == set()
+    assert ended_with_report(output)
+
+
+def test_a_throttled_missing_field_control_leaves_the_failed_addvalidate_part_open() -> None:
+    rows, _, output = _run(rules=[{"contains": CONTROL_CALL, "bodyContains": "dbmlspNoSuchColumn",
+                                   "status": 429, "text": "busy"}])
+
+    assert rows[AV_UNKNOWN]["outcome"] == "NOT ESTABLISHED"
+    assert rows[AV_FAILED]["outcome"] == "NOT ESTABLISHED"
+    assert rows[AV_FAILED]["state"] == "open"
+    assert rows[AV_FAILED]["evidence"] == (
+        "not asked: the missing-column control was not established; a re-run can ask it")
+    for row_id in ADDVALIDATED:
+        assert rows[row_id]["outcome"] == "WRITTEN", rows[row_id]
+    assert voided(rows) == set()
+    assert ended_with_report(output)
+
+
+def _answers(*statuses: int) -> str:
+    """A $batch answer carrying one bodyless part per status."""
+    return "".join(f"--batchresponse_1\r\nContent-Type: application/http\r\n\r\n"
+                   f"HTTP/1.1 {status} Created\r\n\r\n" for status in statuses
+                   ) + "--batchresponse_1--\r\n"
+
+
+@pytest.mark.parametrize(("title", "row_id"), [
+    ("dbmlsp batch untyped verbose", VERBOSE), ("dbmlsp batch untyped nometadata", NOMETADATA),
+])
+def test_an_untyped_batch_answering_more_parts_than_it_sent_is_not_matched(
+        title: str, row_id: str) -> None:
+    rows, _, output = _run(rules=[{"contains": "$batch", "bodyContains": title, "status": 200,
+                                   "text": _answers(201, 201)}])
+
+    assert rows[row_id]["outcome"] == "ANSWERS NOT MATCHED"
+    assert rows[row_id]["state"] == "open"
+    assert rows[row_id]["evidence"].startswith(
+        "1 part(s) sent, 2 answer(s); answer 1: HTTP 201 Created")
+    assert rows[row_id]["evidence"].endswith("landed no")
+    assert rows[PARTS]["outcome"] == "RECORDED"
+    assert voided(rows) == set()
+    assert ended_with_report(output)
+
+
+@pytest.mark.parametrize(("part", "row_id", "said"), [
+    pytest.param({"bodyContains": "addvalidate claims", "status": 503,
+                  "reason": "Service Unavailable", "text": "busy"}, CLAIMS,
+                 "the part was not answered; a re-run can ask it: HTTP 503 Service Unavailable; "
+                 "body busy; landed no", id="not-answered"),
+    pytest.param({"bodyContains": "addvalidate no folder", "status": 200, "reason": "OK",
+                  "text": "{}"}, FOLDER,
+                 "the part answered with no per-field list: HTTP 200 OK; body {}; landed no",
+                 id="no-field-list"),
+])
+def test_an_addvalidate_part_answered_without_a_verdict_is_left_open(
+        part: dict[str, Any], row_id: str, said: str) -> None:
+    rows, _, output = _run(partRules=[part])
+
+    assert rows[row_id]["outcome"] == "NOT ESTABLISHED"
+    assert rows[row_id]["state"] == "open"
+    assert rows[row_id]["evidence"].startswith(said)
+    assert all(rows[other]["outcome"] == "WRITTEN" for other in ADDVALIDATED if other != row_id)
+    assert voided(rows) == set()
+    assert ended_with_report(output)
+
+
+def test_a_digest_lost_mid_run_is_caught_and_the_rest_left_open() -> None:
+    rows, sent, output = _run(digestsAllowed=4)
+
+    assert rows[SINGLE]["outcome"] == "PASS"
+    assert "probe aborted: contextinfo failed: HTTP 403. The unasked rows stay open." in output
+    for row_id in (*OBSERVED, ADDVALIDATE, AV_UNKNOWN, AV_FAILED, *ADDVALIDATED):
+        assert rows[row_id]["state"] == "open", rows[row_id]
+    assert "recycle it by hand" in output
+    assert not [r for r in sent if r["path"].endswith("/recycle")]
+    assert ended_with_report(output)

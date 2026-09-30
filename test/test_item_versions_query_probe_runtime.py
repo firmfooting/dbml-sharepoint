@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from _node import NODE
 from _paths import MANUAL
-from _probe_runs import catalogued_dependents, run_probe, voided
+from _probe_runs import catalogued_dependents, ended_with_report, run_probe, voided
 from _versions_mock import VERSIONS_MOCK
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -180,3 +180,27 @@ def test_a_list_that_will_not_take_versioning_voids_everything() -> None:
     assert rows[LIST]["outcome"] == "FAIL"
     assert voided(rows) == _deps(LIST)
     assert sent[-1]["path"].endswith("/recycle")
+
+
+def test_an_option_answered_2xx_with_no_value_array_is_left_open() -> None:
+    rows, _, output = _run(rules=[{"contains": "/versions?$top", "status": 200,
+                                   "text": '{"d": "not a list"}'}])
+
+    assert rows[TOP]["outcome"] == "NOT ESTABLISHED"
+    assert rows[TOP]["state"] == "open"
+    assert rows[TOP]["evidence"] == (
+        '$top=1: HTTP 200 carried no value array: {"d": "not a list"}')
+    assert rows[FILTER]["outcome"] == "FILTERED"
+    assert voided(rows) == set()
+    assert ended_with_report(output)
+
+
+def test_a_digest_lost_mid_run_is_caught_and_the_rest_left_open() -> None:
+    rows, sent, output = _run(digestsAllowed=3)
+
+    assert rows[LIST]["outcome"] == "PASS"
+    assert "probe aborted: contextinfo failed: HTTP 403. The unasked rows stay open." in output
+    assert all(rows[row_id]["state"] == "open" for row_id in (ITEMS, READ, *SUBJECTS))
+    assert "recycle it by hand" in output
+    assert not [r for r in sent if r["path"].endswith("/recycle")]
+    assert ended_with_report(output)

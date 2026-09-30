@@ -58,3 +58,9 @@ def catalogued_dependents(probe: str, fixture: str) -> set[str]:
 def voided(rows: dict[str, dict[str, str]]) -> set[str]:
     """The ids a run recorded void."""
     return {row_id for row_id, row in rows.items() if row["state"] == "void"}
+
+
+def ended_with_report(output: str) -> bool:
+    """Whether a run printed its whole report and nothing escaped the probe's own handling."""
+    return ("Copy this whole block back verbatim." in output and "ReferenceError" not in output
+            and "Node.js v" not in output)

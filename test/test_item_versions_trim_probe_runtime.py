@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from _node import NODE
 from _paths import MANUAL
-from _probe_runs import catalogued_dependents, run_probe, voided
+from _probe_runs import catalogued_dependents, ended_with_report, run_probe, voided
 from _versions_mock import VERSIONS_MOCK
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -200,3 +200,16 @@ def test_a_digest_lost_before_the_writes_leaves_them_open_and_asks_for_a_recycle
     assert all(rows[row_id]["state"] == "open" for row_id in (ITEM, ONCE, WAIT))
     assert "recycle it by hand" in output
     assert not [r for r in sent if r["path"].endswith("/recycle")]
+
+
+def test_a_versions_read_answered_2xx_with_no_value_array_is_left_open() -> None:
+    rows, _, output = _run(rules=[{"contains": "/versions", "status": 200,
+                                   "text": '{"d": "not a list"}'}])
+
+    for row_id in (ONCE, WAIT):
+        assert rows[row_id]["outcome"] == "NOT ESTABLISHED", rows[row_id]
+        assert rows[row_id]["state"] == "open"
+        assert rows[row_id]["evidence"].startswith(
+            'limit 2; HTTP 200 carried no value array: {"d": "not a list"}')
+    assert voided(rows) == set()
+    assert ended_with_report(output)

@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 from _node import NODE
 from _paths import MANUAL
-from _probe_runs import catalogued_dependents, run_probe, voided
+from _probe_runs import catalogued_dependents, ended_with_report, run_probe, voided
 from _versions_mock import VERSIONS_MOCK
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -434,3 +434,32 @@ def test_a_refused_library_versions_read_voids_only_the_library_observations() -
     assert rows[LIB_READ]["outcome"] == "FAIL"
     assert voided(rows) == _deps(LIB_READ) == {LIB_ADDS, LIB_FIELDS}
     assert rows["field.version.payload-choice"]["outcome"] == "OBSERVED"
+
+
+@pytest.mark.parametrize(("rule", "fixture", "said"), [
+    pytest.param({"contains": "VersionsLibrary')/fields", "verb": "POST", "status": 500,
+                  "text": "no"}, "field.version.fixture-library-column",
+                 'Read differs: read "HTTP 400', id="column"),
+    pytest.param({"contains": "VersionsLibrary')/RootFolder", "status": 400, "text": "no"},
+                 LIB_FOLDER, 'RootRead differs: read "HTTP 400', id="root-folder"),
+    pytest.param({"contains": "/Files/add", "verb": "POST", "status": 500, "text": "no"},
+                 "field.version.fixture-library-file", 'Added differs: read "HTTP 500"', id="file"),
+    pytest.param({"contains": "VersionsLibrary')/items(1)", "verb": "MERGE", "bodyContains": "Q1",
+                  "status": 500, "text": "no"}, "field.version.fixture-library-edit-first",
+                 'Written differs: read "HTTP 500"', id="first-edit"),
+    pytest.param({"contains": "/$value", "verb": "GET", "status": 500, "text": "no"},
+                 LIB_UPLOAD, 'Content differs: read "HTTP 500"', id="content-read"),
+    pytest.param({"contains": "VersionsLibrary')/items(1)", "verb": "MERGE", "bodyContains": "Q2",
+                  "status": 500, "text": "no"}, "field.version.fixture-library-edit-second",
+                 'Written differs: read "HTTP 500"', id="second-edit"),
+])
+def test_a_failed_library_fixture_voids_what_rests_on_it_and_the_list_case_stands(
+        rule: dict[str, Any], fixture: str, said: str) -> None:
+    rows, sent, output = _run(rules=[rule])
+
+    assert rows[fixture]["outcome"] == "FAIL"
+    assert said in rows[fixture]["evidence"]
+    assert voided(rows) == _deps(fixture)
+    assert rows["field.version.payload-choice"]["outcome"] == "OBSERVED"
+    assert _recycled(sent) == RECYCLED
+    assert ended_with_report(output)
