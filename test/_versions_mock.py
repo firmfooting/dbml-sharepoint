@@ -101,6 +101,8 @@ const mockFetch = async (url, opts = {}) => {
       MajorVersionLimit: 50,
       ListItemEntityTypeFullName: `SP.Data.${sent.Title.replace(/ /g, '')}ListItem`,
       root: `/sites/probe/${sent.Title}`, fields: {}, items: [] });
+    // `listDefaults`: values a new list starts with, so a refused MERGE can still leave it usable.
+    Object.assign(lists.get(sent.Title), CONFIG.listDefaults || {});
     return answer(201, { Id: `list-${listCount}` });
   }
   if (path === 'web/folders' && verb === 'POST') {

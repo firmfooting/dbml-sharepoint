@@ -113,6 +113,30 @@ def test_a_refused_settings_merge_is_kept_in_the_evidence() -> None:
     assert 'Settings="HTTP 400: The value is out of range."' in rows[LIST]["evidence"]
 
 
+def test_a_refused_settings_merge_on_a_list_still_in_range_is_observed_not_voided() -> None:
+    rows, _, _ = _run(listDefaults={"EnableVersioning": True, "MajorVersionLimit": 2},
+                      trimToLimit=True,
+                      rules=[{"contains": "getbytitle('dbmlsp Probe VersionsTrim')",
+                              "verb": "MERGE", "bodyContains": "MajorVersionLimit", "status": 400,
+                              "text": "The value is out of range."}])
+
+    assert rows[LIST]["outcome"] == "PASS"
+    assert 'Settings="HTTP 400: The value is out of range."' in rows[LIST]["evidence"]
+    assert rows[LIMIT]["outcome"] == "TAKEN AS ASKED"
+    assert rows[LIMIT]["state"] == "settled"
+    assert "the settings MERGE answered HTTP 400: The value is out of range." in (
+        rows[LIMIT]["evidence"])
+    assert rows[ONCE]["outcome"] == "TRIMMED"
+    assert voided(rows) == set()
+
+
+def test_a_shortfall_that_is_not_the_limit_is_described_not_called_trimmed() -> None:
+    rows, _, _ = _run(keepVersions=3)
+
+    assert rows[ONCE]["outcome"] == "FEWER THAN WRITTEN"
+    assert rows[ONCE]["evidence"].startswith("limit 2; 3 of 6 version(s) answered")
+
+
 def test_a_write_that_did_not_land_voids_the_reads() -> None:
     rows, _, _ = _run(rules=[{"contains": "items(1)", "verb": "MERGE", "bodyContains": "trim 4",
                               "status": 409, "text": "Save conflict."}])

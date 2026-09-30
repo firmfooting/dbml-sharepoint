@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: d9f7406f
+ * REVISION: acde8c39
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -25,9 +25,11 @@
  *   field.version.trim-versions-at-once     the versions read straight after the last write
  *   field.version.trim-versions-after-wait  the same read after TRIM_WAIT_MS
  *
- * HOW TO READ IT: TRIMMED is fewer versions answered than writes landed,
- * UNTRIMMED is as many. Each carries the VersionIds, labels and Titles, and
- * the property names of the version with the lowest VersionId answered.
+ * HOW TO READ IT: TRIMMED is as many versions answered as the limit reads
+ * back, fewer than the writes that landed. FEWER THAN WRITTEN is a shortfall
+ * of any other size, UNTRIMMED is as many as landed. Each carries the
+ * VersionIds, labels and Titles, and the property names of the version with
+ * the lowest VersionId answered.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
  * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again
@@ -538,7 +540,7 @@
       .replace(/(i:0[^|\s'"]*\|([^|\s'"]+\|)?)[^\s'"|\\]+/gi, '$1<account>')
       .replace(/[^\s'"|:<>\\]+@[^\s'"<>\\]+/gi, '<account>');
   };
-  log('INFO', 'probe revision d9f7406f. Quote this when reporting results.');
+  log('INFO', 'probe revision acde8c39. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsTrim';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -584,13 +586,15 @@
   // Refusal text can name the tenant or an account, so it is scrubbed before it is shown.
   const said = (text) => scrub(text).slice(0, 300);
   const titleOf = (n) => `dbmlsp versions trim ${n}`;
-  const describe = (got, written) => {
+  const describe = (got, written, limit) => {
     if (got.head) return [got.head.outcome, scrub(got.head.why)];
     if (got.rows === null) {
       return ['NOT ESTABLISHED', `HTTP ${got.res.status} carried no value array: ${said(got.res.text)}`];
     }
     const rows = got.rows;
-    const head = rows.length < written ? 'TRIMMED' : rows.length === written ? 'UNTRIMMED' : 'MORE THAN WRITTEN';
+    // TRIMMED needs the limit as its baseline: a shortfall of any other size is described, not explained.
+    const head = rows.length === written ? 'UNTRIMMED' : rows.length > written ? 'MORE THAN WRITTEN'
+      : rows.length === limit ? 'TRIMMED' : 'FEWER THAN WRITTEN';
     const listed = rows.map((row) => `${JSON.stringify(row.VersionLabel)}/${JSON.stringify(versionIdOf(row))}`
       + `/${JSON.stringify(row.Title)}`).join(', ');
     // A lowest VersionId is named only when every one answered is a number, since only then is it measured.
@@ -650,12 +654,12 @@
       return;
     }
 
-    const [onceHead, onceSaid] = describe(await readVersions(listPath, itemId), written);
+    const [onceHead, onceSaid] = describe(await readVersions(listPath, itemId), written, limit);
     record('field.version.trim-versions-at-once', Q.once, onceHead, `limit ${limit}; ${onceSaid}`);
     log('INFO', `waiting ${TRIM_WAIT_MS / 1000} seconds before the second read.`);
     const firstRead = Date.now();
     await new Promise((resolve) => { setTimeout(resolve, TRIM_WAIT_MS); });
-    const [waitHead, waitSaid] = describe(await readVersions(listPath, itemId), written);
+    const [waitHead, waitSaid] = describe(await readVersions(listPath, itemId), written, limit);
     // The wait is measured rather than assumed, so the row says how long it actually was.
     const waited = Math.round((Date.now() - firstRead) / 1000);
     record('field.version.trim-versions-after-wait', Q.wait, waitHead,
