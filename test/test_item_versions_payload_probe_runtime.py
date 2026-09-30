@@ -331,8 +331,9 @@ def test_a_library_file_records_whether_its_upload_added_a_version() -> None:
         assert rows[row_id]["outcome"] == "PASS", rows[row_id]
     assert rows[LIB_ADDS]["outcome"] == "UPLOAD ADDED A VERSION"
     assert rows[LIB_ADDS]["evidence"] == (
-        '4 version(s) for an add, two edits and an upload, after which ProbeLibChoice read "Q1"; '
-        'in label order: 1.0=(absent), 2.0="Q1", 3.0="Q1", 4.0="Q2"')
+        "before the upload 2 version(s) (2.0=1024, 1.0=512), after it 3 (3.0=1536, 2.0=1024, "
+        '1.0=512); new: 3.0=1536; ProbeLibChoice read "Q1" after the upload; after the second '
+        'edit, in label order: 1.0=(absent), 2.0="Q1", 3.0="Q1", 4.0="Q2"')
     fields = rows[LIB_FIELDS]["evidence"]
     assert rows[LIB_FIELDS]["outcome"] == "OBSERVED"
     assert fields.startswith('3.0 carries: Editor={"LookupId":7,"LookupValue":"<name>",')
@@ -347,44 +348,85 @@ def test_an_upload_that_adds_no_version_is_named_so() -> None:
 
     assert rows[LIB_UPLOAD]["outcome"] == "PASS"
     assert rows[LIB_ADDS]["outcome"] == "UPLOAD ADDED NO VERSION"
+    assert "new: none;" in rows[LIB_ADDS]["evidence"]
     assert rows[LIB_ADDS]["evidence"].endswith('1.0=(absent), 2.0="Q1", 3.0="Q2"')
     assert rows[LIB_FIELDS]["outcome"] == "NOT IDENTIFIED"
     assert rows[LIB_FIELDS]["state"] == "settled"
-    assert rows[LIB_FIELDS]["evidence"].startswith(
-        "no version is the upload's alone (UPLOAD ADDED NO VERSION); the versions: ")
+    assert rows[LIB_FIELDS]["evidence"] == (
+        "no version is the upload's alone (UPLOAD ADDED NO VERSION)")
 
 
-def test_an_upload_that_changes_the_value_is_recorded_not_failed() -> None:
+def test_an_upload_that_changes_the_value_is_still_found_by_the_reads_around_it() -> None:
     rows, _, _ = _run(uploadSetsValues={"ProbeLibChoice": "Q2"})
 
     assert rows[LIB_UPLOAD]["outcome"] == "PASS"
-    assert rows[LIB_ADDS]["outcome"] == "UPLOAD CHANGED THE VALUE"
-    assert rows[LIB_ADDS]["state"] == "settled"
-    assert rows[LIB_ADDS]["evidence"] == (
-        '4 version(s) for an add, two edits and an upload, after which ProbeLibChoice read "Q2"; '
-        'in label order: 1.0=(absent), 2.0="Q1", 3.0="Q2", 4.0="Q2"')
-    assert rows[LIB_FIELDS]["outcome"] == "NOT IDENTIFIED"
-    assert rows[LIB_FIELDS]["evidence"] == (
-        "the versions were not searched for the upload's version, since the head is "
-        'UPLOAD CHANGED THE VALUE; the versions: 1.0=(absent), 2.0="Q1", 3.0="Q2", 4.0="Q2"')
+    assert rows[LIB_ADDS]["outcome"] == "UPLOAD ADDED A VERSION"
+    assert 'new: 3.0=1536; ProbeLibChoice read "Q2" after the upload' in rows[LIB_ADDS]["evidence"]
+    assert rows[LIB_FIELDS]["outcome"] == "OBSERVED"
+    assert 'ProbeLibChoice="Q2"; VersionId=1536' in rows[LIB_FIELDS]["evidence"]
     assert voided(rows) == set()
 
 
-@pytest.mark.parametrize(("config", "head"), [
-    pytest.param({}, "NOT COMPARABLE", id="kept"),
-    pytest.param({"uploadSetsValues": {"ProbeLibChoice": "Q2"}}, "UPLOAD CHANGED THE VALUE",
-                 id="changed"),
-])
-def test_labels_that_do_not_order_yield_to_a_changed_value(config: dict[str, Any], head: str,
-                                                            ) -> None:
-    rows, _, _ = _run(labelsUnparsed=True, **config)
+def test_labels_that_do_not_order_still_find_the_upload_by_its_entry() -> None:
+    rows, _, _ = _run(labelsUnparsed=True)
 
-    assert rows[LIB_ADDS]["outcome"] == head
-    assert "in the order answered: v4=" in rows[LIB_ADDS]["evidence"]
+    assert rows[LIB_ADDS]["outcome"] == "UPLOAD ADDED A VERSION"
+    assert "new: v3=1536;" in rows[LIB_ADDS]["evidence"]
+    assert "after the second edit, in the order answered: v4=" in rows[LIB_ADDS]["evidence"]
+    assert rows[LIB_FIELDS]["evidence"].startswith("v3 carries: ")
+
+
+# The file's versions are read before the upload, after it, and after the second edit.
+LIB_VERSIONS = "Library')/items(1)/versions"
+
+
+def test_an_earlier_version_gone_after_the_upload_is_not_compared() -> None:
+    renumbered = json.dumps({"value": [
+        {"VersionId": 1536, "VersionLabel": "3.0"}, {"VersionId": 1025, "VersionLabel": "2.0"},
+        {"VersionId": 512, "VersionLabel": "1.0"}]})
+    rows, _, _ = _run(rules=[{"contains": LIB_VERSIONS, "nth": 2, "status": 200,
+                              "text": renumbered}])
+
+    assert rows[LIB_ADDS]["outcome"] == "NOT COMPARABLE"
+    assert "new: 3.0=1536, 2.0=1025; gone: 2.0=1024;" in rows[LIB_ADDS]["evidence"]
     assert rows[LIB_FIELDS]["outcome"] == "NOT IDENTIFIED"
-    assert rows[LIB_FIELDS]["evidence"].startswith(
-        f"the versions were not searched for the upload's version, since the head is {head}; ")
-    assert "alone" not in rows[LIB_FIELDS]["evidence"]
+
+
+def test_an_entry_with_no_versionid_around_the_upload_is_not_compared() -> None:
+    rows, _, output = _run(rules=[{"contains": LIB_VERSIONS, "nth": 1, "status": 200,
+                                   "text": '{"value": [{"VersionLabel": "1.0"}]}'}])
+
+    assert rows[LIB_ADDS]["outcome"] == "NOT COMPARABLE"
+    assert rows[LIB_ADDS]["evidence"].startswith(
+        "the versions read before the upload answered an entry with no VersionId; after the "
+        "second edit, in label order: ")
+    assert rows[LIB_FIELDS]["outcome"] == "NOT IDENTIFIED"
+    assert ended_with_report(output)
+
+
+@pytest.mark.parametrize(("nth", "when"), [(1, "before"), (2, "after")])
+def test_an_unanswered_read_around_the_upload_leaves_both_rows_open(nth: int, when: str) -> None:
+    rows, _, output = _run(rules=[{"contains": LIB_VERSIONS, "nth": nth, "status": 429,
+                                   "text": "busy for ada@example.com"}])
+
+    assert rows[LIB_READ]["outcome"] == "PASS"
+    for row_id in (LIB_ADDS, LIB_FIELDS):
+        assert rows[row_id]["outcome"] == "NOT ESTABLISHED", rows[row_id]
+        assert rows[row_id]["state"] == "open"
+        assert f"the versions read {when} the upload was not answered" in rows[row_id]["evidence"]
+    assert "ada@example.com" not in json.dumps(rows)
+    assert ended_with_report(output)
+
+
+def test_a_read_around_the_upload_with_a_continuation_link_is_not_compared() -> None:
+    paged = json.dumps({"value": [{"VersionId": 512, "VersionLabel": "1.0"}],
+                        "odata.nextLink": "https://example.sharepoint.com/sites/probe/_api/x"})
+    rows, _, _ = _run(rules=[{"contains": LIB_VERSIONS, "nth": 1, "status": 200, "text": paged}])
+
+    assert rows[LIB_ADDS]["outcome"] == "NOT COMPARABLE"
+    assert rows[LIB_ADDS]["state"] == "open"
+    assert rows[LIB_ADDS]["evidence"].startswith(
+        "the versions read before the upload: the answer carried a continuation link ([TENANT]")
 
 
 def test_a_read_after_the_upload_without_the_choice_fails_the_fixture_not_the_value() -> None:
@@ -393,7 +435,7 @@ def test_a_read_after_the_upload_without_the_choice_fails_the_fixture_not_the_va
     assert rows[LIB_UPLOAD]["outcome"] == "FAIL"
     assert "ProbeLibChoice is absent from the payload" in rows[LIB_UPLOAD]["evidence"]
     assert voided(rows) == _deps(LIB_UPLOAD)
-    assert rows[LIB_ADDS]["outcome"] != "UPLOAD CHANGED THE VALUE"
+    assert rows[LIB_ADDS]["state"] == "void"
 
 
 @pytest.mark.parametrize(("rule", "quoted"), [

@@ -53,20 +53,21 @@
  *       on each version, and every property name the version with the greatest
  *       VersionLabel carries
  *   field.version.versionid-follows-label  whether VersionId rises as VersionLabel does
- *   field.version.library-upload-adds-version  the Choice as read after the upload, the
- *       file's versions in label order with the Choice each holds, and whether a version
- *       holds Q1 besides the first edit's
+ *   field.version.library-upload-adds-version  the file's versions read just before and
+ *       just after the upload, the entries the second read adds, the Choice as read after
+ *       the upload, and the versions after the second edit with the Choice each holds
  *   field.version.library-upload-version-fields  every property of the upload's version
  *
  * HOW TO READ IT: OBSERVED is the column's properties as each version carried
  * them. ABSENT is a versions answer carrying no property named for the column.
  * INCREASES WITH LABEL, DOES NOT INCREASE WITH LABEL and NOT COMPARABLE name
  * how the VersionIds fall when the versions are put in label order.
- * UPLOAD ADDED A VERSION and UPLOAD ADDED NO VERSION say whether two versions
- * or one hold Q1, the value between the edits. UPLOAD CHANGED THE VALUE is a
- * Choice that read other than Q1 after the upload, so no version can be told
- * apart by it. NOT IDENTIFIED is the fields row when no version is the
- * upload's alone. NOT COMPARABLE, left open, is a versions read carrying a
+ * UPLOAD ADDED A VERSION, UPLOAD ADDED MORE THAN ONE VERSION and UPLOAD ADDED
+ * NO VERSION count the entries (VersionId and VersionLabel together) that the
+ * read just after the upload has and the read just before it lacks. There,
+ * NOT COMPARABLE is an earlier entry gone from the later read or an entry with
+ * no VersionId, and NOT ESTABLISHED, left open, is either read unanswered.
+ * NOT IDENTIFIED is the fields row when no version is the upload's alone. NOT COMPARABLE, left open, is a versions read carrying a
  * continuation link, which the probe records and does not follow.
  * Email addresses, claims logins and this account's display name are masked.
  *
@@ -555,6 +556,8 @@
       { Written: is2xx, Read: 'HTTP 200', [LIB_COLUMN]: value }, afterLib(id));
     };
     if (!await edit(LIB.libraryFirst, 'Q1')) return;
+    // The upload's version is what the reads either side of it differ by, never a value it holds.
+    const beforeUpload = await readVersions(libraryPath, fileId);
     const uploaded = await sendText(`web/GetFileByServerRelativeUrl('${file}')/$value`, CONTENT[1],
       { 'X-HTTP-Method': 'PUT' });
     // The read must carry the Choice, but its value is observed, never declared: the upload's version is asked.
@@ -569,6 +572,7 @@
     afterLib(LIB.libraryUpload))) {
       return;
     }
+    const afterUploadRead = await readVersions(libraryPath, fileId);
     if (!await edit(LIB.librarySecond, 'Q2')) return;
 
     const versions = await readVersions(libraryPath, fileId);
@@ -586,23 +590,46 @@
     const ordered = rows.every((row) => labelPair(row) !== null)
       ? [...rows].sort((a, b) => labelPair(a)[0] - labelPair(b)[0] || labelPair(a)[1] - labelPair(b)[1]) : rows;
     const sequence = ordered.map((row) => `${labelOf(row)}=${show(row[LIB_COLUMN])}`).join(', ');
-    const holdingFirst = ordered.filter((row) => row[LIB_COLUMN] === 'Q1');
-    // With Q1 kept, two versions holding it are the first edit's and one before the second edit: the upload's.
-    const head = afterUpload !== 'Q1' ? 'UPLOAD CHANGED THE VALUE'
-      : ordered === rows && rows.length > 1 ? 'NOT COMPARABLE'
-        : holdingFirst.length >= 2 ? 'UPLOAD ADDED A VERSION'
-          : holdingFirst.length === 1 ? 'UPLOAD ADDED NO VERSION' : 'NOT COMPARABLE';
-    record(LIB.libraryAdds, Q.libraryAdds, head, `${rows.length} version(s) for an add, two edits and an upload, `
-      + `after which ${LIB_COLUMN} read ${show(afterUpload)}; `
-      + `${ordered === rows ? 'in the order answered' : 'in label order'}: ${sequence}`);
-    const upload = head === 'UPLOAD ADDED A VERSION' ? holdingFirst[holdingFirst.length - 1] : null;
+    const after = `after the second edit, ${ordered === rows ? 'in the order answered' : 'in label order'}: `
+      + sequence;
+    // Why the reads either side of the upload cannot be compared, or null when they can.
+    const unread = (read, when) => {
+      if (read.head || read.rows === null) {
+        return { head: 'NOT ESTABLISHED', state: 'open', why: `the versions read ${when} the upload `
+          + `${read.head ? `was not answered: ${scrub(read.head.why)}` : `answered HTTP ${read.res.status} `
+            + 'with no value array'}; a re-run can ask it` };
+      }
+      if (read.next !== null) {
+        return { head: 'NOT COMPARABLE', state: 'open', why: `the versions read ${when} the upload: ${pagedSaid(read)}` };
+      }
+      return read.rows.some((row) => versionIdOf(row) === null) ? { head: 'NOT COMPARABLE', state: undefined,
+        why: `the versions read ${when} the upload answered an entry with no VersionId` } : null;
+    };
+    const blocked = unread(beforeUpload, 'before') || unread(afterUploadRead, 'after');
+    if (blocked) {
+      record(LIB.libraryAdds, Q.libraryAdds, blocked.head, `${blocked.why}; ${after}`, blocked.state);
+      record(LIB.libraryFields, Q.libraryFields, blocked.head === 'NOT ESTABLISHED' ? blocked.head : 'NOT IDENTIFIED',
+        `the upload's version was not looked for: ${blocked.why}`, blocked.state);
+      return;
+    }
+    // A VersionId and VersionLabel together name an entry, so a renumbered one reads as gone, never as kept.
+    const keyOf = (row) => JSON.stringify([versionIdOf(row), row.VersionLabel]);
+    const listed = (entries) => entries.map((row) => `${labelOf(row)}=${show(versionIdOf(row))}`).join(', ');
+    const had = new Set(beforeUpload.rows.map(keyOf));
+    const kept = new Set(afterUploadRead.rows.map(keyOf));
+    const fresh = afterUploadRead.rows.filter((row) => !had.has(keyOf(row)));
+    const lost = beforeUpload.rows.filter((row) => !kept.has(keyOf(row)));
+    const head = lost.length ? 'NOT COMPARABLE' : !fresh.length ? 'UPLOAD ADDED NO VERSION'
+      : fresh.length === 1 ? 'UPLOAD ADDED A VERSION' : 'UPLOAD ADDED MORE THAN ONE VERSION';
+    record(LIB.libraryAdds, Q.libraryAdds, head, `before the upload ${beforeUpload.rows.length} version(s) `
+      + `(${listed(beforeUpload.rows)}), after it ${afterUploadRead.rows.length} (${listed(afterUploadRead.rows)}); `
+      + `new: ${listed(fresh) || 'none'}${lost.length ? `; gone: ${listed(lost)}` : ''}; `
+      + `${LIB_COLUMN} read ${show(afterUpload)} after the upload; ${after}`);
+    const upload = head === 'UPLOAD ADDED A VERSION' ? fresh[0] : null;
     record(LIB.libraryFields, Q.libraryFields, upload ? 'OBSERVED' : 'NOT IDENTIFIED', upload
       ? `${labelOf(upload)} carries: ${Object.keys(upload).sort().map((key) => `${key}=${show(upload[key])}`)
         .join('; ')}`.slice(0, 1500)
-      : head === 'UPLOAD ADDED NO VERSION'
-        ? `no version is the upload's alone (${head}); the versions: ${sequence}`
-        : `the versions were not searched for the upload's version, since the head is ${head}; `
-          + `the versions: ${sequence}`);
+      : `no version is the upload's alone (${head})`);
   };
 
   try {

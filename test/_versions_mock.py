@@ -93,6 +93,9 @@ const mockFetch = async (url, opts = {}) => {
     if (!path.includes(rule.contains)) continue;
     if (rule.verb && rule.verb !== verb) continue;
     if (rule.bodyContains && !raw.includes(rule.bodyContains)) continue;
+    // `nth` answers only the nth request the rule matches, counting from 1.
+    rule.seen = (rule.seen || 0) + 1;
+    if (rule.nth && rule.seen !== rule.nth) continue;
     if (rule.reject) throw new TypeError('Failed to fetch');
     return answer(rule.status, rule.text);
   }
