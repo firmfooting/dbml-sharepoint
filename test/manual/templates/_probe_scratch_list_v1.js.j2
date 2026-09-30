@@ -1,0 +1,74 @@
+{# test/manual/templates/_probe_scratch_list_v1.js.j2 #}
+{# Included after _probe_harness.js.j2 and _probe_raw_request_v1.js.j2, whose helpers it uses. #}
+  // ---- Scratch lists (v1) ---------------------------------------------
+  // Titles this run created, so the recycle touches those and never a list it only found.
+  const CREATED_LISTS = [];
+  // __metadata is verbose OData, so every write carrying it declares the verbose content type.
+  const VERBOSE_WRITE = { 'Content-Type': 'application/json;odata=verbose' };
+
+  // Creates a list or library (generic unless `baseTemplate` says otherwise) owned by `description`, then reads it back.
+  const claimScratchList = async ({ id, question, title, description, dependents,
+    settings = null, declared = {}, baseTemplate = 100 }) => {
+    const path = `web/lists/getbytitle('${title}')`;
+    const pre = await spGet(`${path}?$select=Id,Description`);
+    if (pre.ok) {
+      if (!pre.body || pre.body.Description !== description) {
+        record(id, question, 'FAIL',
+          `a list named '${title}' exists without this probe's ownership description; refusing to modify it`);
+        voidDependents(dependents, 'the scratch list is not one this probe created');
+        return { held: false, merge: null, body: null };
+      }
+      if (!CLEANUP) {
+        record(id, question, 'FAIL', `a list '${title}' from an earlier run is standing and CLEANUP is off`);
+        voidDependents(dependents, 'a leftover list would answer this run\'s questions');
+        return { held: false, merge: null, body: null };
+      }
+      await resetList(title);
+    }
+    const made = await spPost('web/lists',
+      { Title: title, BaseTemplate: baseTemplate, Description: description }, await getDigest());
+    if (!made.ok) {
+      record(id, question, 'FAIL',
+        `the list create answered HTTP ${made.status}: ${redactTenant(made.text).slice(0, 300)}`);
+      voidDependents(dependents, 'the scratch list was not created');
+      return { held: false, merge: null, body: null };
+    }
+    CREATED_LISTS.push(title);
+    let merge = null;
+    if (settings !== null) {
+      merge = await spPost(path, { __metadata: { type: 'SP.List' }, ...settings }, await getDigest(),
+        { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
+      log('INFO', `list settings MERGE on '${title}': HTTP ${merge.status}`
+        + `${merge.ok ? '' : ` ${redactTenant(merge.text).slice(0, 200)}`}`);
+    }
+    const select = ['BaseTemplate', 'Description', ...Object.keys(declared)].join(',');
+    // The MERGE's answer joins the read-back, so a refused setting shows its reason in RESULTS.
+    const answered = merge === null ? {} : { Settings: `HTTP ${merge.status}`
+      + `${merge.ok ? '' : `: ${redactTenant(merge.text).slice(0, 200)}`}` };
+    const settled = merge === null ? {} : { Settings: (v) => /^HTTP 2\d\d$/.test(v) };
+    let read = null;
+    const held = await establishFixture(id, async () => {
+      read = await spGet(`${path}?$select=${select}`);
+      return read.ok && read.body && typeof read.body === 'object'
+        ? { ...read, body: { ...read.body, ...answered } } : read;
+    }, { BaseTemplate: baseTemplate, Description: description, ...declared, ...settled }, dependents);
+    // The read-back is handed on, so a caller uses the values the fixture certified.
+    return { held, merge, body: held ? read.body : null };
+  };
+
+  // Recycles every list this run created, newest first, and says which one to recycle by hand.
+  const recycleScratchLists = async () => {
+    for (const title of [...CREATED_LISTS].reverse()) {
+      let gone;
+      try {
+        gone = await spPost(`web/lists/getbytitle('${title}')/recycle`, {}, await getDigest());
+      } catch (err) {
+        gone = { ok: false, status: null, text: String((err && err.message) || err) };
+      }
+      // A request that threw has no status, so its message is what the operator is shown.
+      const why = gone.status === null ? redactTenant(gone.text).slice(0, 240) : `HTTP ${gone.status}`;
+      log(gone.ok ? 'OK' : 'FAIL', gone.ok
+        ? `recycled '${title}'; it is restorable from the recycle bin.`
+        : `could not recycle '${title}' (${why}); recycle it by hand.`);
+    }
+  };

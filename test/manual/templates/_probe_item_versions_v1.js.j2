@@ -1,0 +1,25 @@
+{# test/manual/templates/_probe_item_versions_v1.js.j2 #}
+{# Included after _probe_raw_request_v1.js.j2, whose sendRaw and rawHead it uses. #}
+  // ---- Item versions (v1) ---------------------------------------------
+  // One read of an item's versions; `rows` is the value array, or null when the answer carried none.
+  const readVersions = async (listPath, itemId, query = '') => {
+    const res = await sendRaw(`${listPath}/items(${itemId})/versions${query ? `?${query}` : ''}`);
+    const head = rawHead(res);
+    const rows = !head && res.parsed && Array.isArray(res.parsed.value) ? res.parsed.value : null;
+    return { res, head, rows };
+  };
+
+  // A version's VersionId as the answer spelled it, or null when the entry carried none.
+  const versionIdOf = (row) => (row && typeof row === 'object' && row.VersionId !== undefined
+    ? row.VersionId : null);
+
+  // Names the order a run of VersionIds came back in; it describes and never judges.
+  const orderOf = (ids) => {
+    if (!ids.length) return 'NO VERSIONS';
+    if (ids.length === 1) return 'ONE VERSION';
+    if (ids.some((v) => typeof v !== 'number')) return 'NOT NUMBERS';
+    const pairs = ids.slice(1).map((v, i) => v - ids[i]);
+    if (pairs.every((d) => d > 0)) return 'ASCENDING';
+    if (pairs.every((d) => d < 0)) return 'DESCENDING';
+    return 'UNORDERED';
+  };
