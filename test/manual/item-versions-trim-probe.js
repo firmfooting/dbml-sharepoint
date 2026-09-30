@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: 4b3b5fdf
+ * REVISION: b067dbce
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -31,7 +31,8 @@
  * of any other size, UNTRIMMED is as many as landed. Each carries the
  * VersionIds, labels and Titles, and the property names of the version with
  * the lowest VersionId answered. NOT COMPARABLE, left open, is an answer carrying
- * a continuation link, which the probe records and does not follow.
+ * a continuation link, which the probe records and does not follow; NOT
+ * COMPARABLE, settled, is an answer listing one VersionId more than once.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
  * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again
@@ -659,7 +660,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 4b3b5fdf. Quote this when reporting results.');
+  log('INFO', 'probe revision b067dbce. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsTrim';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -710,8 +711,10 @@
       return ['NOT ESTABLISHED', `HTTP ${got.res.status} carried no value array: ${said(got.res.text)}`];
     }
     const rows = got.rows;
+    // A repeated VersionId would be counted as two versions, so no count is compared when one repeats.
+    const again = repeatedIds(rows);
     // TRIMMED needs the limit as its baseline: a shortfall of any other size is described, not explained.
-    const head = got.next !== null ? 'NOT COMPARABLE' : rows.length === written ? 'UNTRIMMED'
+    const head = got.next !== null || again.length ? 'NOT COMPARABLE' : rows.length === written ? 'UNTRIMMED'
       : rows.length > written ? 'MORE THAN WRITTEN' : rows.length === limit ? 'TRIMMED' : 'FEWER THAN WRITTEN';
     const listed = rows.map((row) => `${JSON.stringify(row.VersionLabel)}/${JSON.stringify(versionIdOf(row))}`
       + `/${JSON.stringify(row.Title)}`).join(', ');
@@ -720,7 +723,8 @@
     const lowest = numeric ? rows.reduce((low, row) => (versionIdOf(row) < versionIdOf(low) ? row : low)) : null;
     const carried = lowest ? `; the lowest VersionId answered carries ${Object.keys(lowest).sort().join(', ')}`
       : rows.length ? '; the VersionIds answered are not all numbers, so no lowest is named' : '';
-    const paged = got.next === null ? '' : `${pagedSaid(got)}; `;
+    const paged = got.next !== null ? `${pagedSaid(got)}; `
+      : again.length ? `VersionId ${again.join(', ')} answered more than once; ` : '';
     return [head, `${paged}${rows.length} of ${written} version(s) answered, in order: ${listed}${carried}`,
       got.next === null ? undefined : 'open'];
   };

@@ -518,12 +518,17 @@
     const perVersion = rows.map((row) => FOUR.map((key) => `${key}=${show(row[key])}`).join(', '));
     // Named by its label, never by its place in the answer, since the order versions come back in is a question.
     const labelled = rows.every((row) => labelPair(row) !== null);
-    const greatest = labelled ? rows.reduce((top, row) => (labelPair(row)[0] - labelPair(top)[0]
-      || labelPair(row)[1] - labelPair(top)[1]) > 0 ? row : top) : null;
+    const top = labelled ? rows.reduce((best, row) => (labelPair(row)[0] - labelPair(best)[0]
+      || labelPair(row)[1] - labelPair(best)[1]) > 0 ? row : best) : null;
+    // Two entries at the greatest label leave no one entry to name, so neither is picked by its place.
+    const ties = top ? rows.filter((row) => labelOf(row) === labelOf(top)).length : 0;
+    const greatest = ties === 1 ? top : null;
+    const together = `${[...new Set(rows.flatMap((row) => Object.keys(row)))].sort().join(', ')}`;
     const named = greatest
       ? `The entry with the greatest VersionLabel, ${labelOf(greatest)}, carries: ${Object.keys(greatest).sort().join(', ')}`
-      : 'Not every VersionLabel is major.minor, so no entry is named the greatest; the entries together carry: '
-        + `${[...new Set(rows.flatMap((row) => Object.keys(row)))].sort().join(', ')}`;
+      : `${top ? `${ties} entries carry the greatest VersionLabel, ${labelOf(top)}`
+        : 'Not every VersionLabel is major.minor'}, so no entry is named the greatest; the entries together `
+        + `carry: ${together}`;
     record(SUBJECTS.fields, Q.fields, 'OBSERVED', `${presence.join('; ')}. Per version: `
       + `${perVersion.join(' | ')}. ${named}`);
 

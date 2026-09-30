@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: 4efd6854
+ * REVISION: d5183879
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -698,7 +698,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 4efd6854. Quote this when reporting results.');
+  log('INFO', 'probe revision d5183879. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Versions';
   const TARGET = 'dbmlsp Probe VersionsTarget';
@@ -1129,12 +1129,17 @@
     const perVersion = rows.map((row) => FOUR.map((key) => `${key}=${show(row[key])}`).join(', '));
     // Named by its label, never by its place in the answer, since the order versions come back in is a question.
     const labelled = rows.every((row) => labelPair(row) !== null);
-    const greatest = labelled ? rows.reduce((top, row) => (labelPair(row)[0] - labelPair(top)[0]
-      || labelPair(row)[1] - labelPair(top)[1]) > 0 ? row : top) : null;
+    const top = labelled ? rows.reduce((best, row) => (labelPair(row)[0] - labelPair(best)[0]
+      || labelPair(row)[1] - labelPair(best)[1]) > 0 ? row : best) : null;
+    // Two entries at the greatest label leave no one entry to name, so neither is picked by its place.
+    const ties = top ? rows.filter((row) => labelOf(row) === labelOf(top)).length : 0;
+    const greatest = ties === 1 ? top : null;
+    const together = `${[...new Set(rows.flatMap((row) => Object.keys(row)))].sort().join(', ')}`;
     const named = greatest
       ? `The entry with the greatest VersionLabel, ${labelOf(greatest)}, carries: ${Object.keys(greatest).sort().join(', ')}`
-      : 'Not every VersionLabel is major.minor, so no entry is named the greatest; the entries together carry: '
-        + `${[...new Set(rows.flatMap((row) => Object.keys(row)))].sort().join(', ')}`;
+      : `${top ? `${ties} entries carry the greatest VersionLabel, ${labelOf(top)}`
+        : 'Not every VersionLabel is major.minor'}, so no entry is named the greatest; the entries together `
+        + `carry: ${together}`;
     record(SUBJECTS.fields, Q.fields, 'OBSERVED', `${presence.join('; ')}. Per version: `
       + `${perVersion.join(' | ')}. ${named}`);
 

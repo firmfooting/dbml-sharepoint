@@ -698,3 +698,15 @@ def test_a_versionid_repeated_after_the_upload_is_not_compared_as_a_set() -> Non
             in rows[LIB_ADDS]["evidence"])
     assert rows[LIB_FIELDS]["outcome"] == "NOT IDENTIFIED"
 
+
+def test_two_entries_at_the_greatest_label_leave_no_entry_named() -> None:
+    tied = json.dumps({"value": [
+        {"VersionId": 1536, "VersionLabel": "3.0", "A": 1},
+        {"VersionId": 1537, "VersionLabel": "3.0", "B": 1},
+        {"VersionId": 512, "VersionLabel": "1.0"}]})
+    rows, _, _ = _run(rules=[{"contains": LIST_READ_RULE, "status": 200, "text": tied}])
+
+    evidence = rows[FIELDS]["evidence"]
+    assert ("2 entries carry the greatest VersionLabel, 3.0, so no entry is named the greatest"
+            in evidence)
+    assert "The entry with the greatest VersionLabel" not in evidence

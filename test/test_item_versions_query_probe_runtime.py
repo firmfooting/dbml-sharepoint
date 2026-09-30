@@ -340,3 +340,15 @@ def test_the_top_control_expects_the_greater_id_read_back_whichever_item_has_it(
     assert "served [5], want [5]" in rows[TOP_CONTROL]["evidence"]
     assert rows[TOP]["outcome"] == "TOPPED"
     assert voided(rows) == set()
+
+
+def test_a_plain_read_repeating_a_versionid_voids_the_option_rows() -> None:
+    repeated = json.dumps({"value": [
+        {"VersionId": 1536, "VersionLabel": "3.0"}, {"VersionId": 1536, "VersionLabel": "3.0"},
+        {"VersionId": 512, "VersionLabel": "1.0"}]})
+    rows, _, _ = _run(rules=[{"contains": "items(1)/versions", "nth": 1, "status": 200,
+                              "text": repeated}])
+
+    assert rows[READ]["outcome"] == "FAIL"
+    assert voided(rows) == _deps(READ)
+    assert "none repeated" in rows[FILTER]["evidence"]

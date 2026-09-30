@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: fc7a072c
+ * REVISION: fe1271c1
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -16,7 +16,7 @@
  *   query.odata.fixture-versions-query-items  item A created and written twice, item B
  *       created once, each write read back before the next is sent
  *   query.odata.control-versions-read        A's versions read with no options answers
- *       at least two entries, each carrying a numeric VersionId
+ *       at least two entries, each carrying a numeric VersionId, none repeated
  *   query.odata.control-versions-items-filter      $filter=Id eq A serves A alone
  *   query.odata.control-versions-items-top-orderby $orderby=Id desc&$top=1 serves whichever
  *       of A and B read back with the greater Id, alone
@@ -671,7 +671,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision fc7a072c. Quote this when reporting results.');
+  log('INFO', 'probe revision fe1271c1. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsQuery';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -682,7 +682,7 @@
     list: 'a generic list this probe created, with versioning on',
     items: 'item A created and written twice, item B created once, each write read back before the next',
     read: 'CONTROL: A\'s versions read with no options answers at least two entries, '
-      + 'each carrying a numeric VersionId',
+      + 'each carrying a numeric VersionId, none repeated',
     filterControl: 'CONTROL: $filter=Id eq A on the list\'s items serves A alone',
     topControl: 'CONTROL: $orderby=Id desc&$top=1 on the list\'s items serves the item with the greater Id alone',
     order: 'the order the versions read answers when asked for none',
@@ -798,8 +798,9 @@
     const plain = await readVersions(listPath, ids.A);
     const plainIds = plain.rows === null ? [] : plain.rows.map(versionIdOf);
     // The option rows need two numeric VersionIds; how many an item answers is the payload probe's question.
+    // Each version must be listed once, since every option row compares against these VersionIds as a set.
     const readHeld = plain.rows !== null && plain.rows.length >= 2
-      && plainIds.every((v) => typeof v === 'number');
+      && plainIds.every((v) => typeof v === 'number') && repeatedIds(plain.rows).length === 0;
     // A 2xx with no value array is not an answer about the versions, so it is left open like a throttle.
     const plainUnread = plain.head ? plain.head.outcome === 'NOT ESTABLISHED' : plain.rows === null;
     const readOutcome = readHeld ? 'PASS' : plainUnread ? 'NOT ESTABLISHED' : 'FAIL';
@@ -809,7 +810,8 @@
         : `${entries(plain.rows.length)}, VersionIds ${JSON.stringify(plainIds)}`}`);
     if (readOutcome === 'FAIL') {
       voidDependents(AFTER_READ,
-        'the plain versions read did not answer at least two entries each carrying a numeric VersionId');
+        'the plain versions read did not answer at least two entries each carrying a numeric VersionId, '
+          + 'none repeated');
       return;
     }
     if (readOutcome === 'NOT ESTABLISHED') {

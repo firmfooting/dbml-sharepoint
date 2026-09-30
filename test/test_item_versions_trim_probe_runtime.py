@@ -6,6 +6,7 @@ trimmed on write and a list trimmed after a delay are each reached. The probe's 
 wait is swapped for none.
 """
 
+import json
 from typing import Any
 
 import pytest
@@ -269,3 +270,15 @@ def test_every_request_after_the_claim_goes_by_the_list_id() -> None:
     assert titled
     assert all("?$select=Id,Description" in path or "?$select=Id,BaseTemplate" in path
                for path in titled), titled
+
+
+def test_a_versions_answer_repeating_a_versionid_is_not_counted() -> None:
+    repeated = json.dumps({"value": [
+        {"VersionId": 3072, "VersionLabel": "6.0", "Title": "dbmlsp versions trim 6"},
+        {"VersionId": 3072, "VersionLabel": "6.0", "Title": "dbmlsp versions trim 6"}]})
+    rows, _, _ = _run(rules=[{"contains": "/versions", "status": 200, "text": repeated}])
+
+    for row_id in (ONCE, WAIT):
+        assert rows[row_id]["outcome"] == "NOT COMPARABLE", rows[row_id]
+        assert rows[row_id]["state"] == "settled"
+        assert "VersionId 3072 answered more than once" in rows[row_id]["evidence"]
