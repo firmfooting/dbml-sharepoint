@@ -47,12 +47,13 @@
  * option row.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
- * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again
- * (CLEANUP = true recycles a list left by an earlier run first). Copy the
- * RESULTS block back verbatim.
+ * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again.
+ * Copy the RESULTS block back verbatim.
  *
  * WHEN FINISHED: nothing to delete. The probe recycles its list before it
- * reports.
+ * reports. Each title ends in a token unique to the run, so no run finds,
+ * reuses or recycles another run's list; one a run could not recycle is
+ * named on the console, with its Id, to recycle by hand.
  */
 (async () => {
 {% include "_probe_harness.js.j2" %}
@@ -62,8 +63,8 @@
 {% include "_probe_item_versions_v1.js.j2" %}
   log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
 
-  const LIST = 'dbmlsp Probe VersionsQuery';
-  // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
+  const LIST = runTitle('dbmlsp Probe VersionsQuery');
+  // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
   const OWNERSHIP = 'dbml-sharepoint versions-query probe scratch list. Safe to delete.';
   const CHOICE = 'ProbeChoice';
 

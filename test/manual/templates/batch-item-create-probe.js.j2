@@ -93,9 +93,9 @@
  * Copy the RESULTS block back verbatim.
  *
  * WHEN FINISHED: nothing to delete. The probe recycles its list before it
- * reports. Its title ends in a token unique to the run, so no run reuses an
- * earlier run's list; one a run could not recycle is named on the console,
- * with its Id, to recycle by hand.
+ * reports. Each title ends in a token unique to the run, so no run finds,
+ * reuses or recycles another run's list; one a run could not recycle is
+ * named on the console, with its Id, to recycle by hand.
  */
 (async () => {
 {% include "_probe_harness.js.j2" %}
@@ -104,11 +104,10 @@
 {% include "_probe_scratch_list_v1.js.j2" %}
   log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
 
-  // The parts name the list by title, the form a history write sends and these rows measure, so the title
-  // carries a token unique to the run: no other list holds it, and none can take it between a check and a use.
-  const RUN = Math.random().toString(36).slice(2, 10);
-  const LIST = `dbmlsp Probe BatchItems ${RUN}`;
-  // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
+  // The parts name the list by title, the form a history write sends and these rows measure; the run's token
+  // means no other list holds it, and none can take it between a check and a use.
+  const LIST = runTitle('dbmlsp Probe BatchItems');
+  // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
   const OWNERSHIP = 'dbml-sharepoint batch-item-create probe scratch list. Safe to delete.';
   // A part's request line carries the title quoted then URL-encoded, as a history write sends it.
   const partPath = `web/lists/getbytitle('${encodeURIComponent(LIST.replace(/'/g, "''"))}')`;

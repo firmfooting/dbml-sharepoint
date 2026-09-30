@@ -8,6 +8,7 @@ the Id this run claimed, never by its title, so a title rebound cannot redirect 
 
 import importlib.util
 import json
+import re
 import sys
 from types import ModuleType
 from typing import Any
@@ -181,36 +182,6 @@ def test_a_create_answering_no_id_fails_closed_and_writes_nothing_by_title(
             "by hand.") in out["console"]
 
 
-def test_with_cleanup_a_leftover_is_recycled_by_the_id_its_ownership_read_found() -> None:
-    leftover = {"Id": OTHER, "BaseTemplate": 100, "Description": "owned", "fields": {},
-                "items": []}
-    out = _claim(None, cleanup=True, lists={TITLE: leftover})
-
-    assert out["held"] is True
-    assert _recycles(out) == [f"web/lists(guid'{OTHER}')/recycle",
-                              f"web/lists(guid'{CLAIMED}')/recycle"]
-    paths = [r["path"] for r in out["sent"]]
-    confirm = paths.index(f"web/lists(guid'{OTHER}')?$select=Id")
-    assert confirm == paths.index(f"web/lists(guid'{OTHER}')/recycle") + 1
-    assert f"[OK] recycled '{TITLE}' (list {OTHER})" in out["console"]
-    # The harness's resetList is not used, so nothing reports the recycle before that read.
-    assert "CLEANUP: recycled list" not in out["console"]
-
-
-def test_a_leftover_that_is_not_recycled_is_not_built_over() -> None:
-    leftover = {"Id": OTHER, "BaseTemplate": 100, "Description": "owned", "fields": {},
-                "items": []}
-    out = _claim(None, cleanup=True, lists={TITLE: leftover},
-                 rules=[{"contains": "/recycle", "status": 500, "text": "no"}])
-
-    assert out["held"] is False
-    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
-    assert f"the leftover list '{TITLE}' (list {OTHER}) was not recycled" in (
-        out["rows"][FIXTURE]["evidence"])
-    assert out["rows"][DEPENDENT]["state"] == "void"
-    assert _creates(out) == []
-
-
 @pytest.mark.parametrize(("status", "said"), [
     (429, "was throttled (HTTP 429)"), (503, "was throttled (HTTP 503)"),
     (403, "was not authorised (HTTP 403)"), (500, "was refused (HTTP 500)"),
@@ -248,20 +219,6 @@ def test_a_row_an_earlier_fixture_voided_keeps_its_reason() -> None:
     assert out["rows"][DEPENDENT]["evidence"] == "an earlier fixture failed"
 
 
-def test_a_leftover_answering_no_list_id_is_not_built_over() -> None:
-    leftover = {"Id": "not-a-guid", "BaseTemplate": 100, "Description": "owned", "fields": {},
-                "items": []}
-    out = _claim(None, cleanup=True, lists={TITLE: leftover})
-
-    assert out["held"] is False
-    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
-    assert out["rows"][FIXTURE]["evidence"] == (
-        f"the leftover list '{TITLE}' answered no list Id to recycle it by")
-    assert out["rows"][DEPENDENT]["state"] == "void"
-    assert _creates(out) == []
-    assert _recycles(out) == []
-
-
 def test_a_refused_recycle_names_the_list_and_id_to_recycle_by_hand() -> None:
     out = _claim(None, rules=[{"contains": "/recycle", "status": 400, "text": "no"}])
 
@@ -295,39 +252,6 @@ def test_a_recycle_whose_confirming_read_went_unanswered_is_not_reported_recycle
             "check it and recycle it by hand.") in out["console"]
 
 
-def test_a_leftover_that_answered_its_recycle_but_still_stands_is_not_built_over() -> None:
-    leftover = {"Id": OTHER, "BaseTemplate": 100, "Description": "owned", "fields": {},
-                "items": []}
-    out = _claim(None, cleanup=True, lists={TITLE: leftover},
-                 rules=[{"contains": "/recycle", "status": 200, "text": "{}"}])
-
-    assert out["held"] is False
-    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
-    assert (f"the leftover list '{TITLE}' (list {OTHER}) was not recycled: its recycle answered "
-            "HTTP 200, but it still reads back by its Id (HTTP 200); recycle it by hand") in (
-        out["rows"][FIXTURE]["evidence"])
-    # No line claims the leftover recycled, since the read after the recycle found it standing.
-    assert "recycled list" not in out["console"]
-    assert f"[OK] recycled '{TITLE}' (list {OTHER})" not in out["console"]
-    assert out["rows"][DEPENDENT]["state"] == "void"
-    assert _creates(out) == []
-
-
-def test_a_leftover_whose_recycle_cannot_be_confirmed_leaves_the_rows_open() -> None:
-    leftover = {"Id": OTHER, "BaseTemplate": 100, "Description": "owned", "fields": {},
-                "items": []}
-    out = _claim(None, cleanup=True, lists={TITLE: leftover},
-                 rules=[{"contains": f"guid'{OTHER}')?$select=Id", "status": 503,
-                         "text": "busy"}])
-
-    assert out["held"] is False
-    for row_id in (FIXTURE, DEPENDENT):
-        assert out["rows"][row_id]["outcome"] == "NOT ESTABLISHED"
-        assert out["rows"][row_id]["state"] == "open"
-    assert "was throttled (HTTP 503); nothing was created" in out["rows"][FIXTURE]["evidence"]
-    assert _creates(out) == []
-
-
 def test_a_create_that_never_answered_is_left_open_and_named_for_a_check_by_hand() -> None:
     out = _claim({"EnableVersioning": True}, rules=[{"contains": "web/lists", "verb": "POST",
                                                      "bodyContains": '"BaseTemplate"',
@@ -353,3 +277,32 @@ def test_an_ownership_read_answered_2xx_with_no_json_creates_nothing_and_stays_o
     assert f"the ownership read of '{TITLE}' answered HTTP 200 with no JSON" in (
         out["rows"][FIXTURE]["evidence"])
     assert _creates(out) == []
+
+
+@pytest.mark.parametrize("description", ["owned", "somebody else's"])
+def test_a_list_already_holding_the_title_is_never_recycled_or_built_over(
+        description: str) -> None:
+    standing = {"Id": OTHER, "BaseTemplate": 100, "Description": description, "fields": {},
+                "items": []}
+    out = _claim(None, cleanup=True, lists={TITLE: standing})
+
+    assert out["held"] is False
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert "refusing to modify it" in out["rows"][FIXTURE]["evidence"]
+    assert out["rows"][DEPENDENT]["state"] == "void"
+    assert _creates(out) == []
+    assert _recycles(out) == []
+
+
+def test_every_run_draws_its_own_title_token() -> None:
+    env = _load_renderer()._env()
+    body = env.get_template("_probe_scratch_list_v1.js.j2").render()
+    script = ("(() => {\n" + body
+              + "  console.log('__T__' + runTitle('dbmlsp Probe Scratch'));\n})();\n")
+    titles = []
+    for _ in range(2):
+        line = next(ln for ln in run_node(script).splitlines() if ln.startswith("__T__"))
+        titles.append(line.removeprefix("__T__"))
+    for title in titles:
+        assert re.fullmatch(r"dbmlsp Probe Scratch [a-z0-9]{6,}", title), title
+    assert titles[0] != titles[1]

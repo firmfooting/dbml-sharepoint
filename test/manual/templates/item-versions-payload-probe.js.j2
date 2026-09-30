@@ -74,12 +74,13 @@
  * Email addresses, claims logins and this account's display name are masked.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
- * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again
- * (CLEANUP = true recycles lists left by an earlier run first). Copy the
- * RESULTS block back verbatim.
+ * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again.
+ * Copy the RESULTS block back verbatim.
  *
  * WHEN FINISHED: nothing to delete. The probe recycles both lists and the
- * library before it reports.
+ * library before it reports. Each title ends in a token unique to the run, so no run finds,
+ * reuses or recycles another run's list; one a run could not recycle is
+ * named on the console, with its Id, to recycle by hand.
  */
 (async () => {
 {% include "_probe_harness.js.j2" %}
@@ -89,13 +90,13 @@
 {% include "_probe_item_versions_v1.js.j2" %}
   log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
 
-  const LIST = 'dbmlsp Probe Versions';
-  const TARGET = 'dbmlsp Probe VersionsTarget';
-  // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
+  const LIST = runTitle('dbmlsp Probe Versions');
+  const TARGET = runTitle('dbmlsp Probe VersionsTarget');
+  // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
   const OWNERSHIP = 'dbml-sharepoint item-versions probe scratch list. Safe to delete.';
   const TARGET_OWNERSHIP = 'dbml-sharepoint item-versions probe lookup target. Safe to delete.';
   const PEOPLE = 'ProbePeople';
-  const LIBRARY = 'dbmlsp Probe VersionsLibrary';
+  const LIBRARY = runTitle('dbmlsp Probe VersionsLibrary');
   const LIBRARY_OWNERSHIP = 'dbml-sharepoint item-versions probe scratch library. Safe to delete.';
   const LIB_COLUMN = 'ProbeLibChoice';
   const FOLDER_NAME = 'dbmlsp-subfolder';

@@ -331,26 +331,18 @@ def test_a_foreign_list_holding_the_title_is_never_written_to() -> None:
     assert _recycled(sent) == [RECYCLED[0], RECYCLED[2]]
 
 
-def test_a_leftover_list_without_cleanup_is_refused() -> None:
+@pytest.mark.parametrize("gates", [("CONFIRMED", "ALLOW_WRITES"),
+                                   ("CONFIRMED", "ALLOW_WRITES", "CLEANUP")])
+def test_a_list_already_holding_the_title_is_never_recycled_even_with_cleanup(
+        gates: tuple[str, ...]) -> None:
     leftover = {"Id": LEFTOVER_ID, "BaseTemplate": 100, "Description": OWNED, "fields": {},
                 "items": []}
-    rows, _, _ = _run(lists={"dbmlsp Probe Versions": leftover})
+    rows, sent, _ = _run(gates, lists={"dbmlsp Probe Versions": leftover})
 
     assert rows[LIST]["outcome"] == "FAIL"
-    assert "CLEANUP is off" in rows[LIST]["evidence"]
+    assert "with this probe's description; refusing to modify it" in rows[LIST]["evidence"]
     assert voided(rows) == _deps(LIST)
-
-
-def test_with_cleanup_a_leftover_list_is_recycled_and_built_again() -> None:
-    leftover = {"Id": LEFTOVER_ID, "BaseTemplate": 100, "Description": OWNED, "fields": {},
-                "items": []}
-    rows, sent, _ = _run(("CONFIRMED", "ALLOW_WRITES", "CLEANUP"),
-                         lists={"dbmlsp Probe Versions": leftover})
-
-    assert rows[LIST]["outcome"] == "PASS"
-    # The leftover is recycled by the Id its ownership read found, and the rebuilt list by its own.
-    assert f"web/lists(guid'{LEFTOVER_ID}')/recycle" in _recycled(sent)
-    assert _recycled(sent)[-2:] == [RECYCLED[1], RECYCLED[2]]
+    assert not [r for r in sent if LEFTOVER_ID in r["path"]]
 
 
 def test_a_digest_lost_mid_run_leaves_the_rest_open_and_asks_for_a_recycle_by_hand() -> None:
@@ -714,3 +706,15 @@ def test_two_entries_at_the_greatest_label_leave_no_entry_named() -> None:
     assert ("2 entries carry the greatest VersionLabel, 3.0, so no entry is named the greatest"
             in evidence)
     assert "The entry with the greatest VersionLabel" not in evidence
+
+
+def test_an_unpinned_run_titles_all_three_lists_with_one_token_of_its_own() -> None:
+    rows, sent, _ = run_probe(VERSIONS_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"), {}, pin=False)
+
+    titles = [json.loads(r["body"])["Title"] for r in sent
+              if r["path"] == "web/lists" and r["verb"] == "POST"]
+    tokens = {title.rsplit(" ", 1)[1] for title in titles}
+    assert [title.rsplit(" ", 1)[0] for title in titles] == [
+        "dbmlsp Probe VersionsTarget", "dbmlsp Probe Versions", "dbmlsp Probe VersionsLibrary"]
+    assert len(tokens) == 1
+    assert rows[LIST]["outcome"] == "PASS"

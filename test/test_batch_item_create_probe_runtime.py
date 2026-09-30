@@ -228,14 +228,9 @@ _MOCK = textwrap.dedent(r"""
 """)
 
 
-# The run's token is pinned so the mock can answer for the title; one test runs it unpinned.
-PINNED = {"  const LIST = `dbmlsp Probe BatchItems ${RUN}`;":
-          "  const LIST = 'dbmlsp Probe BatchItems';"}
-
-
 def _run(gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: Any,
          ) -> tuple[dict[str, dict[str, str]], list[dict[str, str]], str]:
-    return run_probe(_MOCK, PROBE, gates, config, PINNED)
+    return run_probe(_MOCK, PROBE, gates, config)
 
 
 def _deps(fixture: str) -> set[str]:
@@ -491,7 +486,7 @@ def test_a_throttled_single_create_keeps_what_an_earlier_fixture_voided() -> Non
 ])
 def test_a_refused_addvalidate_write_is_not_established_and_the_probe_goes_on(
         setting: str, row_id: str, said: str) -> None:
-    rows, sent, _ = run_probe(_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"), {setting: True}, PINNED)
+    rows, sent, _ = run_probe(_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"), {setting: True})
 
     assert rows[row_id]["outcome"] == "NOT ESTABLISHED"
     assert rows[row_id]["state"] == "open"
@@ -559,8 +554,7 @@ def test_the_parts_carry_the_type_only_where_the_question_does() -> None:
     ("refuseUntypedVerbose", VERBOSE), ("refuseUntypedNometadata", NOMETADATA),
 ])
 def test_a_refused_untyped_part_is_recorded_with_its_answer(setting: str, row_id: str) -> None:
-    rows, _, _ = run_probe(_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"), {setting: True},
-                           PINNED)
+    rows, _, _ = run_probe(_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"), {setting: True})
 
     assert rows[row_id]["outcome"] == "PART REFUSED"
     assert "A type is required." in rows[row_id]["evidence"]
@@ -683,13 +677,14 @@ def test_a_foreign_list_holding_the_title_is_never_written_to() -> None:
     assert not [r for r in sent if r["verb"] != "GET" and r["path"] != "contextinfo"]
 
 
-def test_with_cleanup_a_leftover_list_is_recycled_and_built_again() -> None:
+def test_with_cleanup_a_list_holding_the_title_is_still_never_recycled() -> None:
     rows, sent, _ = _run(("CONFIRMED", "ALLOW_WRITES", "CLEANUP"),
                          list={"Id": LEFTOVER_ID, "BaseTemplate": 100, "Description": OWNED,
                                "ListItemEntityTypeFullName": "SP.Data.old"})
 
-    assert rows[LIST]["outcome"] == "PASS"
-    assert len([r for r in sent if r["path"].endswith("/recycle")]) == 2
+    assert rows[LIST]["outcome"] == "FAIL"
+    assert voided(rows) == _deps(LIST)
+    assert not [r for r in sent if r["verb"] != "GET" and r["path"] != "contextinfo"]
 
 
 @pytest.mark.parametrize(("rule", "row_id"), [
@@ -910,7 +905,7 @@ def test_a_date_column_that_did_not_take_date_and_time_voids_the_iso_row() -> No
 def test_each_run_names_its_list_with_a_title_no_other_run_uses() -> None:
     titles = []
     for _ in range(2):
-        _, sent, _ = run_probe(_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"), {})
+        _, sent, _ = run_probe(_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"), {}, pin=False)
         [create] = [r for r in sent if r["path"] == "web/lists" and r["verb"] == "POST"]
         titles.append(json.loads(create["body"])["Title"])
     for title in titles:

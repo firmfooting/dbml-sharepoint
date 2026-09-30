@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: fe1271c1
+ * REVISION: 60f911ff
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -46,12 +46,13 @@
  * option row.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
- * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again
- * (CLEANUP = true recycles a list left by an earlier run first). Copy the
- * RESULTS block back verbatim.
+ * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again.
+ * Copy the RESULTS block back verbatim.
  *
  * WHEN FINISHED: nothing to delete. The probe recycles its list before it
- * reports.
+ * reports. Each title ends in a token unique to the run, so no run finds,
+ * reuses or recycles another run's list; one a run could not recycle is
+ * named on the console, with its Id, to recycle by hand.
  */
 (async () => {
   // ---- Operator gate -------------------------------------------------
@@ -465,6 +466,9 @@
   // ---- Scratch lists (v1) ---------------------------------------------
   // Lists this run created, by title and Id, so the recycle touches those and never a list it only found.
   const CREATED_LISTS = [];
+  // A token drawn once per run and ending every scratch title, so no run finds, reuses or recycles another's list.
+  const RUN = Math.random().toString(36).slice(2, 10);
+  const runTitle = (base) => `${base} ${RUN}`;
   // A list Id as a bare lower-case GUID, or null when the value is not one.
   const guidOf = (value) => {
     const bare = value === null || value === undefined ? '' : String(value).replace(/[{}]/g, '').toLowerCase();
@@ -532,32 +536,12 @@
         + 'nothing was created');
     }
     if (pre.ok) {
-      if (pre.body.Description !== description) {
-        record(id, question, 'FAIL',
-          `a list named '${title}' exists without this probe's ownership description; refusing to modify it`);
-        voidDependents(dependents, 'the scratch list is not one this probe created');
-        return { held: false, merge: null, body: null };
-      }
-      if (!CLEANUP) {
-        record(id, question, 'FAIL', `a list '${title}' from an earlier run is standing and CLEANUP is off`);
-        voidDependents(dependents, 'a leftover list would answer this run\'s questions');
-        return { held: false, merge: null, body: null };
-      }
-      // Recycled by the Id this read found, so a title rebound meanwhile cannot redirect it. The harness's
-      // resetList is not used, since it reports a recycle done before any read confirms the list gone.
-      const leftover = guidOf(pre.body.Id);
-      const reset = leftover === null ? null : await recycleList(title, leftover);
-      if (reset === null || reset.gone === false) {
-        record(id, question, 'FAIL', `the leftover list '${title}' ${reset === null
-          ? 'answered no list Id to recycle it by' : `(list ${leftover}) was not recycled: ${reset.why}`}`
-          + `${reset === null ? '' : '; recycle it by hand'}`);
-        voidDependents(dependents, 'a leftover list would answer this run\'s questions');
-        return { held: false, merge: null, body: null };
-      }
-      // A create over a leftover whose absence cannot be read would not be known to be new.
-      if (reset.gone === null) {
-        return leaveOpen(`the leftover list '${title}' (list ${leftover}) ${reset.why}; nothing was created`);
-      }
+      // A title ending in this run's token names no list before this run makes one, so a list found here is
+      // not this run's, whatever its description, and is never recycled or built over.
+      record(id, question, 'FAIL', `a list named '${title}' already exists`
+        + `${pre.body.Description === description ? ' with this probe\'s description' : ''}; refusing to modify it`);
+      voidDependents(dependents, 'the scratch list is not one this run created');
+      return { held: false, merge: null, body: null };
     } else if (pre.status !== 404) {
       // A by-title read answers an absent list 404 (the live finding rollback.js.j2 cites); anything else is unknown.
       return leaveOpen(`the ownership read of '${title}' ${unanswered(pre)}`
@@ -671,10 +655,10 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision fe1271c1. Quote this when reporting results.');
+  log('INFO', 'probe revision 60f911ff. Quote this when reporting results.');
 
-  const LIST = 'dbmlsp Probe VersionsQuery';
-  // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
+  const LIST = runTitle('dbmlsp Probe VersionsQuery');
+  // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
   const OWNERSHIP = 'dbml-sharepoint versions-query probe scratch list. Safe to delete.';
   const CHOICE = 'ProbeChoice';
 

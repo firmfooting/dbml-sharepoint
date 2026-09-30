@@ -12,10 +12,19 @@ from typing import Any
 from _node import run_node
 from _paths import MANUAL
 
+# Every scratch title ends in a per-run token; a mock answers for fixed titles, so runs pin it away.
+UNPINNED_TITLE = "  const runTitle = (base) => `${base} ${RUN}`;"
+PINNED_TITLE = "  const runTitle = (base) => base;"
 
-def probe_js(path: Path, gates: tuple[str, ...], swaps: dict[str, str] | None = None) -> str:
+
+def probe_js(path: Path, gates: tuple[str, ...], swaps: dict[str, str] | None = None,
+             pin: bool = True) -> str:
     """The rendered probe with `gates` set true, each swap applied once, and RESULTS dumped."""
     js = path.read_text(encoding="utf-8")
+    if pin:
+        pinned = js.replace(UNPINNED_TITLE, PINNED_TITLE, 1)
+        assert pinned != js, "the run-title token is not spelled as this test expects"
+        js = pinned
     for gate in gates:
         opened = js.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
         assert opened != js, f"the {gate} gate is not spelled as this test expects"
@@ -35,11 +44,11 @@ def probe_js(path: Path, gates: tuple[str, ...], swaps: dict[str, str] | None = 
 
 def run_probe(
     mock: str, path: Path, gates: tuple[str, ...], config: dict[str, Any],
-    swaps: dict[str, str] | None = None,
+    swaps: dict[str, str] | None = None, pin: bool = True,
 ) -> tuple[dict[str, dict[str, str]], list[dict[str, str]], str]:
     """Rows by id, the requests the mock saw, and the whole console output."""
     output = run_node(mock.replace("__CONFIG__", json.dumps(config)) + "\n"
-                      + probe_js(path, gates, swaps))
+                      + probe_js(path, gates, swaps, pin))
     sent_line = next(ln for ln in output.splitlines() if ln.startswith("__SENT__"))
     rows_line = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
     rows = {} if rows_line is None else {
