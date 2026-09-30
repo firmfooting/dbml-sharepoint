@@ -258,7 +258,7 @@ def test_an_unauthorised_account_read_leaves_everything_open_and_writes_nothing(
     rows, sent, _ = _run(rules=[{"contains": "web/currentuser", "status": 403, "text": "denied"}])
 
     assert rows[USER]["outcome"] == "NOT ESTABLISHED"
-    assert "was not authorised (HTTP 403)" in rows[USER]["evidence"]
+    assert "the account read answered HTTP 403" in rows[USER]["evidence"]
     assert voided(rows) == set()
     assert all(rows[row_id]["state"] == "open" for row_id in _deps(USER))
     assert not [r for r in sent if r["verb"] != "GET" and r["path"] != "contextinfo"]
@@ -911,3 +911,15 @@ def test_a_list_create_answered_2xx_with_no_json_is_left_open() -> None:
     assert rows[TARGET]["outcome"] == "NOT ESTABLISHED"
     assert "answered HTTP 201 with no JSON object" in rows[TARGET]["evidence"]
     assert "'dbmlsp Probe VersionsTarget' never answered a list Id" in output
+
+
+@pytest.mark.parametrize(("status", "text"), [
+    (200, "Signed in as Ada Probe"), (403, "Ada Probe may not read this"),
+    (500, "Ada Probe could not be read"),
+], ids=["no-json", "unauthorised", "refused"])
+def test_an_account_read_that_fails_quotes_nothing_of_its_body(status: int, text: str) -> None:
+    # The display name is not known yet, so nothing could mask it; only the status is said.
+    rows, _, output = _run(rules=[{"contains": "web/currentuser", "status": status, "text": text}])
+
+    assert f"the account read answered HTTP {status}" in rows[USER]["evidence"]
+    assert "Ada Probe" not in output.split("__SENT__")[0]

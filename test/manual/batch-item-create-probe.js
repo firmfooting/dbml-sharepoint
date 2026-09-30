@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: b3eac1de
+ * REVISION: a7126d99
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -524,16 +524,24 @@
     return head;
   };
   // For a probe with no current-user fixture: learns this account so its display name is masked too.
-  const learnIdentity = async () => {
-    const read = await sendRaw('web/currentuser?$select=Email,LoginName,Title');
-    if (read.ok && read.parsed && typeof read.parsed === 'object') {
-      knowIdentity(read.parsed.Email, '<account>');
-      knowIdentity(read.parsed.LoginName, '<account>');
-      knowIdentity(read.parsed.Title, '<name>', true);
-      return;
+  // Reads this account before any mask for its display name exists, so nothing of a failed answer is quoted.
+  const readAccount = async () => {
+    const res = await sendRaw('web/currentuser?$select=Id,Email,LoginName,Title');
+    const account = res.ok ? recordBody(res) : null;
+    const said = res.status === null ? 'the account read never answered'
+      : `the account read answered HTTP ${res.status}${res.ok && !account ? ' with no JSON object' : ''}`;
+    if (!account && (res.status === null || res.ok || !isRefusal(res.status))) UNHEARD.push(said);
+    if (account) {
+      knowIdentity(account.Email, '<account>');
+      knowIdentity(account.LoginName, '<account>');
+      knowIdentity(account.Title, '<name>', true);
     }
-    const head = maskedHead(read);
-    log('INFO', `this account did not read back (${head ? head.why : `HTTP ${read.status} carried no JSON`}), `
+    return { account, said: account ? `HTTP ${res.status}` : said };
+  };
+  const learnIdentity = async () => {
+    const { account, said } = await readAccount();
+    if (account) return;
+    log('INFO', `this account did not read back (${said}), `
       + 'so a display name in an answer is not masked; logins and emails still are.');
   };
   // ---- Scratch lists (v1) ---------------------------------------------
@@ -775,7 +783,7 @@
       await recycleList(title, id);
     }
   };
-  log('INFO', 'probe revision b3eac1de. Quote this when reporting results.');
+  log('INFO', 'probe revision a7126d99. Quote this when reporting results.');
 
   // The parts name the list by title, the form a history write sends and these rows measure; the run's token
   // means no other list holds it, and none can take it between a check and a use.
@@ -1017,18 +1025,11 @@
   try {
     beginFixture();
     const userHeld = await settleFixture(USER, async () => {
-      const read = await sendRaw('web/currentuser?$select=Id,Email,LoginName,Title');
-      const head = readHead(read);
-      const account = head ? null : recordBody(read);
-      if (!account) {
-        return { ok: true, status: 200, body: { Read: head ? head.why : `HTTP ${read.status} carried no JSON object` } };
-      }
-      knowIdentity(account.Email, '<account>');
-      knowIdentity(account.LoginName, '<account>');
-      knowIdentity(account.Title, '<name>', true);
+      const { account, said: read } = await readAccount();
+      if (!account) return { ok: true, status: 200, body: { Read: read } };
       me = account;
       // The email itself is never put in the row; only that there is one to build claims from.
-      return { ok: true, status: 200, body: { Read: `HTTP ${read.status}`, Id: account.Id,
+      return { ok: true, status: 200, body: { Read: read, Id: account.Id,
         HasEmail: typeof account.Email === 'string' && account.Email.includes('@') } };
     }, { Read: 'HTTP 200', Id: (v) => Number.isInteger(v) && v > 0, HasEmail: true }, [CLAIMS]);
 

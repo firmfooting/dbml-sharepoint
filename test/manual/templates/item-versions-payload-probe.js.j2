@@ -747,13 +747,10 @@
   try {
     beginFixture();
     if (!await settleFixture('field.version.control-current-user', async () => {
-      const me = await readBack('web/currentuser?$select=Id,Email,LoginName,Title');
-      if (!me.parsed) return { ok: true, status: 200, body: { Read: me.read } };
-      knowIdentity(me.parsed.Email, '<account>');
-      knowIdentity(me.parsed.LoginName, '<account>');
-      knowIdentity(me.parsed.Title, '<name>', true);
-      meId = me.parsed.Id;
-      return { ok: true, status: 200, body: { Read: me.read, Id: me.parsed.Id } };
+      const { account, said } = await readAccount();
+      if (!account) return { ok: true, status: 200, body: { Read: said } };
+      meId = account.Id;
+      return { ok: true, status: 200, body: { Read: said, Id: account.Id } };
     }, { Read: 'HTTP 200', Id: (v) => Number.isInteger(v) && v > 0 }, AFTER_USER)) {
       return;
     }

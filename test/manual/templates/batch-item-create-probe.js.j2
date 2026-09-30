@@ -344,18 +344,11 @@
   try {
     beginFixture();
     const userHeld = await settleFixture(USER, async () => {
-      const read = await sendRaw('web/currentuser?$select=Id,Email,LoginName,Title');
-      const head = readHead(read);
-      const account = head ? null : recordBody(read);
-      if (!account) {
-        return { ok: true, status: 200, body: { Read: head ? head.why : `HTTP ${read.status} carried no JSON object` } };
-      }
-      knowIdentity(account.Email, '<account>');
-      knowIdentity(account.LoginName, '<account>');
-      knowIdentity(account.Title, '<name>', true);
+      const { account, said: read } = await readAccount();
+      if (!account) return { ok: true, status: 200, body: { Read: read } };
       me = account;
       // The email itself is never put in the row; only that there is one to build claims from.
-      return { ok: true, status: 200, body: { Read: `HTTP ${read.status}`, Id: account.Id,
+      return { ok: true, status: 200, body: { Read: read, Id: account.Id,
         HasEmail: typeof account.Email === 'string' && account.Email.includes('@') } };
     }, { Read: 'HTTP 200', Id: (v) => Number.isInteger(v) && v > 0, HasEmail: true }, [CLAIMS]);
 

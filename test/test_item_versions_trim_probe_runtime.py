@@ -386,7 +386,7 @@ def test_an_account_that_does_not_read_back_is_said_and_the_run_goes_on() -> Non
     rows, _, output = _run(trimToLimit=True, rules=[{"contains": "web/currentuser", "status": 503,
                                                      "text": "busy"}])
 
-    assert "this account did not read back (the request was throttled (HTTP 503): busy)" in output
+    assert "this account did not read back (the account read answered HTTP 503)" in output
     assert "a display name in an answer is not masked" in output
     assert rows[ONCE]["outcome"] == "TRIMMED"
     assert ended_with_report(output)

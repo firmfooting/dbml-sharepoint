@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: 0bae43d2
+ * REVISION: b3438930
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -475,16 +475,24 @@
     return head;
   };
   // For a probe with no current-user fixture: learns this account so its display name is masked too.
-  const learnIdentity = async () => {
-    const read = await sendRaw('web/currentuser?$select=Email,LoginName,Title');
-    if (read.ok && read.parsed && typeof read.parsed === 'object') {
-      knowIdentity(read.parsed.Email, '<account>');
-      knowIdentity(read.parsed.LoginName, '<account>');
-      knowIdentity(read.parsed.Title, '<name>', true);
-      return;
+  // Reads this account before any mask for its display name exists, so nothing of a failed answer is quoted.
+  const readAccount = async () => {
+    const res = await sendRaw('web/currentuser?$select=Id,Email,LoginName,Title');
+    const account = res.ok ? recordBody(res) : null;
+    const said = res.status === null ? 'the account read never answered'
+      : `the account read answered HTTP ${res.status}${res.ok && !account ? ' with no JSON object' : ''}`;
+    if (!account && (res.status === null || res.ok || !isRefusal(res.status))) UNHEARD.push(said);
+    if (account) {
+      knowIdentity(account.Email, '<account>');
+      knowIdentity(account.LoginName, '<account>');
+      knowIdentity(account.Title, '<name>', true);
     }
-    const head = maskedHead(read);
-    log('INFO', `this account did not read back (${head ? head.why : `HTTP ${read.status} carried no JSON`}), `
+    return { account, said: account ? `HTTP ${res.status}` : said };
+  };
+  const learnIdentity = async () => {
+    const { account, said } = await readAccount();
+    if (account) return;
+    log('INFO', `this account did not read back (${said}), `
       + 'so a display name in an answer is not masked; logins and emails still are.');
   };
   // ---- Scratch lists (v1) ---------------------------------------------
@@ -771,7 +779,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 0bae43d2. Quote this when reporting results.');
+  log('INFO', 'probe revision b3438930. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsTrim');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.

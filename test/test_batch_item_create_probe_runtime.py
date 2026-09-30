@@ -697,16 +697,19 @@ def test_with_cleanup_a_list_holding_the_title_is_still_never_recycled() -> None
     assert not [r for r in sent if r["verb"] != "GET" and r["path"] != "contextinfo"]
 
 
-@pytest.mark.parametrize(("rule", "row_id"), [
-    ({"contains": "web/currentuser"}, USER),
-    ({"contains": "')/AddValidateUpdateItemUsingPath"}, ADDVALIDATE),
-    ({"contains": "/fields", "verb": "POST", "bodyContains": "ProbeWhen"}, COLUMNS),
+@pytest.mark.parametrize(("rule", "row_id", "said"), [
+    # The account read is made before any mask exists, so its answer is never quoted at all.
+    ({"contains": "web/currentuser"}, USER, "the account read answered HTTP 403"),
+    ({"contains": "')/AddValidateUpdateItemUsingPath"}, ADDVALIDATE, "<account> may not"),
+    ({"contains": "/fields", "verb": "POST", "bodyContains": "ProbeWhen"}, COLUMNS,
+     "<account> may not"),
 ])
-def test_an_account_named_in_a_refusal_is_masked(rule: dict[str, str], row_id: str) -> None:
+def test_an_account_named_in_a_refusal_is_masked(rule: dict[str, str], row_id: str,
+                                                  said: str) -> None:
     rows, _, output = _run(rules=[{**rule, "status": 403,
                                    "text": "i:0#.f|membership|bob@example.org may not"}])
 
-    assert "<account> may not" in rows[row_id]["evidence"]
+    assert said in rows[row_id]["evidence"]
     printed = [ln for ln in output.splitlines() if not ln.startswith(("__SENT__", "__ROWS__"))]
     assert "bob@example.org" not in json.dumps(rows) + "\n".join(printed)
 
