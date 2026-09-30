@@ -444,8 +444,9 @@ def test_a_read_around_the_upload_with_a_continuation_link_is_not_compared() -> 
                         "odata.nextLink": "https://example.sharepoint.com/sites/probe/_api/x"})
     rows, _, _ = _run(rules=[{"contains": LIB_VERSIONS, "nth": 1, "status": 200, "text": paged}])
 
-    assert rows[LIB_ADDS]["outcome"] == "NOT COMPARABLE"
-    assert rows[LIB_ADDS]["state"] == "open"
+    for row_id in (LIB_ADDS, LIB_FIELDS):
+        assert rows[row_id]["outcome"] == "NOT COMPARABLE", rows[row_id]
+        assert rows[row_id]["state"] == "open"
     assert rows[LIB_ADDS]["evidence"].startswith(
         "the versions read before the upload: the answer carried a continuation link ([TENANT]")
 

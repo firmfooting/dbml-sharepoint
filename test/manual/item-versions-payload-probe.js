@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: 24d55df4
+ * REVISION: f5ac00f3
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -631,7 +631,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 24d55df4. Quote this when reporting results.');
+  log('INFO', 'probe revision f5ac00f3. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Versions';
   const TARGET = 'dbmlsp Probe VersionsTarget';
@@ -1154,7 +1154,8 @@
     const blocked = unread(beforeUpload, 'before') || unread(afterUploadRead, 'after');
     if (blocked) {
       record(LIB.libraryAdds, Q.libraryAdds, blocked.head, `${blocked.why}; ${after}`, blocked.state);
-      record(LIB.libraryFields, Q.libraryFields, blocked.head === 'NOT ESTABLISHED' ? blocked.head : 'NOT IDENTIFIED',
+      // An open reason (unanswered, or a continuation link) heads both rows alike, as the final read's does.
+      record(LIB.libraryFields, Q.libraryFields, blocked.state === 'open' ? blocked.head : 'NOT IDENTIFIED',
         `the upload's version was not looked for: ${blocked.why}`, blocked.state);
       return;
     }
