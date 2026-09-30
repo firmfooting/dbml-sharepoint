@@ -282,8 +282,7 @@
   const listCase = async () => {
     const target = await claimScratchList({ id: 'field.version.fixture-payload-target-list',
       question: Q.target, title: TARGET, description: TARGET_OWNERSHIP, dependents: AFTER_TARGET,
-      declared: { Id: (v) => typeof v === 'string' && v.length > 0,
-        ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 } });
+      declared: { ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 } });
     if (!target.held) return;
     const targetIds = [];
     for (const title of ['dbmlsp versions target A', 'dbmlsp versions target B']) {

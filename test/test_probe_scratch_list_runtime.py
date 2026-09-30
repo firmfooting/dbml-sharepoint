@@ -2,7 +2,8 @@
 
 A probe that applies list settings certifies them by read-back. The settings MERGE's answer is
 recorded beside that read-back, so a refused MERGE is shown with its reason in RESULTS and not
-only on the console, but it never fails the fixture on its own account.
+only on the console, but it never fails the fixture on its own account. The list is recycled by
+the Id this run claimed, never by its title, so a title rebound cannot redirect the recycle.
 """
 
 import importlib.util
@@ -14,7 +15,7 @@ from typing import Any
 import pytest
 from _node import NODE, run_node
 from _paths import MANUAL
-from _versions_mock import VERSIONS_MOCK
+from _versions_mock import VERSIONS_MOCK, mock_list_id
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
@@ -25,6 +26,8 @@ REFUSAL = "The value is out of range at https://example.sharepoint.com/sites/pro
 REFUSED = {"contains": f"getbytitle('{TITLE}')", "verb": "MERGE", "status": 400, "text": REFUSAL}
 SAID = "HTTP 400: The value is out of range at [TENANT]/sites/probe."
 VERSIONING = "{ EnableVersioning: true }"
+CLAIMED = mock_list_id(TITLE)
+OTHER = "00000000-0000-4000-8000-00000000abcd"
 
 
 def _load_renderer() -> ModuleType:
@@ -39,13 +42,15 @@ def _load_renderer() -> ModuleType:
 
 
 def _claim(
-    settings: dict[str, Any] | None, declared: str = "{}", **config: Any,
+    settings: dict[str, Any] | None, declared: str = "{}", cleanup: bool = False, **config: Any,
 ) -> dict[str, Any]:
-    """Claim one scratch list with `settings`, and return what came back and the result rows."""
+    """Claim one scratch list with `settings`, recycle what was made, and return what came back."""
     env = _load_renderer()._env()
     body = "".join(env.get_template(name).render() for name in (
         "_probe_harness.js.j2", "_probe_raw_request_v1.js.j2", "_probe_identity_v1.js.j2",
         "_probe_scratch_list_v1.js.j2"))
+    for gate in ("CONFIRMED", "ALLOW_WRITES", *(("CLEANUP",) if cleanup else ())):
+        body = body.replace(f"  const {gate} = false;", f"  const {gate} = true;", 1)
     script = (
         VERSIONS_MOCK.replace("__CONFIG__", json.dumps(config))
         + "(async () => {\n" + body
@@ -54,6 +59,7 @@ def _claim(
         + f"  const got = await claimScratchList({{ id: '{FIXTURE}', question: 'the scratch list',"
         + f" title: '{TITLE}', description: 'owned', dependents: ['{DEPENDENT}'],"
         + f" settings: {json.dumps(settings)}, declared: {declared} }});\n"
+        + "  await recycleScratchLists();\n"
         + "  console.log('__OUT__' + JSON.stringify({ held: got.held, body: got.body,"
         + " merge: got.merge && got.merge.status, rows: RESULTS }));\n"
         + "})();\n"
@@ -64,7 +70,17 @@ def _claim(
     out: dict[str, Any] = json.loads(line.removeprefix("__OUT__"))
     out["rows"] = {row["id"]: row for row in out["rows"]}
     out["console"] = output.split("__SENT__")[0]
+    sent_line = next(ln for ln in output.splitlines() if ln.startswith("__SENT__"))
+    out["sent"] = json.loads(sent_line.removeprefix("__SENT__"))
     return out
+
+
+def _recycles(out: dict[str, Any]) -> list[str]:
+    return [r["path"] for r in out["sent"] if r["path"].endswith("/recycle")]
+
+
+def _creates(out: dict[str, Any]) -> list[dict[str, str]]:
+    return [r for r in out["sent"] if r["path"] == "web/lists" and r["verb"] == "POST"]
 
 
 def test_an_accepted_settings_merge_is_read_back_with_its_status() -> None:
@@ -121,3 +137,66 @@ def test_a_list_claimed_without_settings_declares_no_merge() -> None:
     assert out["held"] is True
     assert out["merge"] is None
     assert "Settings" not in out["rows"][FIXTURE]["evidence"]
+
+
+def test_the_list_made_is_recycled_by_its_id_and_never_by_its_title() -> None:
+    out = _claim(None)
+
+    assert out["held"] is True
+    assert f"Id={json.dumps(CLAIMED)}" in out["rows"][FIXTURE]["evidence"]
+    assert _recycles(out) == [f"web/lists(guid'{CLAIMED}')/recycle"]
+    assert f"recycled '{TITLE}' (list {CLAIMED})" in out["console"]
+
+
+def test_a_title_rebound_before_the_read_back_fails_the_fixture_and_spares_the_other_list() -> None:
+    rebound = json.dumps({"Id": OTHER, "BaseTemplate": 100, "Description": "owned"})
+    out = _claim(None, rules=[{"contains": f"getbytitle('{TITLE}')?$select=Id,BaseTemplate",
+                               "status": 200, "text": rebound}])
+
+    assert out["held"] is False
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert "Id differs" in out["rows"][FIXTURE]["evidence"]
+    assert out["rows"][DEPENDENT]["state"] == "void"
+    assert _recycles(out) == [f"web/lists(guid'{CLAIMED}')/recycle"]
+
+
+def test_a_create_answering_no_id_is_pinned_by_the_read_back() -> None:
+    out = _claim(None, createAnswersNoId=True)
+
+    assert out["held"] is True
+    assert _recycles(out) == [f"web/lists(guid'{CLAIMED}')/recycle"]
+
+
+def test_a_list_that_never_answers_an_id_is_left_for_a_recycle_by_hand() -> None:
+    out = _claim(None, createAnswersNoId=True,
+                 rules=[{"contains": f"getbytitle('{TITLE}')?$select=Id,BaseTemplate",
+                         "status": 500, "text": "no"}])
+
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert _recycles(out) == []
+    assert f"'{TITLE}' never answered a list Id, so it was not recycled; recycle it by hand." in (
+        out["console"])
+
+
+def test_with_cleanup_a_leftover_is_recycled_by_the_id_its_ownership_read_found() -> None:
+    leftover = {"Id": OTHER, "BaseTemplate": 100, "Description": "owned", "fields": {},
+                "items": []}
+    out = _claim(None, cleanup=True, lists={TITLE: leftover})
+
+    assert out["held"] is True
+    assert _recycles(out) == [f"web/lists(guid'{OTHER}')/recycle",
+                              f"web/lists(guid'{CLAIMED}')/recycle"]
+
+
+def test_a_leftover_that_is_not_recycled_is_not_built_over() -> None:
+    leftover = {"Id": OTHER, "BaseTemplate": 100, "Description": "owned", "fields": {},
+                "items": []}
+    out = _claim(None, cleanup=True, lists={TITLE: leftover},
+                 rules=[{"contains": "/recycle", "status": 500, "text": "no"}])
+
+    assert out["held"] is False
+    assert out["rows"][FIXTURE]["outcome"] == "FAIL"
+    assert f"the leftover list '{TITLE}' (list {OTHER}) was not recycled" in (
+        out["rows"][FIXTURE]["evidence"])
+    assert out["rows"][DEPENDENT]["state"] == "void"
+    assert _creates(out) == []

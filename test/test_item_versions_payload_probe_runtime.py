@@ -14,7 +14,7 @@ import pytest
 from _node import NODE
 from _paths import MANUAL
 from _probe_runs import catalogued_dependents, ended_with_report, run_probe, voided
-from _versions_mock import VERSIONS_MOCK
+from _versions_mock import VERSIONS_MOCK, mock_list_id
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
@@ -41,9 +41,9 @@ LIB_FIELDS = "field.version.library-upload-version-fields"
 LIB_FIXTURES = (LIBRARY, "field.version.fixture-library-column", LIB_FOLDER,
                 "field.version.fixture-library-file", "field.version.fixture-library-edit-first",
                 LIB_UPLOAD, "field.version.fixture-library-edit-second", LIB_READ)
-RECYCLED = ["web/lists/getbytitle('dbmlsp Probe VersionsLibrary')/recycle",
-            "web/lists/getbytitle('dbmlsp Probe Versions')/recycle",
-            "web/lists/getbytitle('dbmlsp Probe VersionsTarget')/recycle"]
+TITLES = ("dbmlsp Probe VersionsLibrary", "dbmlsp Probe Versions", "dbmlsp Probe VersionsTarget")
+RECYCLED = [f"web/lists(guid'{mock_list_id(title)}')/recycle" for title in TITLES]
+LEFTOVER_ID = "00000000-0000-4000-8000-00000000abcd"
 OWNED = "dbml-sharepoint item-versions probe scratch list. Safe to delete."
 LIST_READ_RULE = "Versions')/items(1)/versions"
 TENANT_TEXT = "Refused at https://example.sharepoint.com/sites/probe/_api/web"
@@ -255,8 +255,8 @@ def test_a_list_whose_versioning_does_not_stick_voids_everything_after_it() -> N
 
 
 def test_a_foreign_list_holding_the_title_is_never_written_to() -> None:
-    foreign = {"Id": "x", "BaseTemplate": 100, "Description": "somebody else's", "fields": {},
-               "items": []}
+    foreign = {"Id": LEFTOVER_ID, "BaseTemplate": 100, "Description": "somebody else's",
+               "fields": {}, "items": []}
     rows, sent, _ = _run(lists={"dbmlsp Probe Versions": foreign})
 
     assert rows[LIST]["outcome"] == "FAIL"
@@ -266,7 +266,8 @@ def test_a_foreign_list_holding_the_title_is_never_written_to() -> None:
 
 
 def test_a_leftover_list_without_cleanup_is_refused() -> None:
-    leftover = {"Id": "x", "BaseTemplate": 100, "Description": OWNED, "fields": {}, "items": []}
+    leftover = {"Id": LEFTOVER_ID, "BaseTemplate": 100, "Description": OWNED, "fields": {},
+                "items": []}
     rows, _, _ = _run(lists={"dbmlsp Probe Versions": leftover})
 
     assert rows[LIST]["outcome"] == "FAIL"
@@ -275,12 +276,15 @@ def test_a_leftover_list_without_cleanup_is_refused() -> None:
 
 
 def test_with_cleanup_a_leftover_list_is_recycled_and_built_again() -> None:
-    leftover = {"Id": "x", "BaseTemplate": 100, "Description": OWNED, "fields": {}, "items": []}
+    leftover = {"Id": LEFTOVER_ID, "BaseTemplate": 100, "Description": OWNED, "fields": {},
+                "items": []}
     rows, sent, _ = _run(("CONFIRMED", "ALLOW_WRITES", "CLEANUP"),
                          lists={"dbmlsp Probe Versions": leftover})
 
     assert rows[LIST]["outcome"] == "PASS"
-    assert len([p for p in _recycled(sent) if "Probe Versions'" in p]) == 2
+    # The leftover is recycled by the Id its ownership read found, and the rebuilt list by its own.
+    assert f"web/lists(guid'{LEFTOVER_ID}')/recycle" in _recycled(sent)
+    assert _recycled(sent)[-2:] == [RECYCLED[1], RECYCLED[2]]
 
 
 def test_a_digest_lost_mid_run_leaves_the_rest_open_and_asks_for_a_recycle_by_hand() -> None:

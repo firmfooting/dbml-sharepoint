@@ -41,6 +41,8 @@ CONTROL_CALL = "')/AddValidateUpdateItemUsingPath"
 FIELD = {"FieldName": "Title", "ErrorMessage": None, "FieldValue": "x"}
 NO_COLUMN = "Column 'dbmlspNoSuchColumn' does not exist."
 ID_FIELD = {"FieldName": "Id", "FieldValue": "6", "HasException": False, "ErrorMessage": None}
+CREATED_ID = "00000000-0000-4000-8000-000000000001"
+LEFTOVER_ID = "00000000-0000-4000-8000-00000000abcd"
 
 _MOCK = textwrap.dedent(r"""
     const CONFIG = __CONFIG__;
@@ -57,6 +59,7 @@ _MOCK = textwrap.dedent(r"""
         text: async () => text, json: async () => JSON.parse(text) };
     };
     const LIST = "web/lists/getbytitle('dbmlsp Probe BatchItems')";
+    const CREATED_ID = '00000000-0000-4000-8000-000000000001';
     const ME = { Id: 7, Email: 'ada@example.com', LoginName: 'i:0#.f|membership|ada@example.com',
       Title: 'Ada Probe' };
     let list = CONFIG.list || null;
@@ -168,12 +171,18 @@ _MOCK = textwrap.dedent(r"""
       if (path.startsWith('web/currentuser')) return answer(200, ME);
       if (path === 'web/lists' && verb === 'POST') {
         const sent = JSON.parse(raw);
-        list = { Id: 'list-1', BaseTemplate: sent.BaseTemplate, Description: sent.Description,
+        list = { Id: CREATED_ID, BaseTemplate: sent.BaseTemplate, Description: sent.Description,
           ListItemEntityTypeFullName: 'SP.Data.dbmlspProbeBatchItemsListItem' };
-        return answer(201, { Id: 'list-1' });
+        return answer(201, { Id: CREATED_ID });
       }
-      if (!path.startsWith(LIST)) return answer(404, 'no such endpoint in the mock: ' + path);
-      const rest = path.slice(LIST.length);
+      // The list answers by its title, and by its Id while it stands.
+      const byId = list === null ? null : `web/lists(guid'${list.Id}')`;
+      const prefix = path.startsWith(LIST) ? LIST : byId && path.startsWith(byId) ? byId : null;
+      if (prefix === null) {
+        return /^web\/lists\(guid'/.test(path) ? answer(404, 'List does not exist.')
+          : answer(404, 'no such endpoint in the mock: ' + path);
+      }
+      const rest = path.slice(prefix.length);
       if (list === null) return answer(404, 'List does not exist.');
       if (rest === '' || rest.startsWith('?')) return answer(200, list);
       if (rest === '/recycle') { list = null; return answer(200, {}); }
@@ -587,7 +596,8 @@ def test_an_items_read_back_that_fails_says_so_rather_than_guessing() -> None:
 
 
 def test_a_foreign_list_holding_the_title_is_never_written_to() -> None:
-    rows, sent, _ = _run(list={"Id": "x", "BaseTemplate": 100, "Description": "somebody else's"})
+    rows, sent, _ = _run(list={"Id": LEFTOVER_ID, "BaseTemplate": 100,
+                               "Description": "somebody else's"})
 
     assert rows[LIST]["outcome"] == "FAIL"
     assert voided(rows) == _deps(LIST)
@@ -596,7 +606,7 @@ def test_a_foreign_list_holding_the_title_is_never_written_to() -> None:
 
 def test_with_cleanup_a_leftover_list_is_recycled_and_built_again() -> None:
     rows, sent, _ = _run(("CONFIRMED", "ALLOW_WRITES", "CLEANUP"),
-                         list={"Id": "x", "BaseTemplate": 100, "Description": OWNED,
+                         list={"Id": LEFTOVER_ID, "BaseTemplate": 100, "Description": OWNED,
                                "ListItemEntityTypeFullName": "SP.Data.old"})
 
     assert rows[LIST]["outcome"] == "PASS"

@@ -7,6 +7,12 @@ branch can be reached; the probes record whatever a site answers and never compa
 this shape.
 """
 
+
+def mock_list_id(title: str) -> str:
+    """The Id the mock gives a list it creates under `title`."""
+    return f"00000000-0000-4000-8000-{sum(map(ord, title)):012x}"
+
+
 VERSIONS_MOCK = r"""
 const CONFIG = __CONFIG__;
 globalThis.window = { _spPageContextInfo: {
@@ -21,8 +27,10 @@ const answer = (status, payload) => {
 const ME = CONFIG.me || { Id: 7, Email: 'ada@example.com',
   LoginName: 'i:0#.f|membership|ada@example.com', Title: 'Ada Probe' };
 const lists = new Map(Object.entries(CONFIG.lists || {}));
+// A list Id spelled as a GUID and derived from the title, as mock_list_id derives it.
+const guid = (title) => '00000000-0000-4000-8000-'
+  + [...title].reduce((sum, c) => sum + c.charCodeAt(0), 0).toString(16).padStart(12, '0');
 const folders = new Set();
-let listCount = 0;
 let digests = 0;
 let versionReads = 0;
 const KINDS = { 2: 'Text', 4: 'DateTime', 6: 'Choice', 7: 'Lookup', 8: 'Boolean', 9: 'Number',
@@ -97,15 +105,15 @@ const mockFetch = async (url, opts = {}) => {
   }
   if (path.startsWith('web/currentuser')) return answer(200, ME);
   if (path === 'web/lists' && verb === 'POST') {
-    listCount += 1;
-    lists.set(sent.Title, { Id: `list-${listCount}`, BaseTemplate: sent.BaseTemplate,
+    lists.set(sent.Title, { Id: guid(sent.Title), BaseTemplate: sent.BaseTemplate,
       Description: sent.Description, EnableVersioning: false, EnableMinorVersions: false,
       MajorVersionLimit: 50,
       ListItemEntityTypeFullName: `SP.Data.${sent.Title.replace(/ /g, '')}ListItem`,
       root: `/sites/probe/${sent.Title}`, fields: {}, items: [] });
     // `listDefaults`: values a new list starts with, so a refused MERGE can still leave it usable.
     Object.assign(lists.get(sent.Title), CONFIG.listDefaults || {});
-    return answer(201, { Id: `list-${listCount}` });
+    // `createAnswersNoId`: a create whose answer carries no Id, so the read-back supplies it.
+    return answer(201, CONFIG.createAnswersNoId ? {} : { Id: guid(sent.Title) });
   }
   if (path === 'web/folders' && verb === 'POST') {
     folders.add(sent.ServerRelativeUrl);
@@ -153,8 +161,10 @@ const mockFetch = async (url, opts = {}) => {
     return answer(200, { Name: found.item.url.slice(found.item.url.lastIndexOf('/') + 1) });
   }
   const at = /^web\/lists\/getbytitle\('([^']+)'\)(.*)$/.exec(path);
-  if (!at) return answer(404, 'no such endpoint in the mock: ' + path);
-  const [, title, rest] = at;
+  const byId = /^web\/lists\(guid'([^']+)'\)(.*)$/.exec(path);
+  if (!at && !byId) return answer(404, 'no such endpoint in the mock: ' + path);
+  const named = (id) => [...lists.keys()].find((name) => lists.get(name).Id === id);
+  const [, title, rest] = at || [null, named(byId[1]), byId[2]];
   const list = lists.get(title);
   if (!list) return answer(404, 'List does not exist.');
   if (rest === '' && verb === 'MERGE') {

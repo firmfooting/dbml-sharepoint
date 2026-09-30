@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: 42922019
+ * REVISION: 17ad6b99
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -445,8 +445,13 @@
       .replace(/[^\s'"|:<>\\]+@[^\s'"<>\\]+/gi, '<account>');
   };
   // ---- Scratch lists (v1) ---------------------------------------------
-  // Titles this run created, so the recycle touches those and never a list it only found.
+  // Lists this run created, by title and Id, so the recycle touches those and never a list it only found.
   const CREATED_LISTS = [];
+  // A list Id as a bare lower-case GUID, or null when the value is not one.
+  const guidOf = (value) => {
+    const bare = value === null || value === undefined ? '' : String(value).replace(/[{}]/g, '').toLowerCase();
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(bare) ? bare : null;
+  };
   // __metadata is verbose OData, so every write carrying it declares the verbose content type.
   const VERBOSE_WRITE = { 'Content-Type': 'application/json;odata=verbose' };
 
@@ -467,7 +472,14 @@
         voidDependents(dependents, 'a leftover list would answer this run\'s questions');
         return { held: false, merge: null, body: null };
       }
-      await resetList(title);
+      // The recycle is pinned to the Id this read found, so a title rebound meanwhile cannot redirect it.
+      const leftover = guidOf(pre.body.Id);
+      if (leftover === null || !await resetList(title, leftover)) {
+        record(id, question, 'FAIL', `the leftover list '${title}' `
+          + `${leftover === null ? 'answered no list Id to recycle it by' : `(list ${leftover}) was not recycled`}`);
+        voidDependents(dependents, 'a leftover list would answer this run\'s questions');
+        return { held: false, merge: null, body: null };
+      }
     }
     const made = await spPost('web/lists',
       { Title: title, BaseTemplate: baseTemplate, Description: description }, await getDigest());
@@ -477,7 +489,9 @@
       voidDependents(dependents, 'the scratch list was not created');
       return { held: false, merge: null, body: null };
     }
-    CREATED_LISTS.push(title);
+    // What a list POST answers is not measured, so a missing Id is taken from the read-back below.
+    const created = { title, id: guidOf(made.body && made.body.Id) };
+    CREATED_LISTS.push(created);
     let merge = null;
     if (settings !== null) {
       merge = await spPost(path, { __metadata: { type: 'SP.List' }, ...settings }, await getDigest(),
@@ -485,7 +499,7 @@
       log('INFO', `list settings MERGE on '${title}': HTTP ${merge.status}`
         + `${merge.ok ? '' : ` ${scrub(merge.text).slice(0, 200)}`}`);
     }
-    const select = ['BaseTemplate', 'Description', ...Object.keys(declared)].join(',');
+    const select = [...new Set(['Id', 'BaseTemplate', 'Description', ...Object.keys(declared)])].join(',');
     // The MERGE's answer joins the read-back, so a refused setting shows its reason in RESULTS.
     const answered = merge === null ? {} : { Settings: `HTTP ${merge.status}`
       + `${merge.ok ? '' : `: ${scrub(merge.text).slice(0, 200)}`}` };
@@ -494,27 +508,36 @@
     let read = null;
     const held = await establishFixture(id, async () => {
       read = await spGet(`${path}?$select=${select}`);
+      const found = read.ok && read.body && typeof read.body === 'object' ? guidOf(read.body.Id) : null;
+      if (created.id === null) created.id = found;
       return read.ok && read.body && typeof read.body === 'object'
         ? { ...read, body: { ...read.body, ...answered } } : read;
-    }, { BaseTemplate: baseTemplate, Description: description, ...declared, ...settled }, dependents);
+    }, { BaseTemplate: baseTemplate, Description: description, ...declared, ...settled,
+      // The title must still name the list this run created, so every write after it reaches that list.
+      Id: (v) => guidOf(v) !== null && guidOf(v) === created.id }, dependents);
     // The read-back is handed on, so a caller uses the values the fixture certified.
     return { held, merge, body: held ? read.body : null };
   };
 
-  // Recycles every list this run created, newest first, and says which one to recycle by hand.
+  // Recycles every list this run created by its Id, newest first, and says which one to recycle by hand.
   const recycleScratchLists = async () => {
-    for (const title of [...CREATED_LISTS].reverse()) {
+    for (const { title, id } of [...CREATED_LISTS].reverse()) {
+      if (id === null) {
+        log('FAIL', `'${title}' never answered a list Id, so it was not recycled; recycle it by hand.`);
+        continue;
+      }
       let gone;
       try {
-        gone = await spPost(`web/lists/getbytitle('${title}')/recycle`, {}, await getDigest());
+        // The by-Id recycle is the one resetList sends, so a title rebound cannot redirect it.
+        gone = await spPost(`web/lists(guid'${id}')/recycle`, {}, await getDigest());
       } catch (err) {
         gone = { ok: false, status: null, text: String((err && err.message) || err) };
       }
       // A request that threw has no status, so its message is what the operator is shown.
       const why = gone.status === null ? scrub(gone.text).slice(0, 240) : `HTTP ${gone.status}`;
       log(gone.ok ? 'OK' : 'FAIL', gone.ok
-        ? `recycled '${title}'; it is restorable from the recycle bin.`
-        : `could not recycle '${title}' (${why}); recycle it by hand.`);
+        ? `recycled '${title}' (list ${id}); it is restorable from the recycle bin.`
+        : `could not recycle '${title}' (list ${id}, ${why}); recycle it by hand.`);
     }
   };
   // ---- Item versions (v1) ---------------------------------------------
@@ -540,7 +563,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 42922019. Quote this when reporting results.');
+  log('INFO', 'probe revision 17ad6b99. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe VersionsTrim';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
