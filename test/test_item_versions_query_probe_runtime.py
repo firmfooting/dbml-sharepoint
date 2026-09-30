@@ -28,7 +28,8 @@ LIST = "query.odata.fixture-versions-query-list"
 ITEMS = "query.odata.fixture-versions-query-items"
 READ = "query.odata.control-versions-read"
 FILTER_CONTROL = "query.odata.control-versions-items-filter"
-TOP_CONTROL = "query.odata.control-versions-items-top-orderby"
+TOP_CONTROL = "query.odata.control-versions-items-top"
+ORDERBY_CONTROL = "query.odata.control-versions-items-orderby"
 ORDER = "query.odata.versions-default-order"
 SELECT = "query.odata.versions-select"
 FILTER = "query.odata.versions-filter"
@@ -57,7 +58,7 @@ def test_without_both_gates_the_probe_sends_nothing(gates: tuple[str, ...]) -> N
 def test_a_site_honouring_every_option_is_recorded_as_such() -> None:
     rows, sent, _ = _run()
 
-    for row_id in (LIST, ITEMS, READ, FILTER_CONTROL, TOP_CONTROL):
+    for row_id in (LIST, ITEMS, READ, FILTER_CONTROL, TOP_CONTROL, ORDERBY_CONTROL):
         assert rows[row_id]["outcome"] == "PASS", rows[row_id]
     assert rows[ORDER]["outcome"] == "DESCENDING"
     assert "VersionIds in the order answered: [1536,1024,512]" in rows[ORDER]["evidence"]
@@ -149,14 +150,18 @@ def test_a_failed_filter_control_voids_only_the_filter_row() -> None:
     assert rows[TOP]["outcome"] == "TOPPED"
 
 
-def test_a_throttled_top_control_leaves_its_rows_open() -> None:
-    rows, _, _ = _run(rules=[{"contains": "/items?$select=Id&$orderby", "status": 429,
-                              "text": "busy"}])
+@pytest.mark.parametrize(("query", "control", "row_id", "other"), [
+    ("/items?$select=Id&$top", TOP_CONTROL, TOP, ORDERBY),
+    ("/items?$select=Id&$orderby=Id desc", ORDERBY_CONTROL, ORDERBY, TOP),
+], ids=["top", "orderby"])
+def test_a_throttled_item_list_control_leaves_only_its_own_row_open(
+        query: str, control: str, row_id: str, other: str) -> None:
+    rows, _, _ = _run(rules=[{"contains": query, "status": 429, "text": "busy"}])
 
-    assert rows[TOP_CONTROL]["outcome"] == "NOT ESTABLISHED"
-    for row_id in (TOP, ORDERBY):
-        assert rows[row_id]["state"] == "open"
-        assert "a re-run can ask it" in rows[row_id]["evidence"]
+    assert rows[control]["outcome"] == "NOT ESTABLISHED"
+    assert rows[row_id]["state"] == "open"
+    assert "a re-run can ask it" in rows[row_id]["evidence"]
+    assert rows[other]["state"] == "settled"
     assert rows[FILTER]["outcome"] == "FILTERED"
 
 
@@ -182,7 +187,7 @@ def test_a_throttled_plain_read_leaves_everything_after_it_open() -> None:
     rows, _, _ = _run(rules=[{"contains": "items(1)/versions", "status": 503, "text": "busy"}])
 
     assert rows[READ]["outcome"] == "NOT ESTABLISHED"
-    for row_id in (FILTER_CONTROL, TOP_CONTROL, *SUBJECTS):
+    for row_id in (FILTER_CONTROL, TOP_CONTROL, ORDERBY_CONTROL, *SUBJECTS):
         assert rows[row_id]["state"] == "open"
 
 
@@ -237,7 +242,7 @@ def test_a_plain_read_with_a_continuation_link_leaves_every_option_row_open() ->
         assert rows[row_id]["outcome"] == "NOT COMPARABLE", rows[row_id]
         assert rows[row_id]["state"] == "open"
         assert "which this probe does not follow" in rows[row_id]["evidence"]
-    for row_id in (FILTER_CONTROL, TOP_CONTROL):
+    for row_id in (FILTER_CONTROL, TOP_CONTROL, ORDERBY_CONTROL):
         assert rows[row_id]["outcome"] == "NOT ESTABLISHED"
         assert rows[row_id]["evidence"].startswith(
             "not asked: the plain versions read is not known")
@@ -304,7 +309,7 @@ def test_a_plain_read_answered_2xx_with_no_value_array_leaves_everything_after_i
                               "text": '{"d": "x"}'}])
 
     assert rows[READ]["outcome"] == "NOT ESTABLISHED"
-    for row_id in (FILTER_CONTROL, TOP_CONTROL, *SUBJECTS):
+    for row_id in (FILTER_CONTROL, TOP_CONTROL, ORDERBY_CONTROL, *SUBJECTS):
         assert rows[row_id]["state"] == "open", rows[row_id]
     assert voided(rows) == set()
 
@@ -333,13 +338,45 @@ def test_an_unordered_plain_read_asks_ascending_and_does_not_call_it_opposite() 
     assert "opposite to" not in rows[ORDERBY]["evidence"]
 
 
-def test_the_top_control_expects_the_greater_id_read_back_whichever_item_has_it() -> None:
+def test_the_orderby_control_asks_both_directions_over_the_ids_read_back() -> None:
     rows, _, _ = _run(itemIds=[5, 3])
 
+    assert rows[ORDERBY_CONTROL]["outcome"] == "PASS", rows[ORDERBY_CONTROL]
+    assert "$orderby=Id asc: served [3,5], want [3,5]" in rows[ORDERBY_CONTROL]["evidence"]
+    assert "$orderby=Id desc: served [5,3], want [5,3]" in rows[ORDERBY_CONTROL]["evidence"]
     assert rows[TOP_CONTROL]["outcome"] == "PASS", rows[TOP_CONTROL]
-    assert "served [5], want [5]" in rows[TOP_CONTROL]["evidence"]
-    assert rows[TOP]["outcome"] == "TOPPED"
+    assert "$top=1: served [5], want one of [5,3]" in rows[TOP_CONTROL]["evidence"]
     assert voided(rows) == set()
+
+
+def test_an_ignored_orderby_fails_its_control_even_where_the_order_happens_to_fit() -> None:
+    # Created 5 then 3, so an ignored $orderby still serves the greater Id first.
+    rows, _, _ = _run(itemIds=[5, 3], itemsIgnoreOrderby=True)
+
+    assert rows[ORDERBY_CONTROL]["outcome"] == "FAIL", rows[ORDERBY_CONTROL]
+    assert "$orderby=Id asc: served [5,3], want [3,5]" in rows[ORDERBY_CONTROL]["evidence"]
+    assert voided(rows) == _deps(ORDERBY_CONTROL) == {ORDERBY}
+    assert rows[TOP_CONTROL]["outcome"] == "PASS"
+    assert rows[TOP]["outcome"] == "TOPPED"
+
+
+def test_an_ignored_top_fails_only_the_top_control() -> None:
+    rows, _, _ = _run(rules=[{"contains": "/items?$select=Id&$top", "status": 200,
+                              "text": '{"value": [{"Id": 1}, {"Id": 2}]}'}])
+
+    assert rows[TOP_CONTROL]["outcome"] == "FAIL"
+    assert voided(rows) == _deps(TOP_CONTROL) == {TOP}
+    assert rows[ORDERBY]["outcome"] == "ASCENDING"
+
+
+def test_a_refused_orderby_read_beside_an_unanswered_one_fails_the_control() -> None:
+    rows, _, _ = _run(rules=[
+        {"contains": "/items?$select=Id&$orderby=Id asc", "status": 500, "text": "Refused."},
+        {"contains": "/items?$select=Id&$orderby=Id desc", "status": 429, "text": "busy"}])
+
+    assert rows[ORDERBY_CONTROL]["outcome"] == "FAIL"
+    assert "$orderby=Id asc: HTTP 500: Refused." in rows[ORDERBY_CONTROL]["evidence"]
+    assert voided(rows) == {ORDERBY}
 
 
 def test_a_plain_read_repeating_a_versionid_voids_the_option_rows() -> None:

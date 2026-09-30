@@ -12599,7 +12599,15 @@
               ]
             },
             {
-              "id": "query.odata.control-versions-items-top-orderby",
+              "id": "query.odata.control-versions-items-top",
+              "depends_on": [
+                "query.odata.fixture-versions-query-list",
+                "query.odata.fixture-versions-query-items",
+                "query.odata.control-versions-read"
+              ]
+            },
+            {
+              "id": "query.odata.control-versions-items-orderby",
               "depends_on": [
                 "query.odata.fixture-versions-query-list",
                 "query.odata.fixture-versions-query-items",
@@ -12637,7 +12645,7 @@
                 "query.odata.fixture-versions-query-list",
                 "query.odata.fixture-versions-query-items",
                 "query.odata.control-versions-read",
-                "query.odata.control-versions-items-top-orderby"
+                "query.odata.control-versions-items-top"
               ]
             },
             {
@@ -12646,7 +12654,7 @@
                 "query.odata.fixture-versions-query-list",
                 "query.odata.fixture-versions-query-items",
                 "query.odata.control-versions-read",
-                "query.odata.control-versions-items-top-orderby"
+                "query.odata.control-versions-items-orderby"
               ]
             }
           ],
@@ -12656,7 +12664,8 @@
             "query.odata.fixture-versions-query-items",
             "query.odata.control-versions-read",
             "query.odata.control-versions-items-filter",
-            "query.odata.control-versions-items-top-orderby"
+            "query.odata.control-versions-items-top",
+            "query.odata.control-versions-items-orderby"
           ],
           "depends_on": []
         }

@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: 86588797
+ * REVISION: 08b910f3
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -18,11 +18,12 @@
  *   query.odata.control-versions-read        A's versions read with no options answers
  *       at least two entries, each carrying a numeric VersionId, none repeated
  *   query.odata.control-versions-items-filter      $filter=Id eq A serves A alone
- *   query.odata.control-versions-items-top-orderby $orderby=Id desc&$top=1 serves whichever
- *       of A and B read back with the greater Id, alone
- *   The filter control gates the filter row, the top-and-orderby control gates the
- *   top and orderby rows. A control that FAILs voids them; one NOT ESTABLISHED leaves
- *   them open and unasked.
+ *   query.odata.control-versions-items-top      $top=1 serves one of A and B, alone
+ *   query.odata.control-versions-items-orderby  $orderby=Id asc serves A and B in rising Id
+ *       order and $orderby=Id desc in falling order, over the Ids read back, so an
+ *       ignored $orderby fails one of the two whatever order the list keeps
+ *   Each item-list control gates the versions row asking the same option. A control
+ *   that FAILs voids it; one NOT ESTABLISHED leaves it open and unasked.
  *
  * OBSERVES (named from what came back, never compared with an expected value)
  *   query.odata.versions-default-order  the VersionIds in the order the plain read answered
@@ -829,7 +830,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 86588797. Quote this when reporting results.');
+  log('INFO', 'probe revision 08b910f3. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsQuery');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
@@ -843,7 +844,9 @@
     read: 'CONTROL: A\'s versions read with no options answers at least two entries, '
       + 'each carrying a numeric VersionId, none repeated',
     filterControl: 'CONTROL: $filter=Id eq A on the list\'s items serves A alone',
-    topControl: 'CONTROL: $orderby=Id desc&$top=1 on the list\'s items serves the item with the greater Id alone',
+    topControl: 'CONTROL: $top=1 on the list\'s items serves one of A and B alone',
+    orderbyControl: 'CONTROL: $orderby=Id asc and $orderby=Id desc on the list\'s items serve A and B in opposite '
+      + 'orders, rising and falling by Id',
     order: 'the order the versions read answers when asked for none',
     select: `what $select=VersionId,VersionLabel,${CHOICE} on the versions read answers`,
     filter: 'what $filter=VersionId gt the lowest VersionId on the versions read answers',
@@ -855,7 +858,8 @@
   expect('query.odata.fixture-versions-query-items', Q.items);
   expect('query.odata.control-versions-read', Q.read);
   expect('query.odata.control-versions-items-filter', Q.filterControl);
-  expect('query.odata.control-versions-items-top-orderby', Q.topControl);
+  expect('query.odata.control-versions-items-top', Q.topControl);
+  expect('query.odata.control-versions-items-orderby', Q.orderbyControl);
   expect('query.odata.versions-default-order', Q.order);
   expect('query.odata.versions-select', Q.select);
   expect('query.odata.versions-filter', Q.filter);
@@ -863,10 +867,11 @@
   expect('query.odata.versions-orderby', Q.orderby);
 
   const FILTER_CONTROL = 'query.odata.control-versions-items-filter';
-  const TOP_CONTROL = 'query.odata.control-versions-items-top-orderby';
+  const TOP_CONTROL = 'query.odata.control-versions-items-top';
+  const ORDERBY_CONTROL = 'query.odata.control-versions-items-orderby';
   const SUBJECTS = ['query.odata.versions-default-order', 'query.odata.versions-select',
     'query.odata.versions-filter', 'query.odata.versions-top', 'query.odata.versions-orderby'];
-  const AFTER_READ = [FILTER_CONTROL, TOP_CONTROL, ...SUBJECTS];
+  const AFTER_READ = [FILTER_CONTROL, TOP_CONTROL, ORDERBY_CONTROL, ...SUBJECTS];
   const AFTER_ITEMS = ['query.odata.control-versions-read', ...AFTER_READ];
   const AFTER_LIST = ['query.odata.fixture-versions-query-items', ...AFTER_ITEMS];
 
@@ -1003,22 +1008,41 @@
       `VersionIds in the order answered: ${JSON.stringify(plainIds)}; labels `
       + `${JSON.stringify(plain.rows.map((row) => row.VersionLabel))}`);
 
-    // What the item-list controls serve decides which option rows are asked at all.
-    const controlOf = async (id, question, query, want) => {
-      const res = await sendRaw(`${listPath}/items?$select=Id&${query}`);
-      const head = maskedHead(res);
-      const { rows, shape } = head ? { rows: null, shape: null } : entriesOf(res.parsed);
-      const served = rows === null ? null : rows.map((row) => row.Id);
-      // A 2xx with no rows is not an answer about the option, so it is left open like a throttle.
-      const outcome = served !== null && sameElements(served, [want]) ? 'PASS'
-        : (head ? head.outcome === 'NOT ESTABLISHED' : served === null) ? 'NOT ESTABLISHED' : 'FAIL';
-      const why = head ? scrub(head.why) : served === null ? `HTTP ${res.status} ${shape}: ${said(res)}` : '';
-      record(id, question, outcome, `${query}: ${why || `served ${JSON.stringify(served)}, want [${want}]`}`);
+    // What the item-list controls serve decides which option rows are asked at all. Each read is judged alone:
+    // a refusal or a contradicting answer fails the control, and otherwise an unanswered read leaves it open.
+    const controlOf = async (id, question, reads) => {
+      const verdicts = [];
+      for (const { query, holds, want } of reads) {
+        const res = await sendRaw(`${listPath}/items?$select=Id&${query}`);
+        const head = maskedHead(res);
+        const { rows, shape } = head ? { rows: null, shape: null } : entriesOf(res.parsed);
+        const served = rows === null ? null : rows.map((row) => row.Id);
+        // A 2xx with no rows is not an answer about the option, so it is left open like a throttle.
+        const outcome = served !== null && holds(served) ? 'PASS'
+          : (head ? head.outcome === 'NOT ESTABLISHED' : served === null) ? 'NOT ESTABLISHED' : 'FAIL';
+        const why = head ? scrub(head.why) : served === null ? `HTTP ${res.status} ${shape}: ${said(res)}` : '';
+        verdicts.push({ outcome, said: `${query}: ${why || `served ${JSON.stringify(served)}, want ${want}`}` });
+      }
+      const outcome = verdicts.some((v) => v.outcome === 'FAIL') ? 'FAIL'
+        : verdicts.some((v) => v.outcome === 'NOT ESTABLISHED') ? 'NOT ESTABLISHED' : 'PASS';
+      const why = verdicts.map((v) => v.said).join('; ');
+      record(id, question, outcome, why);
       return { outcome, why };
     };
-    const filterControl = await controlOf(FILTER_CONTROL, Q.filterControl, `$filter=Id eq ${ids.A}`, ids.A);
-    // The greater of the two Ids read back, since nothing certifies that B was given the greater one.
-    const topControl = await controlOf(TOP_CONTROL, Q.topControl, '$orderby=Id desc&$top=1', Math.max(ids.A, ids.B));
+    // Exactly these Ids in exactly this order.
+    const inOrder = (want) => (served) => served.length === want.length && served.every((v, i) => v === want[i]);
+    const filterControl = await controlOf(FILTER_CONTROL, Q.filterControl, [{ query: `$filter=Id eq ${ids.A}`,
+      holds: (served) => sameElements(served, [ids.A]), want: `[${ids.A}]` }]);
+    const topControl = await controlOf(TOP_CONTROL, Q.topControl, [{ query: '$top=1',
+      holds: (served) => served.length === 1 && [ids.A, ids.B].includes(served[0]),
+      want: `one of [${ids.A},${ids.B}]` }]);
+    // Both directions over the Ids read back, since an ignored $orderby serves one order for both.
+    const rising = [ids.A, ids.B].sort((a, b) => a - b);
+    const falling = [...rising].reverse();
+    const orderbyControl = await controlOf(ORDERBY_CONTROL, Q.orderbyControl, [
+      { query: '$orderby=Id asc', holds: inOrder(rising), want: JSON.stringify(rising) },
+      { query: '$orderby=Id desc', holds: inOrder(falling), want: JSON.stringify(falling) },
+    ]);
 
     // `control` is null for an option no item-list control asks first.
     const ask = async (id, question, control, query, describe) => {
@@ -1097,7 +1121,7 @@
     const direction = opposite || 'asc';
     const askedSaid = opposite ? `asked ${direction}, opposite to the plain read's ${defaultOrder}`
       : `asked asc, since the plain read was ${defaultOrder} and has no opposite`;
-    await ask('query.odata.versions-orderby', Q.orderby, topControl, `$orderby=VersionId ${direction}`,
+    await ask('query.odata.versions-orderby', Q.orderby, orderbyControl, `$orderby=VersionId ${direction}`,
       (rows) => {
         const served = rows.map(versionIdOf);
         // An order is named only over the same versions the plain read answered.

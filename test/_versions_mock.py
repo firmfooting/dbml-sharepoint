@@ -240,7 +240,9 @@ const mockFetch = async (url, opts = {}) => {
     let rows = list.items.map((item) => ({ Id: item.Id, ...item.values }));
     const filter = /^Id eq (\d+)$/.exec(params.$filter || '');
     if (filter) rows = rows.filter((row) => row.Id === Number(filter[1]));
-    if (params.$orderby === 'Id desc') rows = [...rows].sort((a, b) => b.Id - a.Id);
+    // `itemsIgnoreOrderby`: a site serving items in the order made, whatever $orderby asks.
+    const by = CONFIG.itemsIgnoreOrderby ? null : /^Id (asc|desc)$/.exec(params.$orderby || '');
+    if (by) rows = [...rows].sort((a, b) => (by[1] === 'asc' ? a.Id - b.Id : b.Id - a.Id));
     if (params.$top) rows = rows.slice(0, Number(params.$top));
     return answer(200, { value: rows });
   }
