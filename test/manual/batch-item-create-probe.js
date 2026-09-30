@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: f63b2867
+ * REVISION: a027129f
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -69,8 +69,9 @@
  * differs from the parts sent, an AddValidate answer names other fields than
  * its part sent, or the three typed creates' answers cannot be paired with
  * their parts by the Title each names (one answer naming no Title is paired
- * with the one part left, and the evidence says so). FIELD REFUSED is a 2xx AddValidate answer with HasException on
- * the missing column. Any other AddValidate row is WRITTEN when its part answered
+ * with the one part left, and the evidence says so). FIELD REFUSED is a 2xx
+ * AddValidate answer with HasException on the missing column. Any other
+ * AddValidate row is WRITTEN when its part answered
  * 2xx with no field exception, its item exists, and the value it wrote reads back:
  * the person as this account's Id, the date as the same UTC instant as the one
  * sent. When the item exists but the value does not read back so, the claims row
@@ -608,7 +609,7 @@
         : `could not recycle '${title}' (list ${id}, ${why}); recycle it by hand.`);
     }
   };
-  log('INFO', 'probe revision f63b2867. Quote this when reporting results.');
+  log('INFO', 'probe revision a027129f. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe BatchItems';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.

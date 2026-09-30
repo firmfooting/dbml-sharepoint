@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: f5ac00f3
+ * REVISION: 42d31962
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -66,8 +66,9 @@
  * read just after the upload has and the read just before it lacks. There,
  * NOT COMPARABLE is an earlier entry gone from the later read or an entry with
  * no VersionId, and NOT ESTABLISHED, left open, is either read unanswered.
- * NOT IDENTIFIED is the fields row when no version is the upload's alone. NOT COMPARABLE, left open, is a versions read carrying a
- * continuation link, which the probe records and does not follow.
+ * NOT IDENTIFIED is the fields row when no version is the upload's alone.
+ * NOT COMPARABLE, left open, is a versions read carrying a continuation link,
+ * which the probe records and does not follow.
  * Email addresses, claims logins and this account's display name are masked.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
@@ -631,7 +632,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision f5ac00f3. Quote this when reporting results.');
+  log('INFO', 'probe revision 42d31962. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe Versions';
   const TARGET = 'dbmlsp Probe VersionsTarget';
