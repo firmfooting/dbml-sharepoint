@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: 21f05a9a
+ * REVISION: 02a62d29
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -64,8 +64,12 @@
  * line said, beside whether its item exists afterwards. OUTER REQUEST REFUSED
  * is the whole $batch refused, and its text says why. FIELD REFUSED is a 2xx
  * AddValidate answer with HasException on a field. Any other AddValidate row is
- * WRITTEN when its part answered 2xx with no field exception and its item exists;
- * any other answer is NOT ESTABLISHED, with the answer quoted, and the probe goes on.
+ * WRITTEN when its part answered 2xx with no field exception, its item exists, and
+ * the value it wrote reads back: the person as this account's Id, the date as the
+ * same UTC instant as the one sent. When the item exists but the value does not read
+ * back so, the claims row is ACCEPTED, NOT STORED and the date row is ACCEPTED,
+ * STORED DIFFERENTLY, with both values quoted. Any other answer is NOT ESTABLISHED,
+ * with the answer quoted, and the probe goes on.
  * Email addresses, claims logins and this account's display name are masked.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
@@ -554,7 +558,7 @@
         : `could not recycle '${title}' (${why}); recycle it by hand.`);
     }
   };
-  log('INFO', 'probe revision 21f05a9a. Quote this when reporting results.');
+  log('INFO', 'probe revision 02a62d29. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe BatchItems';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -945,15 +949,23 @@
           + 'was not established; a re-run can ask it');
       }
     } else {
-      // What reads back for the value a part wrote, beside its answer; recorded, never judged.
+      // What reads back for the value a part wrote, against what it sent; `stored` is null where no value is asked.
       const readsBack = (one) => {
         const row = present === null ? null : present.get(one.title);
-        if (!row) return '';
+        if (!row || (one.id !== CLAIMS && one.id !== ISO)) return { said: '', stored: null };
+        const shown = (value) => (value === undefined ? '(absent)' : JSON.stringify(value));
         if (one.id === CLAIMS) {
-          return `; ${WHO}Id reads back ${JSON.stringify(row[`${WHO}Id`])}, this account's Id: `
-            + `${row[`${WHO}Id`] === me.Id ? 'yes' : 'no'}`;
+          const who = row[`${WHO}Id`];
+          return { stored: who === me.Id, said: `; ${WHO}Id reads back ${shown(who)}, this account's Id: `
+            + `${who === me.Id ? 'yes' : 'no'} (the account read back Id ${me.Id})` };
         }
-        return one.id === ISO ? `; ${WHEN} reads back ${JSON.stringify(row[WHEN])}` : '';
+        // Compared as instants, so a UTC answer spelled with an offset still counts as the same date.
+        const when = row[WHEN];
+        const at = typeof when === 'string' ? Date.parse(when) : NaN;
+        const sent = Date.parse(STAMP);
+        return { stored: at === sent, said: `; ${WHEN} reads back ${shown(when)}; as a UTC instant `
+          + `${Number.isNaN(at) ? '(not a date)' : new Date(at).toISOString()} against the sent `
+          + `${new Date(sent).toISOString()}: ${at === sent ? 'same' : 'different'}` };
       };
       const outer = outerHead(addValidate);
       const neighbours = asked.filter((one) => one.id !== AV_FAILED)
@@ -985,8 +997,9 @@
         try { parsed = JSON.parse(part.body); } catch { parsed = null; }
         const fields = fieldsOf(parsed);
         const refused = fields !== null && fields.some((f) => f.HasException === true);
+        const kept = readsBack(one);
         const answer = `HTTP ${part.status} ${part.reason}; ${fields ? `fields ${fieldsSaid(fields)}`
-          : `body ${said(part.body) || '(none)'}`}; landed ${landed(one.title)}${readsBack(one)}`;
+          : `body ${said(part.body) || '(none)'}`}; landed ${landed(one.title)}${kept.said}`;
         if (one.id === AV_FAILED) {
           record(AV_FAILED, Q.avfailed, ok2xx(part.status) ? (refused ? 'FIELD REFUSED' : 'PART ANSWERED 2XX')
             : partHead(part), `${answer}; neighbours landed ${neighbours}${titlesSaid}`);
@@ -998,7 +1011,9 @@
             : refused ? 'a field was refused' : landed(one.title) !== 'yes' ? 'no item with its Title is known to exist'
               : null;
         // A refused write leaves the spelling not established; it is recorded and the probe goes on.
-        record(one.id, one.question, why === null ? 'WRITTEN' : 'NOT ESTABLISHED',
+        const head = why !== null ? 'NOT ESTABLISHED' : kept.stored !== false ? 'WRITTEN'
+          : one.id === CLAIMS ? 'ACCEPTED, NOT STORED' : 'ACCEPTED, STORED DIFFERENTLY';
+        record(one.id, one.question, head,
           why === null ? `${answer}${titlesSaid}` : `${why}: ${answer}${titlesSaid}`);
       });
     }

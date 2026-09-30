@@ -101,8 +101,10 @@ _MOCK = textwrap.dedent(r"""
         return { status: 200, reason: 'OK', body: { value: answers } };
       }
       items.push({ Id: items.length + 1, Title: values.Title,
-        ProbeWhoId: values.ProbeWho === undefined ? null : ME.Id,
-        ProbeWhen: values.ProbeWhen === undefined ? null : values.ProbeWhen });
+        ProbeWhoId: values.ProbeWho === undefined ? null
+          : 'storedWhoId' in CONFIG ? CONFIG.storedWhoId : ME.Id,
+        ProbeWhen: values.ProbeWhen === undefined ? null
+          : 'storedWhen' in CONFIG ? CONFIG.storedWhen : values.ProbeWhen });
       answers.push({ ErrorMessage: null, FieldName: 'Id', FieldValue: String(items.length),
         HasException: false, ItemId: 0 });
       return { status: 200, reason: 'OK', body: { value: answers } };
@@ -275,6 +277,44 @@ def test_the_addvalidate_parts_are_sent_as_the_history_write_sends_them() -> Non
     assert '"FieldName":"dbmlspNoSuchColumn"' in parts[1]
     assert '"FieldValue":"[{\\"Key\\":\\"i:0#.f|membership|ada@example.com\\"}]"' in parts[2]
     assert '"FieldName":"ProbeWhen","FieldValue":"2026-01-15T09:30:00Z"' in parts[3]
+
+
+@pytest.mark.parametrize("stored", [None, 9], ids=["empty", "another-person"])
+def test_a_person_accepted_but_not_read_back_as_this_account_is_named_so(
+        stored: int | None) -> None:
+    rows, _, _ = _run(storedWhoId=stored)
+
+    assert rows[CLAIMS]["outcome"] == "ACCEPTED, NOT STORED"
+    assert rows[CLAIMS]["state"] == "settled"
+    assert (f"ProbeWhoId reads back {json.dumps(stored)}, this account's Id: no "
+            "(the account read back Id 7)") in rows[CLAIMS]["evidence"]
+    assert rows[ISO]["outcome"] == "WRITTEN"
+    assert voided(rows) == set()
+
+
+@pytest.mark.parametrize(("stored", "instant"), [
+    ("2026-01-15T19:30:00Z", "2026-01-15T19:30:00.000Z"),
+    ("2026-01-15", "2026-01-15T00:00:00.000Z"),
+    (None, "(not a date)"),
+])
+def test_a_date_accepted_but_read_back_as_another_instant_is_named_so(
+        stored: str | None, instant: str) -> None:
+    rows, _, _ = _run(storedWhen=stored)
+
+    assert rows[ISO]["outcome"] == "ACCEPTED, STORED DIFFERENTLY"
+    assert rows[ISO]["state"] == "settled"
+    assert (f"ProbeWhen reads back {json.dumps(stored)}; as a UTC instant {instant} against the "
+            "sent 2026-01-15T09:30:00.000Z: different") in rows[ISO]["evidence"]
+    assert rows[CLAIMS]["outcome"] == "WRITTEN"
+    assert voided(rows) == set()
+
+
+def test_a_date_read_back_with_an_offset_is_compared_as_an_instant() -> None:
+    rows, _, _ = _run(storedWhen="2026-01-15T20:30:00+11:00")
+
+    assert rows[ISO]["outcome"] == "WRITTEN"
+    assert ("as a UTC instant 2026-01-15T09:30:00.000Z against the sent "
+            "2026-01-15T09:30:00.000Z: same") in rows[ISO]["evidence"]
 
 
 @pytest.mark.parametrize(("setting", "row_id", "said"), [
