@@ -884,3 +884,11 @@ def test_a_column_read_back_with_no_json_leaves_the_columns_open() -> None:
 
     assert rows[COLUMNS]["outcome"] == "NOT ESTABLISHED"
     assert "the read answered HTTP 200 with no JSON" in rows[COLUMNS]["evidence"]
+
+
+def test_an_upload_content_read_that_throws_leaves_the_upload_open() -> None:
+    rows, _, output = _run(rules=[{"contains": "/$value", "verb": "GET", "reject": True}])
+
+    assert rows[LIB_UPLOAD]["outcome"] == "NOT ESTABLISHED"
+    assert "the read never answered (Failed to fetch)" in rows[LIB_UPLOAD]["evidence"]
+    assert ended_with_report(output)

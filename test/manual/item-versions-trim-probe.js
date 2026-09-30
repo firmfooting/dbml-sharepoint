@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: AN ITEM'S VERSIONS AFTER THE VERSION LIMIT TRIMS THEM ----
  *
- * REVISION: 397a2259
+ * REVISION: 25673c77
  *
  * QUESTION: once an item has been written more times than its list's
  * MajorVersionLimit, what does `items(id)/versions` return, straight away and
@@ -522,7 +522,16 @@
     const start = fixtureStart;
     // Rows an earlier fixture voided are put back as they were, since establishFixture voids them again.
     const earlier = RESULTS.filter((r) => dependents.includes(r.id) && r.state === 'void').map((r) => ({ ...r }));
-    const held = await establishFixture(id, read, declared, dependents);
+    // A read that throws never answered, so it counts as unanswered like a throttle.
+    const heard = async () => {
+      try {
+        return await read();
+      } catch (err) {
+        UNHEARD.push(`the read never answered (${scrub(String((err && err.message) || err)).slice(0, 200)})`);
+        throw err;
+      }
+    };
+    const held = await establishFixture(id, heard, declared, dependents);
     const restore = () => earlier.forEach((was) => Object.assign(RESULTS.find((r) => r.id === was.id), was));
     if (held) return true;
     if (UNHEARD.length === start) {
@@ -738,7 +747,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 397a2259. Quote this when reporting results.');
+  log('INFO', 'probe revision 25673c77. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsTrim');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.

@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
  *
- * REVISION: e2321afb
+ * REVISION: 034ae588
  *
  * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
  * part, including a part that fails, and may a part omit the list's
@@ -571,7 +571,16 @@
     const start = fixtureStart;
     // Rows an earlier fixture voided are put back as they were, since establishFixture voids them again.
     const earlier = RESULTS.filter((r) => dependents.includes(r.id) && r.state === 'void').map((r) => ({ ...r }));
-    const held = await establishFixture(id, read, declared, dependents);
+    // A read that throws never answered, so it counts as unanswered like a throttle.
+    const heard = async () => {
+      try {
+        return await read();
+      } catch (err) {
+        UNHEARD.push(`the read never answered (${scrub(String((err && err.message) || err)).slice(0, 200)})`);
+        throw err;
+      }
+    };
+    const held = await establishFixture(id, heard, declared, dependents);
     const restore = () => earlier.forEach((was) => Object.assign(RESULTS.find((r) => r.id === was.id), was));
     if (held) return true;
     if (UNHEARD.length === start) {
@@ -742,7 +751,7 @@
       await recycleList(title, id);
     }
   };
-  log('INFO', 'probe revision e2321afb. Quote this when reporting results.');
+  log('INFO', 'probe revision 034ae588. Quote this when reporting results.');
 
   // The parts name the list by title, the form a history write sends and these rows measure; the run's token
   // means no other list holds it, and none can take it between a check and a use.

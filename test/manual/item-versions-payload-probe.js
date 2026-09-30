@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY, PER COLUMN KIND ----
  *
- * REVISION: 37eca43b
+ * REVISION: a26fbfef
  *
  * QUESTION: what does `items(id)/versions` return for a choice, multi-choice,
  * person, multi-person, lookup, date-only, date-and-time, number and Yes/No
@@ -558,7 +558,16 @@
     const start = fixtureStart;
     // Rows an earlier fixture voided are put back as they were, since establishFixture voids them again.
     const earlier = RESULTS.filter((r) => dependents.includes(r.id) && r.state === 'void').map((r) => ({ ...r }));
-    const held = await establishFixture(id, read, declared, dependents);
+    // A read that throws never answered, so it counts as unanswered like a throttle.
+    const heard = async () => {
+      try {
+        return await read();
+      } catch (err) {
+        UNHEARD.push(`the read never answered (${scrub(String((err && err.message) || err)).slice(0, 200)})`);
+        throw err;
+      }
+    };
+    const held = await establishFixture(id, heard, declared, dependents);
     const restore = () => earlier.forEach((was) => Object.assign(RESULTS.find((r) => r.id === was.id), was));
     if (held) return true;
     if (UNHEARD.length === start) {
@@ -774,7 +783,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision 37eca43b. Quote this when reporting results.');
+  log('INFO', 'probe revision a26fbfef. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe Versions');
   const TARGET = runTitle('dbmlsp Probe VersionsTarget');

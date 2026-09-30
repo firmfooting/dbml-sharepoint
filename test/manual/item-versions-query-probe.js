@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ODATA OPTIONS AN ITEM'S VERSIONS HONOUR ----
  *
- * REVISION: a17c428f
+ * REVISION: 2391881b
  *
  * QUESTION: does `items(id)/versions` honour `$select`, `$filter`, `$top` and
  * `$orderby`, and in what order does it return versions when asked for none?
@@ -529,7 +529,16 @@
     const start = fixtureStart;
     // Rows an earlier fixture voided are put back as they were, since establishFixture voids them again.
     const earlier = RESULTS.filter((r) => dependents.includes(r.id) && r.state === 'void').map((r) => ({ ...r }));
-    const held = await establishFixture(id, read, declared, dependents);
+    // A read that throws never answered, so it counts as unanswered like a throttle.
+    const heard = async () => {
+      try {
+        return await read();
+      } catch (err) {
+        UNHEARD.push(`the read never answered (${scrub(String((err && err.message) || err)).slice(0, 200)})`);
+        throw err;
+      }
+    };
+    const held = await establishFixture(id, heard, declared, dependents);
     const restore = () => earlier.forEach((was) => Object.assign(RESULTS.find((r) => r.id === was.id), was));
     if (held) return true;
     if (UNHEARD.length === start) {
@@ -745,7 +754,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision a17c428f. Quote this when reporting results.');
+  log('INFO', 'probe revision 2391881b. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe VersionsQuery');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.

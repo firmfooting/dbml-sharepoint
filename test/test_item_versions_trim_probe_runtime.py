@@ -407,3 +407,12 @@ def test_a_list_read_back_with_no_json_leaves_the_list_open() -> None:
 
     assert rows[LIST]["outcome"] == "NOT ESTABLISHED"
     assert "the read answered HTTP 200 with no JSON" in rows[LIST]["evidence"]
+
+
+def test_a_list_read_back_that_throws_leaves_the_list_open() -> None:
+    rows, _, output = _run(rules=[{"contains": "?$select=Id,BaseTemplate", "reject": True}])
+
+    assert rows[LIST]["outcome"] == "NOT ESTABLISHED"
+    assert "the read never answered (Failed to fetch)" in rows[LIST]["evidence"]
+    assert voided(rows) == set()
+    assert ended_with_report(output)
