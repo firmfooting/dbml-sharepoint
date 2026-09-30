@@ -1,0 +1,541 @@
+{# test/manual/templates/batch-item-create-probe.js.j2 #}
+
+/** ---- dbml-sharepoint PROBE: WHAT A $BATCH OF ITEM CREATES ANSWERS, PART BY PART ----
+ *
+ * REVISION: {{ revision }}
+ *
+ * QUESTION: what does a `$batch` ChangeSet of item creates answer for each
+ * part, including a part that fails, and may a part omit the list's
+ * ListItemEntityTypeFullName? And for a ChangeSet of parts calling
+ * AddValidateUpdateItemUsingPath, one of them made to fail: what does each part
+ * answer, may a part omit listItemCreateInfo.FolderPath, and does formValues take
+ * a person as claims and a date as ISO 8601 text?
+ *
+ * WHY: a flow that writes one history row per changed column sends them as
+ * one `$batch`, each part calling AddValidateUpdateItemUsingPath; the plain item
+ * creates are kept as a comparison. "Make batch requests with the REST APIs"
+ * settles the request format and says a ChangeSet is not transactional; it
+ * shows no item-create response. "Working with lists and list items with REST" sends the entity
+ * type as `__metadata.type` on a single create, and a flow would rather not
+ * have to read it first. Its "Create list item in a folder" section documents
+ * AddValidateUpdateItemUsingPath with FolderPath.DecodedUrl, formValues and a
+ * per-field HasException; it shows neither FolderPath omitted, nor a person, nor
+ * a date among the formValues.
+ *
+ * DEPENDS ON (read back, and voiding what rests on them when they do not hold)
+ *   transport.batch.fixture-item-batch-list  a generic list this probe created,
+ *       whose ListItemEntityTypeFullName reads back
+ *   transport.batch.control-single-item-create  one single typed create lands and
+ *       its Title reads back; without it a batch answer says nothing about the transport
+ *   transport.batch.control-single-item-unknown-property-refused  a single typed
+ *       create naming a column the list lacks is refused; the failed-part row rests on it
+ *   transport.batch.fixture-item-batch-columns  a person column and a date-and-time
+ *       column read back with their TypeAsString; the claims and date rows rest on it
+ *   transport.batch.control-current-user  this account's Id and Email read back; the
+ *       claims row rests on it
+ *   transport.batch.control-single-addvalidate-create  one AddValidateUpdateItemUsingPath
+ *       call in Learn's form (FolderPath given, Title only) lands; the four rows below rest on it
+ *   transport.batch.control-single-addvalidate-unknown-field-refused  one such call naming
+ *       the missing column in formValues is refused; the failed-part row rests on it
+ *   A control that FAILs voids what rests on it; one NOT ESTABLISHED leaves it open.
+ *
+ * OBSERVES (recorded verbatim, never compared with an expected value)
+ *   transport.batch.changeset-item-creates-per-part   three typed creates in one
+ *       ChangeSet, the middle one naming the missing column: each part's status line,
+ *       headers and body, and which of the three items exist afterwards
+ *   transport.batch.changeset-item-create-failed-part the middle part's answer, and
+ *       whether its neighbours landed
+ *   transport.batch.changeset-item-create-untyped-verbose     one create with verbose
+ *       part headers and no __metadata
+ *   transport.batch.changeset-item-create-untyped-nometadata  one create with
+ *       nometadata part headers and no type
+ *   Every part's request line names the list by its title URL-encoded, its space as %20.
+ *   One ChangeSet of four nometadata AddValidateUpdateItemUsingPath parts, the shape a
+ *   history write sends, each recorded with its per-field answer, whether it landed, and
+ *   what reads back:
+ *   transport.batch.changeset-addvalidate-folderpath-omitted  no FolderPath, Title only
+ *   transport.batch.changeset-addvalidate-failed-part  FolderPath given, naming the missing
+ *       column; its answer, and whether its neighbours landed
+ *   transport.batch.changeset-addvalidate-person-claims  FolderPath given, the person
+ *       column as [{"Key":"i:0#.f|membership|<email>"}]
+ *   transport.batch.changeset-addvalidate-date-iso  FolderPath given, the date column
+ *       as ISO 8601 UTC text
+ *
+ * HOW TO READ IT: PART ANSWERED 2XX and PART REFUSED are what one part's status
+ * line said, beside whether its item exists afterwards. OUTER REQUEST REFUSED
+ * is the whole $batch refused, and its text says why. FIELD REFUSED is a 2xx
+ * AddValidate answer with HasException on a field. Any other AddValidate row is
+ * WRITTEN when its part answered 2xx with no field exception and its item exists;
+ * any other answer is NOT ESTABLISHED, with the answer quoted, and the probe goes on.
+ * Email addresses, claims logins and this account's display name are masked.
+ *
+ * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
+ * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again
+ * (CLEANUP = true recycles a list left by an earlier run first). Copy the
+ * RESULTS block back verbatim.
+ *
+ * WHEN FINISHED: nothing to delete. The probe recycles its list before it
+ * reports.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+{% include "_probe_raw_request_v1.js.j2" %}
+{% include "_probe_identity_v1.js.j2" %}
+{% include "_probe_scratch_list_v1.js.j2" %}
+  log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
+
+  const LIST = 'dbmlsp Probe BatchItems';
+  // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
+  const OWNERSHIP = 'dbml-sharepoint batch-item-create probe scratch list. Safe to delete.';
+  const listPath = `web/lists/getbytitle('${LIST}')`;
+  // A part's request line carries the title quoted then URL-encoded, as a history write sends it.
+  const partPath = `web/lists/getbytitle('${encodeURIComponent(LIST.replace(/'/g, "''"))}')`;
+  const MISSING = 'dbmlspNoSuchColumn';
+  const WHO = 'ProbeWho';
+  const WHEN = 'ProbeWhen';
+  const STAMP = '2026-01-15T09:30:00Z';
+  const NOMETADATA = 'application/json;odata=nometadata';
+  const TITLES = {
+    single: 'dbmlsp batch single', unknown: 'dbmlsp batch single missing column',
+    a: 'dbmlsp batch part A', b: 'dbmlsp batch part B', c: 'dbmlsp batch part C',
+    verbose: 'dbmlsp batch untyped verbose', nometadata: 'dbmlsp batch untyped nometadata',
+    addvalidate: 'dbmlsp addvalidate single', avunknown: 'dbmlsp addvalidate single missing column',
+    avfailed: 'dbmlsp addvalidate part missing column', folder: 'dbmlsp addvalidate no folder',
+    claims: 'dbmlsp addvalidate claims', iso: 'dbmlsp addvalidate iso date',
+  };
+
+  const Q = {
+    list: 'a generic list this probe created, whose ListItemEntityTypeFullName reads back',
+    single: 'CONTROL: one single typed item create lands and its Title reads back',
+    unknown: `CONTROL: a single typed create naming ${MISSING}, which the list lacks, is refused`,
+    parts: 'three typed creates in one ChangeSet, the middle one naming the missing column: what each part answered',
+    failed: 'what the middle part answered, and whether its neighbours landed',
+    verbose: 'what a create part with verbose headers and no __metadata answered',
+    nometadata: 'what a create part with nometadata headers and no type answered',
+    columns: `${WHO} (User) and ${WHEN} (DateTime) read back with their TypeAsString`,
+    user: 'this account\'s Id and Email read back from web/currentuser',
+    addvalidate: 'CONTROL: one AddValidateUpdateItemUsingPath call with FolderPath and a Title lands',
+    avunknown: `CONTROL: one AddValidateUpdateItemUsingPath call naming ${MISSING} in formValues is refused`,
+    avfailed: `what an AddValidateUpdateItemUsingPath part naming ${MISSING} answered, and whether its neighbours landed`,
+    folder: 'what an AddValidateUpdateItemUsingPath part with no listItemCreateInfo.FolderPath answered',
+    claims: `what an AddValidateUpdateItemUsingPath part writing ${WHO} as claims in formValues answered`,
+    iso: `what an AddValidateUpdateItemUsingPath part writing ${WHEN} as ISO 8601 text in formValues answered`,
+  };
+  expect('transport.batch.fixture-item-batch-list', Q.list);
+  expect('transport.batch.control-single-item-create', Q.single);
+  expect('transport.batch.control-single-item-unknown-property-refused', Q.unknown);
+  expect('transport.batch.changeset-item-creates-per-part', Q.parts);
+  expect('transport.batch.changeset-item-create-failed-part', Q.failed);
+  expect('transport.batch.changeset-item-create-untyped-verbose', Q.verbose);
+  expect('transport.batch.changeset-item-create-untyped-nometadata', Q.nometadata);
+  expect('transport.batch.fixture-item-batch-columns', Q.columns);
+  expect('transport.batch.control-current-user', Q.user);
+  expect('transport.batch.control-single-addvalidate-create', Q.addvalidate);
+  expect('transport.batch.control-single-addvalidate-unknown-field-refused', Q.avunknown);
+  expect('transport.batch.changeset-addvalidate-failed-part', Q.avfailed);
+  expect('transport.batch.changeset-addvalidate-folderpath-omitted', Q.folder);
+  expect('transport.batch.changeset-addvalidate-person-claims', Q.claims);
+  expect('transport.batch.changeset-addvalidate-date-iso', Q.iso);
+
+  const SINGLE = 'transport.batch.control-single-item-create';
+  const UNKNOWN = 'transport.batch.control-single-item-unknown-property-refused';
+  const OBSERVED = ['transport.batch.changeset-item-creates-per-part',
+    'transport.batch.changeset-item-create-failed-part',
+    'transport.batch.changeset-item-create-untyped-verbose',
+    'transport.batch.changeset-item-create-untyped-nometadata'];
+  const COLUMNS = 'transport.batch.fixture-item-batch-columns';
+  const USER = 'transport.batch.control-current-user';
+  const ADDVALIDATE = 'transport.batch.control-single-addvalidate-create';
+  const AV_UNKNOWN = 'transport.batch.control-single-addvalidate-unknown-field-refused';
+  const AV_FAILED = 'transport.batch.changeset-addvalidate-failed-part';
+  const FOLDER = 'transport.batch.changeset-addvalidate-folderpath-omitted';
+  const CLAIMS = 'transport.batch.changeset-addvalidate-person-claims';
+  const ISO = 'transport.batch.changeset-addvalidate-date-iso';
+  const AFTER_SINGLE = [UNKNOWN, ...OBSERVED, ADDVALIDATE, AV_UNKNOWN, AV_FAILED, FOLDER, CLAIMS, ISO];
+  const AFTER_LIST = [COLUMNS, SINGLE, ...AFTER_SINGLE];
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create a list '${LIST}' on ${WEB} with a person and a date column, create two`);
+    log('INFO', 'items one at a time (one naming a column the list lacks), then send three $batch requests');
+    log('INFO', 'of item creates: three typed parts with the middle one naming that column, one part with');
+    log('INFO', 'no __metadata, and one nometadata part with no type. It then calls');
+    log('INFO', 'AddValidateUpdateItemUsingPath twice on its own (once naming the missing column), and');
+    log('INFO', 'sends one $batch of four such calls, the second naming that column. The list is');
+    log('INFO', 'recycled on the way out.');
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write. Stopping.');
+    return;
+  }
+
+  const said = (text) => scrub(text).slice(0, 300);
+  const ok2xx = (status) => status >= 200 && status < 300;
+  // rawHead masks only the tenant, and a refusal can quote an account.
+  const headOf = (res) => {
+    const head = rawHead(res);
+    return head && { outcome: head.outcome, why: scrub(head.why) };
+  };
+
+  // Each part's status line, headers and body, read line by line so a nested ChangeSet answer is walked too.
+  const batchParts = (text) => {
+    const parts = [];
+    let current = null;
+    for (const line of String(text).split(/\r?\n/)) {
+      if (line.startsWith('--')) {
+        if (current) parts.push(current);
+        current = null;
+        continue;
+      }
+      const status = /^HTTP\/1\.1 (\d{3})(.*)$/.exec(line);
+      if (status && current === null) {
+        current = { status: Number(status[1]), reason: status[2].trim(), headers: [], body: [], inBody: false };
+        continue;
+      }
+      if (!current) continue;
+      if (!current.inBody) {
+        if (line === '') current.inBody = true;
+        else current.headers.push(line);
+        continue;
+      }
+      current.body.push(line);
+    }
+    if (current) parts.push(current);
+    return parts.map((part) => ({ status: part.status, reason: part.reason, headers: part.headers,
+      body: part.body.join('\n').trim() }));
+  };
+
+  // A part carries its own headers, so the verbose and nometadata parts differ only where they must.
+  const partOf = (op, digest, inner) => {
+    const headers = { Accept: `application/json;odata=${op.odata}`,
+      'Content-Type': `application/json;odata=${op.odata}`, 'X-RequestDigest': digest };
+    return `--${inner}\r\n`
+      + 'Content-Type: application/http\r\n'
+      + 'Content-Transfer-Encoding: binary\r\n'
+      + '\r\n'
+      + `POST ${WEB}/_api/${partPath}/${op.path || 'items'} HTTP/1.1\r\n`
+      + Object.entries(headers).map(([name, value]) => `${name}: ${value}\r\n`).join('')
+      + '\r\n'
+      + `${JSON.stringify(op.body)}\r\n`;
+  };
+  const token = () => Math.random().toString(36).slice(2, 10);
+  // One $batch request holding one ChangeSet of `ops`, with no retry, since a retry would hide the answer.
+  const sendChangeSet = async (ops) => {
+    const digest = await getDigest();
+    const outer = `batch_${token()}${token()}`;
+    const inner = `changeset_${token()}${token()}`;
+    const body = `--${outer}\r\n`
+      + `Content-Type: multipart/mixed; boundary=${inner}\r\n`
+      + '\r\n'
+      + ops.map((op) => partOf(op, digest, inner)).join('')
+      + `--${inner}--\r\n`
+      + `--${outer}--\r\n`;
+    let res;
+    try {
+      // No Accept header, for #401's reason: a JSON Accept turns the throttling-page redirect into a 406.
+      res = await fetch(`${WEB}/_api/$batch`, { method: 'POST',
+        headers: { 'Content-Type': `multipart/mixed; boundary=${outer}`, 'X-RequestDigest': digest }, body });
+    } catch (err) {
+      return { ok: false, status: null, text: `no response: ${err && err.message ? err.message : String(err)}`,
+        parts: [] };
+    }
+    const text = await res.text();
+    return { ok: res.ok, status: res.status, text, parts: batchParts(text) };
+  };
+  // The head a whole $batch earns when it carried no part answers, or null when its parts decide.
+  const outerHead = (batch) => {
+    if (batch.status === null) return { outcome: 'NOT ESTABLISHED', why: scrub(batch.text) };
+    if (batch.ok && batch.parts.length) return null;
+    if (batch.ok) return { outcome: 'NO PART STATUS', why: `HTTP ${batch.status} carried no part: ${said(batch.text)}` };
+    if (isRefusal(batch.status)) {
+      return { outcome: 'OUTER REQUEST REFUSED', why: `HTTP ${batch.status}: ${said(batch.text)}` };
+    }
+    return { outcome: 'NOT ESTABLISHED', why: `the $batch ${unanswered({ ok: false, status: batch.status })}: `
+      + said(batch.text) };
+  };
+  const partSaid = (part) => `HTTP ${part.status} ${part.reason}; headers ${said(part.headers.join('; '))}; `
+    + `body ${said(part.body) || '(none)'}`;
+  const partHead = (part) => (!part ? 'NO PART STATUS' : ok2xx(part.status) ? 'PART ANSWERED 2XX'
+    : isRefusal(part.status) ? 'PART REFUSED' : 'PART NOT ANSWERED');
+
+  let me = null;
+  try {
+    const userHeld = await establishFixture(USER, async () => {
+      const read = await sendRaw('web/currentuser?$select=Id,Email,LoginName,Title');
+      const head = headOf(read);
+      if (head || !read.parsed) {
+        return { ok: true, status: 200, body: { Read: head ? head.why : `HTTP ${read.status} carried no JSON` } };
+      }
+      knowIdentity(read.parsed.Email, '<account>');
+      knowIdentity(read.parsed.LoginName, '<account>');
+      knowIdentity(read.parsed.Title, '<name>');
+      me = read.parsed;
+      // The email itself is never put in the row; only that there is one to build claims from.
+      return { ok: true, status: 200, body: { Read: `HTTP ${read.status}`, Id: read.parsed.Id,
+        HasEmail: typeof read.parsed.Email === 'string' && read.parsed.Email.includes('@') } };
+    }, { Read: 'HTTP 200', Id: (v) => Number.isInteger(v) && v > 0, HasEmail: true }, [CLAIMS]);
+
+    const list = await claimScratchList({ id: 'transport.batch.fixture-item-batch-list', question: Q.list,
+      title: LIST, description: OWNERSHIP, dependents: AFTER_LIST,
+      declared: { ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 } });
+    if (!list.held) return;
+    const itemType = list.body.ListItemEntityTypeFullName;
+    const typed = (title, extra = {}) => ({ __metadata: { type: itemType }, Title: title, ...extra });
+    const single = async (body) => sendRaw(`${listPath}/items`, { method: 'POST',
+      headers: { ...VERBOSE_WRITE, 'X-RequestDigest': await getDigest() }, body });
+
+    // The deploy's create bodies for a person and a date-and-time column, which the AddValidate parts write.
+    const created = {};
+    for (const [name, body] of [
+      [WHO, { __metadata: { type: 'SP.FieldUser' }, FieldTypeKind: 20, SelectionMode: 0 }],
+      [WHEN, { __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4, DisplayFormat: 1 }],
+    ]) {
+      const sent = await spPost(`${listPath}/fields`, { ...body, Title: name, Required: false },
+        await getDigest(), VERBOSE_WRITE);
+      created[`${name}.Create`] = `HTTP ${sent.status}${sent.ok ? '' : `: ${said(sent.text)}`}`;
+      log('INFO', `create ${name}: ${created[`${name}.Create`]}`);
+    }
+    // Recorded, never judged: the read-back decides whether the columns hold.
+    const recorded = (v) => typeof v === 'string';
+    const columnsHeld = await establishFixture(COLUMNS, async () => {
+      // The creates' answers join the read-back, so a refused column shows its reason in RESULTS.
+      const body = { ...created };
+      for (const name of [WHO, WHEN]) {
+        const read = await sendRaw(`${listPath}/fields/getbyinternalnameortitle('${name}')`
+          + '?$select=InternalName,TypeAsString');
+        const head = headOf(read);
+        body[`${name}.Read`] = head ? head.why : `HTTP ${read.status}`;
+        if (!head && read.parsed) body[`${name}.TypeAsString`] = read.parsed.TypeAsString;
+      }
+      return { ok: true, status: 200, body };
+    }, { [`${WHO}.Create`]: recorded, [`${WHO}.Read`]: 'HTTP 200', [`${WHO}.TypeAsString`]: 'User',
+      [`${WHEN}.Create`]: recorded, [`${WHEN}.Read`]: 'HTTP 200', [`${WHEN}.TypeAsString`]: 'DateTime' },
+    [CLAIMS, ISO]);
+
+    const made = await single(typed(TITLES.single));
+    const madeHead = headOf(made);
+    const madeId = !madeHead && made.parsed && Number.isInteger(made.parsed.Id) ? made.parsed.Id : null;
+    const back = madeId === null ? null : await sendRaw(`${listPath}/items(${madeId})?$select=Id,Title`);
+    const backHead = back === null ? null : headOf(back);
+    const singleHeld = back !== null && !backHead && back.parsed && back.parsed.Title === TITLES.single;
+    const singleOutcome = singleHeld ? 'PASS'
+      : [madeHead, backHead].some((h) => h && h.outcome === 'NOT ESTABLISHED') ? 'NOT ESTABLISHED' : 'FAIL';
+    record(SINGLE, Q.single, singleOutcome, madeHead ? `the create: ${madeHead.why}`
+      : madeId === null ? `the create answered HTTP ${made.status} with no Id: ${said(made.text)}`
+        : backHead ? `created Id ${madeId}; the read-back: ${backHead.why}`
+          : `created Id ${madeId}; it reads back Title ${JSON.stringify(back.parsed && back.parsed.Title)}`);
+    if (singleOutcome === 'FAIL') {
+      voidDependents(AFTER_SINGLE, 'a single typed create did not land, so a batch answer '
+        + 'would say nothing about the transport');
+      return;
+    }
+    if (singleOutcome === 'NOT ESTABLISHED') {
+      for (const id of AFTER_SINGLE) {
+        const row = RESULTS.find((r) => r.id === id);
+        record(id, row.question, 'NOT ESTABLISHED', 'not asked: the single-create control was not '
+          + 'established; a re-run can ask it');
+      }
+      return;
+    }
+
+    const refused = await single(typed(TITLES.unknown, { [MISSING]: 'x' }));
+    const refusedOutcome = refused.status !== null && isRefusal(refused.status) ? 'PASS'
+      : refused.status !== null && ok2xx(refused.status) ? 'FAIL' : 'NOT ESTABLISHED';
+    record(UNKNOWN, Q.unknown, refusedOutcome, refused.status === null ? scrub(refused.text)
+      : `HTTP ${refused.status}: ${said(refused.text)}`);
+
+    const three = await sendChangeSet([
+      { odata: 'verbose', body: typed(TITLES.a) },
+      { odata: 'verbose', body: typed(TITLES.b, { [MISSING]: 'x' }) },
+      { odata: 'verbose', body: typed(TITLES.c) },
+    ]);
+    const untypedVerbose = await sendChangeSet([{ odata: 'verbose', body: { Title: TITLES.verbose } }]);
+    const untypedNometadata = await sendChangeSet([{ odata: 'nometadata', body: { Title: TITLES.nometadata } }]);
+
+    // Learn's "Create list item in a folder" body; `folder` null omits FolderPath, which is one question here.
+    const addValidateBody = (folder, values) => ({
+      listItemCreateInfo: folder === null ? { UnderlyingObjectType: 0 }
+        : { FolderPath: { DecodedUrl: folder }, UnderlyingObjectType: 0 },
+      formValues: Object.entries(values).map(([FieldName, FieldValue]) => ({ FieldName, FieldValue })),
+      bNewDocumentUpdate: false,
+    });
+    const fieldsOf = (parsed) => (parsed && Array.isArray(parsed.value) ? parsed.value : null);
+    const fieldsSaid = (fields) => scrub(fields.map((f) => `${f.FieldName} HasException=`
+      + `${JSON.stringify(f.HasException)} ErrorMessage=${JSON.stringify(f.ErrorMessage)} `
+      + `FieldValue=${JSON.stringify(f.FieldValue)}`).join('; ')).slice(0, 600);
+    const headOutcome = (head) => (head.outcome === 'NOT ESTABLISHED' ? 'NOT ESTABLISHED' : 'FAIL');
+    // The control: Learn's form, sent alone, with the list's root folder as an absolute FolderPath.
+    const addValidateControl = async () => {
+      const root = await sendRaw(`${listPath}/RootFolder?$select=ServerRelativeUrl`);
+      const rootHead = headOf(root);
+      if (rootHead || !root.parsed || typeof root.parsed.ServerRelativeUrl !== 'string') {
+        return { outcome: rootHead ? headOutcome(rootHead) : 'FAIL', folder: null, evidence: 'the root folder '
+          + `read: ${rootHead ? rootHead.why : `HTTP ${root.status} carried no ServerRelativeUrl`}` };
+      }
+      const folder = `${new URL(WEB).origin}${root.parsed.ServerRelativeUrl}`;
+      const sent = await sendRaw(`${listPath}/AddValidateUpdateItemUsingPath`, { method: 'POST',
+        headers: { 'Content-Type': NOMETADATA, 'X-RequestDigest': await getDigest() },
+        body: addValidateBody(folder, { Title: TITLES.addvalidate }) });
+      const head = headOf(sent);
+      if (head) return { outcome: headOutcome(head), folder, evidence: `the call: ${head.why}` };
+      const fields = fieldsOf(sent.parsed);
+      const idField = fields ? fields.find((f) => f.FieldName === 'Id') : null;
+      const madeAt = idField ? Number(idField.FieldValue) : NaN;
+      if (!fields || fields.some((f) => f.HasException === true) || !Number.isInteger(madeAt) || madeAt < 1) {
+        return { outcome: 'FAIL', folder, evidence: `the call answered HTTP ${sent.status}: `
+          + `${scrub(sent.text).slice(0, 400)}` };
+      }
+      const back = await sendRaw(`${listPath}/items(${madeAt})?$select=Id,Title`);
+      const backHead = headOf(back);
+      if (backHead) return { outcome: headOutcome(backHead), folder, evidence: `created Id ${madeAt}; the `
+        + `read-back: ${backHead.why}` };
+      const title = back.parsed ? back.parsed.Title : undefined;
+      return { outcome: title === TITLES.addvalidate ? 'PASS' : 'FAIL', folder,
+        evidence: `created Id ${madeAt}; it reads back Title ${JSON.stringify(title)}` };
+    };
+    const control = await addValidateControl();
+    record(ADDVALIDATE, Q.addvalidate, control.outcome, control.evidence);
+    let avUnknown = null;
+    if (control.outcome === 'PASS') {
+      const sent = await sendRaw(`${listPath}/AddValidateUpdateItemUsingPath`, { method: 'POST',
+        headers: { 'Content-Type': NOMETADATA, 'X-RequestDigest': await getDigest() },
+        body: addValidateBody(control.folder, { Title: TITLES.avunknown, [MISSING]: 'x' }) });
+      const head = headOf(sent);
+      const fields = head ? null : fieldsOf(sent.parsed);
+      const fieldRefused = fields !== null && fields.some((f) => f.FieldName === MISSING && f.HasException === true);
+      avUnknown = head ? (head.outcome === 'NOT ESTABLISHED' ? 'NOT ESTABLISHED' : 'PASS')
+        : fieldRefused ? 'PASS' : 'FAIL';
+      record(AV_UNKNOWN, Q.avunknown, avUnknown, head ? head.why : `HTTP ${sent.status}: `
+        + `${fields ? `fields ${fieldsSaid(fields)}` : scrub(sent.text).slice(0, 400)}`);
+    }
+    // Each part asked only when what it rests on held, so a voided row is never overwritten.
+    const asked = [
+      { id: FOLDER, question: Q.folder, title: TITLES.folder, folder: null, values: {} },
+      { id: AV_FAILED, question: Q.avfailed, title: TITLES.avfailed, folder: control.folder,
+        values: { [MISSING]: 'x' } },
+      ...(userHeld && columnsHeld ? [{ id: CLAIMS, question: Q.claims, title: TITLES.claims,
+        folder: control.folder, values: { [WHO]: JSON.stringify([{ Key: `i:0#.f|membership|${me.Email}` }]) } }]
+        : []),
+      ...(columnsHeld ? [{ id: ISO, question: Q.iso, title: TITLES.iso, folder: control.folder,
+        values: { [WHEN]: STAMP } }] : []),
+    ];
+    const addValidate = control.outcome !== 'PASS' ? null : await sendChangeSet(asked.map((one) => ({
+      odata: 'nometadata', path: 'AddValidateUpdateItemUsingPath',
+      body: addValidateBody(one.folder, { Title: one.title, ...one.values }) })));
+
+    const select = columnsHeld ? `Id,Title,${WHO}Id,${WHEN}` : 'Id,Title';
+    const titles = await sendRaw(`${listPath}/items?$select=${select}&$top=100`);
+    const titlesHead = headOf(titles);
+    const present = !titlesHead && titles.parsed && Array.isArray(titles.parsed.value)
+      ? new Map(titles.parsed.value.map((row) => [row.Title, row])) : null;
+    const landed = (title) => (present === null ? 'unknown' : present.has(title) ? 'yes' : 'no');
+    const titlesSaid = present === null ? `; the items read-back failed: ${titlesHead ? titlesHead.why
+      : `HTTP ${titles.status} carried no rows`}` : '';
+
+    const threeHead = outerHead(three);
+    record('transport.batch.changeset-item-creates-per-part', Q.parts, threeHead ? threeHead.outcome : 'RECORDED',
+      threeHead ? threeHead.why : `outer HTTP ${three.status}, ${three.parts.length} part answer(s): `
+        + three.parts.map((part, i) => `part ${i + 1}: ${partSaid(part)}`).join(' | ')
+        + `; landed A ${landed(TITLES.a)}, B ${landed(TITLES.b)}, C ${landed(TITLES.c)}${titlesSaid}`);
+
+    if (refusedOutcome === 'FAIL') {
+      voidDependents(['transport.batch.changeset-item-create-failed-part'], 'a single create naming '
+        + `${MISSING} was not refused, so the middle part is not a known failing request`);
+    } else if (refusedOutcome === 'NOT ESTABLISHED') {
+      record('transport.batch.changeset-item-create-failed-part', Q.failed, 'NOT ESTABLISHED',
+        'not asked: the missing-column control was not established; a re-run can ask it');
+    } else {
+      const middle = threeHead ? null : three.parts[1];
+      record('transport.batch.changeset-item-create-failed-part', Q.failed,
+        threeHead ? threeHead.outcome : partHead(middle),
+        threeHead ? threeHead.why : `${middle ? partSaid(middle) : `${three.parts.length} part answer(s)`}; `
+          + `landed B ${landed(TITLES.b)}; neighbours landed A ${landed(TITLES.a)}, C ${landed(TITLES.c)}`
+          + titlesSaid);
+    }
+
+    for (const [id, question, batch, title] of [
+      ['transport.batch.changeset-item-create-untyped-verbose', Q.verbose, untypedVerbose, TITLES.verbose],
+      ['transport.batch.changeset-item-create-untyped-nometadata', Q.nometadata, untypedNometadata,
+        TITLES.nometadata],
+    ]) {
+      const head = outerHead(batch);
+      record(id, question, head ? head.outcome : partHead(batch.parts[0]), head ? head.why
+        : `${partSaid(batch.parts[0])}; landed ${landed(title)}${titlesSaid}`);
+    }
+
+    if (control.outcome === 'FAIL') {
+      voidDependents([AV_UNKNOWN, ...asked.map((one) => one.id)], 'the single AddValidateUpdateItemUsingPath '
+        + 'call in Learn\'s form did not land, so a part calling it says nothing about the question');
+    } else if (control.outcome === 'NOT ESTABLISHED') {
+      for (const [id, question] of [[AV_UNKNOWN, Q.avunknown], ...asked.map((one) => [one.id, one.question])]) {
+        record(id, question, 'NOT ESTABLISHED', 'not asked: the AddValidateUpdateItemUsingPath control '
+          + 'was not established; a re-run can ask it');
+      }
+    } else {
+      // What reads back for the value a part wrote, beside its answer; recorded, never judged.
+      const readsBack = (one) => {
+        const row = present === null ? null : present.get(one.title);
+        if (!row) return '';
+        if (one.id === CLAIMS) {
+          return `; ${WHO}Id reads back ${JSON.stringify(row[`${WHO}Id`])}, this account's Id: `
+            + `${row[`${WHO}Id`] === me.Id ? 'yes' : 'no'}`;
+        }
+        return one.id === ISO ? `; ${WHEN} reads back ${JSON.stringify(row[WHEN])}` : '';
+      };
+      const outer = outerHead(addValidate);
+      const neighbours = asked.filter((one) => one.id !== AV_FAILED)
+        .map((one) => `${one.title} ${landed(one.title)}`).join(', ');
+      asked.forEach((one, i) => {
+        if (one.id === AV_FAILED && avUnknown === 'FAIL') {
+          voidDependents([AV_FAILED], `a single call naming ${MISSING} was not refused, so the second part `
+            + 'is not a known failing request');
+          return;
+        }
+        if (one.id === AV_FAILED && avUnknown === 'NOT ESTABLISHED') {
+          record(AV_FAILED, Q.avfailed, 'NOT ESTABLISHED', 'not asked: the missing-column control was not '
+            + 'established; a re-run can ask it');
+          return;
+        }
+        if (outer) {
+          // The failing part keeps the batch's own head; a write under question is not established.
+          record(one.id, one.question, one.id === AV_FAILED ? outer.outcome : 'NOT ESTABLISHED',
+            `the $batch was not answered part by part: ${outer.outcome}: ${outer.why}`);
+          return;
+        }
+        const part = addValidate.parts[i];
+        if (!part) {
+          record(one.id, one.question, 'NOT ESTABLISHED', `no answer for part ${i + 1} among `
+            + `${addValidate.parts.length}; a re-run can ask it`);
+          return;
+        }
+        let parsed = null;
+        try { parsed = JSON.parse(part.body); } catch { parsed = null; }
+        const fields = fieldsOf(parsed);
+        const refused = fields !== null && fields.some((f) => f.HasException === true);
+        const answer = `HTTP ${part.status} ${part.reason}; ${fields ? `fields ${fieldsSaid(fields)}`
+          : `body ${said(part.body) || '(none)'}`}; landed ${landed(one.title)}${readsBack(one)}`;
+        if (one.id === AV_FAILED) {
+          record(AV_FAILED, Q.avfailed, ok2xx(part.status) ? (refused ? 'FIELD REFUSED' : 'PART ANSWERED 2XX')
+            : partHead(part), `${answer}; neighbours landed ${neighbours}${titlesSaid}`);
+          return;
+        }
+        const why = !ok2xx(part.status) ? (isRefusal(part.status) ? 'the write was refused'
+          : 'the part was not answered; a re-run can ask it')
+          : fields === null ? 'the part answered with no per-field list'
+            : refused ? 'a field was refused' : landed(one.title) !== 'yes' ? 'no item with its Title is known to exist'
+              : null;
+        // A refused write leaves the spelling not established; it is recorded and the probe goes on.
+        record(one.id, one.question, why === null ? 'WRITTEN' : 'NOT ESTABLISHED',
+          why === null ? `${answer}${titlesSaid}` : `${why}: ${answer}${titlesSaid}`);
+      });
+    }
+  } catch (err) {
+    log('FAIL', `probe aborted: ${scrub(String((err && err.message) || err)).slice(0, 240)}. `
+      + 'The unasked rows stay open.');
+  } finally {
+    await recycleScratchLists();
+    // Reported here, after the recycle, so every path prints the recycle line above the table.
+    report();
+  }
+})();

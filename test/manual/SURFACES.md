@@ -656,7 +656,17 @@ Ids without the list having changed.
 Scopes: `batch`, `throttle`, `retry`, `cache`
 
 Probes: `throttle-batch-probe.js`, `batch-field-create-probe.js`,
-`list-identity-cache-probe.js`
+`list-identity-cache-probe.js`, `batch-item-create-probe.js`
+
+`batch-item-create-probe.js` files under `batch` beside
+`batch-field-create-probe.js`, and takes its own `item-` ids because an item
+create is a different request from a field create. It records each part's
+status line, headers and body, and whether a part may omit the list's
+ListItemEntityTypeFullName in a verbose part and in a nometadata part. Its
+`addvalidate` rows ask the same of a ChangeSet of parts calling
+AddValidateUpdateItemUsingPath, one made to fail: whether a part may omit
+`listItemCreateInfo.FolderPath`, and whether `formValues` takes a person as
+claims and a date as ISO 8601 text.
 
 ## Checks that file under a different surface than their probe
 

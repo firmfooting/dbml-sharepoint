@@ -1,0 +1,479 @@
+"""Execute batch-item-create-probe.js under node against a mock web.
+
+The mock unpacks each `$batch` ChangeSet, creates or refuses each item, and answers in a
+nested batch and ChangeSet envelope with a status line, headers and a body per part. An
+AddValidateUpdateItemUsingPath call answers a per-field list shaped like Learn's example.
+Which parts it refuses is set per test; that the refusals match a site is the probe's
+question, not this mock's claim.
+"""
+
+import json
+import textwrap
+from typing import Any
+
+import pytest
+from _node import NODE
+from _paths import MANUAL
+from _probe_runs import catalogued_dependents, run_probe, voided
+
+pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
+
+PROBE = MANUAL / "batch-item-create-probe.js"
+LIST = "transport.batch.fixture-item-batch-list"
+SINGLE = "transport.batch.control-single-item-create"
+UNKNOWN = "transport.batch.control-single-item-unknown-property-refused"
+PARTS = "transport.batch.changeset-item-creates-per-part"
+FAILED = "transport.batch.changeset-item-create-failed-part"
+VERBOSE = "transport.batch.changeset-item-create-untyped-verbose"
+NOMETADATA = "transport.batch.changeset-item-create-untyped-nometadata"
+OBSERVED = (PARTS, FAILED, VERBOSE, NOMETADATA)
+COLUMNS = "transport.batch.fixture-item-batch-columns"
+USER = "transport.batch.control-current-user"
+ADDVALIDATE = "transport.batch.control-single-addvalidate-create"
+AV_UNKNOWN = "transport.batch.control-single-addvalidate-unknown-field-refused"
+AV_FAILED = "transport.batch.changeset-addvalidate-failed-part"
+FOLDER = "transport.batch.changeset-addvalidate-folderpath-omitted"
+CLAIMS = "transport.batch.changeset-addvalidate-person-claims"
+ISO = "transport.batch.changeset-addvalidate-date-iso"
+ADDVALIDATED = (FOLDER, CLAIMS, ISO)
+OWNED = "dbml-sharepoint batch-item-create probe scratch list. Safe to delete."
+
+_MOCK = textwrap.dedent(r"""
+    const CONFIG = __CONFIG__;
+    globalThis.window = { _spPageContextInfo: {
+      webAbsoluteUrl: 'https://example.sharepoint.com/sites/probe' } };
+    const SENT = [];
+    process.on('exit', () => console.log('__SENT__' + JSON.stringify(SENT)));
+    const answer = (status, payload) => {
+      const text = typeof payload === 'string' ? payload : JSON.stringify(payload);
+      return { ok: status >= 200 && status < 300, status, headers: { get: () => null },
+        text: async () => text, json: async () => JSON.parse(text) };
+    };
+    const LIST = "web/lists/getbytitle('dbmlsp Probe BatchItems')";
+    const ME = { Id: 7, Email: 'ada@example.com', LoginName: 'i:0#.f|membership|ada@example.com',
+      Title: 'Ada Probe' };
+    let list = CONFIG.list || null;
+    const items = [];
+    const fields = {};
+    let digests = 0;
+    const refuse = (value) => ({ status: 400, reason: 'Bad Request',
+      body: { error: { code: '-1, Microsoft.SharePoint.Client.InvalidClientQueryException',
+        message: { lang: 'en-US', value } } } });
+    // One item create answered as this mock chooses; `odata` is the content type it came in.
+    const createItem = (sent, odata) => {
+      const typed = sent.__metadata && sent.__metadata.type === list.ListItemEntityTypeFullName;
+      const unknown = Object.keys(sent).find((key) => !['__metadata', 'Title'].includes(key));
+      if (unknown && !CONFIG.acceptUnknown) {
+        const type = list.ListItemEntityTypeFullName;
+        return refuse(`The property '${unknown}' does not exist on type '${type}'.`);
+      }
+      const refuseUntyped = odata === 'verbose' ? CONFIG.refuseUntypedVerbose
+        : CONFIG.refuseUntypedNometadata;
+      if (!typed && refuseUntyped) return refuse('A type is required.');
+      items.push({ Id: items.length + 1, Title: sent.Title });
+      const row = { Id: items.length, Title: sent.Title };
+      return { status: 201, reason: 'Created',
+        body: odata === 'verbose'
+          ? { d: { __metadata: { type: list.ListItemEntityTypeFullName }, ...row } } : row };
+    };
+    // One AddValidateUpdateItemUsingPath call answered as this mock chooses, per field.
+    const addValidate = (sent) => {
+      const values = Object.fromEntries(sent.formValues.map((v) => [v.FieldName, v.FieldValue]));
+      const noFolder = !sent.listItemCreateInfo.FolderPath;
+      if (noFolder && CONFIG.refuseNoFolderPath) {
+        return refuse('The parameter listItemCreateInfo.FolderPath is required.');
+      }
+      const answers = sent.formValues.map((v) => ({ ErrorMessage: null, FieldName: v.FieldName,
+        FieldValue: v.FieldValue, HasException: false, ItemId: 0 }));
+      const bad = (name, message) => answers.filter((a) => a.FieldName === name)
+        .forEach((a) => { a.HasException = true; a.ErrorMessage = message; });
+      if (values.ProbeWho !== undefined && CONFIG.refuseClaims) {
+        bad('ProbeWho', 'The user ada@example.com does not exist or is not unique.');
+      }
+      if (values.ProbeWhen !== undefined && CONFIG.refuseIsoDate) {
+        bad('ProbeWhen', 'Invalid date/time value.');
+      }
+      const known = ['Title', ...Object.keys(fields)];
+      for (const name of Object.keys(values).filter((n) => !known.includes(n))) {
+        if (!CONFIG.acceptUnknown) bad(name, `Column '${name}' does not exist.`);
+      }
+      if (answers.some((a) => a.HasException)) {
+        return { status: 200, reason: 'OK', body: { value: answers } };
+      }
+      items.push({ Id: items.length + 1, Title: values.Title,
+        ProbeWhoId: values.ProbeWho === undefined ? null : ME.Id,
+        ProbeWhen: values.ProbeWhen === undefined ? null : values.ProbeWhen });
+      answers.push({ ErrorMessage: null, FieldName: 'Id', FieldValue: String(items.length),
+        HasException: false, ItemId: 0 });
+      return { status: 200, reason: 'OK', body: { value: answers } };
+    };
+    const batch = (raw) => {
+      const parts = [];
+      for (const chunk of raw.split(/--changeset_[a-z0-9]+/)) {
+        const at = chunk.indexOf('POST ');
+        if (at === -1) continue;
+        const [head, body] = chunk.slice(at).split('\r\n\r\n');
+        const odata = /odata=nometadata/.test(head) ? 'nometadata' : 'verbose';
+        const rule = (CONFIG.partRules || []).find((r) => body.includes(r.bodyContains));
+        const sent = rule ? null : JSON.parse(body.trim());
+        parts.push(rule ? { status: rule.status, reason: rule.reason, body: rule.text }
+          : /AddValidateUpdateItemUsingPath HTTP/.test(head) ? addValidate(sent)
+            : createItem(sent, odata));
+      }
+      return '--batchresponse_1\r\n'
+        + 'Content-Type: multipart/mixed; boundary=changesetresponse_1\r\n\r\n'
+        + parts.map((part) => '--changesetresponse_1\r\nContent-Type: application/http\r\n'
+          + 'Content-Transfer-Encoding: binary\r\n\r\n'
+          + `HTTP/1.1 ${part.status} ${part.reason}\r\n`
+          + 'CONTENT-TYPE: application/json;odata=verbose;charset=utf-8\r\n\r\n'
+          + `${typeof part.body === 'string' ? part.body : JSON.stringify(part.body)}\r\n`).join('')
+        + '--changesetresponse_1--\r\n--batchresponse_1--\r\n';
+    };
+    globalThis.fetch = async (url, opts = {}) => {
+      const path = decodeURIComponent(String(url).split('/_api/')[1] || '');
+      const verb = (opts.headers || {})['X-HTTP-Method'] || opts.method || 'GET';
+      const raw = opts.body ? String(opts.body) : '';
+      SENT.push({ verb, path, body: raw });
+      for (const rule of CONFIG.rules || []) {
+        if (!path.includes(rule.contains)) continue;
+        if (rule.verb && rule.verb !== verb) continue;
+        if (rule.bodyContains && !raw.includes(rule.bodyContains)) continue;
+        if (rule.reject) throw new TypeError('Failed to fetch');
+        return answer(rule.status, rule.text);
+      }
+      if (path === 'contextinfo') {
+        digests += 1;
+        if (CONFIG.digestsAllowed !== undefined && digests > CONFIG.digestsAllowed) {
+          return answer(403, 'denied');
+        }
+        return answer(200, { d: { GetContextWebInformation: { FormDigestValue: 'digest' } } });
+      }
+      if (path === '$batch') {
+        return answer(CONFIG.batchStatus || 200, CONFIG.batchText || batch(raw));
+      }
+      if (path.startsWith('web/currentuser')) return answer(200, ME);
+      if (path === 'web/lists' && verb === 'POST') {
+        const sent = JSON.parse(raw);
+        list = { Id: 'list-1', BaseTemplate: sent.BaseTemplate, Description: sent.Description,
+          ListItemEntityTypeFullName: 'SP.Data.dbmlspProbeBatchItemsListItem' };
+        return answer(201, { Id: 'list-1' });
+      }
+      if (!path.startsWith(LIST)) return answer(404, 'no such endpoint in the mock: ' + path);
+      const rest = path.slice(LIST.length);
+      if (list === null) return answer(404, 'List does not exist.');
+      if (rest === '' || rest.startsWith('?')) return answer(200, list);
+      if (rest === '/recycle') { list = null; return answer(200, {}); }
+      if (rest === '/fields' && verb === 'POST') {
+        const sent = JSON.parse(raw);
+        fields[sent.Title] = { InternalName: sent.Title,
+          TypeAsString: sent.FieldTypeKind === 20 ? 'User' : 'DateTime' };
+        return answer(201, { Title: sent.Title });
+      }
+      const field = /^\/fields\/getbyinternalnameortitle\('([^']+)'\)/.exec(rest);
+      if (field) {
+        return fields[field[1]] ? answer(200, fields[field[1]])
+          : answer(400, { 'odata.error': { message: { value: 'Column does not exist.' } } });
+      }
+      if (rest.startsWith('/RootFolder')) {
+        return answer(200, { ServerRelativeUrl: '/sites/probe/Lists/dbmlsp Probe BatchItems' });
+      }
+      if (rest === '/AddValidateUpdateItemUsingPath' && verb === 'POST') {
+        const made = addValidate(JSON.parse(raw));
+        return answer(made.status, made.body);
+      }
+      if (rest === '/items' && verb === 'POST') {
+        const made = createItem(JSON.parse(raw), 'verbose');
+        const last = items[items.length - 1];
+        return answer(made.status,
+          made.status === 201 ? { Id: items.length, Title: last.Title } : made.body);
+      }
+      if (rest.startsWith('/items?')) return answer(200, { value: items });
+      const one = /^\/items\((\d+)\)/.exec(rest);
+      if (one) return answer(200, items[Number(one[1]) - 1] || {});
+      return answer(404, 'no such endpoint in the mock: ' + path);
+    };
+""")
+
+
+def _run(gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: Any,
+         ) -> tuple[dict[str, dict[str, str]], list[dict[str, str]], str]:
+    return run_probe(_MOCK, PROBE, gates, config)
+
+
+def _deps(fixture: str) -> set[str]:
+    return catalogued_dependents(PROBE.name, fixture)
+
+
+def _batches(sent: list[dict[str, str]]) -> list[str]:
+    return [r["body"] for r in sent if r["path"] == "$batch"]
+
+
+@pytest.mark.parametrize("gates", [(), ("CONFIRMED",)], ids=["unconfirmed", "no-writes"])
+def test_without_both_gates_the_probe_sends_nothing(gates: tuple[str, ...]) -> None:
+    rows, sent, _ = _run(gates)
+
+    assert sent == []
+    assert rows == {}
+
+
+def test_each_part_answer_is_recorded_with_what_landed() -> None:
+    rows, sent, _ = _run()
+
+    for row_id in (LIST, SINGLE, UNKNOWN, COLUMNS, USER, ADDVALIDATE, AV_UNKNOWN):
+        assert rows[row_id]["outcome"] == "PASS", rows[row_id]
+    parts = rows[PARTS]["evidence"]
+    assert rows[PARTS]["outcome"] == "RECORDED"
+    assert parts.startswith("outer HTTP 200, 3 part answer(s): part 1: HTTP 201 Created; headers "
+                            "CONTENT-TYPE: application/json;odata=verbose;charset=utf-8; body ")
+    assert "part 2: HTTP 400 Bad Request" in parts
+    assert parts.endswith("landed A yes, B no, C yes")
+    assert rows[FAILED]["outcome"] == "PART REFUSED"
+    assert "The property 'dbmlspNoSuchColumn' does not exist" in rows[FAILED]["evidence"]
+    assert "neighbours landed A yes, C yes" in rows[FAILED]["evidence"]
+    assert rows[VERBOSE]["outcome"] == "PART ANSWERED 2XX"
+    assert rows[NOMETADATA]["outcome"] == "PART ANSWERED 2XX"
+    assert "landed yes" in rows[NOMETADATA]["evidence"]
+    assert len(_batches(sent)) == 4
+    assert sent[-1]["path"].endswith("/recycle")
+
+
+def test_each_addvalidate_part_is_recorded_with_its_fields_and_what_reads_back() -> None:
+    rows, _, _ = _run()
+
+    for row_id in ADDVALIDATED:
+        assert rows[row_id]["outcome"] == "WRITTEN", rows[row_id]
+        assert rows[row_id]["state"] == "settled"
+        assert rows[row_id]["evidence"].startswith("HTTP 200 OK; fields Title HasException=false")
+    claims = rows[CLAIMS]["evidence"]
+    assert 'ProbeWho HasException=false ErrorMessage=null FieldValue="[{\\"Key\\":' in claims
+    assert "ProbeWhoId reads back 7, this account's Id: yes" in claims
+    failed = rows[AV_FAILED]["evidence"]
+    assert rows[AV_FAILED]["outcome"] == "FIELD REFUSED"
+    assert "dbmlspNoSuchColumn HasException=true" in failed
+    assert failed.endswith("landed no; neighbours landed dbmlsp addvalidate no folder yes, "
+                           "dbmlsp addvalidate claims yes, dbmlsp addvalidate iso date yes")
+    assert 'ProbeWhen reads back "2026-01-15T09:30:00Z"' in rows[ISO]["evidence"]
+    everything = json.dumps(rows)
+    assert "ada@example.com" not in everything
+    assert "Ada Probe" not in everything
+
+
+def test_the_addvalidate_parts_are_sent_as_the_history_write_sends_them() -> None:
+    _, sent, _ = _run()
+
+    control = next(r for r in sent if r["path"].endswith("')/AddValidateUpdateItemUsingPath"))
+    assert ('"FolderPath":{"DecodedUrl":"https://example.sharepoint.com/sites/probe/Lists/'
+            in control["body"])
+    parts = _batches(sent)[3].split("--changeset_")[1:-1]
+    assert len(parts) == 4
+    assert all("/AddValidateUpdateItemUsingPath HTTP/1.1" in part for part in parts)
+    assert all("getbytitle('dbmlsp%20Probe%20BatchItems')/AddValidateUpdateItemUsingPath" in part
+               for part in parts)
+    assert all("Content-Type: application/json;odata=nometadata" in part for part in parts)
+    assert '"listItemCreateInfo":{"UnderlyingObjectType":0}' in parts[0]
+    assert all('"FolderPath":{"DecodedUrl":' in part for part in parts[1:])
+    assert '"FieldName":"dbmlspNoSuchColumn"' in parts[1]
+    assert '"FieldValue":"[{\\"Key\\":\\"i:0#.f|membership|ada@example.com\\"}]"' in parts[2]
+    assert '"FieldName":"ProbeWhen","FieldValue":"2026-01-15T09:30:00Z"' in parts[3]
+
+
+@pytest.mark.parametrize(("setting", "row_id", "said"), [
+    ("refuseNoFolderPath", FOLDER, "the write was refused: HTTP 400 Bad Request"),
+    ("refuseClaims", CLAIMS, "a field was refused: HTTP 200 OK"),
+    ("refuseIsoDate", ISO, "a field was refused: HTTP 200 OK"),
+])
+def test_a_refused_addvalidate_write_is_not_established_and_the_probe_goes_on(
+        setting: str, row_id: str, said: str) -> None:
+    rows, sent, _ = run_probe(_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"), {setting: True})
+
+    assert rows[row_id]["outcome"] == "NOT ESTABLISHED"
+    assert rows[row_id]["state"] == "open"
+    assert rows[row_id]["evidence"].startswith(said)
+    assert "landed no" in rows[row_id]["evidence"]
+    assert all(rows[other]["outcome"] == "WRITTEN" for other in ADDVALIDATED if other != row_id)
+    assert voided(rows) == set()
+    assert "ada@example.com" not in json.dumps(rows)
+    assert sent[-1]["path"].endswith("/recycle")
+
+
+def test_an_addvalidate_control_that_is_refused_voids_every_addvalidate_row() -> None:
+    rows, sent, _ = _run(rules=[{"contains": "')/AddValidateUpdateItemUsingPath", "status": 500,
+                                 "text": "no"}])
+
+    assert rows[ADDVALIDATE]["outcome"] == "FAIL"
+    assert voided(rows) == _deps(ADDVALIDATE) == {AV_UNKNOWN, AV_FAILED, *ADDVALIDATED}
+    assert rows[PARTS]["outcome"] == "RECORDED"
+    assert len(_batches(sent)) == 3
+
+
+def test_a_throttled_addvalidate_control_leaves_every_addvalidate_row_open() -> None:
+    rows, _, _ = _run(rules=[{"contains": "')/AddValidateUpdateItemUsingPath", "status": 429,
+                              "text": "busy"}])
+
+    assert rows[ADDVALIDATE]["outcome"] == "NOT ESTABLISHED"
+    for row_id in (AV_UNKNOWN, AV_FAILED, *ADDVALIDATED):
+        assert rows[row_id]["state"] == "open"
+        assert "a re-run can ask it" in rows[row_id]["evidence"]
+
+
+def test_columns_that_do_not_read_back_void_the_claims_and_date_parts_only() -> None:
+    rows, sent, _ = _run(rules=[{"contains": "/fields", "verb": "POST", "bodyContains": "ProbeWho",
+                                 "status": 500, "text": "This field type is not supported."}])
+
+    assert rows[COLUMNS]["outcome"] == "FAIL"
+    created = 'ProbeWho.Create="HTTP 500: This field type is not supported."'
+    assert created in rows[COLUMNS]["evidence"]
+    assert voided(rows) == _deps(COLUMNS) == {CLAIMS, ISO}
+    assert rows[FOLDER]["outcome"] == "WRITTEN"
+    assert len(_batches(sent)[3].split("--changeset_")[1:-1]) == 2
+
+
+def test_an_unread_account_voids_only_the_claims_part() -> None:
+    rows, _, _ = _run(rules=[{"contains": "web/currentuser", "status": 403, "text": "denied"}])
+
+    assert rows[USER]["outcome"] == "FAIL"
+    assert voided(rows) == _deps(USER) == {CLAIMS}
+    assert rows[ISO]["outcome"] == "WRITTEN"
+
+
+def test_the_parts_carry_the_type_only_where_the_question_does() -> None:
+    _, sent, _ = _run()
+
+    three, untyped_verbose, untyped_nometadata, _ = _batches(sent)
+    assert three.count('"__metadata":{"type":"SP.Data.dbmlspProbeBatchItemsListItem"}') == 3
+    assert "__metadata" not in untyped_verbose
+    assert "Content-Type: application/json;odata=verbose" in untyped_verbose
+    assert "__metadata" not in untyped_nometadata
+    assert "Content-Type: application/json;odata=nometadata" in untyped_nometadata
+    assert "POST https://example.sharepoint.com/sites/probe/_api/web/lists/getbytitle(" in three
+
+
+@pytest.mark.parametrize(("setting", "row_id"), [
+    ("refuseUntypedVerbose", VERBOSE), ("refuseUntypedNometadata", NOMETADATA),
+])
+def test_a_refused_untyped_part_is_recorded_with_its_answer(setting: str, row_id: str) -> None:
+    rows, _, _ = run_probe(_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"), {setting: True})
+
+    assert rows[row_id]["outcome"] == "PART REFUSED"
+    assert "A type is required." in rows[row_id]["evidence"]
+    assert "landed no" in rows[row_id]["evidence"]
+
+
+def test_a_part_throttled_inside_the_batch_is_not_called_refused() -> None:
+    rows, _, _ = _run(partRules=[{"bodyContains": "untyped verbose", "status": 429,
+                                  "reason": "Too Many Requests", "text": "busy"}])
+
+    assert rows[VERBOSE]["outcome"] == "PART NOT ANSWERED"
+
+
+@pytest.mark.parametrize(("status", "outcome"), [(400, "OUTER REQUEST REFUSED"),
+                                                 (429, "NOT ESTABLISHED")])
+def test_a_whole_batch_that_is_not_answered_part_by_part_is_named_so(
+        status: int, outcome: str) -> None:
+    rows, _, _ = _run(batchStatus=status, batchText="The request is not a batch.")
+
+    for row_id in OBSERVED:
+        assert rows[row_id]["outcome"] == outcome, rows[row_id]
+        assert "The request is not a batch." in rows[row_id]["evidence"]
+    for row_id in ADDVALIDATED:
+        assert rows[row_id]["outcome"] == "NOT ESTABLISHED", rows[row_id]
+        assert f"{outcome}: " in rows[row_id]["evidence"]
+    assert rows[AV_FAILED]["outcome"] == outcome
+
+
+def test_a_batch_that_never_answered_is_a_row_and_the_list_is_still_recycled() -> None:
+    rows, sent, _ = _run(rules=[{"contains": "$batch", "reject": True}])
+
+    assert rows[PARTS]["outcome"] == "NOT ESTABLISHED"
+    assert "no response: Failed to fetch" in rows[PARTS]["evidence"]
+    assert sent[-1]["path"].endswith("/recycle")
+
+
+def test_a_2xx_batch_with_no_parts_is_named_so() -> None:
+    rows, _, _ = _run(batchText="nothing here")
+
+    assert rows[PARTS]["outcome"] == "NO PART STATUS"
+
+
+def test_a_missing_column_the_site_accepts_voids_the_failed_part_row() -> None:
+    rows, _, _ = _run(acceptUnknown=True)
+
+    assert rows[UNKNOWN]["outcome"] == "FAIL"
+    assert rows[AV_UNKNOWN]["outcome"] == "FAIL"
+    assert _deps(UNKNOWN) == {FAILED}
+    assert voided(rows) == _deps(UNKNOWN) | _deps(AV_UNKNOWN) == {FAILED, AV_FAILED}
+    assert rows[PARTS]["outcome"] == "RECORDED"
+
+
+def test_a_throttled_missing_column_control_leaves_the_failed_part_row_open() -> None:
+    rows, _, _ = _run(rules=[{"contains": "BatchItems')/items", "verb": "POST",
+                              "bodyContains": "dbmlspNoSuchColumn", "status": 429, "text": "busy"}])
+
+    assert rows[UNKNOWN]["outcome"] == "NOT ESTABLISHED"
+    assert rows[FAILED]["state"] == "open"
+    assert "a re-run can ask it" in rows[FAILED]["evidence"]
+    assert rows[PARTS]["outcome"] == "RECORDED"
+
+
+def test_a_throttled_single_create_leaves_every_batch_row_open() -> None:
+    rows, sent, _ = _run(rules=[{"contains": "BatchItems')/items", "verb": "POST", "status": 429,
+                                 "text": "busy"}])
+
+    assert rows[SINGLE]["outcome"] == "NOT ESTABLISHED"
+    for row_id in (UNKNOWN, *OBSERVED, ADDVALIDATE, AV_UNKNOWN, AV_FAILED, *ADDVALIDATED):
+        assert rows[row_id]["state"] == "open"
+    assert _batches(sent) == []
+
+
+def test_a_single_create_that_does_not_land_voids_every_batch_row() -> None:
+    rows, sent, _ = _run(rules=[{"contains": "BatchItems')/items(1)", "status": 200, "text": "{}"}])
+
+    assert rows[SINGLE]["outcome"] == "FAIL"
+    assert voided(rows) == _deps(SINGLE)
+    assert _batches(sent) == []
+
+
+def test_an_items_read_back_that_fails_says_so_rather_than_guessing() -> None:
+    rows, _, _ = _run(rules=[{"contains": "items?$select=Id,Title", "status": 500, "text": "no"}])
+
+    assert "landed A unknown" in rows[PARTS]["evidence"]
+    assert "the items read-back failed: HTTP 500: no" in rows[PARTS]["evidence"]
+
+
+def test_a_foreign_list_holding_the_title_is_never_written_to() -> None:
+    rows, sent, _ = _run(list={"Id": "x", "BaseTemplate": 100, "Description": "somebody else's"})
+
+    assert rows[LIST]["outcome"] == "FAIL"
+    assert voided(rows) == _deps(LIST)
+    assert not [r for r in sent if r["verb"] != "GET" and r["path"] != "contextinfo"]
+
+
+def test_with_cleanup_a_leftover_list_is_recycled_and_built_again() -> None:
+    rows, sent, _ = _run(("CONFIRMED", "ALLOW_WRITES", "CLEANUP"),
+                         list={"Id": "x", "BaseTemplate": 100, "Description": OWNED,
+                               "ListItemEntityTypeFullName": "SP.Data.old"})
+
+    assert rows[LIST]["outcome"] == "PASS"
+    assert len([r for r in sent if r["path"].endswith("/recycle")]) == 2
+
+
+@pytest.mark.parametrize(("rule", "row_id"), [
+    ({"contains": "web/currentuser"}, USER),
+    ({"contains": "')/AddValidateUpdateItemUsingPath"}, ADDVALIDATE),
+    ({"contains": "/fields", "verb": "POST", "bodyContains": "ProbeWhen"}, COLUMNS),
+])
+def test_an_account_named_in_a_refusal_is_masked(rule: dict[str, str], row_id: str) -> None:
+    rows, _, output = _run(rules=[{**rule, "status": 403,
+                                   "text": "i:0#.f|membership|bob@example.org may not"}])
+
+    assert "<account> may not" in rows[row_id]["evidence"]
+    printed = [ln for ln in output.splitlines() if not ln.startswith(("__SENT__", "__ROWS__"))]
+    assert "bob@example.org" not in json.dumps(rows) + "\n".join(printed)
+
+
+def test_the_evidence_never_names_the_tenant() -> None:
+    rows, _, _ = _run(partRules=[{"bodyContains": "part B", "status": 400, "reason": "Bad Request",
+                                  "text": "Refused at https://example.sharepoint.com/sites/probe/_api"}])
+
+    assert "[TENANT]/sites/probe/_api" in rows[FAILED]["evidence"]
+    assert "example.sharepoint.com" not in json.dumps(rows)

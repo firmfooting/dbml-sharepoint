@@ -12696,6 +12696,148 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "batch-item-create-probe.js",
+      "surface": "transport",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch generic list with a person and a date-and-time column, and up to thirteen items, sent one at a time, as $batch ChangeSet parts or through AddValidateUpdateItemUsingPath; the list is recycled before the probe reports"
+      ],
+      "cleanup": {
+        "policy": "after"
+      },
+      "prerequisites": [
+        "permission to create and recycle lists on the site"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "transport",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "transport.batch.control-current-user",
+              "depends_on": []
+            },
+            {
+              "id": "transport.batch.fixture-item-batch-list",
+              "depends_on": []
+            },
+            {
+              "id": "transport.batch.fixture-item-batch-columns",
+              "depends_on": [
+                "transport.batch.fixture-item-batch-list"
+              ]
+            },
+            {
+              "id": "transport.batch.control-single-item-create",
+              "depends_on": [
+                "transport.batch.fixture-item-batch-list"
+              ]
+            },
+            {
+              "id": "transport.batch.control-single-item-unknown-property-refused",
+              "depends_on": [
+                "transport.batch.fixture-item-batch-list",
+                "transport.batch.control-single-item-create"
+              ]
+            },
+            {
+              "id": "transport.batch.changeset-item-creates-per-part",
+              "depends_on": [
+                "transport.batch.fixture-item-batch-list",
+                "transport.batch.control-single-item-create"
+              ]
+            },
+            {
+              "id": "transport.batch.changeset-item-create-failed-part",
+              "depends_on": [
+                "transport.batch.fixture-item-batch-list",
+                "transport.batch.control-single-item-create",
+                "transport.batch.control-single-item-unknown-property-refused"
+              ]
+            },
+            {
+              "id": "transport.batch.changeset-item-create-untyped-verbose",
+              "depends_on": [
+                "transport.batch.fixture-item-batch-list",
+                "transport.batch.control-single-item-create"
+              ]
+            },
+            {
+              "id": "transport.batch.changeset-item-create-untyped-nometadata",
+              "depends_on": [
+                "transport.batch.fixture-item-batch-list",
+                "transport.batch.control-single-item-create"
+              ]
+            },
+            {
+              "id": "transport.batch.control-single-addvalidate-create",
+              "depends_on": [
+                "transport.batch.fixture-item-batch-list",
+                "transport.batch.control-single-item-create"
+              ]
+            },
+            {
+              "id": "transport.batch.control-single-addvalidate-unknown-field-refused",
+              "depends_on": [
+                "transport.batch.fixture-item-batch-list",
+                "transport.batch.control-single-item-create",
+                "transport.batch.control-single-addvalidate-create"
+              ]
+            },
+            {
+              "id": "transport.batch.changeset-addvalidate-folderpath-omitted",
+              "depends_on": [
+                "transport.batch.fixture-item-batch-list",
+                "transport.batch.control-single-item-create",
+                "transport.batch.control-single-addvalidate-create"
+              ]
+            },
+            {
+              "id": "transport.batch.changeset-addvalidate-failed-part",
+              "depends_on": [
+                "transport.batch.fixture-item-batch-list",
+                "transport.batch.control-single-item-create",
+                "transport.batch.control-single-addvalidate-create",
+                "transport.batch.control-single-addvalidate-unknown-field-refused"
+              ]
+            },
+            {
+              "id": "transport.batch.changeset-addvalidate-person-claims",
+              "depends_on": [
+                "transport.batch.control-current-user",
+                "transport.batch.fixture-item-batch-list",
+                "transport.batch.fixture-item-batch-columns",
+                "transport.batch.control-single-item-create",
+                "transport.batch.control-single-addvalidate-create"
+              ]
+            },
+            {
+              "id": "transport.batch.changeset-addvalidate-date-iso",
+              "depends_on": [
+                "transport.batch.fixture-item-batch-list",
+                "transport.batch.fixture-item-batch-columns",
+                "transport.batch.control-single-item-create",
+                "transport.batch.control-single-addvalidate-create"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "transport.batch.control-current-user",
+            "transport.batch.fixture-item-batch-list",
+            "transport.batch.fixture-item-batch-columns",
+            "transport.batch.control-single-item-create",
+            "transport.batch.control-single-item-unknown-property-refused",
+            "transport.batch.control-single-addvalidate-create",
+            "transport.batch.control-single-addvalidate-unknown-field-refused"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
