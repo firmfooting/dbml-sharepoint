@@ -211,7 +211,9 @@ const mockFetch = async (url, opts = {}) => {
   }
   if (rest === '/items' && verb === 'POST') {
     const values = plain(sent);
-    const item = { Id: list.items.length + 1, values, history: [{ ...values }] };
+    // `itemIds`: the Ids a list's item creates answer, in order, where the default is 1, 2, 3.
+    const item = { Id: (CONFIG.itemIds || [])[list.items.length] || list.items.length + 1, values,
+      history: [{ ...values }] };
     list.items.push(item);
     return answer(201, { Id: item.Id, Title: values.Title });
   }
@@ -226,7 +228,7 @@ const mockFetch = async (url, opts = {}) => {
   }
   const one = /^\/items\((\d+)\)(.*)$/.exec(rest);
   if (one) {
-    const item = list.items[Number(one[1]) - 1];
+    const item = list.items.find((each) => each.Id === Number(one[1]));
     if (!item) return answer(404, 'Item does not exist.');
     if (one[2] === '' && verb === 'MERGE') {
       // `mergeDrops`: per item MERGE count from 1, names that MERGE answers 204 and never stores.

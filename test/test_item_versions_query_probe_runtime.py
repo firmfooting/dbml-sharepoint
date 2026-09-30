@@ -331,3 +331,12 @@ def test_an_unordered_plain_read_asks_ascending_and_does_not_call_it_opposite() 
     assert rows[ORDERBY]["evidence"].startswith(
         "$orderby=VersionId asc: asked asc, since the plain read was UNORDERED and has no opposite")
     assert "opposite to" not in rows[ORDERBY]["evidence"]
+
+
+def test_the_top_control_expects_the_greater_id_read_back_whichever_item_has_it() -> None:
+    rows, _, _ = _run(itemIds=[5, 3])
+
+    assert rows[TOP_CONTROL]["outcome"] == "PASS", rows[TOP_CONTROL]
+    assert "served [5], want [5]" in rows[TOP_CONTROL]["evidence"]
+    assert rows[TOP]["outcome"] == "TOPPED"
+    assert voided(rows) == set()
