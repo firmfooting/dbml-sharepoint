@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.6.0...v0.7.0) (2026-10-01)
+
+
+### Features
+
+* **mapping:** declare Power Automate uses on a watched column ([#711](https://github.com/firmfooting/dbml-sharepoint/issues/711)) ([27c32c2](https://github.com/firmfooting/dbml-sharepoint/commit/27c32c2ce62a450a3df5671fa3d1131c7535617d))
+
 ## [0.6.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.5.1...v0.6.0) (2026-09-28)
 
 
