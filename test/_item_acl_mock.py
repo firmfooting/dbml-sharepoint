@@ -165,6 +165,10 @@ const aclFetch = async (url, opts = {}) => {
     nextGroup += 1;
     named.sitegroups.set(sent.Title, { Id: nextGroup - 1,
       Description: CONFIG.createDropsDescription ? '' : sent.Description });
+    // `groupCPrebound`: something binds group C at Read on the web as soon as it is created.
+    if (CONFIG.groupCPrebound && sent.Title.endsWith(' C')) {
+      scopes.get('web').bindings.push({ principal: nextGroup - 1, level: 1073741826 });
+    }
     return mine(201, { Id: nextGroup - 1, Title: sent.Title });
   }
   const removeById = /^web\/sitegroups\/removebyid\((\d+)\)/.exec(path);
@@ -290,6 +294,8 @@ const aclFetch = async (url, opts = {}) => {
     return mine(200, { value: levels.map((b) => ({ Name: LEVELS[b.level][0] })) });
   }
   if (tail.startsWith('/getusereffectivepermissions(@user)')) {
+    // `emptyBitmap`: effective permissions answered with empty High and Low halves.
+    if (CONFIG.emptyBitmap) return mine(200, { High: '', Low: '' });
     // `userAlreadyReads`: the test user holds Read through a group this mock does not model.
     let high = CONFIG.userAlreadyReads ? 176n : 0n;
     let low = CONFIG.userAlreadyReads ? 138612833n : 0n;

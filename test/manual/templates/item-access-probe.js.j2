@@ -90,6 +90,14 @@
   // `trial` takes C3's delete attempt, so a delete that succeeds cannot remove the C3 file STATE 2 needs.
   const NAMES = { plain: 'item-access-c1.txt', reset: 'item-access-c6.txt',
     book: WORKBOOK_URL ? 'item-access-c3.xlsx' : 'item-access-c3.txt', trial: 'item-access-c3-delete.txt' };
+  // What STATE 1 and STATE 2 do to each file, by the key NAMES uses, so the plan names every file made.
+  const FILE_PLAN = {
+    plain: 'STATE 1 breaks its inheritance, copying the library\'s groups (C1, C2)',
+    reset: 'STATE 2 breaks its inheritance, grants TEST_USER_LOGIN the custom level, then resets it (C6)',
+    book: 'STATE 1 breaks its inheritance and grants TEST_USER_LOGIN the custom level (C3, C4); STATE 2 '
+      + 'removes that grant (C5)',
+    trial: 'STATE 1 breaks its inheritance and grants TEST_USER_LOGIN the custom level, for C3\'s delete trial',
+  };
   // Add, edit and read items and versions, no delete: dbml_sharepoint.analysis.permissions computes
   // these halves for ViewListItems, AddListItems, EditListItems, OpenItems, ViewVersions,
   // ViewFormPages, Open, ViewPages, BrowseUserInfo, UseClientIntegration, UseRemoteAPIs,
@@ -154,10 +162,16 @@
     return;
   }
   if (!CONFIRMED) {
-    log('INFO', `STATE 1 creates a library '${LIB}' on ${WEB} with unique permissions, three groups and`);
-    log('INFO', 'a custom level, adds three files, breaks one file\'s inheritance (C1, C2) and grants');
-    log('INFO', 'TEST_USER_LOGIN the custom level on another (C3, C4). STATE 2 removes that grant (C5)');
-    log('INFO', 'and resets a third file holding a user grant (C6). CLEANUP removes what STATE 1 made.');
+    log('INFO', `STATE 1 creates a library '${LIB}' on ${WEB} with unique permissions, the groups `
+      + `${Object.values(GROUP).map((one) => `'${one}'`).join(', ')} and the custom level '${LEVEL}'. It grants `
+      + 'the library group A at Read and group B at the custom level, and later group C at Read (C2). It adds '
+      + 'TEST_USER_LOGIN to the site\'s user list.');
+    log('INFO', `It adds ${Object.keys(NAMES).length} files to the library:`);
+    for (const [key, name] of Object.entries(NAMES)) {
+      const made = key === 'book' && WORKBOOK_URL ? `copied from ${WORKBOOK_URL}` : 'uploaded as text';
+      log('INFO', `  ${name} (${made}): ${FILE_PLAN[key]}.`);
+    }
+    log('INFO', 'CLEANUP removes what STATE 1 made.');
     log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
     return;
   }
@@ -238,9 +252,11 @@
     const head = readHead(read);
     const body = head ? null : recordBody(read);
     const node = body && (body.GetUserEffectivePermissions || body);
-    if (!node || node.High == null || node.Low == null) {
-      return { mask: null,
-        text: `unread (${head ? scrub(head.why) : `HTTP ${read.status} with no High/Low`})` };
+    // Each half must be a decimal integer, since BigInt reads an empty string as 0, which would read as denied.
+    const decimal = (half) => (typeof half === 'string' || typeof half === 'number') && /^\d+$/.test(String(half));
+    if (!node || !decimal(node.High) || !decimal(node.Low)) {
+      return { mask: null, text: `unread (${head ? scrub(head.why)
+        : `HTTP ${read.status} with High and Low that are not decimal integers`})` };
     }
     const mask = (BigInt(String(node.High)) << 32n) | BigInt(String(node.Low));
     return { mask, text: `High=${node.High} Low=${node.Low}` };
@@ -503,20 +519,32 @@
         record('access.item-acl.parent-grant-after-break', Q.c2, 'NOT ESTABLISHED',
           'group C or the Read level was not available, so nothing was granted');
       } else {
-        const added = await write(`${lib}/roleassignments/addroleassignment(principalid=${groups.c},`
-          + `roledefid=${readId})`);
-        // One window for both scopes: the library's grant is the prerequisite, the file's bindings the observation.
-        let onLibrary = 0;
-        const c2 = await settle(async () => {
-          const both = { library: await bindingsOf(lib), file: await bindingsOf(fileOf('plain')) };
-          if (!onLibrary && holds(both.library.rows, groups.c, readId)) onLibrary = 1;
-          return both;
-        }, (r) => onLibrary === 1 && holds(r.file.rows, groups.c, readId));
-        record('access.item-acl.parent-grant-after-break', Q.c2,
-          !onLibrary || c2.last.file.rows === null ? 'NOT ESTABLISHED'
-            : c2.held ? 'REACHED THE FILE' : 'NOT ON THE FILE',
-          `the library grant answered HTTP ${added.status}; the library ${onLibrary ? 'read it' : 'never read it'} `
-          + `within the window; after ${c2.reads} read(s), ${c2.ms} ms the file holds ${shown(c2.last.file)}`);
+        // Group C must read absent from both scopes first, or a binding already there would read as reaching the file.
+        const prior = { library: await bindingsOf(lib), file: await bindingsOf(fileOf('plain')) };
+        const boundC = (bound) => (bound.rows === null ? null : bound.rows.some((r) => r.principal === groups.c));
+        const found = [boundC(prior.library), boundC(prior.file)];
+        if (found.includes(true) || found.includes(null)) {
+          record('access.item-acl.parent-grant-after-break', Q.c2, 'NOT ESTABLISHED',
+            `${found.includes(true) ? 'group C was already bound before the grant'
+              : 'a read before the grant was unread'}, so nothing was granted; the library holds `
+            + `${shown(prior.library)}; the file holds ${shown(prior.file)}`);
+        } else {
+          const added = await write(`${lib}/roleassignments/addroleassignment(principalid=${groups.c},`
+            + `roledefid=${readId})`);
+          // One window for both scopes: the library's grant is the prerequisite, the file's bindings the observation.
+          let onLibrary = 0;
+          const c2 = await settle(async () => {
+            const both = { library: await bindingsOf(lib), file: await bindingsOf(fileOf('plain')) };
+            if (!onLibrary && holds(both.library.rows, groups.c, readId)) onLibrary = 1;
+            return both;
+          }, (r) => onLibrary === 1 && holds(r.file.rows, groups.c, readId));
+          record('access.item-acl.parent-grant-after-break', Q.c2,
+            !onLibrary || c2.last.file.rows === null ? 'NOT ESTABLISHED'
+              : c2.held ? 'REACHED THE FILE' : 'NOT ON THE FILE',
+            `group C read absent from the library and the file before the grant; the library grant answered `
+            + `HTTP ${added.status}; the library ${onLibrary ? 'read it' : 'never read it'} within the window; `
+            + `after ${c2.reads} read(s), ${c2.ms} ms the file holds ${shown(c2.last.file)}`);
+        }
       }
 
       // ---- the test user: resolved, not an administrator, and denied before any grant ----

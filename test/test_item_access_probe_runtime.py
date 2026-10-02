@@ -6,6 +6,7 @@ and CLEANUP runs start from `stateOne`, the mock's copy of what STATE 1 leaves. 
 probe's settle wait is swapped for none and its test user set.
 """
 
+import re
 from typing import Any
 
 import pytest
@@ -427,3 +428,38 @@ def test_cleanup_recycles_the_library_it_read_by_id_when_the_title_is_rebound() 
     writes = [r["path"] for r in sent if r["verb"] != "GET" and r["path"] != "contextinfo"]
     assert f"web/lists(guid'{LIBRARY_ID}')/recycle" in writes
     assert not any("getbytitle(" in path or DECOY_ID in path for path in writes)
+
+
+def test_empty_permission_halves_are_unread_not_denied() -> None:
+    rows, sent, output = _run(emptyBitmap=True)
+
+    assert rows[DENIED]["outcome"] == "NOT ESTABLISHED", rows[DENIED]
+    assert {C3, C4} <= voided(rows)
+    assert "MANUAL HALF" not in output
+    assert not any("addroleassignment(principalid=20," in r["path"] for r in sent)
+
+
+def test_group_c_bound_before_its_grant_leaves_c2_not_established() -> None:
+    rows, sent, _ = _run(groupCPrebound=True)
+
+    assert rows[C2]["outcome"] == "NOT ESTABLISHED", rows[C2]
+    assert "already bound before the grant" in rows[C2]["evidence"]
+    assert not any("addroleassignment(principalid=13," in r["path"] for r in sent)
+
+
+@pytest.mark.parametrize("swaps", [(), (WORKBOOK,)], ids=["text", "workbook"])
+def test_the_confirmation_plan_names_every_file_state_one_creates(
+        swaps: tuple[dict[str, str], ...]) -> None:
+    _, _, plan = _run(*swaps, gates=())
+    _, sent, _ = _run(*swaps)
+
+    created = set()
+    for r in sent:
+        made = re.search(r"Files/add\(url='([^']+)'|copyto\(strnewurl='[^']*/([^'/]+)'", r["path"])
+        if made:
+            created.add(made.group(1) or made.group(2))
+    assert len(created) == 4
+    for name in created:
+        assert name in plan, name
+    assert "undefined" not in plan
+    assert "delete trial" in plan
