@@ -40,7 +40,7 @@ with.
 ### `generate_data_dictionary`
 
 ```python
-def generate_data_dictionary(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, release: dbml_sharepoint.model.release.Release | None = None, generated_at: str = '', source_schema: str = '', source_mapping: str = '', time_zone: str | None = None) -> str
+def generate_data_dictionary(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, release: dbml_sharepoint.model.release.Release | None = None, generated_at: str = '', source_schema: str = '', source_mapping: str = '', time_zone: str | None = None, application: str = 'dbml-sharepoint') -> str
 ```
 
 Companion data dictionary: deployment/schema metadata + every list and

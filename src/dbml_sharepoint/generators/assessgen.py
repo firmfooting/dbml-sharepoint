@@ -11,6 +11,7 @@ guarantee test. Spec: docs/plans/2026-07-24-tenant-assessment-design.md.
 from dataclasses import dataclass
 from typing import Any
 
+from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.clock_usage import clock_usage
 from dbml_sharepoint.analysis.group_description import marker_for_group
 from dbml_sharepoint.analysis.limits import (
@@ -393,8 +394,8 @@ NOT_ASSESSABLE: tuple[str, ...] = (
 )
 
 
-def _render(template_name: str, **context: Any) -> str:
-    return script_env().get_template(template_name).render(**context)
+def _render(template_name: str, *, application: str = APPLICATION_NAME, **context: Any) -> str:
+    return script_env(application).get_template(template_name).render(**context)
 
 
 @guards_resolution
@@ -408,6 +409,7 @@ def generate_assess_js(
     site_role: str,
     source_dbml: str,
     generated_at: str,
+    application: str = APPLICATION_NAME,
 ) -> str:
     requirements = [
         {"key": r.key, "description": r.description, "level_on_fail": r.level_on_fail}
@@ -423,6 +425,7 @@ def generate_assess_js(
         targets=assess_targets(schema, bundle, site_role, resolved=resolved),
         requirements=requirements,
         not_assessable=list(NOT_ASSESSABLE),
+        application=application,
     )
 
 

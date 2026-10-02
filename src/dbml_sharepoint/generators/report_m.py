@@ -18,6 +18,7 @@ no site and falls back to a ``SiteUrl`` text parameter.
 from datetime import datetime
 from urllib.parse import quote
 
+from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN
 from dbml_sharepoint.analysis.report_columns import (
     DATE_ZONE_RESOLVED_COLUMN,
@@ -1475,6 +1476,7 @@ def generate_dictionary_powerquery(
     source_mapping: str = "",
     site_url: str | None = None,
     time_zone: str | None = None,
+    application: str = APPLICATION_NAME,
 ) -> dict[str, str]:
     """The data dictionary as report-loadable M queries, so any report can
     surface it as a page: _DataDictionary (one row per column), _ModelInfo
@@ -1498,7 +1500,7 @@ def generate_dictionary_powerquery(
         "{" + _m_string(field_name) + ", " + _m_string(value) + "}"
         for field_name, value in metadata_rows(
             bundle, site_role, len(tables),
-            release, generated_at, source_schema, source_mapping,
+            release, generated_at, source_schema, source_mapping, application,
         )
     ]
     return {

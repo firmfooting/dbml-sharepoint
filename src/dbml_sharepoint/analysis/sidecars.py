@@ -57,12 +57,6 @@ EXTERNAL_LOG_DEFAULT = "firmfooting_Deployments"
 #: that each name is true of every row in it.
 EXTERNAL_CHANGE_LOG_DEFAULT = "firmfooting_Changes"
 
-#: Which application wrote a central row. Written into the `Application`
-#: column so a reader does not have to parse it out of a version string, and
-#: so the type-2 close can tell two applications' rows apart. A literal, like
-#: the provenance marker: the close matches it against rows already on live logs.
-APPLICATION_NAME = "dbml-sharepoint"
-
 #: The CENTRAL logging site the external deployment log lives on, and the
 #: default every build probes unless the operator names another. One site
 #: per org collects every firmfooting application's deployment rows, so
@@ -72,14 +66,6 @@ APPLICATION_NAME = "dbml-sharepoint"
 #: because creating a whole site is a consent-shaped act, not a side
 #: effect of provisioning a register.
 CENTRAL_LOG_SITE_DEFAULT = "firmfooting-logging"
-
-#: The Title prefix every external-log row carries, structured columns or
-#: not: the list belongs to its operator and its schema is unknown, so the
-#: ONLY column every generic list is guaranteed is Title. Derived from
-#: `APPLICATION_NAME` rather than restated, because the Title prefix and
-#: the `Application` column name the same application; a name declared
-#: twice would let a rename change one and miss the other.
-EXTERNAL_LOG_ROW_PREFIX = APPLICATION_NAME
 
 #: The stamp columns the `deployment-log` family declares on the central
 #: list, and the ones a cross-web stamp fills when its probe finds them

@@ -14,6 +14,7 @@ from typing import Any, cast
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 import dbml_sharepoint
+from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.typemap import (
     BASE_TYPE_AS_STRING_PAIRS,
     DERIVED_FIELD_PROPERTIES,
@@ -40,8 +41,11 @@ def markdown_cell(value: object) -> str:
     return str(value).replace("&", "&amp;").replace("|", "&#124;").replace("\n", " ")
 
 
-def script_env() -> Environment:
-    """Environment for every generated artifact (scripts and manifests)."""
+def script_env(application: str = APPLICATION_NAME) -> Environment:
+    """Environment for every generated artifact (scripts and manifests).
+
+    `application` is the identity the artifacts stamp; the version is the distribution's.
+    """
     # No autoescape by design: these templates emit JavaScript and
     # markdown, not HTML. Interpolations are guarded individually
     # (tojson for values, comment_safe for comment text).
@@ -77,8 +81,8 @@ def script_env() -> Environment:
     # list.
     env_globals["derived_field_properties"] = DERIVED_FIELD_PROPERTIES
     env_globals["derived_field_property_kinds"] = DERIVED_FIELD_PROPERTY_KINDS
-    # The deployer every script and manifest records, from the installed metadata (#687).
-    env_globals["deployer_name"] = dbml_sharepoint.DISTRIBUTION
+    # The identity every script and manifest stamps, chosen by the generator's caller.
+    env_globals["application_name"] = application
     # Read per call rather than imported, so the test suite can pin the version its goldens record.
     env_globals["deployer_version"] = dbml_sharepoint.__version__
     return env

@@ -4,6 +4,7 @@
 import json
 from typing import Any
 
+from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.condition_description import describe
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.limits import MAX_VALIDATION_FORMULA, MAX_VALIDATION_MESSAGE
@@ -39,6 +40,7 @@ def generate_manifest(
     deployment_log_list: str = "",
     deployment_log_change_list: str = "",
     deployment_log_site: str = "",
+    application: str = APPLICATION_NAME,
 ) -> str:
     """Render the deploy manifest for ONE build.
 
@@ -71,7 +73,7 @@ def generate_manifest(
     enum that did not resolve, so a reachable defect there is neither a
     bare `KeyError` nor a silent omission.
     """
-    template = script_env().get_template("manifest.md.j2")
+    template = script_env(application).get_template("manifest.md.j2")
     lists: list[dict[str, Any]] = schema_json["lists"]
 
     counts = {

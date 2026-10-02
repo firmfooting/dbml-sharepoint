@@ -824,7 +824,7 @@
         body.SourceSite = SITE_URL;
         body.ReleaseTag = RELEASE_TAG;
         body.SchemaVersion = SCHEMA_VERSION;
-        body.DeployerVersion = {{ (deployer_name ~ '/' ~ deployer_version) | tojson }};
+        body.DeployerVersion = {{ (application_name ~ '/' ~ deployer_version) | tojson }};
         body.Operator = OPERATOR_LOGIN;
         body.Details = details || '';
         body.Application = APPLICATION;

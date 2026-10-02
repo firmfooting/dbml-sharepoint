@@ -14,6 +14,7 @@ shapes the core cannot know; they are skipped by the queries and listed
 in ``guide.md``.
 """
 
+from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN
 from dbml_sharepoint.analysis.lookups import lookup_display_columns
 from dbml_sharepoint.analysis.report_columns import (
@@ -486,6 +487,7 @@ def generate_data_dictionary(
     source_schema: str = "",
     source_mapping: str = "",
     time_zone: str | None = None,
+    application: str = APPLICATION_NAME,
 ) -> str:
     """Companion data dictionary: deployment/schema metadata + every list and
     column as deployed, including choices, lookup targets, calculated
@@ -537,7 +539,7 @@ def generate_data_dictionary(
         f"| {field_name} | {_md_cell(value)} |"
         for field_name, value in metadata_rows(
             bundle, site_role, len(tables),
-            release, generated_at, source_schema, source_mapping,
+            release, generated_at, source_schema, source_mapping, application,
         )
     ]
 

@@ -34,9 +34,9 @@ from _node import run_node as _run
 from _paths import FIXTURES
 
 import dbml_sharepoint
+from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.sidecars import (
-    APPLICATION_NAME,
     CENTRAL_CHANGE_COLUMNS,
     CENTRAL_LOG_COLUMNS,
     CENTRAL_LOG_SITE_DEFAULT,
@@ -1419,7 +1419,7 @@ def test_the_stamped_deployer_version_is_not_doubled() -> None:
     central = run["state"]["central"]
     stamps = [r for r in central if "DeployerVersion" in r]
     assert stamps, "no central stamp carried DeployerVersion"
-    stamped = f"{dbml_sharepoint.DISTRIBUTION}/{dbml_sharepoint.__version__}"
+    stamped = f"{APPLICATION_NAME}/{dbml_sharepoint.__version__}"
     assert all(r["DeployerVersion"] == stamped for r in stamps), (
         f"DeployerVersion is doubled: {[r['DeployerVersion'] for r in stamps]}"
     )

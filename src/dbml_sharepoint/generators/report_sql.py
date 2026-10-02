@@ -15,6 +15,7 @@ display-name text, and no derived column reaches this side because a
 row-level M expression has no SQL to translate to.
 """
 
+from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.report_columns import projection_output_name
 from dbml_sharepoint.analysis.reporting.dictionary import (
     LOADABLE_COLUMNS,
@@ -228,6 +229,7 @@ def generate_dictionary_sql(
     source_schema: str = "",
     source_mapping: str = "",
     time_zone: str | None = None,
+    application: str = APPLICATION_NAME,
 ) -> str:
     """The data dictionary as SQL views built from embedded VALUES rows (no
     landing table needed), so warehouse-driven reports can surface the same
@@ -246,7 +248,7 @@ def generate_dictionary_sql(
         _sql_string(field_name) + ", " + _sql_string(value)
         for field_name, value in metadata_rows(
             bundle, site_role, len(tables),
-            release, generated_at, source_schema, source_mapping,
+            release, generated_at, source_schema, source_mapping, application,
         )
     ]
     audit_view = _render_user_added_columns_sql(

@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, assert_never
 
+from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.column_projection import (
     effective_column_types,
     system_column_types_for,
@@ -42,12 +43,7 @@ from dbml_sharepoint.analysis.role_definition_description import (
     marker_for_level,
 )
 from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
-from dbml_sharepoint.analysis.sidecars import (
-    APPLICATION_NAME,
-    CENTRAL_CHANGE_COLUMNS,
-    CENTRAL_LOG_COLUMNS,
-    EXTERNAL_LOG_ROW_PREFIX,
-)
+from dbml_sharepoint.analysis.sidecars import CENTRAL_CHANGE_COLUMNS, CENTRAL_LOG_COLUMNS
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPES,
     ENTITY_TYPE_BY_KIND,
@@ -128,8 +124,9 @@ def generate_deploy_js(
     sidecar_change_log_title: str | None = None,
     sidecar_change_log_marker: str | None = None,
     sidecar_change_fields: Sequence[dict[str, Any]] | None = None,
+    application: str = APPLICATION_NAME,
 ) -> str:
-    env = script_env()
+    env = script_env(application)
     ext: DeploymentExtension = extension if extension is not None else NullExtension()
     sc = _resolve_site_context(
         site_context, site_url=site_url, site_role=site_role, release=release,
@@ -223,11 +220,7 @@ def generate_deploy_js(
         # change feed, which is what lets a run with a central log create no
         # per-site sidecars at all.
         deployment_log_change_columns=list(CENTRAL_CHANGE_COLUMNS),
-        deployment_log_row_prefix=EXTERNAL_LOG_ROW_PREFIX,
-        # Which firmfooting application this build is. Written into every
-        # central row and every change-log row so a reader recovers it from a
-        # declared column rather than by parsing DeployerVersion.
-        application_name=APPLICATION_NAME,
+        deployment_log_row_prefix=application,
         # The assessment's three inputs, built exactly as generate_assess_js
         # builds them. `assess_targets_data` rather than `assess_targets` so
         # the context name does not shadow the imported function.
