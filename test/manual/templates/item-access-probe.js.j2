@@ -238,15 +238,32 @@
     if (head) return `unread (${scrub(head.why)})`;
     return (entriesOf(read.parsed).rows || []).map((r) => quote(String(r.Name))).join(', ') || 'none';
   };
-  // A group or level by name, with its Id only when its description is this probe's.
-  const ownedByName = async (collection, name) => {
-    const read = await sendRaw(`web/${collection}/getbyname('${pathLiteral(name)}')?$select=Id,Description`);
-    if (read.status === 404) return { id: null, why: 'absent' };
+  // A group or level by name: absent, mine, foreign, duplicate or unheard, with its Id only when mine.
+  const lookUp = async (collection, name) => {
+    const judge = (body) => (body.Description !== OWNERSHIP
+      ? { state: 'foreign', id: null, why: 'not this probe\'s (its description differs)' }
+      : Number.isInteger(body.Id) ? { state: 'mine', id: body.Id, why: null }
+        : { state: 'unheard', id: null, why: 'no Id' });
+    if (collection === 'sitegroups') {
+      const read = await sendRaw(`web/sitegroups/getbyname('${pathLiteral(name)}')?$select=Id,Description`);
+      if (read.status === 404) return { state: 'absent', id: null, why: 'absent' };
+      const head = readHead(read);
+      const body = head ? null : recordBody(read);
+      return body ? judge(body) : { state: 'unheard', id: null, why: head ? scrub(head.why) : 'no JSON object' };
+    }
+    // A level by $filter, as the deployer reads one: getbyname answers 500 for an absent level, not 404.
+    const read = await sendRaw('web/roledefinitions?$select=Id,Description'
+      + `&$filter=Name eq '${odataLiteral(name)}'`);
     const head = readHead(read);
-    const body = head ? null : recordBody(read);
-    if (!body) return { id: null, why: head ? scrub(head.why) : 'no JSON object' };
-    if (body.Description !== OWNERSHIP) return { id: null, why: 'not this probe\'s (its description differs)' };
-    return Number.isInteger(body.Id) ? { id: body.Id, why: null } : { id: null, why: 'no Id' };
+    const { rows, shape } = head ? { rows: null, shape: null } : entriesOf(read.parsed);
+    if (rows === null) return { state: 'unheard', id: null, why: head ? scrub(head.why) : `HTTP ${read.status} ${shape}` };
+    if (rows.length === 0) return { state: 'absent', id: null, why: 'absent' };
+    if (rows.length > 1) return { state: 'duplicate', id: null, why: `held ${rows.length} times` };
+    return judge(rows[0]);
+  };
+  const ownedByName = async (collection, name) => {
+    const found = await lookUp(collection, name);
+    return { id: found.id, why: found.why };
   };
   const resolveUser = async () => {
     if (PLACEHOLDER.test(TEST_USER_LOGIN)) return null;
@@ -305,31 +322,37 @@
   try {
     await learnIdentity();
     if (STATE === 1) {
+      // Each fixed name is read before anything is made, since SharePoint accepts a duplicate level name.
+      const found = { mine: [], other: [], unheard: [] };
+      for (const [collection, name] of [['roledefinitions', LEVEL],
+        ...Object.values(GROUP).map((one) => ['sitegroups', one])]) {
+        const one = await lookUp(collection, name);
+        if (one.state === 'mine') found.mine.push(`'${name}'`);
+        else if (one.state === 'foreign' || one.state === 'duplicate') found.other.push(`'${name}' (${one.why})`);
+        else if (one.state === 'unheard') found.unheard.push(`'${name}' (${one.why})`);
+      }
+      if (found.mine.length || found.other.length || found.unheard.length) {
+        const why = [
+          found.mine.length ? `left by an earlier run of this probe: ${found.mine.join(', ')}; run CLEANUP `
+            + 'first, then STATE 1 again' : '',
+          found.other.length ? `held by something other than this probe, which CLEANUP leaves by design: `
+            + `${found.other.join(', ')}; remove or rename it by hand, or run this probe on another site` : '',
+          found.unheard.length ? `not read as absent: ${found.unheard.join(', ')}; a re-run can ask it` : '',
+        ].filter(Boolean).join('; ');
+        const held = found.mine.length > 0 || found.other.length > 0;
+        record('access.item-acl.fixture-library-groups', Q.groups, held ? 'FAIL' : 'NOT ESTABLISHED',
+          `nothing was created: ${why}`);
+        record('access.item-acl.fixture-library', Q.library, 'NOT ESTABLISHED',
+          'not created: the probe\'s fixed group and level names were not all free');
+        voidRows(AFTER_GROUPS, 'the library\'s groups and level were not made');
+        return;
+      }
       const library = await claimScratchList({ id: 'access.item-acl.fixture-library', question: Q.library,
         title: LIB, description: OWNERSHIP, dependents: AFTER_LIBRARY, baseTemplate: 101 });
       if (!library.held) return;
 
       // ---- the library: unique, with group A at Read and group B at the custom level ----
       beginFixture();
-      // Each fixed name is read before anything is made under it, since SharePoint accepts a duplicate level name.
-      const held = [];
-      const unheard = [];
-      for (const [collection, name] of [['roledefinitions', LEVEL],
-        ...Object.values(GROUP).map((one) => ['sitegroups', one])]) {
-        const read = await sendRaw(`web/${collection}/getbyname('${pathLiteral(name)}')?$select=Id`);
-        if (read.status === 404) continue;
-        if (read.ok) held.push(`'${name}' (HTTP ${read.status})`);
-        else unheard.push(`'${name}' ${read.status === null ? 'never answered' : `answered HTTP ${read.status}`}`);
-      }
-      if (held.length || unheard.length) {
-        const why = held.length
-          ? `already on the site: ${held.join(', ')}; run CLEANUP first, then STATE 1 again`
-          : `the read of each fixed name did not answer 404: ${unheard.join(', ')}; a re-run can ask it`;
-        record('access.item-acl.fixture-library-groups', Q.groups, held.length ? 'FAIL' : 'NOT ESTABLISHED',
-          `nothing was created: ${why}`);
-        voidRows(AFTER_GROUPS, 'the library\'s groups and level were not made');
-        return;
-      }
       const level = createdId(await write('web/roledefinitions', {
         __metadata: { type: 'SP.RoleDefinition' }, Name: LEVEL, Description: OWNERSHIP, Order: 100,
         BasePermissions: { __metadata: { type: 'SP.BasePermissions' }, High: LEVEL_HIGH, Low: LEVEL_LOW },

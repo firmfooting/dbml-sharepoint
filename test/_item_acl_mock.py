@@ -99,7 +99,17 @@ const aclFetch = async (url, opts = {}) => {
   const byName = /^web\/(sitegroups|roledefinitions)\/getbyname\('((?:[^']|'')+)'\)/.exec(path);
   if (byName) {
     const held = named[byName[1]].get(unquote(byName[2]));
-    return held ? mine(200, held) : mine(404, 'Group cannot be found.');
+    if (held) return mine(200, held);
+    // An absent level's getbyname answers 500, as deploy/_security_principals.js.j2 records.
+    return byName[1] === 'sitegroups' ? mine(404, 'Group cannot be found.')
+      : mine(500, 'Cannot find the role definition.');
+  }
+  const filtered = /^web\/roledefinitions\?.*\$filter=Name eq '((?:[^']|'')+)'$/.exec(path);
+  if (filtered) {
+    const held = named.roledefinitions.get(unquote(filtered[1]));
+    // `levelTwice`: the level's name is held by two levels, as SharePoint allows.
+    const rows = !held ? [] : CONFIG.levelTwice ? [held, { ...held, Id: held.Id + 1 }] : [held];
+    return mine(200, { value: rows });
   }
   if (/^web\/roledefinitions\(\d+\)$/.test(path)) return mine(200, {});
   if (path === 'web/sitegroups' && verb === 'POST') {

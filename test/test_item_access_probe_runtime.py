@@ -193,19 +193,43 @@ def test_an_unread_value_leaves_its_row_not_established(
     assert "unread (" in rows[row]["evidence"]
 
 
-@pytest.mark.parametrize("held", [
-    {"roledefinitions": ["dbmlsp ItemAccess No Delete"]},
-    {"sitegroups": ["dbmlsp ItemAccess B"]},
-], ids=["level", "group"])
+CREATES = {"web/lists", "web/roledefinitions", "web/sitegroups"}
+FOREIGN = "CLEANUP leaves by design"
+
+
+@pytest.mark.parametrize(("config", "advice"), [
+    ({"heldNames": {"roledefinitions": ["dbmlsp ItemAccess No Delete"]}}, FOREIGN),
+    ({"heldNames": {"sitegroups": ["dbmlsp ItemAccess B"]}}, FOREIGN),
+    ({"stateOne": True}, "run CLEANUP first"),
+    ({"stateOne": True, "levelTwice": True}, "held 2 times"),
+], ids=["foreign-level", "foreign-group", "own-names", "level-held-twice"])
 def test_a_fixed_name_already_on_the_site_stops_state_one_before_it_creates(
-        held: dict[str, list[str]]) -> None:
-    rows, sent, _ = _run(heldNames=held)
+        config: dict[str, Any], advice: str) -> None:
+    rows, sent, _ = _run(**config)
 
     assert rows[GROUPS]["outcome"] == "FAIL"
-    assert "run CLEANUP first" in rows[GROUPS]["evidence"]
+    assert advice in rows[GROUPS]["evidence"]
+    assert rows[LIBRARY]["outcome"] == "NOT ESTABLISHED"
     assert voided(rows) == catalogued_dependents(PROBE.name, GROUPS)
-    assert not any(r["verb"] == "POST" and r["path"] in {"web/roledefinitions", "web/sitegroups"}
-                   for r in sent)
+    assert not any(r["verb"] == "POST" and r["path"] in CREATES for r in sent)
+
+
+def test_a_fixed_name_read_that_does_not_answer_creates_nothing() -> None:
+    rows, sent, _ = _run(throttle="sitegroups/getbyname")
+
+    assert rows[GROUPS]["outcome"] == "NOT ESTABLISHED"
+    assert rows[GROUPS]["state"] == "open"
+    assert "a re-run can ask it" in rows[GROUPS]["evidence"]
+    assert catalogued_dependents(PROBE.name, GROUPS) <= voided(rows)
+    assert not any(r["verb"] == "POST" and r["path"] in CREATES for r in sent)
+
+
+def test_cleanup_leaves_a_level_whose_name_is_held_twice() -> None:
+    _, sent, output = _run(gates=("CONFIRMED", "ALLOW_WRITES", "CLEANUP"), stateOne=True,
+                           levelTwice=True)
+
+    assert not any(r["path"].startswith("web/roledefinitions(") for r in sent)
+    assert "held 2 times" in output
 
 
 def test_cleanup_leaves_a_library_and_level_whose_description_is_not_the_probes() -> None:
