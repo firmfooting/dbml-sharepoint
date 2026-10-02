@@ -32,17 +32,27 @@ let nextGroup = 11;
 const named = { sitegroups: new Map(), roledefinitions: new Map() };
 const LIB = 'dbmlsp Probe ItemAccess';
 const OWNED = 'dbml-sharepoint item-access probe fixture. Safe to delete.';
+const FOREIGN = 'somebody else\'s';
+// `heldNames`: by collection, names somebody else already holds on the site.
+for (const [collection, names] of Object.entries(CONFIG.heldNames || {})) {
+  for (const [at, name] of names.entries()) {
+    named[collection].set(name, { Id: 900 + at, Description: FOREIGN });
+  }
+}
 // `stateOne`: what a STATE 1 run leaves, so a STATE 2 or CLEANUP run has something to find.
 if (CONFIG.stateOne) {
   const root = `/sites/probe/${LIB}`;
   const files = ['item-access-c1.txt', 'item-access-c6.txt', 'item-access-c3.txt'];
-  lists.set(LIB, { Id: guid(LIB), Title: LIB, BaseTemplate: 101, Description: OWNED, root,
+  // `foreignLibrary`, `foreignLevel`: the library or level under the probe's name is another's.
+  lists.set(LIB, { Id: guid(LIB), Title: LIB, BaseTemplate: 101,
+    Description: CONFIG.foreignLibrary ? FOREIGN : OWNED, root,
     fields: {}, items: files.map((name, at) => ({ Id: at + 1, values: { FileLeafRef: name },
       history: [{}], url: `${root}/${name}` })) });
   LEVELS[1073741930] = ['dbmlsp ItemAccess No Delete', 432n, 134419047n];
-  named.roledefinitions.set('dbmlsp ItemAccess No Delete', { Id: 1073741930, Description: OWNED });
+  named.roledefinitions.set('dbmlsp ItemAccess No Delete', { Id: 1073741930,
+    Description: CONFIG.foreignLevel ? FOREIGN : OWNED });
   // `foreignGroups`: groups under the probe's names whose description is somebody else's.
-  const description = CONFIG.foreignGroups ? 'somebody else\'s group' : OWNED;
+  const description = CONFIG.foreignGroups ? FOREIGN : OWNED;
   for (const [at, key] of ['A', 'B', 'C'].entries()) {
     named.sitegroups.set(`dbmlsp ItemAccess ${key}`, { Id: 11 + at, Description: description });
   }
@@ -73,6 +83,10 @@ const aclFetch = async (url, opts = {}) => {
     SENT.push({ verb, path, body: raw });
     return answer(status, payload);
   };
+  // `throttle`: every GET whose path holds this text is answered 429, echoing the URL as sent.
+  if (CONFIG.throttle && verb === 'GET' && path.includes(CONFIG.throttle)) {
+    return mine(429, `throttled: ${String(url)}`);
+  }
   if (path === 'web/roledefinitions' && verb === 'POST') {
     const { High, Low } = sent.BasePermissions;
     LEVELS[1073741930] = [sent.Name, BigInt(High), BigInt(Low)];

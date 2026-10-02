@@ -100,7 +100,7 @@ def test_a_user_who_can_already_read_voids_the_rows_that_grant_it() -> None:
     rows, sent, _ = _run(userAlreadyReads=True)
 
     assert rows[DENIED]["outcome"] == "FAIL"
-    assert {C3, C4} <= voided(rows)
+    assert voided(rows) == catalogued_dependents(PROBE.name, DENIED) == {C3, C4}
     assert not any("addroleassignment(principalid=20," in r["path"] for r in sent)
 
 
@@ -118,7 +118,7 @@ def test_a_site_administrator_as_the_test_user_is_refused() -> None:
     rows, _, _ = _run(userIsAdmin=True)
 
     assert rows[USER]["outcome"] != "PASS"
-    assert rows[C3]["state"] in {"void", "open"}
+    assert voided(rows) == catalogued_dependents(PROBE.name, USER)
 
 
 def test_state_two_on_a_site_that_behaves_as_designed() -> None:
@@ -176,3 +176,58 @@ def test_cleanup_leaves_a_group_whose_description_is_not_the_probes() -> None:
 
     assert not any("sitegroups/removebyid(" in r["path"] for r in sent)
     assert "its description differs" in output
+
+
+@pytest.mark.parametrize(("swaps", "config", "row"), [
+    ((), {"throttle": "items(1)?$select=HasUniqueRoleAssignments"}, C1),
+    ((), {"throttle": "items(1)/roleassignments?"}, C2),
+    ((STATE_TWO,), {"stateOne": True, "throttle": "items(2)?$select=HasUniqueRoleAssignments"}, C6),
+    ((STATE_TWO,), {"stateOne": True, "throttle": "ItemAccess')/roleassignments?"}, C6),
+], ids=["c1-unique", "c2-file-bindings", "c6-unique", "c6-library-bindings"])
+def test_an_unread_value_leaves_its_row_not_established(
+        swaps: tuple[dict[str, str], ...], config: dict[str, Any], row: str) -> None:
+    rows, _, _ = _run(*swaps, **config)
+
+    assert rows[row]["outcome"] == "NOT ESTABLISHED", rows[row]
+    assert rows[row]["state"] == "open"
+    assert "unread (" in rows[row]["evidence"]
+
+
+@pytest.mark.parametrize("held", [
+    {"roledefinitions": ["dbmlsp ItemAccess No Delete"]},
+    {"sitegroups": ["dbmlsp ItemAccess B"]},
+], ids=["level", "group"])
+def test_a_fixed_name_already_on_the_site_stops_state_one_before_it_creates(
+        held: dict[str, list[str]]) -> None:
+    rows, sent, _ = _run(heldNames=held)
+
+    assert rows[GROUPS]["outcome"] == "FAIL"
+    assert "run CLEANUP first" in rows[GROUPS]["evidence"]
+    assert voided(rows) == catalogued_dependents(PROBE.name, GROUPS)
+    assert not any(r["verb"] == "POST" and r["path"] in {"web/roledefinitions", "web/sitegroups"}
+                   for r in sent)
+
+
+def test_cleanup_leaves_a_library_and_level_whose_description_is_not_the_probes() -> None:
+    _, sent, _ = _run(gates=("CONFIRMED", "ALLOW_WRITES", "CLEANUP"), stateOne=True,
+                      foreignLibrary=True, foreignLevel=True)
+
+    assert not any(r["verb"] == "DELETE" for r in sent)
+    assert not any(r["path"].endswith("/recycle") for r in sent)
+    assert len([r for r in sent if "sitegroups/removebyid(" in r["path"]]) == 3
+
+
+def test_a_state_other_than_one_or_two_is_refused_before_anything_is_sent() -> None:
+    rows, sent, output = _run({"  const STATE = 1;": "  const STATE = '2';"})
+
+    assert sent == []
+    assert rows == {}
+    assert "STATE must be the number 1 or 2" in output
+
+
+def test_an_echoed_percent_encoded_login_is_masked() -> None:
+    rows, _, output = _run(throttle="getusereffectivepermissions")
+
+    assert rows[DENIED]["outcome"] == "NOT ESTABLISHED"
+    assert "throttled: " in output
+    assert "tess" not in output.split("__SENT__")[0]
