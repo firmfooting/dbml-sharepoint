@@ -10,6 +10,7 @@ from _paths import FIXTURES, REPO_ROOT
 from typer.testing import CliRunner
 
 from dbml_sharepoint import DISTRIBUTION
+from dbml_sharepoint.analysis.sidecars import APPLICATION_NAME
 from dbml_sharepoint.cli import app
 
 runner = CliRunner()
@@ -31,9 +32,16 @@ def _build(tmp_path: Path, release: Path) -> tuple[Path, str]:
     return out, result.output
 
 
-def test_the_distribution_name_is_the_one_pyproject_declares() -> None:
+def test_the_installed_metadata_is_the_one_pyproject_declares() -> None:
+    """A stale install would stamp an old version on every site it builds for."""
     project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert project["project"]["name"] == DISTRIBUTION
+    assert importlib.metadata.version(DISTRIBUTION) == project["project"]["version"]
+
+
+def test_the_central_log_application_name_does_not_follow_the_distribution() -> None:
+    """The type-2 close matches it against rows on live logs, so a rename must not move it."""
+    assert APPLICATION_NAME == "dbml-sharepoint"
 
 
 @pytest.mark.real_deployer_version

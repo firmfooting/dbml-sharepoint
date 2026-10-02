@@ -1479,7 +1479,7 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.RELEASE_DEPLOYER_VERSION_IGNORED: (
         "release.yaml sets `deployer_version`, which the build no longer reads. "
-        "The deployer every script, manifest and deployment log row records is "
+        "The deployer every script, manifest and Deployments row records is "
         "the installed package's own name and version, read from its metadata "
         "at build time. The key was written by hand and had drifted: most "
         "shipped files said 0.1.0 whatever version built them. The file still "
