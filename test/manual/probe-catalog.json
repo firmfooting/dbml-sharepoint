@@ -12193,6 +12193,170 @@
       ]
     },
     {
+      "file": "item-access-probe.js",
+      "surface": "access",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library with unique permissions, three files, three site groups, one custom permission level, and role assignments on the library and three files"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "TEST_USER_LOGIN: the claims login of a licensed test account with no access to the site, not a site collection administrator",
+        "Optional WORKBOOK_URL: a small .xlsx on the site, copied in for C3's Excel for the web half",
+        "STATE 1, then the manual half as the test user in a second browser session, then STATE 2 on the fixture STATE 1 left",
+        "A CLEANUP paste once both states are recorded"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "access",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "access.item-acl.fixture-library",
+              "depends_on": []
+            },
+            {
+              "id": "access.item-acl.fixture-library-groups",
+              "depends_on": [
+                "access.item-acl.fixture-library"
+              ]
+            },
+            {
+              "id": "access.item-acl.fixture-files",
+              "depends_on": [
+                "access.item-acl.fixture-library"
+              ]
+            },
+            {
+              "id": "access.item-acl.fixture-test-user",
+              "depends_on": []
+            },
+            {
+              "id": "access.item-acl.control-test-user-denied",
+              "depends_on": [
+                "access.item-acl.fixture-files",
+                "access.item-acl.fixture-test-user"
+              ]
+            },
+            {
+              "id": "access.item-acl.break-copies-parent-groups",
+              "depends_on": [
+                "access.item-acl.fixture-library-groups",
+                "access.item-acl.fixture-files"
+              ]
+            },
+            {
+              "id": "access.item-acl.parent-grant-after-break",
+              "depends_on": [
+                "access.item-acl.fixture-library-groups",
+                "access.item-acl.break-copies-parent-groups"
+              ]
+            },
+            {
+              "id": "access.item-acl.fixture-state-one",
+              "depends_on": []
+            },
+            {
+              "id": "access.item-acl.user-binding-removal",
+              "depends_on": [
+                "access.item-acl.fixture-state-one"
+              ]
+            },
+            {
+              "id": "access.item-acl.reset-restores-parent",
+              "depends_on": [
+                "access.item-acl.fixture-state-one"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "access.item-acl.fixture-library",
+            "access.item-acl.fixture-library-groups",
+            "access.item-acl.fixture-files",
+            "access.item-acl.fixture-test-user",
+            "access.item-acl.control-test-user-denied",
+            "access.item-acl.fixture-state-one"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "test-user-findings",
+          "surface": "access",
+          "pattern": "identity-pair",
+          "findings": [
+            {
+              "id": "access.item-acl.custom-level-user-grant",
+              "depends_on": [
+                "access.item-acl.fixture-library-groups",
+                "access.item-acl.fixture-files",
+                "access.item-acl.fixture-test-user",
+                "access.item-acl.control-test-user-denied"
+              ]
+            },
+            {
+              "id": "access.item-acl.item-only-user-views",
+              "depends_on": [
+                "access.item-acl.fixture-files",
+                "access.item-acl.fixture-test-user",
+                "access.item-acl.control-test-user-denied"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "role": "library-view",
+              "page": "the library's AllItems view as the test user",
+              "assertions": [
+                "whether the C3 file is listed"
+              ]
+            },
+            {
+              "role": "edit-kept",
+              "page": "the C3 file opened in the browser as the test user",
+              "assertions": [
+                "a change saved",
+                "the change kept on reopening"
+              ]
+            },
+            {
+              "role": "version-history",
+              "page": "the C3 file's version history as the test user",
+              "assertions": [
+                "opens",
+                "lists the test user's save"
+              ]
+            },
+            {
+              "role": "delete-refused",
+              "page": "the C3 file's delete command as the test user",
+              "assertions": [
+                "refused",
+                "the message shown"
+              ]
+            },
+            {
+              "role": "other-file-denied",
+              "page": "the C1 file as the test user",
+              "assertions": [
+                "access denied"
+              ]
+            }
+          ],
+          "controls": [
+            "access.item-acl.control-test-user-denied"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
+    },
+    {
       "file": "item-versions-payload-probe.js",
       "surface": "field",
       "harness": "shared-v1",

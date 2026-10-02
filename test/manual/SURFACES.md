@@ -325,7 +325,7 @@ role definition can hold but whether the platform defends the six it ships.
 Probes: `enterprise-reader-probe.js`, `reader-bindings-probe.js`,
 `built-in-levels-probe.js`, `lookup-acl-probe.js`,
 `siteuserinfolist-probe.js`, `operator-safety-grant-probe.js`,
-`last-binding-removal-probe.js`
+`last-binding-removal-probe.js`, `item-access-probe.js`
 
 `last-binding-removal-probe.js` sends what `operator-safety-grant-probe.js`
 avoids by granting the owner group first: the removal of every direct binding
@@ -342,6 +342,15 @@ title. A refusal by title names no list and one by Id does, so whether the
 administrator can still read the list is answered by
 `after-last-binding-by-id`, while the rows that model the deploy stay on the
 title the deploy reads by.
+
+`item-access-probe.js` asks what a flow that grants item-level access leaves
+on one file in a library with unique permissions: what breaking the file's
+inheritance copies, whether a later library grant reaches it, what a user bound
+to a custom level on the file can do, what removing that binding and resetting
+the file's inheritance leave behind. Its `item-acl` rows read role assignments
+and effective permissions over a settle window and record what they saw. Two
+rows have a manual half, done in a second browser session as the test user that
+`TEST_USER_LOGIN` names.
 
 ### 9. `scale`: behaviour at and beyond the list view threshold
 
