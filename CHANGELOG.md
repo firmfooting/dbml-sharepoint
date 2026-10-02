@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.1](https://github.com/firmfooting/dbml-sharepoint/compare/v0.8.0...v0.8.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **deploy:** refuse a collection answer with no results array, and a non-boolean inheritance flag ([#728](https://github.com/firmfooting/dbml-sharepoint/issues/728)) ([7c5e3de](https://github.com/firmfooting/dbml-sharepoint/commit/7c5e3de81db646e55b328dfacbfb4993c92c4cd2))
+* **deploy:** refuse an enumeration answer with no results array ([#721](https://github.com/firmfooting/dbml-sharepoint/issues/721)) ([7aaef2c](https://github.com/firmfooting/dbml-sharepoint/commit/7aaef2cbf0f63a36c8363d9e4139fadb590337ef))
+* refuse a target's missing ItemCount in rollback and a truncated row page in verify ([#729](https://github.com/firmfooting/dbml-sharepoint/issues/729)) ([a61eb76](https://github.com/firmfooting/dbml-sharepoint/commit/a61eb7617d46656c09e0b729c7df65d665484e68))
+* stamp the installed package as the deployer, not release.yaml's deployer_version ([#724](https://github.com/firmfooting/dbml-sharepoint/issues/724)) ([4668dc1](https://github.com/firmfooting/dbml-sharepoint/commit/4668dc1c94fb6226f162b6833380c0e498fce95f)), closes [#687](https://github.com/firmfooting/dbml-sharepoint/issues/687)
+* **validator:** warn when a configured policy breaks inheritance and grants nothing ([#723](https://github.com/firmfooting/dbml-sharepoint/issues/723)) ([1c31f26](https://github.com/firmfooting/dbml-sharepoint/commit/1c31f2601ac565571346c9baa7910ac9ac8e533c))
+
 ## [0.8.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.7.0...v0.8.0) (2026-10-02)
 
 
