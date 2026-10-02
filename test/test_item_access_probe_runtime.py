@@ -148,7 +148,7 @@ def test_state_two_without_state_one_asks_nothing() -> None:
 
 
 def test_a_removal_that_does_not_take_is_recorded_still_bound() -> None:
-    rows, _, _ = _run(STATE_TWO, stateOne=True, ignore=["removeroleassignment"])
+    rows, _, _ = _run(STATE_TWO, stateOne=True, ignoreRemovalOn=3)
 
     assert rows[C5]["outcome"] == "STILL BOUND"
 
@@ -309,7 +309,7 @@ def test_the_delete_trial_is_on_its_own_file_so_state_two_keeps_the_c3_file() ->
 
 def test_cleanup_stops_when_the_library_ownership_read_does_not_answer() -> None:
     _, sent, output = _run(gates=("CONFIRMED", "ALLOW_WRITES", "CLEANUP"), stateOne=True,
-                           throttle="ItemAccess')?$select=Id,Description")
+                           throttle=LISTS_READ)
 
     assert not any(r["verb"] in {"POST", "DELETE"} and r["path"] != "contextinfo" for r in sent)
     assert "nothing was deleted" in output
@@ -395,13 +395,15 @@ def test_c2_reads_the_library_and_the_file_in_one_window() -> None:
 
 def test_a_cleanup_request_that_throws_still_reports() -> None:
     _, _, output = _run(gates=("CONFIRMED", "ALLOW_WRITES", "CLEANUP"), stateOne=True,
-                        rules=[{"contains": "contextinfo", "reject": True}])
+                        rules=[{"contains": "contextinfo", "reject": True, "after": 1}])
 
     assert ended_with_report(output), output[-2000:]
     assert "CLEANUP aborted" in output
 
 
 DECOY_ID = mock_list_id("decoy")
+# CLEANUP finds the library by its ownership marker among every list, not by its title.
+LISTS_READ = "web/lists?$select=Id,Title,Description"
 
 
 @pytest.mark.parametrize(("swaps", "config", "row", "outcome"), [
@@ -423,7 +425,7 @@ def test_a_title_rebound_to_another_list_mid_run_receives_no_write(
 
 def test_cleanup_recycles_the_library_it_read_by_id_when_the_title_is_rebound() -> None:
     _, sent, _ = _run(gates=("CONFIRMED", "ALLOW_WRITES", "CLEANUP"), stateOne=True,
-                      rebindAfter="ItemAccess')?$select=Id,Description")
+                      rebindAfter=LISTS_READ)
 
     writes = [r["path"] for r in sent if r["verb"] != "GET" and r["path"] != "contextinfo"]
     assert f"web/lists(guid'{LIBRARY_ID}')/recycle" in writes
@@ -463,3 +465,61 @@ def test_the_confirmation_plan_names_every_file_state_one_creates(
         assert name in plan, name
     assert "undefined" not in plan
     assert "delete trial" in plan
+
+
+@pytest.mark.parametrize(("throttle", "manual", "unasked"), [
+    ("getusereffectivepermissions", set(), {C3, C4}),
+    ("roledefinitionbindings", {C4}, {C3}),
+], ids=["effective-permissions", "levels"])
+def test_a_manual_row_whose_machine_reads_are_unread_is_not_established(
+        throttle: str, manual: set[str], unasked: set[str]) -> None:
+    rows, _, output = _run(throttle=throttle, throttleAfter="addroleassignment(principalid=20,")
+
+    for row in unasked:
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", rows[row]
+        assert "unread" in rows[row]["evidence"]
+    for row in manual:
+        assert rows[row]["outcome"] == "MANUAL", rows[row]
+    assert ("MANUAL HALF" in output) == bool(manual)
+    assert ("C4: is" in output) == (C4 in manual)
+    assert ("C3: refused" in output) == (C3 in manual)
+
+
+def test_state_two_removes_the_trial_grant_before_c5_and_c6() -> None:
+    rows, sent, _ = _run(STATE_TWO, stateOne=True)
+
+    removals = [r["path"] for r in sent if "removeroleassignment(principalid=20," in r["path"]]
+    assert "/items(4)/" in removals[0] and "/items(3)/" in removals[1], removals
+    assert "delete-trial file" in rows[C5]["evidence"]
+    assert rows[C5]["outcome"] == "REMOVED"
+
+
+def test_a_trial_grant_that_does_not_read_back_gone_leaves_c5_and_c6_unasked() -> None:
+    rows, sent, _ = _run(STATE_TWO, stateOne=True, ignoreRemovalOn=4)
+
+    for row in (C5, C6):
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", rows[row]
+        assert "delete-trial file" in rows[row]["evidence"]
+    assert not any("/items(3)/roleassignments/removeroleassignment" in r["path"] for r in sent)
+
+
+def test_cleanup_finds_a_renamed_library_by_its_marker() -> None:
+    _, sent, output = _run(gates=("CONFIRMED", "ALLOW_WRITES", "CLEANUP"), stateOne=True,
+                           stateOneRenamed=True)
+
+    paths = [r["path"] for r in sent]
+    assert f"web/lists(guid'{LIBRARY_ID}')/recycle" in paths
+    assert paths.index(f"web/lists(guid'{LIBRARY_ID}')/recycle") < min(
+        i for i, path in enumerate(paths) if "sitegroups/removebyid(" in path)
+    assert "[OK] CLEANUP: group 'dbmlsp ItemAccess A' removed and read back absent" in output
+
+
+def test_cleanup_refuses_when_two_lists_carry_the_marker() -> None:
+    other = {"Id": mock_list_id("other"), "Title": "other", "BaseTemplate": 101,
+             "Description": "dbml-sharepoint item-access probe fixture. Safe to delete.",
+             "root": "/sites/probe/other", "fields": {}, "items": []}
+    _, sent, output = _run(gates=("CONFIRMED", "ALLOW_WRITES", "CLEANUP"), stateOne=True,
+                           lists={"other": other})
+
+    assert not any(r["verb"] in {"POST", "DELETE"} and r["path"] != "contextinfo" for r in sent)
+    assert "CLEANUP stopped" in output

@@ -42,9 +42,12 @@ for (const [collection, names] of Object.entries(CONFIG.heldNames || {})) {
 // `stateOne`: what a STATE 1 run leaves, so a STATE 2 or CLEANUP run has something to find.
 if (CONFIG.stateOne) {
   const root = `/sites/probe/${LIB}`;
-  const files = ['item-access-c1.txt', 'item-access-c6.txt', 'item-access-c3.txt'];
+  const files = ['item-access-c1.txt', 'item-access-c6.txt', 'item-access-c3.txt',
+    'item-access-c3-delete.txt'];
+  // `stateOneRenamed`: the library STATE 1 made has since been renamed; its Id is unchanged.
+  const title = CONFIG.stateOneRenamed ? `${LIB} renamed` : LIB;
   // `foreignLibrary`, `foreignLevel`: the library or level under the probe's name is another's.
-  lists.set(LIB, { Id: guid(LIB), Title: LIB, BaseTemplate: 101,
+  lists.set(title, { Id: guid(LIB), Title: title, BaseTemplate: 101,
     Description: CONFIG.foreignLibrary ? FOREIGN : OWNED, root,
     fields: {}, items: files.map((name, at) => ({ Id: at + 1, values: { FileLeafRef: name },
       history: [{}], url: `${root}/${name}` })) });
@@ -59,11 +62,13 @@ if (CONFIG.stateOne) {
   const groups = [{ principal: 3, level: 1073741829 }, { principal: 11, level: 1073741826 },
     { principal: 12, level: 1073741930 }, { principal: 13, level: 1073741826 }];
   const limited = { principal: 20, level: 1073741825 };
-  scopes.set(LIB, { unique: true, bindings: [...groups, limited] });
+  scopes.set(title, { unique: true, bindings: [...groups, limited] });
   scopes.get('web').bindings.push(limited);
-  scopes.set(`${LIB}|1`, { unique: true, bindings: groups.slice(0, 3) });
-  scopes.set(`${LIB}|3`, { unique: true,
-    bindings: [...groups, { principal: 20, level: 1073741930 }] });
+  scopes.set(`${title}|1`, { unique: true, bindings: groups.slice(0, 3) });
+  for (const item of [3, 4]) {
+    scopes.set(`${title}|${item}`, { unique: true,
+      bindings: [...groups, { principal: 20, level: 1073741930 }] });
+  }
 }
 // `ignore`: the writes, by the call they name, that answer 200 and store nothing.
 const ignored = (call) => (CONFIG.ignore || []).includes(call);
@@ -82,6 +87,7 @@ if (CONFIG.virtualClock) {
 const visible = (b) => !b.visibleAt || b.visibleAt <= Date.now();
 let malformed = false;
 let rebound = false;
+let throttling = false;
 const GRANT = new RegExp('^/roleassignments/(add|remove)roleassignment'
   + '\\(principalid=(\\d+),roledefid=(\\d+)\\)$');
 const aclFetch = async (url, opts = {}) => {
@@ -96,8 +102,8 @@ const aclFetch = async (url, opts = {}) => {
   };
   // `rebindAfter`: once a request holding this text is answered, the library's title is rebound.
   if (CONFIG.rebindAfter && !rebound && path.includes(CONFIG.rebindAfter)) {
-    const answered = await mockFetch(url, opts);
     rebound = true;
+    const answered = await aclFetch(url, opts);
     const real = lists.get(LIB);
     real.Title = `${LIB} renamed`;
     lists.delete(LIB);
@@ -115,7 +121,10 @@ const aclFetch = async (url, opts = {}) => {
   // `malformedAfter`: once a request holding this text is seen, assignments carry no levels.
   if (CONFIG.malformedAfter && path.includes(CONFIG.malformedAfter)) malformed = true;
   // `throttle`: every GET whose path holds this text is answered 429, echoing the URL as sent.
-  if (CONFIG.throttle && verb === 'GET' && path.includes(CONFIG.throttle)) {
+  // `throttleAfter`: the throttle starts only once a request holding this text has been seen.
+  if (CONFIG.throttleAfter && path.includes(CONFIG.throttleAfter)) throttling = true;
+  if (CONFIG.throttle && (throttling || !CONFIG.throttleAfter) && verb === 'GET'
+    && path.includes(CONFIG.throttle)) {
     return mine(429, `throttled: ${String(url)}`);
   }
   if (path === 'web/roledefinitions' && verb === 'POST') {
@@ -192,6 +201,10 @@ const aclFetch = async (url, opts = {}) => {
       url: target });
     return mine(200, { Name: name, ServerRelativeUrl: target });
   }
+  if (path.startsWith('web/lists?') && verb === 'GET') {
+    return mine(200, { value: [...lists.values()].map((one) => ({ Id: one.Id, Title: one.Title,
+      Description: one.Description })) });
+  }
   const at = SCOPE.exec(path);
   if (!at) return mockFetch(url, opts);
   const [, byTitle, byId, item, tail] = at;
@@ -246,7 +259,8 @@ const aclFetch = async (url, opts = {}) => {
     // `fileGrantIgnored`: a grant on a file that answers 200 and stores nothing.
     if (grant[1] === 'add' && CONFIG.fileGrantIgnored && key.includes('|')) return mine(200, {});
     if (grant[1] === 'remove') {
-      if (!ignored('removeroleassignment')) {
+      // `ignoreRemovalOn`: removals on this item Id answer 200 and store nothing.
+      if (!ignored('removeroleassignment') && Number(item) !== CONFIG.ignoreRemovalOn) {
         scope.bindings = scope.bindings.filter((b) => b.principal !== binding.principal
           || b.level !== binding.level);
       }

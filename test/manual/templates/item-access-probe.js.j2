@@ -328,23 +328,38 @@
   // ---- CLEANUP: remove what STATE 1 made, each only when its description is this probe's ----
   // Returns early, deleting nothing more, whenever what a later step rests on did not hold.
   const cleanUp = async () => {
-    const held = await sendRaw(`${lib}?$select=Id,Description`);
-    const head = held.status === 404 ? null : readHead(held);
-    const body = held.status === 404 || head ? null : recordBody(held);
-    // An unread ownership says nothing about the library, so nothing is deleted on it.
-    if (held.status !== 404 && !body) {
-      log('FAIL', `CLEANUP stopped: the library's ownership read ${head ? scrub(head.why) : 'carried no JSON object'}`
-        + ', so nothing was deleted. Paste again with CLEANUP.');
-      return;
-    }
-    if (body && body.Description === OWNERSHIP) {
-      // The groups and level stay while the library stands, so its permissions are never dismantled under it.
-      if (!await resetList(LIB, guidOf(body.Id))) {
-        log('FAIL', 'CLEANUP stopped: the library was not recycled, so its groups and level were kept. '
-          + 'Paste again with CLEANUP.');
+    // The library is found by its ownership marker among every list, so a renamed library is still found.
+    const owned = [];
+    let next = 'web/lists?$select=Id,Title,Description';
+    while (next) {
+      const read = await sendRaw(next);
+      const head = readHead(read);
+      const { rows, shape } = head ? { rows: null, shape: null } : entriesOf(read.parsed);
+      if (rows === null) {
+        log('FAIL', `CLEANUP stopped: the read of the site's lists ${head ? scrub(head.why)
+          : `answered HTTP ${read.status} ${shape}`}, so nothing was deleted. Paste again with CLEANUP.`);
         return;
       }
-    } else log('INFO', `CLEANUP: no library '${LIB}' of this probe's to remove.`);
+      owned.push(...rows.filter((r) => r.Description === OWNERSHIP));
+      const link = continuationOf(read.parsed);
+      next = link ? link.slice(link.indexOf('/_api/') + 6) : null;
+    }
+    const titles = owned.map((r) => `'${quote(String(r.Title))}'`).join(', ');
+    if (owned.length > 1 || (owned.length === 1 && guidOf(owned[0].Id) === null)) {
+      log('FAIL', `CLEANUP stopped: ${owned.length > 1 ? `${owned.length} lists carry this probe's description `
+        + `(${titles})` : `the list ${titles} carrying this probe's description answered no list Id`}, so nothing `
+        + 'was deleted. Recycle the extra list by hand, then paste again with CLEANUP.');
+      return;
+    }
+    if (owned.length === 1) {
+      // The groups and level stay until the library reads back gone, so its permissions are never dismantled under it.
+      const recycled = await recycleList(quote(String(owned[0].Title)), guidOf(owned[0].Id));
+      if (recycled.gone !== true) {
+        log('FAIL', `CLEANUP stopped: the library ${titles} was not shown gone (${recycled.why}), so its groups and `
+          + 'level were kept. Paste again with CLEANUP.');
+        return;
+      }
+    } else log('INFO', 'CLEANUP: no list carries this probe\'s description, so there is no library to remove.');
     // Logs OK only once the name reads back absent.
     const readBackGone = async (what, collection, name, sent) => {
       const after = await lookUp(collection, name);
@@ -603,24 +618,48 @@
       const onWeb = await effectiveOf('web', user.login);
       const canDelete = onBook.mask === null ? 'unread'
         : String((onBook.mask & DELETE_LIST_ITEMS) !== 0n);
-      record('access.item-acl.custom-level-user-grant', Q.c3, 'MANUAL',
-        `${grants}; effective on ${NAMES.book} ${onBook.text} (DeleteListItems ${canDelete}), on the `
-        + `library ${onLib.text}, on the web ${onWeb.text}; the user's levels at the library `
-        + `${await levelsOf(lib, user.id)}, at the web ${await levelsOf('web', user.id)}. By hand, as the `
-        + `test user: on ${NAMES.book} an edit saved and the version history opened; on ${NAMES.trial} a `
-        + 'delete tried.');
-      record('access.item-acl.item-only-user-views', Q.c4, 'MANUAL',
-        `effective on the library ${onLib.text}. By hand, as the test user: open the library's default `
-        + `view and say whether ${NAMES.book} is listed.`);
+      const libLevels = await levelsOf(lib, user.id);
+      const webLevels = await levelsOf('web', user.id);
+      // A row is left for the manual half only once its machine reads all answered; no step recovers one.
+      const unreadOf = (reads) => reads.filter(([, unread]) => unread).map(([name]) => name);
+      const c3Unread = unreadOf([[`effective permissions on ${NAMES.book}`, onBook.mask === null],
+        ['effective permissions on the library', onLib.mask === null],
+        ['effective permissions on the web', onWeb.mask === null],
+        ['the user\'s levels at the library', libLevels.startsWith('unread')],
+        ['the user\'s levels at the web', webLevels.startsWith('unread')]]);
+      const c4Unread = unreadOf([['effective permissions on the library', onLib.mask === null]]);
+      const c3Seen = `${grants}; effective on ${NAMES.book} ${onBook.text} (DeleteListItems ${canDelete}), on `
+        + `the library ${onLib.text}, on the web ${onWeb.text}; the user's levels at the library ${libLevels}, `
+        + `at the web ${webLevels}`;
+      if (c3Unread.length) {
+        record('access.item-acl.custom-level-user-grant', Q.c3, 'NOT ESTABLISHED',
+          `unread: ${c3Unread.join(', ')}, so the manual half is not asked; ${c3Seen}`);
+      } else {
+        record('access.item-acl.custom-level-user-grant', Q.c3, 'MANUAL', `${c3Seen}. By hand, as the test `
+          + `user: on ${NAMES.book} an edit saved and the version history opened; on ${NAMES.trial} a delete tried.`);
+      }
+      if (c4Unread.length) {
+        record('access.item-acl.item-only-user-views', Q.c4, 'NOT ESTABLISHED',
+          `unread: ${c4Unread.join(', ')}, so the manual half is not asked; effective on the library ${onLib.text}`);
+      } else {
+        record('access.item-acl.item-only-user-views', Q.c4, 'MANUAL',
+          `effective on the library ${onLib.text}. By hand, as the test user: open the library's default `
+          + `view and say whether ${NAMES.book} is listed.`);
+      }
       stampRemaining('NOT REACHED', 'STATE 2 asks this, on what STATE 1 leaves');
+      if (c3Unread.length && c4Unread.length) return;
 
       console.log('\n==================== MANUAL HALF (C3, C4) ====================');
       console.log('Sign in as the test user in a second browser session, then:');
-      console.log(`  1. Open ${new URL(WEB).origin}${root}/Forms/AllItems.aspx. C4: is ${NAMES.book} listed?`);
-      console.log(`  2. Open ${NAMES.book} in the browser, change it, close it, reopen it. C3: kept?`);
-      console.log('  3. Open its version history. C3: does it open and list your save?');
-      console.log(`  4. Try to delete ${NAMES.trial}, not ${NAMES.book}. C3: refused, and with what message?`);
-      console.log(`  5. Try to open ${NAMES.plain}. C3: denied?`);
+      if (!c4Unread.length) {
+        console.log(`  - Open ${new URL(WEB).origin}${root}/Forms/AllItems.aspx. C4: is ${NAMES.book} listed?`);
+      }
+      if (!c3Unread.length) {
+        console.log(`  - Open ${NAMES.book} in the browser, change it, close it, reopen it. C3: kept?`);
+        console.log('  - Open its version history. C3: does it open and list your save?');
+        console.log(`  - Try to delete ${NAMES.trial}, not ${NAMES.book}. C3: refused, and with what message?`);
+        console.log(`  - Try to open ${NAMES.plain}. C3: denied?`);
+      }
       console.log('Then paste this probe with STATE = 2. Write what you saw beside the RESULTS block.');
       console.log('==============================================================\n');
       return;
@@ -648,6 +687,26 @@
     }
     const fileOf = (key) => `${lib}/items(${files[key].id})`;
 
+    // ---- the delete-trial grant, removed first so the residues C5 and C6 read come from their own files ----
+    let isolated = `the delete-trial file ${NAMES.trial} is absent, so it holds no grant`;
+    if (files.trial) {
+      const trial = `${lib}/items(${files.trial.id})`;
+      const dropped = await write(`${trial}/roleassignments/removeroleassignment(principalid=${user.id},`
+        + `roledefid=${level.id})`);
+      const back = await settle(() => bindingsOf(trial), (r) => r.rows !== null && !holds(r.rows, user.id, level.id));
+      isolated = `the delete-trial file's grant removal answered HTTP ${dropped.status} and `
+        + `${back.held ? 'read back gone' : `did not read back gone (it holds ${shown(back.last)})`}`;
+      if (!back.held) {
+        for (const [id, question] of [['access.item-acl.user-binding-removal', Q.c5],
+          ['access.item-acl.reset-restores-parent', Q.c6]]) {
+          record(id, question, 'NOT ESTABLISHED', `${isolated}, so its grant could still hold the library and `
+            + 'web residues this row reads; nothing more was sent');
+        }
+        stampRemaining('NOT REACHED', 'STATE 1 asks this');
+        return;
+      }
+    }
+
     // ---- C5: the user's binding removed ----
     const removed = await write(`${fileOf('book')}/roleassignments/removeroleassignment(`
       + `principalid=${user.id},roledefid=${level.id})`);
@@ -656,7 +715,7 @@
     const afterBook = await effectiveOf(fileOf('book'), user.login);
     record('access.item-acl.user-binding-removal', Q.c5,
       c5.last.rows === null ? 'NOT ESTABLISHED' : c5.held ? 'REMOVED' : 'STILL BOUND',
-      `removeroleassignment answered HTTP ${removed.status}; after ${c5.reads} read(s), ${c5.ms} ms the `
+      `${isolated}; removeroleassignment answered HTTP ${removed.status}; after ${c5.reads} read(s), ${c5.ms} ms the `
       + `file holds ${shown(c5.last)}; effective on the file ${afterBook.text}; the user's levels at the `
       + `library ${await levelsOf(lib, user.id)}, at the web ${await levelsOf('web', user.id)}`);
 
