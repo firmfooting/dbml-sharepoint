@@ -1211,7 +1211,8 @@ def test_a_configured_folder_policy_breaking_with_no_assignments_warns_once(
     tmp_path: Path, default: str | None, override: str | None,
 ) -> None:
     """Allowed off an exact list to hand the folders to manual management,
-    and still strips a folder that inherits down to the operator (#684)."""
+    and the break still copies none of a folder's inherited role assignments
+    (#684). What a folder keeps after it is not measured."""
     f = only(
         _folder_policy_body(
             tmp_path, "{break_inheritance: true}", default=default, override=override,

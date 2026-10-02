@@ -1554,8 +1554,8 @@ def _breaks_bare() -> ListPermissionPolicy:
 
 def test_a_configured_default_breaking_with_no_assignments_warns() -> None:
     """The break copies no role assignments and the policy grants nothing
-    back, so a list that still inherits ends with the operator's binding
-    alone (#684)."""
+    back; operator-safety-grant-probe.js measured a list left with the
+    operator's binding alone (#684)."""
     finding = only(
         _exact_policy_findings(default=_breaks_bare()),
         FindingCode.CONFIGURED_BREAK_GRANTS_NOTHING,

@@ -276,11 +276,8 @@ def _configured_breaks_granting_nothing(
             FindingCode.CONFIGURED_BREAK_GRANTS_NOTHING,
             f"{ctx}: reconcile: configured with break_inheritance and no "
             f"assignments makes the deploy break inheritance on {scope} "
-            f"where it still inherits, copying no role assignments, and "
-            f"grant nothing back. Measured on a list, that leaves only the "
-            f"operator's own binding (not yet measured for an operator who is "
-            f"not a site collection administrator), so every other principal "
-            f"that inherited a role loses it. Declare "
+            f"where it still inherits, copying none of the role assignments "
+            f"it inherited, and grant nothing back. Declare "
             f"the assignments the scope should have, or set "
             f"break_inheritance: false if it should keep inheriting.",
             location=at,
