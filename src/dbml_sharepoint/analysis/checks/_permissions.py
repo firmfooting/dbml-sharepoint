@@ -262,7 +262,6 @@ def _configured_breaks_granting_nothing(
     A folder block under an exact list is skipped: `folder_policy_manages_nothing`
     already refuses it.
     """
-    mapping = vc.bundle.mapping
     findings: list[Finding] = []
     for policy, ctx, scope, at, entity in blocks:
         if (
@@ -270,7 +269,7 @@ def _configured_breaks_granting_nothing(
             or policy.assignments
         ):
             continue
-        list_policy = mapping.permissions_for_entity(entity) if entity else None
+        list_policy = vc.bundle.mapping.permissions_for_entity(entity) if entity else None
         if list_policy is not None and list_policy.reconcile_mode == "exact":
             continue
         findings.append(Finding(
@@ -278,9 +277,10 @@ def _configured_breaks_granting_nothing(
             f"{ctx}: reconcile: configured with break_inheritance and no "
             f"assignments makes the deploy break inheritance on {scope} "
             f"where it still inherits, copying no role assignments, and "
-            f"grant nothing back. Measured on a list as a site collection "
-            f"administrator, that leaves only the operator's own binding, so "
-            f"every other principal that inherited a role loses it. Declare "
+            f"grant nothing back. Measured on a list, that leaves only the "
+            f"operator's own binding (not yet measured for an operator who is "
+            f"not a site collection administrator), so every other principal "
+            f"that inherited a role loses it. Declare "
             f"the assignments the scope should have, or set "
             f"break_inheritance: false if it should keep inheriting.",
             location=at,
