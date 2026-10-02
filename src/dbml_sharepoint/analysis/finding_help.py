@@ -1054,6 +1054,26 @@ FINDING_HELP: dict[FindingCode, str] = {
         "that should stay, or use `reconcile: configured`, which leaves "
         "undeclared grants alone."
     ),
+    FindingCode.CONFIGURED_BREAK_GRANTS_NOTHING: (
+        "A `list_permissions` policy (the default, an override or a folder "
+        "policy) declares `reconcile: configured`, `break_inheritance: "
+        "true` and no `assignments`. On a scope that still inherits, the "
+        "deploy's ACL phase breaks inheritance with "
+        "`copyRoleAssignments=false`, grants nothing, and removes nothing, "
+        "because configured mode removes only a level a declared principal "
+        "holds. On a list that break was measured to leave exactly one "
+        "binding, the deploying account's own at Full Control (2026-09-22, "
+        "`test/manual/operator-safety-grant-probe.js`), so every principal "
+        "that held access through inheritance loses it. The same break on a "
+        "folder has not been measured; the list measurement is the evidence "
+        "here. On a scope that already has permissions of its own, the "
+        "policy writes nothing. A folder policy under a library that "
+        "reconciles `exact` is refused by `folder_policy_manages_nothing` "
+        "instead. This is a warning rather than an error because breaking "
+        "a scope to manage it by hand is a legitimate intent. Declare the "
+        "assignments the scope should have, or set `break_inheritance: "
+        "false` if it should keep inheriting."
+    ),
     FindingCode.EXTENSION_REPORTED: (
         "A finding raised by an extension's own validators."
     ),

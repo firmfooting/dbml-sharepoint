@@ -167,31 +167,28 @@ def _folder_policy_assignments(
         )
 
 
-def _exact_policies_granting_nothing(
+# A policy block, its finding context, scope and location, and a folder block's entity.
+_PolicyBlock = tuple[ListPermissionPolicy, str, str, Location, str | None]
+
+
+def _governed_policy_blocks(
     vc: ValidationContext, perms: PermissionsConfig,
-) -> list[Finding]:
-    """`reconcile: exact` with no assignments, once per declared policy block.
+) -> list[_PolicyBlock]:
+    """Each declared policy block where the deploy carries it, with the
+    context, scope and location a finding about it reports, and the entity a
+    folder block belongs to.
 
-    A warning, because stripping a scope is supported and
-    `test_an_exact_list_declaring_nothing_strips_it_and_reads_it_back` pins
-    it. The message says only what `_acls.js.j2` does: the prune issues a
-    removal for every binding outside the empty allowlist except 'Limited
-    Access'. Whether those removals succeed once the last binding on a scope
-    goes, and what the operator keeps, is unmeasured (#667), so it is not
-    stated.
-
-    Each block reports only where it governs a scope, because that is where
-    the deploy carries it: the default when some list takes it rather than an
-    override or a `site_role` that excludes it, an override keyed by a table
-    that deploys, and a folder block on such a table through its expansion,
-    once however many folders it covers. A block that governs nothing either
-    deploys nothing or already has a finding of its own, such as
-    `unknown_table` or `entity_not_in_schema`.
+    The default when some list takes it rather than an override or a
+    `site_role` that excludes it, an override keyed by a table that deploys,
+    and a folder block on such a table through its expansion, once however
+    many folders it covers. A block that governs nothing either deploys
+    nothing or already has a finding of its own, such as `unknown_table` or
+    `entity_not_in_schema`.
     """
     mapping = vc.bundle.mapping
     # A list deploys only when the mapping and the schema both declare it.
     governed = {name for name in mapping.entities if name in vc.table_names}
-    declared: list[tuple[ListPermissionPolicy, str, str, Location]] = []
+    declared: list[_PolicyBlock] = []
     default = perms.default_policy
     # Not by identity: one policy object may be both the default and an override.
     if default is not None and any(
@@ -200,10 +197,10 @@ def _exact_policies_granting_nothing(
     ):
         declared.append((
             default, "list_permissions.default",
-            "every list it applies to", _DEFAULT_POLICY,
+            "every list it applies to", _DEFAULT_POLICY, None,
         ))
     declared += [
-        (policy, f"list_permissions.overrides[{name!r}]", name, _OVERRIDES)
+        (policy, f"list_permissions.overrides[{name!r}]", name, _OVERRIDES, None)
         for name, policy in perms.overrides.items()
         if name in governed
     ]
@@ -216,10 +213,29 @@ def _exact_policies_granting_nothing(
     declared += [
         (
             policy, f"list_permissions.folders[{name!r}]",
-            f"every folder {name} declares", _FOLDERS,
+            f"every folder {name} declares", _FOLDERS, name,
         )
         for name, policy in folder_blocks.items()
     ]
+    return declared
+
+
+def _exact_policies_granting_nothing(
+    blocks: list[_PolicyBlock],
+) -> list[Finding]:
+    """`reconcile: exact` with no assignments, once per declared policy block.
+
+    A warning, because stripping a scope is supported and
+    `test_an_exact_list_declaring_nothing_strips_it_and_reads_it_back` pins
+    it. The message says only what `_acls.js.j2` does: the prune issues a
+    removal for every binding outside the empty allowlist except 'Limited
+    Access'. Whether those removals succeed once the last binding on a scope
+    goes, and what the operator keeps, is unmeasured (#667), so it is not
+    stated.
+
+    Each block reports only where it governs a scope, which is where the
+    deploy carries it (`_governed_policy_blocks`).
+    """
     return [
         Finding(
             FindingCode.EXACT_POLICY_GRANTS_NOTHING,
@@ -230,9 +246,45 @@ def _exact_policies_granting_nothing(
             f"which leaves undeclared grants alone.",
             location=at,
         )
-        for policy, ctx, scope, at in declared
+        for policy, ctx, scope, at, _entity in blocks
         if policy.reconcile_mode == "exact" and not policy.assignments
     ]
+
+
+def _configured_breaks_granting_nothing(
+    vc: ValidationContext,
+    blocks: list[_PolicyBlock],
+) -> list[Finding]:
+    """`reconcile: configured`, `break_inheritance: true` and no assignments,
+    once per declared policy block (#684).
+
+    A warning, because breaking a scope to manage it by hand is legitimate.
+    A folder block under an exact list is skipped: `folder_policy_manages_nothing`
+    already refuses it.
+    """
+    mapping = vc.bundle.mapping
+    findings: list[Finding] = []
+    for policy, ctx, scope, at, entity in blocks:
+        if (
+            policy.reconcile_mode != "configured" or not policy.break_inheritance
+            or policy.assignments
+        ):
+            continue
+        list_policy = mapping.permissions_for_entity(entity) if entity else None
+        if list_policy is not None and list_policy.reconcile_mode == "exact":
+            continue
+        findings.append(Finding(
+            FindingCode.CONFIGURED_BREAK_GRANTS_NOTHING,
+            f"{ctx}: reconcile: configured with break_inheritance and no "
+            f"assignments makes the deploy break inheritance on {scope} "
+            f"where it still inherits, copying no role assignments, and "
+            f"grant nothing back. On a list that leaves only the operator's "
+            f"own binding, so every principal that inherited access loses "
+            f"it. Declare the assignments the scope should have, or set "
+            f"break_inheritance: false if it should keep inheriting.",
+            location=at,
+        ))
+    return findings
 
 
 def _group_name_characters(vc: ValidationContext) -> list[Finding]:
@@ -803,6 +855,8 @@ def check(vc: ValidationContext) -> list[Finding]:
             _check_policy_assignments(override_policy, ctx_key, _OVERRIDES)
 
         _folder_policy_assignments(vc, perms, _check_policy_assignments)
-        findings += _exact_policies_granting_nothing(vc, perms)
+        blocks = _governed_policy_blocks(vc, perms)
+        findings += _exact_policies_granting_nothing(blocks)
+        findings += _configured_breaks_granting_nothing(vc, blocks)
 
     return findings
