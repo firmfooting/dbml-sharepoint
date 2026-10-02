@@ -253,6 +253,8 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
     const FORBID_FIELD_WRITES = false;
     const ROWS_WITHOUT_RESULTS = false;
     const ROWS_STATUS = 200;
+    const ROWS_NEXT = undefined;
+    const ROWS_FULL_PAGE = false;
     const QUERY_WITHOUT_RESULTS = false;
     Date.prototype.getTimezoneOffset = () => -BROWSER_OFFSET;
     const DAY = 86400000;
@@ -369,7 +371,10 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
           return respond(ROWS_STATUS, { error: { message: { value: 'rows read failed' } } });
         }
         const rows = [...items.entries()].map(([Id, it]) => ({ Id, Title: it.Title }));
-        return respond(200, { d: { results: rows } });
+        while (ROWS_FULL_PAGE && rows.length < 5000) {
+          rows.push({ Id: 90000 + rows.length, Title: 'other' });
+        }
+        return respond(200, { d: { results: rows, __next: ROWS_NEXT } });
       }
       if (path.endsWith('/getitems')) {
         if (QUERY_WITHOUT_RESULTS) return respond(200, { d: {} });
@@ -581,3 +586,26 @@ def test_a_query_answer_without_results_is_not_assessable() -> None:
         assert levels[key] == "NOT-ASSESSABLE", levels
         detail = next(f["detail"] for f in summary["findings"] if f["key"] == key)
         assert "without a d.results array" in detail
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("knobs", [
+    {"ROWS_FULL_PAGE": "true"},
+    {"ROWS_NEXT": "'https://example.sharepoint.com/next'"},
+], ids=["full-page", "next-link"])
+def test_a_row_page_that_may_be_truncated_stops_verify_before_placing_rows(
+    knobs: dict[str, str],
+) -> None:
+    """A row past the page reads as absent, so it is neither recycled nor
+    reused and a second row is placed under its title (#727)."""
+    summary = _run_verify(**knobs)
+    assert summary["verdict"] == "NOT-VERIFIED"
+    assert summary["aborted"] == "rows-page-truncated"
+    assert _levels(summary)["scratch_list"] == "NOT-ASSESSABLE"
+    assert not [k for k in _levels(summary) if k.startswith("row_")]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("terminator", ["null", "''"])
+def test_a_row_page_ending_without_a_next_link_is_verified(terminator: str) -> None:
+    assert _run_verify(ROWS_NEXT=terminator)["verdict"] == "VERIFIED"
