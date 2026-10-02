@@ -33,9 +33,12 @@ type PrincipalKind = Literal[
     "associated_visitor_group",
 ]
 type ReconcileMode = Literal["configured", "exact"]
+# Whether an exact list refuses unique file scopes below it or leaves them to another writer.
+type FileScopes = Literal["refuse", "external"]
 
 ENTITY_KINDS: frozenset[str] = frozenset(get_args(EntityKind.__value__))
 VIEW_SCOPES: frozenset[str] = frozenset(get_args(ViewScope.__value__))
+FILE_SCOPES: frozenset[str] = frozenset(get_args(FileScopes.__value__))
 
 #: Derived from the `Literal` above for the same reason `ENTITY_KINDS` is:
 #: `mapping_loader` needs a runtime set to admit a raw YAML string against,
@@ -647,6 +650,8 @@ class ListPermissionPolicy:
     # every other direct role binding (except SharePoint's derived Limited
     # Access binding). Exact is the recommended fail-closed baseline.
     reconcile_mode: ReconcileMode = "configured"
+    # external: an exact list leaves unique file scopes to the writer that made them.
+    file_scopes: FileScopes = "refuse"
 
     def __post_init__(self) -> None:
         # The annotation is not enforced, so a caller's list is copied rather than shared.

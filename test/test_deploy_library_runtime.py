@@ -78,6 +78,15 @@ list_permissions:
           level: "Folder Editor"
 """
 
+#: The same library with its file scopes handed to another writer, as a flow
+#: that grants item-level access needs. Only the list policy takes the key.
+_EXTERNAL_FILES_LIBRARY = _FOLDER_ACL_LIBRARY.replace(
+    "    reconcile: exact\n    assignments:",
+    "    reconcile: exact\n    file_scopes: external\n    assignments:",
+    1,
+)
+assert _EXTERNAL_FILES_LIBRARY != _FOLDER_ACL_LIBRARY
+
 # A library secured ONLY at folder scope: `permissions_for_entity` returns
 # None for it, so `acl_scopes` carries its folder rows and no list row.
 _FOLDER_ONLY_LIBRARY = _FOLDERED_LIBRARY + """
@@ -310,6 +319,16 @@ _FOLDER_JS = r"""globalThis.fetch = async (url, opts = {}) => {
       rows.push({ Id: 99, FileSystemObjectType: 0, FileLeafRef: 'stray.docx',
         FileRef: '/sites/test/APP_Escalation/stray.docx',
         HasUniqueRoleAssignments: true });
+    }
+    // A folder nobody declared, shared by hand: what `file_scopes: external` must still refuse.
+    if (globalThis.__strayFolderScope) {
+      rows.push({ Id: 98, FileSystemObjectType: 1, FileLeafRef: 'Archive',
+        FileRef: '/sites/test/APP_Escalation/Archive', HasUniqueRoleAssignments: true });
+    }
+    // A row whose type the read did not carry, which no rule may read as a file.
+    if (globalThis.__strayUntypedScope) {
+      rows.push({ Id: 97, FileLeafRef: 'untyped',
+        FileRef: '/sites/test/APP_Escalation/untyped', HasUniqueRoleAssignments: true });
     }
     return folderAnswer({ d: { results: rows } });
   }
@@ -1202,20 +1221,20 @@ def test_declared_library_url_is_created_and_verified(
 
 def _folder_acl_run(
     tmp_path: Path, *, stray: bool = False, missing: bool = False,
+    mapping: str = _FOLDER_ACL_LIBRARY, flags: str = "",
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """The whole deploy against a library whose one folder carries an ACL."""
     # `unique_after=1` is what makes the mock answer the inheritance flag
     # at all; both securables read it, the list for its settle loop and
     # the folder for the same wait.
     harness = _library_harness(declared_folder=True, unique_after=1)
-    flags = ""
     if stray:
         flags += "globalThis.__strayScope = true;\n"
     if missing:
         flags += "globalThis.__folderMissing = true;\n"
     summary, calls, _ = _run(
         flags + harness,
-        _library_deploy_js(tmp_path, _FOLDER_ACL_LIBRARY, titled=False),
+        _library_deploy_js(tmp_path, mapping, titled=False),
     )
     return summary, calls
 
@@ -1662,6 +1681,47 @@ def test_an_undeclared_descendant_scope_still_aborts(tmp_path: Path) -> None:
         messages
     assert any("stray.docx" in m for m in messages), messages
     # Never erased, only reported.
+    assert not any("removeroleassignment" in c["url"] for c in calls)
+
+
+def test_external_file_scopes_leave_a_shared_file_alone_and_say_so(tmp_path: Path) -> None:
+    """`file_scopes: external`: another writer's file scope is counted, not refused or erased."""
+    deploy_js = _library_deploy_js(tmp_path, _EXTERNAL_FILES_LIBRARY, titled=False)
+    output = _run_output(
+        "globalThis.__strayScope = true;\n"
+        + _library_harness(declared_folder=True, unique_after=1),
+        deploy_js,
+    )
+    summary = _summary_of(output)
+    calls = _calls_of(output)
+
+    assert summary["errors"] == [], summary["errors"]
+    assert "holds 1 file unique permission scope(s) another writer owns" in output
+    assert not any("/items(99)" in c["url"] for c in calls), [c["url"] for c in calls]
+
+
+def test_external_file_scopes_still_abort_on_an_undeclared_folder(tmp_path: Path) -> None:
+    summary, calls = _folder_acl_run(
+        tmp_path, mapping=_EXTERNAL_FILES_LIBRARY,
+        flags="globalThis.__strayFolderScope = true;\n",
+    )
+    messages = [e["error"] for e in summary["errors"]]
+    assert any("1 undeclared item/folder unique permission scope(s)" in m for m in messages), (
+        messages)
+    assert any("Archive" in m for m in messages), messages
+    assert not any("removeroleassignment" in c["url"] for c in calls)
+
+
+def test_external_file_scopes_abort_on_a_scope_whose_type_did_not_read_back(
+    tmp_path: Path,
+) -> None:
+    """Only a row read back as a file is handed over, so a row with no type is still refused."""
+    summary, calls = _folder_acl_run(
+        tmp_path, mapping=_EXTERNAL_FILES_LIBRARY,
+        flags="globalThis.__strayUntypedScope = true;\n",
+    )
+    messages = [e["error"] for e in summary["errors"]]
+    assert any("untyped" in m for m in messages), messages
     assert not any("removeroleassignment" in c["url"] for c in calls)
 
 

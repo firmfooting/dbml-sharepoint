@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.7.0...v0.8.0) (2026-10-02)
+
+
+### Features
+
+* **acls:** accept file scopes written by something else ([#715](https://github.com/firmfooting/dbml-sharepoint/issues/715)) ([4fd0fb8](https://github.com/firmfooting/dbml-sharepoint/commit/4fd0fb828d47625b1151a16dec706f021868e142))
+
 ## [0.7.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.6.0...v0.7.0) (2026-10-01)
 
 

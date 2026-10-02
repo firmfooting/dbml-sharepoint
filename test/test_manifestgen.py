@@ -1443,6 +1443,83 @@ def test_the_manifest_splits_one_acl_collection_into_its_two_tables(
     assert "_(no per-folder assignments configured)_" not in per_folder
 
 
+def test_the_manifest_names_each_list_whose_file_scopes_another_writer_owns(
+    tmp_path: Path,
+) -> None:
+    """The guard `file_scopes: external` relaxes is one the operator reads about here."""
+    schema, bundle = two_libraries_with_list_and_folder_scopes(tmp_path)
+    permissions = bundle.mapping.permissions
+    assert permissions is not None
+    permissions.overrides["Docs"] = replace(permissions.overrides["Docs"], file_scopes="external")
+    resolved = resolve(schema, bundle.mapping)
+    md = generate_manifest(
+        resolved=resolved,
+        schema_json=build_schema_json(schema, bundle, "default", resolved=resolved),
+        findings=[], bundle=bundle, release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test", site_role="default",
+        source_dbml="docs.dbml", source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+    per_list = md.split("### Per-list assignments")[1].split("\n###")[0]
+    left = next(line for line in per_list.splitlines()
+                if line.startswith("**File scopes left to another writer:**"))
+    assert "Docs" in left
+    assert "Policies" not in left
+
+
+def test_the_manifest_does_not_name_a_generic_list_under_external(tmp_path: Path) -> None:
+    """The deploy hands over only a library's file scopes, so the manifest names only those."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Docs", ID_PK, TITLE) + table("Notes", ID_PK, TITLE),
+        mapping="""
+            entities:
+              Docs: { kind: DocumentLibrary, base_template: 101, site_role: default }
+              Notes: { kind: List, base_template: 100, site_role: default }
+
+            list_permissions:
+              default:
+                break_inheritance: true
+                reconcile: exact
+                file_scopes: external
+                assignments:
+                  - principal: { kind: associated_owner_group }
+                    level: "Full Control"
+        """,
+    )
+    resolved = resolve(schema, bundle.mapping)
+    md = generate_manifest(
+        resolved=resolved,
+        schema_json=build_schema_json(schema, bundle, "default", resolved=resolved),
+        findings=[], bundle=bundle, release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test", site_role="default",
+        source_dbml="s.dbml", source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+    left = next(line for line in md.splitlines()
+                if line.startswith("**File scopes left to another writer:**"))
+    assert bundle.mapping.list_title("Docs") in left
+    assert bundle.mapping.list_title("Notes") not in left
+
+
+def test_the_manifest_says_nothing_about_file_scopes_when_no_list_hands_them_over(
+    tmp_path: Path,
+) -> None:
+    schema, bundle = two_libraries_with_list_and_folder_scopes(tmp_path)
+    resolved = resolve(schema, bundle.mapping)
+    md = generate_manifest(
+        resolved=resolved,
+        schema_json=build_schema_json(schema, bundle, "default", resolved=resolved),
+        findings=[], bundle=bundle, release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test", site_role="default",
+        source_dbml="docs.dbml", source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+    assert "File scopes left to another writer" not in md
+
+
 def test_manifest_inventories_folder_scopes(tmp_path: Path) -> None:
     """The manifest is what an operator reads before pasting the script.
 

@@ -116,6 +116,42 @@ def test_acl_scopes_emits_each_list_scope_before_its_own_folder_scopes(
     assert "folder" not in out["acl_scopes"][0]
 
 
+def test_file_scopes_external_takes_effect_only_on_a_document_library(
+    tmp_path: Path,
+) -> None:
+    """A `default` policy reaches every list, but only a library's rows are files.
+
+    What a generic list item reads back as is not documented, so a list keeps
+    the whole guard however the policy is written.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Docs", ID_PK, TITLE) + table("Notes", ID_PK, TITLE),
+        mapping="""
+            entities:
+              Docs: { kind: DocumentLibrary, base_template: 101, site_role: default }
+              Notes: { kind: List, base_template: 100, site_role: default }
+
+            list_permissions:
+              default:
+                break_inheritance: true
+                reconcile: exact
+                file_scopes: external
+                assignments:
+                  - principal: { kind: associated_owner_group }
+                    level: "Full Control"
+        """,
+    )
+
+    out = build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
+
+    file_scopes = {row["list"]: row["file_scopes"] for row in out["acl_scopes"]}
+    assert file_scopes == {
+        bundle.mapping.list_title("Docs"): "external",
+        bundle.mapping.list_title("Notes"): "refuse",
+    }, file_scopes
+
+
 @pytest.mark.parametrize("folder_name", ["", "   "])
 def test_acl_scopes_fails_closed_on_an_empty_or_blank_folder_name(
     tmp_path: Path, folder_name: str,
@@ -467,7 +503,7 @@ def test_exact_acl_reconciliation_detects_descendant_unique_scopes() -> None:
     # after it. Position in the driver is what actually orders the two.
     phase4 = js.split(f"Starting Phase {pn('acls')}")[1].split(f"Starting Phase {pn('seeds')}")[0]
     driver = phase4.split("for (const listTitle of aclListTitles)")[1]
-    assert driver.index("assertNoUndeclaredScopes(listTitle, before.undeclared)") < \
+    assert driver.index("assertNoUndeclaredScopes(listTitle, owned)") < \
         driver.index("await reconcileScope("), \
         "the guard must run before the first securable is written"
 
