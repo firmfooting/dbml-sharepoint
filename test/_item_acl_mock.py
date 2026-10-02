@@ -81,6 +81,7 @@ if (CONFIG.virtualClock) {
 // Whether a binding is visible yet, for a grant given a delay by `libraryGrantMs` or `fileGrantMs`.
 const visible = (b) => !b.visibleAt || b.visibleAt <= Date.now();
 let malformed = false;
+let rebound = false;
 const GRANT = new RegExp('^/roleassignments/(add|remove)roleassignment'
   + '\\(principalid=(\\d+),roledefid=(\\d+)\\)$');
 const aclFetch = async (url, opts = {}) => {
@@ -93,6 +94,24 @@ const aclFetch = async (url, opts = {}) => {
     SENT.push({ verb, path, body: raw });
     return answer(status, payload);
   };
+  // `rebindAfter`: once a request holding this text is answered, the library's title is rebound.
+  if (CONFIG.rebindAfter && !rebound && path.includes(CONFIG.rebindAfter)) {
+    const answered = await mockFetch(url, opts);
+    rebound = true;
+    const real = lists.get(LIB);
+    real.Title = `${LIB} renamed`;
+    lists.delete(LIB);
+    lists.set(real.Title, real);
+    lists.set(LIB, { Id: guid('decoy'), Title: LIB, BaseTemplate: 101, Description: 'another list',
+      root: '/sites/probe/decoy', fields: {}, items: [] });
+    for (const [key, held] of [...scopes]) {
+      if (key === LIB || key.startsWith(`${LIB}|`)) {
+        scopes.delete(key);
+        scopes.set(key.replace(LIB, real.Title), held);
+      }
+    }
+    return answered;
+  }
   // `malformedAfter`: once a request holding this text is seen, assignments carry no levels.
   if (CONFIG.malformedAfter && path.includes(CONFIG.malformedAfter)) malformed = true;
   // `throttle`: every GET whose path holds this text is answered 429, echoing the URL as sent.

@@ -398,3 +398,32 @@ def test_a_cleanup_request_that_throws_still_reports() -> None:
 
     assert ended_with_report(output), output[-2000:]
     assert "CLEANUP aborted" in output
+
+
+DECOY_ID = mock_list_id("decoy")
+
+
+@pytest.mark.parametrize(("swaps", "config", "row", "outcome"), [
+    ((), {"rebindAfter": "ItemAccess')?$select=Id,BaseTemplate,Description"}, C1, "COPIED"),
+    ((STATE_TWO,), {"stateOne": True, "rebindAfter": "ItemAccess')?$select=Id,Description"}, C5,
+     "REMOVED"),
+], ids=["state-one", "state-two"])
+def test_a_title_rebound_to_another_list_mid_run_receives_no_write(
+        swaps: tuple[dict[str, str], ...], config: dict[str, Any], row: str, outcome: str) -> None:
+    """After the claim the library is renamed and its title given to another list."""
+    rows, sent, _ = _run(*swaps, **config)
+
+    assert rows[row]["outcome"] == outcome, rows[row]
+    after = sent[next(i for i, r in enumerate(sent) if config["rebindAfter"] in r["path"]) + 1:]
+    writes = [r["path"] for r in after if r["verb"] != "GET"]
+    assert any(f"guid'{LIBRARY_ID}'" in path for path in writes)
+    assert not any("getbytitle(" in path or DECOY_ID in path for path in writes)
+
+
+def test_cleanup_recycles_the_library_it_read_by_id_when_the_title_is_rebound() -> None:
+    _, sent, _ = _run(gates=("CONFIRMED", "ALLOW_WRITES", "CLEANUP"), stateOne=True,
+                      rebindAfter="ItemAccess')?$select=Id,Description")
+
+    writes = [r["path"] for r in sent if r["verb"] != "GET" and r["path"] != "contextinfo"]
+    assert f"web/lists(guid'{LIBRARY_ID}')/recycle" in writes
+    assert not any("getbytitle(" in path or DECOY_ID in path for path in writes)
