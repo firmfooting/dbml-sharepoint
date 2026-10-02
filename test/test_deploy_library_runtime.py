@@ -821,6 +821,36 @@ globalThis.fetch = async (url, options) => {
                 or "removeroleassignment" in c["url"]]
 
 
+@pytest.mark.parametrize(
+    "payload", [{}, {"d": {}}, {"d": {"results": None}}, {"d": {"results": {}}}],
+)
+def test_descendant_scope_enumeration_without_results_is_refused(
+    tmp_path: Path, payload: Any,
+) -> None:
+    """An answer with no results array is not a list with no unique scopes.
+
+    Read as an empty page, it passed the undeclared-scope guard and the
+    phase went on to write the list's ACL.
+    """
+    harness = _library_harness(unique_after=1)
+    harness += """
+const scopeFetch = globalThis.fetch;
+globalThis.fetch = async (url, options) => {
+  if (String(url).includes('/items?$select=Id,HasUniqueRoleAssignments')) {
+    return {ok: true, status: 200, json: async () => (PAYLOAD)};
+  }
+  return scopeFetch(url, options);
+};
+""".replace("PAYLOAD", json.dumps(payload))
+    summary, calls, _reads = _run(harness, _library_deploy_js(tmp_path, _BROKEN_INHERITANCE))
+    assert any(
+        "permission-scope enumeration" in e["error"] and "no d.results array" in e["error"]
+        for e in summary["errors"]
+    ), summary["errors"]
+    assert not [c for c in calls if "addroleassignment" in c["url"]
+                or "removeroleassignment" in c["url"]]
+
+
 def _view_titles_created(calls: list[dict[str, Any]]) -> list[str]:
     """Every Title the run POSTed to a /views collection, in order."""
     made: list[str] = []
