@@ -19,6 +19,7 @@ from typing import Any
 
 import typer
 
+from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.folders import UnknownFolderEnumError
@@ -33,7 +34,7 @@ from dbml_sharepoint.analysis.sidecars import (
     EXTERNAL_LOG_DEFAULT,
     run_log_title,
 )
-from dbml_sharepoint.analysis.validator import validate_all
+from dbml_sharepoint.analysis.validator import validate_all, validate_release
 from dbml_sharepoint.bundle import (
     REPORT_DICTIONARY,
     REPORT_GUIDE,
@@ -88,6 +89,7 @@ from dbml_sharepoint.project import (
     validate_site_url,
     validate_time_zone,
 )
+from dbml_sharepoint.templating import check_application_name
 
 # Empty schema view used to render a findings-only manifest when validation
 # fails: build_schema_json cannot run safely on an invalid schema.
@@ -153,6 +155,7 @@ def execute_build(
     deployment_log_site: str | None = None,
     change_log_list: str | None = None,
     no_sidecars: bool = False,
+    application: str = APPLICATION_NAME,
 ) -> None:
     """The `build` pipeline, callable without going through typer.
 
@@ -186,6 +189,7 @@ def execute_build(
     # manifest, and the reporting pack's `SiteRoot` and SQLCMD `SiteUrl` --
     # reads this variable, so cleaning it here is what keeps a pasted
     # `?web=1` out of every generated endpoint.
+    check_application_name(application)
     cleaned_site_url = validate_site_url(site_url)
     if notice := site_url_notice(site_url, cleaned_site_url):
         typer.echo(notice, err=True)
@@ -391,7 +395,7 @@ def execute_build(
     # could paste.
     clear_generated(out, reporting=True)
 
-    findings = validate_all(parsed_schema, bundle, ext)
+    findings = validate_all(parsed_schema, bundle, ext) + validate_release(release_obj)
     errors = [f for f in findings if f.severity == "error"]
 
     site_context = SiteContext(
@@ -456,6 +460,7 @@ def execute_build(
         deployment_log_list=external_log or "",
         deployment_log_change_list=external_change_log or "",
         deployment_log_site=external_site or "",
+        application=application,
     )
     write_artifact(out / "deploy-manifest.md", manifest_md)
 
@@ -501,6 +506,7 @@ def execute_build(
             deployment_log_site=external_site or "",
             change_log_list=None if no_sidecars else change_log,
             no_sidecars=no_sidecars,
+            application=application,
         )
     except SeedRequiresDemoItemsError as exc:
         typer.echo(str(exc), err=True)

@@ -3,7 +3,7 @@ import json
 import re
 from typing import Any
 
-from _paths import FIXTURES
+from _paths import FIXTURES, GOLDEN_DEPLOYER_VERSION
 
 from dbml_sharepoint.analysis.list_description import family_for, marker_for
 from dbml_sharepoint.analysis.resolve import resolve
@@ -262,7 +262,7 @@ def test_rollback_header_carries_full_provenance() -> None:
     )
     assert "Release tag:  0.1.0-test" in js
     assert "Schema:       v0.8" in js
-    assert "Deployer:     vdbml-sharepoint/0.1.0" in js
+    assert f"Deployer:     v{GOLDEN_DEPLOYER_VERSION}" in js
     assert "Generated at: 2026-05-04T00:00:00Z" in js
 
 

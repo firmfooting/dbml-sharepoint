@@ -40,4 +40,17 @@ What a hook is given, from the parsed inputs:
   and `dbml_sharepoint.model.parser.Column` are the parsed DBML.
 """
 
-__version__ = "0.8.0"  # x-release-please-version
+from importlib.metadata import version as _installed_version
+
+#: The distribution this package ships as, used only to read its version from the metadata.
+DISTRIBUTION = "dbml-sharepoint"
+
+#: The application identity this package stamps on what it generates. A literal, like the
+#: provenance marker: the central log's type-2 close matches it against rows on live logs.
+APPLICATION_NAME = "dbml-sharepoint"
+
+#: The console command the generated scripts tell the operator to run next.
+COMMAND_NAME = "dbml-sharepoint"
+
+#: Read from the installed metadata, so pyproject.toml holds the only copy (#687).
+__version__ = _installed_version(DISTRIBUTION)

@@ -42,6 +42,7 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.resolve import guards_resolution
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
@@ -339,6 +340,7 @@ def emit_bundle(
     deployment_log_site: str | None = None,
     change_log_list: str | None = None,
     no_sidecars: bool = False,
+    application: str = APPLICATION_NAME,
 ) -> str:
     """Emit the full post-validation bundle; returns the success message.
 
@@ -409,6 +411,7 @@ def emit_bundle(
             deployment_log_list=deployment_log_list or "",
             deployment_log_change_list=deployment_log_change_list or "",
             deployment_log_site=deployment_log_site or "",
+            application=application,
         ),
     )
     write_artifact(
@@ -417,6 +420,7 @@ def emit_bundle(
             schema=schema, bundle=mapping_bundle, release=release,
             site_url=site_url, site_role=site_role,
             source_dbml=schema_name, generated_at=generated_at,
+            application=application,
         ),
     )
     write_artifact(
@@ -425,6 +429,7 @@ def emit_bundle(
             schema=schema, bundle=mapping_bundle, resolved=resolved, release=release,
             site_url=site_url, site_role=site_role,
             source_dbml=schema_name, generated_at=generated_at,
+            application=application,
         ),
     )
     write_artifact(
@@ -450,6 +455,7 @@ def emit_bundle(
                 schema=schema, bundle=mapping_bundle, release=release,
                 site_url=site_url, site_role=site_role,
                 source_dbml=schema_name, generated_at=generated_at,
+                application=application,
             ),
         )
         relpaths.append(VERIFY_SCRIPT)
@@ -460,6 +466,7 @@ def emit_bundle(
                 schema=schema, bundle=mapping_bundle, release=release,
                 site_url=site_url, site_role=site_role,
                 source_dbml=schema_name, generated_at=generated_at,
+                application=application,
             ),
         )
         relpaths.append(DEMO_SCRIPT)
@@ -472,7 +479,7 @@ def emit_bundle(
         # not have to ask. Only `report`, which has no site, falls back to
         # the SiteUrl parameter. The zone is the same kind of fact and
         # travels the same way.
-        site_url=site_url,
+        site_url=site_url, application=application,
         time_zone=time_zone,
     )
     write_index(out, reporting=True, demo=seed, verify=verify, env_provenance=env_provenance)

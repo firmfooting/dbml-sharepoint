@@ -18,7 +18,7 @@ from _model import column
 from _model import schema as make_schema
 from _model import table as make_table
 from _node import NODE, run_node
-from _paths import EXPECTED, FIXTURES, write_golden
+from _paths import EXPECTED, FIXTURES, pin_deployer_version, write_golden
 
 from dbml_sharepoint.analysis.clock_cells import cell_for
 from dbml_sharepoint.analysis.condition_rendering import to_validation
@@ -535,6 +535,7 @@ def test_a_lagging_formula_clock_is_reported_as_information() -> None:
 
 if __name__ == "__main__":  # pragma: no cover
     # Regenerate the golden through the same helper the test uses.
+    pin_deployer_version()
     _target = EXPECTED / "simple-verify.js"
     write_golden(_target, _simple_verify_js())
     print(f"wrote {_target}")  # noqa: T201

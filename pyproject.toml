@@ -323,4 +323,5 @@ markers = [
   # not the critical path. Dropping a fifth of the suite buys three seconds.
   # CI never filters: the whole suite runs on every change.
   "conformance: the template family-standard sweep, parametrised over every template",
+  "real_deployer_version: stamp the installed version, not the pin conftest.py sets for goldens",
 ]

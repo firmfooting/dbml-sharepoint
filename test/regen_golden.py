@@ -19,12 +19,13 @@ Regeneration stays a separate, explicit act rather than a `--snapshot-update`
 flag on the test run; the friction is the point.
 """
 
-from _paths import write_golden
+from _paths import pin_deployer_version, write_golden
 from test_jsgen import _generate_simple_js
 from test_jsgen_golden import MANIFEST, SEGMENT_DIR, manifest_text, split_deploy_js
 
 
 def main() -> None:
+    pin_deployer_version()
     js = _generate_simple_js()
     pieces = split_deploy_js(js)
     SEGMENT_DIR.mkdir(parents=True, exist_ok=True)

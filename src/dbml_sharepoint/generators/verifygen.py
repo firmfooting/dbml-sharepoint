@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 from typing import Any, TypedDict
 
+from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.clock_cells import cell_for
 from dbml_sharepoint.analysis.clock_usage import clock_usage
 from dbml_sharepoint.analysis.condition_rendering import to_caml, to_validation
@@ -287,8 +288,8 @@ def verify_targets(schema: Schema, bundle: MappingBundle, site_role: str) -> dic
     }
 
 
-def _render(template_name: str, **context: Any) -> str:
-    return script_env().get_template(template_name).render(**context)
+def _render(template_name: str, *, application: str = APPLICATION_NAME, **context: Any) -> str:
+    return script_env(application).get_template(template_name).render(**context)
 
 
 def generate_verify_js(
@@ -300,9 +301,11 @@ def generate_verify_js(
     site_role: str,
     source_dbml: str,
     generated_at: str,
+    application: str = APPLICATION_NAME,
 ) -> str:
     return _render(
         "verify.js.j2",
+        application=application,
         site_url=site_url,
         site_role=site_role,
         release=release,

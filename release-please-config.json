@@ -6,10 +6,6 @@
       "include-component-in-tag": false,
       "extra-files": [
         {
-          "type": "generic",
-          "path": "src/dbml_sharepoint/__init__.py"
-        },
-        {
           "type": "toml",
           "path": "uv.lock",
           "jsonpath": "$.package[?(@.name.value=='dbml-sharepoint')].version"

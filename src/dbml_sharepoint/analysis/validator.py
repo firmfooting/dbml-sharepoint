@@ -13,6 +13,7 @@ from dbml_sharepoint.analysis.limits import MAX_INTERNAL_NAME
 from dbml_sharepoint.extension import DeploymentExtension
 from dbml_sharepoint.model.mapping_types import FoldersFromEnum, MappingBundle
 from dbml_sharepoint.model.parser import Column, Schema
+from dbml_sharepoint.model.release import Release
 
 # Hard-error reserved names. Note: 'Title' is special-cased (PATCH existing
 # system column); 'Id' annotated pk+increment is special-cased (skip).
@@ -443,6 +444,19 @@ def validate_all(
         + _validate_cross_site_expansion(schema, bundle, extension)
         + extension.extra_validators(bundle, schema)
     )
+
+
+def validate_release(release: Release) -> list[Finding]:
+    """What release.yaml says that the build will not act on."""
+    if release.ignored_deployer_version is None:
+        return []
+    return [_report(
+        FindingCode.RELEASE_DEPLOYER_VERSION_IGNORED,
+        Location(Section.RELEASE, sub="deployer_version"),
+        f"{release.ignored_deployer_version!r} is ignored. Script headers, the deploy "
+        "manifest and the deployment log record the installed package as the deployer. "
+        "Remove the key.",
+    )]
 
 
 def _enums_used_by_mapping(bundle: MappingBundle) -> set[str]:

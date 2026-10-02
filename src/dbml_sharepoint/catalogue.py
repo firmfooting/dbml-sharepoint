@@ -25,6 +25,7 @@ from importlib.metadata import EntryPoint, PackageNotFoundError, entry_points, m
 from pathlib import Path, PureWindowsPath
 from typing import Any, NamedTuple
 
+from dbml_sharepoint import DISTRIBUTION
 from dbml_sharepoint.model import _yaml
 
 #: One directory per list family. Not `templates/`, which is Jinja.
@@ -86,7 +87,7 @@ _SUMMARY_MAX = 140
 _ELLIPSIS = "..."
 
 #: The distribution this module ships in. Its blueprints win a duplicate id.
-CORE_DISTRIBUTION = "dbml-sharepoint"
+CORE_DISTRIBUTION = DISTRIBUTION
 
 #: The entry-point group a blueprint provider registers a zero-argument callable under.
 BLUEPRINT_ROOTS_GROUP = "dbml_sharepoint.blueprint_roots"

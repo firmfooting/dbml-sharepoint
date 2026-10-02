@@ -5,7 +5,7 @@
  * Site role:    default
  * Release tag:  0.1.0-test
  * Schema:       v0.8
- * Deployer:     vdbml-sharepoint/0.1.0
+ * Deployer:     v0.0.0-test
  * Generated at: 2026-05-04T00:00:00Z
  *
  * Paste into the SharePoint browser console and press Enter.

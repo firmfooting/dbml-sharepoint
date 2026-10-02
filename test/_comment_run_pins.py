@@ -391,21 +391,21 @@ PINNED: dict[str, list[str]] = {
     ],
     "src/dbml_sharepoint/templates/assess.js.j2": [
         "2e6d3851e1d6",
-        "adb16e59a86f",
+        "ae7459494853",
     ],
     "src/dbml_sharepoint/templates/columns.js.j2": [
         "0ffb4aa1aab2",
-        "41a328fe3c52",
+        "d0475855b2b9",
         "d17584d8ddb1",
     ],
     "src/dbml_sharepoint/templates/demo.js.j2": [
-        "2eeb6586a02a",
+        "74da63944c5c",
         "9cf6f24d6806",
     ],
     "src/dbml_sharepoint/templates/deploy.js.j2": [
         "0c34d410b03e",
         "a51d523ad652",
-        "d3e3bb180bb0",
+        "e3acd576e6fb",
         "ed767b568de8",
         "f9945ccc3ea5",
     ],
@@ -545,28 +545,28 @@ PINNED: dict[str, list[str]] = {
     "src/dbml_sharepoint/templates/extract.js.j2": [
         "4bfec11e5918",
         "5142b1a851c4",
-        "f6f50ce200b9",
+        "ffcb13d9a1a5",
     ],
     "src/dbml_sharepoint/templates/identify.js.j2": [
-        "36a664da1243",
+        "5aac76a6e195",
         "4599c6df7668",
         "9552eedf9616",
         "e9a57d2d8401",
     ],
     "src/dbml_sharepoint/templates/list.js.j2": [
-        "2650bfeceec1",
+        "5279e376f724",
     ],
     "src/dbml_sharepoint/templates/manifest.md.j2": [
         "0bcce2091caf",
     ],
     "src/dbml_sharepoint/templates/protection.js.j2": [
-        "74111f3dcbf0",
+        "ccc69cc7b244",
         "941f2774b524",
     ],
     "src/dbml_sharepoint/templates/rollback.js.j2": [
         "081732f30682",
         "30b14f775125",
-        "83df6bf717e9",
+        "616fcca71c3a",
         "add208263097",
         "b3acbe5bae45",
         "cbbb61700240",
@@ -574,7 +574,7 @@ PINNED: dict[str, list[str]] = {
         "d64b61f8dbc2",
     ],
     "src/dbml_sharepoint/templates/verify.js.j2": [
-        "e791d726cb5d",
+        "62f9576d5fee",
     ],
     "src/dbml_sharepoint/templating.py": [
         "a08162f6cfb2",
@@ -1019,7 +1019,6 @@ PINNED: dict[str, list[str]] = {
     ],
     "test/test_deploy_logging_runtime.py": [
         "7376be1d2874",
-        "c869317c6cf5",
     ],
     "test/test_deploy_runtime.py": [
         "10c3530ba8df",

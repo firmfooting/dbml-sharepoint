@@ -16,6 +16,8 @@ the same place. They are named apart here.
 
 from pathlib import Path
 
+import dbml_sharepoint
+
 TEST_DIR = Path(__file__).resolve().parent
 
 
@@ -36,6 +38,14 @@ FIXTURES = TEST_DIR / "fixtures"
 
 #: Committed golden files: the emitted scripts, byte for byte.
 EXPECTED = FIXTURES / "expected"
+
+#: The deployer version goldens record, since every release moves the installed one (#687).
+GOLDEN_DEPLOYER_VERSION = "0.0.0-test"
+
+
+def pin_deployer_version() -> None:
+    """Stamp `GOLDEN_DEPLOYER_VERSION`, for a regeneration run outside pytest."""
+    dbml_sharepoint.__version__ = GOLDEN_DEPLOYER_VERSION
 
 
 def write_golden(path: Path, text: str) -> None:

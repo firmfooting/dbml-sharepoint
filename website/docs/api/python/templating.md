@@ -21,6 +21,18 @@ in exactly one place.
 TEMPLATES_DIR = Path("dbml_sharepoint/templates")
 ```
 
+### `ApplicationNameError`
+
+An application name the generated scripts cannot carry safely.
+
+### `check_application_name`
+
+```python
+def check_application_name(application: str) -> None
+```
+
+Refuse a name that could escape a string, comment or attribute it is rendered into.
+
 ### `comment_safe`
 
 ```python
@@ -44,8 +56,10 @@ Keep arbitrary text inside one Markdown table cell.
 ### `script_env`
 
 ```python
-def script_env() -> jinja2.environment.Environment
+def script_env(application: str = 'dbml-sharepoint') -> jinja2.environment.Environment
 ```
 
 Environment for every generated artifact (scripts and manifests).
+
+`application` is the identity the artifacts stamp; the version is the distribution's.
 

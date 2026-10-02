@@ -13,7 +13,7 @@ guarantee test pins that.
 
 import re
 
-from dbml_sharepoint import __version__
+from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.extract.sources import LIVE_FORMAT
 from dbml_sharepoint.templating import script_env
 
@@ -82,6 +82,7 @@ def generate_extract_js(
     site_url: str,
     list_paths: list[str],
     generated_at: str,
+    application: str = APPLICATION_NAME,
 ) -> str:
     """The pasteable extraction script for one site and its named lists.
 
@@ -100,11 +101,10 @@ def generate_extract_js(
             "no lists were named, so the script would read nothing. Pass "
             "--list once per list to extract.",
         )
-    return script_env().get_template("extract.js.j2").render(
+    return script_env(application).get_template("extract.js.j2").render(
         site_url=site_url,
         list_paths=list_paths,
         generated_at=generated_at,
-        deployer_version=__version__,
         live_format=LIVE_FORMAT,
         download_name=download_name([slug_from_path(p) for p in list_paths]),
     )

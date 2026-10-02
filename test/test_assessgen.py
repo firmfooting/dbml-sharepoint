@@ -14,7 +14,7 @@ from _model import bundle as make_bundle
 from _model import schema as make_schema
 from _model import table as make_table
 from _node import NODE, run_node
-from _paths import EXPECTED, FIXTURES, write_golden
+from _paths import EXPECTED, FIXTURES, GOLDEN_DEPLOYER_VERSION, pin_deployer_version, write_golden
 
 from dbml_sharepoint.analysis.list_description import family_for, marker_for
 from dbml_sharepoint.analysis.resolve import resolve
@@ -359,7 +359,7 @@ def test_assess_header_carries_full_provenance() -> None:
     js = _assess_js()
     assert "Release tag:  0.1.0-test" in js
     assert "Schema:       v0.8" in js
-    assert "Deployer:     vdbml-sharepoint/0.1.0" in js
+    assert f"Deployer:     v{GOLDEN_DEPLOYER_VERSION}" in js
     assert "Generated at: 2026-05-04T00:00:00Z" in js
 
 
@@ -2766,6 +2766,7 @@ if __name__ == "__main__":  # pragma: no cover
     # Regenerate the golden. Deliberately not a pytest flag: see
     # test_simple_assess_js_matches_golden. Uses the SAME renderer the test
     # does, so the two cannot drift.
+    pin_deployer_version()
     _target = EXPECTED / "simple-assess.js"
     write_golden(_target, _assess_js())
     print(f"wrote {_target}")  # noqa: T201

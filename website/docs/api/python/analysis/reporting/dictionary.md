@@ -64,7 +64,7 @@ deleting.
 ### `metadata_rows`
 
 ```python
-def metadata_rows(bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, list_count: int, release: dbml_sharepoint.model.release.Release | None, generated_at: str, source_schema: str, source_mapping: str) -> list[tuple[str, str]]
+def metadata_rows(bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, list_count: int, release: dbml_sharepoint.model.release.Release | None, generated_at: str, source_schema: str, source_mapping: str, application: str = 'dbml-sharepoint') -> list[tuple[str, str]]
 ```
 
 Deployment/schema model metadata as plain (field, value) rows,

@@ -16,13 +16,13 @@ release.yaml reader + config-snapshot hashing.
 class Release:
     release_tag: str
     date: str
-    deployer_version: str
     schema_version: str
     flow_package_version: str
     notes: str
+    ignored_deployer_version: str | None = None
 ```
 
-Release(release_tag: str, date: str, deployer_version: str, schema_version: str, flow_package_version: str, notes: str)
+Release(*, release_tag: str, date: str, schema_version: str, flow_package_version: str, notes: str, ignored_deployer_version: str | None = None)
 
 ### `load_release`
 

@@ -33,9 +33,10 @@ from _node import NODE
 from _node import run_node as _run
 from _paths import FIXTURES
 
+import dbml_sharepoint
+from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.sidecars import (
-    APPLICATION_NAME,
     CENTRAL_CHANGE_COLUMNS,
     CENTRAL_LOG_COLUMNS,
     CENTRAL_LOG_SITE_DEFAULT,
@@ -435,8 +436,11 @@ _HARNESS = textwrap.dedent(r"""
             return reply(201, { d: row });
           }
           const key = filteredKey(rest);
+          const app = filteredApplication(rest);
           const rows = state.items[title].filter(
-            (r) => (key === null || r.ChangeKey === key) && r.IsCurrent === true,
+            (r) => (key === null || r.ChangeKey === key)
+              && (app === null || r.Application === app)
+              && r.IsCurrent === true,
           );
           return reply(200, { d: { results: rows } });
         }
@@ -506,6 +510,7 @@ def _substitute(harness: str, old: str, new: str) -> str:
 def _run_deploy(
     *,
     seeded_change_rows: bool = False,
+    seeded_local_foreign_application: bool = False,
     fail_change_writes: bool = False,
     bare_run_log: bool = False,
     fail_run_log_field_creates: bool = False,
@@ -644,10 +649,17 @@ def _run_deploy(
             harness, "const SEED_LISTS = [];", f"const SEED_LISTS = {seeded_lists};",
         )
     if seeded_change_rows:
-        seeded = json.dumps({CHANGE_LOG_TITLE: [{
+        local_rows = [{
             "Id": 900, "Title": SEEDED_KEY, "ChangeKey": SEEDED_KEY,
-            "ChangeKind": "create", "IsCurrent": True,
-        }]})
+            "ChangeKind": "create", "IsCurrent": True, "Application": APPLICATION_NAME,
+        }]
+        if seeded_local_foreign_application:
+            # Another application's current row for the same key on the same per-site log.
+            local_rows.append({
+                "Id": 901, "Title": SEEDED_KEY, "ChangeKey": SEEDED_KEY,
+                "ChangeKind": "create", "IsCurrent": True, "Application": "another-application",
+            })
+        seeded = json.dumps({CHANGE_LOG_TITLE: local_rows})
         harness = _substitute(
             harness, "const SEED_ITEMS = {};", f"const SEED_ITEMS = {seeded};",
         )
@@ -739,10 +751,7 @@ def test_the_logging_phase_stamps_writes_and_closes_against_a_live_script(
     # Both sides of the LOCAL close query's AND are asserted indexed, by
     # MERGE, because a create body's handling of `Indexed` has never been
     # measured here and a REUSED log would never see one either way.
-    # Application is indexed too, for the CENTRAL close's AND (this list
-    # never filters on it itself: a per-site log belongs to one application
-    # by construction), but the declaration is shared with CHANGE_FIELDS so
-    # this on-site log carries the same index unused.
+    # Application is indexed too: the local close filters on it, as the central one does.
     indexed = {f["InternalName"] for f in state["fields"][CHANGE_LOG_TITLE] if f["Indexed"]}
     assert indexed == {"ChangeKey", "IsCurrent", "Application"}
 
@@ -755,10 +764,11 @@ def test_the_logging_phase_stamps_writes_and_closes_against_a_live_script(
     assert field_reads, "the change log's fields were never enumerated"
     assert all("$top=500" in c["url"] for c in field_reads)
 
-    # The type-2 close, keyed on ChangeKey and not on Title.
+    # The type-2 close, keyed on ChangeKey and not on Title, and scoped to this application.
     closes = [c for c in calls if "ChangeKey eq" in c["url"]]
     assert closes, "no close query was issued; the writer never reached the insert"
     assert all("IsCurrent eq true" in c["url"] for c in closes)
+    assert all(f"Application eq '{APPLICATION_NAME}'" in c["url"] for c in closes)
     seeded = next(r for r in state["items"][CHANGE_LOG_TITLE] if r["Id"] == 900)
     assert seeded["IsCurrent"] is False, "the seeded current row was never closed"
     assert seeded["EffectiveTo"], "the closed row carries no EffectiveTo"
@@ -1408,18 +1418,28 @@ def test_the_close_leaves_another_application_row_alone() -> None:
     )
 
 
+def test_the_local_close_leaves_another_application_s_current_row() -> None:
+    """Two applications can share one per-site change log, so its close is scoped too."""
+    run = _run_deploy(
+        seeded_change_rows=True, seeded_local_foreign_application=True, central_absent=True,
+    )
+    rows = {r["Id"]: r for r in run["state"]["items"][CHANGE_LOG_TITLE]}
+    assert rows[900]["IsCurrent"] is False, "this application's own row was not closed"
+    assert rows[901]["IsCurrent"] is True, "another application's row was closed"
+
+
 def test_the_stamped_deployer_version_is_not_doubled() -> None:
-    """`release.yaml`'s `deployer_version` already carries the product name
-    (`dbml-sharepoint/0.1.0`), so prepending it a second time stamped every
-    central row with `dbml-sharepoint/dbml-sharepoint/0.1.0`. Only the
-    Deployments list's stamps carry DeployerVersion; a change row never has.
+    """The stamp is `<name>/<version>` once. Prepending the product name to a
+    value that already carried it stamped every central row with
+    `dbml-sharepoint/dbml-sharepoint/0.1.0`. Only the Deployments list's
+    stamps carry DeployerVersion; a change row never has.
     """
-    release = load_release(FIXTURES / "release.yaml")
     run = _run_deploy(central_can_close=True, seeded_central_rows=True)
     central = run["state"]["central"]
     stamps = [r for r in central if "DeployerVersion" in r]
     assert stamps, "no central stamp carried DeployerVersion"
-    assert all(r["DeployerVersion"] == release.deployer_version for r in stamps), (
+    stamped = f"{APPLICATION_NAME}/{dbml_sharepoint.__version__}"
+    assert all(r["DeployerVersion"] == stamped for r in stamps), (
         f"DeployerVersion is doubled: {[r['DeployerVersion'] for r in stamps]}"
     )
     assert not any("DeployerVersion" in r for r in run["state"]["centralChanges"]), (

@@ -8,11 +8,14 @@ filter the pasteable scripts need. That means a rendering rule
 in exactly one place.
 """
 
+import re
 from pathlib import Path
 from typing import Any, cast
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
+import dbml_sharepoint
+from dbml_sharepoint import APPLICATION_NAME, COMMAND_NAME
 from dbml_sharepoint.analysis.typemap import (
     BASE_TYPE_AS_STRING_PAIRS,
     DERIVED_FIELD_PROPERTIES,
@@ -22,6 +25,22 @@ from dbml_sharepoint.analysis.typemap import (
 )
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+
+#: Safe unescaped in a JavaScript string, a CSOM XML attribute and an OData literal.
+_APPLICATION_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+
+
+class ApplicationNameError(ValueError):
+    """An application name the generated scripts cannot carry safely."""
+
+
+def check_application_name(application: str) -> None:
+    """Refuse a name that could escape a string, comment or attribute it is rendered into."""
+    if not _APPLICATION_NAME.fullmatch(application):
+        raise ApplicationNameError(
+            f"application name {application!r} must be 1 to 64 letters, digits, '.', '_' "
+            "or '-', starting with a letter or digit",
+        )
 
 
 def comment_safe(value: object) -> str:
@@ -39,8 +58,12 @@ def markdown_cell(value: object) -> str:
     return str(value).replace("&", "&amp;").replace("|", "&#124;").replace("\n", " ")
 
 
-def script_env() -> Environment:
-    """Environment for every generated artifact (scripts and manifests)."""
+def script_env(application: str = APPLICATION_NAME) -> Environment:
+    """Environment for every generated artifact (scripts and manifests).
+
+    `application` is the identity the artifacts stamp; the version is the distribution's.
+    """
+    check_application_name(application)
     # No autoescape by design: these templates emit JavaScript and
     # markdown, not HTML. Interpolations are guarded individually
     # (tojson for values, comment_safe for comment text).
@@ -76,4 +99,9 @@ def script_env() -> Environment:
     # list.
     env_globals["derived_field_properties"] = DERIVED_FIELD_PROPERTIES
     env_globals["derived_field_property_kinds"] = DERIVED_FIELD_PROPERTY_KINDS
+    # The identity every script and manifest stamps, chosen by the generator's caller.
+    env_globals["application_name"] = application
+    env_globals["command_name"] = COMMAND_NAME
+    # Read per call rather than imported, so the test suite can pin the version its goldens record.
+    env_globals["deployer_version"] = dbml_sharepoint.__version__
     return env

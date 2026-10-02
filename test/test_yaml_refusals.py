@@ -208,7 +208,7 @@ def test_a_tag_is_refused_in_release_yaml_as_a_config_error(
     as the parser's own error, which `project.CONFIG_ERRORS` catches."""
     release = write_mapping(
         tmp_path,
-        'release: "1.0.0"\ndate: "2026-01-01"\ndeployer_version: "dbml-sharepoint/0.1.0"\n'
+        'release: "1.0.0"\ndate: "2026-01-01"\n'
         f'schema_version: "1.0.0"\n{_TAGGED}',
         prefix=None,
         name="release.yaml",
@@ -216,7 +216,7 @@ def test_a_tag_is_refused_in_release_yaml_as_a_config_error(
     with pytest.raises(typer.Exit) as exit_:
         load_config(FIXTURES / "simple.dbml", FIXTURES / "sharepoint-mapping.yaml", release)
     assert exit_.value.exit_code == 1
-    assert capsys.readouterr().err == f"[ERROR] release {release}: {_HEADER}\n{_found(5, 4)}\n"
+    assert capsys.readouterr().err == f"[ERROR] release {release}: {_HEADER}\n{_found(4, 4)}\n"
 
 
 def test_a_tag_is_refused_in_a_journey_s_front_matter(
@@ -371,7 +371,7 @@ def test_valid_yaml_the_loader_refuses_in_release_yaml_is_a_config_error(
 ) -> None:
     release = write_mapping(
         tmp_path,
-        'release: "1.0.0"\ndate: "2026-01-01"\ndeployer_version: "dbml-sharepoint/0.1.0"\n'
+        'release: "1.0.0"\ndate: "2026-01-01"\n'
         f'schema_version: "1.0.0"\n{text}',
         prefix=None,
         name="release.yaml",

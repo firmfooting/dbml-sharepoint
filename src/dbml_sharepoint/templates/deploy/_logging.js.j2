@@ -112,7 +112,7 @@
     // the change feed is written there too.
     const EXTERNAL_LOG_COLUMNS = {{ deployment_log_columns | tojson }};
     const EXTERNAL_CHANGE_COLUMNS = {{ deployment_log_change_columns | tojson }};
-    const EXTERNAL_ROW_PREFIX = {{ deployment_log_row_prefix | tojson }};
+    const EXTERNAL_ROW_PREFIX = {{ application_name | tojson }};
     const CHANGE_FIELDS = {{ sidecar_change_fields | tojson(indent=2) }};
     const RUN_LOG_FIELDS = {{ sidecar_run_log_fields | tojson(indent=2) }};
     // Which firmfooting application this run is. Written into every central
@@ -707,7 +707,8 @@
       const effectiveFrom = change.at || new Date().toISOString();
       const currentResp = await fetchWithRetry(apiUrl(
         `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')/items`
-        + `?$select=Id,IsCurrent&$filter=ChangeKey eq '${odataName(change.key)}' and IsCurrent eq true`
+        + `?$select=Id,IsCurrent&$filter=ChangeKey eq '${odataName(change.key)}'`
+        + ` and Application eq '${odataName(APPLICATION)}' and IsCurrent eq true`
       ), { headers: { 'Accept': 'application/json;odata=verbose' } });
       if (!currentResp.ok) {
         recordFailure(`current-row read for '${change.key}'`,
@@ -822,7 +823,7 @@
         body.SourceSite = SITE_URL;
         body.ReleaseTag = RELEASE_TAG;
         body.SchemaVersion = SCHEMA_VERSION;
-        body.DeployerVersion = {{ release.deployer_version | tojson }};
+        body.DeployerVersion = {{ (application_name ~ '/' ~ deployer_version) | tojson }};
         body.Operator = OPERATOR_LOGIN;
         body.Details = details || '';
         body.Application = APPLICATION;
@@ -1153,7 +1154,7 @@
         `site {{ site_url }}; role {{ site_role }}`);
       await stampExternal('provenance',
         `generated from {{ source_dbml }}; release ${RELEASE_TAG}; schema v${SCHEMA_VERSION}; `
-        + `deployer v{{ release.deployer_version }}; {{ generated_at }}; {{ env_file_line }}`,
+        + `deployer v{{ deployer_version }}; {{ generated_at }}; {{ env_file_line }}`,
         `generated from {{ source_dbml }} at {{ generated_at }}; {{ env_file_line }}`);
     } else {
       await stampRunLog('deployment start', `site {{ site_url }}; role {{ site_role }}`);
