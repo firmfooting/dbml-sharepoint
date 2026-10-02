@@ -315,6 +315,7 @@ class FindingCode(StrEnum):
     FOLDER_PERMISSIONS_ON_A_LIST = "folder_permissions_on_a_list", "error"
     FOLDER_PERMISSIONS_WITHOUT_FOLDERS = "folder_permissions_without_folders", "error"
     FOLDER_POLICY_MANAGES_NOTHING = "folder_policy_manages_nothing", "error"
+    FILE_SCOPES_EXTERNAL_NEEDS_LIBRARY = "file_scopes_external_needs_library", "error"
     VIEW_SCOPE_ON_A_LIST = "view_scope_on_a_list", "error"
     # Warning severity: the view renders and answers correctly below the
     # threshold; what changes past it is measured, and the author may accept it.

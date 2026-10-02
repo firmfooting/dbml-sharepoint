@@ -741,6 +741,20 @@ FINDING_HELP: dict[FindingCode, str] = {
         "from, and a configured folder policy that only breaks inheritance "
         "is a legitimate way to hand the folders to manual management."
     ),
+    FindingCode.FILE_SCOPES_EXTERNAL_NEEDS_LIBRARY: (
+        "`file_scopes: external` reaches a list that is not a "
+        "`DocumentLibrary`, through `list_permissions.default` or an "
+        "`overrides` entry. `external` lets a unique scope on a row that "
+        "reads back as a file (`FileSystemObjectType` 0) pass the exact-mode "
+        "descendant check. Learn's [FileSystemObjectType enumeration]"
+        "(https://learn.microsoft.com/en-us/dotnet/api/"
+        "microsoft.sharepoint.client.filesystemobjecttype) lists Invalid, "
+        "File, Folder and Web, and does not say what an ordinary list item "
+        "reads back as, so on such a list the deploy cannot tell a file "
+        "scope from an item scope. It keeps `refuse` there, and the setting "
+        "would do nothing. Set `external` only on an `overrides` entry for a "
+        "document library, or remove it."
+    ),
     FindingCode.VIEW_SCOPE_ON_A_LIST: (
         "A view declares `scope` on an entity that is not a "
         "`DocumentLibrary`. Scope decides whether a view shows the files in "

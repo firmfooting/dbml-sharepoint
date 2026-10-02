@@ -2393,10 +2393,12 @@ file, still aborts the phase by name. The list's own allowlist, its pruning and
 its read-back are unchanged. `external` without `reconcile: exact` is refused
 at load, since only an exact list surveys its descendants.
 
-`external` takes effect only on a document library. On any other list the
-deploy keeps `refuse`, because Learn's FileSystemObjectType enumeration does
-not say what a list item reads back as. The manifest names every document
-library whose file scopes the deploy leaves to another writer.
+`external` takes effect only on a document library, because Learn's
+FileSystemObjectType enumeration does not say what a list item reads back as.
+The build refuses `external` wherever it reaches any other list, through
+`default` or an `overrides` entry, with `file_scopes_external_needs_library`.
+The manifest names every document library whose file scopes the deploy leaves
+to another writer.
 
 What it gives up: a file somebody shares by hand on such a list is no longer
 reported by the deploy. Whatever writes those scopes has to reconcile them
