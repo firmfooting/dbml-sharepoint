@@ -13,6 +13,7 @@ from _item_acl_mock import ITEM_ACL_MOCK
 from _node import NODE
 from _paths import MANUAL
 from _probe_runs import catalogued_dependents, ended_with_report, run_probe, voided
+from _versions_mock import mock_list_id
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
@@ -24,6 +25,8 @@ USER = "access.item-acl.fixture-test-user"
 DENIED = "access.item-acl.control-test-user-denied"
 STATE_ONE = "access.item-acl.fixture-state-one"
 LEVEL_BITS = "access.item-acl.fixture-level-permissions"
+# STATE 2 addresses the library by the Id it reads back, as the mock derives it.
+LIBRARY_ID = mock_list_id("dbmlsp Probe ItemAccess")
 C1 = "access.item-acl.break-copies-parent-groups"
 C2 = "access.item-acl.parent-grant-after-break"
 C3 = "access.item-acl.custom-level-user-grant"
@@ -183,7 +186,7 @@ def test_cleanup_leaves_a_group_whose_description_is_not_the_probes() -> None:
     ((), {"throttle": "items(1)?$select=HasUniqueRoleAssignments"}, C1),
     ((), {"throttle": "items(1)/roleassignments?"}, C2),
     ((STATE_TWO,), {"stateOne": True, "throttle": "items(2)?$select=HasUniqueRoleAssignments"}, C6),
-    ((STATE_TWO,), {"stateOne": True, "throttle": "ItemAccess')/roleassignments?"}, C6),
+    ((STATE_TWO,), {"stateOne": True, "throttle": f"{LIBRARY_ID}')/roleassignments?"}, C6),
 ], ids=["c1-unique", "c2-file-bindings", "c6-unique", "c6-library-bindings"])
 def test_an_unread_value_leaves_its_row_not_established(
         swaps: tuple[dict[str, str], ...], config: dict[str, Any], row: str) -> None:
@@ -326,3 +329,72 @@ def test_a_malformed_levels_answer_is_unread_not_none() -> None:
     rows, _, _ = _run(levelsMalformed=True)
 
     assert "the user's levels at the library unread (" in rows[C3]["evidence"]
+
+
+def test_c6_compares_the_file_with_the_library_as_it_reads_after_the_reset() -> None:
+    rows, _, _ = _run(STATE_TWO, stateOne=True, resetDropsLimitedAccess=True)
+
+    assert rows[C6]["outcome"] == "MATCHES THE LIBRARY", rows[C6]
+
+
+def test_role_assignments_without_level_bindings_are_unread() -> None:
+    rows, _, _ = _run(STATE_TWO, stateOne=True, malformedAfter="removeroleassignment")
+
+    assert rows[C5]["outcome"] == "NOT ESTABLISHED", rows[C5]
+    assert "RoleDefinitionBindings" in rows[C5]["evidence"]
+
+
+def test_cleanup_stops_when_the_library_recycle_fails() -> None:
+    _, sent, output = _run(gates=("CONFIRMED", "ALLOW_WRITES", "CLEANUP"), stateOne=True,
+                           rules=[{"contains": "/recycle", "status": 429, "text": "throttled"}])
+
+    assert not any("sitegroups/removebyid(" in r["path"] for r in sent)
+    assert not any(r["path"].startswith("web/roledefinitions(") for r in sent)
+    assert "CLEANUP stopped" in output
+
+
+def test_groups_and_a_level_that_lose_the_ownership_marker_fail_the_fixture() -> None:
+    rows, _, _ = _run(createDropsDescription=True)
+
+    assert rows[GROUPS]["outcome"] == "FAIL", rows[GROUPS]
+    assert voided(rows) == catalogued_dependents(PROBE.name, GROUPS)
+
+
+def test_files_that_never_read_unique_leave_c3_and_c4_unasked() -> None:
+    rows, _, output = _run(fileFlagInheriting=True)
+
+    for manual in (C3, C4):
+        assert rows[manual]["outcome"] == "NOT ESTABLISHED", rows[manual]
+    assert "MANUAL HALF" not in output
+
+
+def test_the_manual_view_link_is_built_from_the_root_folder() -> None:
+    _, _, output = _run(listDefaults={"root": "/sites/probe/ItemAccessSlug"})
+
+    assert "https://example.sharepoint.com/sites/probe/ItemAccessSlug/Forms/AllItems.aspx" in output
+
+
+@pytest.mark.parametrize("swaps", [(), (STATE_TWO,)], ids=["state-one", "state-two"])
+def test_writes_after_the_library_is_claimed_address_it_by_id(
+        swaps: tuple[dict[str, str], ...]) -> None:
+    _, sent, _ = _run(*swaps, stateOne=bool(swaps))
+
+    writes = [r["path"] for r in sent
+              if r["verb"] != "GET" and r["path"].startswith(("web/lists/", "web/lists("))]
+    assert writes
+    assert not any("getbytitle(" in path for path in writes)
+
+
+def test_c2_reads_the_library_and_the_file_in_one_window() -> None:
+    rows, _, _ = _run(grantReachesBrokenFiles=True, virtualClock=True, libraryGrantMs=20000,
+                      fileGrantMs=45000)
+
+    assert rows[C2]["outcome"] == "NOT ON THE FILE", rows[C2]
+
+
+def test_a_cleanup_request_that_throws_still_reports() -> None:
+    _, _, output = _run(gates=("CONFIRMED", "ALLOW_WRITES", "CLEANUP"), stateOne=True,
+                        rules=[{"contains": "contextinfo", "reject": True}])
+
+    assert ended_with_report(output), output[-2000:]
+    assert "CLEANUP aborted" in output

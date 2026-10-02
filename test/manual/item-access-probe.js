@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: A FILE'S OWN ROLE ASSIGNMENTS IN A LIBRARY WITH UNIQUE PERMISSIONS ----
  *
- * REVISION: ac93a293
+ * REVISION: 566c825f
  *
  * WHY: a flow that grants item-level access breaks inheritance on one file,
  * binds one user to a custom level there, later removes that binding, and
@@ -869,7 +869,7 @@
       await recycleList(title, id);
     }
   };
-  log('INFO', 'probe revision ac93a293. Quote this when reporting results.');
+  log('INFO', 'probe revision 566c825f. Quote this when reporting results.');
 
   // 1: build the fixture and ask C1 to C4. 2: ask C5 and C6 on what STATE 1 left.
   const STATE = 1;
@@ -969,7 +969,8 @@
   const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
   // OData string literal: quotes doubled, then percent-encoded, so a claims login's '#' and '|' survive.
   const odataLiteral = (value) => encodeURIComponent(String(value).replace(/'/g, "''"));
-  const lib = `web/lists/getbytitle('${pathLiteral(LIB)}')`;
+  // By title until the library is claimed or read back as this probe's, then by its Id.
+  let lib = `web/lists/getbytitle('${pathLiteral(LIB)}')`;
   let digest = null;
   const write = async (path, body = {}, extra = {}) => {
     digest = digest || await getDigest();
@@ -989,7 +990,11 @@
       const { rows: page, shape } = entriesOf(read.parsed);
       if (page === null) return { rows: null, why: `HTTP ${read.status} ${shape}` };
       for (const row of page) {
-        const levels = Array.isArray(row.RoleDefinitionBindings) ? row.RoleDefinitionBindings : [];
+        // An assignment without its level bindings, or a level without an Id, is no reading of the scope.
+        const levels = row.RoleDefinitionBindings;
+        if (!Array.isArray(levels) || !levels.every((one) => one && Number.isInteger(one.Id))) {
+          return { rows: null, why: `HTTP ${read.status} carried an assignment without RoleDefinitionBindings Ids` };
+        }
         for (const level of levels) {
           rows.push({ principal: row.PrincipalId, level: level.Name, levelId: level.Id });
         }
@@ -1105,7 +1110,8 @@
   };
 
   // ---- CLEANUP: remove what STATE 1 made, each only when its description is this probe's ----
-  if (CLEANUP) {
+  // Returns early, deleting nothing more, whenever what a later step rests on did not hold.
+  const cleanUp = async () => {
     const held = await sendRaw(`${lib}?$select=Id,Description`);
     const head = held.status === 404 ? null : readHead(held);
     const body = held.status === 404 || head ? null : recordBody(held);
@@ -1113,12 +1119,16 @@
     if (held.status !== 404 && !body) {
       log('FAIL', `CLEANUP stopped: the library's ownership read ${head ? scrub(head.why) : 'carried no JSON object'}`
         + ', so nothing was deleted. Paste again with CLEANUP.');
-      stampRemaining('NOT REACHED', 'a CLEANUP paste asks nothing');
-      report();
       return;
     }
-    if (body && body.Description === OWNERSHIP) await resetList(LIB, guidOf(body.Id));
-    else log('INFO', `CLEANUP: no library '${LIB}' of this probe's to remove.`);
+    if (body && body.Description === OWNERSHIP) {
+      // The groups and level stay while the library stands, so its permissions are never dismantled under it.
+      if (!await resetList(LIB, guidOf(body.Id))) {
+        log('FAIL', 'CLEANUP stopped: the library was not recycled, so its groups and level were kept. '
+          + 'Paste again with CLEANUP.');
+        return;
+      }
+    } else log('INFO', `CLEANUP: no library '${LIB}' of this probe's to remove.`);
     // Logs OK only once the name reads back absent.
     const readBackGone = async (what, collection, name, sent) => {
       const after = await lookUp(collection, name);
@@ -1145,8 +1155,17 @@
       if (gone.ok) await readBackGone('level', 'roledefinitions', LEVEL, 'deleted');
       else log('FAIL', `CLEANUP: level '${LEVEL}' not deleted: HTTP ${gone.status}`);
     }
-    stampRemaining('NOT REACHED', 'a CLEANUP paste asks nothing');
-    report();
+  };
+  if (CLEANUP) {
+    try {
+      await cleanUp();
+    } catch (err) {
+      log('FAIL', `CLEANUP aborted: ${scrub(String((err && err.message) || err)).slice(0, 240)}. `
+        + 'Some of what STATE 1 made may remain; paste again with CLEANUP.');
+    } finally {
+      stampRemaining('NOT REACHED', 'a CLEANUP paste asks nothing');
+      report();
+    }
     return;
   }
 
@@ -1181,6 +1200,8 @@
       const library = await claimScratchList({ id: 'access.item-acl.fixture-library', question: Q.library,
         title: LIB, description: OWNERSHIP, dependents: AFTER_LIBRARY, baseTemplate: 101 });
       if (!library.held) return;
+      // Every later request goes to the list this run proved its own, by Id, so a rebound title cannot redirect it.
+      lib = library.path;
 
       // ---- the library: unique, with group A at Read and group B at the custom level ----
       beginFixture();
@@ -1205,13 +1226,21 @@
       }
       let libraryRows = null;
       if (!await settleFixture('access.item-acl.fixture-library-groups', async () => {
+        // CLEANUP removes only what carries this probe's description, so each create must read back with it.
+        const unowned = [];
+        for (const [collection, name, id] of [['roledefinitions', LEVEL, level],
+          ...['a', 'b', 'c'].map((key) => ['sitegroups', GROUP[key], groups[key]])]) {
+          const back = await lookUp(collection, name);
+          if (back.state !== 'mine' || back.id !== id) unowned.push(`'${name}' (${back.why || 'another Id'})`);
+        }
         const got = await settle(async () => ({ unique: await uniqueOf(lib), bound: await bindingsOf(lib) }),
           (r) => r.unique === true && holds(r.bound.rows, groups.a, readId)
             && holds(r.bound.rows, groups.b, level));
         libraryRows = got.last.bound.rows;
         return { ok: true, status: 200, body: { Unique: got.last.unique, Held: got.held,
-          Bindings: shown(got.last.bound) } };
-      }, { Unique: true, Held: true, Bindings: (v) => typeof v === 'string' }, AFTER_GROUPS)) return;
+          Bindings: shown(got.last.bound), Unowned: unowned.join(', ') || 'none' } };
+      }, { Unique: true, Held: true, Bindings: (v) => typeof v === 'string', Unowned: 'none' },
+      AFTER_GROUPS)) return;
 
       // ---- the custom level: read back with the bits it was sent, which C3 and C4 rest on ----
       beginFixture();
@@ -1276,13 +1305,18 @@
       } else {
         const added = await write(`${lib}/roleassignments/addroleassignment(principalid=${groups.c},`
           + `roledefid=${readId})`);
-        const onLibrary = await settle(() => bindingsOf(lib), (r) => holds(r.rows, groups.c, readId));
-        const onFile = await settle(() => bindingsOf(fileOf('plain')), (r) => holds(r.rows, groups.c, readId));
+        // One window for both scopes: the library's grant is the prerequisite, the file's bindings the observation.
+        let onLibrary = 0;
+        const c2 = await settle(async () => {
+          const both = { library: await bindingsOf(lib), file: await bindingsOf(fileOf('plain')) };
+          if (!onLibrary && holds(both.library.rows, groups.c, readId)) onLibrary = 1;
+          return both;
+        }, (r) => onLibrary === 1 && holds(r.file.rows, groups.c, readId));
         record('access.item-acl.parent-grant-after-break', Q.c2,
-          !onLibrary.held || onFile.last.rows === null ? 'NOT ESTABLISHED'
-            : onFile.held ? 'REACHED THE FILE' : 'NOT ON THE FILE',
-          `the library grant answered HTTP ${added.status}; the library read it after ${onLibrary.reads} `
-          + `read(s); the file holds ${shown(onFile.last)} after ${onFile.reads} read(s), ${onFile.ms} ms`);
+          !onLibrary || c2.last.file.rows === null ? 'NOT ESTABLISHED'
+            : c2.held ? 'REACHED THE FILE' : 'NOT ON THE FILE',
+          `the library grant answered HTTP ${added.status}; the library ${onLibrary ? 'read it' : 'never read it'} `
+          + `within the window; after ${c2.reads} read(s), ${c2.ms} ms the file holds ${shown(c2.last.file)}`);
       }
 
       // ---- the test user: resolved, not an administrator, and denied before any grant ----
@@ -1317,13 +1351,16 @@
         + 'clearSubscopes=true)');
       const trialGranted = await write(`${fileOf('trial')}/roleassignments/addroleassignment(`
         + `principalid=${user.id},roledefid=${level})`);
+      // Each grant counts only on a file that reads unique, since the manual half tests a direct file grant.
       const c3 = await settle(async () => ({ book: await bindingsOf(fileOf('book')),
-        trial: await bindingsOf(fileOf('trial')) }),
-      (r) => holds(r.book.rows, user.id, level) && holds(r.trial.rows, user.id, level));
+        trial: await bindingsOf(fileOf('trial')), bookUnique: await uniqueOf(fileOf('book')),
+        trialUnique: await uniqueOf(fileOf('trial')) }),
+      (r) => r.bookUnique === true && r.trialUnique === true
+        && holds(r.book.rows, user.id, level) && holds(r.trial.rows, user.id, level));
       const grants = `break HTTP ${bookBroke.status}, grant HTTP ${granted.status} on ${NAMES.book}; break `
         + `HTTP ${trialBroke.status}, grant HTTP ${trialGranted.status} on ${NAMES.trial}; after ${c3.reads} `
         + `read(s), ${c3.ms} ms ${NAMES.book} holds ${shown(c3.last.book)} and ${NAMES.trial} holds `
-        + `${shown(c3.last.trial)}`;
+        + `${shown(c3.last.trial)}; HasUniqueRoleAssignments read ${c3.last.bookUnique} and ${c3.last.trialUnique}`;
       // The manual half asks what the grant allows, so it is not asked until both grants read back.
       if (!c3.held) {
         for (const [id, question] of [['access.item-acl.custom-level-user-grant', Q.c3],
@@ -1351,7 +1388,7 @@
 
       console.log('\n==================== MANUAL HALF (C3, C4) ====================');
       console.log('Sign in as the test user in a second browser session, then:');
-      console.log(`  1. Open ${WEB}/${LIB}/Forms/AllItems.aspx. C4: is ${NAMES.book} listed?`);
+      console.log(`  1. Open ${new URL(WEB).origin}${root}/Forms/AllItems.aspx. C4: is ${NAMES.book} listed?`);
       console.log(`  2. Open ${NAMES.book} in the browser, change it, close it, reopen it. C3: kept?`);
       console.log('  3. Open its version history. C3: does it open and list your save?');
       console.log(`  4. Try to delete ${NAMES.trial}, not ${NAMES.book}. C3: refused, and with what message?`);
@@ -1365,7 +1402,9 @@
     beginFixture();
     const owned = await sendRaw(`${lib}?$select=Id,Description`);
     const ownedBody = readHead(owned) ? null : recordBody(owned);
-    const mine = Boolean(ownedBody && ownedBody.Description === OWNERSHIP);
+    const ownedId = ownedBody ? guidOf(ownedBody.Id) : null;
+    const mine = Boolean(ownedBody && ownedBody.Description === OWNERSHIP && ownedId);
+    if (mine) lib = `web/lists(guid'${ownedId}')`;
     const level = await ownedByName('roledefinitions', LEVEL);
     const user = mine ? await resolveUser() : null;
     const files = user ? await filesOf() : {};
@@ -1402,13 +1441,13 @@
       record('access.item-acl.reset-restores-parent', Q.c6, 'NOT ESTABLISHED',
         `the user's grant on the C6 file never read back (${shown(c6Before.last)}), so no reset was sent`);
     } else {
-      const libraryNow = await bindingsOf(lib);
       const reset = await write(`${fileOf('reset')}/resetroleinheritance`);
-      // The window waits for the flag and the restored bindings together, so their order is never a finding.
+      // The flag, the file and the library are read together, so the file is compared with the library as it is now.
       const c6 = await settle(async () => ({ unique: await uniqueOf(fileOf('reset')),
-        bound: await bindingsOf(fileOf('reset')) }),
-      (r) => r.unique === false && sameBindings(r.bound.rows, libraryNow.rows));
+        bound: await bindingsOf(fileOf('reset')), library: await bindingsOf(lib) }),
+      (r) => r.unique === false && sameBindings(r.bound.rows, r.library.rows));
       const fileNow = c6.last.bound;
+      const libraryNow = c6.last.library;
       const afterReset = await effectiveOf(fileOf('reset'), user.login);
       const unread = libraryNow.rows === null || fileNow.rows === null;
       // An unread value is no answer, so the row rests on nothing and is not established.
@@ -1417,7 +1456,7 @@
           : unread ? 'NOT ESTABLISHED'
             : sameBindings(fileNow.rows, libraryNow.rows) ? 'MATCHES THE LIBRARY' : 'DIFFERS FROM THE LIBRARY',
         `the reset answered HTTP ${reset.status}; after ${c6.reads} read(s), ${c6.ms} ms `
-        + `HasUniqueRoleAssignments read ${c6.last.unique}; the library held ${shown(libraryNow)}; the file `
+        + `HasUniqueRoleAssignments read ${c6.last.unique}; the library holds ${shown(libraryNow)}; the file `
         + `holds ${shown(fileNow)}; effective on the file ${afterReset.text}; the user's levels at the library `
         + `${await levelsOf(lib, user.id)}`);
     }

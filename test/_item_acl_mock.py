@@ -70,7 +70,17 @@ const ignored = (call) => (CONFIG.ignore || []).includes(call);
 const COPY = new RegExp("^web/GetFileByServerRelativeUrl\\('(?:[^']|'')+'\\)"
   + "/copyto\\(strnewurl='((?:[^']|'')+)'");
 const ADD = /^web\/GetFolderByServerRelativeUrl\('((?:[^']|'')+)'\)\/Files\/add\(url='([^']+)'/;
-const SCOPE = /^web(?:\/lists\/getbytitle\('((?:[^']|'')+)'\)(?:\/items\((\d+)\))?)?(.*)$/;
+const SCOPE = new RegExp("^web(?:/lists(?:/getbytitle\\('((?:[^']|'')+)'\\)|\\(guid'([^']+)'\\))"
+  + '(?:/items\\((\\d+)\\))?)?(.*)$');
+// `virtualClock`: each wait the probe makes advances a clock of the mock's own by `tickMs`.
+if (CONFIG.virtualClock) {
+  let now = 0;
+  Date.now = () => now;
+  globalThis.setTimeout = (fn) => { now += CONFIG.tickMs || 2000; setImmediate(fn); return 0; };
+}
+// Whether a binding is visible yet, for a grant given a delay by `libraryGrantMs` or `fileGrantMs`.
+const visible = (b) => !b.visibleAt || b.visibleAt <= Date.now();
+let malformed = false;
 const GRANT = new RegExp('^/roleassignments/(add|remove)roleassignment'
   + '\\(principalid=(\\d+),roledefid=(\\d+)\\)$');
 const aclFetch = async (url, opts = {}) => {
@@ -83,6 +93,8 @@ const aclFetch = async (url, opts = {}) => {
     SENT.push({ verb, path, body: raw });
     return answer(status, payload);
   };
+  // `malformedAfter`: once a request holding this text is seen, assignments carry no levels.
+  if (CONFIG.malformedAfter && path.includes(CONFIG.malformedAfter)) malformed = true;
   // `throttle`: every GET whose path holds this text is answered 429, echoing the URL as sent.
   if (CONFIG.throttle && verb === 'GET' && path.includes(CONFIG.throttle)) {
     return mine(429, `throttled: ${String(url)}`);
@@ -92,7 +104,9 @@ const aclFetch = async (url, opts = {}) => {
     // `levelAddsDelete`: a create that stores DeleteListItems beside the bits it was sent.
     const extra = CONFIG.levelAddsDelete ? 8n : 0n;
     LEVELS[1073741930] = [sent.Name, BigInt(High), BigInt(Low) | extra];
-    named.roledefinitions.set(sent.Name, { Id: 1073741930, Description: sent.Description });
+    // `createDropsDescription`: a group or level create that stores no description.
+    named.roledefinitions.set(sent.Name, { Id: 1073741930,
+      Description: CONFIG.createDropsDescription ? '' : sent.Description });
     return mine(201, { Id: 1073741930 });
   }
   if (path.startsWith("web/roledefinitions/getbyname('Read')")) {
@@ -130,7 +144,8 @@ const aclFetch = async (url, opts = {}) => {
   }
   if (path === 'web/sitegroups' && verb === 'POST') {
     nextGroup += 1;
-    named.sitegroups.set(sent.Title, { Id: nextGroup - 1, Description: sent.Description });
+    named.sitegroups.set(sent.Title, { Id: nextGroup - 1,
+      Description: CONFIG.createDropsDescription ? '' : sent.Description });
     return mine(201, { Id: nextGroup - 1, Title: sent.Title });
   }
   const removeById = /^web\/sitegroups\/removebyid\((\d+)\)/.exec(path);
@@ -156,16 +171,22 @@ const aclFetch = async (url, opts = {}) => {
   }
   const at = SCOPE.exec(path);
   if (!at) return mockFetch(url, opts);
-  const [, title, item, tail] = at;
-  const key = title === undefined ? 'web'
-    : item === undefined ? unquote(title) : `${unquote(title)}|${item}`;
+  const [, byTitle, byId, item, tail] = at;
+  const found = byId === undefined ? null : [...lists.values()].find((one) => one.Id === byId);
+  if (byId !== undefined && !found) return mockFetch(url, opts);
+  const title = found ? found.Title : byTitle === undefined ? undefined : unquote(byTitle);
+  const key = title === undefined ? 'web' : item === undefined ? title : `${title}|${item}`;
   if (tail.startsWith('/items?') && item === undefined && title !== undefined) {
-    const list = lists.get(unquote(title));
+    const list = lists.get(title);
     return mine(200, { value: list.items.map((one) => ({ Id: one.Id,
       FileLeafRef: one.values.FileLeafRef,
       HasUniqueRoleAssignments: scopeOf(`${list.Title}|${one.Id}`).unique })) });
   }
   if (tail === '?$select=HasUniqueRoleAssignments') {
+    // `fileFlagInheriting`: a file's flag reads false whatever its scope holds.
+    if (CONFIG.fileFlagInheriting && key.includes('|')) {
+      return mine(200, { HasUniqueRoleAssignments: false });
+    }
     return mine(200, { HasUniqueRoleAssignments: scopeOf(key).unique });
   }
   const broke = /^\/breakroleinheritance\(copyRoleAssignments=(true|false)/.exec(tail);
@@ -188,6 +209,11 @@ const aclFetch = async (url, opts = {}) => {
       ? scopeOf(key).bindings.filter((b) => b.principal === USER.Id) : [];
     scopes.set(key, { unique: false, bindings: kept, keptOnReset: kept.length > 0,
       lag: CONFIG.bindingsLag || 0, stale: effective(key) });
+    // `resetDropsLimitedAccess`: a file's reset takes the user's Limited Access off the library.
+    if (CONFIG.resetDropsLimitedAccess && key.includes('|')) {
+      const up = scopeOf(parentOf(key));
+      up.bindings = up.bindings.filter((b) => b.principal !== USER.Id || b.level !== 1073741825);
+    }
     return mine(200, {});
   }
   const grant = GRANT.exec(tail);
@@ -203,11 +229,15 @@ const aclFetch = async (url, opts = {}) => {
       }
       return mine(200, {});
     }
-    scope.bindings.push(binding);
+    const onLibrary = !key.includes('|') && key !== 'web';
+    scope.bindings.push(onLibrary && CONFIG.libraryGrantMs
+      ? { ...binding, visibleAt: Date.now() + CONFIG.libraryGrantMs } : binding);
     // `grantReachesBrokenFiles`: a library grant that also lands on every file with its own scope.
-    if (CONFIG.grantReachesBrokenFiles && !key.includes('|')) {
+    if (CONFIG.grantReachesBrokenFiles && onLibrary) {
       for (const [other, held] of scopes) {
-        if (other.startsWith(`${key}|`) && held.unique) held.bindings.push(binding);
+        if (other.startsWith(`${key}|`) && held.unique) {
+          held.bindings.push({ ...binding, visibleAt: Date.now() + (CONFIG.fileGrantMs || 0) });
+        }
       }
     }
     // A user's grant on a file leaves Limited Access at the library and the web.
@@ -224,8 +254,12 @@ const aclFetch = async (url, opts = {}) => {
       scope.lag -= 1;
       return mine(200, { value: scope.stale.map(row) });
     }
-    const held = scope.keptOnReset ? [...effective(parentOf(key)), ...scope.bindings]
-      : effective(key);
+    const held = (scope.keptOnReset ? [...effective(parentOf(key)), ...scope.bindings]
+      : effective(key)).filter(visible);
+    if (malformed) {
+      const bare = held.map((b) => ({ PrincipalId: b.principal, Member: row(b).Member }));
+      return mine(200, { value: bare });
+    }
     return mine(200, { value: held.map(row) });
   }
   const by = /^\/roleassignments\/getbyprincipalid\((\d+)\)\/roledefinitionbindings/.exec(tail);
