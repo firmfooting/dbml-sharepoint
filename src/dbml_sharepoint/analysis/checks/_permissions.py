@@ -278,9 +278,9 @@ def _configured_breaks_granting_nothing(
             f"{ctx}: reconcile: configured with break_inheritance and no "
             f"assignments makes the deploy break inheritance on {scope} "
             f"where it still inherits, copying no role assignments, and "
-            f"grant nothing back. On a list that leaves only the operator's "
-            f"own binding, so every principal that inherited access loses "
-            f"it. Declare the assignments the scope should have, or set "
+            f"grant nothing back. Measured on a list, that leaves only the "
+            f"operator's own binding, so every other principal that inherited "
+            f"a role loses it. Declare the assignments the scope should have, or set "
             f"break_inheritance: false if it should keep inheriting.",
             location=at,
         ))

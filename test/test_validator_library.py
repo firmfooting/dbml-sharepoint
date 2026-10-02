@@ -1199,7 +1199,6 @@ def test_a_folder_policy_that_grants_or_reviews_is_not_refused(
     )
 
 
-
 @pytest.mark.parametrize(
     ("default", "override"),
     [
@@ -1258,6 +1257,7 @@ def test_a_configured_folder_policy_on_a_library_the_schema_lacks_does_not_warn(
     findings = validate_against_mapping(schema, bundle)
     only(findings, FindingCode.ENTITY_NOT_IN_SCHEMA)
     none_of(findings, FindingCode.CONFIGURED_BREAK_GRANTS_NOTHING)
+
 
 def test_a_library_with_no_folders_is_told_that_rather_than_both(
     tmp_path: Path,

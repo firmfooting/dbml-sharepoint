@@ -1609,6 +1609,7 @@ def test_a_policy_that_governs_nothing_keeps_inheriting_or_grants_does_not_warn(
         FindingCode.CONFIGURED_BREAK_GRANTS_NOTHING,
     )
 
+
 def test_lookup_target_without_title_or_display_column_is_error() -> None:
     """A1: a lookup into a target list that has no Title column and no
     display_column would render blank in SP (LookupField defaults to the empty
