@@ -1716,12 +1716,13 @@ def test_external_file_scopes_abort_on_a_scope_whose_type_did_not_read_back(
     tmp_path: Path,
 ) -> None:
     """Only a row read back as a file is handed over, so a row with no type is still refused."""
-    summary, _ = _folder_acl_run(
+    summary, calls = _folder_acl_run(
         tmp_path, mapping=_EXTERNAL_FILES_LIBRARY,
         flags="globalThis.__strayUntypedScope = true;\n",
     )
     messages = [e["error"] for e in summary["errors"]]
     assert any("untyped" in m for m in messages), messages
+    assert not any("removeroleassignment" in c["url"] for c in calls)
 
 
 def test_a_declared_folder_that_does_not_exist_is_refused(tmp_path: Path) -> None:
