@@ -252,6 +252,7 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
     const FIELD_NEXT = undefined;
     const FORBID_FIELD_WRITES = false;
     const ROWS_WITHOUT_RESULTS = false;
+    const ROWS_STATUS = 200;
     const QUERY_WITHOUT_RESULTS = false;
     Date.prototype.getTimezoneOffset = () => -BROWSER_OFFSET;
     const DAY = 86400000;
@@ -364,6 +365,9 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
       }
       if (u.includes('/items?$select=Id,Title')) {
         if (ROWS_WITHOUT_RESULTS) return respond(200, { d: {} });
+        if (ROWS_STATUS !== 200) {
+          return respond(ROWS_STATUS, { error: { message: { value: 'rows read failed' } } });
+        }
         const rows = [...items.entries()].map(([Id, it]) => ({ Id, Title: it.Title }));
         return respond(200, { d: { results: rows } });
       }
@@ -550,13 +554,21 @@ def test_valid_list_inventory_terminators_preserve_verify(continuation: str) -> 
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_a_row_read_without_results_stops_verify_before_placing_rows() -> None:
+@pytest.mark.parametrize(("knobs", "why"), [
+    ({"ROWS_WITHOUT_RESULTS": "true"}, "without a d.results array"),
+    ({"ROWS_STATUS": "500"}, "HTTP 500"),
+], ids=["no-results", "failed-read"])
+def test_a_row_read_that_cannot_be_used_stops_verify_before_placing_rows(
+    knobs: dict[str, str], why: str,
+) -> None:
     """Read as empty, the rows of an earlier run stayed and new ones were
     placed beside them under the same titles (#722)."""
-    summary = _run_verify(ROWS_WITHOUT_RESULTS="true")
+    summary = _run_verify(**knobs)
     assert summary["verdict"] == "NOT-VERIFIED"
     assert summary["aborted"] == "rows-unreadable"
     assert _levels(summary)["scratch_list"] == "NOT-ASSESSABLE"
+    assert why in summary["findings"][-1]["detail"]
+    assert not [k for k in _levels(summary) if k.startswith("row_")]
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

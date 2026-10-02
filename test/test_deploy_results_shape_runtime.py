@@ -181,7 +181,11 @@ def test_a_descendant_row_without_its_flag_is_not_read_as_inheriting(tmp_path: P
     assert any("Item 41 of" in e and "not a boolean" in e for e in _errors(summary)), (
         summary.get("errors")
     )
-    assert not [c for c in calls if "removeroleassignment" in c["url"]]
+    assert not [
+        c for c in calls
+        if "roleassignment(" in c["url"]
+        or ("breakroleinheritance" in c["url"] and c.get("phase") == phase_number("acls"))
+    ]
 
 
 def test_a_library_flag_re_read_that_is_not_a_boolean_writes_no_allowlist(
@@ -197,8 +201,9 @@ def test_a_library_flag_re_read_that_is_not_a_boolean_writes_no_allowlist(
     from test_deploy_library_runtime import _calls_of as library_calls
 
     output = _run_output(
-        _library_harness(unique_after=1)
-        + malformed(("?$select=HasUniqueRoleAssignments",), _NO_FLAG, nth=2),
+        # Read 1 is early isolation, 2 the ACL check, 3 the re-read after the ACL break.
+        _library_harness(unique_after=3)
+        + malformed(("?$select=HasUniqueRoleAssignments",), _NO_FLAG, nth=3),
         _library_deploy_js(tmp_path, _BROKEN_INHERITANCE),
     )
     assert "SHAPE_INJECTED" in output, output[-4000:]
@@ -214,11 +219,12 @@ def _logging_failures(run: dict[str, Any]) -> list[str]:
 
 @pytest.mark.parametrize("central", [True, False])
 @pytest.mark.parametrize("which", ["deployments", "changes"])
-def test_a_logging_field_read_without_results_creates_and_trusts_no_column(
+def test_a_logging_field_read_without_results_is_a_recorded_failure(
     central: bool, which: str,
 ) -> None:
-    """Read as empty, the central probe dropped columns that exist, and the
-    sidecar probe created every stamp column again."""
+    """Read as empty, the sidecar probe created every stamp column again, and
+    the central probe degraded the run as if the columns were missing, with
+    nothing recorded."""
     from test_deploy_logging_runtime import (
         _CENTRAL_FIELDS_READ,
         _SIDECAR_FIELDS_READ,
@@ -251,6 +257,11 @@ def test_a_logging_field_read_without_results_creates_and_trusts_no_column(
         c for c in run["calls"]
         if c["method"] == "POST" and unquote(c["url"]).endswith(f"getbytitle('{title}')/fields")
     ]
+    if central and which == "deployments":
+        # Unproved columns are not written to: the stamps fall back to Title alone.
+        assert not [row for row in run["state"]["central"] if row.get("StampKind")]
+    if central and which == "changes":
+        assert run["state"]["centralChanges"] == []
 
 
 @pytest.mark.parametrize("central", [True, False])

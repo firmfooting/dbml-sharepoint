@@ -526,7 +526,8 @@
     const existing = await readJson(`${itemsPath}?$select=Id,Title&$top=5000`);
     // Rows missing from this read are created again beside the old ones, so an unreadable read stops the run.
     if (!existing.ok || !existing.d || !Array.isArray(existing.d.results)) {
-      finding('scratch_list', 'NOT-ASSESSABLE', `Could not read the list's rows (HTTP ${existing.status} ${existing.reason}); nothing was verified.`);
+      const why = existing.ok ? 'it answered without a d.results array' : `HTTP ${existing.status} ${existing.reason}`;
+      finding('scratch_list', 'NOT-ASSESSABLE', `Could not read the list's rows (${why}); nothing was verified.`);
       return { findings, verdict: 'NOT-VERIFIED', aborted: 'rows-unreadable' };
     }
     const byTitle = new Map();

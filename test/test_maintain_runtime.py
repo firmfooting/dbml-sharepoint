@@ -235,7 +235,9 @@ _HARNESS = textwrap.dedent(r"""
       }
       if (u.includes('/fields?')) {
         state.fieldReads += 1;
-        if (FLAGS.fieldsWithoutResults) return reply(200, { d: {} });
+        if ([state.fieldReads, 'every'].includes(FLAGS.fieldsWithoutResultsAt)) {
+          return reply(200, { d: {} });
+        }
         if (FLAGS.fieldsReadFailsAt === state.fieldReads) {
           return reply(500, { error: { message: { value: 'fields refused' } } });
         }
@@ -1964,7 +1966,7 @@ def test_a_field_read_without_results_stops_before_maintenance() -> None:
         site_url=SITE, list_title=LIST_SLUG, list_path=LIST_PATH,
         generated_at=GENERATED_AT,
     )
-    script = _wrap(js, _config(), ["unlock"], {"fieldsWithoutResults": True})
+    script = _wrap(js, _config(), ["unlock"], {"fieldsWithoutResultsAt": "every"})
     script = script.rstrip().removesuffix(";") + (
         ".catch((err) => { console.log('__ERROR__' + err.message);"
         "console.log('__CALLS__' + JSON.stringify(calls)); });"
@@ -1986,17 +1988,18 @@ def test_a_value_read_without_results_requires_non_empty_confirmation() -> None:
     assert summary["skipped"] == [{"column": "ColumnTwo", "reason": "not-confirmed"}]
 
 
-@pytest.mark.parametrize(("items", "read", "what"), [
-    (_TWO_ITEMS, 1, "drain"),
-    ([], 2, "final drain check"),
-], ids=["drain", "final-check"])
+@pytest.mark.parametrize(("items", "read", "what", "locked"), [
+    (_TWO_ITEMS, 1, "drain", False),
+    ([], 2, "final drain check", False),
+    ([], 2, "final drain check", True),
+], ids=["drain", "final-check", "final-check-relocks"])
 def test_an_item_read_without_results_deletes_nothing(
-    items: list[dict[str, Any]], read: int, what: str,
+    items: list[dict[str, Any]], read: int, what: str, locked: bool,
 ) -> None:
     """Read as empty, the drain stopped, or the final check passed, and the
     DELETE destroyed rows that were never recycled (#722)."""
     summary, calls, _, _ = _list(
-        _config(items=items, allow_deletion=True),
+        _config(items=items, allow_deletion=not locked),
         [TITLE, "DELETE NON-EMPTY"],
         flags={"itemsWithoutResultsAt": read},
     )
@@ -2005,3 +2008,19 @@ def test_an_item_read_without_results_deletes_nothing(
     assert _recycles(calls) == []
     assert any(what in e["error"] and "without a d.results array" in e["error"]
                for e in summary["errors"]), summary["errors"]
+    if locked:
+        # The final check comes after the unlock, so the lock goes back on.
+        assert summary["relocked"] is True
+
+
+def test_a_fields_read_without_results_cannot_settle_a_column_delete() -> None:
+    """The first fields read is the menu's; read as empty, the second
+    confirmed a delete it could not see (#722)."""
+    config = _config(items=[{"Id": 1, "ColumnOne": None}])
+    (summary, _calls, _prompts, _tables), _out = _columns_output(
+        config, _DELETE_ONE, {"absentField": "other400", "fieldsWithoutResultsAt": 2},
+    )
+    assert summary["deleted"] == []
+    assert summary["aborted"] == "write-failed"
+    assert "whether 'ColumnOne' is gone is unknown" in summary["errors"][0]["error"]
+    assert "without a d.results array" in summary["errors"][0]["error"]
