@@ -208,19 +208,15 @@ def generate_deploy_js(
         # it does not depend on them.
         deployment_log_change_list=deployment_log_change_list,
         deployment_log_site=deployment_log_site,
-        # The stamp columns the `deployment-log` family declares, and the
-        # Title prefix every stamp carries. Rendered from the one authority
-        # rather than typed into the template, because a stamp that names a
-        # column the family does not declare is refused by SharePoint and a
-        # prefix that drifts stops the rows being recognisable as this
-        # tool's.
+        # The stamp columns the `deployment-log` family declares. Rendered from
+        # the one authority rather than typed into the template, because a stamp
+        # that names a column the family does not declare is refused by SharePoint.
         deployment_log_columns=list(CENTRAL_LOG_COLUMNS),
         # The CHANGE columns the family declares on the Changes list. A
         # central Changes list carrying every one of them takes the type-2
         # change feed, which is what lets a run with a central log create no
         # per-site sidecars at all.
         deployment_log_change_columns=list(CENTRAL_CHANGE_COLUMNS),
-        deployment_log_row_prefix=application,
         # The assessment's three inputs, built exactly as generate_assess_js
         # builds them. `assess_targets_data` rather than `assess_targets` so
         # the context name does not shadow the imported function.

@@ -19,6 +19,7 @@ from typing import Any
 
 import typer
 
+from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.folders import UnknownFolderEnumError
@@ -153,6 +154,7 @@ def execute_build(
     deployment_log_site: str | None = None,
     change_log_list: str | None = None,
     no_sidecars: bool = False,
+    application: str = APPLICATION_NAME,
 ) -> None:
     """The `build` pipeline, callable without going through typer.
 
@@ -456,6 +458,7 @@ def execute_build(
         deployment_log_list=external_log or "",
         deployment_log_change_list=external_change_log or "",
         deployment_log_site=external_site or "",
+        application=application,
     )
     write_artifact(out / "deploy-manifest.md", manifest_md)
 
@@ -501,6 +504,7 @@ def execute_build(
             deployment_log_site=external_site or "",
             change_log_list=None if no_sidecars else change_log,
             no_sidecars=no_sidecars,
+            application=application,
         )
     except SeedRequiresDemoItemsError as exc:
         typer.echo(str(exc), err=True)

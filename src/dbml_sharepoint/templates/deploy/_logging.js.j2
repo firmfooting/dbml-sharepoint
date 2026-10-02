@@ -112,7 +112,7 @@
     // the change feed is written there too.
     const EXTERNAL_LOG_COLUMNS = {{ deployment_log_columns | tojson }};
     const EXTERNAL_CHANGE_COLUMNS = {{ deployment_log_change_columns | tojson }};
-    const EXTERNAL_ROW_PREFIX = {{ deployment_log_row_prefix | tojson }};
+    const EXTERNAL_ROW_PREFIX = {{ application_name | tojson }};
     const CHANGE_FIELDS = {{ sidecar_change_fields | tojson(indent=2) }};
     const RUN_LOG_FIELDS = {{ sidecar_run_log_fields | tojson(indent=2) }};
     // Which firmfooting application this run is. Written into every central

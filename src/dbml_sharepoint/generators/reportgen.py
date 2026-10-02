@@ -20,6 +20,7 @@ own write policy (#171).
 
 from pathlib import Path
 
+from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.bundle import (
     REPORT_DICTIONARY,
@@ -60,6 +61,7 @@ def render_reporting(
     source_mapping: str,
     site_url: str | None = None,
     time_zone: str | None = None,
+    application: str = APPLICATION_NAME,
 ) -> dict[str, str]:
     """The whole reporting pack as {relative path: content}, nothing written.
 
@@ -92,7 +94,7 @@ def render_reporting(
         schema, bundle, site_role,
         release=release, generated_at=generated_at,
         source_schema=source_schema, source_mapping=source_mapping,
-        site_url=site_url, time_zone=time_zone,
+        site_url=site_url, time_zone=time_zone, application=application,
     ))
     pack = {
         f"{REPORT_POWERQUERY_DIR}/{filename}": content
@@ -107,7 +109,7 @@ def render_reporting(
             schema, bundle, site_role,
             release=release, generated_at=generated_at,
             source_schema=source_schema, source_mapping=source_mapping,
-            time_zone=time_zone,
+            time_zone=time_zone, application=application,
         )
     )
     pack[REPORT_GUIDE] = generate_reporting_md(
@@ -117,7 +119,7 @@ def render_reporting(
         schema, bundle, site_role, resolved=resolved,
         release=release, generated_at=generated_at,
         source_schema=source_schema, source_mapping=source_mapping,
-        time_zone=time_zone,
+        time_zone=time_zone, application=application,
     )
     return pack
 
@@ -136,6 +138,7 @@ def emit_reporting(
     source_mapping: str,
     site_url: str | None = None,
     time_zone: str | None = None,
+    application: str = APPLICATION_NAME,
 ) -> list[str]:
     """Write the reporting pack under ``out/reporting/`` and return the
     POSIX relpaths written, for checksums.txt.
@@ -149,7 +152,7 @@ def emit_reporting(
         schema, bundle, site_role, resolved=resolved,
         release=release, generated_at=generated_at,
         source_schema=source_schema, source_mapping=source_mapping,
-        site_url=site_url, time_zone=time_zone,
+        site_url=site_url, time_zone=time_zone, application=application,
     )
     relpaths: list[str] = []
     for relpath, content in pack.items():
