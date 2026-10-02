@@ -89,7 +89,9 @@ const aclFetch = async (url, opts = {}) => {
   }
   if (path === 'web/roledefinitions' && verb === 'POST') {
     const { High, Low } = sent.BasePermissions;
-    LEVELS[1073741930] = [sent.Name, BigInt(High), BigInt(Low)];
+    // `levelAddsDelete`: a create that stores DeleteListItems beside the bits it was sent.
+    const extra = CONFIG.levelAddsDelete ? 8n : 0n;
+    LEVELS[1073741930] = [sent.Name, BigInt(High), BigInt(Low) | extra];
     named.roledefinitions.set(sent.Name, { Id: 1073741930, Description: sent.Description });
     return mine(201, { Id: 1073741930 });
   }
@@ -111,13 +113,35 @@ const aclFetch = async (url, opts = {}) => {
     const rows = !held ? [] : CONFIG.levelTwice ? [held, { ...held, Id: held.Id + 1 }] : [held];
     return mine(200, { value: rows });
   }
-  if (/^web\/roledefinitions\(\d+\)$/.test(path)) return mine(200, {});
+  const levelAt = /^web\/roledefinitions\((\d+)\)(\?.*)?$/.exec(path);
+  if (levelAt && verb === 'DELETE') {
+    // `ignore` naming 'deleterole' or 'removebyid': a delete that answers 200 and removes nothing.
+    if (!ignored('deleterole')) {
+      for (const [name, held] of named.roledefinitions) {
+        if (held.Id === Number(levelAt[1])) named.roledefinitions.delete(name);
+      }
+    }
+    return mine(200, {});
+  }
+  if (levelAt) {
+    const bits = LEVELS[Number(levelAt[1])];
+    return bits ? mine(200, { BasePermissions: { High: String(bits[1]), Low: String(bits[2]) } })
+      : mine(404, 'Cannot find the role definition.');
+  }
   if (path === 'web/sitegroups' && verb === 'POST') {
     nextGroup += 1;
     named.sitegroups.set(sent.Title, { Id: nextGroup - 1, Description: sent.Description });
     return mine(201, { Id: nextGroup - 1, Title: sent.Title });
   }
-  if (path.startsWith('web/sitegroups/removebyid(')) return mine(200, {});
+  const removeById = /^web\/sitegroups\/removebyid\((\d+)\)/.exec(path);
+  if (removeById) {
+    if (!ignored('removebyid')) {
+      for (const [name, held] of named.sitegroups) {
+        if (held.Id === Number(removeById[1])) named.sitegroups.delete(name);
+      }
+    }
+    return mine(200, {});
+  }
   if (path === 'web/ensureuser') return mine(200, USER);
   const copy = COPY.exec(path);
   const add = ADD.exec(path);
@@ -148,8 +172,13 @@ const aclFetch = async (url, opts = {}) => {
   if (broke) {
     // `breakCopiesNothing`: a file's break that copies no binding, whatever it asked.
     const copied = broke[1] === 'true' && !(CONFIG.breakCopiesNothing && key.includes('|'));
-    const bindings = copied ? effective(key).map((b) => ({ ...b })) : [];
-    scopes.set(key, { unique: true, bindings });
+    // `breakCopiesTwinLevel`: a file's break copies the custom level as another of its name.
+    const twin = CONFIG.breakCopiesTwinLevel && key.includes('|');
+    if (twin) LEVELS[1073741931] = [...LEVELS[1073741930]];
+    const bindings = copied ? effective(key).map((b) => ({ ...b,
+      level: twin && b.level === 1073741930 ? 1073741931 : b.level })) : [];
+    // `bindingsLag`: this many reads of a scope's bindings answer what it held before.
+    scopes.set(key, { unique: true, bindings, lag: CONFIG.bindingsLag || 0, stale: [] });
     return mine(200, {});
   }
   if (tail === '/resetroleinheritance') {
@@ -157,13 +186,16 @@ const aclFetch = async (url, opts = {}) => {
     // `resetKeepsUser`: a reset that leaves the user's direct grant readable on the file.
     const kept = CONFIG.resetKeepsUser
       ? scopeOf(key).bindings.filter((b) => b.principal === USER.Id) : [];
-    scopes.set(key, { unique: false, bindings: kept, keptOnReset: kept.length > 0 });
+    scopes.set(key, { unique: false, bindings: kept, keptOnReset: kept.length > 0,
+      lag: CONFIG.bindingsLag || 0, stale: effective(key) });
     return mine(200, {});
   }
   const grant = GRANT.exec(tail);
   if (grant) {
     const binding = { principal: Number(grant[2]), level: Number(grant[3]) };
     const scope = scopeOf(key);
+    // `fileGrantIgnored`: a grant on a file that answers 200 and stores nothing.
+    if (grant[1] === 'add' && CONFIG.fileGrantIgnored && key.includes('|')) return mine(200, {});
     if (grant[1] === 'remove') {
       if (!ignored('removeroleassignment')) {
         scope.bindings = scope.bindings.filter((b) => b.principal !== binding.principal
@@ -188,12 +220,18 @@ const aclFetch = async (url, opts = {}) => {
   }
   if (tail.startsWith('/roleassignments?')) {
     const scope = scopeOf(key);
+    if (scope.lag > 0) {
+      scope.lag -= 1;
+      return mine(200, { value: scope.stale.map(row) });
+    }
     const held = scope.keptOnReset ? [...effective(parentOf(key)), ...scope.bindings]
       : effective(key);
     return mine(200, { value: held.map(row) });
   }
   const by = /^\/roleassignments\/getbyprincipalid\((\d+)\)\/roledefinitionbindings/.exec(tail);
   if (by) {
+    // `levelsMalformed`: a principal's levels answered 200 with no value array.
+    if (CONFIG.levelsMalformed) return mine(200, {});
     const levels = effective(key).filter((b) => b.principal === Number(by[1]));
     if (!levels.length) return mine(404, 'Can not find the principal with id');
     return mine(200, { value: levels.map((b) => ({ Name: LEVELS[b.level][0] })) });

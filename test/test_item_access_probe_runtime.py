@@ -23,6 +23,7 @@ FILES = "access.item-acl.fixture-files"
 USER = "access.item-acl.fixture-test-user"
 DENIED = "access.item-acl.control-test-user-denied"
 STATE_ONE = "access.item-acl.fixture-state-one"
+LEVEL_BITS = "access.item-acl.fixture-level-permissions"
 C1 = "access.item-acl.break-copies-parent-groups"
 C2 = "access.item-acl.parent-grant-after-break"
 C3 = "access.item-acl.custom-level-user-grant"
@@ -255,3 +256,73 @@ def test_an_echoed_percent_encoded_login_is_masked() -> None:
     assert rows[DENIED]["outcome"] == "NOT ESTABLISHED"
     assert "throttled: " in output
     assert "tess" not in output.split("__SENT__")[0]
+
+
+def test_a_user_grant_that_never_reads_back_leaves_c3_and_c4_unasked() -> None:
+    rows, _, output = _run(fileGrantIgnored=True)
+
+    for manual in (C3, C4):
+        assert rows[manual]["outcome"] == "NOT ESTABLISHED", rows[manual]
+        assert rows[manual]["state"] == "open"
+    assert "MANUAL HALF" not in output
+
+
+def test_a_copied_binding_to_another_level_of_the_same_name_is_not_a_copy() -> None:
+    rows, _, _ = _run(breakCopiesTwinLevel=True)
+
+    assert rows[C1]["outcome"] == "NOT ALL COPIED", rows[C1]
+
+
+def test_a_level_stored_with_other_bits_voids_the_rows_that_rest_on_it() -> None:
+    rows, sent, _ = _run(levelAddsDelete=True)
+
+    assert rows[LEVEL_BITS]["outcome"] == "FAIL", rows[LEVEL_BITS]
+    assert voided(rows) == catalogued_dependents(PROBE.name, LEVEL_BITS) == {C3, C4}
+    assert rows[C1]["outcome"] == "COPIED"
+    assert not any("addroleassignment(principalid=20," in r["path"] for r in sent)
+
+
+@pytest.mark.parametrize(("swaps", "config", "row", "outcome"), [
+    ((), {}, C1, "COPIED"),
+    ((STATE_TWO,), {"stateOne": True}, C6, "MATCHES THE LIBRARY"),
+], ids=["c1", "c6"])
+def test_bindings_that_trail_the_inheritance_flag_are_waited_for(
+        swaps: tuple[dict[str, str], ...], config: dict[str, Any], row: str, outcome: str) -> None:
+    rows, _, _ = _run(*swaps, bindingsLag=2, **config)
+
+    assert rows[row]["outcome"] == outcome, rows[row]
+
+
+def test_the_delete_trial_is_on_its_own_file_so_state_two_keeps_the_c3_file() -> None:
+    rows, sent, output = _run()
+
+    assert rows[FILES]["outcome"] == "PASS"
+    assert "Try to delete item-access-c3-delete.txt" in output
+    assert "item-access-c3-delete.txt" in rows[C3]["evidence"]
+    granted = [r["path"] for r in sent if "addroleassignment(principalid=20," in r["path"]]
+    assert len(granted) == 2
+
+
+def test_cleanup_stops_when_the_library_ownership_read_does_not_answer() -> None:
+    _, sent, output = _run(gates=("CONFIRMED", "ALLOW_WRITES", "CLEANUP"), stateOne=True,
+                           throttle="ItemAccess')?$select=Id,Description")
+
+    assert not any(r["verb"] in {"POST", "DELETE"} and r["path"] != "contextinfo" for r in sent)
+    assert "nothing was deleted" in output
+
+
+def test_cleanup_reads_each_removal_back() -> None:
+    _, _, output = _run(gates=("CONFIRMED", "ALLOW_WRITES", "CLEANUP"), stateOne=True,
+                        ignore=["removebyid", "deleterole"])
+
+    assert "[FAIL] CLEANUP: group 'dbmlsp ItemAccess A'" in output
+    assert "[FAIL] CLEANUP: level 'dbmlsp ItemAccess No Delete'" in output
+    _, _, clean = _run(gates=("CONFIRMED", "ALLOW_WRITES", "CLEANUP"), stateOne=True)
+    assert "[OK] CLEANUP: group 'dbmlsp ItemAccess A' removed and read back absent" in clean
+    assert "[OK] CLEANUP: level 'dbmlsp ItemAccess No Delete' deleted and read back absent" in clean
+
+
+def test_a_malformed_levels_answer_is_unread_not_none() -> None:
+    rows, _, _ = _run(levelsMalformed=True)
+
+    assert "the user's levels at the library unread (" in rows[C3]["evidence"]

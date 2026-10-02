@@ -21,7 +21,8 @@
  *   access.item-acl.custom-level-user-grant  C3, STATE 1: the test user's
  *       binding on a file, its effective permissions on the file, the library
  *       and the web, and the levels the grant left at the library and the web;
- *       then BY HAND, as the test user: an edit, the version history, a delete
+ *       then BY HAND, as the test user: an edit, the version history, and a
+ *       delete tried on a second file bound the same way, so STATE 2 keeps the first
  *   access.item-acl.item-only-user-views  C4, STATE 1: the test user's effective
  *       permissions on the library; then BY HAND, whether the library's view
  *       shows the user the file
@@ -37,8 +38,10 @@
  *   access.item-acl.fixture-library        STATE 1: a document library this run created
  *   access.item-acl.fixture-library-groups STATE 1: the library reads unique and holds
  *       group A at Read and group B at the probe's custom level
- *   access.item-acl.fixture-files          STATE 1: the C1 and C6 text files and the C3
- *       file, each inheriting
+ *   access.item-acl.fixture-level-permissions  STATE 1: the custom level reads back with
+ *       the BasePermissions this probe sent
+ *   access.item-acl.fixture-files          STATE 1: the C1, C6 and delete-trial text
+ *       files and the C3 file, each inheriting
  *   access.item-acl.fixture-test-user      STATE 1: TEST_USER_LOGIN resolves to a site
  *       user that is not a site collection administrator
  *   access.item-acl.control-test-user-denied  STATE 1, CONTROL: before any grant, the
@@ -84,8 +87,9 @@
   const OWNERSHIP = 'dbml-sharepoint item-access probe fixture. Safe to delete.';
   const GROUP = { a: 'dbmlsp ItemAccess A', b: 'dbmlsp ItemAccess B', c: 'dbmlsp ItemAccess C' };
   const LEVEL = 'dbmlsp ItemAccess No Delete';
+  // `trial` takes C3's delete attempt, so a delete that succeeds cannot remove the C3 file STATE 2 needs.
   const NAMES = { plain: 'item-access-c1.txt', reset: 'item-access-c6.txt',
-    book: WORKBOOK_URL ? 'item-access-c3.xlsx' : 'item-access-c3.txt' };
+    book: WORKBOOK_URL ? 'item-access-c3.xlsx' : 'item-access-c3.txt', trial: 'item-access-c3-delete.txt' };
   // Add, edit and read items and versions, no delete: dbml_sharepoint.analysis.permissions computes
   // these halves for ViewListItems, AddListItems, EditListItems, OpenItems, ViewVersions,
   // ViewFormPages, Open, ViewPages, BrowseUserInfo, UseClientIntegration, UseRemoteAPIs,
@@ -98,7 +102,8 @@
   const Q = {
     library: 'a document library this run created',
     groups: 'the library reads unique and holds group A at Read and group B at the custom level',
-    files: 'the C1 and C6 text files and the C3 file, each read back by name and inheriting',
+    levelBits: 'the custom level reads back with the BasePermissions this probe sent',
+    files: 'the C1, C6 and delete-trial text files and the C3 file, each read back by name and inheriting',
     user: 'TEST_USER_LOGIN resolves to a site user that is not a site collection administrator',
     denied: 'CONTROL: before any grant, the test user\'s effective permissions on the C3 file '
       + 'carry no ViewListItems',
@@ -116,6 +121,7 @@
   };
   expect('access.item-acl.fixture-library', Q.library);
   expect('access.item-acl.fixture-library-groups', Q.groups);
+  expect('access.item-acl.fixture-level-permissions', Q.levelBits);
   expect('access.item-acl.fixture-files', Q.files);
   expect('access.item-acl.fixture-test-user', Q.user);
   expect('access.item-acl.control-test-user-denied', Q.denied);
@@ -131,7 +137,8 @@
     'access.item-acl.custom-level-user-grant', 'access.item-acl.item-only-user-views'];
   const AFTER_FILES = ['access.item-acl.fixture-test-user', 'access.item-acl.break-copies-parent-groups',
     'access.item-acl.parent-grant-after-break', ...USER_ROWS];
-  const AFTER_GROUPS = ['access.item-acl.fixture-files', ...AFTER_FILES];
+  const AFTER_GROUPS = ['access.item-acl.fixture-level-permissions', 'access.item-acl.fixture-files',
+    ...AFTER_FILES];
   const AFTER_LIBRARY = ['access.item-acl.fixture-library-groups', ...AFTER_GROUPS];
   const STATE_TWO_ROWS = ['access.item-acl.user-binding-removal', 'access.item-acl.reset-restores-parent'];
 
@@ -192,14 +199,18 @@
     }
     return { rows, why: null };
   };
-  const keysOf = (rows) => rows.map((r) => `${r.principal}:${r.level}`).sort();
+  // Bindings compared by principal and level Id, since two levels may share a name.
+  const keysOf = (rows) => rows.map((r) => `${r.principal}:${r.levelId}`).sort();
+  const textOf = (r) => `${r.principal}:${quote(String(r.level))}`;
   // Whether `rows` bind `principal` to the level with Id `levelId`; an Id that is not an integer matches nothing.
   const holds = (rows, principal, levelId) => rows !== null && Number.isInteger(levelId)
     && rows.some((r) => r.principal === principal && r.levelId === levelId);
-  // A `principal:level name` key for the evidence, its name from an answer passed through quote().
-  const keyText = (key) => `${key.slice(0, key.indexOf(':'))}:${quote(key.slice(key.indexOf(':') + 1))}`;
-  const shown = (bound) => (bound.rows === null ? `unread (${bound.why})`
-    : keysOf(bound.rows).map(keyText).join(', ') || 'none');
+  // Bindings for the evidence as `principal:level name`, each name from an answer passed through quote().
+  const listed = (rows) => rows.map(textOf).sort().join(', ') || 'none';
+  const shown = (bound) => (bound.rows === null ? `unread (${bound.why})` : listed(bound.rows));
+  // Whether two binding sets hold the same principal and level Id pairs.
+  const sameBindings = (a, b) => a !== null && b !== null
+    && JSON.stringify(keysOf(a)) === JSON.stringify(keysOf(b));
   const uniqueOf = async (scope) => {
     const read = await sendRaw(`${scope}?$select=HasUniqueRoleAssignments`);
     const head = readHead(read);
@@ -236,7 +247,9 @@
     if (read.status === 404) return 'none';
     const head = readHead(read);
     if (head) return `unread (${scrub(head.why)})`;
-    return (entriesOf(read.parsed).rows || []).map((r) => quote(String(r.Name))).join(', ') || 'none';
+    const { rows, shape } = entriesOf(read.parsed);
+    if (rows === null) return `unread (HTTP ${read.status} ${shape})`;
+    return rows.map((r) => quote(String(r.Name))).join(', ') || 'none';
   };
   // A group or level by name: absent, mine, foreign, duplicate or unheard, with its Id only when mine.
   const lookUp = async (collection, name) => {
@@ -294,9 +307,25 @@
   // ---- CLEANUP: remove what STATE 1 made, each only when its description is this probe's ----
   if (CLEANUP) {
     const held = await sendRaw(`${lib}?$select=Id,Description`);
-    const body = readHead(held) ? null : recordBody(held);
+    const head = held.status === 404 ? null : readHead(held);
+    const body = held.status === 404 || head ? null : recordBody(held);
+    // An unread ownership says nothing about the library, so nothing is deleted on it.
+    if (held.status !== 404 && !body) {
+      log('FAIL', `CLEANUP stopped: the library's ownership read ${head ? scrub(head.why) : 'carried no JSON object'}`
+        + ', so nothing was deleted. Paste again with CLEANUP.');
+      stampRemaining('NOT REACHED', 'a CLEANUP paste asks nothing');
+      report();
+      return;
+    }
     if (body && body.Description === OWNERSHIP) await resetList(LIB, guidOf(body.Id));
     else log('INFO', `CLEANUP: no library '${LIB}' of this probe's to remove.`);
+    // Logs OK only once the name reads back absent.
+    const readBackGone = async (what, collection, name, sent) => {
+      const after = await lookUp(collection, name);
+      log(after.state === 'absent' ? 'OK' : 'FAIL', after.state === 'absent'
+        ? `CLEANUP: ${what} '${name}' ${sent} and read back absent.`
+        : `CLEANUP: ${what} '${name}' ${sent}, but it reads back ${after.state} (${after.why}).`);
+    };
     for (const name of Object.values(GROUP)) {
       const group = await ownedByName('sitegroups', name);
       if (group.id === null) {
@@ -304,7 +333,8 @@
         continue;
       }
       const gone = await write(`web/sitegroups/removebyid(${group.id})`);
-      log(gone.ok ? 'OK' : 'FAIL', `CLEANUP: group '${name}' removed: HTTP ${gone.status}`);
+      if (gone.ok) await readBackGone('group', 'sitegroups', name, 'removed');
+      else log('FAIL', `CLEANUP: group '${name}' not removed: HTTP ${gone.status}`);
     }
     const level = await ownedByName('roledefinitions', LEVEL);
     if (level.id === null) {
@@ -312,7 +342,8 @@
     } else {
       const gone = await write(`web/roledefinitions(${level.id})`, {},
         { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
-      log(gone.ok ? 'OK' : 'FAIL', `CLEANUP: level '${LEVEL}' deleted: HTTP ${gone.status}`);
+      if (gone.ok) await readBackGone('level', 'roledefinitions', LEVEL, 'deleted');
+      else log('FAIL', `CLEANUP: level '${LEVEL}' not deleted: HTTP ${gone.status}`);
     }
     stampRemaining('NOT REACHED', 'a CLEANUP paste asks nothing');
     report();
@@ -382,13 +413,23 @@
           Bindings: shown(got.last.bound) } };
       }, { Unique: true, Held: true, Bindings: (v) => typeof v === 'string' }, AFTER_GROUPS)) return;
 
+      // ---- the custom level: read back with the bits it was sent, which C3 and C4 rest on ----
+      beginFixture();
+      const levelHeld = await settleFixture('access.item-acl.fixture-level-permissions', async () => {
+        const read = await sendRaw(`web/roledefinitions(${level})?$select=BasePermissions`);
+        const head = readHead(read);
+        const bits = head ? null : (recordBody(read) || {}).BasePermissions;
+        return { ok: Boolean(bits), status: read.status,
+          body: bits ? { High: String(bits.High), Low: String(bits.Low) } : null };
+      }, { High: LEVEL_HIGH, Low: LEVEL_LOW }, USER_ROWS.slice(1));
+
       // ---- the files: two text files and the C3 file, each inheriting ----
       beginFixture();
       const rootRead = await sendRaw(`${lib}/RootFolder?$select=ServerRelativeUrl`);
       const root = readHead(rootRead) ? null : (recordBody(rootRead) || {}).ServerRelativeUrl;
       if (root) {
         const folder = `web/GetFolderByServerRelativeUrl('${pathLiteral(root)}')/Files`;
-        for (const key of WORKBOOK_URL ? ['plain', 'reset'] : ['plain', 'reset', 'book']) {
+        for (const key of WORKBOOK_URL ? ['plain', 'reset', 'trial'] : ['plain', 'reset', 'book', 'trial']) {
           await write(`${folder}/add(url='${NAMES[key]}',overwrite=true)`, 'dbmlsp item access probe file');
         }
         if (WORKBOOK_URL) {
@@ -401,29 +442,33 @@
         files = await filesOf();
         const inheriting = (key) => (files[key] ? files[key].unique === false : false);
         return { ok: true, status: 200, body: { Plain: inheriting('plain'), Reset: inheriting('reset'),
-          Book: inheriting('book') } };
-      }, { Plain: true, Reset: true, Book: true }, AFTER_FILES)) return;
+          Book: inheriting('book'), Trial: inheriting('trial') } };
+      }, { Plain: true, Reset: true, Book: true, Trial: true }, AFTER_FILES)) return;
       const fileOf = (key) => `${lib}/items(${files[key].id})`;
 
       // ---- C1: the break copies the library's groups ----
       const c1Broke = await write(`${fileOf('plain')}/breakroleinheritance(copyRoleAssignments=true,`
         + 'clearSubscopes=true)');
+      const libraryHeld = libraryRows.filter((r) => r.level !== 'Limited Access');
+      // The library's bindings the file does not hold, by level Id, or null while the file's are unread.
+      const missingOf = (bound) => (bound.rows === null ? null : libraryHeld.filter((r) => !keysOf(bound.rows)
+        .includes(keysOf([r])[0])));
+      // The window waits for the flag and the copied bindings together, so their order is never a finding.
       const c1 = await settle(async () => ({ unique: await uniqueOf(fileOf('plain')),
-        bound: await bindingsOf(fileOf('plain')) }), (r) => r.unique === true);
-      const libraryKeys = keysOf(libraryRows.filter((r) => r.level !== 'Limited Access'));
-      const fileKeys = c1.last.bound.rows === null ? null : keysOf(c1.last.bound.rows);
-      const missing = fileKeys === null ? null : libraryKeys.filter((k) => !fileKeys.includes(k));
+        bound: await bindingsOf(fileOf('plain')) }),
+      (r) => r.unique === true && missingOf(r.bound) !== null && missingOf(r.bound).length === 0);
+      const missing = missingOf(c1.last.bound);
       record('access.item-acl.break-copies-parent-groups', Q.c1,
         typeof c1.last.unique !== 'boolean' ? 'NOT ESTABLISHED'
-          : !c1.held ? 'STILL INHERITING' : missing === null ? 'NOT ESTABLISHED'
+          : c1.last.unique !== true ? 'STILL INHERITING' : missing === null ? 'NOT ESTABLISHED'
           : missing.length ? 'NOT ALL COPIED' : 'COPIED',
-        `the break answered HTTP ${c1Broke.status}; HasUniqueRoleAssignments read ${c1.last.unique} after `
-        + `${c1.reads} read(s), ${c1.ms} ms; the library holds ${libraryKeys.map(keyText).join(', ')}; the file `
+        `the break answered HTTP ${c1Broke.status}; after ${c1.reads} read(s), ${c1.ms} ms `
+        + `HasUniqueRoleAssignments read ${c1.last.unique}; the library holds ${listed(libraryHeld)}; the file `
         + `holds ${shown(c1.last.bound)}`
-        + `${missing && missing.length ? `; not on the file: ${missing.map(keyText).join(', ')}` : ''}`);
+        + `${missing && missing.length ? `; not on the file: ${listed(missing)}` : ''}`);
 
       // ---- C2: a group granted at the library after the break ----
-      if (!c1.held) {
+      if (c1.last.unique !== true) {
         voidRows(['access.item-acl.parent-grant-after-break'], 'C1\'s file never read as broken');
       } else if (groups.c === null || !readId) {
         record('access.item-acl.parent-grant-after-break', Q.c2, 'NOT ESTABLISHED',
@@ -458,24 +503,47 @@
         return;
       }
 
-      // ---- C3 and C4: the user bound to the custom level on the C3 file ----
+      if (!levelHeld) {
+        stampRemaining('NOT REACHED', 'STATE 2 asks this, on what STATE 1 leaves');
+        return;
+      }
+
+      // ---- C3 and C4: the user bound to the custom level on the C3 file and the delete-trial file ----
       const bookBroke = await write(`${fileOf('book')}/breakroleinheritance(copyRoleAssignments=true,`
         + 'clearSubscopes=true)');
       const granted = await write(`${fileOf('book')}/roleassignments/addroleassignment(`
         + `principalid=${user.id},roledefid=${level})`);
-      const c3 = await settle(() => bindingsOf(fileOf('book')), (r) => holds(r.rows, user.id, level));
+      const trialBroke = await write(`${fileOf('trial')}/breakroleinheritance(copyRoleAssignments=true,`
+        + 'clearSubscopes=true)');
+      const trialGranted = await write(`${fileOf('trial')}/roleassignments/addroleassignment(`
+        + `principalid=${user.id},roledefid=${level})`);
+      const c3 = await settle(async () => ({ book: await bindingsOf(fileOf('book')),
+        trial: await bindingsOf(fileOf('trial')) }),
+      (r) => holds(r.book.rows, user.id, level) && holds(r.trial.rows, user.id, level));
+      const grants = `break HTTP ${bookBroke.status}, grant HTTP ${granted.status} on ${NAMES.book}; break `
+        + `HTTP ${trialBroke.status}, grant HTTP ${trialGranted.status} on ${NAMES.trial}; after ${c3.reads} `
+        + `read(s), ${c3.ms} ms ${NAMES.book} holds ${shown(c3.last.book)} and ${NAMES.trial} holds `
+        + `${shown(c3.last.trial)}`;
+      // The manual half asks what the grant allows, so it is not asked until both grants read back.
+      if (!c3.held) {
+        for (const [id, question] of [['access.item-acl.custom-level-user-grant', Q.c3],
+          ['access.item-acl.item-only-user-views', Q.c4]]) {
+          record(id, question, 'NOT ESTABLISHED', `the user's grants never both read back: ${grants}`);
+        }
+        stampRemaining('NOT REACHED', 'STATE 2 asks this, on what STATE 1 leaves');
+        return;
+      }
       const onBook = await effectiveOf(fileOf('book'), user.login);
       const onLib = await effectiveOf(lib, user.login);
       const onWeb = await effectiveOf('web', user.login);
       const canDelete = onBook.mask === null ? 'unread'
         : String((onBook.mask & DELETE_LIST_ITEMS) !== 0n);
       record('access.item-acl.custom-level-user-grant', Q.c3, 'MANUAL',
-        `break HTTP ${bookBroke.status}, grant HTTP ${granted.status}; the user's binding read after `
-        + `${c3.reads} read(s), ${c3.ms} ms: ${c3.held ? 'present' : 'absent'}; the file holds `
-        + `${shown(c3.last)}; effective on the file ${onBook.text} (DeleteListItems ${canDelete}), on the `
+        `${grants}; effective on ${NAMES.book} ${onBook.text} (DeleteListItems ${canDelete}), on the `
         + `library ${onLib.text}, on the web ${onWeb.text}; the user's levels at the library `
         + `${await levelsOf(lib, user.id)}, at the web ${await levelsOf('web', user.id)}. By hand, as the `
-        + `test user, on ${NAMES.book}: an edit saved, the version history opened, and a delete tried.`);
+        + `test user: on ${NAMES.book} an edit saved and the version history opened; on ${NAMES.trial} a `
+        + 'delete tried.');
       record('access.item-acl.item-only-user-views', Q.c4, 'MANUAL',
         `effective on the library ${onLib.text}. By hand, as the test user: open the library's default `
         + `view and say whether ${NAMES.book} is listed.`);
@@ -486,7 +554,7 @@
       console.log(`  1. Open ${WEB}/${LIB}/Forms/AllItems.aspx. C4: is ${NAMES.book} listed?`);
       console.log(`  2. Open ${NAMES.book} in the browser, change it, close it, reopen it. C3: kept?`);
       console.log('  3. Open its version history. C3: does it open and list your save?');
-      console.log('  4. Try to delete it. C3: refused, and with what message?');
+      console.log(`  4. Try to delete ${NAMES.trial}, not ${NAMES.book}. C3: refused, and with what message?`);
       console.log(`  5. Try to open ${NAMES.plain}. C3: denied?`);
       console.log('Then paste this probe with STATE = 2. Write what you saw beside the RESULTS block.');
       console.log('==============================================================\n');
@@ -536,18 +604,21 @@
     } else {
       const libraryNow = await bindingsOf(lib);
       const reset = await write(`${fileOf('reset')}/resetroleinheritance`);
-      const c6 = await settle(() => uniqueOf(fileOf('reset')), (u) => u === false);
-      const fileNow = await bindingsOf(fileOf('reset'));
+      // The window waits for the flag and the restored bindings together, so their order is never a finding.
+      const c6 = await settle(async () => ({ unique: await uniqueOf(fileOf('reset')),
+        bound: await bindingsOf(fileOf('reset')) }),
+      (r) => r.unique === false && sameBindings(r.bound.rows, libraryNow.rows));
+      const fileNow = c6.last.bound;
       const afterReset = await effectiveOf(fileOf('reset'), user.login);
       const unread = libraryNow.rows === null || fileNow.rows === null;
-      const same = !unread && JSON.stringify(keysOf(libraryNow.rows)) === JSON.stringify(keysOf(fileNow.rows));
       // An unread value is no answer, so the row rests on nothing and is not established.
       record('access.item-acl.reset-restores-parent', Q.c6,
-        typeof c6.last !== 'boolean' ? 'NOT ESTABLISHED' : !c6.held ? 'STILL UNIQUE'
-          : unread ? 'NOT ESTABLISHED' : same ? 'MATCHES THE LIBRARY' : 'DIFFERS FROM THE LIBRARY',
-        `the reset answered HTTP ${reset.status}; HasUniqueRoleAssignments read ${c6.last} after `
-        + `${c6.reads} read(s), ${c6.ms} ms; the library held ${shown(libraryNow)}; the file holds `
-        + `${shown(fileNow)}; effective on the file ${afterReset.text}; the user's levels at the library `
+        typeof c6.last.unique !== 'boolean' ? 'NOT ESTABLISHED' : c6.last.unique !== false ? 'STILL UNIQUE'
+          : unread ? 'NOT ESTABLISHED'
+            : sameBindings(fileNow.rows, libraryNow.rows) ? 'MATCHES THE LIBRARY' : 'DIFFERS FROM THE LIBRARY',
+        `the reset answered HTTP ${reset.status}; after ${c6.reads} read(s), ${c6.ms} ms `
+        + `HasUniqueRoleAssignments read ${c6.last.unique}; the library held ${shown(libraryNow)}; the file `
+        + `holds ${shown(fileNow)}; effective on the file ${afterReset.text}; the user's levels at the library `
         + `${await levelsOf(lib, user.id)}`);
     }
     stampRemaining('NOT REACHED', 'STATE 1 asks this');

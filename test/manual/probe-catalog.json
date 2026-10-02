@@ -12198,7 +12198,7 @@
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
-        "fixed document library with unique permissions, three files, three site groups, one custom permission level, and role assignments on the library and three files"
+        "fixed document library with unique permissions, four files, three site groups, one custom permission level, and role assignments on the library and four files"
       ],
       "cleanup": {
         "policy": "manual"
@@ -12223,6 +12223,13 @@
               "id": "access.item-acl.fixture-library-groups",
               "depends_on": [
                 "access.item-acl.fixture-library"
+              ]
+            },
+            {
+              "id": "access.item-acl.fixture-level-permissions",
+              "depends_on": [
+                "access.item-acl.fixture-library",
+                "access.item-acl.fixture-library-groups"
               ]
             },
             {
@@ -12287,6 +12294,7 @@
           "controls": [
             "access.item-acl.fixture-library",
             "access.item-acl.fixture-library-groups",
+            "access.item-acl.fixture-level-permissions",
             "access.item-acl.fixture-files",
             "access.item-acl.fixture-test-user",
             "access.item-acl.control-test-user-denied",
@@ -12304,6 +12312,7 @@
               "depends_on": [
                 "access.item-acl.fixture-library",
                 "access.item-acl.fixture-library-groups",
+                "access.item-acl.fixture-level-permissions",
                 "access.item-acl.fixture-files",
                 "access.item-acl.fixture-test-user",
                 "access.item-acl.control-test-user-denied"
@@ -12314,6 +12323,7 @@
               "depends_on": [
                 "access.item-acl.fixture-library",
                 "access.item-acl.fixture-library-groups",
+                "access.item-acl.fixture-level-permissions",
                 "access.item-acl.fixture-files",
                 "access.item-acl.fixture-test-user",
                 "access.item-acl.control-test-user-denied"
@@ -12346,7 +12356,7 @@
             },
             {
               "role": "delete-refused",
-              "page": "the C3 file's delete command as the test user",
+              "page": "the delete-trial file's delete command as the test user",
               "assertions": [
                 "refused",
                 "the message shown"
