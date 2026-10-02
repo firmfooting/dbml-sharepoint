@@ -557,7 +557,7 @@ the complete allowlist reconciliation and its descendant-scope checks.
 **File scopes left to another writer:** {{ external_lists | join(', ') }}.
 Phase {{ phase_num['acls'] }} counts and logs a unique scope on a file in these
 libraries and leaves its role assignments alone. An undeclared folder scope, or
-a scope on a row whose type did not read back, still aborts the phase.
+a scope on a row that does not read back as a file, still aborts the phase.
 
 {% endif %}
 The **Reconcile** column, in this table and the folder one below it, is what

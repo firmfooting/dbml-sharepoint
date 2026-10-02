@@ -2388,8 +2388,8 @@ survey still runs. A unique scope on a row that reads back as a file
 (`FileSystemObjectType` 0, Learn's
 [FileSystemObjectType enumeration](https://learn.microsoft.com/en-us/dotnet/api/microsoft.sharepoint.client.filesystemobjecttype))
 is counted and logged, and nothing reads or changes its role assignments. Any
-other undeclared scope, a folder or a row whose type did not read back,
-still aborts the phase by name. The list's own allowlist, its pruning and
+other undeclared scope, a folder, or a row that does not read back as a
+file, still aborts the phase by name. The list's own allowlist, its pruning and
 its read-back are unchanged. `external` without `reconcile: exact` is refused
 at load, since only an exact list surveys its descendants.
 

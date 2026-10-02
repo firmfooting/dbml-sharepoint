@@ -61,15 +61,15 @@ _GROUP_KEYS = frozenset({
     # over and leave the loader to pick.
     "from_enum",
 })
+_FOLDER_POLICY_KEYS = frozenset({"break_inheritance", "reconcile", "assignments"})
+# A folder has no `file_scopes`: the list's one survey owns every descendant.
+_POLICY_KEYS = _FOLDER_POLICY_KEYS | {"file_scopes"}
 # `site_role` scopes the DEFAULT policy (which entities it applies to) and
 # is read only there. On an override it was parsed and silently discarded,
 # so an author who had seen it work on the default reasonably expected it to
 # narrow an override too and got a list that was not scoped at all. Rejected
 # rather than implemented: an override is already keyed BY entity, so a
 # site-role scope on one is either redundant or contradicts its own key.
-_FOLDER_POLICY_KEYS = frozenset({"break_inheritance", "reconcile", "assignments"})
-# A folder has no `file_scopes`: the list's one survey owns every descendant.
-_POLICY_KEYS = _FOLDER_POLICY_KEYS | {"file_scopes"}
 _DEFAULT_POLICY_KEYS = _POLICY_KEYS | {"site_role"}
 
 
