@@ -467,7 +467,7 @@ def test_exact_acl_reconciliation_detects_descendant_unique_scopes() -> None:
     # after it. Position in the driver is what actually orders the two.
     phase4 = js.split(f"Starting Phase {pn('acls')}")[1].split(f"Starting Phase {pn('seeds')}")[0]
     driver = phase4.split("for (const listTitle of aclListTitles)")[1]
-    assert driver.index("assertNoUndeclaredScopes(listTitle, before.undeclared)") < \
+    assert driver.index("assertNoUndeclaredScopes(listTitle, owned)") < \
         driver.index("await reconcileScope("), \
         "the guard must run before the first securable is written"
 

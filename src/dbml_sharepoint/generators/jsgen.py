@@ -550,6 +550,7 @@ def _acl_scopes(
                 "list": list_title,
                 "break_inheritance": policy.break_inheritance,
                 "reconcile_mode": policy.reconcile_mode,
+                "file_scopes": policy.file_scopes,
                 "assignments": [
                     {"principal": _principal_json(a.principal), "level": a.level}
                     for a in policy.assignments

@@ -24,6 +24,7 @@
         }
       ],
       "break_inheritance": true,
+      "file_scopes": "refuse",
       "list": "APP_Project",
       "reconcile_mode": "exact"
     },
@@ -50,6 +51,7 @@
         }
       ],
       "break_inheritance": true,
+      "file_scopes": "refuse",
       "list": "APP_Task",
       "reconcile_mode": "exact"
     },
@@ -76,6 +78,7 @@
         }
       ],
       "break_inheritance": true,
+      "file_scopes": "refuse",
       "list": "APP_AppSettings",
       "reconcile_mode": "exact"
     }
