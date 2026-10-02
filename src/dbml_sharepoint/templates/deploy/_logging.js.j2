@@ -236,7 +236,7 @@
       if (!fieldsResp.ok) return null;
       const page = (await fieldsResp.json()).d || {};
       const next = validatedNextPage(page, `Central field read for '${title}'`);
-      const rows = page.results || [];
+      const rows = resultsOf(page, `Central field read for '${title}'`);
       return { names: new Set(rows.map((f) => f.InternalName)), truncated: fieldPageTruncated(rows, next) };
     };
     // Whether ONE central list carries every column. Absence is concluded only
@@ -471,7 +471,7 @@
         }
         const page = (await resp.json()).d || {};
         const next = validatedNextPage(page, `Field read for '${title}'`);
-        const rows = page.results || [];
+        const rows = resultsOf(page, `Field read for '${title}'`);
         const present = new Map(rows.map((f) => [f.InternalName, f]));
         const missing = fields.filter((f) => !present.has(f.Title)).map((f) => f.Title);
         if (missing.length > 0 && fieldPageTruncated(rows, next)) {
@@ -710,14 +710,12 @@
         + `?$select=Id,IsCurrent&$filter=ChangeKey eq '${odataName(change.key)}'`
         + ` and Application eq '${odataName(APPLICATION)}' and IsCurrent eq true`
       ), { headers: { 'Accept': 'application/json;odata=verbose' } });
-      const currentRows = currentResp.ok
-        ? (((await currentResp.json()).d || {}).results || [])
-        : [];
       if (!currentResp.ok) {
         recordFailure(`current-row read for '${change.key}'`,
           new Error(`HTTP ${currentResp.status} ${await currentResp.text()}`));
         return;
       }
+      const currentRows = resultsOf((await currentResp.json()).d, `Current-row read for '${change.key}'`);
       if (currentRows.length > 1) {
         recordFailure(`change key '${change.key}'`,
           new Error(`${currentRows.length} rows are marked current; a previous run died mid-close. Close all but one by hand before the next deploy with changes to this key.`));
@@ -882,7 +880,7 @@
             new Error(`HTTP ${currentResp.status} ${await currentResp.text()}`));
           return;
         }
-        const currentRows = ((await currentResp.json()).d || {}).results || [];
+        const currentRows = resultsOf((await currentResp.json()).d, `Central current-row read for '${change.key}'`);
         if (currentRows.length > 1) {
           recordFailure(`central change key '${change.key}'`,
             new Error(`${currentRows.length} rows are marked current for this site; a previous run died mid-close. Close all but one by hand before the next deploy with changes to this key.`));

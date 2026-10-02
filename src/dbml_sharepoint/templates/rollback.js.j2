@@ -77,7 +77,11 @@
         if (continuation !== undefined && continuation !== null && typeof continuation !== 'string') {
           throw new Error(`list enumeration: malformed OData __next; expected a string or null`);
         }
-        for (const l of ((j && j.d && j.d.results) || [])) {
+        // An answer without a results array is not a site with no lists (#722).
+        if (!j || !j.d || !Array.isArray(j.d.results)) {
+          throw new Error('list enumeration: answered without a d.results array');
+        }
+        for (const l of j.d.results) {
           discovered[l.Title] = Number.isInteger(l.ItemCount) ? l.ItemCount : 0;
         }
         nextUrl = continuation || null;
@@ -112,7 +116,12 @@
           headers: { 'Accept': 'application/json;odata=verbose' },
         });
         if (!r.ok) throw new Error(`item read failed: HTTP ${r.status}`);
-        const rows = ((await r.json()).d || {}).results || [];
+        const page = ((await r.json()) || {}).d;
+        // An answer without a results array is not a drained list (#722).
+        if (!page || !Array.isArray(page.results)) {
+          throw new Error(`item read for '${name}' answered without a d.results array`);
+        }
+        const rows = page.results;
         if (rows.length === 0) break;
         const digest = await getDigest();
         for (const row of rows) {

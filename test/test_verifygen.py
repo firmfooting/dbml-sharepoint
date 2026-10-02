@@ -251,6 +251,9 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
     const FIELD_ROWS = 0;
     const FIELD_NEXT = undefined;
     const FORBID_FIELD_WRITES = false;
+    const ROWS_WITHOUT_RESULTS = false;
+    const ROWS_STATUS = 200;
+    const QUERY_WITHOUT_RESULTS = false;
     Date.prototype.getTimezoneOffset = () => -BROWSER_OFFSET;
     const DAY = 86400000;
     const STORED = { rule: null };
@@ -361,10 +364,15 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
         return respond(200, { d: { ValidationFormula: stored } });
       }
       if (u.includes('/items?$select=Id,Title')) {
+        if (ROWS_WITHOUT_RESULTS) return respond(200, { d: {} });
+        if (ROWS_STATUS !== 200) {
+          return respond(ROWS_STATUS, { error: { message: { value: 'rows read failed' } } });
+        }
         const rows = [...items.entries()].map(([Id, it]) => ({ Id, Title: it.Title }));
         return respond(200, { d: { results: rows } });
       }
       if (path.endsWith('/getitems')) {
+        if (QUERY_WITHOUT_RESULTS) return respond(200, { d: {} });
         return respond(200, { d: { results: answerQuery(body.query.ViewXml) } });
       }
       const recycle = /\/items\((\d+)\)\/recycle$/.exec(path);
@@ -544,3 +552,33 @@ def test_an_unestablished_list_inventory_stops_verify_before_any_write(
 @pytest.mark.parametrize("continuation", ["undefined", "null", "''"])
 def test_valid_list_inventory_terminators_preserve_verify(continuation: str) -> None:
     assert _run_verify(LIST_NEXT=continuation)["verdict"] == "VERIFIED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(("knobs", "why"), [
+    ({"ROWS_WITHOUT_RESULTS": "true"}, "without a d.results array"),
+    ({"ROWS_STATUS": "500"}, "HTTP 500"),
+], ids=["no-results", "failed-read"])
+def test_a_row_read_that_cannot_be_used_stops_verify_before_placing_rows(
+    knobs: dict[str, str], why: str,
+) -> None:
+    """Read as empty, the rows of an earlier run stayed and new ones were
+    placed beside them under the same titles (#722)."""
+    summary = _run_verify(**knobs)
+    assert summary["verdict"] == "NOT-VERIFIED"
+    assert summary["aborted"] == "rows-unreadable"
+    assert _levels(summary)["scratch_list"] == "NOT-ASSESSABLE"
+    assert why in summary["findings"][-1]["detail"]
+    assert not [k for k in _levels(summary) if k.startswith("row_")]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_query_answer_without_results_is_not_assessable() -> None:
+    """Read as no rows, a query expecting none passed and one expecting some
+    failed, neither of which the answer showed (#722)."""
+    summary = _run_verify(QUERY_WITHOUT_RESULTS="true")
+    levels = _levels(summary)
+    for key in ("caml_date_today_offset_7", "default_date"):
+        assert levels[key] == "NOT-ASSESSABLE", levels
+        detail = next(f["detail"] for f in summary["findings"] if f["key"] == key)
+        assert "without a d.results array" in detail

@@ -26,7 +26,7 @@
           headers: { 'Accept': 'application/json;odata=verbose' },
         });
         if (!memberResp.ok) throw new Error(`membership probe failed: HTTP ${memberResp.status}`);
-        const alreadyMember = ((await memberResp.json()).d.results || []).length > 0;
+        const alreadyMember = resultsOf((await memberResp.json()).d, `Membership probe for '${grp.name}'`).length > 0;
         if (alreadyMember) {
           log('INFO', `Operator already a member of '${grp.name}'; membership left untouched.`);
           continue;

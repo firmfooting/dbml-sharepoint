@@ -168,6 +168,13 @@
   // rollback.js). Paged by Id one at a time, the same shape rollback drains
   // with: a $filter on an unindexed column throws past the view threshold.
   const ITEM_PAGES_MAX = 40;
+  // An answer without a results array is not an empty list, and the delete follows it (#722).
+  function drainPage(page, what) {
+    if (!page || !Array.isArray(page.results)) {
+      throw new Error(`${what}: answered without a d.results array; nothing has been deleted`);
+    }
+    return page.results;
+  }
   async function recycleItems() {
     let total = 0;
     let pages = 0;
@@ -183,7 +190,7 @@
         }
         const rows = await getOne(
           `${listPath}/items?$select=Id&$orderby=Id&$top=2000`, 'items');
-        const results = (rows && rows.results) || [];
+        const results = drainPage(rows, `'${LIST_TITLE}' drain`);
         if (!results.length) break;
         for (const row of results) {
           const digest = await getDigest();
@@ -218,7 +225,7 @@
     const rows = await getOne(
       `${listPath}/items?$select=Id&$orderby=Id&$top=1`,
       `'${LIST_TITLE}' final drain check`);
-    const results = (rows && rows.results) || [];
+    const results = drainPage(rows, `'${LIST_TITLE}' final drain check`);
     if (!results.length) return;
     // NAMED, because a run that refused a delete is not a run whose write
     // failed, and the summary is what a caller reads rather than the log.

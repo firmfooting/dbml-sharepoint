@@ -544,8 +544,8 @@ def test_declared_folder_scopes_are_excluded_from_the_guard() -> None:
     js = _generate_simple_js()
     assert "const declared = new Set(folderIds.values());" in js
     assert (
-        "undeclared: rows.filter(r => r.HasUniqueRoleAssignments "
-        "&& !declared.has(r.Id))" in js
+        "undeclared: rows.filter(r => uniqueFlagOf(r, `Item ${r.Id} of '${listTitle}'`)"
+        " && !declared.has(r.Id))" in js
     )
     # Matched on the full path, never the leaf: a subfolder may share a leaf
     # name with a root folder and securing the wrong one reads back clean.
