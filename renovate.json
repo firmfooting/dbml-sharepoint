@@ -1,14 +1,55 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>firmfooting/renovate-config"],
+  "description": "The policy of firmfooting/renovate-config, copied rather than extended. That preset lives in a private repository, and the Mend Renovate app gives a public repository a token scoped to itself alone, so extending it stops Renovate here with \"Cannot find preset's package\" (docs/usage/getting-started/private-packages.md, 'Private presets with public repositories'). Keep extends, the settings above schedule and the first five packageRules equal to that repository's default.json; the rules after them are this repository's own.",
+  "extends": ["config:best-practices", ":dependencyDashboard"],
+  "semanticCommits": "enabled",
+  "automergeStrategy": "squash",
+  "platformAutomerge": true,
+  "prConcurrentLimit": 5,
+  "labels": ["dependencies"],
+  "minimumReleaseAge": "14 days",
   "schedule": ["before 9am on monday"],
   "timezone": "Australia/Sydney",
   "lockFileMaintenance": {
-    "description": "The shared preset takes :maintainLockFilesWeekly from config:best-practices; this block is declared after the extends so monthly wins. MINIMUM RELEASE AGE DOES NOT APPLY HERE, and cannot: Renovate delegates the refresh to the package manager, so a regenerated uv.lock may pull a transitive dependency published minutes ago. Renovate passes a cutoff to npm and to Poetry and has none for uv (renovatebot/renovate#41652), so the cooldown for this path is tool.uv.exclude-newer in pyproject.toml, held equal to the preset's minimumReleaseAge as the uv docs advise.",
+    "description": "config:best-practices brings :maintainLockFilesWeekly; this block is declared after the extends so monthly wins. MINIMUM RELEASE AGE DOES NOT APPLY HERE, and cannot: Renovate delegates the refresh to the package manager, so a regenerated uv.lock may pull a transitive dependency published minutes ago. Renovate passes a cutoff to npm and to Poetry and has none for uv (renovatebot/renovate#41652), so the cooldown for this path is tool.uv.exclude-newer in pyproject.toml, held equal to the top-level minimumReleaseAge as the uv docs advise.",
     "enabled": true,
     "schedule": ["before 9am on the first day of the month"]
   },
   "packageRules": [
+    {
+      "description": "npm waits 14 days like everything else. config:best-practices extends security:minimumReleaseAgeNpm, whose package rule sets npm to 3 days and beats the top-level figure; this rule comes later, so it wins. Only minor and patch are named: the preset deliberately clears the wait for update types that carry no release timestamp (pin, bump, lockFileMaintenance and others), where a wait would hold the update forever. Majors get the 30 days below.",
+      "matchDatasources": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "minimumReleaseAge": "14 days"
+    },
+    {
+      "description": "Majors soak for a month before they are offered. Longer than the 14 days above on purpose: a major is read by a person, so the wait costs nothing anybody is sitting through.",
+      "matchUpdateTypes": ["major"],
+      "minimumReleaseAge": "30 days"
+    },
+    {
+      "description": "Anything that is not a major merges itself once CI is green. Renovate will not automerge a branch that has no passing checks, so a repository with no tests merges nothing and this fails safe. It does NOT prove a gate exists: only branch protection does that, and most repositories here have none, several because they are private on a plan that does not offer it. Where the gate matters, add required checks to the repository.",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest",
+        "pin",
+        "pinDigest",
+        "bump",
+        "lockFileMaintenance"
+      ],
+      "automerge": true
+    },
+    {
+      "description": "Majors always wait for a person. A major is where an API disappears, a default flips, or a peer range breaks, none of which a green suite reliably catches.",
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    },
+    {
+      "description": "firmfooting/.github's shared workflows skip the release-age wait. They are this organisation's own tags, reviewed before they are cut, so the wait guards against nothing, and it would hold every repository on the previous workflows for two weeks: v1.3.0, which moves the shared jobs to the runners private repositories can still use, would have waited 14 days. Comes after the majors rule so it also beats the majors rule's 30 days; a major still waits for a person.",
+      "matchPackageNames": ["firmfooting/.github"],
+      "minimumReleaseAge": null
+    },
     {
       "description": "The docs site is not shipped in the Python package, so its updates are chores, not fixes. Without this Renovate labels npm dependency bumps `fix(deps)` - the React 19 PR arrived titled that way - and release-please files them under Bug Fixes in the changelog.",
       "matchFileNames": ["website/**"],
@@ -16,12 +57,7 @@
     },
     {
       "description": "react and react-dom must move together: bumping one alone leaves the other's peer range unsatisfiable and fails the docs build. This is why the two split Dependabot PRs (#1, #2) were both permanently red.",
-      "matchPackageNames": [
-        "react",
-        "react-dom",
-        "@types/react",
-        "@types/react-dom"
-      ],
+      "matchPackageNames": ["react", "react-dom", "@types/react", "@types/react-dom"],
       "groupName": "react"
     },
     {
