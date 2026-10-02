@@ -19,9 +19,11 @@ from dbml_sharepoint.model._keys import (
 )
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.mapping_types import (
+    FILE_SCOPES,
     PRINCIPAL_KIND_LIST,
     PRINCIPAL_KINDS,
     CustomPermissionLevel,
+    FileScopes,
     GroupsFromEnum,
     ListPermissionPolicy,
     PermissionsConfig,
@@ -65,7 +67,9 @@ _GROUP_KEYS = frozenset({
 # narrow an override too and got a list that was not scoped at all. Rejected
 # rather than implemented: an override is already keyed BY entity, so a
 # site-role scope on one is either redundant or contradicts its own key.
-_POLICY_KEYS = frozenset({"break_inheritance", "reconcile", "assignments"})
+_FOLDER_POLICY_KEYS = frozenset({"break_inheritance", "reconcile", "assignments"})
+# A folder has no `file_scopes`: the list's one survey owns every descendant.
+_POLICY_KEYS = _FOLDER_POLICY_KEYS | {"file_scopes"}
 _DEFAULT_POLICY_KEYS = _POLICY_KEYS | {"site_role"}
 
 
@@ -134,7 +138,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
     raw_default = raw_list_perms.get("default")
     if raw_default is not None:
         default_policy = _parse_policy(
-            raw_default, "list_permissions.default", allow_site_role=True, prefix=prefix,
+            raw_default, "list_permissions.default", _DEFAULT_POLICY_KEYS, prefix=prefix,
         )
         # A blank applies the policy to the entities of every role, so it is recorded.
         default_policy_site_role = optional_str(
@@ -149,7 +153,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
         if raw_policy is None:
             continue
         ctx = f"list_permissions.overrides.{entity_name}"
-        overrides[entity_name] = _parse_policy(raw_policy, ctx, prefix=prefix)
+        overrides[entity_name] = _parse_policy(raw_policy, ctx, _POLICY_KEYS, prefix=prefix)
 
     # One policy per entity, applied to every folder that entity declares.
     # Not keyed by folder name on purpose: the folders are already declared
@@ -161,7 +165,9 @@ def read(sc: SectionContext) -> dict[str, Any]:
         if raw_policy is None:
             continue
         ctx = f"list_permissions.folders.{entity_name}"
-        folder_policies[entity_name] = _parse_policy(raw_policy, ctx, prefix=prefix)
+        folder_policies[entity_name] = _parse_policy(
+            raw_policy, ctx, _FOLDER_POLICY_KEYS, prefix=prefix,
+        )
 
     return {
         "permissions": PermissionsConfig(
@@ -297,14 +303,10 @@ def _parse_principal(raw_principal: Any, context: str, prefix: str = "") -> Prin
 
 
 def _parse_policy(
-    raw_policy: Any, context: str, *, allow_site_role: bool = False, prefix: str = "",
+    raw_policy: Any, context: str, keys: frozenset[str], *, prefix: str = "",
 ) -> ListPermissionPolicy:
     """Parse a list permission policy dict."""
-    _reject_unknown_keys(
-        raw_policy,
-        _DEFAULT_POLICY_KEYS if allow_site_role else _POLICY_KEYS,
-        context,
-    )
+    _reject_unknown_keys(raw_policy, keys, context)
     # Read STRICTLY, and before the reconcile guard below. bool("false") is
     # True, so a lenient read coerces the quoted spelling to True and the
     # guard then tests the coerced value, breaking inheritance the author
@@ -326,6 +328,19 @@ def _parse_policy(
         raise MappingShapeError(
             f"{context}: reconcile 'exact' requires break_inheritance: true; "
             "an inherited ACL cannot be reconciled as a list-scoped allowlist",
+        )
+    file_scopes = cast(
+        "FileScopes", strict_str(raw_policy, "file_scopes", context, default="refuse"),
+    )
+    if file_scopes not in FILE_SCOPES:
+        raise MappingValueError(
+            f"{context}.file_scopes must be 'refuse' or 'external', got {file_scopes!r}",
+        )
+    # Only the exact survey refuses descendant scopes, so `external` anywhere else relaxes nothing.
+    if file_scopes == "external" and reconcile_mode != "exact":
+        raise MappingShapeError(
+            f"{context}: file_scopes 'external' requires reconcile: exact; "
+            "only an exact list surveys the unique scopes below it",
         )
     assignments: list[RoleAssignment] = []
     # A blank `assignments:` grants nothing, and is recorded because under
@@ -360,4 +375,5 @@ def _parse_policy(
         break_inheritance=break_inheritance,
         assignments=tuple(assignments),
         reconcile_mode=reconcile_mode,
+        file_scopes=file_scopes,
     )
