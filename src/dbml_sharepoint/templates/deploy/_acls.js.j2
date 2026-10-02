@@ -157,8 +157,12 @@
           throw new Error(`item/folder permission-scope enumeration failed: HTTP ${itemsResp.status} ${text}`);
         }
         const itemsJson = await itemsResp.json();
+        // An answer without d.results, read as empty, would pass the undeclared-scope guard.
+        if (!itemsJson || !itemsJson.d || !Array.isArray(itemsJson.d.results)) {
+          throw new Error(`item/folder permission-scope enumeration for '${listTitle}' returned no d.results array; refusing to read it as a list with no item/folder scopes`);
+        }
         const next = validatedNextPage(itemsJson.d, `Item/folder permission-scope enumeration for '${listTitle}'`);
-        rows.push(...((itemsJson.d && itemsJson.d.results) || []));
+        rows.push(...itemsJson.d.results);
         itemsUrl = next;
       }
       const folderIds = new Map();
@@ -252,8 +256,12 @@
           throw new Error(`role assignment enumeration failed for '${scope.label}': HTTP ${resp.status} ${text}`);
         }
         const json = await resp.json();
+        // An answer without d.results, read as empty, would prune nothing and certify the scope.
+        if (!json || !json.d || !Array.isArray(json.d.results)) {
+          throw new Error(`role assignment enumeration for '${scope.label}' returned no d.results array; refusing to read it as a scope with no bindings`);
+        }
         const next = validatedNextPage(json.d, `Role assignment enumeration for '${scope.label}'`);
-        for (const row of ((json.d && json.d.results) || [])) {
+        for (const row of json.d.results) {
           if (row.PrincipalId == null) {
             throw new Error(`role assignment enumeration for '${scope.label}' returned an entry without PrincipalId`);
           }

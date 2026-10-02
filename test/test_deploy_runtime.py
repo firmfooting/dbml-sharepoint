@@ -8858,6 +8858,50 @@ def test_a_binding_row_missing_a_field_fails_the_scope_closed(
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    "payload", ["{}", "{ d: {} }", "{ d: { results: null } }", "{ d: { results: {} } }"],
+)
+@pytest.mark.parametrize("read", [1, 2])
+def test_a_role_assignment_page_without_results_fails_the_scope_closed(
+    tmp_path: Path, payload: str, read: int,
+) -> None:
+    """An answer with no results array is not a scope holding no bindings.
+
+    Read 1 is the snapshot the prune runs from: read as empty, an exact
+    policy removed nothing and reported the allowlist in place. Read 2 is the
+    read-back after the prune: read as empty, it certified the scope. Run
+    with an EMPTY declared set, so no presence check sits between them.
+    """
+    seeded = _ownership_harness(tmp_path, ("Escalation",))
+    # Two spaces, for the dedent the refused-enumeration test above names.
+    malformed = seeded.replace(
+        "  if (url.includes('/roleassignments')) {\n",
+        "  if (url.includes('/roleassignments')"
+        " && !url.includes('roleassignment(')) {\n"
+        "    globalThis.__scopeReads = (globalThis.__scopeReads || 0) + 1;\n"
+        f"    if (globalThis.__scopeReads === {read}) return {payload};\n"
+        "  }\n"
+        "  if (url.includes('/roleassignments')) {\n",
+    )
+    assert malformed != seeded, "the malformed-page splice did not apply"
+    summary, calls, output = _run_ownership_deploy(
+        tmp_path, harness=_FAST_TIMERS_JS + malformed, declare_assignments=False,
+    )
+
+    named = [
+        err["error"] for err in summary["errors"]
+        if "role assignment enumeration" in err["error"]
+        and "no d.results array" in err["error"]
+    ]
+    assert named, summary["errors"]
+    removals = [c for c in calls if "removeroleassignment" in c["url"]]
+    # The snapshot failing stops the prune; the read-back failing comes after it.
+    assert len(removals) == (0 if read == 1 else 1), removals
+    log = _phase_log(output, pn("acls"))
+    assert not [line for line in log if "reports exactly" in line], log
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_title_rebound_before_the_exact_read_back_is_refused(
     tmp_path: Path,
 ) -> None:
