@@ -8857,7 +8857,6 @@ def test_a_binding_row_missing_a_field_fails_the_scope_closed(
     assert not [line for line in log if "reports exactly" in line], log
 
 
-
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 @pytest.mark.parametrize(
     "payload", ["{}", "{ d: {} }", "{ d: { results: null } }", "{ d: { results: {} } }"],
@@ -8900,6 +8899,7 @@ def test_a_role_assignment_page_without_results_fails_the_scope_closed(
     assert len(removals) == (0 if read == 1 else 1), removals
     log = _phase_log(output, pn("acls"))
     assert not [line for line in log if "reports exactly" in line], log
+
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_title_rebound_before_the_exact_read_back_is_refused(

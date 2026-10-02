@@ -821,7 +821,6 @@ globalThis.fetch = async (url, options) => {
                 or "removeroleassignment" in c["url"]]
 
 
-
 @pytest.mark.parametrize(
     "payload", [{}, {"d": {}}, {"d": {"results": None}}, {"d": {"results": {}}}],
 )
@@ -850,6 +849,7 @@ globalThis.fetch = async (url, options) => {
     ), summary["errors"]
     assert not [c for c in calls if "addroleassignment" in c["url"]
                 or "removeroleassignment" in c["url"]]
+
 
 def _view_titles_created(calls: list[dict[str, Any]]) -> list[str]:
     """Every Title the run POSTed to a /views collection, in order."""
