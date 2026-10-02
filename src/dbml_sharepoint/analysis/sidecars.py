@@ -25,6 +25,7 @@ Description compared WHOLE, tool-owned (no family), fail closed on a list
 of the same title that is not this tool's.
 """
 
+from dbml_sharepoint import DISTRIBUTION
 from dbml_sharepoint.analysis import provenance
 from dbml_sharepoint.analysis.typemap import entity_type_for_type_kind
 
@@ -60,7 +61,7 @@ EXTERNAL_CHANGE_LOG_DEFAULT = "firmfooting_Changes"
 #: Which application wrote a central row. Written into the `Application`
 #: column so a reader does not have to parse it out of a version string, and
 #: so the type-2 close can tell two applications' rows apart.
-APPLICATION_NAME = "dbml-sharepoint"
+APPLICATION_NAME = DISTRIBUTION
 
 #: The CENTRAL logging site the external deployment log lives on, and the
 #: default every build probes unless the operator names another. One site
