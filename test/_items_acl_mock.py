@@ -34,7 +34,8 @@ const itemsFetch = async (url, opts = {}) => {
   const path = decodeURIComponent(String(url).split('/_api/')[1] || '');
   const verb = (opts.headers || {})['X-HTTP-Method'] || opts.method || 'GET';
   const mine = (status, payload) => {
-    SENT.push({ verb, path, body: opts.body ? String(opts.body) : '' });
+    SENT.push({ verb, path, body: opts.body ? String(opts.body) : '',
+      type: (opts.headers || {})['Content-Type'] || '' });
     return answer(status, payload);
   };
   // A path a `rules` entry names goes to the versions mock, which applies the rule.
@@ -101,7 +102,10 @@ const itemsFetch = async (url, opts = {}) => {
     const link = 'https://example.sharepoint.com/sites/probe/_api/web/lists/'
       + `getbytitle('${list.Title}')/items?%24skiptoken=Paged%3dTRUE%26p_ID%3d${token}&${rest}`;
     const more = loops || ordered.length > page.length;
-    return mine(200, { value: rows, ...(more ? { 'odata.nextLink': link } : {}) });
+    const served = mine(200, { value: rows, ...(more ? { 'odata.nextLink': link } : {}) });
+    // `pageRetryAfter`: every page answered 2xx carries this Retry-After header.
+    const retryAfter = CONFIG.pageRetryAfter;
+    return retryAfter ? headed(served, { 'retry-after': retryAfter }) : served;
   }
   const one = /^\((\d+)\)(.*)$/.exec(tail);
   if (!one) return mockFetch(url, opts);

@@ -101,16 +101,36 @@
     digest = digest || await getDigest();
     return spWrite(path, body, digest, extra);
   };
+  // Files/add takes the file's bytes as its body, so the text goes raw as text/plain, as the large-library fixture sends it.
+  const upload = async (path, text) => {
+    digest = digest || await getDigest();
+    let res;
+    try {
+      const sent = await fetch(`${WEB}/_api/${path}`, { method: 'POST', body: text, headers: {
+        Accept: 'application/json;odata=nometadata', 'Content-Type': 'text/plain', 'X-RequestDigest': digest } });
+      res = { ok: sent.ok, status: sent.status, text: await sent.text() };
+    } catch (err) {
+      res = { ok: false, status: null, text: `no response: ${err && err.message ? err.message : String(err)}` };
+    }
+    maskedHead({ ...res, parsed: null }, true);
+  };
 
   // ---- CLEANUP: recycle the library, only when its description is this probe's ----
   if (CLEANUP) {
     const held = await sendRaw(`${byTitle}?$select=Id,Description`);
-    const body = readHead(held) ? null : recordBody(held);
+    const head = readHead(held);
+    const body = head ? null : recordBody(held);
     if (body && body.Description === OWNERSHIP && guidOf(body.Id)) {
       await recycleList(LIB, guidOf(body.Id));
-    } else {
+    } else if (held.status === 404 || (body && body.Description !== OWNERSHIP)) {
       log('INFO', `CLEANUP: no library '${LIB}' of this probe's to remove`
         + `${body ? ' (its description differs)' : ''}.`);
+    } else {
+      // Only a 404 says the library is gone, so any other answer leaves it for a second paste.
+      const why = head ? head.why : body ? 'the read answered no list Id'
+        : `the read answered HTTP ${held.status} with no JSON object`;
+      log('FAIL', `CLEANUP: could not tell whether '${LIB}' is this probe's (${why}); nothing was recycled. `
+        + 'Paste CLEANUP again.');
     }
     for (const row of RESULTS) record(row.id, row.question, 'NOT REACHED', 'a CLEANUP paste asks nothing');
     report();
@@ -156,6 +176,13 @@
         carrying: rows.filter((r) => Array.isArray(r.RoleAssignments)).length,
         unique: rows.filter((r) => r.HasUniqueRoleAssignments === true).length });
       for (const row of rows) items.set(row.Id, { page: page.n, row });
+      // A link this probe cannot turn into a path on this site is not followed, so nothing else answers for it.
+      if (next !== null && next.indexOf('/_api/') === -1) {
+        const why = `page ${page.n} answered a nextLink with no /_api/ path, which this probe cannot follow`;
+        UNHEARD.push(why);
+        stop = { status: res.status, head: { outcome: 'NOT ESTABLISHED', why } };
+        break;
+      }
       path = next ? next.slice(next.indexOf('/_api/') + 6) : null;
     }
     return { pages, items, stop, capped: stop === null && path !== null };
@@ -187,7 +214,7 @@
     if (root) {
       const folder = `web/GetFolderByServerRelativeUrl('${pathLiteral(root)}')/Files`;
       for (let n = 1; n <= FILE_COUNT; n += 1) {
-        await write(`${folder}/add(url='items-acl-${String(n).padStart(3, '0')}.txt',overwrite=true)`,
+        await upload(`${folder}/add(url='items-acl-${String(n).padStart(3, '0')}.txt',overwrite=true)`,
           'dbmlsp items role-assignments probe file');
       }
     }
@@ -195,9 +222,12 @@
     if (!await settleFixture('access.item-acl.items-fixture-files', async () => {
       const counted = await readAll(`${byTitle}/items?$select=Id&$top=100`);
       ids = [...counted.items.keys()].sort((a, b) => a - b);
+      // Integers, since each sampled Id is spliced into a write URL.
       return { ok: true, status: 200, body: { Count: ids.length, Pages: counted.pages.length,
+        Integers: ids.every((v) => Number.isInteger(v) && v > 0),
         Read: counted.stop ? counted.stop.head.why : counted.capped ? `cut at ${MAX_PAGES} pages` : 'complete' } };
-    }, { Count: (v) => v >= MIN_FILES, Pages: (v) => v >= 2, Read: 'complete' }, AFTER_FILES)) return;
+    }, { Count: (v) => v >= MIN_FILES, Pages: (v) => v >= 2, Integers: true, Read: 'complete' },
+    AFTER_FILES)) return;
 
     // ---- the owner column ----
     beginFixture();
@@ -218,7 +248,8 @@
     UNHEARD.push(...accountUnheard);
     const readLevel = await sendRaw("web/roledefinitions/getbyname('Read')?$select=Id");
     const readId = readHead(readLevel) ? null : (recordBody(readLevel) || {}).Id;
-    if (readId && me !== null) {
+    // An Id that is not a whole number would be spliced into the grant's URL, so nothing is granted.
+    if (Number.isInteger(readId) && me !== null) {
       for (const sample of SAMPLES.filter((s) => s.broken)) {
         const item = `${lib}/items(${sample.id})`;
         await write(`${item}/breakroleinheritance(copyRoleAssignments=true,clearSubscopes=true)`);
@@ -256,12 +287,12 @@
     const ask = async (id, question, select, expand, ownerOf) => {
       const got = await readAll(`${byTitle}/items?$select=Id,HasUniqueRoleAssignments,${select},${ROLES}`
         + `&$expand=${expand}${EXPAND}&$top=100`);
-      const retry = got.pages.find((p) => p.retryAfter);
       if (got.stop) {
+        const last = got.pages[got.pages.length - 1];
         const throttled = got.stop.status === 429 || got.stop.status === 503;
         record(id, question, throttled ? 'THROTTLED' : got.stop.head.outcome,
           `${got.pages.map(pageLine).join('; ')}; the read stopped: ${got.stop.head.why}`
-          + `${throttled && !retry ? '; no Retry-After header' : ''}`, throttled ? 'open' : undefined);
+          + `${throttled && !last.retryAfter ? '; no Retry-After header' : ''}`, throttled ? 'open' : undefined);
         return;
       }
       const total = got.pages.reduce((sum, p) => sum + p.items, 0);
@@ -278,10 +309,12 @@
           + `per-item read ${sample.keys.join(' ') || 'none'}${carried === null ? '' : same ? ', the same'
             : ', different'}${owner}` };
       });
-      const every = carrying === total && total === ids.length && !got.capped && samples.every((s) => s.same);
+      // By Id, so an item read twice cannot stand in for one never read.
+      const every = carrying === total && ids.every((one) => got.items.has(one)) && !got.capped
+        && samples.every((s) => s.same);
       // Scrubbed whole, since its Ids and bindings are values from the answer.
       record(id, question,
-        carrying === 0 ? 'NO ITEM CARRIES BINDINGS' : every ? 'EVERY ITEM CARRIES ITS BINDINGS' : 'PARTIAL',
+        total > 0 && carrying === 0 ? 'NO ITEM CARRIES BINDINGS' : every ? 'EVERY ITEM CARRIES ITS BINDINGS' : 'PARTIAL',
         scrub(`${got.pages.map(pageLine).join('; ')}; ${total} item(s) read of the ${ids.length} counted`
         + `${got.capped ? `, the nextLink still present after ${MAX_PAGES} pages` : ''}`
         + `${carrying > 0 && bare.length ? `; without RoleAssignments: items ${bare.slice(0, 10).join(', ')}`

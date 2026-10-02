@@ -260,3 +260,97 @@ def test_a_value_the_page_answers_is_masked_in_the_evidence() -> None:
     assert rows[BY_ID]["outcome"] == "PARTIAL", rows[BY_ID]
     assert "the page held i:0#.f|membership|<account>" in rows[BY_ID]["evidence"]
     assert "bob@example.com" not in output
+
+
+def _paged(contains: str, first: list[dict[str, Any]], second: list[dict[str, Any]],
+           query: str) -> list[dict[str, Any]]:
+    """Rules answering the first two reads holding `contains` with a page each, linked."""
+    link = ("https://example.sharepoint.com/sites/probe/_api/web/lists/"
+            f"getbytitle('{LIB}')/items?p=2&{query}")
+    return [{"contains": contains, "nth": 1, "status": 200,
+             "text": json.dumps({"value": first, "odata.nextLink": link})},
+            {"contains": contains, "nth": 1, "status": 200, "text": json.dumps({"value": second})}]
+
+
+def _bound(item: int) -> dict[str, Any]:
+    """An item as the mock's per-item read binds it, with its bindings expanded."""
+    broken = item in (10, 100, 111)
+    pairs = [(3, 1073741829), (5, 1073741826)] + ([(7, 1073741826)] if broken else [])
+    return {"Id": item, "HasUniqueRoleAssignments": broken, "ProbeOwnerId": None,
+            "RoleAssignments": [{"PrincipalId": p, "RoleDefinitionBindings": [{"Id": level}]}
+                                for p, level in pairs]}
+
+
+def test_an_item_id_that_is_not_a_whole_number_fails_the_files_and_writes_nothing() -> None:
+    first = [{"Id": "10)/recycle" if n == 10 else n} for n in range(1, 101)]
+    rows, sent, _ = _run(rules=_paged("$select=Id&", first, [{"Id": n} for n in range(101, 131)],
+                                      "$select=Id&$top=100"))
+
+    assert rows[FILES]["outcome"] == "FAIL", rows[FILES]
+    assert "Integers differs" in rows[FILES]["evidence"]
+    assert not any("breakroleinheritance" in r["path"] for r in sent)
+
+
+def test_a_read_level_id_that_is_not_a_whole_number_grants_nothing() -> None:
+    rows, sent, _ = _run(rules=[{"contains": "getbyname('Read')", "status": 200,
+                                 "text": '{"Id": "1073741826)/x"}'}])
+
+    assert rows[BROKEN]["outcome"] == "FAIL", rows[BROKEN]
+    assert not any("addroleassignment" in r["path"] for r in sent)
+    assert not any("breakroleinheritance" in r["path"] for r in sent)
+
+
+def test_cleanup_whose_ownership_read_is_throttled_recycles_nothing_and_says_so() -> None:
+    _, sent, output = _run((*WRITES, "CLEANUP"), rules=[
+        {"contains": "$select=Id,Description", "status": 503, "text": "busy"}], **_seeded(OWNED))
+
+    assert not any(r["path"].endswith("/recycle") for r in sent)
+    assert "[FAIL] CLEANUP" in output
+    assert "Paste CLEANUP again" in output
+    assert "no library" not in output
+
+
+def test_pages_holding_no_items_are_partial_not_no_item_carries() -> None:
+    rows, _, _ = _run(rules=[{"contains": "ProbeOwnerId,RoleAssignments", "status": 200,
+                              "text": '{"value": []}'}])
+
+    assert rows[BY_ID]["outcome"] == "PARTIAL", rows[BY_ID]
+    assert "0 item(s) read of the 130 counted" in rows[BY_ID]["evidence"]
+
+
+def test_files_are_uploaded_as_raw_text() -> None:
+    _, sent, _ = _run()
+
+    adds = [r for r in sent if "/Files/add(" in r["path"]]
+    assert len(adds) == 130
+    assert adds[0]["type"] == "text/plain"
+    assert adds[0]["body"] == "dbmlsp items role-assignments probe file"
+
+
+def test_no_retry_after_is_judged_on_the_page_that_stopped() -> None:
+    rows, _, _ = _run(pageRetryAfter="1", failPage={"query": "ProbeOwnerId", "page": 2,
+                                                    "status": 429, "text": "throttled"})
+
+    assert rows[BY_ID]["outcome"] == "THROTTLED", rows[BY_ID]
+    assert "no Retry-After header" in rows[BY_ID]["evidence"]
+
+
+def test_a_next_link_with_no_api_path_is_not_followed() -> None:
+    page = {"value": [_bound(1)], "odata.nextLink": "https://example.sharepoint.com/elsewhere?p=2"}
+    rows, sent, _ = _run(rules=[{"contains": "ProbeOwnerId,RoleAssignments", "status": 200,
+                                 "text": json.dumps(page)}])
+
+    assert rows[BY_ID]["outcome"] == "NOT ESTABLISHED", rows[BY_ID]
+    assert rows[BY_ID]["state"] == "open"
+    assert "no /_api/ path" in rows[BY_ID]["evidence"]
+    assert len([p for p in _flow_reads(sent) if "ProbeOwnerId" in p]) == 1
+
+
+def test_a_duplicate_does_not_stand_in_for_a_missing_item() -> None:
+    first = [_bound(n) for n in range(1, 101) if n != 50]
+    second = [_bound(51)] + [_bound(n) for n in range(101, 131)]
+    query = f"$select=Id,HasUniqueRoleAssignments,ProbeOwnerId,{ROLES}&$expand={EXPAND}&$top=100"
+    rows, _, _ = _run(rules=_paged("ProbeOwnerId,RoleAssignments", first, second, query))
+
+    assert rows[BY_ID]["outcome"] == "PARTIAL", rows[BY_ID]
+    assert "130 item(s) read of the 130 counted" in rows[BY_ID]["evidence"]
