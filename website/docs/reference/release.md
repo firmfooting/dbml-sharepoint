@@ -58,7 +58,7 @@ console transcript records exactly which release produced the site's
 current shape. `date` additionally appears in the reporting bundle's
 provenance table.
 
-The deployer those headers, the manifests and the deployment log record is
+The deployer those headers, the deploy manifest and the deployment log record is
 not read from this file. It is the name and version of the installed
 dbml-sharepoint package, read from its metadata when the bundle is built.
 `deployer_version` used to be written here by hand and had drifted from the
