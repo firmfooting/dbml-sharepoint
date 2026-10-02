@@ -235,6 +235,7 @@ _HARNESS = textwrap.dedent(r"""
       }
       if (u.includes('/fields?')) {
         state.fieldReads += 1;
+        if (FLAGS.fieldsWithoutResults) return reply(200, { d: {} });
         if (FLAGS.fieldsReadFailsAt === state.fieldReads) {
           return reply(500, { error: { message: { value: 'fields refused' } } });
         }
@@ -255,6 +256,10 @@ _HARNESS = textwrap.dedent(r"""
         // can place it after the drain has already come back empty, which is
         // the one window the drain cannot close.
         state.itemReads += 1;
+        // An answer without a results array, on the Nth read or on every one.
+        if ([state.itemReads, 'every'].includes(FLAGS.itemsWithoutResultsAt)) {
+          return reply(200, { d: {} });
+        }
         if (FLAGS.itemArrivesBeforeRead === state.itemReads) {
           state.items = state.items.concat([{ Id: 99 }]);
         }
@@ -1951,3 +1956,52 @@ def test_later_maintenance_pages_find_columns_and_their_values() -> None:
     assert any(table == [{"item": 1, "value": 42}] for table in tables)
     assert _writes(calls) == []
     assert summary["skipped"] == [{"column": "ColumnTwo", "reason": "not-confirmed"}]
+
+
+def test_a_field_read_without_results_stops_before_maintenance() -> None:
+    """Read as empty, the list read as having no columns (#722)."""
+    js = generate_protection_js(
+        site_url=SITE, list_title=LIST_SLUG, list_path=LIST_PATH,
+        generated_at=GENERATED_AT,
+    )
+    script = _wrap(js, _config(), ["unlock"], {"fieldsWithoutResults": True})
+    script = script.rstrip().removesuffix(";") + (
+        ".catch((err) => { console.log('__ERROR__' + err.message);"
+        "console.log('__CALLS__' + JSON.stringify(calls)); });"
+    )
+    output = _run(script)
+    assert "without a d.results array" in output
+    calls_line = next(line for line in output.splitlines() if line.startswith("__CALLS__"))
+    assert _writes(_tag(calls_line, "__CALLS__")) == []
+
+
+def test_a_value_read_without_results_requires_non_empty_confirmation() -> None:
+    """Read as empty, a column holding values was offered for deletion as empty (#722)."""
+    summary, calls, prompts, _tables = _columns(
+        _config(), ["ColumnTwo", "ColumnTwo", ""], {"itemsWithoutResultsAt": "every"},
+    )
+    assert any("could not be read" in p and "DELETE NON-EMPTY" in p for p in prompts)
+    assert any("without a d.results array" in p for p in prompts)
+    assert _writes(calls) == []
+    assert summary["skipped"] == [{"column": "ColumnTwo", "reason": "not-confirmed"}]
+
+
+@pytest.mark.parametrize(("items", "read", "what"), [
+    (_TWO_ITEMS, 1, "drain"),
+    ([], 2, "final drain check"),
+], ids=["drain", "final-check"])
+def test_an_item_read_without_results_deletes_nothing(
+    items: list[dict[str, Any]], read: int, what: str,
+) -> None:
+    """Read as empty, the drain stopped, or the final check passed, and the
+    DELETE destroyed rows that were never recycled (#722)."""
+    summary, calls, _, _ = _list(
+        _config(items=items, allow_deletion=True),
+        [TITLE, "DELETE NON-EMPTY"],
+        flags={"itemsWithoutResultsAt": read},
+    )
+    assert summary["deleted"] is None
+    assert _deletes(calls) == []
+    assert _recycles(calls) == []
+    assert any(what in e["error"] and "without a d.results array" in e["error"]
+               for e in summary["errors"]), summary["errors"]

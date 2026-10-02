@@ -90,6 +90,8 @@ _HARNESS = textwrap.dedent(r"""
         afterDelete: spec.afterDelete,
         ownershipReads: 0,
         rows: spec.titles.map((t, i) => ({ Id: i + 1, Title: t })),
+        // An item read answering without a results array.
+        itemsWithoutResults: spec.itemsWithoutResults === true,
         deleted: false,
       };
     }
@@ -193,7 +195,9 @@ _HARNESS = textwrap.dedent(r"""
         s.rows = s.rows.filter((row) => row.Id !== Number(recycled[1]));
         return reply(200, { d: { Recycle: '00000000-0000-0000-0000-000000000000' } });
       }
-      if (u.includes('/items?')) return reply(200, { d: { results: s.rows } });
+      if (u.includes('/items?')) {
+        return reply(200, { d: s.itemsWithoutResults ? {} : { results: s.rows } });
+      }
       if (method === 'POST' && headers['X-HTTP-Method'] === 'DELETE') {
         if (s.deleteStatus) {
           return reply(s.deleteStatus, { error: { message: { value: 'delete refused' } } });
@@ -978,3 +982,31 @@ def test_valid_rollback_terminators_preserve_non_empty_confirmation(
     assert len(_non_empty_prompts(prompts)) == 1
     assert _skips(summary)["APP_Task"] == "non-empty"
     assert _writes(calls) == []
+
+
+def test_a_list_enumeration_without_results_is_not_a_site_with_no_lists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Read as empty, every target read as absent and was skipped as gone (#722)."""
+    harness = _HARNESS.replace("const d = { results };", "const d = {};")
+    assert harness != _HARNESS
+    monkeypatch.setattr(__name__ + "._HARNESS", harness)
+    summary, calls, prompts = _rollback({"APP_Task": _listing("APP_Task", ["Record"])})
+    assert summary["deleted"] == []
+    assert summary["skipped"] == []
+    assert summary["errors"]
+    assert all("without a d.results array" in e["error"] for e in summary["errors"])
+    assert _non_empty_prompts(prompts) == []
+    assert _writes(calls) == []
+
+
+def test_an_item_read_without_results_is_not_a_drained_list() -> None:
+    """Read as empty, the drain stopped and the list was deleted with its rows
+    still in it, rather than recycled first (#722)."""
+    listing = _listing("APP_Task", ["One"])
+    listing["itemsWithoutResults"] = True
+    out = _rollback_output({"APP_Task": listing}, answers=["DELETE NON-EMPTY"])
+    summary, calls, _prompts = _parse(out)
+    assert summary["deleted"] == []
+    assert any("without a d.results array" in e["error"] for e in summary["errors"])
+    assert not [c for c in calls if c["headers"].get("X-HTTP-Method") == "DELETE"]

@@ -26,6 +26,23 @@
     return next || null;
   }
 
+  // An answer without a results array is not an empty collection (#722).
+  function resultsOf(page, what) {
+    if (!page || !Array.isArray(page.results)) {
+      throw new Error(`${what}: answered without a d.results array; refusing to read it as an empty collection`);
+    }
+    return page.results;
+  }
+
+  // A missing flag is not a scope that inherits (#722).
+  function uniqueFlagOf(d, what) {
+    const flag = d && d.HasUniqueRoleAssignments;
+    if (typeof flag !== 'boolean') {
+      throw new Error(`${what}: HasUniqueRoleAssignments read back as ${JSON.stringify(flag)}, not a boolean`);
+    }
+    return flag;
+  }
+
   // An incomplete name index must fall back to direct existence probes.
   function completeNamePage(json) {
     const page = json && json.d;
@@ -216,7 +233,7 @@
     // endpoint this cache stands in for.
     const byInternal = new Map();
     const byTitle = new Map();
-    const rows = (j && j.d && j.d.results) || [];
+    const rows = resultsOf(j && j.d, `Field enumeration for '${listName}'`);
     for (const f of rows) {
       if (f.InternalName && !byInternal.has(nameKey(f.InternalName))) {
         byInternal.set(nameKey(f.InternalName), f);

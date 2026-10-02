@@ -205,3 +205,17 @@ def test_extraction_includes_fields_from_later_pages(monkeypatch: pytest.MonkeyP
     assert result["lists"][0]["fields"] == [
         '<Field Name="Title" Type="Text" />', schema,
     ]
+
+
+@pytest.mark.parametrize("results", [None, {}])
+def test_a_field_page_without_results_aborts_extraction(
+    results: Any, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Read as empty, the list extracted with none of its columns (#722)."""
+    config = _config()
+    config["fieldPage"] = {"results": results}
+    monkeypatch.setattr(__name__ + "._config", lambda: config)
+    result, output = _run_script([LIST_PATH])
+    assert result["aborted"] == "list-read-failed"
+    assert "without a d.results array" in output
+    assert "lists" not in result

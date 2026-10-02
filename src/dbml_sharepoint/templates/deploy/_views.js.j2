@@ -93,7 +93,7 @@
       }
       const j = await r.json();
       const next = validatedNextPage(j && j.d, `View enumeration of ${listPath}`);
-      const rows = (j && j.d && j.d.results) || [];
+      const rows = resultsOf(j && j.d, `View enumeration of ${listPath}`);
       // Thrown, not cached: a later read of this list must not trust the page either (#577).
       if (pageTruncated(rows, next, VIEW_PAGE_SIZE)) {
         throw new Error(`the view enumeration of ${listPath} may be truncated (a full page of`
@@ -113,7 +113,7 @@
       throw new Error(`view fields read failed: HTTP ${r.status} ${text}`);
     }
     const j = await r.json();
-    return (j && j.d && j.d.Items && j.d.Items.results) || [];
+    return resultsOf(j && j.d && j.d.Items, `View fields of ${viewUrl}`);
   }
   const deployView = async (view) => {
     try {
