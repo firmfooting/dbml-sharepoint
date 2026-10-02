@@ -2091,36 +2091,6 @@ it (`folder_policy_manages_nothing`). Without the exclusion the first redeploy
 after enabling folder ACLs would fail forever on the phase's own work. Nothing
 is erased either way.
 
-### Files another writer secures: `file_scopes`
-
-`file_scopes` is read on a list's own policy, `default` or an `overrides`
-entry, and takes `refuse` (the default) or `external`. A `folders:` policy
-refuses the key as unknown, because the list's one survey owns every scope
-below it.
-
-`refuse` is the guard described above: under `reconcile: exact`, any unique
-scope below the list that `list_permissions.folders` does not declare aborts
-the phase.
-
-`external` is for a list whose files are secured one by one by something
-other than this deploy, such as a flow that grants item-level access. The
-survey still runs. A unique scope on a row that reads back as a file
-(`FileSystemObjectType` 0, Learn's FileSystemObjectType enumeration) is
-counted and logged, and nothing reads or changes its role assignments. Any
-other undeclared scope, a folder or a row whose type did not read back,
-still aborts the phase by name. The list's own allowlist, its pruning and
-its read-back are unchanged. `external` without `reconcile: exact` is refused
-at load, since only an exact list surveys its descendants.
-
-`external` takes effect only on a document library. On any other list the
-deploy keeps `refuse`, because Learn's FileSystemObjectType enumeration does
-not say what a list item reads back as. The manifest names every document
-library whose file scopes the deploy leaves to another writer.
-
-What it gives up: a file somebody shares by hand on such a list is no longer
-reported by the deploy. Whatever writes those scopes has to reconcile them
-itself.
-
 **Rollback does not restore folder inheritance,** because it deletes the
 library outright and the folders go with it. The case worth planning for is a
 folder that stops being declared while the library survives, such as a member
@@ -2400,6 +2370,37 @@ refusal is not proof that no encoding exists. See the dated comment in
 `templates/deploy/_reader_enrolment.js.j2`.
 
 :::
+
+### Files another writer secures: `file_scopes`
+
+`file_scopes` is read on a list's own policy, `default` or an `overrides`
+entry, and takes `refuse` (the default) or `external`. A `folders:` policy
+refuses the key as unknown, because the list's one survey owns every scope
+below it.
+
+`refuse` is the guard described in the `folders:` and `{member}` section
+above: under `reconcile: exact`, any unique scope below the list that
+`list_permissions.folders` does not declare aborts the phase.
+
+`external` is for a list whose files are secured one by one by something
+other than this deploy, such as a flow that grants item-level access. The
+survey still runs. A unique scope on a row that reads back as a file
+(`FileSystemObjectType` 0, Learn's
+[FileSystemObjectType enumeration](https://learn.microsoft.com/en-us/dotnet/api/microsoft.sharepoint.client.filesystemobjecttype))
+is counted and logged, and nothing reads or changes its role assignments. Any
+other undeclared scope, a folder or a row whose type did not read back,
+still aborts the phase by name. The list's own allowlist, its pruning and
+its read-back are unchanged. `external` without `reconcile: exact` is refused
+at load, since only an exact list surveys its descendants.
+
+`external` takes effect only on a document library. On any other list the
+deploy keeps `refuse`, because Learn's FileSystemObjectType enumeration does
+not say what a list item reads back as. The manifest names every document
+library whose file scopes the deploy leaves to another writer.
+
+What it gives up: a file somebody shares by hand on such a list is no longer
+reported by the deploy. Whatever writes those scopes has to reconcile them
+itself.
 
 ### The site-wide groups
 
