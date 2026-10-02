@@ -550,6 +550,8 @@ def _acl_scopes(
                 "list": list_title,
                 "break_inheritance": policy.break_inheritance,
                 "reconcile_mode": policy.reconcile_mode,
+                # Only a library's rows are files; what a list item reads back as is undocumented.
+                "file_scopes": policy.file_scopes if entity.is_library else "refuse",
                 "assignments": [
                     {"principal": _principal_json(a.principal), "level": a.level}
                     for a in policy.assignments

@@ -347,6 +347,83 @@ def test_exact_reconcile_requires_broken_inheritance(tmp_path: Path) -> None:
     _refuses(tmp_path / "mapping.yaml", MappingShapeError, "requires break_inheritance: true")
 
 
+def test_file_scopes_defaults_to_refuse_and_takes_external(tmp_path: Path) -> None:
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        list_permissions:
+          default:
+            break_inheritance: true
+            reconcile: exact
+            assignments: []
+          overrides:
+            Project:
+              break_inheritance: true
+              reconcile: exact
+              file_scopes: external
+              assignments: []
+    """), name="mapping.yaml")
+    permissions = load_mapping(tmp_path / "mapping.yaml").mapping.permissions
+    assert permissions is not None
+    assert permissions.default_policy is not None
+    assert permissions.default_policy.file_scopes == "refuse"
+    assert permissions.overrides["Project"].file_scopes == "external"
+
+
+def test_file_scopes_external_requires_exact(tmp_path: Path) -> None:
+    """Only an exact list surveys its descendants, so `external` elsewhere relaxes nothing."""
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        list_permissions:
+          default:
+            break_inheritance: true
+            reconcile: configured
+            file_scopes: external
+            assignments: []
+    """), name="mapping.yaml")
+    _refuses(tmp_path / "mapping.yaml", MappingShapeError,
+             r"file_scopes 'external' requires reconcile: exact")
+
+
+def test_file_scopes_external_on_an_inherited_list_is_refused(tmp_path: Path) -> None:
+    """The exact guard fires first, so `external` never reaches a list that inherits."""
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        list_permissions:
+          default:
+            break_inheritance: false
+            reconcile: exact
+            file_scopes: external
+            assignments: []
+    """), name="mapping.yaml")
+    _refuses(tmp_path / "mapping.yaml", MappingShapeError,
+             r"reconcile 'exact' requires break_inheritance: true")
+
+
+def test_file_scopes_takes_only_its_two_words(tmp_path: Path) -> None:
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        list_permissions:
+          default:
+            break_inheritance: true
+            reconcile: exact
+            file_scopes: ignore
+            assignments: []
+    """), name="mapping.yaml")
+    _refuses(tmp_path / "mapping.yaml", MappingValueError,
+             r"list_permissions\.default\.file_scopes must be 'refuse' or 'external'")
+
+
+def test_a_folder_policy_refuses_file_scopes(tmp_path: Path) -> None:
+    """The list's one survey owns every descendant, so a folder has nothing to hand over."""
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        list_permissions:
+          folders:
+            Project:
+              break_inheritance: true
+              reconcile: exact
+              file_scopes: external
+              assignments: []
+    """), name="mapping.yaml")
+    _refuses(tmp_path / "mapping.yaml", UnknownMappingKeyError,
+             r"list_permissions\.folders\.Project: unknown key\(s\) \['file_scopes'\]")
+
+
 def test_permissions_for_entity_returns_default() -> None:
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     policy = bundle.mapping.permissions_for_entity("Project")

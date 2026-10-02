@@ -9,6 +9,8 @@
     // body, and a name that resolves only when another branch has run is
     // how #454 shipped an abort that threw instead of explaining itself.
     const ACL_FOLDER_OBJECT_TYPE = 1;
+    // Learn's FileSystemObjectType enumeration: File = 0, Folder = 1.
+    const ACL_FILE_OBJECT_TYPE = 0;
 
     // Cache resolved IDs across assignments to avoid redundant fetches.
     const principalIdCache = {};
@@ -179,6 +181,13 @@
       if (undeclared.length === 0) return;
       const sample = undeclared.slice(0, 10).map(r => `${r.Id} (${r.FileRef || 'path unknown'})`).join(', ');
       throw new Error(`${undeclared.length} undeclared item/folder unique permission scope(s) remain on '${listTitle}': ${sample}${undeclared.length > 10 ? ', ...' : ''}; review and remove them, or declare them under list_permissions.folders, before rerunning; the deployer will never erase descendant scopes`);
+    }
+
+    // Only a row that reads back as exactly a file is handed over; a folder or an untyped row stays ours to refuse.
+    function splitUndeclared(undeclared, externalFiles) {
+      if (!externalFiles) return { owned: undeclared, handed: 0 };
+      const owned = undeclared.filter(r => r.FileSystemObjectType !== ACL_FILE_OBJECT_TYPE);
+      return { owned, handed: undeclared.length - owned.length };
     }
 
     // Ownership was last proved by the structural phases, and everything
@@ -600,6 +609,7 @@
       log('INFO', `[Phase 4.2] Processing role assignments for '${listTitle}'...`);
       try {
         const la = SCHEMA.acl_scopes.find(s => s.list === listTitle && !s.folder);
+        const externalFiles = Boolean(la && la.file_scopes === 'external');
         const folderAssignments = SCHEMA.acl_scopes.filter(s => s.list === listTitle && s.folder);
         const wantedFolders = folderAssignments.map(fa => fa.folder);
         const aclListId = surveyedListId(aclOwned, listTitle, 'ACL');
@@ -630,7 +640,9 @@
         const before = exact
           ? await surveyDescendants(listTitle, wantedFolders)
           : { ...await declaredFolderIds(listTitle, wantedFolders), undeclared: [] };
-        if (exact) assertNoUndeclaredScopes(listTitle, before.undeclared);
+        const { owned, handed } = splitUndeclared(before.undeclared, externalFiles);
+        if (handed > 0) log('INFO', `[Phase 4.2] '${listTitle}' holds ${handed} file unique permission scope(s) another writer owns; leaving them to it.`);
+        if (exact) assertNoUndeclaredScopes(listTitle, owned);
         if (la) {
           await reconcileScope({
             // The empty suffix IS the list: every endpoint below hangs off
@@ -671,7 +683,7 @@
           // the scopes this run does declare.
           assertNoUndeclaredScopes(
             listTitle,
-            (await surveyDescendants(listTitle, wantedFolders)).undeclared,
+            splitUndeclared((await surveyDescendants(listTitle, wantedFolders)).undeclared, externalFiles).owned,
           );
         }
 

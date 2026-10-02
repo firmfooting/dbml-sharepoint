@@ -1211,6 +1211,58 @@ def test_a_library_with_no_folders_is_told_that_rather_than_both(
     none_of(findings, FindingCode.FOLDER_POLICY_MANAGES_NOTHING)
 
 
+_EXTERNAL_LIST = (
+    "{break_inheritance: true, reconcile: exact, file_scopes: external, assignments: "
+    '[{principal: {kind: associated_owner_group}, level: "Full Control"}]}'
+)
+
+
+def _file_scopes(tmp_path: Path, kind: str, template: int, route: str) -> list[Finding]:
+    """One entity of `kind` whose list policy is `_EXTERNAL_LIST` through `route`."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Docs", ID_PK, TITLE),
+        mapping=f"""
+            entities:
+              Docs:
+                kind: {kind}
+                base_template: {template}
+                site_role: default
+
+            list_permissions:
+              {route}
+        """,
+    )
+    return validate_against_mapping(schema, bundle)
+
+
+#: The two keys a list policy is reached through; the key is the finding's location.
+_ROUTES = [
+    pytest.param(f"default: {_EXTERNAL_LIST}", id="default"),
+    pytest.param(f"overrides: {{Docs: {_EXTERNAL_LIST}}}", id="override"),
+]
+
+
+@pytest.mark.parametrize("route", _ROUTES)
+def test_external_file_scopes_on_a_list_are_refused(tmp_path: Path, route: str) -> None:
+    """The deploy keeps `refuse` on a list, so `external` there would do nothing."""
+    f = only(
+        _file_scopes(tmp_path, "List", 100, route),
+        FindingCode.FILE_SCOPES_EXTERNAL_NEEDS_LIBRARY,
+    )
+    assert f.severity == "error"
+    assert f.location == Location(Section.LIST_PERMISSIONS, sub=route.partition(":")[0])
+    assert "Docs" in f.message
+
+
+@pytest.mark.parametrize("route", _ROUTES)
+def test_external_file_scopes_on_a_library_are_accepted(tmp_path: Path, route: str) -> None:
+    none_of(
+        _file_scopes(tmp_path, "DocumentLibrary", 101, route),
+        FindingCode.FILE_SCOPES_EXTERNAL_NEEDS_LIBRARY,
+    )
+
+
 @pytest.mark.parametrize(
     "flag", ["enroll_enterprise_reader", "enroll_operator_during_deploy"],
 )

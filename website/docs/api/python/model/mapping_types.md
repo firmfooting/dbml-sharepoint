@@ -27,6 +27,12 @@ ENTITY_KINDS = frozenset({'DocumentLibrary', 'HubOnlyList', 'List'})
 VIEW_SCOPES = frozenset({'default', 'recursive'})
 ```
 
+### `FILE_SCOPES`
+
+```python
+FILE_SCOPES = frozenset({'external', 'refuse'})
+```
+
 ### `PRINCIPAL_KINDS`
 
 ```python
@@ -568,9 +574,10 @@ class ListPermissionPolicy:
     break_inheritance: bool
     assignments: tuple[dbml_sharepoint.model.mapping_types.RoleAssignment, ...]
     reconcile_mode: ReconcileMode = 'configured'
+    file_scopes: FileScopes = 'refuse'
 ```
 
-ListPermissionPolicy(break_inheritance: bool, assignments: tuple[dbml_sharepoint.model.mapping_types.RoleAssignment, ...], reconcile_mode: ReconcileMode = 'configured')
+ListPermissionPolicy(break_inheritance: bool, assignments: tuple[dbml_sharepoint.model.mapping_types.RoleAssignment, ...], reconcile_mode: ReconcileMode = 'configured', file_scopes: FileScopes = 'refuse')
 
 ### `PermissionsConfig`
 

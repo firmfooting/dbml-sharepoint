@@ -58,6 +58,43 @@ def check(vc: ValidationContext) -> list[Finding]:
         for row in vc.bundle.mapping.demo_items.get(entity_name, []):
             findings += _demo_file(entity_name, entity, row, folders)
     findings += _folder_permissions(vc)
+    findings += _external_file_scopes(vc)
+    return findings
+
+
+def _external_file_scopes(vc: ValidationContext) -> list[Finding]:
+    """`file_scopes: external` reaches a list that is not a document library.
+
+    `jsgen` emits `refuse` there, because Learn's FileSystemObjectType
+    enumeration does not say what an ordinary list item reads back as, so
+    the setting would do nothing. Judged on `permissions_for_entity`, the
+    policy the deploy emits, and only for a list the schema declares.
+    """
+    mapping = vc.bundle.mapping
+    perms = mapping.permissions
+    if perms is None:
+        return []
+    findings: list[Finding] = []
+    for entity_name, entity in mapping.entities.items():
+        policy = mapping.permissions_for_entity(entity_name)
+        if (
+            entity.is_library or entity_name not in vc.table_names
+            or policy is None or policy.file_scopes != "external"
+        ):
+            continue
+        if entity_name in perms.overrides:
+            key, ctx = "overrides", f"list_permissions.overrides[{entity_name!r}]"
+        else:
+            key, ctx = "default", "list_permissions.default"
+        findings.append(Finding(
+            FindingCode.FILE_SCOPES_EXTERNAL_NEEDS_LIBRARY,
+            f"{ctx}.file_scopes: external reaches {entity_name}, which is "
+            f"not a DocumentLibrary. The deploy keeps refuse there, because "
+            f"what an ordinary list item reads back as is not documented, so "
+            f"the setting would do nothing. Set external only on an "
+            f"overrides entry for a document library, or remove it.",
+            location=Location(Section.LIST_PERMISSIONS, sub=key),
+        ))
     return findings
 
 
