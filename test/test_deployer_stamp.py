@@ -3,6 +3,7 @@
 
 import importlib.metadata
 import tomllib
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from typer.testing import CliRunner
 
 from dbml_sharepoint import APPLICATION_NAME, COMMAND_NAME, DISTRIBUTION
 from dbml_sharepoint.analysis.provenance import MARKER_PREFIX
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.cli import app
 from dbml_sharepoint.extract.sources import LIVE_FORMAT
 from dbml_sharepoint.generators.demogen import generate_demo_js
@@ -21,6 +23,12 @@ from dbml_sharepoint.generators.maintaingen import (
     generate_list_js,
     generate_protection_js,
 )
+from dbml_sharepoint.generators.report_m import (
+    generate_dictionary_powerquery,
+    generate_powerquery,
+)
+from dbml_sharepoint.generators.report_md import generate_data_dictionary, generate_reporting_md
+from dbml_sharepoint.generators.report_sql import generate_dictionary_sql, generate_sql_views
 from dbml_sharepoint.model.env_file import ENV_FILENAME
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.parser import parse_dbml
@@ -64,6 +72,25 @@ def test_an_application_name_that_could_break_a_script_is_refused(name: str) -> 
     """The name is rendered into JavaScript strings, CSOM XML and OData filters."""
     with pytest.raises(ApplicationNameError):
         script_env(name)
+
+
+@pytest.mark.parametrize("generate", [
+    generate_powerquery, generate_dictionary_powerquery, generate_sql_views,
+    generate_dictionary_sql, generate_reporting_md, generate_data_dictionary,
+])
+def test_a_reporting_generator_refuses_an_unsafe_application_name(
+    generate: Callable[..., object],
+) -> None:
+    """The reports render the name into SQL and M comments without going through script_env."""
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    with pytest.raises(ApplicationNameError):
+        generate(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+            application="x\nDROP TABLE t",
+        ) if generate is generate_data_dictionary else generate(
+            schema, bundle, "default", application="x\nDROP TABLE t",
+        )
 
 
 _OTHER = "other-application"

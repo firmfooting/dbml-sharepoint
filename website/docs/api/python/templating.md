@@ -25,6 +25,14 @@ TEMPLATES_DIR = Path("dbml_sharepoint/templates")
 
 An application name the generated scripts cannot carry safely.
 
+### `check_application_name`
+
+```python
+def check_application_name(application: str) -> None
+```
+
+Refuse a name that could escape a string, comment or attribute it is rendered into.
+
 ### `comment_safe`
 
 ```python

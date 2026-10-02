@@ -53,6 +53,7 @@ from dbml_sharepoint.analysis.timezones import WINDOW_END, WINDOW_START, ZoneTab
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema
 from dbml_sharepoint.model.release import Release
+from dbml_sharepoint.templating import check_application_name
 
 
 def _m_string(text: str) -> str:
@@ -1213,6 +1214,7 @@ def generate_powerquery(
     query then carries its transitions and the site-date helpers. See
     `build_plans` for why it is optional here.
     """
+    check_application_name(application)
     plans = build_plans(schema, bundle, site_role, time_zone=time_zone)
     reserved = {"_datadictionary", "_modelinfo", "_useraddedcolumns"}
     if bundle.mapping.reporting.users_table:
@@ -1493,6 +1495,7 @@ def generate_dictionary_powerquery(
     talks to the site; it takes the same binding as the list queries, so a
     bundle needs the ``SiteUrl`` parameter everywhere or nowhere.
     """
+    check_application_name(application)
     dd_rows = [
         "{" + ", ".join([
             str(i), _m_string(list_title), *(_m_string(cell) for cell in row),

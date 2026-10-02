@@ -44,6 +44,7 @@ from dbml_sharepoint.generators._indexes import deployable_index_columns
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema
 from dbml_sharepoint.model.release import Release
+from dbml_sharepoint.templating import check_application_name
 
 
 def _date_zone_guide_paragraphs(time_zone: str | None) -> list[str]:
@@ -137,6 +138,7 @@ def generate_reporting_md(
     the queries carry, and it can only do so for the zone they were built
     with.
     """
+    check_application_name(application)
     plans = build_plans(schema, bundle, site_role, time_zone=time_zone)
     system_columns = bundle.mapping.reporting.system_columns
     users_table = bundle.mapping.reporting.users_table
@@ -510,6 +512,7 @@ def generate_data_dictionary(
     `ValueError` to clear a previously generated pack, and a `KeyError`
     walks through that handler and leaves the stale pack looking current.
     """
+    check_application_name(application)
     tables = tables_for_role(schema, bundle, site_role)
     enum_names = {e.name for e in schema.enums}
     enum_members = {e.name: e.members for e in schema.enums}

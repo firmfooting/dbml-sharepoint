@@ -31,6 +31,7 @@ from dbml_sharepoint.bundle import REPORT_GUIDE
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema
 from dbml_sharepoint.model.release import Release
+from dbml_sharepoint.templating import check_application_name
 
 _SQL_SITE_URL_PLACEHOLDER = "https://yourtenant.sharepoint.com/sites/YourSite"
 
@@ -141,6 +142,7 @@ def generate_sql_views(
     ``time_zone`` is the site's zone the queries beside this were built
     with; the plans are built with it so the two describe the same columns.
     """
+    check_application_name(application)
     plans = build_plans(schema, bundle, site_role, time_zone=time_zone)
     occupied = {
         f"vw_{bundle.mapping.prefix}{name}".casefold()
@@ -235,6 +237,7 @@ def generate_dictionary_sql(
     """The data dictionary as SQL views built from embedded VALUES rows (no
     landing table needed), so warehouse-driven reports can surface the same
     dictionary page."""
+    check_application_name(application)
     prefix = bundle.mapping.prefix
     dd_rows = [
         ", ".join([

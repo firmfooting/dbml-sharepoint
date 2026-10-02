@@ -34,6 +34,15 @@ class ApplicationNameError(ValueError):
     """An application name the generated scripts cannot carry safely."""
 
 
+def check_application_name(application: str) -> None:
+    """Refuse a name that could escape a string, comment or attribute it is rendered into."""
+    if not _APPLICATION_NAME.fullmatch(application):
+        raise ApplicationNameError(
+            f"application name {application!r} must be 1 to 64 letters, digits, '.', '_' "
+            "or '-', starting with a letter or digit",
+        )
+
+
 def comment_safe(value: object) -> str:
     """Neutralise a block-comment terminator in raw header fields.
 
@@ -54,11 +63,7 @@ def script_env(application: str = APPLICATION_NAME) -> Environment:
 
     `application` is the identity the artifacts stamp; the version is the distribution's.
     """
-    if not _APPLICATION_NAME.fullmatch(application):
-        raise ApplicationNameError(
-            f"application name {application!r} must be 1 to 64 letters, digits, '.', '_' "
-            "or '-', starting with a letter or digit",
-        )
+    check_application_name(application)
     # No autoescape by design: these templates emit JavaScript and
     # markdown, not HTML. Interpolations are guarded individually
     # (tojson for values, comment_safe for comment text).
