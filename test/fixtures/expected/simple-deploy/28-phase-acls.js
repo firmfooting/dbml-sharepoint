@@ -177,7 +177,7 @@
       return {
         folderIds,
         folderPaths,
-        undeclared: rows.filter(r => r.HasUniqueRoleAssignments && !declared.has(r.Id)),
+        undeclared: rows.filter(r => uniqueFlagOf(r, `Item ${r.Id} of '${listTitle}'`) && !declared.has(r.Id)),
       };
     }
 
@@ -368,7 +368,7 @@
           throw new Error(`HasUniqueRoleAssignments probe failed: HTTP ${checkResp.status} ${text}`);
         }
         const checkJson = await checkResp.json();
-        if (!checkJson.d.HasUniqueRoleAssignments) {
+        if (!uniqueFlagOf(checkJson.d, `'${scope.label}'`)) {
           await withOwnedList(scope.listTitle, scope.listId, `breakroleinheritance on '${scope.label}'`, async () => {
             digest4 = await getDigest();
             const breakResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(scope.listTitle)}')${scope.suffix}/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)`), {
@@ -400,7 +400,7 @@
                 const text = await again.text();
                 throw new Error(`HasUniqueRoleAssignments re-read failed: HTTP ${again.status} ${text}`);
               }
-              unique = Boolean((await again.json()).d.HasUniqueRoleAssignments);
+              unique = uniqueFlagOf((await again.json()).d, `'${scope.label}'`);
             }
             if (!unique) {
               throw new Error(`'${scope.label}' still reads HasUniqueRoleAssignments=false after breakroleinheritance; refusing to write an allowlist onto a library that inherits`);

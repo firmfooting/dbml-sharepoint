@@ -93,7 +93,7 @@
           throw new Error(`early HasUniqueRoleAssignments probe failed: HTTP ${aclResp.status} ${text}`);
         }
         const aclJson = await aclResp.json();
-        if (!aclJson.d.HasUniqueRoleAssignments) {
+        if (!uniqueFlagOf(aclJson.d, `'${list.title}'`)) {
           digest = await getDigest();
           const breakResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(list.title)}')/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)`), {
             method: 'POST',
