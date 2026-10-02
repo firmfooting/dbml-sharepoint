@@ -8,6 +8,7 @@ filter the pasteable scripts need. That means a rendering rule
 in exactly one place.
 """
 
+import re
 from pathlib import Path
 from typing import Any, cast
 
@@ -24,6 +25,13 @@ from dbml_sharepoint.analysis.typemap import (
 )
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+
+#: Safe unescaped in a JavaScript string, a CSOM XML attribute and an OData literal.
+_APPLICATION_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+
+
+class ApplicationNameError(ValueError):
+    """An application name the generated scripts cannot carry safely."""
 
 
 def comment_safe(value: object) -> str:
@@ -46,6 +54,11 @@ def script_env(application: str = APPLICATION_NAME) -> Environment:
 
     `application` is the identity the artifacts stamp; the version is the distribution's.
     """
+    if not _APPLICATION_NAME.fullmatch(application):
+        raise ApplicationNameError(
+            f"application name {application!r} must be 1 to 64 letters, digits, '.', '_' "
+            "or '-', starting with a letter or digit",
+        )
     # No autoescape by design: these templates emit JavaScript and
     # markdown, not HTML. Interpolations are guarded individually
     # (tojson for values, comment_safe for comment text).

@@ -21,6 +21,10 @@ in exactly one place.
 TEMPLATES_DIR = Path("dbml_sharepoint/templates")
 ```
 
+### `ApplicationNameError`
+
+An application name the generated scripts cannot carry safely.
+
 ### `comment_safe`
 
 ```python

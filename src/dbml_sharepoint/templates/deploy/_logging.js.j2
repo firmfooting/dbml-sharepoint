@@ -707,7 +707,8 @@
       const effectiveFrom = change.at || new Date().toISOString();
       const currentResp = await fetchWithRetry(apiUrl(
         `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')/items`
-        + `?$select=Id,IsCurrent&$filter=ChangeKey eq '${odataName(change.key)}' and IsCurrent eq true`
+        + `?$select=Id,IsCurrent&$filter=ChangeKey eq '${odataName(change.key)}'`
+        + ` and Application eq '${odataName(APPLICATION)}' and IsCurrent eq true`
       ), { headers: { 'Accept': 'application/json;odata=verbose' } });
       const currentRows = currentResp.ok
         ? (((await currentResp.json()).d || {}).results || [])

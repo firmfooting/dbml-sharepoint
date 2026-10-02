@@ -152,11 +152,10 @@ def change_log_title() -> str:
 #: Application names the firmfooting application that wrote the row, so a
 #: reader can tell two applications' rows apart even when they share a
 #: ChangeKey and a SourceSite. This field set creates the PER-SITE change
-#: log's columns; that log's own close still filters only ChangeKey and
-#: IsCurrent. Application is indexed here anyway because CHANGE_FIELDS is
-#: shared with the CENTRAL list, whose close (`deploy/_logging.js.j2`)
-#: already reads Application as the fourth clause of a four-way AND with
-#: SourceSite, ChangeKey and IsCurrent. Microsoft documents that a filter is
+#: log's columns, and that log's close filters ChangeKey, Application and
+#: IsCurrent, since two applications can share it. The CENTRAL list's close
+#: (`deploy/_logging.js.j2`) reads Application as the fourth clause of a
+#: four-way AND with SourceSite, ChangeKey and IsCurrent. Microsoft documents that a filter is
 #: blocked once it would scan past the 5,000-item list view threshold
 #: without an indexed column, and recommends leading with the most
 #: selective one, not that every clause needs its own index; these columns

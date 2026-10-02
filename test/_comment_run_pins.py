@@ -1019,7 +1019,6 @@ PINNED: dict[str, list[str]] = {
     ],
     "test/test_deploy_logging_runtime.py": [
         "7376be1d2874",
-        "c869317c6cf5",
     ],
     "test/test_deploy_runtime.py": [
         "10c3530ba8df",

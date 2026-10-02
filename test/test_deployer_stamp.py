@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 from dbml_sharepoint import APPLICATION_NAME, DISTRIBUTION
 from dbml_sharepoint.cli import app
 from dbml_sharepoint.pipeline import execute_build
+from dbml_sharepoint.templating import ApplicationNameError, script_env
 
 runner = CliRunner()
 
@@ -42,6 +43,13 @@ def test_the_installed_metadata_is_the_one_pyproject_declares() -> None:
 def test_this_package_s_application_name_is_a_literal() -> None:
     """The type-2 close matches it against rows on live logs."""
     assert APPLICATION_NAME == "dbml-sharepoint"
+
+
+@pytest.mark.parametrize("name", ["Acme's deployer", "a&b", 'say "hi"', "", "x" * 65])
+def test_an_application_name_that_could_break_a_script_is_refused(name: str) -> None:
+    """The name is rendered into JavaScript strings, CSOM XML and OData filters."""
+    with pytest.raises(ApplicationNameError):
+        script_env(name)
 
 
 def test_every_stamp_follows_the_application_it_is_given(tmp_path: Path) -> None:
