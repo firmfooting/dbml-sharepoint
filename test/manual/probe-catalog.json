@@ -12732,6 +12732,78 @@
       ]
     },
     {
+      "file": "items-role-assignments-probe.js",
+      "surface": "access",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library with 130 small text files and a User column, three of the files with unique permissions binding the current user at Read and naming it in the column"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "A site where the account may create a document library",
+        "A CLEANUP paste once the run is recorded"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "access",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "access.item-acl.items-fixture-library",
+              "depends_on": []
+            },
+            {
+              "id": "access.item-acl.items-fixture-files",
+              "depends_on": [
+                "access.item-acl.items-fixture-library"
+              ]
+            },
+            {
+              "id": "access.item-acl.items-fixture-owner-column",
+              "depends_on": [
+                "access.item-acl.items-fixture-library"
+              ]
+            },
+            {
+              "id": "access.item-acl.items-fixture-broken",
+              "depends_on": [
+                "access.item-acl.items-fixture-files",
+                "access.item-acl.items-fixture-owner-column"
+              ]
+            },
+            {
+              "id": "access.item-acl.items-expand-role-assignments",
+              "depends_on": [
+                "access.item-acl.items-fixture-files",
+                "access.item-acl.items-fixture-owner-column",
+                "access.item-acl.items-fixture-broken"
+              ]
+            },
+            {
+              "id": "access.item-acl.items-expand-role-assignments-by-login",
+              "depends_on": [
+                "access.item-acl.items-fixture-files",
+                "access.item-acl.items-fixture-owner-column",
+                "access.item-acl.items-fixture-broken"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "access.item-acl.items-fixture-library",
+            "access.item-acl.items-fixture-files",
+            "access.item-acl.items-fixture-owner-column",
+            "access.item-acl.items-fixture-broken"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "batch-item-create-probe.js",
       "surface": "transport",
       "harness": "shared-v1",

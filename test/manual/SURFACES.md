@@ -325,7 +325,7 @@ role definition can hold but whether the platform defends the six it ships.
 Probes: `enterprise-reader-probe.js`, `reader-bindings-probe.js`,
 `built-in-levels-probe.js`, `lookup-acl-probe.js`,
 `siteuserinfolist-probe.js`, `operator-safety-grant-probe.js`,
-`last-binding-removal-probe.js`
+`last-binding-removal-probe.js`, `items-role-assignments-probe.js`
 
 `last-binding-removal-probe.js` sends what `operator-safety-grant-probe.js`
 avoids by granting the owner group first: the removal of every direct binding
@@ -342,6 +342,13 @@ title. A refusal by title names no list and one by Id does, so whether the
 administrator can still read the list is answered by
 `after-last-binding-by-id`, while the rows that model the deploy stay on the
 title the deploy reads by.
+
+`items-role-assignments-probe.js` asks whether a page of library items read
+with `RoleAssignments` expanded, as a flow pages through a library 100 items
+at a time, carries each item's bindings. Its `item-acl` rows read every page
+to the end in two shapes (the person column by lookup id, and by login name)
+and record each page's status and what the items carried beside a per-item
+read of six sampled files.
 
 ### 9. `scale`: behaviour at and beyond the list view threshold
 

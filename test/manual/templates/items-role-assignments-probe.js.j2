@@ -1,0 +1,309 @@
+{# test/manual/templates/items-role-assignments-probe.js.j2 #}
+
+/** ---- dbml-sharepoint PROBE: A PAGE OF LIBRARY ITEMS WITH EACH ITEM'S ROLE ASSIGNMENTS EXPANDED ----
+ *
+ * REVISION: {{ revision }}
+ *
+ * WHY: a flow that reads a whole library through Send an HTTP request to
+ * SharePoint, 100 items to a page, wants each item's role assignments in the
+ * same read so it sends one request per page rather than one per item. Learn
+ * ("Use OData query operations in SharePoint REST requests") says bulk
+ * expansion of related items is not supported and documents $top and
+ * $skiptoken paging; it says nothing about expanding RoleAssignments on an
+ * items collection. These rows ask.
+ *
+ * QUESTIONS (OBSERVES, recorded verbatim, never compared with an expected value)
+ *   access.item-acl.items-expand-role-assignments  C7, shape A: the flow's read
+ *       with ProbeOwnerId selected, every page to the end: each page's status,
+ *       Retry-After, item count, nextLink, how many items carry RoleAssignments,
+ *       and six sampled items' bindings beside the per-item read
+ *   access.item-acl.items-expand-role-assignments-by-login  C7, shape B: the same
+ *       read with ProbeOwner expanded and ProbeOwner/Name selected
+ *
+ * DEPENDS ON (read back, voiding what rests on them when they do not hold)
+ *   access.item-acl.items-fixture-library       a document library this run created
+ *   access.item-acl.items-fixture-files         at least 120 files, counted by a paged
+ *       read that expands nothing, over at least two pages
+ *   access.item-acl.items-fixture-owner-column  a User column ProbeOwner on the library
+ *   access.item-acl.items-fixture-broken        three files (the 10th, the 100th and
+ *       the 111th by Id) unique, holding this account at Read and naming it in
+ *       ProbeOwner; three more (the first, the 101st and the last) inheriting; each
+ *       read per item, which is the CONTROL the pages are set beside
+ *
+ * HOW TO RUN: on a site you own, F12 -> Console. Paste; it prints its plan and
+ * stops. Set CONFIRMED and ALLOW_WRITES to true and paste again. Copy the
+ * RESULTS block back verbatim.
+ *
+ * WHEN FINISHED: paste with CLEANUP, CONFIRMED and ALLOW_WRITES true. It
+ * recycles the library only when its description is this probe's.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+{% include "_probe_raw_request_v1.js.j2" %}
+{% include "_probe_identity_v1.js.j2" %}
+{% include "_probe_scratch_list_v1.js.j2" %}
+  log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
+
+  // A fixed name, so CLEANUP finds what a run made; it is claimed by its description.
+  const LIB = 'dbmlsp Probe ItemsAcl';
+  const OWNERSHIP = 'dbml-sharepoint items role-assignments probe fixture. Safe to delete.';
+  const OWNER = 'ProbeOwner';
+  // 130 files, so the flow's 100-item page is followed by a second.
+  const FILE_COUNT = 130;
+  const MIN_FILES = 120;
+  // A nextLink that never ends is cut here, well past the two pages the fixture needs.
+  const MAX_PAGES = 20;
+  const ROLES = 'RoleAssignments/PrincipalId,RoleAssignments/Member/PrincipalType,'
+    + 'RoleAssignments/Member/LoginName,RoleAssignments/RoleDefinitionBindings/Id,'
+    + 'RoleAssignments/RoleDefinitionBindings/Name';
+  const EXPAND = 'RoleAssignments/Member,RoleAssignments/RoleDefinitionBindings';
+  const byTitle = `web/lists/getbytitle('${pathLiteral(LIB)}')`;
+
+  const Q = {
+    library: 'a document library this run created',
+    files: `at least ${MIN_FILES} files, counted by a paged read that expands nothing, over at least two pages`,
+    column: `a User column ${OWNER} on the library`,
+    broken: 'three files unique, each holding this account at Read and naming it in ProbeOwner, and three '
+      + 'inheriting, each read per item as the CONTROL the pages are set beside',
+    byId: 'Does a page of items read with RoleAssignments expanded and ProbeOwnerId selected carry each '
+      + 'item\'s bindings, as a per-item read returns them?',
+    byLogin: 'Does a page of items read with ProbeOwner and RoleAssignments expanded carry each item\'s '
+      + 'bindings, as a per-item read returns them?',
+  };
+  expect('access.item-acl.items-fixture-library', Q.library);
+  expect('access.item-acl.items-fixture-files', Q.files);
+  expect('access.item-acl.items-fixture-owner-column', Q.column);
+  expect('access.item-acl.items-fixture-broken', Q.broken);
+  expect('access.item-acl.items-expand-role-assignments', Q.byId);
+  expect('access.item-acl.items-expand-role-assignments-by-login', Q.byLogin);
+
+  const ROWS = ['access.item-acl.items-expand-role-assignments',
+    'access.item-acl.items-expand-role-assignments-by-login'];
+  const AFTER_COLUMN = ['access.item-acl.items-fixture-broken', ...ROWS];
+  const AFTER_FILES = ['access.item-acl.items-fixture-owner-column', ...AFTER_COLUMN];
+  const AFTER_LIBRARY = ['access.item-acl.items-fixture-files', ...AFTER_FILES];
+
+  if (!CONFIRMED) {
+    log('INFO', `This creates a library '${LIB}' on ${WEB} with ${FILE_COUNT} small text files and a`);
+    log('INFO', `User column ${OWNER}, breaks inheritance on three files and binds this account to Read on`);
+    log('INFO', 'each, then reads every page of the library twice, as a flow would, with each item\'s role');
+    log('INFO', 'assignments expanded. CLEANUP recycles the library.');
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write. Stopping.');
+    return;
+  }
+
+  let digest = null;
+  const write = async (path, body = {}, extra = {}) => {
+    digest = digest || await getDigest();
+    return spWrite(path, body, digest, extra);
+  };
+
+  // ---- CLEANUP: recycle the library, only when its description is this probe's ----
+  if (CLEANUP) {
+    const held = await sendRaw(`${byTitle}?$select=Id,Description`);
+    const body = readHead(held) ? null : recordBody(held);
+    if (body && body.Description === OWNERSHIP && guidOf(body.Id)) {
+      await recycleList(LIB, guidOf(body.Id));
+    } else {
+      log('INFO', `CLEANUP: no library '${LIB}' of this probe's to remove`
+        + `${body ? ' (its description differs)' : ''}.`);
+    }
+    for (const row of RESULTS) record(row.id, row.question, 'NOT REACHED', 'a CLEANUP paste asks nothing');
+    report();
+    return;
+  }
+
+  // One read as a flow sends it, with the Retry-After header a throttle carries.
+  const readPage = async (path) => {
+    let res;
+    try {
+      res = await fetch(`${WEB}/_api/${path}`, { headers: { Accept: 'application/json;odata=nometadata' } });
+    } catch (err) {
+      return { ok: false, status: null, parsed: null, retryAfter: null,
+        text: `no response: ${err && err.message ? err.message : String(err)}` };
+    }
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* not JSON; the text is kept */ }
+    const retryAfter = res.headers && typeof res.headers.get === 'function' ? res.headers.get('Retry-After') : null;
+    return { ok: res.ok, status: res.status, text, parsed, retryAfter };
+  };
+  // Every page from `first`, following odata.nextLink as a flow's Do until would, up to MAX_PAGES.
+  const readAll = async (first) => {
+    const pages = [];
+    const items = new Map();
+    let path = first;
+    let stop = null;
+    while (path && pages.length < MAX_PAGES) {
+      const res = await readPage(path);
+      const page = { n: pages.length + 1, status: res.status, retryAfter: res.retryAfter };
+      pages.push(page);
+      const head = maskedHead(res);
+      const { rows, shape } = head ? { rows: null, shape: null } : entriesOf(res.parsed);
+      if (head || rows === null) {
+        // A 2xx with no value array is no answer, so a fixture resting on this read stays open.
+        if (!head) UNHEARD.push(`page ${page.n} answered HTTP ${res.status} but ${shape}`);
+        stop = { status: res.status, head: head || { outcome: 'NOT ESTABLISHED',
+          why: `page ${page.n} answered HTTP ${res.status} but ${shape}` } };
+        break;
+      }
+      const next = continuationOf(res.parsed);
+      Object.assign(page, { items: rows.length, next: next !== null,
+        carrying: rows.filter((r) => Array.isArray(r.RoleAssignments)).length,
+        unique: rows.filter((r) => r.HasUniqueRoleAssignments === true).length });
+      for (const row of rows) items.set(row.Id, { page: page.n, row });
+      path = next ? next.slice(next.indexOf('/_api/') + 6) : null;
+    }
+    return { pages, items, stop, capped: stop === null && path !== null };
+  };
+  // Bindings as `principal:level Id`, sorted, from a role assignment array.
+  const keysOf = (assignments) => assignments.flatMap((a) => (a && Array.isArray(a.RoleDefinitionBindings)
+    ? a.RoleDefinitionBindings.map((b) => `${a.PrincipalId}:${b && b.Id}`) : [])).sort();
+  const pageLine = (p) => `page ${p.n}: HTTP ${p.status === null ? 'none' : p.status}`
+    + `${p.items === undefined ? '' : `, ${p.items} item(s), ${p.carrying} carrying RoleAssignments, `
+      + `${p.unique} unique, nextLink ${p.next ? 'present' : 'absent'}`}`
+    + `${p.retryAfter ? `, Retry-After ${scrub(p.retryAfter)}` : ''}`;
+
+  try {
+    const heardFrom = UNHEARD.length;
+    const { account } = await readAccount();
+    // Kept for the fixture that binds this account, which an unanswered account read leaves open.
+    const accountUnheard = UNHEARD.slice(heardFrom);
+    const me = account && Number.isInteger(account.Id) ? account.Id : null;
+    const library = await claimScratchList({ id: 'access.item-acl.items-fixture-library', question: Q.library,
+      title: LIB, description: OWNERSHIP, dependents: AFTER_LIBRARY, baseTemplate: 101,
+      declared: { ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 } });
+    if (!library.held) return;
+    const lib = library.path;
+
+    // ---- the files: FILE_COUNT text files, counted by a read that expands nothing ----
+    beginFixture();
+    const rootRead = await sendRaw(`${lib}/RootFolder?$select=ServerRelativeUrl`);
+    const root = readHead(rootRead) ? null : (recordBody(rootRead) || {}).ServerRelativeUrl;
+    if (root) {
+      const folder = `web/GetFolderByServerRelativeUrl('${pathLiteral(root)}')/Files`;
+      for (let n = 1; n <= FILE_COUNT; n += 1) {
+        await write(`${folder}/add(url='items-acl-${String(n).padStart(3, '0')}.txt',overwrite=true)`,
+          'dbmlsp items role-assignments probe file');
+      }
+    }
+    let ids = [];
+    if (!await settleFixture('access.item-acl.items-fixture-files', async () => {
+      const counted = await readAll(`${byTitle}/items?$select=Id&$top=100`);
+      ids = [...counted.items.keys()].sort((a, b) => a - b);
+      return { ok: true, status: 200, body: { Count: ids.length, Pages: counted.pages.length,
+        Read: counted.stop ? counted.stop.head.why : counted.capped ? `cut at ${MAX_PAGES} pages` : 'complete' } };
+    }, { Count: (v) => v >= MIN_FILES, Pages: (v) => v >= 2, Read: 'complete' }, AFTER_FILES)) return;
+
+    // ---- the owner column ----
+    beginFixture();
+    const made = await write(`${lib}/fields`, { __metadata: { type: 'SP.FieldUser' }, FieldTypeKind: 20,
+      SelectionMode: 0, Title: OWNER, Required: false }, { ...VERBOSE_WRITE });
+    log('INFO', `create ${OWNER}: HTTP ${made.status}`);
+    if (!await settleFixture('access.item-acl.items-fixture-owner-column', async () => {
+      const read = await sendRaw(`${lib}/fields/getbyinternalnameortitle('${OWNER}')`
+        + '?$select=InternalName,TypeAsString');
+      return { ok: read.ok, status: read.status, body: readHead(read) ? null : recordBody(read) };
+    }, { InternalName: OWNER, TypeAsString: 'User' }, AFTER_COLUMN)) return;
+
+    // ---- three files broken, bound to this account at Read and naming it; three left inheriting ----
+    const SAMPLES = [[9, true], [99, true], [110, true], [0, false], [100, false], [ids.length - 1, false]]
+      .map(([at, broken]) => ({ id: ids[at], broken, keys: null, label: `${broken ? 'broken' : 'inheriting'} `
+        + `item ${ids[at]}` }));
+    beginFixture();
+    UNHEARD.push(...accountUnheard);
+    const readLevel = await sendRaw("web/roledefinitions/getbyname('Read')?$select=Id");
+    const readId = readHead(readLevel) ? null : (recordBody(readLevel) || {}).Id;
+    if (readId && me !== null) {
+      for (const sample of SAMPLES.filter((s) => s.broken)) {
+        const item = `${lib}/items(${sample.id})`;
+        await write(`${item}/breakroleinheritance(copyRoleAssignments=true,clearSubscopes=true)`);
+        await write(`${item}/roleassignments/addroleassignment(principalid=${me},roledefid=${readId})`);
+        await write(item, { __metadata: { type: library.body.ListItemEntityTypeFullName }, [`${OWNER}Id`]: me },
+          { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
+      }
+    }
+    if (!await settleFixture('access.item-acl.items-fixture-broken', async () => {
+      const held = { Unique: 0, UserRead: 0, Owner: 0, Inheriting: 0, Controls: 0 };
+      for (const sample of SAMPLES) {
+        const item = `${lib}/items(${sample.id})`;
+        const read = await sendRaw(`${item}?$select=HasUniqueRoleAssignments,${OWNER}Id`);
+        const body = readHead(read) ? null : recordBody(read);
+        const bound = await sendRaw(`${item}/roleassignments?$expand=Member,RoleDefinitionBindings`);
+        const rows = readHead(bound) ? null : entriesOf(bound.parsed).rows;
+        // A 2xx with no value array is no answer, so the fixture stays open rather than failing.
+        if (bound.ok && rows === null) UNHEARD.push(`the bindings read of item ${sample.id} carried no value array`);
+        sample.keys = rows === null ? null : keysOf(rows);
+        if (rows !== null) held.Controls += 1;
+        if (!sample.broken) {
+          if (body && body.HasUniqueRoleAssignments === false) held.Inheriting += 1;
+          continue;
+        }
+        if (body && body.HasUniqueRoleAssignments === true) held.Unique += 1;
+        if (body && me !== null && body[`${OWNER}Id`] === me) held.Owner += 1;
+        if (sample.keys && sample.keys.includes(`${me}:${readId}`)) held.UserRead += 1;
+      }
+      return { ok: true, status: 200, body: Object.fromEntries(Object.entries(held)
+        .map(([name, n]) => [name, `${n} of ${name === 'Controls' ? SAMPLES.length : 3}`])) };
+    }, { Unique: '3 of 3', UserRead: '3 of 3', Owner: '3 of 3', Inheriting: '3 of 3', Controls: '6 of 6' },
+    ROWS)) return;
+
+    // ---- C7: each shape's read, every page to the end, set beside the per-item reads ----
+    const ask = async (id, question, select, expand, ownerOf) => {
+      const got = await readAll(`${byTitle}/items?$select=Id,HasUniqueRoleAssignments,${select},${ROLES}`
+        + `&$expand=${expand}${EXPAND}&$top=100`);
+      const retry = got.pages.find((p) => p.retryAfter);
+      if (got.stop) {
+        const throttled = got.stop.status === 429 || got.stop.status === 503;
+        record(id, question, throttled ? 'THROTTLED' : got.stop.head.outcome,
+          `${got.pages.map(pageLine).join('; ')}; the read stopped: ${got.stop.head.why}`
+          + `${throttled && !retry ? '; no Retry-After header' : ''}`, throttled ? 'open' : undefined);
+        return;
+      }
+      const total = got.pages.reduce((sum, p) => sum + p.items, 0);
+      const carrying = got.pages.reduce((sum, p) => sum + p.carrying, 0);
+      const bare = [...got.items.entries()].filter(([, at]) => !Array.isArray(at.row.RoleAssignments))
+        .map(([itemId]) => itemId);
+      const samples = SAMPLES.map((sample) => {
+        const at = got.items.get(sample.id);
+        const carried = at && Array.isArray(at.row.RoleAssignments) ? keysOf(at.row.RoleAssignments) : null;
+        const same = carried !== null && carried.join(' ') === sample.keys.join(' ');
+        const owner = at && sample.broken ? `; ${ownerOf(at.row)}` : '';
+        return { same, line: `${sample.label} ${at ? `(page ${at.page})` : 'on no page'}: the page `
+          + `${carried === null ? 'carried no RoleAssignments' : `held ${carried.join(' ') || 'none'}`}, the `
+          + `per-item read ${sample.keys.join(' ') || 'none'}${carried === null ? '' : same ? ', the same'
+            : ', different'}${owner}` };
+      });
+      const every = carrying === total && total === ids.length && !got.capped && samples.every((s) => s.same);
+      // Scrubbed whole, since its Ids and bindings are values from the answer.
+      record(id, question,
+        carrying === 0 ? 'NO ITEM CARRIES BINDINGS' : every ? 'EVERY ITEM CARRIES ITS BINDINGS' : 'PARTIAL',
+        scrub(`${got.pages.map(pageLine).join('; ')}; ${total} item(s) read of the ${ids.length} counted`
+        + `${got.capped ? `, the nextLink still present after ${MAX_PAGES} pages` : ''}`
+        + `${carrying > 0 && bare.length ? `; without RoleAssignments: items ${bare.slice(0, 10).join(', ')}`
+          + `${bare.length > 10 ? ` and ${bare.length - 10} more` : ''}` : ''}`
+        + `; ${samples.map((s) => s.line).join('; ')}`));
+    };
+    const logins = (row) => (Array.isArray(row.RoleAssignments) ? row.RoleAssignments : [])
+      .map((a) => a && a.Member && a.Member.LoginName);
+    await ask('access.item-acl.items-expand-role-assignments', Q.byId, `${OWNER}Id`, '',
+      (row) => `${OWNER}Id ${quoteValue(row[`${OWNER}Id`])}, among the page's principals: `
+        + `${(Array.isArray(row.RoleAssignments) ? row.RoleAssignments : [])
+          .some((a) => a && a.PrincipalId === row[`${OWNER}Id`]) ? 'yes' : 'no'}`);
+    await ask('access.item-acl.items-expand-role-assignments-by-login', Q.byLogin, `${OWNER}/Name`, `${OWNER},`,
+      (row) => {
+        const name = row[OWNER] && typeof row[OWNER] === 'object' ? row[OWNER].Name : undefined;
+        return `${OWNER}/Name ${quoteValue(name)}, among the page's logins: `
+          + `${name !== undefined && logins(row).includes(name) ? 'yes' : 'no'}`;
+      });
+  } catch (err) {
+    log('FAIL', `probe aborted: ${scrub(String((err && err.message) || err)).slice(0, 240)}. `
+      + 'The unasked rows stay open; paste with CLEANUP to remove what was made.');
+  } finally {
+    report();
+  }
+})();
