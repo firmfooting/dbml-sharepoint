@@ -22,7 +22,7 @@ class Release:
     ignored_deployer_version: str | None = None
 ```
 
-Release(release_tag: str, date: str, schema_version: str, flow_package_version: str, notes: str, ignored_deployer_version: str | None = None)
+Release(*, release_tag: str, date: str, schema_version: str, flow_package_version: str, notes: str, ignored_deployer_version: str | None = None)
 
 ### `load_release`
 

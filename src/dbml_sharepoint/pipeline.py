@@ -89,6 +89,7 @@ from dbml_sharepoint.project import (
     validate_site_url,
     validate_time_zone,
 )
+from dbml_sharepoint.templating import check_application_name
 
 # Empty schema view used to render a findings-only manifest when validation
 # fails: build_schema_json cannot run safely on an invalid schema.
@@ -188,6 +189,7 @@ def execute_build(
     # manifest, and the reporting pack's `SiteRoot` and SQLCMD `SiteUrl` --
     # reads this variable, so cleaning it here is what keeps a pasted
     # `?web=1` out of every generated endpoint.
+    check_application_name(application)
     cleaned_site_url = validate_site_url(site_url)
     if notice := site_url_notice(site_url, cleaned_site_url):
         typer.echo(notice, err=True)

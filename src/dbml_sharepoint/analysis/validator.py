@@ -453,8 +453,9 @@ def validate_release(release: Release) -> list[Finding]:
     return [_report(
         FindingCode.RELEASE_DEPLOYER_VERSION_IGNORED,
         Location(Section.RELEASE, sub="deployer_version"),
-        f"{release.ignored_deployer_version!r} is ignored. Every script and manifest "
-        "records the installed package as the deployer. Remove the key.",
+        f"{release.ignored_deployer_version!r} is ignored. Script headers, the deploy "
+        "manifest and the deployment log record the installed package as the deployer. "
+        "Remove the key.",
     )]
 
 

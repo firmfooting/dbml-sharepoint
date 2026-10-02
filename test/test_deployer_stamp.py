@@ -93,6 +93,25 @@ def test_a_reporting_generator_refuses_an_unsafe_application_name(
         )
 
 
+def test_an_unsafe_application_name_leaves_the_last_bundle_in_place(tmp_path: Path) -> None:
+    """A refused input must not clear the bundle the operator may be part-way through pasting."""
+    out = tmp_path / "build"
+    out.mkdir()
+    (out / "deploy.js.txt").write_text("the last good bundle", encoding="utf-8", newline="\n")
+    with pytest.raises(ApplicationNameError):
+        execute_build(
+            schema=FIXTURES / "simple.dbml",
+            mapping=FIXTURES / "sharepoint-mapping.yaml",
+            release=FIXTURES / "release.yaml",
+            site_url="https://example.sharepoint.com/sites/test",
+            time_zone="UTC",
+            site_role="default",
+            out=out,
+            application="x y",
+        )
+    assert (out / "deploy.js.txt").read_text(encoding="utf-8") == "the last good bundle"
+
+
 _OTHER = "other-application"
 
 #: Genuine references to this package that stay whatever identity a build stamps.

@@ -1,5 +1,6 @@
 # test/test_release.py
 from pathlib import Path
+from typing import Any
 
 import pytest
 from _packs import write_mapping
@@ -8,7 +9,7 @@ from _paths import FIXTURES
 from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.validator import validate_release
 from dbml_sharepoint.model import _yaml
-from dbml_sharepoint.model.release import load_release, snapshot_hashes
+from dbml_sharepoint.model.release import Release, load_release, snapshot_hashes
 
 
 def test_load_release_returns_tag_and_versions() -> None:
@@ -39,6 +40,13 @@ def test_a_legacy_deployer_version_still_loads_and_is_kept_only_to_report(tmp_pa
 def test_a_release_without_deployer_version_has_no_release_finding(tmp_path: Path) -> None:
     write_mapping(tmp_path, _release_yaml(), prefix=None, name="release.yaml")
     assert validate_release(load_release(tmp_path / "release.yaml")) == []
+
+
+def test_release_refuses_positional_fields() -> None:
+    """Its fields moved when deployer_version was retired, so an old positional call must fail."""
+    legacy_call: Any = Release
+    with pytest.raises(TypeError):
+        legacy_call("1.0.0", "2026-01-01", "dbml-sharepoint/0.1.0", "1.0.0", "none", "")
 
 
 def test_snapshot_hashes_returns_sha256_for_each_path() -> None:

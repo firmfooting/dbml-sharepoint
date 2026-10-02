@@ -10,7 +10,8 @@ from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model._keys import _text_key
 
 
-@dataclass(frozen=True)
+# Keyword-only: the fields moved when deployer_version was retired, so a positional call fails.
+@dataclass(frozen=True, kw_only=True)
 class Release:
     release_tag: str
     date: str
