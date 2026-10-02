@@ -420,6 +420,7 @@ def emit_bundle(
             schema=schema, bundle=mapping_bundle, release=release,
             site_url=site_url, site_role=site_role,
             source_dbml=schema_name, generated_at=generated_at,
+            application=application,
         ),
     )
     write_artifact(
@@ -454,6 +455,7 @@ def emit_bundle(
                 schema=schema, bundle=mapping_bundle, release=release,
                 site_url=site_url, site_role=site_role,
                 source_dbml=schema_name, generated_at=generated_at,
+                application=application,
             ),
         )
         relpaths.append(VERIFY_SCRIPT)
@@ -464,6 +466,7 @@ def emit_bundle(
                 schema=schema, bundle=mapping_bundle, release=release,
                 site_url=site_url, site_role=site_role,
                 source_dbml=schema_name, generated_at=generated_at,
+                application=application,
             ),
         )
         relpaths.append(DEMO_SCRIPT)

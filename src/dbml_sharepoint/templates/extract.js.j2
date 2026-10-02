@@ -1,6 +1,6 @@
 {# src/dbml_sharepoint/templates/extract.js.j2 #}
 /**
- * dbml-sharepoint SCHEMA EXTRACTION script (READ-ONLY).
+ * {{ application_name }} SCHEMA EXTRACTION script (READ-ONLY).
  *
  * Target site:  {{ site_url | comment_safe }}
  * Deployer:     v{{ deployer_version | comment_safe }}
@@ -16,7 +16,7 @@
  * Then, on the machine you generated this from, in the folder you saved the
  * download into:
  *
- *   dbml-sharepoint extract {{ download_name | comment_safe }}
+ *   {{ command_name }} extract {{ download_name | comment_safe }}
  *
  * That creates a folder named after the download and writes a DRAFT
  * schema.dbml, mapping.yaml and release.yaml into it, plus an
@@ -172,9 +172,9 @@
   }
 
   if (downloaded) {
-    log('DONE', `Saved ${DOWNLOAD_NAME} (${lists.length} list(s), ${text.length} bytes). Run: dbml-sharepoint extract ${DOWNLOAD_NAME} --out ./my-project`);
+    log('DONE', `Saved ${DOWNLOAD_NAME} (${lists.length} list(s), ${text.length} bytes). Run: {{ command_name }} extract ${DOWNLOAD_NAME} --out ./my-project`);
   } else {
-    log('DONE', `Read ${lists.length} list(s). Run copy(JSON.stringify(window.__dbmlSharepointExtract, null, 2)) to put the payload on your clipboard, save it as ${DOWNLOAD_NAME}, then run: dbml-sharepoint extract ${DOWNLOAD_NAME} --out ./my-project`);
+    log('DONE', `Read ${lists.length} list(s). Run copy(JSON.stringify(window.__dbmlSharepointExtract, null, 2)) to put the payload on your clipboard, save it as ${DOWNLOAD_NAME}, then run: {{ command_name }} extract ${DOWNLOAD_NAME} --out ./my-project`);
   }
   return payload;
 })();

@@ -438,12 +438,15 @@ def template_contract(path: Path) -> str:
 
     block = _JS_BLOCK_COMMENT.match(text.lstrip())
     if block:
+        from dbml_sharepoint import APPLICATION_NAME, COMMAND_NAME
         from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 
         # Most Jinja tags are implementation detail and disappear from the
         # contract page. This marker is operator-facing content inside the
         # contract itself, so resolve it from the same owner as the template.
         body = block.group(1).replace("{{ demo_title_prefix }}", DEMO_TITLE_PREFIX)
+        body = body.replace("{{ application_name }}", APPLICATION_NAME)
+        body = body.replace("{{ command_name }}", COMMAND_NAME)
         body = _JINJA_TAG.sub("", body)
         lines = [line.strip().lstrip("*").strip() for line in body.splitlines()]
         paragraphs: list[str] = []

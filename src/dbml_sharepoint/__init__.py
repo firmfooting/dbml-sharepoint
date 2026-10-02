@@ -49,5 +49,8 @@ DISTRIBUTION = "dbml-sharepoint"
 #: provenance marker: the central log's type-2 close matches it against rows on live logs.
 APPLICATION_NAME = "dbml-sharepoint"
 
+#: The console command the generated scripts tell the operator to run next.
+COMMAND_NAME = "dbml-sharepoint"
+
 #: Read from the installed metadata, so pyproject.toml holds the only copy (#687).
 __version__ = _installed_version(DISTRIBUTION)

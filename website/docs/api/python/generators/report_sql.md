@@ -25,7 +25,7 @@ row-level M expression has no SQL to translate to.
 ### `generate_sql_views`
 
 ```python
-def generate_sql_views(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, site_url: str | None = None, time_zone: str | None = None) -> str
+def generate_sql_views(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, site_url: str | None = None, time_zone: str | None = None, application: str = 'dbml-sharepoint') -> str
 ```
 
 A single SQLCMD script: typed view per list + _Enriched join views.

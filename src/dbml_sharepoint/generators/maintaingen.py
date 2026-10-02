@@ -16,6 +16,7 @@ bundle no longer declares: a retired sidecar, a list left behind by a
 rename.
 """
 
+from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.provenance import (
     LIST_KIND,
     MARKER_PREFIX,
@@ -42,8 +43,9 @@ LIST_MARKER_KINDS: tuple[str, ...] = (LIST_KIND, SCRATCH_KIND)
 
 def _render(
     template: str, *, site_url: str, list_title: str, list_path: str, generated_at: str,
+    application: str = APPLICATION_NAME,
 ) -> str:
-    return script_env().get_template(template).render(
+    return script_env(application).get_template(template).render(
         site_url=site_url,
         # BOTH, and they are different things. `list_path` is what the script
         # resolves the list by; `list_title` is the URL slug, which names the
@@ -65,6 +67,7 @@ def _render(
 
 def generate_protection_js(
     *, site_url: str, list_title: str, list_path: str, generated_at: str,
+    application: str = APPLICATION_NAME,
 ) -> str:
     """The pasteable script that locks, unlocks, seals or unseals one list.
 
@@ -73,13 +76,14 @@ def generate_protection_js(
     any list renamed in place.
     """
     return _render(
-        "protection.js.j2", site_url=site_url, list_title=list_title,
+        "protection.js.j2", application=application, site_url=site_url, list_title=list_title,
         list_path=list_path, generated_at=generated_at,
     )
 
 
 def generate_columns_js(
     *, site_url: str, list_title: str, list_path: str, generated_at: str,
+    application: str = APPLICATION_NAME,
 ) -> str:
     """The pasteable script that enumerates and deletes one list's custom columns.
 
@@ -88,13 +92,14 @@ def generate_columns_js(
     any list renamed in place.
     """
     return _render(
-        "columns.js.j2", site_url=site_url, list_title=list_title,
+        "columns.js.j2", application=application, site_url=site_url, list_title=list_title,
         list_path=list_path, generated_at=generated_at,
     )
 
 
 def generate_list_js(
     *, site_url: str, list_title: str, list_path: str, generated_at: str,
+    application: str = APPLICATION_NAME,
 ) -> str:
     """The pasteable script that deletes one whole list, by URL.
 
@@ -103,6 +108,6 @@ def generate_list_js(
     any list renamed in place.
     """
     return _render(
-        "list.js.j2", site_url=site_url, list_title=list_title,
+        "list.js.j2", application=application, site_url=site_url, list_title=list_title,
         list_path=list_path, generated_at=generated_at,
     )

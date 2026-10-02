@@ -22,6 +22,6 @@ notice; `analysis/demo_marker.py` declares it.
 ### `generate_demo_js`
 
 ```python
-def generate_demo_js(*, schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, release: dbml_sharepoint.model.release.Release, site_url: str, site_role: str, source_dbml: str, generated_at: str) -> str
+def generate_demo_js(*, schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, release: dbml_sharepoint.model.release.Release, site_url: str, site_role: str, source_dbml: str, generated_at: str, application: str = 'dbml-sharepoint') -> str
 ```
 

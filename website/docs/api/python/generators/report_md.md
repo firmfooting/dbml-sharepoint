@@ -24,7 +24,7 @@ in ``guide.md``.
 ### `generate_reporting_md`
 
 ```python
-def generate_reporting_md(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, site_url: str | None = None, time_zone: str | None = None) -> str
+def generate_reporting_md(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, site_url: str | None = None, time_zone: str | None = None, application: str = 'dbml-sharepoint') -> str
 ```
 
 Usage instructions + the Power BI relationship table.

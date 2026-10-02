@@ -140,9 +140,9 @@ derived_columns:
 """
 
 
-def _pair(tmp_path: Path, **kwargs: str | None) -> dict[str, str]:
+def _pair(tmp_path: Path, site_url: str | None = None) -> dict[str, str]:
     schema, bundle = pack(tmp_path, _PAIR_DBML, _PAIR_MAPPING)
-    return generate_powerquery(schema, bundle, "default", **kwargs)
+    return generate_powerquery(schema, bundle, "default", site_url=site_url)
 
 
 def test_a_mutual_pair_renders_acyclic_with_a_base_each_way(tmp_path: Path) -> None:
@@ -162,8 +162,8 @@ def test_a_base_function_reads_no_query_and_takes_the_site_as_its_parameter(
     one that makes a duplicate pointed at another site read that site's
     children: the base is a function of the site, binding no URL of its
     own, baked pack or not."""
-    for kwargs in ({}, {"site_url": "https://tenant.sharepoint.com/sites/Ops"}):
-        base = _pair(tmp_path, **kwargs)["APP_Action_Base.pq"]
+    for site_url in (None, "https://tenant.sharepoint.com/sites/Ops"):
+        base = _pair(tmp_path, site_url)["APP_Action_Base.pq"]
         code = [
             line for line in base.splitlines() if not line.strip().startswith("//")
         ]

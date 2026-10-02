@@ -49,6 +49,6 @@ The data the verify script loops over, derived from the pack's clock use.
 ### `generate_verify_js`
 
 ```python
-def generate_verify_js(*, schema: 'Schema', bundle: 'MappingBundle', release: 'Release', site_url: 'str', site_role: 'str', source_dbml: 'str', generated_at: 'str') -> 'str'
+def generate_verify_js(*, schema: 'Schema', bundle: 'MappingBundle', release: 'Release', site_url: 'str', site_role: 'str', source_dbml: 'str', generated_at: 'str', application: 'str' = 'dbml-sharepoint') -> 'str'
 ```
 

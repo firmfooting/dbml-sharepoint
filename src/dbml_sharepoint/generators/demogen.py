@@ -14,6 +14,7 @@ notice; `analysis/demo_marker.py` declares it.
 
 from typing import Any
 
+from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.typemap import (
@@ -174,8 +175,9 @@ def generate_demo_js(
     site_role: str,
     source_dbml: str,
     generated_at: str,
+    application: str = APPLICATION_NAME,
 ) -> str:
-    env = script_env()
+    env = script_env(application)
     tables_by_name = {t.name: t for t in schema.tables}
     demo_plan: list[dict[str, Any]] = []
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):

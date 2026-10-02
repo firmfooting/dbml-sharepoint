@@ -15,7 +15,7 @@ from typing import Any, cast
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 import dbml_sharepoint
-from dbml_sharepoint import APPLICATION_NAME
+from dbml_sharepoint import APPLICATION_NAME, COMMAND_NAME
 from dbml_sharepoint.analysis.typemap import (
     BASE_TYPE_AS_STRING_PAIRS,
     DERIVED_FIELD_PROPERTIES,
@@ -96,6 +96,7 @@ def script_env(application: str = APPLICATION_NAME) -> Environment:
     env_globals["derived_field_property_kinds"] = DERIVED_FIELD_PROPERTY_KINDS
     # The identity every script and manifest stamps, chosen by the generator's caller.
     env_globals["application_name"] = application
+    env_globals["command_name"] = COMMAND_NAME
     # Read per call rather than imported, so the test suite can pin the version its goldens record.
     env_globals["deployer_version"] = dbml_sharepoint.__version__
     return env

@@ -25,7 +25,7 @@ no site and falls back to a ``SiteUrl`` text parameter.
 ### `generate_powerquery`
 
 ```python
-def generate_powerquery(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, site_url: str | None = None, time_zone: str | None = None) -> dict[str, str]
+def generate_powerquery(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, site_url: str | None = None, time_zone: str | None = None, application: str = 'dbml-sharepoint') -> dict[str, str]
 ```
 
 One M query per list for the site role, and a base function for each

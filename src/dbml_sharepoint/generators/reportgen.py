@@ -89,6 +89,7 @@ def render_reporting(
     """
     queries = generate_powerquery(
         schema, bundle, site_role, site_url=site_url, time_zone=time_zone,
+        application=application,
     )
     queries.update(generate_dictionary_powerquery(
         schema, bundle, site_role,
@@ -103,6 +104,7 @@ def render_reporting(
     pack[f"{REPORT_SQL_DIR}/{REPORT_VIEWS_SQL}"] = (
         generate_sql_views(
             schema, bundle, site_role, site_url=site_url, time_zone=time_zone,
+            application=application,
         )
         + "\n"
         + generate_dictionary_sql(
@@ -114,6 +116,7 @@ def render_reporting(
     )
     pack[REPORT_GUIDE] = generate_reporting_md(
         schema, bundle, site_role, site_url=site_url, time_zone=time_zone,
+        application=application,
     )
     pack[REPORT_DICTIONARY] = generate_data_dictionary(
         schema, bundle, site_role, resolved=resolved,

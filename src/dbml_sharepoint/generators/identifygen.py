@@ -19,6 +19,7 @@ what a marker looks like. The sidecar list titles and the run log's stamp
 columns come from ``analysis/sidecars.py`` for the same reason.
 """
 
+from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis import sidecars
 from dbml_sharepoint.analysis.provenance import (
     GROUP_KIND,
@@ -61,7 +62,9 @@ RUN_LOG_STAMP_FIELDS: tuple[str, ...] = tuple(
 )
 
 
-def generate_identify_js(*, generated_at: str, site_url: str | None = None) -> str:
+def generate_identify_js(
+    *, generated_at: str, site_url: str | None = None, application: str = APPLICATION_NAME,
+) -> str:
     """The pasteable inventory script for one site, or for any site.
 
     ``site_url`` is optional: with none, the script inventories whichever web
@@ -69,7 +72,7 @@ def generate_identify_js(*, generated_at: str, site_url: str | None = None) -> s
     site-match guard the writing sidecars carry, which is worth doing when the
     file goes to somebody else to paste.
     """
-    return script_env().get_template("identify.js.j2").render(
+    return script_env(application).get_template("identify.js.j2").render(
         site_url=site_url,
         require_site_match=site_url is not None,
         generated_at=generated_at,
