@@ -523,12 +523,20 @@
 
     // ---- 4. Rows: recycle this run's rows where the site allows ----------------
     const itemsPath = `${listPath}/items`;
-    const existing = await readJson(`${itemsPath}?$select=Id,Title&$top=5000`);
+    const ROW_PAGE_SIZE = 5000;
+    const existing = await readJson(`${itemsPath}?$select=Id,Title&$top=${ROW_PAGE_SIZE}`);
     // Rows missing from this read are created again beside the old ones, so an unreadable read stops the run.
     if (!existing.ok || !existing.d || !Array.isArray(existing.d.results)) {
       const why = existing.ok ? 'it answered without a d.results array' : `HTTP ${existing.status} ${existing.reason}`;
       finding('scratch_list', 'NOT-ASSESSABLE', `Could not read the list's rows (${why}); nothing was verified.`);
       return { findings, verdict: 'NOT-VERIFIED', aborted: 'rows-unreadable' };
+    }
+    // A row past the page reads as absent and is placed again, so a page that may be short stops the run, as the field read does.
+    const rowsNext = existing.d.__next;
+    if (existing.d.results.length >= ROW_PAGE_SIZE
+      || (rowsNext !== undefined && rowsNext !== null && rowsNext !== '')) {
+      finding('scratch_list', 'NOT-ASSESSABLE', `The list's row read came back at its ${ROW_PAGE_SIZE}-row page size or with a next link, so a row from an earlier run may be missing from it; nothing was verified.`);
+      return { findings, verdict: 'NOT-VERIFIED', aborted: 'rows-page-truncated' };
     }
     const byTitle = new Map();
     for (const row of existing.d.results) byTitle.set(String(row.Title), row.Id);

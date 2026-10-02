@@ -82,7 +82,7 @@
           throw new Error('list enumeration: answered without a d.results array');
         }
         for (const l of j.d.results) {
-          discovered[l.Title] = Number.isInteger(l.ItemCount) ? l.ItemCount : 0;
+          discovered[l.Title] = l.ItemCount;
         }
         nextUrl = continuation || null;
       }
@@ -90,7 +90,13 @@
       // null, so no later target can mistake a partial catalogue for absence.
       listCountsByTitle = discovered;
     }
-    return (name in listCountsByTitle) ? listCountsByTitle[name] : null;
+    if (!(name in listCountsByTitle)) return null;
+    const count = listCountsByTitle[name];
+    // Read as zero, it told the operator an unread list was empty in the prompt that authorises its deletion (#727).
+    if (!Number.isInteger(count) || count < 0) {
+      throw new Error(`'${name}' answered the list enumeration with no integer ItemCount (${JSON.stringify(count)}); nothing has been deleted`);
+    }
+    return count;
   }
 
   // Recycle a list's items BEFORE deleting the list. Live findings
