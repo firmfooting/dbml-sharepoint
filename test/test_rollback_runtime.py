@@ -1012,18 +1012,24 @@ def test_an_item_read_without_results_is_not_a_drained_list() -> None:
     assert not [c for c in calls if c["headers"].get("X-HTTP-Method") == "DELETE"]
 
 
-@pytest.mark.parametrize("count", [None, "3", 2.5], ids=["missing", "string", "fraction"])
-def test_a_target_whose_item_count_is_not_an_integer_is_not_deleted(count: Any) -> None:
+@pytest.mark.parametrize(
+    "count", ["absent", None, "3", 2.5, -1],
+    ids=["absent", "null", "string", "fraction", "negative"],
+)
+def test_a_target_whose_item_count_is_not_a_count_is_not_deleted(count: Any) -> None:
     """Read as zero, the prompt told the operator the list was empty while
     asking them to authorise its deletion (#727)."""
     listing = _listing("APP_Task", ["Record"])
-    listing["count"] = count
+    if count == "absent":
+        del listing["count"]
+    else:
+        listing["count"] = count
     summary, calls, prompts = _rollback({"APP_Task": listing}, answers=["DELETE NON-EMPTY"])
     assert summary["deleted"] == []
-    assert prompts == [] or not any("currently reports" in p for p in prompts), prompts
+    assert not [p for p in prompts if "currently reports" in p], prompts
     assert _writes(calls) == []
     assert any(
-        "APP_Task" in e["error"] and "no integer ItemCount" in e["error"]
+        "APP_Task" in e["error"] and "no non-negative integer ItemCount" in e["error"]
         for e in summary["errors"]
     ), summary["errors"]
 
@@ -1039,3 +1045,13 @@ def test_another_list_s_unreadable_item_count_does_not_stop_a_target() -> None:
     assert summary["errors"] == [], summary["errors"]
     assert _non_empty_prompts(prompts), prompts
     assert _skips(summary)["APP_Task"] == "non-empty"
+
+
+def test_a_list_this_family_did_not_provision_is_skipped_whatever_its_count() -> None:
+    """Ownership is judged first, so a stranger's unreadable count is a skip, not an error."""
+    listing = _listing("APP_Task", ["Record"], ours=False)
+    listing["count"] = None
+    summary, calls, _prompts = _rollback({"APP_Task": listing})
+    assert summary["errors"] == [], summary["errors"]
+    assert _skips(summary)["APP_Task"] == "not-ours"
+    assert _writes(calls) == []

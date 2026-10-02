@@ -82,7 +82,7 @@
           throw new Error('list enumeration: answered without a d.results array');
         }
         for (const l of j.d.results) {
-          discovered[l.Title] = l.ItemCount;
+          discovered[l.Title] = { count: l.ItemCount };
         }
         nextUrl = continuation || null;
       }
@@ -90,13 +90,8 @@
       // null, so no later target can mistake a partial catalogue for absence.
       listCountsByTitle = discovered;
     }
-    if (!(name in listCountsByTitle)) return null;
-    const count = listCountsByTitle[name];
-    // Read as zero, it told the operator an unread list was empty in the prompt that authorises its deletion (#727).
-    if (!Number.isInteger(count) || count < 0) {
-      throw new Error(`'${name}' answered the list enumeration with no integer ItemCount (${JSON.stringify(count)}); nothing has been deleted`);
-    }
-    return count;
+    // Raw, and wrapped so a null ItemCount is not read as an absent list; the caller refuses one that is not a count.
+    return (name in listCountsByTitle) ? listCountsByTitle[name] : null;
   }
 
   // Recycle a list's items BEFORE deleting the list. Live findings
@@ -216,8 +211,9 @@
     // here because the re-lock that reads it runs in the catch below.
     let unlock = 'untouched';
     try {
-      const count = await itemCount(name);
-      if (count === null) { summary.skipped.push({ list: name, reason: 'not-found' }); continue; }
+      const listed = await itemCount(name);
+      if (listed === null) { summary.skipped.push({ list: name, reason: 'not-found' }); continue; }
+      const { count } = listed;
       // The deploy refuses to adopt an object it did not provision; rollback
       // must refuse to delete one, or the gate exists on the way in and not
       // on the way out (helm/helm#31333, which shipped that asymmetry from
@@ -233,6 +229,10 @@
         summary.skipped.push({ list: name, reason: 'not-ours' });
         log('WARN', `'${name}': exists but carries no '${target.expected_marker}' marker, so it was not provisioned by this family. Skipping; nothing has been deleted. Rename it, or delete it by hand if you are certain.`);
         continue;
+      }
+      // The confirmation prompt quotes this count, so an unreadable one must not read as zero (#727).
+      if (!Number.isInteger(count) || count < 0) {
+        throw new Error(`'${name}' answered the list enumeration with no non-negative integer ItemCount (${JSON.stringify(count)}); nothing has been deleted`);
       }
       // Confirm EVERY list, not only a snapshot classified as non-empty.
       // ItemCount is not an atomic gate: an item can exist despite a stale
