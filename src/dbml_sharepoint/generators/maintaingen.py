@@ -16,7 +16,6 @@ bundle no longer declares: a retired sidecar, a list left behind by a
 rename.
 """
 
-from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis.provenance import (
     LIST_KIND,
     MARKER_PREFIX,
@@ -53,7 +52,6 @@ def _render(
         list_title=list_title,
         list_path=list_path,
         generated_at=generated_at,
-        deployer_version=__version__,
         # The grammar's own parts, passed in rather than typed into the
         # template, so the scripts and the deployer can never disagree about
         # what a marker looks like. The scripts match the WHOLE grammar: a

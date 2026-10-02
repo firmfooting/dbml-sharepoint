@@ -174,7 +174,7 @@ _ONE_ENTITY = (
 #: A release.yaml the loader accepts, for a stand-in family.
 _RELEASE = (
     'release: "1.0.0"\ndate: "2026-09-28"\n'
-    'deployer_version: "dbml-sharepoint/0.1.0"\nschema_version: "1.0.0"\n'
+    'schema_version: "1.0.0"\n'
 )
 
 

@@ -19,7 +19,6 @@ what a marker looks like. The sidecar list titles and the run log's stamp
 columns come from ``analysis/sidecars.py`` for the same reason.
 """
 
-from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis import sidecars
 from dbml_sharepoint.analysis.provenance import (
     GROUP_KIND,
@@ -74,7 +73,6 @@ def generate_identify_js(*, generated_at: str, site_url: str | None = None) -> s
         site_url=site_url,
         require_site_match=site_url is not None,
         generated_at=generated_at,
-        deployer_version=__version__,
         payload_format=PAYLOAD_FORMAT,
         payload_version=PAYLOAD_VERSION,
         download_name=DEFAULT_DOWNLOAD_NAME,

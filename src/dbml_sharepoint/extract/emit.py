@@ -224,7 +224,6 @@ def render_release(*, source: str, generated_at: str) -> str:
     document = {
         "release": DRAFT_RELEASE,
         "date": generated_at,
-        "deployer_version": "dbml-sharepoint/extracted",
         "schema_version": DRAFT_RELEASE,
         "notes": (
             f"Extracted from {source} on {generated_at}. Nothing in the source "

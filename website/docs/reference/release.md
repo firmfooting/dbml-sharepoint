@@ -10,7 +10,6 @@ The smallest input, and the one that makes runs auditable.
 ```yaml
 release: "2026.07-r3"
 date: "2026-07-27"
-deployer_version: "dbml-sharepoint/0.1.0"
 schema_version: "1.4.0"
 notes: |
   Optional free text. Anything an operator or auditor should read
@@ -21,10 +20,10 @@ notes: |
 | --- | --- | --- |
 | `release` | yes | The release tag. Bump for any regenerated bundle you hand to an operator |
 | `date` | yes | The release date, as a string |
-| `deployer_version` | yes | The tool version this bundle was cut with (a pin you record, not one the tool reads back) |
 | `schema_version` | yes | Bump when the DBML changes shape |
 | `flow_package_version` | no | Defaults to `"none"`; for organisations pairing the lists with a Power Automate package |
 | `notes` | no | Defaults to `""` |
+| `deployer_version` | no | Ignored. The build warns with `release_deployer_version_ignored`; remove the key |
 
 The key set is closed. A missing required key and an unrecognised key are
 both load errors naming the file, including a near-miss like
@@ -51,13 +50,19 @@ differ so the file reads as a release description rather than as a struct.
 
 ## Where the values go
 
-`release`, `schema_version` and `deployer_version` are stamped into every
+`release` and `schema_version` are stamped into every
 generated artifact's provenance header: deploy.js.txt, rollback.js.txt, assess.js.txt,
 demo-data.js.txt, both manifests, and the reporting outputs. deploy.js.txt also
 carries `release` and `schema_version` into its run summary, so a pasted
 console transcript records exactly which release produced the site's
-current shape. `date` and `deployer_version` additionally appear in the
-reporting bundle's provenance table.
+current shape. `date` additionally appears in the reporting bundle's
+provenance table.
+
+The deployer those headers, the manifests and the deployment log record is
+not read from this file. It is the name and version of the installed
+dbml-sharepoint package, read from its metadata when the bundle is built.
+`deployer_version` used to be written here by hand and had drifted from the
+version that actually built the bundle, so it is now ignored.
 
 ## What the release tag does *not* do
 

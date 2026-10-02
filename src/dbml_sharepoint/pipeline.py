@@ -33,7 +33,7 @@ from dbml_sharepoint.analysis.sidecars import (
     EXTERNAL_LOG_DEFAULT,
     run_log_title,
 )
-from dbml_sharepoint.analysis.validator import validate_all
+from dbml_sharepoint.analysis.validator import validate_all, validate_release
 from dbml_sharepoint.bundle import (
     REPORT_DICTIONARY,
     REPORT_GUIDE,
@@ -391,7 +391,7 @@ def execute_build(
     # could paste.
     clear_generated(out, reporting=True)
 
-    findings = validate_all(parsed_schema, bundle, ext)
+    findings = validate_all(parsed_schema, bundle, ext) + validate_release(release_obj)
     errors = [f for f in findings if f.severity == "error"]
 
     site_context = SiteContext(

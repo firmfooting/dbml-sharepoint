@@ -13,7 +13,6 @@ guarantee test pins that.
 
 import re
 
-from dbml_sharepoint import __version__
 from dbml_sharepoint.extract.sources import LIVE_FORMAT
 from dbml_sharepoint.templating import script_env
 
@@ -104,7 +103,6 @@ def generate_extract_js(
         site_url=site_url,
         list_paths=list_paths,
         generated_at=generated_at,
-        deployer_version=__version__,
         live_format=LIVE_FORMAT,
         download_name=download_name([slug_from_path(p) for p in list_paths]),
     )

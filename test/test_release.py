@@ -5,6 +5,8 @@ import pytest
 from _packs import write_mapping
 from _paths import FIXTURES
 
+from dbml_sharepoint.analysis.findings import FindingCode
+from dbml_sharepoint.analysis.validator import validate_release
 from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.release import load_release, snapshot_hashes
 
@@ -12,8 +14,31 @@ from dbml_sharepoint.model.release import load_release, snapshot_hashes
 def test_load_release_returns_tag_and_versions() -> None:
     rel = load_release(FIXTURES / "release.yaml")
     assert rel.release_tag == "0.1.0-test"
-    assert rel.deployer_version == "dbml-sharepoint/0.1.0"
     assert rel.schema_version == "0.8"
+
+
+def test_a_release_without_deployer_version_loads(tmp_path: Path) -> None:
+    """The running package's metadata names the deployer now (#687), so the key is optional."""
+    write_mapping(tmp_path, _release_yaml(), prefix=None, name="release.yaml")
+    assert load_release(tmp_path / "release.yaml").ignored_deployer_version is None
+
+
+def test_a_legacy_deployer_version_still_loads_and_is_kept_only_to_report(tmp_path: Path) -> None:
+    """37 of 40 shipped files said 0.1.0 whatever version built them (#687)."""
+    write_mapping(
+        tmp_path, _release_yaml(deployer_version='"dbml-sharepoint/0.1.0"'),
+        prefix=None, name="release.yaml",
+    )
+    release = load_release(tmp_path / "release.yaml")
+    assert release.ignored_deployer_version == "dbml-sharepoint/0.1.0"
+    assert [(f.code, f.severity) for f in validate_release(release)] == [
+        (FindingCode.RELEASE_DEPLOYER_VERSION_IGNORED, "warning"),
+    ]
+
+
+def test_a_release_without_deployer_version_has_no_release_finding(tmp_path: Path) -> None:
+    write_mapping(tmp_path, _release_yaml(), prefix=None, name="release.yaml")
+    assert validate_release(load_release(tmp_path / "release.yaml")) == []
 
 
 def test_snapshot_hashes_returns_sha256_for_each_path() -> None:
@@ -36,7 +61,6 @@ def test_release_unknown_keys_are_rejected(tmp_path: Path) -> None:
         """
         release: "1.0.0"
         date: "2026-01-01"
-        deployer_version: "dbml-sharepoint/0.1.0"
         schema_version: "1.0.0"
         schema_verison: "1.0.1"
         """,
@@ -63,7 +87,7 @@ def test_a_release_key_that_is_not_text_is_refused_before_the_unknown_keys(
     write_mapping(
         tmp_path,
         'release: "1.0.0"\ndate: "2026-01-01"\n'
-        'deployer_version: "dbml-sharepoint/0.1.0"\nschema_version: "1.0.0"\n' + typed,
+        'schema_version: "1.0.0"\n' + typed,
         prefix=None,
         name="release.yaml",
     )
@@ -78,7 +102,7 @@ def test_a_release_key_yaml_1_2_reads_as_text_is_an_unknown_key(tmp_path: Path) 
     write_mapping(
         tmp_path,
         'release: "1.0.0"\ndate: "2026-01-01"\n'
-        'deployer_version: "dbml-sharepoint/0.1.0"\nschema_version: "1.0.0"\nNo: x',
+        'schema_version: "1.0.0"\nNo: x',
         prefix=None,
         name="release.yaml",
     )
@@ -103,7 +127,6 @@ def test_release_missing_key_is_named_not_a_keyerror(tmp_path: Path) -> None:
 _QUOTED = {
     "release": '"1.0.0"',
     "date": '"2026-01-01"',
-    "deployer_version": '"dbml-sharepoint/0.1.0"',
     "schema_version": '"1.0.0"',
 }
 
@@ -159,8 +182,8 @@ def test_a_release_key_written_twice_is_refused(tmp_path: Path) -> None:
     assert str(err.value) == (
         "while constructing a mapping\n"
         f'  in "{path}", line 1, column 1\n'
-        "found duplicate key 'schema_version' (first at line 4)\n"
-        f'  in "{path}", line 5, column 1'
+        "found duplicate key 'schema_version' (first at line 3)\n"
+        f'  in "{path}", line 4, column 1'
     )
 
 

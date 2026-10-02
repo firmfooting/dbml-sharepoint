@@ -96,10 +96,8 @@ KNOWN_CONTEXT = {
     "deployment_log_site",
     "deployment_log_columns", "deployment_log_change_columns",
     "deployment_log_row_prefix", "application_name",
-    # extractgen (extract.js). `deployer_version` is bare here rather than
-    # `release.deployer_version`: extract.js runs before a release.yaml
-    # exists, so there is no release object to hang it off.
-    "list_paths", "live_format", "download_name", "deployer_version",
+    # extractgen (extract.js)
+    "list_paths", "live_format", "download_name",
     # maintaingen (protection.js, columns.js): one list, named by the
     # operator from the address bar, and no release object for the same
     # reason extract.js has none. BOTH halves of that URL are passed:

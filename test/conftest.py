@@ -6,9 +6,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from _paths import GOLDEN_DEPLOYER_VERSION
 from _reachability import NOT_YET_REACHED, evaluate
 from hypothesis import HealthCheck, settings
 
+import dbml_sharepoint
 from dbml_sharepoint.analysis import findings as _findings
 
 if TYPE_CHECKING:
@@ -34,6 +36,15 @@ settings.register_profile(
 settings.register_profile("ci", parent=settings.get_profile("default"), max_examples=200)
 
 settings.load_profile("ci" if os.environ.get("CI") else "default")
+
+
+@pytest.fixture(autouse=True)
+def _pinned_deployer_version(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Goldens record the deployer stamp, and every release moves the installed version."""
+    if request.node.get_closest_marker("real_deployer_version") is None:
+        monkeypatch.setattr(dbml_sharepoint, "__version__", GOLDEN_DEPLOYER_VERSION)
 
 
 # --- Node is optional locally and mandatory in CI ---------------------------

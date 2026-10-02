@@ -264,6 +264,7 @@ dbml-sharepoint explain unknown_column_type
 | `projection_unknown_column` | error | A `lookup_projections:` entry names a column the entity's table does not declare. |
 | `projection_unknown_target_column` | error | A `lookup_projections:` entry projects a column the lookup target does not declare. |
 | `redundant_display_column_acceptance` | warning | `accept_unindexable_display_column` is set on an entity with nothing to accept: nothing looks it up, or its display column is not calculated. |
+| `release_deployer_version_ignored` | warning | release.yaml sets `deployer_version`, which the build no longer reads. The deployer every script, manifest and deployment log row records is the installed package's own name and version, read from its metadata at build time. The key was written by hand and had drifted: most shipped files said 0.1.0 whatever version built them. The file still loads. Remove the key to clear this warning. |
 | `renamed_from_claimed_twice` | error | `renamed_from` resolves to one previous name on more than one entity, group or permission level, or twice on one, so two would race to adopt the same existing object. |
 | `renamed_from_is_a_declared_entity` | error | `renamed_from` resolves to a previous name that is still a declared entity, group or permission level, so a redeploy would find both and could not tell a rename from a collision. |
 | `required_column_hidden_from_the_new_form` | error | A required column with no default is hidden from the New form, so every save would fail. Statically provable, hence an error. |

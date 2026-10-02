@@ -1477,6 +1477,14 @@ FINDING_HELP: dict[FindingCode, str] = {
         "nothing to accept: nothing looks it up, or its display column "
         "is not calculated."
     ),
+    FindingCode.RELEASE_DEPLOYER_VERSION_IGNORED: (
+        "release.yaml sets `deployer_version`, which the build no longer reads. "
+        "The deployer every script, manifest and deployment log row records is "
+        "the installed package's own name and version, read from its metadata "
+        "at build time. The key was written by hand and had drifted: most "
+        "shipped files said 0.1.0 whatever version built them. The file still "
+        "loads. Remove the key to clear this warning."
+    ),
     FindingCode.REQUIRED_COLUMN_HIDDEN_FROM_THE_NEW_FORM: (
         "A required column with no default is hidden from the New form, "
         "so every save would fail. Statically provable, hence an error."

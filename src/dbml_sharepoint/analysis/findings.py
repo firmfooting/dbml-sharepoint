@@ -54,6 +54,8 @@ class Section(StrEnum):
     # rather than as a dotted path. The section is real even where the message
     # never spelled it.
     RETENTION = "retention"
+    # `release.yaml`, which like retention is its own file rather than a mapping section.
+    RELEASE = "release"
     # The `reporting:` switches, which are not keyed by entity.
     REPORTING = "reporting"
     RETIRED_COLUMNS = "retired_columns"
@@ -410,6 +412,9 @@ class FindingCode(StrEnum):
 
     # --- facts the loader recorded while reading (checks/_loading.py) -------
     BLANK_KEY_TOOK_DEFAULT = "blank_key_took_default", "warning"
+
+    # --- release.yaml (validator.validate_release) -------------------------
+    RELEASE_DEPLOYER_VERSION_IGNORED = "release_deployer_version_ignored", "warning"
 
     # --- permission levels, groups and policies (checks/_permissions.py) ----
     AUTOMATION_GROUP_GRANTED_FULL_CONTROL = (

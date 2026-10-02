@@ -824,7 +824,7 @@
         body.SourceSite = SITE_URL;
         body.ReleaseTag = RELEASE_TAG;
         body.SchemaVersion = SCHEMA_VERSION;
-        body.DeployerVersion = {{ release.deployer_version | tojson }};
+        body.DeployerVersion = {{ (deployer_name ~ '/' ~ deployer_version) | tojson }};
         body.Operator = OPERATOR_LOGIN;
         body.Details = details || '';
         body.Application = APPLICATION;
@@ -1155,7 +1155,7 @@
         `site {{ site_url }}; role {{ site_role }}`);
       await stampExternal('provenance',
         `generated from {{ source_dbml }}; release ${RELEASE_TAG}; schema v${SCHEMA_VERSION}; `
-        + `deployer v{{ release.deployer_version }}; {{ generated_at }}; {{ env_file_line }}`,
+        + `deployer v{{ deployer_version }}; {{ generated_at }}; {{ env_file_line }}`,
         `generated from {{ source_dbml }} at {{ generated_at }}; {{ env_file_line }}`);
     } else {
       await stampRunLog('deployment start', `site {{ site_url }}; role {{ site_role }}`);

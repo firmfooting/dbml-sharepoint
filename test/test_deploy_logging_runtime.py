@@ -33,6 +33,7 @@ from _node import NODE
 from _node import run_node as _run
 from _paths import FIXTURES
 
+import dbml_sharepoint
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.sidecars import (
     APPLICATION_NAME,
@@ -1409,17 +1410,17 @@ def test_the_close_leaves_another_application_row_alone() -> None:
 
 
 def test_the_stamped_deployer_version_is_not_doubled() -> None:
-    """`release.yaml`'s `deployer_version` already carries the product name
-    (`dbml-sharepoint/0.1.0`), so prepending it a second time stamped every
-    central row with `dbml-sharepoint/dbml-sharepoint/0.1.0`. Only the
-    Deployments list's stamps carry DeployerVersion; a change row never has.
+    """The stamp is `<name>/<version>` once. Prepending the product name to a
+    value that already carried it stamped every central row with
+    `dbml-sharepoint/dbml-sharepoint/0.1.0`. Only the Deployments list's
+    stamps carry DeployerVersion; a change row never has.
     """
-    release = load_release(FIXTURES / "release.yaml")
     run = _run_deploy(central_can_close=True, seeded_central_rows=True)
     central = run["state"]["central"]
     stamps = [r for r in central if "DeployerVersion" in r]
     assert stamps, "no central stamp carried DeployerVersion"
-    assert all(r["DeployerVersion"] == release.deployer_version for r in stamps), (
+    stamped = f"{dbml_sharepoint.DISTRIBUTION}/{dbml_sharepoint.__version__}"
+    assert all(r["DeployerVersion"] == stamped for r in stamps), (
         f"DeployerVersion is doubled: {[r['DeployerVersion'] for r in stamps]}"
     )
     assert not any("DeployerVersion" in r for r in run["state"]["centralChanges"]), (

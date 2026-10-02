@@ -14,7 +14,7 @@ table.
 
 from typing import NamedTuple
 
-from dbml_sharepoint import __version__
+import dbml_sharepoint
 from dbml_sharepoint.analysis.condition_description import describe
 from dbml_sharepoint.analysis.derived import derived_output_names
 from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN
@@ -394,7 +394,7 @@ def metadata_rows(
     mapping = bundle.mapping
     rows = [
         ("Generated at", generated_at or "-"),
-        ("Generator", f"dbml-sharepoint {__version__}"),
+        ("Generator", f"{dbml_sharepoint.DISTRIBUTION} {dbml_sharepoint.__version__}"),
         ("Source schema", source_schema or "-"),
         ("Source mapping", source_mapping or "-"),
         (
@@ -409,7 +409,6 @@ def metadata_rows(
         rows += [
             ("Release", f"{release.release_tag} ({release.date})"),
             ("Schema version", release.schema_version),
-            ("Deployer version pin", release.deployer_version),
         ]
     else:
         rows.append((

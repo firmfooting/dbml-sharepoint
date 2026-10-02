@@ -14,14 +14,16 @@ from dbml_sharepoint.model._keys import _text_key
 class Release:
     release_tag: str
     date: str
-    deployer_version: str
     schema_version: str
     flow_package_version: str
     notes: str
+    #: The retired `deployer_version` key, kept only so a build can warn that it is ignored.
+    ignored_deployer_version: str | None = None
 
 
-_REQUIRED_KEYS = ("release", "date", "deployer_version", "schema_version")
-_OPTIONAL_KEYS = ("flow_package_version", "notes")
+_REQUIRED_KEYS = ("release", "date", "schema_version")
+# `deployer_version` still loads so existing files build; the installed package names the deployer.
+_OPTIONAL_KEYS = ("deployer_version", "flow_package_version", "notes")
 
 
 def load_release(path: Path) -> Release:
@@ -56,10 +58,14 @@ def load_release(path: Path) -> Release:
         release_tag=_text(entries, "release", path),
         # An unquoted date loads as datetime.date; str() gives ISO text, as retired_columns does.
         date=str(date) if isinstance(date, dt.date) else _text(entries, "date", path),
-        deployer_version=_text(entries, "deployer_version", path),
         schema_version=_text(entries, "schema_version", path),
         flow_package_version=_text(entries, "flow_package_version", path, default="none"),
         notes=_text(entries, "notes", path, default=""),
+        ignored_deployer_version=(
+            _text(entries, "deployer_version", path)
+            if entries.get("deployer_version") is not None
+            else None
+        ),
     )
 
 
@@ -67,8 +73,8 @@ def _text(raw: dict[object, object], key: str, path: Path, *, default: str | Non
     """The value of `key` as text, refusing the numbers YAML reads from an unquoted version.
 
     A blank key reads as absent, following the rule in `model/reading.py`:
-    an optional one takes `default` without a record, because both defaults
-    here only describe the release, and a required one is refused.
+    an optional one takes `default` without a record, because every default
+    here only describes the release, and a required one is refused.
     """
     value = raw.get(key)
     if value is None:

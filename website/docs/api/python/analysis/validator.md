@@ -63,3 +63,11 @@ thing that uses an enum: `folders: {from_enum: <name>}` turns its members
 into a library's folders without any column naming it. Reported anyway,
 the remedy it invites is deleting an enum the deploy needs.
 
+### `validate_release`
+
+```python
+def validate_release(release: dbml_sharepoint.model.release.Release) -> list[dbml_sharepoint.analysis.findings.Finding]
+```
+
+What release.yaml says that the build will not act on.
+
