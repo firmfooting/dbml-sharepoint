@@ -1545,6 +1545,71 @@ def test_a_policy_that_names_a_grant_or_prunes_nothing_does_not_warn(
         FindingCode.EXACT_POLICY_GRANTS_NOTHING,
     )
 
+
+def _breaks_bare() -> ListPermissionPolicy:
+    return ListPermissionPolicy(
+        break_inheritance=True, assignments=(), reconcile_mode="configured",
+    )
+
+
+def test_a_configured_default_breaking_with_no_assignments_warns() -> None:
+    """The break copies no role assignments and the policy grants nothing
+    back; operator-safety-grant-probe.js measured a list left with the
+    operator's binding alone (#684)."""
+    finding = only(
+        _exact_policy_findings(default=_breaks_bare()),
+        FindingCode.CONFIGURED_BREAK_GRANTS_NOTHING,
+    )
+    assert finding.severity == "warning"
+    assert finding.location == Location(Section.LIST_PERMISSIONS, sub="default")
+
+
+def test_a_configured_override_breaking_with_no_assignments_warns_and_names_it() -> None:
+    finding = only(
+        _exact_policy_findings(default=_grants(), overrides={"Task": _breaks_bare()}),
+        FindingCode.CONFIGURED_BREAK_GRANTS_NOTHING,
+    )
+    assert finding.location == Location(Section.LIST_PERMISSIONS, sub="overrides")
+    assert "'Task'" in finding.message
+
+
+@pytest.mark.parametrize(
+    ("default", "overrides"),
+    [
+        pytest.param(
+            _breaks_bare(),
+            {name: _grants() for name in ("Project", "Task", "AppSettings")},
+            id="default-no-list-takes",
+        ),
+        pytest.param(_grants(), {"DoesNotExist": _breaks_bare()}, id="unknown-override"),
+        pytest.param(
+            ListPermissionPolicy(
+                break_inheritance=False, assignments=(), reconcile_mode="configured",
+            ),
+            None,
+            id="inherits",
+        ),
+        pytest.param(
+            ListPermissionPolicy(
+                break_inheritance=True, assignments=(_OWNERS_CONTRIBUTE,),
+                reconcile_mode="configured",
+            ),
+            None,
+            id="breaks-and-grants",
+        ),
+        # Exact with nothing declared is `exact_policy_grants_nothing`'s case.
+        pytest.param(_strips(), None, id="exact"),
+    ],
+)
+def test_a_policy_that_governs_nothing_keeps_inheriting_or_grants_does_not_warn(
+    default: ListPermissionPolicy, overrides: dict[str, ListPermissionPolicy] | None,
+) -> None:
+    none_of(
+        _exact_policy_findings(default=default, overrides=overrides),
+        FindingCode.CONFIGURED_BREAK_GRANTS_NOTHING,
+    )
+
+
 def test_lookup_target_without_title_or_display_column_is_error() -> None:
     """A1: a lookup into a target list that has no Title column and no
     display_column would render blank in SP (LookupField defaults to the empty

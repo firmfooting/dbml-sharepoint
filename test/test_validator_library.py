@@ -1199,6 +1199,67 @@ def test_a_folder_policy_that_grants_or_reviews_is_not_refused(
     )
 
 
+@pytest.mark.parametrize(
+    ("default", "override"),
+    [
+        pytest.param(_CONFIGURED_LIST, None, id="configured-default"),
+        pytest.param(_EXACT_LIST, _CONFIGURED_LIST, id="configured-override"),
+        pytest.param(None, None, id="no-list-policy"),
+    ],
+)
+def test_a_configured_folder_policy_breaking_with_no_assignments_warns_once(
+    tmp_path: Path, default: str | None, override: str | None,
+) -> None:
+    """Allowed off an exact list to hand the folders to manual management,
+    and the break still copies none of a folder's inherited role assignments
+    (#684). What a folder keeps after it is not measured."""
+    f = only(
+        _folder_policy_body(
+            tmp_path, "{break_inheritance: true}", default=default, override=override,
+        ),
+        FindingCode.CONFIGURED_BREAK_GRANTS_NOTHING,
+    )
+    assert f.severity == "warning"
+    assert f.location == Location(Section.LIST_PERMISSIONS, sub="folders")
+    assert "Docs" in f.message
+
+
+def test_a_configured_folder_policy_refused_under_an_exact_list_is_not_also_warned(
+    tmp_path: Path,
+) -> None:
+    findings = _folder_policy_body(tmp_path, "{break_inheritance: true}")
+    only(findings, FindingCode.FOLDER_POLICY_MANAGES_NOTHING)
+    none_of(findings, FindingCode.CONFIGURED_BREAK_GRANTS_NOTHING)
+
+
+def test_a_configured_folder_policy_on_a_library_the_schema_lacks_does_not_warn(
+    tmp_path: Path,
+) -> None:
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Other", ID_PK, TITLE),
+        mapping="""
+            entities:
+              Other:
+                kind: List
+                base_template: 100
+                site_role: default
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: [Alpha, Beta]
+
+            list_permissions:
+              folders:
+                Docs: {break_inheritance: true}
+        """,
+    )
+    findings = validate_against_mapping(schema, bundle)
+    only(findings, FindingCode.ENTITY_NOT_IN_SCHEMA)
+    none_of(findings, FindingCode.CONFIGURED_BREAK_GRANTS_NOTHING)
+
+
 def test_a_library_with_no_folders_is_told_that_rather_than_both(
     tmp_path: Path,
 ) -> None:
