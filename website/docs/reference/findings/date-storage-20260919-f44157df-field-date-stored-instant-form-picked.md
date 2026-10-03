@@ -1,5 +1,8 @@
 ---
-title: "D1"
+title: "field.date.stored-instant-form-picked"
+surface: field
+scope: date
+question: stored-instant-form-picked
 probe_surface: field
 state: failed
 lanes: machine
@@ -7,15 +10,15 @@ lanes: machine
 
 <!-- markdownlint-disable MD013 -->
 
-# D1
+# field.date.stored-instant-form-picked
 
 - Probe surface: field
-- Run: date-storage/20260902-default-reads
+- Run: date-storage/20260919-f44157df
 - Question: stored instants of DueDate, CompletedDate on the first list
 
 ## machine
 
 - Outcome: `FAIL`
-- Evidence: could not read 'ADOPT\_ProgramAction': HTTP 404
+- Evidence: could not read 'dbml-probe-today-semantics': HTTP 400
 
 [All findings](../live-findings)
