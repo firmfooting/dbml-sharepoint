@@ -15,8 +15,10 @@
  * way the Editor spells them, and Learn does not say which spelling that is.
  *
  * DEPENDS ON (read back, and voiding what rests on them when they do not hold)
- *   field.version.fixture-editor-list          the list reads back EnableVersioning true and
- *       an item type; on setup, no list of that title stood before the run
+ *   field.version.fixture-editor-list          the list reads back the probe's ownership
+ *       Description, EnableVersioning true and an item type; on setup, any list of
+ *       that title stood before the run is recycled first only if it carries the
+ *       marker and CLEANUP is on, and is otherwise left alone
  *   field.version.fixture-editor-person-write  item 1's person column holds a user Id
  *       (on setup, the item the create answered is item 1 and holds the Id
  *       ensureuser answered for SECOND_ACCOUNT)
@@ -44,7 +46,8 @@
  *   3. Sign in as the second account and change item 1's Title in the list.
  *   4. Back as yourself, set MODE = 'report' and paste again. Copy the
  *      RESULTS block back verbatim.
- * Set CLEANUP to true on a later setup run to recycle the previous list first.
+ * Set CLEANUP to true on a later setup run to recycle the previous list first;
+ * a same-title list without this probe's Description is never touched.
  */
 (async () => {
 {% include "_probe_harness.js.j2" %}
@@ -55,6 +58,8 @@
   // The second account's sign-in name, typed at paste time and never committed.
   const SECOND_ACCOUNT = '';
   const LIST = 'dbml-probe-version-editor';
+  // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
+  const OWNERSHIP_DESCRIPTION = 'dbml-sharepoint version-editor-email probe scratch list. Safe to delete.';
   const PERSON_COLUMN = 'ProbePerson';
   const LIST_FIXTURE = 'field.version.fixture-editor-list';
   const PERSON_WRITE = 'field.version.fixture-editor-person-write';
@@ -63,7 +68,7 @@
   const QUESTION = 'field.version.editor-email-sign-in';
   const PERSON = 'field.version.person-email-matches-editor';
 
-  expect('field.version.fixture-editor-list', 'the list reads back with versioning on and an item type');
+  expect('field.version.fixture-editor-list', 'the list reads back with versioning on, its marker and an item type');
   expect('field.version.fixture-editor-person-write', 'the person column names the second account');
   expect('field.version.fixture-editor-distinct-names', "the editing user's email and sign-in name differ");
   expect('field.version.control-editor-versions-read', 'the versions read answers at least two versions');
@@ -87,23 +92,33 @@
   const lower = (v) => String(v ?? '').trim().toLowerCase();
   const keysOf = (v) => (v && typeof v === 'object' ? Object.keys(v).sort().join(', ') || 'none' : String(v));
   const listAt = `web/lists/getbytitle('${enc(LIST)}')`;
-  const listRead = () => spGet(`${listAt}?$select=Title,EnableVersioning,ListItemEntityTypeFullName`);
-  const versioned = { EnableVersioning: true,
+  const listRead = () => spGet(`${listAt}?$select=Title,Description,EnableVersioning,ListItemEntityTypeFullName`);
+  const versioned = { Description: OWNERSHIP_DESCRIPTION, EnableVersioning: true,
     ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 };
 
   if (MODE === 'setup') {
-    await resetList(LIST);
-    // A by-title read answers an absent list 404; anything else may be an older run's list, whose item 1 is not ours.
-    const before = await spGet(`${listAt}?$select=Id`);
-    if (before.status !== 404) {
-      record(LIST_FIXTURE, 'the list reads back with versioning on and an item type', 'FAIL', before.ok
-        ? `'${LIST}' already stands; set CLEANUP to true to recycle it first`
-        : `could not tell whether '${LIST}' already stands: the read ${unanswered(before)}`);
+    const refuse = (why) => {
+      record(LIST_FIXTURE, 'the list reads back with versioning on, its marker and an item type', 'FAIL', why);
       voidDependents([PERSON_WRITE, DISTINCT, READ, QUESTION, PERSON], 'the list was not created by this run');
       return report();
+    };
+    // A by-title read answers an absent list 404; a standing one is recycled only if it carries the marker.
+    const before = await spGet(`${listAt}?$select=Id,Description`);
+    if (before.status !== 404) {
+      if (!before.ok) return refuse(`could not tell whether '${LIST}' already stands: the read ${unanswered(before)}`);
+      if (!before.body || before.body.Description !== OWNERSHIP_DESCRIPTION) {
+        return refuse(`a list named '${LIST}' exists without this probe's ownership description; refusing to modify it`);
+      }
+      if (!CLEANUP) return refuse(`'${LIST}' from an earlier run already stands; set CLEANUP to true to recycle it first`);
+      // By the Id read with the marker, so a title rebound since cannot redirect the deletes.
+      if (!await resetList(LIST, String(before.body.Id).replace(/[{}]/g, ''))) {
+        return refuse(`'${LIST}' from an earlier run could not be recycled`);
+      }
+      const after = await spGet(`${listAt}?$select=Id`);
+      if (after.status !== 404) return refuse(`'${LIST}' still answers HTTP ${after.status} after the recycle`);
     }
     said('list create', await post('web/lists', { __metadata: { type: 'SP.List' }, Title: LIST,
-      BaseTemplate: 100, Description: 'dbml-sharepoint probe: which address a version editor carries' }));
+      BaseTemplate: 100, Description: OWNERSHIP_DESCRIPTION }));
     said('versioning MERGE', await post(listAt, { __metadata: { type: 'SP.List' }, EnableVersioning: true },
       { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }));
     said('person column create', await post(`${listAt}/fields`, { __metadata: { type: 'SP.FieldUser' },
@@ -191,6 +206,12 @@
   if (!values.every((p) => p && typeof p === 'object' && 'Email' in p)) {
     record(PERSON, "the person column's Email against the Editor's", 'NOT ESTABLISHED',
       `a version carries no Email on ${PERSON_COLUMN} (keys: ${[...new Set(values.map(keysOf))].join(' | ')})`);
+    return report();
+  }
+  // Compared only where the column names the same user as the Editor, in every version compared.
+  if (!values.every((p) => Number(p.LookupId) === second)) {
+    record(PERSON, "the person column's Email against the Editor's", 'NOT ESTABLISHED',
+      `a version's ${PERSON_COLUMN} does not name the user item 1's person column holds now`);
     return report();
   }
   const exact = mine.every((v) => typeof v.Editor.Email === 'string' && v.Editor.Email === v[PERSON_COLUMN].Email);

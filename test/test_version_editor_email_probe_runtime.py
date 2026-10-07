@@ -29,6 +29,7 @@ LIST_FIXTURE = "field.version.fixture-editor-list"
 PERSON_WRITE = "field.version.fixture-editor-person-write"
 FILLED = {"  const SECOND_ACCOUNT = '';": f"  const SECOND_ACCOUNT = '{LOGIN}';"}
 REPORT = {"  const MODE = 'setup';": "  const MODE = 'report';"}
+CLEANUP = {"  const CLEANUP = false;": "  const CLEANUP = true;"}
 
 Run = tuple[dict[str, dict[str, str]], list[dict[str, str]], str]
 
@@ -41,7 +42,7 @@ def _run(gates: tuple[str, ...] = GATES, swaps: dict[str, str] | None = None,
 
 def _report(**config: Any) -> Run:
     # A report run reads the list its setup run made.
-    config.setdefault("existing", True)
+    config.setdefault("existing", "owned")
     return _run(swaps={**FILLED, **REPORT}, **config)
 
 
@@ -63,12 +64,45 @@ def test_setup_makes_the_list_writes_the_person_and_asks_for_the_manual_edit() -
     assert LOGIN not in output  # the account typed at paste time is never printed
 
 
-def test_setup_refuses_a_list_that_already_stands() -> None:
-    rows, sent, _ = _run(swaps=FILLED, existing=True)
+def _touched(sent: list[dict[str, str]]) -> bool:
+    """Whether a run sent any write: a list create, an item delete or a recycle."""
+    return any(s["method"] == "POST" and (s["path"].endswith("/_api/web/lists")
+                                          or "/recycle" in s["path"] or "/items(" in s["path"])
+               for s in sent)
+
+
+def test_setup_refuses_its_own_earlier_list_while_cleanup_is_off() -> None:
+    rows, sent, _ = _run(swaps=FILLED, existing="owned")
     assert rows[LIST_FIXTURE]["outcome"] == "FAIL"
-    assert "already" in rows[LIST_FIXTURE]["evidence"]
+    assert "CLEANUP" in rows[LIST_FIXTURE]["evidence"]
     assert {PERSON_WRITE, QUESTION, PERSON} <= voided(rows)
-    assert not any(s["method"] == "POST" and s["path"].endswith("/_api/web/lists") for s in sent)
+    assert not _touched(sent)
+
+
+@pytest.mark.parametrize("swaps", [FILLED, {**FILLED, **CLEANUP}], ids=["kept", "cleanup"])
+def test_setup_never_touches_a_same_title_list_it_did_not_make(swaps: dict[str, str]) -> None:
+    rows, sent, _ = _run(swaps=swaps, existing="foreign")
+    assert rows[LIST_FIXTURE]["outcome"] == "FAIL"
+    assert "ownership" in rows[LIST_FIXTURE]["evidence"]
+    assert {PERSON_WRITE, QUESTION, PERSON} <= voided(rows)
+    assert not _touched(sent)
+
+
+def test_setup_with_cleanup_recycles_its_own_list_by_id_and_starts_again() -> None:
+    rows, sent, output = _run(swaps={**FILLED, **CLEANUP}, existing="owned")
+    recycled = [i for i, s in enumerate(sent) if s["path"].endswith("/recycle")]
+    made = [i for i, s in enumerate(sent)
+            if s["method"] == "POST" and s["path"].endswith("/_api/web/lists")]
+    assert recycled and made and recycled[0] < made[0]
+    assert "lists(guid'" in sent[recycled[0]]["path"]
+    assert rows[QUESTION]["outcome"] == "MANUAL"
+    assert ended_with_report(output)
+
+
+def test_the_report_refuses_a_same_title_list_it_did_not_make() -> None:
+    rows, _, _ = _report(existing="foreign")
+    assert rows[LIST_FIXTURE]["outcome"] == "FAIL"
+    assert {PERSON_WRITE, DISTINCT, READ, QUESTION, PERSON} <= voided(rows)
 
 
 def test_setup_reads_back_the_item_the_create_answered_and_needs_it_to_be_item_1() -> None:
@@ -111,6 +145,11 @@ def test_a_person_value_without_email_leaves_the_relation_open() -> None:
     rows, _, _ = _report(person={"LookupId": 12, "LookupValue": "Second Probe"})
     assert rows[PERSON]["state"] == "open"
     assert "LookupId, LookupValue" in rows[PERSON]["evidence"]
+
+
+def test_a_person_value_naming_another_user_leaves_the_relation_open() -> None:
+    rows, _, _ = _report(person={"LookupId": 7, "Email": EMAIL})
+    assert rows[PERSON]["state"] == "open"
 
 
 def test_an_editor_without_email_leaves_the_relation_open() -> None:
