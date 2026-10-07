@@ -26,6 +26,10 @@ const editor = CONFIG.editor || { LookupId: 12, LookupValue: SECOND.Title, Email
 const person = CONFIG.person === undefined
   ? { LookupId: 12, LookupValue: SECOND.Title, Email: user.Email } : CONFIG.person;
 const LIST = "getbytitle('dbml-probe-version-editor')";
+// `existing` says the list stands before the run, as it does for every report run.
+let listMade = Boolean(CONFIG.existing);
+const itemId = CONFIG.itemId || 1;
+const older = CONFIG.older || { LookupId: 7, LookupValue: 'Ada Probe', Email: 'ada@example.com' };
 globalThis.fetch = async (url, init = {}) => {
   const path = String(url).replace(/^https:\/\/example\.sharepoint\.com\/sites\/probe/, '');
   const method = init.method || 'GET';
@@ -40,20 +44,24 @@ globalThis.fetch = async (url, init = {}) => {
   if (path.includes('/siteusers/getbyid(')) return answer(200, { Id: SECOND.Id, ...user });
   if (path.includes('/versions')) return answer(200, { value: [
     { VersionId: 1024, VersionLabel: '2.0', Editor: editor, ProbePerson: person },
-    { VersionId: 512, VersionLabel: '1.0', Editor: { LookupId: 7, LookupValue: 'Ada Probe',
-      Email: 'ada@example.com' }, ProbePerson: person } ] });
-  if (path.endsWith('/_api/web/lists') && method === 'POST') return answer(201, { d: {
-    Id: 'list', Title: 'dbml-probe-version-editor' } });
+    { VersionId: 512, VersionLabel: '1.0', Editor: older, ProbePerson: person } ] });
+  if (path.endsWith('/_api/web/lists') && method === 'POST') {
+    listMade = true;
+    return answer(201, { d: { Id: 'list', Title: 'dbml-probe-version-editor' } });
+  }
   if (path.includes(LIST) && !path.includes('/items') && !path.includes('/fields')) {
     if (method === 'POST' && tunnelled === 'MERGE') return answer(204, '');
-    if (method === 'GET') return answer(200, { Title: 'dbml-probe-version-editor',
-      EnableVersioning: true, ListItemEntityTypeFullName: 'SP.Data.ProbeListItem' });
+    if (method === 'GET') return listMade ? answer(200, { Id: 'list',
+      Title: 'dbml-probe-version-editor', EnableVersioning: true,
+      ListItemEntityTypeFullName: 'SP.Data.ProbeListItem' })
+      : answer(404, { error: { message: { value: 'List does not exist.' } } });
   }
   if (path.includes('/fields') && method === 'POST') return answer(201, { d: {
     InternalName: 'ProbePerson', TypeAsString: 'User' } });
-  if (path.includes('/items') && method === 'POST') return answer(201, { d: { Id: 1,
+  if (path.includes('/items') && method === 'POST') return answer(201, { d: { Id: itemId,
     ProbePersonId: SECOND.Id } });
-  if (path.includes('/items(1)')) return answer(200, { Id: 1, ProbePersonId: SECOND.Id });
+  const read = /\/items\((\d+)\)/.exec(path);
+  if (read) return answer(200, { Id: Number(read[1]), ProbePersonId: SECOND.Id });
   if (path.includes('/recycle')) return answer(200, { d: { Recycle: 'ok' } });
   return answer(404, { error: { message: { value: `mock has no ${method} ${path}` } } });
 };

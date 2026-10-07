@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ADDRESS A VERSION'S EDITOR CARRIES ----
  *
- * REVISION: a27db627
+ * REVISION: 69ab1b4b
  *
  * QUESTION: for a user whose sign-in name (UserPrincipalName) differs from
  * their email address, which of the two does `Editor.Email` carry on an
@@ -14,9 +14,11 @@
  * way the Editor spells them, and Learn does not say which spelling that is.
  *
  * DEPENDS ON (read back, and voiding what rests on them when they do not hold)
- *   field.version.fixture-editor-list          the list reads back EnableVersioning true
+ *   field.version.fixture-editor-list          the list reads back EnableVersioning true and
+ *       an item type; on setup, no list of that title stood before the run
  *   field.version.fixture-editor-person-write  item 1's person column holds a user Id
- *       (on setup, the Id ensureuser answered for SECOND_ACCOUNT)
+ *       (on setup, the item the create answered is item 1 and holds the Id
+ *       ensureuser answered for SECOND_ACCOUNT)
  *   field.version.fixture-editor-distinct-names  that user's Email and UserPrincipalName
  *       are both set and differ, ignoring case
  *   field.version.control-editor-versions-read  a plain versions read of item 1
@@ -368,7 +370,7 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision a27db627. Quote this when reporting results.');
+  log('INFO', 'probe revision 69ab1b4b. Quote this when reporting results.');
 
   // ---- The question ----------------------------------------------------
   const MODE = 'setup'; // 'setup' first, then the second account edits, then 'report'
@@ -383,7 +385,7 @@
   const QUESTION = 'field.version.editor-email-sign-in';
   const PERSON = 'field.version.person-email-matches-editor';
 
-  expect('field.version.fixture-editor-list', 'a list with versioning and a person column');
+  expect('field.version.fixture-editor-list', 'the list reads back with versioning on and an item type');
   expect('field.version.fixture-editor-person-write', 'the person column names the second account');
   expect('field.version.fixture-editor-distinct-names', "the editing user's email and sign-in name differ");
   expect('field.version.control-editor-versions-read', 'the versions read answers at least two versions');
@@ -413,6 +415,15 @@
 
   if (MODE === 'setup') {
     await resetList(LIST);
+    // A by-title read answers an absent list 404; anything else may be an older run's list, whose item 1 is not ours.
+    const before = await spGet(`${listAt}?$select=Id`);
+    if (before.status !== 404) {
+      record(LIST_FIXTURE, 'the list reads back with versioning on and an item type', 'FAIL', before.ok
+        ? `'${LIST}' already stands; set CLEANUP to true to recycle it first`
+        : `could not tell whether '${LIST}' already stands: the read ${unanswered(before)}`);
+      voidDependents([PERSON_WRITE, DISTINCT, READ, QUESTION, PERSON], 'the list was not created by this run');
+      return report();
+    }
     said('list create', await post('web/lists', { __metadata: { type: 'SP.List' }, Title: LIST,
       BaseTemplate: 100, Description: 'dbml-sharepoint probe: which address a version editor carries' }));
     said('versioning MERGE', await post(listAt, { __metadata: { type: 'SP.List' }, EnableVersioning: true },
@@ -426,10 +437,15 @@
     // Status only: a refusal can quote the account it was given.
     log(who.ok ? 'INFO' : 'FAIL', `ensureuser for the second account: HTTP ${who.status}`);
     const id = who.body && who.body.d ? who.body.d.Id : null;
-    said('item create', await post(`${listAt}/items`, { __metadata: { type: list.body.ListItemEntityTypeFullName },
-      Title: 'dbml probe version editor', [`${PERSON_COLUMN}Id`]: id }));
-    if (!await establishFixture(PERSON_WRITE, () => spGet(`${listAt}/items(1)?$select=Id,${PERSON_COLUMN}Id`),
-      { [`${PERSON_COLUMN}Id`]: (v) => Number.isInteger(id) && v === id }, [DISTINCT, QUESTION, PERSON])) {
+    const made = await post(`${listAt}/items`, { __metadata: { type: list.body.ListItemEntityTypeFullName },
+      Title: 'dbml probe version editor', [`${PERSON_COLUMN}Id`]: id });
+    said('item create', made);
+    const itemId = made.body && made.body.d ? made.body.d.Id : null;
+    // The report run reads item 1, so the item this run made must be item 1.
+    if (!await establishFixture(PERSON_WRITE, () => (Number.isInteger(itemId)
+      ? spGet(`${listAt}/items(${itemId})?$select=Id,${PERSON_COLUMN}Id`)
+      : { ok: false, status: made.status, body: null }),
+    { Id: 1, [`${PERSON_COLUMN}Id`]: (v) => Number.isInteger(id) && v === id }, [DISTINCT, QUESTION, PERSON])) {
       return report();
     }
     record(QUESTION, "which address a version's Editor carries", 'MANUAL',
@@ -451,7 +467,8 @@
   if (unanswered(user) || !email || !upn || email === upn) {
     record(DISTINCT, "the editing user's names", 'NOT ESTABLISHED', unanswered(user)
       ? `the user read ${unanswered(user)}`
-      : 'email and sign-in name are blank or the same; name a user whose differ');
+      : !email || !upn ? `the user read carried no Email or no UserPrincipalName (keys: ${keysOf(user.body)})`
+        : 'email and sign-in name are the same; name a user whose differ');
     voidDependents([QUESTION, PERSON], 'the fixture user cannot tell the two names apart');
     return report();
   }
@@ -487,6 +504,11 @@
   record(QUESTION, "which address a version's Editor carries", heads.length === 1 ? heads[0] : 'MIXED',
     `${mine.length} of ${entries.length} versions by that user, read as ${heads.join(', ')}; Editor keys: ${keysOf(mine[0].Editor)}`);
 
+  if (heads.includes('ABSENT')) {
+    record(PERSON, "the person column's Email against the Editor's", 'NOT ESTABLISHED',
+      'a version by that user carries no Editor Email to compare');
+    return report();
+  }
   const values = mine.map((v) => v[PERSON_COLUMN]);
   if (!values.every((p) => p && typeof p === 'object' && 'Email' in p)) {
     record(PERSON, "the person column's Email against the Editor's", 'NOT ESTABLISHED',
