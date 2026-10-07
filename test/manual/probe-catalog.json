@@ -13201,6 +13201,133 @@
           ]
         }
       ]
+    },
+    {
+      "file": "file-move-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "fixed document library dbmlsp Probe FileMove with five columns, one folder whose name holds an ampersand and a comma, one file with three versions, a unique Read grant and a sharing link on it; the file is moved to the root and the folder recycled and restored"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "TEST_USER_LOGIN and MOVER_LOGIN: claims logins of two licensed test accounts, each a site Member, neither the owner nor a site collection administrator",
+        "STATE 1 as the owner, STATE 2 as the editing account in a second browser session, STATE 3 as the moving account in a third, then STATE 4 as the owner",
+        "A CLEANUP paste as the owner once STATE 4 is recorded"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.file.fixture-move-library",
+              "depends_on": []
+            },
+            {
+              "id": "library.file.fixture-move-folder",
+              "depends_on": [
+                "library.file.fixture-move-library"
+              ]
+            },
+            {
+              "id": "library.file.fixture-move-values",
+              "depends_on": [
+                "library.file.fixture-move-library",
+                "library.file.fixture-move-folder"
+              ]
+            },
+            {
+              "id": "library.file.fixture-move-unique-grant",
+              "depends_on": [
+                "library.file.fixture-move-values"
+              ]
+            },
+            {
+              "id": "library.file.fixture-move-sharing-link",
+              "depends_on": [
+                "library.file.fixture-move-values"
+              ]
+            },
+            {
+              "id": "library.file.fixture-move-before",
+              "depends_on": [
+                "library.file.fixture-move-values"
+              ]
+            },
+            {
+              "id": "library.file.fixture-move-answered",
+              "depends_on": [
+                "library.file.fixture-move-before"
+              ]
+            },
+            {
+              "id": "library.file.move-keeps-id-and-versions",
+              "depends_on": [
+                "library.file.fixture-move-before",
+                "library.file.fixture-move-answered"
+              ]
+            },
+            {
+              "id": "library.file.move-keeps-column-values",
+              "depends_on": [
+                "library.file.fixture-move-before",
+                "library.file.fixture-move-answered"
+              ]
+            },
+            {
+              "id": "library.file.move-system-fields",
+              "depends_on": [
+                "library.file.fixture-move-before",
+                "library.file.fixture-move-answered"
+              ]
+            },
+            {
+              "id": "library.file.move-adds-version",
+              "depends_on": [
+                "library.file.fixture-move-before",
+                "library.file.fixture-move-answered"
+              ]
+            },
+            {
+              "id": "library.file.move-keeps-unique-permissions",
+              "depends_on": [
+                "library.file.fixture-move-unique-grant",
+                "library.file.fixture-move-sharing-link",
+                "library.file.fixture-move-answered"
+              ]
+            },
+            {
+              "id": "library.folder.fixture-recycle-empty",
+              "depends_on": [
+                "library.file.fixture-move-answered"
+              ]
+            },
+            {
+              "id": "library.folder.recycle-empty-restorable",
+              "depends_on": [
+                "library.folder.fixture-recycle-empty"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.file.fixture-move-library",
+            "library.file.fixture-move-folder",
+            "library.file.fixture-move-values",
+            "library.file.fixture-move-unique-grant",
+            "library.file.fixture-move-sharing-link",
+            "library.file.fixture-move-before",
+            "library.file.fixture-move-answered",
+            "library.folder.fixture-recycle-empty"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
