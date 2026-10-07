@@ -36,6 +36,8 @@ F4 = "library.file.move-keeps-unique-permissions"
 F5 = "library.file.move-adds-version"
 F6 = "library.folder.recycle-empty-restorable"
 FOREIGN = "A library the probe did not make."
+OWNER_ROW = "library.folder.fixture-owner-account"
+LINK_URL = "https://example.sharepoint.com/:t:/s/probe/link"
 
 Run = tuple[dict[str, dict[str, str]], list[dict[str, str]], str]
 
@@ -44,7 +46,7 @@ def _state_three_start() -> dict[str, Any]:
     """What STATE 1 and STATE 2 leave: the file in the folder with three versions."""
     return {
         "library": True, "folders": [FOLDER], "unique": True, "grants": [8],
-        "links": ["https://example.sharepoint.com/:t:/s/probe/link"],
+        "links": [LINK_URL],
         "file": {"id": 41, "path": f"{FOLDER}/{FILE}",
                  "values": {"MoveChoice": "Q2", "MovePersonId": 7,
                             "MoveDate": "2026-01-15T00:00:00Z", "MoveFlag": True,
@@ -61,11 +63,24 @@ def _state_four_start() -> dict[str, Any]:
     return start
 
 
+def _fnv(text: str) -> str:
+    """The probe's link digest: 32-bit FNV-1a of the URL, as eight hex digits."""
+    h = 0x811C9DC5
+    for ch in text.encode("utf-8"):
+        h = ((h ^ ch) * 0x01000193) & 0xFFFFFFFF
+    return f"{h:08x}"
+
+
+def _digest_swap(url: str = LINK_URL) -> dict[str, str]:
+    return {"  const LINK_DIGEST = '';": f"  const LINK_DIGEST = '{_fnv(url)}';"}
+
+
 def _leg(leg: int, me: int, swaps: dict[str, str] | None = None, /, **config: Any) -> Run:
     """Paste STATE `leg` as site user `me`; `config` reaches the mock, its `state` included."""
     # A swap must change the probe, and STATE 1 is what it ships with.
     pasted = {} if leg == 1 else {"  const STATE = 1;": f"  const STATE = {leg};"}
-    swaps = {**LOGINS, **pasted, **(swaps or {})}
+    digest = _digest_swap() if leg == 4 and not config.pop("no_digest", False) else {}
+    swaps = {**LOGINS, **pasted, **digest, **(swaps or {})}
     return run_probe(FILE_MOVE_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"),
                      {"me": me, **config}, swaps, pin=False)
 
@@ -108,7 +123,7 @@ def test_state_one_builds_the_fixture_in_a_folder_with_an_ampersand_and_a_comma(
 def test_state_one_never_builds_on_a_library_that_already_stands() -> None:
     rows, sent, _ = _leg(1, 7, state={"library": True})
     assert rows[LIBRARY]["outcome"] == "FAIL"
-    assert voided(rows) == set(rows) - {LIBRARY}
+    assert voided(rows) == set(rows) - {LIBRARY, OWNER_ROW}
     assert _writes(sent) == []
 
 
@@ -209,14 +224,15 @@ def test_state_four_recycles_the_empty_folder_and_restores_it() -> None:
     rows, sent, _ = _leg(4, 7, state=_state_four_start())
     assert rows["library.folder.fixture-recycle-empty"]["outcome"] == "PASS"
     assert rows[F6]["outcome"] == "RECYCLED AND RESTORED"
-    assert any(s["path"].endswith("/recycle") for s in sent)
+    assert any(s["path"].endswith("/recycle()") for s in sent)
+    assert any(s["path"].endswith("/restore()") for s in sent)
 
 
 def test_a_folder_that_still_holds_the_file_is_never_recycled() -> None:
     rows, sent, _ = _leg(4, 7, state=_state_three_start())
     assert rows["library.folder.fixture-recycle-empty"]["outcome"] == "FAIL"
     assert rows[F6]["state"] == "void"
-    assert not any(s["path"].endswith("/recycle") for s in sent)
+    assert not any(s["path"].endswith("/recycle()") for s in sent)
 
 
 def test_a_refused_restore_is_recorded_not_raised() -> None:
@@ -232,18 +248,79 @@ def test_a_refused_recycle_is_recorded_as_refused() -> None:
     assert ended_with_report(output)
 
 
-def test_a_bin_holding_another_entry_of_that_name_restores_nothing() -> None:
+def test_only_the_bin_item_the_recycle_returned_is_restored() -> None:
     start = _state_four_start()
     start["recycle"] = [{"Id": "bin-0", "LeafName": "Move & Folder, A", "DirName": ROOT[1:]}]
     rows, sent, _ = _leg(4, 7, state=start)
+    assert rows[F6]["outcome"] == "RECYCLED AND RESTORED"
+    restores = [s["path"] for s in sent if s["path"].endswith("/restore()")]
+    assert restores == ["web/RecycleBin('bin-1')/restore()"]
+
+
+def test_a_recycle_that_returns_no_item_id_restores_nothing() -> None:
+    rows, sent, _ = _leg(4, 7, state=_state_four_start(), recycleNoId=True)
     assert rows[F6]["outcome"] == "NOT ESTABLISHED"
     assert not any("RecycleBin(" in s["path"] for s in sent)
 
 
-def test_an_unreadable_bin_leaves_the_restore_question_open() -> None:
+def test_an_unreadable_bin_item_leaves_the_restore_question_open() -> None:
     rows, sent, _ = _leg(4, 7, state=_state_four_start(), binRefused=True)
     assert rows[F6]["state"] == "open"
-    assert not any("RecycleBin(" in s["path"] for s in sent)
+    assert not any(s["path"].endswith("/restore()") for s in sent)
+
+
+def test_an_invalid_state_is_refused_before_any_request() -> None:
+    swaps = {"  const STATE = 1;": "  const STATE = 7;"}
+    _, sent, output = _leg(7, 7, swaps, state=_state_four_start())
+    assert sent == []
+    assert "STATE" in output
+
+
+def test_state_one_types_the_url_value_and_reads_the_date_back() -> None:
+    rows, sent, _ = _leg(1, 7)
+    assert rows["library.file.fixture-move-values"]["outcome"] == "PASS"
+    reads = [s["path"] for s in sent if s["verb"] == "GET" and "$select" in s["path"]]
+    assert any("MoveDate" in p for p in reads)
+
+
+def test_a_date_that_did_not_store_fails_the_values_fixture() -> None:
+    rows, _, _ = _leg(1, 7, dropsDate=True)
+    assert rows["library.file.fixture-move-values"]["outcome"] == "FAIL"
+
+
+def test_state_one_prints_the_digest_of_the_link_it_made() -> None:
+    _, _, output = _leg(1, 7)
+    assert f"link digest: {_fnv(LINK_URL)}" in _printed(output)
+
+
+def test_state_four_without_the_link_digest_sends_nothing() -> None:
+    _, sent, output = _leg(4, 7, state=_state_four_start(), no_digest=True)
+    assert sent == []
+    assert "LINK_DIGEST" in output
+
+
+def test_a_binding_seen_while_inheritance_was_restored_is_not_a_grant() -> None:
+    start = _state_four_start()
+    start["unique"] = False
+    rows, _, _ = _leg(4, 7, state=start)
+    assert rows[F4]["outcome"] == "GRANT LOST"
+
+
+@pytest.mark.parametrize(("change", "head"), [
+    ({"links": ["https://example.sharepoint.com/:t:/s/probe/other"]}, "LINK REPLACED"),
+    ({"links": ["https://example.sharepoint.com/:t:/s/probe/other"], "grants": []},
+     "GRANT LOST, LINK REPLACED"),
+], ids=["replaced", "grant-lost-and-replaced"])
+def test_a_regenerated_link_is_told_from_the_original(change: dict[str, Any], head: str) -> None:
+    rows, _, _ = _leg(4, 7, state={**_state_four_start(), **change})
+    assert rows[F4]["outcome"] == head
+
+
+def test_state_four_as_another_account_voids_what_rests_on_the_owner_and_writes_nothing() -> None:
+    rows, sent, _ = _leg(4, 8, state=_state_four_start())
+    assert rows[OWNER_ROW]["outcome"] == "FAIL"
+    assert voided(rows) == {F4, "library.folder.fixture-recycle-empty", F6}
+    assert _writes(sent) == []
 
 
 def test_cleanup_recycles_the_probe_library_by_its_id() -> None:

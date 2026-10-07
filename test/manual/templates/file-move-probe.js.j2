@@ -41,6 +41,8 @@
  *   library.file.fixture-move-before       STATE 3: three versions, Author the owner,
  *       Editor the editing account, and the mover a third account
  *   library.file.fixture-move-answered     STATE 3: the move request answered 2xx
+ *   library.folder.fixture-owner-account   STATE 4: the folder's Author is the account
+ *       pasting STATE 4, so the owner is the one acting
  *   library.folder.fixture-recycle-empty   STATE 4: the folder reads empty
  *
  * OBSERVES (recorded as found, never compared with an expected value)
@@ -54,12 +56,13 @@
  * HOW TO READ IT: a head names what was found (ID AND VERSIONS KEPT, ID
  * CHANGED, VERSIONS CHANGED, EVERY VALUE KEPT, VALUES CHANGED, VERSION ADDED,
  * NO VERSION ADDED, GRANT AND LINK PRESENT, GRANT LOST, LINK LOST, GRANT AND
- * LINK LOST, RECYCLED AND RESTORED, RECYCLED, NOT RESTORED, NOT IN THE BIN).
+ * LINK LOST, LINK REPLACED, RECYCLED AND RESTORED, RECYCLED, NOT RESTORED, NOT IN THE BIN).
  * A review decides what a head establishes. Accounts are written as the
  * owner, the editing account and the moving account.
  *
  * HOW TO RUN: F12 -> Console on a site you own; paste; Enter; it prints its
- * plan and stops. Set CONFIRMED, ALLOW_WRITES, STATE and both logins.
+ * plan and stops. Set CONFIRMED, ALLOW_WRITES, STATE and both logins; for
+ * STATE 4 also LINK_DIGEST, the digest STATE 1 printed for its sharing link.
  */
 (async () => {
 {% include "_probe_harness.js.j2" %}
@@ -71,13 +74,16 @@
   const TEST_USER_LOGIN = 'CHANGE ME - the editing account claims login';
   const MOVER_LOGIN = 'CHANGE ME - the moving account claims login';
   const PLACEHOLDER = /^CHANGE ME/;
+  // STATE 4 only: the digest STATE 1 printed for the link it made, so a regenerated link is told from the original.
+  const LINK_DIGEST = '';
   const LIBRARY = 'dbmlsp Probe FileMove';
   // Ownership is the Description: a same-title library this probe did not make is never written to.
   const OWNERSHIP_DESCRIPTION = 'dbml-sharepoint file move probe. Safe to delete.';
   const FOLDER = 'Move & Folder, A';
   const FILE = 'dbmlsp move probe.txt';
   const VALUES = { MoveChoice: 'Q1', MoveDate: '2026-01-15T00:00:00Z', MoveFlag: true,
-    MoveLink: { Url: 'https://example.org/move-probe', Description: 'move probe' } };
+    // A URL column takes a typed record, as demo.js.j2 writes it.
+    MoveLink: { __metadata: { type: 'SP.FieldUrlValue' }, Url: 'https://example.org/move-probe', Description: 'move probe' } };
   const LIST = `web/lists/getbytitle('${LIBRARY}')`;
   // Apostrophes doubled for OData, then percent-encoded so & , and a claims login's # reach the server whole.
   const lit = (text) => encodeURIComponent(String(text).replace(/'/g, "''")).replace(/%2F/g, '/');
@@ -94,6 +100,7 @@
   const BEFORE_ROW = 'library.file.fixture-move-before';
   const ANSWERED_ROW = 'library.file.fixture-move-answered';
   const EMPTY_ROW = 'library.folder.fixture-recycle-empty';
+  const OWNER_ROW = 'library.folder.fixture-owner-account';
   const F1 = 'library.file.move-keeps-id-and-versions';
   const F2 = 'library.file.move-keeps-column-values';
   const F3 = 'library.file.move-system-fields';
@@ -110,11 +117,12 @@
   };
   expect('library.file.fixture-move-library', 'a document library with versioning on and this probe\'s Description');
   expect('library.file.fixture-move-folder', `a folder named ${FOLDER}, read back by name`);
-  expect('library.file.fixture-move-values', 'the file in the folder, with MoveChoice, MovePerson, MoveFlag and MoveLink read back');
+  expect('library.file.fixture-move-values', 'the file in the folder, with MoveChoice, MovePerson, MoveDate, MoveFlag and MoveLink read back');
   expect('library.file.fixture-move-unique-grant', 'a Read grant to the editing account on the file alone, HasUniqueRoleAssignments true');
   expect('library.file.fixture-move-sharing-link', 'a sharing link with a URL, read back on the file');
   expect('library.file.fixture-move-before', 'before the move: three versions, Author the owner, Editor the editing account, a third mover');
   expect('library.file.fixture-move-answered', 'the MoveToUsingPath request answered 2xx');
+  expect('library.folder.fixture-owner-account', 'the folder\'s Author is the account pasting STATE 4');
   expect('library.folder.fixture-recycle-empty', 'the folder reads ItemCount 0, no files and no folders');
   expect('library.file.move-keeps-id-and-versions', Q.f1);
   expect('library.file.move-keeps-column-values', Q.f2);
@@ -136,8 +144,8 @@
     'library.file.move-system-fields': ['library.file.fixture-move-before', 'library.file.fixture-move-answered'],
     'library.file.move-adds-version': ['library.file.fixture-move-before', 'library.file.fixture-move-answered'],
     'library.file.move-keeps-unique-permissions': ['library.file.fixture-move-unique-grant',
-      'library.file.fixture-move-sharing-link', 'library.file.fixture-move-answered'],
-    'library.folder.fixture-recycle-empty': ['library.file.fixture-move-answered'],
+      'library.file.fixture-move-sharing-link', 'library.file.fixture-move-answered', 'library.folder.fixture-owner-account'],
+    'library.folder.fixture-recycle-empty': ['library.file.fixture-move-answered', 'library.folder.fixture-owner-account'],
     'library.folder.recycle-empty-restorable': ['library.folder.fixture-recycle-empty'],
   };
   // Every row resting on `row`, however far down, so a failed fixture leaves nothing below it open.
@@ -153,6 +161,10 @@
     return [...out];
   };
 
+  if (![1, 2, 3, 4].includes(STATE)) {
+    log('ERROR', `STATE is ${JSON.stringify(STATE)}; it must be 1, 2, 3 or 4. Nothing has been sent.`);
+    return report();
+  }
   if (!CONFIRMED || !ALLOW_WRITES) {
     log('INFO', `STATE ${STATE}. Would ${CLEANUP ? `recycle '${LIBRARY}'` : ['', 'build the library, folder and file',
       'edit the file once', 'move the file to the root', 'read its grants and recycle the folder'][STATE]}.`);
@@ -163,11 +175,19 @@
     log('ERROR', 'Set TEST_USER_LOGIN and MOVER_LOGIN first. Nothing has been sent.');
     return report();
   }
+  if (!CLEANUP && STATE === 4 && LINK_DIGEST === '') {
+    log('ERROR', 'Set LINK_DIGEST to the link digest STATE 1 printed. Nothing has been sent.');
+    return report();
+  }
 
   const { digest } = await issueDigest();
   const send = (path, method, body) => sendRaw(path, { method: 'POST', body, headers: {
     'Content-Type': 'application/json;odata=nometadata', 'X-RequestDigest': digest,
     ...(method === 'POST' ? {} : { 'X-HTTP-Method': method, 'IF-MATCH': '*' }) } });
+  // Only the values write is verbose: its __metadata means nothing to a nometadata endpoint.
+  const sendVerbose = (path, method, body) => sendRaw(path, { method: 'POST', body, headers: {
+    'Content-Type': 'application/json;odata=verbose', 'X-RequestDigest': digest,
+    'X-HTTP-Method': method, 'IF-MATCH': '*' } });
   // An answer's text is masked before rawHead cuts it short, so a cut never splits a login unmasked.
   const said = (res) => {
     const head = rawHead({ ...res, text: scrub(res.text) });
@@ -187,6 +207,12 @@
     const r = await sendRaw(`${LIST}/items(${itemId})/versions`);
     return r.ok && r.parsed && Array.isArray(r.parsed.value) ? r.parsed.value.map((v) => v.VersionLabel) : null;
   };
+  // 32-bit FNV-1a, so a link's identity can be compared without printing its URL.
+  const digestOf = (text) => {
+    let h = 0x811c9dc5;
+    for (const byte of new TextEncoder().encode(text)) h = Math.imul(h ^ byte, 0x01000193) >>> 0;
+    return h.toString(16).padStart(8, '0');
+  };
   // The links array is looked for at the top level and under permissionsInformation; its absence is reported.
   const linksOn = async (itemId) => {
     const res = await send(`${LIST}/items(${itemId})/GetSharingInformation`, 'POST',
@@ -195,9 +221,9 @@
     const nested = body && body.permissionsInformation;
     const list = !body ? null : Array.isArray(body.links) ? body.links
       : nested && Array.isArray(nested.links) ? nested.links : null;
-    const withUrl = list ? list.filter((l) => l && l.linkDetails && typeof l.linkDetails.Url === 'string'
-      && l.linkDetails.Url !== '').length : null;
-    return { res, withUrl, entries: list ? list.length : null,
+    const urls = list ? list.filter((l) => l && l.linkDetails && typeof l.linkDetails.Url === 'string'
+      && l.linkDetails.Url !== '').map((l) => l.linkDetails.Url) : null;
+    return { res, withUrl: urls ? urls.length : null, digests: urls ? urls.map(digestOf) : null, entries: list ? list.length : null,
       keys: body ? Object.keys(body).sort().join(', ') || 'none' : said(res) };
   };
 
@@ -256,13 +282,19 @@
     log(up.ok ? 'INFO' : 'FAIL', `file upload: ${said(up)}`);
     const item = await sendRaw(`${fileAt(`${base}/${FOLDER}/${FILE}`)}/ListItemAllFields?$select=Id`);
     const itemId = item.ok && item.parsed && Number.isInteger(item.parsed.Id) ? item.parsed.Id : null;
-    if (itemId !== null) {
-      const merged = await send(`${LIST}/items(${itemId})`, 'MERGE', { ...VALUES, MovePersonId: me });
+    // The verbose body names the item's entity type, as demo.js.j2's library path does.
+    const typeRead = await sendRaw(`${LIST}?$select=ListItemEntityTypeFullName`);
+    const entityType = typeRead.ok && typeRead.parsed && typeof typeRead.parsed.ListItemEntityTypeFullName === 'string'
+      ? typeRead.parsed.ListItemEntityTypeFullName : null;
+    if (itemId !== null && entityType !== null) {
+      const merged = await sendVerbose(`${LIST}/items(${itemId})`, 'MERGE',
+        { __metadata: { type: entityType }, ...VALUES, MovePersonId: me });
       log(merged.ok ? 'INFO' : 'FAIL', `values write: ${said(merged)}`);
     }
     if (!await fixture(VALUES_ROW, async () => (itemId === null ? asRead(item)
-      : asRead(await sendRaw(`${LIST}/items(${itemId})?$select=Id,MoveChoice,MovePersonId,MoveFlag,MoveLink`))),
-    { MoveChoice: 'Q1', MovePersonId: (v) => me !== null && v === me, MoveFlag: true,
+      : asRead(await sendRaw(`${LIST}/items(${itemId})?$select=Id,MoveChoice,MovePersonId,MoveDate,MoveFlag,MoveLink`))),
+    { MoveChoice: 'Q1', MovePersonId: (v) => me !== null && v === me,
+      MoveDate: (v) => typeof v === 'string' && v !== '', MoveFlag: true,
       MoveLink: (v) => Boolean(v) && v.Url === VALUES.MoveLink.Url })) return report();
 
     const ensured = await send('web/ensureuser', 'POST', { logonName: TEST_USER_LOGIN });
@@ -294,6 +326,9 @@
       return { ok: seen.res.ok, status: seen.res.status,
         body: { LinksWithUrl: seen.withUrl === null ? undefined : seen.withUrl } };
     }, { LinksWithUrl: (n) => n > 0 });
+    const madeLinks = await linksOn(itemId);
+    log('INFO', `link digest: ${madeLinks.digests && madeLinks.digests.length ? madeLinks.digests.join(', ') : 'none read'}. `
+      + 'Set LINK_DIGEST to it before STATE 4.');
     log('INFO', 'STATE 1 done. Paste STATE 2 as the editing account.');
     return report();
   }
@@ -359,25 +394,36 @@
   }
 
   // STATE 4: the owner.
+  // The folder's Author is the account that made it in STATE 1; a move never touches the folder.
+  const folderNow = folderAt(`${root}/${FOLDER}`);
+  if (!await fixture(OWNER_ROW, async () => {
+    const r = await sendRaw(`${folderNow}/ListItemAllFields?$select=AuthorId`);
+    return { ok: r.ok, status: r.status, body: { AuthorIsThisAccount: r.parsed && me !== null ? r.parsed.AuthorId === me : undefined } };
+  }, { AuthorIsThisAccount: true })) return report();
   const editor = await siteUser(TEST_USER_LOGIN);
   const moved = await sendRaw(`${fileAt(newPath)}/ListItemAllFields?$select=Id,HasUniqueRoleAssignments`);
   if (moved.ok && moved.parsed && Number.isInteger(moved.parsed.Id)) {
     const itemId = moved.parsed.Id;
     const grants = await sendRaw(`${LIST}/items(${itemId})/roleassignments?$select=PrincipalId`);
     const seen = await linksOn(itemId);
-    const read = grants.ok && grants.parsed && Array.isArray(grants.parsed.value) && seen.withUrl !== null;
-    const held = read && editor !== null && grants.parsed.value.some((g) => g.PrincipalId === editor);
-    const linked = read && seen.withUrl > 0;
-    const head = !read ? 'NOT ESTABLISHED' : held && linked ? 'GRANT AND LINK PRESENT'
-      : !held && !linked ? 'GRANT AND LINK LOST' : !held ? 'GRANT LOST' : 'LINK LOST';
+    const read = grants.ok && grants.parsed && Array.isArray(grants.parsed.value) && seen.withUrl !== null
+      && typeof moved.parsed.HasUniqueRoleAssignments === 'boolean';
+    // A binding seen while the file inherits is the parent's, not the file's own grant.
+    const bound = read && editor !== null && grants.parsed.value.some((g) => g.PrincipalId === editor);
+    const held = bound && moved.parsed.HasUniqueRoleAssignments === true;
+    const link = !read ? null : seen.digests.includes(LINK_DIGEST) ? 'same' : seen.withUrl > 0 ? 'replaced' : 'none';
+    const head = !read ? 'NOT ESTABLISHED' : held && link === 'same' ? 'GRANT AND LINK PRESENT'
+      : held ? (link === 'replaced' ? 'LINK REPLACED' : 'LINK LOST')
+        : link === 'same' ? 'GRANT LOST' : link === 'replaced' ? 'GRANT LOST, LINK REPLACED' : 'GRANT AND LINK LOST';
     record(F4, Q.f4, head, `HasUniqueRoleAssignments ${moved.parsed.HasUniqueRoleAssignments}; bindings read `
-      + `${grants.ok ? `with the editing account ${held ? 'bound' : 'not bound'}` : said(grants)}; sharing `
+      + `${grants.ok ? `with the editing account ${bound ? 'bound' : 'not bound'}` : said(grants)}; sharing `
       + `information ${seen.entries === null ? `carried no links array (${seen.keys})`
-        : `listed ${seen.entries} link(s), ${seen.withUrl} with a URL`}`);
+        : `listed ${seen.entries} link(s), ${seen.withUrl} with a URL, digests ${seen.digests.join(', ') || 'none'}`}`
+      + `; link digest to match ${LINK_DIGEST}`);
   } else {
     record(F4, Q.f4, 'NOT ESTABLISHED', `the moved file read ${said(moved)}`);
   }
-  const at = folderAt(`${root}/${FOLDER}`);
+  const at = folderNow;
   if (!await fixture(EMPTY_ROW, async () => {
     const meta = await sendRaw(`${at}?$select=ItemCount`);
     const files = await sendRaw(`${at}/Files?$select=Name`);
@@ -387,26 +433,32 @@
     return { ok: !failed, status: failed ? failed.status : 200,
       body: { ItemCount: meta.parsed ? meta.parsed.ItemCount : undefined, Files: count(files), Folders: count(folders) } };
   }, { ItemCount: 0, Files: 0, Folders: 0 })) return report();
-  const recycled = await send(`${at}/recycle`, 'POST', {});
+  const recycled = await send(`${at}/recycle()`, 'POST', {});
   const refusal = rawHead(recycled);
   if (refusal) {
     record(F6, Q.f6, refusal.outcome, `the recycle ${said(recycled)}; nothing was restored`);
     return report();
   }
-  const bin = await sendRaw(`web/RecycleBin?$select=Id,LeafName&$filter=LeafName eq '${lit(FOLDER)}'`);
-  const entries = bin.ok && bin.parsed && Array.isArray(bin.parsed.value)
-    ? bin.parsed.value.filter((e) => e.LeafName === FOLDER) : null;
-  // Two entries of one name cannot be told apart here, so neither is restored.
-  if (entries && entries.length > 1) {
-    record(F6, Q.f6, 'NOT ESTABLISHED', `recycle HTTP ${recycled.status}; ${entries.length} bin entries `
-      + `are named ${FOLDER}, so none was restored; restore this run's by hand`);
+  // Learn: Folder.Recycle returns the identifier of the new recycle bin item; only that item is restored.
+  const rp = recycled.parsed;
+  const binId = rp && typeof rp.value === 'string' ? rp.value : rp && rp.d && typeof rp.d.Recycle === 'string' ? rp.d.Recycle : null;
+  if (!binId) {
+    record(F6, Q.f6, 'NOT ESTABLISHED', `recycle HTTP ${recycled.status} returned no recycle bin item id, so nothing was restored; restore this run's by hand`);
     return report();
   }
-  const entry = entries && entries.length === 1 ? entries[0] : null;
-  const restored = entry ? await send(`web/RecycleBin('${lit(entry.Id)}')/restore`, 'POST', {}) : null;
+  const bin = await sendRaw(`web/RecycleBin('${lit(binId)}')?$select=Id,LeafName`);
+  if (bin.status === 404) {
+    record(F6, Q.f6, 'NOT IN THE BIN', `recycle HTTP ${recycled.status}; the returned item reads ${said(bin)}; nothing was restored`);
+    return report();
+  }
+  if (!bin.ok || !bin.parsed || bin.parsed.LeafName !== FOLDER) {
+    record(F6, Q.f6, 'NOT ESTABLISHED', `recycle HTTP ${recycled.status}; the returned bin item read `
+      + `${bin.ok ? 'under another name' : said(bin)}; nothing was restored`);
+    return report();
+  }
+  const restored = await send(`web/RecycleBin('${lit(binId)}')/restore()`, 'POST', {});
   const back = await sendRaw(`${at}?$select=Name`);
-  record(F6, Q.f6, entries === null ? 'NOT ESTABLISHED' : !entry ? 'NOT IN THE BIN' : back.ok ? 'RECYCLED AND RESTORED' : 'RECYCLED, NOT RESTORED',
-    `recycle HTTP ${recycled.status}; bin ${entries ? `entry ${entry ? 'found' : 'absent'}` : `read ${said(bin)}`}; `
-    + `restore ${restored ? said(restored) : 'not sent'}; folder ${back.ok ? 'reads back' : said(back)}`);
+  record(F6, Q.f6, back.ok ? 'RECYCLED AND RESTORED' : 'RECYCLED, NOT RESTORED',
+    `recycle HTTP ${recycled.status}; bin item found; restore ${said(restored)}; folder ${back.ok ? 'reads back' : said(back)}`);
   return report();
 })();

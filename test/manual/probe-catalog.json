@@ -13266,6 +13266,10 @@
               ]
             },
             {
+              "id": "library.folder.fixture-owner-account",
+              "depends_on": []
+            },
+            {
               "id": "library.file.move-keeps-id-and-versions",
               "depends_on": [
                 "library.file.fixture-move-before",
@@ -13298,13 +13302,15 @@
               "depends_on": [
                 "library.file.fixture-move-unique-grant",
                 "library.file.fixture-move-sharing-link",
-                "library.file.fixture-move-answered"
+                "library.file.fixture-move-answered",
+                "library.folder.fixture-owner-account"
               ]
             },
             {
               "id": "library.folder.fixture-recycle-empty",
               "depends_on": [
-                "library.file.fixture-move-answered"
+                "library.file.fixture-move-answered",
+                "library.folder.fixture-owner-account"
               ]
             },
             {
@@ -13323,6 +13329,7 @@
             "library.file.fixture-move-sharing-link",
             "library.file.fixture-move-before",
             "library.file.fixture-move-answered",
+            "library.folder.fixture-owner-account",
             "library.folder.fixture-recycle-empty"
           ],
           "depends_on": []

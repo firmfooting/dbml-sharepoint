@@ -108,13 +108,23 @@ globalThis.fetch = async (url, opts = {}) => {
         return answer(200, { links });
       }
       if (method === 'MERGE') {
-        Object.assign(f.values, body); f.editor = me; f.versions.push(`${f.versions.length + 1}.0`);
+        const verbose = String(opts.headers['Content-Type']).includes('odata=verbose');
+        const link = body.MoveLink && body.MoveLink.__metadata;
+        const typed = verbose && body.__metadata && link && link.type === 'SP.FieldUrlValue';
+        if (body.MoveLink && !typed) {
+          return refused('untyped URL value');
+        }
+        const { __metadata, ...plain } = body;
+        if (CONFIG.dropsDate) delete plain.MoveDate;
+        Object.assign(f.values, plain);
+        f.editor = me; f.versions.push(`${f.versions.length + 1}.0`);
         return answer(204, '');
       }
       if (method === 'DELETE') { S.file = null; return answer(200, {}); }
       return answer(200, itemOf(f));
     }
     return answer(200, { Id: LIBRARY_ID, BaseTemplate: 101, EnableVersioning: true,
+      ListItemEntityTypeFullName: 'SP.Data.DbmlspProbeFileMoveItem',
       Title: 'dbmlsp Probe FileMove', Description: S.description });
   }
   if (path.startsWith('web/GetFolderByServerRelativePath')) {
@@ -130,9 +140,12 @@ globalThis.fetch = async (url, opts = {}) => {
       if (CONFIG.recycleRefused) return refused('cannot recycle');
       S.folders = S.folders.filter((x) => x !== folder);
       S.recycle.push({ Id: 'bin-1', LeafName: folder.split('/').pop(), DirName: ROOT.slice(1) });
-      return answer(200, { value: 'bin-1' });
+      return answer(200, CONFIG.recycleNoId ? {} : { value: 'bin-1' });
     }
     if (!known) return answer(404, { error: 'File Not Found.' });
+    if (path.includes('/ListItemAllFields')) {
+      return answer(200, { AuthorId: S.folderAuthor === undefined ? 7 : S.folderAuthor });
+    }
     const inside = S.file && S.file.path.startsWith(`${folder}/`) ? 1 : 0;
     if (path.includes('/Files')) return answer(200, { value: inside ? [{ Name: 'x' }] : [] });
     if (path.includes('/Folders')) return answer(200, { value: [] });
@@ -160,13 +173,17 @@ globalThis.fetch = async (url, opts = {}) => {
     return answer(200, { Name: file.split('/').pop() });
   }
   if (path.startsWith('web/RecycleBin(')) {
-    if (CONFIG.restoreRefused) return refused('cannot restore');
-    const entry = S.recycle.shift();
-    if (entry) S.folders.push(`/${entry.DirName}/${entry.LeafName}`);
-    return answer(200, {});
-  }
-  if (path.startsWith('web/RecycleBin')) {
-    return CONFIG.binRefused ? refused('cannot read the bin') : answer(200, { value: S.recycle });
+    const id = (path.match(/^web\/RecycleBin\('([^']*)'\)/) || [])[1];
+    const entry = S.recycle.find((e) => e.Id === id);
+    if (path.endsWith('/restore()')) {
+      if (CONFIG.restoreRefused) return refused('cannot restore');
+      if (!entry) return answer(404, { error: 'no such entry' });
+      S.recycle = S.recycle.filter((e) => e !== entry);
+      S.folders.push(`/${entry.DirName}/${entry.LeafName}`);
+      return answer(200, {});
+    }
+    if (CONFIG.binRefused) return refused('cannot read the bin');
+    return entry ? answer(200, entry) : answer(404, { error: 'no such entry' });
   }
   return answer(404, { error: `unrouted ${path}` });
 };
