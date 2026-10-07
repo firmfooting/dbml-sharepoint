@@ -29,10 +29,38 @@ const LIST = "getbytitle('dbml-probe-version-editor')";
 // `existing` is 'owned' (an earlier run's list, with the probe's marker) or 'foreign'.
 const OWNER = 'dbml-sharepoint version-editor-email probe scratch list. Safe to delete.';
 const LIST_ID = '00000000-0000-4000-8000-000000000abc';
+const BY_ID = `lists(guid'${LIST_ID}')`;
 let standing = CONFIG.existing === 'foreign' ? { Description: 'A list the probe did not make.' }
   : CONFIG.existing ? { Description: OWNER } : null;
 const itemId = CONFIG.itemId || 1;
 const older = CONFIG.older || { LookupId: 7, LookupValue: 'Ada Probe', Email: 'ada@example.com' };
+// `field` overrides what the person column's definition reads back as.
+const field = { InternalName: 'ProbePerson', TypeAsString: 'User', FieldTypeKind: 20,
+  AllowMultipleValues: false, ...(CONFIG.field || {}) };
+const missing = () => answer(404, { error: { message: { value: 'List does not exist.' } } });
+// Everything under the list, whether it was addressed by title or by Id.
+const underList = (rest, method, tunnelled) => {
+  if (!standing) return missing();
+  if (rest.startsWith('/recycle')) {
+    standing = null;
+    return answer(200, { d: { Recycle: 'ok' } });
+  }
+  if (rest.startsWith('/items?')) return answer(200, { value: [] });
+  if (rest.includes('/versions')) return answer(200, { value: [
+    { VersionId: 1024, VersionLabel: '2.0', Editor: editor, ProbePerson: person },
+    { VersionId: 512, VersionLabel: '1.0', Editor: older, ProbePerson: person } ] });
+  if (rest.startsWith('/fields/getbyinternalnameortitle(')) return answer(200, field);
+  if (rest.startsWith('/fields') && method === 'POST') return answer(201, { d: {
+    InternalName: 'ProbePerson', TypeAsString: 'User' } });
+  if (rest.startsWith('/items') && method === 'POST') return answer(201, { d: { Id: itemId,
+    ProbePersonId: SECOND.Id } });
+  const read = /^\/items\((\d+)\)/.exec(rest);
+  if (read) return answer(200, { Id: Number(read[1]), ProbePersonId: SECOND.Id });
+  if (method === 'POST' && tunnelled === 'MERGE') return answer(204, '');
+  return answer(200, { Id: LIST_ID, Title: 'dbml-probe-version-editor',
+    Description: standing.Description, EnableVersioning: true,
+    ListItemEntityTypeFullName: 'SP.Data.ProbeListItem' });
+};
 globalThis.fetch = async (url, init = {}) => {
   const path = String(url).replace(/^https:\/\/example\.sharepoint\.com\/sites\/probe/, '');
   const method = init.method || 'GET';
@@ -40,41 +68,27 @@ globalThis.fetch = async (url, init = {}) => {
   SENT.push({ method, path });
   if (CONFIG.refuse && path.includes(CONFIG.refuse)) return answer(403, { error: {
     message: { value: 'Access denied.' } } });
-  if (path.includes(`lists(guid'${LIST_ID}')`)) {
-    if (!standing) return answer(404, { error: { message: { value: 'List does not exist.' } } });
-    if (path.endsWith('/recycle')) {
-      standing = null;
-      return answer(200, { d: { Recycle: 'ok' } });
-    }
-    if (path.includes('/items?')) return answer(200, { value: [] });
-    return answer(200, { Id: LIST_ID });
-  }
   if (path.endsWith('/_api/contextinfo')) return answer(200, { d: {
     GetContextWebInformation: { FormDigestValue: 'digest' } } });
   if (path.includes('/ensureuser')) return answer(200, { d: { Id: SECOND.Id,
     Email: user.Email, LoginName: user.LoginName } });
+  // `accountId` is the Id the sign-in name resolves to, when a test makes it another user's.
+  if (path.includes('/siteusers/getbyloginname(')) return answer(200, {
+    Id: CONFIG.accountId || SECOND.Id });
   if (path.includes('/siteusers/getbyid(')) return answer(200, { Id: SECOND.Id, ...user });
-  if (path.includes('/versions')) return answer(200, { value: [
-    { VersionId: 1024, VersionLabel: '2.0', Editor: editor, ProbePerson: person },
-    { VersionId: 512, VersionLabel: '1.0', Editor: older, ProbePerson: person } ] });
   if (path.endsWith('/_api/web/lists') && method === 'POST') {
+    // `raced` has another actor take the title between the absence read and the create.
+    if (CONFIG.raced) {
+      standing = { Description: 'A list the probe did not make.' };
+      return answer(500, { error: { message: { value: 'That title is taken.' } } });
+    }
     standing = { Description: JSON.parse(init.body).Description };
-    return answer(201, { d: { Id: 'list', Title: 'dbml-probe-version-editor' } });
+    return answer(201, { d: { Id: LIST_ID, Title: 'dbml-probe-version-editor' } });
   }
-  if (path.includes(LIST) && !path.includes('/items') && !path.includes('/fields')) {
-    if (method === 'POST' && tunnelled === 'MERGE') return answer(204, '');
-    if (method === 'GET') return standing ? answer(200, { Id: LIST_ID,
-      Title: 'dbml-probe-version-editor', Description: standing.Description, EnableVersioning: true,
-      ListItemEntityTypeFullName: 'SP.Data.ProbeListItem' })
-      : answer(404, { error: { message: { value: 'List does not exist.' } } });
+  for (const head of [BY_ID, LIST]) {
+    const at = path.indexOf(head);
+    if (at >= 0) return underList(path.slice(at + head.length), method, tunnelled);
   }
-  if (path.includes('/fields') && method === 'POST') return answer(201, { d: {
-    InternalName: 'ProbePerson', TypeAsString: 'User' } });
-  if (path.includes('/items') && method === 'POST') return answer(201, { d: { Id: itemId,
-    ProbePersonId: SECOND.Id } });
-  const read = /\/items\((\d+)\)/.exec(path);
-  if (read) return answer(200, { Id: Number(read[1]), ProbePersonId: SECOND.Id });
-  if (path.includes('/recycle')) return answer(200, { d: { Recycle: 'ok' } });
   return answer(404, { error: { message: { value: `mock has no ${method} ${path}` } } });
 };
 """

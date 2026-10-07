@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ADDRESS A VERSION'S EDITOR CARRIES ----
  *
- * REVISION: e7f52f83
+ * REVISION: 555dd04c
  *
  * QUESTION: for a user whose sign-in name (UserPrincipalName) differs from
  * their email address, which of the two does `Editor.Email` carry on an
@@ -18,9 +18,10 @@
  *       Description, EnableVersioning true and an item type; on setup, any list of
  *       that title stood before the run is recycled first only if it carries the
  *       marker and CLEANUP is on, and is otherwise left alone
- *   field.version.fixture-editor-person-write  item 1's person column holds a user Id
- *       (on setup, the item the create answered is item 1 and holds the Id
- *       ensureuser answered for SECOND_ACCOUNT)
+ *   field.version.fixture-editor-person-write  item 1's person column holds the site
+ *       user Id of SECOND_ACCOUNT (ensureuser on setup, a read by login name on
+ *       report); on setup the column reads back as a single-person User field
+ *       and the item the create answered is item 1
  *   field.version.fixture-editor-distinct-names  that user's Email and UserPrincipalName
  *       are both set and differ, ignoring case
  *   field.version.control-editor-versions-read  a plain versions read of item 1
@@ -373,7 +374,7 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision e7f52f83. Quote this when reporting results.');
+  log('INFO', 'probe revision 555dd04c. Quote this when reporting results.');
 
   // ---- The question ----------------------------------------------------
   const MODE = 'setup'; // 'setup' first, then the second account edits, then 'report'
@@ -414,7 +415,7 @@
   const lower = (v) => String(v ?? '').trim().toLowerCase();
   const keysOf = (v) => (v && typeof v === 'object' ? Object.keys(v).sort().join(', ') || 'none' : String(v));
   const listAt = `web/lists/getbytitle('${enc(LIST)}')`;
-  const listRead = () => spGet(`${listAt}?$select=Title,Description,EnableVersioning,ListItemEntityTypeFullName`);
+  const listRead = (at) => spGet(`${at}?$select=Title,Description,EnableVersioning,ListItemEntityTypeFullName`);
   const versioned = { Description: OWNERSHIP_DESCRIPTION, EnableVersioning: true,
     ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 };
 
@@ -439,26 +440,39 @@
       const after = await spGet(`${listAt}?$select=Id`);
       if (after.status !== 404) return refuse(`'${LIST}' still answers HTTP ${after.status} after the recycle`);
     }
-    said('list create', await post('web/lists', { __metadata: { type: 'SP.List' }, Title: LIST,
-      BaseTemplate: 100, Description: OWNERSHIP_DESCRIPTION }));
-    said('versioning MERGE', await post(listAt, { __metadata: { type: 'SP.List' }, EnableVersioning: true },
+    const created = await post('web/lists', { __metadata: { type: 'SP.List' }, Title: LIST,
+      BaseTemplate: 100, Description: OWNERSHIP_DESCRIPTION });
+    said('list create', created);
+    // Only a list this run's create answered for is written to, and only by its Id: the title may be another's now.
+    const listId = created.ok && created.body && created.body.d
+      ? String(created.body.d.Id).replace(/[{}]/g, '') : '';
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(listId)) {
+      return refuse(`the list create answered HTTP ${created.status} with no list Id; nothing more was written`);
+    }
+    const at = `web/lists(guid'${listId}')`;
+    said('versioning MERGE', await post(at, { __metadata: { type: 'SP.List' }, EnableVersioning: true },
       { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }));
-    said('person column create', await post(`${listAt}/fields`, { __metadata: { type: 'SP.FieldUser' },
+    said('person column create', await post(`${at}/fields`, { __metadata: { type: 'SP.FieldUser' },
       Title: PERSON_COLUMN, FieldTypeKind: 20, SelectionMode: 0 }));
     let list = null;
-    if (!await establishFixture(LIST_FIXTURE, async () => (list = await listRead()), versioned,
+    if (!await establishFixture(LIST_FIXTURE, async () => (list = await listRead(at)), versioned,
       [PERSON_WRITE, DISTINCT, READ, QUESTION, PERSON])) return report();
+    // The item is written only into a single-person User column; any other column would answer about something else.
+    if (!await establishFixture(PERSON_WRITE, () => spGet(`${at}/fields/getbyinternalnameortitle('${PERSON_COLUMN}')`
+      + '?$select=InternalName,TypeAsString,FieldTypeKind,AllowMultipleValues'),
+    { InternalName: PERSON_COLUMN, TypeAsString: 'User', FieldTypeKind: 20, AllowMultipleValues: false },
+    [DISTINCT, QUESTION, PERSON])) return report();
     const who = await post('web/ensureuser', { logonName: SECOND_ACCOUNT });
     // Status only: a refusal can quote the account it was given.
     log(who.ok ? 'INFO' : 'FAIL', `ensureuser for the second account: HTTP ${who.status}`);
     const id = who.body && who.body.d ? who.body.d.Id : null;
-    const made = await post(`${listAt}/items`, { __metadata: { type: list.body.ListItemEntityTypeFullName },
+    const made = await post(`${at}/items`, { __metadata: { type: list.body.ListItemEntityTypeFullName },
       Title: 'dbml probe version editor', [`${PERSON_COLUMN}Id`]: id });
     said('item create', made);
     const itemId = made.body && made.body.d ? made.body.d.Id : null;
     // The report run reads item 1, so the item this run made must be item 1.
     if (!await establishFixture(PERSON_WRITE, () => (Number.isInteger(itemId)
-      ? spGet(`${listAt}/items(${itemId})?$select=Id,${PERSON_COLUMN}Id`)
+      ? spGet(`${at}/items(${itemId})?$select=Id,${PERSON_COLUMN}Id`)
       : { ok: false, status: made.status, body: null }),
     { Id: 1, [`${PERSON_COLUMN}Id`]: (v) => Number.isInteger(id) && v === id }, [DISTINCT, QUESTION, PERSON])) {
       return report();
@@ -468,13 +482,18 @@
     return report();
   }
 
-  if (!await establishFixture(LIST_FIXTURE, listRead, versioned,
+  if (!await establishFixture(LIST_FIXTURE, () => listRead(listAt), versioned,
     [PERSON_WRITE, DISTINCT, READ, QUESTION, PERSON])) return report();
-  let item = null;
-  if (!await establishFixture(PERSON_WRITE,
-    async () => (item = await spGet(`${listAt}/items(1)?$select=Id,${PERSON_COLUMN}Id`)),
-    { [`${PERSON_COLUMN}Id`]: (v) => Number.isInteger(v) }, [DISTINCT, QUESTION, PERSON])) return report();
-  const second = item.body[`${PERSON_COLUMN}Id`];
+  // Read-only: the report resolves the account typed at paste time without ensureuser, which setup alone sends.
+  const login = `i:0#.f|membership|${SECOND_ACCOUNT}`;
+  const account = await spGet(`web/siteusers/getbyloginname(@v)?@v='${encodeURIComponent(login.replace(/'/g, "''"))}'&$select=Id`);
+  // Status only: a refusal can quote the account it was given.
+  log(account.ok ? 'INFO' : 'FAIL', `the second account's site user read: HTTP ${account.status}`);
+  const accountId = account.ok && account.body && Number.isInteger(account.body.Id) ? account.body.Id : null;
+  if (!await establishFixture(PERSON_WRITE, () => spGet(`${listAt}/items(1)?$select=Id,${PERSON_COLUMN}Id`),
+    { [`${PERSON_COLUMN}Id`]: (v) => accountId !== null && v === accountId },
+    [DISTINCT, QUESTION, PERSON])) return report();
+  const second = accountId;
 
   const user = await spGet(`web/siteusers/getbyid(${second})?$select=Email,UserPrincipalName`);
   const email = lower(user.body && user.body.Email);

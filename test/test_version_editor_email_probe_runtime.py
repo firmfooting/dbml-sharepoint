@@ -62,6 +62,26 @@ def test_setup_makes_the_list_writes_the_person_and_asks_for_the_manual_edit() -
     assert any(s["method"] == "POST" and s["path"].endswith("/_api/web/lists") for s in sent)
     assert ended_with_report(output)
     assert LOGIN not in output  # the account typed at paste time is never printed
+    # Every write after the create goes to the list by the Id the create answered.
+    assert not any(s["method"] == "POST" and "getbytitle" in s["path"] for s in sent)
+
+
+def test_setup_stops_when_another_list_takes_the_title_before_its_create() -> None:
+    rows, sent, _ = _run(swaps=FILLED, raced=True)
+    assert rows[LIST_FIXTURE]["outcome"] == "FAIL"
+    assert {PERSON_WRITE, QUESTION, PERSON} <= voided(rows)
+    after = sent[next(i for i, s in enumerate(sent) if s["path"].endswith("/_api/web/lists")) + 1:]
+    assert not any(s["method"] == "POST" and s["path"] != "/_api/contextinfo" for s in after)
+
+
+@pytest.mark.parametrize("field", [
+    {"TypeAsString": "UserMulti", "AllowMultipleValues": True}, {"InternalName": "ProbePerson0"},
+    {"FieldTypeKind": 7}], ids=["multi", "renamed", "lookup"])
+def test_setup_refuses_a_person_column_not_a_single_user_field(field: dict[str, Any]) -> None:
+    rows, sent, _ = _run(swaps=FILLED, field=field)
+    assert rows[PERSON_WRITE]["outcome"] == "FAIL"
+    assert {QUESTION, PERSON} <= voided(rows)
+    assert not any(s["method"] == "POST" and s["path"].endswith("/items") for s in sent)
 
 
 def _touched(sent: list[dict[str, str]]) -> bool:
@@ -97,6 +117,14 @@ def test_setup_with_cleanup_recycles_its_own_list_by_id_and_starts_again() -> No
     assert "lists(guid'" in sent[recycled[0]]["path"]
     assert rows[QUESTION]["outcome"] == "MANUAL"
     assert ended_with_report(output)
+
+
+def test_the_report_needs_item_1_to_name_the_account_typed_at_paste_time() -> None:
+    rows, sent, output = _report(accountId=13)
+    assert rows[PERSON_WRITE]["outcome"] == "FAIL"
+    assert {DISTINCT, QUESTION, PERSON} <= voided(rows)
+    assert not any("/ensureuser" in s["path"] for s in sent)  # the report run writes nothing
+    assert LOGIN not in output
 
 
 def test_the_report_refuses_a_same_title_list_it_did_not_make() -> None:
@@ -181,7 +209,7 @@ def test_a_user_read_without_a_sign_in_name_names_the_keys_it_carried() -> None:
 
 
 def test_an_unanswered_user_read_voids_the_question() -> None:
-    rows, _, _ = _report(refuse="/siteusers/")
+    rows, _, _ = _report(refuse="/siteusers/getbyid(")
     assert "not authorised" in rows[DISTINCT]["evidence"]
     assert {QUESTION, PERSON} <= voided(rows)
 
