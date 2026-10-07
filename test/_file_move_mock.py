@@ -165,7 +165,9 @@ globalThis.fetch = async (url, opts = {}) => {
     if (entry) S.folders.push(`/${entry.DirName}/${entry.LeafName}`);
     return answer(200, {});
   }
-  if (path.startsWith('web/RecycleBin')) return answer(200, { value: S.recycle });
+  if (path.startsWith('web/RecycleBin')) {
+    return CONFIG.binRefused ? refused('cannot read the bin') : answer(200, { value: S.recycle });
+  }
   return answer(404, { error: `unrouted ${path}` });
 };
 """

@@ -70,6 +70,11 @@ def _leg(leg: int, me: int, swaps: dict[str, str] | None = None, /, **config: An
                      {"me": me, **config}, swaps, pin=False)
 
 
+def _printed(output: str) -> str:
+    """What the probe printed, without the mock's own record of the requests it saw."""
+    return "\n".join(ln for ln in output.splitlines() if not ln.startswith("__SENT__"))
+
+
 def _writes(sent: list[dict[str, str]]) -> list[dict[str, str]]:
     """Every request but a read and the digest it takes to write."""
     return [s for s in sent if s["verb"] != "GET" and not s["path"].startswith("contextinfo")]
@@ -97,7 +102,7 @@ def test_state_one_builds_the_fixture_in_a_folder_with_an_ampersand_and_a_comma(
     assert rows["library.file.fixture-move-unique-grant"]["outcome"] == "PASS"
     assert rows["library.file.fixture-move-sharing-link"]["outcome"] == "PASS"
     assert ended_with_report(output)
-    assert "editor@example.com" not in output
+    assert "editor@example.com" not in _printed(output)
 
 
 def test_state_one_never_builds_on_a_library_that_already_stands() -> None:
@@ -143,7 +148,8 @@ def test_state_three_records_a_move_that_keeps_everything() -> None:
     assert rows[F2]["outcome"] == "EVERY VALUE KEPT"
     assert rows[F5]["outcome"] == "NO VERSION ADDED"
     assert "Editor: the editing account -> the editing account" in rows[F3]["evidence"]
-    assert "editor@example.com" not in output and "mover@example.com" not in output
+    assert "editor@example.com" not in _printed(output)
+    assert "mover@example.com" not in _printed(output)
 
 
 def test_state_three_records_what_a_move_changes_without_failing() -> None:
@@ -231,6 +237,12 @@ def test_a_bin_holding_another_entry_of_that_name_restores_nothing() -> None:
     start["recycle"] = [{"Id": "bin-0", "LeafName": "Move & Folder, A", "DirName": ROOT[1:]}]
     rows, sent, _ = _leg(4, 7, state=start)
     assert rows[F6]["outcome"] == "NOT ESTABLISHED"
+    assert not any("RecycleBin(" in s["path"] for s in sent)
+
+
+def test_an_unreadable_bin_leaves_the_restore_question_open() -> None:
+    rows, sent, _ = _leg(4, 7, state=_state_four_start(), binRefused=True)
+    assert rows[F6]["state"] == "open"
     assert not any("RecycleBin(" in s["path"] for s in sent)
 
 
