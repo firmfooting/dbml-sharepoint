@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHICH ADDRESS A VERSION'S EDITOR CARRIES ----
  *
- * REVISION: 555dd04c
+ * REVISION: 5edd7b56
  *
  * QUESTION: for a user whose sign-in name (UserPrincipalName) differs from
  * their email address, which of the two does `Editor.Email` carry on an
@@ -35,8 +35,10 @@
  *
  * HOW TO READ IT: EMAIL means configured addresses must be email addresses;
  * SIGN-IN NAME means they must be sign-in names. NOT ESTABLISHED on the
- * question with no void means no version answered was edited by that user:
- * do the manual step and run the report again.
+ * question with no void means the evidence names why: no version answered
+ * was edited by that user (do the manual step and run the report again), a
+ * version's Editor carries no integer LookupId, or the versions answer
+ * carried a continuation link, which the probe does not follow.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
  * plan and stops. Then:
@@ -374,7 +376,7 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision 555dd04c. Quote this when reporting results.');
+  log('INFO', 'probe revision 5edd7b56. Quote this when reporting results.');
 
   // ---- The question ----------------------------------------------------
   const MODE = 'setup'; // 'setup' first, then the second account edits, then 'report'
@@ -465,7 +467,13 @@
     const who = await post('web/ensureuser', { logonName: SECOND_ACCOUNT });
     // Status only: a refusal can quote the account it was given.
     log(who.ok ? 'INFO' : 'FAIL', `ensureuser for the second account: HTTP ${who.status}`);
-    const id = who.body && who.body.d ? who.body.d.Id : null;
+    const id = who.ok && who.body && who.body.d ? who.body.d.Id : null;
+    if (!Number.isInteger(id)) {
+      record(PERSON_WRITE, 'the person column names the second account', 'FAIL',
+        `ensureuser for the second account answered HTTP ${who.status} with no integer user Id; no item was written`);
+      voidDependents([DISTINCT, QUESTION, PERSON], 'the second account was not resolved to a site user');
+      return report();
+    }
     const made = await post(`${at}/items`, { __metadata: { type: list.body.ListItemEntityTypeFullName },
       Title: 'dbml probe version editor', [`${PERSON_COLUMN}Id`]: id });
     said('item create', made);
@@ -474,7 +482,7 @@
     if (!await establishFixture(PERSON_WRITE, () => (Number.isInteger(itemId)
       ? spGet(`${at}/items(${itemId})?$select=Id,${PERSON_COLUMN}Id`)
       : { ok: false, status: made.status, body: null }),
-    { Id: 1, [`${PERSON_COLUMN}Id`]: (v) => Number.isInteger(id) && v === id }, [DISTINCT, QUESTION, PERSON])) {
+    { Id: 1, [`${PERSON_COLUMN}Id`]: id }, [DISTINCT, QUESTION, PERSON])) {
       return report();
     }
     record(QUESTION, "which address a version's Editor carries", 'MANUAL',
@@ -519,15 +527,29 @@
     return report();
   }
   record(READ, 'the versions read', 'ESTABLISHED', `${entries.length} versions`);
-
-  // Chosen by Editor, not by position: the order versions come back in is its own open question.
-  const mine = entries.filter((v) => v && v.Editor && Number(v.Editor.LookupId) === second);
-  if (!mine.length) {
-    const why = 'no version answered has the person column\'s user as its Editor; sign in as that account, '
-      + `edit item 1, and run the report again (Editor keys: ${[...new Set(entries.map((v) => keysOf(v && v.Editor)))].join(' | ')})`;
+  const unsettled = (why) => {
     record(QUESTION, "which address a version's Editor carries", 'NOT ESTABLISHED', why);
     record(PERSON, "the person column's Email against the Editor's", 'NOT ESTABLISHED', why);
     return report();
+  };
+  // Learn documents no paging for item versions, so a continuation link is reported, never followed or printed.
+  const next = versions.body['odata.nextLink'] || versions.body['@odata.nextLink'] || versions.body.__next;
+  if (typeof next === 'string' && next) {
+    return unsettled(`the versions read carried a continuation link, which this probe does not follow, so its `
+      + `${entries.length} entries may not be every version`);
+  }
+  // A version whose Editor cannot be matched might be the second account's, so none is settled from the rest.
+  const unmatched = entries.filter((v) => !(v && v.Editor && Number.isInteger(v.Editor.LookupId)));
+  if (unmatched.length) {
+    return unsettled(`${unmatched.length} of ${entries.length} versions carry no integer Editor.LookupId `
+      + `(Editor keys: ${[...new Set(unmatched.map((v) => keysOf(v && v.Editor)))].join(' | ')})`);
+  }
+
+  // Chosen by Editor, not by position: the order versions come back in is its own open question.
+  const mine = entries.filter((v) => v.Editor.LookupId === second);
+  if (!mine.length) {
+    return unsettled('no version answered has the person column\'s user as its Editor; sign in as that account, '
+      + `edit item 1, and run the report again (Editor keys: ${[...new Set(entries.map((v) => keysOf(v.Editor)))].join(' | ')})`);
   }
   const headOf = (editor) => {
     const carried = lower(editor.Email);

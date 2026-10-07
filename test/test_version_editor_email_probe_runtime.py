@@ -119,6 +119,17 @@ def test_setup_with_cleanup_recycles_its_own_list_by_id_and_starts_again() -> No
     assert ended_with_report(output)
 
 
+@pytest.mark.parametrize("config", [{"refuse": "/ensureuser"}, {"ensuredId": None},
+                                    {"ensuredId": "12"}], ids=["refused", "no-id", "text-id"])
+def test_setup_writes_no_item_unless_ensureuser_answers_an_integer_id(
+        config: dict[str, Any]) -> None:
+    rows, sent, _ = _run(swaps=FILLED, **config)
+    assert rows[PERSON_WRITE]["outcome"] == "FAIL"
+    assert "ensureuser" in rows[PERSON_WRITE]["evidence"]
+    assert {DISTINCT, QUESTION, PERSON} <= voided(rows)
+    assert not any(s["method"] == "POST" and s["path"].endswith("/items") for s in sent)
+
+
 def test_the_report_needs_item_1_to_name_the_account_typed_at_paste_time() -> None:
     rows, sent, output = _report(accountId=13)
     assert rows[PERSON_WRITE]["outcome"] == "FAIL"
@@ -185,6 +196,21 @@ def test_an_editor_without_email_leaves_the_relation_open() -> None:
                          person={"LookupId": 12, "Email": None})
     assert rows[QUESTION]["outcome"] == "ABSENT"
     assert rows[PERSON]["outcome"] == "NOT ESTABLISHED"
+
+
+def test_a_paged_versions_answer_leaves_the_observations_open() -> None:
+    link = "https://example.sharepoint.com/sites/probe/_api/next"
+    rows, sent, output = _report(nextLink=link)
+    assert rows[QUESTION]["state"] == "open" and rows[PERSON]["state"] == "open"
+    assert "continuation link" in rows[QUESTION]["evidence"]
+    assert sum("/versions" in s["path"] for s in sent) == 1  # never followed
+    assert link not in output
+
+
+def test_a_version_without_a_usable_editor_id_leaves_the_observations_open() -> None:
+    rows, _, _ = _report(older={"LookupValue": "Ada Probe", "Email": "ada@example.com"})
+    assert rows[QUESTION]["state"] == "open" and rows[PERSON]["state"] == "open"
+    assert "LookupId" in rows[QUESTION]["evidence"]
 
 
 def test_no_version_by_the_second_account_leaves_the_question_open() -> None:

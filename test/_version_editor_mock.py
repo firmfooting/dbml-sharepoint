@@ -46,9 +46,11 @@ const underList = (rest, method, tunnelled) => {
     return answer(200, { d: { Recycle: 'ok' } });
   }
   if (rest.startsWith('/items?')) return answer(200, { value: [] });
+  // `nextLink` adds a continuation link to the versions answer.
   if (rest.includes('/versions')) return answer(200, { value: [
     { VersionId: 1024, VersionLabel: '2.0', Editor: editor, ProbePerson: person },
-    { VersionId: 512, VersionLabel: '1.0', Editor: older, ProbePerson: person } ] });
+    { VersionId: 512, VersionLabel: '1.0', Editor: older, ProbePerson: person } ],
+  ...(CONFIG.nextLink ? { 'odata.nextLink': CONFIG.nextLink } : {}) });
   if (rest.startsWith('/fields/getbyinternalnameortitle(')) return answer(200, field);
   if (rest.startsWith('/fields') && method === 'POST') return answer(201, { d: {
     InternalName: 'ProbePerson', TypeAsString: 'User' } });
@@ -70,8 +72,10 @@ globalThis.fetch = async (url, init = {}) => {
     message: { value: 'Access denied.' } } });
   if (path.endsWith('/_api/contextinfo')) return answer(200, { d: {
     GetContextWebInformation: { FormDigestValue: 'digest' } } });
-  if (path.includes('/ensureuser')) return answer(200, { d: { Id: SECOND.Id,
-    Email: user.Email, LoginName: user.LoginName } });
+  // `ensuredId` replaces the Id ensureuser answers, so a test can make it absent or not a number.
+  if (path.includes('/ensureuser')) return answer(200, { d: {
+    Id: 'ensuredId' in CONFIG ? CONFIG.ensuredId : SECOND.Id, Email: user.Email,
+    LoginName: user.LoginName } });
   // `accountId` is the Id the sign-in name resolves to, when a test makes it another user's.
   if (path.includes('/siteusers/getbyloginname(')) return answer(200, {
     Id: CONFIG.accountId || SECOND.Id });
