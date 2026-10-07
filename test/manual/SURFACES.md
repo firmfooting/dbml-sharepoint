@@ -220,7 +220,8 @@ Probes: `multi-value-probe.js`, `projected-lookup-probe.js`,
 `default-formula-functions-probe.js`, `unique-blanks-probe.js`,
 `unique-transition-probe.js`, `field-sealed-probe.js`,
 `utctolocaltime-rest-form-probe.js`, `calculated-date-rest-probe.js`,
-`item-versions-payload-probe.js`, `item-versions-trim-probe.js`
+`item-versions-payload-probe.js`, `item-versions-trim-probe.js`,
+`version-editor-email-probe.js`
 
 `site-zone-transitions-probe.js` files under `date` because its subject is
 the relation between a stored UTC instant and the site-local clock, which is
@@ -290,6 +291,12 @@ version carries.
 records what the versions read answers at once and a minute later. The limit
 the list takes is a fixture only in its range, because the run has to be able
 to write past it; the value itself is `trim-limit-taken`, an observation.
+`version-editor-email-probe.js` asks which address a version's `Editor`
+carries in `Email` for a user whose sign-in name differs from their email
+(`editor-email-sign-in`), and whether a person column's value in the same
+version carries the same string (`person-email-matches-editor`). A second
+account makes the edit by hand between its setup and report runs, and the
+versions it reads are chosen by Editor rather than by position.
 
 ### 7. `text`: does a string survive a write and read back byte-identical
 
@@ -837,6 +844,7 @@ different questions and take different ids. They do not merge.
 | Does `items(id)/versions` answer an item's versions | a plain read answering any entries, before the payload is recorded | `field.version.control-payload-versions-read` |
 | Does `items(id)/versions` answer an item's versions | a plain read answering at least two versions, each with a numeric VersionId | `query.odata.control-versions-read` |
 | Does `items(id)/versions` answer a library file's versions | a plain read of the file's item answering any entries, before the upload's version is looked for | `field.version.control-library-versions-read` |
+| Does `items(id)/versions` answer an item's versions | a plain read answering at least two versions, before the Editor of each is compared with the user the person column names | `field.version.control-editor-versions-read` |
 
 `native-index-probe.js` and `threshold-index-probe.js` both emitted `CMPIDX` and
 `NULIDX`, and their four system-column checks (`NATCRE`/`SYSCRE` and siblings)
