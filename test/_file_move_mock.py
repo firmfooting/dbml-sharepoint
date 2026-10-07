@@ -24,7 +24,8 @@ const OWNED = 'dbml-sharepoint file move probe. Safe to delete.';
 const LIBRARY_ID = '0b6c4c7e-1d2a-4b8f-9c3e-5a7d2f1e8b90';
 const S = Object.assign({ library: false, description: OWNED, fields: [], folders: [], file: null,
   grants: [], links: [], recycle: [], unique: false }, CONFIG.state || {});
-const USERS = { 7: 'owner@example.com', 8: 'editor@example.com', 9: 'mover@example.com' };
+const USERS = { 7: 'owner@example.com', 8: 'editor@example.com', 9: 'mover@example.com',
+  10: 'other@example.com' };
 const me = CONFIG.me || 7;
 // The OData string literal after `key=`, its doubled apostrophes undone.
 const decoded = (url, key) => {
@@ -32,9 +33,15 @@ const decoded = (url, key) => {
   return found ? found[1].replace(/''/g, "'") : '';
 };
 const userOf = (login) => Number(Object.keys(USERS).find((k) => login.endsWith(USERS[k])) || 0);
-const itemOf = (f) => ({ Id: f.id, FileRef: f.path, ...f.values,
-  Created: f.created, AuthorId: f.author, Modified: f.modified, EditorId: f.editor,
-  HasUniqueRoleAssignments: S.unique });
+const READ = 1073741826;
+const itemOf = (f) => {
+  const item = { Id: f.id, FileRef: f.path, MoveChoice: null, MovePersonId: null, MoveDate: null,
+    MoveFlag: null, MoveLink: null, ...f.values,
+    Created: f.created, AuthorId: f.author, Modified: f.modified, EditorId: f.editor,
+    HasUniqueRoleAssignments: S.unique };
+  for (const name of (f.moved ? CONFIG.omitAfter : CONFIG.omitBefore) || []) delete item[name];
+  return item;
+};
 const LIST = "web/lists/getbytitle('dbmlsp Probe FileMove')";
 const refused = (why) => answer(500, { error: { message: { value: why } } });
 globalThis.fetch = async (url, opts = {}) => {
@@ -60,7 +67,7 @@ globalThis.fetch = async (url, opts = {}) => {
     const id = userOf(decoded(path, '@v'));
     return id ? answer(200, { Id: id }) : answer(404, { error: 'no user' });
   }
-  if (path.startsWith('web/roledefinitions/getbytype(2)')) return answer(200, { Id: 1073741826 });
+  if (path.startsWith('web/roledefinitions/getbytype(2)')) return answer(200, { Id: READ });
   if (path === 'web/lists' && method === 'POST') {
     S.library = true; S.description = body.Description;
     return answer(201, { Id: LIBRARY_ID, BaseTemplate: 101 });
@@ -75,7 +82,10 @@ globalThis.fetch = async (url, opts = {}) => {
     if (rest.startsWith('/fields/createfieldasxml')) {
       S.fields.push(body.parameters.SchemaXml); return answer(201, {});
     }
-    if (rest.startsWith('/RootFolder?')) return answer(200, { ServerRelativeUrl: ROOT });
+    if (rest.startsWith('/RootFolder?')) {
+      if (CONFIG.rootRefused) return refused('no root');
+      return answer(200, CONFIG.rootUrlMissing ? {} : { ServerRelativeUrl: ROOT });
+    }
     if (rest.startsWith('/items?')) {
       return answer(200, { value: S.file ? [{ Id: S.file.id }] : [] });
     }
@@ -85,14 +95,20 @@ globalThis.fetch = async (url, opts = {}) => {
       const tail = item[2];
       if (!f) return answer(404, { error: 'Item does not exist' });
       if (tail.startsWith('/versions')) {
-        return answer(200, { value: f.versions.map((v) => ({ VersionLabel: v })) });
+        return answer(200, { value: f.versions.map((v) => (
+          CONFIG.versionsUnlabelled && f.moved ? {} : { VersionLabel: v })) });
       }
       if (tail.startsWith('/breakroleinheritance')) { S.unique = true; return answer(200, {}); }
       if (tail.startsWith('/roleassignments/addroleassignment')) {
         S.grants.push(Number(tail.match(/principalid=(\d+)/)[1])); return answer(200, {});
       }
+      if (tail.startsWith('/roleassignments') && CONFIG.grantsRefused) {
+        return refused('cannot read grants');
+      }
       if (tail.startsWith('/roleassignments')) {
-        return answer(200, { value: S.grants.map((p) => ({ PrincipalId: p })) });
+        const roles = S.grantRoles || {};
+        return answer(200, { value: S.grants.map((p) => ({ PrincipalId: p,
+          RoleDefinitionBindings: (roles[p] || [READ]).map((Id) => ({ Id })) })) });
       }
       if (tail.startsWith('/ShareLink')) {
         if (CONFIG.linkRefused) return refused('sharing is off');
@@ -160,10 +176,12 @@ globalThis.fetch = async (url, opts = {}) => {
       S.file.path = body.newPath.DecodedUrl;
       S.file.moved = true;
       if (move.newId) S.file.id = 99;
+      if (move.dropsLabel) S.file.versions = S.file.versions.slice(1);
       if (move.addsVersion) S.file.versions.push(`${S.file.versions.length + 1}.0`);
       if (move.editorBecomesMover) { S.file.editor = me; S.file.modified = '2026-10-07T00:00:00Z'; }
       if (move.dropsValues) S.file.values = {};
       if (move.dropsUnique) { S.unique = false; S.grants = []; }
+      if (move.readBecomesEdit) S.grantRoles = { 8: [1073741827] };
       return answer(200, {});
     }
     if (path.includes('/ListItemAllFields')) {

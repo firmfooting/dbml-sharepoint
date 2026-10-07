@@ -24,7 +24,10 @@
  *            two versions and five values, a Read grant to TEST_USER_LOGIN on
  *            the file alone, and an organisation sharing link
  *   STATE 2  TEST_USER_LOGIN: one edit of MoveChoice, the third version
- *   STATE 3  MOVER_LOGIN: reads the file, moves it to the root, reads it by Id
+ *   STATE 3  MOVER_LOGIN: reads the file, reads its grant and link, moves it to
+ *            the root, reads it by Id. The moving account must be able to read the
+ *            file's role assignments and sharing information; if it cannot, the
+ *            grant and link row stays NOT ESTABLISHED (the move is still recorded)
  *   STATE 4  the owner: the grant and link after the move, then the folder
  *   CLEANUP  the owner, CLEANUP true: recycles the library
  * Both logins must be site Members. The three accounts must differ. Every leg
@@ -40,6 +43,8 @@
  *   library.file.fixture-move-sharing-link STATE 1: a link with a URL on the file
  *   library.file.fixture-move-before       STATE 3: three versions, Author the owner,
  *       Editor the editing account, and the mover a third account
+ *   library.file.fixture-move-permissions-before STATE 3: read just before the move,
+ *       the unique grant at the Read level and the STATE 1 link still on the file
  *   library.file.fixture-move-answered     STATE 3: the move request answered 2xx
  *   library.folder.fixture-owner-account   STATE 4: the folder's Author is the account
  *       pasting STATE 4, so the owner is the one acting
@@ -62,7 +67,7 @@
  *
  * HOW TO RUN: F12 -> Console on a site you own; paste; Enter; it prints its
  * plan and stops. Set CONFIRMED, ALLOW_WRITES, STATE and both logins; for
- * STATE 4 also LINK_DIGEST, the digest STATE 1 printed for its sharing link.
+ * STATES 3 and 4 also LINK_DIGEST, the digest STATE 1 printed for its sharing link.
  */
 (async () => {
 {% include "_probe_harness.js.j2" %}
@@ -98,6 +103,7 @@
   const GRANT_ROW = 'library.file.fixture-move-unique-grant';
   const LINK_ROW = 'library.file.fixture-move-sharing-link';
   const BEFORE_ROW = 'library.file.fixture-move-before';
+  const PERMS_ROW = 'library.file.fixture-move-permissions-before';
   const ANSWERED_ROW = 'library.file.fixture-move-answered';
   const EMPTY_ROW = 'library.folder.fixture-recycle-empty';
   const OWNER_ROW = 'library.folder.fixture-owner-account';
@@ -121,6 +127,7 @@
   expect('library.file.fixture-move-unique-grant', 'a Read grant to the editing account on the file alone, HasUniqueRoleAssignments true');
   expect('library.file.fixture-move-sharing-link', 'a sharing link with a URL, read back on the file');
   expect('library.file.fixture-move-before', 'before the move: three versions, Author the owner, Editor the editing account, a third mover');
+  expect('library.file.fixture-move-permissions-before', 'just before the move: the file\'s own Read grant to the editing account and the STATE 1 link are still on it');
   expect('library.file.fixture-move-answered', 'the MoveToUsingPath request answered 2xx');
   expect('library.folder.fixture-owner-account', 'the folder\'s Author is the account pasting STATE 4');
   expect('library.folder.fixture-recycle-empty', 'the folder reads ItemCount 0, no files and no folders');
@@ -138,13 +145,16 @@
     'library.file.fixture-move-unique-grant': ['library.file.fixture-move-values'],
     'library.file.fixture-move-sharing-link': ['library.file.fixture-move-values'],
     'library.file.fixture-move-before': ['library.file.fixture-move-values'],
+    'library.file.fixture-move-permissions-before': ['library.file.fixture-move-unique-grant',
+      'library.file.fixture-move-sharing-link'],
     'library.file.fixture-move-answered': ['library.file.fixture-move-before'],
     'library.file.move-keeps-id-and-versions': ['library.file.fixture-move-before', 'library.file.fixture-move-answered'],
     'library.file.move-keeps-column-values': ['library.file.fixture-move-before', 'library.file.fixture-move-answered'],
     'library.file.move-system-fields': ['library.file.fixture-move-before', 'library.file.fixture-move-answered'],
     'library.file.move-adds-version': ['library.file.fixture-move-before', 'library.file.fixture-move-answered'],
     'library.file.move-keeps-unique-permissions': ['library.file.fixture-move-unique-grant',
-      'library.file.fixture-move-sharing-link', 'library.file.fixture-move-answered', 'library.folder.fixture-owner-account'],
+      'library.file.fixture-move-sharing-link', 'library.file.fixture-move-permissions-before',
+      'library.file.fixture-move-answered', 'library.folder.fixture-owner-account'],
     'library.folder.fixture-recycle-empty': ['library.file.fixture-move-answered', 'library.folder.fixture-owner-account'],
     'library.folder.recycle-empty-restorable': ['library.folder.fixture-recycle-empty'],
   };
@@ -175,7 +185,7 @@
     log('ERROR', 'Set TEST_USER_LOGIN and MOVER_LOGIN first. Nothing has been sent.');
     return report();
   }
-  if (!CLEANUP && STATE === 4 && LINK_DIGEST === '') {
+  if (!CLEANUP && (STATE === 3 || STATE === 4) && LINK_DIGEST === '') {
     log('ERROR', 'Set LINK_DIGEST to the link digest STATE 1 printed. Nothing has been sent.');
     return report();
   }
@@ -205,8 +215,30 @@
   const versionsOf = async (itemId) => {
     // Unselected: whether a versions read honours $select is field.version's own open question.
     const r = await sendRaw(`${LIST}/items(${itemId})/versions`);
-    return r.ok && r.parsed && Array.isArray(r.parsed.value) ? r.parsed.value.map((v) => v.VersionLabel) : null;
+    const labels = r.ok && r.parsed && Array.isArray(r.parsed.value) ? r.parsed.value.map((v) => v && v.VersionLabel) : null;
+    return labels && labels.every((l) => typeof l === 'string' && l !== '') ? labels : null;
   };
+  // The Read role id; an assignment's levels are its RoleDefinitionBindings, and PrincipalId only names who holds them.
+  const readRoleId = async () => {
+    const r = await sendRaw('web/roledefinitions/getbytype(2)?$select=Id');
+    return r.ok && r.parsed && Number.isInteger(r.parsed.Id) ? r.parsed.Id : null;
+  };
+  // bound is null when anything needed to say whether the editing account holds Read could not be read.
+  const grantOn = async (itemId, editor, roleId) => {
+    const own = await sendRaw(`${LIST}/items(${itemId})?$select=HasUniqueRoleAssignments`);
+    const grants = await sendRaw(`${LIST}/items(${itemId})/roleassignments?$expand=RoleDefinitionBindings&$select=PrincipalId,RoleDefinitionBindings/Id`);
+    const rows = grants.ok && grants.parsed && Array.isArray(grants.parsed.value) ? grants.parsed.value : null;
+    const ours = rows && editor !== null ? rows.find((g) => g && g.PrincipalId === editor) : undefined;
+    const levels = ours && Array.isArray(ours.RoleDefinitionBindings) ? ours.RoleDefinitionBindings.map((b) => b && b.Id) : null;
+    const unique = own.ok && own.parsed ? own.parsed.HasUniqueRoleAssignments : undefined;
+    const readable = rows !== null && editor !== null && roleId !== null && typeof unique === 'boolean' && (!ours || levels !== null);
+    return { ok: own.ok && grants.ok, status: own.ok ? grants.status : own.status, grants, unique, rows, levels,
+      bound: readable ? Boolean(ours) && levels.includes(roleId) : null };
+  };
+  // Every selected field is present and shaped, so an absent one is never compared or printed as a value.
+  const hasColumns = (o) => COLUMNS.every((c) => c in o);
+  const hasSystem = (o) => [o.Created, o.Modified].every((t) => typeof t === 'string' && t !== '')
+    && Number.isInteger(o.AuthorId) && Number.isInteger(o.EditorId);
   // 32-bit FNV-1a, so a link's identity can be compared without printing its URL.
   const digestOf = (text) => {
     let h = 0x811c9dc5;
@@ -241,9 +273,11 @@
       return report();
     }
   }
+  // Null unless the root is a non-empty server-relative path, so no later request is built from a missing one.
   const rootUrl = async () => {
     const r = await sendRaw(`${LIST}/RootFolder?$select=ServerRelativeUrl`);
-    return r.ok && r.parsed ? r.parsed.ServerRelativeUrl : null;
+    const url = r.ok && r.parsed ? r.parsed.ServerRelativeUrl : null;
+    return typeof url === 'string' && url.length > 1 && url.startsWith('/') ? url : null;
   };
   const SELECT = 'Id,MoveChoice,MovePersonId,MoveDate,MoveFlag,MoveLink,Created,AuthorId,Modified,EditorId';
   const COLUMNS = ['MoveChoice', 'MovePersonId', 'MoveDate', 'MoveFlag', 'MoveLink'];
@@ -272,6 +306,11 @@
       log(field.ok ? 'INFO' : 'FAIL', `column create: ${said(field)}`);
     }
     const base = await rootUrl();
+    if (base === null) {
+      record(FOLDER_ROW, `a folder named ${FOLDER}, read back by name`, 'FAIL', 'the library RootFolder gave no usable ServerRelativeUrl; no folder or file was sent');
+      voidDependents(downstream(FOLDER_ROW), 'the library root URL was not read');
+      return report();
+    }
     const folder = await send(`web/Folders/AddUsingPath(decodedurl='${lit(`${base}/${FOLDER}`)}')`, 'POST', {});
     log(folder.ok ? 'INFO' : 'FAIL', `folder create: ${said(folder)}`);
     if (!await fixture(FOLDER_ROW, async () => asRead(await sendRaw(`${folderAt(`${base}/${FOLDER}`)}?$select=Name`)),
@@ -301,8 +340,7 @@
     // Status only: a refusal can quote the login it was given.
     log(ensured.ok ? 'INFO' : 'FAIL', `ensureuser for the editing account: HTTP ${ensured.status}`);
     const editor = ensured.ok && ensured.parsed && Number.isInteger(ensured.parsed.Id) ? ensured.parsed.Id : null;
-    const role = await sendRaw('web/roledefinitions/getbytype(2)?$select=Id');
-    const roleId = role.ok && role.parsed && Number.isInteger(role.parsed.Id) ? role.parsed.Id : null;
+    const roleId = await readRoleId();
     if (editor !== null && roleId !== null) {
       const broke = await send(`${LIST}/items(${itemId})/breakroleinheritance(copyRoleAssignments=true,clearSubscopes=true)`, 'POST', {});
       log(broke.ok ? 'INFO' : 'FAIL', `break inheritance: ${said(broke)}`);
@@ -310,14 +348,10 @@
       log(granted.ok ? 'INFO' : 'FAIL', `Read grant: ${said(granted)}`);
     }
     await fixture(GRANT_ROW, async () => {
-      const unique = await sendRaw(`${LIST}/items(${itemId})?$select=HasUniqueRoleAssignments`);
-      const grants = await sendRaw(`${LIST}/items(${itemId})/roleassignments?$select=PrincipalId`);
-      const bound = grants.ok && grants.parsed && Array.isArray(grants.parsed.value) && editor !== null
-        && grants.parsed.value.some((g) => g.PrincipalId === editor);
-      return { ok: unique.ok && grants.ok, status: unique.ok ? grants.status : unique.status, body: {
-        HasUniqueRoleAssignments: unique.parsed ? unique.parsed.HasUniqueRoleAssignments : undefined,
-        EditingAccountBound: bound } };
-    }, { HasUniqueRoleAssignments: true, EditingAccountBound: true });
+      const g = await grantOn(itemId, editor, roleId);
+      return { ok: g.ok, status: g.status, body: { HasUniqueRoleAssignments: g.unique,
+        EditingAccountHasRead: g.bound === null ? undefined : g.bound } };
+    }, { HasUniqueRoleAssignments: true, EditingAccountHasRead: true });
     const link = await send(`${LIST}/items(${itemId})/ShareLink`, 'POST',
       { request: { createLink: true, settings: { linkKind: 2 } } });
     log(link.ok ? 'INFO' : 'FAIL', `sharing link create: ${said(link)}`);
@@ -334,10 +368,19 @@
   }
 
   const root = await rootUrl();
+  if (root === null) {
+    log('FAIL', 'the library RootFolder gave no usable ServerRelativeUrl; nothing was sent.');
+    return report();
+  }
   const oldPath = `${root}/${FOLDER}/${FILE}`;
   const newPath = `${root}/${FILE}`;
 
   if (STATE === 2) {
+    const editing = await siteUser(TEST_USER_LOGIN);
+    if (editing === null || editing !== me) {
+      log('FAIL', 'this account is not TEST_USER_LOGIN, the editing account; nothing was edited.');
+      return report();
+    }
     const item = await sendRaw(`${fileAt(oldPath)}/ListItemAllFields?$select=Id`);
     const itemId = item.ok && item.parsed && Number.isInteger(item.parsed.Id) ? item.parsed.Id : null;
     if (itemId === null) {
@@ -356,13 +399,23 @@
     const labels = before ? await versionsOf(before.Id) : null;
     if (before) who[before.AuthorId] = 'the owner';
     if (editor !== null) who[editor] = 'the editing account';
-    if (me !== null) who[me] = who[me] || 'the moving account';
+    const mover = await siteUser(MOVER_LOGIN);
+    if (mover !== null) who[mover] = who[mover] || 'the moving account';
     if (!await fixture(BEFORE_ROW, async () => ({ ok: first.ok, status: first.status, body: {
       Versions: labels ? labels.length : undefined, Author: before ? name(before.AuthorId) : undefined,
-      Editor: before ? name(before.EditorId) : undefined, Mover: name(me) } }),
-    { Versions: 3, Author: 'the owner', Editor: 'the editing account', Mover: 'the moving account' })) {
+      Editor: before ? name(before.EditorId) : undefined, Mover: name(me), Complete: before ? hasColumns(before) && hasSystem(before) : undefined } }),
+    { Versions: 3, Author: 'the owner', Editor: 'the editing account', Mover: 'the moving account', Complete: true })) {
       return report();
     }
+    // Read by the account that moves, immediately before it does; its failure voids only the grant and link row.
+    const roleBefore = await readRoleId();
+    await fixture(PERMS_ROW, async () => {
+      const g = await grantOn(before.Id, editor, roleBefore);
+      const l = await linksOn(before.Id);
+      return { ok: g.ok && l.res.ok, status: g.ok ? l.res.status : g.status, body: {
+        HasUniqueRoleAssignments: g.unique, EditingAccountHasRead: g.bound === null ? undefined : g.bound,
+        LinkDigestPresent: l.digests ? l.digests.includes(LINK_DIGEST) : undefined } };
+    }, { HasUniqueRoleAssignments: true, EditingAccountHasRead: true, LinkDigestPresent: true });
     const move = await send(`${fileAt(oldPath)}/MoveToUsingPath`, 'POST',
       { newPath: { DecodedUrl: newPath }, moveOperations: 0 });
     if (!await fixture(ANSWERED_ROW, async () => ({ ok: true, status: 200, body: { Answer: said(move) } }),
@@ -378,15 +431,25 @@
       return report();
     }
     const keptId = after.Id === before.Id;
-    const keptVersions = JSON.stringify(afterLabels) === JSON.stringify(labels);
+    // Retention only: a label the move added is F5's question.
+    const keptVersions = labels.every((l) => afterLabels.includes(l));
     record(F1, Q.f1, keptId && keptVersions ? 'ID AND VERSIONS KEPT' : !keptId ? 'ID CHANGED' : 'VERSIONS CHANGED',
       `Id ${before.Id} -> ${after.Id}; versions ${labels.join(', ')} -> ${afterLabels.join(', ')}`);
+    const missing = 'the moved item\'s read omitted a selected field';
     const changed = COLUMNS.filter((c) => JSON.stringify(before[c]) !== JSON.stringify(after[c]));
-    record(F2, Q.f2, changed.length ? 'VALUES CHANGED' : 'EVERY VALUE KEPT',
-      COLUMNS.map((c) => `${c}: ${scrub(JSON.stringify(before[c]))} -> ${scrub(JSON.stringify(after[c]))}`).join('; '));
-    record(F3, Q.f3, 'OBSERVED',
+    if (!hasColumns(after)) {
+      record(F2, Q.f2, 'NOT ESTABLISHED', missing);
+    } else {
+      record(F2, Q.f2, changed.length ? 'VALUES CHANGED' : 'EVERY VALUE KEPT',
+        COLUMNS.map((c) => `${c}: ${scrub(JSON.stringify(before[c]))} -> ${scrub(JSON.stringify(after[c]))}`).join('; '));
+    }
+    if (!hasSystem(after)) {
+      record(F3, Q.f3, 'NOT ESTABLISHED', missing);
+    } else {
+      record(F3, Q.f3, 'OBSERVED',
       `Created: ${before.Created} -> ${after.Created}; Author: ${name(before.AuthorId)} -> ${name(after.AuthorId)}; `
       + `Modified: ${before.Modified} -> ${after.Modified}; Editor: ${name(before.EditorId)} -> ${name(after.EditorId)}`);
+    }
     record(F5, Q.f5, afterLabels.length > labels.length ? 'VERSION ADDED' : 'NO VERSION ADDED',
       `${labels.length} version(s) before, ${afterLabels.length} after`);
     log('INFO', 'STATE 3 done. Paste STATE 4 as the owner.');
@@ -401,22 +464,22 @@
     return { ok: r.ok, status: r.status, body: { AuthorIsThisAccount: r.parsed && me !== null ? r.parsed.AuthorId === me : undefined } };
   }, { AuthorIsThisAccount: true })) return report();
   const editor = await siteUser(TEST_USER_LOGIN);
-  const moved = await sendRaw(`${fileAt(newPath)}/ListItemAllFields?$select=Id,HasUniqueRoleAssignments`);
+  const moved = await sendRaw(`${fileAt(newPath)}/ListItemAllFields?$select=Id`);
   if (moved.ok && moved.parsed && Number.isInteger(moved.parsed.Id)) {
     const itemId = moved.parsed.Id;
-    const grants = await sendRaw(`${LIST}/items(${itemId})/roleassignments?$select=PrincipalId`);
+    const g = await grantOn(itemId, editor, await readRoleId());
     const seen = await linksOn(itemId);
-    const read = grants.ok && grants.parsed && Array.isArray(grants.parsed.value) && seen.withUrl !== null
-      && typeof moved.parsed.HasUniqueRoleAssignments === 'boolean';
+    const read = g.bound !== null && seen.withUrl !== null;
     // A binding seen while the file inherits is the parent's, not the file's own grant.
-    const bound = read && editor !== null && grants.parsed.value.some((g) => g.PrincipalId === editor);
-    const held = bound && moved.parsed.HasUniqueRoleAssignments === true;
+    const held = g.bound === true && g.unique === true;
     const link = !read ? null : seen.digests.includes(LINK_DIGEST) ? 'same' : seen.withUrl > 0 ? 'replaced' : 'none';
     const head = !read ? 'NOT ESTABLISHED' : held && link === 'same' ? 'GRANT AND LINK PRESENT'
       : held ? (link === 'replaced' ? 'LINK REPLACED' : 'LINK LOST')
         : link === 'same' ? 'GRANT LOST' : link === 'replaced' ? 'GRANT LOST, LINK REPLACED' : 'GRANT AND LINK LOST';
-    record(F4, Q.f4, head, `HasUniqueRoleAssignments ${moved.parsed.HasUniqueRoleAssignments}; bindings read `
-      + `${grants.ok ? `with the editing account ${bound ? 'bound' : 'not bound'}` : said(grants)}; sharing `
+    const bindings = !g.rows ? said(g.grants) : editor === null ? 'the editing account did not resolve'
+      : g.levels ? `the editing account bound at role ids ${g.levels.join(', ')}` : 'the editing account not bound';
+    record(F4, Q.f4, head, `HasUniqueRoleAssignments ${g.unique}; bindings read, ${bindings}; Read level `
+      + `${g.bound === null ? 'not established' : g.bound ? 'held' : 'not held'}; sharing `
       + `information ${seen.entries === null ? `carried no links array (${seen.keys})`
         : `listed ${seen.entries} link(s), ${seen.withUrl} with a URL, digests ${seen.digests.join(', ') || 'none'}`}`
       + `; link digest to match ${LINK_DIGEST}`);

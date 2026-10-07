@@ -37,6 +37,8 @@ F5 = "library.file.move-adds-version"
 F6 = "library.folder.recycle-empty-restorable"
 FOREIGN = "A library the probe did not make."
 OWNER_ROW = "library.folder.fixture-owner-account"
+BEFORE_PERMS = "library.file.fixture-move-permissions-before"
+BEFORE = "library.file.fixture-move-before"
 LINK_URL = "https://example.sharepoint.com/:t:/s/probe/link"
 
 Run = tuple[dict[str, dict[str, str]], list[dict[str, str]], str]
@@ -79,7 +81,7 @@ def _leg(leg: int, me: int, swaps: dict[str, str] | None = None, /, **config: An
     """Paste STATE `leg` as site user `me`; `config` reaches the mock, its `state` included."""
     # A swap must change the probe, and STATE 1 is what it ships with.
     pasted = {} if leg == 1 else {"  const STATE = 1;": f"  const STATE = {leg};"}
-    digest = _digest_swap() if leg == 4 and not config.pop("no_digest", False) else {}
+    digest = _digest_swap() if leg in (3, 4) and not config.pop("no_digest", False) else {}
     swaps = {**LOGINS, **pasted, **digest, **(swaps or {})}
     return run_probe(FILE_MOVE_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"),
                      {"me": me, **config}, swaps, pin=False)
@@ -131,7 +133,7 @@ def test_a_refused_sharing_link_voids_only_what_rests_on_it() -> None:
     rows, _, _ = _leg(1, 7, linkRefused=True)
     assert rows["library.file.fixture-move-sharing-link"]["outcome"] == "FAIL"
     assert rows["library.file.fixture-move-unique-grant"]["outcome"] == "PASS"
-    assert voided(rows) == {F4}
+    assert voided(rows) == {BEFORE_PERMS, F4}
 
 
 def test_state_two_edits_the_file_once() -> None:
@@ -346,3 +348,119 @@ def test_the_probe_voids_what_the_catalogue_says_rests_on_each_fixture() -> None
     declared = {finding["id"]: finding["depends_on"] for scenario in entry["scenarios"]
                 for finding in scenario["findings"] if finding["depends_on"]}
     assert table == declared
+
+
+def test_state_three_reads_the_grant_and_link_just_before_it_moves() -> None:
+    rows, sent, _ = _leg(3, 9, state=_state_three_start())
+    assert rows[BEFORE_PERMS]["outcome"] == "PASS"
+    reads = [i for i, s in enumerate(sent)
+             if "/roleassignments?$expand=RoleDefinitionBindings" in s["path"]]
+    move = next(i for i, s in enumerate(sent) if "MoveToUsingPath" in s["path"])
+    assert reads and reads[0] < move
+
+
+@pytest.mark.parametrize(("change", "config"), [
+    ({"grants": []}, {}),
+    ({"links": ["https://example.sharepoint.com/:t:/s/probe/other"]}, {}),
+    ({"unique": False}, {}),
+    ({"grantRoles": {8: [1073741827]}}, {}),
+    ({}, {"grantsRefused": True}),
+], ids=["grant-gone", "link-replaced", "inheriting", "other-level", "unreadable"])
+def test_a_grant_or_link_that_does_not_hold_before_the_move_voids_f4_but_not_the_move(
+        change: dict[str, Any], config: dict[str, Any]) -> None:
+    rows, sent, _ = _leg(3, 9, state={**_state_three_start(), **change}, **config)
+    assert rows[BEFORE_PERMS]["outcome"] == "FAIL"
+    assert voided(rows) == {F4}
+    assert any("MoveToUsingPath" in s["path"] for s in sent)
+    assert rows[F1]["state"] == "settled"
+
+
+def test_state_three_needs_the_link_digest_before_it_sends_anything() -> None:
+    _, sent, output = _leg(3, 9, state=_state_three_start(), no_digest=True)
+    assert sent == []
+    assert "LINK_DIGEST" in output
+
+
+def test_a_changed_permission_level_is_a_lost_grant_after_the_move() -> None:
+    start = {**_state_four_start(), "grantRoles": {8: [1073741827]}}
+    rows, _, _ = _leg(4, 7, state=start)
+    assert rows[F4]["outcome"] == "GRANT LOST"
+    assert "1073741827" in rows[F4]["evidence"]
+
+
+def test_an_editing_account_that_does_not_resolve_leaves_f4_open() -> None:
+    swaps = {"  const TEST_USER_LOGIN = 'CHANGE ME - the editing account claims login';":
+             "  const TEST_USER_LOGIN = 'i:0#.f|membership|nobody@example.com';"}
+    rows, _, _ = _leg(4, 7, swaps, state=_state_four_start())
+    assert rows[F4]["outcome"] == "NOT ESTABLISHED"
+
+
+def test_a_fourth_account_pasting_state_three_moves_nothing() -> None:
+    rows, sent, _ = _leg(3, 10, state=_state_three_start())
+    assert rows[BEFORE]["outcome"] == "FAIL"
+    assert "the moving account" not in rows[BEFORE]["evidence"].split("read ")[-1]
+    assert not any("MoveToUsingPath" in s["path"] for s in sent)
+
+
+@pytest.mark.parametrize("me", [7, 9, 10])
+def test_state_two_edits_nothing_unless_the_editing_account_pastes_it(me: int) -> None:
+    start = _state_three_start()
+    start["file"]["versions"] = ["1.0", "2.0"]
+    _, sent, output = _leg(2, me, state=start)
+    assert _writes(sent) == []
+    assert "editing account" in output
+
+
+@pytest.mark.parametrize(("where", "fields"), [
+    ("omitBefore", ["Created"]), ("omitBefore", ["MoveChoice"]), ("omitBefore", ["EditorId"]),
+], ids=["created", "choice", "editor"])
+def test_a_before_read_missing_a_field_stops_before_the_move(where: str, fields: list[str]) -> None:
+    rows, sent, _ = _leg(3, 9, state=_state_three_start(), **{where: fields})
+    assert rows[BEFORE]["outcome"] == "FAIL"
+    assert not any("MoveToUsingPath" in s["path"] for s in sent)
+
+
+@pytest.mark.parametrize(("fields", "open_rows", "settled"), [
+    (["Modified"], {F3}, {F1, F2, F5}),
+    (["AuthorId"], {F3}, {F1, F2, F5}),
+    (["MoveFlag"], {F2}, {F1, F3, F5}),
+    (["MoveChoice", "MoveDate"], {F2}, {F1, F3, F5}),
+], ids=["modified", "author", "flag", "two-columns"])
+def test_a_moved_item_missing_a_field_leaves_only_the_rows_that_need_it_open(
+        fields: list[str], open_rows: set[str], settled: set[str]) -> None:
+    rows, _, _ = _leg(3, 9, state=_state_three_start(), omitAfter=fields)
+    for row in open_rows:
+        assert rows[row]["outcome"] == "NOT ESTABLISHED", row
+    for row in settled:
+        assert rows[row]["state"] == "settled", row
+
+
+def test_a_moved_item_whose_versions_carry_no_label_leaves_the_version_rows_open() -> None:
+    rows, _, _ = _leg(3, 9, state=_state_three_start(), versionsUnlabelled=True)
+    assert all(rows[c]["state"] == "open" for c in (F1, F2, F3, F5))
+
+
+def test_an_added_version_does_not_make_the_original_versions_lost() -> None:
+    rows, _, _ = _leg(3, 9, state=_state_three_start(), move={"addsVersion": True})
+    assert rows[F1]["outcome"] == "ID AND VERSIONS KEPT"
+    assert rows[F5]["outcome"] == "VERSION ADDED"
+
+
+def test_a_dropped_version_label_is_a_versions_change() -> None:
+    rows, _, _ = _leg(3, 9, state=_state_three_start(), move={"dropsLabel": True})
+    assert rows[F1]["outcome"] == "VERSIONS CHANGED"
+
+
+@pytest.mark.parametrize("config", [{"rootUrlMissing": True}, {"rootRefused": True}],
+                         ids=["no-url", "refused"])
+@pytest.mark.parametrize("leg", [1, 2, 3, 4])
+def test_a_library_root_without_a_url_stops_every_leg_before_a_path_is_built(
+        leg: int, config: dict[str, Any]) -> None:
+    me = {1: 7, 2: 8, 3: 9, 4: 7}[leg]
+    state = {} if leg == 1 else _state_three_start()
+    _, sent, output = _leg(leg, me, state=state, **config)
+    assert not any("null" in s["path"] or "undefined" in s["path"] for s in sent)
+    built = ("Folders/AddUsingPath", "MoveToUsingPath", "GetFolderByServerRelativePath",
+             "GetFileByServerRelativePath")
+    assert not any(b in s["path"] for s in sent for b in built)
+    assert ended_with_report(output)
