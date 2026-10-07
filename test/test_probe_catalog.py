@@ -116,7 +116,7 @@ def test_probe_catalog_covers_the_exact_manual_inventory() -> None:
     actual = {path.name for path in MANUAL.glob("*.js")}
 
     assert catalog["schema_version"] == "1.2"
-    assert len(descriptors) == 99
+    assert len(descriptors) == 100
     assert catalogued == actual
 
 
@@ -740,7 +740,8 @@ def test_calculated_operand_probe_uses_shared_v2_and_exact_fixture_ownership() -
 def test_the_watched_column_probes_list_every_fixture_and_control_they_register() -> None:
     """A fixture missing from its scenario's controls is a dependency the catalogue hides."""
     probes = {"batch-item-create-probe.js", "item-versions-payload-probe.js",
-              "item-versions-query-probe.js", "item-versions-trim-probe.js"}
+              "item-versions-query-probe.js", "item-versions-trim-probe.js",
+              "version-editor-email-probe.js"}
     for descriptor in _catalog()["probes"]:
         if descriptor["file"] not in probes:
             continue

@@ -13131,6 +13131,76 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "version-editor-email-probe.js",
+      "surface": "field",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch generic list with versioning and a person column, and one item in it naming a second account; recycled by the next setup run with CLEANUP on"
+      ],
+      "cleanup": {
+        "policy": "before"
+      },
+      "prerequisites": [
+        "permission to create and recycle lists on the site",
+        "a second account whose sign-in name differs from its email address, able to edit the list"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.version.fixture-editor-list",
+              "depends_on": []
+            },
+            {
+              "id": "field.version.fixture-editor-person-write",
+              "depends_on": [
+                "field.version.fixture-editor-list"
+              ]
+            },
+            {
+              "id": "field.version.fixture-editor-distinct-names",
+              "depends_on": [
+                "field.version.fixture-editor-person-write"
+              ]
+            },
+            {
+              "id": "field.version.control-editor-versions-read",
+              "depends_on": [
+                "field.version.fixture-editor-list"
+              ]
+            },
+            {
+              "id": "field.version.editor-email-sign-in",
+              "depends_on": [
+                "field.version.fixture-editor-person-write",
+                "field.version.fixture-editor-distinct-names",
+                "field.version.control-editor-versions-read"
+              ]
+            },
+            {
+              "id": "field.version.person-email-matches-editor",
+              "depends_on": [
+                "field.version.fixture-editor-person-write",
+                "field.version.fixture-editor-distinct-names",
+                "field.version.control-editor-versions-read"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.version.fixture-editor-list",
+            "field.version.fixture-editor-person-write",
+            "field.version.fixture-editor-distinct-names",
+            "field.version.control-editor-versions-read"
+          ]
+        }
+      ]
     }
   ]
 }
