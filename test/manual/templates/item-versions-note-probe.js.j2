@@ -1,0 +1,240 @@
+{# test/manual/templates/item-versions-note-probe.js.j2 #}
+
+/** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY FOR A NOTE COLUMN ----
+ *
+ * REVISION: {{ revision }}
+ *
+ * QUESTION: what does `items(id)/versions` return, per version, for a plain
+ * multi-line text column (Note, RichText false) whose value holds a double
+ * quote, an apostrophe, a line feed and the sequence semicolon-hash?
+ *
+ * WHY: a flow that records changes reads the item's versions and spells each
+ * value as text by its column kind. The payload probe measured every other
+ * kind; a note column was not among them.
+ *
+ * DEPENDS ON (read back, and voiding what rests on them when they do not hold)
+ *   field.version.control-current-user        this account's Id reads back
+ *   field.version.fixture-note-list           a generic list with versioning on
+ *   field.version.fixture-note-column         the deploy's Note column (RichText and AppendOnly false, NumberOfLines 6), read back
+ *   field.version.fixture-note-item           one item created blank, then the note
+ *       written twice; each value reads back equal before the next is sent
+ *   field.version.control-payload-versions-read  the versions read answers a list of entries
+ *
+ * OBSERVES (recorded verbatim per version, never compared with an expected value)
+ *   field.version.payload-note   every property of each version whose name begins
+ *       with the column's name, and its raw value
+ *
+ * HOW TO READ IT: OBSERVED is the column's properties as each version carried
+ * them. ABSENT is a versions answer carrying no property named for the column.
+ * NOT COMPARABLE, left open, is a versions read carrying a continuation link,
+ * which the probe records and does not follow.
+ * Email addresses, claims logins and this account's display name are masked.
+ * When no display name comes back, no text from an answer is quoted, only statuses.
+ *
+ * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
+ * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again.
+ * Copy the RESULTS block back verbatim.
+ *
+ * WHEN FINISHED: nothing to delete. The probe recycles its list before it
+ * reports. The title ends in a token unique to the run, so no run finds,
+ * reuses or recycles another run's list; one a run could not recycle is
+ * named on the console, with its Id, to recycle by hand.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+{% include "_probe_raw_request_v1.js.j2" %}
+{% include "_probe_identity_v1.js.j2" %}
+{% include "_probe_scratch_list_v1.js.j2" %}
+{% include "_probe_item_versions_v1.js.j2" %}
+  log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
+
+  const LIST = runTitle('dbmlsp Probe NoteVersions');
+  // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
+  const OWNERSHIP = 'dbml-sharepoint item-versions note probe scratch list. Safe to delete.';
+  const COLUMN = 'ProbeNote';
+  // The two values written: a quote, an apostrophe, a line feed and the delimiter SharePoint uses in lookups.
+  const NOTES = ['Reviewed; "partly" met.\nSee gaps;#2.', 'Second: \'met\'.\nNone;# "open".'];
+
+  const ID = {
+    user: 'field.version.control-current-user',
+    list: 'field.version.fixture-note-list',
+    column: 'field.version.fixture-note-column',
+    item: 'field.version.fixture-note-item',
+    read: 'field.version.control-payload-versions-read',
+    note: 'field.version.payload-note',
+  };
+  const Q = {
+    user: 'this account\'s Id reads back from web/currentuser',
+    list: 'a generic list this probe created, with versioning on',
+    column: `${COLUMN} reads back as the deploy's Note column: RichText false, NumberOfLines 6, AppendOnly false`,
+    item: 'one item created with only a Title and the note written twice, the create and each write read back '
+      + 'before the next',
+    read: 'CONTROL: items(id)/versions answers a list of version entries',
+    note: 'what each version carries for a plain multi-line text column',
+  };
+  expect('field.version.control-current-user', Q.user);
+  expect('field.version.fixture-note-list', Q.list);
+  expect('field.version.fixture-note-column', Q.column);
+  expect('field.version.fixture-note-item', Q.item);
+  expect('field.version.control-payload-versions-read', Q.read);
+  expect('field.version.payload-note', Q.note);
+  const AFTER_READ = [ID.note];
+  const AFTER_ITEM = [ID.read, ...AFTER_READ];
+  const AFTER_COLUMN = [ID.item, ...AFTER_ITEM];
+  const AFTER_LIST = [ID.column, ...AFTER_COLUMN];
+  const AFTER_USER = [ID.list, ...AFTER_LIST];
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create a list '${LIST}' on ${WEB} with versioning on and one plain multi-line text`);
+    log('INFO', 'column, create one item and write the column twice, then read its versions.');
+    log('INFO', 'The list is recycled on the way out. Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false and this probe must write. Stopping.');
+    return;
+  }
+
+  const show = (value) => (value === undefined ? '(absent)' : quoteValue(value));
+  // A read keeps its answer, so a refused read is never mistaken for a missing object.
+  const readBack = async (path) => {
+    const res = await sendRaw(path);
+    const head = readHead(res);
+    const parsed = head ? null : recordBody(res);
+    return { parsed, read: head ? scrub(head.why) : parsed ? `HTTP ${res.status}`
+      : `HTTP ${res.status} carried no JSON: ${quote(res.text).slice(0, 400)}` };
+  };
+  const labelOf = (row) => (row.VersionLabel === undefined ? '(no VersionLabel)'
+    : typeof row.VersionLabel === 'string' ? quote(row.VersionLabel) : show(row.VersionLabel));
+
+  // A versions read is the control the observation rests on: a refusal voids it, a throttle leaves it open.
+  const recordVersionsRead = (versions) => {
+    const held = versions.rows !== null && versions.rows.length > 0;
+    // A 2xx with no value array is not an answer about the versions, so it is left open like a throttle.
+    const unread = versions.head ? versions.head.outcome === 'NOT ESTABLISHED' : versions.rows === null;
+    const outcome = held ? 'PASS' : unread ? 'NOT ESTABLISHED' : 'FAIL';
+    record(ID.read, Q.read, outcome, versions.head
+      ? scrub(versions.head.why)
+      : `HTTP ${versions.res.status}, ${versions.rows === null ? versions.shape : `${versions.rows.length} entries`}`
+        + `: ${quote(versions.res.text).slice(0, 400)}`);
+    if (outcome === 'FAIL') voidRows(AFTER_READ, 'the versions read answered no version entries');
+    if (outcome === 'NOT ESTABLISHED') {
+      const why = versions.head ? scrub(versions.head.why) : `HTTP ${versions.res.status} ${versions.shape}`;
+      record(ID.note, Q.note, 'NOT ESTABLISHED',
+        `not asked: the versions read was not established (${why}); a re-run can ask it`);
+    }
+    return held;
+  };
+
+  const run = async () => {
+    beginFixture();
+    let meId = null;
+    if (!await settleFixture(ID.user, async () => {
+      const { account, said } = await readAccount();
+      if (!account) return { ok: true, status: 200, body: { Read: said } };
+      meId = account.Id;
+      return { ok: true, status: 200, body: { Read: said, Id: account.Id } };
+    }, { Read: 'HTTP 200', Id: (v) => Number.isInteger(v) && v > 0 }, AFTER_USER)) {
+      return;
+    }
+
+    const list = await claimScratchList({ id: ID.list, question: Q.list, title: LIST, description: OWNERSHIP,
+      dependents: AFTER_LIST, settings: { EnableVersioning: true },
+      declared: { EnableVersioning: true,
+        ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 } });
+    if (!list.held) return;
+    const listPath = list.path;
+    const itemType = list.body.ListItemEntityTypeFullName;
+
+    // The deploy's create body for an optional long-text column (jsgen._field_body), pinned by a test.
+    beginFixture();
+    const sent = await spWrite(`${listPath}/fields`, { __metadata: { type: 'SP.FieldMultiLineText' },
+      FieldTypeKind: 3, Title: COLUMN, RichText: false, NumberOfLines: 6,
+      AppendOnly: false }, await getDigest(), VERBOSE_WRITE);
+    log('INFO', `create ${COLUMN}: HTTP ${sent.status}${sent.ok ? '' : ` ${quote(sent.text).slice(0, 200)}`}`);
+    if (!await settleFixture(ID.column, async () => {
+      // The whole field is read, since $select of a subtype property can 400.
+      const read = await readBack(`${listPath}/fields/getbyinternalnameortitle('${COLUMN}')`);
+      return { ok: true, status: 200, body: read.parsed
+        ? { Read: read.read, TypeAsString: read.parsed.TypeAsString, RichText: read.parsed.RichText,
+            NumberOfLines: read.parsed.NumberOfLines, AppendOnly: read.parsed.AppendOnly }
+        : { Read: read.read } };
+    }, { Read: 'HTTP 200', TypeAsString: 'Note', RichText: false, NumberOfLines: 6,
+      AppendOnly: false }, AFTER_COLUMN)) {
+      return;
+    }
+
+    // Each write is read back before the next is sent, so the second never replaces a first that did not land.
+    let written = 0;
+    const missed = [];
+    let itemId = null;
+    const ITEM_TITLE = 'dbmlsp note versions item';
+    beginFixture();
+    const made = await spWrite(`${listPath}/items`, { __metadata: { type: itemType }, Title: ITEM_TITLE },
+      await getDigest(), VERBOSE_WRITE);
+    itemId = createdId(made);
+    if (itemId === null) {
+      missed.push(`the create: HTTP ${made.status}`
+        + `${made.ok ? ' carried no numeric Id' : `: ${quote(made.text).slice(0, 300)}`}`);
+    } else {
+      const back = await readBack(`${listPath}/items(${itemId})?$select=Id,Title`);
+      if (back.parsed && back.parsed.Title === ITEM_TITLE) written += 1;
+      else {
+        missed.push(`the create: HTTP ${made.status}, but ${back.parsed
+          ? `Title reads back ${show(back.parsed.Title)}` : `the read-back ${back.read}`}`);
+      }
+    }
+    for (const [i, text] of (written === 1 ? NOTES : []).entries()) {
+      const merged = await spWrite(`${listPath}/items(${itemId})`, { __metadata: { type: itemType },
+        [COLUMN]: text }, await getDigest(), { ...VERBOSE_WRITE, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
+      const what = `write ${i + 1}: HTTP ${merged.status}`;
+      if (!merged.ok) {
+        missed.push(`${what}: ${quote(merged.text).slice(0, 300)}`);
+        break;
+      }
+      const back = await readBack(`${listPath}/items(${itemId})?$select=Id,${COLUMN}`);
+      if (back.parsed && back.parsed[COLUMN] === text) {
+        written += 1;
+        continue;
+      }
+      missed.push(`${what}, but ${back.parsed ? `${COLUMN} reads back ${show(back.parsed[COLUMN])}`
+        : `the read-back ${back.read}`}`);
+      break;
+    }
+    if (!await settleFixture(ID.item, async () => {
+      const body = { Written: written, Missed: missed.join('; ') || 'none' };
+      if (itemId === null) return { ok: true, status: 200, body };
+      const read = await readBack(`${listPath}/items(${itemId})?$select=Id,${COLUMN}`);
+      if (!read.parsed) return { ok: true, status: 200, body: { ...body, Read: read.read } };
+      return { ok: true, status: 200, body: { ...body, [COLUMN]: read.parsed[COLUMN] } };
+    }, { Written: 3, Missed: (v) => typeof v === 'string', [COLUMN]: NOTES[1] }, AFTER_ITEM)) {
+      return;
+    }
+
+    const versions = await readVersions(listPath, itemId);
+    if (!recordVersionsRead(versions)) return;
+    if (versions.next !== null) {
+      record(ID.note, Q.note, 'NOT COMPARABLE', pagedSaid(versions), 'open');
+      return;
+    }
+    const rows = versions.rows;
+    const keys = [...new Set(rows.flatMap((row) => Object.keys(row)
+      .filter((key) => key.startsWith(COLUMN))))].sort();
+    const perVersion = rows.map((row) => `${labelOf(row)}: {${keys.map((key) => `${key}=${show(row[key])}`)
+      .join(', ')}}`);
+    record(ID.note, Q.note, keys.length ? 'OBSERVED' : 'ABSENT',
+      `${rows.length} version(s) in the order answered; properties beginning ${COLUMN}: `
+      + `${keys.join(', ') || 'none'}; ${perVersion.join('; ')}`);
+  };
+
+  try {
+    await run();
+  } catch (err) {
+    log('FAIL', `probe aborted: ${scrub(String((err && err.message) || err)).slice(0, 240)}. `
+      + 'The unasked rows stay open.');
+  } finally {
+    await recycleScratchLists();
+    // Reported here, after the recycle, so every path prints the recycle line above the table.
+    report();
+  }
+})();
