@@ -78,7 +78,8 @@
   // Refusal means the server rejected the content; 401/403/408/429/503 are about who or when, so never refusals.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
-    && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
+    && status !== 408 && status !== 429 && status !== 503 // 503: the other documented throttle
+    && status !== 502 && status !== 504; // gateway failures: no content-specific answer
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -318,9 +319,10 @@
 
   // The write is verbose with the item type, as the other probes write list items.
   const write = async () => {
+    const digest = await getDigest();
     const started = Date.now();
     const res = await spPost(itemAt, { __metadata: { type: item.body.ListItemEntityTypeFullName }, [NOTE]: RUN },
-      await getDigest(), {
+      digest, {
         Accept: 'application/json;odata=verbose',
         'Content-Type': 'application/json;odata=verbose',
         'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE',
@@ -344,7 +346,7 @@
     return e && e.code !== undefined ? String(e.code) : 'none';
   };
   const describe = (back) => (back.ok && back.body
-    ? `read back: ${JSON.stringify(back.body[NOTE])} (wrote ${JSON.stringify(RUN)})`
+    ? `read back: ${JSON.stringify(back.body[NOTE])} (requested ${JSON.stringify(RUN)})`
     : `the read back ${unanswered(back)}`);
   const answeredBy = (res, ms) => `HTTP ${res.status} in ${ms} ms; error.code: ${codeOf(res)}; body: ${res.text.slice(0, 300)}`;
 
@@ -370,16 +372,17 @@
     return report();
   }
   // A refusal is the finding, so it is never a failure of the probe. But a malformed request is refused
-  // the same way, so the row stays awaiting-capture until the closed paste's control passes with this request shape.
+  // the same way, so the row stays open until the closed paste's control passes with this request shape.
   const SETTLE = 'settled only when the closed control passes with the same request';
   const answered = answeredBy(res, ms);
   // Recorded before any further request, so the write's own answer survives a failure after it.
-  record(CHECKS[OPENED_IN], ASK, 'OBSERVED', `${answered}; ${SETTLE}`, 'awaiting-capture');
+  record(CHECKS[OPENED_IN], ASK, 'OBSERVED', `${answered}; ${SETTLE}`, 'open');
   let back = 'the read back threw';
   try { back = describe(await read()); } catch (err) { back = `the read back threw: ${err && err.message ? err.message : String(err)}`; }
   record(CHECKS[OPENED_IN], ASK, 'OBSERVED',
-    `${answered}; ${back}; before: ${lockBefore}; after: ${await lockState()}; ${SETTLE}`, 'awaiting-capture');
-  record(CONTROL, CONTROL_Q, 'MANUAL', "close the workbook in the second account, then paste again with STATE = 'closed'");
+    `${answered}; ${back}; before: ${lockBefore}; after: ${await lockState()}; ${SETTLE}`, 'open');
+  record(CONTROL, CONTROL_Q, 'NOT ESTABLISHED',
+    "close the workbook in the second account, then paste again with STATE = 'closed'", 'open');
   return report();
   };
   try {

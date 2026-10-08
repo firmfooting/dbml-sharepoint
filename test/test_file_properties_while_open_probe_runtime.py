@@ -107,11 +107,11 @@ def test_an_opened_in_that_is_not_web_or_desktop_stops_before_any_request(
 
 def test_a_refused_merge_is_recorded_with_its_status_not_failed() -> None:
     rows, sent, output = _run(OPEN_WEB, refuse=423)
-    assert rows[WEB]["outcome"] == "OBSERVED" and rows[WEB]["state"] == "awaiting-capture"
+    assert rows[WEB]["outcome"] == "OBSERVED" and rows[WEB]["state"] == "open"
     assert "error.code: -2130575305" in rows[WEB]["evidence"]
     assert "before: LockedByUser read: HTTP 200" in rows[WEB]["evidence"]
     assert "423" in rows[WEB]["evidence"] and "locked for shared use" in rows[WEB]["evidence"]
-    assert rows[CONTROL]["state"] == "awaiting-capture"
+    assert rows[CONTROL]["state"] == "open"
     assert len(_writes(sent)) == 1 and ended_with_report(output)
 
 
@@ -198,7 +198,7 @@ def test_the_control_verdict_and_its_evidence_come_from_one_read() -> None:
     assert len(reads) == 2  # the fixture read and the one read after the write
 
 
-@pytest.mark.parametrize("status", [401, 403, 408, 429, 503])
+@pytest.mark.parametrize("status", [401, 403, 408, 429, 502, 503, 504])
 def test_a_status_that_says_nothing_about_the_update_is_not_established(status: int) -> None:
     rows, _, _ = _run(OPEN_WEB, refuse=status)
     assert rows[WEB]["outcome"] == "NOT ESTABLISHED" and rows[WEB]["state"] == "open"
@@ -211,3 +211,8 @@ def test_the_merge_answer_survives_a_failing_read_back() -> None:
     rows, _, output = _run(OPEN_WEB, refuse=423, readFailsAfterWrite=True)
     assert "423" in rows[WEB]["evidence"] and "read back threw" in rows[WEB]["evidence"]
     assert ended_with_report(output)
+
+
+def test_a_refused_update_is_not_labelled_as_written() -> None:
+    rows, _, _ = _run(OPEN_WEB, refuse=423)
+    assert "requested" in rows[WEB]["evidence"] and "wrote" not in rows[WEB]["evidence"]
