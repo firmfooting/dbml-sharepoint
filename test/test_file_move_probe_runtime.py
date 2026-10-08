@@ -419,6 +419,14 @@ def test_another_link_with_a_url_leaves_the_tracked_link_open(change: dict[str, 
     assert "entries with a URL 1" in rows[F4]["evidence"]
 
 
+def test_any_remaining_entry_leaves_the_tracked_link_open() -> None:
+    # A URL-less entry under another ShareId could be ours in a post-move shape.
+    rows, _, _ = _leg(5, 7, state={**_state_four_start(), "links": []}, placeholders=1)
+    assert rows[F4]["outcome"] == "NOT ESTABLISHED"
+    rows, _, _ = _leg(5, 7, state={**_state_four_start(), "links": []})
+    assert rows[F4]["outcome"] == "LINK LOST"
+
+
 @pytest.mark.parametrize("empty", ["00000000-0000-0000-0000-000000000000",
                                    "{00000000-0000-0000-0000-000000000000}"])
 def test_the_empty_guid_is_no_share_id(empty: str) -> None:
@@ -715,7 +723,7 @@ def test_the_share_id_value_is_printed_nowhere_only_its_digest() -> None:
     ({}, {"placeholders": 2}, "GRANT AND LINK PRESENT"),
     ({"links": ["https://example.sharepoint.com/:t:/s/probe/other"]}, {"placeholders": 2},
      "NOT ESTABLISHED"),
-    ({"links": []}, {"placeholders": 2}, "LINK LOST"),
+    ({"links": []}, {"placeholders": 2}, "NOT ESTABLISHED"),
     ({}, {"duplicateOurs": True}, "NOT ESTABLISHED"),
 ], ids=["survives", "replaced", "none", "several-match"])
 def test_state_five_finds_our_entry_by_the_digest_of_its_share_id(

@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A MOVE INSIDE ONE LIBRARY KEEPS ----
  *
- * REVISION: 9b599386
+ * REVISION: 3a9eceb1
  *
  * QUESTION: when File.MoveToUsingPath moves a file from a folder to the root
  * of the same document library, does the item keep its Id, its versions, its
@@ -563,7 +563,7 @@
   const learnIdentity = async () => {
     await readAccount();
   };
-  log('INFO', 'probe revision 9b599386. Quote this when reporting results.');
+  log('INFO', 'probe revision 3a9eceb1. Quote this when reporting results.');
 
   const STATE = 1;
   const TEST_USER_LOGIN = 'CHANGE ME - the editing account claims login';
@@ -1081,10 +1081,8 @@
     const itemId = moved.parsed.Id;
     const g = await grantOn(itemId, editor, await readRoleId());
     const seen = await linksOn(itemId, (v) => digestOf(v) === LINK_DIGEST);
-    // Lost only when no entry is ours and none could be: an unidentified entry, or any other entry with a URL (made before
-    // the move, or ours under a ShareId the move changed), leaves it open.
-    const link = seen.matches === 1 && seen.oursHasUrl ? 'same'
-      : seen.matches === 0 && seen.unknown === 0 && seen.withUrl === 0 ? 'none' : null;
+    // Lost only when no entry is left: any remaining entry could be ours under a ShareId or shape the move changed.
+    const link = seen.matches === 1 && seen.oursHasUrl ? 'same' : seen.entries === 0 ? 'none' : null;
     const read = g.bound !== null && link !== null;
     // A binding seen while the file inherits is the parent's, not the file's own grant.
     const held = g.bound === true && g.unique === true;
