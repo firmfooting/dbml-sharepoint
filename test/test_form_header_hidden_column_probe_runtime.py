@@ -24,6 +24,8 @@ PROBE = MANUAL / "form-header-hidden-column-probe.js"
 EDIT = "form.edit-form.header-hidden-column"
 DISPLAY = "form.display-form.header-hidden-column"
 BASE = ("form.edit-form.footer-baseline-renders", "form.display-form.footer-baseline-renders")
+BODY = ("form.edit-form.body-hides-column", "form.display-form.body-hides-column")
+OBSERVED_BASELINE = BASE + BODY
 TOKEN = ("form.edit-form.header-choice-token-renders",
          "form.display-form.header-choice-token-renders")
 TARGET = (EDIT, DISPLAY)
@@ -32,6 +34,7 @@ LIST = "text.form-fmt.fixture-hidden-list"
 CONTROL = "text.form-fmt.control-column-hidden-on-forms"
 FORMATTER = "text.form-fmt.fixture-header-formatter"
 FOOTER_FIXTURE = "text.form-fmt.fixture-footer-baseline"
+CONTROL_FIXTURE = "text.form-fmt.fixture-control-header"
 FIXTURES = (
     LIST,
     "text.form-fmt.fixture-hidden-columns",
@@ -40,6 +43,7 @@ FIXTURES = (
     LINKS,
 )
 GATES = ("CONFIRMED", "ALLOW_WRITES")
+CONTROL_MODE = {"  const MODE = 'baseline';": "  const MODE = 'control';"}
 HEADER = {"  const MODE = 'baseline';": "  const MODE = 'header';"}
 CLEANUP = {"  const CLEANUP = false;": "  const CLEANUP = true;"}
 
@@ -143,8 +147,13 @@ def _run(gates: tuple[str, ...] = GATES, swaps: dict[str, str] | None = None,
 
 
 def _header(**config: Any) -> Run:
-    """The second paste, against the state the first one leaves."""
+    """The last paste, against the state the earlier ones leave."""
     return run_probe(_MOCK, PROBE, GATES, {**PRIOR, **config}, swaps=HEADER, pin=False)
+
+
+def _control(**config: Any) -> Run:
+    """The middle paste."""
+    return run_probe(_MOCK, PROBE, GATES, {**PRIOR, **config}, swaps=CONTROL_MODE, pin=False)
 
 
 def _writes(sent: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -161,7 +170,7 @@ def test_a_healthy_baseline_run_writes_the_footer_alone_and_awaits_a_person() ->
     rows, sent, output = _run()
     for row in (*FIXTURES, FOOTER_FIXTURE):
         assert rows[row]["outcome"] == "PASS", (row, rows[row]["evidence"])
-    for row in BASE:
+    for row in OBSERVED_BASELINE:
         assert rows[row]["outcome"] == "MANUAL" and rows[row]["state"] == "awaiting-capture"
     assert not set(TOKEN + TARGET) & set(rows)
     formatter = next(s for s in sent if "ClientFormCustomFormatter" in s["body"])
@@ -172,30 +181,49 @@ def test_a_healthy_baseline_run_writes_the_footer_alone_and_awaits_a_person() ->
     assert not any(s["method"] == "POST" and "getbytitle" in s["path"] for s in sent)
 
 
-def test_a_header_run_adds_the_header_to_the_baseline_list_and_writes_nothing_else() -> None:
+def test_a_control_run_adds_only_the_visible_choice_line() -> None:
+    rows, sent, output = _control()
+    for row in (*FIXTURES, CONTROL_FIXTURE):
+        assert rows[row]["outcome"] == "PASS", (row, rows[row]["evidence"])
+    for row in TOKEN:
+        assert rows[row]["outcome"] == "MANUAL" and rows[row]["state"] == "awaiting-capture"
+    assert not set(BASE + BODY + TARGET) & set(rows)
+    [write] = _writes(sent)
+    assert "visible-choice: " in write["body"] and "hidden-column" not in write["body"]
+    assert "footerJSONFormatter" in write["body"] and ended_with_report(output)
+
+
+def test_a_header_run_adds_the_hidden_line_and_writes_nothing_else() -> None:
     rows, sent, output = _header()
     for row in (*FIXTURES, FORMATTER):
         assert rows[row]["outcome"] == "PASS", (row, rows[row]["evidence"])
-    for row in (*TOKEN, *TARGET):
+    for row in TARGET:
         assert rows[row]["outcome"] == "MANUAL" and rows[row]["state"] == "awaiting-capture"
-    assert not set(BASE) & set(rows)
+    assert not set(BASE + BODY + TOKEN) & set(rows)
     [write] = _writes(sent)
-    assert "headerJSONFormatter" in write["body"] and "footerJSONFormatter" in write["body"]
+    assert "hidden-column: " in write["body"] and "visible-choice: " in write["body"]
     assert "contenttypes('0x01')" in write["path"] and ended_with_report(output)
 
 
-def test_the_header_reading_voids_on_a_blank_choice_control_and_names_suppression() -> None:
+def test_each_reading_is_its_own_finding_and_body_visibility_voids_only_the_target() -> None:
+    rows, _sent, _output = _run()
+    assert "HiddenResult is absent from the Edit form body" in rows[BODY[0]]["evidence"]
+    assert "probe-baseline-footer" in rows[BASE[0]]["evidence"]
+    assert "VOID" not in rows[BASE[0]]["evidence"] and "VOID" not in rows[BODY[0]]["evidence"]
+    rows, _sent, _output = _control()
+    assert "observed failure of the visible Choice token" in rows[TOKEN[0]]["evidence"]
+    assert "VOID" not in rows[TOKEN[0]]["evidence"]
     rows, _sent, _output = _header()
-    evidence = rows[EDIT]["evidence"]
-    assert "VOID it if the visible-choice line is blank" in evidence
-    assert "whole-formatter suppression" in evidence and "whole-header suppression" in evidence
-    assert "visible-choice" in rows[TOKEN[0]]["evidence"]
-    assert "VOID that form if HiddenResult is still a field" in evidence
+    assert "VOID it where the body row did not show the column hidden" in rows[EDIT]["evidence"]
+    assert "suppression by the hidden token" in rows[EDIT]["evidence"]
 
 
-def test_the_formatter_uses_no_attribute_and_tells_its_lines_apart_by_text() -> None:
+def test_joined_text_is_an_expression_and_the_footer_a_plain_literal() -> None:
     js = PROBE.read_text(encoding="utf-8")
-    assert "attributes: {" not in js and "hidden-column: [$" in js and "visible-choice: [$" in js
+    assert "txtContent: `='visible-choice: ' + [$${SHOWN}]`" in js
+    assert "txtContent: `='hidden-column: ' + [$${HIDDEN}]`" in js
+    assert "txtContent: 'probe-baseline-footer'" in js
+    assert "attributes: {" not in js
 
 
 def test_a_header_run_without_a_baseline_list_refuses_and_writes_nothing() -> None:
@@ -225,7 +253,7 @@ def test_a_committed_write_that_answers_an_error_stands_on_an_exact_readback() -
 def test_a_refused_formatter_write_voids_the_reading() -> None:
     rows, _sent, _output = _header(refuseFormatter=True)
     assert rows[FORMATTER]["outcome"] == "FAIL"
-    assert set(TARGET + TOKEN) <= voided(rows)
+    assert set(TARGET) <= voided(rows)
     rows, _sent, _output = _run(refuseFormatter=True)
     assert rows[FOOTER_FIXTURE]["outcome"] == "FAIL" and set(BASE) <= voided(rows)
 

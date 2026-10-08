@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FORM HEADER SHOWING A COLUMN HIDDEN FROM THE FORMS ----
  *
- * REVISION: 2d764186
+ * REVISION: 2c0609c8
  *
  * QUESTION: when a column is hidden from the Edit and Display forms the way
  * the deploy hides one (a ClientValidationFormula that is true only while
@@ -15,11 +15,14 @@
  * no attribute: Learn's formatting syntax reference lists the predefined ones
  * and says an unlisted attribute is an error.
  *
- * TWO PASTES, because a baseline must be seen before the thing under test exists:
+ * THREE PASTES, because each variable must be seen alone before the next is added:
  *   MODE = 'baseline'  builds the fixture and writes a formatter holding only a
- *       literal footer. A person records whether the footer shows on each form.
- *   MODE = 'header'    adds the header (a hidden-column line and a visible-Choice
- *       line) to the same formatter. A person records what each form shows.
+ *       literal footer. A person records whether the footer shows on each form and
+ *       whether the form body holds the columns as declared.
+ *   MODE = 'control'   adds a header holding only the visible Choice column's line.
+ *   MODE = 'header'    adds the hidden column's line to that header.
+ * Text that joins a label to a field is an expression ('=' then a single-quoted
+ * string, + and [$Field]), as Learn's list form configuration page writes it.
  *
  * DEPENDS ON (read back, and voiding what rests on them when they do not hold)
  *   text.form-fmt.fixture-hidden-list           a generic list this probe created, read back
@@ -34,32 +37,36 @@
  *       default item content type, neither Hidden
  *   text.form-fmt.fixture-footer-baseline       (baseline) the content type's
  *       ClientFormCustomFormatter read back as the footer alone
- *   text.form-fmt.fixture-header-formatter      (header) it read back as the header and the footer
+ *   text.form-fmt.fixture-control-header        (control) it read back as the visible
+ *       Choice column's header line and the footer
+ *   text.form-fmt.fixture-header-formatter      (header) it read back as both header
+ *       lines and the footer
  *
  * OBSERVES (a person's reading, recorded with a screenshot; never asserted)
+ *   form.edit-form.body-hides-column, form.display-form.body-hides-column
+ *       (baseline) whether HiddenResult is absent from that form's body and ShownResult
+ *       present
  *   form.edit-form.footer-baseline-renders, form.display-form.footer-baseline-renders
  *       (baseline) whether the literal footer shows, before any header exists
  *   form.edit-form.header-choice-token-renders, form.display-form.header-choice-token-renders
- *       (header) whether the visible Choice column's line shows its value
+ *       (control) whether the visible Choice column's line shows its value
  *   form.edit-form.header-hidden-column, form.display-form.header-hidden-column
  *       (header) what the hidden column's line shows
  *
  * HOW TO READ IT: the machine rows settle the fixture and stop; each form row is
- * MANUAL until a person records it.
- *   - Baseline: footer absent means the formatter cannot be shown on that form; stop,
- *     the header run would answer nothing.
- *   - Header, with the baseline footer shown: a footer that is now absent is observed
- *     whole-formatter suppression; a footer shown with no header is observed
- *     whole-header suppression. Both are findings, recorded on the hidden-column row.
- *   - Header rendered: if the visible Choice line is blank, record that on the
- *     choice-token row and the hidden-column row is VOID, since Choice tokens do not
- *     render here at all. Otherwise record what the hidden-column line shows.
- *   - In both modes, HiddenResult still in the form body, or ShownResult missing from
- *     it, voids that form's rows: the hiding or the fixture did not take effect.
+ * MANUAL until a person records it. Each row is its own finding: a body that does not
+ * hide the column does not void whether the footer or the visible line rendered.
+ *   - Baseline: footer absent means the formatter cannot be shown on that form; stop.
+ *   - Control: a blank visible line with the footer showing is observed failure of the
+ *     visible Choice token, and the header run is not worth making; a vanished footer
+ *     or header is observed suppression by that token.
+ *   - Header, with the control line shown: a vanished footer or header is suppression
+ *     by the hidden token; both lines shown, record what the hidden line shows. The
+ *     hidden-column row is VOID where the body row did not show the column hidden.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
  * plan and stops. Set CONFIRMED and ALLOW_WRITES to true and paste again,
- * then open the URLs it prints. Then set MODE = 'header' and paste again. Set
+ * then open the URLs it prints. Then set MODE = 'control', and later 'header', and paste again. Set
  * CLEANUP to true on a later baseline run to recycle the previous list first; a
  * same-title list without this probe's Description is never touched.
  */
@@ -355,10 +362,10 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision 2d764186. Quote this when reporting results.');
+  log('INFO', 'probe revision 2c0609c8. Quote this when reporting results.');
 
   // ---- The question ----------------------------------------------------
-  const MODE = 'baseline'; // 'baseline' first, a person looks, then 'header'
+  const MODE = 'baseline'; // 'baseline', a person looks, then 'control', then 'header'
   const BASELINE = MODE === 'baseline';
   const LIST = 'dbml-probe-header-hidden-column';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -366,17 +373,16 @@
   const HIDDEN = 'HiddenResult';
   const SHOWN = 'ShownResult';
   // No attributes: Learn's formatting syntax reference lists the predefined ones; lines are told apart by their text.
-  const HEADER = {
-    elmType: 'div',
-    children: [
-      { elmType: 'div', txtContent: `hidden-column: [$${HIDDEN}]` },
-      { elmType: 'div', txtContent: `visible-choice: [$${SHOWN}]` },
-    ],
-  };
+  // Joined text is an expression, as Learn's list form configuration example writes it.
+  const CONTROL_LINE = { elmType: 'div', txtContent: `='visible-choice: ' + [$${SHOWN}]` };
+  const HIDDEN_LINE = { elmType: 'div', txtContent: `='hidden-column: ' + [$${HIDDEN}]` };
   const FOOTER = { elmType: 'div', txtContent: 'probe-baseline-footer' };
   // The deploy's own encoding: part OBJECTS under *JSONFormatter keys, the whole thing a JSON string.
   const FOOTER_ONLY = JSON.stringify({ footerJSONFormatter: FOOTER });
-  const FORMATTER = BASELINE ? FOOTER_ONLY : JSON.stringify({ headerJSONFormatter: HEADER, footerJSONFormatter: FOOTER });
+  const headerOf = (...lines) => ({ elmType: 'div', children: lines });
+  const FORMATTER = { baseline: FOOTER_ONLY,
+    control: JSON.stringify({ headerJSONFormatter: headerOf(CONTROL_LINE), footerJSONFormatter: FOOTER }),
+    header: JSON.stringify({ headerJSONFormatter: headerOf(CONTROL_LINE, HIDDEN_LINE), footerJSONFormatter: FOOTER }) }[MODE];
   // What the generator emits for new: true, existing: false (compose_visibility); pinned by a test.
   const HIDE_ON_EXISTING = "=if([$ID] == '', 'true', 'false')";
   const LIST_FIXTURE = 'text.form-fmt.fixture-hidden-list';
@@ -384,16 +390,21 @@
   const ITEM = 'text.form-fmt.fixture-hidden-item';
   const CONTROL = 'text.form-fmt.control-column-hidden-on-forms';
   const LINKS = 'text.form-fmt.control-columns-in-content-type';
-  const FORMATTER_FIXTURE = BASELINE ? 'text.form-fmt.fixture-footer-baseline' : 'text.form-fmt.fixture-header-formatter';
-  const FORMATTER_QUESTION = BASELINE ? 'the content type reads back the footer-only formatter as written'
-    : 'the content type reads back the header and footer formatter as written';
+  const FORMATTER_FIXTURE = { baseline: 'text.form-fmt.fixture-footer-baseline', control: 'text.form-fmt.fixture-control-header',
+    header: 'text.form-fmt.fixture-header-formatter' }[MODE];
+  const FORMATTER_QUESTION = { baseline: 'the content type reads back the footer-only formatter as written',
+    control: 'the content type reads back the visible-Choice header and the footer as written',
+    header: 'the content type reads back both header lines and the footer as written' }[MODE];
   const BASE_EDIT = 'form.edit-form.footer-baseline-renders';
   const BASE_DISPLAY = 'form.display-form.footer-baseline-renders';
   const TOKEN_EDIT = 'form.edit-form.header-choice-token-renders';
   const TOKEN_DISPLAY = 'form.display-form.header-choice-token-renders';
   const EDIT = 'form.edit-form.header-hidden-column';
   const DISPLAY = 'form.display-form.header-hidden-column';
-  const OBSERVED = BASELINE ? [BASE_EDIT, BASE_DISPLAY] : [TOKEN_EDIT, TOKEN_DISPLAY, EDIT, DISPLAY];
+  const BODY_EDIT = 'form.edit-form.body-hides-column';
+  const BODY_DISPLAY = 'form.display-form.body-hides-column';
+  const OBSERVED = { baseline: [BODY_EDIT, BODY_DISPLAY, BASE_EDIT, BASE_DISPLAY], control: [TOKEN_EDIT, TOKEN_DISPLAY],
+    header: [EDIT, DISPLAY] }[MODE];
   const ALL_AFTER_LIST = [COLUMNS, ITEM, CONTROL, LINKS, FORMATTER_FIXTURE, ...OBSERVED];
 
   expect('text.form-fmt.fixture-hidden-list', 'the list reads back with its marker, an item type and its folder URL');
@@ -403,12 +414,16 @@
   expect('text.form-fmt.control-columns-in-content-type', 'both columns are field links of the default content type and neither is Hidden');
   if (BASELINE) {
     expect('text.form-fmt.fixture-footer-baseline', 'the content type reads back the footer-only formatter as written');
+    expect('form.edit-form.body-hides-column', 'whether the Edit form body omits HiddenResult and holds ShownResult');
+    expect('form.display-form.body-hides-column', 'whether the Display form body omits HiddenResult and holds ShownResult');
     expect('form.edit-form.footer-baseline-renders', 'whether the literal footer shows on the Edit form before any header exists');
     expect('form.display-form.footer-baseline-renders', 'whether the literal footer shows on the Display form before any header exists');
-  } else {
-    expect('text.form-fmt.fixture-header-formatter', 'the content type reads back the header and footer formatter as written');
+  } else if (MODE === 'control') {
+    expect('text.form-fmt.fixture-control-header', 'the content type reads back the visible-Choice header and the footer as written');
     expect('form.edit-form.header-choice-token-renders', 'whether the visible Choice column shows its value in the Edit form header');
     expect('form.display-form.header-choice-token-renders', 'whether the visible Choice column shows its value in the Display form header');
+  } else {
+    expect('text.form-fmt.fixture-header-formatter', 'the content type reads back both header lines and the footer as written');
     expect('form.edit-form.header-hidden-column', 'whether the Edit form header shows the value of a column hidden from the forms');
     expect('form.display-form.header-hidden-column', 'whether the Display form header shows the value of a column hidden from the forms');
   }
@@ -416,7 +431,7 @@
   if (!CONFIRMED || !ALLOW_WRITES) {
     log('INFO', BASELINE
       ? `Would create '${LIST}' with two Choice columns and one item, hide ${HIDDEN} from the Edit and Display forms with a formula, and write a footer-only form formatter, on ${WEB}.`
-      : `Would add a header naming both columns to the form formatter of '${LIST}' on ${WEB}.`);
+      : `Would write the ${MODE} form formatter to '${LIST}' on ${WEB}.`);
     log('INFO', 'Nothing has been sent. Set CONFIRMED = true and ALLOW_WRITES = true to run it.');
     return report();
   }
@@ -553,27 +568,23 @@
   const stateOf = (id) => (RESULTS.find((r) => r.id === id) || {}).state;
   // The folder URL the create answered for: the list's title is not its URL, and a link built from it can open another list.
   const forms = `${new URL(WEB).origin}${list.body.RootFolder.ServerRelativeUrl}`;
-  const body = 'VOID that form if HiddenResult is still a field in the form body or ShownResult is missing from it. ';
-  const open = (form, page) => `Open the item's ${form} form: ${forms}/${page}?ID=${itemId}. Screenshot it. ${body}`;
-  for (const [form, page, ids] of [['Edit', 'EditForm.aspx', [BASE_EDIT, TOKEN_EDIT, EDIT]],
-    ['Display', 'DispForm.aspx', [BASE_DISPLAY, TOKEN_DISPLAY, DISPLAY]]]) {
-    const [base, token, target] = ids;
-    if (BASELINE) {
-      if (stateOf(base) !== 'void') {
-        record(base, `whether the literal footer shows on the ${form} form before any header exists`, 'MANUAL',
-          `${open(form, page)}Record whether the line probe-baseline-footer shows. If it does not, stop: the header run would answer nothing.`);
-      }
-      continue;
-    }
-    if (stateOf(token) !== 'void') {
-      record(token, `whether the visible Choice column shows its value in the ${form} form header`, 'MANUAL',
-        `${open(form, page)}Record whether the line "visible-choice:" shows Yes.`);
-    }
-    if (stateOf(target) !== 'void') {
-      record(target, `whether the ${form} form header shows the value of a column hidden from the forms`, 'MANUAL',
-        `${open(form, page)}Record the line "hidden-column:" as shown or blank. VOID it if the visible-choice line is blank `
-        + '(Choice tokens do not render here). If the baseline footer is now absent, record whole-formatter suppression; '
-        + 'if the footer shows with no header, record whole-header suppression.');
+  const open = (form, page) => `Open the item's ${form} form: ${forms}/${page}?ID=${itemId}. Screenshot it. `;
+  const asks = {
+    body: (form) => `Record whether HiddenResult is absent from the ${form} form body and ShownResult is present.`,
+    base: () => 'Record whether the line probe-baseline-footer shows. If it does not, stop: later runs would answer nothing.',
+    token: () => 'Record whether the line "visible-choice:" shows Yes. A blank line with the footer showing is observed failure of '
+      + 'the visible Choice token; a vanished footer or header is observed suppression by that token.',
+    target: () => 'Record the line "hidden-column:" as showing No or blank. VOID it where the body row did not show the column hidden. '
+      + 'A vanished footer or header is observed suppression by the hidden token.',
+  };
+  const plan = { baseline: (f) => [[BODY_EDIT, BODY_DISPLAY, 'body', `whether the ${f} form body omits HiddenResult and holds ShownResult`],
+    [BASE_EDIT, BASE_DISPLAY, 'base', `whether the literal footer shows on the ${f} form before any header exists`]],
+  control: (f) => [[TOKEN_EDIT, TOKEN_DISPLAY, 'token', `whether the visible Choice column shows its value in the ${f} form header`]],
+  header: (f) => [[EDIT, DISPLAY, 'target', `whether the ${f} form header shows the value of a column hidden from the forms`]] }[MODE];
+  for (const [form, page, side] of [['Edit', 'EditForm.aspx', 0], ['Display', 'DispForm.aspx', 1]]) {
+    for (const [editId, displayId, kind, question] of plan(form)) {
+      const id = side === 0 ? editId : displayId;
+      if (stateOf(id) !== 'void') record(id, question, 'MANUAL', `${open(form, page)}${asks[kind](form)}`);
     }
   }
   return report();

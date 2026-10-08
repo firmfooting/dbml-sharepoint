@@ -2512,15 +2512,14 @@
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
-        "one scratch list with two Choice columns, one item, a hiding formula on one column and, on the default content type, first a footer-only form formatter and then a header and footer; recycled by the next baseline run with CLEANUP on"
+        "one scratch list with two Choice columns, one item, a hiding formula on one column and, on the default content type, a form formatter written in three steps: a footer alone, then a header with the visible column's line, then the hidden column's line; recycled by the next baseline run with CLEANUP on"
       ],
       "cleanup": {
         "policy": "before"
       },
       "prerequisites": [
         "permission to create and recycle lists on the site",
-        "A person opens the item's Edit form and Display form after the baseline run and records whether the footer shows",
-        "A person does the same after the header run (MODE = 'header') and records what the header shows"
+        "A person opens the item's Edit form and Display form after each of the three runs (MODE = 'baseline', 'control', 'header') and records what the page shows"
       ],
       "scenarios": [
         {
@@ -2563,6 +2562,12 @@
               ]
             },
             {
+              "id": "text.form-fmt.fixture-control-header",
+              "depends_on": [
+                "text.form-fmt.fixture-hidden-list"
+              ]
+            },
+            {
               "id": "text.form-fmt.fixture-header-formatter",
               "depends_on": [
                 "text.form-fmt.fixture-hidden-list"
@@ -2577,6 +2582,7 @@
             "text.form-fmt.control-column-hidden-on-forms",
             "text.form-fmt.control-columns-in-content-type",
             "text.form-fmt.fixture-footer-baseline",
+            "text.form-fmt.fixture-control-header",
             "text.form-fmt.fixture-header-formatter"
           ],
           "depends_on": []
@@ -2587,10 +2593,25 @@
           "pattern": "before-action-after",
           "findings": [
             {
-              "id": "form.edit-form.footer-baseline-renders",
+              "id": "form.edit-form.body-hides-column",
               "depends_on": [
                 "text.form-fmt.fixture-hidden-item",
                 "text.form-fmt.control-column-hidden-on-forms",
+                "text.form-fmt.control-columns-in-content-type"
+              ]
+            },
+            {
+              "id": "form.display-form.body-hides-column",
+              "depends_on": [
+                "text.form-fmt.fixture-hidden-item",
+                "text.form-fmt.control-column-hidden-on-forms",
+                "text.form-fmt.control-columns-in-content-type"
+              ]
+            },
+            {
+              "id": "form.edit-form.footer-baseline-renders",
+              "depends_on": [
+                "text.form-fmt.fixture-hidden-item",
                 "text.form-fmt.control-columns-in-content-type",
                 "text.form-fmt.fixture-footer-baseline"
               ]
@@ -2599,7 +2620,6 @@
               "id": "form.display-form.footer-baseline-renders",
               "depends_on": [
                 "text.form-fmt.fixture-hidden-item",
-                "text.form-fmt.control-column-hidden-on-forms",
                 "text.form-fmt.control-columns-in-content-type",
                 "text.form-fmt.fixture-footer-baseline"
               ]
@@ -2634,7 +2654,7 @@
           ]
         },
         {
-          "id": "header-reading",
+          "id": "control-reading",
           "surface": "form",
           "pattern": "before-action-after",
           "findings": [
@@ -2642,9 +2662,8 @@
               "id": "form.edit-form.header-choice-token-renders",
               "depends_on": [
                 "text.form-fmt.fixture-hidden-item",
-                "text.form-fmt.control-column-hidden-on-forms",
                 "text.form-fmt.control-columns-in-content-type",
-                "text.form-fmt.fixture-header-formatter",
+                "text.form-fmt.fixture-control-header",
                 "form.edit-form.footer-baseline-renders"
               ]
             },
@@ -2652,12 +2671,42 @@
               "id": "form.display-form.header-choice-token-renders",
               "depends_on": [
                 "text.form-fmt.fixture-hidden-item",
-                "text.form-fmt.control-column-hidden-on-forms",
                 "text.form-fmt.control-columns-in-content-type",
-                "text.form-fmt.fixture-header-formatter",
+                "text.form-fmt.fixture-control-header",
                 "form.display-form.footer-baseline-renders"
               ]
+            }
+          ],
+          "states": [
+            {
+              "role": "display",
+              "page": "Display form",
+              "assertions": [
+                "footer line visible",
+                "visible-choice line shows its value"
+              ]
             },
+            {
+              "role": "edit",
+              "page": "Edit form",
+              "assertions": [
+                "footer line visible",
+                "visible-choice line shows its value"
+              ]
+            }
+          ],
+          "controls": [
+            "text.form-fmt.control-columns-in-content-type"
+          ],
+          "depends_on": [
+            "baseline-reading"
+          ]
+        },
+        {
+          "id": "header-reading",
+          "surface": "form",
+          "pattern": "before-action-after",
+          "findings": [
             {
               "id": "form.edit-form.header-hidden-column",
               "depends_on": [
@@ -2666,7 +2715,8 @@
                 "text.form-fmt.control-columns-in-content-type",
                 "text.form-fmt.fixture-header-formatter",
                 "form.edit-form.footer-baseline-renders",
-                "form.edit-form.header-choice-token-renders"
+                "form.edit-form.header-choice-token-renders",
+                "form.edit-form.body-hides-column"
               ]
             },
             {
@@ -2677,7 +2727,8 @@
                 "text.form-fmt.control-columns-in-content-type",
                 "text.form-fmt.fixture-header-formatter",
                 "form.display-form.footer-baseline-renders",
-                "form.display-form.header-choice-token-renders"
+                "form.display-form.header-choice-token-renders",
+                "form.display-form.body-hides-column"
               ]
             }
           ],
@@ -2687,9 +2738,8 @@
               "page": "Display form",
               "assertions": [
                 "footer line visible",
-                "HiddenResult absent from the form body",
-                "ShownResult present in the form body",
-                "visible-choice line shows its value"
+                "visible-choice line shows its value",
+                "hidden-column line shows its value or is blank"
               ]
             },
             {
@@ -2697,9 +2747,8 @@
               "page": "Edit form",
               "assertions": [
                 "footer line visible",
-                "HiddenResult absent from the form body",
-                "ShownResult present in the form body",
-                "visible-choice line shows its value"
+                "visible-choice line shows its value",
+                "hidden-column line shows its value or is blank"
               ]
             }
           ],
@@ -2708,7 +2757,7 @@
             "text.form-fmt.control-columns-in-content-type"
           ],
           "depends_on": [
-            "baseline-reading"
+            "control-reading"
           ]
         }
       ]
