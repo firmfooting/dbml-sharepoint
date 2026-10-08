@@ -636,11 +636,11 @@ def test_a_root_file_with_another_id_is_not_established_not_a_lost_grant() -> No
     assert "MOVED_ID" in rows[F4]["evidence"]
 
 
-def test_a_sharing_entry_without_a_url_does_not_hide_our_link_or_its_loss() -> None:
+def test_an_empty_sharing_entry_does_not_hide_our_link_and_leaves_its_loss_open() -> None:
     rows, _, _ = _leg(5, 7, state=_state_four_start(), linksShape="noUrl")
     assert rows[F4]["outcome"] == "GRANT AND LINK PRESENT"
     rows, _, _ = _leg(5, 7, state={**_state_four_start(), "links": []}, linksShape="noUrl")
-    assert rows[F4]["outcome"] == "LINK LOST"
+    assert rows[F4]["outcome"] == "NOT ESTABLISHED"
 
 
 def _evidence(rows: dict[str, dict[str, str]], row: str) -> str:
@@ -711,6 +711,16 @@ def test_state_five_finds_our_entry_by_the_digest_of_its_share_id(
     assert "entries matching the ShareId" in _evidence(rows, F4)
     if head == "NOT ESTABLISHED":
         assert "2 entries matched the ShareId" in _evidence(rows, F4)
+
+
+@pytest.mark.parametrize("change", [
+    {"links": []}, {"links": ["https://example.sharepoint.com/:t:/s/probe/other"]},
+], ids=["ours-gone", "another-link"])
+def test_state_five_never_calls_a_link_lost_or_replaced_beside_an_entry_with_no_share_id(
+        change: dict[str, Any]) -> None:
+    rows, _, _ = _leg(5, 7, state={**_state_four_start(), **change}, unidentified=True)
+    assert rows[F4]["outcome"] == "NOT ESTABLISHED"
+    assert "entries without a ShareId 1" in _evidence(rows, F4)
 
 
 def test_state_three_fails_the_snapshot_when_none_or_several_entries_are_ours() -> None:

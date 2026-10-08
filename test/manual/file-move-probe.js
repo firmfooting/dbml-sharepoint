@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A MOVE INSIDE ONE LIBRARY KEEPS ----
  *
- * REVISION: 37462e15
+ * REVISION: 87a225b2
  *
  * QUESTION: when File.MoveToUsingPath moves a file from a folder to the root
  * of the same document library, does the item keep its Id, its versions, its
@@ -563,7 +563,7 @@
   const learnIdentity = async () => {
     await readAccount();
   };
-  log('INFO', 'probe revision 37462e15. Quote this when reporting results.');
+  log('INFO', 'probe revision 87a225b2. Quote this when reporting results.');
 
   const STATE = 1;
   const TEST_USER_LOGIN = 'CHANGE ME - the editing account claims login';
@@ -784,12 +784,15 @@
     const objectOf = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
     const detail = (l) => objectOf(objectOf(l).linkDetails);
     const hasUrl = (l) => typeof detail(l).Url === 'string' && detail(l).Url !== '';
-    const mine = list ? list.filter((l) => typeof detail(l).ShareId === 'string' && detail(l).ShareId !== '' && isOurs(detail(l).ShareId)) : null;
+    const known = (l) => typeof detail(l).ShareId === 'string' && detail(l).ShareId !== '';
+    const mine = list ? list.filter((l) => known(l) && isOurs(detail(l).ShareId)) : null;
+    const unknown = list ? list.filter((l) => !known(l)).length : null;
     const union = (objs) => Object.fromEntries(objs.flatMap((o) => Object.keys(o)).map((k) => [k, 1]));
     const withUrl = list ? list.filter(hasUrl).length : null;
     const shape = !list ? 'links array no' : `links array yes; entries ${list.length}; entry keys ${namesOf(union(list.map(objectOf)))}; `
-      + `linkDetails keys ${namesOf(union(list.map(detail)))}; entries with a URL ${withUrl}; entries matching the ShareId ${mine.length}`;
-    return { res, withUrl, entries: list ? list.length : null, matches: mine ? mine.length : null,
+      + `linkDetails keys ${namesOf(union(list.map(detail)))}; entries with a URL ${withUrl}; entries matching the ShareId ${mine.length}; `
+      + `entries without a ShareId ${unknown}`;
+    return { res, withUrl, unknown, entries: list ? list.length : null, matches: mine ? mine.length : null,
       oursHasUrl: mine ? mine.length === 1 && hasUrl(mine[0]) : null, shape,
       keys: !body ? said(res) : `top-level keys ${namesOf(body)}; permissionsInformation `
         + (nested === undefined ? 'absent' : nested && typeof nested === 'object' && !Array.isArray(nested) ? `keys ${namesOf(nested)}` : 'not an object') };
@@ -1076,8 +1079,9 @@
     const itemId = moved.parsed.Id;
     const g = await grantOn(itemId, editor, await readRoleId());
     const seen = await linksOn(itemId, (v) => digestOf(v) === LINK_DIGEST);
-    // One match without a Url, or several matches, cannot show the link kept or lost.
-    const link = seen.matches === 1 && seen.oursHasUrl ? 'same' : seen.matches === 0 ? (seen.withUrl > 0 ? 'replaced' : 'none') : null;
+    // One match without a Url, several matches, or an entry with no ShareId (it could be ours) cannot show the link lost.
+    const link = seen.matches === 1 && seen.oursHasUrl ? 'same'
+      : seen.matches === 0 && seen.unknown === 0 ? (seen.withUrl > 0 ? 'replaced' : 'none') : null;
     const read = g.bound !== null && link !== null;
     // A binding seen while the file inherits is the parent's, not the file's own grant.
     const held = g.bound === true && g.unique === true;

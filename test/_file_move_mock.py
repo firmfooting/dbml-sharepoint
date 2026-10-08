@@ -168,6 +168,9 @@ globalThis.fetch = async (url, opts = {}) => {
           links.push(JSON.parse(JSON.stringify(links[links.length - 1])));
         }
         if (CONFIG.linksShape === 'noUrl') links.push({ linkDetails: {} });
+        if (CONFIG.unidentified) {
+          links.push({ linkDetails: { Url: 'https://example.sharepoint.com/:t:/s/probe/anon' } });
+        }
         if (CONFIG.linksShape === 'nested') {
           return answer(200, { permissionsInformation: { links } });
         }
