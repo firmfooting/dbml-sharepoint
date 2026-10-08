@@ -48,14 +48,17 @@ def run_node(script: str) -> str:
         path.write_text(script, encoding="utf-8", newline="\n")
         prelude = Path(tmp) / "sp_mock.cjs"
         prelude.write_text(PRELUDE, encoding="utf-8", newline="\n")
-        proc = subprocess.run(  # noqa: S603
-            [NODE, "--require", str(prelude), str(path)], capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=180, check=False,
-        )
-    # stdout/stderr are None only if capture failed, which cannot happen here;
-    # the guard keeps a decode collapse from surfacing as a TypeError that
-    # hides the finding the test is asserting on.
-    output = (proc.stdout or "") + (proc.stderr or "")
+        # Files, not pipes: Node writes to a pipe asynchronously on POSIX, so an exit
+        # handler's write past the pipe buffer is lost (Node docs, "A note on process I/O").
+        out_path, err_path = Path(tmp) / "stdout.txt", Path(tmp) / "stderr.txt"
+        with out_path.open("wb") as out, err_path.open("wb") as err:
+            subprocess.run(  # noqa: S603
+                [NODE, "--require", str(prelude), str(path)], stdout=out, stderr=err,
+                timeout=180, check=False,
+            )
+        stdout = out_path.read_bytes().decode("utf-8", errors="replace")
+        stderr = err_path.read_bytes().decode("utf-8", errors="replace")
+    output = stdout + stderr
     reads = unselected_reads(output)
     if reads:
         raise UnselectedReadError(reads)
