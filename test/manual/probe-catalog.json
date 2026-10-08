@@ -13215,9 +13215,9 @@
       },
       "prerequisites": [
         "TEST_USER_LOGIN and MOVER_LOGIN: claims logins of two licensed test accounts, each a site Member, neither the owner nor a site collection administrator",
-        "STATE 1 as the owner, STATE 2 as the editing account in a second browser session, STATE 3 as the moving account in a third, then STATE 4 as the owner",
-        "STATE 3 also needs LINK_DIGEST, and the moving account must be able to read the file's role assignments and sharing information, or the grant and link row stays NOT ESTABLISHED",
-        "A CLEANUP paste as the owner once STATE 4 is recorded"
+        "STATE 1 as the owner, STATE 2 as the editing account in a second browser session, STATE 3 as the owner again, STATE 4 as the moving account in a third, then STATE 5 as the owner",
+        "STATE 3 and STATE 5 also need LINK_DIGEST, the digest STATE 1 printed",
+        "A CLEANUP paste as the owner once STATE 5 is recorded"
       ],
       "scenarios": [
         {
@@ -13264,7 +13264,8 @@
               "id": "library.file.fixture-move-permissions-before",
               "depends_on": [
                 "library.file.fixture-move-unique-grant",
-                "library.file.fixture-move-sharing-link"
+                "library.file.fixture-move-sharing-link",
+                "library.folder.fixture-owner-account"
               ]
             },
             {

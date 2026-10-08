@@ -19,16 +19,16 @@
  * Folder.Recycle; it does not say a recycled folder can be restored. The link
  * is created with linkKind 2, OrganizationView in Learn's SharingLinkKind.
  *
- * FOUR LEGS, each pasted by the account named, then a cleanup:
+ * FIVE LEGS, each pasted by the account named, then a cleanup:
  *   STATE 1  the owner: the library, its columns, the folder, the file with
  *            two versions and five values, a Read grant to TEST_USER_LOGIN on
  *            the file alone, and an organisation sharing link
  *   STATE 2  TEST_USER_LOGIN: one edit of MoveChoice, the third version
- *   STATE 3  MOVER_LOGIN: reads the file, reads its grant and link, moves it to
- *            the root, reads it by Id. The moving account must be able to read the
- *            file's role assignments and sharing information; if it cannot, the
- *            grant and link row stays NOT ESTABLISHED (the move is still recorded)
- *   STATE 4  the owner: the grant and link after the move, then the folder
+ *   STATE 3  the owner: reads the file's grant (at the Read level) and its
+ *            link just before the move, and writes nothing
+ *   STATE 4  MOVER_LOGIN: reads the file, moves it to the root, reads it by Id.
+ *            The moving account reads no role assignments or sharing information
+ *   STATE 5  the owner: the grant and link after the move, then the folder
  *   CLEANUP  the owner, CLEANUP true: recycles the library
  * Both logins must be site Members. The three accounts must differ. Every leg
  * after STATE 1 writes only to a library carrying this probe's Description.
@@ -41,14 +41,14 @@
  *   library.file.fixture-move-unique-grant STATE 1: the file's own Read grant to the
  *       test user, read back with HasUniqueRoleAssignments true
  *   library.file.fixture-move-sharing-link STATE 1: a link with a URL on the file
- *   library.file.fixture-move-before       STATE 3: three versions, Author the owner,
+ *   library.file.fixture-move-before       STATE 4: three versions, Author the owner,
  *       Editor the editing account, and the mover a third account
- *   library.file.fixture-move-permissions-before STATE 3: read just before the move,
+ *   library.file.fixture-move-permissions-before STATE 3 (owner): read just before the move,
  *       the unique grant at the Read level and the STATE 1 link still on the file
- *   library.file.fixture-move-answered     STATE 3: the move request answered 2xx
- *   library.folder.fixture-owner-account   STATE 4: the folder's Author is the account
- *       pasting STATE 4, so the owner is the one acting
- *   library.folder.fixture-recycle-empty   STATE 4: the folder reads empty
+ *   library.file.fixture-move-answered     STATE 4: the move request answered 2xx
+ *   library.folder.fixture-owner-account   STATES 3 and 5: the folder's Author is the
+ *       account pasting, so the owner is the one acting
+ *   library.folder.fixture-recycle-empty   STATE 5: the folder reads empty
  *
  * OBSERVES (recorded as found, never compared with an expected value)
  *   library.file.move-keeps-id-and-versions    the Id and version labels before and after
@@ -79,7 +79,7 @@
   const TEST_USER_LOGIN = 'CHANGE ME - the editing account claims login';
   const MOVER_LOGIN = 'CHANGE ME - the moving account claims login';
   const PLACEHOLDER = /^CHANGE ME/;
-  // STATE 4 only: the digest STATE 1 printed for the link it made, so a regenerated link is told from the original.
+  // STATES 3 and 5: the digest STATE 1 printed for the link it made, so a regenerated link is told from the original.
   const LINK_DIGEST = '';
   const LIBRARY = 'dbmlsp Probe FileMove';
   // Ownership is the Description: a same-title library this probe did not make is never written to.
@@ -129,7 +129,7 @@
   expect('library.file.fixture-move-before', 'before the move: three versions, Author the owner, Editor the editing account, a third mover');
   expect('library.file.fixture-move-permissions-before', 'just before the move: the file\'s own Read grant to the editing account and the STATE 1 link are still on it');
   expect('library.file.fixture-move-answered', 'the MoveToUsingPath request answered 2xx');
-  expect('library.folder.fixture-owner-account', 'the folder\'s Author is the account pasting STATE 4');
+  expect('library.folder.fixture-owner-account', 'the folder\'s Author is the account pasting STATE 3 or 5');
   expect('library.folder.fixture-recycle-empty', 'the folder reads ItemCount 0, no files and no folders');
   expect('library.file.move-keeps-id-and-versions', Q.f1);
   expect('library.file.move-keeps-column-values', Q.f2);
@@ -146,7 +146,7 @@
     'library.file.fixture-move-sharing-link': ['library.file.fixture-move-values'],
     'library.file.fixture-move-before': ['library.file.fixture-move-values'],
     'library.file.fixture-move-permissions-before': ['library.file.fixture-move-unique-grant',
-      'library.file.fixture-move-sharing-link'],
+      'library.file.fixture-move-sharing-link', 'library.folder.fixture-owner-account'],
     'library.file.fixture-move-answered': ['library.file.fixture-move-before'],
     'library.file.move-keeps-id-and-versions': ['library.file.fixture-move-before', 'library.file.fixture-move-answered'],
     'library.file.move-keeps-column-values': ['library.file.fixture-move-before', 'library.file.fixture-move-answered'],
@@ -171,13 +171,14 @@
     return [...out];
   };
 
-  if (![1, 2, 3, 4].includes(STATE)) {
-    log('ERROR', `STATE is ${JSON.stringify(STATE)}; it must be 1, 2, 3 or 4. Nothing has been sent.`);
+  if (![1, 2, 3, 4, 5].includes(STATE)) {
+    log('ERROR', `STATE is ${JSON.stringify(STATE)}; it must be 1, 2, 3, 4 or 5. Nothing has been sent.`);
     return report();
   }
   if (!CONFIRMED || !ALLOW_WRITES) {
     log('INFO', `STATE ${STATE}. Would ${CLEANUP ? `recycle '${LIBRARY}'` : ['', 'build the library, folder and file',
-      'edit the file once', 'move the file to the root', 'read its grants and recycle the folder'][STATE]}.`);
+      'edit the file once', 'read the file\'s grant and link', 'move the file to the root',
+      'read its grants and recycle the folder'][STATE]}.`);
     log('INFO', 'Nothing has been sent. Set CONFIRMED and ALLOW_WRITES to true.');
     return report();
   }
@@ -185,7 +186,7 @@
     log('ERROR', 'Set TEST_USER_LOGIN and MOVER_LOGIN first. Nothing has been sent.');
     return report();
   }
-  if (!CLEANUP && (STATE === 3 || STATE === 4) && LINK_DIGEST === '') {
+  if (!CLEANUP && (STATE === 3 || STATE === 5) && LINK_DIGEST === '') {
     log('ERROR', 'Set LINK_DIGEST to the link digest STATE 1 printed. Nothing has been sent.');
     return report();
   }
@@ -362,7 +363,7 @@
     }, { LinksWithUrl: (n) => n > 0 });
     const madeLinks = await linksOn(itemId);
     log('INFO', `link digest: ${madeLinks.digests && madeLinks.digests.length ? madeLinks.digests.join(', ') : 'none read'}. `
-      + 'Set LINK_DIGEST to it before STATE 4.');
+      + 'Set LINK_DIGEST to it before STATE 3.');
     log('INFO', 'STATE 1 done. Paste STATE 2 as the editing account.');
     return report();
   }
@@ -388,11 +389,37 @@
       return report();
     }
     const edit = await send(`${LIST}/items(${itemId})`, 'MERGE', { MoveChoice: 'Q2' });
-    log(edit.ok ? 'OK' : 'FAIL', `the edit answered ${said(edit)}. Paste STATE 3 as the moving account.`);
+    log(edit.ok ? 'OK' : 'FAIL', `the edit answered ${said(edit)}. Paste STATE 3 as the owner.`);
     return report();
   }
 
+  // The folder's Author is the account that made it in STATE 1; a move never touches the folder.
+  const folderNow = folderAt(`${root}/${FOLDER}`);
+  const ownerHere = () => fixture(OWNER_ROW, async () => {
+    const r = await sendRaw(`${folderNow}/ListItemAllFields?$select=AuthorId`);
+    return { ok: r.ok, status: r.status, body: { AuthorIsThisAccount: r.parsed && me !== null ? r.parsed.AuthorId === me : undefined } };
+  }, { AuthorIsThisAccount: true });
+
   if (STATE === 3) {
+    if (!await ownerHere()) return report();
+    const editor = await siteUser(TEST_USER_LOGIN);
+    const item = await sendRaw(`${fileAt(oldPath)}/ListItemAllFields?$select=Id`);
+    const itemId = item.ok && item.parsed && Number.isInteger(item.parsed.Id) ? item.parsed.Id : null;
+    const roleId = await readRoleId();
+    // Owner-read, immediately before the move; the mover is not asked to enumerate permissions.
+    await fixture(PERMS_ROW, async () => {
+      if (itemId === null) return asRead(item);
+      const g = await grantOn(itemId, editor, roleId);
+      const l = await linksOn(itemId);
+      return { ok: g.ok && l.res.ok, status: g.ok ? l.res.status : g.status, body: {
+        HasUniqueRoleAssignments: g.unique, EditingAccountHasRead: g.bound === null ? undefined : g.bound,
+        LinkDigestPresent: l.digests ? l.digests.includes(LINK_DIGEST) : undefined } };
+    }, { HasUniqueRoleAssignments: true, EditingAccountHasRead: true, LinkDigestPresent: true });
+    log('INFO', 'STATE 3 done. Paste STATE 4 as the moving account.');
+    return report();
+  }
+
+  if (STATE === 4) {
     const editor = await siteUser(TEST_USER_LOGIN);
     const first = await sendRaw(`${fileAt(oldPath)}/ListItemAllFields?$select=${SELECT}`);
     const before = first.ok && first.parsed && Number.isInteger(first.parsed.Id) ? first.parsed : null;
@@ -407,15 +434,6 @@
     { Versions: 3, Author: 'the owner', Editor: 'the editing account', Mover: 'the moving account', Complete: true })) {
       return report();
     }
-    // Read by the account that moves, immediately before it does; its failure voids only the grant and link row.
-    const roleBefore = await readRoleId();
-    await fixture(PERMS_ROW, async () => {
-      const g = await grantOn(before.Id, editor, roleBefore);
-      const l = await linksOn(before.Id);
-      return { ok: g.ok && l.res.ok, status: g.ok ? l.res.status : g.status, body: {
-        HasUniqueRoleAssignments: g.unique, EditingAccountHasRead: g.bound === null ? undefined : g.bound,
-        LinkDigestPresent: l.digests ? l.digests.includes(LINK_DIGEST) : undefined } };
-    }, { HasUniqueRoleAssignments: true, EditingAccountHasRead: true, LinkDigestPresent: true });
     const move = await send(`${fileAt(oldPath)}/MoveToUsingPath`, 'POST',
       { newPath: { DecodedUrl: newPath }, moveOperations: 0 });
     if (!await fixture(ANSWERED_ROW, async () => ({ ok: true, status: 200, body: { Answer: said(move) } }),
@@ -452,17 +470,12 @@
     }
     record(F5, Q.f5, afterLabels.length > labels.length ? 'VERSION ADDED' : 'NO VERSION ADDED',
       `${labels.length} version(s) before, ${afterLabels.length} after`);
-    log('INFO', 'STATE 3 done. Paste STATE 4 as the owner.');
+    log('INFO', 'STATE 3 done. Paste STATE 5 as the owner.');
     return report();
   }
 
-  // STATE 4: the owner.
-  // The folder's Author is the account that made it in STATE 1; a move never touches the folder.
-  const folderNow = folderAt(`${root}/${FOLDER}`);
-  if (!await fixture(OWNER_ROW, async () => {
-    const r = await sendRaw(`${folderNow}/ListItemAllFields?$select=AuthorId`);
-    return { ok: r.ok, status: r.status, body: { AuthorIsThisAccount: r.parsed && me !== null ? r.parsed.AuthorId === me : undefined } };
-  }, { AuthorIsThisAccount: true })) return report();
+  // STATE 5: the owner.
+  if (!await ownerHere()) return report();
   const editor = await siteUser(TEST_USER_LOGIN);
   const moved = await sendRaw(`${fileAt(newPath)}/ListItemAllFields?$select=Id`);
   if (moved.ok && moved.parsed && Number.isInteger(moved.parsed.Id)) {
