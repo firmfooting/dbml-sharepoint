@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FILE PROPERTY UPDATE WHILE THE WORKBOOK IS OPEN ----
  *
- * REVISION: c7ddb3ac
+ * REVISION: 8b00592d
  *
  * QUESTION: while a second account has a library workbook open in Excel for the
  * web (or in Excel desktop), can the first account set a column on that file,
@@ -217,10 +217,11 @@
     return false;
   };
 
-  const REVISION = 'c7ddb3ac';
+  const REVISION = '8b00592d';
   const report = () => {
     console.log('\n==================== RESULTS ====================');
     console.log(`probe revision ${REVISION}. Quote this when reporting results.`);
+    console.log(`target: ${WEB}${WORKBOOK_URL}`);
     for (const r of RESULTS) {
       console.log(`${r.id.padEnd(6)} ${r.state.padEnd(16)} ${r.outcome.padEnd(16)} ${r.question}`);
       if (r.evidence) console.log(`       ${r.evidence}`);
@@ -347,13 +348,20 @@
     return `the MERGE rejected after ${ms} ms before any answer (${err}); the write is uncertain; ${back}`;
   };
   // Statuses the helper treats as non-answering say nothing about the update, so they are never a finding.
-  const noAnswer = (r) => !r.ok && !isRefusal(r.status);
+  // SharePoint refusals arrive as 500, but only with an error payload; a bare 500 is an internal failure.
+  const hasErrorPayload = (r) => !!(r.body && (r.body.error || r.body['odata.error']));
+  const bare500 = (r) => r.status === 500 && !hasErrorPayload(r);
+  const noAnswer = (r) => !r.ok && (!isRefusal(r.status) || bare500(r));
+  const silentWhy = (r) => (bare500(r) ? 'answered HTTP 500 with no SharePoint error payload' : unanswered(r));
   // File.LockedByUser is a documented SP.File property (Learn, File.LockedByUser); what a value of it means
   // for a co-authoring session is not, so only whether a user is named is recorded, never who.
   const lockState = async () => {
     try {
       const r = await spGet(`${fileAt}/LockedByUser?$select=Id`);
-      return `LockedByUser read: HTTP ${r.status}, ${r.ok ? (r.body && r.body.Id !== undefined ? 'a user is named' : 'no user named') : 'unanswered'}`;
+      const named = r.ok && r.body && typeof r.body === 'object' && Number.isInteger(r.body.Id);
+      const why = !r.ok ? 'unanswered' : !r.body || typeof r.body !== 'object' ? 'no readable payload'
+        : 'the payload carried no integer Id';
+      return `LockedByUser read: HTTP ${r.status}, ${named ? 'a user is named' : why}`;
     } catch (err) {
       return `LockedByUser read threw: ${err && err.message ? err.message : String(err)}`;
     }
@@ -362,9 +370,10 @@
     const e = r.body && (r.body.error || r.body['odata.error']);
     return e && e.code !== undefined ? String(e.code) : 'none';
   };
-  const describe = (back) => (back.ok && back.body
+  const hasNote = (back) => !!(back.ok && back.body && Object.prototype.hasOwnProperty.call(back.body, NOTE));
+  const describe = (back) => (hasNote(back)
     ? `read back: ${JSON.stringify(back.body[NOTE])} (requested ${JSON.stringify(RUN)})`
-    : `the read back ${unanswered(back)}`);
+    : back.ok && back.body ? `the read back payload carries no ${NOTE}` : `the read back ${unanswered(back)}`);
   const answeredBy = (res, ms) => `HTTP ${res.status} in ${ms} ms; error.code: ${codeOf(res)}; body: ${res.text.slice(0, 300)}`;
 
   if (STATE === 'closed') {
@@ -375,7 +384,7 @@
     }
     if (noAnswer(res)) {
       record(CONTROL, CONTROL_Q, 'NOT ESTABLISHED',
-        `the update ${unanswered(res)}; ${answeredBy(res, ms)}; the write is uncertain; ${await tokenRead()}`);
+        `the update ${silentWhy(res)}; ${answeredBy(res, ms)}; the write is uncertain; ${await tokenRead()}`);
       return report();
     }
     let back = null;
@@ -383,7 +392,7 @@
       back = { ok: false, status: 0, body: null, threw: e2 && e2.message ? e2.message : String(e2) };
     }
     // A readback that did not answer says nothing about the request shape, so it is not a failure of the control.
-    if (back && (!back.ok || unanswered(back))) {
+    if (back && (!back.ok || unanswered(back) || !hasNote(back))) {
       record(CONTROL, CONTROL_Q, 'NOT ESTABLISHED',
         `${answeredBy(res, ms)}; ${back.threw ? `the read back threw: ${back.threw}` : describe(back)}`);
       return report();
@@ -403,7 +412,7 @@
   }
   if (noAnswer(res)) {
     record(CHECKS[OPENED_IN], ASK, 'NOT ESTABLISHED',
-      `the update ${unanswered(res)}; ${answeredBy(res, ms)}; the write is uncertain; ${await tokenRead()}`);
+      `the update ${silentWhy(res)}; ${answeredBy(res, ms)}; the write is uncertain; ${await tokenRead()}`);
     return report();
   }
   // A refusal is the finding, so it is never a failure of the probe. But a malformed request is refused

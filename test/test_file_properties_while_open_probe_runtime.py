@@ -66,6 +66,7 @@ _MOCK = textwrap.dedent(r"""
           note = JSON.parse(init.body).ProbeNote;
           throw new Error('connection lost');
         }
+        if (CONFIG.refuse && CONFIG.bare) return answer(CONFIG.refuse, 'internal error');
         if (CONFIG.refuse) return answer(CONFIG.refuse, { error: {
           code: '-2130575305, Microsoft.SharePoint.SPException',
           message: { value: 'locked for shared use' } } });
@@ -76,7 +77,11 @@ _MOCK = textwrap.dedent(r"""
         return CONFIG.noParent ? answer(404, 'no parent list')
           : answer(200, { ListItemEntityTypeFullName: 'SP.Data.LibItem' });
       }
-      if (path.includes('/LockedByUser')) return answer(200, CONFIG.locked ? { Id: 9 } : {});
+      if (path.includes('/LockedByUser')) {
+        if (CONFIG.lockEmpty) return answer(200, '');
+        return answer(200, CONFIG.locked ? { Id: 9 } : { Id: null });
+      }
+      if (wrote && CONFIG.noNoteRead) return answer(200, { Id: 3 });
       if (wrote && CONFIG.emptyRead) return answer(200, '');
       if (wrote && CONFIG.readStatus) return answer(CONFIG.readStatus, 'slow down');
       if (wrote && CONFIG.readFailsAfterWrite) throw new Error('read after write failed');
@@ -227,8 +232,8 @@ def test_a_refused_update_is_not_labelled_as_written() -> None:
 
 
 @pytest.mark.parametrize("config", [{"readFailsAfterWrite": True}, {"readStatus": 429},
-                                    {"readStatus": 404}, {"emptyRead": True}],
-                         ids=["throws", "429", "404", "empty"])
+                                    {"readStatus": 404}, {"emptyRead": True}, {"noNoteRead": True}],
+                         ids=["throws", "429", "404", "empty", "no-note"])
 def test_a_control_readback_that_did_not_answer_is_not_established_and_voids_nothing(
         config: dict[str, Any]) -> None:
     rows, _, _ = _run(CLOSED, **config)
@@ -265,3 +270,31 @@ def test_a_gateway_failure_still_reads_the_token_back(swaps: dict[str, str], sta
     assert row["outcome"] == "NOT ESTABLISHED" and "the write is uncertain" in row["evidence"]
     assert "token" in row["evidence"]
     assert sent[-1]["method"] == "GET"
+
+
+@pytest.mark.parametrize("swaps", [OPEN_WEB, CLOSED], ids=["open", "closed"])
+def test_a_bare_500_is_not_a_finding_but_a_500_with_a_sharepoint_error_is(
+        swaps: dict[str, str]) -> None:
+    key = CONTROL if swaps is CLOSED else WEB
+    rows, _, _ = _run(swaps, refuse=500, bare=True)
+    assert rows[key]["outcome"] == "NOT ESTABLISHED"
+    assert "no SharePoint error payload" in rows[key]["evidence"]
+    assert not voided(rows)
+    rows, _, _ = _run(swaps, refuse=500)
+    assert rows[key]["outcome"] in {"OBSERVED", "FAIL"}
+
+
+def test_a_lock_read_with_no_payload_or_a_null_id_names_no_user() -> None:
+    rows, _, _ = _run(OPEN_WEB, refuse=423, lockEmpty=True)
+    assert "no readable payload" in rows[WEB]["evidence"]
+    assert "a user is named" not in rows[WEB]["evidence"]
+    rows, _, _ = _run(OPEN_WEB, refuse=423)
+    assert "the payload carried no integer Id" in rows[WEB]["evidence"]
+    rows, _, _ = _run(OPEN_WEB, refuse=423, locked=True)
+    assert "a user is named" in rows[WEB]["evidence"]
+
+
+def test_every_report_names_its_target() -> None:
+    for swaps in (OPEN_WEB, CLOSED):
+        _, _, output = _run(swaps)
+        assert "target: https://example.sharepoint.com/sites/probe/sites/probe/Lib/p" in output
