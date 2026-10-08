@@ -2512,14 +2512,15 @@
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
-        "one scratch list with two Choice columns, one item, a header and footer formatter on the default content type, and a hiding formula on one column; recycled by the next run with CLEANUP on"
+        "one scratch list with two Choice columns, one item, a hiding formula on one column and, on the default content type, first a footer-only form formatter and then a header and footer; recycled by the next baseline run with CLEANUP on"
       ],
       "cleanup": {
         "policy": "before"
       },
       "prerequisites": [
         "permission to create and recycle lists on the site",
-        "A person opens the item's Display form and Edit form in the browser after the run and records what the header shows"
+        "A person opens the item's Edit form and Display form after the baseline run and records whether the footer shows",
+        "A person does the same after the header run (MODE = 'header') and records what the header shows"
       ],
       "scenarios": [
         {
@@ -2556,6 +2557,12 @@
               ]
             },
             {
+              "id": "text.form-fmt.fixture-footer-baseline",
+              "depends_on": [
+                "text.form-fmt.fixture-hidden-list"
+              ]
+            },
+            {
               "id": "text.form-fmt.fixture-header-formatter",
               "depends_on": [
                 "text.form-fmt.fixture-hidden-list"
@@ -2569,31 +2576,32 @@
             "text.form-fmt.fixture-hidden-item",
             "text.form-fmt.control-column-hidden-on-forms",
             "text.form-fmt.control-columns-in-content-type",
+            "text.form-fmt.fixture-footer-baseline",
             "text.form-fmt.fixture-header-formatter"
           ],
           "depends_on": []
         },
         {
-          "id": "header-reading",
+          "id": "baseline-reading",
           "surface": "form",
           "pattern": "before-action-after",
           "findings": [
             {
-              "id": "form.edit-form.header-hidden-column",
+              "id": "form.edit-form.footer-baseline-renders",
               "depends_on": [
                 "text.form-fmt.fixture-hidden-item",
                 "text.form-fmt.control-column-hidden-on-forms",
                 "text.form-fmt.control-columns-in-content-type",
-                "text.form-fmt.fixture-header-formatter"
+                "text.form-fmt.fixture-footer-baseline"
               ]
             },
             {
-              "id": "form.display-form.header-hidden-column",
+              "id": "form.display-form.footer-baseline-renders",
               "depends_on": [
                 "text.form-fmt.fixture-hidden-item",
                 "text.form-fmt.control-column-hidden-on-forms",
                 "text.form-fmt.control-columns-in-content-type",
-                "text.form-fmt.fixture-header-formatter"
+                "text.form-fmt.fixture-footer-baseline"
               ]
             }
           ],
@@ -2602,7 +2610,7 @@
               "role": "display",
               "page": "Display form",
               "assertions": [
-                "footer baseline visible",
+                "footer line visible",
                 "HiddenResult absent from the form body",
                 "ShownResult present in the form body"
               ]
@@ -2611,7 +2619,7 @@
               "role": "edit",
               "page": "Edit form",
               "assertions": [
-                "footer baseline visible",
+                "footer line visible",
                 "HiddenResult absent from the form body",
                 "ShownResult present in the form body"
               ]
@@ -2623,6 +2631,84 @@
           ],
           "depends_on": [
             "machine-findings"
+          ]
+        },
+        {
+          "id": "header-reading",
+          "surface": "form",
+          "pattern": "before-action-after",
+          "findings": [
+            {
+              "id": "form.edit-form.header-choice-token-renders",
+              "depends_on": [
+                "text.form-fmt.fixture-hidden-item",
+                "text.form-fmt.control-column-hidden-on-forms",
+                "text.form-fmt.control-columns-in-content-type",
+                "text.form-fmt.fixture-header-formatter",
+                "form.edit-form.footer-baseline-renders"
+              ]
+            },
+            {
+              "id": "form.display-form.header-choice-token-renders",
+              "depends_on": [
+                "text.form-fmt.fixture-hidden-item",
+                "text.form-fmt.control-column-hidden-on-forms",
+                "text.form-fmt.control-columns-in-content-type",
+                "text.form-fmt.fixture-header-formatter",
+                "form.display-form.footer-baseline-renders"
+              ]
+            },
+            {
+              "id": "form.edit-form.header-hidden-column",
+              "depends_on": [
+                "text.form-fmt.fixture-hidden-item",
+                "text.form-fmt.control-column-hidden-on-forms",
+                "text.form-fmt.control-columns-in-content-type",
+                "text.form-fmt.fixture-header-formatter",
+                "form.edit-form.footer-baseline-renders",
+                "form.edit-form.header-choice-token-renders"
+              ]
+            },
+            {
+              "id": "form.display-form.header-hidden-column",
+              "depends_on": [
+                "text.form-fmt.fixture-hidden-item",
+                "text.form-fmt.control-column-hidden-on-forms",
+                "text.form-fmt.control-columns-in-content-type",
+                "text.form-fmt.fixture-header-formatter",
+                "form.display-form.footer-baseline-renders",
+                "form.display-form.header-choice-token-renders"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "role": "display",
+              "page": "Display form",
+              "assertions": [
+                "footer line visible",
+                "HiddenResult absent from the form body",
+                "ShownResult present in the form body",
+                "visible-choice line shows its value"
+              ]
+            },
+            {
+              "role": "edit",
+              "page": "Edit form",
+              "assertions": [
+                "footer line visible",
+                "HiddenResult absent from the form body",
+                "ShownResult present in the form body",
+                "visible-choice line shows its value"
+              ]
+            }
+          ],
+          "controls": [
+            "text.form-fmt.control-column-hidden-on-forms",
+            "text.form-fmt.control-columns-in-content-type"
+          ],
+          "depends_on": [
+            "baseline-reading"
           ]
         }
       ]
