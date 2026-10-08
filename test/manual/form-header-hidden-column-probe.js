@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FORM HEADER SHOWING A COLUMN HIDDEN FROM THE FORMS ----
  *
- * REVISION: 4054b0cc
+ * REVISION: 69c0b41a
  *
  * QUESTION: when a column is hidden from the Edit and Display forms the way
  * the deploy hides one (a ClientValidationFormula that is true only while
@@ -367,7 +367,7 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision 4054b0cc. Quote this when reporting results.');
+  log('INFO', 'probe revision 69c0b41a. Quote this when reporting results.');
 
   // ---- The question ----------------------------------------------------
   const MODE = 'baseline'; // 'baseline', a person looks, then 'control', then 'header'
@@ -616,9 +616,10 @@
     base: () => 'Record whether the line probe-baseline-footer shows. If it does not, stop: later runs would answer nothing.',
     token: () => 'Record whether the line "visible-choice:" shows Yes. A blank line with the footer showing is observed failure of '
       + 'the visible Choice token; a vanished footer or header is observed suppression by that token.',
-    target: () => 'First record whether the line "visible-choice:" still shows Yes. If it is blank or gone, the hidden token changed the '
+    target: (form) => 'First record whether the line "visible-choice:" still shows Yes. If it is blank or gone, the hidden token changed the '
       + 'control: record observed suppression by the hidden token, not a blank hidden line. Otherwise record the line "hidden-column:" '
-      + 'as showing Yes or blank. VOID it where the body row did not show the column hidden. '
+      + `as showing Yes or blank. Also record whether HiddenResult is still absent from the ${form} form body now; `
+      + 'VOID this reading where it is present, or where the baseline body row did not show the column hidden. '
       + 'A vanished footer or header is observed suppression by the hidden token.',
   };
   const plan = { baseline: (f) => [[BODY_EDIT, BODY_DISPLAY, 'body', `whether the ${f} form body omits HiddenResult and holds ShownResult`],

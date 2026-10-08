@@ -59,6 +59,10 @@ _MOCK = textwrap.dedent(r"""
       if (path.endsWith('/_api/contextinfo')) return answer(200, { d: {
         GetContextWebInformation: { FormDigestValue: 'digest' } } });
       if (!path.includes('GetFileByServerRelativePath')) return answer(404, 'mock has no ' + path);
+      if (CONFIG.fixtureStatus && method === 'GET' && !wrote) {
+        return answer(CONFIG.fixtureStatus, 'no');
+      }
+      if (CONFIG.fixtureEmpty && method === 'GET' && !wrote) return answer(200, '');
       if (CONFIG.missing) return answer(404, { error: { message: { value: 'File Not Found.' } } });
       if (method === 'POST') {
         wrote = true;
@@ -157,6 +161,17 @@ def test_a_workbook_that_cannot_be_read_voids_the_control_and_the_check(
     rows, sent, _ = _run(OPEN_WEB, **config)
     assert rows[FIXTURE]["outcome"] == "FAIL"
     assert {CONTROL, WEB} <= voided(rows)
+    assert _writes(sent) == []
+
+
+@pytest.mark.parametrize("config",
+                         [{"fixtureStatus": 429}, {"fixtureStatus": 403}, {"fixtureEmpty": True}],
+                         ids=["throttled", "unauthorised", "no-payload"])
+def test_a_fixture_read_that_did_not_answer_is_not_established_and_voids_nothing(
+        config: dict[str, Any]) -> None:
+    rows, sent, _ = _run(OPEN_WEB, **config)
+    assert rows[FIXTURE]["outcome"] == "NOT ESTABLISHED" and rows[FIXTURE]["state"] == "open"
+    assert voided(rows) == set()
     assert _writes(sent) == []
 
 

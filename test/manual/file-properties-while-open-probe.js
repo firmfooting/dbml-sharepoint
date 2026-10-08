@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FILE PROPERTY UPDATE WHILE THE WORKBOOK IS OPEN ----
  *
- * REVISION: 01124c1a
+ * REVISION: c3315e97
  *
  * QUESTION: while a second account has a library workbook open in Excel for the
  * web (or in Excel desktop), can the first account set a column on that file,
@@ -150,16 +150,20 @@
     const problems = [];
     const seen = [];
     let got = null;
-    let threw = false;
+    let silentWhy = null; // a read that said nothing about the fixture: a re-run can clear it
     try {
       got = await read();
     } catch (err) {
-      threw = true;
-      problems.push(`the read threw: ${err && err.message ? err.message : String(err)}`);
+      silentWhy = `the read threw: ${err && err.message ? err.message : String(err)}`;
     }
-    if (!threw) {
+    if (!silentWhy) {
       const silent = got && typeof got === 'object' ? unanswered(got) : 'returned no response';
-      if (silent) problems.push(`the read ${silent}`);
+      if (silent && got && typeof got === 'object' && !got.ok && isRefusal(got.status)) problems.push(`the read ${silent}`);
+      else if (silent) silentWhy = `the read ${silent}`;
+    }
+    if (silentWhy && !problems.length) {
+      record(id, question, 'NOT ESTABLISHED', silentWhy, 'open');
+      return false;
     }
     if (!problems.length) {
       for (const [name, want] of Object.entries(declared)) {
@@ -185,7 +189,7 @@
     return false;
   };
 
-  const REVISION = '01124c1a';
+  const REVISION = 'c3315e97';
   const report = () => {
     console.log('\n==================== RESULTS ====================');
     console.log(`probe revision ${REVISION}. Quote this when reporting results.`);

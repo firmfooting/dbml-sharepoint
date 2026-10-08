@@ -232,9 +232,10 @@ def test_each_reading_is_its_own_finding_and_body_visibility_voids_only_the_targ
     assert "observed failure of the visible Choice token" in rows[TOKEN[0]]["evidence"]
     assert "VOID" not in rows[TOKEN[0]]["evidence"]
     rows, _sent, _output = _header()
-    assert "VOID it where the body row did not show the column hidden" in rows[EDIT]["evidence"]
+    assert "VOID this reading where it is present" in rows[EDIT]["evidence"]
     assert "suppression by the hidden token" in rows[EDIT]["evidence"]
     assert 'whether the line "visible-choice:" still shows Yes' in rows[EDIT]["evidence"]
+    assert "HiddenResult is still absent from the Edit form body" in rows[EDIT]["evidence"]
 
 
 def test_joined_text_is_an_expression_and_the_footer_a_plain_literal() -> None:
