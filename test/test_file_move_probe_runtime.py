@@ -163,6 +163,15 @@ def test_a_sharing_answer_without_links_records_its_key_names_and_no_values() ->
     assert "SECRET" not in row["evidence"]
 
 
+def test_sharing_answer_key_names_are_masked_like_any_quoted_text() -> None:
+    rows, _, _ = _leg(1, 7, linksShape="identityKeys")
+    evidence = rows["library.file.fixture-move-sharing-link"]["evidence"]
+    for leaked in ("editor@example.com", "someone@example.org", "mover@example.com",
+                   "example.sharepoint.com", "stranger@example"):
+        assert leaked not in evidence, evidence
+    assert "<account>" in evidence
+
+
 def test_state_five_names_the_keys_of_a_sharing_answer_without_links() -> None:
     rows, _, _ = _leg(5, 7, state=_state_four_start(), linksShape="noLinks")
     assert "hasInheritedLinks" in rows[F4]["evidence"]

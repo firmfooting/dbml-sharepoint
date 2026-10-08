@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A MOVE INSIDE ONE LIBRARY KEEPS ----
  *
- * REVISION: f64b085a
+ * REVISION: fcaee6ba
  *
  * QUESTION: when File.MoveToUsingPath moves a file from a folder to the root
  * of the same document library, does the item keep its Id, its versions, its
@@ -562,7 +562,7 @@
   const learnIdentity = async () => {
     await readAccount();
   };
-  log('INFO', 'probe revision f64b085a. Quote this when reporting results.');
+  log('INFO', 'probe revision fcaee6ba. Quote this when reporting results.');
 
   const STATE = 1;
   const TEST_USER_LOGIN = 'CHANGE ME - the editing account claims login';
@@ -758,9 +758,10 @@
   };
   // Printed by STATE 3 only when its snapshot held; STATE 5 recomputes it, so a snapshot that failed cannot be carried on.
   const snapshotToken = (itemId) => digestOf(`snapshot ${LINK_DIGEST} ${itemId}`);
-  // Key names only, never values, sorted and bounded so a large payload cannot flood the record.
+  // Key names only, never values, each masked before it is cut, sorted and bounded so a large payload cannot flood the record.
   const namesOf = (o) => {
-    const all = Object.keys(o).sort();
+    if (withheld) return WITHHELD;
+    const all = Object.keys(o).map(scrub).sort();
     const shown = all.slice(0, 40).map((k) => (k.length > 64 ? `${k.slice(0, 64)}...` : k)).join(', ');
     return (shown || 'none') + (all.length > 40 ? `, and ${all.length - 40} more` : '');
   };
