@@ -64,6 +64,9 @@ const fieldRead = (xml, name) => {
   return { ...out, ...((CONFIG.fieldRead || {})[name] || {}) };
 };
 const LIST = "web/lists/getbytitle('dbmlsp Probe FileMove')";
+// A link is a URL string (ShareId from its last segment) or an entry with its own ShareId and Url.
+const detailsOf = (l) => (typeof l === 'string'
+  ? { ShareId: `share-${l.split('/').pop()}`, Url: l, LinkKind: 2, IsActive: true } : l);
 const refused = (why) => answer(500, { error: { message: { value: why } } });
 globalThis.fetch = async (url, opts = {}) => {
   const method = (opts.headers && opts.headers['X-HTTP-Method']) || opts.method || 'GET';
@@ -147,11 +150,23 @@ globalThis.fetch = async (url, opts = {}) => {
       }
       if (tail.startsWith('/ShareLink')) {
         if (CONFIG.linkRefused) return refused('sharing is off');
-        S.links.push('https://example.sharepoint.com/:t:/s/probe/link');
-        return answer(200, CONFIG.shareAnswer || { sharingLinkInfo: { Url: S.links[0] } });
+        const made = 'https://example.sharepoint.com/:t:/s/probe/link';
+        S.links.push(CONFIG.shareId ? { ShareId: CONFIG.shareId, Url: CONFIG.linkNoUrl ? '' : made,
+          LinkKind: 2, IsActive: true } : made);
+        const info = { ...detailsOf(S.links[S.links.length - 1]) };
+        if (CONFIG.shareIdMissing) delete info.ShareId;
+        return answer(200, CONFIG.shareAnswer || { sharingLinkInfo: info });
       }
       if (tail.startsWith('/GetSharingInformation')) {
-        const links = S.links.map((u) => ({ linkDetails: { Url: u } }));
+        const links = S.links.map((l) => ({ linkDetails: detailsOf(l) }));
+        // Placeholders have an empty Url and their own ShareId, and come before our entry.
+        for (let i = 0; i < (CONFIG.placeholders || 0); i += 1) {
+          links.unshift({ linkDetails: { ShareId: `placeholder-${i}`, Url: '', LinkKind: 2,
+            IsActive: false } });
+        }
+        if (CONFIG.duplicateOurs && links.length) {
+          links.push(JSON.parse(JSON.stringify(links[links.length - 1])));
+        }
         if (CONFIG.linksShape === 'noUrl') links.push({ linkDetails: {} });
         if (CONFIG.linksShape === 'nested') {
           return answer(200, { permissionsInformation: { links } });
