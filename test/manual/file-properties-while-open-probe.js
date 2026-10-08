@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FILE PROPERTY UPDATE WHILE THE WORKBOOK IS OPEN ----
  *
- * REVISION: 59339ba1
+ * REVISION: 01124c1a
  *
  * QUESTION: while a second account has a library workbook open in Excel for the
  * web (or in Excel desktop), can the first account set a column on that file,
@@ -13,26 +13,26 @@
  * item update on the same file.
  *
  * SETUP (by hand): put a small .xlsx in a library on this site that has a text
- * column ProbeNote. Sign a second account in, in another browser, and open the
+ * column ProbeNotes. Sign a second account in, in another browser, and open the
  * workbook in Excel for the web (OPENED_IN = 'web') or Excel desktop
  * (OPENED_IN = 'desktop'); keep it open while the STATE = 'open' paste runs.
  *
  * DEPENDS ON
  *   library.file.fixture-open-workbook          WORKBOOK_URL reads back as a file with a list
- *       item that has an integer Id, an item type and ProbeNote
+ *       item that has an integer Id, an item type and ProbeNotes
  *   library.file.control-properties-update-closed  the same MERGE, sent with STATE = 'closed'
  *       after the second account has closed the workbook, answers 2xx and reads back
  *
  * OBSERVES (recorded verbatim, never compared with an expected value)
  *   library.file.properties-update-while-open-web      with OPENED_IN = 'web': the MERGE's status,
- *       its body's first 300 characters, its duration, and ProbeNote read back after it
+ *       its body's first 300 characters, its duration, and ProbeNotes read back after it
  *   library.file.properties-update-while-open-desktop  the same with OPENED_IN = 'desktop'
  *
  * HOW TO RUN: F12 -> Console. Set CONFIRMED, ALLOW_WRITES, WORKBOOK_URL (the
  * file's server-relative path), OPENED_IN, STATE ('open' first, 'closed' after)
  * and SECOND_ACCOUNT_HAS_IT_OPEN (true for the open paste) or
  * SECOND_ACCOUNT_HAS_CLOSED_IT (true for the closed one); paste; Enter. Copy the
- * RESULTS block back verbatim. Both pastes overwrite ProbeNote, and the open
+ * RESULTS block back verbatim. Both pastes overwrite ProbeNotes, and the open
  * paste's fixture row records its original value: restore it by hand afterwards.
  */
 (async () => {
@@ -185,7 +185,7 @@
     return false;
   };
 
-  const REVISION = '59339ba1';
+  const REVISION = '01124c1a';
   const report = () => {
     console.log('\n==================== RESULTS ====================');
     console.log(`probe revision ${REVISION}. Quote this when reporting results.`);
@@ -225,11 +225,11 @@
     web: 'library.file.properties-update-while-open-web',
     desktop: 'library.file.properties-update-while-open-desktop',
   };
-  const NOTE = 'ProbeNote';
+  const NOTE = 'ProbeNotes';
   const RUN = Date.now().toString(36);
   const ASK = 'what a property update answers while a second account has the workbook open';
 
-  expect('library.file.fixture-open-workbook', 'the workbook reads back as a file with a list item that has ProbeNote');
+  expect('library.file.fixture-open-workbook', 'the workbook reads back as a file with a list item that has ProbeNotes');
   expect('library.file.control-properties-update-closed', 'the same property update reads back once the workbook is closed');
   expect('library.file.properties-update-while-open-web', ASK + ' (Excel for the web)');
   expect('library.file.properties-update-while-open-desktop', ASK + ' (Excel desktop)');
