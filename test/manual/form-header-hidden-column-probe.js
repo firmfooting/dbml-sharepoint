@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FORM HEADER SHOWING A COLUMN HIDDEN FROM THE FORMS ----
  *
- * REVISION: 024d4de6
+ * REVISION: 51f760c3
  *
  * QUESTION: when a column is hidden from the Edit and Display forms the way
  * the deploy hides one (a ClientValidationFormula that is true only while
@@ -365,7 +365,7 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision 024d4de6. Quote this when reporting results.');
+  log('INFO', 'probe revision 51f760c3. Quote this when reporting results.');
 
   // ---- The question ----------------------------------------------------
   const MODE = 'baseline'; // 'baseline', a person looks, then 'control', then 'header'
@@ -577,9 +577,12 @@
     ? types.body.value.find((t) => t && typeof t.StringId === 'string'
       && t.StringId.startsWith('0x01') && !t.StringId.startsWith('0x0120')) : null;
   if (!itemType || typeof itemType.StringId !== 'string') {
-    record(FORMATTER_FIXTURE, FORMATTER_QUESTION, 'FAIL',
-      unanswered(types) ? `the content type read ${unanswered(types)}` : 'no default item content type answered');
-    voidDependents(dependents(FORMATTER_FIXTURE), 'the content type was not found');
+    const why = unanswered(types) ? `the content type read ${unanswered(types)}` : 'no default item content type answered';
+    record(FORMATTER_FIXTURE, FORMATTER_QUESTION, 'FAIL', why);
+    record(LINKS, 'both columns are field links of the default content type and neither is Hidden', 'FAIL',
+      `the content type was not found: ${why}`);
+    voidDependents([...(BASELINE ? [] : [PREVIOUS_FIXTURE]), ...new Set([...dependents(LINKS), ...dependents(FORMATTER_FIXTURE)])],
+      'the content type was not found');
     return report();
   }
   const typeAt = `${at}/contenttypes('${itemType.StringId}')`;
@@ -589,8 +592,14 @@
     { value: (rows) => linkOk(rows, HIDDEN) && linkOk(rows, SHOWN) }, dependents(LINKS));
   if (!BASELINE && !await establishFixture(PREVIOUS_FIXTURE, () => spGet(`${typeAt}?$select=ClientFormCustomFormatter`),
     { ClientFormCustomFormatter: PREVIOUS }, dependents(PREVIOUS_FIXTURE))) return report();
-  const wrote = await post(typeAt, { __metadata: { type: 'SP.ContentType' }, ClientFormCustomFormatter: FORMATTER },
-    { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
+  // A rejected fetch may still have reached the site, so it is named and the exact readback below decides.
+  let wrote;
+  try {
+    wrote = await post(typeAt, { __metadata: { type: 'SP.ContentType' }, ClientFormCustomFormatter: FORMATTER },
+      { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
+  } catch (err) {
+    wrote = { ok: false, status: 0, text: `the write request threw: ${err && err.message ? err.message : String(err)}` };
+  }
   said('form formatter write', wrote);
   // The readback, not the write status, says what the type holds: an exact readback stands after an ambiguous write.
   if (!await establishFixture(FORMATTER_FIXTURE, () => spGet(`${typeAt}?$select=ClientFormCustomFormatter`),

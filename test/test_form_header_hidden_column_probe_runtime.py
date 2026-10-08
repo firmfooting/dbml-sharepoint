@@ -113,6 +113,9 @@ _MOCK = textwrap.dedent(r"""
           HiddenResult: 'No', ShownResult: 'Yes' });
       }
       if (rest.startsWith('/contenttypes?')) {
+        if (CONFIG.noItemType) {
+          return answer(200, { value: [{ Name: 'Folder', StringId: '0x0120' }] });
+        }
         return answer(200, { value: [{ Name: 'Folder', StringId: '0x0120' },
           { Name: CONFIG.typeName || 'Item', StringId: '0x01' }] });
       }
@@ -123,6 +126,12 @@ _MOCK = textwrap.dedent(r"""
       if (rest.startsWith("/contenttypes('0x01')")) {
         if (method === 'POST') {
           if (CONFIG.refuseFormatter) return answer(403, 'denied');
+          // `throwAfter` commits the write then rejects; `throwBefore` rejects without one.
+          if (CONFIG.throwBefore) throw new Error('network down');
+          if (CONFIG.throwAfter) {
+            stored = JSON.parse(init.body).ClientFormCustomFormatter;
+            throw new Error('network down');
+          }
           stored = JSON.parse(init.body).ClientFormCustomFormatter;
           // `ambiguous` commits the write and answers as if it failed.
           return CONFIG.ambiguous ? answer(500, 'unknown') : answer(204, '');
@@ -389,3 +398,25 @@ def test_a_header_run_straight_after_the_baseline_is_refused() -> None:
 def test_a_header_run_after_a_control_run_passes_the_previous_phase_check() -> None:
     rows, _sent, _output = _header()
     assert rows[PREVIOUS]["outcome"] == "PASS"
+
+
+def test_a_rejected_write_request_that_committed_stands_on_the_exact_readback() -> None:
+    rows, _sent, output = _header(throwAfter=True)
+    assert rows[FORMATTER]["outcome"] == "PASS" and rows[EDIT]["outcome"] == "MANUAL"
+    assert "the write request threw: network down" in output and ended_with_report(output)
+
+
+def test_a_rejected_write_request_that_did_not_commit_fails_the_fixture_by_name() -> None:
+    rows, _sent, output = _header(throwBefore=True)
+    assert rows[FORMATTER]["outcome"] == "FAIL" and set(TARGET) <= voided(rows)
+    assert "the write request threw" in output and "ReferenceError" not in output
+
+
+@pytest.mark.parametrize("config", [{"refuse": "/contenttypes?"}, {"noItemType": True}],
+                         ids=["refused", "no-item-type"])
+def test_an_unfound_content_type_fails_the_links_control_and_voids_what_rests_on_it(
+        config: dict[str, Any]) -> None:
+    rows, sent, _output = _run(**config)
+    assert rows[LINKS]["outcome"] == "FAIL" and rows[FOOTER_FIXTURE]["outcome"] == "FAIL"
+    assert set(BASE + BODY) <= voided(rows)
+    assert not any("ClientFormCustomFormatter" in s["body"] for s in sent)
