@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FILE PROPERTY UPDATE WHILE THE WORKBOOK IS OPEN ----
  *
- * REVISION: 5ecccbf1
+ * REVISION: 59339ba1
  *
  * QUESTION: while a second account has a library workbook open in Excel for the
  * web (or in Excel desktop), can the first account set a column on that file,
@@ -77,6 +77,7 @@
 
   // extraHeaders carries X-HTTP-Method: SharePoint tunnels MERGE and DELETE through POST.
   const spPost = async (path, payload, digest, extraHeaders = {}) => {
+    if (!ALLOW_WRITES) throw new Error('spPost refused: ALLOW_WRITES is false.');
     const res = await fetch(`${WEB}/_api/${path}`, {
       method: 'POST',
       headers: {
@@ -184,7 +185,7 @@
     return false;
   };
 
-  const REVISION = '5ecccbf1';
+  const REVISION = '59339ba1';
   const report = () => {
     console.log('\n==================== RESULTS ====================');
     console.log(`probe revision ${REVISION}. Quote this when reporting results.`);

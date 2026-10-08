@@ -750,3 +750,16 @@ def test_the_watched_column_probes_list_every_fixture_and_control_they_register(
             ids = [finding["id"] for finding in scenario["findings"]]
             gates = [i for i in ids if ".fixture-" in i or ".control-" in i]
             assert sorted(gates) == sorted(scenario["controls"]), descriptor["file"]
+
+
+def test_a_shared_v1_writer_carries_a_second_allow_writes_guard() -> None:
+    """The probes repo's upstream-contract check reads a shared-v1 source as
+    read-only unless it has more than one executable `if (... ALLOW_WRITES ...)`
+    (one dormant cleanup guard plus a run gate), so a writer with a single gate
+    fails that check only after it merges here."""
+    guard = re.compile(r"\bif\s*\([^)]*\bALLOW_WRITES\b[^)]*\)")
+    for descriptor in _catalog()["probes"]:
+        if descriptor["harness"] != "shared-v1" or descriptor["authority"] != "allow-writes":
+            continue
+        source = (MANUAL / descriptor["file"]).read_text(encoding="utf-8")
+        assert len(guard.findall(source)) > 1, descriptor["file"]
