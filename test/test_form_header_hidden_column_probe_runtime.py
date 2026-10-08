@@ -429,3 +429,9 @@ def test_both_columns_hold_the_same_choice_value() -> None:
     js = PROBE.read_text(encoding="utf-8")
     assert "[HIDDEN]: 'Yes', [SHOWN]: 'Yes'" in js
     assert "[HIDDEN]: 'No'" not in js
+
+
+def test_a_fixture_read_that_did_not_answer_is_not_established_and_voids_nothing() -> None:
+    rows, _sent, _output = _header(refuse="ClientFormCustomFormatter")
+    assert rows[FORMATTER]["outcome"] == "NOT ESTABLISHED" and rows[FORMATTER]["state"] == "open"
+    assert not set(TARGET) & voided(rows)

@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FILE PROPERTY UPDATE WHILE THE WORKBOOK IS OPEN ----
  *
- * REVISION: c3315e97
+ * REVISION: cc455883
  *
  * QUESTION: while a second account has a library workbook open in Excel for the
  * web (or in Excel desktop), can the first account set a column on that file,
@@ -135,6 +135,8 @@
     return isRefusal(r.status) ? `was refused (HTTP ${r.status})` : `did not answer (HTTP ${r.status})`;
   };
 
+  const hasErrorPayload = (r) => !!(r.body && (r.body.error || r.body['odata.error']));
+  const bare500 = (r) => r.status === 500 && !hasErrorPayload(r);
   // A voided row keeps its question and is counted apart from open and answered.
   const voidDependents = (ids, reason) => {
     for (const id of ids) {
@@ -158,7 +160,7 @@
     }
     if (!silentWhy) {
       const silent = got && typeof got === 'object' ? unanswered(got) : 'returned no response';
-      if (silent && got && typeof got === 'object' && !got.ok && isRefusal(got.status)) problems.push(`the read ${silent}`);
+      if (silent && got && typeof got === 'object' && !got.ok && isRefusal(got.status) && !bare500(got)) problems.push(`the read ${silent}`);
       else if (silent) silentWhy = `the read ${silent}`;
     }
     if (silentWhy && !problems.length) {
@@ -189,7 +191,7 @@
     return false;
   };
 
-  const REVISION = 'c3315e97';
+  const REVISION = 'cc455883';
   const report = () => {
     console.log('\n==================== RESULTS ====================');
     console.log(`probe revision ${REVISION}. Quote this when reporting results.`);
@@ -315,8 +317,6 @@
     return `the MERGE rejected after ${ms} ms before any answer (${err}); the write is uncertain; ${back}`;
   };
   // Non-answering statuses say nothing about the update, and a SharePoint refusal is a 500 only with an error payload.
-  const hasErrorPayload = (r) => !!(r.body && (r.body.error || r.body['odata.error']));
-  const bare500 = (r) => r.status === 500 && !hasErrorPayload(r);
   const noAnswer = (r) => !r.ok && (!isRefusal(r.status) || bare500(r));
   const silentWhy = (r) => (bare500(r) ? 'answered HTTP 500 with no SharePoint error payload' : unanswered(r));
   // File.LockedByUser is documented but its meaning under co-authoring is not, so only whether a user is named is recorded.

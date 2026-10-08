@@ -165,8 +165,9 @@ def test_a_workbook_that_cannot_be_read_voids_the_control_and_the_check(
 
 
 @pytest.mark.parametrize("config",
-                         [{"fixtureStatus": 429}, {"fixtureStatus": 403}, {"fixtureEmpty": True}],
-                         ids=["throttled", "unauthorised", "no-payload"])
+                         [{"fixtureStatus": 429}, {"fixtureStatus": 403}, {"fixtureEmpty": True},
+                          {"fixtureStatus": 500}],
+                         ids=["throttled", "unauthorised", "no-payload", "bare-500"])
 def test_a_fixture_read_that_did_not_answer_is_not_established_and_voids_nothing(
         config: dict[str, Any]) -> None:
     rows, sent, _ = _run(OPEN_WEB, **config)
