@@ -77,6 +77,7 @@ _MOCK = textwrap.dedent(r"""
           : answer(200, { ListItemEntityTypeFullName: 'SP.Data.LibItem' });
       }
       if (path.includes('/LockedByUser')) return answer(200, CONFIG.locked ? { Id: 9 } : {});
+      if (wrote && CONFIG.emptyRead) return answer(200, '');
       if (wrote && CONFIG.readStatus) return answer(CONFIG.readStatus, 'slow down');
       if (wrote && CONFIG.readFailsAfterWrite) throw new Error('read after write failed');
       const staleNote = CONFIG.staleRead && wrote ? null : note;
@@ -226,7 +227,8 @@ def test_a_refused_update_is_not_labelled_as_written() -> None:
 
 
 @pytest.mark.parametrize("config", [{"readFailsAfterWrite": True}, {"readStatus": 429},
-                                    {"readStatus": 404}], ids=["throws", "429", "404"])
+                                    {"readStatus": 404}, {"emptyRead": True}],
+                         ids=["throws", "429", "404", "empty"])
 def test_a_control_readback_that_did_not_answer_is_not_established_and_voids_nothing(
         config: dict[str, Any]) -> None:
     rows, _, _ = _run(CLOSED, **config)
@@ -253,3 +255,13 @@ def test_the_revision_is_derived_from_the_probe_text() -> None:
     assert stamped.group(1) == hashlib.sha256(neutral.encode()).hexdigest()[:8]
     _, _, output = _run(OPEN_WEB)
     assert f"probe revision {stamped.group(1)}." in output
+
+
+@pytest.mark.parametrize("swaps", [OPEN_WEB, CLOSED], ids=["open", "closed"])
+@pytest.mark.parametrize("status", [502, 504])
+def test_a_gateway_failure_still_reads_the_token_back(swaps: dict[str, str], status: int) -> None:
+    rows, sent, _ = _run(swaps, refuse=status)
+    row = rows[CONTROL if swaps is CLOSED else WEB]
+    assert row["outcome"] == "NOT ESTABLISHED" and "the write is uncertain" in row["evidence"]
+    assert "token" in row["evidence"]
+    assert sent[-1]["method"] == "GET"

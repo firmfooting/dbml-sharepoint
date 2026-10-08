@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FILE PROPERTY UPDATE WHILE THE WORKBOOK IS OPEN ----
  *
- * REVISION: 65a83b77
+ * REVISION: c7ddb3ac
  *
  * QUESTION: while a second account has a library workbook open in Excel for the
  * web (or in Excel desktop), can the first account set a column on that file,
@@ -217,7 +217,7 @@
     return false;
   };
 
-  const REVISION = '65a83b77';
+  const REVISION = 'c7ddb3ac';
   const report = () => {
     console.log('\n==================== RESULTS ====================');
     console.log(`probe revision ${REVISION}. Quote this when reporting results.`);
@@ -337,11 +337,13 @@
     }
   };
   // Whether the per-run token is present after a request that never answered.
-  const uncertain = async (err, ms) => {
-    let back;
-    try { back = describe(await read()).replace('requested', 'token'); } catch (e2) {
-      back = `the read back threw: ${e2 && e2.message ? e2.message : String(e2)}`;
+  const tokenRead = async () => {
+    try { return describe(await read()).replace('requested', 'token'); } catch (e2) {
+      return `the read back threw: ${e2 && e2.message ? e2.message : String(e2)}`;
     }
+  };
+  const uncertain = async (err, ms) => {
+    const back = await tokenRead();
     return `the MERGE rejected after ${ms} ms before any answer (${err}); the write is uncertain; ${back}`;
   };
   // Statuses the helper treats as non-answering say nothing about the update, so they are never a finding.
@@ -372,7 +374,8 @@
       return report();
     }
     if (noAnswer(res)) {
-      record(CONTROL, CONTROL_Q, 'NOT ESTABLISHED', `the update ${unanswered(res)}; ${answeredBy(res, ms)}`);
+      record(CONTROL, CONTROL_Q, 'NOT ESTABLISHED',
+        `the update ${unanswered(res)}; ${answeredBy(res, ms)}; the write is uncertain; ${await tokenRead()}`);
       return report();
     }
     let back = null;
@@ -380,7 +383,7 @@
       back = { ok: false, status: 0, body: null, threw: e2 && e2.message ? e2.message : String(e2) };
     }
     // A readback that did not answer says nothing about the request shape, so it is not a failure of the control.
-    if (back && !back.ok) {
+    if (back && (!back.ok || unanswered(back))) {
       record(CONTROL, CONTROL_Q, 'NOT ESTABLISHED',
         `${answeredBy(res, ms)}; ${back.threw ? `the read back threw: ${back.threw}` : describe(back)}`);
       return report();
@@ -399,7 +402,8 @@
     return report();
   }
   if (noAnswer(res)) {
-    record(CHECKS[OPENED_IN], ASK, 'NOT ESTABLISHED', `the update ${unanswered(res)}; ${answeredBy(res, ms)}`);
+    record(CHECKS[OPENED_IN], ASK, 'NOT ESTABLISHED',
+      `the update ${unanswered(res)}; ${answeredBy(res, ms)}; the write is uncertain; ${await tokenRead()}`);
     return report();
   }
   // A refusal is the finding, so it is never a failure of the probe. But a malformed request is refused
