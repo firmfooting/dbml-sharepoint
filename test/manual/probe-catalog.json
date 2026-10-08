@@ -2512,7 +2512,7 @@
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
-        "one scratch list with a choice column and a text column, one item, a header formatter on the default content type, and the choice column hidden from the Edit and Display forms; recycled by the next run with CLEANUP on"
+        "one scratch list with two Choice columns, one item, a header and footer formatter on the default content type, and a hiding formula on one column; recycled by the next run with CLEANUP on"
       ],
       "cleanup": {
         "policy": "before"
@@ -2585,14 +2585,14 @@
               "role": "display",
               "page": "Display form",
               "assertions": [
-                "header rendered (control span shows visible)"
+                "footer baseline visible"
               ]
             },
             {
               "role": "edit",
               "page": "Edit form",
               "assertions": [
-                "header rendered (control span shows visible)"
+                "footer baseline visible"
               ]
             }
           ],

@@ -14,6 +14,8 @@ from _node import NODE
 from _paths import MANUAL
 from _probe_runs import ended_with_report, run_probe, voided
 
+from dbml_sharepoint.analysis.form_rendering import compose_visibility
+
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
 PROBE = MANUAL / "form-header-hidden-column-probe.js"
@@ -47,10 +49,7 @@ _MOCK = textwrap.dedent(r"""
     const OWNER = 'dbml-sharepoint form-header-hidden-column probe scratch list. Safe to delete.';
     let standing = CONFIG.existing === 'foreign' ? { Description: 'Not made by the probe.' }
       : CONFIG.existing ? { Description: OWNER } : null;
-    const hidden = new Set();
-    const flags = () => [...hidden].map((a) => a + '="FALSE"').join(' ');
-    const schema = () => `<Field Name='HiddenResult' ${flags()}/>`;
-    let stored = '';
+    let formula = '';
     globalThis.fetch = async (url, init = {}) => {
       const path = String(url).replace(/^https:\/\/example\.sharepoint\.com\/sites\/probe/, '');
       const method = init.method || 'GET';
@@ -70,25 +69,28 @@ _MOCK = textwrap.dedent(r"""
       if (!standing) return answer(404, { error: { message: { value: 'List does not exist.' } } });
       if (rest.startsWith('/recycle')) { standing = null; return answer(200, { d: {} }); }
       if (rest.startsWith('/items?')) return answer(200, { value: [] });
-      if (rest.includes('/setshowin')) {
-        const attr = rest.includes('editform') ? 'ShowInEditForm' : 'ShowInDisplayForm';
-        if (!CONFIG.stayShown) hidden.add(attr);
-        return answer(204, '');
-      }
       if (rest.includes('/fields/getbyinternalnameortitle(')) {
-        return answer(200, { SchemaXml: schema() });
+        if (method === 'POST') {
+          if (!CONFIG.stayShown) formula = JSON.parse(init.body).ClientValidationFormula;
+          return answer(204, '');
+        }
+        return answer(200, { ClientValidationFormula: formula });
       }
       if (rest.startsWith('/fields/createfieldasxml')) return answer(201, { d: {} });
       if (rest.startsWith('/fields?')) return answer(200, { value: [
         { InternalName: 'HiddenResult', TypeAsString: 'Choice' },
-        { InternalName: 'Shown', TypeAsString: 'Text' }] });
+        { InternalName: 'ShownResult', TypeAsString: 'Choice' }] });
       if (rest.startsWith('/items') && method === 'POST') {
         return answer(201, { d: { Id: CONFIG.itemId || 1 } });
       }
       const item = /^\/items\((\d+)\)/.exec(rest);
-      if (item) return answer(200, { Id: Number(item[1]), HiddenResult: 'No', Shown: 'visible' });
+      if (item) {
+        return answer(200, { Id: CONFIG.readId || Number(item[1]),
+          HiddenResult: 'No', ShownResult: 'Yes' });
+      }
       if (rest.startsWith('/contenttypes?')) {
-        return answer(200, { value: [{ Name: 'Item', StringId: '0x01' }] });
+        return answer(200, { value: [{ Name: 'Folder', StringId: '0x0120' },
+          { Name: CONFIG.typeName || 'Item', StringId: '0x01' }] });
       }
       if (rest.startsWith("/contenttypes('0x01')")) {
         if (method === 'POST') {
@@ -124,7 +126,7 @@ def test_a_healthy_run_settles_the_fixture_and_leaves_the_reading_to_a_person() 
         assert rows[row]["outcome"] == "PASS", (row, rows[row]["evidence"])
     assert rows[CHECK]["outcome"] == "MANUAL"
     assert rows[CHECK]["state"] == "awaiting-capture"
-    assert "record the reading as VOID" in rows[CHECK]["evidence"]
+    assert "VOID if HiddenResult is still a field" in rows[CHECK]["evidence"]
     assert "Open the item's Display form" in output and ended_with_report(output)
     # Every write after the create goes to the list by the Id the create answered.
     assert not any(s["method"] == "POST" and "getbytitle" in s["path"] for s in sent)
@@ -142,10 +144,43 @@ def test_a_refused_formatter_write_voids_the_reading() -> None:
     assert CHECK in voided(rows)
 
 
-def test_an_item_that_is_not_item_1_voids_the_reading() -> None:
-    rows, _sent, _output = _run(itemId=2)
+def test_an_item_read_that_answers_another_id_voids_the_reading() -> None:
+    rows, _sent, _output = _run(readId=9)
     assert rows["text.form-fmt.fixture-hidden-item"]["outcome"] == "FAIL"
     assert CHECK in voided(rows)
+
+
+def test_the_item_need_not_be_item_1() -> None:
+    rows, _sent, _output = _run(itemId=2)
+    assert rows["text.form-fmt.fixture-hidden-item"]["outcome"] == "PASS"
+    assert "ID=2" in rows[CHECK]["evidence"]
+
+
+def test_the_content_type_is_found_by_id_prefix_not_by_its_name() -> None:
+    rows, sent, _output = _run(typeName="Eintrag")
+    assert rows[FORMATTER]["outcome"] == "PASS"
+    assert any("contenttypes('0x01')" in s["path"] for s in sent)
+    assert not any("0x0120" in s["path"] and s["method"] == "POST" for s in sent)
+
+
+def test_the_hiding_is_the_formula_the_generator_emits_and_never_a_show_in_form_setter() -> None:
+    expected = compose_visibility(new=True, existing=False, when=None, types={})
+    js = PROBE.read_text(encoding="utf-8")
+    assert f'const HIDE_ON_EXISTING = "{expected}";' in js
+    _rows, sent, _output = _run()
+    assert not any("setshowin" in s["path"].lower() for s in sent)
+
+
+def test_the_reading_names_the_footer_baseline_and_whole_header_suppression() -> None:
+    rows, _sent, _output = _run()
+    evidence = rows[CHECK]["evidence"]
+    assert "probe-baseline-footer" in evidence and "whole-header suppression" in evidence
+    assert "VOID" in evidence and "Choice tokens do not render" in evidence
+
+
+def test_the_formatter_carries_an_independent_footer_baseline() -> None:
+    js = PROBE.read_text(encoding="utf-8")
+    assert "footerJSONFormatter: FOOTER" in js and "ShownResult" in js
 
 
 def test_a_same_title_list_it_did_not_make_is_left_alone() -> None:
