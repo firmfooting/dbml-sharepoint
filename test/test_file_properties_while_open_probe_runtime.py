@@ -6,6 +6,7 @@ expected outcome.
 """
 from __future__ import annotations
 
+import json
 import textwrap
 from typing import Any
 
@@ -23,8 +24,10 @@ FIXTURE = "library.file.fixture-open-workbook"
 CONTROL = "library.file.control-properties-update-closed"
 GATES = ("CONFIRMED", "ALLOW_WRITES")
 URL = {"  const WORKBOOK_URL = '';": "  const WORKBOOK_URL = '/sites/probe/Lib/p & q.xlsx';"}
-OPEN_WEB = {**URL, "  const OPENED_IN = '';": "  const OPENED_IN = 'web';"}
-OPEN_DESKTOP = {**URL, "  const OPENED_IN = '';": "  const OPENED_IN = 'desktop';"}
+ATTEST = {**URL, "  const SECOND_ACCOUNT_HAS_IT_OPEN = false;":
+          "  const SECOND_ACCOUNT_HAS_IT_OPEN = true;"}
+OPEN_WEB = {**ATTEST, "  const OPENED_IN = '';": "  const OPENED_IN = 'web';"}
+OPEN_DESKTOP = {**ATTEST, "  const OPENED_IN = '';": "  const OPENED_IN = 'desktop';"}
 CLOSED = {**OPEN_WEB, "  const STATE = 'open';": "  const STATE = 'closed';"}
 
 # The shapes are this mock's own; the probe records what a site answers and never compares it.
@@ -43,16 +46,20 @@ _MOCK = textwrap.dedent(r"""
     globalThis.fetch = async (url, init = {}) => {
       const path = String(url).replace(/^https:\/\/example\.sharepoint\.com\/sites\/probe/, '');
       const method = init.method || 'GET';
-      SENT.push({ method, path, headers: init.headers || {} });
+      SENT.push({ method, path, headers: init.headers || {}, body: init.body });
       if (path.endsWith('/_api/contextinfo')) return answer(200, { d: {
         GetContextWebInformation: { FormDigestValue: 'digest' } } });
       if (!path.includes('GetFileByServerRelativePath')) return answer(404, 'mock has no ' + path);
       if (CONFIG.missing) return answer(404, { error: { message: { value: 'File Not Found.' } } });
       if (method === 'POST') {
-        if (CONFIG.refuse) return answer(CONFIG.refuse, 'locked for shared use');
+        if (CONFIG.refuse) return answer(CONFIG.refuse, { error: {
+          code: '-2130575305, Microsoft.SharePoint.SPException',
+          message: { value: 'locked for shared use' } } });
+        if (CONFIG.throws) throw new Error('network down');
         note = JSON.parse(init.body)[CONFIG.noteName || 'ProbeNote'];
         return answer(204, '');
       }
+      if (path.includes('/LockedByUser')) return answer(200, CONFIG.locked ? { Id: 9 } : {});
       return answer(200, { Id: CONFIG.itemId === undefined ? 3 : CONFIG.itemId,
         ProbeNote: note, ListItemEntityTypeFullName: 'SP.Data.LibItem' });
     };
@@ -75,10 +82,10 @@ def test_an_unconfirmed_paste_prints_its_plan_and_sends_nothing() -> None:
     assert sent == [] and "WORKBOOK_URL" in output
 
 
-PHONE = {**URL, "  const OPENED_IN = '';": "  const OPENED_IN = 'phone';"}
+PHONE = {**ATTEST, "  const OPENED_IN = '';": "  const OPENED_IN = 'phone';"}
 
 
-@pytest.mark.parametrize("swaps", [URL, PHONE], ids=["unset", "unknown"])
+@pytest.mark.parametrize("swaps", [ATTEST, PHONE], ids=["unset", "unknown"])
 def test_an_opened_in_that_is_not_web_or_desktop_stops_before_any_request(
         swaps: dict[str, str]) -> None:
     _, sent, output = _run(swaps)
@@ -87,7 +94,9 @@ def test_an_opened_in_that_is_not_web_or_desktop_stops_before_any_request(
 
 def test_a_refused_merge_is_recorded_with_its_status_not_failed() -> None:
     rows, sent, output = _run(OPEN_WEB, refuse=423)
-    assert rows[WEB]["outcome"] == "OBSERVED" and rows[WEB]["state"] == "settled"
+    assert rows[WEB]["outcome"] == "OBSERVED" and rows[WEB]["state"] == "awaiting-capture"
+    assert "error.code: -2130575305" in rows[WEB]["evidence"]
+    assert "before: LockedByUser read: HTTP 200" in rows[WEB]["evidence"]
     assert "423" in rows[WEB]["evidence"] and "locked for shared use" in rows[WEB]["evidence"]
     assert rows[CONTROL]["state"] == "awaiting-capture"
     assert len(_writes(sent)) == 1 and ended_with_report(output)
@@ -101,6 +110,7 @@ def test_an_accepted_merge_records_the_value_read_back_under_the_desktop_check()
     [write] = _writes(sent)
     assert write["headers"]["X-HTTP-Method"] == "MERGE" and write["headers"]["IF-MATCH"] == "*"
     assert "p%20%26%20q.xlsx" in write["path"]
+    assert json.loads(write["body"])["__metadata"] == {"type": "SP.Data.LibItem"}
 
 
 def test_the_closed_paste_records_the_control_and_leaves_the_checks_alone() -> None:
@@ -122,3 +132,15 @@ def test_a_workbook_that_cannot_be_read_voids_the_control_and_the_check(
     assert rows[FIXTURE]["outcome"] == "FAIL"
     assert {CONTROL, WEB} <= voided(rows)
     assert _writes(sent) == []
+
+
+def test_an_open_paste_without_the_attestation_sends_nothing() -> None:
+    swaps = {**URL, "  const OPENED_IN = '';": "  const OPENED_IN = 'web';"}
+    _, sent, output = _run(swaps)
+    assert sent == [] and "SECOND_ACCOUNT_HAS_IT_OPEN" in output
+
+
+def test_a_request_that_throws_still_prints_the_report() -> None:
+    rows, _, output = _run(OPEN_WEB, throws=True)
+    assert rows[WEB]["state"] == "open" and "the probe stopped" in output
+    assert ended_with_report(output)

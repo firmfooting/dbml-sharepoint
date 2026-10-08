@@ -29,7 +29,8 @@
  *   library.file.properties-update-while-open-desktop  the same with OPENED_IN = 'desktop'
  *
  * HOW TO RUN: F12 -> Console. Set CONFIRMED, ALLOW_WRITES, WORKBOOK_URL (the
- * file's server-relative path), OPENED_IN and STATE ('open' first, 'closed'
+ * file's server-relative path), SECOND_ACCOUNT_HAS_IT_OPEN (the open paste
+ * needs it true), OPENED_IN and STATE ('open' first, 'closed'
  * after); paste; Enter. Copy the RESULTS block back verbatim.
  */
 (async () => {
@@ -74,33 +75,7 @@
   // worked. Anything asking "did I actually read this?" must test `ok`.
   const readFailed = (r) => !r.ok || r.body === null;
 
-  // Was this request REFUSED (the server saying no to what was sent) or
-  // did it merely fail? A negative control that cannot tell the difference
-  // certifies the surface as observable on the strength of a throttle, and
-  // every row it guards is then read as evidence.
-  //
-  // Defined by what it EXCLUDES, because the tempting definition is wrong
-  // here. "400 means bad request" is the HTTP convention and it is not what
-  // this tenant does: every SharePoint refusal this project has recorded
-  // came back 500:
-  //
-  //   "To add an item to a document library, use SPFileCollection.Add()"
-  //   "One or more column references are not allowed, because the columns
-  //    are defined as a data type that is not supported in formulas"
-  //   "The formula refers to a column that does not exist"
-  //   "This field type does not support..."
-  //
-  // (analysis/checks/_structure.py, analysis/conditions.py, generators/
-  // jsgen.py, each dated and cited to a live run). A 400-only test would
-  // therefore have reported NOT ESTABLISHED for every negative control on a
-  // tenant behaving exactly as recorded, which is the opposite failure and a
-  // worse one: it would quietly retire the controls the stack's own evidence
-  // rests on.
-  //
-  // So: 401/403 are about WHO is asking and 408/429 about the moment; those
-  // are never refusals. Everything else non-2xx is treated as the server
-  // rejecting the content, and the response TEXT is always printed beside
-  // the verdict so a reader can see which it was.
+  // Refusal means the server rejected the content; 401/403/408/429/503 are about who or when, so never refusals.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
     && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
@@ -273,6 +248,8 @@
   const OPENED_IN = ''; // 'web' or 'desktop': where the second account has it open
   // The workbook's server-relative path, typed at paste time and never committed.
   const WORKBOOK_URL = '';
+  // Nothing the probe sends can see the second account's session, so the operator attests to it.
+  const SECOND_ACCOUNT_HAS_IT_OPEN = false;
   const FIXTURE = 'library.file.fixture-open-workbook';
   const CONTROL = 'library.file.control-properties-update-closed';
   const CHECKS = {
@@ -297,11 +274,17 @@
     log('FAIL', `STATE is '${STATE}'; it must be 'open' or 'closed'. Nothing was sent.`);
     return report();
   }
+  if (STATE === 'open' && !SECOND_ACCOUNT_HAS_IT_OPEN) {
+    log('FAIL', "STATE is 'open' but SECOND_ACCOUNT_HAS_IT_OPEN is false; the open paste means nothing "
+      + 'unless a second account has the workbook open. Nothing was sent.');
+    return report();
+  }
   if (!Object.prototype.hasOwnProperty.call(CHECKS, OPENED_IN)) {
     log('FAIL', `OPENED_IN is '${OPENED_IN}'; it must be 'web' or 'desktop'. Nothing was sent.`);
     return report();
   }
 
+  const run = async () => {
   // Apostrophes doubled for OData, then percent-encoded so & , and # reach the server whole.
   const lit = (text) => encodeURIComponent(String(text).replace(/'/g, "''")).replace(/%2F/g, '/');
   const itemAt = `web/GetFileByServerRelativePath(decodedurl='${lit(WORKBOOK_URL)}')/ListItemAllFields`;
@@ -326,6 +309,16 @@
       });
     return { res, ms: Date.now() - started };
   };
+  // File.LockedByUser is a documented SP.File property (Learn, File.LockedByUser); what a value of it means
+  // for a co-authoring session is not, so only whether a user is named is recorded, never who.
+  const lockState = async () => {
+    const r = await spGet(`${itemAt.replace('/ListItemAllFields', '')}/LockedByUser?$select=Id`);
+    return `LockedByUser read: HTTP ${r.status}, ${r.ok ? (r.body && r.body.Id !== undefined ? 'a user is named' : 'no user named') : 'unanswered'}`;
+  };
+  const codeOf = (r) => {
+    const e = r.body && (r.body.error || r.body['odata.error']);
+    return e && e.code !== undefined ? String(e.code) : 'none';
+  };
   const readBack = async () => {
     const back = await read();
     return back.ok && back.body ? `read back: ${JSON.stringify(back.body[NOTE])} (wrote ${JSON.stringify(RUN)})`
@@ -337,15 +330,27 @@
     const back = res.ok ? await read() : null;
     const held = res.ok && back.ok && back.body && back.body[NOTE] === RUN;
     record(CONTROL, 'the same property update reads back once the workbook is closed',
-      held ? 'PASS' : 'FAIL', `HTTP ${res.status} in ${ms} ms; ${back ? await readBack() : res.text.slice(0, 300)}`);
+      held ? 'PASS' : 'FAIL', `HTTP ${res.status} in ${ms} ms; error.code: ${codeOf(res)}; ${back ? await readBack() : res.text.slice(0, 300)}`);
     return report();
   }
 
+  const lockBefore = await lockState();
   const { res, ms } = await write();
-  // OBSERVED whatever the status: a refusal is the finding, so it is never a failure of the probe.
-  const answered = `HTTP ${res.status} in ${ms} ms; body: ${res.text.slice(0, 300)}`;
-  record(CHECKS[OPENED_IN], ASK, 'OBSERVED', `${answered}; ${await readBack()}`);
+  // A refusal is the finding, so it is never a failure of the probe. But a malformed request is refused
+  // the same way, so the row stays awaiting-capture until the closed paste's control passes with this request shape.
+  const answered = `HTTP ${res.status} in ${ms} ms; error.code: ${codeOf(res)}; body: ${res.text.slice(0, 300)}`;
+  record(CHECKS[OPENED_IN], ASK, 'OBSERVED',
+    `${answered}; ${await readBack()}; before: ${lockBefore}; after: ${await lockState()}; `
+    + 'settled only when the closed control passes with the same request',
+    'awaiting-capture');
   record(CONTROL, 'the same property update reads back once the workbook is closed', 'MANUAL',
     "close the workbook in the second account, then paste again with STATE = 'closed'");
   return report();
+  };
+  try {
+    return await run();
+  } catch (err) {
+    log('FAIL', `the probe stopped: ${err && err.message ? err.message : String(err)}`);
+    return report();
+  }
 })();
