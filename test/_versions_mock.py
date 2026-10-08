@@ -200,6 +200,7 @@ const mockFetch = async (url, opts = {}) => {
       ...(sent.DisplayFormat === undefined ? {} : { DisplayFormat: sent.DisplayFormat }),
       ...(sent.RichText === undefined ? {} : { RichText: sent.RichText }),
       ...(sent.AppendOnly === undefined ? {} : { AppendOnly: sent.AppendOnly }),
+      ...(sent.NumberOfLines === undefined ? {} : { NumberOfLines: sent.NumberOfLines }),
       ...((CONFIG.fieldsTake || {})[sent.Title] || {}) };
     return answer(201, { d: { Title: sent.Title } });
   }

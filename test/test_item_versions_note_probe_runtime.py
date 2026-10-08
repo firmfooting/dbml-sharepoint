@@ -20,7 +20,7 @@ USER = "field.version.control-current-user"
 LIST = "field.version.fixture-note-list"
 COLUMN = "field.version.fixture-note-column"
 ITEM = "field.version.fixture-note-item"
-READ = "field.version.control-note-versions-read"
+READ = "field.version.control-payload-versions-read"
 NOTE = "field.version.payload-note"
 FIXTURES = (USER, LIST, COLUMN, ITEM, READ)
 NOTE_TEXTS = ('Reviewed; "partly" met.\nSee gaps;#2.', "Second: 'met'.\nNone;# \"open\".")
@@ -76,6 +76,7 @@ def test_the_column_is_created_as_plain_multi_line_text() -> None:
     assert body["RichText"] is False
     # The deploy's Note body sends AppendOnly false (generators/jsgen.py).
     assert body["AppendOnly"] is False
+    assert body["NumberOfLines"] == 6
 
 
 def test_a_note_read_back_unlike_what_was_sent_fails_the_item_and_voids_the_observation() -> None:
@@ -177,4 +178,12 @@ def test_a_note_column_that_reads_back_append_only_voids_what_rests_on_it() -> N
 
     assert rows[COLUMN]["outcome"] == "FAIL"
     assert "AppendOnly differs: read true, declared false" in rows[COLUMN]["evidence"]
+    assert voided(rows) == _deps(COLUMN)
+
+
+def test_a_note_column_with_another_line_count_voids_what_rests_on_it() -> None:
+    rows, _, _ = _run(fieldsTake={"ProbeNote": {"NumberOfLines": 3}})
+
+    assert rows[COLUMN]["outcome"] == "FAIL"
+    assert "NumberOfLines differs: read 3, declared 6" in rows[COLUMN]["evidence"]
     assert voided(rows) == _deps(COLUMN)

@@ -12786,7 +12786,7 @@
               ]
             },
             {
-              "id": "field.version.control-note-versions-read",
+              "id": "field.version.control-payload-versions-read",
               "depends_on": [
                 "field.version.control-current-user",
                 "field.version.fixture-note-list",
@@ -12801,7 +12801,7 @@
                 "field.version.fixture-note-list",
                 "field.version.fixture-note-column",
                 "field.version.fixture-note-item",
-                "field.version.control-note-versions-read"
+                "field.version.control-payload-versions-read"
               ]
             }
           ],
@@ -12811,7 +12811,7 @@
             "field.version.fixture-note-list",
             "field.version.fixture-note-column",
             "field.version.fixture-note-item",
-            "field.version.control-note-versions-read"
+            "field.version.control-payload-versions-read"
           ],
           "depends_on": []
         }
