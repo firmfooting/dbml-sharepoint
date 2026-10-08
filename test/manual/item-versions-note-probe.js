@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY FOR A NOTE COLUMN ----
  *
- * REVISION: f3d13fb2
+ * REVISION: 6171120a
  *
  * QUESTION: what does `items(id)/versions` return, per version, for a plain
  * multi-line text column (Note, RichText false) whose value holds a double
@@ -14,7 +14,7 @@
  * DEPENDS ON (read back, and voiding what rests on them when they do not hold)
  *   field.version.control-current-user        this account's Id reads back
  *   field.version.fixture-note-list           a generic list with versioning on
- *   field.version.fixture-note-column         a Note column with RichText false, read back
+ *   field.version.fixture-note-column         a Note column with RichText and AppendOnly false, read back
  *   field.version.fixture-note-item           one item created blank, then the note
  *       written twice; each value reads back equal before the next is sent
  *   field.version.control-note-versions-read  the versions read answers a list of entries
@@ -884,7 +884,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision f3d13fb2. Quote this when reporting results.');
+  log('INFO', 'probe revision 6171120a. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe NoteVersions');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
@@ -904,7 +904,7 @@
   const Q = {
     user: 'this account\'s Id reads back from web/currentuser',
     list: 'a generic list this probe created, with versioning on',
-    column: `${COLUMN} reads back as a Note column with RichText false`,
+    column: `${COLUMN} reads back as a Note column with RichText and AppendOnly false`,
     item: 'one item created with only a Title and the note written twice, the create and each write read back '
       + 'before the next',
     read: 'CONTROL: items(id)/versions answers a list of version entries',
@@ -987,15 +987,16 @@
     // The deploy's create body for a Note column (generators/jsgen.py), so a refusal is about the column.
     beginFixture();
     const sent = await spWrite(`${listPath}/fields`, { __metadata: { type: 'SP.FieldMultiLineText' },
-      FieldTypeKind: 3, Title: COLUMN, Required: false, RichText: false }, await getDigest(), VERBOSE_WRITE);
+      FieldTypeKind: 3, Title: COLUMN, Required: false, RichText: false, AppendOnly: false }, await getDigest(), VERBOSE_WRITE);
     log('INFO', `create ${COLUMN}: HTTP ${sent.status}${sent.ok ? '' : ` ${quote(sent.text).slice(0, 200)}`}`);
     if (!await settleFixture(ID.column, async () => {
       // The whole field is read, since $select of a subtype property can 400.
       const read = await readBack(`${listPath}/fields/getbyinternalnameortitle('${COLUMN}')`);
       return { ok: true, status: 200, body: read.parsed
-        ? { Read: read.read, TypeAsString: read.parsed.TypeAsString, RichText: read.parsed.RichText }
+        ? { Read: read.read, TypeAsString: read.parsed.TypeAsString, RichText: read.parsed.RichText,
+            AppendOnly: read.parsed.AppendOnly }
         : { Read: read.read } };
-    }, { Read: 'HTTP 200', TypeAsString: 'Note', RichText: false }, AFTER_COLUMN)) {
+    }, { Read: 'HTTP 200', TypeAsString: 'Note', RichText: false, AppendOnly: false }, AFTER_COLUMN)) {
       return;
     }
 

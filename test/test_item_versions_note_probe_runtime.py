@@ -74,6 +74,8 @@ def test_the_column_is_created_as_plain_multi_line_text() -> None:
     body = json.loads(made["body"])
     assert body["FieldTypeKind"] == 3
     assert body["RichText"] is False
+    # The deploy's Note body sends AppendOnly false (generators/jsgen.py).
+    assert body["AppendOnly"] is False
 
 
 def test_a_note_read_back_unlike_what_was_sent_fails_the_item_and_voids_the_observation() -> None:
@@ -168,3 +170,11 @@ def test_without_a_display_name_no_note_text_is_quoted_and_the_fixtures_still_ho
     assert rows[NOTE]["outcome"] == "OBSERVED"
     assert "Second:" not in rows[NOTE]["evidence"]
     assert ended_with_report(output)
+
+
+def test_a_note_column_that_reads_back_append_only_voids_what_rests_on_it() -> None:
+    rows, _, _ = _run(fieldsTake={"ProbeNote": {"AppendOnly": True}})
+
+    assert rows[COLUMN]["outcome"] == "FAIL"
+    assert "AppendOnly differs: read true, declared false" in rows[COLUMN]["evidence"]
+    assert voided(rows) == _deps(COLUMN)

@@ -199,6 +199,7 @@ const mockFetch = async (url, opts = {}) => {
     list.fields[sent.Title] = { InternalName: sent.Title, TypeAsString: KINDS[sent.FieldTypeKind],
       ...(sent.DisplayFormat === undefined ? {} : { DisplayFormat: sent.DisplayFormat }),
       ...(sent.RichText === undefined ? {} : { RichText: sent.RichText }),
+      ...(sent.AppendOnly === undefined ? {} : { AppendOnly: sent.AppendOnly }),
       ...((CONFIG.fieldsTake || {})[sent.Title] || {}) };
     return answer(201, { d: { Title: sent.Title } });
   }
