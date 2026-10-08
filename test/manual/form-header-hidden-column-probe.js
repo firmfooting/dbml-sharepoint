@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FORM HEADER SHOWING A COLUMN HIDDEN FROM THE FORMS ----
  *
- * REVISION: 2c0609c8
+ * REVISION: 024d4de6
  *
  * QUESTION: when a column is hidden from the Edit and Display forms the way
  * the deploy hides one (a ClientValidationFormula that is true only while
@@ -35,6 +35,9 @@
  *       as written; ShownResult carries none
  *   text.form-fmt.control-columns-in-content-type both columns read back as field links of the
  *       default item content type, neither Hidden
+ *   text.form-fmt.fixture-previous-phase-formatter (control, header) the formatter read back byte for
+ *       byte as the phase before left it, before this run overwrites it; a skipped or stale
+ *       phase fails here
  *   text.form-fmt.fixture-footer-baseline       (baseline) the content type's
  *       ClientFormCustomFormatter read back as the footer alone
  *   text.form-fmt.fixture-control-header        (control) it read back as the visible
@@ -362,10 +365,15 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision 2c0609c8. Quote this when reporting results.');
+  log('INFO', 'probe revision 024d4de6. Quote this when reporting results.');
 
   // ---- The question ----------------------------------------------------
   const MODE = 'baseline'; // 'baseline', a person looks, then 'control', then 'header'
+  // A mistyped MODE would index every phase table with undefined, so it fails closed here by name.
+  if (!['baseline', 'control', 'header'].includes(MODE)) {
+    console.error(`[FATAL] MODE is '${MODE}'; it must be 'baseline', 'control' or 'header'. Nothing was sent.`);
+    return;
+  }
   const BASELINE = MODE === 'baseline';
   const LIST = 'dbml-probe-header-hidden-column';
   // Ownership is the Description, never the title: a same-title list this probe did not make is left alone.
@@ -380,8 +388,9 @@
   // The deploy's own encoding: part OBJECTS under *JSONFormatter keys, the whole thing a JSON string.
   const FOOTER_ONLY = JSON.stringify({ footerJSONFormatter: FOOTER });
   const headerOf = (...lines) => ({ elmType: 'div', children: lines });
+  const CONTROL_FORMATTER = JSON.stringify({ headerJSONFormatter: headerOf(CONTROL_LINE), footerJSONFormatter: FOOTER });
   const FORMATTER = { baseline: FOOTER_ONLY,
-    control: JSON.stringify({ headerJSONFormatter: headerOf(CONTROL_LINE), footerJSONFormatter: FOOTER }),
+    control: CONTROL_FORMATTER,
     header: JSON.stringify({ headerJSONFormatter: headerOf(CONTROL_LINE, HIDDEN_LINE), footerJSONFormatter: FOOTER }) }[MODE];
   // What the generator emits for new: true, existing: false (compose_visibility); pinned by a test.
   const HIDE_ON_EXISTING = "=if([$ID] == '', 'true', 'false')";
@@ -405,7 +414,23 @@
   const BODY_DISPLAY = 'form.display-form.body-hides-column';
   const OBSERVED = { baseline: [BODY_EDIT, BODY_DISPLAY, BASE_EDIT, BASE_DISPLAY], control: [TOKEN_EDIT, TOKEN_DISPLAY],
     header: [EDIT, DISPLAY] }[MODE];
-  const ALL_AFTER_LIST = [COLUMNS, ITEM, CONTROL, LINKS, FORMATTER_FIXTURE, ...OBSERVED];
+  // Each phase starts from exactly the formatter the phase before it left; a skipped or stale list fails here.
+  const PREVIOUS = { control: FOOTER_ONLY, header: CONTROL_FORMATTER }[MODE];
+  const PREVIOUS_FIXTURE = 'text.form-fmt.fixture-previous-phase-formatter';
+  // Explicit dependencies, as the catalogue declares them: a failure voids only the rows that rest on it.
+  const REST_ON = {
+    [COLUMNS]: [LIST_FIXTURE], [ITEM]: [COLUMNS], [CONTROL]: [COLUMNS], [LINKS]: [COLUMNS],
+    [FORMATTER_FIXTURE]: [LIST_FIXTURE], [PREVIOUS_FIXTURE]: [LIST_FIXTURE],
+    [BODY_EDIT]: [ITEM, CONTROL, LINKS], [BODY_DISPLAY]: [ITEM, CONTROL, LINKS],
+    [BASE_EDIT]: [ITEM, LINKS, FORMATTER_FIXTURE], [BASE_DISPLAY]: [ITEM, LINKS, FORMATTER_FIXTURE],
+    [TOKEN_EDIT]: [ITEM, LINKS, FORMATTER_FIXTURE, PREVIOUS_FIXTURE],
+    [TOKEN_DISPLAY]: [ITEM, LINKS, FORMATTER_FIXTURE, PREVIOUS_FIXTURE],
+    [EDIT]: [ITEM, CONTROL, LINKS, FORMATTER_FIXTURE, PREVIOUS_FIXTURE],
+    [DISPLAY]: [ITEM, CONTROL, LINKS, FORMATTER_FIXTURE, PREVIOUS_FIXTURE],
+  };
+  const NODES = [LIST_FIXTURE, COLUMNS, ITEM, CONTROL, LINKS, FORMATTER_FIXTURE, ...(BASELINE ? [] : [PREVIOUS_FIXTURE]), ...OBSERVED];
+  const rests = (id, on) => (REST_ON[id] || []).some((d) => d === on || rests(d, on));
+  const dependents = (on) => NODES.filter((id) => id !== on && rests(id, on));
 
   expect('text.form-fmt.fixture-hidden-list', 'the list reads back with its marker, an item type and its folder URL');
   expect('text.form-fmt.fixture-hidden-columns', 'both Choice columns read back as such');
@@ -419,10 +444,12 @@
     expect('form.edit-form.footer-baseline-renders', 'whether the literal footer shows on the Edit form before any header exists');
     expect('form.display-form.footer-baseline-renders', 'whether the literal footer shows on the Display form before any header exists');
   } else if (MODE === 'control') {
+    expect('text.form-fmt.fixture-previous-phase-formatter', 'the content type reads back the footer-only formatter before this run writes');
     expect('text.form-fmt.fixture-control-header', 'the content type reads back the visible-Choice header and the footer as written');
     expect('form.edit-form.header-choice-token-renders', 'whether the visible Choice column shows its value in the Edit form header');
     expect('form.display-form.header-choice-token-renders', 'whether the visible Choice column shows its value in the Display form header');
   } else {
+    expect('text.form-fmt.fixture-previous-phase-formatter', 'the content type reads back the visible-Choice header and the footer before this run writes');
     expect('text.form-fmt.fixture-header-formatter', 'the content type reads back both header lines and the footer as written');
     expect('form.edit-form.header-hidden-column', 'whether the Edit form header shows the value of a column hidden from the forms');
     expect('form.display-form.header-hidden-column', 'whether the Display form header shows the value of a column hidden from the forms');
@@ -449,7 +476,7 @@
 
   const refuse = (why) => {
     record(LIST_FIXTURE, 'the list reads back with its marker, an item type and its folder URL', 'FAIL', why);
-    voidDependents(ALL_AFTER_LIST, 'the list was not established by this run');
+    voidDependents(dependents(LIST_FIXTURE), 'the list was not established by this run');
     return report();
   };
   let listId = '';
@@ -493,8 +520,7 @@
     `${at}?$select=Description,ListItemEntityTypeFullName,RootFolder/ServerRelativeUrl&$expand=RootFolder`)),
   { Description: OWNERSHIP_DESCRIPTION, ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0,
     RootFolder: (v) => !!v && typeof v.ServerRelativeUrl === 'string' && v.ServerRelativeUrl.startsWith('/') },
-  ALL_AFTER_LIST.filter((id) => id !== LIST_FIXTURE))) return report();
-  const dependents = (after) => ALL_AFTER_LIST.slice(ALL_AFTER_LIST.indexOf(after) + 1);
+  dependents(LIST_FIXTURE))) return report();
 
   // Options 9 adds the field to the default content type, without which it reaches no form.
   const addField = (schemaXml) => post(`${at}/fields/createfieldasxml`, { parameters: {
@@ -536,8 +562,11 @@
   }
   // Both columns are read: the control must carry no formula, or its span could be blank for that reason.
   const formulaOf = (rows, name) => { const f = (rows || []).find((r) => r && r.InternalName === name); return f ? f.ClientValidationFormula : undefined; };
+  // The property must be present on the control's row: an omitted property proves nothing about it.
+  const shownRow = (rows) => (rows || []).find((r) => r && r.InternalName === SHOWN);
   const controlHeld = (rows) => Array.isArray(rows) && formulaOf(rows, HIDDEN) === HIDE_ON_EXISTING
-    && [undefined, null, ''].includes(formulaOf(rows, SHOWN)) && rows.some((r) => r && r.InternalName === SHOWN);
+    && !!shownRow(rows) && Object.prototype.hasOwnProperty.call(shownRow(rows), 'ClientValidationFormula')
+    && [null, ''].includes(shownRow(rows).ClientValidationFormula);
   await establishFixture(CONTROL, () => spGet(`${at}/fields?$select=InternalName,ClientValidationFormula`
     + `&$filter=InternalName eq '${HIDDEN}' or InternalName eq '${SHOWN}'`),
   { value: controlHeld }, dependents(CONTROL));
@@ -550,20 +579,22 @@
   if (!itemType || typeof itemType.StringId !== 'string') {
     record(FORMATTER_FIXTURE, FORMATTER_QUESTION, 'FAIL',
       unanswered(types) ? `the content type read ${unanswered(types)}` : 'no default item content type answered');
-    voidDependents(OBSERVED, 'the content type was not found');
+    voidDependents(dependents(FORMATTER_FIXTURE), 'the content type was not found');
     return report();
   }
   const typeAt = `${at}/contenttypes('${itemType.StringId}')`;
   // Both columns must be on the type's forms: a column not there, or Hidden, has a blank span for that reason.
-  const linkOk = (rows, name) => Array.isArray(rows) && rows.some((l) => l && l.Name === name && l.Hidden !== true);
+  const linkOk = (rows, name) => Array.isArray(rows) && rows.some((l) => l && l.Name === name && l.Hidden === false);
   await establishFixture(LINKS, () => spGet(`${typeAt}/fieldlinks?$select=Name,Hidden&$top=500`),
     { value: (rows) => linkOk(rows, HIDDEN) && linkOk(rows, SHOWN) }, dependents(LINKS));
+  if (!BASELINE && !await establishFixture(PREVIOUS_FIXTURE, () => spGet(`${typeAt}?$select=ClientFormCustomFormatter`),
+    { ClientFormCustomFormatter: PREVIOUS }, dependents(PREVIOUS_FIXTURE))) return report();
   const wrote = await post(typeAt, { __metadata: { type: 'SP.ContentType' }, ClientFormCustomFormatter: FORMATTER },
     { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
   said('form formatter write', wrote);
   // The readback, not the write status, says what the type holds: an exact readback stands after an ambiguous write.
   if (!await establishFixture(FORMATTER_FIXTURE, () => spGet(`${typeAt}?$select=ClientFormCustomFormatter`),
-    { ClientFormCustomFormatter: FORMATTER }, OBSERVED)) return report();
+    { ClientFormCustomFormatter: FORMATTER }, dependents(FORMATTER_FIXTURE))) return report();
 
   const stateOf = (id) => (RESULTS.find((r) => r.id === id) || {}).state;
   // The folder URL the create answered for: the list's title is not its URL, and a link built from it can open another list.

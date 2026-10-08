@@ -7,6 +7,7 @@ the check row stays awaiting a capture.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import textwrap
 from typing import Any
@@ -66,7 +67,7 @@ _MOCK = textwrap.dedent(r"""
     // `prior` is the state a baseline run leaves behind, for a header run to find.
     let made = !!CONFIG.prior;
     let formula = CONFIG.prior ? CONFIG.hide : '';
-    let stored = CONFIG.prior ? CONFIG.footerOnly : '';
+    let stored = CONFIG.prior ? CONFIG.stored : '';
     if (CONFIG.prior) standing = { Description: OWNER };
     globalThis.fetch = async (url, init = {}) => {
       const path = String(url).replace(/^https:\/\/example\.sharepoint\.com\/sites\/probe/, '');
@@ -100,7 +101,8 @@ _MOCK = textwrap.dedent(r"""
       if (rest.startsWith('/fields?')) return answer(200, { value: [
         { InternalName: 'HiddenResult', TypeAsString: 'Choice', ClientValidationFormula: formula },
         { InternalName: 'ShownResult', TypeAsString: 'Choice',
-          ClientValidationFormula: CONFIG.shownFormula || '' }] });
+          ...(CONFIG.omitShownFormula ? {}
+            : { ClientValidationFormula: CONFIG.shownFormula || '' }) }] });
       if (rest.startsWith('/items') && method === 'POST') {
         made = true;
         return answer(201, { d: { Id: CONFIG.itemId || 1 } });
@@ -137,7 +139,13 @@ _MOCK = textwrap.dedent(r"""
 Run = tuple[dict[str, dict[str, str]], list[dict[str, str]], str]
 HIDE = "=if([$ID] == '', 'true', 'false')"
 FOOTER_ONLY = '{"footerJSONFormatter":{"elmType":"div","txtContent":"probe-baseline-footer"}}'
-PRIOR = {"prior": True, "hide": HIDE, "footerOnly": FOOTER_ONLY}
+CONTROL_FORMATTER = json.dumps({
+    "headerJSONFormatter": {"elmType": "div", "children": [
+        {"elmType": "div", "txtContent": "='visible-choice: ' + [$ShownResult]"}]},
+    "footerJSONFormatter": {"elmType": "div", "txtContent": "probe-baseline-footer"}},
+    separators=(",", ":"))
+PRIOR = {"prior": True, "hide": HIDE, "stored": FOOTER_ONLY}
+PREVIOUS = "text.form-fmt.fixture-previous-phase-formatter"
 
 
 def _run(gates: tuple[str, ...] = GATES, swaps: dict[str, str] | None = None,
@@ -148,7 +156,8 @@ def _run(gates: tuple[str, ...] = GATES, swaps: dict[str, str] | None = None,
 
 def _header(**config: Any) -> Run:
     """The last paste, against the state the earlier ones leave."""
-    return run_probe(_MOCK, PROBE, GATES, {**PRIOR, **config}, swaps=HEADER, pin=False)
+    config = {**PRIOR, "stored": CONTROL_FORMATTER, **config}
+    return run_probe(_MOCK, PROBE, GATES, config, swaps=HEADER, pin=False)
 
 
 def _control(**config: Any) -> Run:
@@ -258,10 +267,13 @@ def test_a_refused_formatter_write_voids_the_reading() -> None:
     assert rows[FOOTER_FIXTURE]["outcome"] == "FAIL" and set(BASE) <= voided(rows)
 
 
-def test_a_column_still_shown_on_the_forms_voids_the_reading() -> None:
+def test_a_hiding_that_did_not_read_back_voids_only_the_rows_resting_on_it() -> None:
     rows, _sent, _output = _run(stayShown=True)
     assert rows[CONTROL]["outcome"] == "FAIL"
-    assert set(BASE) <= voided(rows)
+    assert set(BODY) <= voided(rows)
+    assert not set(BASE) & voided(rows)
+    rows, _sent, _output = _header(hide="")
+    assert set(TARGET) <= voided(rows)
 
 
 def test_the_item_need_not_be_item_1() -> None:
@@ -303,13 +315,21 @@ def test_the_form_links_come_from_the_lists_own_folder_url() -> None:
 def test_a_visible_control_carrying_a_formula_voids_the_reading() -> None:
     rows, _sent, _output = _run(shownFormula="=if(false, 'true', 'false')")
     assert rows[CONTROL]["outcome"] == "FAIL"
-    assert set(BASE) <= voided(rows)
+    assert set(BODY) <= voided(rows)
+
+
+def test_a_control_row_that_omits_the_formula_property_proves_nothing() -> None:
+    rows, _sent, _output = _run(omitShownFormula=True)
+    assert rows[CONTROL]["outcome"] == "FAIL"
+    assert set(BODY) <= voided(rows)
 
 
 @pytest.mark.parametrize("links", [
     [{"Name": "HiddenResult", "Hidden": False}],
     [{"Name": "HiddenResult", "Hidden": False}, {"Name": "ShownResult", "Hidden": True}],
-], ids=["control-not-a-link", "control-hidden"])
+    [{"Name": "HiddenResult", "Hidden": False}, {"Name": "ShownResult"}],
+    [{"Name": "HiddenResult", "Hidden": False}, {"Name": "ShownResult", "Hidden": None}],
+], ids=["control-not-a-link", "control-hidden", "hidden-omitted", "hidden-null"])
 def test_a_control_not_on_the_content_type_voids_the_reading(links: list[dict[str, Any]]) -> None:
     rows, _sent, _output = _run(links=links)
     assert rows[LINKS]["outcome"] == "FAIL"
@@ -345,3 +365,27 @@ def test_the_revision_is_derived_from_the_probe_text() -> None:
     # Re-stamp with this digest whenever the probe changes.
     assert stamped.group(1) == hashlib.sha256(neutral.encode()).hexdigest()[:8]
     assert f"probe revision {stamped.group(1)}." in js
+
+
+def test_a_mistyped_mode_fails_closed_by_name_and_sends_nothing() -> None:
+    rows, sent, output = _run(swaps={"  const MODE = 'baseline';": "  const MODE = 'heder';"})
+    assert sent == [] and rows == {}
+    assert "MODE is 'heder'" in output and "TypeError" not in output
+
+
+def test_a_control_run_needs_the_footer_only_formatter_before_it_writes() -> None:
+    rows, sent, _output = run_probe(_MOCK, PROBE, GATES, {**PRIOR, "stored": ""},
+                                    swaps=CONTROL_MODE, pin=False)
+    assert rows[PREVIOUS]["outcome"] == "FAIL" and set(TOKEN) <= voided(rows)
+    assert not _writes(sent)
+
+
+def test_a_header_run_straight_after_the_baseline_is_refused() -> None:
+    rows, sent, _output = _header(stored=FOOTER_ONLY)
+    assert rows[PREVIOUS]["outcome"] == "FAIL" and set(TARGET) <= voided(rows)
+    assert not _writes(sent)
+
+
+def test_a_header_run_after_a_control_run_passes_the_previous_phase_check() -> None:
+    rows, _sent, _output = _header()
+    assert rows[PREVIOUS]["outcome"] == "PASS"

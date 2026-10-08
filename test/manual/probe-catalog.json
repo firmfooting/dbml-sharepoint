@@ -2572,6 +2572,12 @@
               "depends_on": [
                 "text.form-fmt.fixture-hidden-list"
               ]
+            },
+            {
+              "id": "text.form-fmt.fixture-previous-phase-formatter",
+              "depends_on": [
+                "text.form-fmt.fixture-hidden-list"
+              ]
             }
           ],
           "states": [],
@@ -2583,7 +2589,8 @@
             "text.form-fmt.control-columns-in-content-type",
             "text.form-fmt.fixture-footer-baseline",
             "text.form-fmt.fixture-control-header",
-            "text.form-fmt.fixture-header-formatter"
+            "text.form-fmt.fixture-header-formatter",
+            "text.form-fmt.fixture-previous-phase-formatter"
           ],
           "depends_on": []
         },
@@ -2664,7 +2671,8 @@
                 "text.form-fmt.fixture-hidden-item",
                 "text.form-fmt.control-columns-in-content-type",
                 "text.form-fmt.fixture-control-header",
-                "form.edit-form.footer-baseline-renders"
+                "form.edit-form.footer-baseline-renders",
+                "text.form-fmt.fixture-previous-phase-formatter"
               ]
             },
             {
@@ -2673,7 +2681,8 @@
                 "text.form-fmt.fixture-hidden-item",
                 "text.form-fmt.control-columns-in-content-type",
                 "text.form-fmt.fixture-control-header",
-                "form.display-form.footer-baseline-renders"
+                "form.display-form.footer-baseline-renders",
+                "text.form-fmt.fixture-previous-phase-formatter"
               ]
             }
           ],
@@ -2696,7 +2705,8 @@
             }
           ],
           "controls": [
-            "text.form-fmt.control-columns-in-content-type"
+            "text.form-fmt.control-columns-in-content-type",
+            "text.form-fmt.fixture-previous-phase-formatter"
           ],
           "depends_on": [
             "baseline-reading"
@@ -2716,7 +2726,8 @@
                 "text.form-fmt.fixture-header-formatter",
                 "form.edit-form.footer-baseline-renders",
                 "form.edit-form.header-choice-token-renders",
-                "form.edit-form.body-hides-column"
+                "form.edit-form.body-hides-column",
+                "text.form-fmt.fixture-previous-phase-formatter"
               ]
             },
             {
@@ -2728,7 +2739,8 @@
                 "text.form-fmt.fixture-header-formatter",
                 "form.display-form.footer-baseline-renders",
                 "form.display-form.header-choice-token-renders",
-                "form.display-form.body-hides-column"
+                "form.display-form.body-hides-column",
+                "text.form-fmt.fixture-previous-phase-formatter"
               ]
             }
           ],
@@ -2754,7 +2766,8 @@
           ],
           "controls": [
             "text.form-fmt.control-column-hidden-on-forms",
-            "text.form-fmt.control-columns-in-content-type"
+            "text.form-fmt.control-columns-in-content-type",
+            "text.form-fmt.fixture-previous-phase-formatter"
           ],
           "depends_on": [
             "control-reading"
