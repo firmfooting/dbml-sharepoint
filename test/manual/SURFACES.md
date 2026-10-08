@@ -220,7 +220,8 @@ Probes: `multi-value-probe.js`, `projected-lookup-probe.js`,
 `default-formula-functions-probe.js`, `unique-blanks-probe.js`,
 `unique-transition-probe.js`, `field-sealed-probe.js`,
 `utctolocaltime-rest-form-probe.js`, `calculated-date-rest-probe.js`,
-`item-versions-payload-probe.js`, `item-versions-trim-probe.js`,
+`item-versions-payload-probe.js`, `item-versions-note-probe.js`,
+`item-versions-trim-probe.js`,
 `version-editor-email-probe.js`
 
 `site-zone-transitions-probe.js` files under `date` because its subject is
@@ -287,6 +288,9 @@ and whether VersionId rises as VersionLabel does. Its library case edits a
 file in a library's folder, replaces the file's content, and edits it again,
 and records whether the content-only upload added a version and what that
 version carries.
+`item-versions-note-probe.js` writes a plain multi-line text column twice, with
+a quote, an apostrophe, a line feed and a semicolon-hash in its value, and
+records the raw properties each version carries for it.
 `item-versions-trim-probe.js` writes past the list's MajorVersionLimit and
 records what the versions read answers at once and a minute later. The limit
 the list takes is a fixture only in its range, because the run has to be able

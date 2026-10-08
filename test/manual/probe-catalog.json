@@ -12948,6 +12948,83 @@
       ]
     },
     {
+      "file": "item-versions-note-probe.js",
+      "surface": "field",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch generic list with versioning on, a plain multi-line text column and one item written three times; the list is recycled before the probe reports"
+      ],
+      "cleanup": {
+        "policy": "after"
+      },
+      "prerequisites": [
+        "permission to create and recycle lists on the site"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "field",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "field.version.control-current-user",
+              "depends_on": []
+            },
+            {
+              "id": "field.version.fixture-note-list",
+              "depends_on": [
+                "field.version.control-current-user"
+              ]
+            },
+            {
+              "id": "field.version.fixture-note-column",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-note-list"
+              ]
+            },
+            {
+              "id": "field.version.fixture-note-item",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-note-list",
+                "field.version.fixture-note-column"
+              ]
+            },
+            {
+              "id": "field.version.control-payload-versions-read",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-note-list",
+                "field.version.fixture-note-column",
+                "field.version.fixture-note-item"
+              ]
+            },
+            {
+              "id": "field.version.payload-note",
+              "depends_on": [
+                "field.version.control-current-user",
+                "field.version.fixture-note-list",
+                "field.version.fixture-note-column",
+                "field.version.fixture-note-item",
+                "field.version.control-payload-versions-read"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "field.version.control-current-user",
+            "field.version.fixture-note-list",
+            "field.version.fixture-note-column",
+            "field.version.fixture-note-item",
+            "field.version.control-payload-versions-read"
+          ],
+          "depends_on": []
+        }
+      ]
+    },
+    {
       "file": "item-versions-query-probe.js",
       "surface": "query",
       "harness": "shared-v1",

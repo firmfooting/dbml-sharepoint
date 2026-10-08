@@ -41,6 +41,8 @@ BEFORE_PERMS = "library.file.fixture-move-permissions-before"
 BEFORE = "library.file.fixture-move-before"
 FOLDER_ROW = "library.file.fixture-move-folder"
 LINK_URL = "https://example.sharepoint.com/:t:/s/probe/link"
+LINK_SHARE_ID = "share-link"
+LINK_ROW = "library.file.fixture-move-sharing-link"
 
 Run = tuple[dict[str, dict[str, str]], list[dict[str, str]], str]
 
@@ -67,20 +69,20 @@ def _state_four_start() -> dict[str, Any]:
 
 
 def _fnv(text: str) -> str:
-    """The probe's link digest: 32-bit FNV-1a of the URL, as eight hex digits."""
+    """The probe's digest: 32-bit FNV-1a of the text, as eight hex digits."""
     h = 0x811C9DC5
     for ch in text.encode("utf-8"):
         h = ((h ^ ch) * 0x01000193) & 0xFFFFFFFF
     return f"{h:08x}"
 
 
-def _digest_swap(url: str = LINK_URL) -> dict[str, str]:
-    return {"  const LINK_DIGEST = '';": f"  const LINK_DIGEST = '{_fnv(url)}';"}
+def _digest_swap(share_id: str = LINK_SHARE_ID) -> dict[str, str]:
+    return {"  const LINK_DIGEST = '';": f"  const LINK_DIGEST = '{_fnv(share_id)}';"}
 
 
 def _snapshot_token(item_id: int = 41) -> str:
-    """The token STATE 3 prints when its snapshot holds: the digest of the link and the item."""
-    return _fnv(f"snapshot {_fnv(LINK_URL)} {item_id}")
+    """The token STATE 3 prints when its snapshot holds: the digest of the ShareId and the item."""
+    return _fnv(f"snapshot {_fnv(LINK_SHARE_ID)} {item_id}")
 
 
 def _token_swap(token: str | None = None) -> dict[str, str]:
@@ -181,7 +183,7 @@ def test_the_sharing_information_request_expands_permissions_information() -> No
 
 def test_links_that_come_only_when_expanded_are_read_under_permissions_information() -> None:
     rows, _, _ = _leg(1, 7)
-    assert "LinksWithUrl" in rows["library.file.fixture-move-sharing-link"]["evidence"]
+    assert "OurLinks=1" in rows["library.file.fixture-move-sharing-link"]["evidence"]
 
 
 def test_a_sharing_answer_with_no_links_fails_the_link_fixture_whatever_share_link_said() -> None:
@@ -389,7 +391,7 @@ def test_a_date_that_did_not_store_fails_the_values_fixture() -> None:
 
 def test_state_one_prints_the_digest_of_the_link_it_made() -> None:
     _, _, output = _leg(1, 7)
-    assert f"link digest: {_fnv(LINK_URL)}" in _printed(output)
+    assert f"link digest: {_fnv(LINK_SHARE_ID)}" in _printed(output)
 
 
 def test_state_four_without_the_link_digest_sends_nothing() -> None:
@@ -405,14 +407,36 @@ def test_a_binding_seen_while_inheritance_was_restored_is_not_a_grant() -> None:
     assert rows[F4]["outcome"] == "GRANT LOST"
 
 
-@pytest.mark.parametrize(("change", "head"), [
-    ({"links": ["https://example.sharepoint.com/:t:/s/probe/other"]}, "LINK REPLACED"),
-    ({"links": ["https://example.sharepoint.com/:t:/s/probe/other"], "grants": []},
-     "GRANT LOST, LINK REPLACED"),
-], ids=["replaced", "grant-lost-and-replaced"])
-def test_a_regenerated_link_is_told_from_the_original(change: dict[str, Any], head: str) -> None:
+@pytest.mark.parametrize("change", [
+    {"links": ["https://example.sharepoint.com/:t:/s/probe/other"]},
+    {"links": ["https://example.sharepoint.com/:t:/s/probe/other"], "grants": []},
+], ids=["another-link", "grant-gone-and-another-link"])
+def test_another_link_with_a_url_leaves_the_tracked_link_open(change: dict[str, Any]) -> None:
+    # It could be a link made before the move, or ours with a ShareId the move changed.
     rows, _, _ = _leg(5, 7, state={**_state_four_start(), **change})
-    assert rows[F4]["outcome"] == head
+    assert rows[F4]["outcome"] == "NOT ESTABLISHED"
+    assert "REPLACED" not in rows[F4]["outcome"]
+    assert "entries with a URL 1" in rows[F4]["evidence"]
+
+
+def test_any_remaining_entry_leaves_the_tracked_link_open() -> None:
+    # A URL-less entry under another ShareId could be ours in a post-move shape.
+    rows, _, _ = _leg(5, 7, state={**_state_four_start(), "links": []}, placeholders=1)
+    assert rows[F4]["outcome"] == "NOT ESTABLISHED"
+    rows, _, _ = _leg(5, 7, state={**_state_four_start(), "links": []})
+    assert rows[F4]["outcome"] == "LINK LOST"
+
+
+@pytest.mark.parametrize("empty", ["00000000-0000-0000-0000-000000000000",
+                                   "{00000000-0000-0000-0000-000000000000}"])
+def test_the_empty_guid_is_no_share_id(empty: str) -> None:
+    rows, _, output = _leg(1, 7, shareId=empty)
+    assert rows[LINK_ROW]["outcome"] == "FAIL"
+    assert "link digest: none read" in _printed(output)
+    start = {**_state_four_start(), "links": [{"ShareId": empty, "Url": ""}]}
+    rows, _, _ = _leg(5, 7, state=start)
+    assert rows[F4]["outcome"] == "NOT ESTABLISHED"
+    assert "entries without a ShareId 1" in rows[F4]["evidence"]
 
 
 def test_state_four_as_another_account_voids_what_rests_on_the_owner_and_writes_nothing() -> None:
@@ -634,10 +658,106 @@ def test_a_root_file_with_another_id_is_not_established_not_a_lost_grant() -> No
     assert "MOVED_ID" in rows[F4]["evidence"]
 
 
-def test_a_sharing_entry_without_a_url_is_not_established_not_a_lost_link() -> None:
-    start = {**_state_four_start(), "links": []}
-    rows, _, _ = _leg(5, 7, state=start, linksShape="noUrl")
+def test_an_empty_sharing_entry_does_not_hide_our_link_and_leaves_its_loss_open() -> None:
+    rows, _, _ = _leg(5, 7, state=_state_four_start(), linksShape="noUrl")
+    assert rows[F4]["outcome"] == "GRANT AND LINK PRESENT"
+    rows, _, _ = _leg(5, 7, state={**_state_four_start(), "links": []}, linksShape="noUrl")
     assert rows[F4]["outcome"] == "NOT ESTABLISHED"
+
+
+def _evidence(rows: dict[str, dict[str, str]], row: str) -> str:
+    return rows[row]["evidence"]
+
+
+def test_our_link_is_the_one_entry_with_our_share_id_among_placeholders_without_a_url() -> None:
+    rows, _, _ = _leg(1, 7, placeholders=2)
+    assert rows[LINK_ROW]["outcome"] == "PASS"
+    shape = _evidence(rows, LINK_ROW)
+    assert "links array yes; entries 3" in shape
+    assert "entries with a URL 1" in shape and "entries matching the ShareId 1" in shape
+    for name in ("IsActive", "LinkKind", "ShareId", "Url"):
+        assert name in shape
+
+
+def test_no_entry_with_our_share_id_fails_the_link_fixture_naming_the_count() -> None:
+    rows, _, _ = _leg(1, 7, placeholders=1,
+                      shareAnswer={"sharingLinkInfo": {"ShareId": "unmatched", "Url": LINK_URL}})
+    assert rows[LINK_ROW]["outcome"] == "FAIL"
+    assert "OurLinks differs: read 0" in _evidence(rows, LINK_ROW)
+    assert "entries matching the ShareId 0" in _evidence(rows, LINK_ROW)
+
+
+def test_two_entries_with_our_share_id_fail_the_link_fixture_naming_the_count() -> None:
+    rows, _, _ = _leg(1, 7, duplicateOurs=True)
+    assert rows[LINK_ROW]["outcome"] == "FAIL"
+    assert "OurLinks differs: read 2" in _evidence(rows, LINK_ROW)
+
+
+def test_a_share_link_answer_without_a_share_id_fails_the_link_fixture_by_name() -> None:
+    rows, _, output = _leg(1, 7, shareIdMissing=True)
+    assert rows[LINK_ROW]["outcome"] == "FAIL"
+    assert "ShareIdRead differs: read false" in _evidence(rows, LINK_ROW)
+    assert "link digest: none read" in _printed(output)
+
+
+def test_our_entry_without_a_url_fails_the_link_fixture() -> None:
+    rows, _, _ = _leg(1, 7, shareId="share-link", linkNoUrl=True)
+    assert rows[LINK_ROW]["outcome"] == "FAIL"
+    assert "OurLinkHasUrl differs" in _evidence(rows, LINK_ROW)
+
+
+def test_the_share_id_value_is_printed_nowhere_only_its_digest() -> None:
+    leaked_id = "SECRET-SHARE-ID-0123"
+    rows, _, output = _leg(1, 7, shareId=leaked_id, placeholders=1)
+    assert rows[LINK_ROW]["outcome"] == "PASS"
+    assert leaked_id not in _printed(output) and leaked_id not in json.dumps(rows)
+    assert f"link digest: {_fnv(leaked_id)}" in _printed(output)
+    start = {**_state_four_start(), "links": [{"ShareId": leaked_id, "Url": LINK_URL}]}
+    swaps = {**_digest_swap(leaked_id), **_token_swap(_fnv(f"snapshot {_fnv(leaked_id)} 41"))}
+    rows, _, output = _leg(5, 7, swaps, state=start)
+    assert rows[F4]["outcome"] == "GRANT AND LINK PRESENT"
+    assert leaked_id not in _printed(output) and leaked_id not in json.dumps(rows)
+
+
+@pytest.mark.parametrize(("change", "config", "head"), [
+    ({}, {"placeholders": 2}, "GRANT AND LINK PRESENT"),
+    ({"links": ["https://example.sharepoint.com/:t:/s/probe/other"]}, {"placeholders": 2},
+     "NOT ESTABLISHED"),
+    ({"links": []}, {"placeholders": 2}, "NOT ESTABLISHED"),
+    ({}, {"duplicateOurs": True}, "NOT ESTABLISHED"),
+], ids=["survives", "replaced", "none", "several-match"])
+def test_state_five_finds_our_entry_by_the_digest_of_its_share_id(
+        change: dict[str, Any], config: dict[str, Any], head: str) -> None:
+    rows, _, _ = _leg(5, 7, state={**_state_four_start(), **change}, **config)
+    assert rows[F4]["outcome"] == head
+    assert "entries matching the ShareId" in _evidence(rows, F4)
+    if config.get("duplicateOurs"):
+        assert "2 entries matched the ShareId" in _evidence(rows, F4)
+
+
+@pytest.mark.parametrize("change", [
+    {"links": []}, {"links": ["https://example.sharepoint.com/:t:/s/probe/other"]},
+], ids=["ours-gone", "another-link"])
+def test_state_five_never_calls_a_link_lost_or_replaced_beside_an_entry_with_no_share_id(
+        change: dict[str, Any]) -> None:
+    rows, _, _ = _leg(5, 7, state={**_state_four_start(), **change}, unidentified=True)
+    assert rows[F4]["outcome"] == "NOT ESTABLISHED"
+    assert "entries without a ShareId 1" in _evidence(rows, F4)
+
+
+def test_state_three_fails_the_snapshot_when_none_or_several_entries_are_ours() -> None:
+    for change, config, count in (({"links": []}, {}, 0), ({}, {"duplicateOurs": True}, 2)):
+        rows, _, _ = _leg(3, 7, state={**_state_three_start(), **change}, **config)
+        assert rows[BEFORE_PERMS]["outcome"] == "FAIL"
+        assert f"entries matching the ShareId {count}" in _evidence(rows, BEFORE_PERMS)
+
+
+def test_state_three_records_the_link_shape_without_values() -> None:
+    rows, _, _ = _leg(3, 7, state=_state_three_start(), placeholders=1)
+    assert rows[BEFORE_PERMS]["outcome"] == "PASS"
+    shape = _evidence(rows, BEFORE_PERMS)
+    assert "links array yes; entries 2" in shape and "linkDetails keys" in shape
+    assert LINK_URL not in shape
 
 
 @pytest.mark.parametrize("bad", ["principal", "binding"])
