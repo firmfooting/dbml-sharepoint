@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FORM HEADER SHOWING A COLUMN HIDDEN FROM THE FORMS ----
  *
- * REVISION: 42ec1d8b
+ * REVISION: 4054b0cc
  *
  * QUESTION: when a column is hidden from the Edit and Display forms the way
  * the deploy hides one (a ClientValidationFormula that is true only while
@@ -65,7 +65,8 @@
  *     visible Choice token, and the header run is not worth making; a vanished footer
  *     or header is observed suppression by that token.
  *   - Header, with the control line shown: a vanished footer or header is suppression
- *     by the hidden token; both lines shown, record what the hidden line shows. The
+ *     by the hidden token; a visible line that no longer shows Yes is also suppression by
+ *     the hidden token; both lines shown, record what the hidden line shows. The
  *     hidden-column row is VOID where the body row did not show the column hidden.
  *
  * HOW TO RUN: F12 -> Console on a site you own, paste, Enter; it prints its
@@ -366,7 +367,7 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision 42ec1d8b. Quote this when reporting results.');
+  log('INFO', 'probe revision 4054b0cc. Quote this when reporting results.');
 
   // ---- The question ----------------------------------------------------
   const MODE = 'baseline'; // 'baseline', a person looks, then 'control', then 'header'
@@ -615,7 +616,9 @@
     base: () => 'Record whether the line probe-baseline-footer shows. If it does not, stop: later runs would answer nothing.',
     token: () => 'Record whether the line "visible-choice:" shows Yes. A blank line with the footer showing is observed failure of '
       + 'the visible Choice token; a vanished footer or header is observed suppression by that token.',
-    target: () => 'Record the line "hidden-column:" as showing Yes or blank. VOID it where the body row did not show the column hidden. '
+    target: () => 'First record whether the line "visible-choice:" still shows Yes. If it is blank or gone, the hidden token changed the '
+      + 'control: record observed suppression by the hidden token, not a blank hidden line. Otherwise record the line "hidden-column:" '
+      + 'as showing Yes or blank. VOID it where the body row did not show the column hidden. '
       + 'A vanished footer or header is observed suppression by the hidden token.',
   };
   const plan = { baseline: (f) => [[BODY_EDIT, BODY_DISPLAY, 'body', `whether the ${f} form body omits HiddenResult and holds ShownResult`],
