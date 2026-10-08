@@ -13430,6 +13430,62 @@
           "depends_on": []
         }
       ]
+    },
+    {
+      "file": "file-properties-while-open-probe.js",
+      "surface": "library",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one text column value on a workbook the operator names"
+      ],
+      "cleanup": {
+        "policy": "manual"
+      },
+      "prerequisites": [
+        "WORKBOOK_URL: a small .xlsx in a library with a text column ProbeNote",
+        "A second account with the workbook open in Excel for the web, or in Excel desktop, while STATE = 'open' runs",
+        "A second paste with STATE = 'closed' once that account has closed it"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-only",
+          "surface": "library",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "library.file.fixture-open-workbook",
+              "depends_on": []
+            },
+            {
+              "id": "library.file.control-properties-update-closed",
+              "depends_on": [
+                "library.file.fixture-open-workbook"
+              ]
+            },
+            {
+              "id": "library.file.properties-update-while-open-web",
+              "depends_on": [
+                "library.file.fixture-open-workbook",
+                "library.file.control-properties-update-closed"
+              ]
+            },
+            {
+              "id": "library.file.properties-update-while-open-desktop",
+              "depends_on": [
+                "library.file.fixture-open-workbook",
+                "library.file.control-properties-update-closed"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "library.file.fixture-open-workbook",
+            "library.file.control-properties-update-closed"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
