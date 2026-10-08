@@ -73,7 +73,11 @@ _MOCK = textwrap.dedent(r"""
       const path = String(url).replace(/^https:\/\/example\.sharepoint\.com\/sites\/probe/, '');
       const method = init.method || 'GET';
       SENT.push({ method, path, body: typeof init.body === 'string' ? init.body : '' });
-      if (CONFIG.refuse && path.includes(CONFIG.refuse)) return answer(403, 'denied');
+      if (CONFIG.refuse && path.includes(CONFIG.refuse)) {
+        if (!CONFIG.status) return answer(403, 'denied');
+        return CONFIG.bare ? answer(CONFIG.status, 'internal error')
+          : answer(CONFIG.status, { error: { message: { value: 'refused' } } });
+      }
       if (path.endsWith('/_api/contextinfo')) return answer(200, { d: {
         GetContextWebInformation: { FormDigestValue: 'digest' } } });
       if (path.endsWith('/_api/web/lists') && method === 'POST') {
@@ -415,7 +419,8 @@ def test_a_rejected_write_request_that_did_not_commit_fails_the_fixture_by_name(
     assert "the write request threw" in output and "ReferenceError" not in output
 
 
-@pytest.mark.parametrize("config", [{"refuse": "/contenttypes?"}, {"noItemType": True}],
+@pytest.mark.parametrize("config",
+                         [{"refuse": "/contenttypes?", "status": 500}, {"noItemType": True}],
                          ids=["refused", "no-item-type"])
 def test_an_unfound_content_type_fails_the_links_control_and_voids_what_rests_on_it(
         config: dict[str, Any]) -> None:
@@ -431,7 +436,22 @@ def test_both_columns_hold_the_same_choice_value() -> None:
     assert "[HIDDEN]: 'No'" not in js
 
 
-def test_a_fixture_read_that_did_not_answer_is_not_established_and_voids_nothing() -> None:
-    rows, _sent, _output = _header(refuse="ClientFormCustomFormatter")
-    assert rows[FORMATTER]["outcome"] == "NOT ESTABLISHED" and rows[FORMATTER]["state"] == "open"
+@pytest.mark.parametrize("config", [{}, {"status": 429}, {"status": 500, "bare": True}],
+                         ids=["unauthorised", "throttled", "bare-500"])
+def test_a_fixture_read_that_did_not_answer_is_not_established_and_voids_nothing(
+        config: dict[str, Any]) -> None:
+    rows, _sent, _output = _header(refuse="ClientFormCustomFormatter", **config)
+    assert rows[PREVIOUS]["outcome"] == "NOT ESTABLISHED" and rows[PREVIOUS]["state"] == "open"
     assert not set(TARGET) & voided(rows)
+
+
+@pytest.mark.parametrize("config", [{"refuse": "/contenttypes?"},
+                                    {"refuse": "/contenttypes?", "status": 500, "bare": True}],
+                         ids=["unauthorised", "bare-500"])
+def test_a_content_type_read_that_did_not_answer_is_not_established_and_voids_nothing(
+        config: dict[str, Any]) -> None:
+    rows, sent, _output = _run(**config)
+    for row in (LINKS, FOOTER_FIXTURE):
+        assert rows[row]["outcome"] == "NOT ESTABLISHED" and rows[row]["state"] == "open"
+    assert voided(rows) == set()
+    assert not any("ClientFormCustomFormatter" in s["body"] for s in sent)

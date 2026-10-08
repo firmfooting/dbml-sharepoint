@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FILE PROPERTY UPDATE WHILE THE WORKBOOK IS OPEN ----
  *
- * REVISION: cc455883
+ * REVISION: c0c8970e
  *
  * QUESTION: while a second account has a library workbook open in Excel for the
  * web (or in Excel desktop), can the first account set a column on that file,
@@ -132,11 +132,14 @@
     if (r.status === 429 || r.status === 503) return `was throttled (HTTP ${r.status})`;
     if (r.status === 408) return 'timed out (HTTP 408)';
     if (r.status === 401 || r.status === 403) return `was not authorised (HTTP ${r.status})`;
+    if (bare500(r)) return 'answered HTTP 500 with no SharePoint error payload';
     return isRefusal(r.status) ? `was refused (HTTP ${r.status})` : `did not answer (HTTP ${r.status})`;
   };
 
   const hasErrorPayload = (r) => !!(r.body && (r.body.error || r.body['odata.error']));
   const bare500 = (r) => r.status === 500 && !hasErrorPayload(r);
+  const silentOf = (r) => (r.ok || !isRefusal(r.status) || bare500(r) ? unanswered(r) : null);
+
   // A voided row keeps its question and is counted apart from open and answered.
   const voidDependents = (ids, reason) => {
     for (const id of ids) {
@@ -152,19 +155,19 @@
     const problems = [];
     const seen = [];
     let got = null;
-    let silentWhy = null; // a read that said nothing about the fixture: a re-run can clear it
+    let quiet = null; // a read that said nothing about the fixture: a re-run can clear it
     try {
       got = await read();
     } catch (err) {
-      silentWhy = `the read threw: ${err && err.message ? err.message : String(err)}`;
+      quiet = `the read threw: ${err && err.message ? err.message : String(err)}`;
     }
-    if (!silentWhy) {
-      const silent = got && typeof got === 'object' ? unanswered(got) : 'returned no response';
-      if (silent && got && typeof got === 'object' && !got.ok && isRefusal(got.status) && !bare500(got)) problems.push(`the read ${silent}`);
-      else if (silent) silentWhy = `the read ${silent}`;
+    if (!quiet) {
+      if (!got || typeof got !== 'object') quiet = 'the read returned no response';
+      else if (silentOf(got)) quiet = `the read ${silentOf(got)}`;
+      else if (unanswered(got)) problems.push(`the read ${unanswered(got)}`);
     }
-    if (silentWhy && !problems.length) {
-      record(id, question, 'NOT ESTABLISHED', silentWhy, 'open');
+    if (quiet) {
+      record(id, question, 'NOT ESTABLISHED', quiet, 'open');
       return false;
     }
     if (!problems.length) {
@@ -191,7 +194,7 @@
     return false;
   };
 
-  const REVISION = 'cc455883';
+  const REVISION = 'c0c8970e';
   const report = () => {
     console.log('\n==================== RESULTS ====================');
     console.log(`probe revision ${REVISION}. Quote this when reporting results.`);
@@ -318,7 +321,6 @@
   };
   // Non-answering statuses say nothing about the update, and a SharePoint refusal is a 500 only with an error payload.
   const noAnswer = (r) => !r.ok && (!isRefusal(r.status) || bare500(r));
-  const silentWhy = (r) => (bare500(r) ? 'answered HTTP 500 with no SharePoint error payload' : unanswered(r));
   // File.LockedByUser is documented but its meaning under co-authoring is not, so only whether a user is named is recorded.
   const lockState = async () => {
     try {
@@ -349,7 +351,7 @@
     }
     if (noAnswer(res)) {
       record(CONTROL, CONTROL_Q, 'NOT ESTABLISHED',
-        `the update ${silentWhy(res)}; ${answeredBy(res, ms)}; the write is uncertain; ${await tokenRead()}`);
+        `the update ${unanswered(res)}; ${answeredBy(res, ms)}; the write is uncertain; ${await tokenRead()}`);
       return report();
     }
     let back = null;
@@ -377,7 +379,7 @@
   }
   if (noAnswer(res)) {
     record(CHECKS[OPENED_IN], ASK, 'NOT ESTABLISHED',
-      `the update ${silentWhy(res)}; ${answeredBy(res, ms)}; the write is uncertain; ${await tokenRead()}`);
+      `the update ${unanswered(res)}; ${answeredBy(res, ms)}; the write is uncertain; ${await tokenRead()}`);
     return report();
   }
   // A malformed request is refused like a lock, so the row stays open until the closed control passes with this shape.
