@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FILE PROPERTY UPDATE WHILE THE WORKBOOK IS OPEN ----
  *
- * REVISION: 8b00592d
+ * REVISION: 5d66a7f5
  *
  * QUESTION: while a second account has a library workbook open in Excel for the
  * web (or in Excel desktop), can the first account set a column on that file,
@@ -29,9 +29,11 @@
  *   library.file.properties-update-while-open-desktop  the same with OPENED_IN = 'desktop'
  *
  * HOW TO RUN: F12 -> Console. Set CONFIRMED, ALLOW_WRITES, WORKBOOK_URL (the
- * file's server-relative path), SECOND_ACCOUNT_HAS_IT_OPEN (true for the open
- * paste) or SECOND_ACCOUNT_HAS_CLOSED_IT (true for the closed one), OPENED_IN and STATE ('open' first, 'closed'
- * after); paste; Enter. Copy the RESULTS block back verbatim.
+ * file's server-relative path), OPENED_IN, STATE ('open' first, 'closed' after)
+ * and SECOND_ACCOUNT_HAS_IT_OPEN (true for the open paste) or
+ * SECOND_ACCOUNT_HAS_CLOSED_IT (true for the closed one); paste; Enter. Copy the
+ * RESULTS block back verbatim. Both pastes overwrite ProbeNote, and the open
+ * paste's fixture row records its original value: restore it by hand afterwards.
  */
 (async () => {
   // ---- Operator gate -------------------------------------------------
@@ -217,11 +219,11 @@
     return false;
   };
 
-  const REVISION = '8b00592d';
+  const REVISION = '5d66a7f5';
   const report = () => {
     console.log('\n==================== RESULTS ====================');
     console.log(`probe revision ${REVISION}. Quote this when reporting results.`);
-    console.log(`target: ${WEB}${WORKBOOK_URL}`);
+    console.log(`target: ${new URL(WEB).origin}${WORKBOOK_URL}`);
     for (const r of RESULTS) {
       console.log(`${r.id.padEnd(6)} ${r.state.padEnd(16)} ${r.outcome.padEnd(16)} ${r.question}`);
       if (r.evidence) console.log(`       ${r.evidence}`);
@@ -250,11 +252,11 @@
   // ---- The question ----------------------------------------------------
   const STATE = 'open'; // 'open' while the second account has the workbook open, then 'closed'
   const OPENED_IN = ''; // 'web' or 'desktop': where the second account has it open
-  // The workbook's server-relative path, typed at paste time and never committed.
+  // Server-relative path, typed at paste time and never committed.
   const WORKBOOK_URL = '';
   // Nothing the probe sends can see the second account's session, so the operator attests to it.
   const SECOND_ACCOUNT_HAS_IT_OPEN = false;
-  // For STATE 'closed': the second account has closed it. Exactly one of the two is true in a run.
+  // For STATE 'closed'; exactly one of the two attestations is true in a run.
   const SECOND_ACCOUNT_HAS_CLOSED_IT = false;
   const FIXTURE = 'library.file.fixture-open-workbook';
   const CONTROL = 'library.file.control-properties-update-closed';
@@ -347,14 +349,12 @@
     const back = await tokenRead();
     return `the MERGE rejected after ${ms} ms before any answer (${err}); the write is uncertain; ${back}`;
   };
-  // Statuses the helper treats as non-answering say nothing about the update, so they are never a finding.
-  // SharePoint refusals arrive as 500, but only with an error payload; a bare 500 is an internal failure.
+  // Non-answering statuses say nothing about the update, and a SharePoint refusal is a 500 only with an error payload.
   const hasErrorPayload = (r) => !!(r.body && (r.body.error || r.body['odata.error']));
   const bare500 = (r) => r.status === 500 && !hasErrorPayload(r);
   const noAnswer = (r) => !r.ok && (!isRefusal(r.status) || bare500(r));
   const silentWhy = (r) => (bare500(r) ? 'answered HTTP 500 with no SharePoint error payload' : unanswered(r));
-  // File.LockedByUser is a documented SP.File property (Learn, File.LockedByUser); what a value of it means
-  // for a co-authoring session is not, so only whether a user is named is recorded, never who.
+  // File.LockedByUser is documented but its meaning under co-authoring is not, so only whether a user is named is recorded.
   const lockState = async () => {
     try {
       const r = await spGet(`${fileAt}/LockedByUser?$select=Id`);
@@ -415,8 +415,7 @@
       `the update ${silentWhy(res)}; ${answeredBy(res, ms)}; the write is uncertain; ${await tokenRead()}`);
     return report();
   }
-  // A refusal is the finding, so it is never a failure of the probe. But a malformed request is refused
-  // the same way, so the row stays open until the closed paste's control passes with this request shape.
+  // A malformed request is refused like a lock, so the row stays open until the closed control passes with this shape.
   const SETTLE = 'settled only when the closed control passes with the same request';
   const answered = answeredBy(res, ms);
   // Recorded before any further request, so the write's own answer survives a failure after it.

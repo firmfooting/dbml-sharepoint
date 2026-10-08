@@ -297,4 +297,5 @@ def test_a_lock_read_with_no_payload_or_a_null_id_names_no_user() -> None:
 def test_every_report_names_its_target() -> None:
     for swaps in (OPEN_WEB, CLOSED):
         _, _, output = _run(swaps)
-        assert "target: https://example.sharepoint.com/sites/probe/sites/probe/Lib/p" in output
+        assert "target: https://example.sharepoint.com/sites/probe/Lib/p" in output
+        assert "/sites/probe/sites/probe" not in output.split("target:")[1].splitlines()[0]
