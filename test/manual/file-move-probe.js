@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A MOVE INSIDE ONE LIBRARY KEEPS ----
  *
- * REVISION: edced6dc
+ * REVISION: 3a9eceb1
  *
  * QUESTION: when File.MoveToUsingPath moves a file from a folder to the root
  * of the same document library, does the item keep its Id, its versions, its
@@ -41,7 +41,8 @@
  *   library.file.fixture-move-values       STATE 1: the file, its values read back
  *   library.file.fixture-move-unique-grant STATE 1: the file's own Read grant to the
  *       test user, read back with HasUniqueRoleAssignments true
- *   library.file.fixture-move-sharing-link STATE 1: a link with a URL on the file
+ *   library.file.fixture-move-sharing-link STATE 1: exactly one sharing-information entry carries the
+ *       ShareId ShareLink answered with, and that entry has a URL
  *   library.file.fixture-move-before       STATE 4: three versions, each with a VersionId and
  *       a VersionLabel, Author the owner,
  *       Editor the editing account, and the mover a third account
@@ -63,13 +64,13 @@
  * HOW TO READ IT: a head names what was found (ID AND VERSIONS KEPT, ID
  * CHANGED, VERSIONS CHANGED, EVERY VALUE KEPT, VALUES CHANGED, VERSION ADDED,
  * NO VERSION ADDED, GRANT AND LINK PRESENT, GRANT LOST, LINK LOST, GRANT AND
- * LINK LOST, LINK REPLACED, RECYCLED AND RESTORED, RECYCLED, NOT RESTORED, NOT IN THE BIN).
+ * LINK LOST, RECYCLED AND RESTORED, RECYCLED, NOT RESTORED, NOT IN THE BIN).
  * A review decides what a head establishes. Accounts are written as the
  * owner, the editing account and the moving account.
  *
  * HOW TO RUN: F12 -> Console on a site you own; paste; Enter; it prints its
  * plan and stops. Set CONFIRMED, ALLOW_WRITES, STATE and both logins; for
- * STATES 3 and 5 also LINK_DIGEST, the digest STATE 1 printed for its sharing link;
+ * STATES 3 and 5 also LINK_DIGEST, the digest STATE 1 printed for the ShareId of its sharing link;
  * for STATE 5 also MOVED_ID, the item id STATE 4 printed for the moved file, and
  * SNAPSHOT_TOKEN, the token STATE 3 printed only when its permissions snapshot held.
  */
@@ -562,13 +563,13 @@
   const learnIdentity = async () => {
     await readAccount();
   };
-  log('INFO', 'probe revision edced6dc. Quote this when reporting results.');
+  log('INFO', 'probe revision 3a9eceb1. Quote this when reporting results.');
 
   const STATE = 1;
   const TEST_USER_LOGIN = 'CHANGE ME - the editing account claims login';
   const MOVER_LOGIN = 'CHANGE ME - the moving account claims login';
   const PLACEHOLDER = /^CHANGE ME/;
-  // STATES 3 and 5: the digest STATE 1 printed for the link it made, so a regenerated link is told from the original.
+  // STATES 3 and 5: the digest STATE 1 printed for the ShareId of the link it made, so our link is told from any other.
   const LINK_DIGEST = '';
   // STATE 5: the moved item's Id as STATE 4 printed it, so a different file at the root path is refused by name.
   const MOVED_ID = 0;
@@ -750,7 +751,7 @@
   const hasColumns = (o) => COLUMNS.every((c) => c in o);
   const hasSystem = (o) => [o.Created, o.Modified].every((t) => typeof t === 'string' && t !== '')
     && Number.isInteger(o.AuthorId) && Number.isInteger(o.EditorId);
-  // 32-bit FNV-1a, so a link's identity can be compared without printing its URL.
+  // 32-bit FNV-1a, so a link's ShareId can be compared without printing it.
   const digestOf = (text) => {
     let h = 0x811c9dc5;
     for (const byte of new TextEncoder().encode(text)) h = Math.imul(h ^ byte, 0x01000193) >>> 0;
@@ -771,17 +772,30 @@
   // No Microsoft Learn page documents the GetSharingInformation response shape (searched), hence the keys are recorded.
   // Unproven until a run measures it: PnPjs documents getSharingInformation({}, ["permissionsInformation"]) (https://pnp.github.io/pnpjs/sp/sharing/#getsharinginformation), as does a PnP script sample using $Expand=permissionsInformation (https://pnp.github.io/script-samples/spo-delete-expired-sharing-link-folder-file-item/README.html).
   // The links array is looked for at the top level and under permissionsInformation; its absence is reported.
-  const linksOn = async (itemId) => {
+  // MS-CSOMSPT (UnshareLink) treats an empty GUID as an unpopulated shareId, so it identifies nothing here either.
+  const usableShareId = (v) => typeof v === 'string' && v !== '' && !/^\{?0{8}-0{4}-0{4}-0{4}-0{12}\}?$/.test(v);
+  // ShareLink's answer names our link by ShareId; no Microsoft Learn page documents that shape, so the entry keys are recorded.
+  // Other entries may be placeholders with no Url, so only the entries whose ShareId `isOurs` decide anything.
+  const linksOn = async (itemId, isOurs) => {
     const res = await send(`${LIST}/items(${itemId})/GetSharingInformation?$expand=permissionsInformation`, 'POST',
       { request: { maxPrincipalsToReturn: 10 } });
     const body = res.ok && res.parsed && typeof res.parsed === 'object' ? res.parsed : null;
     const nested = body && body.permissionsInformation;
     const list = !body ? null : Array.isArray(body.links) ? body.links
       : nested && Array.isArray(nested.links) ? nested.links : null;
-    // One entry without a string Url could be the original link, so absence is not shown by the others.
-    const urls = list && list.every((l) => l && l.linkDetails && typeof l.linkDetails.Url === 'string' && l.linkDetails.Url !== '')
-      ? list.map((l) => l.linkDetails.Url) : null;
-    return { res, withUrl: urls ? urls.length : null, digests: urls ? urls.map(digestOf) : null, entries: list ? list.length : null,
+    const objectOf = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+    const detail = (l) => objectOf(objectOf(l).linkDetails);
+    const hasUrl = (l) => typeof detail(l).Url === 'string' && detail(l).Url !== '';
+    const known = (l) => usableShareId(detail(l).ShareId);
+    const mine = list ? list.filter((l) => known(l) && isOurs(detail(l).ShareId)) : null;
+    const unknown = list ? list.filter((l) => !known(l)).length : null;
+    const union = (objs) => Object.fromEntries(objs.flatMap((o) => Object.keys(o)).map((k) => [k, 1]));
+    const withUrl = list ? list.filter(hasUrl).length : null;
+    const shape = !list ? 'links array no' : `links array yes; entries ${list.length}; entry keys ${namesOf(union(list.map(objectOf)))}; `
+      + `linkDetails keys ${namesOf(union(list.map(detail)))}; entries with a URL ${withUrl}; entries matching the ShareId ${mine.length}; `
+      + `entries without a ShareId ${unknown}`;
+    return { res, withUrl, unknown, entries: list ? list.length : null, matches: mine ? mine.length : null,
+      oursHasUrl: mine ? mine.length === 1 && hasUrl(mine[0]) : null, shape,
       keys: !body ? said(res) : `top-level keys ${namesOf(body)}; permissionsInformation `
         + (nested === undefined ? 'absent' : nested && typeof nested === 'object' && !Array.isArray(nested) ? `keys ${namesOf(nested)}` : 'not an object') };
   };
@@ -910,15 +924,19 @@
     const link = await send(`${LIST}/items(${itemId})/ShareLink`, 'POST',
       { request: { createLink: true, settings: { linkKind: 2 } } });
     log(link.ok ? 'INFO' : 'FAIL', `sharing link create: ${said(link)}`);
+    const info = link.ok && link.parsed && typeof link.parsed === 'object' ? link.parsed.sharingLinkInfo : undefined;
+    // Held in memory only; the value is never printed or recorded, only its digest.
+    const ourShareId = info && usableShareId(info.ShareId) ? info.ShareId : '';
     await fixture(LINK_ROW, async () => {
-      const seen = await linksOn(itemId);
+      const seen = await linksOn(itemId, (v) => ourShareId !== '' && v === ourShareId);
       return { ok: seen.res.ok, status: seen.res.status,
-        body: { LinksWithUrl: seen.withUrl === null ? undefined : seen.withUrl, SharingInformationKeys: seen.keys,
+        body: { ShareIdRead: ourShareId !== '', OurLinks: seen.matches === null ? undefined : seen.matches,
+          OurLinkHasUrl: seen.oursHasUrl === null ? undefined : seen.oursHasUrl, LinksShape: seen.shape,
+          SharingInformationKeys: seen.keys,
           ShareLinkKeys: link.ok && link.parsed && typeof link.parsed === 'object' ? treeNames(link.parsed) : said(link) } };
-    }, { LinksWithUrl: (n) => n > 0, SharingInformationKeys: () => true, ShareLinkKeys: () => true });
-    const madeLinks = await linksOn(itemId);
-    log('INFO', `link digest: ${madeLinks.digests && madeLinks.digests.length ? madeLinks.digests.join(', ') : 'none read'}. `
-      + 'Set LINK_DIGEST to it before STATE 3.');
+    }, { ShareIdRead: true, OurLinks: 1, OurLinkHasUrl: true, LinksShape: () => true, SharingInformationKeys: () => true,
+      ShareLinkKeys: () => true });
+    log('INFO', `link digest: ${ourShareId !== '' ? digestOf(ourShareId) : 'none read'}. Set LINK_DIGEST to it before STATE 3.`);
     log('INFO', 'STATE 1 done. Paste STATE 2 as the editing account.');
     return report();
   }
@@ -972,11 +990,13 @@
     const held = await fixture(PERMS_ROW, async () => {
       if (itemId === null) return asRead(item);
       const g = await grantOn(itemId, editor, roleId);
-      const l = await linksOn(itemId);
+      const l = await linksOn(itemId, (v) => digestOf(v) === LINK_DIGEST);
       return { ok: g.ok && l.res.ok, status: g.ok ? l.res.status : g.status, body: {
         HasUniqueRoleAssignments: g.unique, EditingAccountHasRead: g.bound === null ? undefined : g.bound,
-        LinkDigestPresent: l.digests ? l.digests.includes(LINK_DIGEST) : undefined, SharingInformationKeys: l.keys } };
-    }, { HasUniqueRoleAssignments: true, EditingAccountHasRead: true, LinkDigestPresent: true, SharingInformationKeys: () => true });
+        OurLinks: l.matches === null ? undefined : l.matches, LinkDigestPresent: l.oursHasUrl === null ? undefined : l.oursHasUrl,
+        LinksShape: l.shape, SharingInformationKeys: l.keys } };
+    }, { HasUniqueRoleAssignments: true, EditingAccountHasRead: true, OurLinks: 1, LinkDigestPresent: true, LinksShape: () => true,
+      SharingInformationKeys: () => true });
     if (!held) {
       log('FAIL', 'the permissions snapshot did not hold, so no snapshot token is printed. Do not paste STATE 4 or STATE 5.');
       return report();
@@ -1060,22 +1080,22 @@
   } else if (moved.ok && moved.parsed && Number.isInteger(moved.parsed.Id)) {
     const itemId = moved.parsed.Id;
     const g = await grantOn(itemId, editor, await readRoleId());
-    const seen = await linksOn(itemId);
-    const read = g.bound !== null && seen.withUrl !== null;
+    const seen = await linksOn(itemId, (v) => digestOf(v) === LINK_DIGEST);
+    // Lost only when no entry is left: any remaining entry could be ours under a ShareId or shape the move changed.
+    const link = seen.matches === 1 && seen.oursHasUrl ? 'same' : seen.entries === 0 ? 'none' : null;
+    const read = g.bound !== null && link !== null;
     // A binding seen while the file inherits is the parent's, not the file's own grant.
     const held = g.bound === true && g.unique === true;
-    const link = !read ? null : seen.digests.includes(LINK_DIGEST) ? 'same' : seen.withUrl > 0 ? 'replaced' : 'none';
     const head = !read ? 'NOT ESTABLISHED' : held && link === 'same' ? 'GRANT AND LINK PRESENT'
-      : held ? (link === 'replaced' ? 'LINK REPLACED' : 'LINK LOST')
-        : link === 'same' ? 'GRANT LOST' : link === 'replaced' ? 'GRANT LOST, LINK REPLACED' : 'GRANT AND LINK LOST';
+      : held ? 'LINK LOST' : link === 'same' ? 'GRANT LOST' : 'GRANT AND LINK LOST';
     const bindings = !g.rows ? said(g.grants) : editor === null ? 'the editing account did not resolve'
       : g.levels ? `the editing account bound at role ids ${g.levels.join(', ')}` : 'the editing account not bound';
     record(F4, Q.f4, head, `HasUniqueRoleAssignments ${g.unique}; bindings read, ${bindings}; Read level `
       + `${g.bound === null ? 'not established' : g.bound ? 'held' : 'not held'}; sharing `
-      + `information ${seen.entries === null ? `carried no links array (${seen.keys})`
-        : seen.withUrl === null ? `listed ${seen.entries} entries, not every one with a URL`
-          : `listed ${seen.entries} link(s), ${seen.withUrl} with a URL, digests ${seen.digests.join(', ') || 'none'}`}`
-      + `; link digest to match ${LINK_DIGEST}`);
+      + `information ${seen.entries === null ? `carried no links array (${seen.keys})` : seen.shape}`
+      + `${seen.matches > 1 ? `; ${seen.matches} entries matched the ShareId` : ''}`
+      + `${seen.matches === 1 && !seen.oursHasUrl ? '; the entry matching the ShareId has no URL' : ''}`
+      + `; ShareId digest to match ${LINK_DIGEST}`);
   } else {
     record(F4, Q.f4, 'NOT ESTABLISHED', `the moved file read ${said(moved)}`);
   }

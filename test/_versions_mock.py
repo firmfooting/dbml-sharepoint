@@ -33,8 +33,8 @@ const guid = (title) => '00000000-0000-4000-8000-'
 const folders = new Set();
 let digests = 0;
 let versionReads = 0;
-const KINDS = { 2: 'Text', 4: 'DateTime', 6: 'Choice', 7: 'Lookup', 8: 'Boolean', 9: 'Number',
-  15: 'MultiChoice', 20: 'User' };
+const KINDS = { 2: 'Text', 3: 'Note', 4: 'DateTime', 6: 'Choice', 7: 'Lookup', 8: 'Boolean',
+  9: 'Number', 15: 'MultiChoice', 20: 'User' };
 // `versionEmail` spells a version's person with an email the probe never learned.
 const person = (id) => ({ LookupId: id, LookupValue: ME.Title,
   Email: CONFIG.versionEmail === undefined ? ME.Email : CONFIG.versionEmail });
@@ -198,6 +198,9 @@ const mockFetch = async (url, opts = {}) => {
     // `fieldsTake`: by column name, what a create stores in place of what it sent.
     list.fields[sent.Title] = { InternalName: sent.Title, TypeAsString: KINDS[sent.FieldTypeKind],
       ...(sent.DisplayFormat === undefined ? {} : { DisplayFormat: sent.DisplayFormat }),
+      ...(sent.RichText === undefined ? {} : { RichText: sent.RichText }),
+      ...(sent.AppendOnly === undefined ? {} : { AppendOnly: sent.AppendOnly }),
+      ...(sent.NumberOfLines === undefined ? {} : { NumberOfLines: sent.NumberOfLines }),
       ...((CONFIG.fieldsTake || {})[sent.Title] || {}) };
     return answer(201, { d: { Title: sent.Title } });
   }
