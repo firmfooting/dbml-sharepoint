@@ -110,7 +110,7 @@ _MOCK = textwrap.dedent(r"""
       const item = /^\/items\((\d+)\)/.exec(rest);
       if (item) {
         return answer(200, { Id: CONFIG.readId || Number(item[1]),
-          HiddenResult: 'No', ShownResult: 'Yes' });
+          HiddenResult: 'Yes', ShownResult: 'Yes' });
       }
       if (rest.startsWith('/contenttypes?')) {
         if (CONFIG.noItemType) {
@@ -420,3 +420,9 @@ def test_an_unfound_content_type_fails_the_links_control_and_voids_what_rests_on
     assert rows[LINKS]["outcome"] == "FAIL" and rows[FOOTER_FIXTURE]["outcome"] == "FAIL"
     assert set(BASE + BODY) <= voided(rows)
     assert not any("ClientFormCustomFormatter" in s["body"] for s in sent)
+
+
+def test_both_columns_hold_the_same_choice_value() -> None:
+    js = PROBE.read_text(encoding="utf-8")
+    assert "[HIDDEN]: 'Yes', [SHOWN]: 'Yes'" in js
+    assert "[HIDDEN]: 'No'" not in js

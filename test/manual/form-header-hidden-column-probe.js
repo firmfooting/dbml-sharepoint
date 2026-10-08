@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FORM HEADER SHOWING A COLUMN HIDDEN FROM THE FORMS ----
  *
- * REVISION: 51f760c3
+ * REVISION: 42ec1d8b
  *
  * QUESTION: when a column is hidden from the Edit and Display forms the way
  * the deploy hides one (a ClientValidationFormula that is true only while
@@ -29,7 +29,8 @@
  *       with its ownership Description, an item type and its folder URL
  *   text.form-fmt.fixture-hidden-columns        two Choice columns, HiddenResult and ShownResult
  *       (Yes, No), read back with their TypeAsString
- *   text.form-fmt.fixture-hidden-item           the one item, HiddenResult = No, ShownResult = Yes,
+ *   text.form-fmt.fixture-hidden-item           the one item, HiddenResult = Yes and ShownResult = Yes (one value in both,
+ *       so a value-specific difference cannot pass for the effect of hiding),
  *       read back at the Id the create answered (header mode: the list's only item)
  *   text.form-fmt.control-column-hidden-on-forms HiddenResult's ClientValidationFormula read back
  *       as written; ShownResult carries none
@@ -365,7 +366,7 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision 51f760c3. Quote this when reporting results.');
+  log('INFO', 'probe revision 42ec1d8b. Quote this when reporting results.');
 
   // ---- The question ----------------------------------------------------
   const MODE = 'baseline'; // 'baseline', a person looks, then 'control', then 'header'
@@ -434,7 +435,7 @@
 
   expect('text.form-fmt.fixture-hidden-list', 'the list reads back with its marker, an item type and its folder URL');
   expect('text.form-fmt.fixture-hidden-columns', 'both Choice columns read back as such');
-  expect('text.form-fmt.fixture-hidden-item', 'the item reads back with HiddenResult No and ShownResult Yes');
+  expect('text.form-fmt.fixture-hidden-item', 'the item reads back with Yes in both HiddenResult and ShownResult');
   expect('text.form-fmt.control-column-hidden-on-forms', 'HiddenResult reads back with the hiding formula and ShownResult with none');
   expect('text.form-fmt.control-columns-in-content-type', 'both columns are field links of the default content type and neither is Hidden');
   if (BASELINE) {
@@ -540,7 +541,7 @@
   let itemId = null;
   if (BASELINE) {
     const made = await post(`${at}/items`, { __metadata: { type: list.body.ListItemEntityTypeFullName },
-      Title: 'dbml probe header', [HIDDEN]: 'No', [SHOWN]: 'Yes' });
+      Title: 'dbml probe header', [HIDDEN]: 'Yes', [SHOWN]: 'Yes' });
     said('item create', made);
     itemId = made.body && made.body.d ? made.body.d.Id : null;
   } else {
@@ -552,7 +553,7 @@
   if (!await establishFixture(ITEM, () => (Number.isInteger(itemId)
     ? spGet(`${at}/items(${itemId})?$select=Id,${HIDDEN},${SHOWN}`)
     : { ok: false, status: 0, body: null }),
-  { Id: itemId, [HIDDEN]: 'No', [SHOWN]: 'Yes' }, dependents(ITEM))) return report();
+  { Id: itemId, [HIDDEN]: 'Yes', [SHOWN]: 'Yes' }, dependents(ITEM))) return report();
 
   // The deploy's own hiding: a ClientValidationFormula (never ShowIn*Form), read back as written.
   const fieldAt = `${at}/fields/getbyinternalnameortitle('${HIDDEN}')`;
@@ -614,7 +615,7 @@
     base: () => 'Record whether the line probe-baseline-footer shows. If it does not, stop: later runs would answer nothing.',
     token: () => 'Record whether the line "visible-choice:" shows Yes. A blank line with the footer showing is observed failure of '
       + 'the visible Choice token; a vanished footer or header is observed suppression by that token.',
-    target: () => 'Record the line "hidden-column:" as showing No or blank. VOID it where the body row did not show the column hidden. '
+    target: () => 'Record the line "hidden-column:" as showing Yes or blank. VOID it where the body row did not show the column hidden. '
       + 'A vanished footer or header is observed suppression by the hidden token.',
   };
   const plan = { baseline: (f) => [[BODY_EDIT, BODY_DISPLAY, 'body', `whether the ${f} form body omits HiddenResult and holds ShownResult`],
