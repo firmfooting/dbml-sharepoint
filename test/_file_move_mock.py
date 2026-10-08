@@ -157,6 +157,10 @@ globalThis.fetch = async (url, opts = {}) => {
           return answer(200, { permissionsInformation: { links } });
         }
         if (CONFIG.linksShape === 'none') return answer(200, { canShare: true });
+        if (CONFIG.linksShape === 'noLinks') {
+          return answer(200, { anonymousLinkExpirationRestrictionDays: 'SECRET-DAYS',
+            permissionsInformation: { hasInheritedLinks: 'SECRET-INHERIT' } });
+        }
         return answer(200, { links });
       }
       if (method === 'MERGE') {

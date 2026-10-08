@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A MOVE INSIDE ONE LIBRARY KEEPS ----
  *
- * REVISION: 6ee800b4
+ * REVISION: f64b085a
  *
  * QUESTION: when File.MoveToUsingPath moves a file from a folder to the root
  * of the same document library, does the item keep its Id, its versions, its
@@ -562,7 +562,7 @@
   const learnIdentity = async () => {
     await readAccount();
   };
-  log('INFO', 'probe revision 6ee800b4. Quote this when reporting results.');
+  log('INFO', 'probe revision f64b085a. Quote this when reporting results.');
 
   const STATE = 1;
   const TEST_USER_LOGIN = 'CHANGE ME - the editing account claims login';
@@ -758,6 +758,13 @@
   };
   // Printed by STATE 3 only when its snapshot held; STATE 5 recomputes it, so a snapshot that failed cannot be carried on.
   const snapshotToken = (itemId) => digestOf(`snapshot ${LINK_DIGEST} ${itemId}`);
+  // Key names only, never values, sorted and bounded so a large payload cannot flood the record.
+  const namesOf = (o) => {
+    const all = Object.keys(o).sort();
+    const shown = all.slice(0, 40).map((k) => (k.length > 64 ? `${k.slice(0, 64)}...` : k)).join(', ');
+    return (shown || 'none') + (all.length > 40 ? `, and ${all.length - 40} more` : '');
+  };
+  // No Microsoft Learn page documents the GetSharingInformation response shape (searched), hence the keys are recorded.
   // The links array is looked for at the top level and under permissionsInformation; its absence is reported.
   const linksOn = async (itemId) => {
     const res = await send(`${LIST}/items(${itemId})/GetSharingInformation`, 'POST',
@@ -770,7 +777,8 @@
     const urls = list && list.every((l) => l && l.linkDetails && typeof l.linkDetails.Url === 'string' && l.linkDetails.Url !== '')
       ? list.map((l) => l.linkDetails.Url) : null;
     return { res, withUrl: urls ? urls.length : null, digests: urls ? urls.map(digestOf) : null, entries: list ? list.length : null,
-      keys: body ? Object.keys(body).sort().join(', ') || 'none' : said(res) };
+      keys: !body ? said(res) : `top-level keys ${namesOf(body)}; permissionsInformation `
+        + (nested === undefined ? 'absent' : nested && typeof nested === 'object' && !Array.isArray(nested) ? `keys ${namesOf(nested)}` : 'not an object') };
   };
 
   const standing = await sendRaw(`${LIST}?$select=Id,Description`);
@@ -900,8 +908,8 @@
     await fixture(LINK_ROW, async () => {
       const seen = await linksOn(itemId);
       return { ok: seen.res.ok, status: seen.res.status,
-        body: { LinksWithUrl: seen.withUrl === null ? undefined : seen.withUrl } };
-    }, { LinksWithUrl: (n) => n > 0 });
+        body: { LinksWithUrl: seen.withUrl === null ? undefined : seen.withUrl, SharingInformationKeys: seen.keys } };
+    }, { LinksWithUrl: (n) => n > 0, SharingInformationKeys: () => true });
     const madeLinks = await linksOn(itemId);
     log('INFO', `link digest: ${madeLinks.digests && madeLinks.digests.length ? madeLinks.digests.join(', ') : 'none read'}. `
       + 'Set LINK_DIGEST to it before STATE 3.');
@@ -961,8 +969,8 @@
       const l = await linksOn(itemId);
       return { ok: g.ok && l.res.ok, status: g.ok ? l.res.status : g.status, body: {
         HasUniqueRoleAssignments: g.unique, EditingAccountHasRead: g.bound === null ? undefined : g.bound,
-        LinkDigestPresent: l.digests ? l.digests.includes(LINK_DIGEST) : undefined } };
-    }, { HasUniqueRoleAssignments: true, EditingAccountHasRead: true, LinkDigestPresent: true });
+        LinkDigestPresent: l.digests ? l.digests.includes(LINK_DIGEST) : undefined, SharingInformationKeys: l.keys } };
+    }, { HasUniqueRoleAssignments: true, EditingAccountHasRead: true, LinkDigestPresent: true, SharingInformationKeys: () => true });
     if (!held) {
       log('FAIL', 'the permissions snapshot did not hold, so no snapshot token is printed. Do not paste STATE 4 or STATE 5.');
       return report();
