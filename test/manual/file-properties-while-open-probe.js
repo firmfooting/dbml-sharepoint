@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FILE PROPERTY UPDATE WHILE THE WORKBOOK IS OPEN ----
  *
- * REVISION: c0c8970e
+ * REVISION: fafb028b
  *
  * QUESTION: while a second account has a library workbook open in Excel for the
  * web (or in Excel desktop), can the first account set a column on that file,
@@ -138,6 +138,7 @@
 
   const hasErrorPayload = (r) => !!(r.body && (r.body.error || r.body['odata.error']));
   const bare500 = (r) => r.status === 500 && !hasErrorPayload(r);
+  // Only a refusal is a finding: throttling, authorisation, timeouts, gateways, an empty body and a 500 with no SharePoint error payload answer nothing.
   const silentOf = (r) => (r.ok || !isRefusal(r.status) || bare500(r) ? unanswered(r) : null);
 
   // A voided row keeps its question and is counted apart from open and answered.
@@ -194,7 +195,7 @@
     return false;
   };
 
-  const REVISION = 'c0c8970e';
+  const REVISION = 'fafb028b';
   const report = () => {
     console.log('\n==================== RESULTS ====================');
     console.log(`probe revision ${REVISION}. Quote this when reporting results.`);
