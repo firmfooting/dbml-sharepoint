@@ -299,3 +299,12 @@ def test_every_report_names_its_target() -> None:
         _, _, output = _run(swaps)
         assert "target: https://example.sharepoint.com/sites/probe/Lib/p" in output
         assert "/sites/probe/sites/probe" not in output.split("target:")[1].splitlines()[0]
+
+
+@pytest.mark.parametrize("config", [{"readFailsAfterWrite": True}, {"readStatus": 429},
+                                    {"emptyRead": True}, {"noNoteRead": True}],
+                         ids=["throws", "429", "empty", "no-note"])
+def test_an_accepted_open_update_with_an_unreadable_readback_is_not_a_finding(
+        config: dict[str, Any]) -> None:
+    rows, _, _ = _run(OPEN_WEB, **config)
+    assert rows[WEB]["outcome"] == "NOT ESTABLISHED" and "HTTP 204" in rows[WEB]["evidence"]

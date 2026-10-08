@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FILE PROPERTY UPDATE WHILE THE WORKBOOK IS OPEN ----
  *
- * REVISION: 5d66a7f5
+ * REVISION: 5ecccbf1
  *
  * QUESTION: while a second account has a library workbook open in Excel for the
  * web (or in Excel desktop), can the first account set a column on that file,
@@ -36,15 +36,11 @@
  * paste's fixture row records its original value: restore it by hand afterwards.
  */
 (async () => {
-  // ---- Operator gate -------------------------------------------------
-  // All default false. Pasting an unedited probe prints its plan and
-  // stops; nothing touches the tenant until the operator opts in.
+  // Gates default false: an unedited paste prints its plan and sends nothing.
   const CONFIRMED = false;
   const ALLOW_WRITES = false;
 
-  // No SITE_URL constant, deliberately. The probe reads the site it was
-  // pasted into. A tenant URL committed to this repo has leaked twice, and
-  // the field was the vector both times.
+  // No SITE_URL constant: a tenant URL committed to this repo has leaked before, so the probe reads the page's site.
   const pageCtx = window._spPageContextInfo;
   if (!pageCtx) {
     console.error('[FATAL] No _spPageContextInfo. Paste this into a SharePoint page.');
@@ -70,11 +66,7 @@
     return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
   };
 
-  // NOTE the contract, because getting it wrong has produced false verdicts
-  // here twice: `body` is the PARSED payload whether or not the request
-  // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
-  // so `body !== null` says the response was JSON, never that the call
-  // worked. Anything asking "did I actually read this?" must test `ok`.
+  // `body` is the parsed payload even on failure, so `body !== null` never means the call worked; test `ok`.
   const readFailed = (r) => !r.ok || r.body === null;
 
   // Refusal means the server rejected the content; 401/403/408/429/503 are about who or when, so never refusals.
@@ -83,8 +75,7 @@
     && status !== 408 && status !== 429 && status !== 503 // 503: the other documented throttle
     && status !== 502 && status !== 504; // gateway failures: no content-specific answer
 
-  // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
-  // both through POST rather than accepting them as real verbs.
+  // extraHeaders carries X-HTTP-Method: SharePoint tunnels MERGE and DELETE through POST.
   const spPost = async (path, payload, digest, extraHeaders = {}) => {
     const res = await fetch(`${WEB}/_api/${path}`, {
       method: 'POST',
@@ -96,36 +87,14 @@
       },
       body: JSON.stringify(payload),
     });
-    // The interesting result is often the REFUSAL, so the response text is
-    // returned rather than thrown: a 400 here is the finding, not a crash.
+  // The response text is returned rather than thrown, because a refusal is often the finding.
     const text = await res.text();
     let parsed = null;
     try { parsed = JSON.parse(text); } catch { /* SharePoint sent plain text */ }
     return { ok: res.ok, status: res.status, body: parsed, text };
   };
 
-  // ---- Result table --------------------------------------------------
-  // A probe answers questions. Outcome and EVIDENCE are recorded
-  // separately so a run cannot be summarised as a verdict with nothing
-  // behind it.
-  //
-  // Every question is REGISTERED UP FRONT as NOT ESTABLISHED, and record()
-  // overwrites. Appending as you go looks equivalent and is not: a probe
-  // that aborts early then reports only what it reached, and prints
-  // "0 not established" while most of its questions were never asked.
-  //
-  // STATE carries the coarse answer alongside the prose, from the five-value
-  // vocabulary in test/manual/SURFACES.md: settled, open, awaiting-capture,
-  // void, needs-human. There are 83 distinct outcome heads across the
-  // committed evidence, which is good prose and a bad enum, so a reader
-  // downstream sorts on state and quotes outcome. record() takes an explicit
-  // state and that always wins; the classifier below is the default for the
-  // rows nobody has ruled on yet, and it reproduces exactly what report()
-  // used to derive from the outcome head.
-  //
-  // ABORTED is open, not settled. It is the head a probe records when its
-  // fixture never built, so the question it names was never asked; classifying
-  // it settled printed "N answered, 0 open" for a run that measured nothing.
+  // Evidence is recorded apart from outcome; questions are registered up front as NOT ESTABLISHED and record() overwrites; state is one of settled, open, awaiting-capture, void, needs-human (SURFACES.md); ABORTED is open.
   const OPEN_HEADS = ['NOT ESTABLISHED', 'SHORT', 'ABORTED'];
   const AWAITING_CAPTURE_HEADS = ['MANUAL', 'NOT REACHED'];
   const stateFor = (outcome) => {
@@ -153,9 +122,7 @@
     if (evidence) console.log(`      evidence: ${evidence}`);
   };
 
-  // ---- Fixtures (#559) -----------------------------------------------
-  // Why a response carries no reading, or null when it does. Learn documents
-  // 429 and 503 as the two SharePoint Online throttle statuses.
+  // Why a response carries no reading, or null when it does; 429 and 503 are Learn's throttle statuses.
   const unanswered = (r) => {
     if (r.ok) {
       return r.body !== null && typeof r.body === 'object'
@@ -175,9 +142,7 @@
     }
   };
 
-  // `read` resolves to a harness response ({ ok, status, body }). `declared`
-  // maps each property the measurement depends on to a value or a predicate.
-  // PASS needs every one read back; otherwise FAIL, void `dependents`, false.
+  // `read` resolves to { ok, status, body }; PASS needs every declared property read back, else FAIL and void `dependents`.
   const establishFixture = async (id, read, declared, dependents) => {
     const row = RESULTS.find((r) => r.id === id);
     const question = row ? row.question : id;
@@ -219,7 +184,7 @@
     return false;
   };
 
-  const REVISION = '5d66a7f5';
+  const REVISION = '5ecccbf1';
   const report = () => {
     console.log('\n==================== RESULTS ====================');
     console.log(`probe revision ${REVISION}. Quote this when reporting results.`);
@@ -229,12 +194,7 @@
       if (r.evidence) console.log(`       ${r.evidence}`);
     }
     console.log('=================================================');
-    // Counted off state rather than off the outcome head, so the summary and
-    // the per-row state can never disagree. awaiting-capture stays open until
-    // a person records the observation. void does NOT: the control row names a
-    // reason this identity can never answer, so counting it open reports work
-    // that no re-run can clear, and counting it answered claims a measurement
-    // nobody made. It gets its own number.
+  // Counted off state so summary and rows agree; void is counted apart because no re-run can clear it.
     const voided = RESULTS.filter((r) => r.state === 'void').length;
     const open = RESULTS.filter((r) => r.state !== 'settled' && r.state !== 'void').length;
     const waiting = RESULTS.filter((r) => r.state === 'awaiting-capture').length;
@@ -420,10 +380,13 @@
   const answered = answeredBy(res, ms);
   // Recorded before any further request, so the write's own answer survives a failure after it.
   record(CHECKS[OPENED_IN], ASK, 'OBSERVED', `${answered}; ${SETTLE}`, 'open');
-  let back = 'the read back threw';
-  try { back = describe(await read()); } catch (err) { back = `the read back threw: ${err && err.message ? err.message : String(err)}`; }
-  record(CHECKS[OPENED_IN], ASK, 'OBSERVED',
-    `${answered}; ${back}; before: ${lockBefore}; after: ${await lockState()}; ${SETTLE}`, 'open');
+  let back = null;
+  let said = 'the read back threw';
+  try { back = await read(); said = describe(back); } catch (err) { said = `the read back threw: ${err && err.message ? err.message : String(err)}`; }
+  // An accepted update whose value was not read back is unverified, so it is not a finding.
+  const unread = res.ok && !(back && hasNote(back));
+  record(CHECKS[OPENED_IN], ASK, unread ? 'NOT ESTABLISHED' : 'OBSERVED',
+    `${answered}; ${said}; before: ${lockBefore}; after: ${await lockState()}; ${SETTLE}`, 'open');
   record(CONTROL, CONTROL_Q, 'NOT ESTABLISHED',
     "close the workbook in the second account, then paste again with STATE = 'closed'", 'open');
   return report();
