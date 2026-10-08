@@ -39,6 +39,7 @@ FOREIGN = "A library the probe did not make."
 OWNER_ROW = "library.folder.fixture-owner-account"
 BEFORE_PERMS = "library.file.fixture-move-permissions-before"
 BEFORE = "library.file.fixture-move-before"
+FOLDER_ROW = "library.file.fixture-move-folder"
 LINK_URL = "https://example.sharepoint.com/:t:/s/probe/link"
 
 Run = tuple[dict[str, dict[str, str]], list[dict[str, str]], str]
@@ -77,6 +78,16 @@ def _digest_swap(url: str = LINK_URL) -> dict[str, str]:
     return {"  const LINK_DIGEST = '';": f"  const LINK_DIGEST = '{_fnv(url)}';"}
 
 
+def _snapshot_token(item_id: int = 41) -> str:
+    """The token STATE 3 prints when its snapshot holds: the digest of the link and the item."""
+    return _fnv(f"snapshot {_fnv(LINK_URL)} {item_id}")
+
+
+def _token_swap(token: str | None = None) -> dict[str, str]:
+    return {"  const SNAPSHOT_TOKEN = '';":
+            f"  const SNAPSHOT_TOKEN = '{token or _snapshot_token()}';"}
+
+
 def _moved_id_swap(item_id: int = 41) -> dict[str, str]:
     return {"  const MOVED_ID = 0;": f"  const MOVED_ID = {item_id};"}
 
@@ -87,7 +98,8 @@ def _leg(leg: int, me: int, swaps: dict[str, str] | None = None, /, **config: An
     pasted = {} if leg == 1 else {"  const STATE = 1;": f"  const STATE = {leg};"}
     digest = _digest_swap() if leg in (3, 5) and not config.pop("no_digest", False) else {}
     moved = _moved_id_swap() if leg == 5 and not config.pop("no_moved_id", False) else {}
-    swaps = {**LOGINS, **pasted, **digest, **moved, **(swaps or {})}
+    token = _token_swap() if leg == 5 and not config.pop("no_token", False) else {}
+    swaps = {**LOGINS, **pasted, **digest, **moved, **token, **(swaps or {})}
     return run_probe(FILE_MOVE_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"),
                      {"me": me, **config}, swaps, pin=False)
 
@@ -564,3 +576,91 @@ def test_a_malformed_role_assignment_row_is_not_established_not_a_lost_grant(bad
     start = {**_state_four_start(), "grants": []}
     rows, _, _ = _leg(5, 7, state=start, badGrantRow=bad)
     assert rows[F4]["outcome"] == "NOT ESTABLISHED"
+
+
+COLUMNS = "library.file.fixture-move-columns"
+
+
+def test_state_three_prints_a_snapshot_token_only_when_its_snapshot_holds() -> None:
+    _, _, held = _leg(3, 7, state=_state_three_start())
+    assert f"snapshot token: {_snapshot_token()}" in _printed(held)
+    _, _, broken = _leg(3, 7, state={**_state_three_start(), "grants": []})
+    assert "snapshot token:" not in _printed(broken)
+    assert "Do not paste STATE 4" in _printed(broken)
+
+
+def test_state_five_without_the_snapshot_token_sends_nothing() -> None:
+    _, sent, output = _leg(5, 7, state=_state_four_start(), no_token=True)
+    assert sent == []
+    assert "SNAPSHOT_TOKEN" in output
+
+
+def test_a_wrong_snapshot_token_leaves_f4_open_and_reads_no_grants() -> None:
+    rows, sent, _ = _leg(5, 7, _token_swap("00000000"), state=_state_four_start())
+    assert rows[F4]["outcome"] == "NOT ESTABLISHED"
+    assert "SNAPSHOT_TOKEN" in rows[F4]["evidence"]
+    assert not any("roleassignments" in s["path"] or "GetSharingInformation" in s["path"]
+                   for s in sent)
+
+
+def test_a_version_without_a_version_id_before_the_move_stops_before_the_move() -> None:
+    rows, sent, _ = _leg(4, 9, state=_state_three_start(), versionIdsUnnamedBefore=True)
+    assert rows[BEFORE]["outcome"] == "FAIL"
+    assert not any("MoveToUsingPath" in s["path"] for s in sent)
+
+
+def test_a_version_without_a_version_id_after_the_move_leaves_the_version_rows_open() -> None:
+    rows, _, _ = _leg(4, 9, state=_state_three_start(), versionIdsUnnamed=True)
+    assert rows[F1]["outcome"] == "NOT ESTABLISHED"
+    assert rows[F5]["outcome"] == "NOT ESTABLISHED"
+
+
+def test_a_renumbered_version_is_a_versions_change_not_a_kept_one() -> None:
+    rows, _, _ = _leg(4, 9, state=_state_three_start(), move={"renumbers": True})
+    assert rows[F1]["outcome"] == "VERSIONS CHANGED"
+    assert rows[F5]["outcome"] == "NOT ESTABLISHED"
+
+
+@pytest.mark.parametrize("current", ["refused", "noId"])
+def test_state_one_writes_nothing_without_an_integer_account_id(current: str) -> None:
+    rows, sent, output = _leg(1, 7, currentUser=current)
+    assert _writes(sent) == []
+    assert rows[LIBRARY]["outcome"] == "FAIL"
+    assert "web/currentuser" in rows[LIBRARY]["evidence"]
+    assert ended_with_report(output)
+
+
+@pytest.mark.parametrize("drift", [
+    {"MoveChoice": {"TypeAsString": "Text"}},
+    {"MoveChoice": {"Choices": ["Q1"]}},
+    {"MovePerson": {"SelectionMode": 1}},
+    {"MoveDate": {"DisplayFormat": 1}},
+    {"MoveLink": {"DisplayFormat": 1}},
+    {"MoveFlag": {"TypeAsString": "Text"}},
+], ids=["choice-type", "choices", "people-only", "date-only", "url-format", "flag-type"])
+def test_a_created_column_that_reads_back_differently_fails_the_fixture(
+        drift: dict[str, Any]) -> None:
+    rows, sent, _ = _leg(1, 7, fieldRead=drift)
+    assert rows[COLUMNS]["outcome"] == "FAIL"
+    assert rows[FOLDER_ROW]["state"] == "void"
+    assert not any(b in s["path"] for s in sent
+                   for b in ("Folders/AddUsingPath", "Files/AddUsingPath", "/items("))
+
+
+def test_state_one_reads_back_every_column_it_created() -> None:
+    rows, sent, _ = _leg(1, 7)
+    assert rows[COLUMNS]["outcome"] == "PASS"
+    reads = [s["path"] for s in sent if "getbyinternalnameortitle" in s["path"]]
+    assert len(reads) == 5
+
+
+def test_a_restore_that_brings_back_another_folder_is_not_a_restoration() -> None:
+    rows, _, _ = _leg(5, 7, state=_state_four_start(), restoreNewId=True)
+    assert rows[F6]["outcome"] == "NOT ESTABLISHED"
+
+
+def test_a_folder_without_a_unique_id_is_never_recycled() -> None:
+    rows, sent, _ = _leg(5, 7, state=_state_four_start(), folderNoUid=True)
+    assert rows["library.folder.fixture-recycle-empty"]["outcome"] == "FAIL"
+    assert rows[F6]["state"] == "void"
+    assert not any(s["path"].endswith("/recycle()") for s in sent)

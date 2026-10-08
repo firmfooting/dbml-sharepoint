@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A MOVE INSIDE ONE LIBRARY KEEPS ----
  *
- * REVISION: c83d1fa3
+ * REVISION: 6ee800b4
  *
  * QUESTION: when File.MoveToUsingPath moves a file from a folder to the root
  * of the same document library, does the item keep its Id, its versions, its
@@ -35,22 +35,25 @@
  * DEPENDS ON (read back, and voiding what rests on them when they do not hold)
  *   library.file.fixture-move-library      STATE 1: a document library with
  *       versioning on and this probe's Description, where none stood before
+ *   library.file.fixture-move-columns      STATE 1: the five columns, each read back with its
+ *       type and the properties the fixture uses, before any folder or file is written
  *   library.file.fixture-move-folder       STATE 1: a folder whose name holds & and ,
  *   library.file.fixture-move-values       STATE 1: the file, its values read back
  *   library.file.fixture-move-unique-grant STATE 1: the file's own Read grant to the
  *       test user, read back with HasUniqueRoleAssignments true
  *   library.file.fixture-move-sharing-link STATE 1: a link with a URL on the file
- *   library.file.fixture-move-before       STATE 4: three versions, Author the owner,
+ *   library.file.fixture-move-before       STATE 4: three versions, each with a VersionId and
+ *       a VersionLabel, Author the owner,
  *       Editor the editing account, and the mover a third account
  *   library.file.fixture-move-permissions-before STATE 3 (owner): read just before the move,
  *       the unique grant at the Read level and the STATE 1 link still on the file
  *   library.file.fixture-move-answered     STATE 4: the move request answered 2xx
  *   library.folder.fixture-owner-account   STATES 3 and 5: the folder's Author is the
  *       account pasting, so the owner is the one acting
- *   library.folder.fixture-recycle-empty   STATE 5: the folder reads empty
+ *   library.folder.fixture-recycle-empty   STATE 5: the folder reads empty and has a UniqueId
  *
  * OBSERVES (recorded as found, never compared with an expected value)
- *   library.file.move-keeps-id-and-versions    the Id and version labels before and after
+ *   library.file.move-keeps-id-and-versions    the Id and the VersionId and label of each version, before and after
  *   library.file.move-keeps-column-values      each of the five values before and after
  *   library.file.move-system-fields            Created, Author, Modified, Editor before and after
  *   library.file.move-adds-version             the version count before and after
@@ -67,7 +70,8 @@
  * HOW TO RUN: F12 -> Console on a site you own; paste; Enter; it prints its
  * plan and stops. Set CONFIRMED, ALLOW_WRITES, STATE and both logins; for
  * STATES 3 and 5 also LINK_DIGEST, the digest STATE 1 printed for its sharing link;
- * for STATE 5 also MOVED_ID, the item id STATE 4 printed for the moved file.
+ * for STATE 5 also MOVED_ID, the item id STATE 4 printed for the moved file, and
+ * SNAPSHOT_TOKEN, the token STATE 3 printed only when its permissions snapshot held.
  */
 (async () => {
   // ---- Operator gate -------------------------------------------------
@@ -558,7 +562,7 @@
   const learnIdentity = async () => {
     await readAccount();
   };
-  log('INFO', 'probe revision c83d1fa3. Quote this when reporting results.');
+  log('INFO', 'probe revision 6ee800b4. Quote this when reporting results.');
 
   const STATE = 1;
   const TEST_USER_LOGIN = 'CHANGE ME - the editing account claims login';
@@ -568,6 +572,8 @@
   const LINK_DIGEST = '';
   // STATE 5: the moved item's Id as STATE 4 printed it, so a different file at the root path is refused by name.
   const MOVED_ID = 0;
+  // STATE 5: the token STATE 3 printed when its permissions snapshot held, so a failed snapshot cannot be carried on.
+  const SNAPSHOT_TOKEN = '';
   const LIBRARY = 'dbmlsp Probe FileMove';
   // Ownership is the Description: a same-title library this probe did not make is never written to.
   const OWNERSHIP_DESCRIPTION = 'dbml-sharepoint file move probe. Safe to delete.';
@@ -585,6 +591,7 @@
   knowIdentity(MOVER_LOGIN, '<moving account>');
 
   const LIBRARY_ROW = 'library.file.fixture-move-library';
+  const COLUMNS_ROW = 'library.file.fixture-move-columns';
   const FOLDER_ROW = 'library.file.fixture-move-folder';
   const VALUES_ROW = 'library.file.fixture-move-values';
   const GRANT_ROW = 'library.file.fixture-move-unique-grant';
@@ -609,15 +616,16 @@
     f6: 'Does Folder.Recycle put the empty folder in the recycle bin, and can it be restored?',
   };
   expect('library.file.fixture-move-library', 'a document library with versioning on and this probe\'s Description');
+  expect('library.file.fixture-move-columns', 'the five columns read back with their type and the properties the fixture uses');
   expect('library.file.fixture-move-folder', `a folder named ${FOLDER}, read back by name`);
   expect('library.file.fixture-move-values', 'the file in the folder, with MoveChoice, MovePerson, MoveDate, MoveFlag and MoveLink read back');
   expect('library.file.fixture-move-unique-grant', 'a Read grant to the editing account on the file alone, HasUniqueRoleAssignments true');
   expect('library.file.fixture-move-sharing-link', 'a sharing link with a URL, read back on the file');
-  expect('library.file.fixture-move-before', 'before the move: three versions, Author the owner, Editor the editing account, a third mover');
+  expect('library.file.fixture-move-before', 'before the move: three versions each with a VersionId and VersionLabel, Author the owner, Editor the editing account, a third mover');
   expect('library.file.fixture-move-permissions-before', 'just before the move: the file\'s own Read grant to the editing account and the STATE 1 link are still on it');
   expect('library.file.fixture-move-answered', 'the MoveToUsingPath request answered 2xx');
   expect('library.folder.fixture-owner-account', 'the folder\'s Author is the account pasting STATE 3 or 5');
-  expect('library.folder.fixture-recycle-empty', 'the folder reads ItemCount 0, no files and no folders');
+  expect('library.folder.fixture-recycle-empty', 'the folder reads ItemCount 0, no files, no folders and a UniqueId');
   expect('library.file.move-keeps-id-and-versions', Q.f1);
   expect('library.file.move-keeps-column-values', Q.f2);
   expect('library.file.move-system-fields', Q.f3);
@@ -627,8 +635,9 @@
 
   // probe-catalog.json's depends_on, which test_file_move_probe_runtime.py holds this table to.
   const DEPENDS = {
-    'library.file.fixture-move-folder': ['library.file.fixture-move-library'],
-    'library.file.fixture-move-values': ['library.file.fixture-move-library', 'library.file.fixture-move-folder'],
+    'library.file.fixture-move-columns': ['library.file.fixture-move-library'],
+    'library.file.fixture-move-folder': ['library.file.fixture-move-columns'],
+    'library.file.fixture-move-values': ['library.file.fixture-move-columns', 'library.file.fixture-move-folder'],
     'library.file.fixture-move-unique-grant': ['library.file.fixture-move-values'],
     'library.file.fixture-move-sharing-link': ['library.file.fixture-move-values'],
     'library.file.fixture-move-before': ['library.file.fixture-move-values'],
@@ -681,6 +690,10 @@
     log('ERROR', 'Set MOVED_ID to the moved item id STATE 4 printed. Nothing has been sent.');
     return report();
   }
+  if (!CLEANUP && STATE === 5 && SNAPSHOT_TOKEN === '') {
+    log('ERROR', 'Set SNAPSHOT_TOKEN to the snapshot token STATE 3 printed. If STATE 3 printed none, its snapshot failed; do not continue. Nothing has been sent.');
+    return report();
+  }
 
   const { digest } = await issueDigest();
   const send = (path, method, body) => sendRaw(path, { method: 'POST', body, headers: {
@@ -704,11 +717,14 @@
     const r = await sendRaw(`web/siteusers/getbyloginname(@v)?@v='${lit(login)}'&$select=Id`);
     return r.ok && r.parsed && Number.isInteger(r.parsed.Id) ? r.parsed.Id : null;
   };
+  // A version is its VersionId and VersionLabel together, as the item-version probe treats it; either missing on any entry gives null.
   const versionsOf = async (itemId) => {
     // Unselected: whether a versions read honours $select is field.version's own open question.
     const r = await sendRaw(`${LIST}/items(${itemId})/versions`);
-    const labels = r.ok && r.parsed && Array.isArray(r.parsed.value) ? r.parsed.value.map((v) => v && v.VersionLabel) : null;
-    return labels && labels.every((l) => typeof l === 'string' && l !== '') ? labels : null;
+    const rows = r.ok && r.parsed && Array.isArray(r.parsed.value) ? r.parsed.value : null;
+    const named = rows && rows.every((v) => v && typeof v.VersionLabel === 'string' && v.VersionLabel !== ''
+      && v.VersionId !== undefined && v.VersionId !== null);
+    return named ? rows.map((v) => `${v.VersionLabel} (VersionId ${JSON.stringify(v.VersionId)})`) : null;
   };
   // The Read role id; an assignment's levels are its RoleDefinitionBindings, and PrincipalId only names who holds them.
   const readRoleId = async () => {
@@ -740,6 +756,8 @@
     for (const byte of new TextEncoder().encode(text)) h = Math.imul(h ^ byte, 0x01000193) >>> 0;
     return h.toString(16).padStart(8, '0');
   };
+  // Printed by STATE 3 only when its snapshot held; STATE 5 recomputes it, so a snapshot that failed cannot be carried on.
+  const snapshotToken = (itemId) => digestOf(`snapshot ${LINK_DIGEST} ${itemId}`);
   // The links array is looked for at the top level and under permissionsInformation; its absence is reported.
   const linksOn = async (itemId) => {
     const res = await send(`${LIST}/items(${itemId})/GetSharingInformation`, 'POST',
@@ -787,20 +805,48 @@
       voidDependents(downstream(LIBRARY_ROW), 'the library was not created by this run');
       return report();
     }
+    if (me === null) {
+      record(LIBRARY_ROW, 'a document library with versioning on and this probe\'s Description', 'FAIL',
+        'web/currentuser failed or carried no integer Id, so the owner is unknown; nothing was written');
+      voidDependents(downstream(LIBRARY_ROW), 'the owner account was not read');
+      return report();
+    }
     const made = await send('web/lists', 'POST', { Title: LIBRARY, BaseTemplate: 101,
       EnableVersioning: true, Description: OWNERSHIP_DESCRIPTION });
     log(made.ok ? 'INFO' : 'FAIL', `library create: ${said(made)}`);
     if (!await fixture(LIBRARY_ROW, async () => asRead(await sendRaw(`${LIST}?$select=BaseTemplate,EnableVersioning,Description`)),
       { BaseTemplate: 101, EnableVersioning: true, Description: OWNERSHIP_DESCRIPTION })) return report();
-    for (const xml of [
+    const COLUMN_XML = [
       '<Field Type="Choice" Name="MoveChoice" DisplayName="MoveChoice"><CHOICES><CHOICE>Q1</CHOICE><CHOICE>Q2</CHOICE></CHOICES></Field>',
       '<Field Type="User" Name="MovePerson" DisplayName="MovePerson" UserSelectionMode="PeopleOnly" />',
       '<Field Type="DateTime" Name="MoveDate" DisplayName="MoveDate" Format="DateOnly" />',
       '<Field Type="Boolean" Name="MoveFlag" DisplayName="MoveFlag"><Default>0</Default></Field>',
-      '<Field Type="URL" Name="MoveLink" DisplayName="MoveLink" Format="Hyperlink" />']) {
+      '<Field Type="URL" Name="MoveLink" DisplayName="MoveLink" Format="Hyperlink" />'];
+    for (const xml of COLUMN_XML) {
       const field = await send(`${LIST}/fields/createfieldasxml`, 'POST', { parameters: { SchemaXml: xml, Options: 8 } });
       log(field.ok ? 'INFO' : 'FAIL', `column create: ${said(field)}`);
     }
+    // DateOnly, PeopleOnly and Hyperlink are 0 in Learn's DateTimeFieldFormatType, FieldUserSelectionMode and UrlFieldFormatType; the enum's name is accepted as well.
+    const zeroOr = (word) => (v) => v === 0 || v === word;
+    const choiceList = (v) => (Array.isArray(v) ? v : v && Array.isArray(v.results) ? v.results : null);
+    const WANT = { MoveChoice: ['TypeAsString,Choices', { TypeAsString: 'Choice', Choices: (v) => {
+      const list = choiceList(v); return Boolean(list) && list.length === 2 && list[0] === 'Q1' && list[1] === 'Q2'; } }],
+    MovePerson: ['TypeAsString,SelectionMode', { TypeAsString: 'User', SelectionMode: zeroOr('PeopleOnly') }],
+    MoveDate: ['TypeAsString,DisplayFormat', { TypeAsString: 'DateTime', DisplayFormat: zeroOr('DateOnly') }],
+    MoveFlag: ['TypeAsString', { TypeAsString: 'Boolean' }],
+    MoveLink: ['TypeAsString,DisplayFormat', { TypeAsString: 'URL', DisplayFormat: zeroOr('Hyperlink') }] };
+    // Each definition is read back before anything is uploaded, so a column that stored otherwise stops the run.
+    if (!await fixture(COLUMNS_ROW, async () => {
+      const body = {};
+      let failed = null;
+      for (const [column, [select, want]] of Object.entries(WANT)) {
+        const r = await sendRaw(`${LIST}/fields/getbyinternalnameortitle('${column}')?$select=${select}`);
+        if (!r.ok && !failed) failed = r;
+        for (const key of Object.keys(want)) body[`${column}.${key}`] = r.ok && r.parsed ? r.parsed[key] : undefined;
+      }
+      return { ok: !failed, status: failed ? failed.status : 200, body };
+    }, Object.fromEntries(Object.entries(WANT).flatMap(([column, [, want]]) => Object.entries(want)
+      .map(([key, check]) => [`${column}.${key}`, check]))))) return report();
     const base = await rootUrl();
     if (base === null) {
       record(FOLDER_ROW, `a folder named ${FOLDER}, read back by name`, 'FAIL', 'the library RootFolder gave no usable ServerRelativeUrl; no folder or file was sent');
@@ -909,7 +955,7 @@
     const itemId = item.ok && item.parsed && Number.isInteger(item.parsed.Id) ? item.parsed.Id : null;
     const roleId = await readRoleId();
     // Owner-read, immediately before the move; the mover is not asked to enumerate permissions.
-    await fixture(PERMS_ROW, async () => {
+    const held = await fixture(PERMS_ROW, async () => {
       if (itemId === null) return asRead(item);
       const g = await grantOn(itemId, editor, roleId);
       const l = await linksOn(itemId);
@@ -917,6 +963,11 @@
         HasUniqueRoleAssignments: g.unique, EditingAccountHasRead: g.bound === null ? undefined : g.bound,
         LinkDigestPresent: l.digests ? l.digests.includes(LINK_DIGEST) : undefined } };
     }, { HasUniqueRoleAssignments: true, EditingAccountHasRead: true, LinkDigestPresent: true });
+    if (!held) {
+      log('FAIL', 'the permissions snapshot did not hold, so no snapshot token is printed. Do not paste STATE 4 or STATE 5.');
+      return report();
+    }
+    log('INFO', `snapshot token: ${snapshotToken(itemId)}. Set SNAPSHOT_TOKEN to it before STATE 5.`);
     log('INFO', 'STATE 3 done. Paste STATE 4 as the moving account.');
     return report();
   }
@@ -990,6 +1041,8 @@
   const moved = await sendRaw(`${fileAt(newPath)}/ListItemAllFields?$select=Id`);
   if (moved.ok && moved.parsed && Number.isInteger(moved.parsed.Id) && moved.parsed.Id !== MOVED_ID) {
     record(F4, Q.f4, 'NOT ESTABLISHED', `the root path reads item ${moved.parsed.Id}, not MOVED_ID ${MOVED_ID}; no grant or link was read`);
+  } else if (moved.ok && moved.parsed && Number.isInteger(moved.parsed.Id) && SNAPSHOT_TOKEN !== snapshotToken(moved.parsed.Id)) {
+    record(F4, Q.f4, 'NOT ESTABLISHED', 'SNAPSHOT_TOKEN does not match the one STATE 3 printed for this link and item, so the pre-move snapshot is not shown to have held; no grant or link was read');
   } else if (moved.ok && moved.parsed && Number.isInteger(moved.parsed.Id)) {
     const itemId = moved.parsed.Id;
     const g = await grantOn(itemId, editor, await readRoleId());
@@ -1013,15 +1066,18 @@
     record(F4, Q.f4, 'NOT ESTABLISHED', `the moved file read ${said(moved)}`);
   }
   const at = folderNow;
+  let folderUid = null;
   if (!await fixture(EMPTY_ROW, async () => {
-    const meta = await sendRaw(`${at}?$select=ItemCount`);
+    const meta = await sendRaw(`${at}?$select=ItemCount,UniqueId`);
+    folderUid = meta.ok && meta.parsed && typeof meta.parsed.UniqueId === 'string' && meta.parsed.UniqueId !== '' ? meta.parsed.UniqueId : null;
     const files = await sendRaw(`${at}/Files?$select=Name`);
     const folders = await sendRaw(`${at}/Folders?$select=Name`);
     const count = (r) => (r.ok && r.parsed && Array.isArray(r.parsed.value) ? r.parsed.value.length : undefined);
     const failed = [meta, files, folders].find((r) => !r.ok);
     return { ok: !failed, status: failed ? failed.status : 200,
-      body: { ItemCount: meta.parsed ? meta.parsed.ItemCount : undefined, Files: count(files), Folders: count(folders) } };
-  }, { ItemCount: 0, Files: 0, Folders: 0 })) return report();
+      body: { ItemCount: meta.parsed ? meta.parsed.ItemCount : undefined, Files: count(files), Folders: count(folders),
+        HasUniqueId: folderUid !== null } };
+  }, { ItemCount: 0, Files: 0, Folders: 0, HasUniqueId: true })) return report();
   const recycled = await send(`${at}/recycle()`, 'POST', {});
   const refusal = rawHead(recycled);
   if (refusal) {
@@ -1046,8 +1102,11 @@
     return report();
   }
   const restored = await send(`web/RecycleBin('${lit(binId)}')/restore()`, 'POST', {});
-  const back = await sendRaw(`${at}?$select=Name`);
-  record(F6, Q.f6, back.ok ? 'RECYCLED AND RESTORED' : 'RECYCLED, NOT RESTORED',
-    `recycle HTTP ${recycled.status}; bin item found; restore ${said(restored)}; folder ${back.ok ? 'reads back' : said(back)}`);
+  const back = await sendRaw(`${at}?$select=Name,UniqueId`);
+  // Only the folder that was recycled counts as restored: same UniqueId, and the restore answered ok.
+  const same = back.ok && back.parsed && back.parsed.UniqueId === folderUid;
+  const head = restored.ok && same ? 'RECYCLED AND RESTORED' : !restored.ok && !back.ok ? 'RECYCLED, NOT RESTORED' : 'NOT ESTABLISHED';
+  record(F6, Q.f6, head, `recycle HTTP ${recycled.status}; bin item found; restore ${said(restored)}; folder `
+    + `${!back.ok ? said(back) : same ? 'reads back with the UniqueId it had' : 'reads back with another UniqueId'}`);
   return report();
 })();

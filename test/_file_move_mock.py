@@ -42,6 +42,27 @@ const itemOf = (f) => {
   for (const name of (f.moved ? CONFIG.omitAfter : CONFIG.omitBefore) || []) delete item[name];
   return item;
 };
+// A VersionId follows the label's major number; a config can renumber or drop it.
+const versionRow = (f, label) => {
+  const shift = f.moved && (CONFIG.move || {}).renumbers ? 1 : 0;
+  const row = { VersionLabel: label, VersionId: Number(label.split('.')[0]) * 512 + shift };
+  const unnamed = f.moved ? CONFIG.versionIdsUnnamed : CONFIG.versionIdsUnnamedBefore;
+  if (unnamed) delete row.VersionId;
+  return row;
+};
+// What a created field reads back as, from its own schema; CONFIG.fieldRead overrides one property.
+const fieldRead = (xml, name) => {
+  const attr = (a) => (xml.match(new RegExp(`${a}="([^"]*)"`)) || [])[1];
+  const type = attr('Type');
+  const out = { TypeAsString: type };
+  if (type === 'Choice') {
+    out.Choices = [...xml.matchAll(/<CHOICE>([^<]*)<\/CHOICE>/g)].map((m) => m[1]);
+  }
+  if (type === 'DateTime') out.DisplayFormat = attr('Format') === 'DateOnly' ? 0 : 1;
+  if (type === 'User') out.SelectionMode = attr('UserSelectionMode') === 'PeopleOnly' ? 0 : 1;
+  if (type === 'URL') out.DisplayFormat = attr('Format') === 'Hyperlink' ? 0 : 1;
+  return { ...out, ...((CONFIG.fieldRead || {})[name] || {}) };
+};
 const LIST = "web/lists/getbytitle('dbmlsp Probe FileMove')";
 const refused = (why) => answer(500, { error: { message: { value: why } } });
 globalThis.fetch = async (url, opts = {}) => {
@@ -56,6 +77,8 @@ globalThis.fetch = async (url, opts = {}) => {
     return answer(200, { d: { GetContextWebInformation: { FormDigestValue: 'digest' } } });
   }
   if (path.startsWith('web/currentuser')) {
+    if (CONFIG.currentUser === 'refused') return refused('no current user');
+    if (CONFIG.currentUser === 'noId') return answer(200, { Title: 'User' });
     return answer(200, { Id: me, Email: USERS[me], LoginName: `i:0#.f|membership|${USERS[me]}`,
       Title: `User ${me}` });
   }
@@ -82,6 +105,11 @@ globalThis.fetch = async (url, opts = {}) => {
     if (rest.startsWith('/fields/createfieldasxml')) {
       S.fields.push(body.parameters.SchemaXml); return answer(201, {});
     }
+    const wanted = rest.match(/^\/fields\/getbyinternalnameortitle\('([^']*)'\)/);
+    if (wanted) {
+      const xml = S.fields.find((x) => x.includes(`Name="${wanted[1]}"`));
+      return xml ? answer(200, fieldRead(xml, wanted[1])) : answer(404, { error: 'no such field' });
+    }
     if (rest.startsWith('/RootFolder?')) {
       if (CONFIG.rootRefused) return refused('no root');
       return answer(200, CONFIG.rootUrlMissing ? {} : { ServerRelativeUrl: ROOT });
@@ -96,7 +124,7 @@ globalThis.fetch = async (url, opts = {}) => {
       if (!f) return answer(404, { error: 'Item does not exist' });
       if (tail.startsWith('/versions')) {
         return answer(200, { value: f.versions.map((v) => (
-          CONFIG.versionsUnlabelled && f.moved ? {} : { VersionLabel: v })) });
+          CONFIG.versionsUnlabelled && f.moved ? {} : versionRow(f, v))) });
       }
       if (tail.startsWith('/breakroleinheritance')) { S.unique = true; return answer(200, {}); }
       if (tail.startsWith('/roleassignments/addroleassignment')) {
@@ -177,7 +205,8 @@ globalThis.fetch = async (url, opts = {}) => {
     const inside = S.file && S.file.path.startsWith(`${folder}/`) ? 1 : 0;
     if (path.includes('/Files')) return answer(200, { value: inside ? [{ Name: 'x' }] : [] });
     if (path.includes('/Folders')) return answer(200, { value: [] });
-    return answer(200, { Name: folder.split('/').pop(), ItemCount: inside });
+    return answer(200, { Name: folder.split('/').pop(), ItemCount: inside,
+      UniqueId: CONFIG.folderNoUid ? undefined : (S.uids || {})[folder] || `uid-${folder}` });
   }
   if (path.startsWith('web/GetFileByServerRelativePath')) {
     const file = decoded(path, 'decodedurl');
@@ -215,6 +244,8 @@ globalThis.fetch = async (url, opts = {}) => {
       if (!entry) return answer(404, { error: 'no such entry' });
       S.recycle = S.recycle.filter((e) => e !== entry);
       S.folders.push(`/${entry.DirName}/${entry.LeafName}`);
+      const back = `/${entry.DirName}/${entry.LeafName}`;
+      if (CONFIG.restoreNewId) S.uids = { ...S.uids, [back]: 'uid-new' };
       return answer(200, {});
     }
     if (CONFIG.binRefused) return refused('cannot read the bin');
