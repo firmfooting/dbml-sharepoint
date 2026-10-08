@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FORM HEADER SHOWING A COLUMN HIDDEN FROM THE FORMS ----
  *
- * REVISION: 32744000
+ * REVISION: ee495cdd
  *
  * QUESTION: when a column is hidden from the Edit and Display forms the way
  * the deploy hides one (a ClientValidationFormula that is true only while
@@ -15,28 +15,30 @@
  *
  * DEPENDS ON (read back, and voiding the check when they do not hold)
  *   text.form-fmt.fixture-hidden-list           a generic list this probe created, read back
- *       with its ownership Description and an item type
+ *       with its ownership Description, an item type and its folder URL
  *   text.form-fmt.fixture-hidden-columns        two Choice columns, HiddenResult and ShownResult
  *       (Yes, No), read back with their TypeAsString
  *   text.form-fmt.fixture-hidden-item           one item, HiddenResult = No, ShownResult = Yes,
  *       read back at the Id the create answered
  *   text.form-fmt.control-column-hidden-on-forms HiddenResult's ClientValidationFormula read back
  *       as written; ShownResult carries none
+ *   text.form-fmt.control-columns-in-content-type both columns read back as field links of the
+ *       default item content type, neither Hidden
  *   text.form-fmt.fixture-header-formatter      the default item content type's
  *       ClientFormCustomFormatter read back holding a header whose two spans read
  *       [$HiddenResult] and [$ShownResult] and, as an independent baseline, a footer
  *       reading probe-baseline-footer
  *
  * OBSERVES (a person's reading, recorded with a screenshot; never asserted)
- *   text.form-fmt.header-hidden-column  on the item's Display form and Edit form: whether the
- *       formula hid HiddenResult from the form body, whether the footer baseline shows,
- *       and what each header span shows
+ *   form.edit-form.header-hidden-column, form.display-form.header-hidden-column  on that form:
+ *       whether both columns are in the form body as declared, whether the footer baseline
+ *       shows, and what each header span shows
  *
- * HOW TO READ IT: the machine rows settle the fixture and stop. The check row
- * is MANUAL until the person records what each form showed.
- *   - The footer line probe-baseline-footer is absent, or HiddenResult is still a field in
- *     the form body: the formatter or the hiding did not take effect, so the reading is
- *     VOID.
+ * HOW TO READ IT: the machine rows settle the fixture and stop. The check rows
+ * are MANUAL until the person records what each form showed.
+ *   - The footer line probe-baseline-footer is absent, HiddenResult is still a field in the
+ *     form body, or ShownResult is missing from it: the formatter or the hiding did not take
+ *     effect, so the reading is VOID.
  *   - The baseline shows and the header is absent or blank: record it as observed
  *     whole-header suppression, not VOID.
  *   - The baseline shows and the header renders: record what each span shows. ShownResult
@@ -341,7 +343,7 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision 32744000. Quote this when reporting results.');
+  log('INFO', 'probe revision ee495cdd. Quote this when reporting results.');
 
   // ---- The question ----------------------------------------------------
   const LIST = 'dbml-probe-header-hidden-column';
@@ -367,15 +369,20 @@
   const ITEM = 'text.form-fmt.fixture-hidden-item';
   const CONTROL = 'text.form-fmt.control-column-hidden-on-forms';
   const FORMATTER_FIXTURE = 'text.form-fmt.fixture-header-formatter';
-  const CHECK = 'text.form-fmt.header-hidden-column';
-  const ALL_AFTER_LIST = [COLUMNS, ITEM, CONTROL, FORMATTER_FIXTURE, CHECK];
+  const LINKS = 'text.form-fmt.control-columns-in-content-type';
+  const EDIT = 'form.edit-form.header-hidden-column';
+  const DISPLAY = 'form.display-form.header-hidden-column';
+  const CHECKS = [EDIT, DISPLAY];
+  const ALL_AFTER_LIST = [COLUMNS, ITEM, CONTROL, LINKS, FORMATTER_FIXTURE, ...CHECKS];
 
   expect('text.form-fmt.fixture-hidden-list', 'the list reads back with its marker and an item type');
   expect('text.form-fmt.fixture-hidden-columns', 'both Choice columns read back as such');
   expect('text.form-fmt.fixture-hidden-item', 'the item reads back with HiddenResult No and ShownResult Yes');
   expect('text.form-fmt.control-column-hidden-on-forms', 'HiddenResult reads back with the hiding formula and ShownResult with none');
   expect('text.form-fmt.fixture-header-formatter', 'the content type reads back the header and footer formatter as written');
-  expect('text.form-fmt.header-hidden-column', "whether a form header shows the value of a column hidden from the forms");
+  expect('text.form-fmt.control-columns-in-content-type', 'both columns are field links of the default content type and neither is Hidden');
+  expect('form.edit-form.header-hidden-column', 'whether the Edit form header shows the value of a column hidden from the forms');
+  expect('form.display-form.header-hidden-column', 'whether the Display form header shows the value of a column hidden from the forms');
 
   if (!CONFIRMED || !ALLOW_WRITES) {
     log('INFO', `Would create '${LIST}' with two Choice columns and one item, hide ${HIDDEN} from the Edit and Display forms with a formula, and write a form header naming both, on ${WEB}.`);
@@ -426,9 +433,10 @@
   const at = `web/lists(guid'${listId}')`;
   let list = null;
   if (!await establishFixture(LIST_FIXTURE, async () => (list = await spGet(
-    `${at}?$select=Description,ListItemEntityTypeFullName`)),
-  { Description: OWNERSHIP_DESCRIPTION, ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0 },
-  [COLUMNS, ITEM, CONTROL, FORMATTER_FIXTURE, CHECK])) return report();
+    `${at}?$select=Description,ListItemEntityTypeFullName,RootFolder/ServerRelativeUrl&$expand=RootFolder`)),
+  { Description: OWNERSHIP_DESCRIPTION, ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0,
+    RootFolder: (v) => !!v && typeof v.ServerRelativeUrl === 'string' && v.ServerRelativeUrl.startsWith('/') },
+  ALL_AFTER_LIST)) return report();
 
   // Options 9 adds the field to the default content type, without which it reaches no form.
   const addField = (schemaXml) => post(`${at}/fields/createfieldasxml`, { parameters: {
@@ -441,7 +449,7 @@
   if (!await establishFixture(COLUMNS, () => spGet(`${at}/fields?$select=InternalName,TypeAsString`
     + `&$filter=InternalName eq '${HIDDEN}' or InternalName eq '${SHOWN}'`),
   { value: (rows) => Array.isArray(rows) && kindOf(rows, HIDDEN) === 'Choice' && kindOf(rows, SHOWN) === 'Choice' },
-  [ITEM, CONTROL, FORMATTER_FIXTURE, CHECK])) return report();
+  ALL_AFTER_LIST.slice(1))) return report();
 
   const made = await post(`${at}/items`, { __metadata: { type: list.body.ListItemEntityTypeFullName },
     Title: 'dbml probe header', [HIDDEN]: 'No', [SHOWN]: 'Yes' });
@@ -450,14 +458,19 @@
   if (!await establishFixture(ITEM, () => (Number.isInteger(itemId)
     ? spGet(`${at}/items(${itemId})?$select=Id,${HIDDEN},${SHOWN}`)
     : { ok: false, status: made.status, body: null }),
-  { Id: itemId, [HIDDEN]: 'No', [SHOWN]: 'Yes' }, [CHECK])) return report();
+  { Id: itemId, [HIDDEN]: 'No', [SHOWN]: 'Yes' }, CHECKS)) return report();
 
   // The deploy's own hiding: a ClientValidationFormula (never ShowIn*Form), read back as written.
   const fieldAt = `${at}/fields/getbyinternalnameortitle('${HIDDEN}')`;
   said('hide with a formula', await post(fieldAt, { __metadata: { type: 'SP.Field' },
     ClientValidationFormula: HIDE_ON_EXISTING, ClientValidationMessage: '' }, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }));
-  await establishFixture(CONTROL, () => spGet(`${fieldAt}?$select=ClientValidationFormula`),
-    { ClientValidationFormula: HIDE_ON_EXISTING }, [CHECK]);
+  // Both columns are read: the control must carry no formula, or its span could be blank for that reason.
+  const formulaOf = (rows, name) => { const f = (rows || []).find((r) => r && r.InternalName === name); return f ? f.ClientValidationFormula : undefined; };
+  const controlHeld = (rows) => Array.isArray(rows) && formulaOf(rows, HIDDEN) === HIDE_ON_EXISTING
+    && [undefined, null, ''].includes(formulaOf(rows, SHOWN)) && rows.some((r) => r && r.InternalName === SHOWN);
+  await establishFixture(CONTROL, () => spGet(`${at}/fields?$select=InternalName,ClientValidationFormula`
+    + `&$filter=InternalName eq '${HIDDEN}' or InternalName eq '${SHOWN}'`),
+  { value: controlHeld }, CHECKS);
 
   // The default item content type, as the deploy finds it: an Item-derived type that is not a folder.
   const types = await spGet(`${at}/contenttypes?$select=Name,StringId&$top=100`);
@@ -467,33 +480,40 @@
   if (!itemType || typeof itemType.StringId !== 'string') {
     record(FORMATTER_FIXTURE, 'the content type reads back the header and footer formatter as written', 'FAIL',
       unanswered(types) ? `the content type read ${unanswered(types)}` : 'no default item content type answered');
-    voidDependents([CHECK], 'the content type was not found');
+    voidDependents(CHECKS, 'the content type was not found');
     return report();
   }
   const typeAt = `${at}/contenttypes('${itemType.StringId}')`;
+  // Both columns must be on the type's forms: a column not there, or Hidden, has a blank span for that reason.
+  const linkOk = (rows, name) => Array.isArray(rows) && rows.some((l) => l && l.Name === name && l.Hidden !== true);
+  await establishFixture(LINKS, () => spGet(`${typeAt}/fieldlinks?$select=Name,Hidden&$top=500`),
+    { value: (rows) => linkOk(rows, HIDDEN) && linkOk(rows, SHOWN) }, CHECKS);
   const wrote = await post(typeAt, { __metadata: { type: 'SP.ContentType' }, ClientFormCustomFormatter: FORMATTER },
     { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
   said('header formatter write', wrote);
   // A refused write is still read back: the readback, not the write status, says what the type holds.
   await establishFixture(FORMATTER_FIXTURE, () => spGet(`${typeAt}?$select=ClientFormCustomFormatter`),
-    { ClientFormCustomFormatter: FORMATTER }, [CHECK]);
+    { ClientFormCustomFormatter: FORMATTER }, CHECKS);
   if (!wrote.ok) {
     record(FORMATTER_FIXTURE, 'the content type reads back the header and footer formatter as written', 'FAIL',
       `the write answered HTTP ${wrote.status} ${wrote.text.slice(0, 200)}`);
-    voidDependents([CHECK], 'the header formatter write was refused');
+    voidDependents(CHECKS, 'the header formatter write was refused');
     return report();
   }
 
   const stateOf = (id) => (RESULTS.find((r) => r.id === id) || {}).state;
-  if (stateOf(CHECK) !== 'void') {
-    const forms = `${WEB}/Lists/${LIST}`;
-    record(CHECK, "whether a form header shows the value of a column hidden from the forms", 'MANUAL',
-      `Open the item's Display form: ${forms}/DispForm.aspx?ID=${itemId}, then its Edit form: `
-      + `${forms}/EditForm.aspx?ID=${itemId}. Screenshot each. VOID if HiddenResult is still a field in the `
-      + 'form body, or if the footer line probe-baseline-footer is absent (the formatter did not render). '
-      + 'With the footer showing, a blank or absent header is observed whole-header suppression; otherwise '
-      + 'record what the header shows for HiddenResult and '
-      + 'for ShownResult. If neither Choice span shows, Choice tokens do not render at all.');
+  // The folder URL the create answered for: the list's title is not its URL, and a link built from it can open another list.
+  const forms = `${new URL(WEB).origin}${list.body.RootFolder.ServerRelativeUrl}`;
+  const reading = (form, page) => `Open the item's ${form} form: ${forms}/${page}?ID=${itemId}. Screenshot it. `
+    + 'VOID if HiddenResult is still a field in the form body, if ShownResult is missing from it, or if '
+    + 'the footer line probe-baseline-footer is absent (the formatter did not render). With the footer showing, a blank or '
+    + 'absent header is observed whole-header suppression; otherwise record what the header shows for '
+    + 'HiddenResult and for ShownResult. If neither Choice span shows, Choice tokens do not render at all.';
+  for (const [id, form, page] of [[EDIT, 'Edit', 'EditForm.aspx'], [DISPLAY, 'Display', 'DispForm.aspx']]) {
+    if (stateOf(id) !== 'void') {
+      record(id, `whether the ${form} form header shows the value of a column hidden from the forms`,
+        'MANUAL', reading(form, page));
+    }
   }
   return report();
 })();

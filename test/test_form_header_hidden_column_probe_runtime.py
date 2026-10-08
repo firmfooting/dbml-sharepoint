@@ -6,6 +6,8 @@ the check row stays awaiting a capture.
 """
 from __future__ import annotations
 
+import hashlib
+import re
 import textwrap
 from typing import Any
 
@@ -19,7 +21,10 @@ from dbml_sharepoint.analysis.form_rendering import compose_visibility
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
 PROBE = MANUAL / "form-header-hidden-column-probe.js"
-CHECK = "text.form-fmt.header-hidden-column"
+EDIT = "form.edit-form.header-hidden-column"
+DISPLAY = "form.display-form.header-hidden-column"
+CHECKS = (EDIT, DISPLAY)
+LINKS = "text.form-fmt.control-columns-in-content-type"
 LIST = "text.form-fmt.fixture-hidden-list"
 CONTROL = "text.form-fmt.control-column-hidden-on-forms"
 FORMATTER = "text.form-fmt.fixture-header-formatter"
@@ -28,6 +33,7 @@ FIXTURES = (
     "text.form-fmt.fixture-hidden-columns",
     "text.form-fmt.fixture-hidden-item",
     CONTROL,
+    LINKS,
     FORMATTER,
 )
 GATES = ("CONFIRMED", "ALLOW_WRITES")
@@ -78,8 +84,9 @@ _MOCK = textwrap.dedent(r"""
       }
       if (rest.startsWith('/fields/createfieldasxml')) return answer(201, { d: {} });
       if (rest.startsWith('/fields?')) return answer(200, { value: [
-        { InternalName: 'HiddenResult', TypeAsString: 'Choice' },
-        { InternalName: 'ShownResult', TypeAsString: 'Choice' }] });
+        { InternalName: 'HiddenResult', TypeAsString: 'Choice', ClientValidationFormula: formula },
+        { InternalName: 'ShownResult', TypeAsString: 'Choice',
+          ClientValidationFormula: CONFIG.shownFormula || '' }] });
       if (rest.startsWith('/items') && method === 'POST') {
         return answer(201, { d: { Id: CONFIG.itemId || 1 } });
       }
@@ -92,6 +99,10 @@ _MOCK = textwrap.dedent(r"""
         return answer(200, { value: [{ Name: 'Folder', StringId: '0x0120' },
           { Name: CONFIG.typeName || 'Item', StringId: '0x01' }] });
       }
+      if (rest.includes('/fieldlinks')) {
+        return answer(200, { value: CONFIG.links || [{ Name: 'HiddenResult', Hidden: false },
+          { Name: 'ShownResult', Hidden: false }] });
+      }
       if (rest.startsWith("/contenttypes('0x01')")) {
         if (method === 'POST') {
           if (CONFIG.refuseFormatter) return answer(403, 'denied');
@@ -101,6 +112,8 @@ _MOCK = textwrap.dedent(r"""
         return answer(200, { ClientFormCustomFormatter: stored });
       }
       return answer(200, { Id: LIST_ID, Description: standing.Description,
+        RootFolder: { ServerRelativeUrl: CONFIG.rootUrl
+          || '/sites/probe/Lists/occupied-elsewhere' },
         ListItemEntityTypeFullName: 'SP.Data.ProbeListItem' });
     };
 """)
@@ -117,16 +130,17 @@ def _run(gates: tuple[str, ...] = GATES, swaps: dict[str, str] | None = None,
 def test_an_unconfirmed_probe_prints_its_plan_and_sends_nothing() -> None:
     rows, sent, output = _run(gates=())
     assert sent == [] and "Set CONFIRMED = true" in output
-    assert rows[CHECK]["state"] == "open"
+    assert rows[EDIT]["state"] == "open"
 
 
 def test_a_healthy_run_settles_the_fixture_and_leaves_the_reading_to_a_person() -> None:
     rows, sent, output = _run()
     for row in FIXTURES:
         assert rows[row]["outcome"] == "PASS", (row, rows[row]["evidence"])
-    assert rows[CHECK]["outcome"] == "MANUAL"
-    assert rows[CHECK]["state"] == "awaiting-capture"
-    assert "VOID if HiddenResult is still a field" in rows[CHECK]["evidence"]
+    for check in CHECKS:
+        assert rows[check]["outcome"] == "MANUAL"
+        assert rows[check]["state"] == "awaiting-capture"
+    assert "VOID if HiddenResult is still a field" in rows[EDIT]["evidence"]
     assert "Open the item's Display form" in output and ended_with_report(output)
     # Every write after the create goes to the list by the Id the create answered.
     assert not any(s["method"] == "POST" and "getbytitle" in s["path"] for s in sent)
@@ -135,25 +149,25 @@ def test_a_healthy_run_settles_the_fixture_and_leaves_the_reading_to_a_person() 
 def test_a_column_still_shown_on_the_forms_voids_the_reading() -> None:
     rows, _sent, _output = _run(stayShown=True)
     assert rows[CONTROL]["outcome"] == "FAIL"
-    assert CHECK in voided(rows)
+    assert set(CHECKS) <= voided(rows)
 
 
 def test_a_refused_formatter_write_voids_the_reading() -> None:
     rows, _sent, _output = _run(refuseFormatter=True)
     assert rows[FORMATTER]["outcome"] == "FAIL"
-    assert CHECK in voided(rows)
+    assert set(CHECKS) <= voided(rows)
 
 
 def test_an_item_read_that_answers_another_id_voids_the_reading() -> None:
     rows, _sent, _output = _run(readId=9)
     assert rows["text.form-fmt.fixture-hidden-item"]["outcome"] == "FAIL"
-    assert CHECK in voided(rows)
+    assert set(CHECKS) <= voided(rows)
 
 
 def test_the_item_need_not_be_item_1() -> None:
     rows, _sent, _output = _run(itemId=2)
     assert rows["text.form-fmt.fixture-hidden-item"]["outcome"] == "PASS"
-    assert "ID=2" in rows[CHECK]["evidence"]
+    assert "ID=2" in rows[EDIT]["evidence"] and "ID=2" in rows[DISPLAY]["evidence"]
 
 
 def test_the_content_type_is_found_by_id_prefix_not_by_its_name() -> None:
@@ -173,7 +187,7 @@ def test_the_hiding_is_the_formula_the_generator_emits_and_never_a_show_in_form_
 
 def test_the_reading_names_the_footer_baseline_and_whole_header_suppression() -> None:
     rows, _sent, _output = _run()
-    evidence = rows[CHECK]["evidence"]
+    evidence = rows[EDIT]["evidence"]
     assert "probe-baseline-footer" in evidence and "whole-header suppression" in evidence
     assert "VOID" in evidence and "Choice tokens do not render" in evidence
 
@@ -185,7 +199,7 @@ def test_the_formatter_carries_an_independent_footer_baseline() -> None:
 
 def test_a_same_title_list_it_did_not_make_is_left_alone() -> None:
     rows, sent, _output = _run(swaps=CLEANUP, existing="foreign")
-    assert rows[LIST]["outcome"] == "FAIL" and CHECK in voided(rows)
+    assert rows[LIST]["outcome"] == "FAIL" and set(CHECKS) <= voided(rows)
     assert not any(s["method"] == "POST" for s in sent if not s["path"].endswith("/contextinfo"))
 
 
@@ -201,4 +215,43 @@ def test_cleanup_recycles_its_own_earlier_list_by_id_first() -> None:
             if s["method"] == "POST" and s["path"].endswith("/_api/web/lists")]
     assert recycled and made and recycled[0] < made[0]
     assert "lists(guid'" in sent[recycled[0]]["path"]
-    assert rows[CHECK]["outcome"] == "MANUAL"
+    assert rows[DISPLAY]["outcome"] == "MANUAL"
+
+
+def test_the_form_links_come_from_the_lists_own_folder_url() -> None:
+    rows, _sent, _output = _run(rootUrl="/sites/probe/Lists/Renamed%20Folder")
+    assert "https://example.sharepoint.com/sites/probe/Lists/Renamed%20Folder/EditForm.aspx?ID=1" \
+        in rows[EDIT]["evidence"]
+    assert "/DispForm.aspx?ID=1" in rows[DISPLAY]["evidence"]
+    assert "dbml-probe-header-hidden-column/" not in rows[EDIT]["evidence"]
+
+
+def test_each_form_is_its_own_finding() -> None:
+    rows, _sent, _output = _run()
+    assert "Edit form" in rows[EDIT]["evidence"] and "Display form" in rows[DISPLAY]["evidence"]
+
+
+def test_a_visible_control_carrying_a_formula_voids_the_reading() -> None:
+    rows, _sent, _output = _run(shownFormula="=if(false, 'true', 'false')")
+    assert rows[CONTROL]["outcome"] == "FAIL"
+    assert set(CHECKS) <= voided(rows)
+
+
+@pytest.mark.parametrize("links", [
+    [{"Name": "HiddenResult", "Hidden": False}],
+    [{"Name": "HiddenResult", "Hidden": False}, {"Name": "ShownResult", "Hidden": True}],
+], ids=["control-not-a-link", "control-hidden"])
+def test_a_control_not_on_the_content_type_voids_the_reading(links: list[dict[str, Any]]) -> None:
+    rows, _sent, _output = _run(links=links)
+    assert rows[LINKS]["outcome"] == "FAIL"
+    assert set(CHECKS) <= voided(rows)
+
+
+def test_the_revision_is_derived_from_the_probe_text() -> None:
+    js = PROBE.read_text(encoding="utf-8")
+    stamped = re.search(r"REVISION: ([0-9a-f]{8})", js)
+    assert stamped is not None
+    neutral = js.replace(stamped.group(1), "00000000")
+    # Re-stamp with this digest whenever the probe changes.
+    assert stamped.group(1) == hashlib.sha256(neutral.encode()).hexdigest()[:8]
+    assert f"probe revision {stamped.group(1)}." in js

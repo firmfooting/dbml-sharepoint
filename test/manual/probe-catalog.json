@@ -2508,7 +2508,7 @@
     },
     {
       "file": "form-header-hidden-column-probe.js",
-      "surface": "text",
+      "surface": "form",
       "harness": "shared-v1",
       "authority": "allow-writes",
       "writes": [
@@ -2524,7 +2524,7 @@
       "scenarios": [
         {
           "id": "machine-findings",
-          "surface": "text",
+          "surface": "form",
           "pattern": "machine-only",
           "findings": [
             {
@@ -2550,6 +2550,12 @@
               ]
             },
             {
+              "id": "text.form-fmt.control-columns-in-content-type",
+              "depends_on": [
+                "text.form-fmt.fixture-hidden-columns"
+              ]
+            },
+            {
               "id": "text.form-fmt.fixture-header-formatter",
               "depends_on": [
                 "text.form-fmt.fixture-hidden-list"
@@ -2562,20 +2568,31 @@
             "text.form-fmt.fixture-hidden-columns",
             "text.form-fmt.fixture-hidden-item",
             "text.form-fmt.control-column-hidden-on-forms",
+            "text.form-fmt.control-columns-in-content-type",
             "text.form-fmt.fixture-header-formatter"
           ],
           "depends_on": []
         },
         {
           "id": "header-reading",
-          "surface": "text",
+          "surface": "form",
           "pattern": "before-action-after",
           "findings": [
             {
-              "id": "text.form-fmt.header-hidden-column",
+              "id": "form.edit-form.header-hidden-column",
               "depends_on": [
                 "text.form-fmt.fixture-hidden-item",
                 "text.form-fmt.control-column-hidden-on-forms",
+                "text.form-fmt.control-columns-in-content-type",
+                "text.form-fmt.fixture-header-formatter"
+              ]
+            },
+            {
+              "id": "form.display-form.header-hidden-column",
+              "depends_on": [
+                "text.form-fmt.fixture-hidden-item",
+                "text.form-fmt.control-column-hidden-on-forms",
+                "text.form-fmt.control-columns-in-content-type",
                 "text.form-fmt.fixture-header-formatter"
               ]
             }
@@ -2585,19 +2602,24 @@
               "role": "display",
               "page": "Display form",
               "assertions": [
-                "footer baseline visible"
+                "footer baseline visible",
+                "HiddenResult absent from the form body",
+                "ShownResult present in the form body"
               ]
             },
             {
               "role": "edit",
               "page": "Edit form",
               "assertions": [
-                "footer baseline visible"
+                "footer baseline visible",
+                "HiddenResult absent from the form body",
+                "ShownResult present in the form body"
               ]
             }
           ],
           "controls": [
-            "text.form-fmt.control-column-hidden-on-forms"
+            "text.form-fmt.control-column-hidden-on-forms",
+            "text.form-fmt.control-columns-in-content-type"
           ],
           "depends_on": [
             "machine-findings"

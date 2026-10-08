@@ -191,7 +191,7 @@ Not about validating what is typed in; that is `expression`.
 Scopes: `new-form`, `edit-form`, `display-form`, `field-links`, `panel`
 
 Probes: `form-visibility-probe.js`, `form-visibility-storage-probe.js`,
-`form-visibility-interactive.js`
+`form-visibility-interactive.js`, `form-header-hidden-column-probe.js`
 
 ### 6. `field`: column provisioning, typing and item round-trip
 
@@ -315,8 +315,7 @@ transferable from what a description does to one.
 
 Probes: `list-description-probe.js`, `group-description-probe.js`,
 `role-definition-probe.js`, `formatter-xml-probe.js`,
-`item-text-roundtrip-probe.js`,
-`form-header-hidden-column-probe.js`
+`item-text-roundtrip-probe.js`
 
 ### 8. `access`: identities, groups, permission levels, ACLs
 
