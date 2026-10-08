@@ -2507,6 +2507,105 @@
       ]
     },
     {
+      "file": "form-header-hidden-column-probe.js",
+      "surface": "text",
+      "harness": "shared-v1",
+      "authority": "allow-writes",
+      "writes": [
+        "one scratch list with a choice column and a text column, one item, a header formatter on the default content type, and the choice column hidden from the Edit and Display forms; recycled by the next run with CLEANUP on"
+      ],
+      "cleanup": {
+        "policy": "before"
+      },
+      "prerequisites": [
+        "permission to create and recycle lists on the site",
+        "A person opens the item's Display form and Edit form in the browser after the run and records what the header shows"
+      ],
+      "scenarios": [
+        {
+          "id": "machine-findings",
+          "surface": "text",
+          "pattern": "machine-only",
+          "findings": [
+            {
+              "id": "text.form-fmt.fixture-hidden-list",
+              "depends_on": []
+            },
+            {
+              "id": "text.form-fmt.fixture-hidden-columns",
+              "depends_on": [
+                "text.form-fmt.fixture-hidden-list"
+              ]
+            },
+            {
+              "id": "text.form-fmt.fixture-hidden-item",
+              "depends_on": [
+                "text.form-fmt.fixture-hidden-columns"
+              ]
+            },
+            {
+              "id": "text.form-fmt.control-column-hidden-on-forms",
+              "depends_on": [
+                "text.form-fmt.fixture-hidden-columns"
+              ]
+            },
+            {
+              "id": "text.form-fmt.fixture-header-formatter",
+              "depends_on": [
+                "text.form-fmt.fixture-hidden-list"
+              ]
+            }
+          ],
+          "states": [],
+          "controls": [
+            "text.form-fmt.fixture-hidden-list",
+            "text.form-fmt.fixture-hidden-columns",
+            "text.form-fmt.fixture-hidden-item",
+            "text.form-fmt.control-column-hidden-on-forms",
+            "text.form-fmt.fixture-header-formatter"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "header-reading",
+          "surface": "text",
+          "pattern": "before-action-after",
+          "findings": [
+            {
+              "id": "text.form-fmt.header-hidden-column",
+              "depends_on": [
+                "text.form-fmt.fixture-hidden-item",
+                "text.form-fmt.control-column-hidden-on-forms",
+                "text.form-fmt.fixture-header-formatter"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "role": "display",
+              "page": "Display form",
+              "assertions": [
+                "header spans visible"
+              ]
+            },
+            {
+              "role": "edit",
+              "page": "Edit form",
+              "assertions": [
+                "header spans visible"
+              ]
+            }
+          ],
+          "controls": [
+            "text.form-fmt.control-column-hidden-on-forms"
+          ],
+          "depends_on": [
+            "machine-findings"
+          ]
+        }
+      ]
+    },
+    {
       "file": "formatter-xml-probe.js",
       "surface": "text",
       "harness": "shared-v1",

@@ -315,7 +315,8 @@ transferable from what a description does to one.
 
 Probes: `list-description-probe.js`, `group-description-probe.js`,
 `role-definition-probe.js`, `formatter-xml-probe.js`,
-`item-text-roundtrip-probe.js`
+`item-text-roundtrip-probe.js`,
+`form-header-hidden-column-probe.js`
 
 ### 8. `access`: identities, groups, permission levels, ACLs
 
