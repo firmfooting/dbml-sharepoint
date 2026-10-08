@@ -172,6 +172,50 @@ def test_sharing_answer_key_names_are_masked_like_any_quoted_text() -> None:
     assert "<account>" in evidence
 
 
+def test_the_sharing_information_request_expands_permissions_information() -> None:
+    _, sent, _ = _leg(1, 7)
+    asked = [s["path"] for s in sent if "GetSharingInformation" in s["path"]]
+    assert asked
+    assert all(p.endswith("GetSharingInformation?$expand=permissionsInformation") for p in asked)
+
+
+def test_links_that_come_only_when_expanded_are_read_under_permissions_information() -> None:
+    rows, _, _ = _leg(1, 7)
+    assert "LinksWithUrl" in rows["library.file.fixture-move-sharing-link"]["evidence"]
+
+
+def test_a_sharing_answer_with_no_links_fails_the_link_fixture_whatever_share_link_said() -> None:
+    rows, _, _ = _leg(1, 7, linksShape="none")
+    assert rows["library.file.fixture-move-sharing-link"]["outcome"] == "FAIL"
+    assert rows["library.file.fixture-move-sharing-link"]["outcome"] != "PASS"
+    assert rows[F4]["outcome"] == "NOT ESTABLISHED"
+
+
+def test_sixty_or_more_key_names_are_all_recorded() -> None:
+    rows, _, _ = _leg(1, 7, linksShape="many")
+    evidence = rows["library.file.fixture-move-sharing-link"]["evidence"]
+    assert "key000" in evidence and "key119" in evidence
+    assert " more" not in evidence
+
+
+def test_the_share_link_answer_key_names_are_recorded_with_no_values() -> None:
+    rows, _, _ = _leg(1, 7, shareAnswer={"sharingLinkInfo": {"Url": "https://example.sharepoint.com/:t:/s/x",
+                                                            "LinkKind": 2}, "extra": "SECRET-X"})
+    evidence = rows["library.file.fixture-move-sharing-link"]["evidence"]
+    assert "ShareLinkKeys" in evidence
+    for name in ("sharingLinkInfo", "extra", "LinkKind"):
+        assert name in evidence
+    assert "SECRET" not in evidence and ":t:/s/x" not in evidence
+
+
+def test_share_link_answer_key_names_are_masked_like_any_quoted_text() -> None:
+    rows, _, _ = _leg(1, 7, shareAnswer={"owner@example.com": 1,
+                                         "sharingLinkInfo": {"mover@example.com": 1}})
+    evidence = rows["library.file.fixture-move-sharing-link"]["evidence"]
+    assert "owner@example.com" not in evidence and "mover@example.com" not in evidence
+    assert "<account>" in evidence
+
+
 def test_state_five_names_the_keys_of_a_sharing_answer_without_links() -> None:
     rows, _, _ = _leg(5, 7, state=_state_four_start(), linksShape="noLinks")
     assert "hasInheritedLinks" in rows[F4]["evidence"]

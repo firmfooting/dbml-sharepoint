@@ -148,7 +148,7 @@ globalThis.fetch = async (url, opts = {}) => {
       if (tail.startsWith('/ShareLink')) {
         if (CONFIG.linkRefused) return refused('sharing is off');
         S.links.push('https://example.sharepoint.com/:t:/s/probe/link');
-        return answer(200, { sharingLinkInfo: { Url: S.links[0] } });
+        return answer(200, CONFIG.shareAnswer || { sharingLinkInfo: { Url: S.links[0] } });
       }
       if (tail.startsWith('/GetSharingInformation')) {
         const links = S.links.map((u) => ({ linkDetails: { Url: u } }));
@@ -167,7 +167,15 @@ globalThis.fetch = async (url, opts = {}) => {
           return answer(200, { anonymousLinkExpirationRestrictionDays: 'SECRET-DAYS',
             permissionsInformation: { hasInheritedLinks: 'SECRET-INHERIT' } });
         }
-        return answer(200, { links });
+        if (CONFIG.linksShape === 'topLevel') return answer(200, { links });
+        if (CONFIG.linksShape === 'many') {
+          const keys = Array.from({ length: 120 }, (_, i) => `key${String(i).padStart(3, '0')}`);
+          return answer(200, Object.fromEntries(keys.map((k) => [k, 1])));
+        }
+        // Links ride under permissionsInformation only when the request expands it.
+        const expanded = path.includes('$expand=permissionsInformation');
+        const shape = { canShare: true };
+        return answer(200, expanded ? { ...shape, permissionsInformation: { links } } : shape);
       }
       if (method === 'MERGE') {
         const verbose = String(opts.headers['Content-Type']).includes('odata=verbose');

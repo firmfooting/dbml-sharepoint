@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A MOVE INSIDE ONE LIBRARY KEEPS ----
  *
- * REVISION: fcaee6ba
+ * REVISION: edced6dc
  *
  * QUESTION: when File.MoveToUsingPath moves a file from a folder to the root
  * of the same document library, does the item keep its Id, its versions, its
@@ -562,7 +562,7 @@
   const learnIdentity = async () => {
     await readAccount();
   };
-  log('INFO', 'probe revision fcaee6ba. Quote this when reporting results.');
+  log('INFO', 'probe revision edced6dc. Quote this when reporting results.');
 
   const STATE = 1;
   const TEST_USER_LOGIN = 'CHANGE ME - the editing account claims login';
@@ -762,13 +762,17 @@
   const namesOf = (o) => {
     if (withheld) return WITHHELD;
     const all = Object.keys(o).map(scrub).sort();
-    const shown = all.slice(0, 40).map((k) => (k.length > 64 ? `${k.slice(0, 64)}...` : k)).join(', ');
-    return (shown || 'none') + (all.length > 40 ? `, and ${all.length - 40} more` : '');
+    const shown = all.slice(0, 200).map((k) => (k.length > 64 ? `${k.slice(0, 64)}...` : k)).join(', ');
+    return (shown || 'none') + (all.length > 200 ? `, and ${all.length - 200} more` : '');
   };
+  // An answer's top-level key names and those of each object-valued property one level down, names only.
+  const treeNames = (o) => `top-level keys ${namesOf(o)}` + Object.keys(o).filter((k) => o[k] && typeof o[k] === 'object' && !Array.isArray(o[k]))
+    .sort().map((k) => `; ${withheld ? WITHHELD : scrub(k)} keys ${namesOf(o[k])}`).join('');
   // No Microsoft Learn page documents the GetSharingInformation response shape (searched), hence the keys are recorded.
+  // Unproven until a run measures it: PnPjs documents getSharingInformation({}, ["permissionsInformation"]) (https://pnp.github.io/pnpjs/sp/sharing/#getsharinginformation), as does a PnP script sample using $Expand=permissionsInformation (https://pnp.github.io/script-samples/spo-delete-expired-sharing-link-folder-file-item/README.html).
   // The links array is looked for at the top level and under permissionsInformation; its absence is reported.
   const linksOn = async (itemId) => {
-    const res = await send(`${LIST}/items(${itemId})/GetSharingInformation`, 'POST',
+    const res = await send(`${LIST}/items(${itemId})/GetSharingInformation?$expand=permissionsInformation`, 'POST',
       { request: { maxPrincipalsToReturn: 10 } });
     const body = res.ok && res.parsed && typeof res.parsed === 'object' ? res.parsed : null;
     const nested = body && body.permissionsInformation;
@@ -909,8 +913,9 @@
     await fixture(LINK_ROW, async () => {
       const seen = await linksOn(itemId);
       return { ok: seen.res.ok, status: seen.res.status,
-        body: { LinksWithUrl: seen.withUrl === null ? undefined : seen.withUrl, SharingInformationKeys: seen.keys } };
-    }, { LinksWithUrl: (n) => n > 0, SharingInformationKeys: () => true });
+        body: { LinksWithUrl: seen.withUrl === null ? undefined : seen.withUrl, SharingInformationKeys: seen.keys,
+          ShareLinkKeys: link.ok && link.parsed && typeof link.parsed === 'object' ? treeNames(link.parsed) : said(link) } };
+    }, { LinksWithUrl: (n) => n > 0, SharingInformationKeys: () => true, ShareLinkKeys: () => true });
     const madeLinks = await linksOn(itemId);
     log('INFO', `link digest: ${madeLinks.digests && madeLinks.digests.length ? madeLinks.digests.join(', ') : 'none read'}. `
       + 'Set LINK_DIGEST to it before STATE 3.');
