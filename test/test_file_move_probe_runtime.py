@@ -407,14 +407,28 @@ def test_a_binding_seen_while_inheritance_was_restored_is_not_a_grant() -> None:
     assert rows[F4]["outcome"] == "GRANT LOST"
 
 
-@pytest.mark.parametrize(("change", "head"), [
-    ({"links": ["https://example.sharepoint.com/:t:/s/probe/other"]}, "LINK REPLACED"),
-    ({"links": ["https://example.sharepoint.com/:t:/s/probe/other"], "grants": []},
-     "GRANT LOST, LINK REPLACED"),
-], ids=["replaced", "grant-lost-and-replaced"])
-def test_a_regenerated_link_is_told_from_the_original(change: dict[str, Any], head: str) -> None:
+@pytest.mark.parametrize("change", [
+    {"links": ["https://example.sharepoint.com/:t:/s/probe/other"]},
+    {"links": ["https://example.sharepoint.com/:t:/s/probe/other"], "grants": []},
+], ids=["another-link", "grant-gone-and-another-link"])
+def test_another_link_with_a_url_leaves_the_tracked_link_open(change: dict[str, Any]) -> None:
+    # It could be a link made before the move, or ours with a ShareId the move changed.
     rows, _, _ = _leg(5, 7, state={**_state_four_start(), **change})
-    assert rows[F4]["outcome"] == head
+    assert rows[F4]["outcome"] == "NOT ESTABLISHED"
+    assert "REPLACED" not in rows[F4]["outcome"]
+    assert "entries with a URL 1" in rows[F4]["evidence"]
+
+
+@pytest.mark.parametrize("empty", ["00000000-0000-0000-0000-000000000000",
+                                   "{00000000-0000-0000-0000-000000000000}"])
+def test_the_empty_guid_is_no_share_id(empty: str) -> None:
+    rows, _, output = _leg(1, 7, shareId=empty)
+    assert rows[LINK_ROW]["outcome"] == "FAIL"
+    assert "link digest: none read" in _printed(output)
+    start = {**_state_four_start(), "links": [{"ShareId": empty, "Url": ""}]}
+    rows, _, _ = _leg(5, 7, state=start)
+    assert rows[F4]["outcome"] == "NOT ESTABLISHED"
+    assert "entries without a ShareId 1" in rows[F4]["evidence"]
 
 
 def test_state_four_as_another_account_voids_what_rests_on_the_owner_and_writes_nothing() -> None:
@@ -700,7 +714,7 @@ def test_the_share_id_value_is_printed_nowhere_only_its_digest() -> None:
 @pytest.mark.parametrize(("change", "config", "head"), [
     ({}, {"placeholders": 2}, "GRANT AND LINK PRESENT"),
     ({"links": ["https://example.sharepoint.com/:t:/s/probe/other"]}, {"placeholders": 2},
-     "LINK REPLACED"),
+     "NOT ESTABLISHED"),
     ({"links": []}, {"placeholders": 2}, "LINK LOST"),
     ({}, {"duplicateOurs": True}, "NOT ESTABLISHED"),
 ], ids=["survives", "replaced", "none", "several-match"])
@@ -709,7 +723,7 @@ def test_state_five_finds_our_entry_by_the_digest_of_its_share_id(
     rows, _, _ = _leg(5, 7, state={**_state_four_start(), **change}, **config)
     assert rows[F4]["outcome"] == head
     assert "entries matching the ShareId" in _evidence(rows, F4)
-    if head == "NOT ESTABLISHED":
+    if config.get("duplicateOurs"):
         assert "2 entries matched the ShareId" in _evidence(rows, F4)
 
 

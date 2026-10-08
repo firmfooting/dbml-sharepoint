@@ -65,7 +65,7 @@
  * HOW TO READ IT: a head names what was found (ID AND VERSIONS KEPT, ID
  * CHANGED, VERSIONS CHANGED, EVERY VALUE KEPT, VALUES CHANGED, VERSION ADDED,
  * NO VERSION ADDED, GRANT AND LINK PRESENT, GRANT LOST, LINK LOST, GRANT AND
- * LINK LOST, LINK REPLACED, RECYCLED AND RESTORED, RECYCLED, NOT RESTORED, NOT IN THE BIN).
+ * LINK LOST, RECYCLED AND RESTORED, RECYCLED, NOT RESTORED, NOT IN THE BIN).
  * A review decides what a head establishes. Accounts are written as the
  * owner, the editing account and the moving account.
  *
@@ -85,7 +85,7 @@
   const TEST_USER_LOGIN = 'CHANGE ME - the editing account claims login';
   const MOVER_LOGIN = 'CHANGE ME - the moving account claims login';
   const PLACEHOLDER = /^CHANGE ME/;
-  // STATES 3 and 5: the digest STATE 1 printed for the ShareId of the link it made, so a regenerated link is told from the original.
+  // STATES 3 and 5: the digest STATE 1 printed for the ShareId of the link it made, so our link is told from any other.
   const LINK_DIGEST = '';
   // STATE 5: the moved item's Id as STATE 4 printed it, so a different file at the root path is refused by name.
   const MOVED_ID = 0;
@@ -288,6 +288,8 @@
   // No Microsoft Learn page documents the GetSharingInformation response shape (searched), hence the keys are recorded.
   // Unproven until a run measures it: PnPjs documents getSharingInformation({}, ["permissionsInformation"]) (https://pnp.github.io/pnpjs/sp/sharing/#getsharinginformation), as does a PnP script sample using $Expand=permissionsInformation (https://pnp.github.io/script-samples/spo-delete-expired-sharing-link-folder-file-item/README.html).
   // The links array is looked for at the top level and under permissionsInformation; its absence is reported.
+  // MS-CSOMSPT (UnshareLink) treats an empty GUID as an unpopulated shareId, so it identifies nothing here either.
+  const usableShareId = (v) => typeof v === 'string' && v !== '' && !/^\{?0{8}-0{4}-0{4}-0{4}-0{12}\}?$/.test(v);
   // ShareLink's answer names our link by ShareId; no Microsoft Learn page documents that shape, so the entry keys are recorded.
   // Other entries may be placeholders with no Url, so only the entries whose ShareId `isOurs` decide anything.
   const linksOn = async (itemId, isOurs) => {
@@ -300,7 +302,7 @@
     const objectOf = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
     const detail = (l) => objectOf(objectOf(l).linkDetails);
     const hasUrl = (l) => typeof detail(l).Url === 'string' && detail(l).Url !== '';
-    const known = (l) => typeof detail(l).ShareId === 'string' && detail(l).ShareId !== '';
+    const known = (l) => usableShareId(detail(l).ShareId);
     const mine = list ? list.filter((l) => known(l) && isOurs(detail(l).ShareId)) : null;
     const unknown = list ? list.filter((l) => !known(l)).length : null;
     const union = (objs) => Object.fromEntries(objs.flatMap((o) => Object.keys(o)).map((k) => [k, 1]));
@@ -440,7 +442,7 @@
     log(link.ok ? 'INFO' : 'FAIL', `sharing link create: ${said(link)}`);
     const info = link.ok && link.parsed && typeof link.parsed === 'object' ? link.parsed.sharingLinkInfo : undefined;
     // Held in memory only; the value is never printed or recorded, only its digest.
-    const ourShareId = info && typeof info.ShareId === 'string' ? info.ShareId : '';
+    const ourShareId = info && usableShareId(info.ShareId) ? info.ShareId : '';
     await fixture(LINK_ROW, async () => {
       const seen = await linksOn(itemId, (v) => ourShareId !== '' && v === ourShareId);
       return { ok: seen.res.ok, status: seen.res.status,
@@ -595,15 +597,15 @@
     const itemId = moved.parsed.Id;
     const g = await grantOn(itemId, editor, await readRoleId());
     const seen = await linksOn(itemId, (v) => digestOf(v) === LINK_DIGEST);
-    // One match without a Url, several matches, or an entry with no ShareId (it could be ours) cannot show the link lost.
+    // Lost only when no entry is ours and none could be: an unidentified entry, or any other entry with a URL (made before
+    // the move, or ours under a ShareId the move changed), leaves it open.
     const link = seen.matches === 1 && seen.oursHasUrl ? 'same'
-      : seen.matches === 0 && seen.unknown === 0 ? (seen.withUrl > 0 ? 'replaced' : 'none') : null;
+      : seen.matches === 0 && seen.unknown === 0 && seen.withUrl === 0 ? 'none' : null;
     const read = g.bound !== null && link !== null;
     // A binding seen while the file inherits is the parent's, not the file's own grant.
     const held = g.bound === true && g.unique === true;
     const head = !read ? 'NOT ESTABLISHED' : held && link === 'same' ? 'GRANT AND LINK PRESENT'
-      : held ? (link === 'replaced' ? 'LINK REPLACED' : 'LINK LOST')
-        : link === 'same' ? 'GRANT LOST' : link === 'replaced' ? 'GRANT LOST, LINK REPLACED' : 'GRANT AND LINK LOST';
+      : held ? 'LINK LOST' : link === 'same' ? 'GRANT LOST' : 'GRANT AND LINK LOST';
     const bindings = !g.rows ? said(g.grants) : editor === null ? 'the editing account did not resolve'
       : g.levels ? `the editing account bound at role ids ${g.levels.join(', ')}` : 'the editing account not bound';
     record(F4, Q.f4, head, `HasUniqueRoleAssignments ${g.unique}; bindings read, ${bindings}; Read level `
