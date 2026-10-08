@@ -29,8 +29,8 @@
  *   library.file.properties-update-while-open-desktop  the same with OPENED_IN = 'desktop'
  *
  * HOW TO RUN: F12 -> Console. Set CONFIRMED, ALLOW_WRITES, WORKBOOK_URL (the
- * file's server-relative path), SECOND_ACCOUNT_HAS_IT_OPEN (the open paste
- * needs it true), OPENED_IN and STATE ('open' first, 'closed'
+ * file's server-relative path), SECOND_ACCOUNT_HAS_IT_OPEN (true for the open
+ * paste) or SECOND_ACCOUNT_HAS_CLOSED_IT (true for the closed one), OPENED_IN and STATE ('open' first, 'closed'
  * after); paste; Enter. Copy the RESULTS block back verbatim.
  */
 (async () => {
@@ -250,6 +250,8 @@
   const WORKBOOK_URL = '';
   // Nothing the probe sends can see the second account's session, so the operator attests to it.
   const SECOND_ACCOUNT_HAS_IT_OPEN = false;
+  // For STATE 'closed': the second account has closed it. Exactly one of the two is true in a run.
+  const SECOND_ACCOUNT_HAS_CLOSED_IT = false;
   const FIXTURE = 'library.file.fixture-open-workbook';
   const CONTROL = 'library.file.control-properties-update-closed';
   const CHECKS = {
@@ -274,8 +276,13 @@
     log('FAIL', `STATE is '${STATE}'; it must be 'open' or 'closed'. Nothing was sent.`);
     return report();
   }
-  if (STATE === 'open' && !SECOND_ACCOUNT_HAS_IT_OPEN) {
-    log('FAIL', "STATE is 'open' but SECOND_ACCOUNT_HAS_IT_OPEN is false; the open paste means nothing "
+  if (STATE === 'closed' && (!SECOND_ACCOUNT_HAS_CLOSED_IT || SECOND_ACCOUNT_HAS_IT_OPEN)) {
+    log('FAIL', "STATE is 'closed' but SECOND_ACCOUNT_HAS_CLOSED_IT is not true, or SECOND_ACCOUNT_HAS_IT_OPEN is "
+      + 'not false; a control sent while the workbook may be open proves nothing. Nothing was sent.');
+    return report();
+  }
+  if (STATE === 'open' && (!SECOND_ACCOUNT_HAS_IT_OPEN || SECOND_ACCOUNT_HAS_CLOSED_IT)) {
+    log('FAIL', "STATE is 'open' but SECOND_ACCOUNT_HAS_IT_OPEN is not true (or CLOSED_IT is true); the open paste means nothing "
       + 'unless a second account has the workbook open. Nothing was sent.');
     return report();
   }
@@ -287,12 +294,23 @@
   const run = async () => {
   // Apostrophes doubled for OData, then percent-encoded so & , and # reach the server whole.
   const lit = (text) => encodeURIComponent(String(text).replace(/'/g, "''")).replace(/%2F/g, '/');
-  const itemAt = `web/GetFileByServerRelativePath(decodedurl='${lit(WORKBOOK_URL)}')/ListItemAllFields`;
-  const read = () => spGet(`${itemAt}?$select=Id,${NOTE},ListItemEntityTypeFullName`);
-  const dependents = [CONTROL, CHECKS[OPENED_IN]];
+  const fileAt = `web/GetFileByServerRelativePath(decodedurl='${lit(WORKBOOK_URL)}')`;
+  const itemAt = `${fileAt}/ListItemAllFields`;
+  const read = () => spGet(`${itemAt}?$select=Id,${NOTE}`);
+  // The item type is a property of the containing list, not of the item (Learn, Working with lists and list items with REST).
+  const readFixture = async () => {
+    const got = await read();
+    if (!got.ok || got.body === null) return got;
+    const parent = await spGet(`${itemAt}/ParentList?$select=ListItemEntityTypeFullName`);
+    if (!parent.ok || parent.body === null) return parent;
+    return { ok: true, status: got.status, body: { ...got.body,
+      ListItemEntityTypeFullName: parent.body.ListItemEntityTypeFullName } };
+  };
+  const dependents = [CONTROL, CHECKS.web, CHECKS.desktop];
+  const CONTROL_Q = 'the same property update reads back once the workbook is closed';
 
   let item = null;
-  if (!await establishFixture(FIXTURE, async () => (item = await read()), {
+  if (!await establishFixture(FIXTURE, async () => (item = await readFixture()), {
     Id: (v) => Number.isInteger(v),
     ListItemEntityTypeFullName: (v) => typeof v === 'string' && v.length > 0,
     [NOTE]: (v) => v === null || typeof v === 'string',
@@ -309,42 +327,59 @@
       });
     return { res, ms: Date.now() - started };
   };
+  // Statuses the helper treats as non-answering say nothing about the update, so they are never a finding.
+  const noAnswer = (r) => !r.ok && !isRefusal(r.status);
   // File.LockedByUser is a documented SP.File property (Learn, File.LockedByUser); what a value of it means
   // for a co-authoring session is not, so only whether a user is named is recorded, never who.
   const lockState = async () => {
-    const r = await spGet(`${itemAt.replace('/ListItemAllFields', '')}/LockedByUser?$select=Id`);
-    return `LockedByUser read: HTTP ${r.status}, ${r.ok ? (r.body && r.body.Id !== undefined ? 'a user is named' : 'no user named') : 'unanswered'}`;
+    try {
+      const r = await spGet(`${fileAt}/LockedByUser?$select=Id`);
+      return `LockedByUser read: HTTP ${r.status}, ${r.ok ? (r.body && r.body.Id !== undefined ? 'a user is named' : 'no user named') : 'unanswered'}`;
+    } catch (err) {
+      return `LockedByUser read threw: ${err && err.message ? err.message : String(err)}`;
+    }
   };
   const codeOf = (r) => {
     const e = r.body && (r.body.error || r.body['odata.error']);
     return e && e.code !== undefined ? String(e.code) : 'none';
   };
-  const readBack = async () => {
-    const back = await read();
-    return back.ok && back.body ? `read back: ${JSON.stringify(back.body[NOTE])} (wrote ${JSON.stringify(RUN)})`
-      : `the read back ${unanswered(back)}`;
-  };
+  const describe = (back) => (back.ok && back.body
+    ? `read back: ${JSON.stringify(back.body[NOTE])} (wrote ${JSON.stringify(RUN)})`
+    : `the read back ${unanswered(back)}`);
+  const answeredBy = (res, ms) => `HTTP ${res.status} in ${ms} ms; error.code: ${codeOf(res)}; body: ${res.text.slice(0, 300)}`;
 
   if (STATE === 'closed') {
     const { res, ms } = await write();
-    const back = res.ok ? await read() : null;
+    if (noAnswer(res)) {
+      record(CONTROL, CONTROL_Q, 'NOT ESTABLISHED', `the update ${unanswered(res)}; ${answeredBy(res, ms)}`);
+      return report();
+    }
+    let back = null;
+    try { back = res.ok ? await read() : null; } catch (err) { back = { ok: false, status: 0, body: null }; }
     const held = res.ok && back.ok && back.body && back.body[NOTE] === RUN;
-    record(CONTROL, 'the same property update reads back once the workbook is closed',
-      held ? 'PASS' : 'FAIL', `HTTP ${res.status} in ${ms} ms; error.code: ${codeOf(res)}; ${back ? await readBack() : res.text.slice(0, 300)}`);
+    record(CONTROL, CONTROL_Q, held ? 'PASS' : 'FAIL',
+      `${answeredBy(res, ms)}${back ? `; ${describe(back)}` : ''}`);
+    if (!held) voidDependents([CHECKS.web, CHECKS.desktop], 'the closed control did not hold, so the same request proves nothing');
     return report();
   }
 
   const lockBefore = await lockState();
   const { res, ms } = await write();
+  if (noAnswer(res)) {
+    record(CHECKS[OPENED_IN], ASK, 'NOT ESTABLISHED', `the update ${unanswered(res)}; ${answeredBy(res, ms)}`);
+    return report();
+  }
   // A refusal is the finding, so it is never a failure of the probe. But a malformed request is refused
   // the same way, so the row stays awaiting-capture until the closed paste's control passes with this request shape.
-  const answered = `HTTP ${res.status} in ${ms} ms; error.code: ${codeOf(res)}; body: ${res.text.slice(0, 300)}`;
+  const SETTLE = 'settled only when the closed control passes with the same request';
+  const answered = answeredBy(res, ms);
+  // Recorded before any further request, so the write's own answer survives a failure after it.
+  record(CHECKS[OPENED_IN], ASK, 'OBSERVED', `${answered}; ${SETTLE}`, 'awaiting-capture');
+  let back = 'the read back threw';
+  try { back = describe(await read()); } catch (err) { back = `the read back threw: ${err && err.message ? err.message : String(err)}`; }
   record(CHECKS[OPENED_IN], ASK, 'OBSERVED',
-    `${answered}; ${await readBack()}; before: ${lockBefore}; after: ${await lockState()}; `
-    + 'settled only when the closed control passes with the same request',
-    'awaiting-capture');
-  record(CONTROL, 'the same property update reads back once the workbook is closed', 'MANUAL',
-    "close the workbook in the second account, then paste again with STATE = 'closed'");
+    `${answered}; ${back}; before: ${lockBefore}; after: ${await lockState()}; ${SETTLE}`, 'awaiting-capture');
+  record(CONTROL, CONTROL_Q, 'MANUAL', "close the workbook in the second account, then paste again with STATE = 'closed'");
   return report();
   };
   try {

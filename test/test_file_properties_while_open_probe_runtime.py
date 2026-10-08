@@ -28,7 +28,12 @@ ATTEST = {**URL, "  const SECOND_ACCOUNT_HAS_IT_OPEN = false;":
           "  const SECOND_ACCOUNT_HAS_IT_OPEN = true;"}
 OPEN_WEB = {**ATTEST, "  const OPENED_IN = '';": "  const OPENED_IN = 'web';"}
 OPEN_DESKTOP = {**ATTEST, "  const OPENED_IN = '';": "  const OPENED_IN = 'desktop';"}
-CLOSED = {**OPEN_WEB, "  const STATE = 'open';": "  const STATE = 'closed';"}
+CLOSED_ONLY = {"  const STATE = 'open';": "  const STATE = 'closed';",
+               "  const SECOND_ACCOUNT_HAS_IT_OPEN = true;":
+               "  const SECOND_ACCOUNT_HAS_IT_OPEN = false;"}
+CLOSED_IT = {"  const SECOND_ACCOUNT_HAS_CLOSED_IT = false;":
+             "  const SECOND_ACCOUNT_HAS_CLOSED_IT = true;"}
+CLOSED = {**OPEN_WEB, **CLOSED_ONLY, **CLOSED_IT}
 
 # The shapes are this mock's own; the probe records what a site answers and never compares it.
 _MOCK = textwrap.dedent(r"""
@@ -43,6 +48,7 @@ _MOCK = textwrap.dedent(r"""
         text: async () => text, json: async () => JSON.parse(text) };
     };
     let note = null;
+    let wrote = false;
     globalThis.fetch = async (url, init = {}) => {
       const path = String(url).replace(/^https:\/\/example\.sharepoint\.com\/sites\/probe/, '');
       const method = init.method || 'GET';
@@ -52,6 +58,7 @@ _MOCK = textwrap.dedent(r"""
       if (!path.includes('GetFileByServerRelativePath')) return answer(404, 'mock has no ' + path);
       if (CONFIG.missing) return answer(404, { error: { message: { value: 'File Not Found.' } } });
       if (method === 'POST') {
+        wrote = true;
         if (CONFIG.refuse) return answer(CONFIG.refuse, { error: {
           code: '-2130575305, Microsoft.SharePoint.SPException',
           message: { value: 'locked for shared use' } } });
@@ -59,9 +66,15 @@ _MOCK = textwrap.dedent(r"""
         note = JSON.parse(init.body)[CONFIG.noteName || 'ProbeNote'];
         return answer(204, '');
       }
+      if (path.includes('/ParentList')) {
+        return CONFIG.noParent ? answer(404, 'no parent list')
+          : answer(200, { ListItemEntityTypeFullName: 'SP.Data.LibItem' });
+      }
       if (path.includes('/LockedByUser')) return answer(200, CONFIG.locked ? { Id: 9 } : {});
+      if (wrote && CONFIG.readFailsAfterWrite) throw new Error('read after write failed');
+      const staleNote = CONFIG.staleRead && wrote ? null : note;
       return answer(200, { Id: CONFIG.itemId === undefined ? 3 : CONFIG.itemId,
-        ProbeNote: note, ListItemEntityTypeFullName: 'SP.Data.LibItem' });
+        ProbeNote: staleNote });
     };
 """)
 
@@ -143,4 +156,58 @@ def test_an_open_paste_without_the_attestation_sends_nothing() -> None:
 def test_a_request_that_throws_still_prints_the_report() -> None:
     rows, _, output = _run(OPEN_WEB, throws=True)
     assert rows[WEB]["state"] == "open" and "the probe stopped" in output
+    assert ended_with_report(output)
+
+
+def test_the_item_type_is_read_from_the_containing_list() -> None:
+    _, sent, _ = _run(OPEN_WEB)
+    assert any("/ListItemAllFields/ParentList" in s["path"] for s in sent)
+    assert not any("ListItemEntityTypeFullName" in s["path"] and "ParentList" not in s["path"]
+                   for s in sent)
+
+
+def test_a_list_that_cannot_be_read_voids_both_checks_and_writes_nothing() -> None:
+    rows, sent, _ = _run(OPEN_WEB, noParent=True)
+    assert rows[FIXTURE]["outcome"] == "FAIL"
+    assert {CONTROL, WEB, DESKTOP} <= voided(rows)
+    assert _writes(sent) == []
+
+
+def test_a_closed_paste_needs_the_closed_attestation() -> None:
+    swaps = {**OPEN_WEB, **CLOSED_ONLY}
+    _, sent, output = _run(swaps)
+    assert sent == [] and "SECOND_ACCOUNT_HAS_CLOSED_IT" in output
+
+
+def test_a_closed_paste_that_also_says_it_is_open_sends_nothing() -> None:
+    swaps = {**OPEN_WEB, **CLOSED_IT, "  const STATE = 'open';": "  const STATE = 'closed';"}
+    _, sent, _ = _run(swaps)
+    assert sent == []
+
+
+def test_a_failed_control_voids_both_checks() -> None:
+    rows, _, _ = _run(CLOSED, refuse=400)
+    assert rows[CONTROL]["outcome"] == "FAIL"
+    assert {WEB, DESKTOP} <= voided(rows)
+
+
+def test_the_control_verdict_and_its_evidence_come_from_one_read() -> None:
+    rows, sent, _ = _run(CLOSED, staleRead=True)
+    assert rows[CONTROL]["outcome"] == "FAIL" and "read back: null" in rows[CONTROL]["evidence"]
+    reads = [s for s in sent if s["method"] == "GET" and s["path"].endswith("ProbeNote")]
+    assert len(reads) == 2  # the fixture read and the one read after the write
+
+
+@pytest.mark.parametrize("status", [401, 403, 408, 429, 503])
+def test_a_status_that_says_nothing_about_the_update_is_not_established(status: int) -> None:
+    rows, _, _ = _run(OPEN_WEB, refuse=status)
+    assert rows[WEB]["outcome"] == "NOT ESTABLISHED" and rows[WEB]["state"] == "open"
+    assert str(status) in rows[WEB]["evidence"]
+    rows, _, _ = _run(CLOSED, refuse=status)
+    assert rows[CONTROL]["outcome"] == "NOT ESTABLISHED" and rows[CONTROL]["state"] == "open"
+
+
+def test_the_merge_answer_survives_a_failing_read_back() -> None:
+    rows, _, output = _run(OPEN_WEB, refuse=423, readFailsAfterWrite=True)
+    assert "423" in rows[WEB]["evidence"] and "read back threw" in rows[WEB]["evidence"]
     assert ended_with_report(output)
