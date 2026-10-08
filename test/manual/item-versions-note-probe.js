@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT AN ITEM'S VERSIONS CARRY FOR A NOTE COLUMN ----
  *
- * REVISION: e54fdffc
+ * REVISION: 208d0e79
  *
  * QUESTION: what does `items(id)/versions` return, per version, for a plain
  * multi-line text column (Note, RichText false) whose value holds a double
@@ -884,7 +884,7 @@
     if (pairs.every((d) => d < 0)) return 'DESCENDING';
     return 'UNORDERED';
   };
-  log('INFO', 'probe revision e54fdffc. Quote this when reporting results.');
+  log('INFO', 'probe revision 208d0e79. Quote this when reporting results.');
 
   const LIST = runTitle('dbmlsp Probe NoteVersions');
   // The Description marks the list as this probe's for anyone recycling it by hand, and the read-back checks it.
@@ -984,10 +984,10 @@
     const listPath = list.path;
     const itemType = list.body.ListItemEntityTypeFullName;
 
-    // The deploy's create body for a Note column (generators/jsgen.py), so a refusal is about the column.
+    // The deploy's create body for an optional long-text column (jsgen._field_body), pinned by a test.
     beginFixture();
     const sent = await spWrite(`${listPath}/fields`, { __metadata: { type: 'SP.FieldMultiLineText' },
-      FieldTypeKind: 3, Title: COLUMN, Required: false, RichText: false, NumberOfLines: 6,
+      FieldTypeKind: 3, Title: COLUMN, RichText: false, NumberOfLines: 6,
       AppendOnly: false }, await getDigest(), VERBOSE_WRITE);
     log('INFO', `create ${COLUMN}: HTTP ${sent.status}${sent.ok ? '' : ` ${quote(sent.text).slice(0, 200)}`}`);
     if (!await settleFixture(ID.column, async () => {

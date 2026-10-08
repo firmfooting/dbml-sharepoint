@@ -13,6 +13,9 @@ from _paths import MANUAL
 from _probe_runs import catalogued_dependents, ended_with_report, run_probe, voided
 from _versions_mock import VERSIONS_MOCK, mock_list_id
 
+from dbml_sharepoint.generators.jsgen import _field_body
+from dbml_sharepoint.model.parser import Column
+
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
 PROBE = MANUAL / "item-versions-note-probe.js"
@@ -67,16 +70,13 @@ def test_each_version_records_the_note_property_verbatim() -> None:
     assert ended_with_report(output)
 
 
-def test_the_column_is_created_as_plain_multi_line_text() -> None:
+def test_the_column_is_created_with_the_deploys_body_for_an_optional_long_text() -> None:
     _, sent, _ = _run()
 
     [made] = [r for r in sent if r["path"].endswith("/fields") and r["verb"] == "POST"]
-    body = json.loads(made["body"])
-    assert body["FieldTypeKind"] == 3
-    assert body["RichText"] is False
-    # The deploy's Note body sends AppendOnly false (generators/jsgen.py).
-    assert body["AppendOnly"] is False
-    assert body["NumberOfLines"] == 6
+    deployed = _field_body(Column(name="ProbeNote", type="longtext"), {}, "APP_")
+    assert deployed is not None
+    assert json.loads(made["body"]) == deployed["body"]
 
 
 def test_a_note_read_back_unlike_what_was_sent_fails_the_item_and_voids_the_observation() -> None:

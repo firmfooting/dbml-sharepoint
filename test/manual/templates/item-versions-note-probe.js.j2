@@ -146,10 +146,10 @@
     const listPath = list.path;
     const itemType = list.body.ListItemEntityTypeFullName;
 
-    // The deploy's create body for a Note column (generators/jsgen.py), so a refusal is about the column.
+    // The deploy's create body for an optional long-text column (jsgen._field_body), pinned by a test.
     beginFixture();
     const sent = await spWrite(`${listPath}/fields`, { __metadata: { type: 'SP.FieldMultiLineText' },
-      FieldTypeKind: 3, Title: COLUMN, Required: false, RichText: false, NumberOfLines: 6,
+      FieldTypeKind: 3, Title: COLUMN, RichText: false, NumberOfLines: 6,
       AppendOnly: false }, await getDigest(), VERBOSE_WRITE);
     log('INFO', `create ${COLUMN}: HTTP ${sent.status}${sent.ok ? '' : ` ${quote(sent.text).slice(0, 200)}`}`);
     if (!await settleFixture(ID.column, async () => {
