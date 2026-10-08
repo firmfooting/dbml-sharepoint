@@ -107,8 +107,15 @@ globalThis.fetch = async (url, opts = {}) => {
       }
       if (tail.startsWith('/roleassignments')) {
         const roles = S.grantRoles || {};
-        return answer(200, { value: S.grants.map((p) => ({ PrincipalId: p,
-          RoleDefinitionBindings: (roles[p] || [READ]).map((Id) => ({ Id })) })) });
+        const rows = S.grants.map((p) => ({ PrincipalId: p,
+          RoleDefinitionBindings: (roles[p] || [READ]).map((Id) => ({ Id })) }));
+        if (CONFIG.badGrantRow === 'principal') {
+          rows.push({ PrincipalId: 'x', RoleDefinitionBindings: [{ Id: READ }] });
+        }
+        if (CONFIG.badGrantRow === 'binding') {
+          rows.push({ PrincipalId: 10, RoleDefinitionBindings: [{}] });
+        }
+        return answer(200, { value: rows });
       }
       if (tail.startsWith('/ShareLink')) {
         if (CONFIG.linkRefused) return refused('sharing is off');
@@ -117,6 +124,7 @@ globalThis.fetch = async (url, opts = {}) => {
       }
       if (tail.startsWith('/GetSharingInformation')) {
         const links = S.links.map((u) => ({ linkDetails: { Url: u } }));
+        if (CONFIG.linksShape === 'noUrl') links.push({ linkDetails: {} });
         if (CONFIG.linksShape === 'nested') {
           return answer(200, { permissionsInformation: { links } });
         }
@@ -133,6 +141,9 @@ globalThis.fetch = async (url, opts = {}) => {
         const { __metadata, ...plain } = body;
         if (CONFIG.dropsDate) delete plain.MoveDate;
         if (CONFIG.dropsEdit) delete plain.MoveChoice;
+        if (CONFIG.linkDescription && plain.MoveLink) {
+          plain.MoveLink = { ...plain.MoveLink, Description: CONFIG.linkDescription };
+        }
         Object.assign(f.values, plain);
         f.editor = me; f.versions.push(`${f.versions.length + 1}.0`);
         return answer(204, '');
@@ -178,6 +189,7 @@ globalThis.fetch = async (url, opts = {}) => {
       S.file.moved = true;
       if (move.newId) S.file.id = 99;
       if (move.dropsLabel) S.file.versions = S.file.versions.slice(1);
+      if (move.relabels) S.file.versions = [...S.file.versions.slice(0, -1), '3.1'];
       if (move.addsVersion) S.file.versions.push(`${S.file.versions.length + 1}.0`);
       if (move.editorBecomesMover) { S.file.editor = me; S.file.modified = '2026-10-07T00:00:00Z'; }
       if (move.dropsValues) S.file.values = {};

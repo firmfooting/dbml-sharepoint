@@ -77,12 +77,17 @@ def _digest_swap(url: str = LINK_URL) -> dict[str, str]:
     return {"  const LINK_DIGEST = '';": f"  const LINK_DIGEST = '{_fnv(url)}';"}
 
 
+def _moved_id_swap(item_id: int = 41) -> dict[str, str]:
+    return {"  const MOVED_ID = 0;": f"  const MOVED_ID = {item_id};"}
+
+
 def _leg(leg: int, me: int, swaps: dict[str, str] | None = None, /, **config: Any) -> Run:
     """Paste STATE `leg` as site user `me`; `config` reaches the mock, its `state` included."""
     # A swap must change the probe, and STATE 1 is what it ships with.
     pasted = {} if leg == 1 else {"  const STATE = 1;": f"  const STATE = {leg};"}
     digest = _digest_swap() if leg in (3, 5) and not config.pop("no_digest", False) else {}
-    swaps = {**LOGINS, **pasted, **digest, **(swaps or {})}
+    moved = _moved_id_swap() if leg == 5 and not config.pop("no_moved_id", False) else {}
+    swaps = {**LOGINS, **pasted, **digest, **moved, **(swaps or {})}
     return run_probe(FILE_MOVE_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"),
                      {"me": me, **config}, swaps, pin=False)
 
@@ -513,3 +518,49 @@ def test_a_library_root_without_a_url_stops_every_leg_before_a_path_is_built(
              "GetFileByServerRelativePath")
     assert not any(b in s["path"] for s in sent for b in built)
     assert ended_with_report(output)
+
+
+def test_a_link_description_that_did_not_store_fails_the_values_fixture() -> None:
+    rows, _, _ = _leg(1, 7, linkDescription="rewritten")
+    assert rows["library.file.fixture-move-values"]["outcome"] == "FAIL"
+
+
+def test_a_relabelled_version_is_not_established_not_a_missing_addition() -> None:
+    rows, _, _ = _leg(4, 9, state=_state_three_start(), move={"relabels": True})
+    assert rows[F5]["outcome"] == "NOT ESTABLISHED"
+
+
+def test_a_dropped_version_label_leaves_the_added_version_question_open() -> None:
+    rows, _, _ = _leg(4, 9, state=_state_three_start(), move={"dropsLabel": True})
+    assert rows[F5]["outcome"] == "NOT ESTABLISHED"
+
+
+def test_state_four_prints_the_moved_items_id() -> None:
+    _, _, output = _leg(4, 9, state=_state_three_start(), move={"newId": True})
+    assert "moved item id: 99" in _printed(output)
+
+
+def test_state_five_without_the_moved_id_sends_nothing() -> None:
+    _, sent, output = _leg(5, 7, state=_state_four_start(), no_moved_id=True)
+    assert sent == []
+    assert "MOVED_ID" in output
+
+
+def test_a_root_file_with_another_id_is_not_established_not_a_lost_grant() -> None:
+    start = {**_state_four_start(), "grants": [], "links": []}
+    rows, _, _ = _leg(5, 7, _moved_id_swap(42), state=start)
+    assert rows[F4]["outcome"] == "NOT ESTABLISHED"
+    assert "MOVED_ID" in rows[F4]["evidence"]
+
+
+def test_a_sharing_entry_without_a_url_is_not_established_not_a_lost_link() -> None:
+    start = {**_state_four_start(), "links": []}
+    rows, _, _ = _leg(5, 7, state=start, linksShape="noUrl")
+    assert rows[F4]["outcome"] == "NOT ESTABLISHED"
+
+
+@pytest.mark.parametrize("bad", ["principal", "binding"])
+def test_a_malformed_role_assignment_row_is_not_established_not_a_lost_grant(bad: str) -> None:
+    start = {**_state_four_start(), "grants": []}
+    rows, _, _ = _leg(5, 7, state=start, badGrantRow=bad)
+    assert rows[F4]["outcome"] == "NOT ESTABLISHED"

@@ -1,7 +1,7 @@
 
 /** ---- dbml-sharepoint PROBE: WHAT A MOVE INSIDE ONE LIBRARY KEEPS ----
  *
- * REVISION: 208ace49
+ * REVISION: c83d1fa3
  *
  * QUESTION: when File.MoveToUsingPath moves a file from a folder to the root
  * of the same document library, does the item keep its Id, its versions, its
@@ -66,7 +66,8 @@
  *
  * HOW TO RUN: F12 -> Console on a site you own; paste; Enter; it prints its
  * plan and stops. Set CONFIRMED, ALLOW_WRITES, STATE and both logins; for
- * STATES 3 and 4 also LINK_DIGEST, the digest STATE 1 printed for its sharing link.
+ * STATES 3 and 5 also LINK_DIGEST, the digest STATE 1 printed for its sharing link;
+ * for STATE 5 also MOVED_ID, the item id STATE 4 printed for the moved file.
  */
 (async () => {
   // ---- Operator gate -------------------------------------------------
@@ -557,7 +558,7 @@
   const learnIdentity = async () => {
     await readAccount();
   };
-  log('INFO', 'probe revision 208ace49. Quote this when reporting results.');
+  log('INFO', 'probe revision c83d1fa3. Quote this when reporting results.');
 
   const STATE = 1;
   const TEST_USER_LOGIN = 'CHANGE ME - the editing account claims login';
@@ -565,6 +566,8 @@
   const PLACEHOLDER = /^CHANGE ME/;
   // STATES 3 and 5: the digest STATE 1 printed for the link it made, so a regenerated link is told from the original.
   const LINK_DIGEST = '';
+  // STATE 5: the moved item's Id as STATE 4 printed it, so a different file at the root path is refused by name.
+  const MOVED_ID = 0;
   const LIBRARY = 'dbmlsp Probe FileMove';
   // Ownership is the Description: a same-title library this probe did not make is never written to.
   const OWNERSHIP_DESCRIPTION = 'dbml-sharepoint file move probe. Safe to delete.';
@@ -674,6 +677,10 @@
     log('ERROR', 'Set LINK_DIGEST to the link digest STATE 1 printed. Nothing has been sent.');
     return report();
   }
+  if (!CLEANUP && STATE === 5 && !(Number.isInteger(MOVED_ID) && MOVED_ID > 0)) {
+    log('ERROR', 'Set MOVED_ID to the moved item id STATE 4 printed. Nothing has been sent.');
+    return report();
+  }
 
   const { digest } = await issueDigest();
   const send = (path, method, body) => sendRaw(path, { method: 'POST', body, headers: {
@@ -712,7 +719,10 @@
   const grantOn = async (itemId, editor, roleId) => {
     const own = await sendRaw(`${LIST}/items(${itemId})?$select=HasUniqueRoleAssignments`);
     const grants = await sendRaw(`${LIST}/items(${itemId})/roleassignments?$expand=RoleDefinitionBindings&$select=PrincipalId,RoleDefinitionBindings/Id`);
-    const rows = grants.ok && grants.parsed && Array.isArray(grants.parsed.value) ? grants.parsed.value : null;
+    const listed = grants.ok && grants.parsed && Array.isArray(grants.parsed.value) ? grants.parsed.value : null;
+    // A row without an integer PrincipalId and integer binding Ids cannot show the editing account's absence.
+    const rows = listed && listed.every((g) => g && Number.isInteger(g.PrincipalId) && Array.isArray(g.RoleDefinitionBindings)
+      && g.RoleDefinitionBindings.every((b) => b && Number.isInteger(b.Id))) ? listed : null;
     const ours = rows && editor !== null ? rows.find((g) => g && g.PrincipalId === editor) : undefined;
     const levels = ours && Array.isArray(ours.RoleDefinitionBindings) ? ours.RoleDefinitionBindings.map((b) => b && b.Id) : null;
     const unique = own.ok && own.parsed ? own.parsed.HasUniqueRoleAssignments : undefined;
@@ -738,8 +748,9 @@
     const nested = body && body.permissionsInformation;
     const list = !body ? null : Array.isArray(body.links) ? body.links
       : nested && Array.isArray(nested.links) ? nested.links : null;
-    const urls = list ? list.filter((l) => l && l.linkDetails && typeof l.linkDetails.Url === 'string'
-      && l.linkDetails.Url !== '').map((l) => l.linkDetails.Url) : null;
+    // One entry without a string Url could be the original link, so absence is not shown by the others.
+    const urls = list && list.every((l) => l && l.linkDetails && typeof l.linkDetails.Url === 'string' && l.linkDetails.Url !== '')
+      ? list.map((l) => l.linkDetails.Url) : null;
     return { res, withUrl: urls ? urls.length : null, digests: urls ? urls.map(digestOf) : null, entries: list ? list.length : null,
       keys: body ? Object.keys(body).sort().join(', ') || 'none' : said(res) };
   };
@@ -819,7 +830,7 @@
       : asRead(await sendRaw(`${LIST}/items(${itemId})?$select=Id,MoveChoice,MovePersonId,MoveDate,MoveFlag,MoveLink`))),
     { MoveChoice: 'Q1', MovePersonId: (v) => me !== null && v === me,
       MoveDate: (v) => typeof v === 'string' && v !== '', MoveFlag: true,
-      MoveLink: (v) => Boolean(v) && v.Url === VALUES.MoveLink.Url })) return report();
+      MoveLink: (v) => Boolean(v) && v.Url === VALUES.MoveLink.Url && v.Description === VALUES.MoveLink.Description })) return report();
 
     const ensured = await send('web/ensureuser', 'POST', { logonName: TEST_USER_LOGIN });
     // Status only: a refusal can quote the login it was given.
@@ -933,6 +944,7 @@
     const at = await sendRaw(`${fileAt(newPath)}/ListItemAllFields?$select=${SELECT}`);
     const after = at.ok && at.parsed && Number.isInteger(at.parsed.Id) ? at.parsed : null;
     const afterLabels = after ? await versionsOf(after.Id) : null;
+    if (after) log('INFO', `moved item id: ${after.Id}. Set MOVED_ID to it before STATE 5.`);
     if (!after || !afterLabels) {
       const why = after ? 'the moved item\'s versions did not read' : `the moved file read ${said(at)}`;
       for (const [row, question] of [[F1, Q.f1], [F2, Q.f2], [F3, Q.f3], [F5, Q.f5]]) {
@@ -964,9 +976,11 @@
       `Created: ${before.Created} -> ${after.Created}; Author: ${name(before.AuthorId)} -> ${name(after.AuthorId)}; `
       + `Modified: ${before.Modified} -> ${after.Modified}; Editor: ${name(before.EditorId)} -> ${name(after.EditorId)}`);
     }
-    record(F5, Q.f5, afterLabels.length > labels.length ? 'VERSION ADDED' : 'NO VERSION ADDED',
-      `${labels.length} version(s) before, ${afterLabels.length} after`);
-    log('INFO', 'STATE 3 done. Paste STATE 5 as the owner.');
+    // A before-label gone after the move makes the label sets incomparable, so no addition or absence is claimed.
+    record(F5, Q.f5, !keptVersions ? 'NOT ESTABLISHED'
+      : afterLabels.some((l) => !labels.includes(l)) ? 'VERSION ADDED' : 'NO VERSION ADDED',
+    `${labels.length} version(s) before, ${afterLabels.length} after; labels ${labels.join(', ')} -> ${afterLabels.join(', ')}`);
+    log('INFO', 'STATE 4 done. Paste STATE 5 as the owner.');
     return report();
   }
 
@@ -974,7 +988,9 @@
   if (!await ownerHere()) return report();
   const editor = await siteUser(TEST_USER_LOGIN);
   const moved = await sendRaw(`${fileAt(newPath)}/ListItemAllFields?$select=Id`);
-  if (moved.ok && moved.parsed && Number.isInteger(moved.parsed.Id)) {
+  if (moved.ok && moved.parsed && Number.isInteger(moved.parsed.Id) && moved.parsed.Id !== MOVED_ID) {
+    record(F4, Q.f4, 'NOT ESTABLISHED', `the root path reads item ${moved.parsed.Id}, not MOVED_ID ${MOVED_ID}; no grant or link was read`);
+  } else if (moved.ok && moved.parsed && Number.isInteger(moved.parsed.Id)) {
     const itemId = moved.parsed.Id;
     const g = await grantOn(itemId, editor, await readRoleId());
     const seen = await linksOn(itemId);
@@ -990,7 +1006,8 @@
     record(F4, Q.f4, head, `HasUniqueRoleAssignments ${g.unique}; bindings read, ${bindings}; Read level `
       + `${g.bound === null ? 'not established' : g.bound ? 'held' : 'not held'}; sharing `
       + `information ${seen.entries === null ? `carried no links array (${seen.keys})`
-        : `listed ${seen.entries} link(s), ${seen.withUrl} with a URL, digests ${seen.digests.join(', ') || 'none'}`}`
+        : seen.withUrl === null ? `listed ${seen.entries} entries, not every one with a URL`
+          : `listed ${seen.entries} link(s), ${seen.withUrl} with a URL, digests ${seen.digests.join(', ') || 'none'}`}`
       + `; link digest to match ${LINK_DIGEST}`);
   } else {
     record(F4, Q.f4, 'NOT ESTABLISHED', `the moved file read ${said(moved)}`);
