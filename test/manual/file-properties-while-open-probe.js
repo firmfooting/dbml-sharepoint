@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FILE PROPERTY UPDATE WHILE THE WORKBOOK IS OPEN ----
  *
- * REVISION: 32744000
+ * REVISION: 65a83b77
  *
  * QUESTION: while a second account has a library workbook open in Excel for the
  * web (or in Excel desktop), can the first account set a column on that file,
@@ -217,8 +217,10 @@
     return false;
   };
 
+  const REVISION = '65a83b77';
   const report = () => {
     console.log('\n==================== RESULTS ====================');
+    console.log(`probe revision ${REVISION}. Quote this when reporting results.`);
     for (const r of RESULTS) {
       console.log(`${r.id.padEnd(6)} ${r.state.padEnd(16)} ${r.outcome.padEnd(16)} ${r.question}`);
       if (r.evidence) console.log(`       ${r.evidence}`);
@@ -321,13 +323,26 @@
   const write = async () => {
     const digest = await getDigest();
     const started = Date.now();
-    const res = await spPost(itemAt, { __metadata: { type: item.body.ListItemEntityTypeFullName }, [NOTE]: RUN },
-      digest, {
-        Accept: 'application/json;odata=verbose',
-        'Content-Type': 'application/json;odata=verbose',
-        'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE',
-      });
-    return { res, ms: Date.now() - started };
+    try {
+      const res = await spPost(itemAt, { __metadata: { type: item.body.ListItemEntityTypeFullName }, [NOTE]: RUN },
+        digest, {
+          Accept: 'application/json;odata=verbose',
+          'Content-Type': 'application/json;odata=verbose',
+          'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE',
+        });
+      return { res, ms: Date.now() - started };
+    } catch (err) {
+      // The request may have been committed before the browser lost the answer, so the caller reads back.
+      return { res: null, ms: Date.now() - started, err: err && err.message ? err.message : String(err) };
+    }
+  };
+  // Whether the per-run token is present after a request that never answered.
+  const uncertain = async (err, ms) => {
+    let back;
+    try { back = describe(await read()).replace('requested', 'token'); } catch (e2) {
+      back = `the read back threw: ${e2 && e2.message ? e2.message : String(e2)}`;
+    }
+    return `the MERGE rejected after ${ms} ms before any answer (${err}); the write is uncertain; ${back}`;
   };
   // Statuses the helper treats as non-answering say nothing about the update, so they are never a finding.
   const noAnswer = (r) => !r.ok && !isRefusal(r.status);
@@ -351,14 +366,26 @@
   const answeredBy = (res, ms) => `HTTP ${res.status} in ${ms} ms; error.code: ${codeOf(res)}; body: ${res.text.slice(0, 300)}`;
 
   if (STATE === 'closed') {
-    const { res, ms } = await write();
+    const { res, ms, err } = await write();
+    if (!res) {
+      record(CONTROL, CONTROL_Q, 'NOT ESTABLISHED', await uncertain(err, ms));
+      return report();
+    }
     if (noAnswer(res)) {
       record(CONTROL, CONTROL_Q, 'NOT ESTABLISHED', `the update ${unanswered(res)}; ${answeredBy(res, ms)}`);
       return report();
     }
     let back = null;
-    try { back = res.ok ? await read() : null; } catch (err) { back = { ok: false, status: 0, body: null }; }
-    const held = res.ok && back.ok && back.body && back.body[NOTE] === RUN;
+    try { back = res.ok ? await read() : null; } catch (e2) {
+      back = { ok: false, status: 0, body: null, threw: e2 && e2.message ? e2.message : String(e2) };
+    }
+    // A readback that did not answer says nothing about the request shape, so it is not a failure of the control.
+    if (back && !back.ok) {
+      record(CONTROL, CONTROL_Q, 'NOT ESTABLISHED',
+        `${answeredBy(res, ms)}; ${back.threw ? `the read back threw: ${back.threw}` : describe(back)}`);
+      return report();
+    }
+    const held = res.ok && back.body && back.body[NOTE] === RUN;
     record(CONTROL, CONTROL_Q, held ? 'PASS' : 'FAIL',
       `${answeredBy(res, ms)}${back ? `; ${describe(back)}` : ''}`);
     if (!held) voidDependents([CHECKS.web, CHECKS.desktop], 'the closed control did not hold, so the same request proves nothing');
@@ -366,7 +393,11 @@
   }
 
   const lockBefore = await lockState();
-  const { res, ms } = await write();
+  const { res, ms, err } = await write();
+  if (!res) {
+    record(CHECKS[OPENED_IN], ASK, 'NOT ESTABLISHED', await uncertain(err, ms));
+    return report();
+  }
   if (noAnswer(res)) {
     record(CHECKS[OPENED_IN], ASK, 'NOT ESTABLISHED', `the update ${unanswered(res)}; ${answeredBy(res, ms)}`);
     return report();

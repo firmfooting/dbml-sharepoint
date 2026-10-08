@@ -6,7 +6,9 @@ expected outcome.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import textwrap
 from typing import Any
 
@@ -53,16 +55,20 @@ _MOCK = textwrap.dedent(r"""
       const path = String(url).replace(/^https:\/\/example\.sharepoint\.com\/sites\/probe/, '');
       const method = init.method || 'GET';
       SENT.push({ method, path, headers: init.headers || {}, body: init.body });
+      if (path.endsWith('/_api/contextinfo') && CONFIG.digestThrows) throw new Error('no digest');
       if (path.endsWith('/_api/contextinfo')) return answer(200, { d: {
         GetContextWebInformation: { FormDigestValue: 'digest' } } });
       if (!path.includes('GetFileByServerRelativePath')) return answer(404, 'mock has no ' + path);
       if (CONFIG.missing) return answer(404, { error: { message: { value: 'File Not Found.' } } });
       if (method === 'POST') {
         wrote = true;
+        if (CONFIG.commitThenThrow) {
+          note = JSON.parse(init.body).ProbeNote;
+          throw new Error('connection lost');
+        }
         if (CONFIG.refuse) return answer(CONFIG.refuse, { error: {
           code: '-2130575305, Microsoft.SharePoint.SPException',
           message: { value: 'locked for shared use' } } });
-        if (CONFIG.throws) throw new Error('network down');
         note = JSON.parse(init.body)[CONFIG.noteName || 'ProbeNote'];
         return answer(204, '');
       }
@@ -71,6 +77,7 @@ _MOCK = textwrap.dedent(r"""
           : answer(200, { ListItemEntityTypeFullName: 'SP.Data.LibItem' });
       }
       if (path.includes('/LockedByUser')) return answer(200, CONFIG.locked ? { Id: 9 } : {});
+      if (wrote && CONFIG.readStatus) return answer(CONFIG.readStatus, 'slow down');
       if (wrote && CONFIG.readFailsAfterWrite) throw new Error('read after write failed');
       const staleNote = CONFIG.staleRead && wrote ? null : note;
       return answer(200, { Id: CONFIG.itemId === undefined ? 3 : CONFIG.itemId,
@@ -154,7 +161,7 @@ def test_an_open_paste_without_the_attestation_sends_nothing() -> None:
 
 
 def test_a_request_that_throws_still_prints_the_report() -> None:
-    rows, _, output = _run(OPEN_WEB, throws=True)
+    rows, _, output = _run(OPEN_WEB, digestThrows=True)
     assert rows[WEB]["state"] == "open" and "the probe stopped" in output
     assert ended_with_report(output)
 
@@ -216,3 +223,33 @@ def test_the_merge_answer_survives_a_failing_read_back() -> None:
 def test_a_refused_update_is_not_labelled_as_written() -> None:
     rows, _, _ = _run(OPEN_WEB, refuse=423)
     assert "requested" in rows[WEB]["evidence"] and "wrote" not in rows[WEB]["evidence"]
+
+
+@pytest.mark.parametrize("config", [{"readFailsAfterWrite": True}, {"readStatus": 429},
+                                    {"readStatus": 404}], ids=["throws", "429", "404"])
+def test_a_control_readback_that_did_not_answer_is_not_established_and_voids_nothing(
+        config: dict[str, Any]) -> None:
+    rows, _, _ = _run(CLOSED, **config)
+    assert rows[CONTROL]["outcome"] == "NOT ESTABLISHED" and rows[CONTROL]["state"] == "open"
+    assert "HTTP 204" in rows[CONTROL]["evidence"]
+    assert not voided(rows)
+
+
+@pytest.mark.parametrize("swaps", [OPEN_WEB, CLOSED], ids=["open", "closed"])
+def test_a_merge_that_rejects_is_read_back_for_the_token(swaps: dict[str, str]) -> None:
+    rows, _, output = _run(swaps, commitThenThrow=True)
+    row = rows[CONTROL if swaps is CLOSED else WEB]
+    assert row["outcome"] == "NOT ESTABLISHED" and "the write is uncertain" in row["evidence"]
+    assert "connection lost" in row["evidence"] and "token" in row["evidence"]
+    assert ended_with_report(output)
+
+
+def test_the_revision_is_derived_from_the_probe_text() -> None:
+    js = PROBE.read_text(encoding="utf-8")
+    stamped = re.search(r"REVISION: ([0-9a-f]{8})", js)
+    assert stamped is not None
+    neutral = js.replace(stamped.group(1), "00000000")
+    # Re-stamp with this digest whenever the probe changes.
+    assert stamped.group(1) == hashlib.sha256(neutral.encode()).hexdigest()[:8]
+    _, _, output = _run(OPEN_WEB)
+    assert f"probe revision {stamped.group(1)}." in output
