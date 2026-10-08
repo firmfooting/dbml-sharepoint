@@ -389,7 +389,14 @@
       return report();
     }
     const edit = await send(`${LIST}/items(${itemId})`, 'MERGE', { MoveChoice: 'Q2' });
-    log(edit.ok ? 'OK' : 'FAIL', `the edit answered ${said(edit)}. Paste STATE 3 as the owner.`);
+    log(edit.ok ? 'OK' : 'FAIL', `the edit answered ${said(edit)}.`);
+    // Read back, so a 2xx that stored nothing is named here rather than found after the move.
+    const back = await sendRaw(`${LIST}/items(${itemId})?$select=MoveChoice`);
+    if (!back.ok || !back.parsed || back.parsed.MoveChoice !== 'Q2') {
+      log('FAIL', `the edit did not store: MoveChoice reads ${back.ok && back.parsed ? JSON.stringify(back.parsed.MoveChoice) : said(back)}, not "Q2". Do not paste STATE 3.`);
+      return report();
+    }
+    log('OK', 'MoveChoice reads Q2. Paste STATE 3 as the owner.');
     return report();
   }
 
@@ -424,14 +431,15 @@
     const first = await sendRaw(`${fileAt(oldPath)}/ListItemAllFields?$select=${SELECT}`);
     const before = first.ok && first.parsed && Number.isInteger(first.parsed.Id) ? first.parsed : null;
     const labels = before ? await versionsOf(before.Id) : null;
-    if (before) who[before.AuthorId] = 'the owner';
+    // The owner is the account STATE 1 wrote into MovePerson, so Author is checked against it and not against itself.
+    if (before && Number.isInteger(before.MovePersonId)) who[before.MovePersonId] = 'the owner';
     if (editor !== null) who[editor] = 'the editing account';
     const mover = await siteUser(MOVER_LOGIN);
     if (mover !== null) who[mover] = who[mover] || 'the moving account';
     if (!await fixture(BEFORE_ROW, async () => ({ ok: first.ok, status: first.status, body: {
       Versions: labels ? labels.length : undefined, Author: before ? name(before.AuthorId) : undefined,
-      Editor: before ? name(before.EditorId) : undefined, Mover: name(me), Complete: before ? hasColumns(before) && hasSystem(before) : undefined } }),
-    { Versions: 3, Author: 'the owner', Editor: 'the editing account', Mover: 'the moving account', Complete: true })) {
+      Editor: before ? name(before.EditorId) : undefined, Mover: name(me), Choice: before ? before.MoveChoice : undefined, Complete: before ? hasColumns(before) && hasSystem(before) : undefined } }),
+    { Versions: 3, Author: 'the owner', Editor: 'the editing account', Mover: 'the moving account', Choice: 'Q2', Complete: true })) {
       return report();
     }
     const move = await send(`${fileAt(oldPath)}/MoveToUsingPath`, 'POST',
@@ -454,7 +462,11 @@
     record(F1, Q.f1, keptId && keptVersions ? 'ID AND VERSIONS KEPT' : !keptId ? 'ID CHANGED' : 'VERSIONS CHANGED',
       `Id ${before.Id} -> ${after.Id}; versions ${labels.join(', ')} -> ${afterLabels.join(', ')}`);
     const missing = 'the moved item\'s read omitted a selected field';
-    const changed = COLUMNS.filter((c) => JSON.stringify(before[c]) !== JSON.stringify(after[c]));
+    // MoveLink is the one object; its properties are compared by name so their order cannot read as a change.
+    const sameValue = (c) => (c === 'MoveLink' && before[c] && after[c]
+      ? before[c].Url === after[c].Url && before[c].Description === after[c].Description
+      : JSON.stringify(before[c]) === JSON.stringify(after[c]));
+    const changed = COLUMNS.filter((c) => !sameValue(c));
     if (!hasColumns(after)) {
       record(F2, Q.f2, 'NOT ESTABLISHED', missing);
     } else {

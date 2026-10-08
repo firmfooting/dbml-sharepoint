@@ -132,6 +132,7 @@ globalThis.fetch = async (url, opts = {}) => {
         }
         const { __metadata, ...plain } = body;
         if (CONFIG.dropsDate) delete plain.MoveDate;
+        if (CONFIG.dropsEdit) delete plain.MoveChoice;
         Object.assign(f.values, plain);
         f.editor = me; f.versions.push(`${f.versions.length + 1}.0`);
         return answer(204, '');
@@ -180,6 +181,10 @@ globalThis.fetch = async (url, opts = {}) => {
       if (move.addsVersion) S.file.versions.push(`${S.file.versions.length + 1}.0`);
       if (move.editorBecomesMover) { S.file.editor = me; S.file.modified = '2026-10-07T00:00:00Z'; }
       if (move.dropsValues) S.file.values = {};
+      if (move.reordersLink) {
+        const { Url, Description } = S.file.values.MoveLink;
+        S.file.values.MoveLink = { Description, Url };
+      }
       if (move.dropsUnique) { S.unique = false; S.grants = []; }
       if (move.readBecomesEdit) S.grantRoles = { 8: [1073741827] };
       return answer(200, {});

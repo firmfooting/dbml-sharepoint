@@ -144,6 +144,17 @@ def test_state_two_edits_the_file_once() -> None:
     assert ended_with_report(output)
 
 
+def test_state_two_reads_the_edit_back_and_names_one_that_did_not_store() -> None:
+    start = _state_three_start()
+    start["file"]["versions"] = ["1.0", "2.0"]
+    start["file"]["values"]["MoveChoice"] = "Q1"
+    _, _, stored = _leg(2, 8, state=start)
+    assert "MoveChoice reads Q2" in _printed(stored)
+    _, _, output = _leg(2, 8, state=start, dropsEdit=True)
+    assert "did not store" in _printed(output)
+    assert "Paste STATE 3" not in _printed(output)
+
+
 def test_state_two_edits_nothing_when_the_file_is_not_in_the_folder() -> None:
     _, sent, output = _leg(2, 8, state=_state_four_start())
     assert _writes(sent) == []
@@ -450,6 +461,27 @@ def test_a_moved_item_missing_a_field_leaves_only_the_rows_that_need_it_open(
         assert rows[row]["outcome"] == "NOT ESTABLISHED", row
     for row in settled:
         assert rows[row]["state"] == "settled", row
+
+
+def test_a_choice_the_edit_did_not_leave_stops_before_the_move() -> None:
+    start = _state_three_start()
+    start["file"]["values"]["MoveChoice"] = "Q1"
+    rows, sent, _ = _leg(4, 9, state=start)
+    assert rows[BEFORE]["outcome"] == "FAIL"
+    assert not any("MoveToUsingPath" in s["path"] for s in sent)
+
+
+def test_an_author_who_is_not_the_account_that_wrote_the_fixture_stops_before_the_move() -> None:
+    start = _state_three_start()
+    start["file"]["author"] = 10
+    rows, sent, _ = _leg(4, 9, state=start)
+    assert rows[BEFORE]["outcome"] == "FAIL"
+    assert not any("MoveToUsingPath" in s["path"] for s in sent)
+
+
+def test_a_url_value_with_its_properties_in_another_order_is_a_kept_value() -> None:
+    rows, _, _ = _leg(4, 9, state=_state_three_start(), move={"reordersLink": True})
+    assert rows[F2]["outcome"] == "EVERY VALUE KEPT"
 
 
 def test_a_moved_item_whose_versions_carry_no_label_leaves_the_version_rows_open() -> None:
