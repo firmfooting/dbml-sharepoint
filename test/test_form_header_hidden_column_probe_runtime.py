@@ -236,6 +236,7 @@ def test_each_reading_is_its_own_finding_and_body_visibility_voids_only_the_targ
     assert "suppression by the hidden token" in rows[EDIT]["evidence"]
     assert 'whether the line "visible-choice:" still shows Yes' in rows[EDIT]["evidence"]
     assert "HiddenResult is still absent from the Edit form body" in rows[EDIT]["evidence"]
+    assert "HiddenResult is still absent from the Display form body" in rows[DISPLAY]["evidence"]
 
 
 def test_joined_text_is_an_expression_and_the_footer_a_plain_literal() -> None:
