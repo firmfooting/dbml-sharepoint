@@ -153,6 +153,31 @@ def test_a_refused_sharing_link_voids_only_what_rests_on_it() -> None:
     assert voided(rows) == {BEFORE_PERMS, F4}
 
 
+def test_a_sharing_answer_without_links_records_its_key_names_and_no_values() -> None:
+    rows, _, _ = _leg(1, 7, linksShape="noLinks")
+    row = rows["library.file.fixture-move-sharing-link"]
+    assert row["outcome"] == "FAIL"
+    for name in ("anonymousLinkExpirationRestrictionDays", "permissionsInformation",
+                 "hasInheritedLinks"):
+        assert name in row["evidence"]
+    assert "SECRET" not in row["evidence"]
+
+
+def test_sharing_answer_key_names_are_masked_like_any_quoted_text() -> None:
+    rows, _, _ = _leg(1, 7, linksShape="identityKeys")
+    evidence = rows["library.file.fixture-move-sharing-link"]["evidence"]
+    for leaked in ("editor@example.com", "someone@example.org", "mover@example.com",
+                   "example.sharepoint.com", "stranger@example"):
+        assert leaked not in evidence, evidence
+    assert "<account>" in evidence
+
+
+def test_state_five_names_the_keys_of_a_sharing_answer_without_links() -> None:
+    rows, _, _ = _leg(5, 7, state=_state_four_start(), linksShape="noLinks")
+    assert "hasInheritedLinks" in rows[F4]["evidence"]
+    assert "SECRET" not in rows[F4]["evidence"]
+
+
 def test_state_two_edits_the_file_once() -> None:
     start = _state_three_start()
     start["file"]["versions"] = ["1.0", "2.0"]
