@@ -63,14 +63,14 @@ _MOCK = textwrap.dedent(r"""
       if (method === 'POST') {
         wrote = true;
         if (CONFIG.commitThenThrow) {
-          note = JSON.parse(init.body).ProbeNote;
+          note = JSON.parse(init.body).ProbeNotes;
           throw new Error('connection lost');
         }
         if (CONFIG.refuse && CONFIG.bare) return answer(CONFIG.refuse, 'internal error');
         if (CONFIG.refuse) return answer(CONFIG.refuse, { error: {
           code: '-2130575305, Microsoft.SharePoint.SPException',
           message: { value: 'locked for shared use' } } });
-        note = JSON.parse(init.body)[CONFIG.noteName || 'ProbeNote'];
+        note = JSON.parse(init.body)[CONFIG.noteName || 'ProbeNotes'];
         return answer(204, '');
       }
       if (path.includes('/ParentList')) {
@@ -87,7 +87,7 @@ _MOCK = textwrap.dedent(r"""
       if (wrote && CONFIG.readFailsAfterWrite) throw new Error('read after write failed');
       const staleNote = CONFIG.staleRead && wrote ? null : note;
       return answer(200, { Id: CONFIG.itemId === undefined ? 3 : CONFIG.itemId,
-        ProbeNote: staleNote });
+        ProbeNotes: staleNote });
     };
 """)
 
@@ -207,7 +207,7 @@ def test_a_failed_control_voids_both_checks() -> None:
 def test_the_control_verdict_and_its_evidence_come_from_one_read() -> None:
     rows, sent, _ = _run(CLOSED, staleRead=True)
     assert rows[CONTROL]["outcome"] == "FAIL" and "read back: null" in rows[CONTROL]["evidence"]
-    reads = [s for s in sent if s["method"] == "GET" and s["path"].endswith("ProbeNote")]
+    reads = [s for s in sent if s["method"] == "GET" and s["path"].endswith("ProbeNotes")]
     assert len(reads) == 2  # the fixture read and the one read after the write
 
 
@@ -308,3 +308,11 @@ def test_an_accepted_open_update_with_an_unreadable_readback_is_not_a_finding(
         config: dict[str, Any]) -> None:
     rows, _, _ = _run(OPEN_WEB, **config)
     assert rows[WEB]["outcome"] == "NOT ESTABLISHED" and "HTTP 204" in rows[WEB]["evidence"]
+
+
+def test_the_note_column_is_the_one_the_catalogue_prerequisite_names() -> None:
+    # Core holds no fixture schema, so the catalogue prerequisite is what grounds the column.
+    note = re.search(r"const NOTE = '(\w+)'", PROBE.read_text(encoding="utf-8"))
+    assert note is not None
+    catalogue = (MANUAL / "probe-catalog.json").read_text(encoding="utf-8")
+    assert f"a library with a text column {note.group(1)}\"" in catalogue

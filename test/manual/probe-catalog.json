@@ -13712,7 +13712,7 @@
         "policy": "manual"
       },
       "prerequisites": [
-        "WORKBOOK_URL: a small .xlsx in a library with a text column ProbeNote",
+        "WORKBOOK_URL: a small .xlsx in a library with a text column ProbeNotes",
         "A second account with the workbook open in Excel for the web, or in Excel desktop, while STATE = 'open' runs",
         "A second paste with STATE = 'closed' once that account has closed it"
       ],
