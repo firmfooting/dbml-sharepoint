@@ -124,6 +124,7 @@ def test_a_healthy_run_settles_the_fixture_and_leaves_the_reading_to_a_person() 
         assert rows[row]["outcome"] == "PASS", (row, rows[row]["evidence"])
     assert rows[CHECK]["outcome"] == "MANUAL"
     assert rows[CHECK]["state"] == "awaiting-capture"
+    assert "record the reading as VOID" in rows[CHECK]["evidence"]
     assert "Open the item's Display form" in output and ended_with_report(output)
     # Every write after the create goes to the list by the Id the create answered.
     assert not any(s["method"] == "POST" and "getbytitle" in s["path"] for s in sent)

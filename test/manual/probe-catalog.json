@@ -2585,14 +2585,14 @@
               "role": "display",
               "page": "Display form",
               "assertions": [
-                "header spans visible"
+                "header rendered (control span shows visible)"
               ]
             },
             {
               "role": "edit",
               "page": "Edit form",
               "assertions": [
-                "header spans visible"
+                "header rendered (control span shows visible)"
               ]
             }
           ],

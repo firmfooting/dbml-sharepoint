@@ -30,7 +30,9 @@
  *       the header shows "No" (the hidden column) beside "visible" (the control)
  *
  * HOW TO READ IT: the machine rows settle the fixture and stop. The check row
- * is MANUAL until the person records what each form showed. A void check
+ * is MANUAL until the person records what each form showed. If the "visible"
+ * control span (the Shown column) does not appear in the header, the header
+ * never rendered and the reading is VOID, never "No" or "not shown". A void check
  * means a fixture or control did not hold, so nothing the person sees answers
  * the question.
  *
@@ -47,14 +49,7 @@
   const CONFIRMED = false;
   const ALLOW_WRITES = false;
 
-  // CLEANUP deletes the probe's own list BEFORE the run, so every question
-  // is answered by actually creating something rather than reporting
-  // "already present" from a previous run, which is much weaker evidence.
-  //
-  // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
-  // ever touches the explicitly named probe-owned list or lists; it never
-  // enumerates or deletes anything else. Each list is RECYCLED, not purged,
-  // so a mistake is recoverable from the site recycle bin.
+  // CLEANUP recycles only this probe's own list, by Id, before the run; it needs CONFIRMED and ALLOW_WRITES too.
   const CLEANUP = false;
 
   // No SITE_URL constant, deliberately. The probe reads the site it was
@@ -92,33 +87,7 @@
   // worked. Anything asking "did I actually read this?" must test `ok`.
   const readFailed = (r) => !r.ok || r.body === null;
 
-  // Was this request REFUSED (the server saying no to what was sent) or
-  // did it merely fail? A negative control that cannot tell the difference
-  // certifies the surface as observable on the strength of a throttle, and
-  // every row it guards is then read as evidence.
-  //
-  // Defined by what it EXCLUDES, because the tempting definition is wrong
-  // here. "400 means bad request" is the HTTP convention and it is not what
-  // this tenant does: every SharePoint refusal this project has recorded
-  // came back 500:
-  //
-  //   "To add an item to a document library, use SPFileCollection.Add()"
-  //   "One or more column references are not allowed, because the columns
-  //    are defined as a data type that is not supported in formulas"
-  //   "The formula refers to a column that does not exist"
-  //   "This field type does not support..."
-  //
-  // (analysis/checks/_structure.py, analysis/conditions.py, generators/
-  // jsgen.py, each dated and cited to a live run). A 400-only test would
-  // therefore have reported NOT ESTABLISHED for every negative control on a
-  // tenant behaving exactly as recorded, which is the opposite failure and a
-  // worse one: it would quietly retire the controls the stack's own evidence
-  // rests on.
-  //
-  // So: 401/403 are about WHO is asking and 408/429 about the moment; those
-  // are never refusals. Everything else non-2xx is treated as the server
-  // rejecting the content, and the response TEXT is always printed beside
-  // the verdict so a reader can see which it was.
+  // Non-2xx other than 401/403/408/429/503 is the server rejecting the content: this tenant answers refusals 500, not 400.
   const isRefusal = (status) =>
     status >= 400 && status !== 401 && status !== 403
     && status !== 408 && status !== 429 && status !== 503; // 503: the other documented throttle
@@ -509,7 +478,8 @@
     record(CHECK, "whether a form header shows the value of a column hidden from the forms", 'MANUAL',
       `Open the item's Display form: ${forms}/DispForm.aspx?ID=${itemId}, then its Edit form: `
       + `${forms}/EditForm.aspx?ID=${itemId}. Screenshot the header on each and write down whether it `
-      + 'shows "No" beside "visible".');
+      + 'shows "No" beside "visible". If "visible" (the control) does not appear, the header did not '
+      + 'render: record the reading as VOID, not as the hidden column being not shown.');
   }
   return report();
 })();
