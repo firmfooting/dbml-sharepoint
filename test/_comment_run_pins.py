@@ -412,7 +412,6 @@ PINNED: dict[str, list[str]] = {
     "src/dbml_sharepoint/templates/deploy/_acls.js.j2": [
         "228f24a14472",
         "461eb40aa734",
-        "47f315321e7d",
         "511e40a81b7c",
         "5386db631b9f",
         "59b505af8161",
