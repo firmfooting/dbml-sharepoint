@@ -49,6 +49,17 @@ write machinery is auditable from the script text itself.
    licence-gated behaviour), so absence of a finding is never mistaken
    for a pass.
 
+## Identity rows
+
+For each group that enrols an identity, the assessment reads the group's
+members (when the group exists) and reports each declared value as present,
+missing (it will be enrolled), or the wrong kind (`BLOCKED`), and any member
+no declared identity accounts for as an extra (`BLOCKED` in an exclusive
+group, `WARN` otherwise). It never calls `ensureuser`, because resolving a
+user writes a site user entry; a value is matched against the members
+already on the group. The script also logs an `[IDENTITIES]` JSON block with
+each row's group, identity name and status, and never a value.
+
 ## The verdict
 
 Findings roll up per requirement key to a single line:

@@ -2300,10 +2300,10 @@ membership exactly as it is and still deploys the group and its `Read` grant.
 
 One consequence for mapping authors: a group cannot declare both
 `enroll: [enterprise_reader]` with `membership: exclusive` and
-`enroll_during_run: [operator]`. Phase 1.4 puts
+`enroll_during_run: [operator]`. Phase 1.5 puts
 the pasting operator into the second, which is precisely what the gate in Phase
-1.5 refuses, so every deploy would abort on a correct address. The validator
-rejects the pair (`enterprise_reader_group_enrols_the_operator`), and the
+1.6 refuses, so every deploy would abort on a correct address. The validator
+rejects the pair (`exclusive_group_enrols_the_operator`), and the
 combination has no legitimate use in any case: a reader group is held to
 `Read`, while an operator self-enrols in order to write.
 

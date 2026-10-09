@@ -20,7 +20,7 @@
   let identityEnrolmentErrors = 0;
   {
     const IDENTITY_GROUPS = {{ identity_enrolment | tojson }};
-    // Tenant-wide claims ensureuser can hand back; refused for every user value.
+    // Tenant-wide claims ensureuser can hand back; refused for every value.
     const TENANT_WIDE = ['spo-grid-all-users', 'c:0(.s|true', 'c:0-.f|rolemanager'];
     // An error body can echo the value back (ensureuser names the logon it could not find).
     const scrub = (text, value) => String(text).split(value).join('[value]');
@@ -540,7 +540,7 @@
               + `account every one of those rights, and no phase of this deploy removes them: the `
               + `ACL phase reconciles only the lists this bundle declares. Nothing was granted and `
               + `nobody was enrolled. Remove the binding in Site settings > Site permissions, or `
-              + `point --enterprise-reader at a group that holds nothing else, then run this `
+              + `use a group that holds nothing else for this identity, then run this `
               + `script again.`,
             );
           }
