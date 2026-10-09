@@ -52,6 +52,11 @@ from dbml_sharepoint.pipeline import (
 runner = CliRunner()
 
 
+def _captured_reader(captured: dict[str, Any]) -> str | None:
+    values = captured["identities"].get("enterprise_reader", ())
+    return values[0].value if values else None
+
+
 @pytest.fixture(autouse=True)
 def _cwd_has_no_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Every test in this module runs with an empty current directory.
@@ -1123,7 +1128,7 @@ def test_no_reader_flag_emits_no_enrolment(
         "--out", str(out),
     ])
     assert result.exit_code == 0, result.output
-    assert captured["enterprise_reader"] is None
+    assert _captured_reader(captured) is None
     assert "enterprise-reader" not in (out / "deploy.js.txt").read_text(encoding="utf-8")
 
 
@@ -1165,7 +1170,7 @@ def test_a_valid_reader_flag_reaches_emit_bundle(
         "--enterprise-reader", address,
     ])
     assert result.exit_code == 0, result.output
-    assert captured["enterprise_reader"] == address
+    assert _captured_reader(captured) == address
 
 
 def test_a_valid_reader_flag_reaches_the_written_manifest(tmp_path: Path) -> None:
@@ -1194,7 +1199,7 @@ def test_a_valid_reader_flag_reaches_the_written_manifest(tmp_path: Path) -> Non
 
     manifest = (out / "deploy-manifest.md").read_text(encoding="utf-8")
     assert address in manifest
-    assert "PERMANENT" in manifest
+    assert "kept by a run that reaches the end" in manifest
     assert "does not delete the group" in manifest
 
 
@@ -1249,12 +1254,12 @@ def test_the_declined_sentinel_is_treated_as_nobody_not_as_a_value(
         enterprise_reader=ENTERPRISE_READER_DECLINED,
     )
 
-    assert captured["enterprise_reader"] is None
+    assert _captured_reader(captured) is None
     # Not a bare `"enterprise-reader" not in ...` check: this fixture's own
     # group carries that substring in a static description ("Read-only
     # enrolment target for --enterprise-reader") that renders regardless of
     # whether anybody was actually enrolled. `READER_ADDRESS` is declared
-    # only inside `_reader_enrolment.js.j2`'s `{% if enterprise_reader %}`
+    # only inside `_identity_enrolment.js.j2`'s `{% if enterprise_reader %}`
     # guard, so its absence is what actually proves no enrolment code emitted.
     assert "READER_ADDRESS" not in (out / "deploy.js.txt").read_text(encoding="utf-8")
 
@@ -1392,7 +1397,7 @@ def test_an_env_file_value_reaches_execute_build(
         "--env-file", str(env_path),
     ])
     assert result.exit_code == 0, result.output
-    assert captured["enterprise_reader"] == "svc-reporting@example.org"
+    assert _captured_reader(captured) == "svc-reporting@example.org"
 
 
 def test_an_explicit_flag_beats_the_env_file(tmp_path: Path) -> None:
@@ -1467,7 +1472,7 @@ def test_the_declined_sentinel_beats_the_env_file(
         env_file=env_path,
     )
 
-    assert captured["enterprise_reader"] is None
+    assert _captured_reader(captured) is None
     assert "READER_ADDRESS" not in (out / "deploy.js.txt").read_text(encoding="utf-8")
     printed = capsys.readouterr().out
     assert (

@@ -336,15 +336,8 @@ def execute_build(
         )
     except IdentityError as exc:
         config_error("identity", None, exc)
-    reader_values = resolved_identities.get("enterprise_reader", ())
-    # Until the generators read identities (PR 3), the reader travels as before;
-    # the declined sentinel survives when no value was resolved.
-    if reader_values:
-        enterprise_reader = reader_values[0].value
 
-    # `isinstance`, not `is not None`: the declined sentinel means nobody is
-    # enrolled and must skip the group check just as `None` does.
-    if isinstance(enterprise_reader, str):
+    if resolved_identities.get("enterprise_reader"):
         # "Which lists grant it" needs the RESOLVED name, because a
         # `from_enum` group's template spelling matches no assignment.
         targets = [
@@ -457,12 +450,6 @@ def execute_build(
     mtime = dt.datetime.fromtimestamp(schema.stat().st_mtime, dt.UTC)
     source_mtime = (min(mtime, fixed) if fixed else mtime).isoformat(timespec="seconds")
 
-    # Narrowed here rather than by reassigning the parameter above, which
-    # would erase the unset/declined distinction before anything consumes it.
-    resolved_enterprise_reader = (
-        enterprise_reader if isinstance(enterprise_reader, str) else None
-    )
-
     manifest_md = generate_manifest(
         schema_json=schema_json,
         resolved=resolved,
@@ -480,7 +467,7 @@ def execute_build(
         # error path below: a build that refuses still writes a manifest,
         # and the operator reading it should see what the flag would have
         # done once the errors are fixed.
-        enterprise_reader=resolved_enterprise_reader,
+        identities=resolved_identities,
         env_provenance=env_provenance,
         sidecar_run_log_title=None if no_sidecars else run_log_title(),
         sidecar_change_log_title=None if no_sidecars else change_log,
@@ -526,7 +513,7 @@ def execute_build(
             time_zone=time_zone,
             extension=ext,
             site_context=site_context,
-            enterprise_reader=resolved_enterprise_reader,
+            identities=resolved_identities,
             env_provenance=env_provenance,
             deployment_log_list=external_log or "",
             deployment_log_change_list=external_change_log or "",

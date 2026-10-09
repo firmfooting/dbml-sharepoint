@@ -30,7 +30,7 @@
     let verdict = null;
     const finding = (tier, key, level, detail) => {
       findings.push({ tier, key, level, detail });
-      log(level, `[T${tier}] ${key}: ${detail}`);
+      log(level, `[${typeof tier === 'number' ? `T${tier}` : tier}] ${key}: ${detail}`);
     };
     // A property the site did not return is not a value. Printing it as one
     // put the literal word `undefined` in operator-facing lines.
@@ -947,6 +947,66 @@
       } catch (err) {
         finding(2, 'process_query', 'WARN', `ProcessQuery probe failed (${err.message}); owner correction will be degraded.`);
       }
+    }
+
+    // Identities: read-only by ruling A4. resolving a user writes a site user entry, so a value is
+    // matched against the members already on the group and never resolved.
+    const identityRows = [];
+    {
+      const SEVERITY = { INFO: 0, WARN: 1, BLOCKED: 2, 'NOT-ASSESSABLE': 1 };
+      const upnPart = (name) => String(name).split('|').pop();
+      // Only user (1) and security_group (4) have a proven PrincipalType; any other kind has none.
+      const expectedType = (kind) => (kind === 'user' ? 1 : kind === 'security_group' ? 4 : null);
+      for (const plan of (TARGETS.identity_groups || [])) {
+        const key = `identity:${plan.group}`;
+        const rows = [];
+        const add = (level, detail) => rows.push({ level, detail });
+        const r = await probeGet(`web/sitegroups/getbyname('${odataName(plan.group)}')/users?$select=Id,LoginName,Email,PrincipalType&$top=5000`);
+        if (!r.ok && r.status === 404) {
+          add('INFO', `'${plan.group}' does not exist yet; the deploy creates it and enrols ${plan.rows.map((x) => x.identity).join(', ')}.`);
+        } else if (!r.ok || malformedNextPage(r.d) || !Array.isArray(r.d.results)
+          || r.d.results.length >= 5000 || r.d.__next) {
+          // A page that may be short would report a member as absent and an extra as unseen.
+          add('NOT-ASSESSABLE', `'${plan.group}' membership could not be read in full (${r.ok ? 'malformed or truncated page' : `HTTP ${r.status || r.error}`}).`);
+        } else {
+          const members = r.d.results;
+          const addressOf = (u) => [u.Email, upnPart(u.LoginName)].map((v) => String(v || '').toLowerCase());
+          const accounted = new Set();
+          for (const row of plan.rows) {
+            for (const value of row.values) {
+              if (expectedType(value.kind) == null) {
+                add('NOT-ASSESSABLE', `${row.identity} is of a kind whose principal type is not established, so its membership in '${plan.group}' was not judged.`);
+                identityRows.push({ group: plan.group, identity: row.described, status: 'not assessable' });
+                continue;
+              }
+              const sameAddress = members.filter((u) => addressOf(u).includes(String(value.value).toLowerCase()));
+              // A correct-kind member wins, so a stray principal sharing the address cannot block.
+              const hit = sameAddress.find((u) => u.PrincipalType === expectedType(value.kind)) || sameAddress[0];
+              let status = '+ will enrol';
+              let level = 'INFO';
+              if (hit) {
+                accounted.add(hit.Id);
+                [status, level] = hit.PrincipalType === expectedType(value.kind) ? ['= present', 'INFO'] : ['! wrong kind', 'BLOCKED'];
+              }
+              add(level, `${status}  ${row.identity}  '${value.value}' in '${plan.group}'.`);
+              identityRows.push({ group: plan.group, identity: row.described, status });
+            }
+          }
+          for (const u of members.filter((m) => !accounted.has(m.Id))) {
+            add(plan.membership === 'exclusive' ? 'BLOCKED' : 'WARN', `extra  '${u.LoginName}' in '${plan.group}' is held by no declared identity.`);
+            identityRows.push({ group: plan.group, identity: null, status: 'extra' });
+          }
+        }
+        for (const name of plan.during_run) {
+          add('INFO', `+/- this run  ${name} is added and removed within the deploy.`);
+          identityRows.push({ group: plan.group, identity: name, status: '+/- this run' });
+        }
+        // Worst last: the verdict keeps one finding per key, and the last non-INFO one wins.
+        rows.sort((a, b) => SEVERITY[a.level] - SEVERITY[b.level]);
+        for (const x of rows) finding('IDENTITIES', key, x.level, x.detail);
+      }
+      // After the human lines; this is the part tools copy, so it names no value.
+      if ((TARGETS.identity_groups || []).length) log('INFO', `[IDENTITIES] ${JSON.stringify(identityRows)}`);
     }
 
     // Applied sensitivity label + Preservation Hold Library signal (governance INFO).

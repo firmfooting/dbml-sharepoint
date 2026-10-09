@@ -14,6 +14,8 @@ from _model import bundle as make_bundle
 from _model import schema as make_schema
 from _model import table as make_table
 from _node import NODE, run_node
+from _packs import blocks, entities
+from _packs import pack as write_pack
 from _paths import EXPECTED, FIXTURES, GOLDEN_DEPLOYER_VERSION, pin_deployer_version, write_golden
 
 from dbml_sharepoint.analysis.list_description import family_for, marker_for
@@ -25,6 +27,7 @@ from dbml_sharepoint.generators.assessgen import (
 )
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.model.conditions import Leaf
+from dbml_sharepoint.model.identities import parse_values
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
@@ -588,6 +591,7 @@ def _run_assess(
     js: str | None = None,
     item_counts: Mapping[str, int] | None = None,
     wrap: str = "",
+    capture: bool = False,
 ) -> dict[str, Any]:
     """Execute the emitted assess.js against a site holding `list_description`.
 
@@ -597,8 +601,9 @@ def _run_assess(
     list reports as its size, per title, where the default empty list is what
     the size checks read as comfortably under the threshold. `wrap` is spliced
     in OUTSIDE the batch mock, which is the only place a test can damage a
-    `$batch` answer the mock has already assembled. Returns the summary the
-    script resolves with.
+    `$batch` answer the mock has already assembled. `capture` adds `calls`
+    (from `globalThis.__CALLS`) and `log` (every console line) to the summary.
+    Returns the summary the script resolves with.
     """
     held = (
         dict.fromkeys(_declared_descriptions(), list_description)
@@ -620,8 +625,18 @@ def _run_assess(
     # Outermost, so the site mock underneath answers each unpacked part as
     # the single GET it stands for. Without it every batched read is one
     # opaque POST the harness cannot answer and the whole tier degrades.
-    script = mocked + BATCH_MOCK + wrap + "\n" + js.replace(
-        "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    done = (
+        "Object.assign(r, {calls: globalThis.__CALLS || [], log: globalThis.__LOG || []})"
+        if capture else "r"
+    )
+    logger = (
+        "globalThis.__LOG = []; const __log = console.log;"
+        " console.log = (...a) => {"
+        " globalThis.__LOG.push(a.map(String).join(' ')); __log(...a); };\n"
+        if capture else ""
+    )
+    script = logger + mocked + BATCH_MOCK + wrap + "\n" + js.replace(
+        "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(" + done + ")))",
     ).replace("(async () => {", "((async () => {", 1)
     output = run_node(script)
     line = next(
@@ -3063,3 +3078,189 @@ def test_absent_library_requires_an_available_root(
     assert finding["level"] == expected
     if expected == "BLOCKED":
         assert summary["verdict"] == "BLOCKED"
+
+
+# --- Identities: assess reads membership and never writes (ruling A4) --------
+
+_WRITERS_BODY = """
+    groups:
+      - name: "XX Writers"
+        description: "w"
+        enroll: [automation]
+"""
+
+
+def _writers_assess(tmp_path: Path, body: str = _WRITERS_BODY) -> str:
+    schema, bundle = write_pack(
+        tmp_path,
+        dbml="""
+            Table Project {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+            }
+        """,
+        mapping=blocks(entities("Project"), body),
+    )
+    return generate_assess_js(
+        schema=schema, bundle=bundle, resolved=resolve(schema, bundle.mapping),
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test", site_role="default",
+        source_dbml="s.dbml", generated_at="2026-10-09T00:00:00Z",
+        identities={"automation": parse_values("automation", "user:flows@example.com")},
+    )
+
+
+def _members_wrap(members: Any, status: int = 200, extra: str = "") -> str:
+    """Answer the group's users read with `members`, and record every request."""
+    return textwrap.dedent("""
+        globalThis.__CALLS = [];
+        const __inner = globalThis.fetch;
+        globalThis.fetch = async (url, opts) => {
+          globalThis.__CALLS.push({ url: String(url), method: (opts && opts.method) || 'GET' });
+          const path = String(url).split('?')[0];
+          if (/sitegroups\\/getbyname\\('XX%20Writers'\\)\\/users$/.test(path)) {
+            const members = @MEMBERS@;
+            return respond(@STATUS@, @BODY@);
+          }
+          return __inner(url, opts);
+        };
+    """).replace("@MEMBERS@", json.dumps(members)).replace("@STATUS@", str(status)).replace(
+        "@BODY@", extra or "{ d: { results: members } }")
+
+
+def _identity_run(tmp_path: Path, members: Any, status: int = 200, extra: str = "",
+                  body: str = _WRITERS_BODY) -> dict[str, Any]:
+    return _run_assess(
+        "", js=_writers_assess(tmp_path, body), capture=True,
+        wrap=_members_wrap(members, status, extra),
+    )
+
+
+def _identity_rows(out: dict[str, Any]) -> list[dict[str, Any]]:
+    return [f for f in out["findings"] if f["tier"] == "IDENTITIES"]
+
+
+def _member(login: str, kind: int = 1, email: str = "", ident: int = 41) -> dict[str, Any]:
+    return {"Id": ident, "LoginName": login, "Email": email, "PrincipalType": kind}
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(("members", "status", "level"), [
+    ([], "+ will enrol", "INFO"),
+    ([_member("i:0#.f|membership|Flows@Example.com")], "= present", "INFO"),
+    ([_member("c:0t.c|tenant|x", 4, "flows@example.com")], "! wrong kind", "BLOCKED"),
+    ([_member("i:0#.f|membership|other@example.com", ident=42)], "extra", "WARN"),
+])
+def test_assess_reports_each_identity_status(
+    tmp_path: Path, members: Any, status: str, level: str,
+) -> None:
+    out = _identity_run(tmp_path, members)
+    assert any(status in f["detail"] and f["level"] == level for f in _identity_rows(out))
+    # No ensureuser, and no POST beyond the digest, the CSOM read and the batch transport.
+    assert not [c for c in out["calls"] if "ensureuser" in c["url"].lower()]
+    writes = [c for c in out["calls"] if c["method"] != "GET"
+              and not any(t in c["url"] for t in ("contextinfo", "ProcessQuery", "$batch"))]
+    assert not writes, writes
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_extra_member_blocks_an_exclusive_group_and_reaches_the_verdict(
+    tmp_path: Path,
+) -> None:
+    body = _WRITERS_BODY + "        membership: exclusive\n"
+    out = _identity_run(tmp_path, [_member("i:0#.f|membership|other@example.com", ident=42)],
+                        body=body)
+    assert any(f["level"] == "BLOCKED" and "extra" in f["detail"] for f in _identity_rows(out))
+    assert out["verdict"] == "BLOCKED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_group_not_on_the_site_yet_is_informational(tmp_path: Path) -> None:
+    out = _identity_run(tmp_path, {}, status=404, extra="{ error: {} }")
+    (row,) = _identity_rows(out)
+    assert row["level"] == "INFO" and "does not exist yet" in row["detail"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(("status", "extra"), [
+    (500, "{ error: {} }"),
+    (200, "{ d: { results: [], __next: 'https://example.sharepoint.com/next' } }"),
+    (200, "{ d: { results: 'nope' } }"),
+    (200, ("{ d: { results: Array.from({ length: 5000 }, (_, i) => ({ Id: i + 100, "
+          "LoginName: 'u' + i, Email: '', PrincipalType: 1 })) } }")),
+    (200, "{ d: { results: [], __next: 0 } }"),
+])
+def test_a_membership_read_that_may_be_short_is_not_assessable(
+    tmp_path: Path, status: int, extra: str,
+) -> None:
+    out = _identity_run(tmp_path, [], status=status, extra=extra)
+    (row,) = _identity_rows(out)
+    assert row["level"] == "NOT-ASSESSABLE" and "in full" in row["detail"]
+    assert out["verdict"] != "COMPATIBLE"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_correct_kind_member_wins_over_a_wrong_kind_one_sharing_the_address(
+    tmp_path: Path,
+) -> None:
+    members = [
+        _member("c:0t.c|tenant|x", 4, "flows@example.com", ident=40),
+        _member("i:0#.f|membership|flows@example.com", ident=41),
+    ]
+    out = _identity_run(tmp_path, members)
+    rows = _identity_rows(out)
+    assert any("= present" in f["detail"] for f in rows)
+    assert not [f for f in rows if f["level"] == "BLOCKED"], rows
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_identity_findings_log_under_their_own_label(tmp_path: Path) -> None:
+    out = _identity_run(tmp_path, [])
+    assert any("[IDENTITIES] identity:XX Writers:" in ln for ln in out["log"])
+    assert not any("TIDENTITIES" in ln for ln in out["log"])
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_run_scoped_identity_is_reported_as_this_run(tmp_path: Path) -> None:
+    body = _WRITERS_BODY + "        enroll_during_run: [operator]\n"
+    out = _identity_run(tmp_path, [], body=body)
+    assert any("+/- this run" in f["detail"] and f["level"] == "INFO"
+               for f in _identity_rows(out))
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_hand_built_kind_with_no_proven_principal_type_is_not_assessable(tmp_path: Path) -> None:
+    """The build refuses these kinds; a hand-built targets file must not be judged as type 4."""
+    base = _writers_assess(tmp_path, _WRITERS_BODY)
+    js = re.sub(r'"kind":\s*"user"', '"kind": "m365_group"', base)
+    out = _run_assess(
+        "", js=js, capture=True,
+        wrap=_members_wrap([_member("c:0t.c|tenant|x", 4, "flows@example.com")]),
+    )
+    rows = _identity_rows(out)
+    assert any(f["level"] == "NOT-ASSESSABLE" for f in rows), rows
+    assert not any("= present" in f["detail"] for f in rows), rows
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_identities_json_line_carries_no_value(tmp_path: Path) -> None:
+    out = _identity_run(tmp_path, [_member("i:0#.f|membership|other@example.com", ident=42)])
+    (line,) = [ln for ln in out["log"] if "[IDENTITIES] [{" in ln]
+    rows = json.loads(line.split("[IDENTITIES] ", 1)[1])
+    assert rows[0]["identity"].startswith("automation (sha256:")
+    assert rows[1] == {"group": "XX Writers", "identity": None, "status": "extra"}
+    assert "flows@example.com" not in line and "other@example.com" not in line
+
+
+def test_each_group_with_values_becomes_a_requirement(tmp_path: Path) -> None:
+    schema, bundle = write_pack(
+        tmp_path,
+        dbml="Table Project {\n  Id int [pk, increment]\n  Title nvarchar [not null]\n}\n",
+        mapping=blocks(entities("Project"), _WRITERS_BODY),
+    )
+    resolved = resolve(schema, bundle.mapping)
+    ids = {"automation": parse_values("automation", "user:flows@example.com")}
+    assert "identity:XX Writers" in {
+        r.key for r in derive_requirements(schema, bundle, "default", resolved=resolved,
+                                           identities=ids)}
+    assert not assess_targets(schema, bundle, "default", resolved=resolved)["identity_groups"]

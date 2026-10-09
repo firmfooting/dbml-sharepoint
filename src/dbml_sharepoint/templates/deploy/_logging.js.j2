@@ -978,7 +978,7 @@
         + `${centralChangeReady ? ` and '${EXTERNAL_CHANGE_LOG_TITLE}'` : ''}, whose permissions `
         + `belong to the deployment-log family that provisions them.`);
     } else if (changeLogReady) {
-{% if enterprise_reader %}
+{% if reader_enrolled %}
       const readerGroup = SCHEMA.groups.find((g) => g.enroll.includes('enterprise_reader'));
       // Prefer a list-scope grant: the change log is a list with no folders,
       // so a list-scope grant is the closer analogue. The folder fallback is
@@ -1143,6 +1143,9 @@
       }
     };
 
+    // Name and hash per identity, from the build; never the value (see persisted_identities).
+    // Details only: Title is cut at 255 characters, which would split a hash.
+    const IDENTITY_TAIL = {{ persisted_identities | tojson }}.map((d) => `; identity: ${d}`).join('');
     // ---- The opening stamps ---------------------------------------------
     // One sink, so exactly one of these two runs. Written once the phase's
     // own setup has succeeded, so a start stamp exists only for a run that
@@ -1155,7 +1158,7 @@
       await stampExternal('provenance',
         `generated from {{ source_dbml }}; release ${RELEASE_TAG}; schema v${SCHEMA_VERSION}; `
         + `deployer v{{ deployer_version }}; {{ generated_at }}; {{ env_file_line }}`,
-        `generated from {{ source_dbml }} at {{ generated_at }}; {{ env_file_line }}`);
+        `generated from {{ source_dbml }} at {{ generated_at }}; {{ env_file_line }}` + IDENTITY_TAIL);
     } else {
       await stampRunLog('deployment start', `site {{ site_url }}; role {{ site_role }}`);
     }

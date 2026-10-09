@@ -51,9 +51,10 @@ KNOWN_CONTEXT = {
     # The assessment's inputs, imported from assessgen so deploy.js and
     # assess.js cannot disagree about the same site.
     "assess_requirements", "assess_targets_data", "assess_not_assessable",
-    # The single named account `build --enterprise-reader` enrols read-only,
-    # or None to emit no enrolment code at all.
-    "enterprise_reader", "reader_group_list",
+    # The manifest's identity view and the logging phase's reader flag;
+    # enrolment itself reads `identity_enrolment`, the rows from analysis.enrolment.
+    "group_enrols", "identity_descriptions", "identity_enrolment", "identity_value_lines",
+    "reader_enrolled", "reader_group_list",
     "enterprise_reader_advisory_bits",
     "enterprise_reader_elevated_bits",
     "enterprise_reader_required_bits",
@@ -80,6 +81,7 @@ KNOWN_CONTEXT = {
     # that nothing was), same wording in the manifest, index.md and the
     # deploy transcript's log() line.
     "env_file_line",
+    "persisted_identities",
     # The sidecar lists the logging phase ensures on every deploy (both
     # None under --no-sidecars, which emits no logging phase at all), the
     # run-log stamp columns and change-log column bodies, each shared by an

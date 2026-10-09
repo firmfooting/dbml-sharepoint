@@ -207,10 +207,13 @@ recorded digest matches the bytes on disk and the standard tools agree.
 ### `write_index`
 
 ```python
-def write_index(out: pathlib.Path, *, reporting: bool = False, demo: bool = False, verify: bool = False, env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=())) -> None
+def write_index(out: pathlib.Path, *, reporting: bool = False, demo: bool = False, verify: bool = False, env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=()), carries_identities: bool = False) -> None
 ```
 
 Write ``index.md``: what is in the bundle, one row per artifact.
+
+``carries_identities`` adds the private-output note: the scripts hold the
+account names ``ensureuser`` needs.
 
 ``env_provenance`` defaults to ``NO_ENV_FILE``: this is a documented
 composition point extension CLIs call directly, and a required
@@ -219,7 +222,7 @@ parameter would break every one of them.
 ### `emit_bundle`
 
 ```python
-def emit_bundle(out: pathlib.Path, *, schema: 'Schema', mapping_bundle: 'MappingBundle', resolved: 'ResolvedMapping', release: 'Release', site_url: str, site_role: str, schema_name: str, mapping_name: str, source_mtime: str, generated_at: str, seed: bool, time_zone: str | None = None, extension: 'DeploymentExtension | None' = None, site_context: 'SiteContext | None' = None, enterprise_reader: str | None = None, env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=()), deployment_log_list: str | None = None, deployment_log_change_list: str | None = None, deployment_log_site: str | None = None, change_log_list: str | None = None, no_sidecars: bool = False, application: str = 'dbml-sharepoint') -> str
+def emit_bundle(out: pathlib.Path, *, schema: 'Schema', mapping_bundle: 'MappingBundle', resolved: 'ResolvedMapping', release: 'Release', site_url: str, site_role: str, schema_name: str, mapping_name: str, source_mtime: str, generated_at: str, seed: bool, time_zone: str | None = None, extension: 'DeploymentExtension | None' = None, site_context: 'SiteContext | None' = None, identities: collections.abc.Mapping[str, tuple[dbml_sharepoint.model.identities.IdentityValue, ...]] = mappingproxy({}), env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=()), deployment_log_list: str | None = None, deployment_log_change_list: str | None = None, deployment_log_site: str | None = None, change_log_list: str | None = None, no_sidecars: bool = False, application: str = 'dbml-sharepoint') -> str
 ```
 
 Emit the full post-validation bundle; returns the success message.
@@ -230,10 +233,8 @@ checksums.txt) shared by the core CLI and every extension CLI. Raises
 :class:`SeedRequiresDemoItemsError` before writing anything when
 ``seed`` is set but the mapping declares no demo rows.
 
-``enterprise_reader`` is already validated by the caller (a malformed
-address or a mapping with no group whose ``enroll`` names it both
-refuse before this function is reached); it is passed through unchecked
-to ``generate_deploy_js`` so the deploy render context carries it.
+``identities`` are the resolved values, already validated by the caller;
+they are passed through unchecked to the generators that enrol them.
 
 ``env_provenance`` defaults to ``NO_ENV_FILE`` and is passed through to
 ``generate_deploy_js`` (the console transcript) and ``write_index``: this

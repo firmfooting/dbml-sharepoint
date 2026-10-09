@@ -39,13 +39,16 @@ writer that bypasses it, which is exactly how the CRLF got in.
 
 import hashlib
 import shutil
+from collections.abc import Mapping as AbcMapping
 from pathlib import Path
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
 from dbml_sharepoint.analysis.resolve import guards_resolution
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
+from dbml_sharepoint.model.identities import IdentityValue
 
 if TYPE_CHECKING:
     from dbml_sharepoint.analysis.resolve import ResolvedMapping
@@ -256,6 +259,14 @@ def write_checksums(out: Path, relpaths: list[str]) -> None:
     write_artifact(out / "checksums.txt", "\n".join(lines) + "\n")
 
 
+_PRIVATE_NOTE = (
+    "> This bundle carries account names (identity values) inside",
+    "> `deploy.js.txt`, `assess.js.txt`, `verify.js.txt` and `deploy-manifest.md`.",
+    "> Treat it as private output for this one site; do not commit or share it.",
+    "",
+)
+
+
 def write_index(
     out: Path,
     *,
@@ -263,8 +274,12 @@ def write_index(
     demo: bool = False,
     verify: bool = False,
     env_provenance: EnvProvenance = NO_ENV_FILE,
+    carries_identities: bool = False,
 ) -> None:
     """Write ``index.md``: what is in the bundle, one row per artifact.
+
+    ``carries_identities`` adds the private-output note: the scripts hold the
+    account names ``ensureuser`` needs.
 
     ``env_provenance`` defaults to ``NO_ENV_FILE``: this is a documented
     composition point extension CLIs call directly, and a required
@@ -280,6 +295,7 @@ def write_index(
     lines = [
         "# Deployment bundle index",
         "",
+        *(_PRIVATE_NOTE if carries_identities else ()),
         f"**Env file:** {describe_env_provenance(env_provenance)}",
         "",
         "| File | Purpose |",
@@ -333,7 +349,7 @@ def emit_bundle(
     time_zone: str | None = None,
     extension: "DeploymentExtension | None" = None,
     site_context: "SiteContext | None" = None,
-    enterprise_reader: str | None = None,
+    identities: AbcMapping[str, tuple[IdentityValue, ...]] = MappingProxyType({}),
     env_provenance: EnvProvenance = NO_ENV_FILE,
     deployment_log_list: str | None = None,
     deployment_log_change_list: str | None = None,
@@ -350,10 +366,8 @@ def emit_bundle(
     :class:`SeedRequiresDemoItemsError` before writing anything when
     ``seed`` is set but the mapping declares no demo rows.
 
-    ``enterprise_reader`` is already validated by the caller (a malformed
-    address or a mapping with no group whose ``enroll`` names it both
-    refuse before this function is reached); it is passed through unchecked
-    to ``generate_deploy_js`` so the deploy render context carries it.
+    ``identities`` are the resolved values, already validated by the caller;
+    they are passed through unchecked to the generators that enrol them.
 
     ``env_provenance`` defaults to ``NO_ENV_FILE`` and is passed through to
     ``generate_deploy_js`` (the console transcript) and ``write_index``: this
@@ -392,7 +406,7 @@ def emit_bundle(
             source_dbml=schema_name, source_mtime=source_mtime,
             generated_at=generated_at,
             extension=extension, site_context=site_context,
-            enterprise_reader=enterprise_reader,
+            identities=identities,
             env_provenance=env_provenance,
             sidecar_run_log_title=None if no_sidecars else sidecars_mod.run_log_title(),
             sidecar_run_log_marker=None if no_sidecars else sidecars_mod.run_log_marker(),
@@ -429,6 +443,7 @@ def emit_bundle(
             schema=schema, bundle=mapping_bundle, resolved=resolved, release=release,
             site_url=site_url, site_role=site_role,
             source_dbml=schema_name, generated_at=generated_at,
+            identities=identities,
             application=application,
         ),
     )
@@ -444,17 +459,21 @@ def emit_bundle(
         "deploy-manifest.md", DEPLOY_SCRIPT, ROLLBACK_SCRIPT,
         ASSESS_SCRIPT, "assess-manifest.md",
     ]
-    # Derived, not flagged: a pack that reads a clock anywhere gets the
-    # script that exercises those cells on the site; one that does not has
+    # Derived, not flagged: a pack that reads a clock or enrols an identity
+    # gets the script that checks it on the site; one with neither has
     # nothing to verify and gets no script to paste by mistake.
-    verify = bool(verify_targets(schema, mapping_bundle, site_role)["checks"])
+    targets = verify_targets(
+        schema, mapping_bundle, site_role, resolved=resolved, identities=identities,
+    )
+    verify = bool(targets["checks"] or targets["identity_groups"])
     if verify:
         write_artifact(
             out / VERIFY_SCRIPT,
             generate_verify_js(
-                schema=schema, bundle=mapping_bundle, release=release,
+                schema=schema, bundle=mapping_bundle, resolved=resolved, release=release,
                 site_url=site_url, site_role=site_role,
                 source_dbml=schema_name, generated_at=generated_at,
+                identities=identities,
                 application=application,
             ),
         )
@@ -482,7 +501,10 @@ def emit_bundle(
         site_url=site_url, application=application,
         time_zone=time_zone,
     )
-    write_index(out, reporting=True, demo=seed, verify=verify, env_provenance=env_provenance)
+    write_index(
+        out, reporting=True, demo=seed, verify=verify, env_provenance=env_provenance,
+        carries_identities=bool(identities),
+    )
     relpaths.append("index.md")
     write_checksums(out, relpaths)
 

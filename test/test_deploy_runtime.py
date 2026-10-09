@@ -28,13 +28,14 @@ from _batch_mock import BATCH_MOCK
 from _builders import ID_PK, TITLE, table
 from _node import NODE
 from _node import run_node as _run
-from _packs import DEFAULT_PREFIX, blocks, entities, pack
+from _packs import DEFAULT_PREFIX, blocks, entities, pack, reader_identities
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.list_description import marker_for
 from dbml_sharepoint.analysis.phases import phase_number as pn
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.extension import BaseExtension
+from dbml_sharepoint.model.identities import parse_values
 
 
 def _deploy_js_with_assessment() -> str:
@@ -5105,12 +5106,14 @@ _RESOLVED_USER: dict[str, Any] = {
 _MEMBERSHIP_URL = re.compile(r"sitegroups\(\d+\)/users")
 
 
-def _reader_deploy_js(
-    enterprise_reader: str | None = _READER_ADDRESS,
+def _identity_deploy_js(
+    identities: dict[str, str],
     *,
+    mapping: str = "sharepoint-mapping-with-reader.yaml",
+    dbml: str = "simple.dbml",
     sidecars: bool = False,
 ) -> str:
-    """deploy.js for the mapping that declares an enterprise-reader group.
+    """deploy.js for `mapping`, built with `identities` (name to raw value).
 
     `sidecars` also emits the run and change logs, which is what puts the
     change log's own reader grant into the emitted script. Off by default
@@ -5138,8 +5141,8 @@ def _reader_deploy_js(
         "sidecar_change_log_marker": change_log_marker(),
         "sidecar_change_fields": list(CHANGE_FIELDS),
     }
-    schema = parse_dbml(FIXTURES / "simple.dbml")
-    bundle = load_mapping(FIXTURES / "sharepoint-mapping-with-reader.yaml")
+    schema = parse_dbml(FIXTURES / dbml)
+    bundle = load_mapping(FIXTURES / mapping)
     return _without_assessment(generate_deploy_js(
         schema=schema,
         bundle=bundle,
@@ -5149,10 +5152,20 @@ def _reader_deploy_js(
         source_dbml="simple.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
-        enterprise_reader=enterprise_reader,
+        identities={name: parse_values(name, raw) for name, raw in identities.items()},
         **sidecar_args,
         resolved=resolve(schema, bundle.mapping),
     ))
+
+
+def _reader_deploy_js(
+    enterprise_reader: str | None = _READER_ADDRESS,
+    *,
+    sidecars: bool = False,
+) -> str:
+    """deploy.js for the mapping that declares an enterprise-reader group."""
+    identities = {"enterprise_reader": f"user:{enterprise_reader}"} if enterprise_reader else {}
+    return _identity_deploy_js(identities, sidecars=sidecars)
 
 
 # The built-in Read as a live site actually reports it: read by
@@ -5204,22 +5217,37 @@ def _with_bits(*names: str) -> dict[str, str]:
     return {"High": str((value >> 32) & 0xFFFFFFFF), "Low": str(value & 0xFFFFFFFF)}
 
 
+# Fixture values whose only job is to differ from every other level the harness serves.
+_FULL_CONTROL_FIXTURE = {"High": "2147483647", "Low": "4294705151"}
+_CONTRIBUTE_FIXTURE = {"High": "432", "Low": "1011028719"}
+
+
 def _reader_harness(
     ensure_user: dict[str, Any],
     *,
     members: list[dict[str, Any]] | None = None,
     member_pages: list[list[dict[str, Any]]] | None = None,
     drop_readback: bool = False,
+    ensure_status: int = 200,
+    add_status: int = 200,
+    remove_status: int = 200,
     stray_on_write: dict[str, Any] | None = None,
     stray_after_read: dict[str, Any] | None = None,
     read_bitmap: dict[str, str] | None = _BUILT_IN_READ_BITMAP,
     web_bindings: list[dict[str, Any]] | None = None,
+    full_control_bitmap: dict[str, str] | None = _FULL_CONTROL_FIXTURE,
+    contribute_bitmap: dict[str, str] | None = _CONTRIBUTE_FIXTURE,
     web_binding_status: int | None = None,
     web_binding_shape: str = "verbose",
     unreadable_binding_levels: list[int] | None = None,
     drop_change_log_grant: bool = False,
 ) -> str:
     """`_ADOPTED_HARNESS` plus the two surfaces the reader phase touches.
+
+    `ensure_user` is one principal answered for every address, or a dict keyed
+    by the `logonName` the POST carries. `ensure_status` and `add_status`
+    answer `ensureuser` and the membership POST with that HTTP status; a
+    refused add stores nothing.
 
     `ensureuser` answers `ensure_user` verbatim. That is the whole point of
     the harness, since what a tenant resolves an address to is exactly what
@@ -5254,6 +5282,10 @@ def _reader_harness(
     so the step-0 gate stays quiet; `None` makes the level unreadable, which
     is what a site with no such level answers.
 
+    `full_control_bitmap` is what `web/roledefinitions/getbytype(5)` answers; `None`
+    answers HTTP 500. The level 'Contribute' (`contribute_bitmap`, `None` for 500)
+    is served too, since the writers fixture grants it and the ceiling reads it.
+
     `web_bindings` is what the flagged group ALREADY holds at web scope
     before this run touches anything: a list of
     `{Id, Name, High, Low}` role definitions, each becoming one entry in the
@@ -5279,7 +5311,16 @@ def _reader_harness(
         list(page) for page in member_pages
     ]
     return _ADOPTED_HARNESS + textwrap.dedent(r"""
-        const ENSURED = __ENSURE_USER__;
+        const ENSURED_BY = __ENSURE_USER__;
+        const ENSURE_STATUS = __ENSURE_STATUS__;
+        const ADD_STATUS = __ADD_STATUS__;
+        const REMOVE_STATUS = __REMOVE_STATUS__;
+        const ensuredFor = (body) => {
+          const asked = JSON.parse(body || '{}').logonName;
+          return ENSURED_BY.LoginName !== undefined ? ENSURED_BY : ENSURED_BY[asked];
+        };
+        const OPERATOR = { Id: 7, LoginName: 'i:0#.f|membership|probe@example.com',
+                           Title: 'Probe Operator' };
         const READER_MEMBER_PAGES = __MEMBER_PAGES__;
         const DROP_READBACK = __DROP_READBACK__;
         const STRAY_ON_WRITE = __STRAY_ON_WRITE__;
@@ -5287,6 +5328,8 @@ def _reader_harness(
         let strayAfterReadApplied = false;
         const READ_BITMAP = __READ_BITMAP__;
         const WEB_BINDINGS = __WEB_BINDINGS__;
+        const FULL_CONTROL_BITMAP = __FULL_CONTROL_BITMAP__;
+        const CONTRIBUTE_BITMAP = __CONTRIBUTE_BITMAP__;
         const WEB_BINDING_STATUS = __WEB_BINDING_STATUS__;
         const WEB_BINDING_SHAPE = __WEB_BINDING_SHAPE__;
         const UNREADABLE_BINDING_LEVELS = __UNREADABLE_BINDING_LEVELS__;
@@ -5305,7 +5348,19 @@ def _reader_harness(
                      json: async () => payload,
                      text: async () => JSON.stringify(payload) };
           };
-          if (u.toLowerCase().includes('/ensureuser')) return respond({ d: ENSURED });
+          if (u.toLowerCase().includes('/ensureuser')) {
+            if (ENSURE_STATUS !== 200) {
+              calls.push({ url: u, method, body: opts.body === undefined ? null : opts.body });
+              // Real refusals name the logon they could not find.
+              const payload = { error: { code: 'ensureuser refused', message: {
+                value: 'The user ' + JSON.parse(opts.body || '{}').logonName
+                  + ' could not be found' } } };
+              return { ok: false, status: ENSURE_STATUS, headers: { get: () => null },
+                       json: async () => payload, text: async () => JSON.stringify(payload) };
+            }
+            return respond({ d: ensuredFor(opts.body) });
+          }
+          if (u.includes('web/currentuser')) return respond({ d: OPERATOR });
           // The level the fixture's reader group is granted. The adopted
           // harness underneath knows only the fixture's own custom level, so
           // without this every reader run would fail step 0 on a level the
@@ -5354,6 +5409,28 @@ def _reader_harness(
               ...held,
             ] } });
           }
+          if (method === 'GET' && /roledefinitions\/getbytype\(5\)/.test(u)) {
+            if (FULL_CONTROL_BITMAP === null) {
+              calls.push({ url: u, method, body: null });
+              const payload = { error: { code: 'unreadable' } };
+              return { ok: false, status: 500, headers: { get: () => null },
+                       json: async () => payload,
+                       text: async () => JSON.stringify(payload) };
+            }
+            return respond({ d: { Id: 1073741829, Name: 'Full Control',
+                                  BasePermissions: FULL_CONTROL_BITMAP } });
+          }
+          if (method === 'GET' && /roledefinitions\/getbyname\('Contribute'\)/.test(u)) {
+            if (CONTRIBUTE_BITMAP === null) {
+              calls.push({ url: u, method, body: null });
+              const payload = { error: { code: 'unreadable' } };
+              return { ok: false, status: 500, headers: { get: () => null },
+                       json: async () => payload,
+                       text: async () => JSON.stringify(payload) };
+            }
+            return respond({ d: { Id: 1073741827, Name: 'Contribute',
+                                  BasePermissions: CONTRIBUTE_BITMAP } });
+          }
           const boundLevel = /roledefinitions\((\d+)\)/.exec(u);
           if (method === 'GET' && mockPhase === READER_PHASE && boundLevel) {
             const wanted = WEB_BINDINGS.find((b) => String(b.Id) === boundLevel[1]);
@@ -5369,7 +5446,7 @@ def _reader_harness(
                                     BasePermissions: { High: wanted.High, Low: wanted.Low } } });
             }
           }
-          // Task 6 (security-phase-atomicity): removeReaderEnrollments's
+          // Task 6 (security-phase-atomicity): removeIdentityEnrollments's
           // drain POSTs here. Checked BEFORE the broader
           // sitegroups(N)/users test below, which this URL also matches --
           // and whose POST branch assumes an add, parsing `opts.body` as
@@ -5377,6 +5454,12 @@ def _reader_harness(
           // branch throws `JSON.parse(undefined)` instead of modelling the
           // removal.
           const removed = /sitegroups\(\d+\)\/users\/removebyid\((\d+)\)/.exec(u);
+          if (removed && method === 'POST' && REMOVE_STATUS !== 200) {
+            calls.push({ url: u, method, body: null });
+            const payload = { error: { code: 'remove refused' } };
+            return { ok: false, status: REMOVE_STATUS, headers: { get: () => null },
+                     json: async () => payload, text: async () => JSON.stringify(payload) };
+          }
           if (removed && method === 'POST') {
             const removedId = Number(removed[1]);
             for (const page of READER_MEMBER_PAGES) {
@@ -5391,17 +5474,28 @@ def _reader_harness(
           if (/sitegroups\(\d+\)\/users/.test(u)) {
             if (method === 'POST') {
               const added = JSON.parse(opts.body);
+              if (ADD_STATUS !== 200) {
+                calls.push({ url: u, method, body: opts.body });
+                const payload = { error: { code: 'add refused' } };
+                return { ok: false, status: ADD_STATUS, headers: { get: () => null },
+                         json: async () => payload, text: async () => JSON.stringify(payload) };
+              }
+              // The principal the POSTed LoginName belongs to: an ensured one,
+              // or the operator the earlier enrolment phase adds.
+              const known = ENSURED_BY.LoginName !== undefined ? [ENSURED_BY]
+                : Object.values(ENSURED_BY);
+              const who = [...known, OPERATOR].find((k) => k.LoginName === added.LoginName)
+                || { Id: 0, Title: '' };
               if (!DROP_READBACK) {
                 READER_MEMBER_PAGES[READER_MEMBER_PAGES.length - 1].push(
-                  { Id: ENSURED.Id, Title: ENSURED.Title || '',
-                    LoginName: added.LoginName });
+                  { Id: who.Id, Title: who.Title || '', LoginName: added.LoginName });
               }
               // Somebody else's write landing in the same window.
               if (STRAY_ON_WRITE) {
                 READER_MEMBER_PAGES[READER_MEMBER_PAGES.length - 1].push(
                   STRAY_ON_WRITE);
               }
-              return respond({ d: { Id: ENSURED.Id, LoginName: added.LoginName } });
+              return respond({ d: { Id: who.Id, LoginName: added.LoginName } });
             }
             // Page 0 unless the caller followed a __next we handed out.
             // The follow-on URL keeps the sitegroups(N)/users shape so it
@@ -5469,6 +5563,12 @@ def _reader_harness(
     """).replace(
         "__ENSURE_USER__", json.dumps(ensure_user),
     ).replace(
+        "__ENSURE_STATUS__", str(ensure_status),
+    ).replace(
+        "__ADD_STATUS__", str(add_status),
+    ).replace(
+        "__REMOVE_STATUS__", str(remove_status),
+    ).replace(
         "__MEMBER_PAGES__", json.dumps(pages),
     ).replace(
         "__DROP_READBACK__", "true" if drop_readback else "false",
@@ -5483,13 +5583,17 @@ def _reader_harness(
     ).replace(
         "__WEB_BINDINGS__", json.dumps(web_bindings or []),
     ).replace(
+        "__CONTRIBUTE_BITMAP__", json.dumps(contribute_bitmap),
+    ).replace(
+        "__FULL_CONTROL_BITMAP__", json.dumps(full_control_bitmap),
+    ).replace(
         "__WEB_BINDING_STATUS__", json.dumps(web_binding_status),
     ).replace(
         "__WEB_BINDING_SHAPE__", json.dumps(web_binding_shape),
     ).replace(
         "__UNREADABLE_BINDING_LEVELS__", json.dumps(unreadable_binding_levels or []),
     ).replace(
-        "__READER_PHASE__", json.dumps(pn("reader_enrolment")),
+        "__READER_PHASE__", json.dumps(pn("identity_enrolment")),
     ).replace(
         "__CHANGE_LOG_TITLE__", json.dumps(CHANGE_LOG_TITLE),
     ).replace(
@@ -5521,8 +5625,24 @@ def _with_sidecar_descriptions(harness: str) -> str:
 
 
 def _run_reader_deploy(
+    ensure_user: dict[str, Any], **harness: Any,
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    """`_run_identity_deploy` for the one enterprise reader the reader tests name."""
+    return _run_identity_deploy(
+        {"enterprise_reader": f"user:{_READER_ADDRESS}"}, ensure_user, **harness,
+    )
+
+
+def _run_identity_deploy(
+    identities: dict[str, str],
     ensure_user: dict[str, Any],
     *,
+    mapping: str = "sharepoint-mapping-with-reader.yaml",
+    dbml: str = "simple.dbml",
+    edit_js: Callable[[str], str] | None = None,
+    ensure_status: int = 200,
+    add_status: int = 200,
+    remove_status: int = 200,
     members: list[dict[str, Any]] | None = None,
     member_pages: list[list[dict[str, Any]]] | None = None,
     drop_readback: bool = False,
@@ -5530,6 +5650,8 @@ def _run_reader_deploy(
     stray_after_read: dict[str, Any] | None = None,
     read_bitmap: dict[str, str] | None = _BUILT_IN_READ_BITMAP,
     web_bindings: list[dict[str, Any]] | None = None,
+    full_control_bitmap: dict[str, str] | None = _FULL_CONTROL_FIXTURE,
+    contribute_bitmap: dict[str, str] | None = _CONTRIBUTE_FIXTURE,
     web_binding_status: int | None = None,
     web_binding_shape: str = "verbose",
     unreadable_binding_levels: list[int] | None = None,
@@ -5548,17 +5670,24 @@ def _run_reader_deploy(
     grant's POST and stores nothing.
     """
     script = _reader_harness(
-        ensure_user, members=members, member_pages=member_pages,
+        ensure_user, ensure_status=ensure_status, add_status=add_status,
+        remove_status=remove_status,
+        members=members, member_pages=member_pages,
         drop_readback=drop_readback, stray_on_write=stray_on_write,
         stray_after_read=stray_after_read, read_bitmap=read_bitmap,
-        web_bindings=web_bindings, web_binding_status=web_binding_status,
+        web_bindings=web_bindings, full_control_bitmap=full_control_bitmap,
+        contribute_bitmap=contribute_bitmap,
+        web_binding_status=web_binding_status,
         web_binding_shape=web_binding_shape,
         unreadable_binding_levels=unreadable_binding_levels,
         drop_change_log_grant=drop_change_log_grant,
     )
     if sidecars:
         script = _with_sidecar_descriptions(script)
-    script = script + "\n" + _reader_deploy_js(sidecars=sidecars).replace(
+    deploy_js = _identity_deploy_js(
+        identities, mapping=mapping, dbml=dbml, sidecars=sidecars,
+    )
+    script = script + "\n" + (edit_js(deploy_js) if edit_js else deploy_js).replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
         " console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); })",
@@ -5572,8 +5701,8 @@ def _run_reader_deploy(
         (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
     )
     assert calls_line is not None, f"harness produced no call log:\n{output[-3000:]}"
-    assert f"Starting Phase {pn('reader_enrolment')}" in output, (
-        f"the reader-enrolment phase never ran:\n{output[-3000:]}"
+    assert f"Starting Phase {pn("identity_enrolment")}" in output, (
+        f"the identity-enrolment phase never ran:\n{output[-3000:]}"
     )
     return (
         json.loads(result_line.removeprefix("__RESULT__")),
@@ -5593,8 +5722,359 @@ def _membership_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _reader_errors(summary: dict[str, Any]) -> list[Any]:
     return [
         err for err in (summary.get("errors") or [])
-        if str(err.get("phase")) == pn("reader_enrolment")
+        if str(err.get("phase")) == pn("identity_enrolment")
     ]
+
+
+_FLOWS = {"Id": 41, "LoginName": "i:0#.f|membership|flows@example.com",
+          "Title": "Flows", "Email": "flows@example.com", "PrincipalType": 1}
+_OTHER = {"Id": 42, "LoginName": "i:0#.f|membership|other@example.com",
+          "Title": "Other", "Email": "other@example.com", "PrincipalType": 1}
+_OPERATOR_MEMBER = {"Id": 7, "LoginName": "i:0#.f|membership|probe@example.com",
+                    "Title": "Probe Operator"}
+
+
+def _run_writers(
+    ensure_user: dict[str, Any], *, mapping: str = "sharepoint-mapping-with-writers.yaml",
+    **harness: Any,
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    return _run_identity_deploy(
+        {"automation": "user:flows@example.com"}, ensure_user, mapping=mapping, **harness,
+    )
+
+
+def _warnings(output: str) -> list[str]:
+    return [line for line in output.splitlines() if "WARN" in line]
+
+
+def _identity_errors(summary: dict[str, Any]) -> list[Any]:
+    return [
+        err for err in (summary.get("errors") or [])
+        if str(err.get("phase")) == pn("identity_enrolment")
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_automation_account_is_resolved_added_and_read_back() -> None:
+    summary, calls, _ = _run_writers(_FLOWS)
+    assert not _identity_errors(summary), summary
+    assert [w["LoginName"] for w in _membership_writes(calls)] == [_FLOWS["LoginName"]]
+
+
+_FULL_CONTROL_LEVEL = {"Id": 1073741829, "Name": "Full Control", **_FULL_CONTROL_FIXTURE}
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_automation_group_bound_to_full_control_aborts_before_any_write() -> None:
+    summary, calls, _ = _run_writers(_FLOWS, web_bindings=[_FULL_CONTROL_LEVEL])
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert any("Full Control" in e["error"] for e in _identity_errors(summary))
+    assert not [c for c in calls if "/ensureuser" in c["url"]]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_automation_group_granted_a_level_equal_to_full_control_aborts() -> None:
+    """The declared grant (Contribute here) is judged by bitmap, not by name."""
+    summary, calls, _ = _run_writers(_FLOWS, contribute_bitmap=_FULL_CONTROL_FIXTURE)
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert not [c for c in calls if "/ensureuser" in c["url"]]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_custom_level_with_manage_permissions_passes_the_automation_ceiling() -> None:
+    """The live check is never stronger than AUTOMATION_GROUP_GRANTED_FULL_CONTROL."""
+    custom = {"Id": 1073741930, "Name": "Flow Admin", "High": "2147483647", "Low": "4294705150"}
+    summary, calls, _ = _run_writers(_FLOWS, web_bindings=[custom])
+    assert not _identity_errors(summary), summary
+    assert [w["LoginName"] for w in _membership_writes(calls)] == [_FLOWS["LoginName"]]
+    assert summary.get("aborted") != "identity-enrolment-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unreadable_full_control_level_fails_closed() -> None:
+    summary, calls, _ = _run_writers(_FLOWS, full_control_bitmap=None)
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert any("could not be read" in e["error"] for e in _identity_errors(summary))
+    assert not [c for c in calls if "/ensureuser" in c["url"]]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unreadable_granted_level_fails_the_automation_ceiling_closed() -> None:
+    summary, calls, _ = _run_writers(_FLOWS, contribute_bitmap=None)
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert any("Contribute" in e["error"] for e in _identity_errors(summary))
+    assert not [c for c in calls if "/ensureuser" in c["url"]]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unreadable_bound_level_fails_the_automation_ceiling_closed() -> None:
+    bound = {"Id": 1073741930, "Name": "Flow Admin", "High": "0", "Low": "1"}
+    summary, calls, _ = _run_writers(
+        _FLOWS, web_bindings=[bound], unreadable_binding_levels=[bound["Id"]],
+    )
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert not [c for c in calls if "/ensureuser" in c["url"]]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_additive_group_warns_about_an_unmanaged_extra_and_keeps_it() -> None:
+    summary, calls, output = _run_writers(_FLOWS, members=[_OTHER])
+    assert not _identity_errors(summary), summary
+    assert any("unmanaged" in line and "other@example.com" in line
+               for line in _warnings(output)), output[-2000:]
+    assert not [c for c in calls if f"removebyid({_OTHER['Id']})" in c["url"]]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_additive_group_that_already_holds_the_account_still_warns() -> None:
+    """The nothing-to-write path reads the group again and warns on that read."""
+    summary, calls, output = _run_writers(_FLOWS, members=[_FLOWS, _OTHER])
+    assert not _identity_errors(summary), summary
+    assert _membership_writes(calls) == []
+    assert not _removals(calls), _removals(calls)
+    assert any("unmanaged" in line and "other@example.com" in line
+               for line in _warnings(output)), output[-2000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_extra_on_the_second_page_still_aborts() -> None:
+    """Review focus 2: an exclusive group reads every page before the first write."""
+    summary, calls, _ = _run_reader_deploy(
+        _RESOLVED_USER, member_pages=[[], [_OTHER]],
+    )
+    assert _membership_writes(calls) == []
+    assert not _removals(calls), _removals(calls)
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_run_scoped_operator_is_not_an_unmanaged_extra() -> None:
+    """Review focus 5: the earlier phase's own member is the run's, not a stranger.
+
+    The operator is added by that phase's POST, not seeded, so the run-scoped
+    record the identity phase consults is the real one.
+    """
+    summary, calls, output = _run_writers(
+        _FLOWS, mapping="sharepoint-mapping-writers-and-operator.yaml",
+    )
+    added = [w["LoginName"] for w in _membership_writes(calls)]
+    assert _OPERATOR_MEMBER["LoginName"] in added, added
+    assert not _identity_errors(summary), summary
+    assert not [line for line in _warnings(output) if "unmanaged" in line], output[-2000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_value_that_resolves_to_somebody_else_aborts_naming_the_identity() -> None:
+    summary, calls, _ = _run_writers(_OTHER)
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert any("automation" in e["error"] for e in _identity_errors(summary))
+    assert _membership_writes(calls) == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_dropped_add_fails_the_read_back() -> None:
+    summary, _, _ = _run_writers(_FLOWS, drop_readback=True)
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_ensureuser_failure_aborts_naming_the_identity() -> None:
+    summary, _, _ = _run_writers(_FLOWS, ensure_status=500)
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert any("automation" in e["error"] for e in _identity_errors(summary))
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_group_principal_type_is_refused_for_a_user_value() -> None:
+    summary, calls, _ = _run_writers({**_FLOWS, "PrincipalType": 4})
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert _membership_writes(calls) == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_add_aborts() -> None:
+    summary, _, _ = _run_writers(_FLOWS, add_status=403)
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_tenant_wide_claim_is_refused_for_an_automation_value() -> None:
+    claim = {**_FLOWS, "LoginName": "c:0(.s|true", "Email": "flows@example.com"}
+    summary, calls, _ = _run_writers(claim)
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert _membership_writes(calls) == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_single_member_enum_group_is_enrolled_under_its_deployed_name() -> None:
+    """The plan is keyed by the generated name, not the `{member}` template."""
+    summary, calls, _ = _run_writers(
+        _FLOWS, mapping="sharepoint-mapping-enum-writers.yaml", dbml="simple-one-division.dbml",
+    )
+    assert not _identity_errors(summary), summary
+    assert [w["LoginName"] for w in _membership_writes(calls)] == [_FLOWS["LoginName"]]
+
+
+_OPERATOR_AS_AUTOMATION = {
+    **_OPERATOR_MEMBER, "Email": "probe@example.com", "PrincipalType": 1,
+}
+
+
+def _run_operator_is_automation(**kwargs: Any) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    """The account running the deploy is also the group's declared automation account."""
+    return _run_identity_deploy(
+        {"automation": "user:probe@example.com"}, _OPERATOR_AS_AUTOMATION,
+        mapping="sharepoint-mapping-writers-and-operator.yaml", **kwargs,
+    )
+
+
+def _removals_of(calls: list[dict[str, Any]], user_id: int) -> list[dict[str, Any]]:
+    return [c for c in calls if f"removebyid({user_id})" in c["url"]]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_declared_account_the_operator_phase_added_survives_a_run_that_ends() -> None:
+    """`runReachedTheEnd` is forced true to stand in for a finished run, which
+    the mock cannot reach; the declared membership must then be kept, not
+    removed with the operator's run-scoped one."""
+    summary, calls, _ = _run_operator_is_automation(
+        edit_js=lambda js: js.replace(
+            "let runReachedTheEnd = false;", "let runReachedTheEnd = true;", 1,
+        ),
+    )
+    assert not _identity_errors(summary), summary
+    assert _removals_of(calls, _OPERATOR_MEMBER["Id"]) == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_declared_account_the_operator_phase_added_is_removed_when_the_run_aborts() -> None:
+    summary, calls, output = _run_operator_is_automation()
+    assert summary.get("aborted") not in (None, "identity-enrolment-errors"), summary
+    assert len(_removals_of(calls, _OPERATOR_MEMBER["Id"])) == 1
+    assert "Removed automation" in output, output[-2000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_declared_account_the_operator_phase_added_is_logged_as_enrolled() -> None:
+    """It is the identity phase's membership, so it gets the change row and the Enrolled line."""
+    _, calls, output = _run_operator_is_automation(sidecars=True)
+    rows = [c["body"] for c in _item_writes(calls) if "identity:XX Writers:automation" in c["body"]]
+    assert len(rows) == 1, output[-2000:]
+    assert "probe@example.com" not in rows[0]
+    assert "Enrolled" in output
+    assert "left untouched" not in output, output[-2000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_later_group_writes_nothing_once_an_earlier_group_failed() -> None:
+    """The first group is exclusive and holds a stranger; the second must not ensureuser or POST."""
+    summary, calls, output = _run_writers(
+        _FLOWS, mapping="sharepoint-mapping-two-enrolling-groups.yaml", members=[_OTHER],
+    )
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    errors = _identity_errors(summary)
+    assert [e["group"] for e in errors] == ["XX Writers"], errors
+    resolves = [c for c in calls if "ensureuser" in c["url"].lower()]
+    assert len(resolves) == 1, "only the first group resolves"
+    assert _membership_writes(calls) == []
+    assert "skipped" in output and "XX Writers Two" in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_reader_group_granted_nothing_here_warns_and_still_enrols() -> None:
+    """A hand-edited bundle: no level is declared for the group, so there is no bitmap to judge."""
+    summary, calls, output = _run_reader_deploy(
+        _RESOLVED_USER,
+        edit_js=lambda js: re.sub(
+            r'("kind":\s*"group",\s*"name":\s*)"Enterprise Reader"', r'\1"Somebody Else"', js,
+        ),
+    )
+    assert not _identity_errors(summary), summary
+    warned = any("is granted no permission level" in line for line in _warnings(output))
+    assert warned, output[-2000:]
+    assert "carries the read bits" not in output
+    assert _membership_writes(calls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unsupplied_reader_row_sets_no_reader_checks() -> None:
+    """The group also enrols the reader, but only automation has a value: no reader step 0 or 1."""
+    summary, _, output = _run_writers(
+        _FLOWS, mapping="sharepoint-mapping-reader-and-automation.yaml",
+    )
+    assert not _identity_errors(summary), summary
+    assert "carries the read bits" not in output
+    assert "web-scope binding(s)" not in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unsupplied_automation_row_sets_no_automation_ceiling() -> None:
+    """Only the reader has a value, so a Full Control-equal grant is not judged as automation's."""
+    summary, _, _ = _run_identity_deploy(
+        {"enterprise_reader": f"user:{_READER_ADDRESS}"}, _RESOLVED_USER,
+        mapping="sharepoint-mapping-reader-and-automation.yaml",
+        contribute_bitmap=_FULL_CONTROL_FIXTURE,
+    )
+    assert not _identity_errors(summary), summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_failed_removal_of_an_identity_enrolment_is_reported() -> None:
+    """The drain's own failure branch: the log names the account left behind."""
+    _, calls, output = _run_writers(_FLOWS, remove_status=403)
+    assert any("removebyid" in c["url"] for c in calls)
+    assert "Could not remove automation (sha256:" in output, output[-2000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_throw_while_draining_identity_enrolments_is_reported_in_the_summary() -> None:
+    """The outer catch around the drain: a throw that escapes the per-entry catch."""
+    summary, _, output = _run_writers(
+        _FLOWS, edit_js=lambda js: js.replace(
+            "for (const enrollment of identityEnrollments.splice(0)) {",
+            "throw new Error('drain broke');\n"
+            "    for (const enrollment of identityEnrollments.splice(0)) {",
+            1,
+        ),
+    )
+    assert any(
+        e.get("phase") == "exit" and "drain broke" in e["error"] for e in summary["errors"]
+    ), summary["errors"]
+    assert "Could not remove the enrolled identities on exit" in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_hand_edited_non_user_value_is_refused_before_any_resolution() -> None:
+    """The build refuses these kinds; the emitted guard stops a hand-edited bundle."""
+    summary, calls, _ = _run_writers(
+        _FLOWS, edit_js=lambda js: re.sub(r'"kind":\s*"user"', '"kind": "group"', js),
+    )
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert any("group values are not enrolled" in e["error"] for e in _identity_errors(summary))
+    assert not [c for c in calls if "ensureuser" in c["url"].lower()]
+    assert _membership_writes(calls) == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_hand_edited_group_the_schema_lacks_aborts_with_a_reason() -> None:
+    summary, calls, _ = _run_writers(
+        _FLOWS, edit_js=lambda js: re.sub(
+            r'("group":\s*)"XX Writers"', r'\1"No Such Group"', js, count=1,
+        ),
+    )
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert any("not in the schema" in e["error"] for e in _identity_errors(summary))
+    assert _membership_writes(calls) == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_identity_added_by_a_run_that_aborts_later_is_removed_on_exit() -> None:
+    """The mock run stops in a later phase, so the drain must undo this phase's add."""
+    summary, calls, output = _run_writers(_FLOWS)
+    assert summary.get("aborted") not in (None, "identity-enrolment-errors"), summary
+    removals = [c for c in calls if f"removebyid({_FLOWS['Id']})" in c["url"]]
+    assert removals, "the account the run enrolled was left in the group"
+    assert "Removed automation" in output, output[-2000:]
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -5620,7 +6100,7 @@ def test_a_security_group_is_refused_as_an_enterprise_reader() -> None:
     assert not _membership_writes(calls), (
         "a security group was enrolled: every member of it now holds Read"
     )
-    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
     assert _reader_errors(summary), summary
 
 
@@ -5650,7 +6130,7 @@ def test_the_everyone_claim_is_refused_even_though_it_types_as_a_user() -> None:
     assert not _membership_writes(calls), (
         "an everyone-claim was enrolled: every user in the tenant now holds Read"
     )
-    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -5671,7 +6151,7 @@ def test_a_mismatched_identity_is_refused() -> None:
     assert not _membership_writes(calls), (
         "an account other than the one asked for was enrolled"
     )
-    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -5909,7 +6389,7 @@ def _run_folder_and_list_reader_deploy(
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
-        enterprise_reader=_READER_ADDRESS,
+        identities=reader_identities(_READER_ADDRESS),
         sidecar_run_log_title=RUN_LOG_TITLE,
         sidecar_run_log_marker=run_log_marker(),
         sidecar_run_log_fields=list(RUN_LOG_STAMP_COLUMNS),
@@ -6036,7 +6516,7 @@ def test_a_read_level_missing_a_required_bit_enrols_nobody(missing: str) -> None
     assert not _membership_writes(calls), (
         f"an account was enrolled into a group whose level lacks {missing}"
     )
-    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
     errors = _reader_errors(summary)
     assert errors, summary
     message = str(errors[0].get("error", ""))
@@ -6092,7 +6572,7 @@ def test_an_unreadable_level_enrols_nobody() -> None:
     """
     summary, calls, _ = _run_reader_deploy(_RESOLVED_USER, read_bitmap=None)
     assert not _membership_writes(calls), "an unreadable level still enrolled somebody"
-    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
     assert any(
         "could not be read" in str(err.get("error", "")) for err in _reader_errors(summary)
     ), summary
@@ -6205,7 +6685,7 @@ def test_a_group_already_holding_an_elevated_binding_enrols_nobody() -> None:
     assert not _membership_writes(calls), (
         "an account was enrolled into a group that already holds EditListItems"
     )
-    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
     errors = _reader_errors(summary)
     assert errors, summary
     message = str(errors[0].get("error", ""))
@@ -6246,7 +6726,7 @@ def test_every_elevated_bit_refuses_on_its_own(elevated: str) -> None:
         _RESOLVED_USER, web_bindings=[_contribute_binding(elevated)],
     )
     assert not _membership_writes(calls), f"{elevated} did not stop the enrolment"
-    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
     assert any(
         elevated in str(err.get("error", "")) for err in _reader_errors(summary)
     ), summary
@@ -6316,7 +6796,7 @@ def test_a_refused_binding_enumeration_fails_closed() -> None:
         _RESOLVED_USER, web_binding_status=403,
     )
     assert not _membership_writes(calls), "a refused scan still enrolled somebody"
-    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
     assert any(
         "403" in str(err.get("error", "")) for err in _reader_errors(summary)
     ), summary
@@ -6333,7 +6813,7 @@ def test_a_binding_whose_bitmap_cannot_be_read_fails_closed() -> None:
         unreadable_binding_levels=[_BOUND_CONTRIBUTE_ID],
     )
     assert not _membership_writes(calls), "an unjudgeable binding still enrolled somebody"
-    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
     assert any(
         "could not be read" in str(err.get("error", ""))
         for err in _reader_errors(summary)
@@ -6352,7 +6832,7 @@ def test_bindings_that_arrive_in_neither_expanded_shape_fail_closed() -> None:
         web_binding_shape="broken",
     )
     assert not _membership_writes(calls), "an unreadable binding row still enrolled somebody"
-    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -6366,7 +6846,7 @@ def test_a_bare_array_of_bindings_is_still_judged() -> None:
         web_binding_shape="array",
     )
     assert not _membership_writes(calls), "a bare-array binding was never judged"
-    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -6417,7 +6897,7 @@ def test_a_membership_that_does_not_read_back_aborts() -> None:
     """
     summary, calls, _ = _run_reader_deploy(_RESOLVED_USER, drop_readback=True)
     assert _membership_writes(calls), "the run never attempted the enrolment"
-    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
 
 
 _OTHER_MEMBER: dict[str, Any] = {
@@ -6460,7 +6940,7 @@ def test_an_unexpected_member_aborts_the_run_and_is_never_removed() -> None:
         "a second account was enrolled into a group that already held "
         "somebody else; both now hold Read on every list in the bundle"
     )
-    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
     assert not _removals(calls), (
         f"the phase removed an existing member: {_removals(calls)}"
     )
@@ -6494,7 +6974,7 @@ def test_an_unexpected_member_on_a_later_page_still_aborts() -> None:
     assert not _membership_writes(calls), (
         "a member on page two was missed and the enrolment went ahead"
     )
-    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
     assert not _removals(calls)
 
 
@@ -6513,7 +6993,7 @@ def test_the_named_reader_plus_a_stranger_still_aborts() -> None:
         _OTHER_MEMBER,
     ])
     assert not _membership_writes(calls)
-    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
     assert not _removals(calls)
 
 
@@ -6553,7 +7033,7 @@ def test_a_principal_added_during_the_run_is_caught_by_the_read_back() -> None:
     errors = _reader_errors(summary)
     assert errors, summary
     assert "while this script was running" in str(errors), errors
-    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
     removals = _removals(calls)
     assert any(f"removebyid({_RESOLVED_USER['Id']})" in c["url"] for c in removals), (
         f"the reader this run just enrolled was left in place after the abort: {removals}"
@@ -6580,7 +7060,7 @@ def test_an_already_enrolled_reader_is_not_added_twice() -> None:
     # Not `aborted is None`: this harness's run stops later in Phase 1 for
     # reasons that have nothing to do with the reader. What must be true is
     # that the reader phase is not what stopped it.
-    assert summary.get("aborted") != "reader-enrolment-errors", summary
+    assert summary.get("aborted") != "identity-enrolment-errors", summary
     assert not _membership_writes(calls), "an existing membership was re-POSTed"
 
 
@@ -6614,7 +7094,7 @@ def test_a_principal_added_during_a_redeploy_that_writes_nothing_aborts() -> Non
     assert errors, summary
     assert "while this script was running" in str(errors), errors
     assert _OTHER_MEMBER["LoginName"] in str(errors), errors
-    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
     # This path writes nothing, so there is nothing for the abort to undo and
     # the stray, which this run did not add, is still not removed.
     assert not _membership_writes(calls), "the idempotent path enrolled somebody"
@@ -6647,7 +7127,7 @@ def test_a_later_phase_failure_drains_the_reader_this_run_added() -> None:
         f"the reader phase itself failed, so this does not test a LATER "
         f"phase's abort: {summary}"
     )
-    assert summary.get("aborted") not in (None, "reader-enrolment-errors"), (
+    assert summary.get("aborted") not in (None, "identity-enrolment-errors"), (
         f"the run did not abort in a later phase: {summary}\n{output[-2000:]}"
     )
     assert _membership_writes(calls), "the reader was never enrolled in the first place"
@@ -6702,7 +7182,7 @@ def _declared_reader_deploy_js(tmp_path: Path) -> str:
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
-        enterprise_reader=_READER_ADDRESS, resolved=resolve(schema, bundle.mapping),
+        identities=reader_identities(_READER_ADDRESS), resolved=resolve(schema, bundle.mapping),
     ))
 
 
@@ -7728,7 +8208,7 @@ def test_no_reader_no_enrolment_code() -> None:
     """
     js = _deploy_js()
     assert "ensureuser" not in js
-    assert f"Starting Phase {pn('reader_enrolment')}" not in js
+    assert f"Starting Phase {pn("identity_enrolment")}" not in js
     # And the same mapping, WITH a reader, does emit it. Otherwise the two
     # assertions above would also hold for a template that never works.
     assert "ensureuser" in _reader_deploy_js()
@@ -9933,3 +10413,85 @@ def test_the_title_rename_lands_before_any_calculated_column(
     # The formula the create carries is the rewritten one, so the pair above
     # is about ORDER rather than about the generator having done nothing.
     assert "[Escalation Summary]" in calls[formula]["body"]
+
+
+# The supplied value in every spelling a log line could carry: the address, its
+# local part, the claims login and the resolved user id. The domain is not asserted:
+# the operator account in the stamps shares it.
+_PERSISTED_HIDDEN = ("flows@example.com", "flows", "i:0#.f|membership|flows", "user 41", "(41)")
+
+
+def _item_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every row written to either log list, which are the only /items POSTs the mock records."""
+    return [
+        c for c in calls
+        if c["method"] == "POST" and c.get("body") and c["url"].endswith("/items")
+    ]
+
+
+def _run_logged_writers(**harness: Any) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    return _run_writers(_FLOWS, sidecars=True, **harness)
+
+
+# summary.errors is never written to a log list (the abort stamp carries counts only),
+# which is why a stranger's login may stay in those messages.
+def _assert_nothing_persisted_names_a_value(
+    summary: dict[str, Any], calls: list[dict[str, Any]], output: str,
+) -> None:
+    persisted = "\n".join(c["body"] for c in _item_writes(calls))
+    persisted += "\n" + json.dumps(summary.get("errors") or [])
+    persisted += "\n" + "\n".join(line for line in output.splitlines() if "[SP-DEPLOY]" in line)
+    for hidden in _PERSISTED_HIDDEN:
+        assert hidden not in persisted, f"{hidden!r} reached a persisted line:\n{persisted}"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_no_persisted_row_carries_a_value() -> None:
+    """PII: the success path writes a change row naming the identity and its hash only."""
+    summary, calls, output = _run_logged_writers()
+    rows = _item_writes(calls)
+    assert rows, "the run wrote no log rows, so this test proves nothing"
+    change = [json.loads(c["body"]) for c in rows if "identity:XX Writers:automation" in c["body"]]
+    assert len(change) == 1, rows
+    assert change[0]["ChangeKind"] == "identity-enrolled"
+    assert re.fullmatch(r"automation \(sha256:[0-9a-f]{12}\)", change[0]["TargetName"])
+    _assert_nothing_persisted_names_a_value(summary, calls, output)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("case", [
+    pytest.param({"ensure_status": 500}, id="ensure-fails-and-echoes-the-logon"),
+    pytest.param({"add_status": 403}, id="add-fails"),
+    pytest.param({"drop_readback": True}, id="readback-mismatch"),
+    pytest.param({"remove_status": 403}, id="drain-removal-fails"),
+    pytest.param({"members": [_OTHER]}, id="additive-group-has-a-stranger"),
+    pytest.param({"ensure_user": {**_FLOWS, "PrincipalType": 4}}, id="not-a-user"),
+    pytest.param({"ensure_user": {**_FLOWS, "LoginName": "c:0(.s|true"}}, id="tenant-wide-claim"),
+    pytest.param({"ensure_user": _OTHER}, id="resolved-to-someone-else"),
+])
+def test_no_failure_path_persists_a_value(case: dict[str, Any]) -> None:
+    case = dict(case)
+    ensure_user = case.pop("ensure_user", _FLOWS)
+    if ensure_user is not _FLOWS and ensure_user.get("LoginName") == "c:0(.s|true":
+        ensure_user = {**ensure_user, "Email": "flows@example.com"}
+    summary, calls, output = _run_writers(ensure_user, sidecars=True, **case)
+    _assert_nothing_persisted_names_a_value(summary, calls, output)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_rerun_with_every_value_present_writes_nothing() -> None:
+    """Review focus 3: idempotent, and no change row."""
+    summary, calls, _ = _run_logged_writers(members=[_FLOWS])
+    assert not _identity_errors(summary), summary
+    assert _membership_writes(calls) == []
+    assert not [c for c in _item_writes(calls) if "identity:XX Writers" in c["body"]]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_aborted_run_removes_only_what_it_added() -> None:
+    """The mock run aborts after enrolment; the drain removes the one add and not the stranger."""
+    summary, calls, _ = _run_writers(_FLOWS, members=[_OTHER])
+    removed = [c["url"] for c in calls if "removebyid" in c["url"]]
+    assert summary.get("aborted") not in (None, "identity-enrolment-errors"), summary
+    assert [u for u in removed if f"removebyid({_FLOWS['Id']})" in u], removed
+    assert not [u for u in removed if f"removebyid({_OTHER['Id']})" in u], removed

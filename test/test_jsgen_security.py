@@ -268,7 +268,7 @@ def _acl_phase(js: str) -> str:
     """Phase 4.2's own text, from its banner to the next phase's.
 
     A search over the whole script answers for templates this one has nothing
-    to do with: `_reader_enrolment.js.j2` names `roleassignments/getbyprincipalid`
+    to do with: `_identity_enrolment.js.j2` names `roleassignments/getbyprincipalid`
     in a comment, and the simple fixture omits it only for want of an
     enterprise reader.
     """
@@ -396,7 +396,7 @@ def test_required_empty_group_is_paginated_and_fails_before_phase_1() -> None:
     # reader-enrolment phase itself.
     assert js.count("/users/removebyid(") == 2
     assert js.index("removeSelfEnrollments") < js.index("/users/removebyid(")
-    assert "removeReaderEnrollments" in js
+    assert "removeIdentityEnrollments" in js
 
 
 def test_exact_lists_break_inheritance_immediately_in_phase_1() -> None:

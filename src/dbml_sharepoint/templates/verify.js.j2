@@ -8,7 +8,8 @@
  * `{{ targets.list_title | comment_safe }}`, and prints a VERIFIED /
  * MISMATCH / NOT-VERIFIED verdict. It creates that list if absent, reuses it
  * when its Description carries the tool's marker, and never touches any
- * other list. Paste after deploy.js.txt, on the same site.
+ * other list. It also checks, read only, that each enrolled identity is a
+ * member of its group. Paste after deploy.js.txt, on the same site.
  */
 (async () => {
   const SITE_URL = {{ site_url | tojson }};
@@ -20,7 +21,9 @@
 
 {% include "_http.js.j2" %}
 {% include "_http_write.js.j2" %}
-  log('INFO', `Writes only to the scratch list '${TARGETS.list_title}'. No declared list is touched.`);
+  log('INFO', TARGETS.checks.length
+    ? `Writes only to the scratch list '${TARGETS.list_title}'. No declared list is touched.`
+    : 'No clock cell is used, so nothing is written: group membership is only read.');
 
 {% include "_digest_cached.js.j2" %}
 {% include "_formula_canonical.js.j2" %}

@@ -37,9 +37,9 @@ DEPLOY_GROUPS: tuple[tuple[str, tuple[PhaseStep, ...]], ...] = (
         # require_empty_at_deploy, and a reader added ahead of it would trip
         # the run's own empty-group gate. Before every write phase, because
         # the enrolment is part of PREPARE's security setup.
-        PhaseStep("reader_enrolment", "enterprise reader enrolment",
-                  "deploy/_reader_enrolment.js.j2"),
-        # After `reader_enrolment` so the run log's start stamp records a run
+        PhaseStep("identity_enrolment", "identity enrolment",
+                  "deploy/_identity_enrolment.js.j2"),
+        # After `identity_enrolment` so the run log's start stamp records a run
         # whose security setup (groups, enrolments) already exists, and so the
         # change log's reader grant can reuse the group the enrolment targets.
         # Before every write phase: a sidecar created by a run that later

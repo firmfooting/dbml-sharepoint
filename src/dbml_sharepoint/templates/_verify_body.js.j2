@@ -2,13 +2,13 @@
 {# The whole verification, taking its collaborators as an argument so the
    standalone script and a test harness can share it. Expects `targets`
    (generators/verifygen.py: list_title, marker, columns, rows, checks,
-   rule) and the transport, digest and canonicalFormula collaborators. #}
+   rule, identity_groups) and the transport, digest and canonicalFormula collaborators. #}
   async function verifySite(ctx) {
     const { targets: T, log, fetchWithRetry, apiUrl, odataName, getDigest, spHeaders,
             spError, canonicalFormula, verdictLevel } = ctx;
     // Fail closed on a caller-built targets or a missing collaborator: a
     // missing key is a bare TypeError several checks in.
-    const missingTargets = ['list_title', 'marker', 'columns', 'rows', 'checks', 'rule']
+    const missingTargets = ['list_title', 'marker', 'columns', 'rows', 'checks', 'rule', 'identity_groups']
       .filter((k) => !(k in (T || {})));
     if (missingTargets.length) throw new Error(`verify-targets-incomplete: ctx.targets is missing ${missingTargets.join(', ')}`);
     const missingCollaborators = ['log', 'fetchWithRetry', 'apiUrl', 'odataName', 'getDigest',
@@ -48,6 +48,74 @@
     // refusal of the content. Everything else non-2xx is the server saying no.
     const isRefusal = (status) => status >= 400 && ![401, 403, 408, 429].includes(status);
     const outcomeOf = (r) => (r.ok ? 'saved' : isRefusal(r.status) ? 'refused' : 'failed');
+
+    // The verdict, shared by the identity-only early return and the end of the clock checks.
+    const finish = () => {
+      const subject = T.checks.length ? T.list_title : 'Identities';
+      // Conservative on purpose: a check nobody could make is not a pass, so
+      // an unassessed check keeps the verdict at NOT-VERIFIED.
+      const levels = findings.map((f) => f.level);
+      let verdict;
+      if (levels.includes('FAIL')) verdict = 'MISMATCH';
+      else if (!levels.includes('PASS') || levels.includes('NOT-ASSESSABLE')) verdict = 'NOT-VERIFIED';
+      else verdict = 'VERIFIED';
+      console.log('\n==================== VERIFY ====================');
+      for (const f of findings) {
+        console.log(`${f.level.padEnd(15)} ${f.key}${f.cell ? ` [${f.cell}]` : ''}`);
+        console.log(`       ${f.detail}`);
+      }
+      console.log('================================================');
+      const counts = ['PASS', 'FAIL', 'NOT-ASSESSABLE', 'INFO'].map((l) => `${levels.filter((x) => x === l).length} ${l}`).join(', ');
+      if (verdict === 'MISMATCH') {
+        log(verdictLevel, `${subject}: MISMATCH (${counts}). A clock cell or an identity this pack relies on is not as declared; read the FAIL lines before trusting the deployed rules.`);
+      } else if (verdict === 'NOT-VERIFIED') {
+        log(verdictLevel, `${subject}: NOT-VERIFIED (${counts}). Something could not be assessed; the site is not shown wrong, and not shown right either.`);
+      } else {
+        log(verdictLevel, `${subject}: VERIFIED (${counts}). ${T.checks.length ? 'Every clock cell this pack uses behaves on this site as measured.' : 'Every enrolled identity is a member of its group.'}`);
+      }
+      return { findings, verdict, list: T.checks.length ? T.list_title : null };
+    };
+
+    // ---- 0. Identities: read-only, and before anything that writes ------------
+    // Membership is read, never resolved (ensureuser writes a site user entry). No value is logged.
+    {
+      const upnPart = (name) => String(name).split('|').pop();
+      // Only user (1) and security_group (4) have a proven PrincipalType; any other kind has none.
+      const expectedType = (kind) => (kind === 'user' ? 1 : kind === 'security_group' ? 4 : null);
+      const malformedNextPage = (page) => page.__next != null && typeof page.__next !== 'string';
+      const addressOf = (u) => [u.Email, upnPart(u.LoginName)].map((v) => String(v || '').toLowerCase());
+      for (const plan of T.identity_groups) {
+        const read = await readJson(`web/sitegroups/getbyname('${odataName(plan.group)}')/users?$select=Id,LoginName,Email,PrincipalType&$top=5000`);
+        const key = `identity:${plan.group}`;
+        let members = [];
+        if (!read.ok && read.status === 404) {
+          members = [];
+        } else if (!read.ok || !read.d || malformedNextPage(read.d) || !Array.isArray(read.d.results)
+          || read.d.results.length >= 5000 || read.d.__next) {
+          // A page that may be short would report a member as absent.
+          finding(key, 'NOT-ASSESSABLE', `'${plan.group}' membership could not be read in full (${read.ok ? 'malformed or truncated page' : `HTTP ${read.status}`}).`);
+          continue;
+        } else {
+          members = read.d.results;
+        }
+        for (const row of plan.rows) {
+          for (const value of row.values) {
+            if (expectedType(value.kind) == null) {
+              finding(`${key}/${row.identity}`, 'FAIL', `MISMATCH: '${row.identity}' is of a kind whose principal type is not established, so it cannot be verified in '${plan.group}'.`);
+              continue;
+            }
+            const sameAddress = members.filter((u) => addressOf(u).includes(String(value.value).toLowerCase()));
+            // A correct-kind member wins, so a stray principal sharing the address cannot fail the check.
+            const hit = sameAddress.find((u) => u.PrincipalType === expectedType(value.kind)) || sameAddress[0];
+            const rowKey = `${key}/${row.identity}`;
+            if (!hit) finding(rowKey, 'FAIL', `MISMATCH: '${row.identity}' is not a member of '${plan.group}'.`);
+            else if (hit.PrincipalType !== expectedType(value.kind)) finding(rowKey, 'FAIL', `MISMATCH: '${row.identity}' is in '${plan.group}' as the wrong kind of principal.`);
+            else finding(rowKey, 'PASS', `VERIFIED: '${row.identity}' is a member of '${plan.group}'.`);
+          }
+        }
+      }
+    }
+    if (T.checks.length === 0) return finish();
 
     // ---- 1. The site's zone, and whether this browser shares it --------
     // A date-only value is site-local midnight, so the boundary values are
@@ -361,27 +429,5 @@
       }
     }
 
-    // ---- 6. Verdict ------------------------------------------------------------
-    // Conservative on purpose: a check nobody could make is not a pass, so
-    // an unassessed check keeps the verdict at NOT-VERIFIED.
-    const levels = findings.map((f) => f.level);
-    let verdict;
-    if (levels.includes('FAIL')) verdict = 'MISMATCH';
-    else if (!levels.includes('PASS') || levels.includes('NOT-ASSESSABLE')) verdict = 'NOT-VERIFIED';
-    else verdict = 'VERIFIED';
-    console.log('\n==================== VERIFY ====================');
-    for (const f of findings) {
-      console.log(`${f.level.padEnd(15)} ${f.key}${f.cell ? ` [${f.cell}]` : ''}`);
-      console.log(`       ${f.detail}`);
-    }
-    console.log('================================================');
-    const counts = ['PASS', 'FAIL', 'NOT-ASSESSABLE', 'INFO'].map((l) => `${levels.filter((x) => x === l).length} ${l}`).join(', ');
-    if (verdict === 'MISMATCH') {
-      log(verdictLevel, `${T.list_title}: MISMATCH (${counts}). A clock cell this pack relies on does not behave on this site as measured; read the FAIL lines before trusting the deployed rules.`);
-    } else if (verdict === 'NOT-VERIFIED') {
-      log(verdictLevel, `${T.list_title}: NOT-VERIFIED (${counts}). Something could not be assessed; the site is not shown wrong, and not shown right either.`);
-    } else {
-      log(verdictLevel, `${T.list_title}: VERIFIED (${counts}). Every clock cell this pack uses behaves on this site as measured.`);
-    }
-    return { findings, verdict, list: T.list_title };
+    return finish();
   }

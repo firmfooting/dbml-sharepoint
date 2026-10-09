@@ -2279,7 +2279,7 @@ The tampering this guards against is measured, not supposed: on **2026-09-06**
 `BasePermissions` on the built-in `Read` itself, returning HTTP 204 and reading
 back with `ViewListItems` cleared, and a deploy against that site then aborted
 here before creating anything. The comment at step 0 of
-`templates/deploy/_reader_enrolment.js.j2` records the run.
+`templates/deploy/_identity_enrolment.js.j2` records the run.
 
 **The flagged group must hold nobody but the named account.** Before enrolling
 anything, the deploy enumerates the group's membership (every page) and
@@ -2373,7 +2373,7 @@ Users* outright, HTTP 400, "the specified user could not be found", so on
 that tenant neither is reachable by display name. That narrows the gap; it
 does not close it, since another tenant may resolve them and a display-name
 refusal is not proof that no encoding exists. See the dated comment in
-`templates/deploy/_reader_enrolment.js.j2`.
+`templates/deploy/_identity_enrolment.js.j2`.
 
 :::
 
@@ -2437,6 +2437,10 @@ Neither mode removes a member. `enroll_enterprise_reader: true` and
 `enroll_operator_during_deploy: true` still load, as `enroll:
 [enterprise_reader]` with `membership: exclusive` and as
 `enroll_during_run: [operator]`, and raise `deprecated_enrolment_flag`.
+
+The standalone `assess.js.txt` findings name declared values and other members'
+logins, because they go to the console and the return object only and are not
+written to any log.
 
 ### The site-wide groups
 

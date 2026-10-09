@@ -1,6 +1,6 @@
 {
-  "bytes": 477642,
-  "sha256": "20c5d19bde536b50d17963e5bda700ad1ac6f9385b47a0fb422f3fe5cfdf61d9",
+  "bytes": 481171,
+  "sha256": "e6ee4540109a35323b7b5a2d9ea27f6bdea47ccf468d8a43051d90e2b183d74a",
   "segments": [
     "00-header.js",
     "01-site-guard.js",
@@ -19,7 +19,7 @@
     "14-phase-renames.js",
     "15-phase-security.js",
     "16-phase-enrolment.js",
-    "17-phase-reader-enrolment.js",
+    "17-phase-identity-enrolment.js",
     "18-phase-logging.js",
     "19-phase-unseal.js",
     "20-phase-lists.js",

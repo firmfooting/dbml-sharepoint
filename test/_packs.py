@@ -50,6 +50,7 @@ from textwrap import dedent
 
 from _builders import ID_PK, TITLE, table
 
+from dbml_sharepoint.model.identities import IdentityValue, parse_values
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema, parse_dbml
@@ -419,3 +420,10 @@ def two_libraries_with_list_and_folder_scopes(tmp_path: Path) -> tuple[Schema, M
                       level: "Folder Editor"
         """,
     )
+
+
+def reader_identities(address: str | None) -> dict[str, tuple[IdentityValue, ...]]:
+    """The `identities` argument a generator takes for one enterprise reader, or none."""
+    if not address:
+        return {}
+    return {"enterprise_reader": parse_values("enterprise_reader", f"user:{address}")}

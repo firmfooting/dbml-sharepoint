@@ -2,10 +2,13 @@
 """Render deploy-manifest.md."""
 
 import json
+from collections.abc import Mapping as AbcMapping
+from types import MappingProxyType
 from typing import Any
 
 from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.condition_description import describe
+from dbml_sharepoint.analysis.enrolment import as_json, enrolment_plan
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.limits import MAX_VALIDATION_FORMULA, MAX_VALIDATION_MESSAGE
 from dbml_sharepoint.analysis.permissions import lists_granting_group
@@ -14,9 +17,30 @@ from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.extension import ManifestExtras
 from dbml_sharepoint.generators.jsgen import UNMANAGED
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
+from dbml_sharepoint.model.identities import BUILTIN_IDENTITIES, IdentityValue
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
+
+
+def _group_enrols(
+    group: dict[str, Any], identities: AbcMapping[str, tuple[IdentityValue, ...]],
+) -> list[str]:
+    """Each identity a group holds as a name and kind, never a value."""
+    out = []
+    for name in group.get("enroll", ()):
+        kinds = sorted({v.kind for v in identities.get(name, ())})
+        out.append(
+            f"{name} ({', '.join(kinds)}; kept by a run that reaches the end; "
+            "an aborted run removes only what it added)"
+            if kinds else f"{name} (no value supplied; nobody enrolled, created empty)")
+    for name in group.get("enroll_during_run", ()):
+        if name != "operator":
+            raise ValueError(f"enroll_during_run names {name!r}; only operator is run-lifetime")
+        out.append(
+            f"{name} (user; this run only): you (the operator), "
+            "removed automatically at the end of the run")
+    return out or ["nobody"]
 
 
 @guards_resolution
@@ -33,7 +57,7 @@ def generate_manifest(
     source_mtime: str,
     generated_at: str,
     manifest_extras: ManifestExtras | None = None,
-    enterprise_reader: str | None = None,
+    identities: AbcMapping[str, tuple[IdentityValue, ...]] = MappingProxyType({}),
     env_provenance: EnvProvenance = NO_ENV_FILE,
     sidecar_run_log_title: str | None = None,
     sidecar_change_log_title: str | None = None,
@@ -44,13 +68,10 @@ def generate_manifest(
 ) -> str:
     """Render the deploy manifest for ONE build.
 
-    ``enterprise_reader`` is the address `build --enterprise-reader` was
-    given, or None. It is render material, not a build input: the manifest
-    is the document an operator reads BEFORE pasting anything, and the
-    reader enrolment is the one thing this bundle does that a rollback does
-    not undo. Passing it only to ``generate_deploy_js`` left the manifest
-    unable to say so, and left its group table reporting the permanently
-    enrolled group as one nothing enrols into.
+    ``identities`` holds the resolved values the build was given. The manifest
+    is the document an operator reads BEFORE pasting anything, and identity
+    enrolment is the one thing this bundle does that a rollback does not
+    undo. The template reads the enrolment plan, never a raw address.
 
     ``env_provenance`` defaults to ``NO_ENV_FILE`` rather than being
     required: this function has 19 call sites, and a required parameter
@@ -74,6 +95,9 @@ def generate_manifest(
     bare `KeyError` nor a silent omission.
     """
     template = script_env(application).get_template("manifest.md.j2")
+    plan = enrolment_plan(bundle, resolved, identities)
+    descriptions = {n: b.description for n, b in BUILTIN_IDENTITIES.items()} | {
+        n: d.description for n, d in bundle.mapping.identities.items()}
     lists: list[dict[str, Any]] = schema_json["lists"]
 
     counts = {
@@ -381,7 +405,14 @@ def generate_manifest(
         seed_items=schema_json["seed_items"],
         extra_sections=extras.sections,
         extra_warnings=extras.warnings,
-        enterprise_reader=enterprise_reader,
+        identity_enrolment=as_json(plan),
+        identity_descriptions=descriptions,
+        identity_value_lines=list(dict.fromkeys(
+            f"{r.identity} = `{v.kind}:{v.value}`"
+            for g in plan for r in g.rows for v in r.values)),
+        reader_enrolled=any(
+            r.identity == "enterprise_reader" and r.values for g in plan for r in g.rows),
+        group_enrols={g["name"]: _group_enrols(g, identities) for g in groups},
         reader_group_list=_reader_groups,
         reader_granted_lists=reader_granted_lists,
         reader_folder_only_lists=reader_folder_only_lists,

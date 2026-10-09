@@ -1,4 +1,5 @@
 # test/test_manifestgen.py
+import shutil
 from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
@@ -15,6 +16,7 @@ from _packs import (
     entities,
     entity,
     pack,
+    reader_identities,
     two_libraries_with_list_and_folder_scopes,
     write_mapping,
 )
@@ -253,7 +255,7 @@ def _reader_manifest(enterprise_reader: str | None) -> str:
         source_dbml="simple.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
-        enterprise_reader=enterprise_reader,
+        identities=reader_identities(enterprise_reader),
     )
 
 
@@ -295,7 +297,7 @@ def _manifest_for_bundle(bundle: MappingBundle, enterprise_reader: str | None) -
         source_dbml="simple.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
-        enterprise_reader=enterprise_reader,
+        identities=reader_identities(enterprise_reader),
     )
 
 
@@ -459,7 +461,7 @@ def test_the_manifest_says_a_reader_grant_is_folder_scoped(tmp_path: Path) -> No
         source_dbml="docs.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
-        enterprise_reader="svc-reporting@example.org",
+        identities=reader_identities("svc-reporting@example.org"),
     )
 
     manifest = " ".join(md.split())
@@ -484,8 +486,8 @@ def test_manifest_warns_that_the_reader_enrolment_is_permanent() -> None:
 
     assert "svc-reporting@example.org" in md
     assert "Enterprise Reader" in md          # the group it goes into
-    assert "PERMANENT" in md
-    assert f"Phase {pn('reader_enrolment')}" in md
+    assert "kept by a run that reaches the end" in md
+    assert f"Phase {pn('identity_enrolment')}" in md
     # And the rollback consequence, in as many words.
     assert "does not delete the group" in md
     assert "nothing left for it to read" in md
@@ -501,7 +503,7 @@ def test_manifest_says_the_reader_group_is_empty_without_the_flag() -> None:
     md = _reader_manifest(None)
 
     assert "created empty" in md
-    assert "PERMANENT" not in md
+    assert "kept by a run that reaches the end" not in md
     assert "svc-reporting@example.org" not in md
 
 
@@ -517,11 +519,11 @@ def test_the_group_table_never_reports_the_reader_group_as_unenrolled() -> None:
     """
     row = next(
         line for line in _reader_manifest("svc-reporting@example.org").splitlines()
-        if line.startswith("| Enterprise Reader |")
+        if line.startswith("| Enterprise Reader |") and "kept by a run that reaches the end" in line
     )
 
-    assert "svc-reporting@example.org" in row
-    assert "PERMANENT" in row
+    assert "enterprise_reader (user;" in row
+    assert "svc-reporting@example.org" not in row
     assert "nobody" not in row
 
 
@@ -533,9 +535,9 @@ def test_the_group_table_marks_the_reader_group_empty_without_the_flag() -> None
         if line.startswith("| Enterprise Reader |")
     )
 
-    assert "nobody" in row
-    assert "--enterprise-reader" in row
-    assert "PERMANENT" not in row
+    assert "nobody enrolled" in row
+    assert "created empty" in row
+    assert "kept by a run that reaches the end" not in row
 
 
 def test_a_mapping_with_no_reader_group_gets_no_reader_prose() -> None:
@@ -1783,3 +1785,87 @@ def test_a_folder_the_deploy_does_not_break_is_not_called_inherited(
 
     assert "not broken here" in md
     assert "inherited" not in md
+
+
+def _manifest_for_writers(
+    identities: dict[str, str], mapping: str = "sharepoint-mapping-with-writers.yaml",
+) -> str:
+    from dbml_sharepoint.model.identities import parse_values
+
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / mapping)
+    resolved = resolve(schema, bundle.mapping)
+    return generate_manifest(
+        resolved=resolved,
+        schema_json=build_schema_json(schema, bundle, "default", resolved=resolved),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="simple.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+        identities={n: parse_values(n, v) for n, v in identities.items()},
+    )
+
+
+def test_the_manifest_lists_each_identity_with_its_description() -> None:
+    text = _manifest_for_writers({"automation": "user:flows@example.com"})
+    assert ("| XX Writers | automation | The accounts whose flows write to these lists. "
+            "| additive | 1 |") in text
+    assert "flows@example.com" in text  # private output (spec, PII)
+
+
+def test_the_manifest_says_rollback_leaves_memberships_alone() -> None:
+    text = _manifest_for_writers({"automation": "user:flows@example.com"})
+    assert "Rollback leaves group memberships alone." in text
+
+
+def test_the_groups_table_names_every_identity_and_kind_without_values() -> None:
+    text = _manifest_for_writers({"automation": "user:flows@example.com"})
+    row = next(ln for ln in text.splitlines() if ln.startswith("| XX Writers | Site Owners"))
+    assert ("automation (user; kept by a run that reaches the end; "
+            "an aborted run removes only what it added") in row
+    assert "flows@example.com" not in row
+    assert "nobody" not in row
+
+
+def test_the_manifest_says_an_aborted_run_removes_only_what_it_added() -> None:
+    text = " ".join(_manifest_for_writers({"automation": "user:flows@example.com"}).split())
+    assert "Neither removes a member the run did not add." in text
+    assert "a run that aborts removes only the memberships it added itself" in text
+    assert "kept by a run that reaches the end; an aborted run removes only what it added" in text
+    assert "PERMANENT" not in text
+
+
+def test_the_manifest_row_for_an_exclusive_group_says_exclusive() -> None:
+    text = _reader_manifest("svc-reporting@example.org")
+    assert ("| Enterprise Reader | enterprise_reader | The read-only reporting account. "
+            "| exclusive | 1 |") in text
+
+
+def test_the_groups_table_shows_the_operator_as_run_only() -> None:
+    text = _manifest_for_writers(
+        {"automation": "user:flows@example.com"},
+        mapping="sharepoint-mapping-writers-and-operator.yaml",
+    )
+    row = next(ln for ln in text.splitlines() if ln.startswith("| XX Writers | Site Owners"))
+    assert ("operator (user; this run only): you (the operator), "
+            "removed automatically at the end of the run") in row
+    assert "flows@example.com" not in row
+
+
+
+def test_an_identity_enrolled_in_two_groups_prints_its_values_once(tmp_path: Path) -> None:
+    src = (FIXTURES / "sharepoint-mapping-with-writers.yaml").read_text(encoding="utf-8")
+    start = src.index('  - name: "XX Writers"')
+    end = src.index("enroll: [automation]\n", start) + len("enroll: [automation]\n")
+    second = src[start:end].replace("XX Writers", "XX Writers Two")
+    shutil.copytree(FIXTURES, tmp_path, dirs_exist_ok=True)  # the mapping names sibling files
+    (tmp_path / "m.yaml").write_text(src[:end] + second + src[end:], encoding="utf-8", newline="\n")
+    text = _manifest_for_writers(
+        {"automation": "user:flows@example.com"}, str(tmp_path / "m.yaml"),
+    )
+    assert "XX Writers Two" in text
+    assert text.count("automation = `user:flows@example.com`") == 1

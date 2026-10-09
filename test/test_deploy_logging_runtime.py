@@ -21,6 +21,7 @@ Node is required; the tests skip without it rather than failing.
 """
 
 import json
+import re
 import textwrap
 from typing import Any
 
@@ -527,8 +528,11 @@ def _run_deploy(
     protect: bool = False,
     overlay: str = "",
     rerun: bool = False,
+    identity_tail: str = "",
 ) -> dict[str, Any]:
-    """`rerun` deploys a second time over the state the first run left, and
+    """`identity_tail` swaps in an IDENTITY_TAIL line rendered for real identities.
+
+    `rerun` deploys a second time over the state the first run left, and
     `rerun_from` in the result is the index of the second run's first call."""
     harness = _HARNESS
     # Substituted BEFORE the placeholder titles, because the entity type is
@@ -664,6 +668,10 @@ def _run_deploy(
             harness, "const SEED_ITEMS = {};", f"const SEED_ITEMS = {seeded};",
         )
     body = _deploy_js(protect=protect).rstrip()
+    if identity_tail:
+        body, swapped = re.subn(
+            r"const IDENTITY_TAIL = .*;", lambda _: identity_tail, body, count=1)
+        assert swapped == 1
     assert body.endswith("})();")
     deploy = body[:-3]
     second = (
@@ -1715,3 +1723,24 @@ def test_a_read_back_holding_every_column_on_a_full_page_passes(title: str) -> N
         c["method"] == "POST" and c["url"].endswith(f"getbytitle('{title}')/fields")
         for c in run["calls"]
     ), "the probe was not whole, so the read-back was never reached"
+
+
+def test_the_central_provenance_stamp_names_identities_by_hash_in_details_only() -> None:
+    """The tail is rendered by jsgen for a real enrolment, then run against a ready central log."""
+    from test_deploy_runtime import _identity_deploy_js
+
+    rendered = _identity_deploy_js(
+        {"automation": "user:flows@example.com"},
+        mapping="sharepoint-mapping-with-writers.yaml", sidecars=True,
+    )
+    line = re.search(r"const IDENTITY_TAIL = .*;", rendered)
+    assert line, "the logging phase no longer defines IDENTITY_TAIL"
+    run = _run_deploy(identity_tail=line.group(0))
+    provenance = [r for r in run["state"]["central"] if r.get("StampKind") == "provenance"]
+    assert len(provenance) == 1, run["state"]["central"]
+    row = provenance[0]
+    assert re.search(r"identity: automation \(sha256:[0-9a-f]{12}\)", row["Details"]), row
+    assert "identity:" not in row["Title"], row
+    # The id only in delimited forms: a bare "41" matches the minute of the timestamp.
+    for hidden in ("flows@example.com", "flows", "i:0#.f|membership", "user 41", "(41)"):
+        assert hidden not in json.dumps(row), (hidden, row)
