@@ -518,11 +518,11 @@ def test_the_group_table_never_reports_the_reader_group_as_unenrolled() -> None:
     """
     row = next(
         line for line in _reader_manifest("svc-reporting@example.org").splitlines()
-        if line.startswith("| Enterprise Reader |")
+        if line.startswith("| Enterprise Reader |") and "PERMANENT" in line
     )
 
-    assert "svc-reporting@example.org" in row
-    assert "PERMANENT" in row
+    assert "enterprise_reader (user;" in row
+    assert "svc-reporting@example.org" not in row
     assert "nobody" not in row
 
 
@@ -534,8 +534,8 @@ def test_the_group_table_marks_the_reader_group_empty_without_the_flag() -> None
         if line.startswith("| Enterprise Reader |")
     )
 
-    assert "nobody" in row
-    assert "--enterprise-reader" in row
+    assert "nobody enrolled" in row
+    assert "created empty" in row
     assert "PERMANENT" not in row
 
 
@@ -1784,3 +1784,44 @@ def test_a_folder_the_deploy_does_not_break_is_not_called_inherited(
 
     assert "not broken here" in md
     assert "inherited" not in md
+
+
+def _manifest_for_writers(identities: dict[str, str]) -> str:
+    from dbml_sharepoint.model.identities import parse_values
+
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping-with-writers.yaml")
+    resolved = resolve(schema, bundle.mapping)
+    return generate_manifest(
+        resolved=resolved,
+        schema_json=build_schema_json(schema, bundle, "default", resolved=resolved),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="simple.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+        identities={n: parse_values(n, v) for n, v in identities.items()},
+    )
+
+
+def test_the_manifest_lists_each_identity_with_its_description() -> None:
+    text = _manifest_for_writers({"automation": "user:flows@example.com"})
+    assert ("| XX Writers | automation | The accounts whose flows write to these lists. "
+            "| additive | 1 |") in text
+    assert "flows@example.com" in text  # private output (spec, PII)
+
+
+def test_the_manifest_says_rollback_leaves_memberships_alone() -> None:
+    text = _manifest_for_writers({"automation": "user:flows@example.com"})
+    assert "Rollback leaves group memberships alone." in text
+
+
+def test_the_groups_table_names_every_identity_and_kind_without_values() -> None:
+    text = _manifest_for_writers({"automation": "user:flows@example.com"})
+    row = next(ln for ln in text.splitlines() if ln.startswith("| XX Writers | Site Owners"))
+    assert "automation (user; PERMANENT" in row
+    assert "flows@example.com" not in row
+    assert "nobody" not in row

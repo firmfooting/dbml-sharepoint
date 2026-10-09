@@ -20,8 +20,9 @@ from dbml_sharepoint.bundle import (
     write_checksums,
     write_index,
 )
+from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import MappingBundle
-from dbml_sharepoint.model.parser import Schema
+from dbml_sharepoint.model.parser import Schema, parse_dbml
 
 
 def test_generated_files_is_the_full_bundle() -> None:
@@ -387,3 +388,37 @@ def test_verify_is_emitted_only_for_a_pack_that_uses_a_clock_cell(tmp_path: Path
     assert not (out / "verify.js.txt").exists()
     assert "verify.js.txt" not in (out / "checksums.txt").read_text(encoding="utf-8")
     assert "`verify.js.txt`" not in (out / "index.md").read_text(encoding="utf-8")
+
+
+def _index_for_writers(tmp_path: Path, identities: dict[str, str]) -> str:
+    from dbml_sharepoint.model.identities import parse_values
+    from dbml_sharepoint.model.release import load_release
+
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping-with-writers.yaml")
+    out = tmp_path / "build"
+    out.mkdir()
+    (out / "deploy-manifest.md").write_text("manifest", encoding="utf-8")
+    emit_bundle(
+        out, schema=schema, mapping_bundle=bundle,
+        resolved=resolve(schema, bundle.mapping),
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test", site_role="default",
+        schema_name="s.dbml", mapping_name="m.yaml", source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z", seed=False,
+        identities={n: parse_values(n, v) for n, v in identities.items()},
+    )
+    return (out / "index.md").read_text(encoding="utf-8")
+
+
+def test_index_says_the_bundle_is_private_when_it_carries_values(tmp_path: Path) -> None:
+    index = _index_for_writers(tmp_path, {"automation": "user:flows@example.com"})
+    assert "carries account names" in index
+    assert "private" in index
+
+
+def test_index_is_silent_about_privacy_without_identity_values(tmp_path: Path) -> None:
+    out = tmp_path / "build"
+    out.mkdir()
+    write_index(out)
+    assert "carries account names" not in (out / "index.md").read_text(encoding="utf-8")

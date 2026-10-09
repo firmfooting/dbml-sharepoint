@@ -51,9 +51,10 @@ KNOWN_CONTEXT = {
     # The assessment's inputs, imported from assessgen so deploy.js and
     # assess.js cannot disagree about the same site.
     "assess_requirements", "assess_targets_data", "assess_not_assessable",
-    # The manifest's reader address and the logging phase's reader flag;
+    # The manifest's identity view and the logging phase's reader flag;
     # enrolment itself reads `identity_enrolment`, the rows from analysis.enrolment.
-    "enterprise_reader", "identity_enrolment", "reader_enrolled", "reader_group_list",
+    "group_enrols", "identity_descriptions", "identity_enrolment", "identity_value_lines",
+    "reader_enrolled", "reader_group_list",
     "enterprise_reader_advisory_bits",
     "enterprise_reader_elevated_bits",
     "enterprise_reader_required_bits",

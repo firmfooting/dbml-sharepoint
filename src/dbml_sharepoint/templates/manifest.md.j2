@@ -95,15 +95,33 @@ group's list grants, and you are removed automatically at the end of the run
 untouched. If an unexpected crash strands the enrolment, remove yourself in
 **Site permissions -> Groups**.
 {% endif %}
+{% if identity_enrolment %}
+
+## Identities enrolled by this deploy
+
+| Group | Identity | Why | Membership | Values |
+| --- | --- | --- | --- | --- |
+{% for g in identity_enrolment %}{% for r in g.rows %}
+| {{ g.group | markdown_cell }} | {{ r.identity | markdown_cell }} | {{ identity_descriptions[r.identity] | markdown_cell }} | {{ g.membership }} | {{ r["values"] | length }} |
+{% endfor %}{% endfor %}
+
+Values: {{ identity_value_lines | join("; ") }}.
+
+An additive group keeps members no identity accounts for and the deploy
+warns about each. An exclusive group must hold nobody else, or the deploy
+stops before creating any list. Neither removes a member.
+Rollback leaves group memberships alone.
+{% endif %}
 {% set reader_groups = schema_json.groups | selectattr("name", "in", reader_group_list) | list %}
 {% set reader_group_names = reader_groups | map(attribute="name") | join(", ") %}
 {# The blank line is INSIDE each branch, so it costs nothing on a mapping
    with no reader group. Without it the paragraph runs straight on from the
    ownership note above and markdown renders the two as one. #}
-{% if reader_groups and enterprise_reader %}
+{% if reader_groups and reader_enrolled %}
 
 **Enterprise reader enrolment: this membership is PERMANENT.** This bundle was
-built with `--enterprise-reader {{ enterprise_reader }}`, so Phase {{ phase_num['identity_enrolment'] }} adds that ONE
+built with an `enterprise_reader` identity (listed under Identities enrolled by this
+deploy), so Phase {{ phase_num['identity_enrolment'] }} adds that ONE
 account to **{{ reader_group_names }}**, a group granted the built-in **Read** and
 nothing more. It is NOT like the operator self-enrolment above: that one exists
 only to let this run write and removes itself at the end of the run, whereas a
@@ -113,7 +131,7 @@ needs access.
 
 **Check that group's membership before you paste.** Phase {{ phase_num['identity_enrolment'] }} enrols nobody and
 **aborts the whole run** if **{{ reader_group_names }}** already holds any principal
-other than `{{ enterprise_reader }}`; it names each one and removes none, because
+other than that account; it names each one and removes none, because
 {% if not reader_granted_lists and not reader_folder_only_lists %}who else belongs to that group is your decision,
 not the script's. Note that this build grants the group **Read** on no list this
 bundle provisions: every list's resolved permissions leave the group out.
@@ -129,13 +147,13 @@ is bound to the declared folders only, not to the library itself, so the group
 can read what is inside those folders and nothing else there.
 {% endif %}If that stops you: remove them in **Site permissions -> Groups** and paste again,
 or rebuild without `--enterprise-reader`, which leaves the membership untouched
-and still deploys the group and its grant. `{{ enterprise_reader }}` already being a
+and still deploys the group and its grant. That account already being a
 member is fine; a repeat paste of this bundle is a no-op there.
 
 Read that alongside the rollback note: `rollback.js.txt` deletes the lists this
 bundle provisioned, but it does not delete the group and it does not remove the
 account from it. After a rollback you are left with **{{ reader_group_names }}** still
-present, `{{ enterprise_reader }}` still a member, and nothing left for it to read.
+present, that account still a member, and nothing left for it to read.
 {% elif reader_groups %}
 
 Enterprise reader group: **this build enrols nobody into {{ reader_group_names }}**.
@@ -494,25 +512,12 @@ _(none declared)_
 {% endif %}
 
 ### Site groups
-{# The last column below used to ask only "Operator self-enrol", and answered
-   "no" for the enterprise-reader group -- the ONE group this deploy
-   permanently enrols an account into. A column narrower than the question it
-   appears to answer is worse than no column: it reads as "nothing is added
-   here". Widened rather than paired with a second column, because "who does
-   this deploy put in this group" is ONE fact per group and the table is
-   already five columns wide. Both enrolments therefore render here, and each
-   says whether it is undone at the end of the run.
-
-   `reader_cell` is set OUTSIDE the conditional below on purpose: Jinja's
-   `meta.find_undeclared_variables`, which `test_template_variables_are_known_
-   context` runs over every template, reports a name assigned inside a
-   conditional as undeclared at its use site. #}
-{% set reader_cell = enterprise_reader ~ " (PERMANENT, not removed at the end of the run)" if enterprise_reader else "nobody (built without `--enterprise-reader`; created empty)" %}
+{# One cell per group: each identity as a name and kind, never a value. #}
 {% if schema_json.groups %}
 | Name | Required owner | Must be empty at deploy | Enrolled by this deploy | Description |
 |------|----------------|-------------------------|-------------------------|-------------|
 {% for grp in schema_json.groups %}
-| {{ grp.name | markdown_cell }} | {{ grp.owner_group | markdown_cell }} | {{ "yes" if grp.require_empty_at_deploy else "no" | markdown_cell }} | {% if grp.enroll_during_run and "enterprise_reader" in grp.enroll %}you (the operator), removed automatically at the end of the run; and {{ reader_cell | markdown_cell }}{% elif grp.enroll_during_run %}you (the operator), removed automatically at the end of the run{% elif "enterprise_reader" in grp.enroll %}{{ reader_cell | markdown_cell }}{% else %}nobody{% endif %} | {{ grp.description | markdown_cell }} |
+| {{ grp.name | markdown_cell }} | {{ grp.owner_group | markdown_cell }} | {{ "yes" if grp.require_empty_at_deploy else "no" | markdown_cell }} | {{ group_enrols[grp.name] | join("; ") | markdown_cell }} | {{ grp.description | markdown_cell }} |
 {% endfor %}
 {% else %}
 _(none declared)_

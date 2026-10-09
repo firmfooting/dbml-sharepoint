@@ -259,6 +259,14 @@ def write_checksums(out: Path, relpaths: list[str]) -> None:
     write_artifact(out / "checksums.txt", "\n".join(lines) + "\n")
 
 
+_PRIVATE_NOTE = (
+    "> This bundle carries account names (identity values) inside",
+    "> `deploy.js.txt`, `assess.js.txt`, `verify.js.txt` and `deploy-manifest.md`.",
+    "> Treat it as private output for this one site; do not commit or share it.",
+    "",
+)
+
+
 def write_index(
     out: Path,
     *,
@@ -266,8 +274,12 @@ def write_index(
     demo: bool = False,
     verify: bool = False,
     env_provenance: EnvProvenance = NO_ENV_FILE,
+    carries_identities: bool = False,
 ) -> None:
     """Write ``index.md``: what is in the bundle, one row per artifact.
+
+    ``carries_identities`` adds the private-output note: the scripts hold the
+    account names ``ensureuser`` needs.
 
     ``env_provenance`` defaults to ``NO_ENV_FILE``: this is a documented
     composition point extension CLIs call directly, and a required
@@ -283,6 +295,7 @@ def write_index(
     lines = [
         "# Deployment bundle index",
         "",
+        *(_PRIVATE_NOTE if carries_identities else ()),
         f"**Env file:** {describe_env_provenance(env_provenance)}",
         "",
         "| File | Purpose |",
@@ -485,7 +498,10 @@ def emit_bundle(
         site_url=site_url, application=application,
         time_zone=time_zone,
     )
-    write_index(out, reporting=True, demo=seed, verify=verify, env_provenance=env_provenance)
+    write_index(
+        out, reporting=True, demo=seed, verify=verify, env_provenance=env_provenance,
+        carries_identities=bool(identities),
+    )
     relpaths.append("index.md")
     write_checksums(out, relpaths)
 

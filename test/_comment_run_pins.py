@@ -546,7 +546,6 @@ PINNED: dict[str, list[str]] = {
         "5279e376f724",
     ],
     "src/dbml_sharepoint/templates/manifest.md.j2": [
-        "0bcce2091caf",
     ],
     "src/dbml_sharepoint/templates/protection.js.j2": [
         "ccc69cc7b244",

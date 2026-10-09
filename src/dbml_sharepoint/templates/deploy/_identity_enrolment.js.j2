@@ -205,7 +205,7 @@
         throw new Error(`${row.described}: ${value.kind} values are not enrolled by this release`);
       }
       const asked = value.value;
-      // Persisted via summary.errors and the run log: name the identity, never the value.
+      // Error messages name the identity by description, never the value.
       const who = row.described;
       // 2. Resolve the value. EnsureUser is a write (it materialises
       // the principal in the site's user information list), hence the

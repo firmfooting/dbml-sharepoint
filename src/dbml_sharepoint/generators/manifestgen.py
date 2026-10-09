@@ -8,6 +8,7 @@ from typing import Any
 
 from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.condition_description import describe
+from dbml_sharepoint.analysis.enrolment import as_json, enrolment_plan
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.limits import MAX_VALIDATION_FORMULA, MAX_VALIDATION_MESSAGE
 from dbml_sharepoint.analysis.permissions import lists_granting_group
@@ -16,10 +17,27 @@ from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.extension import ManifestExtras
 from dbml_sharepoint.generators.jsgen import UNMANAGED
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
-from dbml_sharepoint.model.identities import IdentityValue
+from dbml_sharepoint.model.identities import BUILTIN_IDENTITIES, IdentityValue
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
+
+
+def _group_enrols(
+    group: dict[str, Any], identities: AbcMapping[str, tuple[IdentityValue, ...]],
+) -> list[str]:
+    """Each identity a group holds as a name and kind, never a value."""
+    out = []
+    for name in group.get("enroll", ()):
+        kinds = sorted({v.kind for v in identities.get(name, ())})
+        out.append(
+            f"{name} ({', '.join(kinds)}; PERMANENT, not removed at the end of the run)"
+            if kinds else f"{name} (no value supplied; nobody enrolled, created empty)")
+    for name in group.get("enroll_during_run", ()):
+        who = "you (the operator)" if name == "operator" else "the run's account"
+        out.append(
+            f"{name} (user; this run only): {who}, removed automatically at the end of the run")
+    return out or ["nobody"]
 
 
 @guards_resolution
@@ -50,8 +68,7 @@ def generate_manifest(
     ``identities`` holds the resolved values the build was given. The manifest
     is the document an operator reads BEFORE pasting anything, and identity
     enrolment is the one thing this bundle does that a rollback does not
-    undo. The reader section still shows the first ``enterprise_reader`` value
-    as an address, until the manifest reads the enrolment rows.
+    undo. The template reads the enrolment plan, never a raw address.
 
     ``env_provenance`` defaults to ``NO_ENV_FILE`` rather than being
     required: this function has 19 call sites, and a required parameter
@@ -75,7 +92,9 @@ def generate_manifest(
     bare `KeyError` nor a silent omission.
     """
     template = script_env(application).get_template("manifest.md.j2")
-    reader_values = identities.get("enterprise_reader", ())
+    plan = enrolment_plan(bundle, resolved, identities)
+    descriptions = {n: b.description for n, b in BUILTIN_IDENTITIES.items()} | {
+        n: d.description for n, d in bundle.mapping.identities.items()}
     lists: list[dict[str, Any]] = schema_json["lists"]
 
     counts = {
@@ -383,7 +402,13 @@ def generate_manifest(
         seed_items=schema_json["seed_items"],
         extra_sections=extras.sections,
         extra_warnings=extras.warnings,
-        enterprise_reader=reader_values[0].value if reader_values else None,
+        identity_enrolment=as_json(plan),
+        identity_descriptions=descriptions,
+        identity_value_lines=[
+            f"{r.identity} = `{v.kind}:{v.value}`"
+            for g in plan for r in g.rows for v in r.values],
+        reader_enrolled=bool(identities.get("enterprise_reader")),
+        group_enrols={g["name"]: _group_enrols(g, identities) for g in groups},
         reader_group_list=_reader_groups,
         reader_granted_lists=reader_granted_lists,
         reader_folder_only_lists=reader_folder_only_lists,

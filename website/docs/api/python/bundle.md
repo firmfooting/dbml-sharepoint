@@ -207,10 +207,13 @@ recorded digest matches the bytes on disk and the standard tools agree.
 ### `write_index`
 
 ```python
-def write_index(out: pathlib.Path, *, reporting: bool = False, demo: bool = False, verify: bool = False, env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=())) -> None
+def write_index(out: pathlib.Path, *, reporting: bool = False, demo: bool = False, verify: bool = False, env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=()), carries_identities: bool = False) -> None
 ```
 
 Write ``index.md``: what is in the bundle, one row per artifact.
+
+``carries_identities`` adds the private-output note: the scripts hold the
+account names ``ensureuser`` needs.
 
 ``env_provenance`` defaults to ``NO_ENV_FILE``: this is a documented
 composition point extension CLIs call directly, and a required

@@ -20,8 +20,7 @@ Render the deploy manifest for ONE build.
 ``identities`` holds the resolved values the build was given. The manifest
 is the document an operator reads BEFORE pasting anything, and identity
 enrolment is the one thing this bundle does that a rollback does not
-undo. The reader section still shows the first ``enterprise_reader`` value
-as an address, until the manifest reads the enrolment rows.
+undo. The template reads the enrolment plan, never a raw address.
 
 ``env_provenance`` defaults to ``NO_ENV_FILE`` rather than being
 required: this function has 19 call sites, and a required parameter
