@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.10.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.9.0...v0.10.0) (2026-10-09)
+
+
+### Features
+
+* **build:** take identity values from --identity and the env file ([#757](https://github.com/firmfooting/dbml-sharepoint/issues/757)) ([64005f6](https://github.com/firmfooting/dbml-sharepoint/commit/64005f61b76ceff5aa2055b7e0714d3c0c8632a6))
+* **deploy:** enrol every declared identity and check it in assess and verify ([#758](https://github.com/firmfooting/dbml-sharepoint/issues/758)) ([c7b361d](https://github.com/firmfooting/dbml-sharepoint/commit/c7b361d723967493c3f639ff1fc3640c91206530))
+* **mapping:** declare identities and enrol them from groups ([#755](https://github.com/firmfooting/dbml-sharepoint/issues/755)) ([90d02d6](https://github.com/firmfooting/dbml-sharepoint/commit/90d02d645ffc7fa8786b8d53c5dc3f78923eab74))
+
 ## [0.9.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.8.0...v0.9.0) (2026-10-09)
 
 
