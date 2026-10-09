@@ -1199,7 +1199,7 @@ def test_a_valid_reader_flag_reaches_the_written_manifest(tmp_path: Path) -> Non
 
     manifest = (out / "deploy-manifest.md").read_text(encoding="utf-8")
     assert address in manifest
-    assert "PERMANENT" in manifest
+    assert "kept after a successful run" in manifest
     assert "does not delete the group" in manifest
 
 

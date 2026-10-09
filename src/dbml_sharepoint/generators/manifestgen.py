@@ -31,12 +31,15 @@ def _group_enrols(
     for name in group.get("enroll", ()):
         kinds = sorted({v.kind for v in identities.get(name, ())})
         out.append(
-            f"{name} ({', '.join(kinds)}; PERMANENT, not removed at the end of the run)"
+            f"{name} ({', '.join(kinds)}; kept after a successful run; "
+            "an aborted run removes only what it added)"
             if kinds else f"{name} (no value supplied; nobody enrolled, created empty)")
     for name in group.get("enroll_during_run", ()):
-        who = "you (the operator)" if name == "operator" else "the run's account"
+        if name != "operator":
+            raise ValueError(f"enroll_during_run names {name!r}; only operator is run-lifetime")
         out.append(
-            f"{name} (user; this run only): {who}, removed automatically at the end of the run")
+            f"{name} (user; this run only): you (the operator), "
+            "removed automatically at the end of the run")
     return out or ["nobody"]
 
 
@@ -404,10 +407,11 @@ def generate_manifest(
         extra_warnings=extras.warnings,
         identity_enrolment=as_json(plan),
         identity_descriptions=descriptions,
-        identity_value_lines=[
+        identity_value_lines=list(dict.fromkeys(
             f"{r.identity} = `{v.kind}:{v.value}`"
-            for g in plan for r in g.rows for v in r.values],
-        reader_enrolled=bool(identities.get("enterprise_reader")),
+            for g in plan for r in g.rows for v in r.values)),
+        reader_enrolled=any(
+            r.identity == "enterprise_reader" and r.values for g in plan for r in g.rows),
         group_enrols={g["name"]: _group_enrols(g, identities) for g in groups},
         reader_group_list=_reader_groups,
         reader_granted_lists=reader_granted_lists,

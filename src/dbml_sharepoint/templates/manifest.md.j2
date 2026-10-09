@@ -109,7 +109,9 @@ Values: {{ identity_value_lines | join("; ") }}.
 
 An additive group keeps members no identity accounts for and the deploy
 warns about each. An exclusive group must hold nobody else, or the deploy
-stops before creating any list. Neither removes a member.
+stops before creating any list. Neither removes a member the run did not add.
+A run that reaches the end keeps the memberships it added; a run that aborts
+removes only the memberships it added itself.
 Rollback leaves group memberships alone.
 {% endif %}
 {% set reader_groups = schema_json.groups | selectattr("name", "in", reader_group_list) | list %}
@@ -119,13 +121,14 @@ Rollback leaves group memberships alone.
    ownership note above and markdown renders the two as one. #}
 {% if reader_groups and reader_enrolled %}
 
-**Enterprise reader enrolment: this membership is PERMANENT.** This bundle was
+**Enterprise reader enrolment: this membership is kept after a successful run.** This bundle was
 built with an `enterprise_reader` identity (listed under Identities enrolled by this
 deploy), so Phase {{ phase_num['identity_enrolment'] }} adds that ONE
 account to **{{ reader_group_names }}**, a group granted the built-in **Read** and
 nothing more. It is NOT like the operator self-enrolment above: that one exists
 only to let this run write and removes itself at the end of the run, whereas a
-reporting account has to keep reading between runs, so nothing removes this one.
+reporting account has to keep reading between runs, so a run that reaches the end leaves it in place (a run that aborts removes
+only what it added itself).
 Remove it by hand in **Site permissions -> Groups** when the account no longer
 needs access.
 
