@@ -54,6 +54,27 @@ def test_the_keyword_beats_the_environment(
     assert "2025-10-01T00:00:00+00:00" in deploy
 
 
+def test_the_zero_epoch_is_a_valid_stamp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SOURCE_DATE_EPOCH", raising=False)
+    _build_simple(tmp_path / "a", source_date_epoch=0)
+    deploy = (tmp_path / "a" / "deploy.js.txt").read_text(encoding="utf-8")
+    assert "1970-01-01T00:00:00+00:00" in deploy
+
+
+@pytest.mark.parametrize("keyword", [-1, 10**20])
+def test_a_refused_keyword_epoch_is_a_refused_build(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    keyword: int,
+) -> None:
+    monkeypatch.delenv("SOURCE_DATE_EPOCH", raising=False)
+    with pytest.raises(typer.Exit) as raised:
+        _build_simple(tmp_path / "a", source_date_epoch=keyword)
+    assert raised.value.exit_code == 1
+    assert "SOURCE_DATE_EPOCH" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("raw", ["yesterday", "-5", "1.5", "", "99999999999999999"])
 def test_a_malformed_epoch_is_a_refused_build(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], raw: str,

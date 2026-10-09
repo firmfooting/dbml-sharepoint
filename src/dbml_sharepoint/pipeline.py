@@ -137,22 +137,28 @@ def _echo_warnings(findings: list[Finding]) -> None:
         typer.echo(f"  [WARNING] {f.detail}", err=True)
 
 
-def _build_instant(source_date_epoch: int | None) -> dt.datetime | None:
-    """The reproducible-builds stamp: the keyword, else SOURCE_DATE_EPOCH, else None."""
-    if source_date_epoch is not None:
-        return dt.datetime.fromtimestamp(source_date_epoch, dt.UTC)
-    raw = os.environ.get("SOURCE_DATE_EPOCH")
-    if raw is None:
-        return None
+def _epoch_instant(seconds: int | None, shown: str) -> dt.datetime:
+    """The UTC instant for whole non-negative seconds, else a named SOURCE_DATE_EPOCH refusal."""
     try:
-        if not (raw.isascii() and raw.isdigit()):
-            raise ValueError("not a whole number")
-        return dt.datetime.fromtimestamp(int(raw), dt.UTC)
+        if seconds is None or seconds < 0:
+            raise ValueError("not a non-negative whole number")
+        return dt.datetime.fromtimestamp(seconds, dt.UTC)
     except (ValueError, OverflowError, OSError):
         config_error(
             "SOURCE_DATE_EPOCH", None,
-            ValueError(f"must be whole seconds since 1970-01-01 UTC, got {raw!r}"),
+            ValueError(f"must be whole seconds since 1970-01-01 UTC, got {shown!r}"),
         )
+
+
+def _build_instant(source_date_epoch: int | None) -> dt.datetime | None:
+    """The reproducible-builds stamp: the keyword, else SOURCE_DATE_EPOCH, else None."""
+    if source_date_epoch is not None:
+        return _epoch_instant(source_date_epoch, str(source_date_epoch))
+    raw = os.environ.get("SOURCE_DATE_EPOCH")
+    if raw is None:
+        return None
+    digits = raw.isascii() and raw.isdigit()
+    return _epoch_instant(int(raw) if digits else None, raw)
 
 
 def execute_build(
