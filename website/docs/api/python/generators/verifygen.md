@@ -41,7 +41,7 @@ HOUR = 3600
 ### `verify_targets`
 
 ```python
-def verify_targets(schema: 'Schema', bundle: 'MappingBundle', site_role: 'str') -> 'dict[str, Any]'
+def verify_targets(schema: 'Schema', bundle: 'MappingBundle', site_role: 'str', identities: 'AbcMapping[str, tuple[IdentityValue, ...]]' = mappingproxy({})) -> 'dict[str, Any]'
 ```
 
 The data the verify script loops over, derived from the pack's clock use.

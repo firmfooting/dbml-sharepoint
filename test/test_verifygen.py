@@ -9,6 +9,7 @@ lists, one column at a time.
 import json
 import subprocess
 import textwrap
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -26,12 +27,15 @@ from dbml_sharepoint.analysis.list_description import VERIFY_LIST_TITLE, verify_
 from dbml_sharepoint.analysis.save_rules import joined_list_validation
 from dbml_sharepoint.generators.verifygen import generate_verify_js, verify_targets
 from dbml_sharepoint.model.conditions import Group, Leaf
+from dbml_sharepoint.model.identities import parse_values
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
     EntitySection,
     ListValidation,
     MappingBundle,
+    PermissionsConfig,
+    SiteGroup,
     ViewDef,
 )
 from dbml_sharepoint.model.parser import Schema, parse_dbml
@@ -256,6 +260,8 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
     const ROWS_NEXT = undefined;
     const ROWS_FULL_PAGE = false;
     const QUERY_WITHOUT_RESULTS = false;
+    const GROUP_MEMBERS = {};
+    const GROUP_REPLY = null;
     Date.prototype.getTimezoneOffset = () => -BROWSER_OFFSET;
     const DAY = 86400000;
     const STORED = { rule: null };
@@ -327,6 +333,15 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
       if (u.includes('contextinfo')) {
         return respond(200, { d: { GetContextWebInformation: {
           FormDigestValue: 'digest', FormDigestTimeoutSeconds: 1800 } } });
+      }
+      const groupRead = /sitegroups\/getbyname\('([^']*)'\)\/users$/.exec(path);
+      if (groupRead) {
+        if (GROUP_REPLY) return respond(GROUP_REPLY.status, GROUP_REPLY.body);
+        const name = decodeURIComponent(groupRead[1]);
+        if (!(name in GROUP_MEMBERS)) {
+          return respond(404, { error: { message: { value: 'no group' } } });
+        }
+        return respond(200, { d: { results: GROUP_MEMBERS[name] } });
       }
       if (u.includes('regionalsettings/timezone')) {
         return respond(200, { d: {
@@ -417,8 +432,8 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
 """)
 
 
-def _run_verify(js: str | None = None, **knobs: str) -> dict[str, Any]:
-    """Execute a verify script against the fake site; returns its summary."""
+def _run_verify_full(js: str | None = None, **knobs: str) -> dict[str, Any]:
+    """Execute a verify script against the fake site; returns its summary plus calls and log."""
     harness = _VERIFY_HARNESS
     for name, value in knobs.items():
         marker = f"const {name} = "
@@ -430,6 +445,7 @@ def _run_verify(js: str | None = None, **knobs: str) -> dict[str, Any]:
     assert script.count("})();") == 1, "the IIFE terminator is no longer unique"
     wrapped = script.replace(
         "})();", "}))().then(r => { globalThis.__assertNoWrites(); "
+        "console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); "
         "console.log('__RESULT__' + JSON.stringify(r)); })",
     ).replace("(async () => {", "((async () => {", 1)
     output = run_node(harness + "\n" + wrapped)
@@ -437,7 +453,15 @@ def _run_verify(js: str | None = None, **knobs: str) -> dict[str, Any]:
     assert line is not None, f"verify.js did not return a summary:\n{output[-3000:]}"
     summary: dict[str, Any] = json.loads(line.removeprefix("__RESULT__"))
     assert summary.get("verdict"), f"verify.js reached no verdict:\n{output[-3000:]}"
+    calls_line = next(ln for ln in output.splitlines() if ln.startswith("__CALLS__"))
+    summary["calls"] = json.loads(calls_line.removeprefix("__CALLS__"))
+    summary["log"] = [ln for ln in output.splitlines() if ln.startswith("[SP-VERIFY]")]
     return summary
+
+
+def _run_verify(js: str | None = None, **knobs: str) -> dict[str, Any]:
+    """Execute a verify script against the fake site; returns its summary."""
+    return _run_verify_full(js, **knobs)
 
 
 def _levels(summary: dict[str, Any]) -> dict[str, str]:
@@ -533,14 +557,6 @@ def test_a_lagging_formula_clock_is_reported_as_information() -> None:
     assert summary["verdict"] == "VERIFIED"
 
 
-if __name__ == "__main__":  # pragma: no cover
-    # Regenerate the golden through the same helper the test uses.
-    pin_deployer_version()
-    _target = EXPECTED / "simple-verify.js"
-    write_golden(_target, _simple_verify_js())
-    print(f"wrote {_target}")  # noqa: T201
-
-
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 @pytest.mark.parametrize("continuation", ["false", "0", "true", "1", "[]", "{}", "'next-page'"])
 def test_an_unestablished_list_inventory_stops_verify_before_any_write(
@@ -610,3 +626,154 @@ def test_a_row_page_that_may_be_truncated_stops_verify_before_placing_rows(
 @pytest.mark.parametrize("terminator", ["null", "''"])
 def test_a_row_page_ending_without_a_next_link_is_verified(terminator: str) -> None:
     assert _run_verify(ROWS_NEXT=terminator)["verdict"] == "VERIFIED"
+
+
+# ---- Identities: verify reads membership, with or without a clock ---------------
+
+_IDENTITIES = {"automation": parse_values("automation", "user:flows@example.com")}
+_FLOWS_MEMBER = {
+    "Id": 41, "LoginName": "i:0#.f|membership|Flows@Example.com",
+    "Email": "flows@example.com", "PrincipalType": 1,
+}
+_GROUP = SiteGroup(
+    name="XX Writers", description="w", owner_group="Site Owners",
+    allow_members_edit_membership=False, allow_request_to_join_leave=False,
+    auto_accept_request_to_join_leave=False, only_allow_members_view_membership=False,
+    enroll=("automation",),
+)
+
+
+def _with_group(bundle: MappingBundle) -> MappingBundle:
+    permissions = PermissionsConfig(
+        default_policy=None, overrides={}, levels=[], groups=[_GROUP],
+    )
+    return replace(bundle, mapping=replace(bundle.mapping, permissions=permissions))
+
+
+def _writers_pack() -> tuple[Schema, MappingBundle]:
+    schema = make_schema(make_table("Task", column("Title", required=True), note="Tasks."))
+    return schema, _with_group(make_bundle(entities=["Task"]))
+
+
+def _writers_verify_js(clock: bool = False) -> str:
+    schema, bundle = _clock_pack() if clock else _writers_pack()
+    if clock:
+        bundle = _with_group(bundle)
+    return generate_verify_js(
+        schema=schema, bundle=bundle, release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test", site_role="default",
+        source_dbml="s.dbml", generated_at="2026-10-09T00:00:00Z", identities=_IDENTITIES,
+    )
+
+
+def _members(members: list[dict[str, Any]]) -> str:
+    return json.dumps({"XX Writers": members})
+
+
+def _identity_levels(out: dict[str, Any]) -> list[tuple[str, str]]:
+    return [(f["level"], f["detail"]) for f in out["findings"] if f["key"].startswith("identity:")]
+
+
+def _no_writes(out: dict[str, Any]) -> bool:
+    return not [c for c in out["calls"] if c["method"] != "GET" and "contextinfo" not in c["url"]]
+
+
+def test_a_pack_with_identities_and_no_clock_still_has_something_to_verify() -> None:
+    schema, bundle = _writers_pack()
+    targets = verify_targets(schema, bundle, "default", identities=_IDENTITIES)
+    assert targets["checks"] == []
+    assert targets["identity_groups"][0]["group"] == "XX Writers"
+    assert not verify_targets(schema, bundle, "default")["identity_groups"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_identity_checks_run_without_creating_the_scratch_list() -> None:
+    """Review focus 4: no clock cell means no scratch list and no write at all."""
+    out = _run_verify_full(
+        _writers_verify_js(), EXPECT_NO_WRITES="true", GROUP_MEMBERS=_members([_FLOWS_MEMBER]),
+    )
+    assert out["verdict"] == "VERIFIED"
+    assert _no_writes(out)
+    assert not [c for c in out["calls"] if "_dbml-verify" in c["url"]]
+    assert not [c for c in out["calls"] if "ensureuser" in c["url"].lower()]
+    assert any("is a member of 'XX Writers'" in ln for ln in out["log"])
+    assert not any("flows@example.com" in ln.lower() for ln in out["log"])
+    assert not any("_dbml-verify" in ln for ln in out["log"])
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_missing_identity_is_a_mismatch_naming_group_and_identity() -> None:
+    out = _run_verify_full(_writers_verify_js(), GROUP_MEMBERS=_members([]))
+    assert out["verdict"] == "MISMATCH"
+    assert any("'automation' is not a member of 'XX Writers'" in ln for ln in out["log"])
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_group_that_is_not_on_the_site_is_a_mismatch() -> None:
+    out = _run_verify_full(_writers_verify_js())
+    assert out["verdict"] == "MISMATCH"
+    assert _no_writes(out)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_member_of_the_wrong_kind_is_a_mismatch_and_a_right_kind_one_wins() -> None:
+    wrong = {**_FLOWS_MEMBER, "PrincipalType": 4}
+    out = _run_verify_full(_writers_verify_js(), GROUP_MEMBERS=_members([wrong]))
+    assert out["verdict"] == "MISMATCH"
+    assert any("wrong kind" in detail for _, detail in _identity_levels(out))
+    both = _run_verify_full(
+        _writers_verify_js(), GROUP_MEMBERS=_members([wrong, {**_FLOWS_MEMBER, "Id": 42}]),
+    )
+    assert both["verdict"] == "VERIFIED"
+
+
+_LONG_PAGE = (
+    "{ status: 200, body: { d: { results: Array.from({ length: 5000 }, (_, i) => ({ Id: i + 100, "
+    "LoginName: 'u' + i, Email: '', PrincipalType: 1 })) } } }"
+)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("reply", [
+    "{ status: 500, body: { error: {} } }",
+    "{ status: 500, body: { d: { results: [] } } }",
+    "{ status: 200, body: { d: { results: [], __next: 'https://example.sharepoint.com/next' } } }",
+    "{ status: 200, body: { d: { results: 'nope' } } }",
+    "{ status: 200, body: { d: { results: [], __next: 0 } } }",
+    _LONG_PAGE,
+], ids=[
+    "failed-read", "failed-with-results", "next-link", "not-an-array", "malformed-next",
+    "full-page",
+])
+def test_a_membership_read_that_may_be_short_is_not_verified(reply: str) -> None:
+    out = _run_verify_full(_writers_verify_js(), EXPECT_NO_WRITES="true", GROUP_REPLY=reply)
+    assert out["verdict"] == "NOT-VERIFIED"
+    ((level, detail),) = _identity_levels(out)
+    assert level == "NOT-ASSESSABLE" and "in full" in detail
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_identities_are_checked_before_the_clock_and_the_clock_still_runs() -> None:
+    out = _run_verify_full(_writers_verify_js(clock=True), GROUP_MEMBERS=_members([]))
+    keys = [f["key"] for f in out["findings"]]
+    assert keys[0] == "identity:XX Writers/automation"
+    assert "scratch_list" in keys
+    assert out["verdict"] == "MISMATCH"
+    ok = _run_verify_full(_writers_verify_js(clock=True), GROUP_MEMBERS=_members([_FLOWS_MEMBER]))
+    assert ok["verdict"] == "VERIFIED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_hand_built_targets_without_identity_groups_is_refused() -> None:
+    js = _writers_verify_js().replace('"identity_groups"', '"identity_groupz"')
+    out = _run_verify_full(js, GROUP_MEMBERS=_members([_FLOWS_MEMBER]))
+    assert out["verdict"] == "NOT-VERIFIED"
+    assert out["aborted"] == "verification-failed"
+
+
+if __name__ == "__main__":  # pragma: no cover
+    # Regenerate the golden through the same helper the test uses.
+    pin_deployer_version()
+    _target = EXPECTED / "simple-verify.js"
+    write_golden(_target, _simple_verify_js())
+    print(f"wrote {_target}")  # noqa: T201

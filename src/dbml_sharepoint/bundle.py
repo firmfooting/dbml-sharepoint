@@ -459,10 +459,11 @@ def emit_bundle(
         "deploy-manifest.md", DEPLOY_SCRIPT, ROLLBACK_SCRIPT,
         ASSESS_SCRIPT, "assess-manifest.md",
     ]
-    # Derived, not flagged: a pack that reads a clock anywhere gets the
-    # script that exercises those cells on the site; one that does not has
+    # Derived, not flagged: a pack that reads a clock or enrols an identity
+    # gets the script that checks it on the site; one with neither has
     # nothing to verify and gets no script to paste by mistake.
-    verify = bool(verify_targets(schema, mapping_bundle, site_role)["checks"])
+    targets = verify_targets(schema, mapping_bundle, site_role, identities)
+    verify = bool(targets["checks"] or targets["identity_groups"])
     if verify:
         write_artifact(
             out / VERIFY_SCRIPT,

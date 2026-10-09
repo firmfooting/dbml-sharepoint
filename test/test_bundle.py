@@ -2,6 +2,7 @@
 """Bundle-level packaging: artifact clearing, LF-stable hashing, INDEX/checksums."""
 
 import hashlib
+from dataclasses import replace
 from pathlib import Path
 
 from _paths import FIXTURES, PACKAGE
@@ -422,3 +423,27 @@ def test_index_is_silent_about_privacy_without_identity_values(tmp_path: Path) -
     out.mkdir()
     write_index(out)
     assert "carries account names" not in (out / "index.md").read_text(encoding="utf-8")
+
+
+def test_verify_is_emitted_for_identities_alone_and_not_without_values(tmp_path: Path) -> None:
+    from dbml_sharepoint.model.identities import parse_values
+    from dbml_sharepoint.model.release import load_release
+
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping-with-writers.yaml")
+    # The simple fixture's view window is a clock cell; remove it to isolate the identity path.
+    bundle = replace(bundle, mapping=replace(bundle.mapping, views={}))
+    flows = {"automation": parse_values("automation", "user:a@example.com")}
+    for identities, expected in ((flows, True), ({}, False)):
+        out = tmp_path / str(expected)
+        out.mkdir()
+        (out / "deploy-manifest.md").write_text("manifest", encoding="utf-8")
+        emit_bundle(
+            out, schema=schema, mapping_bundle=bundle,
+            resolved=resolve(schema, bundle.mapping),
+            release=load_release(FIXTURES / "release.yaml"),
+            site_url="https://example.sharepoint.com/sites/test", site_role="default",
+            schema_name="s.dbml", mapping_name="m.yaml", source_mtime="2026-05-04T00:00:00Z",
+            generated_at="2026-05-04T00:00:00Z", seed=False, identities=identities,
+        )
+        assert (out / "verify.js.txt").is_file() is expected

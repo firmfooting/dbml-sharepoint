@@ -207,7 +207,7 @@ Shared web-context resolution for every pasteable script. Expects a `log` functi
 
 Included by: `verify.js.j2`
 
-The whole verification, taking its collaborators as an argument so the standalone script and a test harness can share it. Expects `targets` (generators/verifygen.py: list_title, marker, columns, rows, checks, rule) and the transport, digest and canonicalFormula collaborators.
+The whole verification, taking its collaborators as an argument so the standalone script and a test harness can share it. Expects `targets` (generators/verifygen.py: list_title, marker, columns, rows, checks, rule, identity_groups) and the transport, digest and canonicalFormula collaborators.
 
 ## deploy.js phase bodies
 

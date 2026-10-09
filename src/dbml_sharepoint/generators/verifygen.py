@@ -23,8 +23,10 @@ from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.clock_cells import cell_for
 from dbml_sharepoint.analysis.clock_usage import clock_usage
 from dbml_sharepoint.analysis.condition_rendering import to_caml, to_validation
+from dbml_sharepoint.analysis.enrolment import as_json, enrolment_plan
 from dbml_sharepoint.analysis.list_description import VERIFY_LIST_TITLE, verify_marker
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.save_rules import joined_list_validation
 from dbml_sharepoint.model.conditions import Group, Leaf
 from dbml_sharepoint.model.identities import IdentityValue
@@ -250,7 +252,10 @@ def _not_after_now(row: _Row) -> bool:
     return bool(value["kind"] == "midnight" and row["day"] is not None and row["day"] <= 0)
 
 
-def verify_targets(schema: Schema, bundle: MappingBundle, site_role: str) -> dict[str, Any]:
+def verify_targets(
+    schema: Schema, bundle: MappingBundle, site_role: str,
+    identities: AbcMapping[str, tuple[IdentityValue, ...]] = MappingProxyType({}),
+) -> dict[str, Any]:
     """The data the verify script loops over, derived from the pack's clock use."""
     mapping = bundle.mapping
     table_names = list(site_tables_in_order(schema, mapping.entities, site_role))
@@ -288,6 +293,8 @@ def verify_targets(schema: Schema, bundle: MappingBundle, site_role: str) -> dic
         "rows": [{k: v for k, v in row.items() if k != "day"} for row in targets.rows.values()],
         "checks": targets.checks,
         "rule": rule,
+        # Values travel here for the standalone script only; the script logs names, never values.
+        "identity_groups": as_json(enrolment_plan(bundle, resolve(schema, mapping), identities)),
     }
 
 
@@ -315,5 +322,5 @@ def generate_verify_js(
         release=release,
         source_dbml=source_dbml,
         generated_at=generated_at,
-        targets=verify_targets(schema, bundle, site_role),
+        targets=verify_targets(schema, bundle, site_role, identities),
     )
