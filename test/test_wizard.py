@@ -3955,6 +3955,27 @@ def test_a_template_with_a_file_that_cannot_be_read_is_refused_before_writing(
     assert not destination.exists()
 
 
+@pytest.mark.skipif(not _PERMISSIONS_BIND, reason="needs POSIX permissions that bind this user")
+def test_a_template_with_a_directory_that_cannot_be_entered_is_refused_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """rglob skips a directory it cannot search, so the copy would meet it after writing."""
+    solution = _fake_family(tmp_path / "fake")
+    (solution.root / "locked").mkdir()
+    (solution.root / "locked" / "page.txt").write_text("hidden\n", encoding="utf-8")
+    (solution.root / "locked").chmod(0)
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+    try:
+        assert wizard.run_wizard(console) == 1
+    finally:
+        (solution.root / "locked").chmod(0o755)
+    assert "locked cannot be read" in _collapsed(console)
+    assert not destination.exists()
+
+
 def test_a_provider_template_that_fails_validation_is_refused_before_writing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

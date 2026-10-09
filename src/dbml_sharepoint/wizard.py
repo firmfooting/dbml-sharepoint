@@ -36,6 +36,7 @@ and `test_messages_bound_for_a_console_are_ascii` walks the AST.
 """
 
 import json
+import os
 import re
 import shutil
 import sys
@@ -1263,6 +1264,25 @@ def _check_reads(solution: Solution, read: list[Path]) -> None:
             )
 
 
+def _template_entries(solution: Solution) -> list[Path]:
+    """Every entry under the template, refusing a directory the walk cannot enter.
+
+    `rglob` skips such a directory silently, and the copy would then meet it
+    after the destination was created.
+    """
+
+    def refuse(exc: OSError) -> None:
+        name = Path(exc.filename or solution.root).relative_to(solution.root).as_posix()
+        raise WizardError(
+            f"the {solution.id} template's {name} cannot be read: {exc.strerror}",
+        ) from exc
+
+    entries: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(solution.root, onerror=refuse):
+        entries.extend(Path(dirpath, name) for name in (*dirnames, *filenames))
+    return sorted(entries)
+
+
 def _check_tree(solution: Solution) -> None:
     """Refuse a template the copy would stop part-way through, or would carry too much of.
 
@@ -1271,7 +1291,7 @@ def _check_tree(solution: Solution) -> None:
     a file this user cannot read, which would leave a partial project.
     """
     root = solution.root.resolve()
-    for path in sorted(solution.root.rglob("*")):
+    for path in _template_entries(solution):
         inside = path.relative_to(solution.root)
         if set(inside.parts) & set(_NEVER_COPY):
             continue
