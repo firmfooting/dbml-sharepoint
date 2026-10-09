@@ -3186,6 +3186,9 @@ def test_a_group_not_on_the_site_yet_is_informational(tmp_path: Path) -> None:
     (500, "{ error: {} }"),
     (200, "{ d: { results: [], __next: 'https://example.sharepoint.com/next' } }"),
     (200, "{ d: { results: 'nope' } }"),
+    (200, ("{ d: { results: Array.from({ length: 5000 }, (_, i) => ({ Id: i + 100, "
+          "LoginName: 'u' + i, Email: '', PrincipalType: 1 })) } }")),
+    (200, "{ d: { results: [], __next: 0 } }"),
 ])
 def test_a_membership_read_that_may_be_short_is_not_assessable(
     tmp_path: Path, status: int, extra: str,
@@ -3194,6 +3197,27 @@ def test_a_membership_read_that_may_be_short_is_not_assessable(
     (row,) = _identity_rows(out)
     assert row["level"] == "NOT-ASSESSABLE" and "in full" in row["detail"]
     assert out["verdict"] != "COMPATIBLE"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_correct_kind_member_wins_over_a_wrong_kind_one_sharing_the_address(
+    tmp_path: Path,
+) -> None:
+    members = [
+        _member("c:0t.c|tenant|x", 4, "flows@example.com", ident=40),
+        _member("i:0#.f|membership|flows@example.com", ident=41),
+    ]
+    out = _identity_run(tmp_path, members)
+    rows = _identity_rows(out)
+    assert any("= present" in f["detail"] for f in rows)
+    assert not [f for f in rows if f["level"] == "BLOCKED"], rows
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_identity_findings_log_under_their_own_label(tmp_path: Path) -> None:
+    out = _identity_run(tmp_path, [])
+    assert any("[IDENTITIES] identity:XX Writers:" in ln for ln in out["log"])
+    assert not any("TIDENTITIES" in ln for ln in out["log"])
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -3207,7 +3231,7 @@ def test_a_run_scoped_identity_is_reported_as_this_run(tmp_path: Path) -> None:
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_the_identities_json_line_carries_no_value(tmp_path: Path) -> None:
     out = _identity_run(tmp_path, [_member("i:0#.f|membership|other@example.com", ident=42)])
-    (line,) = [ln for ln in out["log"] if "[IDENTITIES] " in ln]
+    (line,) = [ln for ln in out["log"] if "[IDENTITIES] [{" in ln]
     rows = json.loads(line.split("[IDENTITIES] ", 1)[1])
     assert rows[0]["identity"].startswith("automation (sha256:")
     assert rows[1] == {"group": "XX Writers", "identity": None, "status": "extra"}

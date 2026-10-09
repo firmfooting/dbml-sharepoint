@@ -30,7 +30,7 @@
     let verdict = null;
     const finding = (tier, key, level, detail) => {
       findings.push({ tier, key, level, detail });
-      log(level, `[T${tier}] ${key}: ${detail}`);
+      log(level, `[${typeof tier === 'number' ? `T${tier}` : tier}] ${key}: ${detail}`);
     };
     // A property the site did not return is not a value. Printing it as one
     // put the literal word `undefined` in operator-facing lines.
@@ -974,7 +974,9 @@
           const accounted = new Set();
           for (const row of plan.rows) {
             for (const value of row.values) {
-              const hit = members.find((u) => addressOf(u).includes(String(value.value).toLowerCase()));
+              const sameAddress = members.filter((u) => addressOf(u).includes(String(value.value).toLowerCase()));
+              // A correct-kind member wins, so a stray principal sharing the address cannot block.
+              const hit = sameAddress.find((u) => u.PrincipalType === expectedType(value.kind)) || sameAddress[0];
               let status = '+ will enrol';
               let level = 'INFO';
               if (hit) {
