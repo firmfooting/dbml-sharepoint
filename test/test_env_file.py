@@ -16,6 +16,8 @@ from dbml_sharepoint.model.env_file import (
     EnvValue,
     UnknownEnvKeyError,
     describe_env_provenance,
+    identity_env_key,
+    identity_name_from_key,
     read_env_file,
 )
 
@@ -328,3 +330,24 @@ def test_a_hash_without_leading_space_stays_in_the_value(tmp_path: Path) -> None
     path = _write(tmp_path, "DBMLSP_ENTERPRISE_READER=svc#1@example.org\n")
     settings, _ = read_env_file(path)
     assert settings == {"DBMLSP_ENTERPRISE_READER": "svc#1@example.org"}
+
+
+def test_an_identity_key_is_read_raw(tmp_path: Path) -> None:
+    path = tmp_path / "dbml-sharepoint.env"
+    path.write_text("DBMLSP_IDENTITY_RECORDS_CLERK=user:clerk@example.com\n", encoding="utf-8")
+    settings, _ = read_env_file(path)
+    assert settings == {"DBMLSP_IDENTITY_RECORDS_CLERK": "user:clerk@example.com"}
+
+
+@pytest.mark.parametrize("key", ["DBMLSP_IDENTITY_", "DBMLSP_IDENTITY_1A", "DBMLSP_IDENTITY_a"])
+def test_an_identity_key_no_name_could_spell_is_unknown(tmp_path: Path, key: str) -> None:
+    path = tmp_path / "dbml-sharepoint.env"
+    path.write_text(f"{key}=user:a@example.com\n", encoding="utf-8")
+    with pytest.raises(UnknownEnvKeyError):
+        read_env_file(path)
+
+
+def test_an_identity_name_and_its_key_round_trip() -> None:
+    assert identity_env_key("records_clerk") == "DBMLSP_IDENTITY_RECORDS_CLERK"
+    assert identity_name_from_key("DBMLSP_IDENTITY_RECORDS_CLERK") == "records_clerk"
+    assert identity_name_from_key("DBMLSP_TIME_ZONE") is None

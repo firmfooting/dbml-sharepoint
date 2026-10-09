@@ -18,6 +18,8 @@ from difflib import get_close_matches
 from pathlib import Path
 from typing import Final, NoReturn
 
+from dbml_sharepoint.model.identities import NAME_PATTERN
+
 ENV_FILENAME: Final = "dbml-sharepoint.env"
 
 
@@ -61,6 +63,22 @@ CHANGE_LOG_LIST_PARAMETER: Final = "change_log_list"
 # here beside the other deployment facts and never in the mapping.
 TIME_ZONE_KEY: Final = "DBMLSP_TIME_ZONE"
 TIME_ZONE_PARAMETER: Final = "time_zone"
+
+# One key per identity the mapping enrols, so the name set is open and checked by pattern.
+IDENTITY_KEY_PREFIX: Final = "DBMLSP_IDENTITY_"
+
+
+def identity_env_key(name: str) -> str:
+    return IDENTITY_KEY_PREFIX + name.upper()
+
+
+def identity_name_from_key(key: str) -> str | None:
+    """The identity a key names, or None when it is not a well-formed identity key."""
+    if not key.startswith(IDENTITY_KEY_PREFIX):
+        return None
+    suffix = key.removeprefix(IDENTITY_KEY_PREFIX)
+    name = suffix.lower()
+    return name if suffix == name.upper() and NAME_PATTERN.fullmatch(name) else None
 
 # No `validate` field: `execute_build` already validates what it consumes, and
 # importing `cli.py`'s validators here would cycle and drag typer into `model/`.
@@ -250,7 +268,7 @@ def read_env_file(path: Path) -> tuple[dict[str, str], str]:
         value = _unquote(path, line_no, stripped, raw_value)
         if not key.startswith("DBMLSP_"):
             _refuse(path, line_no, stripped, f"key {key!r} must start with DBMLSP_")
-        if key not in known_keys:
+        if key not in known_keys and identity_name_from_key(key) is None:
             near = get_close_matches(key, known_keys, n=3, cutoff=0.6)
             suggestion = f" Did you mean: {', '.join(near)}?" if near else ""
             raise UnknownEnvKeyError(f"{path}: line {line_no}: unknown key {key!r}.{suggestion}")

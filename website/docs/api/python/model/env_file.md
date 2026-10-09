@@ -113,6 +113,26 @@ TIME_ZONE_KEY = 'DBMLSP_TIME_ZONE'
 TIME_ZONE_PARAMETER = 'time_zone'
 ```
 
+### `IDENTITY_KEY_PREFIX`
+
+```python
+IDENTITY_KEY_PREFIX = 'DBMLSP_IDENTITY_'
+```
+
+### `identity_env_key`
+
+```python
+def identity_env_key(name: str) -> str
+```
+
+### `identity_name_from_key`
+
+```python
+def identity_name_from_key(key: str) -> str | None
+```
+
+The identity a key names, or None when it is not a well-formed identity key.
+
 ### `ENV_SETTINGS`
 
 ```python
