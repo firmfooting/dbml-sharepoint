@@ -10351,7 +10351,6 @@ def test_the_title_rename_lands_before_any_calculated_column(
     assert "[Escalation Summary]" in calls[formula]["body"]
 
 
-
 # The supplied value in every spelling a log line could carry: the address, its
 # local part, the claims login and the resolved user id. The domain is not asserted:
 # the operator account in the stamps shares it.
@@ -10370,6 +10369,8 @@ def _run_logged_writers(**harness: Any) -> tuple[dict[str, Any], list[dict[str, 
     return _run_writers(_FLOWS, sidecars=True, **harness)
 
 
+# summary.errors is never written to a log list (the abort stamp carries counts only),
+# which is why a stranger's login may stay in those messages.
 def _assert_nothing_persisted_names_a_value(
     summary: dict[str, Any], calls: list[dict[str, Any]], output: str,
 ) -> None:
