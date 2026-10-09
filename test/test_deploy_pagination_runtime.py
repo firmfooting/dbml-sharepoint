@@ -51,7 +51,7 @@ def test_deploy_reads_validate_continuation_markers(
     if surface.startswith("reader"):
         js = _reader_deploy_js()
         harness = _reader_harness(_RESOLVED_USER)
-        phase = "reader_enrolment"
+        phase = "identity_enrolment"
         part = "/users?" if surface == "reader_members" else "web/roleassignments?"
     elif surface in {"acl", "seeds"}:
         js = _ownership_deploy_js(tmp_path, ("Escalation",))

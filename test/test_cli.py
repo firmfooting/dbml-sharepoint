@@ -26,7 +26,6 @@ from typer.testing import CliRunner, Result
 
 from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis import sidecars
-from dbml_sharepoint.analysis.enrolment import reader_address
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.catalogue import (
@@ -54,7 +53,8 @@ runner = CliRunner()
 
 
 def _captured_reader(captured: dict[str, Any]) -> str | None:
-    return reader_address(captured["identities"])
+    values = captured["identities"].get("enterprise_reader", ())
+    return values[0].value if values else None
 
 
 @pytest.fixture(autouse=True)
@@ -1259,7 +1259,7 @@ def test_the_declined_sentinel_is_treated_as_nobody_not_as_a_value(
     # group carries that substring in a static description ("Read-only
     # enrolment target for --enterprise-reader") that renders regardless of
     # whether anybody was actually enrolled. `READER_ADDRESS` is declared
-    # only inside `_reader_enrolment.js.j2`'s `{% if enterprise_reader %}`
+    # only inside `_identity_enrolment.js.j2`'s `{% if enterprise_reader %}`
     # guard, so its absence is what actually proves no enrolment code emitted.
     assert "READER_ADDRESS" not in (out / "deploy.js.txt").read_text(encoding="utf-8")
 

@@ -336,14 +336,8 @@ def execute_build(
         )
     except IdentityError as exc:
         config_error("identity", None, exc)
-    reader_values = resolved_identities.get("enterprise_reader", ())
-    # The checks below still read the reader as a string; the generators take `identities`.
-    if reader_values:
-        enterprise_reader = reader_values[0].value
 
-    # `isinstance`, not `is not None`: the declined sentinel means nobody is
-    # enrolled and must skip the group check just as `None` does.
-    if isinstance(enterprise_reader, str):
+    if resolved_identities.get("enterprise_reader"):
         # "Which lists grant it" needs the RESOLVED name, because a
         # `from_enum` group's template spelling matches no assignment.
         targets = [

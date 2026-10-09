@@ -20,30 +20,21 @@
       }
     }
   }
-  // Enterprise reader enrolment cleanup (#213 form 1). Declared here,
-  // unconditionally, so an ordinary build with no reader flag still has
-  // this list and drain function: _reader_enrolment.js.j2 wraps its whole
-  // phase body in a template conditional on enterprise_reader, and a
-  // declaration made only inside that block would be a ReferenceError in
-  // the finally below on every build that never emits it.
-  //
-  // Unlike the operator's run-scoped enrolment, the reader account is meant
-  // to outlive the run, but only if the run REACHES the end: two concurrent
-  // deploys naming different reader addresses can each add their own
-  // account and each then abort at the strays check a phase later, and
-  // without this both accounts stayed enrolled forever. runReachedTheEnd is
-  // set once, on the success path in deploy/_seeds.js.j2, after every abort
-  // gate in the phase chain has been passed.
-  const readerEnrollments = [];
+  // Identity enrolment cleanup (#213 form 1). Declared here, unconditionally,
+  // because the enrolment phase is emitted only when a group enrols something
+  // and the finally below would otherwise hit a ReferenceError. These accounts
+  // outlive the run only if it REACHES the end: runReachedTheEnd is set once,
+  // on the success path in deploy/_seeds.js.j2, after every abort gate.
+  const identityEnrollments = [];
   let runReachedTheEnd = false;
-  async function removeReaderEnrollments() {
+  async function removeIdentityEnrollments() {
     if (runReachedTheEnd) {
       // The run reached the end: this is a permanent grant now, not
       // something to undo. Cleared rather than left for a stale reference.
-      readerEnrollments.length = 0;
+      identityEnrollments.length = 0;
       return;
     }
-    for (const enrollment of readerEnrollments.splice(0)) {
+    for (const enrollment of identityEnrollments.splice(0)) {
       try {
         const digestR = await getDigest();
         const removeResp = await fetchWithRetry(apiUrl(`web/sitegroups(${enrollment.groupId})/users/removebyid(${enrollment.userId})`), {
@@ -54,9 +45,9 @@
           const text = await removeResp.text();
           throw new Error(`HTTP ${removeResp.status} ${text}`);
         }
-        log('INFO', `Removed the enterprise reader this run enrolled into '${enrollment.groupName}', because the run did not reach the end.`);
+        log('INFO', `Removed ${enrollment.identity} (user ${enrollment.userId}) this run enrolled into '${enrollment.groupName}', because the run did not reach the end.`);
       } catch (err) {
-        log('ERROR', `Could not remove the enterprise reader from '${enrollment.groupName}': ${err.message}. Remove it in Site permissions > Groups.`);
+        log('ERROR', `Could not remove ${enrollment.identity} from '${enrollment.groupName}': ${err.message}. Remove it in Site permissions > Groups.`);
       }
     }
   }

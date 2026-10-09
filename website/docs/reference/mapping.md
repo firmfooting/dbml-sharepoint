@@ -2279,7 +2279,7 @@ The tampering this guards against is measured, not supposed: on **2026-09-06**
 `BasePermissions` on the built-in `Read` itself, returning HTTP 204 and reading
 back with `ViewListItems` cleared, and a deploy against that site then aborted
 here before creating anything. The comment at step 0 of
-`templates/deploy/_reader_enrolment.js.j2` records the run.
+`templates/deploy/_identity_enrolment.js.j2` records the run.
 
 **The flagged group must hold nobody but the named account.** Before enrolling
 anything, the deploy enumerates the group's membership (every page) and
@@ -2373,7 +2373,7 @@ Users* outright, HTTP 400, "the specified user could not be found", so on
 that tenant neither is reachable by display name. That narrows the gap; it
 does not close it, since another tenant may resolve them and a display-name
 refusal is not proof that no encoding exists. See the dated comment in
-`templates/deploy/_reader_enrolment.js.j2`.
+`templates/deploy/_identity_enrolment.js.j2`.
 
 :::
 

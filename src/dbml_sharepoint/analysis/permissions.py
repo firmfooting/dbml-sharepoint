@@ -139,7 +139,7 @@ ASSIGNABLE_BUILT_IN_LEVELS: frozenset[str] = BUILT_IN_LEVELS - DERIVED_BUILT_IN_
 #: grants something else entirely, and the deploy binds it, reads it back
 #: byte-identical, and reports success. Reserving the name at build time
 #: (BUILT_IN_LEVELS) stops THIS tool creating that level; it says nothing about
-#: what a site already has. So `_reader_enrolment.js.j2` reads the live
+#: what a site already has. So `_identity_enrolment.js.j2` reads the live
 #: BasePermissions before it enrols anybody and judges the bitmap.
 #:
 #: These three are the floor for reading a list at all: the rows
@@ -173,7 +173,7 @@ ENTERPRISE_READER_ADVISORY_PERMISSIONS: tuple[str, ...] = (
 #: enrolled into, so the account inherits every one of those bindings
 #: permanently, and no phase removes them -- `_acls.js.j2` reconciles the
 #: scopes `SCHEMA.acl_scopes` names and nothing else. So
-#: `_reader_enrolment.js.j2` enumerates what the group holds at web scope and
+#: `_identity_enrolment.js.j2` enumerates what the group holds at web scope and
 #: judges each binding's live bitmap against this set.
 #:
 #: THIS IS NOT "anything outside the reader triad", and the difference is the

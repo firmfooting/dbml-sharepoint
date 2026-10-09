@@ -978,7 +978,7 @@
         + `${centralChangeReady ? ` and '${EXTERNAL_CHANGE_LOG_TITLE}'` : ''}, whose permissions `
         + `belong to the deployment-log family that provisions them.`);
     } else if (changeLogReady) {
-{% if enterprise_reader %}
+{% if reader_enrolled %}
       const readerGroup = SCHEMA.groups.find((g) => g.enroll.includes('enterprise_reader'));
       // Prefer a list-scope grant: the change log is a list with no folders,
       // so a list-scope grant is the closer analogue. The folder fallback is

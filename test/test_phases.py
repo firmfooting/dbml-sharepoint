@@ -15,7 +15,7 @@ def test_todays_numbering_is_pinned() -> None:
     derive from position; this pins today's derivation exactly."""
     assert phase_numbers() == {
         "assess": "1.1", "preflight": "1.2", "renames": "1.3",
-        "security": "1.4", "enrolment": "1.5", "reader_enrolment": "1.6",
+        "security": "1.4", "enrolment": "1.5", "identity_enrolment": "1.6",
         "logging": "1.7", "unseal": "1.8",
         "lists": "2.1", "folders": "2.2", "lookups": "2.3", "indexes": "2.4",
         "defaults": "2.5", "views": "3.1", "forms": "3.2", "seal": "4.1",
@@ -36,15 +36,15 @@ def test_reader_enrolment_follows_operator_enrolment() -> None:
     later aborts is tool-owned documentation, not half a register.
     """
     numbers = phase_numbers()
-    assert numbers["reader_enrolment"] == "1.6"
+    assert numbers["identity_enrolment"] == "1.6"
     assert numbers["logging"] == "1.7"
     assert numbers["unseal"] == "1.8"
     keys = [step.key for _, steps in DEPLOY_GROUPS for step in steps]
     # A renamed list must be under its current title before the security
     # phase, the first to address lists by title after the preflight.
     assert keys.index("preflight") < keys.index("renames") < keys.index("security")
-    assert keys.index("security") < keys.index("reader_enrolment")
-    assert keys.index("reader_enrolment") < keys.index("logging")
+    assert keys.index("security") < keys.index("identity_enrolment")
+    assert keys.index("identity_enrolment") < keys.index("logging")
     assert keys.index("logging") < keys.index("lists")
 
 

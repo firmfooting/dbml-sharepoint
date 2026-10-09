@@ -404,7 +404,6 @@ PINNED: dict[str, list[str]] = {
         "0c34d410b03e",
         "a51d523ad652",
         "e3acd576e6fb",
-        "ed767b568de8",
         "f9945ccc3ea5",
     ],
     "src/dbml_sharepoint/templates/deploy/_acls.js.j2": [
@@ -475,17 +474,10 @@ PINNED: dict[str, list[str]] = {
     "src/dbml_sharepoint/templates/deploy/_preflight.js.j2": [
         "3c5beeaa8d93",
     ],
-    "src/dbml_sharepoint/templates/deploy/_reader_enrolment.js.j2": [
-        "11c763e8a3be",
-        "248285d41cbd",
+    "src/dbml_sharepoint/templates/deploy/_identity_enrolment.js.j2": [
         "2e91b6b9d4b0",
-        "30bd0c541e17",
-        "2d95a6f50e03",
         "5f017d1a051a",
         "65900fc74d67",
-        "94eb764336ab",
-        "7b6c2c04c158",
-        "d5e902f0d3c1",
         "e553a0521ee0",
         "f3b4502a003a",
         "f84a29490592",

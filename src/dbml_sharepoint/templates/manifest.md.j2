@@ -103,7 +103,7 @@ untouched. If an unexpected crash strands the enrolment, remove yourself in
 {% if reader_groups and enterprise_reader %}
 
 **Enterprise reader enrolment: this membership is PERMANENT.** This bundle was
-built with `--enterprise-reader {{ enterprise_reader }}`, so Phase {{ phase_num['reader_enrolment'] }} adds that ONE
+built with `--enterprise-reader {{ enterprise_reader }}`, so Phase {{ phase_num['identity_enrolment'] }} adds that ONE
 account to **{{ reader_group_names }}**, a group granted the built-in **Read** and
 nothing more. It is NOT like the operator self-enrolment above: that one exists
 only to let this run write and removes itself at the end of the run, whereas a
@@ -111,7 +111,7 @@ reporting account has to keep reading between runs, so nothing removes this one.
 Remove it by hand in **Site permissions -> Groups** when the account no longer
 needs access.
 
-**Check that group's membership before you paste.** Phase {{ phase_num['reader_enrolment'] }} enrols nobody and
+**Check that group's membership before you paste.** Phase {{ phase_num['identity_enrolment'] }} enrols nobody and
 **aborts the whole run** if **{{ reader_group_names }}** already holds any principal
 other than `{{ enterprise_reader }}`; it names each one and removes none, because
 {% if not reader_granted_lists and not reader_folder_only_lists %}who else belongs to that group is your decision,

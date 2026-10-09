@@ -253,6 +253,12 @@ Included by: `deploy.js.j2`
 
 Bounded per-lane parallelism. SharePoint stores fields and views in the list schema, and concurrent schema writes to the SAME list race into save conflicts, but different lists are fully independent. So the unit of parallelism is the list: items are grouped into lanes by key, items within a lane run strictly sequentially, lanes run concurrently up to `limit`. Workers keep their own per-item try/catch, so error attribution and summary.errors are unchanged.
 
+### `deploy/_identity_enrolment.js.j2`
+
+*Phase 1.6 (PREPARE): identity enrolment*
+
+Phase body: enrol every identity a group declares, from the build's resolved values. A reader group is also checked for what it grants (step 0) and what it already holds (step 1). The step 4 needles are NOT full coverage of the tenant-wide claims; read the dated KNOWN LIMIT there. Membership is permanent only once the run reaches the end; deploy.js.j2's finally undoes it otherwise.
+
 ### `deploy/_indexes.js.j2`
 
 *Phase 2.4 (STRUCTURE): indexed columns*
@@ -294,12 +300,6 @@ Some mappings route all list administration through an empty-by-default admin gr
 *Phase 1.2 (PREPARE): read-only preflight*
 
 A matching display name is not proof that an existing list or field was created from this schema. Before Phase 1.3 performs its first write, every existing list must carry this declaration's exact provenance marker and every immutable shape must agree. Mutable settings are reconciled only after both checks pass.
-
-### `deploy/_reader_enrolment.js.j2`
-
-*Phase 1.6 (PREPARE): enterprise reader enrolment*
-
-Phase body: enrol the ONE account named by `build --enterprise-reader` into the mapping's `enroll: [enterprise_reader]` group, which holds Read. Emitted only when that flag was given, so an ordinary build carries no enrolment code at all. Unlike the operator's run-scoped enrolment, this membership is PERMANENT once the run reaches the end. If a later phase aborts, deploy.js.j2's finally removes the account this phase just enrolled -- a rollback of this run's own write, not a general reconciler for membership some earlier run may have left behind. Step 0 checks what the group GRANTS, by reading the live BasePermissions of every level it is assigned rather than trusting a level named Read to be the built-in one. Step 1 checks what it ALREADY HOLDS, because a binding this bundle did not create is inherited on enrolment just the same. The rest guard WHO is enrolled: every resolution is refused unless it is a single user (PrincipalType strictly 1), does not match one of the three tenant-wide-claim needles at step 4, and matches the address the build asked for; the group must hold nobody but that account already (step 7); and the membership is then read back before the run is allowed to call it done. Those needles are NOT full coverage of the tenant-wide claims: they cover two of the four Learn names. Read the dated KNOWN LIMIT at step 4 before treating this as a closed door -- it records which two, why the other two are deliberately not guessed, and which of the guards here the residual risk actually rests on.
 
 ### `deploy/_renames.js.j2`
 

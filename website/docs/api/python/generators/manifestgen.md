@@ -17,13 +17,11 @@ def generate_manifest(*, schema_json: dict[str, typing.Any], resolved: dbml_shar
 
 Render the deploy manifest for ONE build.
 
-``enterprise_reader`` is the address `build --enterprise-reader` was
-given, or None. It is render material, not a build input: the manifest
-is the document an operator reads BEFORE pasting anything, and the
-reader enrolment is the one thing this bundle does that a rollback does
-not undo. Passing it only to ``generate_deploy_js`` left the manifest
-unable to say so, and left its group table reporting the permanently
-enrolled group as one nothing enrols into.
+``identities`` holds the resolved values the build was given. The manifest
+is the document an operator reads BEFORE pasting anything, and identity
+enrolment is the one thing this bundle does that a rollback does not
+undo. The reader section still shows the first ``enterprise_reader`` value
+as an address, until the manifest reads the enrolment rows.
 
 ``env_provenance`` defaults to ``NO_ENV_FILE`` rather than being
 required: this function has 19 call sites, and a required parameter

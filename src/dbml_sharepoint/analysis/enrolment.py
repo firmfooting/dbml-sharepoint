@@ -52,12 +52,6 @@ def enrolment_plan(
     return tuple(plan)
 
 
-def reader_address(identities: AbcMapping[str, tuple[IdentityValue, ...]]) -> str | None:
-    """The UPN the existing reader template enrols, until the template reads the rows."""
-    values = identities.get("enterprise_reader", ())
-    return values[0].value if values else None
-
-
 def as_json(plan: Sequence[GroupEnrolment]) -> list[dict[str, Any]]:
     return [
         {

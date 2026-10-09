@@ -20,7 +20,7 @@ from dbml_sharepoint.analysis.column_refs import (
 )
 from dbml_sharepoint.analysis.condition_description import describe
 from dbml_sharepoint.analysis.condition_rendering import to_caml_protected, to_validation
-from dbml_sharepoint.analysis.enrolment import as_json, enrolment_plan, reader_address
+from dbml_sharepoint.analysis.enrolment import as_json, enrolment_plan
 from dbml_sharepoint.analysis.form_rendering import compose_visibility
 from dbml_sharepoint.analysis.group_description import group_description, marker_for_group
 from dbml_sharepoint.analysis.joins import all_items_hidden
@@ -156,12 +156,8 @@ def generate_deploy_js(
         schema_json=schema_json,
         phases=phases_context(),
         unmanaged_sentinel=UNMANAGED,
-        # The account `build --enterprise-reader` enrols read-only into the
-        # group whose `enroll` names enterprise_reader, or None for nobody.
-        # `execute_build` has already refused a malformed address and a
-        # mapping with no such group, so a non-None value names a real target.
-        # Which group that is stays the template's job, read from SCHEMA.groups.
-        enterprise_reader=reader_address(identities),
+        # Whether any enterprise_reader value is enrolled; the logging phase mirrors its grant.
+        reader_enrolled=bool(identities.get("enterprise_reader")),
         identity_enrolment=as_json(enrolment_plan(bundle.mapping, identities)),
         # #199: the bitmap the enrolment phase requires of the level behind
         # the reader's grant, and the two bits it only warns about. Emitted

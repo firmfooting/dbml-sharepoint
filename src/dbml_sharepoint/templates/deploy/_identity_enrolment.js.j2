@@ -1,0 +1,662 @@
+{# src/dbml_sharepoint/templates/deploy/_identity_enrolment.js.j2
+   Phase body: enrol every identity a group declares, from the build's resolved
+   values. A reader group is also checked for what it grants (step 0) and what
+   it already holds (step 1). The step 4 needles are NOT full coverage of the
+   tenant-wide claims; read the dated KNOWN LIMIT there. Membership is permanent
+   only once the run reaches the end; deploy.js.j2's finally undoes it otherwise. #}
+{% if identity_enrolment %}
+  // === Identity enrolment (groups[].enroll) ===
+  // Adds each declared identity value to the group that names it. An exclusive
+  // group must hold nobody else: this phase aborts before adding and removes
+  // nobody. An additive group keeps what it holds and logs each unmanaged
+  // member.
+{% if phase.first_in_group %}
+  log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
+{% endif %}
+  log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
+  // Declared outside the block below so the abort at the end of this phase
+  // can read it. See that abort for why a local count and not
+  // `summary.errors.length`.
+  let identityEnrolmentErrors = 0;
+  {
+    const IDENTITY_GROUPS = {{ identity_enrolment | tojson }};
+    // Tenant-wide claims ensureuser can hand back; refused for every user value.
+    const TENANT_WIDE = ['spo-grid-all-users', 'c:0(.s|true', 'c:0-.f|rolemanager'];
+    const upnPart = (name) => {
+      const parts = String(name).split('|');
+      return parts[parts.length - 1];
+    };
+    // The bitmap a level must carry to be worth enrolling into, and the two
+    // bits whose absence only narrows it. Emitted from
+    // analysis/permissions.py so the values this checks against and the
+    // values a declared level is BUILT from have one definition.
+    const READER_REQUIRED_BITS = {{ enterprise_reader_required_bits | tojson }};
+    const READER_ADVISORY_BITS = {{ enterprise_reader_advisory_bits | tojson }};
+    // The bits that make a binding the group ALREADY holds too strong to
+    // hand on (#198, step 1). Same table, same split, same reason.
+    const READER_ELEVATED_BITS = {{ enterprise_reader_elevated_bits | tojson }};
+    // BigInt, not `&`. SP.BasePermissions.Low runs to 2^32-1 and JS bitwise
+    // operators truncate to a SIGNED 32-bit integer, so the top bit of a
+    // full mask reads negative. Every bit this file tests happens to sit low
+    // enough for that to come out right, which is exactly the kind of
+    // accident a later bit would break silently.
+    const bitmapHalf = (perms, half, levelName) => {
+      const raw = perms == null ? undefined : perms[half];
+      const text = String(raw == null ? '' : raw);
+      // Int64 under odata=verbose is a STRING; some responses give a number.
+      // Anything else means the read did not return a bitmap, and guessing
+      // zero would report every bit missing rather than an unreadable level.
+      if (!/^\d+$/.test(text)) {
+        throw new Error(
+          `permission level '${levelName}' returned BasePermissions.${half} as `
+          + `${JSON.stringify(raw)}, which is not a bitmap this script can read`,
+        );
+      }
+      return BigInt(text);
+    };
+    const carriesBit = (high, low, bit) => (
+      (high & BigInt(bit.high)) === BigInt(bit.high)
+      && (low & BigInt(bit.low)) === BigInt(bit.low)
+    );
+    // A role definition's live bitmap, by Id. Step 0 resolves the levels this
+    // bundle declares by NAME because that is what the mapping gives it; step
+    // 1 has an Id off a binding and nothing else, and resolving that back
+    // through a name would reintroduce exactly the name-is-not-the-grant
+    // hazard step 0 exists to close.
+    const readLevelById = async (levelId, boundName) => {
+      const label = boundName || `role definition ${levelId}`;
+      const resp = await fetchWithRetry(
+        apiUrl(`web/roledefinitions(${levelId})?$select=Id,Name,BasePermissions`),
+        { headers: { 'Accept': 'application/json;odata=verbose' } },
+      );
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(
+          `the permission level behind binding ${levelId} ('${label}') could not be read: `
+          + `HTTP ${resp.status} ${text}. Nothing was changed.`,
+        );
+      }
+      const def = (await resp.json()).d || {};
+      const name = typeof def.Name === 'string' && def.Name !== '' ? def.Name : label;
+      return {
+        name,
+        high: bitmapHalf(def.BasePermissions, 'High', name),
+        low: bitmapHalf(def.BasePermissions, 'Low', name),
+      };
+    };
+    // Steps 2 to 5 for ONE declared value: resolve it, then refuse anything but
+    // the single user that was asked for.
+    const resolveUser = async (row, value) => {
+      if (value.kind !== 'user') {
+        throw new Error(`${row.identity}: ${value.kind} values are not enrolled by this release`);
+      }
+      const asked = value.value;
+      const who = `${row.identity} value '${asked}'`;
+      // 2. Resolve the value. EnsureUser is a write (it materialises
+      // the principal in the site's user information list), hence the
+      // digest, and it is the only documented way to turn a UPN into the
+      // claims LoginName a group membership needs.
+      const digestR = await getDigest();
+      const resolveResp = await fetchWithRetry(apiUrl('web/ensureuser?$select=Id,LoginName,Title,Email,PrincipalType'), {
+        method: 'POST',
+        headers: spHeaders(digestR),
+        body: JSON.stringify({ logonName: asked }),
+      });
+      if (!resolveResp.ok) {
+        const text = await resolveResp.text();
+        throw new Error(`could not resolve ${who}: HTTP ${resolveResp.status} ${text}`);
+      }
+      const resolved = (await resolveResp.json()).d;
+      if (!resolved || !Number.isInteger(resolved.Id)
+          || typeof resolved.LoginName !== 'string' || resolved.LoginName === '') {
+        throw new Error(`resolving ${who} returned an invalid principal response`);
+      }
+
+      // 3. Principal type, STRICT equality. Microsoft Learn documents
+      // SP.PrincipalType as None 0, User 1, DistributionList 2,
+      // SecurityGroup 4, SharePointGroup 8, All 15, and marks it
+      // [Flags]. A bitwise `& 1` would therefore admit any combination
+      // that happens to carry the User bit, so the comparison is `!== 1`
+      // and stays that way.
+      if (resolved.PrincipalType !== 1) {
+        throw new Error(
+          `${who} resolved to '${resolved.Title || resolved.LoginName}' with PrincipalType `
+          + `${resolved.PrincipalType}, which is not a single user (1). Enrolling a group would give its access `
+          + `to every one of its members. Nothing was changed; name an individual account.`,
+        );
+      }
+
+      // 4. The tenant-wide claims. Granting one hands Read on this
+      // register to every account in the tenant, the one mistake in this
+      // phase with no cheap undo.
+      //
+      // MEASURED 2026-08-12, on ONE tenant, by group B of
+      // `test/manual/enterprise-reader-probe.js`: `web/ensureuser` for
+      // BOTH display names ("Everyone" and "Everyone except external
+      // users") resolved to the SAME principal, a
+      // `c:0-.f|rolemanager|spo-grid-all-users/<tenantid>` login typed
+      // PrincipalType 4 (SecurityGroup). So the strict `!== 1` check
+      // above refuses them on its own, before this list is consulted.
+      // An earlier version of this comment said these claims "resolve as
+      // ordinary users, so the type check above does not catch them".
+      // That was written from plausibility and the live run contradicts
+      // it.
+      //
+      // THE NEEDLES STAY, and neither they nor the type check are to be
+      // softened. Two of the three matched that principal
+      // (`spo-grid-all-users`, `c:0-.f|rolemanager`), and ONE TENANT IS
+      // ONE DATA POINT: another tenant may type the same claim
+      // differently, and a claim typed 1 with no needle matching it is
+      // exactly the case this defence in depth exists for.
+      //
+      // KNOWN LIMIT, opened 2026-08-11, NARROWED 2026-08-12. Learn
+      // ("Grant the Everyone claim to external users in Microsoft 365")
+      // names FOUR tenant-wide claims: Everyone, Everyone except external
+      // users, All Authenticated Users, All Forms Users. The three
+      // needles below cover the first two. Learn publishes no login-name
+      // encoding for the other two, and they are still deliberately NOT
+      // guessed here: a needle invented from plausibility would read
+      // like a guard and catch nothing, which is worse than an
+      // acknowledged gap.
+      //
+      // They were SOUGHT on 2026-08-12: that probe's
+      // `access.principal.ensureuser-all-authenticated-users` and
+      // `access.principal.ensureuser-all-forms-users` rows (B3 and B4)
+      // asked `web/ensureuser` for both display names and it REFUSED
+      // both, HTTP 400 SPException "The specified user ... could not be
+      // found", under odata=nometadata and odata=verbose alike. So on
+      // that tenant neither is reachable by display name, and
+      // `validate_enterprise_reader` refuses any '|' at build time, so a
+      // claim string cannot be supplied through the CLI either.
+      //
+      // THAT NARROWS THE GAP; IT DOES NOT CLOSE IT. Another tenant may
+      // resolve those display names, and a refusal by display name is not
+      // proof that no login-name encoding exists.
+      //
+      // The residual risk therefore still rests on the guards rather than
+      // on this list: the '|' refusal at build time; the strict type
+      // check above; and step 5 below, which requires the RESOLVED
+      // identity to equal the address that was asked for, which a claim
+      // principal does not.
+      const login = resolved.LoginName.toLowerCase();
+      const claim = TENANT_WIDE.find(c => login.includes(c));
+      if (claim) {
+        throw new Error(
+          `${who} resolved to '${resolved.LoginName}', which is a tenant-wide claim `
+          + `(matched '${claim}') and would give every user in the tenant the group's access. Nothing was changed.`,
+        );
+      }
+
+      // 5. Identity. EnsureUser answering with SOMEBODY ELSE is the quiet
+      // failure here: the deploy reports success and the wrong account
+      // holds Read. Two addresses are compared, and either may match: the
+      // mailbox Email, and the UPN the claims LoginName ends in. They are
+      // routinely different for the same account (an alias mailbox), so
+      // requiring the Email alone would refuse correct resolutions, while
+      // a resolution of a DIFFERENT account matches neither.
+      const candidates = [resolved.Email, upnPart(resolved.LoginName)]
+        .map(v => String(v == null ? '' : v).toLowerCase())
+        .filter(v => v !== '');
+      if (!candidates.includes(asked.toLowerCase())) {
+        throw new Error(
+          `${who} resolved to a different account: '${resolved.Title || resolved.LoginName}' `
+          + `(${candidates.join(', ') || 'no address'}). Nothing was changed.`,
+        );
+      }
+
+      return resolved;
+    };
+    for (const plan of IDENTITY_GROUPS) {
+      const grp = SCHEMA.groups.find((g) => g.name === plan.group);
+      try {
+        if (!grp) {
+          throw new Error(`group '${plan.group}' is not in the schema this bundle deploys`);
+        }
+        const readerRows = plan.rows.filter((r) => r.ceiling === 'reader');
+        const readerLabel = readerRows.map((r) => r.described).join(', ');
+        const grpResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')?$select=Id`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!grpResp.ok) {
+          throw new Error(`group probe for '${grp.name}' failed: HTTP ${grpResp.status}`);
+        }
+        const groupId = (await grpResp.json()).d.Id;
+        if (!Number.isInteger(groupId)) {
+          throw new Error(`group probe for '${grp.name}' returned an invalid response`);
+        }
+        if (readerRows.length > 0) {
+          // 0. The GRANT, by its bitmap and not by its name. #199.
+          //
+          // Every step below guards WHO is enrolled. This one guards WHAT they
+          // are enrolled into. A permission level is site-scoped and its name
+          // is writable, so a level called 'Read' is evidence that somebody
+          // named it that and nothing more. The build reserves the built-in
+          // names against its OWN declarations (analysis/permissions.py,
+          // BUILT_IN_LEVELS) and refuses a mapping that redefines one, which
+          // says nothing about what the target site already has. Bind a level
+          // called Read that grants nothing and the deploy reads back
+          // byte-identical and reports success; the reporting account holds a
+          // grant that reaches no rows and nobody finds out until somebody
+          // opens the report.
+          //
+          // Runs BEFORE step 2, which is a write: a level this run is going to
+          // refuse must not materialise a principal in the site's user
+          // information list on the way to being refused.
+          //
+          // MEASURED against the real thing rather than assumed, per the
+          // reference-implementation rule: `reader-bindings-probe.js` read the
+          // built-in Read on a live site on 2026-08-14 (#199, R2) as
+          // High=176 Low=138612833, which carries all three required bits and
+          // both advisory ones. So a genuine built-in Read passes this check
+          // silently, which is the property that makes a firing check mean
+          // something.
+          //
+          // And the threat it guards against is measured too, not supposed.
+          // `read-level-tamper-probe.js` ran on a live site on 2026-09-06 and
+          // SharePoint Online ACCEPTED a MERGE of BasePermissions on the
+          // BUILT-IN Read (RoleTypeKind 2, Id 1073741826): HTTP 204, reading
+          // back High=176 Low=138612832 with ViewListItems gone. A tenant admin
+          // or a rogue script can hollow out a built-in level in one call, and
+          // the level goes on being called Read.
+          //
+          // The same day, a deploy against that tampered site refused here with
+          // "permission level 'Read' on this site does not grant ViewListItems"
+          // and aborted before list creation, issuing no POST, MERGE or DELETE
+          // after this phase began. Restoring the bitmap by exact read-back and
+          // rerunning enrolled the account. So this check is the only thing
+          // between a hollowed-out level and a site that reports success.
+          //
+          // Nor is it a Read quirk. `built-in-levels-probe.js` ran the same
+          // one-bit MERGE against all six built-in levels on 2026-09-06: Read,
+          // Contribute, Edit, Design, Full Control and Limited Access each
+          // answered HTTP 204 and read back EXACTLY the requested mask, so
+          // clearing one bit moved no other, and the two Learn documents as
+          // unchangeable were editable like the rest. That run also renamed a
+          // custom level to 'Read', which SharePoint accepted; the getbyname
+          // below still resolved to the built-in (Id 1073741826, which is also
+          // the lower Id, and one run cannot say which rule decided it). So an
+          // impostor beside the built-in did not capture this call, and the
+          // bitmap check is what makes that safe rather than the name.
+          // Folder grants count, because the validator counts them: a reader
+          // granted only inside the folders satisfies
+          // ENTERPRISE_READER_GROUP_NOT_GRANTED, and reading only the list
+          // grants here would take the no-grant branch below, skip this bitmap
+          // check and enrol the account into a level nothing had judged.
+          const levelNames = [...new Set(SCHEMA.acl_scopes
+            .flatMap(s => s.assignments)
+            .filter(a => a.principal.kind === 'group' && a.principal.name === grp.name)
+            .map(a => a.level))];
+          // WARN rather than abort, and on a bundle this tool produced this is
+          // now unreachable. The validator
+          // (ENTERPRISE_READER_GROUP_NOT_GRANTED) requires the flagged group to
+          // hold a grant SOMEWHERE in the mapping, and `acl_scopes` holds
+          // only the lists in the site role THIS bundle deploys, so a mapping
+          // granting the reader in another role used to reach here with nothing
+          // to check; `build` now refuses that combination outright (#200 gap
+          // 3). It stays for a HAND-EDITED bundle, the same reason the loop
+          // above is a loop, and stays a WARN because nothing is granted: there
+          // is no bitmap that could be wrong and nothing to fail closed on.
+          if (levelNames.length === 0) {
+            log('WARN', `'${grp.name}' is granted no permission level on the lists or folders `
+              + `this bundle deploys, so enrolling ${readerLabel} into it grants nothing `
+              + `here. Its bitmap was not checked. If this family is meant to be readable, `
+              + `declare the grant in list_permissions for this site role.`);
+          }
+          // The Ids step 0 judges, so step 1 does not report this bundle's own
+          // declared grant back as an extra binding. Collected here rather than
+          // re-resolved there: a redeploy holds the grant it declared, and
+          // warning about it on every rerun trains an operator to ignore the
+          // line that matters.
+          const verifiedLevelIds = new Set();
+          for (const levelName of levelNames) {
+            const lvlResp = await fetchWithRetry(
+              apiUrl(`web/roledefinitions/getbyname('${odataName(levelName)}')?$select=Id,Name,BasePermissions`),
+              { headers: { 'Accept': 'application/json;odata=verbose' } },
+            );
+            if (!lvlResp.ok) {
+              const text = await lvlResp.text();
+              throw new Error(
+                `permission level '${levelName}', which '${grp.name}' is granted, could not be read: `
+                + `HTTP ${lvlResp.status} ${text}. Nothing was changed.`,
+              );
+            }
+            const lvl = (await lvlResp.json()).d || {};
+            const high = bitmapHalf(lvl.BasePermissions, 'High', levelName);
+            const low = bitmapHalf(lvl.BasePermissions, 'Low', levelName);
+            const missing = READER_REQUIRED_BITS.filter(b => !carriesBit(high, low, b));
+            if (missing.length > 0) {
+              throw new Error(
+                `permission level '${levelName}' on this site does not grant `
+                + `${missing.map(b => b.name).join(', ')}, so '${grp.name}' would not let `
+                + `${readerLabel} read the lists this bundle deploys. Its bitmap is `
+                + `High=${high} Low=${low}. A level's NAME is not its grant: this site's `
+                + `'${levelName}' is not the built-in one, whatever it is called. Nothing was `
+                + `granted and nobody was enrolled. Fix the level in Site settings > Site `
+                + `permissions > Permission Levels, or grant the reader group a level that `
+                + `does read, then run this script again.`,
+              );
+            }
+            const advisory = READER_ADVISORY_BITS.filter(b => !carriesBit(high, low, b));
+            if (advisory.length > 0) {
+              // Not fatal: a browser-based reader works without either. A
+              // reporting CLIENT does not, and this is the only place the
+              // operator is told before the account is enrolled.
+              log('WARN', `Permission level '${levelName}' grants `
+                + `${advisory.map(b => b.name).join(' and ')} to nobody, so it is narrower than the `
+                + `built-in Read. ${readerLabel} will be able to read the lists in a browser. `
+                + `A reporting client enumerating them over REST or CSOM needs UseRemoteAPIs, and `
+                + `resolving person columns needs BrowseUserInfo. Enrolment continues.`);
+            }
+            if (lvl.Id != null) verifiedLevelIds.add(String(lvl.Id));
+            log('INFO', `Permission level '${levelName}' carries the read bits `
+              + `'${grp.name}' needs (High=${high} Low=${low}).`);
+          }
+
+          // 1. The group, and WHAT IT ALREADY HOLDS. #198.
+          //
+          // Step 0 judged the level this bundle grants. It cannot see a role
+          // assignment the group carries for some other reason: an earlier
+          // deploy, a hand edit, another tool. The group is resolved by NAME
+          // and enrolled into, so the account inherits every one of those
+          // bindings, permanently, and nothing here removes them:
+          // `_acls.js.j2` reconciles the scopes `SCHEMA.acl_scopes` names
+          // and nothing else. The level bitmap passes, the per-list grant
+          // passes, and the drop-box posture leaks anyway.
+          //
+          // MEASURED, `test/manual/reader-bindings-probe.js` run 2,
+          // 2026-08-14 (R4): on that site every tool-created group held
+          // exactly `Limited Access` at web scope, the DERIVED binding
+          // SharePoint adds when a principal is granted something on a list
+          // below the web, and nothing elevated. So the reference posture
+          // passes this silently, which is the property that makes a firing
+          // check mean something.
+          //
+          // WEB SCOPE ONLY, and this is a boundary rather than an oversight.
+          // R5 of the same run reports the other half, an elevated binding on
+          // a LIST outside this bundle, and it is deliberately NOT checked
+          // here: the shipped `deployment-log` family grants this same group
+          // Full Control on its central log list on purpose, and says why
+          // (`solutions/deployment-log/20-configure/mapping.yaml`). A
+          // list-scope arm would refuse that posture on any site carrying both
+          // families, which is a rule stronger than the reference
+          // implementation satisfies. Closing it needs that decision revisited
+          // first, not a wider scan bolted on here.
+          //
+          // Runs BEFORE step 2 for the reason step 0 does: EnsureUser is a
+          // write, and a run that is going to refuse must not materialise a
+          // principal in the site's user information list on the way to
+          // refusing it. The group probe itself moved up from what used to be
+          // step 5 so that its Id is available here; it is a GET either way,
+          // against the group Phase {{ phase.group_number }}.2 created and
+          // reconciled earlier in this same run.
+
+          // The collection form, not `roleassignments/getbyprincipalid`, and
+          // the url is `_security_principals.js.j2`'s verbatim. This is the
+          // shape the probe actually measured at web scope (R4c: PASS as a
+          // site owner on 2026-08-14, HTTP 403 as a Visitor on 2026-09-02),
+          // and a 404-for-absence convention borrowed from list scope would be
+          // an inference where a measurement exists.
+          const heldBindings = new Map();
+          {
+            let asgUrl = apiUrl('web/roleassignments?$select=PrincipalId&$expand=RoleDefinitionBindings&$top=200');
+            while (asgUrl) {
+              const asgResp = await fetchWithRetry(asgUrl, {
+                headers: { 'Accept': 'application/json;odata=verbose' },
+              });
+              if (!asgResp.ok) {
+                const text = await asgResp.text();
+                throw new Error(
+                  `the role assignments '${grp.name}' already holds on this site could not be `
+                  + `enumerated: HTTP ${asgResp.status} ${text}. That read is the only evidence `
+                  + `this run can have that the group carries nothing beyond the grant this bundle `
+                  + `declares, and a refusal reads exactly like a clean group. Nothing was granted `
+                  + `and nobody was enrolled. Run this script as a site owner.`,
+                );
+              }
+              const asgJson = await asgResp.json();
+              if (!asgJson || !asgJson.d || !Array.isArray(asgJson.d.results)) {
+                throw new Error(
+                  `the role-assignment enumeration for '${grp.name}' returned an invalid response`,
+                );
+              }
+              const next = validatedNextPage(asgJson.d, `Role-assignment enumeration for '${grp.name}'`);
+              for (const row of asgJson.d.results) {
+                if (Number(row.PrincipalId) !== Number(groupId)) continue;
+                // Same tolerance, and same reason, as countWebAssignmentsUsing
+                // in `_security_principals.js.j2`: how odata=verbose renders an
+                // expanded navigation property is inferred there rather than
+                // measured, so both shapes are accepted and NEITHER shape
+                // throws. A row whose bindings cannot be read is a binding this
+                // scan cannot see, and counting it as clean is the same false
+                // reassurance as a refused enumeration.
+                const raw = row.RoleDefinitionBindings;
+                const bindings = Array.isArray(raw) ? raw : (raw && raw.results);
+                if (!Array.isArray(bindings)) {
+                  throw new Error(
+                    `a role assignment held by '${grp.name}' returned bindings this script cannot `
+                    + `read, so its privileges cannot be judged. Nothing was changed.`,
+                  );
+                }
+                for (const b of bindings) {
+                  if (b == null || b.Id == null) {
+                    throw new Error(
+                      `a role assignment held by '${grp.name}' returned a binding with no Id`,
+                    );
+                  }
+                  heldBindings.set(String(b.Id), typeof b.Name === 'string' ? b.Name : '');
+                }
+              }
+              asgUrl = next;
+            }
+          }
+
+          const elevated = [];
+          const lesser = [];
+          for (const [levelId, boundName] of heldBindings) {
+            // Judged by BITMAP, always, and for every binding. The name only
+            // ever chooses how loudly a binding already proved harmless is
+            // reported (below); it never decides whether one is harmless. A
+            // site can carry a level called 'Limited Access' that grants
+            // Full Control, which is #199's lesson one scope up.
+            if (verifiedLevelIds.has(levelId)) continue;
+            const lvl = await readLevelById(levelId, boundName);
+            const carried = READER_ELEVATED_BITS.filter(b => carriesBit(lvl.high, lvl.low, b));
+            if (carried.length > 0) {
+              elevated.push(`'${lvl.name}' (${carried.map(b => b.name).join(', ')})`);
+            } else {
+              lesser.push(lvl.name);
+            }
+          }
+          if (elevated.length > 0) {
+            throw new Error(
+              `group '${grp.name}' already holds ${elevated.length} role assignment(s) on this `
+              + `site that grant more than reading, which this bundle did not create: `
+              + `${elevated.join('; ')}. Enrolling ${readerLabel} into it would hand that `
+              + `account every one of those rights, and no phase of this deploy removes them: the `
+              + `ACL phase reconciles only the lists this bundle declares. Nothing was granted and `
+              + `nobody was enrolled. Remove the binding in Site settings > Site permissions, or `
+              + `point --enterprise-reader at a group that holds nothing else, then run this `
+              + `script again.`,
+            );
+          }
+          for (const name of lesser) {
+            // Visible, not blocking. A level no stronger than the declared
+            // grant hands the account nothing it does not already have, so
+            // refusing would fail a posture that is untidy rather than unsafe.
+            // 'Limited Access' is the DERIVED binding every tool-created group
+            // on the measured site carries, so it is reported at INFO: warning
+            // about it on every redeploy is how a warning stops being read.
+            const line = `Group '${grp.name}' already holds '${name}' at web scope, which `
+              + `${readerLabel} inherits on enrolment. It carries no permission beyond `
+              + `reading, so the enrolment continues.`;
+            if (name === 'Limited Access') {
+              log('INFO', `Group '${grp.name}' also holds '${name}' at web scope, the binding `
+                + `SharePoint derives from a grant below the web. It carries no permission beyond `
+                + `reading.`);
+            } else {
+              log('WARN', line);
+            }
+          }
+          log('INFO', `'${grp.name}' holds ${heldBindings.size} web-scope binding(s), none of `
+            + `them elevated.`);
+
+        }
+
+        const resolvedRows = [];
+        for (const row of plan.rows) {
+          for (const value of row.values) {
+            resolvedRows.push({ row, value, principal: await resolveUser(row, value) });
+          }
+        }
+
+        // 6. Membership, enumerated in full (every page): a stranger on a page
+        // this loop never fetched would read as an empty group.
+        const readMembers = async () => {
+          const found = [];
+          let membersUrl = apiUrl(`web/sitegroups(${groupId})/users?$select=Id,LoginName,Title&$top=5000`);
+          while (membersUrl) {
+            const membersResp = await fetchWithRetry(membersUrl, {
+              headers: { 'Accept': 'application/json;odata=verbose' },
+            });
+            if (!membersResp.ok) {
+              const text = await membersResp.text();
+              throw new Error(`membership probe for '${grp.name}' failed: HTTP ${membersResp.status} ${text}`);
+            }
+            const membersJson = await membersResp.json();
+            if (!membersJson.d || !Array.isArray(membersJson.d.results)) {
+              throw new Error(`membership probe for '${grp.name}' returned an invalid response`);
+            }
+            const next = validatedNextPage(membersJson.d, `Membership probe for '${grp.name}'`);
+            found.push(...membersJson.d.results);
+            membersUrl = next;
+          }
+          return found;
+        };
+        // nameKey: claims logins are resolved case-insensitively, so a
+        // member stored as I:0#.F|... must not read as a different account.
+        const wanted = new Set(resolvedRows.map((r) => nameKey(r.principal.LoginName)));
+        const ours = (u) => wanted.has(nameKey(u && u.LoginName));
+        // The operator the earlier enrolment phase added for this run is not a stranger.
+        const runScoped = (u) => selfEnrollments.some(
+          (s) => s.groupName === plan.group && Number(s.userId) === Number(u && u.Id));
+        const strangers = (members) => members.filter((u) => !ours(u) && !runScoped(u));
+        const listMembers = (members) => members
+          .map((u) => `'${u.Title || '(untitled)'}' (${u.LoginName})`)
+          .join('; ');
+        const declared = plan.rows.map((r) => r.described).join(', ');
+        const withoutHint = readerRows.length > 0 ? '--enterprise-reader'
+          : `a value for ${plan.rows.map((r) => r.identity).join(', ')}`;
+        const exclusive = plan.membership === 'exclusive';
+        const warnStrangers = (members) => {
+          for (const u of strangers(members)) {
+            log('WARN', `'${plan.group}' also holds '${u.Title || '(untitled)'}' (${u.LoginName}), `
+              + 'which no declared identity accounts for. It is an unmanaged member; '
+              + 'this run leaves it in place.');
+          }
+        };
+        // Checked twice, against the state this run found and the state it
+        // left. Nothing removes a stranger: membership is the operator's, and
+        // this is a gate rather than a reconciler. `undo` says what happens to
+        // this run's own write, which differs between the two callers.
+        const refuseLateArrivals = (members, undo) => {
+          const strays = strangers(members);
+          if (strays.length === 0) return;
+          throw new Error(
+            `group '${plan.group}' now also holds ${strays.length} principal(s) that were not `
+            + `there when this run checked: ${listMembers(strays)}. Somebody added them while `
+            + `this script was running, and the group's grants reach everything it is granted `
+            + `on. ${undo} Review the membership in Site permissions > Groups for the others `
+            + `and remove whoever should not be there, then run this script again.`,
+          );
+        };
+        const before = await readMembers();
+
+        // 7. Anybody else in an exclusive group ABORTS the phase before
+        // anything is added, and nobody is removed: a second holder is a
+        // permanent grant nothing here can safely undo, so it goes to a human.
+        const others = strangers(before);
+        if (exclusive && others.length > 0) {
+          throw new Error(
+            `group '${plan.group}' already holds ${others.length} principal(s) other than `
+            + `${declared}: ${listMembers(others)}. This group is shared by every family `
+            + `deployed to the site, so an unexpected member is most likely another family's `
+            + `account rather than a mistake; removing it by hand could silently break that `
+            + `family. Nothing was granted and nobody was removed. This needs a human decision: `
+            + `remove them in Site permissions > Groups only after confirming nothing still `
+            + `needs them, or rebuild without ${withoutHint}.`,
+          );
+        }
+        const absent = [];
+        for (const r of resolvedRows) {
+          const key = nameKey(r.principal.LoginName);
+          const here = before.some((u) => nameKey(u && u.LoginName) === key);
+          if (!here && !absent.some((a) => nameKey(a.principal.LoginName) === key)) absent.push(r);
+        }
+        if (absent.length === 0) {
+          // A redeploy writes nothing, but the group can still change during the run.
+          const now = await readMembers();
+          if (exclusive) {
+            refuseLateArrivals(now, 'This run enrolled nobody, so it has no write of its own to undo.');
+          } else {
+            warnStrangers(now);
+          }
+          log('INFO', `Every declared identity is already a member of '${plan.group}'; membership left untouched.`);
+          continue;
+        }
+
+        for (const r of absent) {
+          const digestA = await getDigest();
+          const addResp = await fetchWithRetry(apiUrl(`web/sitegroups(${groupId})/users`), {
+            method: 'POST',
+            headers: spHeaders(digestA),
+            body: JSON.stringify({ __metadata: { type: 'SP.User' }, LoginName: r.principal.LoginName }),
+          });
+          if (!addResp.ok) {
+            const text = await addResp.text();
+            throw new Error(`enrolment of ${r.row.identity} value '${r.value.value}' into '${plan.group}' failed: HTTP ${addResp.status} ${text}`);
+          }
+          // Recorded straight after the write, before the checks below can abort
+          // this phase, so the finally in deploy.js.j2 has it to undo (#213).
+          identityEnrollments.push({
+            groupId, groupName: plan.group, identity: r.row.identity, userId: r.principal.Id,
+          });
+        }
+
+        // 8. Read the membership back. HTTP 200 does not show the account is in
+        // the group, and a grant reported but never made is worse than a failure.
+        const after = await readMembers();
+        for (const r of resolvedRows) {
+          if (!after.some((u) => Number(u.Id) === Number(r.principal.Id))) {
+            throw new Error(`${r.row.identity} value '${r.value.value}' was accepted into '${plan.group}' but is absent when the membership is read back; the grant did not take effect`);
+          }
+        }
+        if (exclusive) {
+          refuseLateArrivals(
+            after,
+            'This run\'s own enrolment will be removed automatically as this script exits, '
+            + 'since the run does not reach its end.',
+          );
+        } else {
+          warnStrangers(after);
+        }
+        log('INFO', `Enrolled ${absent.map((r) => r.principal.Title || r.row.described).join(', ')} into '${plan.group}'. This membership is PERMANENT once this run reaches its end; if a later phase aborts it is removed automatically. Once permanent, remove it in Site permissions > Groups when the account no longer needs access.`);
+        for (const row of new Set(absent.map((r) => r.row))) {
+          logChange({ key: `identity:${plan.group}:${row.identity}`, kind: 'reader-enrolled',
+            target: row.described, oldValue: '',
+            newValue: `enrolled in '${plan.group}' by deploy ${RELEASE_TAG}` });
+        }
+      } catch (err) {
+        log('ERROR', `Identity enrolment for '${plan.group}': ${err.message}`);
+        summary.errors.push({ phase: '{{ phase.number }}', group: plan.group, error: err.message });
+        identityEnrolmentErrors += 1;
+      }
+    }
+  }
+  // THIS phase's errors, not the run's: `summary.errors` accumulates across
+  // phases, so reading it whole could claim an earlier phase's failure.
+  // Latent today, because every earlier phase returns on its own errors.
+  if (identityEnrolmentErrors > 0) {
+    log('ERROR', 'Identity enrolment failed; aborting before list creation.');
+    return { ...summary, aborted: 'identity-enrolment-errors' };
+  }
+{% endif %}

@@ -486,7 +486,7 @@ def test_manifest_warns_that_the_reader_enrolment_is_permanent() -> None:
     assert "svc-reporting@example.org" in md
     assert "Enterprise Reader" in md          # the group it goes into
     assert "PERMANENT" in md
-    assert f"Phase {pn('reader_enrolment')}" in md
+    assert f"Phase {pn('identity_enrolment')}" in md
     # And the rollback consequence, in as many words.
     assert "does not delete the group" in md
     assert "nothing left for it to read" in md

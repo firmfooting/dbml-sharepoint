@@ -8,7 +8,6 @@ from typing import Any
 
 from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.condition_description import describe
-from dbml_sharepoint.analysis.enrolment import reader_address
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.limits import MAX_VALIDATION_FORMULA, MAX_VALIDATION_MESSAGE
 from dbml_sharepoint.analysis.permissions import lists_granting_group
@@ -48,13 +47,11 @@ def generate_manifest(
 ) -> str:
     """Render the deploy manifest for ONE build.
 
-    ``enterprise_reader`` is the address `build --enterprise-reader` was
-    given, or None. It is render material, not a build input: the manifest
-    is the document an operator reads BEFORE pasting anything, and the
-    reader enrolment is the one thing this bundle does that a rollback does
-    not undo. Passing it only to ``generate_deploy_js`` left the manifest
-    unable to say so, and left its group table reporting the permanently
-    enrolled group as one nothing enrols into.
+    ``identities`` holds the resolved values the build was given. The manifest
+    is the document an operator reads BEFORE pasting anything, and identity
+    enrolment is the one thing this bundle does that a rollback does not
+    undo. The reader section still shows the first ``enterprise_reader`` value
+    as an address, until the manifest reads the enrolment rows.
 
     ``env_provenance`` defaults to ``NO_ENV_FILE`` rather than being
     required: this function has 19 call sites, and a required parameter
@@ -78,6 +75,7 @@ def generate_manifest(
     bare `KeyError` nor a silent omission.
     """
     template = script_env(application).get_template("manifest.md.j2")
+    reader_values = identities.get("enterprise_reader", ())
     lists: list[dict[str, Any]] = schema_json["lists"]
 
     counts = {
@@ -385,7 +383,7 @@ def generate_manifest(
         seed_items=schema_json["seed_items"],
         extra_sections=extras.sections,
         extra_warnings=extras.warnings,
-        enterprise_reader=reader_address(identities),
+        enterprise_reader=reader_values[0].value if reader_values else None,
         reader_group_list=_reader_groups,
         reader_granted_lists=reader_granted_lists,
         reader_folder_only_lists=reader_folder_only_lists,

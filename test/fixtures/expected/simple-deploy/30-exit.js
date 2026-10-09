@@ -45,10 +45,10 @@
       summary.errors.push({ phase: 'exit', error: `write the run's stop record: ${err.message}` });
     }
     try {
-      await removeReaderEnrollments();
+      await removeIdentityEnrollments();
     } catch (err) {
-      log('ERROR', `Could not remove the enterprise reader on exit: ${err.message}`);
-      summary.errors.push({ phase: 'exit', error: `remove the enterprise reader: ${err.message}` });
+      log('ERROR', `Could not remove the enrolled identities on exit: ${err.message}`);
+      summary.errors.push({ phase: 'exit', error: `remove the enrolled identities: ${err.message}` });
     }
     try {
       await removeSelfEnrollments();

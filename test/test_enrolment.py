@@ -8,7 +8,6 @@ from dbml_sharepoint.analysis.enrolment import (
     GroupEnrolment,
     as_json,
     enrolment_plan,
-    reader_address,
 )
 from dbml_sharepoint.model.identities import describe_identity, parse_values
 from dbml_sharepoint.model.mapping_loader import load_mapping
@@ -60,9 +59,3 @@ def test_the_json_shape_the_templates_read(tmp_path: Path) -> None:
             "values": [{"kind": "user", "value": "flows@example.com", "owners": False}],
         }],
     }]
-
-
-def test_the_reader_address_is_the_first_reader_value() -> None:
-    assert reader_address({}) is None
-    ids = {"enterprise_reader": parse_values("enterprise_reader", "user:r@example.com")}
-    assert reader_address(ids) == "r@example.com"

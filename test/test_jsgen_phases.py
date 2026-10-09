@@ -676,7 +676,7 @@ def test_a_cleanup_failure_is_corrected_after_the_summary_line() -> None:
     # does not record it is invisible to the count all over again.
     for cleanup in (
         "restore field protection", "write the run's stop record",
-        "remove the enterprise reader", "remove the operator's run-scoped enrolment",
+        "remove the enrolled identities", "remove the operator's run-scoped enrolment",
     ):
         assert f"summary.errors.push({{ phase: 'exit', error: `{cleanup}" in finally_block, cleanup
     assert correction < finally_block.index("Exit cleanup failed")
