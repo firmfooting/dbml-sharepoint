@@ -1,4 +1,4 @@
-# test/fixtures/sharepoint-mapping.yaml
+# test/fixtures/sharepoint-mapping-with-group-identity.yaml
 # Generic-core fixture: no `extension:` selector, so the deployer resolves to
 # NullExtension. The core knows nothing about any organisation's registers or
 # extension config (organisation extensions ship their own fixtures).

@@ -647,7 +647,7 @@ def resolve_env_settings(
 
 _NOT_YET_SUPPORTED = (
     "is refused until a sandbox probe proves the claim this tool would build for it; "
-    "enrol the members form instead"
+    "enrol the owners as user values"
 )
 
 

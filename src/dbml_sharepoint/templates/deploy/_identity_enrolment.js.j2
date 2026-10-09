@@ -198,9 +198,15 @@
         }
       }
     };
+    // Claim prefixes core builds for the group kinds; a bundle's claim must equal prefix + GUID.
+    const CLAIM_PREFIX = {
+      security_group: 'c:0t.c|tenant|',
+      m365_group: 'c:0o.c|federateddirectoryclaimprovider|',
+    };
+    const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
     // Steps 2 to 5 for ONE declared value: resolve it, then refuse anything but
-    // the single user that was asked for.
-    const resolveUser = async (row, value) => {
+    // the single user or group that was asked for.
+    const resolveValue = async (row, value) => {
       const isGroup = value.kind === 'security_group' || value.kind === 'm365_group';
       if (value.kind !== 'user' && !isGroup) {
         throw new Error(`${row.described}: ${value.kind} values are not enrolled by this release`);
@@ -209,6 +215,10 @@
       const asked = value.claim;
       // Error messages name the identity by description, never the value.
       const who = row.described;
+      // A hand-edited bundle must not send a claim core would not build (a tenant-wide one, say).
+      if (isGroup && (!GUID.test(String(value.value)) || asked !== CLAIM_PREFIX[value.kind] + value.value)) {
+        throw new Error(`${who} carries a claim that is not the one built for its kind. Nothing was changed.`);
+      }
       // 2. Resolve the value. EnsureUser is a write (it materialises
       // the principal in the site's user information list), hence the
       // digest, and it is the only documented way to turn a UPN into the
@@ -221,7 +231,7 @@
       });
       if (!resolveResp.ok) {
         const text = await resolveResp.text();
-        throw new Error(`could not resolve ${who}: HTTP ${resolveResp.status} ${scrub(text, asked)}`);
+        throw new Error(`could not resolve ${who}: HTTP ${resolveResp.status} ${scrub(scrub(text, asked), value.value)}`);
       }
       const resolved = (await resolveResp.json()).d;
       if (!resolved || !Number.isInteger(resolved.Id)
@@ -229,29 +239,19 @@
         throw new Error(`resolving ${who} returned an invalid principal response`);
       }
 
-      // Group kinds resolve to PrincipalType 4 with LoginName equal to the claim sent
-      // (access.identity.security-group-resolves, access.identity.m365-members-resolves).
-      if (isGroup) {
-        if (resolved.PrincipalType !== 4) {
-          throw new Error(
-            `${who} resolved to a principal with PrincipalType ${resolved.PrincipalType}, `
-            + `which is not a group (4). Nothing was changed.`,
-          );
-        }
-        if (resolved.LoginName.toLowerCase() !== asked.toLowerCase()) {
-          throw new Error(
-            `${who} resolved to a different principal than the one declared. Nothing was changed.`,
-          );
-        }
-        return resolved;
-      }
       // 3. Principal type, STRICT equality. Microsoft Learn documents
       // SP.PrincipalType as None 0, User 1, DistributionList 2,
       // SecurityGroup 4, SharePointGroup 8, All 15, and marks it
       // [Flags]. A bitwise `& 1` would therefore admit any combination
       // that happens to carry the User bit, so the comparison is `!== 1`
       // and stays that way.
-      if (resolved.PrincipalType !== 1) {
+      if (isGroup && resolved.PrincipalType !== 4) {
+        throw new Error(
+          `${who} resolved to a principal with PrincipalType ${resolved.PrincipalType}, `
+          + `which is not a group (4). Nothing was changed.`,
+        );
+      }
+      if (!isGroup && resolved.PrincipalType !== 1) {
         throw new Error(
           `${who} resolved to a principal with PrincipalType `
           + `${resolved.PrincipalType}, which is not a single user (1). Enrolling a group would give its access `
@@ -318,6 +318,16 @@
           `${who} resolved to a tenant-wide claim `
           + `(matched '${claim}') and would give every user in the tenant the group's access. Nothing was changed.`,
         );
+      }
+
+      if (isGroup) {
+        // access.identity.security-group-resolves, access.identity.m365-members-resolves: LoginName equals the claim.
+        if (login !== asked.toLowerCase()) {
+          throw new Error(
+            `${who} resolved to a different principal than the one declared. Nothing was changed.`,
+          );
+        }
+        return resolved;
       }
 
       // 5. Identity. EnsureUser answering with SOMEBODY ELSE is the quiet
@@ -592,7 +602,7 @@
         const resolvedRows = [];
         for (const row of plan.rows) {
           for (const value of row.values) {
-            resolvedRows.push({ row, value, principal: await resolveUser(row, value) });
+            resolvedRows.push({ row, value, principal: await resolveValue(row, value) });
           }
         }
 
@@ -716,7 +726,7 @@
           });
           if (!addResp.ok) {
             const text = await addResp.text();
-            throw new Error(`enrolment of ${r.row.described} into '${plan.group}' failed: HTTP ${addResp.status} ${scrub(text, r.value.value)}`);
+            throw new Error(`enrolment of ${r.row.described} into '${plan.group}' failed: HTTP ${addResp.status} ${scrub(scrub(text, r.value.claim), r.value.value)}`);
           }
           // Recorded straight after the write, before the checks below can abort
           // this phase, so the finally in deploy.js.j2 has it to undo (#213).
