@@ -357,6 +357,23 @@ def test_core_without_distribution_metadata_fails_closed(
         read_catalogue()
 
 
+@pytest.mark.parametrize(
+    "error",
+    [OSError("METADATA unreadable"), UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid")],
+)
+def test_core_metadata_that_cannot_be_read_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, error: Exception,
+) -> None:
+    """An unreadable or undecodable METADATA is named as a refusal, not shown as a traceback."""
+
+    def unreadable(name: str) -> Message:
+        raise error
+
+    monkeypatch.setattr(catalogue, "metadata", unreadable)
+    with pytest.raises(BlueprintRootError, match="cannot be read"):
+        read_catalogue()
+
+
 def test_core_metadata_without_a_licence_expression_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -36,6 +36,7 @@ from dbml_sharepoint.catalogue import (
     MAPPING_RELPATH,
     PLACEHOLDER_SITE_URL,
     Journey,
+    Refusal,
     Solution,
     available_solutions,
     load_solution,
@@ -952,6 +953,24 @@ def test_a_refused_build_passes_its_exit_code_through(
     destination = tmp_path / "proj"
     console = ScriptedConsole(_answers(destination, build="y", seed="n"))
     assert wizard.run_wizard(console) == 2
+
+
+def test_every_blueprint_refused_names_each_refusal_before_exiting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The operator needs the paths and reasons, and "shipped without them" is untrue here."""
+    refused = (
+        Refusal("acme-packs", tmp_path / "one", "front matter is broken"),
+        Refusal("acme-packs", tmp_path / "two", "release is missing"),
+    )
+    none_offered = replace(read_catalogue(), solutions=(), refused=refused)
+    monkeypatch.setattr(wizard, "read_catalogue", lambda: none_offered)
+    console = ScriptedConsole([])
+    assert wizard.run_wizard(console) == 1
+    shown = console.text
+    assert "Not offered: acme-packs: front matter is broken" in shown
+    assert "Not offered: acme-packs: release is missing" in shown
+    assert "shipped without them" not in shown
 
 
 def test_no_shipped_templates_is_reported_not_a_crash(
@@ -3907,6 +3926,31 @@ def test_a_template_with_a_link_out_of_it_is_refused_before_writing(
     assert not destination.exists()
 
 
+def test_a_refusal_quoting_a_control_character_in_a_template_path_prints_it_escaped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A provider's path reaches the refusal verbatim, so the terminal must not get the raw ESC."""
+    solution = _fake_family(tmp_path / "fake")
+    secret = tmp_path / "secret.txt"
+    secret.write_text("not for the project\n", encoding="utf-8")
+    name = "esc\x1b[2Jcaf\u00e9.txt"
+    try:
+        (solution.root / name).symlink_to(secret)
+    except OSError as exc:
+        pytest.skip(f"this platform will not create a symlink here: {exc}")
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    shown = _collapsed(console)
+    assert "links outside the template" in shown
+    assert "esc\\x1b[2Jcaf\\xe9.txt" in shown
+    assert "\x1b" not in shown
+    assert not destination.exists()
+
+
 def test_a_template_with_a_link_to_a_directory_is_refused_before_writing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3992,6 +4036,47 @@ def test_a_template_with_a_file_that_cannot_be_read_is_refused_before_writing(
         notice.chmod(0o644)
     assert "NOTICE cannot be read" in _collapsed(console)
     assert not destination.exists()
+
+
+@pytest.mark.skipif(not _PERMISSIONS_BIND, reason="needs POSIX permissions that bind this user")
+def test_a_template_with_a_directory_that_cannot_be_entered_is_refused_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """rglob skips a directory it cannot search, so the copy would meet it after writing."""
+    solution = _fake_family(tmp_path / "fake")
+    (solution.root / "locked").mkdir()
+    (solution.root / "locked" / "page.txt").write_text("hidden\n", encoding="utf-8")
+    (solution.root / "locked").chmod(0)
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+    try:
+        assert wizard.run_wizard(console) == 1
+    finally:
+        (solution.root / "locked").chmod(0o755)
+    assert "locked cannot be read" in _collapsed(console)
+    assert not destination.exists()
+
+
+@pytest.mark.skipif(not _PERMISSIONS_BIND, reason="needs POSIX permissions that bind this user")
+def test_an_unreadable_directory_the_copy_leaves_out_is_not_a_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A directory in _NEVER_COPY is never copied, so the preflight need not enter it."""
+    solution = _fake_family(tmp_path / "fake")
+    (solution.root / "build").mkdir()
+    (solution.root / "build").chmod(0)
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+    try:
+        assert wizard.run_wizard(console) == 0
+    finally:
+        (solution.root / "build").chmod(0o755)
+    assert destination.is_dir()
+    assert not (destination / "build").exists()
 
 
 def test_a_provider_template_that_fails_validation_is_refused_before_writing(

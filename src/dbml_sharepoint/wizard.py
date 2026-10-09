@@ -36,6 +36,7 @@ and `test_messages_bound_for_a_console_are_ascii` walks the AST.
 """
 
 import json
+import os
 import re
 import shutil
 import sys
@@ -1263,6 +1264,28 @@ def _check_reads(solution: Solution, read: list[Path]) -> None:
             )
 
 
+def _template_entries(solution: Solution) -> list[Path]:
+    """Every entry under the template, refusing a directory the walk cannot enter.
+
+    `rglob` skips such a directory silently, and the copy would then meet it
+    after the destination was created.
+    """
+
+    def refuse(exc: OSError) -> None:
+        name = Path(exc.filename or solution.root).relative_to(solution.root).as_posix()
+        where = "template" if name == "." else f"template's {name}"
+        raise WizardError(
+            f"the {solution.id} {where} cannot be read: {exc.strerror}",
+        ) from exc
+
+    entries: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(solution.root, onerror=refuse):
+        # _check_tree skips these, and a directory the copy never reads must not refuse.
+        dirnames[:] = [d for d in dirnames if d not in _NEVER_COPY]
+        entries.extend(Path(dirpath, name) for name in (*dirnames, *filenames))
+    return sorted(entries)
+
+
 def _check_tree(solution: Solution) -> None:
     """Refuse a template the copy would stop part-way through, or would carry too much of.
 
@@ -1272,7 +1295,7 @@ def _check_tree(solution: Solution) -> None:
     read. Each would stop the copy part-way and leave a partial project.
     """
     root = solution.root.resolve()
-    for path in sorted(solution.root.rglob("*")):
+    for path in _template_entries(solution):
         inside = path.relative_to(solution.root)
         if set(inside.parts) & set(_NEVER_COPY):
             continue
@@ -1589,10 +1612,19 @@ def _run(console: Console) -> int:
     # into a wizard that refuses to run.
     journeys = list(found.journeys)
     if not solutions:
-        console.print(
-            "[red]No templates found.[/red] This build of dbml-sharepoint "
-            "shipped without them.",
-        )
+        # The refusals are the reason, so they print before the statement that none were offered.
+        for line in notices(found):
+            console.print(f"[yellow]{escape(line)}[/yellow]")
+        if found.refused:
+            console.print(
+                "[red]No templates are offered.[/red] Every blueprint found was refused, "
+                "for the reasons above.",
+            )
+        else:
+            console.print(
+                "[red]No templates found.[/red] This build of dbml-sharepoint "
+                "shipped without them.",
+            )
         return 1
 
     console.print(
@@ -1652,7 +1684,7 @@ def _run(console: Console) -> int:
         # written. This used to happen after the copy and outside any guard,
         # so a template the loader rejected produced a traceback on top of a
         # project directory that already existed.
-        console.print(f"[red]{escape(str(exc))}[/red]")
+        console.print(f"[red]{escape(terminal_safe(str(exc)))}[/red]")
         return 1
 
     console.rule("Project")
@@ -1725,7 +1757,9 @@ def _run(console: Console) -> int:
     try:
         repointed, applied, dropped = _scaffold(answers)
     except (WizardError, OSError) as exc:
-        console.print(f"[red]Could not scaffold the project:[/red] {escape(str(exc))}")
+        console.print(
+            f"[red]Could not scaffold the project:[/red] {escape(terminal_safe(str(exc)))}",
+        )
         return 1
 
     console.print(f"\n[green]Wrote[/green] {escape(str(answers.destination))}")
