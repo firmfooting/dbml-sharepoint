@@ -3229,6 +3229,20 @@ def test_a_run_scoped_identity_is_reported_as_this_run(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_hand_built_kind_with_no_proven_principal_type_is_not_assessable(tmp_path: Path) -> None:
+    """The build refuses these kinds; a hand-built targets file must not be judged as type 4."""
+    base = _writers_assess(tmp_path, _WRITERS_BODY)
+    js = re.sub(r'"kind":\s*"user"', '"kind": "m365_group"', base)
+    out = _run_assess(
+        "", js=js, capture=True,
+        wrap=_members_wrap([_member("c:0t.c|tenant|x", 4, "flows@example.com")]),
+    )
+    rows = _identity_rows(out)
+    assert any(f["level"] == "NOT-ASSESSABLE" for f in rows), rows
+    assert not any("= present" in f["detail"] for f in rows), rows
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_the_identities_json_line_carries_no_value(tmp_path: Path) -> None:
     out = _identity_run(tmp_path, [_member("i:0#.f|membership|other@example.com", ident=42)])
     (line,) = [ln for ln in out["log"] if "[IDENTITIES] [{" in ln]

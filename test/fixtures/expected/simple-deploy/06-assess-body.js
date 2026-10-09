@@ -955,8 +955,8 @@
     {
       const SEVERITY = { INFO: 0, WARN: 1, BLOCKED: 2, 'NOT-ASSESSABLE': 1 };
       const upnPart = (name) => String(name).split('|').pop();
-      // PrincipalType 1 is a user and 4 a security group (SP.Utilities.PrincipalType).
-      const expectedType = (kind) => (kind === 'user' ? 1 : 4);
+      // Only user (1) and security_group (4) have a proven PrincipalType; any other kind has none.
+      const expectedType = (kind) => (kind === 'user' ? 1 : kind === 'security_group' ? 4 : null);
       for (const plan of (TARGETS.identity_groups || [])) {
         const key = `identity:${plan.group}`;
         const rows = [];
@@ -974,6 +974,11 @@
           const accounted = new Set();
           for (const row of plan.rows) {
             for (const value of row.values) {
+              if (expectedType(value.kind) == null) {
+                add('NOT-ASSESSABLE', `${row.identity} is of a kind whose principal type is not established, so its membership in '${plan.group}' was not judged.`);
+                identityRows.push({ group: plan.group, identity: row.described, status: 'not assessable' });
+                continue;
+              }
               const sameAddress = members.filter((u) => addressOf(u).includes(String(value.value).toLowerCase()));
               // A correct-kind member wins, so a stray principal sharing the address cannot block.
               const hit = sameAddress.find((u) => u.PrincipalType === expectedType(value.kind)) || sameAddress[0];

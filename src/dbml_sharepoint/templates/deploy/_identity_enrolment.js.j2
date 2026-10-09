@@ -321,12 +321,18 @@
       return resolved;
     };
     for (const plan of IDENTITY_GROUPS) {
+      // The run will abort, so later groups make no write (ensureuser creates a site user).
+      if (identityEnrolmentErrors > 0) {
+        log('WARN', `Identity enrolment for '${plan.group}' skipped because an earlier group failed.`);
+        continue;
+      }
       const grp = SCHEMA.groups.find((g) => g.name === plan.group);
       try {
         if (!grp) {
           throw new Error(`group '${plan.group}' is not in the schema this bundle deploys`);
         }
-        const readerRows = plan.rows.filter((r) => r.ceiling === 'reader');
+        // Rows with no supplied value enrol nobody, so they set no ceiling either.
+        const readerRows = plan.rows.filter((r) => r.ceiling === 'reader' && r.values.length > 0);
         const readerLabel = readerRows.map((r) => r.described).join(', ');
         const grpResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')?$select=Id`), {
           headers: { 'Accept': 'application/json;odata=verbose' },
@@ -561,7 +567,7 @@
 
         }
 
-        if (plan.rows.some((r) => r.ceiling === 'automation')) {
+        if (plan.rows.some((r) => r.ceiling === 'automation' && r.values.length > 0)) {
           await refuseFullControl(grp, groupId);
         }
 
@@ -574,6 +580,7 @@
 
         // The operator the earlier phase added, when it is also a declared account here,
         // becomes this phase's membership: kept when the run ends, drained only on abort.
+        const adopted = [];
         for (const r of resolvedRows) {
           const at = selfEnrollments.findIndex(
             (e) => e.groupName === plan.group && Number(e.userId) === Number(r.principal.Id));
@@ -583,6 +590,7 @@
             groupId: entry.groupId, groupName: plan.group,
             identity: r.row.identity, described: r.row.described, userId: entry.userId,
           });
+          adopted.push(r);
         }
 
         // 6. Membership, enumerated in full (every page): a stranger on a page
@@ -668,7 +676,8 @@
           const here = before.some((u) => nameKey(u && u.LoginName) === key);
           if (!here && !absent.some((a) => nameKey(a.principal.LoginName) === key)) absent.push(r);
         }
-        if (absent.length === 0) {
+        // Adopted accounts are already in `before`, but this phase now owns them, so they are logged as enrolled.
+        if (absent.length === 0 && adopted.length === 0) {
           // A redeploy writes nothing, but the group can still change during the run.
           const now = await readMembers();
           if (exclusive) {
@@ -716,8 +725,9 @@
         } else {
           warnStrangers(after);
         }
-        log('INFO', `Enrolled ${absent.map((r) => r.principal.Title || r.row.described).join(', ')} into '${plan.group}'. This membership is kept by a run that reaches the end; if a later phase aborts it is removed automatically. Once kept, remove it in Site permissions > Groups when the account no longer needs access.`);
-        for (const row of new Set(absent.map((r) => r.row))) {
+        const enrolled = [...adopted, ...absent];
+        log('INFO', `Enrolled ${enrolled.map((r) => r.principal.Title || r.row.described).join(', ')} into '${plan.group}'. This membership is kept by a run that reaches the end; if a later phase aborts it is removed automatically. Once kept, remove it in Site permissions > Groups when the account no longer needs access.`);
+        for (const row of new Set(enrolled.map((r) => r.row))) {
           logChange({ key: `identity:${plan.group}:${row.identity}`, kind: 'identity-enrolled',
             target: row.described, oldValue: '',
             newValue: `enrolled in '${plan.group}' by deploy ${RELEASE_TAG}` });

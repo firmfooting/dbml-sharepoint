@@ -7,6 +7,7 @@ script writes to the scratch list is what the deploy writes to the real
 lists, one column at a time.
 """
 import json
+import re
 import subprocess
 import textwrap
 from dataclasses import replace
@@ -738,6 +739,16 @@ def test_a_member_of_the_wrong_kind_is_a_mismatch_and_a_right_kind_one_wins() ->
         _writers_verify_js(), GROUP_MEMBERS=_members([wrong, {**_FLOWS_MEMBER, "Id": 42}]),
     )
     assert both["verdict"] == "VERIFIED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_hand_built_kind_with_no_proven_principal_type_fails_closed() -> None:
+    """The build refuses these kinds; a hand-built targets file must not be judged as type 4."""
+    js = re.sub(r'"kind":\s*"user"', '"kind": "m365_group"', _writers_verify_js())
+    group = {**_FLOWS_MEMBER, "PrincipalType": 4}
+    out = _run_verify_full(js, GROUP_MEMBERS=_members([group]))
+    assert out["verdict"] == "MISMATCH"
+    assert not any("is a member of" in ln for ln in out["log"])
 
 
 _LONG_PAGE = (

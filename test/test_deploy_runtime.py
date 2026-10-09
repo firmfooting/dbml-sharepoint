@@ -5955,6 +5955,70 @@ def test_a_declared_account_the_operator_phase_added_is_removed_when_the_run_abo
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_declared_account_the_operator_phase_added_is_logged_as_enrolled() -> None:
+    """It is the identity phase's membership, so it gets the change row and the Enrolled line."""
+    _, calls, output = _run_operator_is_automation(sidecars=True)
+    rows = [c["body"] for c in _item_writes(calls) if "identity:XX Writers:automation" in c["body"]]
+    assert len(rows) == 1, output[-2000:]
+    assert "probe@example.com" not in rows[0]
+    assert "Enrolled" in output
+    assert "left untouched" not in output, output[-2000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_later_group_writes_nothing_once_an_earlier_group_failed() -> None:
+    """The first group is exclusive and holds a stranger; the second must not ensureuser or POST."""
+    summary, calls, output = _run_writers(
+        _FLOWS, mapping="sharepoint-mapping-two-enrolling-groups.yaml", members=[_OTHER],
+    )
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    errors = _identity_errors(summary)
+    assert [e["group"] for e in errors] == ["XX Writers"], errors
+    resolves = [c for c in calls if "ensureuser" in c["url"].lower()]
+    assert len(resolves) == 1, "only the first group resolves"
+    assert _membership_writes(calls) == []
+    assert "skipped" in output and "XX Writers Two" in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_reader_group_granted_nothing_here_warns_and_still_enrols() -> None:
+    """A hand-edited bundle: no level is declared for the group, so there is no bitmap to judge."""
+    summary, calls, output = _run_reader_deploy(
+        _RESOLVED_USER,
+        edit_js=lambda js: re.sub(
+            r'("kind":\s*"group",\s*"name":\s*)"Enterprise Reader"', r'\1"Somebody Else"', js,
+        ),
+    )
+    assert not _identity_errors(summary), summary
+    warned = any("is granted no permission level" in line for line in _warnings(output))
+    assert warned, output[-2000:]
+    assert "carries the read bits" not in output
+    assert _membership_writes(calls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unsupplied_reader_row_sets_no_reader_checks() -> None:
+    """The group also enrols the reader, but only automation has a value: no reader step 0 or 1."""
+    summary, _, output = _run_writers(
+        _FLOWS, mapping="sharepoint-mapping-reader-and-automation.yaml",
+    )
+    assert not _identity_errors(summary), summary
+    assert "carries the read bits" not in output
+    assert "web-scope binding(s)" not in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unsupplied_automation_row_sets_no_automation_ceiling() -> None:
+    """Only the reader has a value, so a Full Control-equal grant is not judged as automation's."""
+    summary, _, _ = _run_identity_deploy(
+        {"enterprise_reader": f"user:{_READER_ADDRESS}"}, _RESOLVED_USER,
+        mapping="sharepoint-mapping-reader-and-automation.yaml",
+        contribute_bitmap=_FULL_CONTROL_FIXTURE,
+    )
+    assert not _identity_errors(summary), summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_failed_removal_of_an_identity_enrolment_is_reported() -> None:
     """The drain's own failure branch: the log names the account left behind."""
     _, calls, output = _run_writers(_FLOWS, remove_status=403)
@@ -10400,7 +10464,7 @@ def test_no_persisted_row_carries_a_value() -> None:
     pytest.param({"add_status": 403}, id="add-fails"),
     pytest.param({"drop_readback": True}, id="readback-mismatch"),
     pytest.param({"remove_status": 403}, id="drain-removal-fails"),
-    pytest.param({"members": [_OTHER]}, id="exclusive-group-has-a-stranger"),
+    pytest.param({"members": [_OTHER]}, id="additive-group-has-a-stranger"),
     pytest.param({"ensure_user": {**_FLOWS, "PrincipalType": 4}}, id="not-a-user"),
     pytest.param({"ensure_user": {**_FLOWS, "LoginName": "c:0(.s|true"}}, id="tenant-wide-claim"),
     pytest.param({"ensure_user": _OTHER}, id="resolved-to-someone-else"),
