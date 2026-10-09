@@ -3907,6 +3907,31 @@ def test_a_template_with_a_link_out_of_it_is_refused_before_writing(
     assert not destination.exists()
 
 
+def test_a_refusal_quoting_a_control_character_in_a_template_path_prints_it_escaped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A provider's path reaches the refusal verbatim, so the terminal must not get the raw ESC."""
+    solution = _fake_family(tmp_path / "fake")
+    secret = tmp_path / "secret.txt"
+    secret.write_text("not for the project\n", encoding="utf-8")
+    name = "esc\x1b[2Jcaf\u00e9.txt"
+    try:
+        (solution.root / name).symlink_to(secret)
+    except OSError as exc:
+        pytest.skip(f"this platform will not create a symlink here: {exc}")
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    shown = _collapsed(console)
+    assert "links outside the template" in shown
+    assert "esc\\x1b[2Jcaf\\xe9.txt" in shown
+    assert "\x1b" not in shown
+    assert not destination.exists()
+
+
 def test_a_template_with_a_link_to_a_directory_is_refused_before_writing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -1662,7 +1662,7 @@ def _run(console: Console) -> int:
         # written. This used to happen after the copy and outside any guard,
         # so a template the loader rejected produced a traceback on top of a
         # project directory that already existed.
-        console.print(f"[red]{escape(str(exc))}[/red]")
+        console.print(f"[red]{escape(terminal_safe(str(exc)))}[/red]")
         return 1
 
     console.rule("Project")
@@ -1735,7 +1735,9 @@ def _run(console: Console) -> int:
     try:
         repointed, applied, dropped = _scaffold(answers)
     except (WizardError, OSError) as exc:
-        console.print(f"[red]Could not scaffold the project:[/red] {escape(str(exc))}")
+        console.print(
+            f"[red]Could not scaffold the project:[/red] {escape(terminal_safe(str(exc)))}",
+        )
         return 1
 
     console.print(f"\n[green]Wrote[/green] {escape(str(answers.destination))}")
