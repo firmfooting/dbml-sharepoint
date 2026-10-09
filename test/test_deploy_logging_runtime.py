@@ -1741,5 +1741,6 @@ def test_the_central_provenance_stamp_names_identities_by_hash_in_details_only()
     row = provenance[0]
     assert re.search(r"identity: automation \(sha256:[0-9a-f]{12}\)", row["Details"]), row
     assert "identity:" not in row["Title"], row
-    for hidden in ("flows@example.com", "flows", "i:0#.f|membership", "41"):
+    # The id only in delimited forms: a bare "41" matches the minute of the timestamp.
+    for hidden in ("flows@example.com", "flows", "i:0#.f|membership", "user 41", "(41)"):
         assert hidden not in json.dumps(row), (hidden, row)
