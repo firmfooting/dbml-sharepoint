@@ -680,7 +680,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 perms.default_policy, "list_permissions.default", _DEFAULT_POLICY,
             )
 
-        # === Enrolment shape, for every group (ruling A9: one defect, one finding) ===
+        # === Enrolment shape, for every group (one defect yields one finding) ===
         for grp in vc.site_groups:
             if grp.membership == "exclusive" and grp.enroll_during_run:
                 findings.append(Finding(

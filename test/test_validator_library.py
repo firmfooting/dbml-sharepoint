@@ -878,15 +878,15 @@ def test_a_folder_principal_resolving_to_a_protected_group_is_judged(
 ) -> None:
     """A `{member}` principal is not necessarily a per-member group.
 
-    `dbml Enterprise {member}` over a folder named Automation resolves to
-    `dbml Enterprise Automation`, which the deploy grants and the targeted
+    `dbml Automation {member}` over a folder named Accounts resolves to
+    `dbml Automation Accounts`, which the deploy grants and the targeted
     rules are about. Compared unexpanded, the template spelling matched no
     protected name and the grant went out unjudged.
     """
     schema, bundle = pack(
         tmp_path,
         dbml=(
-            'Enum area {\n  "Automation"\n}\n'
+            'Enum area {\n  "Accounts"\n}\n'
             + table("Docs", ID_PK, TITLE, "Area area")
         ),
         mapping="""
@@ -903,7 +903,7 @@ def test_a_folder_principal_resolving_to_a_protected_group_is_judged(
                   break_inheritance: true
                   reconcile: exact
                   assignments:
-                    - principal: { kind: group, name: "dbml Enterprise {member}" }
+                    - principal: { kind: group, name: "dbml Automation {member}" }
                       level: "Full Control"
         """,
     )
@@ -911,7 +911,7 @@ def test_a_folder_principal_resolving_to_a_protected_group_is_judged(
         validate_against_mapping(schema, bundle),
         FindingCode.AUTOMATION_GROUP_GRANTED_FULL_CONTROL,
     )
-    assert "dbml Enterprise Automation" in f.message
+    assert "dbml Automation Accounts" in f.message
 
 
 def test_folder_permissions_on_a_list_are_refused(tmp_path: Path) -> None:

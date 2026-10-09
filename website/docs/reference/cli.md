@@ -153,7 +153,7 @@ given, not from whatever happened to be exported in the shell that ran
 it.
 
 **The armed guard.** `build` already refuses `--enterprise-reader` when
-the mapping declares no `enroll_enterprise_reader` group. That check runs
+the mapping declares no `enroll: [enterprise_reader]` group. That check runs
 on the resolved value regardless of where it came from, so once
 `dbml-sharepoint.env` supplies a reader, a build that previously
 succeeded against such a mapping now refuses. That refusal is the guard

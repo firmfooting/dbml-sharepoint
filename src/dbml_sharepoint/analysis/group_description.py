@@ -51,7 +51,7 @@ FAMILY_MARKER_TEMPLATE = provenance.MARKER_PREFIX + " from {family} for group {n
 #: Power Automate flow. Named here as a constant because a rule keys off the
 #: NAME: unlike the reader tier there is no enrolment flag to select it, since
 #: nothing about this group happens at build time (#331).
-AUTOMATION_GROUP_NAME = "dbml Enterprise Automation"
+AUTOMATION_GROUP_NAME = "dbml Automation Accounts"
 
 #: Groups this tool names for ITSELF rather than for the organisation
 #: deploying it, and which therefore carry no family name.

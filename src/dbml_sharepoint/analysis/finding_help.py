@@ -150,9 +150,10 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.AUTOMATION_GROUP_GRANTED_FULL_CONTROL: (
         "A group enrolling `automation`, or named `dbml Automation Accounts`, "
-        "is granted Full Control, on the default policy or on an override. That group "
-        "exists so the identity a flow connects as can hold a narrow declared "
-        "write on the lists it stamps: under `reconcile: exact` a redeploy "
+        "is granted Full Control, on the default policy or on an override. "
+        "`dbml Automation Accounts` exists so the identity a flow connects as "
+        "can hold a narrow declared write on the lists it stamps: under "
+        "`reconcile: exact` a redeploy "
         "removes undeclared direct grants, so access handed to a flow by hand "
         "does not survive one and the identity has to sit in a group the "
         "mapping declares, holding a level it declares. Full Control is "
