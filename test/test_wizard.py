@@ -3976,6 +3976,26 @@ def test_a_template_with_a_directory_that_cannot_be_entered_is_refused_before_wr
     assert not destination.exists()
 
 
+@pytest.mark.skipif(not _PERMISSIONS_BIND, reason="needs POSIX permissions that bind this user")
+def test_an_unreadable_directory_the_copy_leaves_out_is_not_a_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A directory in _NEVER_COPY is never copied, so the preflight need not enter it."""
+    solution = _fake_family(tmp_path / "fake")
+    (solution.root / "build").mkdir()
+    (solution.root / "build").chmod(0)
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+    try:
+        assert wizard.run_wizard(console) == 0
+    finally:
+        (solution.root / "build").chmod(0o755)
+    assert destination.is_dir()
+    assert not (destination / "build").exists()
+
+
 def test_a_provider_template_that_fails_validation_is_refused_before_writing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

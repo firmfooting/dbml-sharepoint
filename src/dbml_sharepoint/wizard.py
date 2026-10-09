@@ -1273,12 +1273,15 @@ def _template_entries(solution: Solution) -> list[Path]:
 
     def refuse(exc: OSError) -> None:
         name = Path(exc.filename or solution.root).relative_to(solution.root).as_posix()
+        where = "template" if name == "." else f"template's {name}"
         raise WizardError(
-            f"the {solution.id} template's {name} cannot be read: {exc.strerror}",
+            f"the {solution.id} {where} cannot be read: {exc.strerror}",
         ) from exc
 
     entries: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(solution.root, onerror=refuse):
+        # _check_tree skips these, and a directory the copy never reads must not refuse.
+        dirnames[:] = [d for d in dirnames if d not in _NEVER_COPY]
         entries.extend(Path(dirpath, name) for name in (*dirnames, *filenames))
     return sorted(entries)
 
