@@ -14,4 +14,4 @@ jobs:
   prek:
     permissions:
       contents: read
-    uses: firmfooting/.github/.github/workflows/prek.yml@7b967509aeb2c27564751d4afb8ef989a28afbad # v1.2.0
+    uses: firmfooting/.github/.github/workflows/prek.yml@d6d7bba33c7c6e73b0f4e03d6628bb7c3e6d0839 # v1.4.0
