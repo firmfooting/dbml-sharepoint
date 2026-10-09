@@ -152,13 +152,11 @@ def generate_deploy_js(
         schema_json=schema_json,
         phases=phases_context(),
         unmanaged_sentinel=UNMANAGED,
-        # The single named account `build --enterprise-reader` enrols read-
-        # only into the mapping's flagged group, or None to enrol nobody.
+        # The account `build --enterprise-reader` enrols read-only into the
+        # group whose `enroll` names enterprise_reader, or None for nobody.
         # `execute_build` has already refused a malformed address and a
-        # mapping declaring no `enroll_enterprise_reader` group by the time
-        # this runs, so a non-None value here always names a real target.
-        # Which declared group that is stays the template's job: it filters
-        # SCHEMA.groups on the flag emitted in build_schema_json.
+        # mapping with no such group, so a non-None value names a real target.
+        # Which group that is stays the template's job, read from SCHEMA.groups.
         enterprise_reader=enterprise_reader,
         # #199: the bitmap the enrolment phase requires of the level behind
         # the reader's grant, and the two bits it only warns about. Emitted

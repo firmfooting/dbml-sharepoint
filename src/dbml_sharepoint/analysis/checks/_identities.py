@@ -95,7 +95,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     BUILTIN_IDENTITIES[name].kinds if name in BUILTIN_IDENTITIES
                     else declared[name].kinds if name in declared else ("user",)
                 )
-                if any(kind != "user" for kind in kinds):
+                if any(kind in {"security_group", "m365_group"} for kind in kinds):
                     findings.append(Finding(
                         FindingCode.EXCLUSIVE_GROUP_ENROLS_A_GROUP_KIND,
                         f"groups: {grp.name!r} is exclusive and enrols {name!r}, whose "

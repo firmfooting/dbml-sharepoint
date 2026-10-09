@@ -156,3 +156,15 @@ def test_a_sharepoint_group_in_enroll_is_refused_with_the_nesting_citation(
     )
     assert "cannot be nested" in finding.message
     assert "associated_member_group" in finding.message
+
+
+def test_an_unknown_kind_fires_only_the_unknown_kind_rule(tmp_path: Path) -> None:
+    body = _group("        enroll: [clerk]\n        membership: exclusive") + """
+    identities:
+      clerk:
+        description: "x"
+        kinds: [usr]
+"""
+    findings = _findings(tmp_path, body)
+    only(findings, FindingCode.IDENTITY_KIND_UNKNOWN)
+    assert FindingCode.EXCLUSIVE_GROUP_ENROLS_A_GROUP_KIND not in {f.code for f in findings}

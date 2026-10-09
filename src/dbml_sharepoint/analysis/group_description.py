@@ -49,7 +49,7 @@ FAMILY_MARKER_TEMPLATE = provenance.MARKER_PREFIX + " from {family} for group {n
 
 #: The tool-owned group for the identity an automation connects as, such as a
 #: Power Automate flow. Named here as a constant because a rule keys off the
-#: NAME: unlike the reader tier there is no enrolment flag to select it, since
+#: NAME; an identity reaches it through the `enroll` key on a group, and
 #: nothing about this group happens at build time (#331).
 AUTOMATION_GROUP_NAME = "dbml Automation Accounts"
 

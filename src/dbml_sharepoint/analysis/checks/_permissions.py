@@ -368,9 +368,9 @@ def _enum_groups(vc: ValidationContext, perms: PermissionsConfig) -> list[Findin
                 f"they would all be the same group.",
                 location=_GROUPS,
             ))
-        # Each enrolment flag names ONE identity, and exactly one member is
-        # the only count that gives it one group to land in: more leave every
-        # group after the first empty, and none generates no group at all.
+        # These keys act on one group, so only an enum of exactly one member
+        # gives them one group to apply to: more leave every group after the
+        # first unenrolled, and none generates no group at all.
         enrolments: list[str] = [] if len(members) == 1 else [
             key for key, on in (
                 ("enroll", bool(source.template.enroll)),
@@ -389,8 +389,8 @@ def _enum_groups(vc: ValidationContext, perms: PermissionsConfig) -> list[Findin
             findings.append(Finding(
                 FindingCode.GROUP_ENUM_ENROLS_AN_IDENTITY,
                 f"groups[{source.template.name!r}]: from_enum cannot be "
-                f"combined with {' or '.join(enrolments)}; each enrols one "
-                f"identity, and {target}.",
+                f"combined with {' or '.join(enrolments)}; each acts on a "
+                f"single group, and {target}.",
                 location=_GROUPS,
             ))
     return findings

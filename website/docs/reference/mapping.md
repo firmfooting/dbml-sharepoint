@@ -1922,8 +1922,9 @@ groups:
     auto_accept_request_to_join_leave: false
     only_allow_members_view_membership: true
     enroll: [enterprise_reader]  # optional; target of `build --enterprise-reader`
-    membership: exclusive        # (or DBMLSP_ENTERPRISE_READER in
+                                 # (or DBMLSP_ENTERPRISE_READER in
                                  # dbml-sharepoint.env; see the CLI reference)
+    membership: exclusive
 
 list_permissions:
   default:
