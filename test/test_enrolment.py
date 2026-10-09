@@ -67,7 +67,8 @@ def test_the_json_shape_the_templates_read(tmp_path: Path) -> None:
         "rows": [{
             "identity": "automation", "ceiling": "automation",
             "described": plan[0].rows[0].described,
-            "values": [{"kind": "user", "value": "flows@example.com", "owners": False}],
+            "values": [{"kind": "user", "value": "flows@example.com", "owners": False,
+                        "claim": "flows@example.com"}],
         }],
     }]
 

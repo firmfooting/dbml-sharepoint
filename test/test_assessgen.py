@@ -3232,7 +3232,7 @@ def test_a_run_scoped_identity_is_reported_as_this_run(tmp_path: Path) -> None:
 def test_a_hand_built_kind_with_no_proven_principal_type_is_not_assessable(tmp_path: Path) -> None:
     """The build refuses these kinds; a hand-built targets file must not be judged as type 4."""
     base = _writers_assess(tmp_path, _WRITERS_BODY)
-    js = re.sub(r'"kind":\s*"user"', '"kind": "m365_group"', base)
+    js = re.sub(r'"kind":\s*"user"', '"kind": "alien"', base)
     out = _run_assess(
         "", js=js, capture=True,
         wrap=_members_wrap([_member("c:0t.c|tenant|x", 4, "flows@example.com")]),
@@ -3240,6 +3240,27 @@ def test_a_hand_built_kind_with_no_proven_principal_type_is_not_assessable(tmp_p
     rows = _identity_rows(out)
     assert any(f["level"] == "NOT-ASSESSABLE" for f in rows), rows
     assert not any("= present" in f["detail"] for f in rows), rows
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(("kind", "claim"), [
+    ("security_group", "c:0t.c|tenant|0f8fad5b-d9cb-469f-a165-70867728950e"),
+    ("m365_group", "c:0o.c|federateddirectoryclaimprovider|0f8fad5b-d9cb-469f-a165-70867728950e"),
+])
+def test_a_group_kind_is_matched_by_its_claim(tmp_path: Path, kind: str, claim: str) -> None:
+    base = _writers_assess(tmp_path, _WRITERS_BODY)
+    value = json.dumps({"kind": kind, "value": claim.rsplit("|", 1)[1], "owners": False,
+                        "claim": claim})
+    js = re.sub(r'\{[^{}]*"kind":\s*"user"[^{}]*\}', lambda _: value, base)
+
+    def statuses(member: dict[str, Any]) -> list[str]:
+        out = _run_assess("", js=js, capture=True, wrap=_members_wrap([member]))
+        return [f["detail"] for f in _identity_rows(out)]
+
+    assert any("= present" in d for d in statuses(_member(claim, 4)))
+    assert any("! wrong kind" in d for d in statuses(_member(claim, 1)))
+    stranger = _member(claim.replace("0f8fad5b", "11111111"), 4)
+    assert any("+ will enrol" in d for d in statuses(stranger))
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

@@ -5761,6 +5761,59 @@ def test_an_automation_account_is_resolved_added_and_read_back() -> None:
     assert [w["LoginName"] for w in _membership_writes(calls)] == [_FLOWS["LoginName"]]
 
 
+_GROUP_OID = "0f8fad5b-d9cb-469f-a165-70867728950e"
+_SECURITY_CLAIM = f"c:0t.c|tenant|{_GROUP_OID}"
+_MEMBERS_CLAIM = f"c:0o.c|federateddirectoryclaimprovider|{_GROUP_OID}"
+
+
+def _group_principal(login: str, ident: int = 51, kind: int = 4) -> dict[str, Any]:
+    return {"Id": ident, "LoginName": login, "Title": "Intake", "Email": "", "PrincipalType": kind}
+
+
+def _run_group_kind(
+    kind: str, ensured_group: dict[str, Any], **harness: Any,
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    claim = _SECURITY_CLAIM if kind == "security_group" else _MEMBERS_CLAIM
+    return _run_identity_deploy(
+        {"automation": "user:flows@example.com", "intake": f"{kind}:{_GROUP_OID}"},
+        {"flows@example.com": _FLOWS, claim: ensured_group},
+        mapping="sharepoint-mapping-with-group-identity.yaml", **harness,
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(("kind", "claim"), [
+    ("security_group", _SECURITY_CLAIM), ("m365_group", _MEMBERS_CLAIM),
+])
+def test_a_group_kind_is_resolved_by_its_claim_added_and_read_back(kind: str, claim: str) -> None:
+    summary, calls, _ = _run_group_kind(kind, _group_principal(claim))
+    assert not _identity_errors(summary), summary
+    asked = [json.loads(c["body"])["logonName"] for c in calls if "/ensureuser" in c["url"]]
+    assert claim in asked
+    assert claim in [w["LoginName"] for w in _membership_writes(calls)]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("kind", ["security_group", "m365_group"])
+def test_a_group_resolving_as_a_user_type_aborts_naming_the_identity(kind: str) -> None:
+    claim = _SECURITY_CLAIM if kind == "security_group" else _MEMBERS_CLAIM
+    summary, calls, _ = _run_group_kind(kind, _group_principal(claim, kind=1))
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert any("intake (sha256:" in e["error"] and "PrincipalType" in e["error"]
+               for e in _identity_errors(summary)), summary
+    assert claim not in [w["LoginName"] for w in _membership_writes(calls)]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("kind", ["security_group", "m365_group"])
+def test_a_group_resolving_to_a_different_login_aborts(kind: str) -> None:
+    other = "c:0t.c|tenant|11111111-2222-4333-8444-555555555555"
+    summary, calls, _ = _run_group_kind(kind, _group_principal(other))
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert any("different" in e["error"] for e in _identity_errors(summary)), summary
+    assert other not in [w["LoginName"] for w in _membership_writes(calls)]
+
+
 _FULL_CONTROL_LEVEL = {"Id": 1073741829, "Name": "Full Control", **_FULL_CONTROL_FIXTURE}
 
 

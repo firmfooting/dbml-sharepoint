@@ -201,10 +201,12 @@
     // Steps 2 to 5 for ONE declared value: resolve it, then refuse anything but
     // the single user that was asked for.
     const resolveUser = async (row, value) => {
-      if (value.kind !== 'user') {
+      const isGroup = value.kind === 'security_group' || value.kind === 'm365_group';
+      if (value.kind !== 'user' && !isGroup) {
         throw new Error(`${row.described}: ${value.kind} values are not enrolled by this release`);
       }
-      const asked = value.value;
+      // The claim is built by the build from a validated GUID; a user's claim is the UPN.
+      const asked = value.claim;
       // Error messages name the identity by description, never the value.
       const who = row.described;
       // 2. Resolve the value. EnsureUser is a write (it materialises
@@ -227,6 +229,22 @@
         throw new Error(`resolving ${who} returned an invalid principal response`);
       }
 
+      // Group kinds resolve to PrincipalType 4 with LoginName equal to the claim sent
+      // (access.identity.security-group-resolves, access.identity.m365-members-resolves).
+      if (isGroup) {
+        if (resolved.PrincipalType !== 4) {
+          throw new Error(
+            `${who} resolved to a principal with PrincipalType ${resolved.PrincipalType}, `
+            + `which is not a group (4). Nothing was changed.`,
+          );
+        }
+        if (resolved.LoginName.toLowerCase() !== asked.toLowerCase()) {
+          throw new Error(
+            `${who} resolved to a different principal than the one declared. Nothing was changed.`,
+          );
+        }
+        return resolved;
+      }
       // 3. Principal type, STRICT equality. Microsoft Learn documents
       // SP.PrincipalType as None 0, User 1, DistributionList 2,
       // SecurityGroup 4, SharePointGroup 8, All 15, and marks it

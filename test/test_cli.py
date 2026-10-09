@@ -3826,7 +3826,7 @@ def _with_declared_intake(tmp_path: Path) -> Path:
     text = text.replace("enroll: [automation]", "enroll: [automation, intake]")
     text += (
         "\nidentities:\n  intake:\n    description: \"Intake.\"\n"
-        "    kinds: [user, security_group]\n"
+        "    kinds: [user, security_group, m365_group]\n"
     )
     for sibling in ("topics.yaml", "retention-policies.yaml"):
         shutil.copy(FIXTURES / sibling, tmp_path / sibling)
@@ -3865,11 +3865,11 @@ def test_build_refuses_a_bad_identity_before_writing(
     assert not (tmp_path / "out").exists()
 
 
-def test_build_refuses_a_group_kind_before_writing(tmp_path: Path) -> None:
+def test_build_refuses_the_owners_form_before_writing(tmp_path: Path) -> None:
     mapping = _with_declared_intake(tmp_path)
     result = _build_with(
         tmp_path, mapping,
-        ["--identity", _AUTOMATION, "--identity", f"intake=security_group:{_GUID}"],
+        ["--identity", _AUTOMATION, "--identity", f"intake=m365_group:{_GUID}:owners"],
     )
     assert result.exit_code == 1, result.output
     assert "probe" in result.output
