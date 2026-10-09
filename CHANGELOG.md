@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.11.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.10.0...v0.11.0) (2026-10-09)
+
+
+### Features
+
+* **identities:** enrol Entra security groups and Microsoft 365 group members ([#764](https://github.com/firmfooting/dbml-sharepoint/issues/764)) ([3ef1844](https://github.com/firmfooting/dbml-sharepoint/commit/3ef184481bb0b2da0f466216004caf46e070102c))
+* **libraries:** declare require_checkout on a document library ([#765](https://github.com/firmfooting/dbml-sharepoint/issues/765)) ([3f9e53c](https://github.com/firmfooting/dbml-sharepoint/commit/3f9e53c31689158a2e4b066f044cb46f44ca365a))
+
+
+### Bug Fixes
+
+* **wizard:** carry the canonical reader key through the scaffolded env file ([#766](https://github.com/firmfooting/dbml-sharepoint/issues/766)) ([1c6aef1](https://github.com/firmfooting/dbml-sharepoint/commit/1c6aef1b38a5e32376791c89c263b112d5277562))
+
+
+### Documentation
+
+* correct stale identity enrolment text ([#767](https://github.com/firmfooting/dbml-sharepoint/issues/767)) ([3b53917](https://github.com/firmfooting/dbml-sharepoint/commit/3b539170b483aac9491f6748035684367549eab5))
+
 ## [0.10.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.9.0...v0.10.0) (2026-10-09)
 
 
