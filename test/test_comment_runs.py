@@ -94,6 +94,15 @@ def test_hash_lines_in_a_toml_multiline_string_are_content(quote: str) -> None:
     assert comment_runs(text, "pyproject.toml") == []
 
 
+@pytest.mark.parametrize("quote", ['"""', "'''"])
+def test_a_multiline_string_closed_by_extra_quotes_ends_at_the_full_run(quote: str) -> None:
+    """#648 review: TOML reads four closing quotes as the string's content plus its closer."""
+    text = f"x = [{quote}foo{quote}{quote[0]}, {quote}bar\n" + "# content\n" * MIN_RUN
+    text += f"{quote}]\n"
+
+    assert comment_runs(text, "pyproject.toml") == []
+
+
 def test_a_quote_in_a_toml_comment_or_string_does_not_open_a_multiline_string() -> None:
     text = "a = \"'''\"  # say \"\"\"\n" + _lines("#", MIN_RUN)
 
@@ -151,6 +160,20 @@ def test_a_backtick_in_a_jinja_comment_does_not_open_a_template_literal() -> Non
     text = "{# see `name` #}\nrun();\n" + _lines("//", MIN_RUN)
 
     assert [run.length for run in _flagged(text, "a.js.j2")] == [7]
+
+
+def test_a_backtick_inside_a_jinja_span_on_a_mixed_line_is_not_javascript() -> None:
+    """#648 review: a backtick before `#}` opened a template literal and hid the run after it."""
+    text = "{# note\n` #} run();\n" + "// more\n" * MIN_RUN
+
+    assert [(run.first_line, run.length) for run in _flagged(text, "a.js.j2")] == [(3, 7)]
+
+
+def test_a_block_opener_inside_a_jinja_span_on_a_mixed_line_is_not_javascript() -> None:
+    """#648 review: a `/*` before `#}` opened a block comment that swallowed the code after it."""
+    text = "{# why\n" + "  more\n" * 5 + "/* #} run();\nrun();\n"
+
+    assert _flagged(text, "a.js.j2") == []
 
 
 def test_a_blank_line_breaks_a_run() -> None:

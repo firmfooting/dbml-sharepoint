@@ -161,7 +161,12 @@ def _toml_string_end(line: str, index: int, delimiter: str) -> int:
         if delimiter.startswith('"') and line[index] == "\\":
             index += 2
         elif line.startswith(delimiter, index):
-            return index + len(delimiter)
+            end = index + len(delimiter)
+            # A multi-line string may close with up to two quotes of its own.
+            if len(delimiter) == 3:
+                while end < len(line) and end - index < 5 and line[end] == delimiter[0]:
+                    end += 1
+            return end
         else:
             index += 1
     return -1
@@ -277,7 +282,26 @@ def _lex_c_line(line: str, state: _CState, quotes: str, js: bool) -> bool:
     return comment and not code
 
 
-def _c_comment_lines(lines: list[str], skip: set[int], suffix: str) -> set[int]:
+#: Every character `str.splitlines` breaks a line on.
+_LINE_BREAKS = frozenset("\r\n\v\f\x1c\x1d\x1e\x85\N{LINE SEPARATOR}\N{PARAGRAPH SEPARATOR}")
+
+
+def _blank_jinja_comments(text: str) -> str:
+    """`text` with each `{# #}` span spaced out, as Jinja removes it before JS sees it."""
+    out: list[str] = []
+    index = 0
+    while (opener := text.find("{#", index)) >= 0:
+        closer = text.find("#}", opener + 2)
+        end = len(text) if closer < 0 else closer + 2
+        out.append(text[index:opener])
+        # Keeps every character str.splitlines() breaks on, so line numbers stay put.
+        out.append("".join(c if c in _LINE_BREAKS else " " for c in text[opener:end]))
+        index = end
+    out.append(text[index:])
+    return "".join(out)
+
+
+def _c_comment_lines(lines: list[str], suffix: str) -> set[int]:
     """`//` lines and `/* */` blocks, not counting either inside a JS string."""
     found: set[int] = set()
     state = _CState()
@@ -285,8 +309,6 @@ def _c_comment_lines(lines: list[str], skip: set[int], suffix: str) -> set[int]:
     quotes = '"' if suffix == ".pq" else "'\""
     for number, line in enumerate(lines, start=1):
         in_literal = bool(state.stack) and state.stack[-1] < 0
-        if number in skip and not in_literal:
-            continue
         if _lex_c_line(line, state, quotes, js) and not in_literal:
             found.add(number)
     return found
@@ -306,7 +328,8 @@ def _comment_lines(text: str, name: str) -> set[int]:
     if suffix == TOML:
         found |= _toml_comment_lines(lines)
     if suffix in C_STYLE:
-        found |= _c_comment_lines(lines, set(found), suffix)
+        source = _blank_jinja_comments(text) if inner != name else text
+        found |= _c_comment_lines(source.splitlines(), suffix)
     return found
 
 
