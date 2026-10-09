@@ -123,6 +123,7 @@
   "identity_groups": [],
   "index_change_ceiling": 20000,
   "level_renames": [],
+  "library_checkout": [],
   "library_folders": [],
   "library_roots": [],
   "list_display_titles": [
@@ -596,7 +597,7 @@
     const missingTargets = ['base_templates', 'list_titles', 'list_markers',
       'declares_seal', 'declares_prevent_deletion', 'declares_column_formatting',
       'declares_form_formatting', 'declares_versioning', 'declares_groups',
-      'list_view_threshold', 'index_change_ceiling',
+      'list_view_threshold', 'index_change_ceiling', 'library_checkout',
     ].filter((k) => !(k in (TARGETS || {})));
     if (missingTargets.length) throw new Error(`assess-targets-incomplete: ctx.targets is missing ${missingTargets.join(', ')}`);
     // And on the collaborators: a probe inside its own try reports an absent one as the site's answer, not a build fault.
@@ -1508,6 +1509,18 @@
         }
       } else if (TARGETS.declares_versioning) {
         finding(2, 'version_trim_mode', 'INFO', 'No existing declared list to read version policy; checked at deploy time.');
+      }
+    }
+
+    // Declared Require Check Out against the live ForceCheckout, read only. INFO
+    // either way: the deploy reconciles it, so a difference here is a plan.
+    for (const [title, declared] of TARGETS.library_checkout) {
+      const r = await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=ForceCheckout`);
+      const key = `library_checkout:${title}`;
+      if (r.ok && typeof r.d.ForceCheckout === 'boolean') {
+        finding(2, key, 'INFO', `Library '${title}' declares require_checkout ${declared}; the site holds ForceCheckout ${r.d.ForceCheckout}${r.d.ForceCheckout === declared ? '' : ', which the deploy will change'}.`);
+      } else {
+        finding(2, key, 'INFO', `Library '${title}' declares require_checkout ${declared}; its ForceCheckout could not be read (${r.ok ? 'no boolean reported' : `HTTP ${r.status || r.error}`}), so the deploy decides.`);
       }
     }
 

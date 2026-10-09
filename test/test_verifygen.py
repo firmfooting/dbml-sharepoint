@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _model import as_library, column
 from _model import bundle as make_bundle
-from _model import column
 from _model import schema as make_schema
 from _model import table as make_table
 from _node import NODE, run_node
@@ -34,6 +34,7 @@ from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
     EntitySection,
+    LibrarySettings,
     ListValidation,
     MappingBundle,
     PermissionsConfig,
@@ -276,6 +277,7 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
     const QUERY_WITHOUT_RESULTS = false;
     const GROUP_MEMBERS = {};
     const GROUP_REPLY = null;
+    const FORCE_CHECKOUT = undefined;
     Date.prototype.getTimezoneOffset = () => -BROWSER_OFFSET;
     const DAY = 86400000;
     const STORED = { rule: null };
@@ -356,6 +358,11 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
           return respond(404, { error: { message: { value: 'no group' } } });
         }
         return respond(200, { d: { results: GROUP_MEMBERS[name] } });
+      }
+      if (u.includes('ForceCheckout')) {
+        return FORCE_CHECKOUT === undefined
+          ? respond(404, { error: { message: { value: 'no list' } } })
+          : respond(200, { d: { ForceCheckout: FORCE_CHECKOUT } });
       }
       if (u.includes('regionalsettings/timezone')) {
         return respond(200, { d: {
@@ -792,6 +799,61 @@ def test_a_hand_built_targets_without_identity_groups_is_refused() -> None:
     js = _writers_verify_js().replace('"identity_groups"', '"identity_groupz"')
     out = _run_verify_full(js, GROUP_MEMBERS=_members([_FLOWS_MEMBER]))
     assert out["verdict"] == "NOT-VERIFIED"
+    assert out["aborted"] == "verification-failed"
+
+
+def _checkout_verify_js(declared: bool) -> str:
+    schema = make_schema(make_table("Docs", column("Title", required=True)))
+    base = as_library(make_bundle(entities=["Docs"]), "Docs")
+    entity = base.mapping.entities["Docs"]
+    bundle = replace(base, mapping=replace(base.mapping, entities={
+        "Docs": replace(entity, settings=LibrarySettings(require_checkout=declared)),
+    }))
+    return generate_verify_js(
+        schema=schema, bundle=bundle, release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test", site_role="default",
+        source_dbml="s.dbml", generated_at="2026-10-09T00:00:00Z",
+    )
+
+
+def test_a_declared_require_checkout_alone_gets_a_verify_script() -> None:
+    schema = make_schema(make_table("Docs", column("Title", required=True)))
+    base = as_library(make_bundle(entities=["Docs"]), "Docs")
+    entity = base.mapping.entities["Docs"]
+    declared = replace(base, mapping=replace(base.mapping, entities={
+        "Docs": replace(entity, settings=LibrarySettings(require_checkout=False)),
+    }))
+    assert verify_targets(schema, declared, "default")["library_settings"] == [
+        {"title": "APP_Docs", "require_checkout": False},
+    ]
+    assert verify_targets(schema, base, "default")["library_settings"] == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_library_holding_the_declared_require_checkout_is_verified() -> None:
+    out = _run_verify_full(_checkout_verify_js(False), FORCE_CHECKOUT="false")
+    assert out["verdict"] == "VERIFIED"
+    assert _no_writes(out)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_library_that_differs_is_a_mismatch_naming_it() -> None:
+    out = _run_verify_full(_checkout_verify_js(False), FORCE_CHECKOUT="true")
+    assert out["verdict"] == "MISMATCH"
+    assert any("'APP_Docs' holds ForceCheckout true" in ln for ln in out["log"])
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("live", ["undefined", '"yes"', "null"])
+def test_an_unreadable_force_checkout_is_not_verified(live: str) -> None:
+    out = _run_verify_full(_checkout_verify_js(False), FORCE_CHECKOUT=live)
+    assert out["verdict"] == "NOT-VERIFIED"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_hand_built_targets_without_library_settings_is_refused() -> None:
+    js = _checkout_verify_js(False).replace('"library_settings"', '"library_settingz"')
+    out = _run_verify_full(js, FORCE_CHECKOUT="false")
     assert out["aborted"] == "verification-failed"
 
 

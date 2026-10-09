@@ -759,6 +759,40 @@
       oldValue: 'enabled', newValue: 'disabled' });
   }
 
+  // Declared "Require Check Out" (library.checkout.force-checkout-merge): a
+  // MERGE of ForceCheckout answered 2xx and read back what it wrote. Null or
+  // absent is unmanaged and reads nothing. The read-back is the control: a 200
+  // that leaves the stored value alone would report a library as locked down
+  // while files still save without a check-out.
+  async function reconcileListForceCheckout(list, digest) {
+    const wanted = list.require_checkout;
+    if (wanted === null || wanted === undefined) return;
+    const fcUrl = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')?$select=ForceCheckout`);
+    const readForceCheckout = async (what) => {
+      const resp = await fetchWithRetry(fcUrl, { headers: { 'Accept': 'application/json;odata=verbose' } });
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`Library '${list.title}' ForceCheckout ${what} failed: HTTP ${resp.status} ${text}`);
+      }
+      const value = (((await resp.json()) || {}).d || {}).ForceCheckout;
+      if (typeof value !== 'boolean') {
+        throw new Error(`Library '${list.title}' ${what} returned no boolean ForceCheckout; this tenant does not expose the property require_checkout needs.`);
+      }
+      return value;
+    };
+    const live = await readForceCheckout('probe');
+    if (live === wanted) return;
+    const owned = await assertDeclaredListOwnedNow(list.title);
+    await patchListById(owned.Id, { __metadata: { type: 'SP.List' }, ForceCheckout: wanted }, digest);
+    const back = await readForceCheckout('read-back');
+    if (back !== wanted) {
+      throw new Error(`Library '${list.title}' did not retain ForceCheckout = ${wanted} (read back ${back})`);
+    }
+    log('INFO', `Library '${list.title}' ForceCheckout set to ${wanted}.`);
+    logChange({ key: `list-setting:${list.title}:ForceCheckout`, kind: 'list-setting', target: list.title,
+      oldValue: String(live), newValue: String(wanted) });
+  }
+
   // Declared ITEM-level trimming: ReadSecurity / WriteSecurity, each 1 ("all
   // items") or 2 ("items created by the user"). They narrow what a LIST-level
   // grant reaches, which is how a drop box is built -- Contribute plus
@@ -910,6 +944,7 @@
     actual = await reconcileListDescription(list, actual, digest);
     await reconcileListItemSecurity(list, digest);
     await reconcileListAttachments(list, digest);
+    await reconcileListForceCheckout(list, digest);
     await reconcileListDeletionBlock(list, digest);
     return actual;
   }

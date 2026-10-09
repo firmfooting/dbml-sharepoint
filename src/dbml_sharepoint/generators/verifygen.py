@@ -30,7 +30,7 @@ from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.analysis.save_rules import joined_list_validation
 from dbml_sharepoint.model.conditions import Group, Leaf
 from dbml_sharepoint.model.identities import IdentityValue
-from dbml_sharepoint.model.mapping_types import ColumnValidation, MappingBundle
+from dbml_sharepoint.model.mapping_types import ColumnValidation, Mapping, MappingBundle
 from dbml_sharepoint.model.parser import Schema
 from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
@@ -252,6 +252,18 @@ def _not_after_now(row: _Row) -> bool:
     return bool(value["kind"] == "midnight" and row["day"] is not None and row["day"] <= 0)
 
 
+def _library_settings(mapping: Mapping, table_names: list[str]) -> list[dict[str, Any]]:
+    """Each declared `require_checkout`, by deployed title; an unmanaged one is left out."""
+    declared = []
+    for name in table_names:
+        settings = mapping.entities[name].settings
+        if settings is not None and settings.require_checkout is not None:
+            declared.append({
+                "title": mapping.list_title(name), "require_checkout": settings.require_checkout,
+            })
+    return declared
+
+
 @guards_resolution
 def verify_targets(
     schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping,
@@ -294,6 +306,7 @@ def verify_targets(
         "rows": [{k: v for k, v in row.items() if k != "day"} for row in targets.rows.values()],
         "checks": targets.checks,
         "rule": rule,
+        "library_settings": _library_settings(mapping, table_names),
         # Values travel here for the standalone script only; the script logs names, never values.
         "identity_groups": as_json(enrolment_plan(bundle, resolved, identities)),
     }
