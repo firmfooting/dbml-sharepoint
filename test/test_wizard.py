@@ -3947,11 +3947,13 @@ def test_a_template_with_a_dangling_link_is_refused_before_writing(
     assert not destination.exists()
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="named pipes are a POSIX node")
 def test_a_template_with_a_special_file_is_refused_before_writing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A FIFO is neither a file nor a directory, so the copy would fail part-way on it."""
+    # Named pipes are a POSIX node; pyrefly narrows os.mkfifo only under this check.
+    if sys.platform == "win32":
+        pytest.skip("named pipes are a POSIX node")
     solution = _fake_family(tmp_path / "fake")
     os.mkfifo(solution.root / "pipe")
     _offer_only(monkeypatch, solution)
