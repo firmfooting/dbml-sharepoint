@@ -2,15 +2,18 @@
 
 from pathlib import Path
 
-from _packs import blocks, entities, write_mapping
+from _builders import ID_PK, TITLE, table
+from _packs import blocks, entities, pack, write_mapping
 
 from dbml_sharepoint.analysis.enrolment import (
     GroupEnrolment,
     as_json,
     enrolment_plan,
 )
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.model.identities import describe_identity, parse_values
 from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.parser import parse_dbml
 
 _BODY = """
     groups:
@@ -29,8 +32,14 @@ _BODY = """
 
 def _plan(tmp_path: Path, **values: str) -> tuple[GroupEnrolment, ...]:
     write_mapping(tmp_path, blocks(entities("Project"), _BODY), name="mapping.yaml")
-    mapping = load_mapping(tmp_path / "mapping.yaml").mapping
-    return enrolment_plan(mapping, {k: parse_values(k, v) for k, v in values.items()})
+    bundle = load_mapping(tmp_path / "mapping.yaml")
+    dbml = table("Project", ID_PK, TITLE)
+    (tmp_path / "s.dbml").write_text(dbml, encoding="utf-8", newline="\n")
+    schema = parse_dbml(tmp_path / "s.dbml")
+    return enrolment_plan(
+        bundle, resolve(schema, bundle.mapping),
+        {k: parse_values(k, v) for k, v in values.items()},
+    )
 
 
 def test_a_group_whose_identities_have_no_values_is_left_out(tmp_path: Path) -> None:
@@ -59,3 +68,26 @@ def test_the_json_shape_the_templates_read(tmp_path: Path) -> None:
             "values": [{"kind": "user", "value": "flows@example.com", "owners": False}],
         }],
     }]
+
+
+def test_a_single_member_enum_group_is_named_as_it_is_deployed(tmp_path: Path) -> None:
+    schema, bundle = pack(
+        tmp_path,
+        dbml='Enum division {\n  "Field operations"\n}\n' + table("Docs", ID_PK, TITLE),
+        mapping="""
+            entities:
+              Docs: { kind: List, base_template: 100, site_role: default }
+
+            groups:
+              - from_enum: division
+                name: "{member} Editors"
+                description: "Editors."
+                owner_group: "Site Owners"
+                enroll: [automation]
+        """,
+    )
+    plan = enrolment_plan(
+        bundle, resolve(schema, bundle.mapping),
+        {"automation": parse_values("automation", "user:flows@example.com")},
+    )
+    assert [g.group for g in plan] == ["Field operations Editors"]

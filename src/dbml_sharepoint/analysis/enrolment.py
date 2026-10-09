@@ -9,9 +9,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from dbml_sharepoint.analysis.groups import declaring_groups
+from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.model.identities import IdentityValue, MembershipMode, describe_identity
-from dbml_sharepoint.model.mapping_types import Mapping
+from dbml_sharepoint.model.mapping_types import MappingBundle
 
 _CEILINGS: dict[str, Literal["reader", "automation"]] = {
     "enterprise_reader": "reader", "automation": "automation",
@@ -34,11 +34,14 @@ class GroupEnrolment:
     during_run: tuple[str, ...]
 
 
+@guards_resolution
 def enrolment_plan(
-    mapping: Mapping, identities: AbcMapping[str, tuple[IdentityValue, ...]],
+    bundle: MappingBundle, resolved: ResolvedMapping,
+    identities: AbcMapping[str, tuple[IdentityValue, ...]],
 ) -> tuple[GroupEnrolment, ...]:
+    # Resolved groups, not declarations: a `{member}` template name matches no deployed group.
     plan = []
-    for grp in declaring_groups(mapping.permissions):
+    for grp in resolved.groups:
         rows = tuple(
             EnrolmentRow(
                 identity=name, ceiling=_CEILINGS.get(name),

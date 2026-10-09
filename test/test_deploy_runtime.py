@@ -5110,6 +5110,7 @@ def _identity_deploy_js(
     identities: dict[str, str],
     *,
     mapping: str = "sharepoint-mapping-with-reader.yaml",
+    dbml: str = "simple.dbml",
     sidecars: bool = False,
 ) -> str:
     """deploy.js for `mapping`, built with `identities` (name to raw value).
@@ -5140,7 +5141,7 @@ def _identity_deploy_js(
         "sidecar_change_log_marker": change_log_marker(),
         "sidecar_change_fields": list(CHANGE_FIELDS),
     }
-    schema = parse_dbml(FIXTURES / "simple.dbml")
+    schema = parse_dbml(FIXTURES / dbml)
     bundle = load_mapping(FIXTURES / mapping)
     return _without_assessment(generate_deploy_js(
         schema=schema,
@@ -5224,6 +5225,7 @@ def _reader_harness(
     drop_readback: bool = False,
     ensure_status: int = 200,
     add_status: int = 200,
+    remove_status: int = 200,
     stray_on_write: dict[str, Any] | None = None,
     stray_after_read: dict[str, Any] | None = None,
     read_bitmap: dict[str, str] | None = _BUILT_IN_READ_BITMAP,
@@ -5301,6 +5303,7 @@ def _reader_harness(
         const ENSURED_BY = __ENSURE_USER__;
         const ENSURE_STATUS = __ENSURE_STATUS__;
         const ADD_STATUS = __ADD_STATUS__;
+        const REMOVE_STATUS = __REMOVE_STATUS__;
         const ensuredFor = (body) => {
           const asked = JSON.parse(body || '{}').logonName;
           return ENSURED_BY.LoginName !== undefined ? ENSURED_BY : ENSURED_BY[asked];
@@ -5413,6 +5416,12 @@ def _reader_harness(
           // branch throws `JSON.parse(undefined)` instead of modelling the
           // removal.
           const removed = /sitegroups\(\d+\)\/users\/removebyid\((\d+)\)/.exec(u);
+          if (removed && method === 'POST' && REMOVE_STATUS !== 200) {
+            calls.push({ url: u, method, body: null });
+            const payload = { error: { code: 'remove refused' } };
+            return { ok: false, status: REMOVE_STATUS, headers: { get: () => null },
+                     json: async () => payload, text: async () => JSON.stringify(payload) };
+          }
           if (removed && method === 'POST') {
             const removedId = Number(removed[1]);
             for (const page of READER_MEMBER_PAGES) {
@@ -5520,6 +5529,8 @@ def _reader_harness(
     ).replace(
         "__ADD_STATUS__", str(add_status),
     ).replace(
+        "__REMOVE_STATUS__", str(remove_status),
+    ).replace(
         "__MEMBER_PAGES__", json.dumps(pages),
     ).replace(
         "__DROP_READBACK__", "true" if drop_readback else "false",
@@ -5585,9 +5596,11 @@ def _run_identity_deploy(
     ensure_user: dict[str, Any],
     *,
     mapping: str = "sharepoint-mapping-with-reader.yaml",
+    dbml: str = "simple.dbml",
     edit_js: Callable[[str], str] | None = None,
     ensure_status: int = 200,
     add_status: int = 200,
+    remove_status: int = 200,
     members: list[dict[str, Any]] | None = None,
     member_pages: list[list[dict[str, Any]]] | None = None,
     drop_readback: bool = False,
@@ -5614,6 +5627,7 @@ def _run_identity_deploy(
     """
     script = _reader_harness(
         ensure_user, ensure_status=ensure_status, add_status=add_status,
+        remove_status=remove_status,
         members=members, member_pages=member_pages,
         drop_readback=drop_readback, stray_on_write=stray_on_write,
         stray_after_read=stray_after_read, read_bitmap=read_bitmap,
@@ -5624,7 +5638,9 @@ def _run_identity_deploy(
     )
     if sidecars:
         script = _with_sidecar_descriptions(script)
-    deploy_js = _identity_deploy_js(identities, mapping=mapping, sidecars=sidecars)
+    deploy_js = _identity_deploy_js(
+        identities, mapping=mapping, dbml=dbml, sidecars=sidecars,
+    )
     script = script + "\n" + (edit_js(deploy_js) if edit_js else deploy_js).replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
@@ -5714,6 +5730,7 @@ def test_an_additive_group_that_already_holds_the_account_still_warns() -> None:
     summary, calls, output = _run_writers(_FLOWS, members=[_FLOWS, _OTHER])
     assert not _identity_errors(summary), summary
     assert _membership_writes(calls) == []
+    assert not _removals(calls), _removals(calls)
     assert any("unmanaged" in line and "other@example.com" in line
                for line in _warnings(output)), output[-2000:]
 
@@ -5725,6 +5742,7 @@ def test_an_extra_on_the_second_page_still_aborts() -> None:
         _RESOLVED_USER, member_pages=[[], [_OTHER]],
     )
     assert _membership_writes(calls) == []
+    assert not _removals(calls), _removals(calls)
     assert summary.get("aborted") == "identity-enrolment-errors", summary
 
 
@@ -5784,6 +5802,80 @@ def test_a_tenant_wide_claim_is_refused_for_an_automation_value() -> None:
     summary, calls, _ = _run_writers(claim)
     assert summary.get("aborted") == "identity-enrolment-errors", summary
     assert _membership_writes(calls) == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_single_member_enum_group_is_enrolled_under_its_deployed_name() -> None:
+    """The plan is keyed by the generated name, not the `{member}` template."""
+    summary, calls, _ = _run_writers(
+        _FLOWS, mapping="sharepoint-mapping-enum-writers.yaml", dbml="simple-one-division.dbml",
+    )
+    assert not _identity_errors(summary), summary
+    assert [w["LoginName"] for w in _membership_writes(calls)] == [_FLOWS["LoginName"]]
+
+
+_OPERATOR_AS_AUTOMATION = {
+    **_OPERATOR_MEMBER, "Email": "probe@example.com", "PrincipalType": 1,
+}
+
+
+def _run_operator_is_automation(**kwargs: Any) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    """The account running the deploy is also the group's declared automation account."""
+    return _run_identity_deploy(
+        {"automation": "user:probe@example.com"}, _OPERATOR_AS_AUTOMATION,
+        mapping="sharepoint-mapping-writers-and-operator.yaml", **kwargs,
+    )
+
+
+def _removals_of(calls: list[dict[str, Any]], user_id: int) -> list[dict[str, Any]]:
+    return [c for c in calls if f"removebyid({user_id})" in c["url"]]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_declared_account_the_operator_phase_added_survives_a_run_that_ends() -> None:
+    """`runReachedTheEnd` is forced true to stand in for a finished run, which
+    the mock cannot reach; the declared membership must then be kept, not
+    removed with the operator's run-scoped one."""
+    summary, calls, _ = _run_operator_is_automation(
+        edit_js=lambda js: js.replace(
+            "let runReachedTheEnd = false;", "let runReachedTheEnd = true;", 1,
+        ),
+    )
+    assert not _identity_errors(summary), summary
+    assert _removals_of(calls, _OPERATOR_MEMBER["Id"]) == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_declared_account_the_operator_phase_added_is_removed_when_the_run_aborts() -> None:
+    summary, calls, output = _run_operator_is_automation()
+    assert summary.get("aborted") not in (None, "identity-enrolment-errors"), summary
+    assert len(_removals_of(calls, _OPERATOR_MEMBER["Id"])) == 1
+    assert "Removed automation" in output, output[-2000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_failed_removal_of_an_identity_enrolment_is_reported() -> None:
+    """The drain's own failure branch: the log names the account left behind."""
+    _, calls, output = _run_writers(_FLOWS, remove_status=403)
+    assert any("removebyid" in c["url"] for c in calls)
+    assert "Could not remove automation from" in output, output[-2000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_throw_while_draining_identity_enrolments_is_reported_in_the_summary() -> None:
+    """The outer catch around the drain: a throw that escapes the per-entry catch."""
+    summary, _, output = _run_writers(
+        _FLOWS, edit_js=lambda js: js.replace(
+            "for (const enrollment of identityEnrollments.splice(0)) {",
+            "throw new Error('drain broke');\n"
+            "    for (const enrollment of identityEnrollments.splice(0)) {",
+            1,
+        ),
+    )
+    assert any(
+        e.get("phase") == "exit" and "drain broke" in e["error"] for e in summary["errors"]
+    ), summary["errors"]
+    assert "Could not remove the enrolled identities on exit" in output
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

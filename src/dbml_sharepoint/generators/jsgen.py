@@ -158,7 +158,7 @@ def generate_deploy_js(
         unmanaged_sentinel=UNMANAGED,
         # Whether any enterprise_reader value is enrolled; the logging phase mirrors its grant.
         reader_enrolled=bool(identities.get("enterprise_reader")),
-        identity_enrolment=as_json(enrolment_plan(bundle.mapping, identities)),
+        identity_enrolment=as_json(enrolment_plan(bundle, resolved, identities)),
         # #199: the bitmap the enrolment phase requires of the level behind
         # the reader's grant, and the two bits it only warns about. Emitted
         # from analysis.permissions rather than written into the template, so

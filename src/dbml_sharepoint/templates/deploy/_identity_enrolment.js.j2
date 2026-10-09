@@ -509,6 +509,19 @@
           }
         }
 
+        // The operator the earlier phase added, when it is also a declared account here,
+        // becomes this phase's membership: kept when the run ends, drained only on abort.
+        for (const r of resolvedRows) {
+          const at = selfEnrollments.findIndex(
+            (e) => e.groupName === plan.group && Number(e.userId) === Number(r.principal.Id));
+          if (at === -1) continue;
+          const [entry] = selfEnrollments.splice(at, 1);
+          identityEnrollments.push({
+            groupId: entry.groupId, groupName: plan.group,
+            identity: r.row.identity, userId: entry.userId,
+          });
+        }
+
         // 6. Membership, enumerated in full (every page): a stranger on a page
         // this loop never fetched would read as an empty group.
         const readMembers = async () => {
