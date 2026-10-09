@@ -7,7 +7,11 @@ from typing import Any, cast
 from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
 from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
-from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
+from dbml_sharepoint.model.errors import (
+    LibrarySettingNotYetSupported,
+    MappingShapeError,
+    MappingValueError,
+)
 from dbml_sharepoint.model.mapping_types import (
     ENTITY_KINDS,
     EntityKind,
@@ -38,6 +42,12 @@ def read(sc: SectionContext) -> dict[str, Any]:
     for name, spec in _require_mapping(
         sc.required("entities"), "entities", allow_absent=False,
     ).items():
+        if isinstance(spec, dict) and "settings" in spec:
+            raise LibrarySettingNotYetSupported(
+                f"entities.{name}.settings (require_checkout) is refused until a sandbox "
+                "probe shows the deploy can write and read back ForceCheckout; set "
+                "'Require check out' by hand in the library settings meanwhile",
+            )
         _reject_unknown_keys(spec, _ENTITY_KEYS, f"entities.{name}")
         raw_kind: object = spec.get("kind")
         entities[name] = EntityMapping(

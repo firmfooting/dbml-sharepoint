@@ -64,7 +64,7 @@ Every group DECLARATION: the literal groups and the enum templates.
 
 `{member}` is unexpanded, so these are not the groups a site ends up
 with and must not be used to write one. It answers the questions about
-what a mapping DECLARES -- does anything carry `enroll_enterprise_reader`,
+what a mapping DECLARES -- does any group `enroll` enterprise_reader,
 does this mapping declare groups at all -- which is the only kind a
 caller holding no schema can ask, and the CLI asks several of them
 before validation has run.

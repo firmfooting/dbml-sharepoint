@@ -492,6 +492,30 @@ class CustomPermissionLevel:
 
 A custom permission level to create at the site.
 
+### `LegacyFlag`
+
+```python
+@dataclass(frozen=True)
+class LegacyFlag:
+    flag: str
+    identity: str
+    also_declared: bool
+```
+
+A deprecated enrolment boolean the loader translated.
+
+### `IdentityDeclaration`
+
+```python
+@dataclass(frozen=True)
+class IdentityDeclaration:
+    name: str
+    description: str
+    kinds: tuple[str, ...] = ('user',)
+```
+
+`identities.<name>`: an account slot this mapping declares and a build fills.
+
 ### `SiteGroup`
 
 ```python
@@ -505,8 +529,10 @@ class SiteGroup:
     auto_accept_request_to_join_leave: bool
     only_allow_members_view_membership: bool
     require_empty_at_deploy: bool = False
-    enroll_operator_during_deploy: bool = False
-    enroll_enterprise_reader: bool = False
+    enroll: tuple[str, ...] = ()
+    enroll_during_run: tuple[str, ...] = ()
+    membership: MembershipMode = 'additive'
+    legacy_flags: tuple[dbml_sharepoint.model.mapping_types.LegacyFlag, ...] = ()
     renamed_from: tuple[str, ...] = ()
     previous_names: tuple[str, ...] = ()
 ```
@@ -665,6 +691,7 @@ class Mapping:
     retention_policies_source: pathlib.Path | None = None
     extension: str | None = None
     permissions: PermissionsConfig | None = None
+    identities: dict[str, dbml_sharepoint.model.mapping_types.IdentityDeclaration] = field(default_factory=dict)
     previous_prefixes: tuple[str, ...] = ()
     calculated_formulas: dict[str, dict[str, str]] = field(default_factory=dict)
     default_formulas: dict[str, dict[str, str]] = field(default_factory=dict)

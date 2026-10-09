@@ -2072,7 +2072,6 @@ def test_a_group_owned_by_an_undeclared_group_is_an_error() -> None:
                     auto_accept_request_to_join_leave=False,
                     only_allow_members_view_membership=False,
                     require_empty_at_deploy=False,
-                    enroll_operator_during_deploy=False,
                 )],
                 default_policy=None,
                 overrides={},
@@ -2089,7 +2088,7 @@ def _reader_findings(
     *, require_empty: bool = False, level: str | None = "Read",
     second_reader: bool = False, override_level: str | None = None,
     enroll_operator: bool = False, members_edit: bool = False,
-    trim_reads: bool = False,
+    trim_reads: bool = False, membership: Literal["additive", "exclusive"] = "exclusive",
 ) -> list[Finding]:
     """One correctly-shaped mapping with a single knob turned per test.
 
@@ -2110,8 +2109,8 @@ def _reader_findings(
             auto_accept_request_to_join_leave=False,
             only_allow_members_view_membership=False,
             require_empty_at_deploy=require_empty,
-            enroll_operator_during_deploy=enroll_operator,
-            enroll_enterprise_reader=True,
+            enroll=("enterprise_reader",), membership=membership,
+            enroll_during_run=("operator",) if enroll_operator else (),
         )
 
     groups = [reader("XX Enterprise Readers")]
@@ -2154,39 +2153,69 @@ def _reader_findings(
 
 
 def test_a_reader_group_that_must_be_empty_is_refused() -> None:
-    """The two flags contradict each other across runs.
-
-    `require_empty_at_deploy` is proved in Phase 1.3; the reader is enrolled
-    in Phase 1.5 and stays. So the run that enrols the reader succeeds and
-    the NEXT one aborts on its own gate -- on a site nobody touched, which
-    is the worst shape a failure can take.
-    """
+    """The empty gate runs before enrolment, so the second deploy always aborts."""
     only(
         _reader_findings(require_empty=True),
-        FindingCode.ENTERPRISE_READER_GROUP_REQUIRES_EMPTY,
+        FindingCode.ENROLLING_GROUP_REQUIRES_EMPTY,
     )
 
 
 def test_a_reader_group_that_also_enrols_the_operator_is_refused() -> None:
-    """The two enrolment flags on ONE group deadlock the deploy.
-
-    Phase 1.4 adds the pasting operator to a group flagged
-    `enroll_operator_during_deploy`. Phase 1.5 aborts the run when the
-    reader group holds any principal other than the named reader. Put both
-    flags on one group and 1.4 manufactures exactly what 1.5 refuses, so
-    every deploy fails -- on a correct address, for a reason nothing in the
-    mapping states.
-
-    There is no legitimate use to weigh against that:
-    `enterprise_reader_group_over_privileged` already holds a reader group
-    to `Read`, and an operator self-enrols precisely in order to write.
-    """
+    """Phase 1.4 adds the operator, then Phase 1.5 finds an extra and aborts."""
     finding = only(
         _reader_findings(enroll_operator=True),
-        FindingCode.ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR,
+        FindingCode.EXCLUSIVE_GROUP_ENROLS_THE_OPERATOR,
     )
     assert finding.severity == "error"
     assert "XX Enterprise Readers" in finding.message
+
+
+def test_a_reader_group_that_is_not_exclusive_is_refused() -> None:
+    """Additive would let a second reader in silently; step 7's guard needs exclusive."""
+    only(
+        _reader_findings(membership="additive"),
+        FindingCode.ENTERPRISE_READER_GROUP_NOT_EXCLUSIVE,
+    )
+
+
+def _exclusive_findings(*, enroll: tuple[str, ...], require_empty: bool = False) -> list[Finding]:
+    group = SiteGroup(
+        name="XX Flow Service", description="", owner_group="Site Owners",
+        allow_members_edit_membership=False, allow_request_to_join_leave=False,
+        auto_accept_request_to_join_leave=False,
+        only_allow_members_view_membership=True,
+        require_empty_at_deploy=require_empty,
+        enroll=enroll, membership="exclusive",
+    )
+    return validate_against_mapping(
+        make_schema(make_table("Risk")),
+        make_bundle(
+            entities=["Risk"],
+            permissions=PermissionsConfig(
+                levels=[], groups=[group],
+                default_policy=ListPermissionPolicy(
+                    break_inheritance=True, reconcile_mode="exact",
+                    assignments=(RoleAssignment(
+                        principal=Principal(kind="group", name=group.name),
+                        level="Contribute",
+                    ),),
+                ),
+                overrides={},
+            ),
+        ),
+    )
+
+
+def test_an_exclusive_group_with_nobody_to_enrol_is_refused() -> None:
+    """require_empty_at_deploy already says 'nobody'; exclusive with no enroll is a typo."""
+    only(_exclusive_findings(enroll=()), FindingCode.EXCLUSIVE_GROUP_ENROLS_NOBODY)
+
+
+def test_an_enrolling_group_that_must_be_empty_is_refused() -> None:
+    only(
+        _exclusive_findings(enroll=("automation",), require_empty=True),
+        FindingCode.ENROLLING_GROUP_REQUIRES_EMPTY,
+    )
 
 
 def test_two_reader_groups_are_refused() -> None:
@@ -2332,11 +2361,11 @@ def test_a_reader_group_whose_members_may_edit_membership_is_refused() -> None:
 def test_a_correctly_declared_reader_group_is_clean() -> None:
     """The shape the shipped mappings write must pass every reader rule."""
     findings = _reader_findings()
-    none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_REQUIRES_EMPTY)
+    none_of(findings, FindingCode.ENROLLING_GROUP_REQUIRES_EMPTY)
     none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED)
     none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED)
     none_of(findings, FindingCode.MULTIPLE_ENTERPRISE_READER_GROUPS)
-    none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR)
+    none_of(findings, FindingCode.EXCLUSIVE_GROUP_ENROLS_THE_OPERATOR)
     none_of(
         findings,
         FindingCode.ENTERPRISE_READER_GROUP_MEMBERS_MAY_EDIT_MEMBERSHIP,
@@ -2345,6 +2374,7 @@ def test_a_correctly_declared_reader_group_is_clean() -> None:
 
 def _automation_findings(
     *, level: str = "Contribute", override_level: str | None = None,
+    name: str = AUTOMATION_GROUP_NAME, enroll: tuple[str, ...] = (),
 ) -> list[Finding]:
     """A mapping declaring the automation group and granting it `level`.
 
@@ -2354,11 +2384,12 @@ def _automation_findings(
     only way to reach the override path.
     """
     group = SiteGroup(
-        name=AUTOMATION_GROUP_NAME, description="", owner_group="Site Owners",
+        name=name, description="", owner_group="Site Owners",
         allow_members_edit_membership=False,
         allow_request_to_join_leave=False,
         auto_accept_request_to_join_leave=False,
         only_allow_members_view_membership=True,
+        enroll=enroll,
     )
     overrides = {} if override_level is None else {
         "Risk": ListPermissionPolicy(
@@ -2407,6 +2438,15 @@ def test_the_automation_group_granted_full_control_is_refused() -> None:
     )
     assert finding.severity == "error"
     assert AUTOMATION_GROUP_NAME in finding.message
+
+
+def test_a_group_enrolling_automation_granted_full_control_is_refused() -> None:
+    """Keyed on the identity, not the group's name (the spec's validator table)."""
+    finding = only(
+        _automation_findings(level="Full Control", name="XX Writers", enroll=("automation",)),
+        FindingCode.AUTOMATION_GROUP_GRANTED_FULL_CONTROL,
+    )
+    assert "XX Writers" in finding.message
 
 
 def test_the_automation_group_over_privileged_by_an_override_is_refused() -> None:

@@ -119,7 +119,7 @@ def test_an_operator_membership_read_without_results_enrols_nobody() -> None:
     """Read as empty, the operator was added to a group it may already be in,
     and the end of the run then removed a membership it did not grant."""
     js = _deploy_js()
-    flag = '"enroll_operator_during_deploy": false'
+    flag = '"enroll_during_run": []'
     assert flag in js
     harness = _ADOPTED_HARNESS.replace(
         "const KNOWN_GROUP_NAMES = [];", 'const KNOWN_GROUP_NAMES = ["List Maintainer"];',
@@ -127,7 +127,7 @@ def test_an_operator_membership_read_without_results_enrols_nobody() -> None:
     summary, calls, output = _run_capturing_calls(
         # The mock does not model this read, so the whole answer is supplied.
         harness + malformed(("/users?$filter=Id eq",), "payload = { d: {} };"),
-        js.replace(flag, '"enroll_operator_during_deploy": true', 1),
+        js.replace(flag, '"enroll_during_run": ["operator"]', 1),
     )
     assert "SHAPE_INJECTED" in output, output[-4000:]
     assert any("Membership probe for" in e and _NAMED in e for e in _errors(summary)), (

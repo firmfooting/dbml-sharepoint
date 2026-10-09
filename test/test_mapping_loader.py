@@ -17,6 +17,7 @@ from dbml_sharepoint.analysis.findings import Finding, FindingCode
 from dbml_sharepoint.analysis.validator import validate_against_mapping
 from dbml_sharepoint.model import _yaml, errors, mapping_types
 from dbml_sharepoint.model.errors import (
+    LibrarySettingNotYetSupported,
     MappingError,
     MappingReferenceError,
     MappingShapeError,
@@ -31,9 +32,11 @@ from dbml_sharepoint.model.mapping_types import (
     FoldersFromEnum,
     FormVisibility,
     ItemSecurity,
+    LegacyFlag,
     ListPermissionPolicy,
     MappingBundle,
     RetiredColumn,
+    SiteGroup,
     Versioning,
 )
 from dbml_sharepoint.model.reading import strict_str
@@ -296,7 +299,7 @@ def test_a_group_can_declare_itself_the_enterprise_reader_target(
 
     bundle = load_mapping(tmp_path / "mapping.yaml")
     assert bundle.mapping.permissions is not None
-    assert bundle.mapping.permissions.groups[0].enroll_enterprise_reader is True
+    assert bundle.mapping.permissions.groups[0].enroll == ("enterprise_reader",)
 
 
 def test_enterprise_reader_enrolment_defaults_to_false(tmp_path: Path) -> None:
@@ -308,7 +311,7 @@ def test_enterprise_reader_enrolment_defaults_to_false(tmp_path: Path) -> None:
 
     bundle = load_mapping(tmp_path / "mapping.yaml")
     assert bundle.mapping.permissions is not None
-    assert bundle.mapping.permissions.groups[0].enroll_enterprise_reader is False
+    assert "enterprise_reader" not in bundle.mapping.permissions.groups[0].enroll
 
 
 def test_enterprise_reader_enrolment_requires_boolean(tmp_path: Path) -> None:
@@ -877,8 +880,8 @@ def test_enroll_operator_during_deploy_defaults_false_and_parses_true(tmp_path: 
     perms = bundle.mapping.permissions
     assert perms is not None
     groups = {g.name: g for g in perms.groups}
-    assert groups["GH List Administrators"].enroll_operator_during_deploy is True
-    assert groups["GH Automation"].enroll_operator_during_deploy is False
+    assert groups["GH List Administrators"].enroll_during_run == ("operator",)
+    assert groups["GH Automation"].enroll_during_run == ()
 
 
 # --- Declared views ---------------------------------------------------------
@@ -5724,3 +5727,154 @@ def test_a_spelling_yaml_1_1_read_otherwise_loads_as_the_text_yaml_1_2_reads(
     read it as a boolean. The loader reads what it is given as YAML 1.2, and
     the validator judges the names it then carries."""
     load_mapping(write_mapping(tmp_path, body))
+
+
+def _groups(tmp_path: Path, body: str) -> list[SiteGroup]:
+    write_mapping(tmp_path, blocks(entities("Project"), body), name="mapping.yaml")
+    perms = load_mapping(tmp_path / "mapping.yaml").mapping.permissions
+    assert perms is not None
+    return list(perms.groups)
+
+
+def test_identities_are_declared_with_a_description_and_default_to_users(
+    tmp_path: Path,
+) -> None:
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        identities:
+          records_clerk:
+            description: "The account that files incoming correspondence."
+          intake:
+            description: "The intake mailbox's account."
+            kinds: [user, security_group]
+    """), name="mapping.yaml")
+    declared = load_mapping(tmp_path / "mapping.yaml").mapping.identities
+    assert declared["records_clerk"].kinds == ("user",)
+    assert declared["records_clerk"].description.startswith("The account")
+    assert declared["intake"].kinds == ("user", "security_group")
+
+
+def test_an_identity_needs_a_description(tmp_path: Path) -> None:
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        identities:
+          records_clerk:
+            kinds: [user]
+    """), name="mapping.yaml")
+    _refuses(tmp_path / "mapping.yaml", MappingShapeError, "description")
+
+
+def test_an_identity_key_the_loader_does_not_read_is_refused(tmp_path: Path) -> None:
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        identities:
+          records_clerk:
+            description: "x"
+            value: "user:clerk@example.com"
+    """), name="mapping.yaml")
+    _refuses(tmp_path / "mapping.yaml", UnknownMappingKeyError)
+
+
+def test_a_group_reads_enroll_enroll_during_run_and_membership(tmp_path: Path) -> None:
+    (writers, admins) = _groups(tmp_path, """
+        groups:
+          - name: "Writers"
+            enroll: [automation, records_clerk]
+            membership: exclusive
+          - name: "Admins"
+            enroll_during_run: [operator]
+    """)
+    assert writers.enroll == ("automation", "records_clerk")
+    assert writers.membership == "exclusive"
+    assert admins.enroll_during_run == ("operator",)
+    assert admins.membership == "additive"
+
+
+def test_a_membership_word_outside_the_vocabulary_is_refused(tmp_path: Path) -> None:
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        groups:
+          - name: "Writers"
+            enroll: [automation]
+            membership: authoritative
+    """), name="mapping.yaml")
+    _refuses(tmp_path / "mapping.yaml", MappingValueError, "membership")
+
+
+def test_an_identity_enrolled_twice_in_one_group_is_refused(tmp_path: Path) -> None:
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        groups:
+          - name: "Writers"
+            enroll: [automation, automation]
+    """), name="mapping.yaml")
+    _refuses(tmp_path / "mapping.yaml", MappingValueError, "automation")
+
+
+def test_the_reader_flag_loads_as_an_exclusive_reader_enrolment(tmp_path: Path) -> None:
+    (reader,) = _groups(tmp_path, """
+        groups:
+          - name: "Readers"
+            enroll_enterprise_reader: true
+    """)
+    assert reader.enroll == ("enterprise_reader",)
+    # The alias must keep step 7's guard.
+    assert reader.membership == "exclusive"
+    assert reader.legacy_flags == (
+        LegacyFlag("enroll_enterprise_reader", "enterprise_reader", also_declared=False),
+    )
+
+
+def test_the_reader_flag_keeps_an_explicit_membership(tmp_path: Path) -> None:
+    (reader,) = _groups(tmp_path, """
+        groups:
+          - name: "Readers"
+            enroll_enterprise_reader: true
+            membership: additive
+    """)
+    # ENTERPRISE_READER_GROUP_NOT_EXCLUSIVE refuses this at validation.
+    assert reader.membership == "additive"
+
+
+def test_the_operator_flag_loads_as_a_run_enrolment(tmp_path: Path) -> None:
+    (admins,) = _groups(tmp_path, """
+        groups:
+          - name: "Admins"
+            enroll_operator_during_deploy: true
+    """)
+    assert admins.enroll_during_run == ("operator",)
+    assert admins.legacy_flags == (
+        LegacyFlag("enroll_operator_during_deploy", "operator", also_declared=False),
+    )
+
+
+def test_an_old_flag_beside_its_new_key_is_recorded_once(tmp_path: Path) -> None:
+    (reader,) = _groups(tmp_path, """
+        groups:
+          - name: "Readers"
+            enroll_enterprise_reader: true
+            enroll: [enterprise_reader]
+            membership: exclusive
+    """)
+    assert reader.enroll == ("enterprise_reader",)
+    assert reader.legacy_flags[0].also_declared is True
+
+
+def test_an_enum_template_carries_its_enrolment_keys(tmp_path: Path) -> None:
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        groups:
+          - name: "{member} Writers"
+            from_enum: division
+            enroll: [automation]
+    """), name="mapping.yaml")
+    perms = load_mapping(tmp_path / "mapping.yaml").mapping.permissions
+    assert perms is not None
+    assert perms.group_sources[0].template.enroll == ("automation",)
+
+
+def test_library_settings_are_refused_until_the_probe_passes(tmp_path: Path) -> None:
+    write_mapping(tmp_path, """
+        entities:
+          Document:
+            kind: DocumentLibrary
+            base_template: 101
+            site_role: default
+            settings:
+              require_checkout: false
+    """, name="mapping.yaml")
+    _refuses(tmp_path / "mapping.yaml", LibrarySettingNotYetSupported, "require_checkout")

@@ -1241,7 +1241,7 @@ class _TemplateFacts:
     #: dead end, which exits zero and says nothing.
     demo_roles: frozenset[str]
     #: `execute_build` refuses `--enterprise-reader` outright against a
-    #: mapping declaring no `enroll_enterprise_reader` group. Same reason.
+    #: mapping with no group whose `enroll` names enterprise_reader. Same reason.
     reader_group: bool
     entity_titles: tuple[tuple[str, str], ...] = ()
 
@@ -1415,7 +1415,7 @@ def _read_facts(solution: Solution) -> _TemplateFacts:
             if rows and name in bundle.mapping.entities
         ),
         reader_group=any(
-            g.enroll_enterprise_reader
+            "enterprise_reader" in g.enroll
             for g in declaring_groups(permissions)
         ),
     )

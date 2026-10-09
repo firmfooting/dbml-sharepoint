@@ -166,7 +166,7 @@ ban-relative-imports = "all"
 # which measures them with this same ruff rather than restating them:
 #   `_formatting.py::check` at 54
 #   `_views.py::check` at 53
-#   `_permissions.py::check` at 39
+#   `_permissions.py::check` at 42
 # They were prose once, and three of the four numbers had rotted (#311).
 
 # Two functions left the three on 2026-09-13 with #14. `jsgen.py::build_schema_json`
@@ -181,7 +181,7 @@ ban-relative-imports = "all"
 # for its own sake -- the guard the same change added to the index-exposure
 # check would otherwise have pushed 61 to 62.
 
-# Deliberately NOT the default of 10. That flags 32 functions at once, which
+# Deliberately NOT the default of 10. That flags 33 functions at once, which
 # blocks every unrelated change until a large refactor lands -- so it would be
 # turned off again within a week, and the rule would teach nothing.
 max-complexity = 54

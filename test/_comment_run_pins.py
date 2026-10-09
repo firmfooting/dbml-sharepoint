@@ -59,7 +59,6 @@ PINNED: dict[str, list[str]] = {
     "src/dbml_sharepoint/analysis/checks/_permissions.py": [
         "84a9cd1e0131",
         "95fb8a352a0a",
-        "eb997507f1b3",
         "f2d15704e95b",
         "feda0b62382f",
     ],
@@ -246,7 +245,6 @@ PINNED: dict[str, list[str]] = {
         "54d0a09010ef",
         "5cad531512df",
         "70ad9ce5ef12",
-        "7356ba5e2ba6",
         "7a96775281a7",
         "80e21a6ddd40",
         "ae44d2607253",
@@ -460,7 +458,7 @@ PINNED: dict[str, list[str]] = {
     "src/dbml_sharepoint/templates/deploy/_logging.js.j2": [
         "1643590a47da",
         "29e4342ba178",
-        "9798521201e3",
+        "568853874937",
         "bc185d0a28b3",
     ],
     "src/dbml_sharepoint/templates/deploy/_lookups.js.j2": [
@@ -472,7 +470,7 @@ PINNED: dict[str, list[str]] = {
         "431a769a335e",
     ],
     "src/dbml_sharepoint/templates/deploy/_operator_enrolment.js.j2": [
-        "a03dc5a92ec4",
+        "ac0a4e4118b1",
     ],
     "src/dbml_sharepoint/templates/deploy/_preflight.js.j2": [
         "3c5beeaa8d93",
@@ -482,11 +480,11 @@ PINNED: dict[str, list[str]] = {
         "248285d41cbd",
         "2e91b6b9d4b0",
         "30bd0c541e17",
-        "598140922d42",
+        "2d95a6f50e03",
         "5f017d1a051a",
         "65900fc74d67",
         "94eb764336ab",
-        "aa5b477df214",
+        "7b6c2c04c158",
         "d5e902f0d3c1",
         "e553a0521ee0",
         "f3b4502a003a",

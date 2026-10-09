@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Literal, get_args
 
 from dbml_sharepoint.model.conditions import Condition
+from dbml_sharepoint.model.identities import MembershipMode
 
 # Closed vocabularies as Literal types: the loader is the ONE gate that
 # admits these strings, so everything downstream (generators, reporting,
@@ -556,6 +557,26 @@ class CustomPermissionLevel:
 
 
 @dataclass(frozen=True)
+class LegacyFlag:
+    """A deprecated enrolment boolean the loader translated."""
+
+    flag: str
+    identity: str
+    # The group's new key named the same identity too (ENROLMENT_DECLARED_TWICE).
+    also_declared: bool
+
+
+@dataclass(frozen=True)
+class IdentityDeclaration:
+    """`identities.<name>`: an account slot this mapping declares and a build fills."""
+
+    name: str
+    description: str
+    # Kept as written, so IDENTITY_KIND_UNKNOWN can name a word the vocabulary declines.
+    kinds: tuple[str, ...] = ("user",)
+
+
+@dataclass(frozen=True)
 class SiteGroup:
     """A SharePoint site group to create at the site."""
 
@@ -570,18 +591,13 @@ class SiteGroup:
     # group has no members during Phase 1.3 and aborts before list creation if it
     # does. False preserves the existing, non-destructive membership behaviour.
     require_empty_at_deploy: bool = False
-    # Optional operator self-enrolment. When true, deploy.js adds the running
-    # operator to this group after Phase 1.3 (so later phases hold the group's
-    # list grants, e.g. an empty-by-default Full Control admin group) and
-    # removes them again at the end of the run, unless they were already a
-    # member, in which case membership is left untouched.
-    enroll_operator_during_deploy: bool = False
-    # Optional enterprise-reader enrolment target. When true, `build
-    # --enterprise-reader <upn>` adds that ONE named account to this group in
-    # Phase 1.5 and LEAVES IT THERE -- unlike operator enrolment above, which
-    # is undone at the end of the run. Membership is otherwise operator-owned:
-    # the deploy adds, verifies, and never removes anyone.
-    enroll_enterprise_reader: bool = False
+    # Persistent identities this group holds (`enroll:`), in declaration order.
+    enroll: tuple[str, ...] = ()
+    # Run-lifetime identities (`enroll_during_run:`), added and removed within one run.
+    enroll_during_run: tuple[str, ...] = ()
+    # Whether the group may hold anyone the declared identities do not account for.
+    membership: MembershipMode = "additive"
+    legacy_flags: tuple[LegacyFlag, ...] = ()
     # Previous base names, as declared (a `{prefix}` placeholder allowed).
     renamed_from: tuple[str, ...] = ()
     # Every name this group may be found under on a site that has not
@@ -770,6 +786,8 @@ class Mapping:
     retention_policies_source: Path | None = None
     extension: str | None = None
     permissions: "PermissionsConfig | None" = None
+    # `identities:`, by name. Built-in identities are never declared here.
+    identities: dict[str, IdentityDeclaration] = field(default_factory=dict)
     # List prefixes this family was deployed under before. A prefix change is
     # then a rename: every previous prefix multiplies the previous titles of
     # each list (see `previous_titles`) and its stem the previous names of

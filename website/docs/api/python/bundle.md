@@ -231,7 +231,7 @@ checksums.txt) shared by the core CLI and every extension CLI. Raises
 ``seed`` is set but the mapping declares no demo rows.
 
 ``enterprise_reader`` is already validated by the caller (a malformed
-address or a mapping with no ``enroll_enterprise_reader`` group both
+address or a mapping with no group whose ``enroll`` names it both
 refuse before this function is reached); it is passed through unchecked
 to ``generate_deploy_js`` so the deploy render context carries it.
 

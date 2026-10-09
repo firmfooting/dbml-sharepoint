@@ -152,13 +152,11 @@ def generate_deploy_js(
         schema_json=schema_json,
         phases=phases_context(),
         unmanaged_sentinel=UNMANAGED,
-        # The single named account `build --enterprise-reader` enrols read-
-        # only into the mapping's flagged group, or None to enrol nobody.
+        # The account `build --enterprise-reader` enrols read-only into the
+        # group whose `enroll` names enterprise_reader, or None for nobody.
         # `execute_build` has already refused a malformed address and a
-        # mapping declaring no `enroll_enterprise_reader` group by the time
-        # this runs, so a non-None value here always names a real target.
-        # Which declared group that is stays the template's job: it filters
-        # SCHEMA.groups on the flag emitted in build_schema_json.
+        # mapping with no such group, so a non-None value names a real target.
+        # Which group that is stays the template's job, read from SCHEMA.groups.
         enterprise_reader=enterprise_reader,
         # #199: the bitmap the enrolment phase requires of the level behind
         # the reader's grant, and the two bits it only warns about. Emitted
@@ -1149,12 +1147,11 @@ def build_schema_json(
                 "auto_accept_request_to_join_leave": grp.auto_accept_request_to_join_leave,
                 "only_allow_members_view_membership": grp.only_allow_members_view_membership,
                 "require_empty_at_deploy": grp.require_empty_at_deploy,
-                "enroll_operator_during_deploy": grp.enroll_operator_during_deploy,
-                # The reader-enrolment phase finds ITS group by this flag,
-                # exactly as operator enrolment finds its own above. Omitting
-                # it leaves the phase with a `--enterprise-reader` address
-                # and nowhere to put it.
-                "enroll_enterprise_reader": grp.enroll_enterprise_reader,
+                # Phases 1.4 and 1.5 find their groups by these, as the
+                # validator does, never by a group's name.
+                "enroll": list(grp.enroll),
+                "enroll_during_run": list(grp.enroll_during_run),
+                "membership": grp.membership,
             })
 
         acl_scopes_out += _acl_scopes(

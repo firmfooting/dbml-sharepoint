@@ -1725,7 +1725,7 @@ def test_every_family_declares_exactly_one_enterprise_reader_group(
     """
     mapping = _load(template).mapping
     assert mapping.permissions is not None
-    readers = [g for g in mapping.permissions.groups if g.enroll_enterprise_reader]
+    readers = [g for g in mapping.permissions.groups if "enterprise_reader" in g.enroll]
     assert len(readers) == 1, (
         f"{template}: expected exactly one enterprise-reader group, "
         f"got {[g.name for g in readers]}"
@@ -1756,7 +1756,7 @@ def test_the_reader_group_is_granted_read_on_every_policy_block(
     mapping = _load(template).mapping
     assert mapping.permissions is not None
     perms = mapping.permissions
-    reader = next(g for g in perms.groups if g.enroll_enterprise_reader)
+    reader = next(g for g in perms.groups if "enterprise_reader" in g.enroll)
     trims = mapping.declares_item_read_trimming()
     # A folder policy carries its own complete assignment list exactly as an
     # override does, so leaving it out here would let a family secure its
@@ -1842,7 +1842,7 @@ def test_the_administrators_group_holds_full_control_everywhere(
 #: `test_no_family_prefixes_a_shared_group` matches on these rather than on
 #: the keys of SHARED_GROUPS for exactly that reason.
 SHARED_GROUP_SUFFIXES: tuple[str, ...] = (
-    "Enterprise Readers", "List Administrators", "Enterprise Automation",
+    "Enterprise Readers", "List Administrators", "Automation Accounts",
 )
 
 SHARED_GROUPS: dict[str, dict[str, object]] = {
@@ -1857,8 +1857,8 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
         "auto_accept_request_to_join_leave": False,
         "only_allow_members_view_membership": False,
         "require_empty_at_deploy": False,
-        "enroll_operator_during_deploy": False,
-        "enroll_enterprise_reader": True,
+        "enroll": ("enterprise_reader",), "enroll_during_run": (), "membership": "exclusive",
+        "legacy_flags": (),
         # Never renamed: the shared groups are one object per site.
         "renamed_from": (),
         "previous_names": (),
@@ -1874,8 +1874,8 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
         "auto_accept_request_to_join_leave": False,
         "only_allow_members_view_membership": True,
         "require_empty_at_deploy": False,
-        "enroll_operator_during_deploy": True,
-        "enroll_enterprise_reader": False,
+        "enroll": (), "enroll_during_run": ("operator",), "membership": "additive",
+        "legacy_flags": (),
         # Never renamed: the shared groups are one object per site.
         "renamed_from": (),
         "previous_names": (),
@@ -1895,7 +1895,7 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
 #: automation connects as, and hiding it is the narrower of the two
 #: directions. Widening it later needs an argument; this way round does not.
 OPTIONAL_SHARED_GROUPS: dict[str, dict[str, object]] = {
-    "dbml Enterprise Automation": {
+    "dbml Automation Accounts": {
         "description": (
             "Automation identities that write to declared lists. Empty by "
             "default; membership is operator-owned."
@@ -1906,10 +1906,11 @@ OPTIONAL_SHARED_GROUPS: dict[str, dict[str, object]] = {
         "auto_accept_request_to_join_leave": False,
         "only_allow_members_view_membership": True,
         "require_empty_at_deploy": False,
-        "enroll_operator_during_deploy": False,
-        "enroll_enterprise_reader": False,    "renamed_from": [],
-    "previous_names": [],
-},
+        "enroll": (), "enroll_during_run": (), "membership": "additive",
+        "legacy_flags": (),
+        "renamed_from": [],
+        "previous_names": [],
+    },
 }
 
 #: Every group this tool names for itself, shipped by all families or not.
@@ -2017,7 +2018,7 @@ def test_an_optional_shared_group_is_declared_identically_where_it_is_declared(
 ) -> None:
     """The same guard as the sweep above, minus the presence half.
 
-    `dbml Enterprise Automation` is one object per site exactly as the other
+    `dbml Automation Accounts` is one object per site exactly as the other
     two are, so two families declaring it differently overwrite each other's
     settings on the last paste. It differs only in that a family with no
     automation to grant declares nothing, which is why presence is not
@@ -2258,3 +2259,17 @@ def test_no_shipped_level_description_exceeds_the_role_definition_ceiling() -> N
     assert families_with_levels, "no family declares a level, the sweep visited nothing"
     assert levels_checked, "no levels discovered, the sweep visited nothing"
     assert not offenders, "level descriptions over budget:\n" + "\n".join(offenders)
+
+
+@pytest.mark.parametrize("template", _all_templates())
+def test_no_shipped_family_uses_a_deprecated_enrolment_flag(template: str) -> None:
+    """The spec: every family core ships moves to the new keys in the same release."""
+    from dbml_sharepoint.analysis.findings import FindingCode
+    from dbml_sharepoint.analysis.validator import validate_against_mapping
+
+    root = SOLUTION_TEMPLATES / template
+    findings = validate_against_mapping(
+        parse_dbml(root / "10-design" / "schema.dbml"),
+        load_mapping(root / "20-configure" / "mapping.yaml"),
+    )
+    assert not [f for f in findings if f.code is FindingCode.DEPRECATED_ENROLMENT_FLAG]

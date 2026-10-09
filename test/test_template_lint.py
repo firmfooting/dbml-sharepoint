@@ -53,7 +53,7 @@ KNOWN_CONTEXT = {
     "assess_requirements", "assess_targets_data", "assess_not_assessable",
     # The single named account `build --enterprise-reader` enrols read-only,
     # or None to emit no enrolment code at all.
-    "enterprise_reader",
+    "enterprise_reader", "reader_group_list",
     "enterprise_reader_advisory_bits",
     "enterprise_reader_elevated_bits",
     "enterprise_reader_required_bits",

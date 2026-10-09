@@ -45,6 +45,7 @@ from dbml_sharepoint.model.sections import (
     _extensions,
     _formatting,
     _forms,
+    _identities,
     _identity,
     _list_settings,
     _permissions,
@@ -93,6 +94,7 @@ SECTION_FAMILIES: tuple[Section, ...] = (
     Section(("demo_items",), _demo.read, source="demo_source"),
     Section(("retired_columns",), _retired.read),
     Section(("default_formulas",), _default_formulas.read),
+    Section(("identities",), _identities.read),
 )
 
 #: Every top-level key load_mapping understands. A misspelling must fail

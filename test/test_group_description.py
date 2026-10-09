@@ -4,6 +4,7 @@ import pytest
 from _ratchet import Ratchet
 
 from dbml_sharepoint.analysis.group_description import (
+    AUTOMATION_GROUP_NAME,
     FAMILY_MARKER_TEMPLATE,
     GROUP_MARKER_GROWTH_RESERVE,
     TOOL_OWNED_GROUP_NAMES,
@@ -24,11 +25,11 @@ def test_a_tool_owned_group_gets_a_family_less_marker_naming_itself() -> None:
     """
     reader = marker_for_group("dbml Enterprise Readers", "risk-register")
     admin = marker_for_group("dbml List Administrators", "asset-register")
-    automation = marker_for_group("dbml Enterprise Automation", "risk-register")
+    automation = marker_for_group("dbml Automation Accounts", "risk-register")
 
     assert reader == shared_marker_for("dbml Enterprise Readers")
     assert admin == shared_marker_for("dbml List Administrators")
-    assert automation == shared_marker_for("dbml Enterprise Automation")
+    assert automation == shared_marker_for("dbml Automation Accounts")
     assert "risk-register" not in reader
     assert "asset-register" not in admin
     assert "risk-register" not in automation
@@ -134,7 +135,7 @@ def test_a_zero_budget_still_returns_the_marker_alone() -> None:
 #: A ratchet of the same shape as `_reachability.NOT_YET_REACHED`: an entry
 #: comes out when a family declares the name, and one goes in with a reason.
 #:
-#: `dbml Enterprise Automation` carries no site-wide grant, so a family
+#: `dbml Automation Accounts` carries no site-wide grant, so a family
 #: declaring it and granting it nothing would create a group with no access on
 #: every site that family reaches. It is reserved so the first family that
 #: does need it gets the family-less marker rather than a name of its own.
@@ -142,7 +143,7 @@ def test_a_zero_budget_still_returns_the_marker_alone() -> None:
 #: A RESERVATION, NOT A DEBT. Reviewed 2026-09-12 with the rest of the
 #: suite's ratchets: this one is empty of work by design and draining it would
 #: mean shipping a group nothing needs, so it stays until a family needs it.
-_NOT_YET_SHIPPED: frozenset[str] = frozenset({"dbml Enterprise Automation"})
+_NOT_YET_SHIPPED: frozenset[str] = frozenset({"dbml Automation Accounts"})
 
 
 def test_the_not_yet_shipped_ratchet_names_only_tool_owned_groups() -> None:
@@ -184,3 +185,9 @@ def test_every_tool_owned_name_is_actually_shipped(name: str) -> None:
         )
     else:
         assert shipped
+
+
+def test_the_automation_group_is_named_for_the_accounts_it_holds() -> None:
+    assert AUTOMATION_GROUP_NAME == "dbml Automation Accounts"
+    assert "dbml Enterprise Automation" not in TOOL_OWNED_GROUP_NAMES
+    assert AUTOMATION_GROUP_NAME in TOOL_OWNED_GROUP_NAMES

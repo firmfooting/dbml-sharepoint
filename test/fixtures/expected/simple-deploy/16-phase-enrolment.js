@@ -1,5 +1,5 @@
   markPhase('Phase 1.5: operator self-enrolment');
-  // === Operator self-enrolment (groups[].enroll_operator_during_deploy) ===
+  // === Operator self-enrolment (groups[].enroll_during_run: [operator]) ===
   // Some mappings route all list administration through an empty-by-default
   // admin group (Owners hold only Contribute on the lists). Later phases
   // (field reconciliation, indexes, ACL work) then need the operator to hold
@@ -9,7 +9,7 @@
   // group (its Site-Owners owner) can benefit; this adds no new authority.
   log('INFO', 'Starting Phase 1.5: operator self-enrolment.');
   {
-    const enrollGroups = SCHEMA.groups.filter(g => g.enroll_operator_during_deploy);
+    const enrollGroups = SCHEMA.groups.filter(g => g.enroll_during_run.includes('operator'));
     for (const grp of enrollGroups) {
       try {
         const meResp = await fetchWithRetry(apiUrl('web/currentuser?$select=Id,LoginName,Title'), {

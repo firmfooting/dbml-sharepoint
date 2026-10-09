@@ -1913,7 +1913,7 @@ groups:
     auto_accept_request_to_join_leave: false
     only_allow_members_view_membership: true
     require_empty_at_deploy: true        # optional
-    enroll_operator_during_deploy: true  # optional, run-scoped
+    enroll_during_run: [operator]  # optional, run-scoped
   - name: "Reporting Readers"
     description: "Reporting service account, Read only."
     owner_group: "Site Owners"
@@ -1921,9 +1921,10 @@ groups:
     allow_request_to_join_leave: false
     auto_accept_request_to_join_leave: false
     only_allow_members_view_membership: true
-    enroll_enterprise_reader: true  # optional; target of `build --enterprise-reader`
-                                    # (or DBMLSP_ENTERPRISE_READER in
-                                    # dbml-sharepoint.env; see the CLI reference)
+    enroll: [enterprise_reader]  # optional; target of `build --enterprise-reader`
+                                 # (or DBMLSP_ENTERPRISE_READER in
+                                 # dbml-sharepoint.env; see the CLI reference)
+    membership: exclusive
 
 list_permissions:
   default:
@@ -2045,7 +2046,7 @@ Six refusals, all at build time:
   meant for a particular member landed on it. A single-member enum is left
   alone, because one name cannot collapse onto another.
 - `group_enum_enrols_an_identity`, for `from_enum` combined with
-  `enroll_enterprise_reader` or `enroll_operator_during_deploy` where the
+  `enroll` or `enroll_during_run` where the
   enum does not have exactly one member. Each flag enrols one identity: more
   members leave every group after the first empty, and none generates no
   group at all. A single-member enum is accepted, because there is exactly
@@ -2229,7 +2230,7 @@ facts rule that out, together:
   what decides whether an operator is looking for a stranded item scope or a
   grant that has already been reconciled away.
 
-The supported route is the `enroll_enterprise_reader` group above, enrolled
+The supported route is the `enroll: [enterprise_reader]` group above, enrolled
 with `build --enterprise-reader <account>`: a declared, reconcilable grant
 that survives redeploy instead of being deleted or blocking one. The same
 address can instead be set once as `DBMLSP_ENTERPRISE_READER` in a
@@ -2239,7 +2240,7 @@ file's format and precedence. Either way the value reaches `deploy.js.txt`
 in plain text, so `dbml-sharepoint.env` is a defaults file, not a place to
 keep this account's UPN confidential.
 
-A mapping with no `enroll_enterprise_reader` group at all still refuses
+A mapping with no `enroll: [enterprise_reader]` group at all still refuses
 `--enterprise-reader`, whichever supplied it. That refusal used to be rare
 because typing the flag by hand made it a one-off mistake; once
 `dbml-sharepoint.env` supplies the same value on every build in a project,
@@ -2298,7 +2299,8 @@ again, or rebuild **without** `--enterprise-reader`: that build leaves the
 membership exactly as it is and still deploys the group and its `Read` grant.
 
 One consequence for mapping authors: a group cannot declare both
-`enroll_enterprise_reader` and `enroll_operator_during_deploy`. Phase 1.4 puts
+`enroll: [enterprise_reader]` with `membership: exclusive` and
+`enroll_during_run: [operator]`. Phase 1.4 puts
 the pasting operator into the second, which is precisely what the gate in Phase
 1.5 refuses, so every deploy would abort on a correct address. The validator
 rejects the pair (`enterprise_reader_group_enrols_the_operator`), and the
@@ -2408,10 +2410,38 @@ What it gives up: a file somebody shares by hand on such a list is no longer
 reported by the deploy. Whatever writes those scopes has to reconcile them
 itself.
 
+### `identities`
+
+Account slots this mapping declares and a build fills. Three are built in
+and need no declaration: `enterprise_reader` (one optional user),
+`automation` (one or more users, required wherever a group enrols it) and
+`operator` (the person running the deploy, for the run only).
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `description` | yes | Why the account is there; printed in the deploy manifest |
+| `kinds` | no | Any of `user`, `security_group`, `m365_group`; default `[user]`. Group kinds are refused at build until they are proven on a live site |
+
+A name matches `[a-z][a-z0-9_]{0,63}`; its env key is `DBMLSP_IDENTITY_`
+followed by the name in capitals.
+
+### Group enrolment keys
+
+| Key | Meaning |
+| --- | --- |
+| `enroll` | Persistent identities the group holds |
+| `enroll_during_run` | Run-lifetime identities; only `operator` |
+| `membership` | `additive` (default): add each value, warn about anyone else. `exclusive`: abort before any write if the group holds anyone else |
+
+Neither mode removes a member. `enroll_enterprise_reader: true` and
+`enroll_operator_during_deploy: true` still load, as `enroll:
+[enterprise_reader]` with `membership: exclusive` and as
+`enroll_during_run: [operator]`, and raise `deprecated_enrolment_flag`.
+
 ### The site-wide groups
 
 `dbml Enterprise Readers`, `dbml List Administrators` and
-`dbml Enterprise Automation` are
+`dbml Automation Accounts` are
 **one group per site**, not one per family. Every shipped family
 declares the first two identically, and a fleet
 test enforces that, because two families deployed to the same site reconcile
@@ -2448,7 +2478,7 @@ near-simultaneous MERGE calls to the same group description even serialise on a
 live tenant. Until that is measured, no guard is built on it: avoid pasting the
 same mapping's deploy script into two tabs at once.
 
-**`dbml Enterprise Automation` is reserved, not shipped.** It is the name for
+**`dbml Automation Accounts` is reserved, not shipped.** It is the name for
 the identity an automation connects as, such as a Power Automate flow. No
 shipped family declares it, because it carries no site-wide grant, and a
 family declaring it while granting it nothing would create a group with no

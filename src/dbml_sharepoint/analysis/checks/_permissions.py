@@ -368,16 +368,14 @@ def _enum_groups(vc: ValidationContext, perms: PermissionsConfig) -> list[Findin
                 f"they would all be the same group.",
                 location=_GROUPS,
             ))
-        # Each enrolment flag names ONE identity, and exactly one member is
-        # the only count that gives it one group to land in: more leave every
-        # group after the first empty, and none generates no group at all.
+        # These keys act on one group, so only an enum of exactly one member
+        # gives them one group to apply to: more leave every group after the
+        # first unenrolled, and none generates no group at all.
         enrolments: list[str] = [] if len(members) == 1 else [
-            flag for flag, on in (
-                ("enroll_enterprise_reader", source.template.enroll_enterprise_reader),
-                (
-                    "enroll_operator_during_deploy",
-                    source.template.enroll_operator_during_deploy,
-                ),
+            key for key, on in (
+                ("enroll", bool(source.template.enroll)),
+                ("enroll_during_run", bool(source.template.enroll_during_run)),
+                ("membership", source.template.membership == "exclusive"),
             ) if on
         ]
         if enrolments:
@@ -391,8 +389,8 @@ def _enum_groups(vc: ValidationContext, perms: PermissionsConfig) -> list[Findin
             findings.append(Finding(
                 FindingCode.GROUP_ENUM_ENROLS_AN_IDENTITY,
                 f"groups[{source.template.name!r}]: from_enum cannot be "
-                f"combined with {' or '.join(enrolments)}; each enrols one "
-                f"identity, and {target}.",
+                f"combined with {' or '.join(enrolments)}; each acts on a "
+                f"single group, and {target}.",
                 location=_GROUPS,
             ))
     return findings
@@ -682,32 +680,56 @@ def check(vc: ValidationContext) -> list[Finding]:
                 perms.default_policy, "list_permissions.default", _DEFAULT_POLICY,
             )
 
+        # === Enrolment shape, for every group (one defect yields one finding) ===
+        for grp in vc.site_groups:
+            if grp.membership == "exclusive" and grp.enroll_during_run:
+                findings.append(Finding(
+                    FindingCode.EXCLUSIVE_GROUP_ENROLS_THE_OPERATOR,
+                    f"groups: {grp.name!r} is exclusive and also enrols "
+                    f"{', '.join(grp.enroll_during_run)} for the run. Phase 1.4 adds "
+                    f"them before Phase 1.5 checks the group holds nobody else, so "
+                    f"every run aborts.",
+                    location=_GROUPS,
+                ))
+            if grp.enroll and grp.require_empty_at_deploy:
+                findings.append(Finding(
+                    FindingCode.ENROLLING_GROUP_REQUIRES_EMPTY,
+                    f"groups: {grp.name!r} enrols {', '.join(grp.enroll)} and sets "
+                    f"require_empty_at_deploy. The empty gate runs before enrolment and "
+                    f"the members stay, so the next deploy aborts on it.",
+                    location=_GROUPS,
+                ))
+            if grp.membership == "exclusive" and not grp.enroll:
+                findings.append(Finding(
+                    FindingCode.EXCLUSIVE_GROUP_ENROLS_NOBODY,
+                    f"groups: {grp.name!r} is exclusive but enrols nobody. Use "
+                    f"require_empty_at_deploy to say a group must stay empty.",
+                    location=_GROUPS,
+                ))
+
         # === Enterprise reader tier ===
         # The flagged group is the target of `build --enterprise-reader`.
         # Every rule here refuses a mapping that would deploy green and
         # leave the reporting account seeing nothing.
-        reader_groups = [g for g in vc.site_groups if g.enroll_enterprise_reader]
+        reader_groups = [g for g in vc.site_groups if "enterprise_reader" in g.enroll]
 
         if len(reader_groups) > 1:
             findings.append(Finding(
                 FindingCode.MULTIPLE_ENTERPRISE_READER_GROUPS,
                 f"groups: {len(reader_groups)} groups declare "
-                f"enroll_enterprise_reader "
+                f"enroll: [enterprise_reader] "
                 f"({', '.join(repr(g.name) for g in reader_groups)}); "
                 f"--enterprise-reader needs exactly one target.",
                 location=_GROUPS,
             ))
 
         for grp in reader_groups:
-            if grp.enroll_operator_during_deploy:
+            if grp.membership != "exclusive":
                 findings.append(Finding(
-                    FindingCode.ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR,
-                    f"groups: {grp.name!r} declares both "
-                    f"enroll_enterprise_reader and "
-                    f"enroll_operator_during_deploy. Phase 1.4 puts the "
-                    f"operator in the group, so Phase 1.5 finds a principal "
-                    f"other than the named reader and aborts the run -- "
-                    f"every run, on a correct address.",
+                    FindingCode.ENTERPRISE_READER_GROUP_NOT_EXCLUSIVE,
+                    f"groups: {grp.name!r} enrols enterprise_reader with membership "
+                    f"{grp.membership!r}. A reader group must be exclusive, so a second "
+                    f"account cannot share its Read unnoticed.",
                     location=_GROUPS,
                 ))
 
@@ -715,7 +737,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 findings.append(Finding(
                     FindingCode.ENTERPRISE_READER_GROUP_MEMBERS_MAY_EDIT_MEMBERSHIP,
                     f"groups: {grp.name!r} declares both "
-                    f"enroll_enterprise_reader and "
+                    f"enroll: [enterprise_reader] and "
                     f"allow_members_edit_membership. The security phase "
                     f"applies that setting before Phase 1.5 enrols the "
                     f"reader, so the enrolled account can then add "
@@ -725,22 +747,12 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=_GROUPS,
                 ))
 
-            if grp.require_empty_at_deploy:
-                findings.append(Finding(
-                    FindingCode.ENTERPRISE_READER_GROUP_REQUIRES_EMPTY,
-                    f"groups: {grp.name!r} declares both "
-                    f"enroll_enterprise_reader and require_empty_at_deploy. "
-                    f"The reader is enrolled after the empty-group gate and "
-                    f"stays, so the next deploy aborts on that gate.",
-                    location=_GROUPS,
-                ))
-
             grants = _levels_granted_to_group(vc, perms, grp.name)
             if not grants:
                 findings.append(Finding(
                     FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED,
                     f"groups: {grp.name!r} declares "
-                    f"enroll_enterprise_reader but holds no role assignment; "
+                    f"enroll: [enterprise_reader] but holds no role assignment; "
                     f"enrolling an account into it would grant nothing.",
                     location=_GROUPS,
                 ))
@@ -798,41 +810,31 @@ def check(vc: ValidationContext) -> list[Finding]:
                 ))
 
         # === Automation tier ===
-        # Keyed off the NAME, not a flag. The reader tier has a flag because
-        # `build --enterprise-reader` must know which group to enrol an
-        # account into; nothing about this group happens at build time, so a
-        # flag would select nothing.
-        #
-        # A DENYLIST of one level rather than the reader tier's allowlist:
-        # what an automation legitimately needs is the family's call
-        # (Contribute, Edit, a custom level), and only Full Control is knowably
-        # wrong here. It is what `dbml List Administrators` already holds, so
-        # granting it reproduces the breadth this group exists to avoid.
-        #
-        # Same locale blind spot as `ENTERPRISE_READER_GROUP_OVER_PRIVILEGED`:
-        # the built-in names are English, so on a non-English tenant the
-        # equivalent level is spelled otherwise and is not matched here.
+        # Keyed on the automation identity (a group enrolling it) and on the
+        # reserved group name, which carries no enroll key. A denylist of one
+        # level: only Full Control is knowably wrong, since it is what
+        # `dbml List Administrators` already holds. English built-in names only,
+        # as for the reader tier.
+        automation_groups = sorted(
+            {AUTOMATION_GROUP_NAME}
+            | {g.name for g in vc.site_groups if "automation" in g.enroll},
+        )
         full_control_grants = sorted(
             {
-                origin
-                for level, origin in _levels_granted_to_group(
-                    vc, perms, AUTOMATION_GROUP_NAME,
-                )
+                (name, origin)
+                for name in automation_groups
+                for level, origin in _levels_granted_to_group(vc, perms, name)
                 if level == "Full Control"
             },
-            key=lambda origin: origin.path,
+            key=lambda pair: (pair[0], pair[1].path),
         )
-        for origin in full_control_grants:
+        for name, origin in full_control_grants:
             findings.append(Finding(
                 FindingCode.AUTOMATION_GROUP_GRANTED_FULL_CONTROL,
-                f"list_permissions: {AUTOMATION_GROUP_NAME!r} is granted "
-                f"'Full Control'. The group exists so an automation identity "
-                f"can hold a narrow declared write on the lists it stamps, and "
-                f"Full Control is what 'dbml List Administrators' already "
-                f"carries on every list, so this grant leaves the automation "
-                f"the breadth the group was declared to avoid. Grant the "
-                f"narrowest level that lets the flow write, or name a group of "
-                f"your own.",
+                f"list_permissions: {name!r} holds automation accounts and is granted "
+                f"'Full Control', the breadth 'dbml List Administrators' already "
+                f"carries on every list. Grant the narrowest level that lets the flow "
+                f"write.",
                 location=origin,
             ))
 

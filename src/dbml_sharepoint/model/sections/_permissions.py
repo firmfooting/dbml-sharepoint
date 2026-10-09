@@ -18,6 +18,7 @@ from dbml_sharepoint.model._keys import (
     _require_mapping,
 )
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
+from dbml_sharepoint.model.identities import MEMBERSHIP_MODES, MembershipMode
 from dbml_sharepoint.model.mapping_types import (
     FILE_SCOPES,
     PRINCIPAL_KIND_LIST,
@@ -25,6 +26,7 @@ from dbml_sharepoint.model.mapping_types import (
     CustomPermissionLevel,
     FileScopes,
     GroupsFromEnum,
+    LegacyFlag,
     ListPermissionPolicy,
     PermissionsConfig,
     Principal,
@@ -55,6 +57,7 @@ _GROUP_KEYS = frozenset({
     "allow_request_to_join_leave", "auto_accept_request_to_join_leave",
     "only_allow_members_view_membership", "require_empty_at_deploy",
     "enroll_operator_during_deploy", "enroll_enterprise_reader", "renamed_from",
+    "enroll", "enroll_during_run", "membership",
     # `from_enum` turns one declaration into one group per enum member. At
     # the same key as the rest of the group, the way `entities.*.folders`
     # takes both spellings at one key, so a group cannot be declared twice
@@ -209,6 +212,46 @@ def _reject_member_placeholders(group: SiteGroup, context: str) -> None:
                 )
 
 
+def _enrolment(
+    grp: dict[str, Any], context: str,
+) -> tuple[tuple[str, ...], tuple[str, ...], MembershipMode, tuple[LegacyFlag, ...]]:
+    """`enroll`, `enroll_during_run` and `membership`, with the two old booleans folded in.
+
+    The reader flag loads as exclusive unless `membership` says otherwise,
+    which keeps the guard that refuses a reader group holding anyone else.
+    """
+    enroll = list(optional_str_list(grp, "enroll", context))
+    during = list(optional_str_list(grp, "enroll_during_run", context))
+    for key, names in (("enroll", enroll), ("enroll_during_run", during)):
+        if repeated := sorted({n for n in names if names.count(n) > 1}):
+            raise MappingValueError(f"{context}.{key} names {', '.join(repeated)} twice")
+    mode = strict_str(grp, "membership", context, default="")
+    if mode and mode not in MEMBERSHIP_MODES:
+        raise MappingValueError(
+            f"{context}.membership must be 'additive' or 'exclusive', got {mode!r}",
+        )
+    legacy: list[LegacyFlag] = []
+    if optional_bool(grp, "enroll_enterprise_reader", context):
+        legacy.append(LegacyFlag(
+            "enroll_enterprise_reader", "enterprise_reader",
+            also_declared="enterprise_reader" in enroll,
+        ))
+        if "enterprise_reader" not in enroll:
+            enroll.append("enterprise_reader")
+        mode = mode or "exclusive"
+    if optional_bool(grp, "enroll_operator_during_deploy", context):
+        legacy.append(LegacyFlag(
+            "enroll_operator_during_deploy", "operator",
+            also_declared="operator" in during,
+        ))
+        if "operator" not in during:
+            during.append("operator")
+    return (
+        tuple(enroll), tuple(during),
+        cast("MembershipMode", mode or "additive"), tuple(legacy),
+    )
+
+
 def _parse_group(
     grp: dict[str, Any], context: str, prefix: str, previous_prefixes: Sequence[str],
 ) -> SiteGroup:
@@ -218,6 +261,7 @@ def _parse_group(
     The loader never sees the schema, so which members exist is
     `analysis/groups.py`'s answer, not this family's.
     """
+    enroll, enroll_during_run, membership, legacy_flags = _enrolment(grp, context)
     return SiteGroup(
         name=expand_prefix(
             require_str(grp, "name", context), prefix, f"{context}.name",
@@ -241,12 +285,10 @@ def _parse_group(
             grp, "only_allow_members_view_membership", context,
         ),
         require_empty_at_deploy=optional_bool(grp, "require_empty_at_deploy", context),
-        enroll_operator_during_deploy=optional_bool(
-            grp, "enroll_operator_during_deploy", context,
-        ),
-        enroll_enterprise_reader=optional_bool(
-            grp, "enroll_enterprise_reader", context,
-        ),
+        enroll=enroll,
+        enroll_during_run=enroll_during_run,
+        membership=membership,
+        legacy_flags=legacy_flags,
         renamed_from=optional_str_list(grp, "renamed_from", context),
         previous_names=previous_object_names(
             require_str(grp, "name", context),

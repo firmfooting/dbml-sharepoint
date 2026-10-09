@@ -38,6 +38,8 @@ class Section(StrEnum):
     FORM_FORMATTING = "form_formatting"
     FORM_VISIBILITY = "form_visibility"
     GROUPS = "groups"
+    # The `identities:` section: the account slots a mapping declares.
+    IDENTITIES = "identities"
     # Not a per-entity mapping section like the rest: its paths are
     # `list_permissions.default...` and `list_permissions.overrides[...]`.
     LIST_PERMISSIONS = "list_permissions"
@@ -421,18 +423,20 @@ class FindingCode(StrEnum):
         "automation_group_granted_full_control", "error")
     DUPLICATE_GROUP_NAME = "duplicate_group_name", "error"
     DUPLICATE_PERMISSION_LEVEL_NAME = "duplicate_permission_level_name", "error"
-    ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR = (
-        "enterprise_reader_group_enrols_the_operator", "error")
+    ENROLLING_GROUP_REQUIRES_EMPTY = "enrolling_group_requires_empty", "error"
     ENTERPRISE_READER_GROUP_MEMBERS_MAY_EDIT_MEMBERSHIP = (
         "enterprise_reader_group_members_may_edit_membership", "error")
+    ENTERPRISE_READER_GROUP_NOT_EXCLUSIVE = (
+        "enterprise_reader_group_not_exclusive", "error")
     ENTERPRISE_READER_GROUP_NOT_GRANTED = (
         "enterprise_reader_group_not_granted", "error")
     ENTERPRISE_READER_GROUP_OVER_PRIVILEGED = (
         "enterprise_reader_group_over_privileged", "error")
-    ENTERPRISE_READER_GROUP_REQUIRES_EMPTY = (
-        "enterprise_reader_group_requires_empty", "error")
     ENTERPRISE_READER_ON_TRIMMED_LIST = (
         "enterprise_reader_on_trimmed_list", "warning")
+    EXCLUSIVE_GROUP_ENROLS_NOBODY = "exclusive_group_enrols_nobody", "error"
+    EXCLUSIVE_GROUP_ENROLS_THE_OPERATOR = (
+        "exclusive_group_enrols_the_operator", "error")
     # Warning: stripping a scope is supported, and what the last removal does is unmeasured.
     EXACT_POLICY_GRANTS_NOTHING = "exact_policy_grants_nothing", "warning"
     # Warning: breaking a scope to manage it by hand is a legitimate intent.
@@ -473,6 +477,19 @@ class FindingCode(StrEnum):
     #: which is a name the MAPPING does not declare.
     UNKNOWN_TABLE = "unknown_table", "error"
     UNRESOLVABLE_ASSOCIATED_GROUP_ALIAS = "unresolvable_associated_group_alias", "error"
+
+    # --- identities (checks/_identities.py) ---------------------------------
+    DEPRECATED_ENROLMENT_FLAG = "deprecated_enrolment_flag", "warning"
+    ENROLMENT_DECLARED_TWICE = "enrolment_declared_twice", "error"
+    EXCLUSIVE_GROUP_ENROLS_A_GROUP_KIND = (
+        "exclusive_group_enrols_a_group_kind", "error")
+    IDENTITY_DECLARED_NOT_ENROLLED = "identity_declared_not_enrolled", "warning"
+    IDENTITY_KIND_UNKNOWN = "identity_kind_unknown", "error"
+    IDENTITY_NAME_INVALID = "identity_name_invalid", "error"
+    IDENTITY_REDECLARES_BUILTIN = "identity_redeclares_builtin", "error"
+    IDENTITY_UNKNOWN = "identity_unknown", "error"
+    OPERATOR_ENROLLED_PERSISTENTLY = "operator_enrolled_persistently", "error"
+    SHAREPOINT_GROUP_ENROLLED = "sharepoint_group_enrolled", "error"
 
     # --- form visibility (analysis/forms.py) --------------------------------
     FORM_VISIBILITY_CONDITION_ON_A_BOOLEAN_COLUMN = (

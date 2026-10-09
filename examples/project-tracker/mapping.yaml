@@ -53,7 +53,7 @@ groups:
     allow_request_to_join_leave: false
     auto_accept_request_to_join_leave: false
     only_allow_members_view_membership: false
-    enroll_operator_during_deploy: true
+    enroll_during_run: [operator]
 
 permission_levels: []
 

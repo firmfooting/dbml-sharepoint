@@ -56,6 +56,14 @@ from dbml_sharepoint.analysis.typemap import CALCULATED_TYPE_LIST
 #: retired. Without this, the answer is "no finding code", which reads as a
 #: typo rather than as history.
 RETIRED_FINDINGS: dict[str, str] = {
+    "enterprise_reader_group_enrols_the_operator": (
+        "Retired 2026-10-09. Replaced by exclusive_group_enrols_the_operator, "
+        "which applies to every exclusive group, the reader group among them."
+    ),
+    "enterprise_reader_group_requires_empty": (
+        "Retired 2026-10-09. Replaced by enrolling_group_requires_empty, which "
+        "applies to every group with `enroll:`, the reader group among them."
+    ),
     "default_formula_function_unmeasured": (
         "Retired 2026-09-13. It refused DAY, ROUNDDOWN, MOD, TEXT, IF, AND "
         "and OR in a default formula, which had been admitted on the "
@@ -141,19 +149,20 @@ FINDING_HELP: dict[FindingCode, str] = {
         "silently, and this refusal turns that into a build message."
     ),
     FindingCode.AUTOMATION_GROUP_GRANTED_FULL_CONTROL: (
-        "`list_permissions` grants `dbml Enterprise Automation` the built-in "
-        "`Full Control`, on the default policy or on an override. That group "
-        "exists so the identity a flow connects as can hold a narrow declared "
-        "write on the lists it stamps: under `reconcile: exact` a redeploy "
+        "A group enrolling `automation`, or named `dbml Automation Accounts`, "
+        "is granted Full Control, on the default policy or on an override. "
+        "`dbml Automation Accounts` exists so the identity a flow connects as "
+        "can hold a narrow declared write on the lists it stamps: under "
+        "`reconcile: exact` a redeploy "
         "removes undeclared direct grants, so access handed to a flow by hand "
         "does not survive one and the identity has to sit in a group the "
         "mapping declares, holding a level it declares. Full Control is "
         "what `dbml List Administrators` already carries on every list, so "
         "granting it here gives the automation the breadth the group was "
         "declared to avoid, and the name goes on saying otherwise. Grant the "
-        "narrowest level that lets the flow write, or name a group of your "
-        "own. Only `Full Control` is refused; which narrower level an "
-        "automation needs is the mapping's call. The built-in names are "
+        "narrowest level that lets the flow write. Only `Full Control` is "
+        "refused; which narrower level an automation needs is the mapping's "
+        "call. The built-in names are "
         "English, so on a non-English tenant the equivalent level is spelled "
         "otherwise and is not matched, the same blind spot "
         "`enterprise_reader_group_over_privileged` carries."
@@ -798,13 +807,12 @@ FINDING_HELP: dict[FindingCode, str] = {
         "One table's `indexes { }` names the same column twice."
     ),
     FindingCode.GROUP_ENUM_ENROLS_AN_IDENTITY: (
-        "A `groups` entry combines `from_enum` with `enroll_enterprise_reader` "
-        "or `enroll_operator_during_deploy`. Each of those enrols ONE "
-        "identity -- the account `--enterprise-reader` names, or the operator "
-        "running the paste -- and `from_enum` makes one group per enum "
-        "member, so the identity would land in one of them and the rest "
-        "would stay empty. An enum with no members generates no group at "
-        "all, so the identity would land nowhere. Put the flag on a group "
+        "A `groups` entry combines `from_enum` with `enroll: [enterprise_reader]` "
+        "or `enroll_during_run: [operator]`, or `membership: exclusive`. Each of "
+        "those acts on a single group, and `from_enum` makes one group per "
+        "enum member, so the enrolment would apply to one of them and the "
+        "rest would stay empty. An enum with no members generates no group at "
+        "all, so it would apply nowhere. Set `enroll` on a group "
         "declared on its own. An enum with exactly one member is not "
         "reported: there is one group and the identity lands in it."
     ),
@@ -891,18 +899,6 @@ FINDING_HELP: dict[FindingCode, str] = {
         "`List Title`. Give the column a different display title, or rename "
         "the schema column so the auto-split lands somewhere else."
     ),
-    FindingCode.ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR: (
-        "A group declares both `enroll_enterprise_reader` and "
-        "`enroll_operator_during_deploy`. Phase 1.4 adds the pasting "
-        "operator to that group, so by Phase 1.5 the group holds somebody "
-        "other than the named reader, and 1.5 aborts the run when it "
-        "does. Every deploy of this mapping would fail, on a correct "
-        "address, for a reason nothing in the mapping names. The "
-        "combination has no legitimate use either: a reader group is "
-        "restricted to `Read` (`enterprise_reader_group_over_privileged`), "
-        "while an operator self-enrols in order to write. Put the two "
-        "flags on two groups."
-    ),
     FindingCode.GROUP_AUTO_ACCEPT_WITHOUT_REQUESTS: (
         "A `groups:` entry sets `auto_accept_request_to_join_leave` while "
         "`allow_request_to_join_leave` is false. A group cannot "
@@ -939,8 +935,31 @@ FINDING_HELP: dict[FindingCode, str] = {
         "marker would make the tool refuse a group it created itself. "
         "Shorten the description to the budget named in the finding."
     ),
+    FindingCode.ENROLLING_GROUP_REQUIRES_EMPTY: (
+        "A group declares `enroll:` and `require_empty_at_deploy`. The empty "
+        "gate runs in the security phase, before identity enrolment, and an "
+        "enrolled account stays, so the second deploy always aborts. Drop one."
+    ),
+    FindingCode.ENTERPRISE_READER_GROUP_NOT_EXCLUSIVE: (
+        "A group enrols `enterprise_reader` without `membership: exclusive`. "
+        "Exclusive is what makes the deploy refuse a group already holding "
+        "someone else, so a second account cannot share the reader's Read "
+        "without a person deciding it. The old `enroll_enterprise_reader: "
+        "true` loads as exclusive unless `membership` says otherwise."
+    ),
+    FindingCode.EXCLUSIVE_GROUP_ENROLS_NOBODY: (
+        "A group says `membership: exclusive` but has no `enroll:`. Exclusive "
+        "describes who the declared identities are allowed to share the group "
+        "with; to require an empty group, use `require_empty_at_deploy`."
+    ),
+    FindingCode.EXCLUSIVE_GROUP_ENROLS_THE_OPERATOR: (
+        "An exclusive group also has `enroll_during_run: [operator]`. Phase 1.4 adds the "
+        "operator before Phase 1.5 reads the membership, so the exclusive "
+        "check finds an extra member and aborts every run. Give the operator "
+        "a group of its own."
+    ),
     FindingCode.ENTERPRISE_READER_GROUP_MEMBERS_MAY_EDIT_MEMBERSHIP: (
-        "A group declares both `enroll_enterprise_reader` and "
+        "A group declares both `enroll: [enterprise_reader]` and "
         "`allow_members_edit_membership: true`. The security phase applies "
         "that setting before Phase 1.5 enrols the reader, so the enrolled "
         "account can then add principals to its own group -- and everything "
@@ -952,13 +971,13 @@ FINDING_HELP: dict[FindingCode, str] = {
         "the setting, or use a different group for the reader."
     ),
     FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED: (
-        "A group marked `enroll_enterprise_reader` holds no role "
+        "A group enrolling `enterprise_reader` holds no role "
         "assignment, so enrolling an account into it grants nothing. The "
         "deploy would still report success and the account would see no "
         "rows. Grant it `Read` under `list_permissions`."
     ),
     FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED: (
-        "A group marked `enroll_enterprise_reader` is granted something "
+        "A group enrolling `enterprise_reader` is granted something "
         "other than the built-in `Read`. Anything wider contradicts the "
         "name. `Restricted Read` is refused too, and that half is "
         "deliberate: Microsoft Learn's site-permissions table shows it "
@@ -966,14 +985,8 @@ FINDING_HELP: dict[FindingCode, str] = {
         "would be less privilege AND a reporting connector that cannot "
         "read anything."
     ),
-    FindingCode.ENTERPRISE_READER_GROUP_REQUIRES_EMPTY: (
-        "A group declares both `enroll_enterprise_reader` and "
-        "`require_empty_at_deploy`. These contradict across runs: the "
-        "reader is enrolled in Phase 1.5 and stays, so the next deploy "
-        "fails its own empty-group gate in Phase 1.3. Drop one."
-    ),
     FindingCode.ENTERPRISE_READER_ON_TRIMMED_LIST: (
-        "A group marked `enroll_enterprise_reader` holds the built-in "
+        "A group enrolling `enterprise_reader` holds the built-in "
         "`Read` while `item_security` trims reads to the caller's own "
         "items. Read then reaches only the rows the reporting account "
         "itself created, and a reporting account writes nothing, so it "
@@ -1285,8 +1298,61 @@ FINDING_HELP: dict[FindingCode, str] = {
         "More than one view on an entity is marked default; a "
         "SharePoint list has exactly one."
     ),
+    FindingCode.DEPRECATED_ENROLMENT_FLAG: (
+        "A group uses `enroll_enterprise_reader: true` or "
+        "`enroll_operator_during_deploy: true`. Both still load: the first as "
+        "`enroll: [enterprise_reader]` with `membership: exclusive`, the second "
+        "as `enroll_during_run: [operator]`. Move to the new keys; the flags "
+        "will be removed in a later release."
+    ),
+    FindingCode.ENROLMENT_DECLARED_TWICE: (
+        "A group enrols one identity through an old flag and the new key at "
+        "once. Keep the new key and drop the flag, so one declaration says who "
+        "the group holds."
+    ),
+    FindingCode.EXCLUSIVE_GROUP_ENROLS_A_GROUP_KIND: (
+        "An exclusive group enrols an identity whose `kinds` include "
+        "`security_group` or `m365_group`. Exclusive asserts the group holds "
+        "nobody else, and neither the deploy nor assess can see inside an "
+        "Entra group, so the assertion could not be checked. Use an additive "
+        "group, or restrict the identity to `kinds: [user]`."
+    ),
+    FindingCode.IDENTITY_DECLARED_NOT_ENROLLED: (
+        "An identity under `identities:` is enrolled by no group, so a value "
+        "supplied for it would be refused. Enrol it, or delete the declaration."
+    ),
+    FindingCode.IDENTITY_KIND_UNKNOWN: (
+        "An identity's `kinds` is empty or names something other than "
+        "`user`, `security_group` or `m365_group`."
+    ),
+    FindingCode.IDENTITY_NAME_INVALID: (
+        "An identity name must match `[a-z][a-z0-9_]{0,63}`, so its env key "
+        "`DBMLSP_IDENTITY_<NAME>` is the name upper-cased with no other change."
+    ),
+    FindingCode.IDENTITY_REDECLARES_BUILTIN: (
+        "`identities:` declares `enterprise_reader`, `automation` or "
+        "`operator`. These are built in; enrol them without declaring them."
+    ),
+    FindingCode.IDENTITY_UNKNOWN: (
+        "`enroll` or `enroll_during_run` names an identity that is neither "
+        "built in nor declared under `identities:`."
+    ),
+    FindingCode.OPERATOR_ENROLLED_PERSISTENTLY: (
+        "`enroll:` names `operator`, or `enroll_during_run:` names a "
+        "persistent identity. The operator is added and removed within one "
+        "run and goes in `enroll_during_run`; every other identity stays and "
+        "goes in `enroll`."
+    ),
+    FindingCode.SHAREPOINT_GROUP_ENROLLED: (
+        "A group's `enroll` or `enroll_during_run` names a SharePoint group. Microsoft Learn says "
+        "SharePoint groups cannot be nested (the page is written for "
+        "SharePoint Server, so this refuses on its word). To give a site's "
+        "own Owners, Members or Visitors a defined group's access, grant the "
+        "same level to `associated_owner_group`, `associated_member_group` or "
+        "`associated_visitor_group`."
+    ),
     FindingCode.MULTIPLE_ENTERPRISE_READER_GROUPS: (
-        "More than one group is marked `enroll_enterprise_reader`. "
+        "More than one group is marked `enroll: [enterprise_reader]`. "
         "`build --enterprise-reader` takes one address and needs one "
         "unambiguous target."
     ),
