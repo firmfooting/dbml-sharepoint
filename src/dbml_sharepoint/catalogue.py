@@ -757,6 +757,11 @@ def _core_root() -> BlueprintRoot:
             f"{CORE_DISTRIBUTION} is not installed, so the licence of its blueprints cannot "
             "be read; install it (uv sync, or uvx) rather than importing a source tree",
         ) from exc
+    except (OSError, ValueError) as exc:
+        # A decode failure is a ValueError; the wizard and `blueprints` show this, not a traceback.
+        raise BlueprintRootError(
+            f"{CORE_DISTRIBUTION}'s metadata cannot be read: {type(exc).__name__}: {exc}",
+        ) from exc
     return BlueprintRoot(
         CORE_DISTRIBUTION, SOLUTIONS_DIR, _declared_licence(CORE_DISTRIBUTION, declared),
     )
