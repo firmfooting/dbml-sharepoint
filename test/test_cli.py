@@ -26,6 +26,7 @@ from typer.testing import CliRunner, Result
 
 from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis import sidecars
+from dbml_sharepoint.analysis.enrolment import reader_address
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.catalogue import (
@@ -50,6 +51,10 @@ from dbml_sharepoint.pipeline import (
 )
 
 runner = CliRunner()
+
+
+def _captured_reader(captured: dict[str, Any]) -> str | None:
+    return reader_address(captured["identities"])
 
 
 @pytest.fixture(autouse=True)
@@ -1123,7 +1128,7 @@ def test_no_reader_flag_emits_no_enrolment(
         "--out", str(out),
     ])
     assert result.exit_code == 0, result.output
-    assert captured["enterprise_reader"] is None
+    assert _captured_reader(captured) is None
     assert "enterprise-reader" not in (out / "deploy.js.txt").read_text(encoding="utf-8")
 
 
@@ -1165,7 +1170,7 @@ def test_a_valid_reader_flag_reaches_emit_bundle(
         "--enterprise-reader", address,
     ])
     assert result.exit_code == 0, result.output
-    assert captured["enterprise_reader"] == address
+    assert _captured_reader(captured) == address
 
 
 def test_a_valid_reader_flag_reaches_the_written_manifest(tmp_path: Path) -> None:
@@ -1249,7 +1254,7 @@ def test_the_declined_sentinel_is_treated_as_nobody_not_as_a_value(
         enterprise_reader=ENTERPRISE_READER_DECLINED,
     )
 
-    assert captured["enterprise_reader"] is None
+    assert _captured_reader(captured) is None
     # Not a bare `"enterprise-reader" not in ...` check: this fixture's own
     # group carries that substring in a static description ("Read-only
     # enrolment target for --enterprise-reader") that renders regardless of
@@ -1392,7 +1397,7 @@ def test_an_env_file_value_reaches_execute_build(
         "--env-file", str(env_path),
     ])
     assert result.exit_code == 0, result.output
-    assert captured["enterprise_reader"] == "svc-reporting@example.org"
+    assert _captured_reader(captured) == "svc-reporting@example.org"
 
 
 def test_an_explicit_flag_beats_the_env_file(tmp_path: Path) -> None:
@@ -1467,7 +1472,7 @@ def test_the_declined_sentinel_beats_the_env_file(
         env_file=env_path,
     )
 
-    assert captured["enterprise_reader"] is None
+    assert _captured_reader(captured) is None
     assert "READER_ADDRESS" not in (out / "deploy.js.txt").read_text(encoding="utf-8")
     printed = capsys.readouterr().out
     assert (

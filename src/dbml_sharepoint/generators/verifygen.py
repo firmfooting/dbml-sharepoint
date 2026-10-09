@@ -15,6 +15,8 @@ both the build and the check read.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping as AbcMapping
+from types import MappingProxyType
 from typing import Any, TypedDict
 
 from dbml_sharepoint import APPLICATION_NAME
@@ -25,6 +27,7 @@ from dbml_sharepoint.analysis.list_description import VERIFY_LIST_TITLE, verify_
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.save_rules import joined_list_validation
 from dbml_sharepoint.model.conditions import Group, Leaf
+from dbml_sharepoint.model.identities import IdentityValue
 from dbml_sharepoint.model.mapping_types import ColumnValidation, MappingBundle
 from dbml_sharepoint.model.parser import Schema
 from dbml_sharepoint.model.release import Release
@@ -301,6 +304,7 @@ def generate_verify_js(
     site_role: str,
     source_dbml: str,
     generated_at: str,
+    identities: AbcMapping[str, tuple[IdentityValue, ...]] = MappingProxyType({}),
     application: str = APPLICATION_NAME,
 ) -> str:
     return _render(

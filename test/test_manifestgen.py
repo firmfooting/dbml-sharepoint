@@ -15,6 +15,7 @@ from _packs import (
     entities,
     entity,
     pack,
+    reader_identities,
     two_libraries_with_list_and_folder_scopes,
     write_mapping,
 )
@@ -253,7 +254,7 @@ def _reader_manifest(enterprise_reader: str | None) -> str:
         source_dbml="simple.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
-        enterprise_reader=enterprise_reader,
+        identities=reader_identities(enterprise_reader),
     )
 
 
@@ -295,7 +296,7 @@ def _manifest_for_bundle(bundle: MappingBundle, enterprise_reader: str | None) -
         source_dbml="simple.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
-        enterprise_reader=enterprise_reader,
+        identities=reader_identities(enterprise_reader),
     )
 
 
@@ -459,7 +460,7 @@ def test_the_manifest_says_a_reader_grant_is_folder_scoped(tmp_path: Path) -> No
         source_dbml="docs.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
-        enterprise_reader="svc-reporting@example.org",
+        identities=reader_identities("svc-reporting@example.org"),
     )
 
     manifest = " ".join(md.split())

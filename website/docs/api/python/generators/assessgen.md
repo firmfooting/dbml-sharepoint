@@ -67,7 +67,7 @@ NOT_ASSESSABLE = ('Power Automate / Power Apps inventory (lives in Power Platfor
 ### `generate_assess_js`
 
 ```python
-def generate_assess_js(*, schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, release: dbml_sharepoint.model.release.Release, site_url: str, site_role: str, source_dbml: str, generated_at: str, application: str = 'dbml-sharepoint') -> str
+def generate_assess_js(*, schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, release: dbml_sharepoint.model.release.Release, site_url: str, site_role: str, source_dbml: str, generated_at: str, identities: collections.abc.Mapping[str, tuple[dbml_sharepoint.model.identities.IdentityValue, ...]] = mappingproxy({}), application: str = 'dbml-sharepoint') -> str
 ```
 
 ### `generate_assess_manifest`

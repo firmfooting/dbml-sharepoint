@@ -8,7 +8,9 @@ not-assessable honesty block). STRICTLY read-only. See the read-only
 guarantee test. Spec: docs/plans/2026-07-24-tenant-assessment-design.md.
 """
 
+from collections.abc import Mapping as AbcMapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 
 from dbml_sharepoint import APPLICATION_NAME
@@ -25,6 +27,7 @@ from dbml_sharepoint.analysis.rendered_columns import rendered_columns
 from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.analysis.role_definition_description import marker_for_level
 from dbml_sharepoint.analysis.typemap import map_column
+from dbml_sharepoint.model.identities import IdentityValue
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema, Table
 from dbml_sharepoint.model.release import Release
@@ -409,6 +412,7 @@ def generate_assess_js(
     site_role: str,
     source_dbml: str,
     generated_at: str,
+    identities: AbcMapping[str, tuple[IdentityValue, ...]] = MappingProxyType({}),
     application: str = APPLICATION_NAME,
 ) -> str:
     requirements = [

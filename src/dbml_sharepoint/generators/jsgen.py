@@ -2,8 +2,10 @@
 """Render deploy.js from the schema, mapping bundle, and release."""
 
 import json
+from collections.abc import Mapping as AbcMapping
 from collections.abc import Sequence
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, assert_never
 
 from dbml_sharepoint import APPLICATION_NAME
@@ -18,6 +20,7 @@ from dbml_sharepoint.analysis.column_refs import (
 )
 from dbml_sharepoint.analysis.condition_description import describe
 from dbml_sharepoint.analysis.condition_rendering import to_caml_protected, to_validation
+from dbml_sharepoint.analysis.enrolment import as_json, enrolment_plan, reader_address
 from dbml_sharepoint.analysis.form_rendering import compose_visibility
 from dbml_sharepoint.analysis.group_description import group_description, marker_for_group
 from dbml_sharepoint.analysis.joins import all_items_hidden
@@ -63,6 +66,7 @@ from dbml_sharepoint.generators.assessgen import (
     derive_requirements,
 )
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
+from dbml_sharepoint.model.identities import IdentityValue
 from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
     EntityMapping,
@@ -113,7 +117,7 @@ def generate_deploy_js(
     generated_at: str,
     extension: DeploymentExtension | None = None,
     site_context: SiteContext | None = None,
-    enterprise_reader: str | None = None,
+    identities: AbcMapping[str, tuple[IdentityValue, ...]] = MappingProxyType({}),
     env_provenance: EnvProvenance = NO_ENV_FILE,
     deployment_log_list: str = "",
     deployment_log_change_list: str = "",
@@ -157,7 +161,8 @@ def generate_deploy_js(
         # `execute_build` has already refused a malformed address and a
         # mapping with no such group, so a non-None value names a real target.
         # Which group that is stays the template's job, read from SCHEMA.groups.
-        enterprise_reader=enterprise_reader,
+        enterprise_reader=reader_address(identities),
+        identity_enrolment=as_json(enrolment_plan(bundle.mapping, identities)),
         # #199: the bitmap the enrolment phase requires of the level behind
         # the reader's grant, and the two bits it only warns about. Emitted
         # from analysis.permissions rather than written into the template, so

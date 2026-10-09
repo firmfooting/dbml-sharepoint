@@ -28,7 +28,7 @@ from _batch_mock import BATCH_MOCK
 from _builders import ID_PK, TITLE, table
 from _node import NODE
 from _node import run_node as _run
-from _packs import DEFAULT_PREFIX, blocks, entities, pack
+from _packs import DEFAULT_PREFIX, blocks, entities, pack, reader_identities
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.list_description import marker_for
@@ -5149,7 +5149,7 @@ def _reader_deploy_js(
         source_dbml="simple.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
-        enterprise_reader=enterprise_reader,
+        identities=reader_identities(enterprise_reader),
         **sidecar_args,
         resolved=resolve(schema, bundle.mapping),
     ))
@@ -5909,7 +5909,7 @@ def _run_folder_and_list_reader_deploy(
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
-        enterprise_reader=_READER_ADDRESS,
+        identities=reader_identities(_READER_ADDRESS),
         sidecar_run_log_title=RUN_LOG_TITLE,
         sidecar_run_log_marker=run_log_marker(),
         sidecar_run_log_fields=list(RUN_LOG_STAMP_COLUMNS),
@@ -6702,7 +6702,7 @@ def _declared_reader_deploy_js(tmp_path: Path) -> str:
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
-        enterprise_reader=_READER_ADDRESS, resolved=resolve(schema, bundle.mapping),
+        identities=reader_identities(_READER_ADDRESS), resolved=resolve(schema, bundle.mapping),
     ))
 
 

@@ -16,7 +16,7 @@ from urllib.parse import quote
 import pytest
 from _builders import ID_PK, TITLE, table
 from _node import NODE, run_node
-from _packs import pack
+from _packs import pack, reader_identities
 from _paths import FIXTURES
 from test_deploy_runtime import _summary_of, _view_guard_harness, _without_assessment
 
@@ -422,7 +422,7 @@ def _library_deploy_js(
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
-        enterprise_reader=enterprise_reader, resolved=resolve(schema, bundle.mapping),
+        identities=reader_identities(enterprise_reader), resolved=resolve(schema, bundle.mapping),
     ))
 
 

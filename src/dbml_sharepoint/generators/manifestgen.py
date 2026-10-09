@@ -2,10 +2,13 @@
 """Render deploy-manifest.md."""
 
 import json
+from collections.abc import Mapping as AbcMapping
+from types import MappingProxyType
 from typing import Any
 
 from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.condition_description import describe
+from dbml_sharepoint.analysis.enrolment import reader_address
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.limits import MAX_VALIDATION_FORMULA, MAX_VALIDATION_MESSAGE
 from dbml_sharepoint.analysis.permissions import lists_granting_group
@@ -14,6 +17,7 @@ from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.extension import ManifestExtras
 from dbml_sharepoint.generators.jsgen import UNMANAGED
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
+from dbml_sharepoint.model.identities import IdentityValue
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
@@ -33,7 +37,7 @@ def generate_manifest(
     source_mtime: str,
     generated_at: str,
     manifest_extras: ManifestExtras | None = None,
-    enterprise_reader: str | None = None,
+    identities: AbcMapping[str, tuple[IdentityValue, ...]] = MappingProxyType({}),
     env_provenance: EnvProvenance = NO_ENV_FILE,
     sidecar_run_log_title: str | None = None,
     sidecar_change_log_title: str | None = None,
@@ -381,7 +385,7 @@ def generate_manifest(
         seed_items=schema_json["seed_items"],
         extra_sections=extras.sections,
         extra_warnings=extras.warnings,
-        enterprise_reader=enterprise_reader,
+        enterprise_reader=reader_address(identities),
         reader_group_list=_reader_groups,
         reader_granted_lists=reader_granted_lists,
         reader_folder_only_lists=reader_folder_only_lists,
