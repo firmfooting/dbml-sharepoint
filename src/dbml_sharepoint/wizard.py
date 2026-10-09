@@ -1803,6 +1803,7 @@ def _run(console: Console) -> int:
                 # Named by the build's own artefacts, so they report the same
                 # file the wizard read.
                 env_file=answers.env_file,
+                identities=(),
             )
         except typer.Exit as exc:
             # The build refused and has already said why on stderr. Its exit

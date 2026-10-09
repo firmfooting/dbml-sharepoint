@@ -81,7 +81,8 @@ def test_cli_reference_documents_exactly_the_registered_keys() -> None:
     """
     page = CLI_REFERENCE.read_text(encoding="utf-8")
     registered = {setting.key for setting in ENV_SETTINGS}
-    documented = set(DBMLSP_TOKEN.findall(page))
+    # The identity keys are a family, one per name, so they are not in the registry.
+    documented = {k for k in DBMLSP_TOKEN.findall(page) if not k.startswith("DBMLSP_IDENTITY_")}
 
     undocumented = sorted(registered - documented)
     assert not undocumented, (

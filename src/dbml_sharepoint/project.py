@@ -567,7 +567,9 @@ def resolve_env_settings(
             ))
         file_identities[name] = raw
         setting = EnvSetting(key=key, parameter=f"identity:{name}", help="")
-        if name in flagged:
+        if name == "enterprise_reader" and isinstance(enterprise_reader, EnterpriseReaderDeclined):
+            identity_values.append(EnvValue(setting, raw, used=False, override="declined"))
+        elif name in flagged:
             override = describe_identity(name, _values_or_empty(name, flagged[name]))
             identity_values.append(EnvValue(setting, raw, used=False, override=override))
         else:
@@ -604,7 +606,7 @@ def resolve_env_settings(
                     "enterprise_reader", (IdentityValue("user", current.lower()),),
                 )
                 if setting.parameter == ENTERPRISE_READER_PARAMETER and isinstance(current, str)
-                else current if isinstance(current, str) else repr(current)
+                else current if isinstance(current, str) else "declined"
             )
             values.append(EnvValue(
                 setting=setting, value=file_value,
