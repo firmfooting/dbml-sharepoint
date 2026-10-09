@@ -66,7 +66,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         for key, names in (("enroll", grp.enroll), ("enroll_during_run", grp.enroll_during_run)):
             for name in names:
                 enrolled.add(name)
-                if name in sharepoint_names or name.casefold() in ASSOCIATED_GROUP_ALIASES:
+                if name in sharepoint_names:
                     findings.append(Finding(
                         FindingCode.SHAREPOINT_GROUP_ENROLLED,
                         f"groups: {grp.name!r} {key} names {name!r}, a SharePoint group. "

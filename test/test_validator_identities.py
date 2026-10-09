@@ -125,6 +125,28 @@ def test_an_old_flag_beside_the_new_key_is_refused(tmp_path: Path) -> None:
     assert FindingCode.ENROLMENT_DECLARED_TWICE in codes
 
 
+def test_the_reader_flag_beside_the_new_key_is_refused(tmp_path: Path) -> None:
+    body = _group(
+        "        enroll_enterprise_reader: true\n        enroll: [enterprise_reader]"
+    )
+    codes = {f.code for f in _findings(tmp_path, body)}
+    assert FindingCode.ENROLMENT_DECLARED_TWICE in codes
+
+
+def test_a_defined_group_named_in_enroll_is_refused(tmp_path: Path) -> None:
+    only(
+        _findings(tmp_path, _group('        enroll: ["XX Writers"]')),
+        FindingCode.SHAREPOINT_GROUP_ENROLLED,
+    )
+
+
+def test_a_principal_kind_word_named_in_enroll_is_refused(tmp_path: Path) -> None:
+    only(
+        _findings(tmp_path, _group("        enroll: [group]")),
+        FindingCode.SHAREPOINT_GROUP_ENROLLED,
+    )
+
+
 def test_a_sharepoint_group_in_enroll_is_refused_with_the_nesting_citation(
     tmp_path: Path,
 ) -> None:

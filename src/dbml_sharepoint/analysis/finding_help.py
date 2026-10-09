@@ -1344,7 +1344,7 @@ FINDING_HELP: dict[FindingCode, str] = {
         "goes in `enroll`."
     ),
     FindingCode.SHAREPOINT_GROUP_ENROLLED: (
-        "A group's `enroll` names a SharePoint group. Microsoft Learn says "
+        "A group's `enroll` or `enroll_during_run` names a SharePoint group. Microsoft Learn says "
         "SharePoint groups cannot be nested (the page is written for "
         "SharePoint Server, so this refuses on its word). To give a site's "
         "own Owners, Members or Visitors a defined group's access, grant the "
