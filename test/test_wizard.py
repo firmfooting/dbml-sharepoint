@@ -3927,6 +3927,42 @@ def test_a_template_with_a_link_to_a_directory_is_refused_before_writing(
     assert not destination.exists()
 
 
+def test_a_template_with_a_dangling_link_is_refused_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The copy would raise on the missing target after creating the destination."""
+    solution = _fake_family(tmp_path / "fake")
+    try:
+        (solution.root / "notes.txt").symlink_to(solution.root / "missing.txt")
+    except OSError as exc:
+        pytest.skip(f"this platform will not create a symlink here: {exc}")
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    assert "notes.txt is a dangling link" in _collapsed(console)
+    assert not destination.exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="named pipes are a POSIX node")
+def test_a_template_with_a_special_file_is_refused_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A FIFO is neither a file nor a directory, so the copy would fail part-way on it."""
+    solution = _fake_family(tmp_path / "fake")
+    os.mkfifo(solution.root / "pipe")
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    assert "pipe is not a regular file" in _collapsed(console)
+    assert not destination.exists()
+
+
 # Windows has no mode bits and root ignores them, so a permission test cannot bind there.
 if sys.platform == "win32":
     _PERMISSIONS_BIND = False
