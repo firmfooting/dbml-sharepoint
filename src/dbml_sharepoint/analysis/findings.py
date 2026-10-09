@@ -38,6 +38,8 @@ class Section(StrEnum):
     FORM_FORMATTING = "form_formatting"
     FORM_VISIBILITY = "form_visibility"
     GROUPS = "groups"
+    # The `identities:` section: the account slots a mapping declares.
+    IDENTITIES = "identities"
     # Not a per-entity mapping section like the rest: its paths are
     # `list_permissions.default...` and `list_permissions.overrides[...]`.
     LIST_PERMISSIONS = "list_permissions"
@@ -475,6 +477,19 @@ class FindingCode(StrEnum):
     #: which is a name the MAPPING does not declare.
     UNKNOWN_TABLE = "unknown_table", "error"
     UNRESOLVABLE_ASSOCIATED_GROUP_ALIAS = "unresolvable_associated_group_alias", "error"
+
+    # --- identities (checks/_identities.py) ---------------------------------
+    DEPRECATED_ENROLMENT_FLAG = "deprecated_enrolment_flag", "warning"
+    ENROLMENT_DECLARED_TWICE = "enrolment_declared_twice", "error"
+    EXCLUSIVE_GROUP_ENROLS_A_GROUP_KIND = (
+        "exclusive_group_enrols_a_group_kind", "error")
+    IDENTITY_DECLARED_NOT_ENROLLED = "identity_declared_not_enrolled", "warning"
+    IDENTITY_KIND_UNKNOWN = "identity_kind_unknown", "error"
+    IDENTITY_NAME_INVALID = "identity_name_invalid", "error"
+    IDENTITY_REDECLARES_BUILTIN = "identity_redeclares_builtin", "error"
+    IDENTITY_UNKNOWN = "identity_unknown", "error"
+    OPERATOR_ENROLLED_PERSISTENTLY = "operator_enrolled_persistently", "error"
+    SHAREPOINT_GROUP_ENROLLED = "sharepoint_group_enrolled", "error"
 
     # --- form visibility (analysis/forms.py) --------------------------------
     FORM_VISIBILITY_CONDITION_ON_A_BOOLEAN_COLUMN = (

@@ -1298,6 +1298,59 @@ FINDING_HELP: dict[FindingCode, str] = {
         "More than one view on an entity is marked default; a "
         "SharePoint list has exactly one."
     ),
+    FindingCode.DEPRECATED_ENROLMENT_FLAG: (
+        "A group uses `enroll_enterprise_reader: true` or "
+        "`enroll_operator_during_deploy: true`. Both still load: the first as "
+        "`enroll: [enterprise_reader]` with `membership: exclusive`, the second "
+        "as `enroll_during_run: [operator]`. Move to the new keys; the flags "
+        "will be removed in a later release."
+    ),
+    FindingCode.ENROLMENT_DECLARED_TWICE: (
+        "A group enrols one identity through an old flag and the new key at "
+        "once. Keep the new key and drop the flag, so one declaration says who "
+        "the group holds."
+    ),
+    FindingCode.EXCLUSIVE_GROUP_ENROLS_A_GROUP_KIND: (
+        "An exclusive group enrols an identity whose `kinds` include "
+        "`security_group` or `m365_group`. Exclusive asserts the group holds "
+        "nobody else, and neither the deploy nor assess can see inside an "
+        "Entra group, so the assertion could not be checked. Use an additive "
+        "group, or restrict the identity to `kinds: [user]`."
+    ),
+    FindingCode.IDENTITY_DECLARED_NOT_ENROLLED: (
+        "An identity under `identities:` is enrolled by no group, so a value "
+        "supplied for it would be refused. Enrol it, or delete the declaration."
+    ),
+    FindingCode.IDENTITY_KIND_UNKNOWN: (
+        "An identity's `kinds` is empty or names something other than "
+        "`user`, `security_group` or `m365_group`."
+    ),
+    FindingCode.IDENTITY_NAME_INVALID: (
+        "An identity name must match `[a-z][a-z0-9_]{0,63}`, so its env key "
+        "`DBMLSP_IDENTITY_<NAME>` is the name upper-cased with no other change."
+    ),
+    FindingCode.IDENTITY_REDECLARES_BUILTIN: (
+        "`identities:` declares `enterprise_reader`, `automation` or "
+        "`operator`. These are built in; enrol them without declaring them."
+    ),
+    FindingCode.IDENTITY_UNKNOWN: (
+        "`enroll` or `enroll_during_run` names an identity that is neither "
+        "built in nor declared under `identities:`."
+    ),
+    FindingCode.OPERATOR_ENROLLED_PERSISTENTLY: (
+        "`enroll:` names `operator`, or `enroll_during_run:` names a "
+        "persistent identity. The operator is added and removed within one "
+        "run and goes in `enroll_during_run`; every other identity stays and "
+        "goes in `enroll`."
+    ),
+    FindingCode.SHAREPOINT_GROUP_ENROLLED: (
+        "A group's `enroll` names a SharePoint group. Microsoft Learn says "
+        "SharePoint groups cannot be nested (the page is written for "
+        "SharePoint Server, so this refuses on its word). To give a site's "
+        "own Owners, Members or Visitors a defined group's access, grant the "
+        "same level to `associated_owner_group`, `associated_member_group` or "
+        "`associated_visitor_group`."
+    ),
     FindingCode.MULTIPLE_ENTERPRISE_READER_GROUPS: (
         "More than one group is marked `enroll: [enterprise_reader]`. "
         "`build --enterprise-reader` takes one address and needs one "
