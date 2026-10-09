@@ -1149,12 +1149,11 @@ def build_schema_json(
                 "auto_accept_request_to_join_leave": grp.auto_accept_request_to_join_leave,
                 "only_allow_members_view_membership": grp.only_allow_members_view_membership,
                 "require_empty_at_deploy": grp.require_empty_at_deploy,
-                "enroll_operator_during_deploy": grp.enroll_operator_during_deploy,
-                # The reader-enrolment phase finds ITS group by this flag,
-                # exactly as operator enrolment finds its own above. Omitting
-                # it leaves the phase with a `--enterprise-reader` address
-                # and nowhere to put it.
-                "enroll_enterprise_reader": grp.enroll_enterprise_reader,
+                # Phases 1.4 and 1.5 find their groups by these, as the
+                # validator does, never by a group's name.
+                "enroll": list(grp.enroll),
+                "enroll_during_run": list(grp.enroll_during_run),
+                "membership": grp.membership,
             })
 
         acl_scopes_out += _acl_scopes(

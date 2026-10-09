@@ -285,12 +285,6 @@ def _parse_group(
             grp, "only_allow_members_view_membership", context,
         ),
         require_empty_at_deploy=optional_bool(grp, "require_empty_at_deploy", context),
-        enroll_operator_during_deploy=optional_bool(
-            grp, "enroll_operator_during_deploy", context,
-        ),
-        enroll_enterprise_reader=optional_bool(
-            grp, "enroll_enterprise_reader", context,
-        ),
         enroll=enroll,
         enroll_during_run=enroll_during_run,
         membership=membership,

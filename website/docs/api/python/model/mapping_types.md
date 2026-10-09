@@ -529,8 +529,6 @@ class SiteGroup:
     auto_accept_request_to_join_leave: bool
     only_allow_members_view_membership: bool
     require_empty_at_deploy: bool = False
-    enroll_operator_during_deploy: bool = False
-    enroll_enterprise_reader: bool = False
     enroll: tuple[str, ...] = ()
     enroll_during_run: tuple[str, ...] = ()
     membership: MembershipMode = 'additive'

@@ -1725,7 +1725,7 @@ def test_every_family_declares_exactly_one_enterprise_reader_group(
     """
     mapping = _load(template).mapping
     assert mapping.permissions is not None
-    readers = [g for g in mapping.permissions.groups if g.enroll_enterprise_reader]
+    readers = [g for g in mapping.permissions.groups if "enterprise_reader" in g.enroll]
     assert len(readers) == 1, (
         f"{template}: expected exactly one enterprise-reader group, "
         f"got {[g.name for g in readers]}"
@@ -1756,7 +1756,7 @@ def test_the_reader_group_is_granted_read_on_every_policy_block(
     mapping = _load(template).mapping
     assert mapping.permissions is not None
     perms = mapping.permissions
-    reader = next(g for g in perms.groups if g.enroll_enterprise_reader)
+    reader = next(g for g in perms.groups if "enterprise_reader" in g.enroll)
     trims = mapping.declares_item_read_trimming()
     # A folder policy carries its own complete assignment list exactly as an
     # override does, so leaving it out here would let a family secure its
@@ -1857,8 +1857,6 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
         "auto_accept_request_to_join_leave": False,
         "only_allow_members_view_membership": False,
         "require_empty_at_deploy": False,
-        "enroll_operator_during_deploy": False,
-        "enroll_enterprise_reader": True,
         "enroll": ("enterprise_reader",), "enroll_during_run": (), "membership": "exclusive",
         "legacy_flags": (
             LegacyFlag("enroll_enterprise_reader", "enterprise_reader", also_declared=False),
@@ -1878,8 +1876,6 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
         "auto_accept_request_to_join_leave": False,
         "only_allow_members_view_membership": True,
         "require_empty_at_deploy": False,
-        "enroll_operator_during_deploy": True,
-        "enroll_enterprise_reader": False,
         "enroll": (), "enroll_during_run": ("operator",), "membership": "additive",
         "legacy_flags": (
             LegacyFlag("enroll_operator_during_deploy", "operator", also_declared=False),
@@ -1914,8 +1910,6 @@ OPTIONAL_SHARED_GROUPS: dict[str, dict[str, object]] = {
         "auto_accept_request_to_join_leave": False,
         "only_allow_members_view_membership": True,
         "require_empty_at_deploy": False,
-        "enroll_operator_during_deploy": False,
-        "enroll_enterprise_reader": False,
         "enroll": (), "enroll_during_run": (), "membership": "additive",
         "legacy_flags": (),
         "renamed_from": [],

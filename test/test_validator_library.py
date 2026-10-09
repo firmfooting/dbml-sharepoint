@@ -1325,9 +1325,14 @@ def test_external_file_scopes_on_a_library_are_accepted(tmp_path: Path, route: s
 
 
 @pytest.mark.parametrize(
-    "flag", ["enroll_enterprise_reader", "enroll_operator_during_deploy"],
+    ("line", "key"),
+    [
+        ("enroll: [automation]", "enroll"),
+        ("enroll_during_run: [operator]", "enroll_during_run"),
+        ("membership: exclusive", "membership"),
+    ],
 )
-def test_an_enum_group_cannot_enrol_an_identity(tmp_path: Path, flag: str) -> None:
+def test_an_enum_group_cannot_enrol_an_identity(tmp_path: Path, line: str, key: str) -> None:
     """Each flag enrols ONE identity, and `from_enum` makes one group per
     member to enrol it into.
 
@@ -1350,21 +1355,26 @@ def test_an_enum_group_cannot_enrol_an_identity(tmp_path: Path, flag: str) -> No
                 name: "{{member}} Editors"
                 description: "Editors."
                 owner_group: "Site Owners"
-                {flag}: true
+                {line}
         """,
     )
     f = only(
         validate_against_mapping(schema, bundle),
         FindingCode.GROUP_ENUM_ENROLS_AN_IDENTITY,
     )
-    assert flag in f.message
+    assert key in f.message
     assert "division" in f.message
 
 
 @pytest.mark.parametrize(
-    "flag", ["enroll_enterprise_reader", "enroll_operator_during_deploy"],
+    ("line", "key"),
+    [
+        ("enroll: [automation]", "enroll"),
+        ("enroll_during_run: [operator]", "enroll_during_run"),
+        ("membership: exclusive", "membership"),
+    ],
 )
-def test_a_single_member_enum_may_enrol_an_identity(tmp_path: Path, flag: str) -> None:
+def test_a_single_member_enum_may_enrol_an_identity(tmp_path: Path, line: str, key: str) -> None:
     """One member generates one group, so the sentence the refusal gives --
     the identity lands in the first and the rest stay empty -- is not true of
     it, and a finding whose reason does not hold is the wrong finding.
@@ -1385,7 +1395,7 @@ def test_a_single_member_enum_may_enrol_an_identity(tmp_path: Path, flag: str) -
                 name: "{{member}} Editors"
                 description: "Editors."
                 owner_group: "Site Owners"
-                {flag}: true
+                {line}
         """,
     )
     none_of(
@@ -1395,9 +1405,14 @@ def test_a_single_member_enum_may_enrol_an_identity(tmp_path: Path, flag: str) -
 
 
 @pytest.mark.parametrize(
-    "flag", ["enroll_enterprise_reader", "enroll_operator_during_deploy"],
+    ("line", "key"),
+    [
+        ("enroll: [automation]", "enroll"),
+        ("enroll_during_run: [operator]", "enroll_during_run"),
+        ("membership: exclusive", "membership"),
+    ],
 )
-def test_an_empty_enum_may_not_enrol_an_identity(tmp_path: Path, flag: str) -> None:
+def test_an_empty_enum_may_not_enrol_an_identity(tmp_path: Path, line: str, key: str) -> None:
     """No members, no generated group, so the flag would enrol nobody.
 
     The DBML grammar refuses an empty enum body, so the members are cleared
@@ -1418,7 +1433,7 @@ def test_an_empty_enum_may_not_enrol_an_identity(tmp_path: Path, flag: str) -> N
                 name: "{{member}} Editors"
                 description: "Editors."
                 owner_group: "Site Owners"
-                {flag}: true
+                {line}
         """,
     )
     next(e for e in schema.enums if e.name == "division").members.clear()
@@ -1426,7 +1441,7 @@ def test_an_empty_enum_may_not_enrol_an_identity(tmp_path: Path, flag: str) -> N
         validate_against_mapping(schema, bundle),
         FindingCode.GROUP_ENUM_ENROLS_AN_IDENTITY,
     )
-    assert flag in f.message
+    assert key in f.message
     assert "no members" in f.message
 
 

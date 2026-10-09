@@ -652,7 +652,7 @@ def test_the_reader_flag_needs_a_group_to_enrol_into(tmp_path: Path) -> None:
         "--enterprise-reader", "svc-reporting@example.org",
     ])
     assert result.exit_code != 0
-    assert "enroll_enterprise_reader" in result.output
+    assert "enrolling enterprise_reader" in result.output
     assert not (out / "deploy.js.txt").exists()
 
 
@@ -1520,7 +1520,7 @@ def test_env_file_reader_arms_the_no_group_guard(tmp_path: Path) -> None:
         app, [*base_args, "--out", str(out_with), "--env-file", str(env_path)],
     )
     assert with_file.exit_code != 0
-    assert "enroll_enterprise_reader" in with_file.output
+    assert "enrolling enterprise_reader" in with_file.output
     assert not (out_with / "deploy.js.txt").exists()
 
 

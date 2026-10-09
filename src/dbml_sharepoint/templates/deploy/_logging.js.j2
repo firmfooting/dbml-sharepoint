@@ -39,7 +39,7 @@
      cannot.
    - The change log (default `dbml_Changes`, LOCAL only) is hidden and holds
      one Read assignment for the site group flagged
-     `enroll_enterprise_reader`. It receives type-2 rows: every change
+     `enroll: [enterprise_reader]`. It receives type-2 rows: every change
      carries its key in ChangeKey, plus EffectiveFrom/EffectiveTo and
      IsCurrent, and a change CLOSES the previous current row for its key in
      the same logical step, so a reader always sees exactly one current row
@@ -979,7 +979,7 @@
         + `belong to the deployment-log family that provisions them.`);
     } else if (changeLogReady) {
 {% if enterprise_reader %}
-      const readerGroup = SCHEMA.groups.find((g) => g.enroll_enterprise_reader);
+      const readerGroup = SCHEMA.groups.find((g) => g.enroll.includes('enterprise_reader'));
       // Prefer a list-scope grant: the change log is a list with no folders,
       // so a list-scope grant is the closer analogue. The folder fallback is
       // what leaves a reader granted only inside a library's folders with a

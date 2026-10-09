@@ -1,6 +1,6 @@
 {# src/dbml_sharepoint/templates/deploy/_reader_enrolment.js.j2
    Phase body: enrol the ONE account named by `build --enterprise-reader`
-   into the mapping's `enroll_enterprise_reader` group, which holds Read.
+   into the mapping's `enroll: [enterprise_reader]` group, which holds Read.
    Emitted only when that flag was given, so an ordinary build carries no
    enrolment code at all. Unlike the operator's run-scoped enrolment, this
    membership is PERMANENT once the run reaches the end. If a later phase
@@ -27,7 +27,7 @@
   // === Enterprise reader enrolment (--enterprise-reader) ===
   // Grants one named service account read-only access to the registers
   // this bundle provisions, by adding it to the group the mapping flagged
-  // with `enroll_enterprise_reader`, a group the validator requires to
+  // with `enroll: [enterprise_reader]`, a group the validator requires to
   // hold Read and nothing more. The group's grants are unchanged here;
   // this phase decides WHO is in it, and refuses to put anybody in it if
   // the level behind the grant does not actually read (step 0) or if the
@@ -68,7 +68,7 @@
     // bundle this tool produced the list holds exactly one group. Written
     // as a loop anyway: a hand-edited bundle then reports per group instead
     // of silently enrolling into whichever one happened to come first.
-    const readerGroups = SCHEMA.groups.filter(g => g.enroll_enterprise_reader);
+    const readerGroups = SCHEMA.groups.filter(g => g.enroll.includes('enterprise_reader'));
     // The bitmap a level must carry to be worth enrolling into, and the two
     // bits whose absence only narrows it. Emitted from
     // analysis/permissions.py so the values this checks against and the

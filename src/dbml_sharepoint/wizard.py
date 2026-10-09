@@ -1415,7 +1415,7 @@ def _read_facts(solution: Solution) -> _TemplateFacts:
             if rows and name in bundle.mapping.entities
         ),
         reader_group=any(
-            g.enroll_enterprise_reader
+            "enterprise_reader" in g.enroll
             for g in declaring_groups(permissions)
         ),
     )

@@ -306,13 +306,13 @@ def execute_build(
         # group", sent the author to add a flag that is already there, and
         # took the manifest and every other finding with it.
         declared_readers = [
-            g for g in declaring_groups(perms) if g.enroll_enterprise_reader
+            g for g in declaring_groups(perms) if "enterprise_reader" in g.enroll
         ]
         # "Which lists grant it" needs the RESOLVED name, because a
         # `from_enum` group's template spelling matches no assignment.
         targets = [
             g for g in resolved.groups
-            if g.enroll_enterprise_reader
+            if "enterprise_reader" in g.enroll
         ]
         if not declared_readers:
             # Fail closed rather than emitting a bundle that quietly enrols
@@ -322,7 +322,7 @@ def execute_build(
             # so there is nothing to re-check on that side here.
             raise typer.BadParameter(
                 "--enterprise-reader was given but the mapping declares no "
-                "group with enroll_enterprise_reader: true.",
+                "group enrolling enterprise_reader.",
             )
 
         # Declaring the group is not the same as granting it anything HERE.

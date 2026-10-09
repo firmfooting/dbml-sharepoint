@@ -9,6 +9,7 @@ somebody's live site.
 """
 
 import dataclasses
+import re
 from pathlib import Path
 from typing import Any
 
@@ -621,7 +622,7 @@ def test_group_management_automation_rendered(tmp_path: Path) -> None:
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
-    assert '"enroll_operator_during_deploy": true' in js
+    assert re.search(r'"enroll_during_run": \[\s*"operator"\s*\]', js)
     assert "ProcessQuery" in js          # owner-set fallback endpoint
     assert "SetProperty" in js           # CSOM payload
     assert "removeSelfEnrollments" in js # end-of-run cleanup helper

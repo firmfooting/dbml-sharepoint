@@ -264,7 +264,7 @@ def _bundle_with_reader_dropped_from(entity_names: Iterable[str]) -> MappingBund
     bundle = load_mapping(FIXTURES / "sharepoint-mapping-with-reader.yaml")
     perms = bundle.mapping.permissions
     assert perms is not None
-    reader_group = next(g.name for g in perms.groups if g.enroll_enterprise_reader)
+    reader_group = next(g.name for g in perms.groups if "enterprise_reader" in g.enroll)
     default = perms.default_policy
     assert default is not None
     without_reader = replace(

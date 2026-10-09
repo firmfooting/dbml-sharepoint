@@ -127,7 +127,7 @@ def generate_manifest(
     groups: list[dict[str, Any]] = schema_json.get("groups", [])
     _reader_groups = [
         g["name"] for g in groups
-        if g.get("enroll_enterprise_reader")
+        if "enterprise_reader" in g.get("enroll", ())
     ]
     _deployed_entities = [e for e in bundle.mapping.entities if _deployed(e)]
     # The granted half is passed too, not just discarded: when every deployed
@@ -382,6 +382,7 @@ def generate_manifest(
         extra_sections=extras.sections,
         extra_warnings=extras.warnings,
         enterprise_reader=enterprise_reader,
+        reader_group_list=_reader_groups,
         reader_granted_lists=reader_granted_lists,
         reader_folder_only_lists=reader_folder_only_lists,
         reader_excluded_lists=reader_excluded_lists,

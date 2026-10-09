@@ -87,7 +87,7 @@ mismatch the script sets the declared owner via the documented CSOM
 `ProcessQuery` protocol and re-verifies through the read-only `/owner`
 resource; only if that fails does it stop with a manual instruction to set
 the owner in **Site permissions** and rerun.
-{% if schema_json.groups | selectattr("enroll_operator_during_deploy") | list %}
+{% if schema_json.groups | selectattr("enroll_during_run") | list %}
 Operator self-enrolment: for the groups flagged below, the script adds YOU
 (the running operator) to the group after Phase {{ phase_num['security'] }} so later phases hold that
 group's list grants, and you are removed automatically at the end of the run
@@ -95,7 +95,7 @@ group's list grants, and you are removed automatically at the end of the run
 untouched. If an unexpected crash strands the enrolment, remove yourself in
 **Site permissions -> Groups**.
 {% endif %}
-{% set reader_groups = schema_json.groups | selectattr("enroll_enterprise_reader") | list %}
+{% set reader_groups = schema_json.groups | selectattr("name", "in", reader_group_list) | list %}
 {% set reader_group_names = reader_groups | map(attribute="name") | join(", ") %}
 {# The blank line is INSIDE each branch, so it costs nothing on a mapping
    with no reader group. Without it the paragraph runs straight on from the
@@ -512,7 +512,7 @@ _(none declared)_
 | Name | Required owner | Must be empty at deploy | Enrolled by this deploy | Description |
 |------|----------------|-------------------------|-------------------------|-------------|
 {% for grp in schema_json.groups %}
-| {{ grp.name | markdown_cell }} | {{ grp.owner_group | markdown_cell }} | {{ "yes" if grp.require_empty_at_deploy else "no" | markdown_cell }} | {% if grp.enroll_operator_during_deploy and grp.enroll_enterprise_reader %}you (the operator), removed automatically at the end of the run; and {{ reader_cell | markdown_cell }}{% elif grp.enroll_operator_during_deploy %}you (the operator), removed automatically at the end of the run{% elif grp.enroll_enterprise_reader %}{{ reader_cell | markdown_cell }}{% else %}nobody{% endif %} | {{ grp.description | markdown_cell }} |
+| {{ grp.name | markdown_cell }} | {{ grp.owner_group | markdown_cell }} | {{ "yes" if grp.require_empty_at_deploy else "no" | markdown_cell }} | {% if grp.enroll_during_run and "enterprise_reader" in grp.enroll %}you (the operator), removed automatically at the end of the run; and {{ reader_cell | markdown_cell }}{% elif grp.enroll_during_run %}you (the operator), removed automatically at the end of the run{% elif "enterprise_reader" in grp.enroll %}{{ reader_cell | markdown_cell }}{% else %}nobody{% endif %} | {{ grp.description | markdown_cell }} |
 {% endfor %}
 {% else %}
 _(none declared)_

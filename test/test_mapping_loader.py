@@ -299,7 +299,7 @@ def test_a_group_can_declare_itself_the_enterprise_reader_target(
 
     bundle = load_mapping(tmp_path / "mapping.yaml")
     assert bundle.mapping.permissions is not None
-    assert bundle.mapping.permissions.groups[0].enroll_enterprise_reader is True
+    assert bundle.mapping.permissions.groups[0].enroll == ("enterprise_reader",)
 
 
 def test_enterprise_reader_enrolment_defaults_to_false(tmp_path: Path) -> None:
@@ -311,7 +311,7 @@ def test_enterprise_reader_enrolment_defaults_to_false(tmp_path: Path) -> None:
 
     bundle = load_mapping(tmp_path / "mapping.yaml")
     assert bundle.mapping.permissions is not None
-    assert bundle.mapping.permissions.groups[0].enroll_enterprise_reader is False
+    assert "enterprise_reader" not in bundle.mapping.permissions.groups[0].enroll
 
 
 def test_enterprise_reader_enrolment_requires_boolean(tmp_path: Path) -> None:
@@ -880,8 +880,8 @@ def test_enroll_operator_during_deploy_defaults_false_and_parses_true(tmp_path: 
     perms = bundle.mapping.permissions
     assert perms is not None
     groups = {g.name: g for g in perms.groups}
-    assert groups["GH List Administrators"].enroll_operator_during_deploy is True
-    assert groups["GH Automation"].enroll_operator_during_deploy is False
+    assert groups["GH List Administrators"].enroll_during_run == ("operator",)
+    assert groups["GH Automation"].enroll_during_run == ()
 
 
 # --- Declared views ---------------------------------------------------------
@@ -5813,7 +5813,7 @@ def test_the_reader_flag_loads_as_an_exclusive_reader_enrolment(tmp_path: Path) 
             enroll_enterprise_reader: true
     """)
     assert reader.enroll == ("enterprise_reader",)
-    # Review focus 5 of the spec: the alias must keep step 7's guard.
+    # The alias must keep step 7's guard.
     assert reader.membership == "exclusive"
     assert reader.legacy_flags == (
         LegacyFlag("enroll_enterprise_reader", "enterprise_reader", also_declared=False),

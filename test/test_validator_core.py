@@ -2072,7 +2072,6 @@ def test_a_group_owned_by_an_undeclared_group_is_an_error() -> None:
                     auto_accept_request_to_join_leave=False,
                     only_allow_members_view_membership=False,
                     require_empty_at_deploy=False,
-                    enroll_operator_during_deploy=False,
                 )],
                 default_policy=None,
                 overrides={},
@@ -2110,8 +2109,8 @@ def _reader_findings(
             auto_accept_request_to_join_leave=False,
             only_allow_members_view_membership=False,
             require_empty_at_deploy=require_empty,
-            enroll_operator_during_deploy=enroll_operator,
-            enroll_enterprise_reader=True,
+            enroll=("enterprise_reader",), membership="exclusive",
+            enroll_during_run=("operator",) if enroll_operator else (),
         )
 
     groups = [reader("XX Enterprise Readers")]

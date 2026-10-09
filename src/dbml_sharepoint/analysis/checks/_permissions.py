@@ -372,12 +372,10 @@ def _enum_groups(vc: ValidationContext, perms: PermissionsConfig) -> list[Findin
         # the only count that gives it one group to land in: more leave every
         # group after the first empty, and none generates no group at all.
         enrolments: list[str] = [] if len(members) == 1 else [
-            flag for flag, on in (
-                ("enroll_enterprise_reader", source.template.enroll_enterprise_reader),
-                (
-                    "enroll_operator_during_deploy",
-                    source.template.enroll_operator_during_deploy,
-                ),
+            key for key, on in (
+                ("enroll", bool(source.template.enroll)),
+                ("enroll_during_run", bool(source.template.enroll_during_run)),
+                ("membership", source.template.membership == "exclusive"),
             ) if on
         ]
         if enrolments:
@@ -686,7 +684,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # The flagged group is the target of `build --enterprise-reader`.
         # Every rule here refuses a mapping that would deploy green and
         # leave the reporting account seeing nothing.
-        reader_groups = [g for g in vc.site_groups if g.enroll_enterprise_reader]
+        reader_groups = [g for g in vc.site_groups if "enterprise_reader" in g.enroll]
 
         if len(reader_groups) > 1:
             findings.append(Finding(
@@ -699,7 +697,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             ))
 
         for grp in reader_groups:
-            if grp.enroll_operator_during_deploy:
+            if "operator" in grp.enroll_during_run:
                 findings.append(Finding(
                     FindingCode.ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR,
                     f"groups: {grp.name!r} declares both "
