@@ -23,7 +23,8 @@
     // Tenant-wide claims ensureuser can hand back; refused for every user value.
     const TENANT_WIDE = ['spo-grid-all-users', 'c:0(.s|true', 'c:0-.f|rolemanager'];
     // An error body can echo the value back (ensureuser names the logon it could not find).
-    const scrub = (text, value) => String(text).split(value).join('[value]');
+    const scrub = (text, value) => String(text).replace(
+      new RegExp(String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '[value]');
     const upnPart = (name) => {
       const parts = String(name).split('|');
       return parts[parts.length - 1];

@@ -5241,7 +5241,7 @@ def _reader_harness(
     web_binding_shape: str = "verbose",
     unreadable_binding_levels: list[int] | None = None,
     drop_change_log_grant: bool = False,
-    ensure_echo_guid_only: bool = False,
+    ensure_echo: str = '',
 ) -> str:
     """`_ADOPTED_HARNESS` plus the two surfaces the reader phase touches.
 
@@ -5314,7 +5314,7 @@ def _reader_harness(
     return _ADOPTED_HARNESS + textwrap.dedent(r"""
         const ENSURED_BY = __ENSURE_USER__;
         const ENSURE_STATUS = __ENSURE_STATUS__;
-        const ECHO_GUID_ONLY = __ECHO_GUID_ONLY__;
+        const ECHO = __ECHO__;
         const ADD_STATUS = __ADD_STATUS__;
         const REMOVE_STATUS = __REMOVE_STATUS__;
         const ensuredFor = (body) => {
@@ -5352,14 +5352,15 @@ def _reader_harness(
           };
           if (u.toLowerCase().includes('/ensureuser')) {
             const asked = JSON.parse(opts.body || '{}').logonName;
-            if (ENSURE_STATUS !== 200 || (ECHO_GUID_ONLY && asked.includes('|'))) {
+            if (ENSURE_STATUS !== 200 || (ECHO && asked.includes('|'))) {
               calls.push({ url: u, method, body: opts.body === undefined ? null : opts.body });
               // Real refusals name the logon they could not find.
               const payload = { error: { code: 'ensureuser refused', message: {
-                value: 'The user ' + (ECHO_GUID_ONLY
-                  ? JSON.parse(opts.body || '{}').logonName.split('|').pop()
-                  : JSON.parse(opts.body || '{}').logonName)
-                  + ' could not be found' } } };
+                value: 'The user ' + ({
+                  guid: asked.split('|').pop(),
+                  guid_upper: asked.split('|').pop().toUpperCase(),
+                  claim_upper: asked.toUpperCase(),
+                }[ECHO] || asked) + ' could not be found' } } };
               const status = ENSURE_STATUS === 200 ? 400 : ENSURE_STATUS;
               return { ok: false, status, headers: { get: () => null },
                        json: async () => payload, text: async () => JSON.stringify(payload) };
@@ -5569,7 +5570,7 @@ def _reader_harness(
     """).replace(
         "__ENSURE_USER__", json.dumps(ensure_user),
     ).replace(
-        "__ECHO_GUID_ONLY__", "true" if ensure_echo_guid_only else "false",
+        "__ECHO__", json.dumps(ensure_echo),
     ).replace(
         "__ENSURE_STATUS__", str(ensure_status),
     ).replace(
@@ -5665,7 +5666,7 @@ def _run_identity_deploy(
     unreadable_binding_levels: list[int] | None = None,
     sidecars: bool = False,
     drop_change_log_grant: bool = False,
-    ensure_echo_guid_only: bool = False,
+    ensure_echo: str = '',
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     """Run the emitted deploy against the reader harness.
 
@@ -5690,7 +5691,7 @@ def _run_identity_deploy(
         web_binding_shape=web_binding_shape,
         unreadable_binding_levels=unreadable_binding_levels,
         drop_change_log_grant=drop_change_log_grant,
-        ensure_echo_guid_only=ensure_echo_guid_only,
+        ensure_echo=ensure_echo,
     )
     if sidecars:
         script = _with_sidecar_descriptions(script)
@@ -10561,7 +10562,9 @@ def test_no_persisted_row_carries_a_group_value() -> None:
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 @pytest.mark.parametrize("case", [
     pytest.param({"ensure_status": 500}, id="ensure-echoes-the-claim"),
-    pytest.param({"ensure_echo_guid_only": True}, id="ensure-echoes-the-guid"),
+    pytest.param({"ensure_echo": "guid"}, id="ensure-echoes-the-guid"),
+    pytest.param({"ensure_echo": "guid_upper"}, id="ensure-echoes-the-upper-case-guid"),
+    pytest.param({"ensure_echo": "claim_upper"}, id="ensure-echoes-the-upper-case-claim"),
     pytest.param({"add_status": 403}, id="add-fails"),
     pytest.param({"drop_readback": True}, id="readback-mismatch"),
     pytest.param({"ensured": _group_principal(_SECURITY_CLAIM, kind=1)}, id="not-a-group"),
