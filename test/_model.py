@@ -46,6 +46,7 @@ from dbml_sharepoint.model.mapping_types import (
     FolderSource,
     FormFormatting,
     FormVisibility,
+    IdentityDeclaration,
     ItemSecurity,
     ListValidation,
     Mapping,
@@ -218,6 +219,7 @@ class MappingSections(TypedDict, total=False):
     retention_policies_source: Path | None
     extension: str | None
     permissions: PermissionsConfig | None
+    identities: dict[str, IdentityDeclaration]
     previous_prefixes: tuple[str, ...]
     calculated_formulas: dict[str, dict[str, str]]
     default_formulas: dict[str, dict[str, str]]

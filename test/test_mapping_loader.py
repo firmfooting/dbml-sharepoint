@@ -1790,10 +1790,10 @@ def test_the_families_produce_every_field_exactly_once(tmp_path: Path) -> None:
     # `retirement_strips` is filled by the retirement fold after the
     # families run, and `blank_defaults` by the runner's collector around
     # them; `source_paths` is assembled by the runner from two of the fields
-    # below.
+    # below. `identities` has no reader until the section reader lands.
     expected = (
         {f.name for f in fields(mapping_types.Mapping)}
-        - {"retirement_strips", "blank_defaults"}
+        - {"retirement_strips", "blank_defaults", "identities"}
     ) | (
         {f.name for f in fields(mapping_types.MappingBundle)} - {"mapping", "source_paths"}
     )

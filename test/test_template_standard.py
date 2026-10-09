@@ -1859,6 +1859,8 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
         "require_empty_at_deploy": False,
         "enroll_operator_during_deploy": False,
         "enroll_enterprise_reader": True,
+        "enroll": (), "enroll_during_run": (), "membership": "additive",
+        "legacy_flags": (),
         # Never renamed: the shared groups are one object per site.
         "renamed_from": (),
         "previous_names": (),
@@ -1876,6 +1878,8 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
         "require_empty_at_deploy": False,
         "enroll_operator_during_deploy": True,
         "enroll_enterprise_reader": False,
+        "enroll": (), "enroll_during_run": (), "membership": "additive",
+        "legacy_flags": (),
         # Never renamed: the shared groups are one object per site.
         "renamed_from": (),
         "previous_names": (),
@@ -1907,9 +1911,12 @@ OPTIONAL_SHARED_GROUPS: dict[str, dict[str, object]] = {
         "only_allow_members_view_membership": True,
         "require_empty_at_deploy": False,
         "enroll_operator_during_deploy": False,
-        "enroll_enterprise_reader": False,    "renamed_from": [],
-    "previous_names": [],
-},
+        "enroll_enterprise_reader": False,
+        "enroll": (), "enroll_during_run": (), "membership": "additive",
+        "legacy_flags": (),
+        "renamed_from": [],
+        "previous_names": [],
+    },
 }
 
 #: Every group this tool names for itself, shipped by all families or not.
