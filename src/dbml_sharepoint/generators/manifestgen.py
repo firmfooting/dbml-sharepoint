@@ -31,7 +31,7 @@ def _group_enrols(
     for name in group.get("enroll", ()):
         kinds = sorted({v.kind for v in identities.get(name, ())})
         out.append(
-            f"{name} ({', '.join(kinds)}; kept after a successful run; "
+            f"{name} ({', '.join(kinds)}; kept by a run that reaches the end; "
             "an aborted run removes only what it added)"
             if kinds else f"{name} (no value supplied; nobody enrolled, created empty)")
     for name in group.get("enroll_during_run", ()):

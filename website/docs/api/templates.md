@@ -115,7 +115,7 @@ DELETES every list declared by this schema at this site. Refuses EVERY list unle
 
 dbml-sharepoint CLOCK VERIFICATION script (WRITES TO ONE SCRATCH LIST).
 
-Exercises every clock cell this pack uses (a `today` or `now` rule, a `today` view window, a `[today]` default) on a hidden scratch list named ``, and prints a VERIFIED / MISMATCH / NOT-VERIFIED verdict. It creates that list if absent, reuses it when its Description carries the tool's marker, and never touches any other list. Paste after deploy.js.txt, on the same site.
+Exercises every clock cell this pack uses (a `today` or `now` rule, a `today` view window, a `[today]` default) on a hidden scratch list named ``, and prints a VERIFIED / MISMATCH / NOT-VERIFIED verdict. It creates that list if absent, reuses it when its Description carries the tool's marker, and never touches any other list. It also checks, read only, that each enrolled identity is a member of its group. Paste after deploy.js.txt, on the same site.
 
 ## Shared partials
 

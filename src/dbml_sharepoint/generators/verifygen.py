@@ -26,7 +26,7 @@ from dbml_sharepoint.analysis.condition_rendering import to_caml, to_validation
 from dbml_sharepoint.analysis.enrolment import as_json, enrolment_plan
 from dbml_sharepoint.analysis.list_description import VERIFY_LIST_TITLE, verify_marker
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
-from dbml_sharepoint.analysis.resolve import resolve
+from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.analysis.save_rules import joined_list_validation
 from dbml_sharepoint.model.conditions import Group, Leaf
 from dbml_sharepoint.model.identities import IdentityValue
@@ -252,8 +252,9 @@ def _not_after_now(row: _Row) -> bool:
     return bool(value["kind"] == "midnight" and row["day"] is not None and row["day"] <= 0)
 
 
+@guards_resolution
 def verify_targets(
-    schema: Schema, bundle: MappingBundle, site_role: str,
+    schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping,
     identities: AbcMapping[str, tuple[IdentityValue, ...]] = MappingProxyType({}),
 ) -> dict[str, Any]:
     """The data the verify script loops over, derived from the pack's clock use."""
@@ -294,7 +295,7 @@ def verify_targets(
         "checks": targets.checks,
         "rule": rule,
         # Values travel here for the standalone script only; the script logs names, never values.
-        "identity_groups": as_json(enrolment_plan(bundle, resolve(schema, mapping), identities)),
+        "identity_groups": as_json(enrolment_plan(bundle, resolved, identities)),
     }
 
 
@@ -302,10 +303,12 @@ def _render(template_name: str, *, application: str = APPLICATION_NAME, **contex
     return script_env(application).get_template(template_name).render(**context)
 
 
+@guards_resolution
 def generate_verify_js(
     *,
     schema: Schema,
     bundle: MappingBundle,
+    resolved: ResolvedMapping,
     release: Release,
     site_url: str,
     site_role: str,
@@ -322,5 +325,5 @@ def generate_verify_js(
         release=release,
         source_dbml=source_dbml,
         generated_at=generated_at,
-        targets=verify_targets(schema, bundle, site_role, identities),
+        targets=verify_targets(schema, bundle, site_role, resolved=resolved, identities=identities),
     )

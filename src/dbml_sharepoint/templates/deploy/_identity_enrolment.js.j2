@@ -716,7 +716,7 @@
         } else {
           warnStrangers(after);
         }
-        log('INFO', `Enrolled ${absent.map((r) => r.principal.Title || r.row.described).join(', ')} into '${plan.group}'. This membership is PERMANENT once this run reaches its end; if a later phase aborts it is removed automatically. Once permanent, remove it in Site permissions > Groups when the account no longer needs access.`);
+        log('INFO', `Enrolled ${absent.map((r) => r.principal.Title || r.row.described).join(', ')} into '${plan.group}'. This membership is kept by a run that reaches the end; if a later phase aborts it is removed automatically. Once kept, remove it in Site permissions > Groups when the account no longer needs access.`);
         for (const row of new Set(absent.map((r) => r.row))) {
           logChange({ key: `identity:${plan.group}:${row.identity}`, kind: 'identity-enrolled',
             target: row.described, oldValue: '',

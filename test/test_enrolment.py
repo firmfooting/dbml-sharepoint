@@ -11,6 +11,8 @@ from dbml_sharepoint.analysis.enrolment import (
     enrolment_plan,
 )
 from dbml_sharepoint.analysis.resolve import resolve
+from dbml_sharepoint.generators.assessgen import assess_targets
+from dbml_sharepoint.generators.verifygen import verify_targets
 from dbml_sharepoint.model.identities import describe_identity, parse_values
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.parser import parse_dbml
@@ -91,3 +93,31 @@ def test_a_single_member_enum_group_is_named_as_it_is_deployed(tmp_path: Path) -
         {"automation": parse_values("automation", "user:flows@example.com")},
     )
     assert [g.group for g in plan] == ["Field operations Editors"]
+
+
+def test_deploy_assess_and_verify_name_a_single_member_group_alike(tmp_path: Path) -> None:
+    schema, bundle = pack(
+        tmp_path,
+        dbml='Enum division {\n  "Field operations"\n}\n' + table("Docs", ID_PK, TITLE),
+        mapping="""
+            entities:
+              Docs: { kind: List, base_template: 100, site_role: default }
+
+            groups:
+              - from_enum: division
+                name: "{member} Editors"
+                description: "Editors."
+                owner_group: "Site Owners"
+                enroll: [automation]
+        """,
+    )
+    resolved = resolve(schema, bundle.mapping)
+    identities = {"automation": parse_values("automation", "user:flows@example.com")}
+    planned = as_json(enrolment_plan(bundle, resolved, identities))
+    verify = verify_targets(schema, bundle, "default", resolved=resolved, identities=identities)
+    assess = assess_targets(
+        schema, bundle, "default", resolved=resolved, identities=identities,
+    )
+    assert [g["group"] for g in planned] == ["Field operations Editors"]
+    assert verify["identity_groups"] == planned
+    assert assess["identity_groups"] == planned

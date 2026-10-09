@@ -2438,6 +2438,10 @@ Neither mode removes a member. `enroll_enterprise_reader: true` and
 [enterprise_reader]` with `membership: exclusive` and as
 `enroll_during_run: [operator]`, and raise `deprecated_enrolment_flag`.
 
+The standalone `assess.js.txt` findings name declared values and other members'
+logins, because they go to the console and the return object only and are not
+written to any log.
+
 ### The site-wide groups
 
 `dbml Enterprise Readers`, `dbml List Administrators` and

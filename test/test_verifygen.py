@@ -24,8 +24,9 @@ from _paths import EXPECTED, FIXTURES, pin_deployer_version, write_golden
 from dbml_sharepoint.analysis.clock_cells import cell_for
 from dbml_sharepoint.analysis.condition_rendering import to_validation
 from dbml_sharepoint.analysis.list_description import VERIFY_LIST_TITLE, verify_marker
+from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.save_rules import joined_list_validation
-from dbml_sharepoint.generators.verifygen import generate_verify_js, verify_targets
+from dbml_sharepoint.generators import verifygen
 from dbml_sharepoint.model.conditions import Group, Leaf
 from dbml_sharepoint.model.identities import parse_values
 from dbml_sharepoint.model.mapping_loader import load_mapping
@@ -44,6 +45,18 @@ from dbml_sharepoint.model.release import load_release
 
 def _rule(field: str, op: str, value: str) -> ColumnValidation:
     return ColumnValidation(when=Leaf(field=field, op=op, value=value), message="m")
+
+
+def verify_targets(schema: Schema, bundle: MappingBundle, role: str, **kw: Any) -> dict[str, Any]:
+    return verifygen.verify_targets(
+        schema, bundle, role, resolved=resolve(schema, bundle.mapping), **kw,
+    )
+
+
+def generate_verify_js(*, schema: Schema, bundle: MappingBundle, **kw: Any) -> str:
+    return verifygen.generate_verify_js(
+        schema=schema, bundle=bundle, resolved=resolve(schema, bundle.mapping), **kw,
+    )
 
 
 def _clock_pack() -> tuple[Schema, MappingBundle]:

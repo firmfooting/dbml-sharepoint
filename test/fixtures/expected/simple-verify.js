@@ -13,7 +13,8 @@
  * `_dbml-verify`, and prints a VERIFIED /
  * MISMATCH / NOT-VERIFIED verdict. It creates that list if absent, reuses it
  * when its Description carries the tool's marker, and never touches any
- * other list. Paste after deploy.js.txt, on the same site.
+ * other list. It also checks, read only, that each enrolled identity is a
+ * member of its group. Paste after deploy.js.txt, on the same site.
  */
 (async () => {
   const SITE_URL = "https://example.sharepoint.com/sites/test";

@@ -462,13 +462,15 @@ def emit_bundle(
     # Derived, not flagged: a pack that reads a clock or enrols an identity
     # gets the script that checks it on the site; one with neither has
     # nothing to verify and gets no script to paste by mistake.
-    targets = verify_targets(schema, mapping_bundle, site_role, identities)
+    targets = verify_targets(
+        schema, mapping_bundle, site_role, resolved=resolved, identities=identities,
+    )
     verify = bool(targets["checks"] or targets["identity_groups"])
     if verify:
         write_artifact(
             out / VERIFY_SCRIPT,
             generate_verify_js(
-                schema=schema, bundle=mapping_bundle, release=release,
+                schema=schema, bundle=mapping_bundle, resolved=resolved, release=release,
                 site_url=site_url, site_role=site_role,
                 source_dbml=schema_name, generated_at=generated_at,
                 identities=identities,
