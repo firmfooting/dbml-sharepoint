@@ -5217,6 +5217,11 @@ def _with_bits(*names: str) -> dict[str, str]:
     return {"High": str((value >> 32) & 0xFFFFFFFF), "Low": str(value & 0xFFFFFFFF)}
 
 
+# Fixture values whose only job is to differ from every other level the harness serves.
+_FULL_CONTROL_FIXTURE = {"High": "2147483647", "Low": "4294705151"}
+_CONTRIBUTE_FIXTURE = {"High": "432", "Low": "1011028719"}
+
+
 def _reader_harness(
     ensure_user: dict[str, Any],
     *,
@@ -5230,6 +5235,8 @@ def _reader_harness(
     stray_after_read: dict[str, Any] | None = None,
     read_bitmap: dict[str, str] | None = _BUILT_IN_READ_BITMAP,
     web_bindings: list[dict[str, Any]] | None = None,
+    full_control_bitmap: dict[str, str] | None = _FULL_CONTROL_FIXTURE,
+    contribute_bitmap: dict[str, str] | None = _CONTRIBUTE_FIXTURE,
     web_binding_status: int | None = None,
     web_binding_shape: str = "verbose",
     unreadable_binding_levels: list[int] | None = None,
@@ -5275,6 +5282,10 @@ def _reader_harness(
     so the step-0 gate stays quiet; `None` makes the level unreadable, which
     is what a site with no such level answers.
 
+    `full_control_bitmap` is what `web/roledefinitions/getbytype(5)` answers; `None`
+    answers HTTP 500. The level 'Contribute' (`contribute_bitmap`, `None` for 500)
+    is served too, since the writers fixture grants it and the ceiling reads it.
+
     `web_bindings` is what the flagged group ALREADY holds at web scope
     before this run touches anything: a list of
     `{Id, Name, High, Low}` role definitions, each becoming one entry in the
@@ -5317,6 +5328,8 @@ def _reader_harness(
         let strayAfterReadApplied = false;
         const READ_BITMAP = __READ_BITMAP__;
         const WEB_BINDINGS = __WEB_BINDINGS__;
+        const FULL_CONTROL_BITMAP = __FULL_CONTROL_BITMAP__;
+        const CONTRIBUTE_BITMAP = __CONTRIBUTE_BITMAP__;
         const WEB_BINDING_STATUS = __WEB_BINDING_STATUS__;
         const WEB_BINDING_SHAPE = __WEB_BINDING_SHAPE__;
         const UNREADABLE_BINDING_LEVELS = __UNREADABLE_BINDING_LEVELS__;
@@ -5392,6 +5405,28 @@ def _reader_harness(
                 { Id: 1073741829, Name: 'Full Control' }] } },
               ...held,
             ] } });
+          }
+          if (method === 'GET' && /roledefinitions\/getbytype\(5\)/.test(u)) {
+            if (FULL_CONTROL_BITMAP === null) {
+              calls.push({ url: u, method, body: null });
+              const payload = { error: { code: 'unreadable' } };
+              return { ok: false, status: 500, headers: { get: () => null },
+                       json: async () => payload,
+                       text: async () => JSON.stringify(payload) };
+            }
+            return respond({ d: { Id: 1073741829, Name: 'Full Control',
+                                  BasePermissions: FULL_CONTROL_BITMAP } });
+          }
+          if (method === 'GET' && /roledefinitions\/getbyname\('Contribute'\)/.test(u)) {
+            if (CONTRIBUTE_BITMAP === null) {
+              calls.push({ url: u, method, body: null });
+              const payload = { error: { code: 'unreadable' } };
+              return { ok: false, status: 500, headers: { get: () => null },
+                       json: async () => payload,
+                       text: async () => JSON.stringify(payload) };
+            }
+            return respond({ d: { Id: 1073741827, Name: 'Contribute',
+                                  BasePermissions: CONTRIBUTE_BITMAP } });
           }
           const boundLevel = /roledefinitions\((\d+)\)/.exec(u);
           if (method === 'GET' && mockPhase === READER_PHASE && boundLevel) {
@@ -5545,6 +5580,10 @@ def _reader_harness(
     ).replace(
         "__WEB_BINDINGS__", json.dumps(web_bindings or []),
     ).replace(
+        "__CONTRIBUTE_BITMAP__", json.dumps(contribute_bitmap),
+    ).replace(
+        "__FULL_CONTROL_BITMAP__", json.dumps(full_control_bitmap),
+    ).replace(
         "__WEB_BINDING_STATUS__", json.dumps(web_binding_status),
     ).replace(
         "__WEB_BINDING_SHAPE__", json.dumps(web_binding_shape),
@@ -5608,6 +5647,8 @@ def _run_identity_deploy(
     stray_after_read: dict[str, Any] | None = None,
     read_bitmap: dict[str, str] | None = _BUILT_IN_READ_BITMAP,
     web_bindings: list[dict[str, Any]] | None = None,
+    full_control_bitmap: dict[str, str] | None = _FULL_CONTROL_FIXTURE,
+    contribute_bitmap: dict[str, str] | None = _CONTRIBUTE_FIXTURE,
     web_binding_status: int | None = None,
     web_binding_shape: str = "verbose",
     unreadable_binding_levels: list[int] | None = None,
@@ -5631,7 +5672,9 @@ def _run_identity_deploy(
         members=members, member_pages=member_pages,
         drop_readback=drop_readback, stray_on_write=stray_on_write,
         stray_after_read=stray_after_read, read_bitmap=read_bitmap,
-        web_bindings=web_bindings, web_binding_status=web_binding_status,
+        web_bindings=web_bindings, full_control_bitmap=full_control_bitmap,
+        contribute_bitmap=contribute_bitmap,
+        web_binding_status=web_binding_status,
         web_binding_shape=web_binding_shape,
         unreadable_binding_levels=unreadable_binding_levels,
         drop_change_log_grant=drop_change_log_grant,
@@ -5713,6 +5756,61 @@ def test_an_automation_account_is_resolved_added_and_read_back() -> None:
     summary, calls, _ = _run_writers(_FLOWS)
     assert not _identity_errors(summary), summary
     assert [w["LoginName"] for w in _membership_writes(calls)] == [_FLOWS["LoginName"]]
+
+
+_FULL_CONTROL_LEVEL = {"Id": 1073741829, "Name": "Full Control", **_FULL_CONTROL_FIXTURE}
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_automation_group_bound_to_full_control_aborts_before_any_write() -> None:
+    summary, calls, _ = _run_writers(_FLOWS, web_bindings=[_FULL_CONTROL_LEVEL])
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert any("Full Control" in e["error"] for e in _identity_errors(summary))
+    assert not [c for c in calls if "/ensureuser" in c["url"]]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_automation_group_granted_a_level_equal_to_full_control_aborts() -> None:
+    """The declared grant (Contribute here) is judged by bitmap, not by name."""
+    summary, calls, _ = _run_writers(_FLOWS, contribute_bitmap=_FULL_CONTROL_FIXTURE)
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert not [c for c in calls if "/ensureuser" in c["url"]]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_custom_level_with_manage_permissions_passes_the_automation_ceiling() -> None:
+    """The live check is never stronger than AUTOMATION_GROUP_GRANTED_FULL_CONTROL."""
+    custom = {"Id": 1073741930, "Name": "Flow Admin", "High": "2147483647", "Low": "4294705150"}
+    summary, calls, _ = _run_writers(_FLOWS, web_bindings=[custom])
+    assert not _identity_errors(summary), summary
+    assert [w["LoginName"] for w in _membership_writes(calls)] == [_FLOWS["LoginName"]]
+    assert summary.get("aborted") != "identity-enrolment-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unreadable_full_control_level_fails_closed() -> None:
+    summary, calls, _ = _run_writers(_FLOWS, full_control_bitmap=None)
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert any("could not be read" in e["error"] for e in _identity_errors(summary))
+    assert not [c for c in calls if "/ensureuser" in c["url"]]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unreadable_granted_level_fails_the_automation_ceiling_closed() -> None:
+    summary, calls, _ = _run_writers(_FLOWS, contribute_bitmap=None)
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert any("Contribute" in e["error"] for e in _identity_errors(summary))
+    assert not [c for c in calls if "/ensureuser" in c["url"]]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unreadable_bound_level_fails_the_automation_ceiling_closed() -> None:
+    bound = {"Id": 1073741930, "Name": "Flow Admin", "High": "0", "Low": "1"}
+    summary, calls, _ = _run_writers(
+        _FLOWS, web_bindings=[bound], unreadable_binding_levels=[bound["Id"]],
+    )
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert not [c for c in calls if "/ensureuser" in c["url"]]
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

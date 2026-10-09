@@ -84,6 +84,118 @@
         low: bitmapHalf(def.BasePermissions, 'Low', name),
       };
     };
+    // The levels the bundle grants this group, folders included.
+    const declaredLevelNames = (grp) => {
+      return [...new Set(SCHEMA.acl_scopes
+        .flatMap(s => s.assignments)
+        .filter(a => a.principal.kind === 'group' && a.principal.name === grp.name)
+        .map(a => a.level))];
+    };
+    // Web-scope bindings a group already holds, Id to name. Shared by the reader
+    // check (step 1) and the automation ceiling.
+    const readHeldBindings = async (grp, groupId) => {
+      const heldBindings = new Map();
+      {
+        let asgUrl = apiUrl('web/roleassignments?$select=PrincipalId&$expand=RoleDefinitionBindings&$top=200');
+        while (asgUrl) {
+          const asgResp = await fetchWithRetry(asgUrl, {
+            headers: { 'Accept': 'application/json;odata=verbose' },
+          });
+          if (!asgResp.ok) {
+            const text = await asgResp.text();
+            throw new Error(
+              `the role assignments '${grp.name}' already holds on this site could not be `
+              + `enumerated: HTTP ${asgResp.status} ${text}. That read is the only evidence `
+              + `this run can have that the group carries nothing beyond the grant this bundle `
+              + `declares, and a refusal reads exactly like a clean group. Nothing was granted `
+              + `and nobody was enrolled. Run this script as a site owner.`,
+            );
+          }
+          const asgJson = await asgResp.json();
+          if (!asgJson || !asgJson.d || !Array.isArray(asgJson.d.results)) {
+            throw new Error(
+              `the role-assignment enumeration for '${grp.name}' returned an invalid response`,
+            );
+          }
+          const next = validatedNextPage(asgJson.d, `Role-assignment enumeration for '${grp.name}'`);
+          for (const row of asgJson.d.results) {
+            if (Number(row.PrincipalId) !== Number(groupId)) continue;
+            // Same tolerance, and same reason, as countWebAssignmentsUsing
+            // in `_security_principals.js.j2`: how odata=verbose renders an
+            // expanded navigation property is inferred there rather than
+            // measured, so both shapes are accepted and NEITHER shape
+            // throws. A row whose bindings cannot be read is a binding this
+            // scan cannot see, and counting it as clean is the same false
+            // reassurance as a refused enumeration.
+            const raw = row.RoleDefinitionBindings;
+            const bindings = Array.isArray(raw) ? raw : (raw && raw.results);
+            if (!Array.isArray(bindings)) {
+              throw new Error(
+                `a role assignment held by '${grp.name}' returned bindings this script cannot `
+                + `read, so its privileges cannot be judged. Nothing was changed.`,
+              );
+            }
+            for (const b of bindings) {
+              if (b == null || b.Id == null) {
+                throw new Error(
+                  `a role assignment held by '${grp.name}' returned a binding with no Id`,
+                );
+              }
+              heldBindings.set(String(b.Id), typeof b.Name === 'string' ? b.Name : '');
+            }
+          }
+          asgUrl = next;
+        }
+      }
+      return heldBindings;
+    };
+    // Built-in Full Control is RoleTypeKind 5 and its mask is editable
+    // (access.built-in-level.administrator-basepermissions-editable), so
+    // compare against the live mask, never a constant.
+    const fullControlMask = async () => {
+      const resp = await fetchWithRetry(
+        apiUrl('web/roledefinitions/getbytype(5)?$select=Id,Name,BasePermissions'),
+        { headers: { 'Accept': 'application/json;odata=verbose' } });
+      if (!resp.ok) {
+        throw new Error(`the built-in Full Control level could not be read: HTTP ${resp.status}`);
+      }
+      const d = (await resp.json()).d || {};
+      return { high: bitmapHalf(d.BasePermissions, 'High', 'Full Control'),
+               low: bitmapHalf(d.BasePermissions, 'Low', 'Full Control') };
+    };
+    // Every level bound to or granted to the group, by live bitmap.
+    const levelsFor = async (grp, groupId) => {
+      const levels = [];
+      for (const levelName of declaredLevelNames(grp)) {
+        const resp = await fetchWithRetry(
+          apiUrl(`web/roledefinitions/getbyname('${odataName(levelName)}')?$select=Id,Name,BasePermissions`),
+          { headers: { 'Accept': 'application/json;odata=verbose' } });
+        if (!resp.ok) {
+          throw new Error(`permission level '${levelName}', which '${grp.name}' is granted, `
+            + `could not be read: HTTP ${resp.status}. Nothing was changed.`);
+        }
+        const d = (await resp.json()).d || {};
+        levels.push({ name: levelName, high: bitmapHalf(d.BasePermissions, 'High', levelName),
+                      low: bitmapHalf(d.BasePermissions, 'Low', levelName) });
+      }
+      for (const [levelId, boundName] of await readHeldBindings(grp, groupId)) {
+        levels.push(await readLevelById(levelId, boundName));
+      }
+      return levels;
+    };
+    // Refuses only a level whose mask EQUALS Full Control's, the same line
+    // AUTOMATION_GROUP_GRANTED_FULL_CONTROL draws; narrower levels pass.
+    const refuseFullControl = async (grp, groupId) => {
+      const fc = await fullControlMask();
+      for (const level of await levelsFor(grp, groupId)) {
+        if (level.high === fc.high && level.low === fc.low) {
+          throw new Error(
+            `'${grp.name}' enrols automation accounts and holds '${level.name}', which carries `
+            + `the same permissions as built-in Full Control. Grant the narrowest level that lets `
+            + `the flow write. Nothing was changed.`);
+        }
+      }
+    };
     // Steps 2 to 5 for ONE declared value: resolve it, then refuse anything but
     // the single user that was asked for.
     const resolveUser = async (row, value) => {
@@ -282,10 +394,7 @@
           // ENTERPRISE_READER_GROUP_NOT_GRANTED, and reading only the list
           // grants here would take the no-grant branch below, skip this bitmap
           // check and enrol the account into a level nothing had judged.
-          const levelNames = [...new Set(SCHEMA.acl_scopes
-            .flatMap(s => s.assignments)
-            .filter(a => a.principal.kind === 'group' && a.principal.name === grp.name)
-            .map(a => a.level))];
+          const levelNames = declaredLevelNames(grp);
           // WARN rather than abort, and on a bundle this tool produced this is
           // now unreachable. The validator
           // (ENTERPRISE_READER_GROUP_NOT_GRANTED) requires the flagged group to
@@ -396,59 +505,7 @@
           // site owner on 2026-08-14, HTTP 403 as a Visitor on 2026-09-02),
           // and a 404-for-absence convention borrowed from list scope would be
           // an inference where a measurement exists.
-          const heldBindings = new Map();
-          {
-            let asgUrl = apiUrl('web/roleassignments?$select=PrincipalId&$expand=RoleDefinitionBindings&$top=200');
-            while (asgUrl) {
-              const asgResp = await fetchWithRetry(asgUrl, {
-                headers: { 'Accept': 'application/json;odata=verbose' },
-              });
-              if (!asgResp.ok) {
-                const text = await asgResp.text();
-                throw new Error(
-                  `the role assignments '${grp.name}' already holds on this site could not be `
-                  + `enumerated: HTTP ${asgResp.status} ${text}. That read is the only evidence `
-                  + `this run can have that the group carries nothing beyond the grant this bundle `
-                  + `declares, and a refusal reads exactly like a clean group. Nothing was granted `
-                  + `and nobody was enrolled. Run this script as a site owner.`,
-                );
-              }
-              const asgJson = await asgResp.json();
-              if (!asgJson || !asgJson.d || !Array.isArray(asgJson.d.results)) {
-                throw new Error(
-                  `the role-assignment enumeration for '${grp.name}' returned an invalid response`,
-                );
-              }
-              const next = validatedNextPage(asgJson.d, `Role-assignment enumeration for '${grp.name}'`);
-              for (const row of asgJson.d.results) {
-                if (Number(row.PrincipalId) !== Number(groupId)) continue;
-                // Same tolerance, and same reason, as countWebAssignmentsUsing
-                // in `_security_principals.js.j2`: how odata=verbose renders an
-                // expanded navigation property is inferred there rather than
-                // measured, so both shapes are accepted and NEITHER shape
-                // throws. A row whose bindings cannot be read is a binding this
-                // scan cannot see, and counting it as clean is the same false
-                // reassurance as a refused enumeration.
-                const raw = row.RoleDefinitionBindings;
-                const bindings = Array.isArray(raw) ? raw : (raw && raw.results);
-                if (!Array.isArray(bindings)) {
-                  throw new Error(
-                    `a role assignment held by '${grp.name}' returned bindings this script cannot `
-                    + `read, so its privileges cannot be judged. Nothing was changed.`,
-                  );
-                }
-                for (const b of bindings) {
-                  if (b == null || b.Id == null) {
-                    throw new Error(
-                      `a role assignment held by '${grp.name}' returned a binding with no Id`,
-                    );
-                  }
-                  heldBindings.set(String(b.Id), typeof b.Name === 'string' ? b.Name : '');
-                }
-              }
-              asgUrl = next;
-            }
-          }
+          const heldBindings = await readHeldBindings(grp, groupId);
 
           const elevated = [];
           const lesser = [];
@@ -500,6 +557,10 @@
           log('INFO', `'${grp.name}' holds ${heldBindings.size} web-scope binding(s), none of `
             + `them elevated.`);
 
+        }
+
+        if (plan.rows.some((r) => r.ceiling === 'automation')) {
+          await refuseFullControl(grp, groupId);
         }
 
         const resolvedRows = [];
