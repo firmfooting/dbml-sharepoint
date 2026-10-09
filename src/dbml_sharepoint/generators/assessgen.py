@@ -130,6 +130,9 @@ def assess_targets(
     # every list holding at least one column declared unique. Pairs for the
     # same reason `markers` is.
     unique_columns: list[list[Any]] = []
+    # [[library title, declared require_checkout], ...] for each library that
+    # declares one; an unmanaged library is not asked about.
+    library_checkout: list[list[Any]] = []
     enum_names = {enum.name for enum in schema.enums}
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):
         entity = bundle.mapping.entities[table_name]
@@ -139,6 +142,10 @@ def assess_targets(
             library_folders.append(
                 [bundle.mapping.list_title(table_name), list(entity_folders)],
             )
+        if entity.settings is not None and entity.settings.require_checkout is not None:
+            library_checkout.append([
+                bundle.mapping.list_title(table_name), entity.settings.require_checkout,
+            ])
         if entity.internal_name:
             library_roots.append([bundle.mapping.list_title(table_name), entity.internal_name])
         previous = bundle.mapping.previous_titles(table_name)
@@ -221,6 +228,7 @@ def assess_targets(
         "base_templates": sorted(templates),
         "library_folders": library_folders,
         "library_roots": library_roots,
+        "library_checkout": library_checkout,
         # The two list-size ceilings the item-count probe reports against,
         # carried in the payload so the template spells neither number and
         # cannot disagree with `analysis.limits`.

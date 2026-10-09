@@ -193,6 +193,7 @@
       "major_version_limit": 500,
       "prevent_deletion": false,
       "renamed_from": [],
+      "require_checkout": null,
       "title": "APP_Project",
       "title_patch": {
         "Description": "Project name.",
@@ -270,6 +271,7 @@
       "major_version_limit": 500,
       "prevent_deletion": false,
       "renamed_from": [],
+      "require_checkout": null,
       "title": "APP_Task",
       "title_patch": {
         "Description": "",
@@ -299,6 +301,7 @@
       "major_version_limit": 500,
       "prevent_deletion": false,
       "renamed_from": [],
+      "require_checkout": null,
       "title": "APP_AppSettings",
       "title_patch": {
         "Description": "App Settings singleton.",

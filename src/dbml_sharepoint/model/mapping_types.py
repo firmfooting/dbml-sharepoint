@@ -115,6 +115,14 @@ Read it through `analysis/resolve.py::resolve`, never directly.
 
 
 @dataclass(frozen=True)
+class LibrarySettings:
+    """`entities.<name>.settings`, a document library's own switches."""
+
+    # None leaves the library's "Require Check Out" unmanaged: never read, never written.
+    require_checkout: bool | None = None
+
+
+@dataclass(frozen=True)
 class EntityMapping:
     """SP physical mapping for one entity (kind, base template, site role)."""
 
@@ -152,6 +160,7 @@ class EntityMapping:
     folder_source: FolderSource = ()
     title: str | None = None
     internal_name: str | None = None
+    settings: LibrarySettings | None = None
 
     @property
     def is_library(self) -> bool:

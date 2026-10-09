@@ -388,3 +388,32 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
         joining_fields(generated_docs, join_bearing_columns(docs, set()))
         == all_items_joining_fields(docs, docs_entity, set())
     )
+
+
+def test_require_checkout_is_emitted_only_for_a_library_that_declares_it() -> None:
+    from dataclasses import replace
+
+    from _model import as_library, column
+    from _model import bundle as make_bundle
+    from _model import schema as make_schema
+    from _model import table as make_table
+
+    from dbml_sharepoint.model.mapping_types import LibrarySettings
+
+    schema = make_schema(make_table("Docs", column("Title", required=True)))
+    base = make_bundle(entities=["Docs"])
+    library = as_library(base, "Docs")
+
+    def emitted(bundle: Any, settings: LibrarySettings | None) -> Any:
+        entity = replace(bundle.mapping.entities["Docs"], settings=settings)
+        bundle = replace(bundle, mapping=replace(bundle.mapping, entities={"Docs": entity}))
+        (entry,) = build_schema_json(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )["lists"]
+        return entry["require_checkout"]
+
+    assert emitted(library, LibrarySettings(require_checkout=False)) is False
+    assert emitted(library, LibrarySettings()) is None
+    assert emitted(library, None) is None
+    # The validator refuses settings on a List; the emitter must not rely on it.
+    assert emitted(base, LibrarySettings(require_checkout=False)) is None

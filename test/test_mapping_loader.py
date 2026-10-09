@@ -17,7 +17,6 @@ from dbml_sharepoint.analysis.findings import Finding, FindingCode
 from dbml_sharepoint.analysis.validator import validate_against_mapping
 from dbml_sharepoint.model import _yaml, errors, mapping_types
 from dbml_sharepoint.model.errors import (
-    LibrarySettingNotYetSupported,
     MappingError,
     MappingReferenceError,
     MappingShapeError,
@@ -5867,14 +5866,41 @@ def test_an_enum_template_carries_its_enrolment_keys(tmp_path: Path) -> None:
     assert perms.group_sources[0].template.enroll == ("automation",)
 
 
-def test_library_settings_are_refused_until_the_probe_passes(tmp_path: Path) -> None:
-    write_mapping(tmp_path, """
+def _library_settings(tmp_path: Path, settings_lines: str) -> Path:
+    write_mapping(tmp_path, f"""
         entities:
           Document:
             kind: DocumentLibrary
             base_template: 101
             site_role: default
             settings:
-              require_checkout: false
+{settings_lines}
     """, name="mapping.yaml")
-    _refuses(tmp_path / "mapping.yaml", LibrarySettingNotYetSupported, "require_checkout")
+    return tmp_path / "mapping.yaml"
+
+
+@pytest.mark.parametrize(("yaml_value", "expected"), [("false", False), ("true", True)])
+def test_a_library_reads_require_checkout(
+    tmp_path: Path, yaml_value: str, expected: bool,
+) -> None:
+    path = _library_settings(tmp_path, f"              require_checkout: {yaml_value}")
+    settings = load_mapping(path).mapping.entities["Document"].settings
+    assert settings is not None
+    assert settings.require_checkout is expected
+
+
+def test_settings_absent_or_empty_leaves_require_checkout_unmanaged(tmp_path: Path) -> None:
+    path = _library_settings(tmp_path, "              require_checkout: null")
+    settings = load_mapping(path).mapping.entities["Document"].settings
+    assert settings is not None
+    assert settings.require_checkout is None
+
+
+def test_settings_with_any_other_key_is_refused(tmp_path: Path) -> None:
+    path = _library_settings(tmp_path, "              enable_versioning: true")
+    _refuses(path, UnknownMappingKeyError, "enable_versioning")
+
+
+def test_require_checkout_must_be_a_bool(tmp_path: Path) -> None:
+    path = _library_settings(tmp_path, "              require_checkout: maybe")
+    _refuses(path, MappingShapeError, "require_checkout")

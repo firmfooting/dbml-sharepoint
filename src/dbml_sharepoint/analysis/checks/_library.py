@@ -49,6 +49,14 @@ def check(vc: ValidationContext) -> list[Finding]:
             # spells `None` for exactly this reason.
             folders = vc.resolved.folders.get(entity_name)
         findings += _folder_enum_is_this_entity_s(vc, entity_name, entity)
+        if entity.settings is not None and not entity.is_library:
+            findings.append(Finding(
+                FindingCode.LIBRARY_SETTING_ON_A_LIST,
+                f"entities[{entity_name}].settings: {entity_name} is a {entity.kind}, "
+                f"and only a DocumentLibrary has library settings. Remove the key, or "
+                f"declare kind: DocumentLibrary with base_template: 101.",
+                location=Location(Section.ENTITIES, entity=entity_name, sub="settings"),
+            ))
         findings += _folders(
             entity_name, entity, folders or (),
             declared=bool(entity.folder_source),

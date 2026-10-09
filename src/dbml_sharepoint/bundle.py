@@ -156,10 +156,11 @@ _REPORTING_ROW: tuple[str, str] = (
 
 _VERIFY_ROW: tuple[str, str] = (
     VERIFY_SCRIPT,
-    (f"Clock verification: paste AFTER {DEPLOY_SCRIPT}. Exercises every "
-     "date rule, view window and [today] default this pack relies on, on "
-     "one hidden scratch list (`_dbml-verify`), and prints VERIFIED / "
-     "MISMATCH / NOT-VERIFIED. Touches no declared list."),
+    (f"Verification: paste AFTER {DEPLOY_SCRIPT}. Checks the clock cells "
+     "this pack relies on, its enrolled identities and its declared library "
+     "settings, and prints VERIFIED / MISMATCH / NOT-VERIFIED. It only reads, "
+     "unless the pack has clock cells, which use one hidden scratch list "
+     "(`_dbml-verify`). Touches no declared list."),
 )
 
 _DEMO_ROW: tuple[str, str] = (
@@ -459,13 +460,15 @@ def emit_bundle(
         "deploy-manifest.md", DEPLOY_SCRIPT, ROLLBACK_SCRIPT,
         ASSESS_SCRIPT, "assess-manifest.md",
     ]
-    # Derived, not flagged: a pack that reads a clock or enrols an identity
-    # gets the script that checks it on the site; one with neither has
-    # nothing to verify and gets no script to paste by mistake.
+    # Derived, not flagged: a pack that reads a clock, enrols an identity or
+    # declares a library setting gets the script that checks it on the site;
+    # one with none has nothing to verify and gets no script to paste by mistake.
     targets = verify_targets(
         schema, mapping_bundle, site_role, resolved=resolved, identities=identities,
     )
-    verify = bool(targets["checks"] or targets["identity_groups"])
+    verify = bool(
+        targets["checks"] or targets["identity_groups"] or targets["library_settings"],
+    )
     if verify:
         write_artifact(
             out / VERIFY_SCRIPT,

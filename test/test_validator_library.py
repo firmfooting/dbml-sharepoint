@@ -29,6 +29,7 @@ from dbml_sharepoint.model.mapping_types import (
     EntityKind,
     EntityMapping,
     FormFormatting,
+    LibrarySettings,
     ViewDef,
 )
 
@@ -1610,3 +1611,20 @@ def test_a_previous_name_that_expands_onto_the_current_one_is_dropped(
         ),
         ("Corporate Editors", ()),
     ]
+
+
+def test_library_settings_are_refused_on_a_list() -> None:
+    entity = EntityMapping(
+        name="Docs", kind="List", base_template=100, site_role="default",
+        settings=LibrarySettings(require_checkout=False),
+    )
+    f = only(_library_findings(entity), FindingCode.LIBRARY_SETTING_ON_A_LIST)
+    assert "Docs" in f.message
+
+
+def test_library_settings_are_accepted_on_a_library() -> None:
+    entity = EntityMapping(
+        name="Docs", kind="DocumentLibrary", base_template=101, site_role="default",
+        settings=LibrarySettings(require_checkout=False),
+    )
+    none_of(_library_findings(entity), FindingCode.LIBRARY_SETTING_ON_A_LIST)

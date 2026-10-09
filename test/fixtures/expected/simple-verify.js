@@ -1,5 +1,5 @@
 /**
- * dbml-sharepoint CLOCK VERIFICATION script (WRITES TO ONE SCRATCH LIST).
+ * dbml-sharepoint VERIFICATION script (reads only, unless the pack has clock cells).
  * Generated from: simple.dbml
  * Target site:  https://example.sharepoint.com/sites/test
  * Site role:    default
@@ -7,14 +7,7 @@
  * Schema:       v0.8
  * Deployer:     v0.0.0-test
  * Generated at: 2026-05-04T00:00:00Z
- *
- * Exercises every clock cell this pack uses (a `today` or `now` rule, a
- * `today` view window, a `[today]` default) on a hidden scratch list named
- * `_dbml-verify`, and prints a VERIFIED /
- * MISMATCH / NOT-VERIFIED verdict. It creates that list if absent, reuses it
- * when its Description carries the tool's marker, and never touches any
- * other list. It also checks, read only, that each enrolled identity is a
- * member of its group. Paste after deploy.js.txt, on the same site.
+ * Checks clock cells, enrolled identities and library settings. Paste after deploy.js.txt.
  */
 (async () => {
   const SITE_URL = "https://example.sharepoint.com/sites/test";
@@ -58,6 +51,7 @@
     }
   ],
   "identity_groups": [],
+  "library_settings": [],
   "list_title": "_dbml-verify",
   "marker": "Provisioned by dbml-sharepoint for scratch _dbml-verify.",
   "rows": [
@@ -259,7 +253,7 @@
   });
   log('INFO', TARGETS.checks.length
     ? `Writes only to the scratch list '${TARGETS.list_title}'. No declared list is touched.`
-    : 'No clock cell is used, so nothing is written: group membership is only read.');
+    : 'No clock cell is used, so nothing is written: group membership and library settings are only read.');
 
   let cachedDigest = null;
   let digestExpiresAt = 0;
@@ -345,7 +339,7 @@
             spError, canonicalFormula, verdictLevel } = ctx;
     // Fail closed on a caller-built targets or a missing collaborator: a
     // missing key is a bare TypeError several checks in.
-    const missingTargets = ['list_title', 'marker', 'columns', 'rows', 'checks', 'rule', 'identity_groups']
+    const missingTargets = ['list_title', 'marker', 'columns', 'rows', 'checks', 'rule', 'identity_groups', 'library_settings']
       .filter((k) => !(k in (T || {})));
     if (missingTargets.length) throw new Error(`verify-targets-incomplete: ctx.targets is missing ${missingTargets.join(', ')}`);
     const missingCollaborators = ['log', 'fetchWithRetry', 'apiUrl', 'odataName', 'getDigest',
@@ -388,7 +382,7 @@
 
     // The verdict, shared by the identity-only early return and the end of the clock checks.
     const finish = () => {
-      const subject = T.checks.length ? T.list_title : 'Identities';
+      const subject = T.checks.length ? T.list_title : 'Verification';
       // Conservative on purpose: a check nobody could make is not a pass, so
       // an unassessed check keeps the verdict at NOT-VERIFIED.
       const levels = findings.map((f) => f.level);
@@ -403,12 +397,17 @@
       }
       console.log('================================================');
       const counts = ['PASS', 'FAIL', 'NOT-ASSESSABLE', 'INFO'].map((l) => `${levels.filter((x) => x === l).length} ${l}`).join(', ');
+      const verifiedText = [
+        T.checks.length ? 'Every clock cell this pack uses behaves on this site as measured.' : null,
+        T.identity_groups.length ? 'Every enrolled identity is a member of its group.' : null,
+        T.library_settings.length ? 'Every declared library setting holds.' : null,
+      ].filter(Boolean).join(' ');
       if (verdict === 'MISMATCH') {
-        log(verdictLevel, `${subject}: MISMATCH (${counts}). A clock cell or an identity this pack relies on is not as declared; read the FAIL lines before trusting the deployed rules.`);
+        log(verdictLevel, `${subject}: MISMATCH (${counts}). A clock cell, an identity or a library setting this pack relies on is not as declared; read the FAIL lines before trusting the deployed rules.`);
       } else if (verdict === 'NOT-VERIFIED') {
         log(verdictLevel, `${subject}: NOT-VERIFIED (${counts}). Something could not be assessed; the site is not shown wrong, and not shown right either.`);
       } else {
-        log(verdictLevel, `${subject}: VERIFIED (${counts}). ${T.checks.length ? 'Every clock cell this pack uses behaves on this site as measured.' : 'Every enrolled identity is a member of its group.'}`);
+        log(verdictLevel, `${subject}: VERIFIED (${counts}). ${verifiedText}`);
       }
       return { findings, verdict, list: T.checks.length ? T.list_title : null };
     };
@@ -450,6 +449,19 @@
             else finding(rowKey, 'PASS', `VERIFIED: '${row.identity}' is a member of '${plan.group}'.`);
           }
         }
+      }
+    }
+    // ---- 0b. Library settings: read-only ---------------------------------
+    // Require Check Out is the live ForceCheckout (library.checkout.force-checkout-merge).
+    for (const lib of T.library_settings) {
+      const key = `library_checkout:${lib.title}`;
+      const read = await readJson(`web/lists/getbytitle('${odataName(lib.title)}')?$select=ForceCheckout`);
+      if (!read.ok || !read.d || typeof read.d.ForceCheckout !== 'boolean') {
+        finding(key, 'NOT-ASSESSABLE', `'${lib.title}' ForceCheckout could not be read (${read.ok ? 'no boolean reported' : `HTTP ${read.status}`}).`);
+      } else if (read.d.ForceCheckout !== lib.require_checkout) {
+        finding(key, 'FAIL', `MISMATCH: '${lib.title}' holds ForceCheckout ${read.d.ForceCheckout}, declared require_checkout ${lib.require_checkout}.`);
+      } else {
+        finding(key, 'PASS', `VERIFIED: '${lib.title}' holds ForceCheckout ${lib.require_checkout}.`);
       }
     }
     if (T.checks.length === 0) return finish();

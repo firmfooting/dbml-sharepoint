@@ -1,15 +1,8 @@
 {# src/dbml_sharepoint/templates/verify.js.j2 #}
 /**
- * {{ application_name }} CLOCK VERIFICATION script (WRITES TO ONE SCRATCH LIST).
+ * {{ application_name }} VERIFICATION script (reads only, unless the pack has clock cells).
 {% include "_provenance.js.j2" %}
- *
- * Exercises every clock cell this pack uses (a `today` or `now` rule, a
- * `today` view window, a `[today]` default) on a hidden scratch list named
- * `{{ targets.list_title | comment_safe }}`, and prints a VERIFIED /
- * MISMATCH / NOT-VERIFIED verdict. It creates that list if absent, reuses it
- * when its Description carries the tool's marker, and never touches any
- * other list. It also checks, read only, that each enrolled identity is a
- * member of its group. Paste after deploy.js.txt, on the same site.
+ * Checks clock cells, enrolled identities and library settings. Paste after deploy.js.txt.
  */
 (async () => {
   const SITE_URL = {{ site_url | tojson }};
@@ -23,7 +16,7 @@
 {% include "_http_write.js.j2" %}
   log('INFO', TARGETS.checks.length
     ? `Writes only to the scratch list '${TARGETS.list_title}'. No declared list is touched.`
-    : 'No clock cell is used, so nothing is written: group membership is only read.');
+    : 'No clock cell is used, so nothing is written: group membership and library settings are only read.');
 
 {% include "_digest_cached.js.j2" %}
 {% include "_formula_canonical.js.j2" %}

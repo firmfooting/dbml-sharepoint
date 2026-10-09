@@ -72,7 +72,3 @@ class MappingReferenceError(MappingError):
     target file does not hold, or a declaration naming another that this
     document does not produce. The fix is outside the block that reported it.
     """
-
-
-class LibrarySettingNotYetSupported(MappingValueError):  # noqa: N818 - the name states the condition
-    """`entities.<name>.settings`, refused until the sandbox probe proves the write (row 7)."""

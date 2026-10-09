@@ -92,6 +92,16 @@ nothing left to disagree.
 Resolved by `analysis/folders.py`, not here, because the schema is not
 loaded with the mapping.
 
+### `LibrarySettings`
+
+```python
+@dataclass(frozen=True)
+class LibrarySettings:
+    require_checkout: bool | None = None
+```
+
+`entities.<name>.settings`, a document library's own switches.
+
 ### `EntityMapping`
 
 ```python
@@ -109,6 +119,7 @@ class EntityMapping:
     folder_source: FolderSource = ()
     title: str | None = None
     internal_name: str | None = None
+    settings: dbml_sharepoint.model.mapping_types.LibrarySettings | None = None
 ```
 
 SP physical mapping for one entity (kind, base template, site role).

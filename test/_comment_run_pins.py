@@ -561,9 +561,6 @@ PINNED: dict[str, list[str]] = {
         "d11d34fb027e",
         "d64b61f8dbc2",
     ],
-    "src/dbml_sharepoint/templates/verify.js.j2": [
-        "f30cb5bff58a",
-    ],
     "src/dbml_sharepoint/templating.py": [
         "a08162f6cfb2",
     ],
