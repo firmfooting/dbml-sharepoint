@@ -553,7 +553,10 @@ def resolve_env_settings(
     file_identities: dict[str, str] = {}
     identity_values: list[EnvValue] = []
     # Partition only: a malformed flag is refused once, by resolve_identities.
-    flagged = {n: v for n, _, v in map(str.partition, identity_flags, ["="] * len(identity_flags))}
+    flagged = {}
+    for flag in identity_flags:
+        name, _, raw = flag.partition("=")
+        flagged[name] = raw
     if isinstance(enterprise_reader, str):
         flagged.setdefault("enterprise_reader", f"user:{enterprise_reader}")
     reader_alias = file_settings.get(ENTERPRISE_READER_KEY)
@@ -592,7 +595,20 @@ def resolve_env_settings(
             resolved_reader if setting.parameter == ENTERPRISE_READER_PARAMETER
             else resolved[setting.parameter]
         )
-        if current is None:
+        # An --identity enterprise_reader= flag beats the file's alias like any flag.
+        alias_overridden = (
+            setting.parameter == ENTERPRISE_READER_PARAMETER and current is None
+            and "enterprise_reader" in flagged
+        )
+        if alias_overridden:
+            override = describe_identity(
+                "enterprise_reader",
+                _values_or_empty("enterprise_reader", flagged["enterprise_reader"]),
+            )
+            values.append(
+                EnvValue(setting=setting, value=file_value, used=False, override=override),
+            )
+        elif current is None:
             if setting.parameter == ENTERPRISE_READER_PARAMETER:
                 resolved_reader = file_value
                 file_identities["enterprise_reader"] = f"user:{file_value}"
@@ -667,6 +683,10 @@ def resolve_identities(
     """
     given = dict(file_identities)
     from_flags = _flag_values(flags)
+    if isinstance(reader_flag, EnterpriseReaderDeclined) and "enterprise_reader" in from_flags:
+        raise IdentityGivenTwice(
+            "the reader was declined and --identity enterprise_reader= also gives one",
+        )
     if isinstance(reader_flag, str):
         if "enterprise_reader" in from_flags:
             raise IdentityGivenTwice(

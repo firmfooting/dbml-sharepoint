@@ -172,8 +172,8 @@ def describe_env_provenance(provenance: EnvProvenance) -> str:
 
     The no-file case gets its own sentence, because an absent line reads the
     same as a feature that never ran. Overridden keys are named alongside
-    used ones, reporting only the value that won, so a losing candidate never
-    reaches a written artefact.
+    used ones; an overridden identity key reports a hash of the winning value,
+    so no identity value reaches a written artefact.
     """
     if provenance.path is None:
         return "No dbml-sharepoint.env file was read."

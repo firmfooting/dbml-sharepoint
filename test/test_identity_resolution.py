@@ -200,3 +200,58 @@ def test_a_reader_flag_over_the_canonical_file_key_is_described_by_hash(
     line = describe_env_provenance(provenance)
     assert "example.com" not in line
     assert "DBMLSP_IDENTITY_ENTERPRISE_READER (using enterprise_reader (sha256:" in line
+
+
+def test_an_identity_flag_beats_the_file_reader_alias(tmp_path: Path) -> None:
+    path = _env(tmp_path, "DBMLSP_ENTERPRISE_READER=old@example.com\n")
+    reader, *_, file_identities, provenance = resolve_env_settings(
+        path, None, None, None, None, None, None,
+        identity_flags=("enterprise_reader=user:new@example.com",),
+    )
+    line = describe_env_provenance(provenance)
+    assert "example.com" not in line
+    assert "DBMLSP_ENTERPRISE_READER (using enterprise_reader (sha256:" in line
+    # The alias must not reach resolve_identities as a second source.
+    assert reader is None
+    assert "enterprise_reader" not in file_identities
+    resolved = resolve_identities(
+        flags=(*_ALL, "enterprise_reader=user:new@example.com"), reader_flag=reader,
+        file_identities=file_identities, mapping=_mapping(tmp_path),
+    )
+    assert resolved["enterprise_reader"] == (IdentityValue("user", "new@example.com"),)
+
+
+def test_the_reader_flag_and_an_identity_flag_are_still_refused_over_a_file_alias(
+    tmp_path: Path,
+) -> None:
+    path = _env(tmp_path, "DBMLSP_ENTERPRISE_READER=old@example.com\n")
+    reader, *_, file_identities, _ = resolve_env_settings(
+        path, "a@example.com", None, None, None, None, None,
+        identity_flags=("enterprise_reader=user:b@example.com",),
+    )
+    with pytest.raises(IdentityGivenTwice, match="enterprise_reader"):
+        resolve_identities(
+            flags=("enterprise_reader=user:b@example.com",), reader_flag=reader,
+            file_identities=file_identities, mapping=_mapping(tmp_path),
+        )
+
+
+def test_a_declined_reader_with_an_identity_flag_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(IdentityGivenTwice, match="declined"):
+        _resolve(tmp_path, [*_ALL, "enterprise_reader=user:a@example.com"],
+                 reader=ENTERPRISE_READER_DECLINED)
+
+
+@pytest.mark.parametrize("flags", [
+    ("automation",),
+    ("automation=user:a@example.com", "automation=user:b@example.com"),
+])
+def test_resolve_env_settings_leaves_a_bad_identity_flag_to_resolve_identities(
+    tmp_path: Path, flags: tuple[str, ...], capsys: pytest.CaptureFixture[str],
+) -> None:
+    path = _env(tmp_path, "DBMLSP_IDENTITY_AUTOMATION=user:old@example.com\n")
+    *_, provenance = resolve_env_settings(
+        path, None, None, None, None, None, None, identity_flags=flags,
+    )
+    assert "example.com" not in describe_env_provenance(provenance)
+    assert "example.com" not in capsys.readouterr().out

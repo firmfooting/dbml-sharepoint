@@ -300,6 +300,8 @@ def execute_build(
 
     if isinstance(enterprise_reader, str):
         validate_enterprise_reader(enterprise_reader)
+    # Reads the mapping's declarations, not its resolved groups: a misspelled enum
+    # still declares a group, and `group_enum_unknown` is the finding for that.
     try:
         resolved_identities = resolve_identities(
             flags=identities, reader_flag=enterprise_reader,
@@ -368,15 +370,15 @@ def execute_build(
         if len(targets) == 1 and not granted_anywhere_here:
             names = ", ".join(repr(g.name) for g in targets)
             raise typer.BadParameter(
-                f"--enterprise-reader names an account to enrol into "
+                f"The enterprise_reader value names an account to enrol into "
                 f"{names}, which is granted no permission level on any list "
                 f"site role {site_role!r} deploys. The enrolment is permanent "
                 f"once the deploy reaches its end and the run would report "
                 f"success, so the account would hold access to nothing here "
                 f"and nothing on the site would say so. Grant the group in "
                 f"this role's list_permissions, build the site role whose "
-                f"policy does grant it, or build without "
-                f"--enterprise-reader.",
+                f"policy does grant it, or build without a "
+                f"value for enterprise_reader.",
             )
 
     # Everything above this line is a pure read that can refuse: a malformed

@@ -770,7 +770,7 @@ def test_an_unknown_reader_group_enum_is_reported_by_validation(
 
     assert result.exit_code != 0, result.output
     assert "group_enum_unknown" in result.output, result.output
-    assert "declares no group" not in result.output, result.output
+    assert "no group in this mapping enrols" not in result.output, result.output
 
 
 def test_an_unknown_folder_enum_is_reported_by_validation_not_by_the_reader_gate(
