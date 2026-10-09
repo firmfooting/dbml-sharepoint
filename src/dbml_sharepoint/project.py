@@ -11,6 +11,8 @@ contract -- 2 for misuse, 1 for a refused build -- and a second vocabulary
 for the same failures would have to be translated back at every call site.
 """
 
+from collections.abc import Mapping as AbcMapping
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final, NoReturn
@@ -19,6 +21,7 @@ from urllib.parse import urlparse, urlunparse
 import typer
 from pyparsing.exceptions import ParseBaseException
 
+from dbml_sharepoint.analysis.groups import declaring_groups
 from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
 from dbml_sharepoint.analysis.timezones import is_known_zone, unknown_zone_message
 from dbml_sharepoint.extension import (
@@ -32,6 +35,7 @@ from dbml_sharepoint.model.env_file import (
     DEPLOYMENT_CHANGE_LOG_LIST_PARAMETER,
     DEPLOYMENT_LOG_LIST_PARAMETER,
     DEPLOYMENT_LOG_SITE_PARAMETER,
+    ENTERPRISE_READER_KEY,
     ENTERPRISE_READER_PARAMETER,
     ENV_FILENAME,
     ENV_SETTINGS,
@@ -40,11 +44,28 @@ from dbml_sharepoint.model.env_file import (
     TIME_ZONE_PARAMETER,
     EnvFileError,
     EnvProvenance,
+    EnvSetting,
     EnvValue,
+    identity_env_key,
+    identity_name_from_key,
     read_env_file,
 )
+from dbml_sharepoint.model.identities import (
+    BUILTIN_IDENTITIES,
+    IdentityError,
+    IdentityGivenTwice,
+    IdentityKindNotAllowed,
+    IdentityKindNotYetSupported,
+    IdentityNotDeclared,
+    IdentityValue,
+    IdentityValueCount,
+    IdentityValueMalformed,
+    IdentityValueMissing,
+    describe_identity,
+    parse_values,
+)
 from dbml_sharepoint.model.mapping_loader import load_mapping
-from dbml_sharepoint.model.mapping_types import MappingBundle
+from dbml_sharepoint.model.mapping_types import Mapping, MappingBundle
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 from dbml_sharepoint.model.release import Release, load_release
 
@@ -475,9 +496,12 @@ def resolve_env_settings(
     deployment_log_site: str | None,
     change_log_list: str | None,
     time_zone: str | None,
+    *,
+    identity_flags: Sequence[str] = (),
 ) -> tuple[
     str | EnterpriseReaderDeclined | None,
     str | None, str | None, str | None, str | None, str | None,
+    dict[str, str],
     EnvProvenance,
 ]:
     """Apply a resolved dbml-sharepoint.env file, honouring anything already
@@ -502,7 +526,7 @@ def resolve_env_settings(
     if env_file is None:
         return (
             enterprise_reader, deployment_log_list, deployment_log_change_list,
-            deployment_log_site, change_log_list, time_zone, NO_ENV_FILE,
+            deployment_log_site, change_log_list, time_zone, {}, NO_ENV_FILE,
         )
 
     try:
@@ -526,6 +550,33 @@ def resolve_env_settings(
     }
     resolved_reader = enterprise_reader
     values: list[EnvValue] = []
+    file_identities: dict[str, str] = {}
+    identity_values: list[EnvValue] = []
+    # Partition only: a malformed flag is refused once, by resolve_identities.
+    flagged = {}
+    for flag in identity_flags:
+        name, _, raw = flag.partition("=")
+        flagged[name] = raw
+    if isinstance(enterprise_reader, str):
+        flagged.setdefault("enterprise_reader", f"user:{enterprise_reader}")
+    reader_alias = file_settings.get(ENTERPRISE_READER_KEY)
+    for key, raw in sorted(file_settings.items()):
+        name = identity_name_from_key(key)
+        if name is None:
+            continue
+        if name == "enterprise_reader" and reader_alias is not None:
+            config_error("env file", None, IdentityGivenTwice(
+                f"{ENTERPRISE_READER_KEY} and {key} are both set; keep {key}",
+            ))
+        file_identities[name] = raw
+        setting = EnvSetting(key=key, parameter=f"identity:{name}", help="")
+        if name == "enterprise_reader" and isinstance(enterprise_reader, EnterpriseReaderDeclined):
+            identity_values.append(EnvValue(setting, raw, used=False, override="declined"))
+        elif name in flagged:
+            override = describe_identity(name, _values_or_empty(name, flagged[name]))
+            identity_values.append(EnvValue(setting, raw, used=False, override=override))
+        else:
+            identity_values.append(EnvValue(setting, raw, used=True, override=None))
     for setting in ENV_SETTINGS:
         file_value = file_settings.get(setting.key)
         if file_value is None:
@@ -544,21 +595,43 @@ def resolve_env_settings(
             resolved_reader if setting.parameter == ENTERPRISE_READER_PARAMETER
             else resolved[setting.parameter]
         )
-        if current is None:
+        # An --identity enterprise_reader= flag beats the file's alias like any flag.
+        alias_overridden = (
+            setting.parameter == ENTERPRISE_READER_PARAMETER and current is None
+            and "enterprise_reader" in flagged
+        )
+        if alias_overridden:
+            override = describe_identity(
+                "enterprise_reader",
+                _values_or_empty("enterprise_reader", flagged["enterprise_reader"]),
+            )
+            values.append(
+                EnvValue(setting=setting, value=file_value, used=False, override=override),
+            )
+        elif current is None:
             if setting.parameter == ENTERPRISE_READER_PARAMETER:
                 resolved_reader = file_value
+                file_identities["enterprise_reader"] = f"user:{file_value}"
             else:
                 resolved[setting.parameter] = file_value
             values.append(EnvValue(setting=setting, value=file_value, used=True, override=None))
         else:
-            override = current if isinstance(current, str) else repr(current)
+            # The reader is an identity: a persisted line names it by hash, never by value.
+            override = (
+                describe_identity(
+                    "enterprise_reader", (IdentityValue("user", current.lower()),),
+                )
+                if setting.parameter == ENTERPRISE_READER_PARAMETER and isinstance(current, str)
+                else current if isinstance(current, str) else "declined"
+            )
             values.append(EnvValue(
                 setting=setting, value=file_value,
                 used=False, override=override,
             ))
 
     provenance = EnvProvenance(
-        path=_relative_env_path(env_file), digest=digest, values=tuple(values),
+        path=_relative_env_path(env_file), digest=digest,
+        values=(*values, *identity_values),
     )
     return (
         resolved_reader,
@@ -567,8 +640,98 @@ def resolve_env_settings(
         resolved[DEPLOYMENT_LOG_SITE_PARAMETER],
         resolved[CHANGE_LOG_LIST_PARAMETER],
         resolved[TIME_ZONE_PARAMETER],
+        file_identities,
         provenance,
     )
+
+
+_NOT_YET_SUPPORTED = (
+    "is refused until a sandbox probe proves the claim this tool would build for it; "
+    "enrol the accounts as user values meanwhile"
+)
+
+
+def _flag_values(flags: Sequence[str]) -> dict[str, str]:
+    given: dict[str, str] = {}
+    for flag in flags:
+        name, sep, raw = flag.partition("=")
+        if not sep:
+            raise IdentityValueMalformed(f"--identity {name!r} is not NAME=KIND:VALUE")
+        if name in given:
+            raise IdentityGivenTwice(f"--identity names {name} twice")
+        given[name] = raw
+    return given
+
+
+def _values_or_empty(name: str, raw: str) -> tuple[IdentityValue, ...]:
+    try:
+        return parse_values(name, raw)
+    except IdentityError:
+        return ()
+
+
+def resolve_identities(
+    *,
+    flags: Sequence[str],
+    reader_flag: str | EnterpriseReaderDeclined | None,
+    file_identities: AbcMapping[str, str],
+    mapping: Mapping,
+) -> dict[str, tuple[IdentityValue, ...]]:
+    """Every enrolled identity's values: a flag beats the file, per name.
+
+    Raises an `IdentityError` subclass, which `CONFIG_ERRORS` turns into exit 1.
+    """
+    given = dict(file_identities)
+    from_flags = _flag_values(flags)
+    if isinstance(reader_flag, EnterpriseReaderDeclined) and "enterprise_reader" in from_flags:
+        raise IdentityGivenTwice(
+            "the reader was declined and --identity enterprise_reader= also gives one",
+        )
+    if isinstance(reader_flag, str):
+        if "enterprise_reader" in from_flags:
+            raise IdentityGivenTwice(
+                "--enterprise-reader and --identity enterprise_reader= are both given",
+            )
+        from_flags["enterprise_reader"] = f"user:{reader_flag}"
+    given.update(from_flags)
+    if isinstance(reader_flag, EnterpriseReaderDeclined):
+        given.pop("enterprise_reader", None)
+
+    groups = declaring_groups(mapping.permissions)
+    enrolled = {name for g in groups for name in (*g.enroll, *g.enroll_during_run)}
+    resolved: dict[str, tuple[IdentityValue, ...]] = {}
+    for name, raw in sorted(given.items()):
+        values = parse_values(name, raw)
+        builtin = BUILTIN_IDENTITIES.get(name)
+        if builtin is not None and builtin.count == "none":
+            raise IdentityValueCount(f"identity {name} is the running user and takes no value")
+        if name not in enrolled or (builtin is None and name not in mapping.identities):
+            raise IdentityNotDeclared(
+                f"a value is given for identity {name}, which no group in this mapping enrols",
+            )
+        kinds = builtin.kinds if builtin is not None else mapping.identities[name].kinds
+        for value in values:
+            if value.kind not in kinds:
+                raise IdentityKindNotAllowed(
+                    f"identity {name} takes {', '.join(kinds)}, not {value.kind}",
+                )
+            # The owners form is an m365_group value, so this covers it too.
+            if value.kind != "user":
+                raise IdentityKindNotYetSupported(
+                    f"identity {name}: {value.kind} {_NOT_YET_SUPPORTED}",
+                )
+        if builtin is not None and builtin.count == "one" and len(values) > 1:
+            raise IdentityValueCount(f"identity {name} takes one value, got {len(values)}")
+        resolved[name] = values
+    for name in sorted(enrolled - set(resolved)):
+        builtin = BUILTIN_IDENTITIES.get(name)
+        required = builtin.required if builtin is not None else True
+        if required and (builtin is None or builtin.count != "none"):
+            raise IdentityValueMissing(
+                f"identity {name} is enrolled by this mapping and has no value; pass "
+                f"--identity {name}=user:<upn> or set {identity_env_key(name)}",
+            )
+    return resolved
 
 
 def resolve_env_time_zone(
@@ -584,7 +747,7 @@ def resolve_env_time_zone(
     """
     (
         _reader, _log_list, _change_list, _log_site, _change_log,
-        resolved, provenance,
+        resolved, _identities, provenance,
     ) = resolve_env_settings(env_file, None, None, None, None, None, time_zone)
     return resolved, replace(
         provenance,

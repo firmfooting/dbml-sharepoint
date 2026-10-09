@@ -113,6 +113,26 @@ TIME_ZONE_KEY = 'DBMLSP_TIME_ZONE'
 TIME_ZONE_PARAMETER = 'time_zone'
 ```
 
+### `IDENTITY_KEY_PREFIX`
+
+```python
+IDENTITY_KEY_PREFIX = 'DBMLSP_IDENTITY_'
+```
+
+### `identity_env_key`
+
+```python
+def identity_env_key(name: str) -> str
+```
+
+### `identity_name_from_key`
+
+```python
+def identity_name_from_key(key: str) -> str | None
+```
+
+The identity a key names, or None when it is not a well-formed identity key.
+
 ### `ENV_SETTINGS`
 
 ```python
@@ -165,8 +185,8 @@ and the deploy transcript.
 
 The no-file case gets its own sentence, because an absent line reads the
 same as a feature that never ran. Overridden keys are named alongside
-used ones, reporting only the value that won, so a losing candidate never
-reaches a written artefact.
+used ones; an overridden identity key reports a hash of the winning value,
+so no identity value reaches a written artefact.
 
 ### `EnvFileError`
 

@@ -310,7 +310,7 @@ documented disable, checked by the caller before this runs.
 ### `resolve_env_settings`
 
 ```python
-def resolve_env_settings(env_file: pathlib.Path | None, enterprise_reader: str | dbml_sharepoint.project.EnterpriseReaderDeclined | None, deployment_log_list: str | None, deployment_log_change_list: str | None, deployment_log_site: str | None, change_log_list: str | None, time_zone: str | None) -> tuple[str | dbml_sharepoint.project.EnterpriseReaderDeclined | None, str | None, str | None, str | None, str | None, str | None, dbml_sharepoint.model.env_file.EnvProvenance]
+def resolve_env_settings(env_file: pathlib.Path | None, enterprise_reader: str | dbml_sharepoint.project.EnterpriseReaderDeclined | None, deployment_log_list: str | None, deployment_log_change_list: str | None, deployment_log_site: str | None, change_log_list: str | None, time_zone: str | None, *, identity_flags: collections.abc.Sequence[str] = ()) -> tuple[str | dbml_sharepoint.project.EnterpriseReaderDeclined | None, str | None, str | None, str | None, str | None, str | None, dict[str, str], dbml_sharepoint.model.env_file.EnvProvenance]
 ```
 
 Apply a resolved dbml-sharepoint.env file, honouring anything already
@@ -331,6 +331,16 @@ operator turned the external log off" from "nothing was said"): the
 build's own flags carry defaults, so in practice a plain build always
 names its defaults here. The time zone has no default at all: ``None``
 after this is a build that must refuse, see `missing_time_zone`.
+
+### `resolve_identities`
+
+```python
+def resolve_identities(*, flags: collections.abc.Sequence[str], reader_flag: str | dbml_sharepoint.project.EnterpriseReaderDeclined | None, file_identities: collections.abc.Mapping[str, str], mapping: dbml_sharepoint.model.mapping_types.Mapping) -> dict[str, tuple[dbml_sharepoint.model.identities.IdentityValue, ...]]
+```
+
+Every enrolled identity's values: a flag beats the file, per name.
+
+Raises an `IdentityError` subclass, which `CONFIG_ERRORS` turns into exit 1.
 
 ### `resolve_env_time_zone`
 

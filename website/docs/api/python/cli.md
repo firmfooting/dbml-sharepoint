@@ -40,7 +40,7 @@ for explicitly and so it appears in `--help`.
 ### `build`
 
 ```python
-def build(schema: pathlib.Path | None = ..., mapping: pathlib.Path | None = ..., release: pathlib.Path | None = ..., site_url: str = ..., time_zone: str | None = ..., site_role: str = ..., out: pathlib.Path = ..., dry_run: bool = ..., seed: bool = ..., enterprise_reader: str | None = ..., extension: str | None = ..., env_file: pathlib.Path | None = ..., deployment_log_list: str | None = ..., deployment_log_change_list: str | None = ..., deployment_log_site: str | None = ..., change_log_list: str | None = ..., no_sidecars: bool = ...) -> None
+def build(schema: pathlib.Path | None = ..., mapping: pathlib.Path | None = ..., release: pathlib.Path | None = ..., site_url: str = ..., time_zone: str | None = ..., site_role: str = ..., out: pathlib.Path = ..., dry_run: bool = ..., seed: bool = ..., enterprise_reader: str | None = ..., identities: list[str] | None = ..., extension: str | None = ..., env_file: pathlib.Path | None = ..., deployment_log_list: str | None = ..., deployment_log_change_list: str | None = ..., deployment_log_site: str | None = ..., change_log_list: str | None = ..., no_sidecars: bool = ...) -> None
 ```
 
 Generate deploy.js.txt + manifest from the DBML schema and mapping.

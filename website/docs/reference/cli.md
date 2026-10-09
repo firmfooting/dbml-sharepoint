@@ -27,6 +27,7 @@ pack reads a clock, and demo-data.js.txt with `--seed`).
 | `--dry-run` | off | Validate only; no JS output |
 | `--seed` | off | Also emit demo-data.js.txt from the mapping's `demo_items` |
 | `--enterprise-reader UPN` | nobody | UPN of a reporting service account the deploy enrols, read-only, into the mapping's enterprise-reader group; the membership is permanent and a rollback does not remove it |
+| `--identity NAME=KIND:VALUE[,KIND:VALUE...]` | none | NAME=KIND:VALUE[,KIND:VALUE...] for one identity the mapping enrols; repeat per name. KIND is user (a UPN). Overrides `DBMLSP_IDENTITY_<NAME>` in the env file |
 | `--extension NAME` | mapping's `extension:` | Extension to apply; resolved via entry points |
 
 ### Running inside a project
@@ -92,11 +93,12 @@ same precedence as every other key there: the flag wins, then the file.
 `build` can also read `dbml-sharepoint.env`, a `KEY=value` file of
 defaults for flags an operator would otherwise retype on every
 invocation. `report` reads the same file for `DBMLSP_TIME_ZONE`, the one
-key it has an input for. There are six keys today:
+key it has an input for. There are six fixed keys today, plus one key per identity:
 
 | Key | Flag it supplies | Meaning |
 | --- | --- | --- |
 | `DBMLSP_ENTERPRISE_READER` | `--enterprise-reader` | UPN of the enterprise-reader service account to enrol |
+| `DBMLSP_IDENTITY_<NAME>` | `--identity NAME=...` | The value of one identity the mapping enrols, as `KIND:VALUE[,KIND:VALUE...]`. `<NAME>` is the identity's name upper-cased, so `automation` is `DBMLSP_IDENTITY_AUTOMATION` |
 | `DBMLSP_DEPLOY_LOG_LIST` | `--deployment-log-list` | Title of the central deployment log list to stamp start/stop/provenance rows into |
 | `DBMLSP_DEPLOY_CHANGES` | `--deployment-changes` | Title of the central change log to write type-2 change rows into, beside the deployment log above |
 | `DBMLSP_DEPLOY_LOG_SITE` | `--deployment-log-site` | Title of the central logging site the deployment log list lives on |
@@ -109,6 +111,9 @@ table does not list, is refused rather than silently skipped.
 genuinely generated from `ENV_SETTINGS` (`model/env_file.py`) at runtime.
 This table is not: it is kept in sync with that registry by hand, so check
 it against `ENV_SETTINGS` when a key is added, renamed or removed.
+
+The env file holds account names. Keep it out of version control, for
+example with `dbml-sharepoint.env` in `.gitignore`.
 
 **Why this filename, and not `.env`.** The parser refuses any line it
 cannot understand: a stray `export FOO=bar`, an unknown key, a repeated

@@ -21,7 +21,7 @@ import into a function body to break the cycle (#171).
 ### `execute_build`
 
 ```python
-def execute_build(*, schema: pathlib.Path, mapping: pathlib.Path, release: pathlib.Path, site_url: str, site_role: str, out: pathlib.Path = Path('build'), dry_run: bool = False, seed: bool = False, time_zone: str | None = None, extension: str | None = None, enterprise_reader: str | dbml_sharepoint.project.EnterpriseReaderDeclined | None = None, env_file: pathlib.Path | None = None, deployment_log_list: str | None = None, deployment_log_change_list: str | None = None, deployment_log_site: str | None = None, change_log_list: str | None = None, no_sidecars: bool = False, application: str = 'dbml-sharepoint', source_date_epoch: int | None = None) -> None
+def execute_build(*, schema: pathlib.Path, mapping: pathlib.Path, release: pathlib.Path, site_url: str, site_role: str, out: pathlib.Path = Path('build'), dry_run: bool = False, seed: bool = False, time_zone: str | None = None, extension: str | None = None, enterprise_reader: str | dbml_sharepoint.project.EnterpriseReaderDeclined | None = None, env_file: pathlib.Path | None = None, deployment_log_list: str | None = None, deployment_log_change_list: str | None = None, deployment_log_site: str | None = None, change_log_list: str | None = None, no_sidecars: bool = False, application: str = 'dbml-sharepoint', identities: collections.abc.Sequence[str] = (), source_date_epoch: int | None = None) -> None
 ```
 
 The `build` pipeline, callable without going through typer.

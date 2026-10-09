@@ -211,6 +211,13 @@ def build(
         f"{ENV_FILENAME}'s DBMLSP_ENTERPRISE_READER when that file supplies "
         "one, and otherwise enrols nobody.",
     ),
+    identities: list[str] | None = typer.Option(
+        None,
+        "--identity",
+        help="NAME=KIND:VALUE[,KIND:VALUE...] for one identity the mapping "
+        "enrols; repeat per name. KIND is user (a UPN). Overrides "
+        f"DBMLSP_IDENTITY_<NAME> in {ENV_FILENAME}.",
+    ),
     extension: str | None = typer.Option(
         None,
         help="Extension name; overrides the mapping's `extension:` key. Resolved via entry points.",
@@ -313,6 +320,7 @@ def build(
         seed=seed,
         extension=extension,
         enterprise_reader=enterprise_reader,
+        identities=tuple(identities or ()),
         env_file=resolve_env_file(env_file),
         deployment_log_list=deployment_log_list,
         deployment_log_change_list=deployment_log_change_list,

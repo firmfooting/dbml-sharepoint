@@ -1803,6 +1803,7 @@ def _run(console: Console) -> int:
                 # Named by the build's own artefacts, so they report the same
                 # file the wizard read.
                 env_file=answers.env_file,
+                identities=(),
             )
         except typer.Exit as exc:
             # The build refused and has already said why on stderr. Its exit
@@ -1810,11 +1811,10 @@ def _run(console: Console) -> int:
             # flattening every refusal to 1.
             return exc.exit_code
         except typer.BadParameter as exc:
-            # Reachable since the env file started reaching `execute_build`:
-            # its armed guard refuses a reader the mapping has no group for,
-            # and `BadParameter` is a `click.UsageError`, not a `typer.Exit`.
-            # Unhandled it printed a traceback over an already-scaffolded
-            # project. 2 is the documented code for a usage error.
+            # Other build guards still raise `BadParameter`, a `click.UsageError`
+            # and not a `typer.Exit`; unhandled it printed a traceback over an
+            # already-scaffolded project. 2 is the documented usage-error code.
+            # The identity refusals go through `config_error` (exit 1) instead.
             console.print(f"[red]{escape(exc.message)}[/red]")
             return 2
 

@@ -39,6 +39,7 @@ from dbml_sharepoint.cli import (
 )
 from dbml_sharepoint.extension import BaseExtension
 from dbml_sharepoint.model.env_file import ENV_FILENAME, ENV_SETTINGS
+from dbml_sharepoint.model.identities import IdentityValue, describe_identity
 from dbml_sharepoint.pipeline import (
     UnknownFindingCodeError,
     execute_build,
@@ -652,7 +653,7 @@ def test_the_reader_flag_needs_a_group_to_enrol_into(tmp_path: Path) -> None:
         "--enterprise-reader", "svc-reporting@example.org",
     ])
     assert result.exit_code != 0
-    assert "enrolling enterprise_reader" in result.output
+    assert "no group in this mapping enrols" in result.output
     assert not (out / "deploy.js.txt").exists()
 
 
@@ -769,7 +770,7 @@ def test_an_unknown_reader_group_enum_is_reported_by_validation(
 
     assert result.exit_code != 0, result.output
     assert "group_enum_unknown" in result.output, result.output
-    assert "declares no group" not in result.output, result.output
+    assert "no group in this mapping enrols" not in result.output, result.output
 
 
 def test_an_unknown_folder_enum_is_reported_by_validation_not_by_the_reader_gate(
@@ -1420,10 +1421,14 @@ def test_an_explicit_flag_beats_the_env_file(tmp_path: Path) -> None:
     manifest = (out / "deploy-manifest.md").read_text(encoding="utf-8")
     assert flag_address in manifest
     assert file_address not in manifest
-    assert f"Overridden: DBMLSP_ENTERPRISE_READER (using {flag_address})." in manifest
+    # The overriding reader is described by hash: the line reaches the central log.
+    described = describe_identity(
+        "enterprise_reader", (IdentityValue("user", flag_address),),
+    )
+    assert f"Overridden: DBMLSP_ENTERPRISE_READER (using {described})." in manifest
     assert (
         f"DBMLSP_ENTERPRISE_READER = {file_address} (from the file; overridden, "
-        f"using {flag_address})"
+        f"using {described})"
     ) in result.output
 
 
@@ -1467,7 +1472,7 @@ def test_the_declined_sentinel_beats_the_env_file(
     printed = capsys.readouterr().out
     assert (
         f"DBMLSP_ENTERPRISE_READER = {file_address} (from the file; overridden, "
-        "using ENTERPRISE_READER_DECLINED)"
+        "using declined)"
     ) in printed
 
 
@@ -1520,7 +1525,7 @@ def test_env_file_reader_arms_the_no_group_guard(tmp_path: Path) -> None:
         app, [*base_args, "--out", str(out_with), "--env-file", str(env_path)],
     )
     assert with_file.exit_code != 0
-    assert "enrolling enterprise_reader" in with_file.output
+    assert "no group in this mapping enrols" in with_file.output
     assert not (out_with / "deploy.js.txt").exists()
 
 
@@ -3759,3 +3764,142 @@ def test_a_directory_at_the_default_env_path_is_refused(
     ])
     assert result.exit_code != 0
     assert "is not a file" in _normalise_rendered_output(result.output)
+
+
+_AUTOMATION = "automation=user:flows@example.com"
+_GUID = "0f8fad5b-d9cb-469f-a165-70867728950e"
+
+
+def _build_with(
+    tmp_path: Path, mapping: Path, extra: list[str], env_file: Path | None = None,
+) -> Result:
+    args = [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(mapping),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--time-zone", "UTC",
+        "--site-role", "default",
+        "--out", str(tmp_path / "out"),
+        *extra,
+    ]
+    if env_file is not None:
+        args += ["--env-file", str(env_file)]
+    return runner.invoke(app, args)
+
+
+def _build_writers(tmp_path: Path, extra: list[str]) -> Result:
+    return _build_with(tmp_path, FIXTURES / "sharepoint-mapping-with-writers.yaml", extra)
+
+
+def _build_simple(tmp_path: Path, extra: list[str]) -> Result:
+    return _build_with(tmp_path, FIXTURES / "sharepoint-mapping.yaml", extra)
+
+
+def test_build_refuses_a_missing_automation_value(tmp_path: Path) -> None:
+    result = _build_writers(tmp_path, [])
+    assert result.exit_code == 1
+    assert "identity automation is enrolled by this mapping and has no value" in result.output
+    assert not (tmp_path / "out").exists()
+
+
+def test_build_takes_identity_flags(tmp_path: Path) -> None:
+    result = _build_writers(tmp_path, ["--identity", _AUTOMATION])
+    assert result.exit_code == 0, result.output
+
+
+def test_build_refuses_a_reader_value_no_group_enrols(tmp_path: Path) -> None:
+    result = _build_simple(tmp_path, ["--enterprise-reader", "reader@example.com"])
+    assert result.exit_code == 1
+    assert "no group in this mapping enrols" in result.output
+    assert not (tmp_path / "out").exists()
+
+
+def _with_declared_intake(tmp_path: Path) -> Path:
+    text = (FIXTURES / "sharepoint-mapping-with-writers.yaml").read_text(encoding="utf-8")
+    text = text.replace("enroll: [automation]", "enroll: [automation, intake]")
+    text += (
+        "\nidentities:\n  intake:\n    description: \"Intake.\"\n"
+        "    kinds: [user, security_group]\n"
+    )
+    for sibling in ("topics.yaml", "retention-policies.yaml"):
+        shutil.copy(FIXTURES / sibling, tmp_path / sibling)
+    shutil.copytree(FIXTURES / "formatting", tmp_path / "formatting")
+    path = tmp_path / "intake-mapping.yaml"
+    path.write_text(text, encoding="utf-8", newline="\n")
+    return path
+
+
+_REFUSED_IDENTITIES = [
+    pytest.param(["--identity", "automation=nonsense"], "is not KIND:VALUE", id="malformed"),
+    pytest.param(["--identity", f"automation=m365_group:{_GUID}"],
+                 "automation takes user", id="kind"),
+    pytest.param(["--identity", "automation=group:Owners"],
+                 "cannot be nested", id="sharepoint-group"),
+    pytest.param(["--identity", _AUTOMATION, "--identity", "automation=user:b@example.com"],
+                 "twice", id="twice"),
+    pytest.param(["--identity", _AUTOMATION, "--identity", "operator=user:a@example.com"],
+                 "takes no value", id="running-user"),
+    pytest.param(["--identity", _AUTOMATION, "--identity", "bogus=user:a@example.com"],
+                 "no group in this mapping enrols", id="not-declared"),
+    pytest.param(["--identity", _AUTOMATION, "--enterprise-reader", "a@example.com",
+                  "--identity", "enterprise_reader=user:a@example.com"],
+                 "both given", id="reader-twice"),
+]
+
+
+@pytest.mark.parametrize(("extra", "message"), _REFUSED_IDENTITIES)
+def test_build_refuses_a_bad_identity_before_writing(
+    tmp_path: Path, extra: list[str], message: str,
+) -> None:
+    result = _build_writers(tmp_path, extra)
+    assert result.exit_code == 1, result.output
+    assert message in result.output
+    assert "Traceback" not in result.output
+    assert not (tmp_path / "out").exists()
+
+
+def test_build_refuses_a_group_kind_before_writing(tmp_path: Path) -> None:
+    mapping = _with_declared_intake(tmp_path)
+    result = _build_with(
+        tmp_path, mapping,
+        ["--identity", _AUTOMATION, "--identity", f"intake=security_group:{_GUID}"],
+    )
+    assert result.exit_code == 1, result.output
+    assert "probe" in result.output
+    assert not (tmp_path / "out").exists()
+
+
+def test_build_takes_an_identity_from_the_env_file(tmp_path: Path) -> None:
+    env = tmp_path / "dbml-sharepoint.env"
+    env.write_text("DBMLSP_IDENTITY_AUTOMATION=user:flows@example.com\n", encoding="utf-8")
+    mapping = FIXTURES / "sharepoint-mapping-with-writers.yaml"
+    result = _build_with(tmp_path, mapping, [], env_file=env)
+    assert result.exit_code == 0, result.output
+    assert "flows@example.com" in result.output
+
+
+def test_a_declined_reader_is_not_reported_as_used(tmp_path: Path) -> None:
+    from dbml_sharepoint.project import ENTERPRISE_READER_DECLINED, resolve_env_settings
+
+    env = tmp_path / "dbml-sharepoint.env"
+    env.write_text("DBMLSP_IDENTITY_ENTERPRISE_READER=user:r@example.com\n", encoding="utf-8")
+    *_, provenance = resolve_env_settings(
+        env, ENTERPRISE_READER_DECLINED, None, None, None, None, "UTC",
+    )
+    (value,) = provenance.values
+    assert not value.used
+    assert value.override == "declined"
+
+
+def test_build_refuses_two_values_for_a_one_value_identity_before_writing(
+    tmp_path: Path,
+) -> None:
+    result = _build_with(
+        tmp_path, FIXTURES / "sharepoint-mapping-with-reader.yaml",
+        ["--identity", "enterprise_reader=user:a@example.com,user:b@example.com"],
+    )
+    assert result.exit_code == 1, result.output
+    assert "takes one value" in result.output
+    assert not (tmp_path / "out").exists()

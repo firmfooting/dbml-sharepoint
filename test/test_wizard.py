@@ -3149,13 +3149,12 @@ def test_the_wizard_refuses_a_directory_at_the_env_path(
 def test_a_build_refusing_with_bad_parameter_exits_two_not_a_traceback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`execute_build`'s armed guard raises `typer.BadParameter`, which is a
-    `click.UsageError`, NOT a `typer.Exit`.
+    """`execute_build`'s remaining guards raise `typer.BadParameter`, which is
+    a `click.UsageError`, NOT a `typer.Exit`.
 
-    Reaching it became possible when the wizard started passing `env_file`
-    through: a mapping with no reader group plus an env file that supplies
-    one is refused there. The existing `except typer.Exit` could not catch
-    it, so the wizard raised over a project it had already scaffolded.
+    The existing `except typer.Exit` could not catch it, so the wizard raised
+    over a project it had already scaffolded. (The identity refusals go
+    through `config_error` and exit 1 instead.)
     """
     import typer
 

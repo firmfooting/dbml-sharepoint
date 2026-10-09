@@ -12,6 +12,7 @@ import into a function body to break the cycle (#171).
 
 import datetime as dt
 import os
+from collections.abc import Sequence
 from contextlib import suppress
 from difflib import get_close_matches
 from pathlib import Path
@@ -24,7 +25,6 @@ from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.folders import UnknownFolderEnumError
-from dbml_sharepoint.analysis.groups import declaring_groups
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.permissions import lists_granting_group
 from dbml_sharepoint.analysis.resolve import resolve
@@ -72,6 +72,7 @@ from dbml_sharepoint.extract.sources import load_source
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.manifestgen import generate_manifest
 from dbml_sharepoint.generators.reportgen import render_reporting
+from dbml_sharepoint.model.identities import IdentityError
 from dbml_sharepoint.project import (
     CONFIG_ERRORS,
     EnterpriseReaderDeclined,
@@ -83,6 +84,7 @@ from dbml_sharepoint.project import (
     resolve_env_settings,
     resolve_env_time_zone,
     resolve_extension_or_refuse,
+    resolve_identities,
     site_url_notice,
     validate_enterprise_reader,
     validate_list_title,
@@ -179,6 +181,7 @@ def execute_build(
     change_log_list: str | None = None,
     no_sidecars: bool = False,
     application: str = APPLICATION_NAME,
+    identities: Sequence[str] = (),
     source_date_epoch: int | None = None,
 ) -> None:
     """The `build` pipeline, callable without going through typer.
@@ -248,11 +251,12 @@ def execute_build(
 
     (
         enterprise_reader, resolved_external, resolved_external_change,
-        resolved_site, resolved_change, resolved_zone, env_provenance,
+        resolved_site, resolved_change, resolved_zone, file_identities,
+        env_provenance,
     ) = resolve_env_settings(
         env_file, enterprise_reader, deployment_log_list,
         deployment_log_change_list, deployment_log_site, change_log_list,
-        time_zone,
+        time_zone, identity_flags=identities,
     )
     echo_env_provenance(env_provenance)
     # The zone is validated on the resolved value, wherever it came from, so
@@ -321,36 +325,32 @@ def execute_build(
             "own title.",
         )
 
-    # `isinstance`, not `is not None`: the declined sentinel means nobody is
-    # enrolled and must skip validation and the group check just as `None` does.
     if isinstance(enterprise_reader, str):
         validate_enterprise_reader(enterprise_reader)
-        perms = bundle.mapping.permissions
-        # Two questions, two resolutions. "Does a reader group exist at all"
-        # is answered over the DECLARATIONS, because a source whose enum is
-        # misspelled still declares one and `group_enum_unknown` is the
-        # finding for it; resolving here instead reported "declares no
-        # group", sent the author to add a flag that is already there, and
-        # took the manifest and every other finding with it.
-        declared_readers = [
-            g for g in declaring_groups(perms) if "enterprise_reader" in g.enroll
-        ]
+    # Reads the mapping's declarations, not its resolved groups: a misspelled enum
+    # still declares a group, and `group_enum_unknown` is the finding for that.
+    try:
+        resolved_identities = resolve_identities(
+            flags=identities, reader_flag=enterprise_reader,
+            file_identities=file_identities, mapping=bundle.mapping,
+        )
+    except IdentityError as exc:
+        config_error("identity", None, exc)
+    reader_values = resolved_identities.get("enterprise_reader", ())
+    # Until the generators read identities (PR 3), the reader travels as before;
+    # the declined sentinel survives when no value was resolved.
+    if reader_values:
+        enterprise_reader = reader_values[0].value
+
+    # `isinstance`, not `is not None`: the declined sentinel means nobody is
+    # enrolled and must skip the group check just as `None` does.
+    if isinstance(enterprise_reader, str):
         # "Which lists grant it" needs the RESOLVED name, because a
         # `from_enum` group's template spelling matches no assignment.
         targets = [
             g for g in resolved.groups
             if "enterprise_reader" in g.enroll
         ]
-        if not declared_readers:
-            # Fail closed rather than emitting a bundle that quietly enrols
-            # nobody. The operator would not find out until a report came
-            # back short, weeks later. `MULTIPLE_ENTERPRISE_READER_GROUPS`
-            # (a validator rule) already refuses more than one such group,
-            # so there is nothing to re-check on that side here.
-            raise typer.BadParameter(
-                "--enterprise-reader was given but the mapping declares no "
-                "group enrolling enterprise_reader.",
-            )
 
         # Declaring the group is not the same as granting it anything HERE.
         # `ENTERPRISE_READER_GROUP_NOT_GRANTED` unions every policy block and
@@ -397,15 +397,15 @@ def execute_build(
         if len(targets) == 1 and not granted_anywhere_here:
             names = ", ".join(repr(g.name) for g in targets)
             raise typer.BadParameter(
-                f"--enterprise-reader names an account to enrol into "
+                f"The enterprise_reader value names an account to enrol into "
                 f"{names}, which is granted no permission level on any list "
                 f"site role {site_role!r} deploys. The enrolment is permanent "
                 f"once the deploy reaches its end and the run would report "
                 f"success, so the account would hold access to nothing here "
                 f"and nothing on the site would say so. Grant the group in "
                 f"this role's list_permissions, build the site role whose "
-                f"policy does grant it, or build without "
-                f"--enterprise-reader.",
+                f"policy does grant it, or build without a "
+                f"value for enterprise_reader.",
             )
 
     # Everything above this line is a pure read that can refuse: a malformed
