@@ -20,9 +20,9 @@
   let identityEnrolmentErrors = 0;
   {
     const IDENTITY_GROUPS = {{ identity_enrolment | tojson }};
-    // Tenant-wide claims ensureuser can hand back; refused for every user value.
+    // Tenant-wide claims ensureuser can hand back; refused for every resolved value, user or group.
     const TENANT_WIDE = ['spo-grid-all-users', 'c:0(.s|true', 'c:0-.f|rolemanager'];
-    // An error body can echo the value back (ensureuser names the logon it could not find).
+    // Removes a value (the claim or the GUID, any case) from error text before it is thrown or logged.
     const scrub = (text, value) => String(text).replace(
       new RegExp(String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '[value]');
     const upnPart = (name) => {
@@ -240,12 +240,10 @@
         throw new Error(`resolving ${who} returned an invalid principal response`);
       }
 
-      // 3. Principal type, STRICT equality. Microsoft Learn documents
-      // SP.PrincipalType as None 0, User 1, DistributionList 2,
-      // SecurityGroup 4, SharePointGroup 8, All 15, and marks it
-      // [Flags]. A bitwise `& 1` would therefore admit any combination
-      // that happens to carry the User bit, so the comparison is `!== 1`
-      // and stays that way.
+      // 3. Principal type, STRICT equality (SP.PrincipalType is a [Flags] enum, so no bitwise test).
+      // A user must be exactly 1 (Learn: User = 1).
+      // A group kind must be exactly 4 (Learn: SecurityGroup = 4;
+      // access.identity.security-group-resolves, access.identity.m365-members-resolves).
       if (isGroup && resolved.PrincipalType !== 4) {
         throw new Error(
           `${who} resolved to a principal with PrincipalType ${resolved.PrincipalType}, `
