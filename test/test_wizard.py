@@ -3299,6 +3299,62 @@ def test_the_canonical_keys_reader_is_offered_as_the_suggestion(
     assert suggestions.reader == "svc-reporting@example.org"
 
 
+def _verify_env(tmp_path: Path, text: str, reader: str) -> None:
+    path = tmp_path / "copy.env"
+    path.write_text(text, encoding="utf-8", newline="\n")
+    wizard._verify_preserved_env_file(path, reader, "Europe/London")
+
+
+def test_the_verifier_refuses_a_copy_holding_both_reader_keys(tmp_path: Path) -> None:
+    with pytest.raises(wizard.WizardError, match="reads back"):
+        _verify_env(
+            tmp_path,
+            "DBMLSP_ENTERPRISE_READER=a@example.com\n"
+            f"{_CANONICAL_READER_KEY}=user:a@example.com\n"
+            "DBMLSP_TIME_ZONE=Europe/London\n",
+            "a@example.com",
+        )
+
+
+def test_the_verifier_refuses_a_canonical_value_without_the_user_prefix(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(wizard.WizardError, match="reads back"):
+        _verify_env(
+            tmp_path,
+            f"{_CANONICAL_READER_KEY}=a@example.com\nDBMLSP_TIME_ZONE=Europe/London\n",
+            "a@example.com",
+        )
+
+
+def test_the_verifier_accepts_the_canonical_spelling(tmp_path: Path) -> None:
+    _verify_env(
+        tmp_path,
+        f"{_CANONICAL_READER_KEY}=user:a@example.com\nDBMLSP_TIME_ZONE=Europe/London\n",
+        "a@example.com",
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "USER:a@example.com",
+        "user:a@example.com,security_group:00000000-0000-0000-0000-000000000000",
+        "a@example.com",
+    ],
+)
+def test_a_canonical_value_that_is_not_one_user_is_not_suggested(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ENV_FILENAME).write_text(
+        f"{_CANONICAL_READER_KEY}={value}\n", encoding="utf-8", newline="\n",
+    )
+    suggestions = wizard._consult_env_file(ScriptedConsole([], width=400))
+    assert suggestions is not None
+    assert suggestions.reader is None
+
+
 def test_a_replaced_reader_is_preserved_instead_of_the_suggestion(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

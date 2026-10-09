@@ -40,7 +40,7 @@ import os
 import re
 import shutil
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -109,6 +109,10 @@ from dbml_sharepoint.project import (
 #: checkout -- but that is exactly where the wizard gets run during
 #: development, and a stale deploy script in a new project is worse than none.
 _NEVER_COPY = NEVER_COPIED
+
+# The loader also accepts the reader under the identity key, valued `user:<upn>`.
+_READER_IDENTITY_KEY = identity_env_key("enterprise_reader")
+_USER_PREFIX = "user:"
 
 #: Refuses only what cannot be a filename component or would corrupt the
 #: YAML line the prefix is written into. NOT a SharePoint rule.
@@ -678,6 +682,22 @@ class _EnvSuggestions:
     time_zone: str | None
 
 
+def _file_reader(file_settings: Mapping[str, str], console: Console) -> str | None:
+    """The reader the file suggests under either key, or None when it names none or
+    names the identity key's value as anything but one lower-case `user:` entry."""
+    reader = file_settings.get(ENTERPRISE_READER_KEY)
+    canonical = file_settings.get(_READER_IDENTITY_KEY)
+    if reader is not None or canonical is None:
+        return reader
+    if canonical.startswith(_USER_PREFIX) and "," not in canonical:
+        return canonical.removeprefix(_USER_PREFIX)
+    console.print(
+        f"[red]{ENV_FILENAME} suggests a reader that is not valid: "
+        f"{_READER_IDENTITY_KEY} must be one user:<upn> value.[/red]",
+    )
+    return None
+
+
 def _consult_env_file(console: Console) -> _EnvSuggestions | None:
     """The `dbml-sharepoint.env` consulted for suggestions, and what it
     suggested. None only when there was no file at all.
@@ -713,11 +733,7 @@ def _consult_env_file(console: Console) -> _EnvSuggestions | None:
         file_settings, _digest = read_env_file(path)
     except EnvFileError as exc:
         raise WizardError(str(exc)) from exc
-    reader = file_settings.get(ENTERPRISE_READER_KEY)
-    if reader is None:
-        canonical = file_settings.get(_READER_IDENTITY_KEY)
-        if canonical is not None:
-            reader = canonical.removeprefix(_USER_PREFIX)
+    reader = _file_reader(file_settings, console)
     if reader is not None:
         try:
             validate_enterprise_reader(reader)
@@ -1125,11 +1141,6 @@ def _scaffold(
     return changed, applied, dropped
 
 
-# The loader also accepts the reader under the identity key, valued `user:<upn>`.
-_READER_IDENTITY_KEY = identity_env_key("enterprise_reader")
-_USER_PREFIX = "user:"
-
-
 def _is_setting_line(line: str, key: str) -> bool:
     """Whether `line` assigns `key`, under `read_env_file`'s own rules."""
     stripped = line.strip()
@@ -1142,10 +1153,11 @@ def _env_text_for_answers(text: str, reader: str | None, time_zone: str) -> str:
     """`text` with its reader and zone lines set to the answers actually
     given.
 
-    Reader: None means the question was never asked, so the line passes
-    through unchanged and the build's own guard still decides. Blank means
-    the operator was asked and said nobody, so the line is dropped rather
-    than left to enrol somebody on the next build.
+    Reader: None means the question was never asked, so the lines pass
+    through unchanged and the build's own guard still decides. Otherwise both
+    reader keys are removed. Blank means the operator said nobody and nothing
+    replaces them; an address is written at the end of the file under one key,
+    the identity key if the file used it, else the alias.
 
     Zone: always asked, always confirmed, so the copy always names the
     answer. A file naming another zone would otherwise win the next rebuild
@@ -1163,7 +1175,7 @@ def _env_text_for_answers(text: str, reader: str | None, time_zone: str) -> str:
             )
         ]
         if reader and canonical:
-            lines.append(f"{_READER_IDENTITY_KEY}={_env_value_literal(_USER_PREFIX + reader)}")
+            lines.append(f"{_READER_IDENTITY_KEY}={_USER_PREFIX}{reader}")
         elif reader:
             lines.append(f"{ENTERPRISE_READER_KEY}={_env_value_literal(reader)}")
     lines = [line for line in lines if not _is_setting_line(line, TIME_ZONE_KEY)]
@@ -1207,6 +1219,20 @@ def _preserve_env_file(answers: Answers) -> None:
     _verify_preserved_env_file(destination, answers.reader, answers.time_zone)
 
 
+def _reader_read_back(settings: Mapping[str, str], reader: str) -> str | bool:
+    """True when the reader keys say exactly `reader`, else what they read back as."""
+    alias = settings.get(ENTERPRISE_READER_KEY)
+    canonical = settings.get(_READER_IDENTITY_KEY)
+    expected = (_USER_PREFIX + reader) if reader else None
+    ok = (
+        (alias is None or alias == reader)
+        and (canonical is None or canonical == expected)
+        and (alias is None or canonical is None)
+        and ((alias is not None or canonical is not None) == bool(reader))
+    )
+    return True if ok else (alias if alias is not None else canonical) or ""
+
+
 def _verify_preserved_env_file(destination: Path, reader: str | None, time_zone: str) -> None:
     """Read the copy back and confirm it says what the operator answered.
 
@@ -1220,19 +1246,13 @@ def _verify_preserved_env_file(destination: Path, reader: str | None, time_zone:
         raise WizardError(
             f"wrote {destination} but could not read it back: {exc}",
         ) from exc
-    alias = settings.get(ENTERPRISE_READER_KEY)
-    canonical = settings.get(_READER_IDENTITY_KEY)
-    read_back = (
-        alias if alias is not None
-        else canonical.removeprefix(_USER_PREFIX) if canonical is not None
-        else ""
-    )
-    both = alias is not None and canonical is not None
-    if reader is not None and (read_back != reader or both):
-        raise WizardError(
-            f"{destination} reads back as {read_back!r}, "
-            f"not the {reader!r} that was answered.",
-        )
+    if reader is not None:
+        read_back = _reader_read_back(settings, reader)
+        if read_back is not True:
+            raise WizardError(
+                f"{destination} reads back as {read_back!r}, "
+                f"not the {reader!r} that was answered.",
+            )
     if settings.get(TIME_ZONE_KEY) != time_zone:
         raise WizardError(
             f"{destination} reads back {TIME_ZONE_KEY} as "
