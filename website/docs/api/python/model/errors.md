@@ -75,7 +75,3 @@ A file beside the mapping that cannot be read, a fragment naming a key the
 target file does not hold, or a declaration naming another that this
 document does not produce. The fix is outside the block that reported it.
 
-### `LibrarySettingNotYetSupported`
-
-`entities.<name>.settings`, refused until the sandbox probe proves the write (row 7).
-

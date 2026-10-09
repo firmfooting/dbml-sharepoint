@@ -689,6 +689,13 @@ FINDING_HELP: dict[FindingCode, str] = {
         "creates each one under the library's root folder and reads it "
         "back, and a list has no root folder to create under."
     ),
+    FindingCode.LIBRARY_SETTING_ON_A_LIST: (
+        "`settings` is declared on an entity that is not a `DocumentLibrary`. "
+        "Its one key, `require_checkout`, writes the library's `ForceCheckout` "
+        "property, which is the library's \"Require Check Out\" control "
+        "(`library.checkout.force-checkout-merge`). Remove the key, or declare "
+        "`kind: DocumentLibrary` with `base_template: 101`."
+    ),
     FindingCode.FOLDER_NAME_INVALID: (
         "A declared folder name breaks one of Microsoft's file and folder "
         "name rules, or the two this tool adds: it contains one of "
