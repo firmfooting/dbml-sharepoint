@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FORM HEADER SHOWING A COLUMN HIDDEN FROM THE FORMS ----
  *
- * REVISION: 4054b0cc
+ * REVISION: 2ea4cb0b
  *
  * QUESTION: when a column is hidden from the Edit and Display forms the way
  * the deploy hides one (a ClientValidationFormula that is true only while
@@ -286,8 +286,14 @@
     if (r.status === 429 || r.status === 503) return `was throttled (HTTP ${r.status})`;
     if (r.status === 408) return 'timed out (HTTP 408)';
     if (r.status === 401 || r.status === 403) return `was not authorised (HTTP ${r.status})`;
+    if (bare500(r)) return 'answered HTTP 500 with no SharePoint error payload';
     return isRefusal(r.status) ? `was refused (HTTP ${r.status})` : `did not answer (HTTP ${r.status})`;
   };
+
+  // Only a refusal is a finding: throttling, authorisation, timeouts, gateways, an empty body and a 500 with no SharePoint error payload answer nothing.
+  const hasErrorPayload = (r) => !!(r.body && (r.body.error || r.body['odata.error']));
+  const bare500 = (r) => r.status === 500 && !hasErrorPayload(r);
+  const silentOf = (r) => (r.ok || !isRefusal(r.status) || bare500(r) ? unanswered(r) : null);
 
   // A voided row keeps its question and is counted apart from open and answered.
   const voidDependents = (ids, reason) => {
@@ -306,16 +312,20 @@
     const problems = [];
     const seen = [];
     let got = null;
-    let threw = false;
+    let quiet = null; // a read that said nothing about the fixture: a re-run can clear it
     try {
       got = await read();
     } catch (err) {
-      threw = true;
-      problems.push(`the read threw: ${err && err.message ? err.message : String(err)}`);
+      quiet = `the read threw: ${err && err.message ? err.message : String(err)}`;
     }
-    if (!threw) {
-      const silent = got && typeof got === 'object' ? unanswered(got) : 'returned no response';
-      if (silent) problems.push(`the read ${silent}`);
+    if (!quiet) {
+      if (!got || typeof got !== 'object') quiet = 'the read returned no response';
+      else if (silentOf(got)) quiet = `the read ${silentOf(got)}`;
+      else if (unanswered(got)) problems.push(`the read ${unanswered(got)}`);
+    }
+    if (quiet) {
+      record(id, question, 'NOT ESTABLISHED', quiet, 'open');
+      return false;
     }
     if (!problems.length) {
       for (const [name, want] of Object.entries(declared)) {
@@ -367,7 +377,7 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision 4054b0cc. Quote this when reporting results.');
+  log('INFO', 'probe revision 2ea4cb0b. Quote this when reporting results.');
 
   // ---- The question ----------------------------------------------------
   const MODE = 'baseline'; // 'baseline', a person looks, then 'control', then 'header'
@@ -578,6 +588,12 @@
   const itemType = !unanswered(types) && Array.isArray(types.body.value)
     ? types.body.value.find((t) => t && typeof t.StringId === 'string'
       && t.StringId.startsWith('0x01') && !t.StringId.startsWith('0x0120')) : null;
+  if (silentOf(types)) {
+    const quiet = `the content type read ${silentOf(types)}`;
+    record(FORMATTER_FIXTURE, FORMATTER_QUESTION, 'NOT ESTABLISHED', quiet, 'open');
+    record(LINKS, 'both columns are field links of the default content type and neither is Hidden', 'NOT ESTABLISHED', quiet, 'open');
+    return report();
+  }
   if (!itemType || typeof itemType.StringId !== 'string') {
     const why = unanswered(types) ? `the content type read ${unanswered(types)}` : 'no default item content type answered';
     record(FORMATTER_FIXTURE, FORMATTER_QUESTION, 'FAIL', why);
@@ -616,9 +632,10 @@
     base: () => 'Record whether the line probe-baseline-footer shows. If it does not, stop: later runs would answer nothing.',
     token: () => 'Record whether the line "visible-choice:" shows Yes. A blank line with the footer showing is observed failure of '
       + 'the visible Choice token; a vanished footer or header is observed suppression by that token.',
-    target: () => 'First record whether the line "visible-choice:" still shows Yes. If it is blank or gone, the hidden token changed the '
+    target: (form) => 'First record whether the line "visible-choice:" still shows Yes. If it is blank or gone, the hidden token changed the '
       + 'control: record observed suppression by the hidden token, not a blank hidden line. Otherwise record the line "hidden-column:" '
-      + 'as showing Yes or blank. VOID it where the body row did not show the column hidden. '
+      + `as showing Yes or blank. Also record whether HiddenResult is still absent from the ${form} form body now; `
+      + 'VOID this reading where it is present, or where the baseline body row did not show the column hidden. '
       + 'A vanished footer or header is observed suppression by the hidden token.',
   };
   const plan = { baseline: (f) => [[BODY_EDIT, BODY_DISPLAY, 'body', `whether the ${f} form body omits HiddenResult and holds ShownResult`],
