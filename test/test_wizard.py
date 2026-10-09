@@ -36,6 +36,7 @@ from dbml_sharepoint.catalogue import (
     MAPPING_RELPATH,
     PLACEHOLDER_SITE_URL,
     Journey,
+    Refusal,
     Solution,
     available_solutions,
     load_solution,
@@ -952,6 +953,24 @@ def test_a_refused_build_passes_its_exit_code_through(
     destination = tmp_path / "proj"
     console = ScriptedConsole(_answers(destination, build="y", seed="n"))
     assert wizard.run_wizard(console) == 2
+
+
+def test_every_blueprint_refused_names_each_refusal_before_exiting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The operator needs the paths and reasons, and "shipped without them" is untrue here."""
+    refused = (
+        Refusal("acme-packs", tmp_path / "one", "front matter is broken"),
+        Refusal("acme-packs", tmp_path / "two", "release is missing"),
+    )
+    none_offered = replace(read_catalogue(), solutions=(), refused=refused)
+    monkeypatch.setattr(wizard, "read_catalogue", lambda: none_offered)
+    console = ScriptedConsole([])
+    assert wizard.run_wizard(console) == 1
+    shown = console.text
+    assert "Not offered: acme-packs: front matter is broken" in shown
+    assert "Not offered: acme-packs: release is missing" in shown
+    assert "shipped without them" not in shown
 
 
 def test_no_shipped_templates_is_reported_not_a_crash(

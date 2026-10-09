@@ -1599,10 +1599,19 @@ def _run(console: Console) -> int:
     # into a wizard that refuses to run.
     journeys = list(found.journeys)
     if not solutions:
-        console.print(
-            "[red]No templates found.[/red] This build of dbml-sharepoint "
-            "shipped without them.",
-        )
+        # The refusals are the reason, so they print before the statement that none were offered.
+        for line in notices(found):
+            console.print(f"[yellow]{escape(line)}[/yellow]")
+        if found.refused:
+            console.print(
+                "[red]No templates are offered.[/red] Every blueprint found was refused, "
+                "for the reasons above.",
+            )
+        else:
+            console.print(
+                "[red]No templates found.[/red] This build of dbml-sharepoint "
+                "shipped without them.",
+            )
         return 1
 
     console.print(
