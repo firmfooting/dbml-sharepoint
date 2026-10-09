@@ -45,9 +45,9 @@
           const text = await removeResp.text();
           throw new Error(`HTTP ${removeResp.status} ${text}`);
         }
-        log('INFO', `Removed ${enrollment.identity} (user ${enrollment.userId}) this run enrolled into '${enrollment.groupName}', because the run did not reach the end.`);
+        log('INFO', `Removed ${enrollment.described} this run enrolled into '${enrollment.groupName}', because the run did not reach the end.`);
       } catch (err) {
-        log('ERROR', `Could not remove ${enrollment.identity} from '${enrollment.groupName}': ${err.message}. Remove it in Site permissions > Groups.`);
+        log('ERROR', `Could not remove ${enrollment.described} from '${enrollment.groupName}': ${err.message}. Remove it in Site permissions > Groups.`);
       }
     }
   }

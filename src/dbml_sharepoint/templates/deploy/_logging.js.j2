@@ -1143,6 +1143,8 @@
       }
     };
 
+    // Name and hash per identity, from the build; never the value (see persisted_identities).
+    const IDENTITY_TAIL = {{ persisted_identities | tojson }}.map((d) => `; identity: ${d}`).join('');
     // ---- The opening stamps ---------------------------------------------
     // One sink, so exactly one of these two runs. Written once the phase's
     // own setup has succeeded, so a start stamp exists only for a run that
@@ -1154,8 +1156,8 @@
         `site {{ site_url }}; role {{ site_role }}`);
       await stampExternal('provenance',
         `generated from {{ source_dbml }}; release ${RELEASE_TAG}; schema v${SCHEMA_VERSION}; `
-        + `deployer v{{ deployer_version }}; {{ generated_at }}; {{ env_file_line }}`,
-        `generated from {{ source_dbml }} at {{ generated_at }}; {{ env_file_line }}`);
+        + `deployer v{{ deployer_version }}; {{ generated_at }}; {{ env_file_line }}` + IDENTITY_TAIL,
+        `generated from {{ source_dbml }} at {{ generated_at }}; {{ env_file_line }}` + IDENTITY_TAIL);
     } else {
       await stampRunLog('deployment start', `site {{ site_url }}; role {{ site_role }}`);
     }

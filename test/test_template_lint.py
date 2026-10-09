@@ -80,6 +80,7 @@ KNOWN_CONTEXT = {
     # that nothing was), same wording in the manifest, index.md and the
     # deploy transcript's log() line.
     "env_file_line",
+    "persisted_identities",
     # The sidecar lists the logging phase ensures on every deploy (both
     # None under --no-sidecars, which emits no logging phase at all), the
     # run-log stamp columns and change-log column bodies, each shared by an

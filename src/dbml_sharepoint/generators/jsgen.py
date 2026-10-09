@@ -146,6 +146,7 @@ def generate_deploy_js(
         site_context=sc,
     )
     template = env.get_template("deploy.js.j2")
+    plan = enrolment_plan(bundle, resolved, identities)
     return template.render(
         site_url=site_url,
         site_role=site_role,
@@ -158,7 +159,10 @@ def generate_deploy_js(
         unmanaged_sentinel=UNMANAGED,
         # Whether any enterprise_reader value is enrolled; the logging phase mirrors its grant.
         reader_enrolled=bool(identities.get("enterprise_reader")),
-        identity_enrolment=as_json(enrolment_plan(bundle, resolved, identities)),
+        identity_enrolment=as_json(plan),
+        # Names and hashes only: this is the one list of identities a persisted stamp may carry.
+        persisted_identities=list(dict.fromkeys(
+            r.described for g in plan for r in g.rows if r.values)),
         # #199: the bitmap the enrolment phase requires of the level behind
         # the reader's grant, and the two bits it only warns about. Emitted
         # from analysis.permissions rather than written into the template, so

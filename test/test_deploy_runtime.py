@@ -5351,7 +5351,10 @@ def _reader_harness(
           if (u.toLowerCase().includes('/ensureuser')) {
             if (ENSURE_STATUS !== 200) {
               calls.push({ url: u, method, body: opts.body === undefined ? null : opts.body });
-              const payload = { error: { code: 'ensureuser refused' } };
+              // Real refusals name the logon they could not find.
+              const payload = { error: { code: 'ensureuser refused', message: {
+                value: 'The user ' + JSON.parse(opts.body || '{}').logonName
+                  + ' could not be found' } } };
               return { ok: false, status: ENSURE_STATUS, headers: { get: () => null },
                        json: async () => payload, text: async () => JSON.stringify(payload) };
             }
@@ -5956,7 +5959,7 @@ def test_a_failed_removal_of_an_identity_enrolment_is_reported() -> None:
     """The drain's own failure branch: the log names the account left behind."""
     _, calls, output = _run_writers(_FLOWS, remove_status=403)
     assert any("removebyid" in c["url"] for c in calls)
-    assert "Could not remove automation from" in output, output[-2000:]
+    assert "Could not remove automation (sha256:" in output, output[-2000:]
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -10346,3 +10349,84 @@ def test_the_title_rename_lands_before_any_calculated_column(
     # The formula the create carries is the rewritten one, so the pair above
     # is about ORDER rather than about the generator having done nothing.
     assert "[Escalation Summary]" in calls[formula]["body"]
+
+
+
+# The supplied value in every spelling a log line could carry: the address, its
+# local part, the claims login and the resolved user id. The domain is not asserted:
+# the operator account in the stamps shares it.
+_PERSISTED_HIDDEN = ("flows@example.com", "flows", "i:0#.f|membership|flows", "user 41", "(41)")
+
+
+def _item_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every row written to either log list, which are the only /items POSTs the mock records."""
+    return [
+        c for c in calls
+        if c["method"] == "POST" and c.get("body") and c["url"].endswith("/items")
+    ]
+
+
+def _run_logged_writers(**harness: Any) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    return _run_writers(_FLOWS, sidecars=True, **harness)
+
+
+def _assert_nothing_persisted_names_a_value(
+    summary: dict[str, Any], calls: list[dict[str, Any]], output: str,
+) -> None:
+    persisted = "\n".join(c["body"] for c in _item_writes(calls))
+    persisted += "\n" + json.dumps(summary.get("errors") or [])
+    persisted += "\n" + "\n".join(line for line in output.splitlines() if "[SP-DEPLOY]" in line)
+    for hidden in _PERSISTED_HIDDEN:
+        assert hidden not in persisted, f"{hidden!r} reached a persisted line:\n{persisted}"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_no_persisted_row_carries_a_value() -> None:
+    """PII: the success path writes a change row naming the identity and its hash only."""
+    summary, calls, output = _run_logged_writers()
+    rows = _item_writes(calls)
+    assert rows, "the run wrote no log rows, so this test proves nothing"
+    change = [json.loads(c["body"]) for c in rows if "identity:XX Writers:automation" in c["body"]]
+    assert len(change) == 1, rows
+    assert change[0]["ChangeKind"] == "identity-enrolled"
+    assert re.fullmatch(r"automation \(sha256:[0-9a-f]{12}\)", change[0]["TargetName"])
+    _assert_nothing_persisted_names_a_value(summary, calls, output)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("case", [
+    pytest.param({"ensure_status": 500}, id="ensure-fails-and-echoes-the-logon"),
+    pytest.param({"add_status": 403}, id="add-fails"),
+    pytest.param({"drop_readback": True}, id="readback-mismatch"),
+    pytest.param({"remove_status": 403}, id="drain-removal-fails"),
+    pytest.param({"members": [_OTHER]}, id="exclusive-group-has-a-stranger"),
+    pytest.param({"ensure_user": {**_FLOWS, "PrincipalType": 4}}, id="not-a-user"),
+    pytest.param({"ensure_user": {**_FLOWS, "LoginName": "c:0(.s|true"}}, id="tenant-wide-claim"),
+    pytest.param({"ensure_user": _OTHER}, id="resolved-to-someone-else"),
+])
+def test_no_failure_path_persists_a_value(case: dict[str, Any]) -> None:
+    case = dict(case)
+    ensure_user = case.pop("ensure_user", _FLOWS)
+    if ensure_user is not _FLOWS and ensure_user.get("LoginName") == "c:0(.s|true":
+        ensure_user = {**ensure_user, "Email": "flows@example.com"}
+    summary, calls, output = _run_writers(ensure_user, sidecars=True, **case)
+    _assert_nothing_persisted_names_a_value(summary, calls, output)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_rerun_with_every_value_present_writes_nothing() -> None:
+    """Review focus 3: idempotent, and no change row."""
+    summary, calls, _ = _run_logged_writers(members=[_FLOWS])
+    assert not _identity_errors(summary), summary
+    assert _membership_writes(calls) == []
+    assert not [c for c in _item_writes(calls) if "identity:XX Writers" in c["body"]]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_aborted_run_removes_only_what_it_added() -> None:
+    """The mock run aborts after enrolment; the drain removes the one add and not the stranger."""
+    summary, calls, _ = _run_writers(_FLOWS, members=[_OTHER])
+    removed = [c["url"] for c in calls if "removebyid" in c["url"]]
+    assert summary.get("aborted") not in (None, "identity-enrolment-errors"), summary
+    assert [u for u in removed if f"removebyid({_FLOWS['Id']})" in u], removed
+    assert not [u for u in removed if f"removebyid({_OTHER['Id']})" in u], removed
