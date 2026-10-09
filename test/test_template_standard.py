@@ -60,7 +60,7 @@ from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, PLACEHOLDER_TIME_ZON
 from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
 from dbml_sharepoint.model.mapping_loader import load_mapping
-from dbml_sharepoint.model.mapping_types import Mapping, SiteGroup
+from dbml_sharepoint.model.mapping_types import LegacyFlag, Mapping, SiteGroup
 from dbml_sharepoint.model.parser import ColumnDefault, Schema, parse_dbml
 
 # This module is the family-standard conformance sweep, and it dominates the
@@ -1859,8 +1859,10 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
         "require_empty_at_deploy": False,
         "enroll_operator_during_deploy": False,
         "enroll_enterprise_reader": True,
-        "enroll": (), "enroll_during_run": (), "membership": "additive",
-        "legacy_flags": (),
+        "enroll": ("enterprise_reader",), "enroll_during_run": (), "membership": "exclusive",
+        "legacy_flags": (
+            LegacyFlag("enroll_enterprise_reader", "enterprise_reader", also_declared=False),
+        ),
         # Never renamed: the shared groups are one object per site.
         "renamed_from": (),
         "previous_names": (),
@@ -1878,8 +1880,10 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
         "require_empty_at_deploy": False,
         "enroll_operator_during_deploy": True,
         "enroll_enterprise_reader": False,
-        "enroll": (), "enroll_during_run": (), "membership": "additive",
-        "legacy_flags": (),
+        "enroll": (), "enroll_during_run": ("operator",), "membership": "additive",
+        "legacy_flags": (
+            LegacyFlag("enroll_operator_during_deploy", "operator", also_declared=False),
+        ),
         # Never renamed: the shared groups are one object per site.
         "renamed_from": (),
         "previous_names": (),
