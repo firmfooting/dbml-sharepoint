@@ -274,6 +274,7 @@
     // overwrite=false, so SharePoint itself refuses to replace a file that
     // arrived between the probe above and this write (Learn, "Files and
     // folders REST API reference", Files/add(url, overwrite)).
+    // Not checked in: under require_checkout: true the file stays checked out to the operator (library.checkout.force-checkout-merge).
     const upload = await fetchWithRetry(apiUrl(`web/GetFolderByServerRelativeUrl('${pathLiteral(folderUrl)}')/Files/add(url='${pathLiteral(item.file.name)}',overwrite=false)`), {
       method: 'POST',
       headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': await getDigest() },
