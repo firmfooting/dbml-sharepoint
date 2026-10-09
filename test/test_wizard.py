@@ -3927,13 +3927,14 @@ def test_a_template_with_a_link_to_a_directory_is_refused_before_writing(
     assert not destination.exists()
 
 
+@pytest.mark.parametrize("target", ["missing.txt", "notes.txt"])
 def test_a_template_with_a_dangling_link_is_refused_before_writing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, target: str,
 ) -> None:
     """The copy would raise on the missing target after creating the destination."""
     solution = _fake_family(tmp_path / "fake")
     try:
-        (solution.root / "notes.txt").symlink_to(solution.root / "missing.txt")
+        (solution.root / "notes.txt").symlink_to(solution.root / target)
     except OSError as exc:
         pytest.skip(f"this platform will not create a symlink here: {exc}")
     _offer_only(monkeypatch, solution)
