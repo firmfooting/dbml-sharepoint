@@ -5973,6 +5973,8 @@ def test_an_additive_group_that_already_holds_the_account_still_warns() -> None:
     """The nothing-to-write path reads the group again and warns on that read."""
     summary, calls, output = _run_writers(_FLOWS, members=[_FLOWS, _OTHER])
     assert not _identity_errors(summary), summary
+    # The harness's schema aborts later, so reaching it shows the identity phase finished.
+    assert summary.get("aborted") == "phase-1-schema-errors", summary
     assert _membership_writes(calls) == []
     assert not _removals(calls), _removals(calls)
     assert any("unmanaged" in line and "other@example.com" in line

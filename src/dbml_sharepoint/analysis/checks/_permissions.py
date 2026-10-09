@@ -686,8 +686,8 @@ def check(vc: ValidationContext) -> list[Finding]:
                 findings.append(Finding(
                     FindingCode.EXCLUSIVE_GROUP_ENROLS_THE_OPERATOR,
                     f"groups: {grp.name!r} is exclusive and also enrols "
-                    f"{', '.join(grp.enroll_during_run)} for the run. Phase 1.4 adds "
-                    f"them before Phase 1.5 checks the group holds nobody else, so "
+                    f"{', '.join(grp.enroll_during_run)} for the run. Phase 1.5 adds "
+                    f"them before Phase 1.6 checks the group holds nobody else, so "
                     f"every run aborts.",
                     location=_GROUPS,
                 ))
@@ -739,7 +739,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"groups: {grp.name!r} declares both "
                     f"enroll: [enterprise_reader] and "
                     f"allow_members_edit_membership. The security phase "
-                    f"applies that setting before Phase 1.5 enrols the "
+                    f"applies that setting before Phase 1.6 enrols the "
                     f"reader, so the enrolled account can then add "
                     f"principals to its own group and pass on the group's "
                     f"Read. The one-account guard would hold for the length "
