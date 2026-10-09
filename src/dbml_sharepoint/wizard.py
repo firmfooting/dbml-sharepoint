@@ -1291,7 +1291,8 @@ def _check_tree(solution: Solution) -> None:
 
     The copy follows links, so a link out of the template, or to any directory
     (one pointing at an ancestor stays inside and never ends), is refused; so is
-    a file this user cannot read, which would leave a partial project.
+    a dangling link, a special node such as a FIFO, and a file this user cannot
+    read. Each would stop the copy part-way and leave a partial project.
     """
     root = solution.root.resolve()
     for path in _template_entries(solution):
@@ -1309,13 +1310,19 @@ def _check_tree(solution: Solution) -> None:
                 f"the {solution.id} template's {name} links outside the template, and the "
                 "copy would bring whatever it points at into the project",
             )
-        if path.is_file():
-            try:
-                path.open("rb").close()
-            except OSError as exc:
-                raise WizardError(
-                    f"the {solution.id} template's {inside.as_posix()} cannot be read: {exc}",
-                ) from exc
+        if not path.is_symlink() and path.is_dir():
+            continue
+        if not path.resolve().is_file():
+            raise WizardError(
+                f"the {solution.id} template's {inside.as_posix()} is not a regular file, "
+                "which the copy cannot carry",
+            )
+        try:
+            path.open("rb").close()
+        except OSError as exc:
+            raise WizardError(
+                f"the {solution.id} template's {inside.as_posix()} cannot be read: {exc}",
+            ) from exc
 
 
 def _check_inputs(solution: Solution, bundle: MappingBundle) -> None:
