@@ -416,8 +416,8 @@
     // Membership is read, never resolved (ensureuser writes a site user entry). No value is logged.
     {
       const upnPart = (name) => String(name).split('|').pop();
-      // Only user (1) and security_group (4) have a proven PrincipalType; any other kind has none.
-      const expectedType = (kind) => (kind === 'user' ? 1 : kind === 'security_group' ? 4 : null);
+      // user is 1; both group kinds resolve to 4 (access.identity.security-group-resolves, access.identity.m365-members-resolves).
+      const expectedType = (kind) => (kind === 'user' ? 1 : (kind === 'security_group' || kind === 'm365_group') ? 4 : null);
       const malformedNextPage = (page) => page.__next != null && typeof page.__next !== 'string';
       const addressOf = (u) => [u.Email, upnPart(u.LoginName)].map((v) => String(v || '').toLowerCase());
       for (const plan of T.identity_groups) {
@@ -440,7 +440,7 @@
               finding(`${key}/${row.identity}`, 'FAIL', `MISMATCH: '${row.identity}' is of a kind whose principal type is not established, so it cannot be verified in '${plan.group}'.`);
               continue;
             }
-            const sameAddress = members.filter((u) => addressOf(u).includes(String(value.value).toLowerCase()));
+            const sameAddress = members.filter((u) => (value.kind === 'user' ? addressOf(u).includes(String(value.value).toLowerCase()) : String(u.LoginName || '').toLowerCase() === String(value.claim).toLowerCase()));
             // A correct-kind member wins, so a stray principal sharing the address cannot fail the check.
             const hit = sameAddress.find((u) => u.PrincipalType === expectedType(value.kind)) || sameAddress[0];
             const rowKey = `${key}/${row.identity}`;

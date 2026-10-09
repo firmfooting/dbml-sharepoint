@@ -3826,7 +3826,7 @@ def _with_declared_intake(tmp_path: Path) -> Path:
     text = text.replace("enroll: [automation]", "enroll: [automation, intake]")
     text += (
         "\nidentities:\n  intake:\n    description: \"Intake.\"\n"
-        "    kinds: [user, security_group]\n"
+        "    kinds: [user, security_group, m365_group]\n"
     )
     for sibling in ("topics.yaml", "retention-policies.yaml"):
         shutil.copy(FIXTURES / sibling, tmp_path / sibling)
@@ -3865,14 +3865,37 @@ def test_build_refuses_a_bad_identity_before_writing(
     assert not (tmp_path / "out").exists()
 
 
-def test_build_refuses_a_group_kind_before_writing(tmp_path: Path) -> None:
+def test_build_refuses_the_owners_form_before_writing(tmp_path: Path) -> None:
     mapping = _with_declared_intake(tmp_path)
     result = _build_with(
         tmp_path, mapping,
-        ["--identity", _AUTOMATION, "--identity", f"intake=security_group:{_GUID}"],
+        ["--identity", _AUTOMATION, "--identity", f"intake=m365_group:{_GUID}:owners"],
     )
     assert result.exit_code == 1, result.output
     assert "probe" in result.output
+    assert not (tmp_path / "out").exists()
+
+
+def test_build_lowercases_an_uppercase_group_object_id_into_the_claim(tmp_path: Path) -> None:
+    mapping = _with_declared_intake(tmp_path)
+    result = _build_with(
+        tmp_path, mapping,
+        ["--identity", _AUTOMATION, "--identity", f"intake=security_group:{_GUID.upper()}"],
+    )
+    assert result.exit_code == 0, result.output
+    emitted = (tmp_path / "out" / "deploy.js.txt").read_text(encoding="utf-8")
+    assert f"c:0t.c|tenant|{_GUID}" in emitted
+    assert _GUID.upper() not in emitted
+
+
+def test_build_refuses_a_malformed_group_object_id_before_writing(tmp_path: Path) -> None:
+    mapping = _with_declared_intake(tmp_path)
+    result = _build_with(
+        tmp_path, mapping,
+        ["--identity", _AUTOMATION, "--identity", "intake=m365_group:0F8FAD5B-not-a-guid"],
+    )
+    assert result.exit_code == 1, result.output
+    assert "a group value is the Entra object id, a GUID" in result.output
     assert not (tmp_path / "out").exists()
 
 

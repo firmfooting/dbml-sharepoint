@@ -137,3 +137,17 @@ def test_the_kind_not_yet_supported_error_is_an_identity_error() -> None:
 
 def test_the_sharepoint_group_words_cover_every_grant_principal_kind() -> None:
     assert PRINCIPAL_KINDS <= SHAREPOINT_GROUP_WORDS
+
+
+def test_claim_for_builds_the_claim_from_the_kind_and_refuses_owners() -> None:
+    from dbml_sharepoint.model.identities import claim_for
+
+    assert claim_for(IdentityValue("user", "a@example.com")) == "a@example.com"
+    assert claim_for(IdentityValue("security_group", _GUID.lower())) == (
+        f"c:0t.c|tenant|{_GUID.lower()}"
+    )
+    assert claim_for(IdentityValue("m365_group", _GUID.lower())) == (
+        f"c:0o.c|federateddirectoryclaimprovider|{_GUID.lower()}"
+    )
+    with pytest.raises(IdentityKindNotYetSupported):
+        claim_for(IdentityValue("m365_group", _GUID.lower(), owners=True))

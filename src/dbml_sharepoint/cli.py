@@ -215,7 +215,8 @@ def build(
         None,
         "--identity",
         help="NAME=KIND:VALUE[,KIND:VALUE...] for one identity the mapping "
-        "enrols; repeat per name. KIND is user (a UPN). Overrides "
+        "enrols; repeat per name. KIND is user (a UPN), security_group or "
+        "m365_group (an Entra object id; the m365_group owners form is refused). Overrides "
         f"DBMLSP_IDENTITY_<NAME> in {ENV_FILENAME}.",
     ),
     extension: str | None = typer.Option(

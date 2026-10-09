@@ -10,7 +10,12 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
-from dbml_sharepoint.model.identities import IdentityValue, MembershipMode, describe_identity
+from dbml_sharepoint.model.identities import (
+    IdentityValue,
+    MembershipMode,
+    claim_for,
+    describe_identity,
+)
 from dbml_sharepoint.model.mapping_types import MappingBundle
 
 _CEILINGS: dict[str, Literal["reader", "automation"]] = {
@@ -63,7 +68,11 @@ def as_json(plan: Sequence[GroupEnrolment]) -> list[dict[str, Any]]:
                 {
                     "identity": r.identity, "ceiling": r.ceiling, "described": r.described,
                     "values": [
-                        {"kind": v.kind, "value": v.value, "owners": v.owners} for v in r.values
+                        {
+                            "kind": v.kind, "value": v.value, "owners": v.owners,
+                            "claim": claim_for(v),
+                        }
+                        for v in r.values
                     ],
                 }
                 for r in g.rows

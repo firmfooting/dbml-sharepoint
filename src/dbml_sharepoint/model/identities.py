@@ -82,7 +82,7 @@ class IdentityKindNotAllowed(IdentityError):  # noqa: N818 - the spec names the 
 
 
 class IdentityKindNotYetSupported(IdentityError):  # noqa: N818 - the spec names the refusal class
-    """A group kind, refused until the sandbox probe proves the claim it builds."""
+    """A form whose claim no probe has proven, such as the m365_group owners form."""
 
 
 class SharePointGroupNotEnrollable(IdentityError):  # noqa: N818 - the spec names the refusal class
@@ -168,6 +168,23 @@ def parse_values(name: str, raw: str) -> tuple[IdentityValue, ...]:
     if not raw or raw != raw.strip():
         raise IdentityValueMalformed(f"identity {name}: a value must not be empty or padded")
     return tuple(_parse_one(name, item) for item in raw.split(","))
+
+
+# Proven by access.identity.security-group-resolves and access.identity.m365-members-resolves.
+_CLAIM_PREFIX: Final = {
+    "security_group": "c:0t.c|tenant|",
+    "m365_group": "c:0o.c|federateddirectoryclaimprovider|",
+}
+
+
+def claim_for(value: IdentityValue) -> str:
+    """The logon name ensureuser receives: a UPN, or a claim built from a validated GUID."""
+    if value.kind == "user":
+        return value.value
+    if value.owners:
+        # access.identity.m365-owners-claim: the owners claim resolves to the members principal.
+        raise IdentityKindNotYetSupported(f"{value.kind} owners values are not enrolled")
+    return _CLAIM_PREFIX[value.kind] + value.value
 
 
 def identity_hash(values: Sequence[IdentityValue]) -> str:

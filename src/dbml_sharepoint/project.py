@@ -647,7 +647,7 @@ def resolve_env_settings(
 
 _NOT_YET_SUPPORTED = (
     "is refused until a sandbox probe proves the claim this tool would build for it; "
-    "enrol the accounts as user values meanwhile"
+    "enrol the owners as user values"
 )
 
 
@@ -715,10 +715,10 @@ def resolve_identities(
                 raise IdentityKindNotAllowed(
                     f"identity {name} takes {', '.join(kinds)}, not {value.kind}",
                 )
-            # The owners form is an m365_group value, so this covers it too.
-            if value.kind != "user":
+            # access.identity.m365-owners-claim: the owners form stays refused.
+            if value.owners:
                 raise IdentityKindNotYetSupported(
-                    f"identity {name}: {value.kind} {_NOT_YET_SUPPORTED}",
+                    f"identity {name}: the owners form {_NOT_YET_SUPPORTED}",
                 )
         if builtin is not None and builtin.count == "one" and len(values) > 1:
             raise IdentityValueCount(f"identity {name} takes one value, got {len(values)}")

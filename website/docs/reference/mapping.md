@@ -2421,7 +2421,7 @@ and need no declaration: `enterprise_reader` (one optional user),
 | Key | Required | Meaning |
 | --- | --- | --- |
 | `description` | yes | Why the account is there; printed in the deploy manifest |
-| `kinds` | no | Any of `user`, `security_group`, `m365_group`; default `[user]`. Group kinds are refused at build until they are proven on a live site |
+| `kinds` | no | Any of `user`, `security_group`, `m365_group`; default `[user]`. `security_group` and `m365_group` take an Entra object id (a GUID); `m365_group` enrols the group's members. The `m365_group:<id>:owners` form is refused at build |
 
 A name matches `[a-z][a-z0-9_]{0,63}`; its env key is `DBMLSP_IDENTITY_`
 followed by the name in capitals.

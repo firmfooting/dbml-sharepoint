@@ -751,11 +751,36 @@ def test_a_member_of_the_wrong_kind_is_a_mismatch_and_a_right_kind_one_wins() ->
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_hand_built_kind_with_no_proven_principal_type_fails_closed() -> None:
     """The build refuses these kinds; a hand-built targets file must not be judged as type 4."""
-    js = re.sub(r'"kind":\s*"user"', '"kind": "m365_group"', _writers_verify_js())
+    js = re.sub(r'"kind":\s*"user"', '"kind": "alien"', _writers_verify_js())
     group = {**_FLOWS_MEMBER, "PrincipalType": 4}
     out = _run_verify_full(js, GROUP_MEMBERS=_members([group]))
     assert out["verdict"] == "MISMATCH"
     assert not any("is a member of" in ln for ln in out["log"])
+
+
+_GROUP_OID = "0f8fad5b-d9cb-469f-a165-70867728950e"
+_GROUP_CLAIMS = {
+    "security_group": f"c:0t.c|tenant|{_GROUP_OID}",
+    "m365_group": f"c:0o.c|federateddirectoryclaimprovider|{_GROUP_OID}",
+}
+
+
+def _as_group_value(js: str, kind: str) -> str:
+    value = {"kind": kind, "value": _GROUP_OID, "owners": False, "claim": _GROUP_CLAIMS[kind]}
+    return re.sub(r'\{[^{}]*"kind":\s*"user"[^{}]*\}', lambda _: json.dumps(value), js)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("kind", ["security_group", "m365_group"])
+def test_a_group_kind_is_matched_by_its_claim(kind: str) -> None:
+    js = _as_group_value(_writers_verify_js(), kind)
+    claim = _GROUP_CLAIMS[kind]
+    member = {"Id": 51, "LoginName": claim, "Email": "", "PrincipalType": 4}
+    assert _run_verify_full(js, GROUP_MEMBERS=_members([member]))["verdict"] == "VERIFIED"
+    wrong = _run_verify_full(js, GROUP_MEMBERS=_members([{**member, "PrincipalType": 1}]))
+    assert wrong["verdict"] == "MISMATCH"
+    other = {**member, "LoginName": claim.replace("0f8fad5b", "11111111")}
+    assert _run_verify_full(js, GROUP_MEMBERS=_members([other]))["verdict"] == "MISMATCH"
 
 
 _LONG_PAGE = (

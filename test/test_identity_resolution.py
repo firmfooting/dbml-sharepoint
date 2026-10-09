@@ -113,20 +113,23 @@ def test_a_kind_the_identity_does_not_take_is_refused(tmp_path: Path) -> None:
         _resolve(tmp_path, flags)
 
 
-def test_a_group_kind_is_refused_until_the_probe_passes(tmp_path: Path) -> None:
+def test_a_security_group_value_resolves(tmp_path: Path) -> None:
     flags = [*_ALL[:2], f"intake=security_group:{_GUID}"]
-    with pytest.raises(IdentityKindNotYetSupported, match="probe"):
-        _resolve(tmp_path, flags)
+    assert _resolve(tmp_path, flags)["intake"] == (IdentityValue("security_group", _GUID),)
 
 
-def test_the_m365_group_and_its_owners_form_are_refused_until_the_probe_passes(
-    tmp_path: Path,
-) -> None:
+def test_an_m365_group_members_value_resolves(tmp_path: Path) -> None:
     body = _GROUPS.replace("enroll: [automation, records_clerk, intake]",
                            "enroll: [automation, records_clerk, intake, board]")
-    for spelled in (f"m365_group:{_GUID}", f"m365_group:{_GUID}:owners"):
-        with pytest.raises(IdentityKindNotYetSupported, match="board"):
-            _resolve(tmp_path, [*_ALL, f"board={spelled}"], body=body)
+    resolved = _resolve(tmp_path, [*_ALL, f"board=m365_group:{_GUID}"], body=body)
+    assert resolved["board"] == (IdentityValue("m365_group", _GUID),)
+
+
+def test_the_m365_owners_form_is_refused(tmp_path: Path) -> None:
+    body = _GROUPS.replace("enroll: [automation, records_clerk, intake]",
+                           "enroll: [automation, records_clerk, intake, board]")
+    with pytest.raises(IdentityKindNotYetSupported, match="board"):
+        _resolve(tmp_path, [*_ALL, f"board=m365_group:{_GUID}:owners"], body=body)
 
 
 def test_two_reader_values_are_refused(tmp_path: Path) -> None:

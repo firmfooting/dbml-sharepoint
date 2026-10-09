@@ -5384,6 +5384,7 @@ def _reader_harness(
     web_binding_shape: str = "verbose",
     unreadable_binding_levels: list[int] | None = None,
     drop_change_log_grant: bool = False,
+    ensure_echo: str = '',
 ) -> str:
     """`_ADOPTED_HARNESS` plus the two surfaces the reader phase touches.
 
@@ -5456,6 +5457,7 @@ def _reader_harness(
     return _ADOPTED_HARNESS + textwrap.dedent(r"""
         const ENSURED_BY = __ENSURE_USER__;
         const ENSURE_STATUS = __ENSURE_STATUS__;
+        const ECHO = __ECHO__;
         const ADD_STATUS = __ADD_STATUS__;
         const REMOVE_STATUS = __REMOVE_STATUS__;
         const ensuredFor = (body) => {
@@ -5492,13 +5494,18 @@ def _reader_harness(
                      text: async () => JSON.stringify(payload) };
           };
           if (u.toLowerCase().includes('/ensureuser')) {
-            if (ENSURE_STATUS !== 200) {
+            const asked = JSON.parse(opts.body || '{}').logonName;
+            if (ENSURE_STATUS !== 200 || (ECHO && asked.includes('|'))) {
               calls.push({ url: u, method, body: opts.body === undefined ? null : opts.body });
               // Real refusals name the logon they could not find.
               const payload = { error: { code: 'ensureuser refused', message: {
-                value: 'The user ' + JSON.parse(opts.body || '{}').logonName
-                  + ' could not be found' } } };
-              return { ok: false, status: ENSURE_STATUS, headers: { get: () => null },
+                value: 'The user ' + ({
+                  guid: asked.split('|').pop(),
+                  guid_upper: asked.split('|').pop().toUpperCase(),
+                  claim_upper: asked.toUpperCase(),
+                }[ECHO] || asked) + ' could not be found' } } };
+              const status = ENSURE_STATUS === 200 ? 400 : ENSURE_STATUS;
+              return { ok: false, status, headers: { get: () => null },
                        json: async () => payload, text: async () => JSON.stringify(payload) };
             }
             return respond({ d: ensuredFor(opts.body) });
@@ -5706,6 +5713,8 @@ def _reader_harness(
     """).replace(
         "__ENSURE_USER__", json.dumps(ensure_user),
     ).replace(
+        "__ECHO__", json.dumps(ensure_echo),
+    ).replace(
         "__ENSURE_STATUS__", str(ensure_status),
     ).replace(
         "__ADD_STATUS__", str(add_status),
@@ -5800,6 +5809,7 @@ def _run_identity_deploy(
     unreadable_binding_levels: list[int] | None = None,
     sidecars: bool = False,
     drop_change_log_grant: bool = False,
+    ensure_echo: str = '',
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     """Run the emitted deploy against the reader harness.
 
@@ -5824,6 +5834,7 @@ def _run_identity_deploy(
         web_binding_shape=web_binding_shape,
         unreadable_binding_levels=unreadable_binding_levels,
         drop_change_log_grant=drop_change_log_grant,
+        ensure_echo=ensure_echo,
     )
     if sidecars:
         script = _with_sidecar_descriptions(script)
@@ -5902,6 +5913,75 @@ def test_an_automation_account_is_resolved_added_and_read_back() -> None:
     summary, calls, _ = _run_writers(_FLOWS)
     assert not _identity_errors(summary), summary
     assert [w["LoginName"] for w in _membership_writes(calls)] == [_FLOWS["LoginName"]]
+
+
+_GROUP_OID = "0f8fad5b-d9cb-469f-a165-70867728950e"
+_SECURITY_CLAIM = f"c:0t.c|tenant|{_GROUP_OID}"
+_MEMBERS_CLAIM = f"c:0o.c|federateddirectoryclaimprovider|{_GROUP_OID}"
+
+
+def _group_principal(login: str, ident: int = 51, kind: int = 4) -> dict[str, Any]:
+    return {"Id": ident, "LoginName": login, "Title": "Intake", "Email": "", "PrincipalType": kind}
+
+
+def _run_group_kind(
+    kind: str, ensured_group: dict[str, Any], **harness: Any,
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    claim = _SECURITY_CLAIM if kind == "security_group" else _MEMBERS_CLAIM
+    return _run_identity_deploy(
+        {"automation": "user:flows@example.com", "intake": f"{kind}:{_GROUP_OID}"},
+        {"flows@example.com": _FLOWS, claim: ensured_group},
+        mapping="sharepoint-mapping-with-group-identity.yaml", **harness,
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(("kind", "claim"), [
+    ("security_group", _SECURITY_CLAIM), ("m365_group", _MEMBERS_CLAIM),
+])
+def test_a_group_kind_is_resolved_by_its_claim_added_and_read_back(kind: str, claim: str) -> None:
+    summary, calls, _ = _run_group_kind(kind, _group_principal(claim))
+    assert not _identity_errors(summary), summary
+    asked = [json.loads(c["body"])["logonName"] for c in calls if "/ensureuser" in c["url"]]
+    assert claim in asked
+    assert claim in [w["LoginName"] for w in _membership_writes(calls)]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("kind", ["security_group", "m365_group"])
+def test_a_group_resolving_as_a_user_type_aborts_naming_the_identity(kind: str) -> None:
+    claim = _SECURITY_CLAIM if kind == "security_group" else _MEMBERS_CLAIM
+    summary, calls, _ = _run_group_kind(kind, _group_principal(claim, kind=1))
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert any("intake (sha256:" in e["error"] and "PrincipalType" in e["error"]
+               for e in _identity_errors(summary)), summary
+    assert claim not in [w["LoginName"] for w in _membership_writes(calls)]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("kind", ["security_group", "m365_group"])
+def test_a_group_resolving_to_a_different_login_aborts(kind: str) -> None:
+    other = "c:0t.c|tenant|11111111-2222-4333-8444-555555555555"
+    summary, calls, _ = _run_group_kind(kind, _group_principal(other))
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert any("intake (sha256:" in e["error"] and "different" in e["error"]
+               for e in _identity_errors(summary)), summary
+    assert other not in [w["LoginName"] for w in _membership_writes(calls)]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_hand_edited_group_claim_that_is_tenant_wide_is_refused_before_any_write() -> None:
+    wide = "c:0-.f|rolemanager|spo-grid-all-users/11111111-2222-4333-8444-555555555555"
+    summary, calls, _ = _run_identity_deploy(
+        {"automation": "user:flows@example.com", "intake": f"security_group:{_GROUP_OID}"},
+        {"flows@example.com": _FLOWS, wide: _group_principal(wide)},
+        mapping="sharepoint-mapping-with-group-identity.yaml",
+        edit_js=lambda js: js.replace(_SECURITY_CLAIM, wide),
+    )
+    assert summary.get("aborted") == "identity-enrolment-errors", summary
+    assert any("intake (sha256:" in e["error"] for e in _identity_errors(summary)), summary
+    assert not [c for c in calls if "ensureuser" in c["url"].lower() and wide in c["body"]]
+    assert wide not in [w["LoginName"] for w in _membership_writes(calls)]
 
 
 _FULL_CONTROL_LEVEL = {"Id": 1073741829, "Name": "Full Control", **_FULL_CONTROL_FIXTURE}
@@ -10564,6 +10644,7 @@ def test_the_title_rename_lands_before_any_calculated_column(
 # local part, the claims login and the resolved user id. The domain is not asserted:
 # the operator account in the stamps shares it.
 _PERSISTED_HIDDEN = ("flows@example.com", "flows", "i:0#.f|membership|flows", "user 41", "(41)")
+_GROUP_HIDDEN = (_GROUP_OID, _GROUP_OID.upper(), _SECURITY_CLAIM, _SECURITY_CLAIM.upper())
 
 
 def _item_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -10581,12 +10662,12 @@ def _run_logged_writers(**harness: Any) -> tuple[dict[str, Any], list[dict[str, 
 # summary.errors is never written to a log list (the abort stamp carries counts only),
 # which is why a stranger's login may stay in those messages.
 def _assert_nothing_persisted_names_a_value(
-    summary: dict[str, Any], calls: list[dict[str, Any]], output: str,
+    summary: dict[str, Any], calls: list[dict[str, Any]], output: str, group: bool = False,
 ) -> None:
     persisted = "\n".join(c["body"] for c in _item_writes(calls))
     persisted += "\n" + json.dumps(summary.get("errors") or [])
     persisted += "\n" + "\n".join(line for line in output.splitlines() if "[SP-DEPLOY]" in line)
-    for hidden in _PERSISTED_HIDDEN:
+    for hidden in (*_PERSISTED_HIDDEN, *(_GROUP_HIDDEN if group else ())):
         assert hidden not in persisted, f"{hidden!r} reached a persisted line:\n{persisted}"
 
 
@@ -10601,6 +10682,42 @@ def test_no_persisted_row_carries_a_value() -> None:
     assert change[0]["ChangeKind"] == "identity-enrolled"
     assert re.fullmatch(r"automation \(sha256:[0-9a-f]{12}\)", change[0]["TargetName"])
     _assert_nothing_persisted_names_a_value(summary, calls, output)
+
+
+def _run_logged_group(
+    ensured: dict[str, Any] | None = None, **harness: Any,
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    return _run_identity_deploy(
+        {"automation": "user:flows@example.com", "intake": f"security_group:{_GROUP_OID}"},
+        {
+            "flows@example.com": _FLOWS,
+            _SECURITY_CLAIM: ensured or _group_principal(_SECURITY_CLAIM),
+        },
+        mapping="sharepoint-mapping-with-group-identity.yaml", sidecars=True, **harness,
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_no_persisted_row_carries_a_group_value() -> None:
+    summary, calls, output = _run_logged_group()
+    assert any("identity:XX Writers:intake" in c["body"] for c in _item_writes(calls))
+    _assert_nothing_persisted_names_a_value(summary, calls, output, group=True)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize("case", [
+    pytest.param({"ensure_status": 500}, id="ensure-echoes-the-claim"),
+    pytest.param({"ensure_echo": "guid"}, id="ensure-echoes-the-guid"),
+    pytest.param({"ensure_echo": "guid_upper"}, id="ensure-echoes-the-upper-case-guid"),
+    pytest.param({"ensure_echo": "claim_upper"}, id="ensure-echoes-the-upper-case-claim"),
+    pytest.param({"add_status": 403}, id="add-fails"),
+    pytest.param({"drop_readback": True}, id="readback-mismatch"),
+    pytest.param({"ensured": _group_principal(_SECURITY_CLAIM, kind=1)}, id="not-a-group"),
+    pytest.param({"ensured": _group_principal(_MEMBERS_CLAIM)}, id="resolved-to-another-login"),
+])
+def test_no_group_failure_path_persists_a_value(case: dict[str, Any]) -> None:
+    summary, calls, output = _run_logged_group(**case)
+    _assert_nothing_persisted_names_a_value(summary, calls, output, group=True)
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

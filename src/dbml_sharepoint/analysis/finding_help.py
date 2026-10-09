@@ -1320,8 +1320,8 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.EXCLUSIVE_GROUP_ENROLS_A_GROUP_KIND: (
         "An exclusive group enrols an identity whose `kinds` include "
         "`security_group` or `m365_group`. Exclusive asserts the group holds "
-        "nobody else, and neither the deploy nor assess can see inside an "
-        "Entra group, so the assertion could not be checked. Use an additive "
+        "nobody else, and the deploy reads a site group's members, not an Entra "
+        "group's, so the assertion could not be checked. Use an additive "
         "group, or restrict the identity to `kinds: [user]`."
     ),
     FindingCode.IDENTITY_DECLARED_NOT_ENROLLED: (
