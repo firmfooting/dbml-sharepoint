@@ -1310,11 +1310,6 @@ def _check_tree(solution: Solution) -> None:
                 f"the {solution.id} template's {name} links outside the template, and the "
                 "copy would bring whatever it points at into the project",
             )
-        if path.is_symlink() and not path.exists():
-            raise WizardError(
-                f"the {solution.id} template's {inside.as_posix()} is a dangling link, "
-                "which the copy cannot follow",
-            )
         if not path.is_symlink() and path.is_dir():
             continue
         if not path.resolve().is_file():
@@ -1322,13 +1317,12 @@ def _check_tree(solution: Solution) -> None:
                 f"the {solution.id} template's {inside.as_posix()} is not a regular file, "
                 "which the copy cannot carry",
             )
-        if path.is_file():
-            try:
-                path.open("rb").close()
-            except OSError as exc:
-                raise WizardError(
-                    f"the {solution.id} template's {inside.as_posix()} cannot be read: {exc}",
-                ) from exc
+        try:
+            path.open("rb").close()
+        except OSError as exc:
+            raise WizardError(
+                f"the {solution.id} template's {inside.as_posix()} cannot be read: {exc}",
+            ) from exc
 
 
 def _check_inputs(solution: Solution, bundle: MappingBundle) -> None:

@@ -3975,7 +3975,10 @@ def test_a_template_with_a_link_to_a_directory_is_refused_before_writing(
 def test_a_template_with_a_dangling_link_is_refused_before_writing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, target: str,
 ) -> None:
-    """The copy would raise on the missing target after creating the destination."""
+    """The copy would raise on the missing target after creating the destination.
+
+    missing.txt is a missing target; notes.txt links to its own name, a self-referencing loop.
+    """
     solution = _fake_family(tmp_path / "fake")
     try:
         (solution.root / "notes.txt").symlink_to(solution.root / target)
@@ -3987,7 +3990,7 @@ def test_a_template_with_a_dangling_link_is_refused_before_writing(
     console = ScriptedConsole(_answers(destination, template="fake-template"))
 
     assert wizard.run_wizard(console) == 1
-    assert "notes.txt is a dangling link" in _collapsed(console)
+    assert "notes.txt is not a regular file" in _collapsed(console)
     assert not destination.exists()
 
 
