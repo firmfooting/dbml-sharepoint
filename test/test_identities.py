@@ -9,6 +9,8 @@ from dbml_sharepoint.model.identities import (
     IDENTITY_KINDS,
     MEMBERSHIP_MODES,
     NAME_PATTERN,
+    SHAREPOINT_GROUP_WORDS,
+    IdentityError,
     IdentityKindNotYetSupported,
     IdentityValue,
     IdentityValueMalformed,
@@ -18,7 +20,7 @@ from dbml_sharepoint.model.identities import (
     is_run_lifetime,
     parse_values,
 )
-from dbml_sharepoint.model.mapping_types import SiteGroup
+from dbml_sharepoint.model.mapping_types import PRINCIPAL_KINDS, SiteGroup
 
 
 def test_the_three_built_ins_and_their_lifetimes() -> None:
@@ -130,11 +132,8 @@ def test_a_description_carries_the_name_and_hash_and_never_the_value() -> None:
 
 
 def test_the_kind_not_yet_supported_error_is_an_identity_error() -> None:
-    assert issubclass(IdentityKindNotYetSupported, ValueError)
+    assert issubclass(IdentityKindNotYetSupported, IdentityError)
 
 
 def test_the_sharepoint_group_words_cover_every_grant_principal_kind() -> None:
-    from dbml_sharepoint.model.identities import SHAREPOINT_GROUP_WORDS
-    from dbml_sharepoint.model.mapping_types import PRINCIPAL_KINDS
-
     assert PRINCIPAL_KINDS <= SHAREPOINT_GROUP_WORDS

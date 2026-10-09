@@ -104,8 +104,12 @@ SHAREPOINT_GROUP_WORDS: Final = frozenset({
     "associated_visitor_group", "sharepoint_group", "site_group",
 })
 NESTING_REASON = (
-    "SharePoint groups cannot be nested (Microsoft Learn, 'Review available default "
-    "groups'). Grant the level to associated_owner_group, associated_member_group or "
+    "SharePoint groups cannot be nested (Microsoft Learn: "
+    "https://learn.microsoft.com/sharepoint/sites/"
+    "determine-permission-levels-and-groups-in-sharepoint-server"
+    "#review-available-default-groups; "
+    "that page is written for SharePoint Server, so this refusal fails closed on its word). "
+    "Grant the permission level to associated_owner_group, associated_member_group or "
     "associated_visitor_group in list_permissions instead."
 )
 
