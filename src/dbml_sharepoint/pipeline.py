@@ -139,15 +139,13 @@ def _echo_warnings(findings: list[Finding]) -> None:
 
 def _epoch_instant(seconds: int | None, shown: str) -> dt.datetime:
     """The UTC instant for whole non-negative seconds, else a named SOURCE_DATE_EPOCH refusal."""
-    try:
-        if seconds is None or seconds < 0:
-            raise ValueError("not a non-negative whole number")
-        return dt.datetime.fromtimestamp(seconds, dt.UTC)
-    except (ValueError, OverflowError, OSError):
-        config_error(
-            "SOURCE_DATE_EPOCH", None,
-            ValueError(f"must be whole seconds since 1970-01-01 UTC, got {shown!r}"),
-        )
+    if seconds is not None and seconds >= 0:
+        with suppress(ValueError, OverflowError, OSError):
+            return dt.datetime.fromtimestamp(seconds, dt.UTC)
+    return config_error(
+        "SOURCE_DATE_EPOCH", None,
+        ValueError(f"must be whole seconds since 1970-01-01 UTC, got {shown!r}"),
+    )
 
 
 def _build_instant(source_date_epoch: int | None) -> dt.datetime | None:
