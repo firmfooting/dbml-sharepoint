@@ -1,0 +1,18 @@
+# The org's gates (PR title, line endings, workflow security, prek) as one job,
+# from firmfooting/.github. `edited` is here for the PR title check; the shared
+# job skips an edit that did not change the title.
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+permissions: {}
+
+jobs:
+  checks:
+    permissions:
+      contents: read
+    uses: firmfooting/.github/.github/workflows/checks.yml@2b06a255e086ab04d76b88bc83913d2c51ef70ff # v1.5.0
