@@ -421,18 +421,20 @@ class FindingCode(StrEnum):
         "automation_group_granted_full_control", "error")
     DUPLICATE_GROUP_NAME = "duplicate_group_name", "error"
     DUPLICATE_PERMISSION_LEVEL_NAME = "duplicate_permission_level_name", "error"
-    ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR = (
-        "enterprise_reader_group_enrols_the_operator", "error")
+    ENROLLING_GROUP_REQUIRES_EMPTY = "enrolling_group_requires_empty", "error"
     ENTERPRISE_READER_GROUP_MEMBERS_MAY_EDIT_MEMBERSHIP = (
         "enterprise_reader_group_members_may_edit_membership", "error")
+    ENTERPRISE_READER_GROUP_NOT_EXCLUSIVE = (
+        "enterprise_reader_group_not_exclusive", "error")
     ENTERPRISE_READER_GROUP_NOT_GRANTED = (
         "enterprise_reader_group_not_granted", "error")
     ENTERPRISE_READER_GROUP_OVER_PRIVILEGED = (
         "enterprise_reader_group_over_privileged", "error")
-    ENTERPRISE_READER_GROUP_REQUIRES_EMPTY = (
-        "enterprise_reader_group_requires_empty", "error")
     ENTERPRISE_READER_ON_TRIMMED_LIST = (
         "enterprise_reader_on_trimmed_list", "warning")
+    EXCLUSIVE_GROUP_ENROLS_NOBODY = "exclusive_group_enrols_nobody", "error"
+    EXCLUSIVE_GROUP_ENROLS_THE_OPERATOR = (
+        "exclusive_group_enrols_the_operator", "error")
     # Warning: stripping a scope is supported, and what the last removal does is unmeasured.
     EXACT_POLICY_GRANTS_NOTHING = "exact_policy_grants_nothing", "warning"
     # Warning: breaking a scope to manage it by hand is a legitimate intent.

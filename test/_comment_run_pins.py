@@ -59,7 +59,6 @@ PINNED: dict[str, list[str]] = {
     "src/dbml_sharepoint/analysis/checks/_permissions.py": [
         "84a9cd1e0131",
         "95fb8a352a0a",
-        "eb997507f1b3",
         "f2d15704e95b",
         "feda0b62382f",
     ],
