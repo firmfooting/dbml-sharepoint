@@ -466,9 +466,10 @@
 
       // Establish every desired grant before pruning. This keeps at least the
       // declared owner path in place when breakroleinheritance(false) has
-      // temporarily granted the current operator direct Full Control. Any add
+      // temporarily granted the current operator direct Full Control. Exact mode
+      // removes that grant below; configured mode leaves it in place. Any add
       // failure aborts the list before a single binding is removed.
-      //
+
       // ONE enumeration answers every question below, in one shape. It is
       // taken BEFORE the adds, which changes no removal: a binding this run
       // adds is by definition declared, and neither mode removes a declared

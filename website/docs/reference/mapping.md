@@ -1978,6 +1978,10 @@ name. Every assignment needs a `level`.
 `configured` mode asserts the declared grants and leaves anything else
 alone; `exact` additionally **removes undeclared direct grants**, making
 the declaration an allowlist. `exact` requires `break_inheritance: true`.
+On a scope the run breaks, SharePoint binds the deploying operator directly
+at Full Control (measured by `test/manual/operator-safety-grant-probe.js`).
+`configured` leaves that binding in place, because the operator is not a
+declared principal; `exact` removes it.
 An inherited ACL cannot be reconciled as a list-scoped allowlist, and the
 loader refuses the combination. Group owner assignment uses CSOM where REST
 cannot express it.
