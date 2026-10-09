@@ -224,6 +224,9 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     // IGNORE_FORCE_CHECKOUT_WRITES answers the MERGE 200 and keeps the old value.
     const IGNORE_FORCE_CHECKOUT_WRITES = false;
     let forceCheckout = true;
+    // {read: n, mode: 'status' | 'null'} makes the n-th ForceCheckout read answer
+    // HTTP 404 or an unreported value.
+    const FORCE_CHECKOUT_FAULT = null;
     const DROP_LIST_MARKER_AFTER_READS = null;
     const DROP_LIST_MARKER_AFTER_READS_BY_TITLE = new Map([]);
     // Drop every list's marker the moment a named phase announces itself. A
@@ -752,6 +755,10 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       }
       if (url.includes('getbytitle') && url.includes('ForceCheckout')) {
         globalThis.__forceCheckoutReads = (globalThis.__forceCheckoutReads || 0) + 1;
+        if (FORCE_CHECKOUT_FAULT && FORCE_CHECKOUT_FAULT.read === globalThis.__forceCheckoutReads) {
+          if (FORCE_CHECKOUT_FAULT.mode === 'null') return { d: { ForceCheckout: null } };
+          return { error: { code: 'List not found', status: 404 } };
+        }
         return { d: { ForceCheckout: forceCheckout } };
       }
       // A list probe: the list exists, matching the declared shape.
@@ -1735,6 +1742,7 @@ def _run_adopted_deploy(
     require_checkout: bool | None = None,
     force_checkout_live: bool = True,
     ignore_force_checkout_writes: bool = False,
+    force_checkout_fault: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     """Run the emitted deploy against a site whose lists already exist.
 
@@ -1784,6 +1792,9 @@ def _run_adopted_deploy(
     ).replace(
         "const IGNORE_FORCE_CHECKOUT_WRITES = false;",
         f"const IGNORE_FORCE_CHECKOUT_WRITES = {json.dumps(ignore_force_checkout_writes)};",
+    ).replace(
+        "const FORCE_CHECKOUT_FAULT = null;",
+        f"const FORCE_CHECKOUT_FAULT = {json.dumps(force_checkout_fault)};",
     ).replace(
         "let forceCheckout = true;",
         f"let forceCheckout = {json.dumps(force_checkout_live)};",
@@ -1903,10 +1914,32 @@ def test_a_require_checkout_the_site_did_not_store_fails_closed_naming_the_libra
     )
     assert merges, "the write must have been attempted"
     assert changes == []
-    assert any(
-        "ForceCheckout" in e["error"] and "Escalation" in e["error"]
-        for e in summary["errors"]
-    ), summary
+    (error,) = [e["error"] for e in summary["errors"] if "ForceCheckout" in e["error"]]
+    assert "'APP_Escalation'" in error, "the deployed library title must be named"
+    assert "read back" in error and "false" in error
+    assert "example.sharepoint.com" not in error
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("read", "mode", "wanted", "expect"),
+    [
+        (1, "status", True, "probe failed: HTTP 404"),
+        (1, "null", True, "probe returned no boolean"),
+        (2, "status", False, "read-back failed: HTTP 404"),
+        (2, "null", False, "read-back returned no boolean"),
+    ],
+)
+def test_an_unreadable_force_checkout_fails_closed_naming_the_library(
+    tmp_path: Path, read: int, mode: str, wanted: bool, expect: str,
+) -> None:
+    summary, _, changes, _ = _force_checkout_run(
+        tmp_path, require_checkout=wanted, force_checkout_live=True,
+        force_checkout_fault={"read": read, "mode": mode},
+    )
+    (error,) = [e["error"] for e in summary["errors"] if "ForceCheckout" in e["error"]]
+    assert "'APP_Escalation'" in error and expect in error, error
+    assert changes == []
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

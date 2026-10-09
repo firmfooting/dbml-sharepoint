@@ -851,6 +851,20 @@ def test_an_unreadable_force_checkout_is_not_verified(live: str) -> None:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_verdict_text_names_only_what_the_pack_verifies() -> None:
+    settings_only = _run_verify_full(_checkout_verify_js(False), FORCE_CHECKOUT="false")
+    verdict = next(ln for ln in settings_only["log"] if "VERIFIED (" in ln)
+    assert "Verification: VERIFIED" in verdict
+    assert "Every declared library setting holds." in verdict
+    assert "identity" not in verdict and "clock" not in verdict
+    both = _run_verify_full(_writers_verify_js(), GROUP_MEMBERS=_members([_FLOWS_MEMBER]))
+    text = next(ln for ln in both["log"] if "VERIFIED (" in ln)
+    assert "Every enrolled identity" in text and "library setting" not in text
+    clock = next(ln for ln in _run_verify_full()["log"] if "VERIFIED (" in ln)
+    assert "clock cell" in clock and "identity" not in clock
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_hand_built_targets_without_library_settings_is_refused() -> None:
     js = _checkout_verify_js(False).replace('"library_settings"', '"library_settingz"')
     out = _run_verify_full(js, FORCE_CHECKOUT="false")

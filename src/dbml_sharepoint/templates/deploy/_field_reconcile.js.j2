@@ -761,7 +761,7 @@
 
   // Declared "Require Check Out" (library.checkout.force-checkout-merge): a
   // MERGE of ForceCheckout answered 2xx and read back what it wrote. Null or
-  // absent is unmanaged and reads nothing. The read-back is the control: a 200
+  // absent is unmanaged and reads nothing. The read-back is the control: a 2xx
   // that leaves the stored value alone would report a library as locked down
   // while files still save without a check-out.
   async function reconcileListForceCheckout(list, digest) {

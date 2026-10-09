@@ -156,10 +156,11 @@ _REPORTING_ROW: tuple[str, str] = (
 
 _VERIFY_ROW: tuple[str, str] = (
     VERIFY_SCRIPT,
-    (f"Clock verification: paste AFTER {DEPLOY_SCRIPT}. Exercises every "
-     "date rule, view window and [today] default this pack relies on, on "
-     "one hidden scratch list (`_dbml-verify`), and prints VERIFIED / "
-     "MISMATCH / NOT-VERIFIED. Touches no declared list."),
+    (f"Verification: paste AFTER {DEPLOY_SCRIPT}. Checks the clock cells "
+     "this pack relies on, its enrolled identities and its declared library "
+     "settings, and prints VERIFIED / MISMATCH / NOT-VERIFIED. It only reads, "
+     "unless the pack has clock cells, which use one hidden scratch list "
+     "(`_dbml-verify`). Touches no declared list."),
 )
 
 _DEMO_ROW: tuple[str, str] = (

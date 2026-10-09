@@ -921,7 +921,8 @@ def build_schema_json(
             "disable_attachments": not bundle.mapping.attachments,
             # Null when the mapping says nothing: unmanaged, never read or written.
             "require_checkout": (
-                entity.settings.require_checkout if entity.settings is not None else None
+                entity.settings.require_checkout
+                if entity.is_library and entity.settings is not None else None
             ),
             # Null unless the mapping asks for trimming. `all`/`all` is
             # SharePoint's own default, so a mapping that says nothing gets

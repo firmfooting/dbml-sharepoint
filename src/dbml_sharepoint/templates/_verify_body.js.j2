@@ -2,7 +2,7 @@
 {# The whole verification, taking its collaborators as an argument so the
    standalone script and a test harness can share it. Expects `targets`
    (generators/verifygen.py: list_title, marker, columns, rows, checks,
-   rule, identity_groups) and the transport, digest and canonicalFormula collaborators. #}
+   rule, identity_groups, library_settings) and the transport, digest and canonicalFormula collaborators. #}
   async function verifySite(ctx) {
     const { targets: T, log, fetchWithRetry, apiUrl, odataName, getDigest, spHeaders,
             spError, canonicalFormula, verdictLevel } = ctx;
@@ -51,7 +51,7 @@
 
     // The verdict, shared by the identity-only early return and the end of the clock checks.
     const finish = () => {
-      const subject = T.checks.length ? T.list_title : 'Identities';
+      const subject = T.checks.length ? T.list_title : 'Verification';
       // Conservative on purpose: a check nobody could make is not a pass, so
       // an unassessed check keeps the verdict at NOT-VERIFIED.
       const levels = findings.map((f) => f.level);
@@ -66,12 +66,17 @@
       }
       console.log('================================================');
       const counts = ['PASS', 'FAIL', 'NOT-ASSESSABLE', 'INFO'].map((l) => `${levels.filter((x) => x === l).length} ${l}`).join(', ');
+      const verifiedText = [
+        T.checks.length ? 'Every clock cell this pack uses behaves on this site as measured.' : null,
+        T.identity_groups.length ? 'Every enrolled identity is a member of its group.' : null,
+        T.library_settings.length ? 'Every declared library setting holds.' : null,
+      ].filter(Boolean).join(' ');
       if (verdict === 'MISMATCH') {
         log(verdictLevel, `${subject}: MISMATCH (${counts}). A clock cell, an identity or a library setting this pack relies on is not as declared; read the FAIL lines before trusting the deployed rules.`);
       } else if (verdict === 'NOT-VERIFIED') {
         log(verdictLevel, `${subject}: NOT-VERIFIED (${counts}). Something could not be assessed; the site is not shown wrong, and not shown right either.`);
       } else {
-        log(verdictLevel, `${subject}: VERIFIED (${counts}). ${T.checks.length ? 'Every clock cell this pack uses behaves on this site as measured.' : 'Every enrolled identity is a member of its group, and every declared library setting holds.'}`);
+        log(verdictLevel, `${subject}: VERIFIED (${counts}). ${verifiedText}`);
       }
       return { findings, verdict, list: T.checks.length ? T.list_title : null };
     };

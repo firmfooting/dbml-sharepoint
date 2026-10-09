@@ -5,9 +5,12 @@ sidebar_position: 4
 
 # verify.js.txt
 
-A clock verification, emitted with every build whose pack reads a clock
-anywhere: a `today` or `now` save rule, a `today` view window, or a
-`[today]` column default. Nearly every pack does. Paste it in the target
+A verification of the clock cells a pack uses, its enrolled identities and
+its declared library settings. It is emitted with every build whose pack
+reads a clock anywhere (a `today` or `now` save rule, a `today` view window,
+or a `[today]` column default, which nearly every pack does), enrols an
+identity, or declares `require_checkout`. It only reads, unless the pack has
+clock cells, which use one scratch list. Paste it in the target
 site's console *after* `deploy.js.txt`, on the same site, and read the
 `[SP-VERIFY] [DONE]` verdict.
 

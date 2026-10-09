@@ -447,3 +447,23 @@ def test_verify_is_emitted_for_identities_alone_and_not_without_values(tmp_path:
             generated_at="2026-05-04T00:00:00Z", seed=False, identities=identities,
         )
         assert (out / "verify.js.txt").is_file() is expected
+
+
+def test_verify_is_emitted_for_a_declared_library_setting_alone(tmp_path: Path) -> None:
+    from _model import as_library, column
+    from _model import bundle as make_bundle
+    from _model import schema as make_schema
+    from _model import table as make_table
+
+    from dbml_sharepoint.model.mapping_types import LibrarySettings
+
+    schema = make_schema(make_table("Docs", column("Title", required=True), note="Docs."))
+    plain = as_library(make_bundle(entities=["Docs"]), "Docs")
+    entity = plain.mapping.entities["Docs"]
+    declared = replace(plain, mapping=replace(plain.mapping, entities={
+        "Docs": replace(entity, settings=LibrarySettings(require_checkout=False)),
+    }))
+    (tmp_path / "declared").mkdir()
+    (tmp_path / "plain").mkdir()
+    assert (_emit(tmp_path / "declared", schema, declared) / "verify.js.txt").is_file()
+    assert not (_emit(tmp_path / "plain", schema, plain) / "verify.js.txt").exists()
