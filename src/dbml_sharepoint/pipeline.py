@@ -11,6 +11,7 @@ import into a function body to break the cycle (#171).
 """
 
 import datetime as dt
+import os
 from collections.abc import Sequence
 from contextlib import suppress
 from difflib import get_close_matches
@@ -138,6 +139,28 @@ def _echo_warnings(findings: list[Finding]) -> None:
         typer.echo(f"  [WARNING] {f.detail}", err=True)
 
 
+def _epoch_instant(seconds: int | None, shown: str) -> dt.datetime:
+    """The UTC instant for whole non-negative seconds, else a named SOURCE_DATE_EPOCH refusal."""
+    if seconds is not None and seconds >= 0:
+        with suppress(ValueError, OverflowError, OSError):
+            return dt.datetime.fromtimestamp(seconds, dt.UTC)
+    return config_error(
+        "SOURCE_DATE_EPOCH", None,
+        ValueError(f"must be whole seconds since 1970-01-01 UTC, got {shown!r}"),
+    )
+
+
+def _build_instant(source_date_epoch: int | None) -> dt.datetime | None:
+    """The reproducible-builds stamp: the keyword, else SOURCE_DATE_EPOCH, else None."""
+    if source_date_epoch is not None:
+        return _epoch_instant(source_date_epoch, str(source_date_epoch))
+    raw = os.environ.get("SOURCE_DATE_EPOCH")
+    if raw is None:
+        return None
+    digits = raw.isascii() and raw.isdigit()
+    return _epoch_instant(int(raw) if digits else None, raw)
+
+
 def execute_build(
     *,
     schema: Path,
@@ -159,6 +182,7 @@ def execute_build(
     no_sidecars: bool = False,
     application: str = APPLICATION_NAME,
     identities: Sequence[str] = (),
+    source_date_epoch: int | None = None,
 ) -> None:
     """The `build` pipeline, callable without going through typer.
 
@@ -170,6 +194,9 @@ def execute_build(
     contract (2 for misuse, 1 for a refused build), and re-mapping them to
     an exception of its own here would give the wizard a second vocabulary
     for the same failures. The wizard catches it.
+
+    `source_date_epoch`, else the `SOURCE_DATE_EPOCH` variable, fixes the
+    generation stamp so equal inputs build byte-identical bundles.
 
     `enterprise_reader` carries three states: ``None`` (unset -- no flag was
     given), `EnterpriseReaderDeclined` (the operator was asked and said
@@ -425,10 +452,10 @@ def execute_build(
         )
     )
 
-    generated_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
-    source_mtime = dt.datetime.fromtimestamp(
-        schema.stat().st_mtime, dt.UTC,
-    ).isoformat(timespec="seconds")
+    fixed = _build_instant(source_date_epoch)
+    generated_at = (fixed or dt.datetime.now(dt.UTC)).isoformat(timespec="seconds")
+    mtime = dt.datetime.fromtimestamp(schema.stat().st_mtime, dt.UTC)
+    source_mtime = (min(mtime, fixed) if fixed else mtime).isoformat(timespec="seconds")
 
     # Narrowed here rather than by reassigning the parameter above, which
     # would erase the unset/declined distinction before anything consumes it.

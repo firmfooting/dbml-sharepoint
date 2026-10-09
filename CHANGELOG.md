@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.9.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.8.0...v0.9.0) (2026-10-09)
+
+
+### Features
+
+* **build:** honour SOURCE_DATE_EPOCH ([#754](https://github.com/firmfooting/dbml-sharepoint/issues/754)) ([94abbfd](https://github.com/firmfooting/dbml-sharepoint/commit/94abbfd6fdda65fc9493f388c3c5d60c1f24ee72))
+
+
+### Bug Fixes
+
+* **catalogue:** name core metadata that cannot be read or decoded ([#750](https://github.com/firmfooting/dbml-sharepoint/issues/750)) ([c7152a1](https://github.com/firmfooting/dbml-sharepoint/commit/c7152a15eb68f2730c50253eae83a083bfdb30e5))
+* **deploy:** refuse a collection answer with no results array, and a non-boolean inheritance flag ([#728](https://github.com/firmfooting/dbml-sharepoint/issues/728)) ([7c5e3de](https://github.com/firmfooting/dbml-sharepoint/commit/7c5e3de81db646e55b328dfacbfb4993c92c4cd2))
+* **deploy:** refuse an enumeration answer with no results array ([#721](https://github.com/firmfooting/dbml-sharepoint/issues/721)) ([7aaef2c](https://github.com/firmfooting/dbml-sharepoint/commit/7aaef2cbf0f63a36c8363d9e4139fadb590337ef))
+* **probes:** give the open-workbook probe a second ALLOW_WRITES guard ([#743](https://github.com/firmfooting/dbml-sharepoint/issues/743)) ([c433a19](https://github.com/firmfooting/dbml-sharepoint/commit/c433a19f5f57d0e203f9ba0d2861015e47137d4c))
+* **probes:** keep a silent fixture read open and recheck body hiding at header capture ([#745](https://github.com/firmfooting/dbml-sharepoint/issues/745)) ([2dd5279](https://github.com/firmfooting/dbml-sharepoint/commit/2dd52796308cd5008f32513b5817220b9a5edfb9))
+* **probes:** point the open-workbook probe at the fixture's ProbeNotes column ([#744](https://github.com/firmfooting/dbml-sharepoint/issues/744)) ([e07db1d](https://github.com/firmfooting/dbml-sharepoint/commit/e07db1d562fab57d8c71049a72c8b21022c6b48e))
+* refuse a target's missing ItemCount in rollback and a truncated row page in verify ([#729](https://github.com/firmfooting/dbml-sharepoint/issues/729)) ([a61eb76](https://github.com/firmfooting/dbml-sharepoint/commit/a61eb7617d46656c09e0b729c7df65d665484e68))
+* stamp the installed package as the deployer, not release.yaml's deployer_version ([#724](https://github.com/firmfooting/dbml-sharepoint/issues/724)) ([4668dc1](https://github.com/firmfooting/dbml-sharepoint/commit/4668dc1c94fb6226f162b6833380c0e498fce95f)), closes [#687](https://github.com/firmfooting/dbml-sharepoint/issues/687)
+* **validator:** warn when a configured policy breaks inheritance and grants nothing ([#723](https://github.com/firmfooting/dbml-sharepoint/issues/723)) ([1c31f26](https://github.com/firmfooting/dbml-sharepoint/commit/1c31f2601ac565571346c9baa7910ac9ac8e533c))
+* **wizard:** print refusals before reporting that no blueprint is offered ([#751](https://github.com/firmfooting/dbml-sharepoint/issues/751)) ([dbb209d](https://github.com/firmfooting/dbml-sharepoint/commit/dbb209d0dafddd680906f53265ec1200e0d47c20))
+* **wizard:** print refusals through terminal_safe ([#749](https://github.com/firmfooting/dbml-sharepoint/issues/749)) ([ba40459](https://github.com/firmfooting/dbml-sharepoint/commit/ba404591031f863f4ee1484872e89d3faf78bcb2))
+* **wizard:** refuse a dangling link or special file before copying ([#747](https://github.com/firmfooting/dbml-sharepoint/issues/747)) ([f80f3ce](https://github.com/firmfooting/dbml-sharepoint/commit/f80f3cef0abadf063a6470801f28415c5e6513f0))
+* **wizard:** report a nested directory the preflight walk cannot enter ([#748](https://github.com/firmfooting/dbml-sharepoint/issues/748)) ([423adb4](https://github.com/firmfooting/dbml-sharepoint/commit/423adb460317a83f1ce257bf90c7ca915ed9190b))
+
+
+### Documentation
+
+* **permissions:** configured mode keeps the operator's Full Control on a broken scope ([#752](https://github.com/firmfooting/dbml-sharepoint/issues/752)) ([1b38795](https://github.com/firmfooting/dbml-sharepoint/commit/1b38795d98b84216e415fe24db9f44e5625544da))
+
 ## [0.8.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.7.0...v0.8.0) (2026-10-02)
 
 
