@@ -127,7 +127,9 @@ shell syntax and interpolation this parser does not attempt, and
 **Precedence, in one sentence:** an explicit `--enterprise-reader` flag
 wins, then the wizard's declined answer (a deliberate blank, which beats
 the file because the operator was asked directly and said no), then the
-file, then nobody.
+file, then nobody. The same holds for every other identity: a
+`--identity NAME=...` flag beats `DBMLSP_IDENTITY_<NAME>` in the file, per
+name.
 
 **Location.** `build` looks for `dbml-sharepoint.env` in the current
 directory. `--env-file PATH` names a different one, and a path that does
@@ -165,6 +167,12 @@ succeeded against such a mapping now refuses. That refusal is the guard
 doing its job, not a regression, but it is still a change an adopter
 meets the first time they add the file to a project whose mapping
 declares no reader group.
+
+The guard covers every identity, not only the reader. A
+`DBMLSP_IDENTITY_<NAME>` key in the file makes `build` refuse a mapping
+in which no group enrols that name (`IdentityNotDeclared`), so a stale key
+left behind after a group is removed stops the build instead of being
+ignored.
 
 Behaviour worth knowing:
 

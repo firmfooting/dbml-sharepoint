@@ -219,6 +219,14 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     // read-back exists to catch.
     const IGNORE_ATTACHMENT_WRITES = false;
     let attachmentsEnabled = true;
+    // ForceCheckout, one flag for the same reason. FORCE_CHECKOUT_READS counts
+    // the reads, so an unmanaged library can be shown to cost none.
+    // IGNORE_FORCE_CHECKOUT_WRITES answers the MERGE 200 and keeps the old value.
+    const IGNORE_FORCE_CHECKOUT_WRITES = false;
+    let forceCheckout = true;
+    // {read: n, mode: 'status' | 'null'} makes the n-th ForceCheckout read answer
+    // HTTP 404 or an unreported value.
+    const FORCE_CHECKOUT_FAULT = null;
     const DROP_LIST_MARKER_AFTER_READS = null;
     const DROP_LIST_MARKER_AFTER_READS_BY_TITLE = new Map([]);
     // Drop every list's marker the moment a named phase announces itself. A
@@ -745,6 +753,14 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       if (url.includes('getbytitle') && url.includes('EnableAttachments')) {
         return { d: { EnableAttachments: attachmentsEnabled } };
       }
+      if (url.includes('getbytitle') && url.includes('ForceCheckout')) {
+        globalThis.__forceCheckoutReads = (globalThis.__forceCheckoutReads || 0) + 1;
+        if (FORCE_CHECKOUT_FAULT && FORCE_CHECKOUT_FAULT.read === globalThis.__forceCheckoutReads) {
+          if (FORCE_CHECKOUT_FAULT.mode === 'null') return { d: { ForceCheckout: null } };
+          return { error: { code: 'List not found', status: 404 } };
+        }
+        return { d: { ForceCheckout: forceCheckout } };
+      }
       // A list probe: the list exists, matching the declared shape.
       if (url.includes('getbytitle') && url.includes('BaseTemplate')) {
         const probeTitle = listOf(url);
@@ -886,6 +902,9 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       if ((opts.method || 'GET') === 'POST' && opts.body
           && (/getbytitle\('[^/]*'\)$/.test(u) || /lists\(guid'[^']+'\)$/.test(u))) {
         const parsed = JSON.parse(opts.body);
+        if (parsed.ForceCheckout !== undefined && !IGNORE_FORCE_CHECKOUT_WRITES) {
+          forceCheckout = parsed.ForceCheckout;
+        }
         if (parsed.Description !== undefined && !IGNORE_DESCRIPTION_WRITES) {
           let writtenTitle = listOf(u);
           if (!writtenTitle) {
@@ -1720,6 +1739,10 @@ def _run_adopted_deploy(
     drop_marker_at_phase: str | None = None,
     table_names: tuple[str, ...] | None = None,
     self_reference: bool = False,
+    require_checkout: bool | None = None,
+    force_checkout_live: bool = True,
+    ignore_force_checkout_writes: bool = False,
+    force_checkout_fault: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     """Run the emitted deploy against a site whose lists already exist.
 
@@ -1767,6 +1790,15 @@ def _run_adopted_deploy(
         "const IGNORE_DESCRIPTION_WRITES = false;",
         f"const IGNORE_DESCRIPTION_WRITES = {json.dumps(ignore_description_writes)};",
     ).replace(
+        "const IGNORE_FORCE_CHECKOUT_WRITES = false;",
+        f"const IGNORE_FORCE_CHECKOUT_WRITES = {json.dumps(ignore_force_checkout_writes)};",
+    ).replace(
+        "const FORCE_CHECKOUT_FAULT = null;",
+        f"const FORCE_CHECKOUT_FAULT = {json.dumps(force_checkout_fault)};",
+    ).replace(
+        "let forceCheckout = true;",
+        f"let forceCheckout = {json.dumps(force_checkout_live)};",
+    ).replace(
         "const DROP_LIST_MARKER_AFTER_READS = null;",
         f"const DROP_LIST_MARKER_AFTER_READS = {json.dumps(drop_marker_after_reads)};",
     ).replace(
@@ -1777,12 +1809,26 @@ def _run_adopted_deploy(
         "const DROP_LIST_MARKER_AT_PHASE = null;",
         f"const DROP_LIST_MARKER_AT_PHASE = {json.dumps(drop_marker_at_phase)};",
     )
-    script = harness + "\n" + _declared_deploy_js(
+    deploy_js = _declared_deploy_js(
         tmp_path, "", prefix, table_names=table_names,
         self_reference=self_reference,
-    ).replace(
+    )
+    if require_checkout is not None:
+        assert '"require_checkout": null' in deploy_js
+        deploy_js = deploy_js.replace(
+            '"require_checkout": null', f'"require_checkout": {json.dumps(require_checkout)}',
+        )
+    # The change writer is wrapped so a test can read the rows it was handed.
+    shim = "let logChange = (change) => { DEPLOY_CHANGES.push(change); };"
+    assert shim in deploy_js
+    deploy_js = deploy_js.replace(
+        shim, "let logChange = (change) => { (globalThis.__changes ||= []).push(change); };",
+    )
+    script = harness + "\n" + deploy_js.replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
+        " console.log('__CHANGES__' + JSON.stringify(globalThis.__changes || []));"
+        " console.log('__FCREADS__' + (globalThis.__forceCheckoutReads || 0));"
         " console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); })",
     ).replace("(async () => {", "((async () => {", 1)
     output = _run(script)
@@ -1806,6 +1852,103 @@ def _run_adopted_deploy(
         json.loads(calls_line.removeprefix("__CALLS__")),
         output,
     )
+
+
+def _force_checkout_run(
+    tmp_path: Path, **knobs: Any,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], int]:
+    """An owned-list deploy; returns summary, the ForceCheckout MERGE bodies,
+    the change rows, and how many times ForceCheckout was read."""
+    summary, calls, output = _run_adopted_deploy(
+        tmp_path, _declared_list_descriptions(tmp_path), **knobs,
+    )
+    merges = [
+        json.loads(c["body"]) for c in calls
+        if c["method"] == "POST" and c["body"] and "ForceCheckout" in c["body"]
+    ]
+    changes = json.loads(next(
+        ln for ln in output.splitlines() if ln.startswith("__CHANGES__")
+    ).removeprefix("__CHANGES__"))
+    reads = int(next(
+        ln for ln in output.splitlines() if ln.startswith("__FCREADS__")
+    ).removeprefix("__FCREADS__"))
+    return summary, merges, [c for c in changes if c["kind"] == "list-setting"], reads
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_library_already_at_the_declared_require_checkout_is_not_written(
+    tmp_path: Path,
+) -> None:
+    summary, merges, changes, reads = _force_checkout_run(
+        tmp_path, require_checkout=True, force_checkout_live=True,
+    )
+    assert summary.get("aborted") is None, summary
+    assert reads >= 1, "the declared value was never read"
+    assert merges == [] and changes == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_library_that_differs_gets_one_merge_a_read_back_and_a_change_row(
+    tmp_path: Path,
+) -> None:
+    summary, merges, changes, reads = _force_checkout_run(
+        tmp_path, require_checkout=False, force_checkout_live=True,
+    )
+    assert summary.get("aborted") is None, summary
+    assert summary.get("errors") == [], summary["errors"]
+    assert [m["ForceCheckout"] for m in merges] == [False]
+    assert reads == 2, "a probe and a read-back"
+    assert len(changes) == 1
+    assert changes[0]["key"].startswith("list-setting:")
+    assert changes[0]["key"].endswith(":ForceCheckout")
+    assert (changes[0]["oldValue"], changes[0]["newValue"]) == ("true", "false")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_require_checkout_the_site_did_not_store_fails_closed_naming_the_library(
+    tmp_path: Path,
+) -> None:
+    summary, merges, changes, _ = _force_checkout_run(
+        tmp_path, require_checkout=False, force_checkout_live=True,
+        ignore_force_checkout_writes=True,
+    )
+    assert merges, "the write must have been attempted"
+    assert changes == []
+    (error,) = [e["error"] for e in summary["errors"] if "ForceCheckout" in e["error"]]
+    assert "'APP_Escalation'" in error, "the deployed library title must be named"
+    assert "read back" in error and "false" in error
+    assert "example.sharepoint.com" not in error
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("read", "mode", "wanted", "expect"),
+    [
+        (1, "status", True, "probe failed: HTTP 404"),
+        (1, "null", True, "probe returned no boolean"),
+        (2, "status", False, "read-back failed: HTTP 404"),
+        (2, "null", False, "read-back returned no boolean"),
+    ],
+)
+def test_an_unreadable_force_checkout_fails_closed_naming_the_library(
+    tmp_path: Path, read: int, mode: str, wanted: bool, expect: str,
+) -> None:
+    summary, _, changes, _ = _force_checkout_run(
+        tmp_path, require_checkout=wanted, force_checkout_live=True,
+        force_checkout_fault={"read": read, "mode": mode},
+    )
+    (error,) = [e["error"] for e in summary["errors"] if "ForceCheckout" in e["error"]]
+    assert "'APP_Escalation'" in error and expect in error, error
+    assert changes == []
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unmanaged_require_checkout_is_neither_read_nor_written(tmp_path: Path) -> None:
+    summary, merges, changes, reads = _force_checkout_run(
+        tmp_path, require_checkout=None, force_checkout_live=True,
+    )
+    assert summary.get("aborted") is None, summary
+    assert reads == 0 and merges == [] and changes == []
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -5910,6 +6053,8 @@ def test_an_additive_group_that_already_holds_the_account_still_warns() -> None:
     """The nothing-to-write path reads the group again and warns on that read."""
     summary, calls, output = _run_writers(_FLOWS, members=[_FLOWS, _OTHER])
     assert not _identity_errors(summary), summary
+    # The harness's schema aborts later, so reaching it shows the identity phase finished.
+    assert summary.get("aborted") == "phase-1-schema-errors", summary
     assert _membership_writes(calls) == []
     assert not _removals(calls), _removals(calls)
     assert any("unmanaged" in line and "other@example.com" in line

@@ -113,6 +113,7 @@ entities:
 | `accept_unindexable_display_column` | Optional; accept that a **calculated** `display_column` cannot be indexed, and that this list's lookup picker will therefore stop working past ~5,000 items. Silences the warning |
 | `renamed_from` | Optional; the previous entity names this list was deployed under, oldest last. On a redeploy where nothing carries the current title, a list carrying exactly one of the previous titles **and the exact provenance marker for that previous name** is retitled in place and its marker rewritten, keeping items, views, lookups and permissions (the URL keeps its original slug). A previous title without that marker, present beside the current title, or present twice over is refused at assessment and at preflight, before any write. Keep the aliases declared so a site that skipped releases can still migrate. `previous_prefixes` multiplies the candidates: each previous prefix is tried with the current name and with every previous name |
 | `hide_from_all_items` | Optional; a list of columns the generated `All Items` view must not render. The **only** accepted reason is the list view lookup threshold (see below). Every named column must be join-bearing and rendered; naming anything else fails the build. Declared views are unaffected |
+| `settings` | Optional, library only. `settings: { require_checkout: true \| false }` sets the library's "Require Check Out" (`ForceCheckout`): the deploy reads it, writes it when it differs, and reads it back, failing closed on a mismatch. Absent or null leaves it unmanaged, never read and never written. On a `List` it fails the build (`library_setting_on_a_list`). Measured by `library.checkout.force-checkout-merge`: a MERGE answered 2xx, the value read back, and a file uploaded under `true` was not left in the `None` check-out type. Files the demo seed uploads to a library with `require_checkout: true` are left checked out to the operator |
 
 :::warning A lookup into a large list breaks the FORM, not the views
 
@@ -2300,10 +2301,10 @@ membership exactly as it is and still deploys the group and its `Read` grant.
 
 One consequence for mapping authors: a group cannot declare both
 `enroll: [enterprise_reader]` with `membership: exclusive` and
-`enroll_during_run: [operator]`. Phase 1.4 puts
+`enroll_during_run: [operator]`. Phase 1.5 puts
 the pasting operator into the second, which is precisely what the gate in Phase
-1.5 refuses, so every deploy would abort on a correct address. The validator
-rejects the pair (`enterprise_reader_group_enrols_the_operator`), and the
+1.6 refuses, so every deploy would abort on a correct address. The validator
+rejects the pair (`exclusive_group_enrols_the_operator`), and the
 combination has no legitimate use in any case: a reader group is held to
 `Read`, while an operator self-enrols in order to write.
 

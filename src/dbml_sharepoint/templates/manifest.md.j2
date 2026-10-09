@@ -67,11 +67,13 @@ explicit migration.
    Only `[SP-DEPLOY] [ERROR]` lines and a non-empty `errors` array are
    failures. The browser may paint stray read-probe requests red; those
    are absence checks the script handles.
-8. **Verify the clock cells**, when the bundle carries `verify.js.txt`:
-   paste it into the same console, on the same site. It writes only to one
-   hidden scratch list (`_dbml-verify`) and prints a `[SP-VERIFY] [DONE]`
-   verdict; expect **VERIFIED**. A **MISMATCH** means a date rule, view
-   window or default this pack relies on does not behave on this site as
+8. **Verify the site**, when the bundle carries `verify.js.txt`:
+   paste it into the same console, on the same site. It checks clock cells,
+   enrolled identities and declared library settings, and only reads unless
+   the pack has clock cells, which use one hidden scratch list
+   (`_dbml-verify`). It prints a `[SP-VERIFY] [DONE]` verdict; expect
+   **VERIFIED**. A **MISMATCH** means a date rule, view window, default,
+   identity or library setting this pack relies on is not as declared or
    measured: read its FAIL lines before trusting the deployed rules.
 9. **Verify**: run the pack's verification checklist (its deploy.md /
    runbook) before handing the site over.

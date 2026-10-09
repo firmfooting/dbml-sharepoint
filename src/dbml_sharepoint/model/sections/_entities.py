@@ -6,9 +6,8 @@ from typing import Any, cast
 
 from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
 from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
-from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model._keys import _known_keys, _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model.errors import (
-    LibrarySettingNotYetSupported,
     MappingShapeError,
     MappingValueError,
 )
@@ -18,11 +17,13 @@ from dbml_sharepoint.model.mapping_types import (
     EntityMapping,
     FoldersFromEnum,
     FolderSource,
+    LibrarySettings,
 )
 from dbml_sharepoint.model.reading import (
     optional_bool,
     optional_str,
     optional_str_list,
+    optional_value,
     require_int,
     require_str,
 )
@@ -31,7 +32,7 @@ from dbml_sharepoint.model.sections.context import SectionContext
 _ENTITY_KEYS = frozenset({
     "kind", "base_template", "site_role", "singleton", "display_column",
     "accept_unindexable_display_column", "hide_from_all_items", "renamed_from",
-    "folders", "title", "internal_name",
+    "folders", "title", "internal_name", "settings",
 })
 
 _FOLDER_SOURCE_KEYS = frozenset({"from_enum"})
@@ -42,12 +43,6 @@ def read(sc: SectionContext) -> dict[str, Any]:
     for name, spec in _require_mapping(
         sc.required("entities"), "entities", allow_absent=False,
     ).items():
-        if isinstance(spec, dict) and "settings" in spec:
-            raise LibrarySettingNotYetSupported(
-                f"entities.{name}.settings (require_checkout) is refused until a sandbox "
-                "probe shows the deploy can write and read back ForceCheckout; set "
-                "'Require check out' by hand in the library settings meanwhile",
-            )
         _reject_unknown_keys(spec, _ENTITY_KEYS, f"entities.{name}")
         raw_kind: object = spec.get("kind")
         entities[name] = EntityMapping(
@@ -72,6 +67,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
             ),
             # Shape only here; the rest is the validator's.
             folder_source=_folder_source(spec, f"entities.{name}"),
+            settings=_library_settings(spec, f"entities.{name}"),
         )
     titles: set[tuple[str, str]] = set()
     roots: set[tuple[str, str]] = set()
@@ -131,6 +127,19 @@ def _parse_entity_kind(raw_kind: Any, context: str) -> EntityKind:
             f"{', '.join(sorted(ENTITY_KINDS))}; got {raw_kind!r}",
         )
     return cast("EntityKind", raw_kind)
+
+
+def _library_settings(spec: dict[str, Any], context: str) -> LibrarySettings | None:
+    """`settings`, a closed shape. Absent is None; a blank `require_checkout` is unmanaged."""
+    if "settings" not in spec:
+        return None
+    block = _known_keys(spec["settings"], {"require_checkout"}, f"{context}.settings")
+    value = optional_value(block, "require_checkout", f"{context}.settings")
+    if value is not None and not isinstance(value, bool):
+        raise MappingShapeError(
+            f"{context}.settings.require_checkout must be a boolean, got {value!r}",
+        )
+    return LibrarySettings(require_checkout=value)
 
 
 def _folder_source(spec: dict[str, Any], context: str) -> FolderSource:

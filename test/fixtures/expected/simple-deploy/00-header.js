@@ -125,6 +125,7 @@
   "identity_groups": [],
   "index_change_ceiling": 20000,
   "level_renames": [],
+  "library_checkout": [],
   "library_folders": [],
   "library_roots": [],
   "list_display_titles": [

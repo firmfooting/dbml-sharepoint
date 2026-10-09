@@ -33,6 +33,7 @@ from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
     CustomPermissionLevel,
     EntitySection,
+    LibrarySettings,
     ListPermissionPolicy,
     MappingBundle,
     PermissionsConfig,
@@ -3285,3 +3286,72 @@ def test_each_group_with_values_becomes_a_requirement(tmp_path: Path) -> None:
         r.key for r in derive_requirements(schema, bundle, "default", resolved=resolved,
                                            identities=ids)}
     assert not assess_targets(schema, bundle, "default", resolved=resolved)["identity_groups"]
+
+
+def _checkout_pack(require_checkout: bool | None) -> tuple[Schema, MappingBundle]:
+    schema = make_schema(make_table("Docs", column("Title", required=True)))
+    base = as_library(make_bundle(entities=["Docs"]), "Docs")
+    entity = base.mapping.entities["Docs"]
+    return schema, replace(base, mapping=replace(base.mapping, entities={
+        "Docs": replace(entity, settings=LibrarySettings(require_checkout=require_checkout)),
+    }))
+
+
+def test_assess_targets_carry_only_a_declared_require_checkout() -> None:
+    for declared, expected in ((False, [["APP_Docs", False]]), (None, [])):
+        schema, bundle = _checkout_pack(declared)
+        resolved = resolve(schema, bundle.mapping)
+        targets = assess_targets(schema, bundle, "default", resolved=resolved)
+        assert targets["library_checkout"] == expected
+
+
+def _assess_checkout(live: object, *, declared: bool = False) -> list[dict[str, Any]]:
+    schema, bundle = _checkout_pack(declared)
+    js = generate_assess_js(
+        schema=schema, bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default", source_dbml="s.dbml",
+        generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
+    )
+    wrap = f"""
+{{
+  const _under = globalThis.fetch;
+  globalThis.__writes = 0;
+  globalThis.fetch = async (url, opts) => {{
+    if (String(url).includes('ForceCheckout')) {{
+      const body = {json.dumps({"d": {"ForceCheckout": live}})};
+      return {{ ok: true, status: 200, url: String(url), headers: {{ get: () => null }},
+        json: async () => body, text: async () => JSON.stringify(body) }};
+    }}
+    return _under(url, opts);
+  }};
+}}
+"""
+    summary = _run_assess(
+        _declared_descriptions((schema, bundle)), harness=_healthy_harness(), js=js,
+        wrap=wrap, capture=True,
+    )
+    assert not [
+        c for c in summary["calls"]
+        if isinstance(c, dict) and c.get("method") == "POST"
+        and "ForceCheckout" in str(c.get("body"))
+    ], "assess wrote ForceCheckout"
+    return [f for f in summary["findings"] if f["key"] == "library_checkout:APP_Docs"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_reports_declared_and_live_require_checkout_as_info() -> None:
+    (same,) = _assess_checkout(False, declared=False)
+    assert same["level"] == "INFO" and "declares require_checkout false" in same["detail"]
+    assert "holds ForceCheckout false" in same["detail"]
+    assert "will change" not in same["detail"]
+    (differs,) = _assess_checkout(True, declared=False)
+    assert differs["level"] == "INFO"
+    assert "holds ForceCheckout true" in differs["detail"] and "will change" in differs["detail"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_says_so_when_force_checkout_is_not_a_boolean() -> None:
+    (unreadable,) = _assess_checkout(None)
+    assert unreadable["level"] == "INFO" and "could not be read" in unreadable["detail"]

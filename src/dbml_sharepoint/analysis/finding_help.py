@@ -689,6 +689,13 @@ FINDING_HELP: dict[FindingCode, str] = {
         "creates each one under the library's root folder and reads it "
         "back, and a list has no root folder to create under."
     ),
+    FindingCode.LIBRARY_SETTING_ON_A_LIST: (
+        "`settings` is declared on an entity that is not a `DocumentLibrary`. "
+        "Its one key, `require_checkout`, writes the library's `ForceCheckout` "
+        "property, which is the library's \"Require Check Out\" control "
+        "(`library.checkout.force-checkout-merge`). Remove the key, or declare "
+        "`kind: DocumentLibrary` with `base_template: 101`."
+    ),
     FindingCode.FOLDER_NAME_INVALID: (
         "A declared folder name breaks one of Microsoft's file and folder "
         "name rules, or the two this tool adds: it contains one of "
@@ -953,15 +960,15 @@ FINDING_HELP: dict[FindingCode, str] = {
         "with; to require an empty group, use `require_empty_at_deploy`."
     ),
     FindingCode.EXCLUSIVE_GROUP_ENROLS_THE_OPERATOR: (
-        "An exclusive group also has `enroll_during_run: [operator]`. Phase 1.4 adds the "
-        "operator before Phase 1.5 reads the membership, so the exclusive "
+        "An exclusive group also has `enroll_during_run: [operator]`. Phase 1.5 adds the "
+        "operator before Phase 1.6 reads the membership, so the exclusive "
         "check finds an extra member and aborts every run. Give the operator "
         "a group of its own."
     ),
     FindingCode.ENTERPRISE_READER_GROUP_MEMBERS_MAY_EDIT_MEMBERSHIP: (
         "A group declares both `enroll: [enterprise_reader]` and "
         "`allow_members_edit_membership: true`. The security phase applies "
-        "that setting before Phase 1.5 enrols the reader, so the enrolled "
+        "that setting before Phase 1.6 enrols the reader, so the enrolled "
         "account can then add principals to its own group -- and everything "
         "it adds inherits the group's `Read`. The exclusivity check reads "
         "membership at enrolment time and would find the named reader and "

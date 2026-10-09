@@ -36,7 +36,7 @@ def test_the_three_built_ins_and_their_lifetimes() -> None:
     assert not is_run_lifetime("records_clerk")
 
 
-def test_every_built_in_takes_users_only_until_the_probe_passes() -> None:
+def test_every_built_in_takes_users_only() -> None:
     # Ruling A6.
     assert all(b.kinds == ("user",) for b in BUILTIN_IDENTITIES.values())
 

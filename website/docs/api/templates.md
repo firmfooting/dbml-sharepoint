@@ -113,9 +113,9 @@ DELETES every list declared by this schema at this site. Refuses EVERY list unle
 
 ### `verify.js.j2`
 
-dbml-sharepoint CLOCK VERIFICATION script (WRITES TO ONE SCRATCH LIST).
+dbml-sharepoint VERIFICATION script (reads only, unless the pack has clock cells).
 
-Exercises every clock cell this pack uses (a `today` or `now` rule, a `today` view window, a `[today]` default) on a hidden scratch list named ``, and prints a VERIFIED / MISMATCH / NOT-VERIFIED verdict. It creates that list if absent, reuses it when its Description carries the tool's marker, and never touches any other list. It also checks, read only, that each enrolled identity is a member of its group. Paste after deploy.js.txt, on the same site.
+Checks clock cells, enrolled identities and library settings. Paste after deploy.js.txt.
 
 ## Shared partials
 
@@ -207,7 +207,7 @@ Shared web-context resolution for every pasteable script. Expects a `log` functi
 
 Included by: `verify.js.j2`
 
-The whole verification, taking its collaborators as an argument so the standalone script and a test harness can share it. Expects `targets` (generators/verifygen.py: list_title, marker, columns, rows, checks, rule, identity_groups) and the transport, digest and canonicalFormula collaborators.
+The whole verification, taking its collaborators as an argument so the standalone script and a test harness can share it. Expects `targets` (generators/verifygen.py: list_title, marker, columns, rows, checks, rule, identity_groups, library_settings) and the transport, digest and canonicalFormula collaborators.
 
 ## deploy.js phase bodies
 

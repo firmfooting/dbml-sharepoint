@@ -314,6 +314,7 @@ class FindingCode(StrEnum):
     # --- checks/_library.py: folders, view scope, demonstration files ------
     DUPLICATE_FOLDER = "duplicate_folder", "error"
     FOLDERS_ON_A_LIST = "folders_on_a_list", "error"
+    LIBRARY_SETTING_ON_A_LIST = "library_setting_on_a_list", "error"
     FOLDER_NAME_INVALID = "folder_name_invalid", "error"
     FOLDER_ENUM_UNKNOWN = "folder_enum_unknown", "error"
     FOLDER_PERMISSIONS_ON_A_LIST = "folder_permissions_on_a_list", "error"

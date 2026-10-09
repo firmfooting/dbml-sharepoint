@@ -3232,6 +3232,129 @@ def test_a_declined_reader_is_not_preserved_for_the_rebuild(
     assert "svc-reporting@example.org" not in text
 
 
+_CANONICAL_READER_KEY = "DBMLSP_IDENTITY_ENTERPRISE_READER"
+
+
+def _reader_lines(text: str) -> list[str]:
+    return [
+        line for line in text.splitlines()
+        if line.startswith(("DBMLSP_ENTERPRISE_READER=", f"{_CANONICAL_READER_KEY}="))
+    ]
+
+
+def _scaffold_with_env_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, env_text: str, reader: str,
+) -> str:
+    (tmp_path / ENV_FILENAME).write_text(env_text, encoding="utf-8", newline="\n")
+    _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(destination, build="y", seed="n", reader=reader), width=400,
+    )
+    assert wizard.run_wizard(console) == 0
+    return (destination / ENV_FILENAME).read_text(encoding="utf-8")
+
+
+def test_a_declined_reader_drops_the_canonical_key_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    text = _scaffold_with_env_text(
+        tmp_path, monkeypatch,
+        f"# team defaults\n{_CANONICAL_READER_KEY}=user:svc-reporting@example.org\n", "",
+    )
+    assert "# team defaults" in text
+    assert _reader_lines(text) == []
+
+
+def test_an_answered_reader_replaces_the_canonical_key_and_adds_no_alias(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    text = _scaffold_with_env_text(
+        tmp_path, monkeypatch,
+        f"{_CANONICAL_READER_KEY}=user:svc-suggested@example.org\n",
+        "svc-chosen@example.org",
+    )
+    assert _reader_lines(text) == [f"{_CANONICAL_READER_KEY}=user:svc-chosen@example.org"]
+
+
+def test_an_answered_reader_replaces_the_alias_key_and_adds_no_canonical(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    text = _scaffold_with_env_text(
+        tmp_path, monkeypatch,
+        "DBMLSP_ENTERPRISE_READER=svc-suggested@example.org\n", "svc-chosen@example.org",
+    )
+    assert _reader_lines(text) == ["DBMLSP_ENTERPRISE_READER=svc-chosen@example.org"]
+
+
+def test_the_canonical_keys_reader_is_offered_as_the_suggestion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / ENV_FILENAME).write_text(
+        f"{_CANONICAL_READER_KEY}=user:svc-reporting@example.org\n",
+        encoding="utf-8", newline="\n",
+    )
+    suggestions = wizard._consult_env_file(ScriptedConsole([], width=400))
+    assert suggestions is not None
+    assert suggestions.reader == "svc-reporting@example.org"
+
+
+def _verify_env(tmp_path: Path, text: str, reader: str) -> None:
+    path = tmp_path / "copy.env"
+    path.write_text(text, encoding="utf-8", newline="\n")
+    wizard._verify_preserved_env_file(path, reader, "Europe/London")
+
+
+def test_the_verifier_refuses_a_copy_holding_both_reader_keys(tmp_path: Path) -> None:
+    with pytest.raises(wizard.WizardError, match="reads back"):
+        _verify_env(
+            tmp_path,
+            "DBMLSP_ENTERPRISE_READER=a@example.com\n"
+            f"{_CANONICAL_READER_KEY}=user:a@example.com\n"
+            "DBMLSP_TIME_ZONE=Europe/London\n",
+            "a@example.com",
+        )
+
+
+def test_the_verifier_refuses_a_canonical_value_without_the_user_prefix(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(wizard.WizardError, match="reads back"):
+        _verify_env(
+            tmp_path,
+            f"{_CANONICAL_READER_KEY}=a@example.com\nDBMLSP_TIME_ZONE=Europe/London\n",
+            "a@example.com",
+        )
+
+
+def test_the_verifier_accepts_the_canonical_spelling(tmp_path: Path) -> None:
+    _verify_env(
+        tmp_path,
+        f"{_CANONICAL_READER_KEY}=user:a@example.com\nDBMLSP_TIME_ZONE=Europe/London\n",
+        "a@example.com",
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "USER:a@example.com",
+        "user:a@example.com,security_group:00000000-0000-0000-0000-000000000000",
+        "a@example.com",
+    ],
+)
+def test_a_canonical_value_that_is_not_one_user_is_not_suggested(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ENV_FILENAME).write_text(
+        f"{_CANONICAL_READER_KEY}={value}\n", encoding="utf-8", newline="\n",
+    )
+    suggestions = wizard._consult_env_file(ScriptedConsole([], width=400))
+    assert suggestions is not None
+    assert suggestions.reader is None
+
+
 def test_a_replaced_reader_is_preserved_instead_of_the_suggestion(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
