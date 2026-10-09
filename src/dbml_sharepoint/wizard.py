@@ -85,6 +85,7 @@ from dbml_sharepoint.model.env_file import (
     ENV_FILENAME,
     TIME_ZONE_KEY,
     EnvFileError,
+    identity_env_key,
     read_env_file,
 )
 from dbml_sharepoint.model.errors import MappingError
@@ -713,6 +714,10 @@ def _consult_env_file(console: Console) -> _EnvSuggestions | None:
     except EnvFileError as exc:
         raise WizardError(str(exc)) from exc
     reader = file_settings.get(ENTERPRISE_READER_KEY)
+    if reader is None:
+        canonical = file_settings.get(_READER_IDENTITY_KEY)
+        if canonical is not None:
+            reader = canonical.removeprefix(_USER_PREFIX)
     if reader is not None:
         try:
             validate_enterprise_reader(reader)
@@ -1120,6 +1125,11 @@ def _scaffold(
     return changed, applied, dropped
 
 
+# The loader also accepts the reader under the identity key, valued `user:<upn>`.
+_READER_IDENTITY_KEY = identity_env_key("enterprise_reader")
+_USER_PREFIX = "user:"
+
+
 def _is_setting_line(line: str, key: str) -> bool:
     """Whether `line` assigns `key`, under `read_env_file`'s own rules."""
     stripped = line.strip()
@@ -1144,8 +1154,17 @@ def _env_text_for_answers(text: str, reader: str | None, time_zone: str) -> str:
     """
     lines = text.splitlines()
     if reader is not None:
-        lines = [line for line in lines if not _is_setting_line(line, ENTERPRISE_READER_KEY)]
-        if reader:
+        canonical = any(_is_setting_line(line, _READER_IDENTITY_KEY) for line in lines)
+        lines = [
+            line for line in lines
+            if not any(
+                _is_setting_line(line, key)
+                for key in (ENTERPRISE_READER_KEY, _READER_IDENTITY_KEY)
+            )
+        ]
+        if reader and canonical:
+            lines.append(f"{_READER_IDENTITY_KEY}={_env_value_literal(_USER_PREFIX + reader)}")
+        elif reader:
             lines.append(f"{ENTERPRISE_READER_KEY}={_env_value_literal(reader)}")
     lines = [line for line in lines if not _is_setting_line(line, TIME_ZONE_KEY)]
     lines.append(f"{TIME_ZONE_KEY}={_env_value_literal(time_zone)}")
@@ -1201,9 +1220,17 @@ def _verify_preserved_env_file(destination: Path, reader: str | None, time_zone:
         raise WizardError(
             f"wrote {destination} but could not read it back: {exc}",
         ) from exc
-    if reader is not None and settings.get(ENTERPRISE_READER_KEY, "") != reader:
+    alias = settings.get(ENTERPRISE_READER_KEY)
+    canonical = settings.get(_READER_IDENTITY_KEY)
+    read_back = (
+        alias if alias is not None
+        else canonical.removeprefix(_USER_PREFIX) if canonical is not None
+        else ""
+    )
+    both = alias is not None and canonical is not None
+    if reader is not None and (read_back != reader or both):
         raise WizardError(
-            f"{destination} reads back as {settings.get(ENTERPRISE_READER_KEY, '')!r}, "
+            f"{destination} reads back as {read_back!r}, "
             f"not the {reader!r} that was answered.",
         )
     if settings.get(TIME_ZONE_KEY) != time_zone:
