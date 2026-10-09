@@ -15,6 +15,7 @@ from typing import Any
 
 from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.clock_usage import clock_usage
+from dbml_sharepoint.analysis.enrolment import as_json, enrolment_plan
 from dbml_sharepoint.analysis.group_description import marker_for_group
 from dbml_sharepoint.analysis.limits import (
     INDEX_CHANGE_CEILING,
@@ -72,6 +73,7 @@ def _declared_unique_columns(
 @guards_resolution
 def assess_targets(
     schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping,
+    identities: AbcMapping[str, tuple[IdentityValue, ...]] = MappingProxyType({}),
 ) -> dict[str, Any]:
     """The data-driven inputs the assess.js probes loop over.
 
@@ -225,6 +227,8 @@ def assess_targets(
         "list_view_threshold": LIST_VIEW_THRESHOLD,
         "index_change_ceiling": INDEX_CHANGE_CEILING,
         "declares_groups": bool(site_groups),
+        # Values travel here for the standalone script only; the deploy's embedded copy gets none.
+        "identity_groups": as_json(enrolment_plan(bundle, resolved, identities)),
         "declares_seal": m.seal_columns,
         "declares_prevent_deletion": m.prevent_list_deletion,
         "declares_column_formatting": bool(m.column_formatting),
@@ -242,9 +246,10 @@ def assess_targets(
 @guards_resolution
 def derive_requirements(
     schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping,
+    identities: AbcMapping[str, tuple[IdentityValue, ...]] = MappingProxyType({}),
 ) -> list[Requirement]:
     """The pack's site requirements, worst-case severity on probe failure."""
-    t = assess_targets(schema, bundle, site_role, resolved=resolved)
+    t = assess_targets(schema, bundle, site_role, resolved=resolved, identities=identities)
     reqs: list[Requirement] = [
         Requirement("manage_lists_bit",
                     "Operator holds ManageLists on the site", "BLOCKED"),
@@ -342,6 +347,12 @@ def derive_requirements(
             f"exact previous marker while '{title}' is absent",
             "BLOCKED",
         ))
+    for plan in t["identity_groups"]:
+        reqs.append(Requirement(
+            f"identity:{plan['group']}",
+            f"'{plan['group']}' can hold the identities this deploy enrols",
+            "BLOCKED",
+        ))
     if t["uses_today"]:
         reqs.append(Requirement(
             "time_zone",
@@ -417,7 +428,9 @@ def generate_assess_js(
 ) -> str:
     requirements = [
         {"key": r.key, "description": r.description, "level_on_fail": r.level_on_fail}
-        for r in derive_requirements(schema, bundle, site_role, resolved=resolved)
+        for r in derive_requirements(
+            schema, bundle, site_role, resolved=resolved, identities=identities,
+        )
     ]
     return _render(
         "assess.js.j2",
@@ -426,7 +439,9 @@ def generate_assess_js(
         release=release,
         source_dbml=source_dbml,
         generated_at=generated_at,
-        targets=assess_targets(schema, bundle, site_role, resolved=resolved),
+        targets=assess_targets(
+            schema, bundle, site_role, resolved=resolved, identities=identities,
+        ),
         requirements=requirements,
         not_assessable=list(NOT_ASSESSABLE),
         application=application,

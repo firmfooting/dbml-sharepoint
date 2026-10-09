@@ -122,6 +122,7 @@
   "declares_seal": false,
   "declares_versioning": true,
   "group_renames": [],
+  "identity_groups": [],
   "index_change_ceiling": 20000,
   "level_renames": [],
   "library_folders": [],

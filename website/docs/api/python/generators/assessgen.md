@@ -30,7 +30,7 @@ Requirement(key: str, description: str, level_on_fail: str)
 ### `assess_targets`
 
 ```python
-def assess_targets(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping) -> dict[str, typing.Any]
+def assess_targets(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, identities: collections.abc.Mapping[str, tuple[dbml_sharepoint.model.identities.IdentityValue, ...]] = mappingproxy({})) -> dict[str, typing.Any]
 ```
 
 The data-driven inputs the assess.js probes loop over.
@@ -53,7 +53,7 @@ operator and reads them from `analysis.limits` rather than spelling them.
 ### `derive_requirements`
 
 ```python
-def derive_requirements(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping) -> list[dbml_sharepoint.generators.assessgen.Requirement]
+def derive_requirements(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, identities: collections.abc.Mapping[str, tuple[dbml_sharepoint.model.identities.IdentityValue, ...]] = mappingproxy({})) -> list[dbml_sharepoint.generators.assessgen.Requirement]
 ```
 
 The pack's site requirements, worst-case severity on probe failure.
