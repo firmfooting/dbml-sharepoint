@@ -221,7 +221,8 @@ def execute_build(
 
     (
         enterprise_reader, resolved_external, resolved_external_change,
-        resolved_site, resolved_change, resolved_zone, env_provenance,
+        resolved_site, resolved_change, resolved_zone, _file_identities,
+        env_provenance,
     ) = resolve_env_settings(
         env_file, enterprise_reader, deployment_log_list,
         deployment_log_change_list, deployment_log_site, change_log_list,

@@ -39,6 +39,7 @@ from dbml_sharepoint.cli import (
 )
 from dbml_sharepoint.extension import BaseExtension
 from dbml_sharepoint.model.env_file import ENV_FILENAME, ENV_SETTINGS
+from dbml_sharepoint.model.identities import IdentityValue, describe_identity
 from dbml_sharepoint.pipeline import (
     UnknownFindingCodeError,
     execute_build,
@@ -1420,10 +1421,14 @@ def test_an_explicit_flag_beats_the_env_file(tmp_path: Path) -> None:
     manifest = (out / "deploy-manifest.md").read_text(encoding="utf-8")
     assert flag_address in manifest
     assert file_address not in manifest
-    assert f"Overridden: DBMLSP_ENTERPRISE_READER (using {flag_address})." in manifest
+    # The overriding reader is described by hash: the line reaches the central log.
+    described = describe_identity(
+        "enterprise_reader", (IdentityValue("user", flag_address),),
+    )
+    assert f"Overridden: DBMLSP_ENTERPRISE_READER (using {described})." in manifest
     assert (
         f"DBMLSP_ENTERPRISE_READER = {file_address} (from the file; overridden, "
-        f"using {flag_address})"
+        f"using {described})"
     ) in result.output
 
 

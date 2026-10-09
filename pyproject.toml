@@ -181,7 +181,7 @@ ban-relative-imports = "all"
 # for its own sake -- the guard the same change added to the index-exposure
 # check would otherwise have pushed 61 to 62.
 
-# Deliberately NOT the default of 10. That flags 33 functions at once, which
+# Deliberately NOT the default of 10. That flags 35 functions at once, which
 # blocks every unrelated change until a large refactor lands -- so it would be
 # turned off again within a week, and the rule would teach nothing.
 max-complexity = 54
