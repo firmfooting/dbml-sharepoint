@@ -120,7 +120,7 @@ def test_a_misspelled_top_level_section_is_refused(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("body", "where"),
     [
-        ("governance:\n  vocabulry: {}\n", "governance"),
+        ("governance:\n  vocabulry: {}\n", "governance: .*vocabulry"),
         ("governance:\n  vocabulary:\n    levels: [a]\n", "governance.vocabulary"),
         ("governance:\n  lists:\n    Risk:\n      porpoise: x\n", "governance.lists.Risk"),
         (
@@ -169,6 +169,26 @@ def test_a_blank_text_value_is_refused(tmp_path: Path) -> None:
         'governance:\n  lists:\n    Risk: { owner: "" }\n',
         MappingValueError,
         "governance.lists.Risk.owner is blank",
+    )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'governance:\n  lists:\n    Risk: { purpose: "" }\n',
+        'governance:\n  lists:\n    Risk: { columns: { Notes: { purpose: "" } } }\n',
+    ],
+)
+def test_a_blank_purpose_is_refused(tmp_path: Path, body: str) -> None:
+    _refuses(tmp_path, body, MappingValueError, "purpose is blank")
+
+
+def test_a_carriage_return_in_a_purpose_is_refused(tmp_path: Path) -> None:
+    _refuses(
+        tmp_path,
+        'governance:\n  lists:\n    Risk: { purpose: "a\\rb" }\n',
+        MappingValueError,
+        "purpose must be one line",
     )
 
 

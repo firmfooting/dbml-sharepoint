@@ -118,7 +118,7 @@ def _text(
             f"{context}.{key} is blank; omit the key to leave it undeclared",
         )
     if one_line:
-        if "\n" in text:
+        if len(text.splitlines()) > 1:
             raise MappingValueError(f"{context}.{key} must be one line")
         return text
     if text != value:
