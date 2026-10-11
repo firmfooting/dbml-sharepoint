@@ -125,6 +125,7 @@ ignore = [
   # because `Any` satisfies the protocol in both directions and conformance
   # tests cannot see it come back.
   "ANN401",
+  "UP037",  # quotes keep TYPE_CHECKING-only names inspectable; 3.14+ evaluates annotations lazily
   "B008",  # typer.Option in defaults is the framework idiom
   "C408",  # dict(key=...) literals are deliberate where used
 ]

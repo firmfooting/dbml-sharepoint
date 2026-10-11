@@ -709,3 +709,26 @@ def test_any_nested_in_a_parameter_generic_is_reported() -> None:
     assert mentions_any(list[dict[str, Any]] | None)
     assert not mentions_any(MappingBundle)
     assert not mentions_any(dict[str, str])
+
+
+def test_every_public_callable_signature_is_inspectable() -> None:
+    # Unquoted names imported only under TYPE_CHECKING raise NameError here on 3.14+.
+    import inspect
+    import pkgutil
+
+    failures = []
+    for info in pkgutil.walk_packages(dbml_sharepoint.__path__, "dbml_sharepoint."):
+        module = importlib.import_module(info.name)
+        for name, obj in vars(module).items():
+            if name.startswith("_") or getattr(obj, "__module__", None) != info.name:
+                continue
+            targets = [obj] if inspect.isfunction(obj) else []
+            if inspect.isclass(obj):
+                targets = [m for n, m in vars(obj).items()
+                           if not n.startswith("_") and inspect.isfunction(m)]
+            for target in targets:
+                try:
+                    inspect.signature(target)
+                except NameError as error:
+                    failures.append(f"{info.name}.{name}: {error}")
+    assert not failures

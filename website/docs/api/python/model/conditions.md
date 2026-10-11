@@ -64,7 +64,7 @@ normaliser needs no special cases for either.
 @dataclass(frozen=True)
 class Group:
     kind: GroupKind
-    children: tuple[ForwardRef('Condition', is_class=True, owner=<class 'dbml_sharepoint.model.conditions.Group'>), ...]
+    children: tuple['Condition', ...]
 ```
 
 A boolean combination of conditions.

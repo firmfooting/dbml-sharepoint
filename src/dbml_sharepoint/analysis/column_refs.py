@@ -108,7 +108,7 @@ def rewrite_formula_refs(formula: str, rename: dict[str, str]) -> str:
     nothing re-reads. String literals are data and are never rewritten.
     """
 
-    def _replace(match: re.Match[str]) -> str:
+    def _replace(match: "re.Match[str]") -> str:
         name = match.group(1)
         return f"[{rename.get(name, name)}]"
 

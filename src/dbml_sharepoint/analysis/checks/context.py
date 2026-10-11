@@ -133,7 +133,7 @@ class ValidationContext:
         require_matching_resolution(self.resolved, self.bundle, self.schema)
 
     @classmethod
-    def build(cls, schema: Schema, bundle: MappingBundle) -> ValidationContext:
+    def build(cls, schema: Schema, bundle: MappingBundle) -> "ValidationContext":
         cross_site_by_entity: dict[str, set[str]] = {}
         cross_site_pairs: set[tuple[str, str]] = set()
         for xref in bundle.mapping.cross_site_reference_columns:

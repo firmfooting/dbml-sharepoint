@@ -38,7 +38,7 @@ class DeployPlan:
 
 def compute_phases(
     schema: Schema,
-    entities: dict[str, EntityMapping] | None = None,
+    entities: "dict[str, EntityMapping] | None" = None,
 ) -> DeployPlan:
     table_names = [t.name for t in schema.tables]
     edges: dict[str, set[str]] = defaultdict(set)
@@ -118,7 +118,7 @@ def _topological(nodes: list[str], edges: dict[str, set[str]]) -> list[str]:
 
 
 def is_deployed_here(
-    entities: dict[str, EntityMapping],
+    entities: "dict[str, EntityMapping]",
     name: str,
     site_role: str,
 ) -> bool:
@@ -145,7 +145,7 @@ def is_deployed_here(
 
 def site_tables_in_order(
     schema: Schema,
-    entities: dict[str, EntityMapping],
+    entities: "dict[str, EntityMapping]",
     site_role: str,
 ) -> list[str]:
     """Dependency-ordered table names deployed for this site role.

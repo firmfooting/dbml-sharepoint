@@ -70,7 +70,7 @@ class Group:
     """
 
     kind: GroupKind
-    children: tuple[Condition, ...]
+    children: tuple["Condition", ...]
 
 
 type Condition = Leaf | Group

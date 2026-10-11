@@ -293,7 +293,7 @@ def _section_target[T](
 
 
 def _visibility_formula(
-    section: EntitySection[FormVisibility] | None,
+    section: "EntitySection[FormVisibility] | None",
     column: str,
     types: dict[str, str],
     *,
@@ -314,7 +314,7 @@ def _visibility_formula(
 
 
 def _column_validation(
-    section: EntitySection[ColumnValidation] | None,
+    section: "EntitySection[ColumnValidation] | None",
     column: str,
     types: dict[str, str],
     display_map: dict[str, str],

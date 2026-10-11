@@ -334,7 +334,7 @@ class FormVisibility:
 
     new: bool = True
     existing: bool = True
-    when: Condition | None = None
+    when: "Condition | None" = None
 
 
 @dataclass(frozen=True)
@@ -343,7 +343,7 @@ class ColumnValidation:
     a failed save shows SharePoint's generic text, which tells the person
     filling in the form nothing."""
 
-    when: Condition
+    when: "Condition"
     message: str
 
 
@@ -485,7 +485,7 @@ class ListValidation:
     operator differences between the targets could bite them.
     """
 
-    when: Condition
+    when: "Condition"
     message: str
 
 
@@ -794,7 +794,7 @@ class Mapping:
     polymorphic_patterns: list[PolymorphicPattern] = field(default_factory=list)
     retention_policies_source: Path | None = None
     extension: str | None = None
-    permissions: PermissionsConfig | None = None
+    permissions: "PermissionsConfig | None" = None
     # `identities:`, by name. Built-in identities are never declared here.
     identities: dict[str, IdentityDeclaration] = field(default_factory=dict)
     # List prefixes this family was deployed under before. A prefix change is
@@ -839,7 +839,7 @@ class Mapping:
     # See `analysis/derived.py` for what each entry contributes and reads,
     # and `analysis/reporting/plan.py` for the query columns the validator
     # checks a reference against, which the emitter writes from too.
-    derived_columns: dict[str, list[DerivedColumn]] = field(default_factory=dict)
+    derived_columns: dict[str, list["DerivedColumn"]] = field(default_factory=dict)
     # {entity: EntitySection[FormVisibility]} (declared form behaviour).
     form_visibility: dict[str, EntitySection[FormVisibility]] = field(default_factory=dict)
     # {entity: EntitySection[ColumnValidation]} (per-column save rules).
@@ -941,7 +941,7 @@ class Mapping:
             for xref in self.cross_site_reference_columns
         }
 
-    def derived_for(self, entity_name: str) -> list[DerivedColumn]:
+    def derived_for(self, entity_name: str) -> list["DerivedColumn"]:
         """This entity's derived columns, in declaration order.
 
         Order is the contract: an `expr` may read a column an entry above it
@@ -1020,7 +1020,7 @@ class Mapping:
             self.item_security_for(name).read == "own" for name in entities
         ) or self.item_security_default.read == "own"
 
-    def permissions_for_entity(self, entity_name: str) -> ListPermissionPolicy | None:
+    def permissions_for_entity(self, entity_name: str) -> "ListPermissionPolicy | None":
         """Return the per-list permission policy for the given entity name.
 
         Returns override if present, else the default policy, but the default
