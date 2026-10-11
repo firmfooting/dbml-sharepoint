@@ -2676,6 +2676,79 @@ panel show; `Title` is not required in `values`. The name is held to
 Microsoft's file name rules, and `content` is the short text the file holds,
 defaulting to a one-line placeholder.
 
+## `governance`
+
+Descriptive facts about each list and column: what it is for, which role owns
+it, how it is classified, whether it holds personal data and which retention
+policy applies. Nothing here is deployed to SharePoint and no script reads it.
+It exists so documents and reports generated from the mapping can state these
+facts and be checked against the mapping that declares them.
+
+The section is optional. The mapping declares its own vocabulary, and every
+value an entry uses must come from it. Core ships no default values, so a
+mapping that declares no vocabulary can use no values.
+
+```yaml
+governance:
+  vocabulary:
+    classification: [open, internal, restricted]
+    personal_data: [none, contact, sensitive]
+    owners: [list_steward, records_lead]
+  lists:
+    Risk:
+      purpose: "Tracks risks raised against projects."
+      owner: list_steward
+      classification: internal
+      personal_data: contact
+      retention: keep_seven_years
+      columns:
+        Notes: { purpose: "Free-text commentary.", personal_data: sensitive }
+```
+
+The values above are examples. Declare the levels, categories and roles your
+own policy uses.
+
+| Key | Where | Meaning |
+| --- | --- | --- |
+| `vocabulary.classification` | section | Allowed `classification` values |
+| `vocabulary.personal_data` | section | Allowed `personal_data` values, on lists and columns |
+| `vocabulary.owners` | section | Allowed `owner` role keys. A role key names a role, not a person |
+| `lists.<Entity>.purpose` | list | One line of free text |
+| `lists.<Entity>.owner` | list | A role key from `vocabulary.owners` |
+| `lists.<Entity>.classification` | list | A value from `vocabulary.classification` |
+| `lists.<Entity>.personal_data` | list | A value from `vocabulary.personal_data` |
+| `lists.<Entity>.retention` | list | A policy name defined by `retention_policies_source` |
+| `lists.<Entity>.columns.<Column>.purpose` | column | One line of free text |
+| `lists.<Entity>.columns.<Column>.personal_data` | column | A value from `vocabulary.personal_data` |
+
+Every key is optional. `<Entity>` is the entity name used under `entities:`,
+which is also the DBML table name. `<Column>` is the DBML column name. A
+retired column is still declared, so it can still carry an entry.
+
+### What the loader and the build refuse
+
+The loader refuses, naming the key path: an unknown key at any level, a value
+of the wrong type (`owner: 5`), a blank text value, a `purpose` that spans more
+than one line, and a vocabulary list with a blank or repeated value. A bare
+`purpose:` with nothing after it means the key is not declared.
+
+The validator reports these as errors, each a finding code that
+`dbml-sharepoint explain` describes:
+
+- `governance_unknown_entity`: a `lists` key is not a table the schema
+  declares and the mapping deploys.
+- `governance_unknown_column`: a `columns` key is not a column of that table.
+- `governance_value_outside_vocabulary`: an `owner`, `classification` or
+  `personal_data` value is not in the matching vocabulary list. Values are
+  compared exactly, so `Restricted` does not match `restricted`.
+- `governance_unknown_retention_policy`: `retention` names a policy that
+  `retention_policies_source` does not define, or the mapping names no such
+  file.
+
+Programs that load a mapping read the section as `MappingBundle.governance`,
+a `Governance` object with `vocabulary` and `lists`. It is never `None`: a
+mapping without the section loads as an empty `Governance`.
+
 ## `extensions`
 
 ```yaml
