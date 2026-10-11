@@ -130,16 +130,9 @@ ignore = [
 ]
 
 # NOT adopted, recorded so they are not re-litigated:
-#   TRY003 / EM101 / EM102 (105 sites) -- this project's long, operator-facing
-#     error prose IS the product; enforcing them means inventing 95 exception
-#     subclasses to no benefit.
-#   TRY004 (26 sites) -- raising ValueError after an isinstance check is
-#     deliberate: every config failure funnels into one ValueError-shaped
-#     refusal via `_CONFIG_ERRORS` in cli.py.
-#   FA100 / FA102 -- both push TOWARDS `from __future__ import annotations`,
-#     which is the wrong direction here, and neither can remove one. See #164:
-#     PEP 649 shipped in 3.14, this project supports 3.13, so the quoted
-#     forward references are current practice, not legacy.
+#   TRY003 / EM101 / EM102 -- the long operator-facing error prose is the product.
+#   TRY004 -- every config failure funnels into one ValueError-shaped refusal (cli.py).
+#   FA100 / FA102 -- push towards `from __future__ import annotations` (#164); 3.15 needs none.
 
 [tool.ruff.lint.flake8-tidy-imports]
 # Default is "parents", which bans `..` and leaves `from . import x` alone.
