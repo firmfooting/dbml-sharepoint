@@ -30,7 +30,7 @@ Requirement(key: str, description: str, level_on_fail: str)
 ### `assess_targets`
 
 ```python
-def assess_targets(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, identities: collections.abc.Mapping[str, tuple[dbml_sharepoint.model.identities.IdentityValue, ...]] = mappingproxy({})) -> dict[str, typing.Any]
+def assess_targets(schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping, identities: AbcMapping[str, tuple[IdentityValue, ...]] = mappingproxy({})) -> dict[str, Any]
 ```
 
 The data-driven inputs the assess.js probes loop over.
@@ -53,7 +53,7 @@ operator and reads them from `analysis.limits` rather than spelling them.
 ### `derive_requirements`
 
 ```python
-def derive_requirements(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, identities: collections.abc.Mapping[str, tuple[dbml_sharepoint.model.identities.IdentityValue, ...]] = mappingproxy({})) -> list[dbml_sharepoint.generators.assessgen.Requirement]
+def derive_requirements(schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping, identities: AbcMapping[str, tuple[IdentityValue, ...]] = mappingproxy({})) -> list[Requirement]
 ```
 
 The pack's site requirements, worst-case severity on probe failure.
@@ -67,12 +67,12 @@ NOT_ASSESSABLE = ('Power Automate / Power Apps inventory (lives in Power Platfor
 ### `generate_assess_js`
 
 ```python
-def generate_assess_js(*, schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, release: dbml_sharepoint.model.release.Release, site_url: str, site_role: str, source_dbml: str, generated_at: str, identities: collections.abc.Mapping[str, tuple[dbml_sharepoint.model.identities.IdentityValue, ...]] = mappingproxy({}), application: str = 'dbml-sharepoint') -> str
+def generate_assess_js(*, schema: Schema, bundle: MappingBundle, resolved: ResolvedMapping, release: Release, site_url: str, site_role: str, source_dbml: str, generated_at: str, identities: AbcMapping[str, tuple[IdentityValue, ...]] = mappingproxy({}), application: str = 'dbml-sharepoint') -> str
 ```
 
 ### `generate_assess_manifest`
 
 ```python
-def generate_assess_manifest(*, schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, site_url: str, site_role: str) -> str
+def generate_assess_manifest(*, schema: Schema, bundle: MappingBundle, resolved: ResolvedMapping, site_url: str, site_role: str) -> str
 ```
 

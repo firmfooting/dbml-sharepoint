@@ -37,7 +37,7 @@ looking current behind an unhandled traceback.
 ### `declared_folders`
 
 ```python
-def declared_folders(source: FolderSource, enum_members: collections.abc.Mapping[str, collections.abc.Sequence[str]]) -> tuple[str, ...]
+def declared_folders(source: FolderSource, enum_members: Mapping[str, Sequence[str]]) -> tuple[str, ...]
 ```
 
 The folder names `source` declares, in declaration order.
@@ -50,7 +50,7 @@ diff of either stays readable.
 ### `policy_for_folder`
 
 ```python
-def policy_for_folder(policy: dbml_sharepoint.model.mapping_types.ListPermissionPolicy, folder: str) -> dbml_sharepoint.model.mapping_types.ListPermissionPolicy
+def policy_for_folder(policy: ListPermissionPolicy, folder: str) -> ListPermissionPolicy
 ```
 
 `policy` with `{member}` expanded to one folder's name.
@@ -68,7 +68,7 @@ once per folder, which is the duplication this whole shape removes.
 ### `folder_policies`
 
 ```python
-def folder_policies(entity_name: str, source: FolderSource, perms: dbml_sharepoint.model.mapping_types.PermissionsConfig | None, enum_members: collections.abc.Mapping[str, collections.abc.Sequence[str]]) -> tuple[tuple[str, dbml_sharepoint.model.mapping_types.ListPermissionPolicy], ...]
+def folder_policies(entity_name: str, source: FolderSource, perms: PermissionsConfig | None, enum_members: Mapping[str, Sequence[str]]) -> tuple[tuple[str, ListPermissionPolicy], ...]
 ```
 
 (folder name, policy) for every folder `entity_name` declares.

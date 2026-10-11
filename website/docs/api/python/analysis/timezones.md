@@ -66,7 +66,7 @@ One zone's offsets over the window, in minutes east of UTC.
 #### `ZoneTable.offset_at`
 
 ```python
-def offset_at(self, stamp: datetime.datetime) -> int
+def offset_at(self, stamp: datetime) -> int
 ```
 
 The offset in force at a UTC instant: the last transition at or
@@ -137,7 +137,7 @@ the CLI refusal and the derivation's own, so the two cannot disagree.
 ### `zone_table`
 
 ```python
-def zone_table(name: str) -> dbml_sharepoint.analysis.timezones.ZoneTable
+def zone_table(name: str) -> ZoneTable
 ```
 
 The transitions of one IANA zone across the window, bisected to the
@@ -151,7 +151,7 @@ it, rather than emitting a query with no table behind it.
 ### `transitions`
 
 ```python
-def transitions(name: str) -> tuple[tuple[datetime.datetime, int], ...]
+def transitions(name: str) -> tuple[tuple[datetime, int], ...]
 ```
 
 The (UTC instant, offset from then on) rows for one zone; see

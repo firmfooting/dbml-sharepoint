@@ -46,7 +46,7 @@ ClockUsage(cells: 'MappingABC[str, frozenset[int]]', today_defaults: 'tuple[Toda
 ### `clock_usage`
 
 ```python
-def clock_usage(schema: 'Schema', mapping: 'Mapping', table_names: 'Iterable[str]') -> 'ClockUsage'
+def clock_usage(schema: Schema, mapping: Mapping, table_names: Iterable[str]) -> ClockUsage
 ```
 
 Scan the named tables' validation rules, view windows and defaults.

@@ -66,18 +66,18 @@ def test_the_gate_would_catch_a_drifted_pin() -> None:
     permanently green -- the same silent drift the gate exists to refuse.
     """
     found = HOOK_REV.search(
-        "  - repo: https://github.com/DavidAnson/markdownlint-cli2\n    rev: v0.23.2\n"
+        "  - repo: https://github.com/DavidAnson/markdownlint-cli2\n    rev: v0.23.3\n"
     )
     assert found is not None
-    assert found.group(1) == "0.23.2"
+    assert found.group(1) == "0.23.3"
 
     # A different repo's rev must not be mistaken for this one's.
     assert not HOOK_REV.search(
         "  - repo: https://github.com/pre-commit/pre-commit-hooks\n    rev: v6.0.0\n"
     )
 
-    assert CI_PIN.findall('run: npx --yes markdownlint-cli2@0.23.2 "**/*.md"') == [
-        "0.23.2"
+    assert CI_PIN.findall('run: npx --yes markdownlint-cli2@0.23.3 "**/*.md"') == [
+        "0.23.3"
     ]
     # And the bare name, with no version, is not a pin.
     assert CI_PIN.findall("run: npx markdownlint-cli2") == []

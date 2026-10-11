@@ -78,7 +78,7 @@ ClockCell(sentinel: 'Sentinel', column_kind: 'str', target: 'str', status: 'Stat
 ### `sentinel_of`
 
 ```python
-def sentinel_of(value: 'object', column_type: 'str') -> 'Sentinel | None'
+def sentinel_of(value: object, column_type: str) -> Sentinel | None
 ```
 
 Which clock sentinel a leaf value is, on a date-ish column; else None.
@@ -86,7 +86,7 @@ Which clock sentinel a leaf value is, on a date-ish column; else None.
 ### `cell_for`
 
 ```python
-def cell_for(sentinel: 'str', column_kind: 'str', target: 'str') -> 'ClockCell'
+def cell_for(marker: str, column_kind: str, target: str) -> ClockCell
 ```
 
 ### `DEFAULT_EVIDENCE`

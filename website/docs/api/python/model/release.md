@@ -27,7 +27,7 @@ Release(*, release_tag: str, date: str, schema_version: str, flow_package_versio
 ### `load_release`
 
 ```python
-def load_release(path: pathlib.Path) -> dbml_sharepoint.model.release.Release
+def load_release(path: Path) -> Release
 ```
 
 Read release.yaml.
@@ -42,7 +42,7 @@ dict lookup rather than the file they mistyped.
 ### `snapshot_hashes`
 
 ```python
-def snapshot_hashes(paths: dict[str, pathlib.Path]) -> dict[str, str]
+def snapshot_hashes(paths: dict[str, Path]) -> dict[str, str]
 ```
 
 SHA-256 of each file's bytes; used to populate config_snapshot at

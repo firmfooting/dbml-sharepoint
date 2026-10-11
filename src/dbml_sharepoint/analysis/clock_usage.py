@@ -64,10 +64,10 @@ def clock_usage(schema: Schema, mapping: Mapping, table_names: Iterable[str]) ->
     defaults: list[TodayDefault] = []
 
     def note(leaf_value: object, column_type: str, target: str) -> None:
-        sentinel = sentinel_of(leaf_value, column_type)
-        if sentinel is None:
+        marker = sentinel_of(leaf_value, column_type)
+        if marker is None:
             return
-        cell = cell_for(sentinel, column_type, target)
+        cell = cell_for(marker, column_type, target)
         cells.setdefault(cell.id, set()).add(_offset(leaf_value))
 
     for table in schema.tables:

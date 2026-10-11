@@ -29,7 +29,7 @@ HighLow(high: str, low: str)
 ### `base_permissions_to_high_low`
 
 ```python
-def base_permissions_to_high_low(perm_names: list[str]) -> dbml_sharepoint.analysis.permissions.HighLow
+def base_permissions_to_high_low(perm_names: list[str]) -> HighLow
 ```
 
 Combine a list of permission names into the High/Low decimal strings
@@ -74,7 +74,7 @@ ENTERPRISE_READER_ELEVATED_PERMISSIONS = ('AddListItems', 'EditListItems', 'Dele
 ### `permission_bit_table`
 
 ```python
-def permission_bit_table(perm_names: collections.abc.Iterable[str]) -> list[dict[str, str]]
+def permission_bit_table(perm_names: Iterable[str]) -> list[dict[str, str]]
 ```
 
 `{name, high, low}` per permission, for a runtime bitmap test.
@@ -98,7 +98,7 @@ ASSOCIATED_GROUP_ALIASES = {'site owners': 'associated_owner_group', 'site membe
 ### `requires_manage_permissions`
 
 ```python
-def requires_manage_permissions(resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, table_names: collections.abc.Iterable[str]) -> bool
+def requires_manage_permissions(resolved: ResolvedMapping, table_names: Iterable[str]) -> bool
 ```
 
 True when deploying `table_names` performs ANY ACL work, and so needs
@@ -146,7 +146,7 @@ access to a whole library the deploy never binds.
 ### `lists_granting_group`
 
 ```python
-def lists_granting_group(resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, group_name: str, table_names: collections.abc.Iterable[str]) -> dbml_sharepoint.analysis.permissions.GroupReach
+def lists_granting_group(resolved: ResolvedMapping, group_name: str, table_names: Iterable[str]) -> GroupReach
 ```
 
 Split `table_names` by where `group_name` is granted, if anywhere.

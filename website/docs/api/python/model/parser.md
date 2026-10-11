@@ -35,7 +35,7 @@ class Column:
     type: str
     required: bool = False
     unique: bool = False
-    default: ColumnDefault | None = None
+    default: dbml_sharepoint.model.parser.ColumnDefault | None = None
     ref: dbml_sharepoint.model.parser.Reference | None = None
     note: str = ''
     is_pk: bool = False
@@ -104,7 +104,7 @@ In-memory representation of a parsed DBML schema.
 ### `parse_dbml`
 
 ```python
-def parse_dbml(path: pathlib.Path) -> dbml_sharepoint.model.parser.Schema
+def parse_dbml(path: Path) -> Schema
 ```
 
 Parse a DBML file and return our in-memory model.

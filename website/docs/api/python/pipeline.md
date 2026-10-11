@@ -21,7 +21,7 @@ import into a function body to break the cycle (#171).
 ### `execute_build`
 
 ```python
-def execute_build(*, schema: pathlib.Path, mapping: pathlib.Path, release: pathlib.Path, site_url: str, site_role: str, out: pathlib.Path = Path('build'), dry_run: bool = False, seed: bool = False, time_zone: str | None = None, extension: str | None = None, enterprise_reader: str | dbml_sharepoint.project.EnterpriseReaderDeclined | None = None, env_file: pathlib.Path | None = None, deployment_log_list: str | None = None, deployment_log_change_list: str | None = None, deployment_log_site: str | None = None, change_log_list: str | None = None, no_sidecars: bool = False, application: str = 'dbml-sharepoint', identities: collections.abc.Sequence[str] = (), source_date_epoch: int | None = None) -> None
+def execute_build(*, schema: Path, mapping: Path, release: Path, site_url: str, site_role: str, out: Path = Path('build'), dry_run: bool = False, seed: bool = False, time_zone: str | None = None, extension: str | None = None, enterprise_reader: str | EnterpriseReaderDeclined | None = None, env_file: Path | None = None, deployment_log_list: str | None = None, deployment_log_change_list: str | None = None, deployment_log_site: str | None = None, change_log_list: str | None = None, no_sidecars: bool = False, application: str = 'dbml-sharepoint', identities: Sequence[str] = (), source_date_epoch: int | None = None) -> None
 ```
 
 The `build` pipeline, callable without going through typer.
@@ -58,7 +58,7 @@ keyword so the file can supply it, the same shape as `enterprise_reader`.
 ### `execute_validation`
 
 ```python
-def execute_validation(*, schema: pathlib.Path, mapping: pathlib.Path, site_role: str = 'default', extension: str | None = None) -> list[dbml_sharepoint.analysis.findings.Finding]
+def execute_validation(*, schema: Path, mapping: Path, site_role: str = 'default', extension: str | None = None) -> list[Finding]
 ```
 
 The `validate` pipeline, callable without going through typer.
@@ -114,7 +114,7 @@ so the two cannot disagree.
 ### `execute_report`
 
 ```python
-def execute_report(*, schema: pathlib.Path, mapping: pathlib.Path, site_role: str = 'default', out: pathlib.Path = Path('reports'), release: pathlib.Path | None = None, time_zone: str | None = None, env_file: pathlib.Path | None = None) -> dict[str, str]
+def execute_report(*, schema: Path, mapping: Path, site_role: str = 'default', out: Path = Path('reports'), release: Path | None = None, time_zone: str | None = None, env_file: Path | None = None) -> dict[str, str]
 ```
 
 The `report` pipeline, callable without going through typer.
@@ -131,7 +131,7 @@ the same site fact could come from (#171).
 ### `execute_extraction`
 
 ```python
-def execute_extraction(source: pathlib.Path, *, out: pathlib.Path | None = None, entity: str | None = None, prefix: str = 'EX_', project: str | None = None, force: bool = False) -> None
+def execute_extraction(source: Path, *, out: Path | None = None, entity: str | None = None, prefix: str = 'EX_', project: str | None = None, force: bool = False) -> None
 ```
 
 One extraction, from a download to a written project directory.

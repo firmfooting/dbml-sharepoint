@@ -56,7 +56,7 @@ Keep arbitrary text inside one Markdown table cell.
 ### `script_env`
 
 ```python
-def script_env(application: str = 'dbml-sharepoint') -> jinja2.environment.Environment
+def script_env(application: str = 'dbml-sharepoint') -> Environment
 ```
 
 Environment for every generated artifact (scripts and manifests).

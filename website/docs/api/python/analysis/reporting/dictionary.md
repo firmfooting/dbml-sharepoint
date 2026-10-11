@@ -52,7 +52,7 @@ PRINCIPAL_KINDS = (('0x010A', 'Person'), ('0x010B', 'SharePoint group'), ('0x010
 ### `column_rows_for_table`
 
 ```python
-def column_rows_for_table(table: dbml_sharepoint.model.parser.Table, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, enum_names: set[str], enum_members: dict[str, list[str]], cross_site_keys: set[tuple[str, str]]) -> list[dbml_sharepoint.analysis.reporting.dictionary.DictionaryRow]
+def column_rows_for_table(table: Table, bundle: MappingBundle, enum_names: set[str], enum_members: dict[str, list[str]], cross_site_keys: set[tuple[str, str]]) -> list[DictionaryRow]
 ```
 
 Plain-text dictionary rows for one table.
@@ -64,7 +64,7 @@ deleting.
 ### `metadata_rows`
 
 ```python
-def metadata_rows(bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, list_count: int, release: dbml_sharepoint.model.release.Release | None, generated_at: str, source_schema: str, source_mapping: str, application: str = 'dbml-sharepoint') -> list[tuple[str, str]]
+def metadata_rows(bundle: MappingBundle, site_role: str, list_count: int, release: Release | None, generated_at: str, source_schema: str, source_mapping: str, application: str = 'dbml-sharepoint') -> list[tuple[str, str]]
 ```
 
 Deployment/schema model metadata as plain (field, value) rows,
@@ -73,7 +73,7 @@ shared by the data-dictionary.md header and the _ModelInfo report table.
 ### `dictionary_rows`
 
 ```python
-def dictionary_rows(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str) -> list[tuple[str, dbml_sharepoint.analysis.reporting.dictionary.DictionaryRow]]
+def dictionary_rows(schema: Schema, bundle: MappingBundle, site_role: str) -> list[tuple[str, DictionaryRow]]
 ```
 
 (list title, row) for every column in the site role, in schema
@@ -82,7 +82,7 @@ order, the users dimension's last.
 ### `users_dictionary_rows`
 
 ```python
-def users_dictionary_rows() -> list[dbml_sharepoint.analysis.reporting.dictionary.DictionaryRow]
+def users_dictionary_rows() -> list[DictionaryRow]
 ```
 
 Dictionary rows for the `_Users` dimension, in its column order.

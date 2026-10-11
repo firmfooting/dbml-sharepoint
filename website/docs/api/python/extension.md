@@ -47,31 +47,31 @@ BaseExtension provides no-op defaults for every hook.
 #### `DeploymentExtension.cli_subcommands`
 
 ```python
-def cli_subcommands(self, app: typer.main.Typer) -> None
+def cli_subcommands(self, app: typer.Typer) -> None
 ```
 
 #### `DeploymentExtension.expand_column`
 
 ```python
-def expand_column(self, table: dbml_sharepoint.model.parser.Table, column: dbml_sharepoint.model.parser.Column, bundle: dbml_sharepoint.model.mapping_types.MappingBundle) -> list[dict[str, Any]] | None
+def expand_column(self, table: Table, column: Column, bundle: MappingBundle) -> list[dict[str, Any]] | None
 ```
 
 #### `DeploymentExtension.extra_validators`
 
 ```python
-def extra_validators(self, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, schema: dbml_sharepoint.model.parser.Schema) -> list[dbml_sharepoint.analysis.findings.Finding]
+def extra_validators(self, bundle: MappingBundle, schema: Schema) -> list[Finding]
 ```
 
 #### `DeploymentExtension.manifest_extras`
 
 ```python
-def manifest_extras(self, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, schema: dbml_sharepoint.model.parser.Schema) -> dbml_sharepoint.extension.ManifestExtras
+def manifest_extras(self, bundle: MappingBundle, schema: Schema) -> ManifestExtras
 ```
 
 #### `DeploymentExtension.seed_lists`
 
 ```python
-def seed_lists(self, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, schema: dbml_sharepoint.model.parser.Schema, site_context: dbml_sharepoint.extension.SiteContext) -> dict[str, dict[str, typing.Any]]
+def seed_lists(self, bundle: MappingBundle, schema: Schema, site_context: SiteContext) -> dict[str, dict[str, Any]]
 ```
 
 ### `BaseExtension`
@@ -82,7 +82,7 @@ override only what they need.
 #### `BaseExtension.cli_subcommands`
 
 ```python
-def cli_subcommands(self, app: typer.main.Typer) -> None
+def cli_subcommands(self, app: typer.Typer) -> None
 ```
 
 Register wholly-new extension-owned subcommands on the core app.
@@ -91,25 +91,25 @@ Must never alter core command signatures.
 #### `BaseExtension.expand_column`
 
 ```python
-def expand_column(self, table: dbml_sharepoint.model.parser.Table, column: dbml_sharepoint.model.parser.Column, bundle: dbml_sharepoint.model.mapping_types.MappingBundle) -> list[dict[str, Any]] | None
+def expand_column(self, table: Table, column: Column, bundle: MappingBundle) -> list[dict[str, Any]] | None
 ```
 
 #### `BaseExtension.extra_validators`
 
 ```python
-def extra_validators(self, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, schema: dbml_sharepoint.model.parser.Schema) -> list[dbml_sharepoint.analysis.findings.Finding]
+def extra_validators(self, bundle: MappingBundle, schema: Schema) -> list[Finding]
 ```
 
 #### `BaseExtension.manifest_extras`
 
 ```python
-def manifest_extras(self, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, schema: dbml_sharepoint.model.parser.Schema) -> dbml_sharepoint.extension.ManifestExtras
+def manifest_extras(self, bundle: MappingBundle, schema: Schema) -> ManifestExtras
 ```
 
 #### `BaseExtension.seed_lists`
 
 ```python
-def seed_lists(self, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, schema: dbml_sharepoint.model.parser.Schema, site_context: dbml_sharepoint.extension.SiteContext) -> dict[str, dict[str, typing.Any]]
+def seed_lists(self, bundle: MappingBundle, schema: Schema, site_context: SiteContext) -> dict[str, dict[str, Any]]
 ```
 
 ### `NullExtension`
@@ -128,7 +128,7 @@ the operator as a traceback naming the plugin.
 ### `resolve_extension`
 
 ```python
-def resolve_extension(name: str | None) -> dbml_sharepoint.extension.DeploymentExtension
+def resolve_extension(name: str | None) -> DeploymentExtension
 ```
 
 Resolve by entry-point name; None/'null' -> NullExtension.

@@ -18,7 +18,7 @@ RESERVED_NAMES = frozenset({'Attachments', 'Author', 'Created', 'Editor', 'ID', 
 ### `validate`
 
 ```python
-def validate(schema: dbml_sharepoint.model.parser.Schema) -> list[dbml_sharepoint.analysis.findings.Finding]
+def validate(schema: Schema) -> list[Finding]
 ```
 
 Core schema rules, judged without reference to any mapping.
@@ -38,7 +38,7 @@ an `== []` against it passes on a schema the build would reject.
 ### `validate_against_mapping`
 
 ```python
-def validate_against_mapping(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle) -> list[dbml_sharepoint.analysis.findings.Finding]
+def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Finding]
 ```
 
 Cross-check the mapping against the schema.
@@ -50,7 +50,7 @@ Order is part of the contract. See that package's docstring.
 ### `validate_all`
 
 ```python
-def validate_all(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, extension: dbml_sharepoint.extension.DeploymentExtension) -> list[dbml_sharepoint.analysis.findings.Finding]
+def validate_all(schema: Schema, bundle: MappingBundle, extension: DeploymentExtension) -> list[Finding]
 ```
 
 Run every validation stage: core schema rules, mapping cross-checks,
@@ -66,7 +66,7 @@ the remedy it invites is deleting an enum the deploy needs.
 ### `validate_release`
 
 ```python
-def validate_release(release: dbml_sharepoint.model.release.Release) -> list[dbml_sharepoint.analysis.findings.Finding]
+def validate_release(release: Release) -> list[Finding]
 ```
 
 What release.yaml says that the build will not act on.

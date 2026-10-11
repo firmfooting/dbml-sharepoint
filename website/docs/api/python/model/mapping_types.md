@@ -227,7 +227,7 @@ class WatchUse:
     name: str
     id: str | None = None
     on: WatchOn = 'change'
-    when: Condition | None = None
+    when: dbml_sharepoint.model.conditions.Condition | None = None
     settings: collections.abc.Mapping[typing.Any, typing.Any] = field(default_factory=dict)
 ```
 
@@ -333,14 +333,14 @@ class ViewDef:
     fields: list[str]
     renamed_from: list[str] = field(default_factory=list)
     default: bool = False
-    where: Condition | None = None
+    where: dbml_sharepoint.model.conditions.Condition | None = None
     sort: list[dbml_sharepoint.model.mapping_types.ViewSort] = field(default_factory=list)
     group_by: dbml_sharepoint.model.mapping_types.ViewGroupBy | None = None
     row_limit: int | None = None
     formatting: dict[str, typing.Any] | None = None
     widths: dict[str, int] = field(default_factory=dict)
     totals: dict[str, str] = field(default_factory=dict)
-    scope: ViewScope | None = None
+    scope: dbml_sharepoint.model.mapping_types.ViewScope | None = None
     expanded_sets: list[str] = field(default_factory=list)
 ```
 
@@ -786,7 +786,7 @@ PascalCase when mode is auto, else the internal name unchanged.
 #### `Mapping.entity`
 
 ```python
-def entity(self, name: str) -> dbml_sharepoint.model.mapping_types.EntityMapping
+def entity(self, name: str) -> EntityMapping
 ```
 
 #### `Mapping.is_retired`
@@ -800,7 +800,7 @@ True when `retired_columns` declares this column for this entity.
 #### `Mapping.item_security_for`
 
 ```python
-def item_security_for(self, entity_name: str) -> dbml_sharepoint.model.mapping_types.ItemSecurity
+def item_security_for(self, entity_name: str) -> ItemSecurity
 ```
 
 The item-level trimming this entity's list is provisioned with.
@@ -820,7 +820,7 @@ Return the explicit list title, or the prefixed entity name.
 #### `Mapping.permissions_for_entity`
 
 ```python
-def permissions_for_entity(self, entity_name: str) -> 'ListPermissionPolicy | None'
+def permissions_for_entity(self, entity_name: str) -> ListPermissionPolicy | None
 ```
 
 Return the per-list permission policy for the given entity name.
@@ -859,7 +859,7 @@ adds columns, never renames the lookup itself.
 #### `Mapping.versioning_for`
 
 ```python
-def versioning_for(self, entity_name: str) -> dbml_sharepoint.model.mapping_types.Versioning
+def versioning_for(self, entity_name: str) -> Versioning
 ```
 
 The versioning settings this entity's list is provisioned with.
@@ -965,7 +965,7 @@ Mapping + the generic configs it references, all loaded.
 #### `MappingBundle.extension_config_for`
 
 ```python
-def extension_config_for(self, name: str | None) -> dict[str, typing.Any]
+def extension_config_for(self, name: str | None) -> dict[str, Any]
 ```
 
 The named extension's config block; {} when name is None or the

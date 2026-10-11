@@ -89,8 +89,8 @@ def sentinel_of(value: object, column_type: str) -> Sentinel | None:
     return "today_offset" if match.group(2) and int(match.group(2)) else "today"
 
 
-def cell_for(sentinel: str, column_kind: str, target: str) -> ClockCell:
-    return _BY_ID[f"{target}/{column_kind}/{sentinel}"]
+def cell_for(marker: str, column_kind: str, target: str) -> ClockCell:
+    return _BY_ID[f"{target}/{column_kind}/{marker}"]
 
 
 _SAVE_RULES = "src/dbml_sharepoint/analysis/save_rules.py"
@@ -142,9 +142,9 @@ _NOW_XML = '<Value Type="DateTime" IncludeTimeValue="TRUE"><Today/></Value>'
 
 
 def _refused(
-    sentinel: Sentinel, kind: str, target: str, refusal: ConditionRefusalKind,
+    marker: Sentinel, kind: str, target: str, refusal: ConditionRefusalKind,
 ) -> ClockCell:
-    return ClockCell(sentinel, kind, target, "refused", refusal=refusal)
+    return ClockCell(marker, kind, target, "refused", refusal=refusal)
 
 
 CELLS: tuple[ClockCell, ...] = (

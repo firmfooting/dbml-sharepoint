@@ -177,7 +177,7 @@ two arms come to disagree.
 ### `choice_enum_for`
 
 ```python
-def choice_enum_for(col_type: str, enum_names: collections.abc.Collection[str]) -> str | None
+def choice_enum_for(col_type: str, enum_names: Collection[str]) -> str | None
 ```
 
 The enum backing a Choice or MultiChoice column, whatever its arity.
@@ -197,7 +197,7 @@ deliberately not routed here.
 ### `is_multi_value_lookup`
 
 ```python
-def is_multi_value_lookup(col: dbml_sharepoint.model.parser.Column, enum_names: collections.abc.Collection[str]) -> bool
+def is_multi_value_lookup(col: Column, enum_names: Collection[str]) -> bool
 ```
 
 Whether this column is a lookup that holds many target items.
@@ -263,7 +263,7 @@ kept them from diagnosing the same schema two different ways.
 ### `describe_unknown_type`
 
 ```python
-def describe_unknown_type(declared: str, *, enums: collections.abc.Iterable[str]) -> str
+def describe_unknown_type(declared: str, *, enums: Iterable[str]) -> str
 ```
 
 Say what to do about a type this build does not recognise.
@@ -296,7 +296,7 @@ UNIQUE_SUPPORTED_SCALAR_TYPES = frozenset({'date', 'datetime', 'int', 'number', 
 ### `supports_unique`
 
 ```python
-def supports_unique(col: dbml_sharepoint.model.parser.Column, enum_names: set[str]) -> bool
+def supports_unique(col: Column, enum_names: set[str]) -> bool
 ```
 
 Whether this DBML column maps to a uniqueness-capable SP field.
@@ -326,7 +326,7 @@ class SPField:
     field_type_kind: int | None
     required: bool
     unique: bool
-    default: ColumnDefault | None
+    default: dbml_sharepoint.model.parser.ColumnDefault | None
     description: str
     choices_enum: str | None = None
     target_list: str | None = None
@@ -339,12 +339,12 @@ class SPField:
     output_type: int | None = None
 ```
 
-SPField(name: str, kind: FieldKind, field_type_kind: int | None, required: bool, unique: bool, default: ColumnDefault | None, description: str, choices_enum: str | None = None, target_list: str | None = None, date_only: bool = True, rich_text: bool = False, number_of_lines: int = 6, max_length: int = 255, selection_mode: int = 0, display_format: int = 0, output_type: int | None = None)
+SPField(name: str, kind: FieldKind, field_type_kind: int | None, required: bool, unique: bool, default: dbml_sharepoint.model.parser.ColumnDefault | None, description: str, choices_enum: str | None = None, target_list: str | None = None, date_only: bool = True, rich_text: bool = False, number_of_lines: int = 6, max_length: int = 255, selection_mode: int = 0, display_format: int = 0, output_type: int | None = None)
 
 ### `map_column`
 
 ```python
-def map_column(col: dbml_sharepoint.model.parser.Column, enum_names: set[str]) -> dbml_sharepoint.analysis.typemap.SPField
+def map_column(col: Column, enum_names: set[str]) -> SPField
 ```
 
 Map a DBML column to its SharePoint field descriptor.

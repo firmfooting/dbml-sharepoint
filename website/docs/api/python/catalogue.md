@@ -250,7 +250,7 @@ terminal raw.
 ### `read_blueprint_manifest`
 
 ```python
-def read_blueprint_manifest(blueprint_dir: pathlib.Path, distribution_licence: str) -> dbml_sharepoint.catalogue.BlueprintManifest
+def read_blueprint_manifest(blueprint_dir: Path, distribution_licence: str) -> BlueprintManifest
 ```
 
 Read and check `blueprint_dir/blueprint.toml`, or raise `BlueprintManifestError`.
@@ -262,7 +262,7 @@ listing shows is the one the installed package was published under.
 ### `available_solutions`
 
 ```python
-def available_solutions() -> list[dbml_sharepoint.catalogue.Solution]
+def available_solutions() -> list[Solution]
 ```
 
 Every blueprint offered, core's first, each root's ordered by id.
@@ -272,7 +272,7 @@ A refused blueprint is left out; `read_catalogue` says which and why.
 ### `available_journeys`
 
 ```python
-def available_journeys() -> list[dbml_sharepoint.catalogue.Journey]
+def available_journeys() -> list[Journey]
 ```
 
 Every curated reading order, ordered by id.
@@ -285,7 +285,7 @@ and the guard that would have caught it is the one being bypassed.
 ### `blueprint_roots`
 
 ```python
-def blueprint_roots() -> list[dbml_sharepoint.catalogue.BlueprintRoot]
+def blueprint_roots() -> list[BlueprintRoot]
 ```
 
 Where blueprints are read from: core first, then each provider by distribution name.
@@ -297,7 +297,7 @@ uncertain, so nothing is offered until it is fixed or removed.
 ### `read_catalogue`
 
 ```python
-def read_catalogue() -> dbml_sharepoint.catalogue.Catalogue
+def read_catalogue() -> Catalogue
 ```
 
 Every root's blueprints and journeys, what was refused, and what was hidden.
@@ -308,7 +308,7 @@ journey is malformed, and `ValueError` for a malformed journey of core's own.
 ### `notices`
 
 ```python
-def notices(found: dbml_sharepoint.catalogue.Catalogue) -> list[str]
+def notices(found: Catalogue) -> list[str]
 ```
 
 What an interface prints once per run: each refused blueprint, then each hidden group.
@@ -319,7 +319,7 @@ blueprint costs one line rather than one per blueprint.
 ### `load_solution`
 
 ```python
-def load_solution(name: str) -> dbml_sharepoint.catalogue.Solution
+def load_solution(name: str) -> Solution
 ```
 
 One family by directory name, or `UnknownSolutionError`.

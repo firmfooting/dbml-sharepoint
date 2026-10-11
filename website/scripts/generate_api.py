@@ -29,6 +29,7 @@ import inspect
 import re
 import shutil
 import sys
+from annotationlib import Format
 from collections.abc import Collection
 from pathlib import Path, PurePath
 from types import FunctionType
@@ -220,6 +221,22 @@ def _portable_default(value: object) -> object:
     return value
 
 
+class _Source(str):
+    """An annotation as written, so `str(signature)` prints it unquoted."""
+
+    __repr__ = str.__str__
+
+
+def _as_written(sig: inspect.Signature) -> inspect.Signature:
+    # Annotations are lazy on 3.14+ and some names exist only under
+    # TYPE_CHECKING, so read the source text instead of evaluating them.
+    params = [p.replace(annotation=_Source(p.annotation)) if isinstance(p.annotation, str) else p
+              for p in sig.parameters.values()]
+    ret = sig.return_annotation
+    ret = _Source(ret) if isinstance(ret, str) else ret
+    return sig.replace(parameters=params, return_annotation=ret)
+
+
 def clean_signature(obj: object) -> str:
     """str(signature), with non-portable default reprs normalised.
 
@@ -227,7 +244,7 @@ def clean_signature(obj: object) -> str:
     """
     if not callable(obj):
         raise TypeError(f"{obj!r} is not callable")
-    sig = inspect.signature(obj)
+    sig = _as_written(inspect.signature(obj, annotation_format=Format.STRING))
     params = [
         p if p.default is inspect.Parameter.empty
         else p.replace(default=_portable_default(p.default))
@@ -266,7 +283,7 @@ def render_class(name: str, obj: type) -> str:
         if method_name.startswith("_") or method.__qualname__.split(".")[0] != name:
             continue
         try:
-            sig = str(inspect.signature(method))
+            sig = str(_as_written(inspect.signature(method, annotation_format=Format.STRING)))
         except (TypeError, ValueError):
             sig = "(...)"
         out += f"#### `{name}.{method_name}`\n\n```python\ndef {method_name}{sig}\n```\n\n"

@@ -61,7 +61,7 @@ The message for a declaration on a column the deploy never writes.
 ### `rendered_columns`
 
 ```python
-def rendered_columns(table: dbml_sharepoint.model.parser.Table, cross_site_cols: set[str], projected_cols: set[str] | frozenset[str] = frozenset()) -> set[str]
+def rendered_columns(table: Table, cross_site_cols: set[str], projected_cols: set[str] | frozenset[str] = frozenset()) -> set[str]
 ```
 
 Column names that will actually exist on the provisioned SP list:
@@ -74,7 +74,7 @@ but are not DBML columns.
 ### `effective_view_fields`
 
 ```python
-def effective_view_fields(fields: collections.abc.Iterable[str], kind: EntityKind) -> list[str]
+def effective_view_fields(fields: Iterable[str], kind: EntityKind) -> list[str]
 ```
 
 Include the native document icon injected into every library view.

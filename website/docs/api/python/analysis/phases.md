@@ -37,7 +37,7 @@ DEPLOY_GROUPS = (('PREPARE', (PhaseStep(key='assess', name='site assessment', te
 ### `phases_context`
 
 ```python
-def phases_context() -> list[dict[str, typing.Any]]
+def phases_context() -> list[dict[str, Any]]
 ```
 
 Render-ready structure for deploy.js.j2 (numbers derived).

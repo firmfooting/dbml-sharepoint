@@ -20,6 +20,7 @@ the strict resolvers raise today.
 Nothing here imports a check, so a generator can read it.
 """
 
+from annotationlib import Format
 from collections.abc import Callable, Iterable
 from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field
@@ -371,7 +372,7 @@ def guards_resolution[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
     `test_resolve.py::test_every_consumer_taking_both_is_guarded` covers the
     other half, a consumer added without the decorator.
     """
-    sig = signature(fn)
+    sig = signature(fn, annotation_format=Format.STRING)
 
     @wraps(fn)
     def guarded(*args: P.args, **kwargs: P.kwargs) -> R:

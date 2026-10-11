@@ -34,7 +34,7 @@ is a defect.
 ### `group_for_member`
 
 ```python
-def group_for_member(source: dbml_sharepoint.model.mapping_types.GroupsFromEnum, member: str) -> dbml_sharepoint.model.mapping_types.SiteGroup
+def group_for_member(source: GroupsFromEnum, member: str) -> SiteGroup
 ```
 
 `source`'s template with `{member}` expanded to one enum member.
@@ -57,7 +57,7 @@ firing.
 ### `declaring_groups`
 
 ```python
-def declaring_groups(perms: dbml_sharepoint.model.mapping_types.PermissionsConfig | None) -> tuple[dbml_sharepoint.model.mapping_types.SiteGroup, ...]
+def declaring_groups(perms: PermissionsConfig | None) -> tuple[SiteGroup, ...]
 ```
 
 Every group DECLARATION: the literal groups and the enum templates.
@@ -72,7 +72,7 @@ before validation has run.
 ### `declared_groups`
 
 ```python
-def declared_groups(perms: dbml_sharepoint.model.mapping_types.PermissionsConfig | None, enum_members: collections.abc.Mapping[str, collections.abc.Sequence[str]]) -> tuple[dbml_sharepoint.model.mapping_types.SiteGroup, ...]
+def declared_groups(perms: PermissionsConfig | None, enum_members: Mapping[str, Sequence[str]]) -> tuple[SiteGroup, ...]
 ```
 
 Every group the mapping declares, in the order it declares them.
@@ -88,7 +88,7 @@ created in.
 ### `resolvable_groups`
 
 ```python
-def resolvable_groups(perms: dbml_sharepoint.model.mapping_types.PermissionsConfig | None, enum_members: collections.abc.Mapping[str, collections.abc.Sequence[str]]) -> tuple[dbml_sharepoint.model.mapping_types.SiteGroup, ...]
+def resolvable_groups(perms: PermissionsConfig | None, enum_members: Mapping[str, Sequence[str]]) -> tuple[SiteGroup, ...]
 ```
 
 `declared_groups`, but an unknown enum leaves out only its own source.

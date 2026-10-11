@@ -107,7 +107,7 @@ catch the named errors raised everywhere else here.
 #### `ResolvedMapping.require_folder_policies`
 
 ```python
-def require_folder_policies(self, entity: str) -> tuple[tuple[str, dbml_sharepoint.model.mapping_types.ListPermissionPolicy], ...]
+def require_folder_policies(self, entity: str) -> tuple[tuple[str, ListPermissionPolicy], ...]
 ```
 
 Every (folder, policy) `entity` declares, strict where it matters.
@@ -162,7 +162,7 @@ A no-op when nothing is unresolved.
 ### `resolve`
 
 ```python
-def resolve(schema: dbml_sharepoint.model.parser.Schema, mapping: dbml_sharepoint.model.mapping_types.Mapping) -> dbml_sharepoint.analysis.resolve.ResolvedMapping
+def resolve(schema: Schema, mapping: Mapping) -> ResolvedMapping
 ```
 
 Resolve `mapping`'s folders, folder policies and groups against `schema`.
@@ -178,7 +178,7 @@ to name which of those, if any, that was.
 ### `enum_members_of`
 
 ```python
-def enum_members_of(schema: dbml_sharepoint.model.parser.Schema) -> dict[str, tuple[str, ...]]
+def enum_members_of(schema: Schema) -> dict[str, tuple[str, ...]]
 ```
 
 `schema`'s enums as `ResolvedMapping.enum_members`, one derivation.
@@ -190,7 +190,7 @@ the drift that comparison exists to catch.
 ### `require_matching_resolution`
 
 ```python
-def require_matching_resolution(resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, schema: dbml_sharepoint.model.parser.Schema | None = None) -> None
+def require_matching_resolution(resolved: ResolvedMapping, bundle: MappingBundle, schema: Schema | None = None) -> None
 ```
 
 Refuse a resolution that was not built from these same inputs.
@@ -209,7 +209,7 @@ the resolution cannot see are correctly accepted.
 ### `require_current_resolution`
 
 ```python
-def require_current_resolution(resolved: dbml_sharepoint.analysis.resolve.ResolvedMapping) -> None
+def require_current_resolution(resolved: ResolvedMapping) -> None
 ```
 
 Refuse a resolution whose mapping was edited after it was taken.
@@ -225,7 +225,7 @@ catch.
 ### `guards_resolution`
 
 ```python
-def guards_resolution(fn: collections.abc.Callable[P, R]) -> collections.abc.Callable[P, R]
+def guards_resolution(fn: Callable[P, R]) -> Callable[P, R]
 ```
 
 Run `require_matching_resolution` before every call of `fn`.

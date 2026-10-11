@@ -591,8 +591,8 @@ def check(vc: ValidationContext) -> list[Finding]:
         # column rule are caught alike.
         for leaf in leaves(effective_rule.when):
             column_type = types.get(leaf.field, "")
-            sentinel = sentinel_of(leaf.value, column_type)
-            if sentinel is None or cell_for(sentinel, column_type, VALIDATION).status != "clock":
+            marker = sentinel_of(leaf.value, column_type)
+            if marker is None or cell_for(marker, column_type, VALIDATION).status != "clock":
                 continue
             origin = "column_validation" if leaf.field in hoisted_names else "list_validation"
             findings.append(Finding(

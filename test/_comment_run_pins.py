@@ -31,7 +31,6 @@ PINNED: dict[str, list[str]] = {
     ],
     "pyproject.toml": [
         "13413a512984",
-        "1f77f373407a",
         "3f703a5d43a0",
         "a664cee8e30e",
         "e365415b7088",

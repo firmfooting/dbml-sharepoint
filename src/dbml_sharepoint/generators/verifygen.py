@@ -163,20 +163,20 @@ class _Targets:
 
     # ---- caml cells -------------------------------------------------------
     def query_check(self, cell_id: str, offset: int) -> None:
-        _, kind, sentinel = cell_id.split("/")
+        _, kind, marker = cell_id.split("/")
         if kind == "datetime":
             field = self.column("CW", "datetime", DATE_AND_TIME)
             self._datetime_rows()
-            if sentinel != "now":
+            if marker != "now":
                 self.row(f"cw-day-{offset}", "CW", _midnight(offset), day=offset)
         else:
             field = self.column("CD", "date", DATE_ONLY)
             if kind == "calculated_date":
                 field = self.column("CC", "calculated_date", DATE_ONLY, formula="=[CD]")
             self._date_rows()
-            if sentinel != "now":
+            if marker != "now":
                 self.row(f"cd-day-{offset}", "CD", _midnight(offset), day=offset)
-        if sentinel == "now":
+        if marker == "now":
             op, spelling = "Leq", "now"
         elif kind == "datetime":
             op, spelling = "Lt", _spelling(offset)
@@ -191,7 +191,7 @@ class _Targets:
             raise ValueError(f"no <Value> element in the CAML rendering: {rendered}")
         prefix = "cw-" if field == "CW" else "cd-"
         candidates = [row for row in self.rows.values() if row["id"].startswith(prefix)]
-        if sentinel == "now":
+        if marker == "now":
             expect = [r["id"] for r in candidates if _not_after_now(r)]
         elif op == "Lt":
             expect = [r["id"] for r in candidates if r["day"] is not None and r["day"] < offset]
@@ -200,7 +200,7 @@ class _Targets:
                 r["id"] for r in candidates
                 if r["day"] == offset and r["value"]["kind"] == "midnight"
             ]
-        if sentinel == "now":
+        if marker == "now":
             key_suffix = "now"
         else:
             key_suffix = "today" if offset == 0 else f"today_offset_{_suffix(offset)}"

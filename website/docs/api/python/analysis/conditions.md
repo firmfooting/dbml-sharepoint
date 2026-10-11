@@ -73,7 +73,7 @@ REFUSAL_FINDING_CODES = {<ConditionRefusalKind.COLUMN_TYPE_UNKNOWN: 1>: <Finding
 ### `leaves`
 
 ```python
-def leaves(node: Condition) -> list[dbml_sharepoint.model.conditions.Leaf]
+def leaves(node: Condition) -> list[Leaf]
 ```
 
 Every leaf of a tree, in declaration order.
@@ -81,7 +81,7 @@ Every leaf of a tree, in declaration order.
 ### `condition_findings`
 
 ```python
-def condition_findings(condition: Condition, *, target: str | None, rendered: set[str], types: dict[str, str], lookups: set[str], enum_members: collections.abc.Mapping[str, collections.abc.Sequence[str]], at: dbml_sharepoint.analysis.findings.Location) -> list[dbml_sharepoint.analysis.findings.Finding]
+def condition_findings(condition: Condition, *, target: str | None, rendered: set[str], types: dict[str, str], lookups: set[str], enum_members: Mapping[str, Sequence[str]], at: Location) -> list[Finding]
 ```
 
 Semantic problems with a declared condition, as classified Findings.
