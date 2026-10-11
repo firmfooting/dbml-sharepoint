@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.11.0...v0.12.0) (2026-10-11)
+
+
+### Features
+
+* **mapping:** add a typed governance section ([#770](https://github.com/firmfooting/dbml-sharepoint/issues/770)) ([83fe225](https://github.com/firmfooting/dbml-sharepoint/commit/83fe2251b21906a62eed9064338b14252cc2733a))
+
 ## [0.11.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.10.0...v0.11.0) (2026-10-09)
 
 
