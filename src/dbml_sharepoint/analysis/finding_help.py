@@ -1358,6 +1358,31 @@ FINDING_HELP: dict[FindingCode, str] = {
         "same level to `associated_owner_group`, `associated_member_group` or "
         "`associated_visitor_group`."
     ),
+    FindingCode.GOVERNANCE_RETENTION_CONFLICTS_WITH_DEFAULT: (
+        "A list's governance `retention` names a different policy than the one "
+        "`list_defaults` in the retention policies file sets for that list, keyed "
+        "by entity name or prefixed title. Make the two agree."
+    ),
+    FindingCode.GOVERNANCE_UNKNOWN_ENTITY: (
+        "A `governance.lists` key names a table the schema does not declare, "
+        "or one the mapping's `entities:` does not deploy. Governance describes "
+        "deployed lists only; fix the name or declare the entity."
+    ),
+    FindingCode.GOVERNANCE_UNKNOWN_COLUMN: (
+        "A `governance.lists.<Entity>.columns` key names a column the DBML does "
+        "not declare for that table. A retired column is still declared, so it "
+        "is accepted; a name that was never declared is not."
+    ),
+    FindingCode.GOVERNANCE_VALUE_OUTSIDE_VOCABULARY: (
+        "A governance `owner`, `classification` or `personal_data` value is not "
+        "in the matching list under `governance.vocabulary`. Values are compared "
+        "exactly, and a mapping that declares no vocabulary can use no values."
+    ),
+    FindingCode.GOVERNANCE_UNKNOWN_RETENTION_POLICY: (
+        "A governance `retention` value names a policy that the file named by "
+        "`retention_policies_source` does not define, or the mapping names no "
+        "such file."
+    ),
     FindingCode.MULTIPLE_ENTERPRISE_READER_GROUPS: (
         "More than one group is marked `enroll: [enterprise_reader]`. "
         "`build --enterprise-reader` takes one address and needs one "

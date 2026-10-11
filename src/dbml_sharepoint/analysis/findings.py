@@ -38,6 +38,8 @@ class Section(StrEnum):
     FORM_FORMATTING = "form_formatting"
     FORM_VISIBILITY = "form_visibility"
     GROUPS = "groups"
+    # The `governance:` section: purpose, owner, classification and retention per list.
+    GOVERNANCE = "governance"
     # The `identities:` section: the account slots a mapping declares.
     IDENTITIES = "identities"
     # Not a per-entity mapping section like the rest: its paths are
@@ -491,6 +493,16 @@ class FindingCode(StrEnum):
     IDENTITY_UNKNOWN = "identity_unknown", "error"
     OPERATOR_ENROLLED_PERSISTENTLY = "operator_enrolled_persistently", "error"
     SHAREPOINT_GROUP_ENROLLED = "sharepoint_group_enrolled", "error"
+
+    # --- governance (checks/_governance.py) ---------------------------------
+    GOVERNANCE_RETENTION_CONFLICTS_WITH_DEFAULT = (
+        "governance_retention_conflicts_with_default", "error")
+    GOVERNANCE_UNKNOWN_COLUMN = "governance_unknown_column", "error"
+    GOVERNANCE_UNKNOWN_ENTITY = "governance_unknown_entity", "error"
+    GOVERNANCE_UNKNOWN_RETENTION_POLICY = (
+        "governance_unknown_retention_policy", "error")
+    GOVERNANCE_VALUE_OUTSIDE_VOCABULARY = (
+        "governance_value_outside_vocabulary", "error")
 
     # --- form visibility (analysis/forms.py) --------------------------------
     FORM_VISIBILITY_CONDITION_ON_A_BOOLEAN_COLUMN = (

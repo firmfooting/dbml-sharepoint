@@ -880,6 +880,57 @@ Overrides are still stored RAW (`dict[str, Any]`), because
 types; the coercions here are the ones the three call sites were
 each performing.
 
+### `GovernanceVocabulary`
+
+```python
+@dataclass(frozen=True)
+class GovernanceVocabulary:
+    classification: tuple[str, ...] = ()
+    personal_data: tuple[str, ...] = ()
+    owners: tuple[str, ...] = ()
+```
+
+The values a mapping allows in its own `governance:` entries.
+
+Core ships no default set, so a mapping that declares none can use no values.
+
+### `ColumnGovernance`
+
+```python
+@dataclass(frozen=True)
+class ColumnGovernance:
+    purpose: str | None = None
+    personal_data: str | None = None
+```
+
+`governance.lists.<Entity>.columns.<Column>`.
+
+### `ListGovernance`
+
+```python
+@dataclass(frozen=True)
+class ListGovernance:
+    purpose: str | None = None
+    owner: str | None = None
+    classification: str | None = None
+    personal_data: str | None = None
+    retention: str | None = None
+    columns: dict[str, dbml_sharepoint.model.mapping_types.ColumnGovernance] = field(default_factory=dict)
+```
+
+`governance.lists.<Entity>`: what a list is for, who owns it, how it is classed.
+
+### `Governance`
+
+```python
+@dataclass(frozen=True)
+class Governance:
+    vocabulary: GovernanceVocabulary = field(default_factory=GovernanceVocabulary)
+    lists: dict[str, dbml_sharepoint.model.mapping_types.ListGovernance] = field(default_factory=dict)
+```
+
+The parsed `governance:` section. Empty when the mapping declares none.
+
 ### `RetentionPolicy`
 
 ```python
@@ -906,6 +957,7 @@ class MappingBundle:
     retention_list_defaults: dict[str, str]
     extension_configs: dict[str, dict[str, typing.Any]] = field(default_factory=dict)
     source_paths: dict[str, pathlib.Path] = field(default_factory=dict)
+    governance: Governance = field(default_factory=Governance)
 ```
 
 Mapping + the generic configs it references, all loaded.
