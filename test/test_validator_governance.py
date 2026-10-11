@@ -15,6 +15,7 @@ from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Se
 from dbml_sharepoint.analysis.validator import validate_against_mapping
 from dbml_sharepoint.model.mapping_types import (
     ColumnGovernance,
+    EntityMapping,
     Governance,
     GovernanceVocabulary,
     ListGovernance,
@@ -254,6 +255,40 @@ def test_a_matching_or_absent_default_is_clean() -> None:
     same = {"Risk": "keep_seven_years", "APP_Risk": "keep_seven_years"}
     assert _governance_findings(_risk(retention="keep_seven_years"), defaults=same) == []
     assert _governance_findings(_risk(), defaults={"Risk": "keep_forever"}) == []
+
+
+def test_a_bare_key_that_is_another_entitys_title_is_not_this_lists_default() -> None:
+    """`Current` is titled `Archive`, so the key `Archive` belongs to it, not to `Archive`."""
+    declared = {
+        "Current": EntityMapping(
+            name="Current", kind="List", base_template=100, site_role="default", title="Archive",
+        ),
+        "Archive": EntityMapping(
+            name="Archive", kind="List", base_template=100, site_role="finance",
+        ),
+    }
+    governance = Governance(
+        lists={
+            "Current": ListGovernance(retention="keep_seven_years"),
+            "Archive": ListGovernance(retention="keep_seven_years"),
+        },
+    )
+    found = validate_against_mapping(
+        schema(table("Current", column("Title", required=True)),
+               table("Archive", column("Title", required=True))),
+        bundle(
+            entities=declared,
+            governance=governance,
+            retention_policies={"keep_seven_years": _POLICY, "keep_forever": _POLICY},
+            retention_list_defaults={"Archive": "keep_forever"},
+        ),
+    )
+    conflicts = [
+        f for f in found if f.code == FindingCode.GOVERNANCE_RETENTION_CONFLICTS_WITH_DEFAULT
+    ]
+    assert [f.location for f in conflicts] == [
+        Location(Section.GOVERNANCE, entity="Current", sub="retention"),
+    ]
 
 
 def test_every_problem_in_one_section_is_reported_together() -> None:

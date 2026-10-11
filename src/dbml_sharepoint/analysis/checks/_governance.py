@@ -42,7 +42,12 @@ def _conflicting_default(
         return []
     defaults = vc.bundle.retention_list_defaults
     # The file may key a list by entity name or by its prefixed title, as the manifest accepts.
-    for key in dict.fromkeys((entity, vc.bundle.mapping.list_title(entity))):
+    mapping = vc.bundle.mapping
+    title = mapping.list_title(entity)
+    # A key equal to some entity's title belongs to that entity (the manifest's precedence).
+    titled = {mapping.list_title(name) for name in mapping.entities}
+    bare = entity == title or entity not in titled
+    for key in dict.fromkeys(((entity,) if bare else ()) + (title,)):
         default = defaults.get(key)
         if default is not None and default != retention:
             return [
