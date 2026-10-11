@@ -1068,6 +1068,47 @@ class Mapping:
         return out
 
 @dataclass(frozen=True)
+class GovernanceVocabulary:
+    """The values a mapping allows in its own `governance:` entries.
+
+    Core ships no default set, so a mapping that declares none can use no values.
+    """
+
+    classification: tuple[str, ...] = ()
+    personal_data: tuple[str, ...] = ()
+    owners: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ColumnGovernance:
+    """`governance.lists.<Entity>.columns.<Column>`."""
+
+    purpose: str | None = None
+    personal_data: str | None = None
+
+
+@dataclass(frozen=True)
+class ListGovernance:
+    """`governance.lists.<Entity>`: what a list is for, who owns it, how it is classed."""
+
+    purpose: str | None = None
+    owner: str | None = None
+    classification: str | None = None
+    personal_data: str | None = None
+    # A key of `MappingBundle.retention_policies`, resolved by the validator.
+    retention: str | None = None
+    columns: dict[str, ColumnGovernance] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class Governance:
+    """The parsed `governance:` section. Empty when the mapping declares none."""
+
+    vocabulary: GovernanceVocabulary = field(default_factory=GovernanceVocabulary)
+    lists: dict[str, ListGovernance] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class RetentionPolicy:
     """One policy from config/retention-policies.yaml."""
 
@@ -1094,6 +1135,8 @@ class MappingBundle:
     # mapping's own `extension:` key.
     extension_configs: dict[str, dict[str, Any]] = field(default_factory=dict)
     source_paths: dict[str, Path] = field(default_factory=dict)
+    # Optional and descriptive: nothing here is deployed.
+    governance: Governance = field(default_factory=Governance)
 
     def extension_config_for(self, name: str | None) -> dict[str, Any]:
         """The named extension's config block; {} when name is None or the

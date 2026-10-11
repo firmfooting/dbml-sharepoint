@@ -46,6 +46,7 @@ from dbml_sharepoint.model.mapping_types import (
     FolderSource,
     FormFormatting,
     FormVisibility,
+    Governance,
     IdentityDeclaration,
     ItemSecurity,
     ListValidation,
@@ -316,11 +317,12 @@ def bundle(
     retention_list_defaults: dict[str, str] | None = None,
     extension_configs: dict[str, dict[str, Any]] | None = None,
     source_paths: dict[str, Path] | None = None,
+    governance: Governance | None = None,
     **sections: Unpack[MappingSections],
 ) -> MappingBundle:
     """A bundle around `mapping(...)`, which is what the checks consume.
 
-    The five bundle-level fields are spelled out rather than forwarded, so a
+    The six bundle-level fields are spelled out rather than forwarded, so a
     `enum_choices=` meant for the bundle cannot land in the mapping's
     `**sections` and be rejected as an unknown section -- or worse, resemble
     one that exists.
@@ -334,6 +336,7 @@ def bundle(
         ),
         extension_configs=extension_configs if extension_configs is not None else {},
         source_paths=source_paths if source_paths is not None else {},
+        governance=governance if governance is not None else Governance(),
     )
 
 
