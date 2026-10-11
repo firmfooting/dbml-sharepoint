@@ -250,3 +250,31 @@ def test_a_blank_vocabulary_value_is_refused(tmp_path: Path) -> None:
         MappingValueError,
         "blank value",
     )
+
+
+@pytest.mark.parametrize("key", ["owner", "classification", "personal_data", "retention"])
+def test_a_bare_non_purpose_key_is_refused(tmp_path: Path, key: str) -> None:
+    _refuses(
+        tmp_path,
+        f"governance:\n  lists:\n    Risk:\n      {key}:\n",
+        MappingValueError,
+        f"governance.lists.Risk.{key} is empty",
+    )
+
+
+def test_a_bare_column_personal_data_key_is_refused(tmp_path: Path) -> None:
+    _refuses(
+        tmp_path,
+        "governance:\n  lists:\n    Risk:\n      columns:\n        Notes:\n"
+        "          personal_data:\n",
+        MappingValueError,
+        "governance.lists.Risk.columns.Notes.personal_data is empty",
+    )
+
+
+def test_a_bare_column_purpose_key_means_not_declared(tmp_path: Path) -> None:
+    loaded = _load(
+        tmp_path,
+        "governance:\n  lists:\n    Risk:\n      columns:\n        Notes:\n          purpose:\n",
+    )
+    assert loaded.lists["Risk"].columns["Notes"].purpose is None

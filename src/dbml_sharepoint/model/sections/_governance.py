@@ -101,7 +101,7 @@ def _column(raw: object, context: str) -> ColumnGovernance:
 def _text(
     block: Mapping[str, Any], key: str, context: str, *, one_line: bool = False,
 ) -> str | None:
-    """A text value, or None when the key is absent or a bare `key:`.
+    """A text value, or None when the key is absent (or a bare `purpose:`).
 
     `one_line` is for the free-text keys: a document renders them in a table
     cell, where a line break would split the row. A folded YAML block (`>`)
@@ -111,6 +111,11 @@ def _text(
     """
     value = optional_str(block, key, context)
     if value is None:
+        # Only the free-text key may be left bare; an empty enum-like key is a mistake.
+        if key in block and not one_line:
+            raise MappingValueError(
+                f"{context}.{key} is empty; omit the key or give it a value",
+            )
         return None
     text = value.strip()
     if not text:

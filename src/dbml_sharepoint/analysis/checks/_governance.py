@@ -7,6 +7,14 @@ from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 
 
+def _path(at: Location, sub: str | None = None) -> str:
+    """The path as authored in the mapping, not `Location.path`'s `governance[Risk]`."""
+    path = f"governance.lists.{at.entity}"
+    if at.column is not None:
+        path += f".columns.{at.column}"
+    return f"{path}.{sub}" if sub else path
+
+
 def _outside(
     at: Location, field: str, value: str | None, allowed: tuple[str, ...],
 ) -> list[Finding]:
@@ -19,11 +27,33 @@ def _outside(
     return [
         Finding(
             FindingCode.GOVERNANCE_VALUE_OUTSIDE_VOCABULARY,
-            f"{where.path}: {value!r} is not in governance.vocabulary.{vocabulary} "
+            f"{_path(at, field)}: {value!r} is not in governance.vocabulary.{vocabulary} "
             f"(the mapping declares {declared}).",
             location=where,
         ),
     ]
+
+
+def _conflicting_default(
+    vc: ValidationContext, entity: str, retention: str | None, at: Location,
+) -> list[Finding]:
+    """A finding when the list's file default names a different policy than governance."""
+    if retention is None:
+        return []
+    defaults = vc.bundle.retention_list_defaults
+    # The file may key a list by entity name or by its prefixed title, as the manifest accepts.
+    for key in dict.fromkeys((entity, vc.bundle.mapping.list_title(entity))):
+        default = defaults.get(key)
+        if default is not None and default != retention:
+            return [
+                Finding(
+                    FindingCode.GOVERNANCE_RETENTION_CONFLICTS_WITH_DEFAULT,
+                    f"{_path(at, 'retention')}: {retention!r} conflicts with the policy "
+                    f"{default!r} that retention list_defaults sets for {key!r}.",
+                    location=replace(at, sub="retention"),
+                ),
+            ]
+    return []
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -36,7 +66,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         if table is None or entity not in bundle.mapping.entities:
             findings.append(Finding(
                 FindingCode.GOVERNANCE_UNKNOWN_ENTITY,
-                f"{at.path}: {entity!r} is not an entity this mapping deploys from the schema.",
+                f"{_path(at)}: {entity!r} is not an entity this mapping deploys from the schema.",
                 location=at,
             ))
             continue
@@ -51,10 +81,11 @@ def check(vc: ValidationContext) -> list[Finding]:
             )
             findings.append(Finding(
                 FindingCode.GOVERNANCE_UNKNOWN_RETENTION_POLICY,
-                f"{at.path}.retention: {spec.retention!r} is not a declared retention "
+                f"{_path(at, 'retention')}: {spec.retention!r} is not a declared retention "
                 f"policy (declared: {declared}).",
                 location=replace(at, sub="retention"),
             ))
+        findings += _conflicting_default(vc, entity, spec.retention, at)
         # A retired column stays in the DBML, so table.columns is the declared set.
         declared_columns = {c.name for c in table.columns}
         for name, column in spec.columns.items():
@@ -62,7 +93,8 @@ def check(vc: ValidationContext) -> list[Finding]:
             if name not in declared_columns:
                 findings.append(Finding(
                     FindingCode.GOVERNANCE_UNKNOWN_COLUMN,
-                    f"{at.path}: {name!r} is not a column the schema declares for {entity}.",
+                    f"{_path(column_at)}: {name!r} is not a column the schema declares "
+                    f"for {entity}.",
                     location=column_at,
                 ))
                 continue

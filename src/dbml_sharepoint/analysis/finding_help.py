@@ -1358,6 +1358,11 @@ FINDING_HELP: dict[FindingCode, str] = {
         "same level to `associated_owner_group`, `associated_member_group` or "
         "`associated_visitor_group`."
     ),
+    FindingCode.GOVERNANCE_RETENTION_CONFLICTS_WITH_DEFAULT: (
+        "A list's governance `retention` names a different policy than the one "
+        "`list_defaults` in the retention policies file sets for that list, keyed "
+        "by entity name or prefixed title. Make the two agree."
+    ),
     FindingCode.GOVERNANCE_UNKNOWN_ENTITY: (
         "A `governance.lists` key names a table the schema does not declare, "
         "or one the mapping's `entities:` does not deploy. Governance describes "

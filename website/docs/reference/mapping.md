@@ -2730,7 +2730,8 @@ retired column is still declared, so it can still carry an entry.
 The loader refuses, naming the key path: an unknown key at any level, a value
 of the wrong type (`owner: 5`), a blank text value, a `purpose` that spans more
 than one line, and a vocabulary list with a blank or repeated value. A bare
-`purpose:` with nothing after it means the key is not declared.
+`purpose:` with nothing after it means the key is not declared; every other
+key must have a value, and an empty one is refused.
 
 The validator reports these as errors, each a finding code that
 `dbml-sharepoint explain` describes:
@@ -2744,6 +2745,9 @@ The validator reports these as errors, each a finding code that
 - `governance_unknown_retention_policy`: `retention` names a policy that
   `retention_policies_source` does not define, or the mapping names no such
   file.
+- `governance_retention_conflicts_with_default`: `retention` names a different
+  policy than the retention policies file's `list_defaults` sets for the same
+  list, whether that file keys the list by entity name or by prefixed title.
 
 Programs that load a mapping read the section as `MappingBundle.governance`,
 a `Governance` object with `vocabulary` and `lists`. It is never `None`: a

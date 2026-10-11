@@ -203,6 +203,7 @@ dbml-sharepoint explain unknown_column_type
 | `formatter_field_not_rendered` | error | A view formatter references a column the entity does not render. |
 | `formatter_missing_elmtype` | error | A column formatter's JSON has no root `elmType`, so it is not a SharePoint column-formatting object. |
 | `formula_target_not_calculated` | error | A `calculated_formulas:` entry names a column whose DBML type is not one of: calculated_date, calculated_number, calculated_text. |
+| `governance_retention_conflicts_with_default` | error | A list's governance `retention` names a different policy than the one `list_defaults` in the retention policies file sets for that list, keyed by entity name or prefixed title. Make the two agree. |
 | `governance_unknown_column` | error | A `governance.lists.<Entity>.columns` key names a column the DBML does not declare for that table. A retired column is still declared, so it is accepted; a name that was never declared is not. |
 | `governance_unknown_entity` | error | A `governance.lists` key names a table the schema does not declare, or one the mapping's `entities:` does not deploy. Governance describes deployed lists only; fix the name or declare the entity. |
 | `governance_unknown_retention_policy` | error | A governance `retention` value names a policy that the file named by `retention_policies_source` does not define, or the mapping names no such file. |

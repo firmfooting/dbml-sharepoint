@@ -495,6 +495,8 @@ class FindingCode(StrEnum):
     SHAREPOINT_GROUP_ENROLLED = "sharepoint_group_enrolled", "error"
 
     # --- governance (checks/_governance.py) ---------------------------------
+    GOVERNANCE_RETENTION_CONFLICTS_WITH_DEFAULT = (
+        "governance_retention_conflicts_with_default", "error")
     GOVERNANCE_UNKNOWN_COLUMN = "governance_unknown_column", "error"
     GOVERNANCE_UNKNOWN_ENTITY = "governance_unknown_entity", "error"
     GOVERNANCE_UNKNOWN_RETENTION_POLICY = (

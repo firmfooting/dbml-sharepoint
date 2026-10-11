@@ -28,6 +28,7 @@ _GOVERNANCE_CODES = {
     FindingCode.GOVERNANCE_UNKNOWN_COLUMN,
     FindingCode.GOVERNANCE_VALUE_OUTSIDE_VOCABULARY,
     FindingCode.GOVERNANCE_UNKNOWN_RETENTION_POLICY,
+    FindingCode.GOVERNANCE_RETENTION_CONFLICTS_WITH_DEFAULT,
 }
 
 _VOCABULARY = GovernanceVocabulary(
@@ -46,7 +47,12 @@ _POLICY = RetentionPolicy(
 )
 
 
-def _inputs(governance: Governance, *, policies: bool = True) -> tuple[Schema, MappingBundle]:
+def _inputs(
+    governance: Governance,
+    *,
+    policies: bool = True,
+    defaults: dict[str, str] | None = None,
+) -> tuple[Schema, MappingBundle]:
     """A `Risk` list with a `Notes` column, and an `Elsewhere` table the mapping omits."""
     return (
         schema(
@@ -57,12 +63,18 @@ def _inputs(governance: Governance, *, policies: bool = True) -> tuple[Schema, M
             entities=["Risk"],
             governance=governance,
             retention_policies={"keep_seven_years": _POLICY} if policies else {},
+            retention_list_defaults=defaults,
         ),
     )
 
 
-def _governance_findings(governance: Governance, *, policies: bool = True) -> list[Finding]:
-    found = validate_against_mapping(*_inputs(governance, policies=policies))
+def _governance_findings(
+    governance: Governance,
+    *,
+    policies: bool = True,
+    defaults: dict[str, str] | None = None,
+) -> list[Finding]:
+    found = validate_against_mapping(*_inputs(governance, policies=policies, defaults=defaults))
     return [f for f in found if f.code in _GOVERNANCE_CODES]
 
 
@@ -110,7 +122,7 @@ def test_an_entry_for_an_entity_the_schema_lacks_is_refused() -> None:
     governance = Governance(lists={"Ghost": ListGovernance(purpose="Nothing.")})
     found = only(_governance_findings(governance), FindingCode.GOVERNANCE_UNKNOWN_ENTITY)
     assert found.location == Location(Section.GOVERNANCE, entity="Ghost")
-    assert "'Ghost'" in found.message
+    assert found.message.startswith("governance.lists.Ghost: ")
 
 
 def test_an_entry_for_a_table_the_mapping_does_not_deploy_is_refused() -> None:
@@ -129,7 +141,7 @@ def test_an_entry_for_a_column_the_schema_lacks_is_refused() -> None:
     governance = _risk(columns={"Ghost": ColumnGovernance(purpose="Nothing.")})
     found = only(_governance_findings(governance), FindingCode.GOVERNANCE_UNKNOWN_COLUMN)
     assert found.location == Location(Section.GOVERNANCE, entity="Risk", column="Ghost")
-    assert "'Ghost'" in found.message
+    assert found.message.startswith("governance.lists.Risk.columns.Ghost: ")
 
 
 def test_a_list_value_outside_the_vocabulary_is_refused() -> None:
@@ -138,6 +150,7 @@ def test_a_list_value_outside_the_vocabulary_is_refused() -> None:
         FindingCode.GOVERNANCE_VALUE_OUTSIDE_VOCABULARY,
     )
     assert found.location == Location(Section.GOVERNANCE, entity="Risk", sub="classification")
+    assert found.message.startswith("governance.lists.Risk.classification: ")
     assert "'top_secret'" in found.message
     assert "'restricted'" in found.message
 
@@ -160,6 +173,7 @@ def test_a_column_personal_data_value_outside_the_vocabulary_is_refused() -> Non
     assert found.location == Location(
         Section.GOVERNANCE, entity="Risk", column="Notes", sub="personal_data",
     )
+    assert found.message.startswith("governance.lists.Risk.columns.Notes.personal_data: ")
 
 
 def test_a_value_differing_only_in_case_is_refused() -> None:
@@ -191,6 +205,7 @@ def test_a_retention_reference_to_an_undeclared_policy_is_refused() -> None:
         FindingCode.GOVERNANCE_UNKNOWN_RETENTION_POLICY,
     )
     assert found.location == Location(Section.GOVERNANCE, entity="Risk", sub="retention")
+    assert found.message.startswith("governance.lists.Risk.retention: ")
     assert "'keep_forever'" in found.message
     assert "'keep_seven_years'" in found.message
 
@@ -201,6 +216,44 @@ def test_a_retention_reference_with_no_policies_loaded_names_the_source_key() ->
         FindingCode.GOVERNANCE_UNKNOWN_RETENTION_POLICY,
     )
     assert "retention_policies_source" in found.message
+
+
+def test_a_default_naming_another_policy_by_entity_name_is_refused() -> None:
+    found = only(
+        _governance_findings(
+            _risk(retention="keep_seven_years"), defaults={"Risk": "keep_forever"},
+        ),
+        FindingCode.GOVERNANCE_RETENTION_CONFLICTS_WITH_DEFAULT,
+    )
+    assert found.location == Location(Section.GOVERNANCE, entity="Risk", sub="retention")
+    assert found.message.startswith("governance.lists.Risk.retention: ")
+    assert "'keep_seven_years'" in found.message
+    assert "'keep_forever'" in found.message
+    assert "list_defaults" in found.message
+
+
+def test_a_default_keyed_by_the_prefixed_title_is_compared_too() -> None:
+    found = only(
+        _governance_findings(
+            _risk(retention="keep_seven_years"), defaults={"APP_Risk": "keep_forever"},
+        ),
+        FindingCode.GOVERNANCE_RETENTION_CONFLICTS_WITH_DEFAULT,
+    )
+    assert "'APP_Risk'" in found.message
+
+
+def test_both_default_keys_disagreeing_report_once() -> None:
+    found = _governance_findings(
+        _risk(retention="keep_seven_years"),
+        defaults={"Risk": "keep_forever", "APP_Risk": "keep_forever"},
+    )
+    assert [f.code for f in found] == [FindingCode.GOVERNANCE_RETENTION_CONFLICTS_WITH_DEFAULT]
+
+
+def test_a_matching_or_absent_default_is_clean() -> None:
+    same = {"Risk": "keep_seven_years", "APP_Risk": "keep_seven_years"}
+    assert _governance_findings(_risk(retention="keep_seven_years"), defaults=same) == []
+    assert _governance_findings(_risk(), defaults={"Risk": "keep_forever"}) == []
 
 
 def test_every_problem_in_one_section_is_reported_together() -> None:
