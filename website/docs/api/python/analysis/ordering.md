@@ -37,13 +37,13 @@ DeployPlan(list_creation_order: list[str] = &lt;factory>, phase2_lookups: list[t
 ### `compute_phases`
 
 ```python
-def compute_phases(schema: dbml_sharepoint.model.parser.Schema, entities: 'dict[str, EntityMapping] | None' = None) -> dbml_sharepoint.analysis.ordering.DeployPlan
+def compute_phases(schema: Schema, entities: dict[str, EntityMapping] | None = None) -> DeployPlan
 ```
 
 ### `is_deployed_here`
 
 ```python
-def is_deployed_here(entities: 'dict[str, EntityMapping]', name: str, site_role: str) -> bool
+def is_deployed_here(entities: dict[str, EntityMapping], name: str, site_role: str) -> bool
 ```
 
 Is this entity provisioned at a site of this role?
@@ -66,7 +66,7 @@ the shape this repository keeps finding to be false.
 ### `site_tables_in_order`
 
 ```python
-def site_tables_in_order(schema: dbml_sharepoint.model.parser.Schema, entities: 'dict[str, EntityMapping]', site_role: str) -> list[str]
+def site_tables_in_order(schema: Schema, entities: dict[str, EntityMapping], site_role: str) -> list[str]
 ```
 
 Dependency-ordered table names deployed for this site role.

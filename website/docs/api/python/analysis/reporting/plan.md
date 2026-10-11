@@ -89,7 +89,7 @@ Everything the renderers need for one list, in DBML column order.
 ### `tables_for_role`
 
 ```python
-def tables_for_role(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str) -> list[dbml_sharepoint.model.parser.Table]
+def tables_for_role(schema: Schema, bundle: MappingBundle, site_role: str) -> list[Table]
 ```
 
 Schema-order tables mapped to the requested site role.
@@ -134,7 +134,7 @@ place the rule is written.
 ### `is_expand_queryable`
 
 ```python
-def is_expand_queryable(sp: dbml_sharepoint.analysis.typemap.SPField) -> bool
+def is_expand_queryable(sp: SPField) -> bool
 ```
 
 Whether `$select=Lookup/<this column>` is a request SharePoint accepts.
@@ -178,7 +178,7 @@ lookup's expand is the only path there is.
 ### `is_projectable`
 
 ```python
-def is_projectable(sp: dbml_sharepoint.analysis.typemap.SPField) -> bool
+def is_projectable(sp: SPField) -> bool
 ```
 
 Whether a projection of this field can reach the report at all.
@@ -192,7 +192,7 @@ reported the mapping clean, as an unhandled traceback.
 ### `read_by_another`
 
 ```python
-def read_by_another(plans: list[dbml_sharepoint.analysis.reporting.plan.ListPlan]) -> list[dbml_sharepoint.analysis.reporting.plan.ListPlan]
+def read_by_another(plans: list[ListPlan]) -> list[ListPlan]
 ```
 
 The plans whose rows some OTHER list's derived step reads, in plan order.
@@ -220,7 +220,7 @@ VALIDATION_TIME_ZONE = 'UTC'
 ### `build_plans`
 
 ```python
-def build_plans(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str, *, time_zone: str | None = None) -> list[dbml_sharepoint.analysis.reporting.plan.ListPlan]
+def build_plans(schema: Schema, bundle: MappingBundle, site_role: str, *, time_zone: str | None = None) -> list[ListPlan]
 ```
 
 One plan per list the role deploys.
@@ -244,7 +244,7 @@ TOLERANT_DATE_TYPES = frozenset({'type date'})
 ### `grouped_record_expands`
 
 ```python
-def grouped_record_expands(plan: dbml_sharepoint.analysis.reporting.plan.ListPlan) -> list[tuple[str, list[tuple[str, str, str]]]]
+def grouped_record_expands(plan: ListPlan) -> list[tuple[str, list[tuple[str, str, str]]]]
 ```
 
 `record_expands` gathered by source record column, first appearance
@@ -253,7 +253,7 @@ first. See `report_m._render_m` for why one step per record is not optional.
 ### `tolerant_date_columns`
 
 ```python
-def tolerant_date_columns(plan: dbml_sharepoint.analysis.reporting.plan.ListPlan) -> list[str]
+def tolerant_date_columns(plan: ListPlan) -> list[str]
 ```
 
 The columns `AsDate` converts, and so whether the query reads the
@@ -264,7 +264,7 @@ site's time zone at all. Asked by the planner (which decides whether
 ### `reads_zone`
 
 ```python
-def reads_zone(plan: dbml_sharepoint.analysis.reporting.plan.ListPlan) -> bool
+def reads_zone(plan: ListPlan) -> bool
 ```
 
 Whether the query reads the site's zone, and so carries
@@ -276,7 +276,7 @@ planned, written and listed by three different answers.
 ### `report_column_names`
 
 ```python
-def report_column_names(plan: dbml_sharepoint.analysis.reporting.plan.ListPlan, *, include_derived: bool = True) -> tuple[str, ...]
+def report_column_names(plan: ListPlan, *, include_derived: bool = True) -> tuple[str, ...]
 ```
 
 Every column one list's report query produces, in query order.

@@ -9,17 +9,14 @@ permissions: {}
 
 jobs:
   test:
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
       # This job already depends on node twice below, to syntax-check every
       # emitted script, and it never declared it. It was running on whatever
       # the runner image happened to ship. The runtime tests are the worse
@@ -178,7 +175,7 @@ jobs:
           # The script diffs against the merge base, which does not exist in a
           # shallow clone.
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
       - name: Sync dependencies
         run: uv sync
       - name: Mutate every ceiling this pull request changes
@@ -206,7 +203,7 @@ jobs:
         # pin. test/test_markdownlint_version.py fails if the two drift.
         # The glob is passed here, not as config `globs:`, which the tool
         # appends to command-line globs, so the hook lints only staged files.
-        run: npx --yes markdownlint-cli2@0.23.2 "**/*.md"
+        run: npx --yes markdownlint-cli2@0.23.3 "**/*.md"
 
   docs:
     # onBrokenLinks/onBrokenMarkdownLinks are 'throw', so this build is

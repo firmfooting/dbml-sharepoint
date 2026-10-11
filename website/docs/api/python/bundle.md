@@ -123,7 +123,7 @@ GENERATED_FILES = ('deploy.js.txt', 'rollback.js.txt', 'assess.js.txt', 'demo-da
 ### `clear_generated`
 
 ```python
-def clear_generated(out: pathlib.Path, *, reporting: bool = False) -> None
+def clear_generated(out: Path, *, reporting: bool = False) -> None
 ```
 
 Remove every artifact a previous build may have left in ``out``.
@@ -152,7 +152,7 @@ Unrelated operator files in the directory are deliberately untouched.
 ### `write_artifact`
 
 ```python
-def write_artifact(path: pathlib.Path, text: str) -> None
+def write_artifact(path: Path, text: str) -> None
 ```
 
 Write one bundle artifact: UTF-8, LF, no BOM. The only writer.
@@ -188,7 +188,7 @@ SHA-256 hex digest of ``text`` with CRLF normalised to LF (UTF-8).
 ### `write_checksums`
 
 ```python
-def write_checksums(out: pathlib.Path, relpaths: list[str]) -> None
+def write_checksums(out: Path, relpaths: list[str]) -> None
 ```
 
 Write ``checksums.txt``: one ``&lt;sha256>  &lt;relpath>`` line per artifact.
@@ -207,7 +207,7 @@ recorded digest matches the bytes on disk and the standard tools agree.
 ### `write_index`
 
 ```python
-def write_index(out: pathlib.Path, *, reporting: bool = False, demo: bool = False, verify: bool = False, env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=()), carries_identities: bool = False) -> None
+def write_index(out: Path, *, reporting: bool = False, demo: bool = False, verify: bool = False, env_provenance: EnvProvenance = EnvProvenance(path=None, digest=None, values=()), carries_identities: bool = False) -> None
 ```
 
 Write ``index.md``: what is in the bundle, one row per artifact.
@@ -222,7 +222,7 @@ parameter would break every one of them.
 ### `emit_bundle`
 
 ```python
-def emit_bundle(out: pathlib.Path, *, schema: 'Schema', mapping_bundle: 'MappingBundle', resolved: 'ResolvedMapping', release: 'Release', site_url: str, site_role: str, schema_name: str, mapping_name: str, source_mtime: str, generated_at: str, seed: bool, time_zone: str | None = None, extension: 'DeploymentExtension | None' = None, site_context: 'SiteContext | None' = None, identities: collections.abc.Mapping[str, tuple[dbml_sharepoint.model.identities.IdentityValue, ...]] = mappingproxy({}), env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=()), deployment_log_list: str | None = None, deployment_log_change_list: str | None = None, deployment_log_site: str | None = None, change_log_list: str | None = None, no_sidecars: bool = False, application: str = 'dbml-sharepoint') -> str
+def emit_bundle(out: Path, *, schema: Schema, mapping_bundle: MappingBundle, resolved: ResolvedMapping, release: Release, site_url: str, site_role: str, schema_name: str, mapping_name: str, source_mtime: str, generated_at: str, seed: bool, time_zone: str | None = None, extension: DeploymentExtension | None = None, site_context: SiteContext | None = None, identities: AbcMapping[str, tuple[IdentityValue, ...]] = mappingproxy({}), env_provenance: EnvProvenance = EnvProvenance(path=None, digest=None, values=()), deployment_log_list: str | None = None, deployment_log_change_list: str | None = None, deployment_log_site: str | None = None, change_log_list: str | None = None, no_sidecars: bool = False, application: str = 'dbml-sharepoint') -> str
 ```
 
 Emit the full post-validation bundle; returns the success message.

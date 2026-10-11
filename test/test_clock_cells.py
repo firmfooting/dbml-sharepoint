@@ -100,8 +100,8 @@ def test_every_cell_exists_exactly_once() -> None:
     ids = [cell.id for cell in CELLS]
     assert len(ids) == len(set(ids))
     expected = {
-        f"{target}/{kind}/{sentinel}"
-        for sentinel, kind, target in product(SENTINELS, COLUMN_KINDS, TARGETS)
+        f"{target}/{kind}/{marker}"
+        for marker, kind, target in product(SENTINELS, COLUMN_KINDS, TARGETS)
     }
     assert set(ids) == expected
     assert set(COLUMN_KINDS) == DATE_TYPES

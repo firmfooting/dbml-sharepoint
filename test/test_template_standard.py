@@ -797,7 +797,7 @@ def test_every_formatted_column_is_exercised_by_a_demo_row(
 # === Header/body JSON helpers ===============================================
 
 
-def _walk(node: Any) -> "list[dict[str, Any]]":
+def _walk(node: Any) -> list[dict[str, Any]]:
     """Every dict in a formatter JSON tree, depth first."""
     found: list[dict[str, Any]] = []
     if isinstance(node, dict):

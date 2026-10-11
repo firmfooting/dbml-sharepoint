@@ -37,7 +37,7 @@ from dbml_sharepoint.analysis.checks import (
 from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.findings import Finding
 
-CHECK_FAMILIES: tuple[Callable[[ValidationContext], list["Finding"]], ...] = (
+CHECK_FAMILIES: tuple[Callable[[ValidationContext], list[Finding]], ...] = (
     _structure.check,
     _views.check,
     _demo.check,

@@ -10,6 +10,7 @@ silently omit a declared group or folder.
 import importlib
 import inspect
 import pkgutil
+from annotationlib import Format
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -633,9 +634,8 @@ def _public_consumers(*, with_bundle: bool = True) -> list[tuple[str, Callable[.
                 continue
             if fn.__module__ != info.name:
                 continue
-            annotations = [
-                str(p.annotation) for p in inspect.signature(fn).parameters.values()
-            ]
+            sig = inspect.signature(fn, annotation_format=Format.STRING)
+            annotations = [str(p.annotation) for p in sig.parameters.values()]
             takes_bundle = any("MappingBundle" in a for a in annotations)
             if any("ResolvedMapping" in a for a in annotations) and takes_bundle == with_bundle:
                 found.append((f"{info.name}.{name}", fn))

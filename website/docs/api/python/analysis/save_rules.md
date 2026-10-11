@@ -76,7 +76,7 @@ Whether any leaf compares a date or datetime column with `today` or
 ### `hoisted_columns`
 
 ```python
-def hoisted_columns(section: dbml_sharepoint.model.mapping_types.EntitySection[dbml_sharepoint.model.mapping_types.ColumnValidation] | None, column_types: dict[str, str]) -> list[tuple[str, dbml_sharepoint.model.mapping_types.ColumnValidation]]
+def hoisted_columns(section: EntitySection[ColumnValidation] | None, column_types: dict[str, str]) -> list[tuple[str, ColumnValidation]]
 ```
 
 The column rules that move to the list, in declaration order.
@@ -103,7 +103,7 @@ Whether a rule settles the blank case the other way: a top-level
 ### `effective_list_validation`
 
 ```python
-def effective_list_validation(mapping: dbml_sharepoint.model.mapping_types.Mapping, entity: str, column_types: dict[str, str]) -> dbml_sharepoint.model.mapping_types.ListValidation | None
+def effective_list_validation(mapping: Mapping, entity: str, column_types: dict[str, str]) -> ListValidation | None
 ```
 
 The list rule the deployer writes: the declared one, with every
@@ -119,7 +119,7 @@ blank is not guarded twice.
 ### `joined_list_validation`
 
 ```python
-def joined_list_validation(declared: dbml_sharepoint.model.mapping_types.ListValidation | None, hoisted: collections.abc.Sequence[tuple[str, dbml_sharepoint.model.mapping_types.ColumnValidation]]) -> dbml_sharepoint.model.mapping_types.ListValidation | None
+def joined_list_validation(declared: ListValidation | None, hoisted: Sequence[tuple[str, ColumnValidation]]) -> ListValidation | None
 ```
 
 Join hoisted column rules onto a declared list rule; the one join the

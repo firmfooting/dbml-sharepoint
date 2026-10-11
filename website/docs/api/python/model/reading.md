@@ -46,7 +46,7 @@ takes its default, without a record.
 ### `recording_reads`
 
 ```python
-def recording_reads() -> collections.abc.Generator[list[pathlib.Path]]
+def recording_reads() -> Generator[list[Path]]
 ```
 
 Collect every file one load reads, so a caller can check where each lives.
@@ -54,7 +54,7 @@ Collect every file one load reads, so a caller can check where each lives.
 ### `recording_blank_defaults`
 
 ```python
-def recording_blank_defaults() -> collections.abc.Iterator[list[dbml_sharepoint.model.mapping_types.BlankDefault]]
+def recording_blank_defaults() -> Iterator[list[BlankDefault]]
 ```
 
 Collect the blank keys that took a behavioural default, for one load.
@@ -62,7 +62,7 @@ Collect the blank keys that took a behavioural default, for one load.
 ### `optional_value`
 
 ```python
-def optional_value(raw: collections.abc.Mapping[str, typing.Any], key: str, context: str, *, default: object = None) -> Any
+def optional_value(raw: Mapping[str, Any], key: str, context: str, *, default: object = None) -> Any
 ```
 
 The untyped value under `key`, or `default` when it is absent or blank.
@@ -74,7 +74,7 @@ is recorded as taking `default`.
 ### `drop_blank_keys`
 
 ```python
-def drop_blank_keys(block: collections.abc.Mapping[str, object], context: str, defaults: collections.abc.Mapping[str, object]) -> dict[str, object]
+def drop_blank_keys(block: Mapping[str, object], context: str, defaults: Mapping[str, object]) -> dict[str, object]
 ```
 
 `block` without its blank keys, each recorded as taking `defaults[key]`.
@@ -86,7 +86,7 @@ key the caller admitted.
 ### `read_yaml_document`
 
 ```python
-def read_yaml_document(path: pathlib.Path, named_by: str | None = None) -> Any
+def read_yaml_document(path: Path, named_by: str | None = None) -> Any
 ```
 
 Parse one YAML file, naming every way reading it can fail.
@@ -122,7 +122,7 @@ no declaration to blame, so it is the document itself that failed.
 ### `load_yaml`
 
 ```python
-def load_yaml(path: pathlib.Path, named_by: str | None = None) -> dict[str, typing.Any]
+def load_yaml(path: Path, named_by: str | None = None) -> dict[str, Any]
 ```
 
 Load a YAML file; require a top-level mapping (dict).
@@ -130,7 +130,7 @@ Load a YAML file; require a top-level mapping (dict).
 ### `load_json_value`
 
 ```python
-def load_json_value(base_dir: pathlib.Path, value: Any, context: str) -> dict[str, typing.Any]
+def load_json_value(base_dir: Path, value: Any, context: str) -> dict[str, Any]
 ```
 
 A formatter declaration: a relative path to a JSON file (resolved
@@ -141,7 +141,7 @@ offending declaration.
 ### `strict_bool`
 
 ```python
-def strict_bool(raw: collections.abc.Mapping[str, typing.Any], key: str, context: str, *, default: bool = True) -> bool
+def strict_bool(raw: Mapping[str, Any], key: str, context: str, *, default: bool = True) -> bool
 ```
 
 Read a boolean without truthiness-coercing malformed YAML.
@@ -161,7 +161,7 @@ A blank key takes `default` and is recorded, as the module docstring says.
 ### `optional_bool`
 
 ```python
-def optional_bool(raw: collections.abc.Mapping[str, typing.Any], key: str, context: str, *, default: bool = False) -> bool
+def optional_bool(raw: Mapping[str, Any], key: str, context: str, *, default: bool = False) -> bool
 ```
 
 Read an optional boolean without truthiness-coercing malformed YAML.
@@ -173,7 +173,7 @@ A blank key takes it and is recorded, as `strict_bool`'s does.
 ### `optional_str`
 
 ```python
-def optional_str(raw: collections.abc.Mapping[str, typing.Any], key: str, context: str, *, record_blank: bool = False) -> str | None
+def optional_str(raw: Mapping[str, Any], key: str, context: str, *, record_blank: bool = False) -> str | None
 ```
 
 Read an optional string, refusing anything YAML happened to parse instead.
@@ -191,7 +191,7 @@ recorded as taking None. Off by default, so `extension:` stays silent.
 ### `strict_str`
 
 ```python
-def strict_str(raw: collections.abc.Mapping[str, typing.Any], key: str, context: str, *, default: str) -> str
+def strict_str(raw: Mapping[str, Any], key: str, context: str, *, default: str) -> str
 ```
 
 Read a string that falls back to a default the author should hear about.
@@ -208,7 +208,7 @@ and `optional_str` is the reader.
 ### `require_int`
 
 ```python
-def require_int(raw: collections.abc.Mapping[str, typing.Any], key: str, context: str) -> int
+def require_int(raw: Mapping[str, Any], key: str, context: str) -> int
 ```
 
 Read a required integer, refusing the bool YAML hands back for `true`.
@@ -225,7 +225,7 @@ required key, so a caller catching `MappingError` has to get one.
 ### `optional_int`
 
 ```python
-def optional_int(raw: collections.abc.Mapping[str, typing.Any], key: str, context: str, *, record_blank: bool = False) -> int | None
+def optional_int(raw: Mapping[str, Any], key: str, context: str, *, record_blank: bool = False) -> int | None
 ```
 
 Read an optional integer, refusing bools and un-coercible strings.
@@ -240,7 +240,7 @@ a message naming neither the key, the view, nor the entity.
 ### `require_str`
 
 ```python
-def require_str(raw: collections.abc.Mapping[str, typing.Any], key: str, context: str) -> str
+def require_str(raw: Mapping[str, Any], key: str, context: str) -> str
 ```
 
 Read a required string. The mirror of `optional_str`.
@@ -250,7 +250,7 @@ Refuses an absent or blank key the same way `require_int` does.
 ### `optional_str_list`
 
 ```python
-def optional_str_list(raw: collections.abc.Mapping[str, typing.Any], key: str, context: str) -> tuple[str, ...]
+def optional_str_list(raw: Mapping[str, Any], key: str, context: str) -> tuple[str, ...]
 ```
 
 Read an optional list of strings, refusing the shapes YAML also accepts.

@@ -118,7 +118,7 @@ confirming a write and then being asked three more questions.
 ### `run_wizard`
 
 ```python
-def run_wizard(console: rich.console.Console | None = None) -> int
+def run_wizard(console: Console | None = None) -> int
 ```
 
 Entry point. Returns the process exit code.

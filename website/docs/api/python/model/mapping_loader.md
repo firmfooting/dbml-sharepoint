@@ -28,7 +28,7 @@ extension (a CLI `--extension` override may differ from the mapping's own
 ### `load_mapping`
 
 ```python
-def load_mapping(mapping_path: pathlib.Path) -> dbml_sharepoint.model.mapping_types.MappingBundle
+def load_mapping(mapping_path: Path) -> MappingBundle
 ```
 
 Load the mapping YAML and the referenced configs into a single bundle.

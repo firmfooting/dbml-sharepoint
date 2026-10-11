@@ -177,7 +177,7 @@ NO_ENV_FILE = EnvProvenance(path=None, digest=None, values=())
 ### `describe_env_provenance`
 
 ```python
-def describe_env_provenance(provenance: dbml_sharepoint.model.env_file.EnvProvenance) -> str
+def describe_env_provenance(provenance: EnvProvenance) -> str
 ```
 
 One line naming the env file a build read, for the manifest, index.md
@@ -211,7 +211,7 @@ Both are wrapped here because every catch site downstream handles only
 ### `read_env_file`
 
 ```python
-def read_env_file(path: pathlib.Path) -> tuple[dict[str, str], str]
+def read_env_file(path: Path) -> tuple[dict[str, str], str]
 ```
 
 Parsed settings and the digest, from ONE read of the bytes.

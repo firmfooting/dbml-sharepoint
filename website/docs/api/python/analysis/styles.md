@@ -89,7 +89,7 @@ STYLES = {'severity': StyleSpec(expand=<function _severity>, keys=frozenset({'ca
 ### `expand_style`
 
 ```python
-def expand_style(spec: dict[str, typing.Any], context: str, theme: dict[str, dbml_sharepoint.analysis.styles.StyleToken] | None = None) -> dict[str, typing.Any]
+def expand_style(spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None = None) -> dict[str, Any]
 ```
 
 Expand a declared style spec into plain SP column-formatting JSON.
@@ -97,7 +97,7 @@ Expand a declared style spec into plain SP column-formatting JSON.
 ### `parse_theme`
 
 ```python
-def parse_theme(raw: object, context: str) -> dict[str, dbml_sharepoint.analysis.styles.StyleToken]
+def parse_theme(raw: object, context: str) -> dict[str, StyleToken]
 ```
 
 Parse the optional mapping-level style_theme key: per-token

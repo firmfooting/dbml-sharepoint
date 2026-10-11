@@ -12,7 +12,7 @@ provisions SharePoint Online lists from the browser console.
 
 [![CI](https://github.com/firmfooting/dbml-sharepoint/actions/workflows/ci.yml/badge.svg)](https://github.com/firmfooting/dbml-sharepoint/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/dbml-sharepoint?color=2A6B64)](https://pypi.org/project/dbml-sharepoint/)
-[![Python](https://img.shields.io/badge/python-3.13%2B-2A6B64)](https://github.com/firmfooting/dbml-sharepoint/blob/main/pyproject.toml)
+[![Python](https://img.shields.io/badge/python-3.15%2B-2A6B64)](https://github.com/firmfooting/dbml-sharepoint/blob/main/pyproject.toml)
 [![Licence](https://img.shields.io/badge/licence-MIT-2A6B64)](https://github.com/firmfooting/dbml-sharepoint/blob/main/LICENSE)
 [![Docs](https://img.shields.io/badge/docs-firmfooting.github.io-2A6B64)][docs]
 

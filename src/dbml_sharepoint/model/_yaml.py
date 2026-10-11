@@ -88,7 +88,7 @@ class TagOrDirectiveError(YAMLError):
             lines.append(f"  and {len(found) - _MAX_LISTED} more")
         super().__init__("\n".join(["uses tags or directives the loader refuses:", *lines]))
 
-    def moved(self, line: int, column: int) -> "TagOrDirectiveError":
+    def moved(self, line: int, column: int) -> TagOrDirectiveError:
         """This refusal of a fragment cut from a file, placed where the fragment starts there.
 
         `line` and `column` count from zero, as a mark does. Only the

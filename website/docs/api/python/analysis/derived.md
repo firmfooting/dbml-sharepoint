@@ -59,7 +59,7 @@ Every column an M fragment names, in order and without duplicates.
 ### `derived_output_names`
 
 ```python
-def derived_output_names(entry: dbml_sharepoint.model.mapping_types.DerivedColumn) -> tuple[str, ...]
+def derived_output_names(entry: DerivedColumn) -> tuple[str, ...]
 ```
 
 The columns one entry ADDS to the query.
@@ -70,7 +70,7 @@ there, which is why it is not a collision with itself.
 ### `target_entity`
 
 ```python
-def target_entity(entry: dbml_sharepoint.model.mapping_types.DerivedColumn) -> str
+def target_entity(entry: DerivedColumn) -> str
 ```
 
 The entity a `lookup` or a `count` reads. Empty for an `expr`.
@@ -78,7 +78,7 @@ The entity a `lookup` or a `count` reads. Empty for an `expr`.
 ### `is_users_source`
 
 ```python
-def is_users_source(entry: dbml_sharepoint.model.mapping_types.DerivedColumn) -> bool
+def is_users_source(entry: DerivedColumn) -> bool
 ```
 
 Whether a `lookup` reads the users dimension rather than a list.
@@ -91,7 +91,7 @@ where the two key names come from differs.
 ### `lookup_key_columns`
 
 ```python
-def lookup_key_columns(entry: dbml_sharepoint.model.mapping_types.DerivedColumn, entity: str) -> tuple[str, str]
+def lookup_key_columns(entry: DerivedColumn, entity: str) -> tuple[str, str]
 ```
 
 The (this side, other side) key columns one join matches on.

@@ -118,7 +118,7 @@ class FindingCode(StrEnum):
     it meant this time.
     """
 
-    def __new__(cls, value: str, severity: Severity) -> "FindingCode":
+    def __new__(cls, value: str, severity: Severity) -> FindingCode:
         member = str.__new__(cls, value)
         member._value_ = value
         member._severity = severity

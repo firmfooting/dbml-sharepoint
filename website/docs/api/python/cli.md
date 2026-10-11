@@ -12,7 +12,7 @@ Command-line interface for dbml-sharepoint.
 ### `main`
 
 ```python
-def main(ctx: typer.models.Context) -> None
+def main(ctx: typer.Context) -> None
 ```
 
 Run the interactive wizard when invoked with no subcommand.
@@ -40,7 +40,7 @@ for explicitly and so it appears in `--help`.
 ### `build`
 
 ```python
-def build(schema: pathlib.Path | None = ..., mapping: pathlib.Path | None = ..., release: pathlib.Path | None = ..., site_url: str = ..., time_zone: str | None = ..., site_role: str = ..., out: pathlib.Path = ..., dry_run: bool = ..., seed: bool = ..., enterprise_reader: str | None = ..., identities: list[str] | None = ..., extension: str | None = ..., env_file: pathlib.Path | None = ..., deployment_log_list: str | None = ..., deployment_log_change_list: str | None = ..., deployment_log_site: str | None = ..., change_log_list: str | None = ..., no_sidecars: bool = ...) -> None
+def build(schema: Path | None = ..., mapping: Path | None = ..., release: Path | None = ..., site_url: str = ..., time_zone: str | None = ..., site_role: str = ..., out: Path = ..., dry_run: bool = ..., seed: bool = ..., enterprise_reader: str | None = ..., identities: list[str] | None = ..., extension: str | None = ..., env_file: Path | None = ..., deployment_log_list: str | None = ..., deployment_log_change_list: str | None = ..., deployment_log_site: str | None = ..., change_log_list: str | None = ..., no_sidecars: bool = ...) -> None
 ```
 
 Generate deploy.js.txt + manifest from the DBML schema and mapping.
@@ -55,7 +55,7 @@ in a library call.
 ### `validate`
 
 ```python
-def validate(schema: pathlib.Path | None = ..., mapping: pathlib.Path | None = ..., site_role: str = ..., extension: str | None = ...) -> None
+def validate(schema: Path | None = ..., mapping: Path | None = ..., site_role: str = ..., extension: str | None = ...) -> None
 ```
 
 Check the schema and mapping. No site URL, no output, no release.
@@ -122,7 +122,7 @@ same id is reported but is not a failure.
 ### `report`
 
 ```python
-def report(schema: pathlib.Path | None = ..., mapping: pathlib.Path | None = ..., time_zone: str | None = ..., site_role: str = ..., out: pathlib.Path = ..., release: pathlib.Path | None = ..., env_file: pathlib.Path | None = ...) -> None
+def report(schema: Path | None = ..., mapping: Path | None = ..., time_zone: str | None = ..., site_role: str = ..., out: Path = ..., release: Path | None = ..., env_file: Path | None = ...) -> None
 ```
 
 Generate reporting queries (Power Query M + SQL views) from the schema.
@@ -143,7 +143,7 @@ file is still parsed whole, so a malformed line is refused either way.
 ### `extract_script`
 
 ```python
-def extract_script(url: str = ..., out: pathlib.Path | None = ...) -> None
+def extract_script(url: str = ..., out: Path | None = ...) -> None
 ```
 
 Generate the read-only browser-paste script that reads a live list.
@@ -165,7 +165,7 @@ Every request the script makes is a GET. It carries no write helpers.
 ### `protection_script`
 
 ```python
-def protection_script(url: str = ..., out: pathlib.Path | None = ...) -> None
+def protection_script(url: str = ..., out: Path | None = ...) -> None
 ```
 
 Generate the browser-paste script that locks, unlocks, seals or unseals one list.
@@ -179,7 +179,7 @@ disagrees stops the run. It deletes nothing.
 ### `columns_script`
 
 ```python
-def columns_script(url: str = ..., out: pathlib.Path | None = ...) -> None
+def columns_script(url: str = ..., out: Path | None = ...) -> None
 ```
 
 Generate the browser-paste script that enumerates and deletes one list's custom columns.
@@ -199,7 +199,7 @@ to the recycle bin.
 ### `list_script`
 
 ```python
-def list_script(url: str = ..., out: pathlib.Path | None = ...) -> None
+def list_script(url: str = ..., out: Path | None = ...) -> None
 ```
 
 Generate the browser-paste script that deletes one whole list, by URL.
@@ -223,7 +223,7 @@ rollback.js.txt already takes.
 ### `identify_script`
 
 ```python
-def identify_script(site_url: str | None = ..., out: pathlib.Path | None = ...) -> None
+def identify_script(site_url: str | None = ..., out: Path | None = ...) -> None
 ```
 
 Generate the read-only browser-paste script that reports what is on a site.
@@ -243,7 +243,7 @@ Every request the script makes is a GET. It carries no write helpers.
 ### `extract`
 
 ```python
-def extract(source: pathlib.Path | None = ..., out: pathlib.Path | None = ..., entity: str | None = ..., prefix: str = ..., project: str | None = ..., force: bool = ...) -> None
+def extract(source: Path | None = ..., out: Path | None = ..., entity: str | None = ..., prefix: str = ..., project: str | None = ..., force: bool = ...) -> None
 ```
 
 Recover a draft schema.dbml and mapping.yaml from an existing list.

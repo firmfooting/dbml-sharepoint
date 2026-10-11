@@ -98,7 +98,7 @@ goes first, which is also what the fleet's own naming test checks.
 ### `previous_object_names`
 
 ```python
-def previous_object_names(raw_name: str, raw_previous: collections.abc.Sequence[str], prefix: str, previous_prefixes: collections.abc.Sequence[str], context: str) -> tuple[str, ...]
+def previous_object_names(raw_name: str, raw_previous: Sequence[str], prefix: str, previous_prefixes: Sequence[str], context: str) -> tuple[str, ...]
 ```
 
 Every name a group or level may be found under on an unmigrated site.

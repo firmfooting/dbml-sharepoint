@@ -28,13 +28,13 @@ CONFIG_ERRORS = (<class 'ValueError'>, <class 'KeyError'>, <class 'OSError'>, <c
 ### `config_error`
 
 ```python
-def config_error(what: str, path: pathlib.Path | None, exc: Exception) -> NoReturn
+def config_error(what: str, path: Path | None, exc: Exception) -> NoReturn
 ```
 
 ### `load_config`
 
 ```python
-def load_config(schema: pathlib.Path, mapping: pathlib.Path, release: pathlib.Path | None) -> tuple[dbml_sharepoint.model.parser.Schema, dbml_sharepoint.model.mapping_types.MappingBundle, dbml_sharepoint.model.release.Release | None]
+def load_config(schema: Path, mapping: Path, release: Path | None) -> tuple[Schema, MappingBundle, Release | None]
 ```
 
 Load the three config files, reporting a bad one as a message.
@@ -54,7 +54,7 @@ the interface does not have.
 ### `resolve_extension_or_refuse`
 
 ```python
-def resolve_extension_or_refuse(extension: str | None, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, mapping: pathlib.Path) -> dbml_sharepoint.extension.DeploymentExtension
+def resolve_extension_or_refuse(extension: str | None, bundle: MappingBundle, mapping: Path) -> DeploymentExtension
 ```
 
 Resolve the extension name, reporting an unknown one as a message.
@@ -70,7 +70,7 @@ config files, and an extension name is not one of them.
 ### `project_input`
 
 ```python
-def project_input(explicit: pathlib.Path | None, relpath: pathlib.Path, flag: str, *, from_the_project: bool = True) -> pathlib.Path
+def project_input(explicit: Path | None, relpath: Path, flag: str, *, from_the_project: bool = True) -> Path
 ```
 
 The path the operator gave, or the family standard's, or a refusal.
@@ -109,7 +109,7 @@ need no such guard; they name the file they load.
 ### `require_known_site_role`
 
 ```python
-def require_known_site_role(bundle: dbml_sharepoint.model.mapping_types.MappingBundle, site_role: str) -> None
+def require_known_site_role(bundle: MappingBundle, site_role: str) -> None
 ```
 
 Refuse a role the mapping does not declare.
@@ -195,7 +195,7 @@ cleaning, and a silent rewrite of what somebody typed is the defect
 ### `missing_time_zone`
 
 ```python
-def missing_time_zone() -> typer._click.exceptions.BadParameter
+def missing_time_zone() -> typer.BadParameter
 ```
 
 The refusal for a run that named no zone anywhere.
@@ -248,7 +248,7 @@ parsing claims, and no legitimate UPN contains one.
 ### `resolve_env_file`
 
 ```python
-def resolve_env_file(env_file: pathlib.Path | None) -> pathlib.Path | None
+def resolve_env_file(env_file: Path | None) -> Path | None
 ```
 
 The env file `build` should read, or None when there is nothing to.
@@ -310,7 +310,7 @@ documented disable, checked by the caller before this runs.
 ### `resolve_env_settings`
 
 ```python
-def resolve_env_settings(env_file: pathlib.Path | None, enterprise_reader: str | dbml_sharepoint.project.EnterpriseReaderDeclined | None, deployment_log_list: str | None, deployment_log_change_list: str | None, deployment_log_site: str | None, change_log_list: str | None, time_zone: str | None, *, identity_flags: collections.abc.Sequence[str] = ()) -> tuple[str | dbml_sharepoint.project.EnterpriseReaderDeclined | None, str | None, str | None, str | None, str | None, str | None, dict[str, str], dbml_sharepoint.model.env_file.EnvProvenance]
+def resolve_env_settings(env_file: Path | None, enterprise_reader: str | EnterpriseReaderDeclined | None, deployment_log_list: str | None, deployment_log_change_list: str | None, deployment_log_site: str | None, change_log_list: str | None, time_zone: str | None, *, identity_flags: Sequence[str] = ()) -> tuple[str | EnterpriseReaderDeclined | None, str | None, str | None, str | None, str | None, str | None, dict[str, str], EnvProvenance]
 ```
 
 Apply a resolved dbml-sharepoint.env file, honouring anything already
@@ -335,7 +335,7 @@ after this is a build that must refuse, see `missing_time_zone`.
 ### `resolve_identities`
 
 ```python
-def resolve_identities(*, flags: collections.abc.Sequence[str], reader_flag: str | dbml_sharepoint.project.EnterpriseReaderDeclined | None, file_identities: collections.abc.Mapping[str, str], mapping: dbml_sharepoint.model.mapping_types.Mapping) -> dict[str, tuple[dbml_sharepoint.model.identities.IdentityValue, ...]]
+def resolve_identities(*, flags: Sequence[str], reader_flag: str | EnterpriseReaderDeclined | None, file_identities: AbcMapping[str, str], mapping: Mapping) -> dict[str, tuple[IdentityValue, ...]]
 ```
 
 Every enrolled identity's values: a flag beats the file, per name.
@@ -345,7 +345,7 @@ Raises an `IdentityError` subclass, which `CONFIG_ERRORS` turns into exit 1.
 ### `resolve_env_time_zone`
 
 ```python
-def resolve_env_time_zone(env_file: pathlib.Path | None, time_zone: str | None) -> tuple[str | None, dbml_sharepoint.model.env_file.EnvProvenance]
+def resolve_env_time_zone(env_file: Path | None, time_zone: str | None) -> tuple[str | None, EnvProvenance]
 ```
 
 The zone for a command that consumes the file's zone and nothing else.
@@ -359,7 +359,7 @@ it applied an enterprise reader it never reads.
 ### `echo_env_provenance`
 
 ```python
-def echo_env_provenance(provenance: dbml_sharepoint.model.env_file.EnvProvenance) -> None
+def echo_env_provenance(provenance: EnvProvenance) -> None
 ```
 
 Say what was read, and what won. An absent line here is
