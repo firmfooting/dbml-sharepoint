@@ -450,6 +450,47 @@ def test_nesting_is_bounded_through_an_alias() -> None:
     )
 
 
+def _depth_of(value: object) -> int:
+    """How many levels of list and dict `value` nests, itself included."""
+    if isinstance(value, dict):
+        return 1 + max(map(_depth_of, value.values()), default=0)
+    if isinstance(value, list):
+        return 1 + max(map(_depth_of, value), default=0)
+    return 0
+
+
+def _source(height: int) -> str:
+    """An anchored mapping `a` that nests `height` levels, itself included."""
+    return f"a: &a {{k: {'[' * (height - 1)}{']' * (height - 1)}}}\n"
+
+
+@pytest.mark.parametrize("merge", ["<<: *a", "<<: [*a]", "<<: [{z: 1}, *a]"])
+def test_a_merge_source_is_counted_at_the_level_of_the_mapping_that_merges_it(merge: str) -> None:
+    """Merged pairs join the merging mapping, so a source nesting 99 levels
+    merged into a mapping at level 2 builds a document 100 levels deep, the
+    bound. One more level is past it."""
+    built = _yaml.safe_load(_source(99) + f"x: {{{merge}}}\n")
+    assert _depth_of(built) == 100
+    assert _refused(_source(100) + f"x: {{{merge}}}\n").startswith(
+        "found a sequence nested deeper than 100 levels\n",
+    )
+
+
+def test_an_alias_after_an_inner_merge_list_is_still_counted_as_a_merge_source() -> None:
+    """The inner `<<: [...]` must not reset the outer list's level for `*a`."""
+    built = _yaml.safe_load(_source(99) + "x: {<<: [{<<: [{z: 1}]}, *a]}\n")
+    assert _depth_of(built) == 100
+
+
+def test_a_merge_source_that_merges_another_is_counted_at_one_level() -> None:
+    """`b` stands at level 2 and holds `a`'s pairs, as `x` does in the test above."""
+    text = _source(99) + "b: &b {<<: *a}\nx: {<<: *b}\n"
+    assert _depth_of(_yaml.safe_load(text)) == 100
+    assert _refused(_source(100) + "b: &b {<<: *a}\n") == _refused(
+        _source(100) + "x: {<<: *a}\n",
+    ).replace("line 2, column 9", "line 2, column 13")
+
+
 @pytest.mark.parametrize(
     ("text", "problem", "at"),
     [
@@ -488,6 +529,35 @@ def test_an_escape_past_the_last_character_is_a_parse_error() -> None:
         '  in "<file>", line 1, column 4\n'
         "found an escape that names no character; the last is `\\U0010FFFF`\n"
         '  in "<file>", line 1, column 7'
+    )
+
+
+@pytest.mark.parametrize(
+    ("escape", "column"),
+    [
+        pytest.param("\\uD800", 5, id="low-end"),
+        pytest.param("\\udfff", 5, id="high-end-lower-case"),
+        pytest.param("\\U0000DC00", 5, id="long-form"),
+    ],
+)
+def test_an_escape_naming_a_surrogate_is_a_parse_error(escape: str, column: int) -> None:
+    """A lone surrogate loads as a string that raises UnicodeEncodeError wherever
+    it is later written as UTF-8. U+D7FF and U+E000, either side, load."""
+    assert _yaml.safe_load('v: "\\uD7FF\\uE000"\n') == {"v": "\ud7ff\ue000"}
+    assert _refusal(f'v: "{escape}"\n') == (
+        "while scanning a double-quoted scalar\n"
+        '  in "<file>", line 1, column 4\n'
+        f"found the escape `{escape}`, which names a surrogate and so no character\n"
+        f'  in "<file>", line 1, column {column}'
+    )
+
+
+def test_a_surrogate_escape_is_marked_where_it_stands() -> None:
+    """After an escaped backslash, on a later line, and past other text."""
+    assert _yaml.safe_load('v: "\\\\uD800"\n') == {"v": "\\uD800"}
+    assert _refusal('v: "ab\\\\uD800 \\\n  cd\\uD800"\n').endswith(
+        'found the escape `\\uD800`, which names a surrogate and so no character\n'
+        '  in "<file>", line 2, column 5',
     )
 
 
