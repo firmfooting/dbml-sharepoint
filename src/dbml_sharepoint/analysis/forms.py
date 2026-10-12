@@ -61,8 +61,8 @@ def validate_form_visibility(
             location=at,
         ))
     if (when is not None or not (new or existing)) and is_boolean(types.get(column)):
-        # Live 2026-09-04 and 2026-10-13: a composed client formula (a `when`,
-        # or `hidden` = `=if(false, ...)`) on kind 8 is refused with HTTP 500.
+        # SharePoint refuses a composed client formula (a `when`,
+        # or `hidden` = `=if(false, ...)`) on kind 8 with HTTP 500.
         # A gate-only declaration is untested, so it stays deployable.
         findings.append(Finding(
             FindingCode.FORM_VISIBILITY_CONDITION_ON_A_BOOLEAN_COLUMN,
