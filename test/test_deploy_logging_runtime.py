@@ -100,8 +100,7 @@ _HARNESS = textwrap.dedent(r"""
     const CENTRAL_PERMS_LOW = 2;
     // How the central Deployment logs library answers: 'ok', 'missing' (its
     // probe 404s), 'no-add' (EffectiveBasePermissions without AddListItems),
-    // 'refuse-upload' (Files/add answers 403) or 'short-read' (the read-back
-    // length is one byte short).
+    // or 'refuse-upload' (Files/add answers 403).
     const LIBRARY_MODE = 'ok';
     // The columns each central list carries. Empty models a list the operator
     // pointed DBMLSP_DEPLOY_LOG_LIST / DBMLSP_DEPLOY_CHANGES at that this tool
@@ -299,11 +298,6 @@ _HARNESS = textwrap.dedent(r"""
             state.files[path] = {
               text: new TextDecoder().decode(opts.body), bytes: opts.body.length };
             return reply(200, { d: { ServerRelativeUrl: path } });
-          }
-          const read = /getfilebyserverrelativeurl\('([^']*)'\)/.exec(u);
-          if (read && state.files[read[1]]) {
-            const n = state.files[read[1]].bytes - (LIBRARY_MODE === 'short-read' ? 1 : 0);
-            return reply(200, { d: { Length: String(n) } });
           }
           return notFound();
         }
@@ -1951,7 +1945,6 @@ def test_the_upload_post_is_never_retried_and_a_duplicate_name_is_a_failed_uploa
         ("missing", "library is missing"),
         ("no-add", "no AddListItems"),
         ("refuse-upload", "HTTP 403"),
-        ("short-read", "does not match"),
     ],
 )
 def test_a_library_that_cannot_take_the_log_is_a_named_failure_not_a_failed_deploy(

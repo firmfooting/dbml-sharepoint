@@ -864,8 +864,8 @@
     // to document libraries"
     // https://learn.microsoft.com/sharepoint/understanding-permission-levels
     // The upload is Files/add with overwrite=false, which Learn documents for
-    // SharePoint REST, and the read-back compares File.Length, the size in bytes
-    // https://learn.microsoft.com/previous-versions/office/developer/sharepoint-rest-reference/dn450841(v=office.15)
+    // SharePoint REST, and a 2xx answer is the proof it landed: the drop-box
+    // account is not known to be able to read the file back.
     // Returns the file's server-relative URL, or null after recording a named
     // logging failure: this never throws and never fails the deploy.
     const uploadRunLog = async () => {
@@ -899,14 +899,6 @@
         }, 0);
         if (!addResp.ok) throw new Error(`HTTP ${addResp.status} ${spError(await addResp.text())}`);
         const fileUrl = `${root.replace(/\/+$/, '')}/${fileName}`;
-        const backResp = await fetchWithRetry(externalApi(
-          `getfilebyserverrelativeurl('${odataName(fileUrl)}')?$select=Length`
-        ), { headers: { 'Accept': 'application/json;odata=verbose' } });
-        if (!backResp.ok) throw new Error(`read-back: HTTP ${backResp.status}`);
-        const length = Number(((await backResp.json()).d || {}).Length);
-        if (length !== bytes.length) {
-          throw new Error(`read-back length ${length} does not match the ${bytes.length} bytes sent to ${fileUrl}`);
-        }
         return fileUrl;
       } catch (err) {
         recordFailure(where, err);
