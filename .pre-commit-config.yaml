@@ -68,6 +68,12 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
+      - id: lint-imports
+        name: import-linter (generators never import analysis checks)
+        entry: uv run lint-imports
+        language: system
+        types: [python]
+        pass_filenames: false
       - id: j2lint
         name: j2lint
         entry: uv run j2lint --ignore jinja-statements-indentation single-statement-per-line --

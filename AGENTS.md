@@ -53,6 +53,7 @@ hooks run, so a hook can never disagree with CI.
 uv run pytest
 uv run ruff check src test website/scripts scripts
 uv run pyrefly check
+uv run lint-imports
 uv run j2lint --ignore jinja-statements-indentation single-statement-per-line -- src/dbml_sharepoint/templates
 uv run prek run --all-files markdownlint-cli2
 uv run prek run --all-files zizmor
@@ -210,9 +211,10 @@ it (`gh stack`), so each layer keeps its own title and its own changelog entry.
 | `test/manual/` | Live-site probes. Transcripts are gitignored and a test enforces that no tracked file under these names references a tenant |
 | `website/` | Docusaurus docs. `docs/api/` is generated and committed |
 
-A generator must never import from `analysis/checks/`. Where both sides need the
-same fact, it lives in a shared module: `analysis/joins.py` is the worked
-example.
+A generator must never import from `analysis/checks/`; the `[tool.importlinter]`
+contract in `pyproject.toml` enforces it (`uv run lint-imports`). Where both
+sides need the same fact, it lives in a shared module: `analysis/joins.py` is
+the worked example.
 
 ## Safety
 
