@@ -53,6 +53,14 @@ def markdown_cell(value: object) -> str
 
 Keep arbitrary text inside one Markdown table cell.
 
+### `code_span`
+
+```python
+def code_span(value: object) -> str
+```
+
+A Markdown code span whose fence is longer than any backtick run inside the value.
+
 ### `script_env`
 
 ```python
