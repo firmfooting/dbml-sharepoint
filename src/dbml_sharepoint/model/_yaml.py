@@ -55,6 +55,9 @@ _TIME = "tag:yaml.org,2002:timestamp"
 #: How deep a document may nest, well inside the interpreter's recursion limit.
 _MAX_DEPTH = 100
 
+#: The last code point; a `\\U` escape can spell more.
+_LAST_CHARACTER = 0x10FFFF
+
 #: How many refusals one error lists before it counts the rest.
 _MAX_LISTED = 20
 
@@ -131,15 +134,75 @@ class _Scanner(Scanner):
 
     @override
     def scan_flow_scalar_non_spaces(self, double: Any, start_mark: Any) -> Any:
-        try:
-            return super().scan_flow_scalar_non_spaces(double, start_mark)
-        except ValueError as exc:
-            # chr() refuses an escape past U+10FFFF, which only `\U` can spell.
-            raise ScannerError(
-                "while scanning a double-quoted scalar", start_mark,
-                "found an escape that names no character; the last is `\\U0010FFFF`",
-                self.reader.get_mark(),
-            ) from exc
+        """ruamel.yaml 0.19.1's, refusing a `\\u` or `\\U` escape that names no character.
+
+        The escape is checked where it is read, since the text it decodes to is
+        all the caller gets back. It is a copy because the check needs the mark
+        of the backslash and the digits, which the original does not expose.
+        """
+        chunks: list[str] = []
+        srp = self.reader.peek
+        srf = self.reader.forward
+        while True:
+            length = 0
+            while srp(length) not in " \n'\"\\\0\t\r\x85\u2028\u2029":
+                length += 1
+            if length != 0:
+                chunks.append(self.reader.prefix(length))
+                srf(length)
+            ch = srp()
+            if not double and ch == "'" and srp(1) == "'":
+                chunks.append("'")
+                srf(2)
+            elif (double and ch == "'") or (not double and ch in "\"\\"):
+                chunks.append(ch)
+                srf()
+            elif double and ch == "\\":
+                slash = self.reader.get_mark()
+                srf()
+                ch = srp()
+                if ch in self.ESCAPE_REPLACEMENTS:
+                    chunks.append(self.ESCAPE_REPLACEMENTS[ch])
+                    srf()
+                elif ch in self.ESCAPE_CODES:
+                    length = self.ESCAPE_CODES[ch]
+                    srf()
+                    for k in range(length):
+                        if srp(k) not in "0123456789ABCDEFabcdef":
+                            raise ScannerError(
+                                "while scanning a double-quoted scalar", start_mark,
+                                f"expected escape sequence of {length:d} "
+                                f"hexdecimal numbers, but found {srp(k)!r}",
+                                self.reader.get_mark(),
+                            )
+                    digits = self.reader.prefix(length)
+                    code = int(digits, 16)
+                    if code > _LAST_CHARACTER:
+                        raise ScannerError(
+                            "while scanning a double-quoted scalar", start_mark,
+                            "found an escape that names no character; the last is `\\U0010FFFF`",
+                            self.reader.get_mark(),
+                        )
+                    if 0xD800 <= code <= 0xDFFF:
+                        raise ScannerError(
+                            "while scanning a double-quoted scalar", start_mark,
+                            f"found the escape `\\{ch}{digits}`, which names a surrogate "
+                            "and so no character",
+                            slash,
+                        )
+                    chunks.append(chr(code))
+                    srf(length)
+                elif ch in "\n\r\x85\u2028\u2029":
+                    self.scan_line_break()
+                    chunks.extend(self.scan_flow_scalar_breaks(double, start_mark))
+                else:
+                    raise ScannerError(
+                        "while scanning a double-quoted scalar", start_mark,
+                        f"found unknown escape character {ch!r}",
+                        self.reader.get_mark(),
+                    )
+            else:
+                return chunks
 
     @override
     def scan_directive(self) -> DirectiveToken:

@@ -490,6 +490,35 @@ def test_an_escape_past_the_last_character_is_a_parse_error() -> None:
 
 
 @pytest.mark.parametrize(
+    ("escape", "column"),
+    [
+        pytest.param("\\uD800", 5, id="low-end"),
+        pytest.param("\\udfff", 5, id="high-end-lower-case"),
+        pytest.param("\\U0000DC00", 5, id="long-form"),
+    ],
+)
+def test_an_escape_naming_a_surrogate_is_a_parse_error(escape: str, column: int) -> None:
+    """A lone surrogate loads as a string that raises UnicodeEncodeError wherever
+    it is later written as UTF-8. U+D7FF and U+E000, either side, load."""
+    assert _yaml.safe_load('v: "\\uD7FF\\uE000"\n') == {"v": "\ud7ff\ue000"}
+    assert _refusal(f'v: "{escape}"\n') == (
+        "while scanning a double-quoted scalar\n"
+        '  in "<file>", line 1, column 4\n'
+        f"found the escape `{escape}`, which names a surrogate and so no character\n"
+        f'  in "<file>", line 1, column {column}'
+    )
+
+
+def test_a_surrogate_escape_is_marked_where_it_stands() -> None:
+    """After an escaped backslash, on a later line, and past other text."""
+    assert _yaml.safe_load('v: "\\\\uD800"\n') == {"v": "\\uD800"}
+    assert _refusal('v: "ab\\\\uD800 \\\n  cd\\uD800"\n').endswith(
+        'found the escape `\\uD800`, which names a surrogate and so no character\n'
+        '  in "<file>", line 2, column 5',
+    )
+
+
+@pytest.mark.parametrize(
     ("before", "after", "column"),
     [pytest.param("1.", "", 9, id="minor"), pytest.param("", ".1", 7, id="major")],
 )
