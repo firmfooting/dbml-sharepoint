@@ -26,6 +26,7 @@ from dbml_sharepoint.generators.assessgen import (
     generate_assess_js,
 )
 from dbml_sharepoint.generators.jsgen import build_schema_json
+from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.conditions import Leaf
 from dbml_sharepoint.model.identities import parse_values
 from dbml_sharepoint.model.mapping_loader import load_mapping
@@ -44,6 +45,23 @@ from dbml_sharepoint.model.mapping_types import (
 )
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 from dbml_sharepoint.model.release import load_release
+
+
+def _by_title(rows: list[JsonValue]) -> dict[str, JsonValue]:
+    """A `[title, payload]` row list keyed by title."""
+    keyed: dict[str, JsonValue] = {}
+    for row in rows:
+        assert isinstance(row, list)
+        title, payload = row
+        assert isinstance(title, str)
+        keyed[title] = payload
+    return keyed
+
+
+def _string_list(value: JsonValue) -> list[str]:
+    assert isinstance(value, list)
+    assert all(isinstance(item, str) for item in value)
+    return [item for item in value if isinstance(item, str)]
 
 
 def _simple() -> tuple[Schema, MappingBundle]:
@@ -1222,7 +1240,10 @@ def test_assess_targets_name_the_columns_the_deploy_declares_unique() -> None:
         targets = assess_targets(
             pack[0], pack[1], "default", resolved=resolve(pack[0], pack[1].mapping),
         )
-        named = {title: set(columns) for title, columns in targets["list_unique_columns"]}
+        named = {
+            title: set(_string_list(columns))
+            for title, columns in _by_title(targets["list_unique_columns"]).items()
+        }
         assert named == _deployed_unique_columns(pack), targets["list_unique_columns"]
 
 
@@ -1751,8 +1772,8 @@ def test_one_column_enumeration_serves_both_column_checks() -> None:
     targets = assess_targets(
         pack[0], pack[1], "default", resolved=resolve(pack[0], pack[1].mapping),
     )
-    assert [title for title, _ in targets["list_display_titles"]] == ["APP_Asset"]
-    assert [title for title, _ in targets["list_unique_columns"]] == ["APP_Asset"]
+    assert list(_by_title(targets["list_display_titles"])) == ["APP_Asset"]
+    assert list(_by_title(targets["list_unique_columns"])) == ["APP_Asset"]
     summary = _run_unique_assess(
         [
             {"InternalName": "AssetTag", "Title": "Renamed By Hand",

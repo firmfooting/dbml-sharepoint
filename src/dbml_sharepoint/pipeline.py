@@ -71,7 +71,7 @@ from dbml_sharepoint.extract.sources import load_source
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.manifestgen import generate_manifest
 from dbml_sharepoint.generators.reportgen import render_reporting
-from dbml_sharepoint.jsonvalue import JsonValue
+from dbml_sharepoint.generators.schema_types import SchemaJson
 from dbml_sharepoint.model.identities import IdentityError
 from dbml_sharepoint.project import (
     CONFIG_ERRORS,
@@ -96,12 +96,13 @@ from dbml_sharepoint.templating import check_application_name
 
 # Empty schema view used to render a findings-only manifest when validation
 # fails: build_schema_json cannot run safely on an invalid schema.
-_EMPTY_SCHEMA_JSON: dict[str, JsonValue] = {
+_EMPTY_SCHEMA_JSON: SchemaJson = {
     "lists": [],
     "phase2_lookups": [],
     "indexed_columns": [],
     "views": [],
     "form_formatting": [],
+    "field_defaults": [],
     "permission_levels": [],
     "groups": [],
     "acl_scopes": [],

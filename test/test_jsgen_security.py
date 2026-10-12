@@ -11,7 +11,6 @@ somebody's live site.
 import dataclasses
 import re
 from pathlib import Path
-from typing import Any
 
 import pytest
 from _builders import ID_PK, TITLE, table
@@ -35,6 +34,7 @@ from dbml_sharepoint.analysis.provenance import MARKER_PREFIX
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.role_definition_description import marker_for_level
 from dbml_sharepoint.generators.jsgen import build_schema_json, generate_deploy_js
+from dbml_sharepoint.generators.schema_types import SchemaJson
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     EntityMapping,
@@ -204,7 +204,7 @@ def test_acl_scopes_fails_closed_on_an_empty_or_blank_folder_name(
         build_schema_json(schema, bundle, "default", resolved=resolve(schema, bundle.mapping))
 
 
-def _schema_json_for_contract_register() -> dict[str, Any]:
+def _schema_json_for_contract_register() -> SchemaJson:
     """Build SCHEMA for the shipped contract-register family, whose mapping
     declares all three group shapes: a family-owned group and both
     tool-owned ones."""

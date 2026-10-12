@@ -20,10 +20,9 @@ _TYPE_COMMENT = re.compile(r"#\s*type:")
 _ANNOTATION = re.compile(rf"[\w.\[\], |]*\b{NAME}\b[\w.\[\], |]*")
 
 PINS: dict[str, int] = {
-    "src/dbml_sharepoint/generators": 71,
     "src/dbml_sharepoint/model": 159,
-    "test runtime": 616,
-    "test other": 248,
+    "test runtime": 614,
+    "test other": 238,
     "scripts": 0,
     "website/scripts": 0,
 }
@@ -50,9 +49,8 @@ def count_uses(source: str) -> int:
 def unit_of(path: Path) -> str | None:
     """The pinned unit owning ``path``, or None when the unit is cleaned."""
     rel = path.relative_to(REPO_ROOT).as_posix()
-    for unit in ("src/dbml_sharepoint/generators", "src/dbml_sharepoint/model"):
-        if rel.startswith(unit + "/"):
-            return unit
+    if rel.startswith("src/dbml_sharepoint/model/"):
+        return "src/dbml_sharepoint/model"
     if rel.startswith("test/"):
         return "test runtime" if re.fullmatch(r"test_.*_runtime\.py", path.name) else "test other"
     if rel.startswith("website/scripts/"):

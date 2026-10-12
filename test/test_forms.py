@@ -1,7 +1,7 @@
 # test/test_forms.py
 """form_visibility and column_validation: parsing, composition, validation."""
 
-from typing import Unpack, cast
+from typing import Unpack
 
 import pytest
 from _findings import only
@@ -17,6 +17,7 @@ from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Se
 from dbml_sharepoint.analysis.form_rendering import compose_visibility
 from dbml_sharepoint.analysis.forms import validate_form_visibility
 from dbml_sharepoint.analysis.resolve import resolve
+from dbml_sharepoint.generators.schema_types import FieldSpec, SchemaJson
 from dbml_sharepoint.model.conditions import Condition, parse_condition
 from dbml_sharepoint.model.errors import (
     MappingShapeError,
@@ -563,7 +564,7 @@ def _visibility(
 HIDDEN = FormVisibility(new=False, existing=False)
 
 
-def _schema_json(**sections: Unpack[MappingSections]) -> dict[str, object]:
+def _schema_json(**sections: Unpack[MappingSections]) -> SchemaJson:
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema, bundle = _escalation(**sections)
@@ -573,10 +574,8 @@ def _schema_json(**sections: Unpack[MappingSections]) -> dict[str, object]:
     )
 
 
-def _field(schema: dict[str, object], name: str) -> dict[str, object]:
-    lists = cast("list[dict[str, object]]", schema["lists"])
-    fields = cast("list[dict[str, object]]", lists[0]["fields_phase1"])
-    return next(f for f in fields if f["title"] == name)
+def _field(schema: SchemaJson, name: str) -> FieldSpec:
+    return next(f for f in schema["lists"][0]["fields_phase1"] if f["title"] == name)
 
 
 def test_undeclared_section_leaves_every_column_unmanaged() -> None:
@@ -761,7 +760,7 @@ def test_declarations_on_ordinary_columns_still_validate_clean() -> None:
     assert messages == []
 
 
-def _calculated_schema_json(**sections: Unpack[MappingSections]) -> dict[str, object]:
+def _calculated_schema_json(**sections: Unpack[MappingSections]) -> SchemaJson:
     """Escalation with a calculated column, plus a mapping section."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
 

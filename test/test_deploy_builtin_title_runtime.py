@@ -32,6 +32,7 @@ from test_deploy_runtime import (
 from dbml_sharepoint.analysis.phases import phase_number as pn
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.generators.jsgen import build_schema_json, generate_deploy_js
+from dbml_sharepoint.generators.schema_types import SchemaJson
 
 _DBML = """
     Table Escalation {
@@ -53,12 +54,11 @@ calculated_formulas:
 """
 
 
-def _declaration(tmp_path: Path, mapping: str) -> dict[str, Any]:
+def _declaration(tmp_path: Path, mapping: str) -> SchemaJson:
     schema, bundle = pack(tmp_path, dbml=_DBML, mapping=mapping)
-    declaration: dict[str, Any] = build_schema_json(
+    return build_schema_json(
         schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
     )
-    return declaration
 
 
 def _deploy_js(tmp_path: Path) -> str:

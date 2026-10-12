@@ -8,7 +8,6 @@ leaves behind, so both are pinned against what assess.js looks for.
 """
 
 from pathlib import Path
-from typing import Any
 
 from _builders import ID_PK, TITLE, table
 from _model import bundle as make_bundle
@@ -31,6 +30,7 @@ from dbml_sharepoint.analysis.list_description import (
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.generators.assessgen import assess_targets
 from dbml_sharepoint.generators.jsgen import build_schema_json
+from dbml_sharepoint.generators.schema_types import SchemaJson
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import EntityMapping
 from dbml_sharepoint.model.parser import parse_dbml
@@ -99,7 +99,7 @@ def test_document_library_template_101_reaches_shape_gate() -> None:
 
 def _library_schema_json(
     tmp_path: Path, kind: str, template: int, tail: str = "",
-) -> dict[str, Any]:
+) -> SchemaJson:
     """One `Doc` entity of the given kind, with an optional mapping tail."""
     tmp_path.mkdir(exist_ok=True)
     schema, bundle = pack(

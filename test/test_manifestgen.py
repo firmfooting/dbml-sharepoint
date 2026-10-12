@@ -1333,6 +1333,8 @@ def test_manifest_prints_the_list_rule_budget_against_sharepoint_limits() -> Non
         generated_at="2026-05-04T00:00:00Z",
     )
     section = md.split("## List validation")[1].split("## Form formatting")[0]
+    assert written["validation_formula"] is not None
+    assert written["validation_message"] is not None
     assert (
         f"formula: {len(written['validation_formula'])} of 1023 characters, "
         f"message: {len(written['validation_message'])} of 1024"

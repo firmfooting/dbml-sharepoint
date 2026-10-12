@@ -1156,4 +1156,4 @@ def test_implicit_docicon_is_readable_only_in_library_formatters(
     if surface == "column":
         field = generated["lists"][0]["fields_phase1"][0]
         assert field["title"] == "Label"
-        assert "DocIcon" in field["custom_formatter"]
+        assert "DocIcon" in (field.get("custom_formatter") or "")

@@ -30,6 +30,7 @@ from dbml_sharepoint.generators.jsgen import (
     build_schema_json,
     generate_deploy_js,
 )
+from dbml_sharepoint.generators.schema_types import ListRow
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import EntityMapping
 from dbml_sharepoint.model.parser import Column, EnumDef, Reference, parse_dbml
@@ -591,7 +592,9 @@ def test_a_library_still_patches_title_for_a_declared_rename(
         schema, library, "default", resolved=resolve(schema, library.mapping),
     )
     att = next(lst for lst in sj["lists"] if lst["title"] == "APP_Attendance")
-    assert att["title_patch"]["Title"] == "Session"
+    title_patch = att["title_patch"]
+    assert title_patch is not None
+    assert title_patch["Title"] == "Session"
 
 
 def test_generated_condition_fields_are_typed_in_schema_output(tmp_path: Path) -> None:
@@ -895,7 +898,7 @@ def test_field_shapes_keep_internal_names_and_titles_apart() -> None:
 
 def _titled(
     tmp_path: Path, override: str, *, formula: str | None = None,
-) -> dict[str, Any]:
+) -> ListRow:
     tail = ["display_names:", "  mode: auto", "  overrides:", "    Risk:",
             f"      Title: {override!r}"]
     if formula is not None:
@@ -923,7 +926,9 @@ def test_a_display_name_override_renames_the_built_in_title(
     now, so the patch carries it and the four halves agree.
     """
     risk = _titled(tmp_path, "Risk Statement")
-    assert risk["title_patch"]["Title"] == "Risk Statement"
+    patch = risk["title_patch"]
+    assert patch is not None
+    assert patch["Title"] == "Risk Statement"
 
 
 def test_an_undeclared_title_keeps_the_patch_free_of_a_display_title(
@@ -936,7 +941,9 @@ def test_an_undeclared_title_keeps_the_patch_free_of_a_display_title(
     a real rename.
     """
     risk = _titled(tmp_path, "Title")
-    assert "Title" not in risk["title_patch"]
+    patch = risk["title_patch"]
+    assert patch is not None
+    assert "Title" not in patch
 
 
 def test_a_formula_referencing_title_is_rewritten_to_its_display_name(

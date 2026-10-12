@@ -4,7 +4,6 @@
 import json
 from collections.abc import Mapping as AbcMapping
 from types import MappingProxyType
-from typing import Any
 
 from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.condition_description import describe
@@ -16,6 +15,7 @@ from dbml_sharepoint.analysis.phases import phase_numbers
 from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.extension import ManifestExtras
 from dbml_sharepoint.generators.jsgen import UNMANAGED
+from dbml_sharepoint.generators.schema_types import FieldSpec, GroupRow, ListRow, SchemaJson
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
 from dbml_sharepoint.model.identities import BUILTIN_IDENTITIES, IdentityValue
 from dbml_sharepoint.model.mapping_types import MappingBundle
@@ -24,17 +24,17 @@ from dbml_sharepoint.templating import script_env
 
 
 def _group_enrols(
-    group: dict[str, Any], identities: AbcMapping[str, tuple[IdentityValue, ...]],
+    group: GroupRow, identities: AbcMapping[str, tuple[IdentityValue, ...]],
 ) -> list[str]:
     """Each identity a group holds as a name and kind, never a value."""
     out = []
-    for name in group.get("enroll", ()):
+    for name in group["enroll"]:
         kinds = sorted({v.kind for v in identities.get(name, ())})
         out.append(
             f"{name} ({', '.join(kinds)}; kept by a run that reaches the end; "
             "an aborted run removes only what it added)"
             if kinds else f"{name} (no value supplied; nobody enrolled, created empty)")
-    for name in group.get("enroll_during_run", ()):
+    for name in group["enroll_during_run"]:
         if name != "operator":
             raise ValueError(f"enroll_during_run names {name!r}; only operator is run-lifetime")
         out.append(
@@ -46,7 +46,7 @@ def _group_enrols(
 @guards_resolution
 def generate_manifest(
     *,
-    schema_json: dict[str, Any],
+    schema_json: SchemaJson,
     resolved: ResolvedMapping,
     findings: list[Finding],
     bundle: MappingBundle,
@@ -98,7 +98,7 @@ def generate_manifest(
     plan = enrolment_plan(bundle, resolved, identities)
     descriptions = {n: b.description for n, b in BUILTIN_IDENTITIES.items()} | {
         n: d.description for n, d in bundle.mapping.identities.items()}
-    lists: list[dict[str, Any]] = schema_json["lists"]
+    lists = schema_json["lists"]
 
     counts = {
         "lists": len(lists),
@@ -148,10 +148,10 @@ def generate_manifest(
     # From `schema_json`, whose groups are already resolved: a `from_enum`
     # group's name reaches `lists_granting_group` below, and the template
     # spelling matches no assignment.
-    groups: list[dict[str, Any]] = schema_json.get("groups", [])
+    groups = schema_json["groups"]
     _reader_groups = [
         g["name"] for g in groups
-        if "enterprise_reader" in g.get("enroll", ())
+        if "enterprise_reader" in g["enroll"]
     ]
     _deployed_entities = [e for e in bundle.mapping.entities if _deployed(e)]
     # The granted half is passed too, not just discarded: when every deployed
@@ -167,19 +167,19 @@ def generate_manifest(
         lists_granting_group(resolved, name, _deployed_entities)
         for name in _reader_groups
     ]
-    def _titles(scope: str) -> list[str]:
+    def _titles(entities_by_group: list[list[str]]) -> list[str]:
         return sorted({
             bundle.mapping.list_title(entity)
-            for reach in _reader_split
-            for entity in getattr(reach, scope)
+            for entities in entities_by_group
+            for entity in entities
         })
 
-    reader_granted_lists = _titles("granted")
+    reader_granted_lists = _titles([reach.granted for reach in _reader_split])
     # Named apart from the granted half: a folder grant binds inside the
     # declared folders and not on the library, so saying "Read on every list
     # here" of one would overstate what the deploy writes.
-    reader_folder_only_lists = _titles("folder_only")
-    reader_excluded_lists = _titles("excluded")
+    reader_folder_only_lists = _titles([reach.folder_only for reach in _reader_split])
+    reader_excluded_lists = _titles([reach.excluded for reach in _reader_split])
 
     # Every field the deploy actually writes, per list. Iterating
     # fields_phase1 alone made the manifest blind to deferred lookups:
@@ -188,7 +188,7 @@ def generate_manifest(
     # deployed while the review artefact reported "(none declared)", the
     # inverse of a silent drop, and just as misleading to the person
     # signing off the run.
-    def _written_fields(lst: dict[str, Any]) -> list[dict[str, Any]]:
+    def _written_fields(lst: ListRow) -> list[FieldSpec]:
         deferred = [
             lookup["field"]
             for lookup in schema_json["phase2_lookups"]
@@ -279,10 +279,9 @@ def generate_manifest(
             for key in sorted(keys, key=order.index)
         )
 
-    form_rows: list[dict[str, Any]] = schema_json["form_formatting"]
     form_formatting = [
         {"list": row["list"], "parts": _form_parts(row["client_form_custom_formatter"])}
-        for row in form_rows
+        for row in schema_json["form_formatting"]
     ]
 
     entity_by_title = {
@@ -327,14 +326,13 @@ def generate_manifest(
                 return ", ".join(declared.expanded_sets)
         return ""
 
-    view_rows: list[dict[str, Any]] = schema_json["views"]
     views = [
         {
             **view,
             "summary": _view_summary(view["list"], view["title"]),
             "expanded_from": _view_expanded_from(view["list"], view["title"]),
         }
-        for view in view_rows
+        for view in schema_json["views"]
     ]
     # Retirement is a load-time mutation of the author's own declarations;
     # the manifest is where the operator sees what was rewritten and why.

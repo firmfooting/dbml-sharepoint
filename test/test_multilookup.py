@@ -13,7 +13,6 @@ The tenant facts pinned here were measured on 2026-09-02
 """
 
 import json
-from typing import Any
 
 import pytest
 from _paths import FIXTURES
@@ -25,6 +24,7 @@ from dbml_sharepoint.generators.jsgen import build_schema_json, generate_deploy_
 from dbml_sharepoint.generators.report_m import generate_powerquery
 from dbml_sharepoint.generators.report_md import generate_data_dictionary
 from dbml_sharepoint.generators.report_sql import generate_sql_views
+from dbml_sharepoint.generators.schema_types import FieldSpec
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema, parse_dbml
@@ -41,7 +41,7 @@ def inputs() -> tuple[Schema, MappingBundle]:
     )
 
 
-def _matter_field(schema: Schema, bundle: MappingBundle, title: str) -> dict[str, Any]:
+def _matter_field(schema: Schema, bundle: MappingBundle, title: str) -> FieldSpec:
     schema_json = build_schema_json(
         schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
     )

@@ -27,28 +27,17 @@ class Requirement:
 
 Requirement(key: str, description: str, level_on_fail: str)
 
+### `AssessTargets`
+
+The payload assess.js loops over. A row is a list, so it compares equal to its JSON.
+
 ### `assess_targets`
 
 ```python
-def assess_targets(schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping, identities: AbcMapping[str, tuple[IdentityValue, ...]] = mappingproxy({})) -> dict[str, Any]
+def assess_targets(schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping, identities: AbcMapping[str, tuple[IdentityValue, ...]] = mappingproxy({})) -> AssessTargets
 ```
 
-The data-driven inputs the assess.js probes loop over.
-
-`list_markers` pairs each declared list title with the exact provenance
-marker its Description must carry. Pairs rather than a mapping, because
-the template emits this as a JavaScript object literal and a list titled
-`__proto__` would then set the prototype instead of becoming a key. It is
-IMPORTED from
-`analysis.list_description`, never re-spelled here or in the template: a
-second spelling would let assess.js quietly disagree with deploy.js about
-the same list, reporting drift on a description the deploy considers
-correct (or, worse, staying silent on one it does not).
-
-`list_view_threshold` and `index_change_ceiling` are the two list-size
-ceilings the item-count probe reports against. They travel in the payload
-for the same reason: the emitted script quotes both numbers to the
-operator and reads them from `analysis.limits` rather than spelling them.
+The data-driven inputs the assess.js probes loop over; see `_collect`.
 
 ### `derive_requirements`
 
