@@ -24,6 +24,7 @@ Spec: `docs/superpowers/specs/2026-07-28-template-family-standard-design.md`,
 Part 1 (the seven conventions) and §3.1 (these assertions).
 """
 
+import collections.abc as cabc
 import datetime as dt
 import re
 from dataclasses import dataclass, fields
@@ -937,7 +938,8 @@ class _UnevaluableError(Exception):
 
 
 def _evaluate(
-    node: Condition, row: dict[str, Any], types: dict[str, str], *, lagging: bool = False,
+    node: Condition, row: cabc.Mapping[str, object], types: dict[str, str], *,
+    lagging: bool = False,
 ) -> bool | None:
     """Three-valued walk. None means UNKNOWN, a leaf this evaluator cannot
     decide from demo `values` (a calculated column, or the `me` sentinel).
@@ -962,7 +964,7 @@ def _evaluate(
 
 
 def _evaluate_leaf(
-    leaf: Leaf, row: dict[str, Any], types: dict[str, str], *, lagging: bool = False,
+    leaf: Leaf, row: cabc.Mapping[str, object], types: dict[str, str], *, lagging: bool = False,
 ) -> bool | None:
     if leaf.property or (leaf.measure and leaf.measure != "length"):
         raise _UnevaluableError(f"{leaf.field}: 'property'/'measure' comparisons are not evaluated")
@@ -1027,7 +1029,7 @@ _ORDERING_OPS = frozenset({"eq", "neq", "lt", "leq", "gt", "geq"})
 
 
 def _any_member(
-    field: str, column_type: str, raw: Any, members: list[Any], *,
+    field: str, column_type: str, raw: object, members: list[object], *,
     dates: bool, numeric: bool, lagging: bool,
 ) -> bool:
     """True if any member equals `raw`; unevaluable if none does and one could not be decided."""
@@ -1055,7 +1057,7 @@ _FORMULA_LAG_DAYS = (0, 1)
 
 
 def _compare_instants(
-    field: str, op: str, raw: Any, value: Any, *, lagging: bool = False,
+    field: str, op: str, raw: object, value: object, *, lagging: bool = False,
 ) -> bool:
     """`lagging` marks a save rule, whose `today±N` must hold for its day and the day before."""
     # `now` renders against [Modified], the save instant, so only `today±N` reads the lagging clock.
@@ -1157,40 +1159,37 @@ def _compare_booleans(field: str, op: str, raw: Any, value: Any) -> bool:
 
 
 def _compare(
-    op: str, left: Any, right: Any, *, dates: bool = True, numeric: bool = False,
+    op: str, left: object, right: object, *, dates: bool = True, numeric: bool = False,
 ) -> bool:
-    lhs, rhs = _align(left, right, dates=dates, numeric=numeric)
-    match op:
-        case "eq":
-            return bool(lhs == rhs)
-        case "neq":
-            return bool(lhs != rhs)
-        case "lt":
-            return bool(lhs < rhs)
-        case "leq":
-            return bool(lhs <= rhs)
-        case "gt":
-            return bool(lhs > rhs)
-        case "geq":
-            return bool(lhs >= rhs)
-        case _:  # pragma: no cover - SUPPORTED_OPS gates this
-            raise _UnevaluableError(f"operator {op!r}")
-
-
-def _align(
-    left: Any, right: Any, *, dates: bool = True, numeric: bool = False,
-) -> tuple[Any, Any]:
     """Compare like with like: dates if both sides are dates, numbers if both
     are numeric on a numeric column, strings otherwise (a text `"01"` is not `"1"`).
     Mixed pairs fall to string comparison, which is what a choice member against a
     literal wants anyway."""
     left_date, right_date = (_as_date(left), _as_date(right)) if dates else (None, None)
     if left_date is not None and right_date is not None:
-        return left_date, right_date
+        return _decide(op, left_date, right_date)
     left_number, right_number = (_as_number(left), _as_number(right)) if numeric else (None, None)
     if left_number is not None and right_number is not None:
-        return left_number, right_number
-    return str(left), str(right)
+        return _decide(op, left_number, right_number)
+    return _decide(op, str(left), str(right))
+
+
+def _decide[T: (dt.date, float, str)](op: str, lhs: T, rhs: T) -> bool:
+    match op:
+        case "eq":
+            return lhs == rhs
+        case "neq":
+            return lhs != rhs
+        case "lt":
+            return lhs < rhs
+        case "leq":
+            return lhs <= rhs
+        case "gt":
+            return lhs > rhs
+        case "geq":
+            return lhs >= rhs
+        case _:  # pragma: no cover - SUPPORTED_OPS gates this
+            raise _UnevaluableError(f"operator {op!r}")
 
 
 def _as_date(value: Any) -> dt.date | None:
