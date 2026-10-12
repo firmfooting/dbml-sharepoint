@@ -877,13 +877,15 @@
         const stamp = new Date(RUN_STARTED_AT).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
         const fileName = `${stamp}-${slug}-${Math.random().toString(36).slice(2, 8)}.log`;
         const bytes = new TextEncoder().encode(LOG_BUFFER.join('\n') + '\n');
+        // What Files/add answers for a name that already exists is unmeasured, so any non-2xx is a
+        // failed upload; attempts 0 means the POST is never retried, which could hit this run's own file.
         const addResp = await fetchWithRetry(externalApi(
           `getfolderbyserverrelativeurl('${odataName(root)}')/files/add(url='${odataName(fileName)}',overwrite=false)`
         ), {
           method: 'POST',
           headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': await externalDigest() },
           body: bytes,
-        });
+        }, 0);
         if (!addResp.ok) throw new Error(`HTTP ${addResp.status} ${spError(await addResp.text())}`);
         const fileUrl = `${root.replace(/\/+$/, '')}/${fileName}`;
         const backResp = await fetchWithRetry(externalApi(
@@ -1247,6 +1249,7 @@
           + 'Deployment logs library to upload to, and this one recorded itself on the site.');
       }
       const finalNote = logUrl ? `${note}; run log ${logUrl}` : note;
+      if (logUrl) log('INFO', `Run log uploaded to ${logUrl}; lines logged after this are not in it.`);
       if (LOG_MODE === 'CENTRAL') {
         await stampExternal(kind,
           `${RELEASE_TAG} (schema v${SCHEMA_VERSION}) at ${new Date().toISOString()}; ${finalNote}`,

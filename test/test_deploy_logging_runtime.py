@@ -290,7 +290,7 @@ _HARNESS = textwrap.dedent(r"""
             if (headers['X-RequestDigest'] !== 'central-digest') return badDigest();
             const path = `/sites/CENTRAL_SITE/LIBRARY_TITLE/${added[1]}`;
             if (state.files[path] !== undefined) {
-              return reply(409, { error: { message: { value: 'exists' } } });
+              return reply(400, { error: { message: { value: 'duplicate (simulated)' } } });
             }
             state.files[path] = {
               text: new TextDecoder().decode(opts.body), bytes: opts.body.length };
@@ -502,7 +502,7 @@ _HARNESS = textwrap.dedent(r"""
 """) + BATCH_MOCK
 
 
-def _deploy_js(*, protect: bool = False) -> str:
+def _deploy_js(*, protect: bool = False, throw_in_phase: bool = False) -> str:
     """A one-list deploy with both sidecars on and a central log named.
 
     `protect` turns on the two family settings the sidecars now honour
@@ -538,6 +538,15 @@ def _deploy_js(*, protect: bool = False) -> str:
         1,
     )
     assert stubbed != js
+    if throw_in_phase:
+        # Outside any phase-level try, as the real uncaught case is: the first
+        # phase after the logging phase throws a plain Error.
+        marker = "log('INFO', 'Starting Phase"
+        head, sep, tail = stubbed.partition("Logging mode ")
+        assert sep
+        nxt = tail.index(marker)
+        boom = "throw new Error('phase blew up (simulated)');\n  "
+        stubbed = head + sep + tail[:nxt] + boom + tail[nxt:]
     return stubbed
 
 
@@ -571,6 +580,7 @@ def _run_deploy(
     seeded_central_rows: bool = False,
     seeded_foreign_application: bool = False,
     protect: bool = False,
+    throw_in_phase: bool = False,
     overlay: str = "",
     rerun: bool = False,
     identity_tail: str = "",
@@ -716,7 +726,7 @@ def _run_deploy(
         harness = _substitute(
             harness, "const SEED_ITEMS = {};", f"const SEED_ITEMS = {seeded};",
         )
-    body = _deploy_js(protect=protect).rstrip()
+    body = _deploy_js(protect=protect, throw_in_phase=throw_in_phase).rstrip()
     if identity_tail:
         body, swapped = re.subn(
             r"const IDENTITY_TAIL = .*;", lambda _: identity_tail, body, count=1)
@@ -1849,6 +1859,36 @@ def test_a_failed_run_still_uploads_its_log() -> None:
     assert "list create refused" in files[0][1]
     assert run["state"]["central"].rows[-1]["StampKind"] == "abort"
     assert files[0][0] in run["state"]["central"].rows[-1]["Details"]
+
+
+def test_a_phase_that_throws_unhandled_still_uploads_the_lines_logged_before_it() -> None:
+    run = _run_deploy(throw_in_phase=True)
+    assert run["summary"]["aborted"].text == "uncaught-phase-error", run["summary"]
+    files = _uploaded(run)
+    assert len(files) == 1, files
+    path, text = files[0]
+    assert "Logging mode CENTRAL" in text
+    assert "phase blew up (simulated)" in text
+    assert run["state"]["central"].rows[-1]["StampKind"] == "abort"
+    assert path in run["state"]["central"].rows[-1]["Details"]
+
+
+def test_the_upload_post_is_never_retried_and_a_duplicate_name_is_a_failed_upload() -> None:
+    overlay = textwrap.dedent("""
+        const dupFetch = globalThis.fetch;
+        globalThis.fetch = async (url, opts = {}) => {
+          const r = await dupFetch(url, opts);
+          if (opts.method === 'POST' && /files\\/add\\(/.test(decodeURIComponent(String(url)))) {
+            return dupFetch(url, opts);
+          }
+          return r;
+        };
+    """)
+    run = _run_deploy(overlay=overlay)
+    adds = [c for c in run["calls"] if "/files/add(" in c["url"].text]
+    assert len(adds) == 2, adds  # the overlay's own second send; the code sent one
+    failures = run["summary"]["loggingFailures"]
+    assert any("HTTP 400" in f["error"].text for f in failures), failures
 
 
 @pytest.mark.parametrize(
