@@ -112,6 +112,10 @@
     // the change feed is written there too.
     const EXTERNAL_LOG_COLUMNS = {{ deployment_log_columns | tojson }};
     const EXTERNAL_CHANGE_COLUMNS = {{ deployment_log_change_columns | tojson }};
+    // Columns the Changes list may lack without losing the feed; each is
+    // written only when the probe found it.
+    const EXTERNAL_CHANGE_OPTIONAL_COLUMNS = {{ deployment_log_change_optional_columns | tojson }};
+    let centralChangeHasListId = false;
     const EXTERNAL_ROW_PREFIX = {{ application_name | tojson }};
     const CHANGE_FIELDS = {{ sidecar_change_fields | tojson(indent=2) }};
     const RUN_LOG_FIELDS = {{ sidecar_run_log_fields | tojson(indent=2) }};
@@ -336,6 +340,13 @@
               if (present) {
                 centralChangeReady = centralColumnsComplete(
                   EXTERNAL_CHANGE_LOG_TITLE, present, EXTERNAL_CHANGE_COLUMNS);
+                // A page that may be truncated and lacks it counts as absent:
+                // the column is optional, so the safe answer is to not write it.
+                centralChangeHasListId = EXTERNAL_CHANGE_OPTIONAL_COLUMNS.every((n) => present.names.has(n));
+                if (centralChangeReady && !centralChangeHasListId) {
+                  log('INFO', `Central change log '${EXTERNAL_CHANGE_LOG_TITLE}' has no `
+                    + `${EXTERNAL_CHANGE_OPTIONAL_COLUMNS.join(', ')} column: create rows are written without the list id.`);
+                }
               }
             } catch (err) {
               recordFailure(`central change log '${EXTERNAL_CHANGE_LOG_TITLE}' field probe`, err);
@@ -925,11 +936,26 @@
           EffectiveTo: null,
           IsCurrent: true,
           Application: APPLICATION,
+          ...(change.listId && centralChangeHasListId ? { ListId: change.listId } : {}),
         }),
       });
       if (!insertResp.ok) {
         recordFailure(`central insert of '${change.key}'`,
           new Error(`HTTP ${insertResp.status} ${await insertResp.text()}`));
+        return;
+      }
+      if (change.listId && centralChangeHasListId) {
+        // Read the stored value back: a write that saves but stores something else is silent otherwise.
+        const rowId = ((await insertResp.json()).d || {}).Id;
+        const backResp = await fetchWithRetry(externalApi(
+          `lists/getbytitle('${odataName(EXTERNAL_CHANGE_LOG_TITLE)}')/items(${rowId})?$select=ListId`
+        ), { headers: { 'Accept': 'application/json;odata=verbose' } });
+        const stored = backResp.ok ? ((await backResp.json()).d || {}).ListId : null;
+        if (String(stored || '').toLowerCase() !== String(change.listId).toLowerCase()) {
+          recordFailure(`central change '${change.key}'`,
+            new Error(`ListId read-back mismatch: stored '${stored}', created list Id '${change.listId}'`
+              + (backResp.ok ? '' : ` (read-back HTTP ${backResp.status})`)));
+        }
       }
     };
 
