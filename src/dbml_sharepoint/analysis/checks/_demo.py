@@ -15,6 +15,7 @@ from dbml_sharepoint.analysis.typemap import (
     element_type,
     is_boolean,
     is_hyperlink,
+    is_multi_person,
     is_multi_value,
     is_person,
 )
@@ -193,6 +194,15 @@ def check(vc: ValidationContext) -> list[Finding]:
                     continue
                 # ARITY IS ANSWERED FIRST, because every rule below reads one
                 # scalar and a rule handed a list reports the wrong fault.
+                if is_multi_person(col_type):
+                    # The multi-person item write shape is not wired into demo seeding.
+                    findings.append(Finding(
+                        FindingCode.DEMO_PERSON_VALUE_UNSUPPORTED,
+                        f"{ctx}: person[] column {col_name} cannot be seeded "
+                        f"by a demo row; leave it out of values.",
+                        location=at,
+                    ))
+                    continue
                 if is_multi_value(col_type or ""):
                     if not isinstance(value, list):
                         findings.append(Finding(

@@ -49,6 +49,7 @@ from dbml_sharepoint.analysis.role_definition_description import (
 from dbml_sharepoint.analysis.save_rules import effective_list_validation, hoisted_columns
 from dbml_sharepoint.analysis.sidecars import (
     CENTRAL_CHANGE_COLUMNS,
+    CENTRAL_CHANGE_OPTIONAL_COLUMNS,
     CENTRAL_LOG_COLUMNS,
     EXTERNAL_LOG_LIBRARY_DEFAULT,
 )
@@ -250,6 +251,7 @@ def generate_deploy_js(
         # change feed, which is what lets a run with a central log create no
         # per-site sidecars at all.
         deployment_log_change_columns=list(CENTRAL_CHANGE_COLUMNS),
+        deployment_log_change_optional_columns=list(CENTRAL_CHANGE_OPTIONAL_COLUMNS),
         # The assessment's three inputs, built exactly as generate_assess_js
         # builds them. `assess_targets_data` rather than `assess_targets` so
         # the context name does not shadow the imported function.
@@ -1355,6 +1357,17 @@ def _field_body(
             body["DisplayFormat"] = sp.display_format
         case "User":
             body["SelectionMode"] = sp.selection_mode
+        case "UserMulti":
+            body["SelectionMode"] = sp.selection_mode
+            body["AllowMultipleValues"] = True
+            # AddField has no arity, so this is created from schema XML as a
+            # multi-value lookup is (`field.version.fixture-payload-people-column`).
+            # Required and Description arrive on the reconciler's MERGE.
+            return {
+                "title": sp.name,
+                "body": body,
+                "user_creation_xml": {"type": sp.kind, "name": sp.name},
+            }
         case "Lookup" | "LookupMulti":
             # Display the target list's primary field. Defaults to the built-in
             # "Title", but a target whose mapping declares display_column (e.g.

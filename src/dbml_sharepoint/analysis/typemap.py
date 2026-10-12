@@ -22,7 +22,7 @@ from dbml_sharepoint.model.parser import Column, ColumnDefault
 type FieldKind = Literal[
     "Skip", "Text", "Note", "DateTime", "Choice", "Lookup",
     "Boolean", "Number", "URL", "User", "Calculated", "MultiChoice",
-    "LookupMulti",
+    "LookupMulti", "UserMulti",
 ]
 
 #: THE pairing of this codebase's field-kind token to SharePoint's numeric
@@ -54,6 +54,7 @@ FIELD_TYPE_KIND_BY_KIND: dict[FieldKind, int] = {
     "MultiChoice": 15,
     "Calculated": 17,
     "User": 20,
+    "UserMulti": 20,
 }
 
 #: Kinds that share a `FieldTypeKind` with a single-value sibling, keyed by the
@@ -66,7 +67,9 @@ FIELD_TYPE_KIND_BY_KIND: dict[FieldKind, int] = {
 #: `field.multilookup.create-readback-type`, 2026-09-02). So the kind number
 #: does NOT determine the kind token, and every derivation below that inverts
 #: the map has to say which arity it means.
-MULTI_ARITY_KIND: dict[FieldKind, FieldKind] = {"Lookup": "LookupMulti"}
+MULTI_ARITY_KIND: dict[FieldKind, FieldKind] = {
+    "Lookup": "LookupMulti", "User": "UserMulti",
+}
 
 #: The inverse of the above: the single-value spelling of a multi-value kind.
 SINGLE_ARITY_KIND: dict[FieldKind, FieldKind] = {
@@ -117,7 +120,15 @@ MULTI_TYPE_AS_STRING_PAIRS: list[tuple[int, str]] = sorted(
 #: string would abort a field the tenant is perfectly willing to change, so
 #: the assertion compares base types and arity reconciles as an ordinary
 #: property.
-BASE_TYPE_AS_STRING_PAIRS: list[tuple[str, str]] = sorted(SINGLE_ARITY_KIND.items())
+#:
+#: LOOKUP ONLY. Nothing has measured that a User field's AllowMultipleValues
+#: flips on an existing column, so UserMulti is left out and a single/multi
+#: change on a deployed person column aborts as an immutable TypeAsString
+#: mismatch rather than being merged.
+BASE_TYPE_AS_STRING_PAIRS: list[tuple[str, str]] = sorted(
+    (multi, single) for multi, single in SINGLE_ARITY_KIND.items()
+    if multi == "LookupMulti"
+)
 
 
 #: The OData entity type each field kind is CREATED as. One authority, because
@@ -148,6 +159,7 @@ ENTITY_TYPE_BY_KIND: dict[str, str] = {
     "Number": "SP.FieldNumber",
     "URL": "SP.FieldUrl",
     "User": "SP.FieldUser",
+    "UserMulti": "SP.FieldUser",
     "Calculated": "SP.FieldCalculated",
 }
 
@@ -415,6 +427,17 @@ def is_person(column_type: str | None) -> bool:
     return column_type == "person"
 
 
+def is_multi_person(column_type: str | None) -> bool:
+    """Whether this DBML type is the multi-value Person-or-Group column.
+
+    Spelled `person[]`. Reads back TypeAsString "UserMulti" with
+    AllowMultipleValues true, FieldTypeKind 20 (`field.version.fixture-payload-people-column`).
+    """
+    return column_type is not None and is_multi_value(column_type) and is_person(
+        element_type(column_type),
+    )
+
+
 def is_hyperlink(column_type: str | None) -> bool:
     """Whether this DBML type is the Hyperlink column (SP URL, kind 11).
 
@@ -623,6 +646,14 @@ def _resolve_column(col: Column, enum_names: set[str]) -> SPField:
             field_type_kind=FIELD_TYPE_KIND_BY_KIND["MultiChoice"],
             required=col.required, unique=col.unique, default=col.default,
             description=description, choices_enum=choices_enum,
+        )
+
+    if is_multi_person(col.type):
+        return SPField(
+            name=col.name, kind="UserMulti",
+            field_type_kind=FIELD_TYPE_KIND_BY_KIND["UserMulti"],
+            required=col.required, unique=col.unique, default=None,
+            description=description, selection_mode=0,
         )
 
     if col.ref is not None:
@@ -852,12 +883,13 @@ UNSUPPORTED_INDEX_TYPES = {
 # (test/manual/multilookup-probe.js, `field.multilookup.indexed-property` and
 # `.control-single-value-indexed`).
 MULTI_VALUE_SP_TYPE_NAMES: dict[FieldKind, str] = {
+    "UserMulti": "Person (multi-valued)",
     "MultiChoice": "Choice (multi-valued)",
     "LookupMulti": "Lookup (multi-valued)",
 }
 
 
-def multi_value_sp_type_name(*, lookup: bool = False) -> str:
+def multi_value_sp_type_name(*, lookup: bool = False, person: bool = False) -> str:
     """SharePoint's own name for the multi-value column type `lookup` selects.
 
     A FLAG RATHER THAN A `Column`, because the two callers that render this
@@ -865,6 +897,8 @@ def multi_value_sp_type_name(*, lookup: bool = False) -> str:
     only a declared type string out of a `types_by_col` map. Both can answer
     "is this a lookup", and neither should be typing the string.
     """
+    if person:
+        return MULTI_VALUE_SP_TYPE_NAMES["UserMulti"]
     return MULTI_VALUE_SP_TYPE_NAMES["LookupMulti" if lookup else "MultiChoice"]
 
 
@@ -890,7 +924,9 @@ def unsupported_index_reason(col_type: str, *, lookup: bool = False) -> str | No
     predicate, not a second string.
     """
     if is_multi_value(col_type):
-        return multi_value_sp_type_name(lookup=lookup)
+        return multi_value_sp_type_name(
+            lookup=lookup, person=is_multi_person(col_type),
+        )
     return UNSUPPORTED_INDEX_TYPES.get(col_type)
 
 # One join operation per RENDERED column of these types, against the list view

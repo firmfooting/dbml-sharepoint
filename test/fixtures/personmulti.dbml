@@ -1,0 +1,14 @@
+// test/fixtures/personmulti.dbml
+Project personmulti_test {
+  database_type: 'SharePoint Online'
+  Note: 'Fixture exercising a multi-person column through a whole build.'
+}
+
+Table Duty {
+  Id     int      [pk, increment]
+  Title  nvarchar [not null]
+  Owner  person   [note: 'The single-value control.']
+  Owners person[] [note: 'Several people, for a job share.']
+
+  Note: 'Fixture duties.'
+}

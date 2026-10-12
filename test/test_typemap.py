@@ -514,7 +514,7 @@ def test_a_multi_arity_kind_shares_its_single_value_kind_number() -> None:
     deployer could pick the token from the number alone and every arity map
     below would be scaffolding, so pin the reason they exist.
     """
-    assert MULTI_ARITY_KIND == {"Lookup": "LookupMulti"}
+    assert MULTI_ARITY_KIND == {"Lookup": "LookupMulti", "User": "UserMulti"}
     for single, multi in MULTI_ARITY_KIND.items():
         assert FIELD_TYPE_KIND_BY_KIND[multi] == FIELD_TYPE_KIND_BY_KIND[single]
 

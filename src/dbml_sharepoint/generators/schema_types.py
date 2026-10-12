@@ -73,6 +73,7 @@ class FieldSpec(TypedDict):
     body: FieldBody
     target_list: NotRequired[str]
     lookup_creation_xml: NotRequired[dict[str, str]]
+    user_creation_xml: NotRequired[dict[str, str]]
     lookup_creation_parameters: NotRequired[LookupCreationParameters]
     projections: NotRequired[list[Projection]]
     display_title: NotRequired[str]

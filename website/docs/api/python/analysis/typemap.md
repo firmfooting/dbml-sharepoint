@@ -17,19 +17,19 @@ nothing could check and that had already lost Calculated and MultiChoice.
 ### `FIELD_TYPE_KIND_BY_KIND`
 
 ```python
-FIELD_TYPE_KIND_BY_KIND = {'Text': 2, 'Note': 3, 'DateTime': 4, 'Choice': 6, 'Lookup': 7, 'LookupMulti': 7, 'Boolean': 8, 'Number': 9, 'URL': 11, 'MultiChoice': 15, 'Calculated': 17, 'User': 20}
+FIELD_TYPE_KIND_BY_KIND = {'Text': 2, 'Note': 3, 'DateTime': 4, 'Choice': 6, 'Lookup': 7, 'LookupMulti': 7, 'Boolean': 8, 'Number': 9, 'URL': 11, 'MultiChoice': 15, 'Calculated': 17, 'User': 20, 'UserMulti': 20}
 ```
 
 ### `MULTI_ARITY_KIND`
 
 ```python
-MULTI_ARITY_KIND = {'Lookup': 'LookupMulti'}
+MULTI_ARITY_KIND = {'Lookup': 'LookupMulti', 'User': 'UserMulti'}
 ```
 
 ### `SINGLE_ARITY_KIND`
 
 ```python
-SINGLE_ARITY_KIND = {'LookupMulti': 'Lookup'}
+SINGLE_ARITY_KIND = {'LookupMulti': 'Lookup', 'UserMulti': 'User'}
 ```
 
 ### `FIELD_KIND_BY_TYPE_KIND`
@@ -47,7 +47,7 @@ TYPE_AS_STRING_PAIRS = [(2, 'Text'), (3, 'Note'), (4, 'DateTime'), (6, 'Choice')
 ### `MULTI_TYPE_AS_STRING_PAIRS`
 
 ```python
-MULTI_TYPE_AS_STRING_PAIRS = [(7, 'LookupMulti')]
+MULTI_TYPE_AS_STRING_PAIRS = [(7, 'LookupMulti'), (20, 'UserMulti')]
 ```
 
 ### `BASE_TYPE_AS_STRING_PAIRS`
@@ -235,6 +235,17 @@ def is_person(column_type: str | None) -> bool
 
 Whether this DBML type is the Person-or-Group column (SP User, kind 20).
 
+### `is_multi_person`
+
+```python
+def is_multi_person(column_type: str | None) -> bool
+```
+
+Whether this DBML type is the multi-value Person-or-Group column.
+
+Spelled `person[]`. Reads back TypeAsString "UserMulti" with
+AllowMultipleValues true, FieldTypeKind 20 (`field.version.fixture-payload-people-column`).
+
 ### `is_hyperlink`
 
 ```python
@@ -395,13 +406,13 @@ UNSUPPORTED_INDEX_TYPES = {'longtext': 'Multiple lines of text (Note)', 'richtex
 ### `MULTI_VALUE_SP_TYPE_NAMES`
 
 ```python
-MULTI_VALUE_SP_TYPE_NAMES = {'MultiChoice': 'Choice (multi-valued)', 'LookupMulti': 'Lookup (multi-valued)'}
+MULTI_VALUE_SP_TYPE_NAMES = {'UserMulti': 'Person (multi-valued)', 'MultiChoice': 'Choice (multi-valued)', 'LookupMulti': 'Lookup (multi-valued)'}
 ```
 
 ### `multi_value_sp_type_name`
 
 ```python
-def multi_value_sp_type_name(*, lookup: bool = False) -> str
+def multi_value_sp_type_name(*, lookup: bool = False, person: bool = False) -> str
 ```
 
 SharePoint's own name for the multi-value column type `lookup` selects.

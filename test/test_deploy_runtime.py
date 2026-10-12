@@ -2654,6 +2654,47 @@ def test_a_column_with_multiple_immutable_mismatches_reports_all_of_them(
     assert reported == [both]
 
 
+def _arity_flip_summary(
+    tmp_path: Path, declared: str, live_kind: int, live_type: str, live_multi: bool,
+) -> Json:
+    """Deploy a list whose `Owner` is declared `declared` over a live `Owner` of the other arity."""
+    harness = _ADOPTED_HARNESS + textwrap.dedent(f"""
+        const owner = fieldShape('APP_Escalation', 'Owner', {{
+          FieldTypeKind: {live_kind}, Required: false, Description: '',
+          AllowMultipleValues: {json.dumps(live_multi)}, SelectionMode: 0,
+        }});
+        owner.TypeAsString = '{live_type}';
+        created['APP_Escalation Owner'] = owner;
+    """)
+    js = _declared_deploy_js(tmp_path, "", extra_lines=(f"Owner {declared}",))
+    script = harness + "\n" + js.replace(
+        "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+    line = next((ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None)
+    assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
+    return Json.loads(line.removeprefix("__RESULT__"))
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+@pytest.mark.parametrize(
+    ("declared", "live_type", "live_multi", "expected"),
+    [("person[]", "User", False, "UserMulti"), ("person", "UserMulti", True, "User")],
+)
+def test_a_person_column_changing_arity_aborts_as_a_type_mismatch(
+    tmp_path: Path, declared: str, live_type: str, live_multi: bool, expected: str,
+) -> None:
+    """Nothing measured User's arity flipping on a live column, so it is not reconciled."""
+    summary = _arity_flip_summary(tmp_path, declared, 20, live_type, live_multi)
+    assert summary.get("aborted") == "existing-schema-shape-errors", summary
+    reported = [err["error"] for err in summary["errors"] if err.get("column") == "Owner"]
+    want = (
+        f"Existing field 'APP_Escalation.Owner' has immutable TypeAsString '{live_type}'; "
+        f"expected '{expected}'"
+    )
+    assert reported == [want]
+
+
 # One adopted lookup column, correct in every property the collector can still
 # compare, whose TARGET list has lost the display field the lookup names. The
 # enumeration is what the non-fresh probe reads, so dropping Title from it is

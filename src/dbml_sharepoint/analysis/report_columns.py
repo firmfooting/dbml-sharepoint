@@ -161,6 +161,8 @@ def report_output_names(
                 if target != lookup_display
             )
             return (f"{sp.name}Id", f"{sp.name}{lookup_display}", *projected)
+        case "UserMulti":
+            return (f"{sp.name}Id",)
         case "LookupMulti":
             # No expand, so no display column: expanding a collection yields a
             # nested table per row and the query carries the ids alone.

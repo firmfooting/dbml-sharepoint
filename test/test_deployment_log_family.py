@@ -25,6 +25,7 @@ from _paths import JINJA_TEMPLATES, SOLUTION_TEMPLATES
 from dbml_sharepoint.analysis.permissions import BUILT_IN_LEVELS
 from dbml_sharepoint.analysis.sidecars import (
     CENTRAL_CHANGE_COLUMNS,
+    CENTRAL_CHANGE_OPTIONAL_COLUMNS,
     CENTRAL_LOG_COLUMNS,
     EXTERNAL_CHANGE_LOG_DEFAULT,
     EXTERNAL_LOG_DEFAULT,
@@ -55,7 +56,11 @@ _KIND_IN_TERNARY = re.compile(r"const kind = [^;]*\? '([^']+)' : '([^']+)'")
 #: What a stamp row fills and a change row does not, and the reverse. The two
 #: shapes share the stamp half; neither fills every column across both lists,
 #: so the contract is the UNION.
-_ALL_CENTRAL_COLUMNS = frozenset(CENTRAL_LOG_COLUMNS) | frozenset(CENTRAL_CHANGE_COLUMNS)
+_ALL_CENTRAL_COLUMNS = (
+    frozenset(CENTRAL_LOG_COLUMNS)
+    | frozenset(CENTRAL_CHANGE_COLUMNS)
+    | frozenset(CENTRAL_CHANGE_OPTIONAL_COLUMNS)
+)
 
 
 def _tables() -> dict[str, Table]:
@@ -151,7 +156,9 @@ def test_each_list_carries_exactly_its_own_row_shape() -> None:
         f"Deployments declares {sorted(deployments)}, not the stamp shape "
         f"CENTRAL_LOG_COLUMNS plus Title."
     )
-    assert changes == frozenset(CENTRAL_CHANGE_COLUMNS) | {"Title"}, (
+    assert changes == (
+        frozenset(CENTRAL_CHANGE_COLUMNS) | frozenset(CENTRAL_CHANGE_OPTIONAL_COLUMNS) | {"Title"}
+    ), (
         f"Changes declares {sorted(changes)}, not the change shape "
         f"CENTRAL_CHANGE_COLUMNS plus Title."
     )
