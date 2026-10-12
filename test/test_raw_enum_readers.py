@@ -3,6 +3,7 @@
 
 from pathlib import Path
 
+import pytest
 from _paths import PACKAGE
 from _ratchet import Ratchet
 from _raw_enum_readers import (
@@ -237,6 +238,34 @@ def test_a_resolved_class_pattern_is_not_a_raw_read() -> None:
     assert _reads_in(kw, "dbml_sharepoint/generators/jsgen.py") == {
         (MODULE_SCOPE, "folder_policies"),
     }
+
+
+def test_a_reassigned_resolved_class_name_is_a_raw_read() -> None:
+    source = (
+        "class ResolvedMapping: pass\n"
+        "ResolvedMapping = PermissionsConfig\n"
+        "match obj:\n    case ResolvedMapping(folder_policies=p):\n        use(p)\n"
+    )
+    assert _reads_in(source) == {(MODULE_SCOPE, "folder_policies")}
+
+
+@pytest.mark.parametrize(
+    "bind",
+    [
+        "for C in classes:\n    pass\n",
+        "with ctx() as C:\n    pass\n",
+        "try:\n    pass\nexcept E as C:\n    pass\n",
+        "(C := PermissionsConfig)\n",
+        "def f(C):\n    pass\n",
+    ],
+)
+def test_every_kind_of_rebinding_makes_an_alias_unplaceable(bind: str) -> None:
+    source = (
+        "from dbml_sharepoint.model.mapping_types import EntityMapping as C\n"
+        + bind
+        + "match obj:\n    case C(_, _, _, _, _, _, wanted):\n        use(wanted)\n"
+    )
+    assert {name for _, name in _reads_in(source)} == set(RATCHETED)
 
 
 def test_a_default_or_decorator_read_belongs_to_the_enclosing_scope() -> None:

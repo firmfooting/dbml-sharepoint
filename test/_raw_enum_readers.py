@@ -154,9 +154,7 @@ def _import_aliases(tree: ast.Module) -> dict[str, str]:
 
 
 def _bound_names(tree: ast.AST) -> Counter[str]:
-    """How many times each name is bound under `tree` by anything but a
-    `from ... import`: assignment, loop, `with`, `except`, `match`, walrus,
-    parameter, `def`, `class` or plain `import`."""
+    """Bindings per name under `tree`, counting everything but `from ... import`."""
     count: Counter[str] = Counter()
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load):
@@ -219,9 +217,7 @@ def _fields_matched(
     `ast.Attribute` walk never sees because a pattern spells them in
     `kwd_attrs` or, positionally, nowhere at all."""
     cls = _pattern_class(node.cls, aliases)
-    # A class `resolve.py` declares holds its ratcheted names already
-    # resolved, so matching them is the answer and not a raw read. Only a bare
-    # name proven to be that class counts; anything else fails closed.
+    # A bare name proven to be resolve.py's class matches the resolved answer; else fail closed.
     own = (
         RESOLUTION_FIELDS.get(cls, frozenset())
         if isinstance(node.cls, ast.Name) and node.cls.id in resolved
@@ -349,9 +345,12 @@ def _visit(
 def _walk(source: str, module: str = "") -> _Found:
     tree = ast.parse(source)
     found = _Found()
-    ctx = _Ctx(_import_aliases(tree), _resolver_imports(tree), module)
+    rebound = _bound_names(tree)
+    # An imported name is bound nowhere else; resolve.py's own `class` binds once.
+    resolved = {n for n in _resolver_imports(tree) if not rebound[n]}
     if module == RESOLVER_MODULE:
-        ctx = replace(ctx, resolved=set(RESOLUTION_FIELDS))
+        resolved |= {n for n in RESOLUTION_FIELDS if rebound[n] <= 1}
+    ctx = _Ctx(_import_aliases(tree), resolved, module)
     _collect(tree, (), found, ctx)
     return found
 
