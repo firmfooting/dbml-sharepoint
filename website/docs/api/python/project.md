@@ -148,17 +148,16 @@ by the core CLI and any extension project CLIs that compose it. Raises
 RETURNS the URL with any query or fragment removed, rather than refusing
 it. SharePoint's own **Copy link** puts `?web=1` on the clipboard, so the
 most common paste carried one, and nothing downstream stripped it: the
-reporting pack bakes this value into the Power Query `SiteRoot` and the
+reporting pack bakes this value into the Power Query `SiteUrl` and the
 SQLCMD `SiteUrl`, producing endpoints like
 `https://tenant/sites/X?web=1/_api/web`. Every consumer reads the value
 `execute_build` holds after this call, so cleaning it once here reaches
 all of them.
 
-Normalising rather than refusing follows the precedent already on this
-branch -- `_SITE_ROOT_M` trims a pasted LIST url back to the site root
-rather than making the operator edit it. But a silent rewrite of what
-somebody typed is its own defect, so the caller is expected to compare
-and say so; see `site_url_notice`.
+A trailing slash is removed too, because the reporting queries require
+the bare site root and refuse a refresh otherwise. A silent rewrite of
+what somebody typed is its own defect, so the caller is expected to
+compare and say so; see `site_url_notice`.
 
 ### `site_url_notice`
 
