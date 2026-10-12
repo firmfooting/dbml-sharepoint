@@ -2181,6 +2181,39 @@ def test_the_row_key_names_the_list_it_came_from() -> None:
     assert 'each SiteRoot & "|" & Number.ToText([Id])' not in task
 
 
+def _declare_url(bundle: MappingBundle, entity: str, url: str) -> None:
+    bundle.mapping.entities[entity] = replace(
+        bundle.mapping.entities[entity], internal_name=url,
+    )
+
+
+def test_row_key_uses_the_declared_url_not_the_title() -> None:
+    schema, bundle = _simple()
+    _declare_url(bundle, "Task", "Lists//Mail Ledger/")
+    queries = generate_powerquery(schema, bundle, "default")
+    assert _added_column_expression(queries["APP_Task.pq"], "Task Key") == (
+        'each SiteRoot & "|" & "lists/mail ledger" & "|" & Number.ToText([Id])'
+    )
+    assert "APP_Task" not in _added_column_expression(queries["APP_Task.pq"], "Task Key")
+
+
+def test_a_lookup_key_spells_the_target_the_way_the_target_does() -> None:
+    schema, bundle = _simple()
+    _declare_url(bundle, "Project", "Lists/Projects")
+    queries = generate_powerquery(schema, bundle, "default")
+    own = _added_column_expression(queries["APP_Project.pq"], "Project Key")
+    assert '"lists/projects"' in own
+    assert '"|" & "lists/projects" & "|"' in queries["APP_Task.pq"]
+
+
+def test_a_declared_list_url_sets_the_item_form_path() -> None:
+    schema, bundle = _simple()
+    _declare_url(bundle, "Task", "Lists/MailLedger")
+    plan = next(p for p in build_plans(schema, bundle, "default") if p.entity == "Task")
+    assert plan.item_url_path == "/Lists/MailLedger/DispForm.aspx?ID="
+    assert plan.list_url == "lists/mailledger"
+
+
 def test_two_lists_in_one_pack_do_not_share_a_row_key_expression() -> None:
     """The collision itself, not a proxy for it.
 

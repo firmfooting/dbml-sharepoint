@@ -74,6 +74,8 @@ class ListPlan:
     skipped: list[str] = field(default_factory=list)
     item_url_path: str = ''
     item_url_authoritative: bool = False
+    list_url: str = ''
+    target_identities: dict[str, str] = field(default_factory=dict)
     item_url_suffix: str = ''
     renames: list[tuple[str, str]] = field(default_factory=list)
     field_internal_names: list[str] = field(default_factory=list)

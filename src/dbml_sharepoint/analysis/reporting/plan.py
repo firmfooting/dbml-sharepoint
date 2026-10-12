@@ -26,6 +26,7 @@ from dbml_sharepoint.analysis.derived import (
     lookup_key_columns,
 )
 from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN, ambiguous_members
+from dbml_sharepoint.analysis.list_url import list_url_key, list_url_path
 from dbml_sharepoint.analysis.lookups import display_column_for
 from dbml_sharepoint.analysis.ordering import is_deployed_here
 from dbml_sharepoint.analysis.report_columns import (
@@ -144,6 +145,11 @@ class ListPlan:
     # be read, and what the SQL views use, having no site to read.
     item_url_path: str = ""
     item_url_authoritative: bool = False
+    # The declared, lower-cased list URL: the row key's identity. Empty when the
+    # entity declares none, and the key then uses the title.
+    list_url: str = ""
+    # Lookup target title -> the identity its own row key uses.
+    target_identities: dict[str, str] = field(default_factory=dict)
     # What follows the list's own RootFolder to reach the same form. The
     # refresh-time branch: see `_item_url_suffix`.
     item_url_suffix: str = ""
@@ -250,7 +256,15 @@ def _item_url_path(bundle: MappingBundle, entity_name: str, list_title: str) -> 
     entity = bundle.mapping.entities.get(entity_name)
     if entity is not None and entity.is_library:
         return f"/{entity.internal_name or list_title}/Forms/DispForm.aspx?ID="
+    if entity is not None and entity.internal_name:
+        return f"/{list_url_path(entity.internal_name)}/DispForm.aspx?ID="
     return f"/Lists/{list_title}/DispForm.aspx?ID="
+
+
+def _declared_url(bundle: MappingBundle, entity_name: str) -> str:
+    """The lower-cased URL an entity declares, or empty."""
+    entity = bundle.mapping.entities.get(entity_name)
+    return list_url_key(entity.internal_name) if entity and entity.internal_name else ""
 
 
 def _item_url_suffix(bundle: MappingBundle, entity_name: str) -> str:
@@ -650,6 +664,7 @@ def build_plans(
             item_url_path=_item_url_path(bundle, table.name, bundle.mapping.list_title(table.name)),
             item_url_authoritative=bool(bundle.mapping.entities[table.name].internal_name),
             item_url_suffix=_item_url_suffix(bundle, table.name),
+            list_url=_declared_url(bundle, table.name),
             users_table=bundle.mapping.reporting.users_table,
             zone=zone,
         )
@@ -759,8 +774,10 @@ def build_plans(
                         )
                         plan.m_types.append((out, m_type))
                     if target in emitted:
-                        plan.joins.append(
-                            (f"{sp.name}Id", bundle.mapping.list_title(target), display, projected),
+                        target_title = bundle.mapping.list_title(target)
+                        plan.joins.append((f"{sp.name}Id", target_title, display, projected))
+                        plan.target_identities[target_title] = (
+                            _declared_url(bundle, target) or target_title
                         )
                 case "MultiChoice":
                     # MEASURED 2026-08-10 on a live tenant: the item value
