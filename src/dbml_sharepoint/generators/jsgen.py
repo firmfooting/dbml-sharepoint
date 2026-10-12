@@ -271,12 +271,29 @@ def generate_deploy_js(
 # same as clearing it; the deploy script must be able to tell them apart.
 UNMANAGED = "__dbmlsp_unmanaged__"
 
-# SP refuses ValidationFormula on these kinds even as "", with HTTP 500 "This
-# field type does not support validation formulas": Note (3), Lookup (7),
-# Boolean (8; finding field.validation.boolean-refuses-validation-formula),
-# URL (11), MultiChoice (15), Calculated (17), User (20). Hand-kept, so assume it is
-# incomplete; the deploy treats a refused clear as a no-op regardless.
-_COLUMN_VALIDATION_UNSUPPORTED_FIELD_KINDS = frozenset({3, 7, 8, 11, 15, 17, 20})
+# SP rejects ValidationFormula even when the desired value is an empty
+# string on these field kinds. This is a property-surface capability, not
+# merely an operand rule: exact reconciliation must not attempt to CLEAR a
+# formula the field type cannot carry.
+#
+# Confirmed live, both with HTTP 500 "This field type does not support
+# validation formulas": Note (3) and URL (11). Lookup (7), User (20) and
+# Calculated (17) are refused as validation operands for the same platform
+# limitation. MultiChoice (15) joined them on 2026-08-10, refused with that
+# same sentence (see test/manual/multi-value-probe.js).
+#
+# This set is a hand-kept list of platform facts, so treat it as incomplete
+# by default. Boolean (8) is deliberately NOT a member. A SET of a composed
+# ClientValidationFormula on one was refused live on 2026-09-04, which
+# `form_visibility_condition_on_a_boolean_column` now refuses at build time;
+# nothing has established what a ValidationFormula on kind 8 does, and adding
+# it here would UNMANAGE that property on every boolean column on the
+# strength of a measurement of the other one. The deploy does NOT rely on
+# this set being complete: a clear that SharePoint refuses for this reason is
+# treated there as the no-op it is, because a formula the field cannot hold
+# is already absent.
+# This set only avoids making the pointless request.
+_COLUMN_VALIDATION_UNSUPPORTED_FIELD_KINDS = frozenset({3, 7, 11, 15, 17, 20})
 
 
 def _section_target[T](

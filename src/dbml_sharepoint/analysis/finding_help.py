@@ -1172,10 +1172,10 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A form body section names a field the entity does not render."
     ),
     FindingCode.FORM_VISIBILITY_CONDITION_ON_A_BOOLEAN_COLUMN: (
-        "A Yes/No column declares a `when`. SharePoint refuses validation "
-        "formulas on that field type, so the conditional visibility cannot "
-        "be deployed and the deploy aborts at the field it names. Declare "
-        "the visibility without `when`, or move the column off boolean."
+        "A Yes/No column declares a `when`, or is hidden on every form. "
+        "SharePoint refuses a client formula on that field type, so the "
+        "deploy aborts at the field it names. Leave the column visible, "
+        "place it with `form_formatting`, or move it off boolean."
     ),
     FindingCode.FORM_VISIBILITY_CONDITION_UNREACHABLE: (
         "A column is hidden on every form yet carries a `when`, which "

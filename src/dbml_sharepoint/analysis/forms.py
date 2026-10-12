@@ -60,20 +60,16 @@ def validate_form_visibility(
              f"appear on entry forms, so declaring their visibility is a mistake"),
             location=at,
         ))
-    if when is not None and is_boolean(types.get(column)):
-        # Measured live 2026-09-04: the MERGE that sets a composed
-        # ClientValidationFormula on a Yes/No field (kind 8) is refused with
-        # HTTP 500 "This field type does not support validation formulas",
-        # which aborts phase 2.1 at that field. Only the composed formula is
-        # measured, so only `when` is refused; a gate-only declaration and a
-        # server-side ValidationFormula on kind 8 are both untested and stay
-        # deployable rather than being guessed at.
+    if (when is not None or not (new or existing)) and is_boolean(types.get(column)):
+        # Live 2026-09-04 and 2026-10-13: a composed client formula (a `when`,
+        # or `hidden` = `=if(false, ...)`) on kind 8 is refused with HTTP 500.
+        # A gate-only declaration is untested, so it stays deployable.
         findings.append(Finding(
             FindingCode.FORM_VISIBILITY_CONDITION_ON_A_BOOLEAN_COLUMN,
             (f"{at.path}: {column!r} is a Yes/No column and SharePoint refuses "
-             f"validation formulas on that field type, so conditional visibility "
-             f"cannot be deployed -- declare the visibility without 'when', or move "
-             f"the column off boolean"),
+             f"client formulas on that field type, so a 'when' or a column hidden "
+             f"on every form cannot be deployed -- leave it visible, place it "
+             f"with form_formatting, or move the column off boolean"),
             location=at,
         ))
     if not new and not existing and when is not None:
