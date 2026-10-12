@@ -10,7 +10,7 @@ import hashlib
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Final, Literal, cast, get_args
+from typing import Final, Literal, TypeIs, get_args
 
 type IdentityKind = Literal["user", "security_group", "m365_group"]
 type Lifetime = Literal["persistent", "run"]
@@ -21,6 +21,16 @@ IDENTITY_KINDS: Final[frozenset[str]] = frozenset(get_args(IdentityKind.__value_
 MEMBERSHIP_MODES: Final[frozenset[str]] = frozenset(get_args(MembershipMode.__value__))
 # The env key is DBMLSP_IDENTITY_ plus the upper-cased name, so a name must survive that.
 NAME_PATTERN: Final = re.compile(r"[a-z][a-z0-9_]{0,63}")
+
+
+def is_identity_kind(value: str) -> TypeIs[IdentityKind]:
+    """Whether `value` is an identity kind, so a caller can narrow a string to it."""
+    return value in IDENTITY_KINDS
+
+
+def is_membership_mode(value: str) -> TypeIs[MembershipMode]:
+    """Whether `value` is a membership mode, so a caller can narrow a string to it."""
+    return value in MEMBERSHIP_MODES
 
 
 @dataclass(frozen=True)
@@ -145,7 +155,7 @@ def _parse_one(name: str, item: str) -> IdentityValue:
         raise IdentityValueMalformed(f"identity {name}: {item!r} is not KIND:VALUE")
     if kind in SHAREPOINT_GROUP_WORDS:
         raise SharePointGroupNotEnrollable(f"identity {name}: {item!r}. {NESTING_REASON}")
-    if kind not in IDENTITY_KINDS:
+    if not is_identity_kind(kind):
         raise IdentityValueMalformed(
             f"identity {name}: kind {kind!r} is not one of {', '.join(sorted(IDENTITY_KINDS))}",
         )
@@ -160,7 +170,7 @@ def _parse_one(name: str, item: str) -> IdentityValue:
         raise IdentityValueMalformed(
             f"identity {name}: {item!r}: a group value is the Entra object id, a GUID",
         )
-    return IdentityValue(cast("IdentityKind", kind), guid, owners=owners)
+    return IdentityValue(kind, guid, owners=owners)
 
 
 def parse_values(name: str, raw: str) -> tuple[IdentityValue, ...]:

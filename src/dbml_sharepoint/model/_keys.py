@@ -6,7 +6,6 @@ without importing each other.
 """
 
 import datetime as dt
-from typing import Any
 
 from dbml_sharepoint.model.errors import MappingShapeError, UnknownMappingKeyError
 
@@ -33,8 +32,8 @@ def _text_key(key: object, context: str) -> str:
 
 
 def _require_mapping(
-    block: Any, context: str, *, allow_absent: bool = True,
-) -> dict[str, Any]:
+    block: object, context: str, *, allow_absent: bool = True,
+) -> dict[str, object]:
     """Return `block` as a mapping, or fail naming the section.
 
     For the sections read as `name -> block`. Apply it BEFORE indexing or
@@ -90,10 +89,8 @@ def _require_mapping(
         raise MappingShapeError(
             f"{context}: expected a mapping of names, got {type(block).__name__}",
         )
-    entries: dict[object, Any] = block
-    for key in entries:
-        _text_key(key, context)
-    return block
+    entries: dict[object, object] = block
+    return {_text_key(key, context): value for key, value in entries.items()}
 
 
 def _require_list(block: object, context: str) -> list[object]:
@@ -113,7 +110,7 @@ def _require_list(block: object, context: str) -> list[object]:
     return entries
 
 
-def _reject_unknown_keys(block: Any, allowed: frozenset[str] | set[str], context: str) -> None:
+def _reject_unknown_keys(block: object, allowed: frozenset[str] | set[str], context: str) -> None:
     """Fail on any key the loader does not read.
 
     Apply this at EVERY nesting level, not just the top. A fail-open level
@@ -140,11 +137,11 @@ def _known_keys(
             f"{context}: expected a mapping, got {type(block).__name__}",
         )
     entries: dict[object, object] = block
-    unknown = {_text_key(key, context) for key in entries} - set(allowed)
+    result = {_text_key(key, context): value for key, value in entries.items()}
+    unknown = set(result) - set(allowed)
     if unknown:
         raise UnknownMappingKeyError(
             f"{context}: unknown key(s) {sorted(unknown)} "
             f"(known: {sorted(allowed)})",
         )
-    checked: dict[str, object] = block
-    return checked
+    return result

@@ -11,6 +11,7 @@ Groups and permission levels are deliberately not covered: they have no URL.
 """
 
 import pytest
+from _narrow import as_dict
 from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis import sidecars
@@ -32,11 +33,11 @@ def test_a_sidecar_list_title_has_no_space(title: str) -> None:
 def _family_list_titles() -> list[tuple[str, str]]:
     found: list[tuple[str, str]] = []
     for mapping_path in sorted(SOLUTION_TEMPLATES.glob("*/20-configure/mapping.yaml")):
-        raw = _yaml.safe_load(mapping_path.read_text(encoding="utf-8")) or {}
+        raw = as_dict(_yaml.safe_load(mapping_path.read_text(encoding="utf-8")) or {})
         prefix = raw.get("prefix", "")
         found.extend(
             (mapping_path.parent.parent.name, f"{prefix}{entity}")
-            for entity in raw.get("entities") or {}
+            for entity in as_dict(raw.get("entities") or {})
         )
     return found
 

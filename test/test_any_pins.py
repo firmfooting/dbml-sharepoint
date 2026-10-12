@@ -20,9 +20,8 @@ _TYPE_COMMENT = re.compile(r"#\s*type:")
 _ANNOTATION = re.compile(rf"[\w.\[\], |]*\b{NAME}\b[\w.\[\], |]*")
 
 PINS: dict[str, int] = {
-    "src/dbml_sharepoint/model": 159,
     "test runtime": 614,
-    "test other": 238,
+    "test other": 229,
     "scripts": 0,
     "website/scripts": 0,
 }
@@ -49,8 +48,6 @@ def count_uses(source: str) -> int:
 def unit_of(path: Path) -> str | None:
     """The pinned unit owning ``path``, or None when the unit is cleaned."""
     rel = path.relative_to(REPO_ROOT).as_posix()
-    if rel.startswith("src/dbml_sharepoint/model/"):
-        return "src/dbml_sharepoint/model"
     if rel.startswith("test/"):
         return "test runtime" if re.fullmatch(r"test_.*_runtime\.py", path.name) else "test other"
     if rel.startswith("website/scripts/"):
@@ -106,7 +103,7 @@ def test_count_uses(source: str, expected: int) -> None:
 def test_unit_of_routes_paths() -> None:
     assert unit_of(REPO_ROOT / "test" / "test_x_runtime.py") == "test runtime"
     assert unit_of(REPO_ROOT / "test" / "test_x.py") == "test other"
-    assert unit_of(_PACKAGE / "model" / "a.py") == "src/dbml_sharepoint/model"
+    assert unit_of(_PACKAGE / "model" / "a.py") is None
     assert unit_of(_PACKAGE / "analysis" / "a.py") is None
 
 
@@ -115,17 +112,17 @@ def test_a_type_comment_counts_and_fails_in_a_cleaned_unit_and_ratchets_in_a_pin
 ) -> None:
     root = tmp_path / "repo"
     cleaned = root / "src" / "dbml_sharepoint" / "analysis"
-    pinned = root / "src" / "dbml_sharepoint" / "model"
-    for directory in (cleaned, pinned):
+    pinned = root / "test"
+    for directory, name in ((cleaned, "m.py"), (pinned, "test_m.py")):
         directory.mkdir(parents=True)
-        (directory / "m.py").write_text(f"x = []  # type: list[{NAME}]\n", encoding="utf-8")
+        (directory / name).write_text(f"x = []  # type: list[{NAME}]\n", encoding="utf-8")
     monkeypatch.setattr(sys.modules[__name__], "REPO_ROOT", root)
-    monkeypatch.setattr(sys.modules[__name__], "_ROOTS", (root / "src" / "dbml_sharepoint",))
+    monkeypatch.setattr(sys.modules[__name__], "_ROOTS", (root / "src" / "dbml_sharepoint", pinned))
 
     found_pinned, found_cleaned = _counts()
 
     assert found_cleaned == {"src/dbml_sharepoint/analysis/m.py": 1}
-    assert found_pinned["src/dbml_sharepoint/model"] == 1
-    monkeypatch.setitem(PINS, "src/dbml_sharepoint/model", 0)
+    assert found_pinned["test other"] == 1
+    monkeypatch.setitem(PINS, "test other", 0)
     with pytest.raises(AssertionError, match="went up"):
         test_pinned_units_do_not_gain_uses()

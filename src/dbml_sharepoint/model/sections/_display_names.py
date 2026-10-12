@@ -1,15 +1,13 @@
 # src/dbml_sharepoint/model/sections/_display_names.py
 """`display_names`: automatic display titles, and the overrides that win."""
 
-from typing import Any
-
-from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model._keys import _known_keys, _require_mapping
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.reading import require_str
-from dbml_sharepoint.model.sections.context import SectionContext
+from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 
 
-def read(sc: SectionContext) -> dict[str, Any]:
+def read(sc: SectionContext) -> LoadedFields:
     section = sc.block("display_names")
     mode = _parse_display_name_mode(section)
     overrides: dict[str, dict[str, str]] = {}
@@ -25,11 +23,10 @@ def read(sc: SectionContext) -> dict[str, Any]:
     return {"display_name_mode": mode, "display_name_overrides": overrides}
 
 
-def _parse_display_name_mode(section: Any) -> str | None:
+def _parse_display_name_mode(section: object) -> str | None:
     if section is None:
         return None
-    _reject_unknown_keys(section, {"mode", "overrides"}, "display_names")
-    mode: object = section.get("mode")
+    mode = _known_keys(section, {"mode", "overrides"}, "display_names").get("mode")
     # A section written for its overrides alone leaves the key missing, which
     # is a key to add rather than the misspelled mode a value error means.
     if mode is None:

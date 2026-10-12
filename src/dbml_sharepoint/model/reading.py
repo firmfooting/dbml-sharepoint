@@ -41,10 +41,10 @@ from collections.abc import Generator, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Any
 
+from dbml_sharepoint.jsonvalue import as_json_object
 from dbml_sharepoint.model import _yaml
-from dbml_sharepoint.model._keys import _text_key
+from dbml_sharepoint.model._keys import _require_mapping, _text_key
 from dbml_sharepoint.model.errors import (
     MappingReferenceError,
     MappingShapeError,
@@ -99,7 +99,7 @@ def _took_default(context: str, key: str, default: object) -> None:
         recorded.append(BlankDefault(path=f"{context}.{key}", default=default))
 
 
-def _or_default(raw: Mapping[str, Any], key: str, context: str, default: object) -> object:
+def _or_default(raw: Mapping[str, object], key: str, context: str, default: object) -> object:
     """`raw[key]`, or `default` when the key is absent or blank. A blank is recorded."""
     value: object = raw.get(key)
     if value is not None:
@@ -110,8 +110,8 @@ def _or_default(raw: Mapping[str, Any], key: str, context: str, default: object)
 
 
 def optional_value(
-    raw: Mapping[str, Any], key: str, context: str, *, default: object = None,
-) -> Any:
+    raw: Mapping[str, object], key: str, context: str, *, default: object = None,
+) -> object:
     """The untyped value under `key`, or `default` when it is absent or blank.
 
     For a key whose default is itself a behaviour (no condition, no enum to
@@ -139,7 +139,7 @@ def drop_blank_keys(
     return kept
 
 
-def read_yaml_document(path: Path, named_by: str | None = None) -> Any:
+def read_yaml_document(path: Path, named_by: str | None = None) -> object:
     """Parse one YAML file, naming every way reading it can fail.
 
     The parser's `YAMLError` and the `OSError` from opening the file are neither of
@@ -193,8 +193,11 @@ def read_yaml_document(path: Path, named_by: str | None = None) -> Any:
         raise MappingSourceError(f"{path}: is not valid YAML: {exc}") from exc
 
 
-def load_yaml(path: Path, named_by: str | None = None) -> dict[str, Any]:
-    """Load a YAML file; require a top-level mapping (dict)."""
+def load_yaml(path: Path, named_by: str | None = None) -> dict[object, object]:
+    """Load a YAML file; require a top-level mapping (dict).
+
+    The keys are as YAML read them, so a caller checks each with `_text_key`.
+    """
     raw = read_yaml_document(path, named_by)
     if not isinstance(raw, dict):
         raise MappingShapeError(
@@ -203,14 +206,14 @@ def load_yaml(path: Path, named_by: str | None = None) -> dict[str, Any]:
     return raw
 
 
-def load_json_value(base_dir: Path, value: Any, context: str) -> dict[str, Any]:
+def load_json_value(base_dir: Path, value: object, context: str) -> dict[str, object]:
     """A formatter declaration: a relative path to a JSON file (resolved
     against the mapping's directory, like enum_sources) or an inline
     mapping. Anything else (or malformed JSON) is a load error naming the
     offending declaration."""
     if isinstance(value, dict):
         _json_keys_are_text(value, context)
-        return dict(value)
+        return _require_mapping(value, context)
     if isinstance(value, str):
         path = (base_dir / value).resolve()
         _read(path)
@@ -228,9 +231,9 @@ def load_json_value(base_dir: Path, value: Any, context: str) -> dict[str, Any]:
             parsed = json.loads(text)
         except json.JSONDecodeError as exc:
             raise MappingValueError(f"{context}: {value!r} is not valid JSON: {exc}") from exc
-        if not isinstance(parsed, dict):
+        if (declared := as_json_object(parsed)) is None:
             raise MappingShapeError(f"{context}: {value!r} must contain a JSON object")
-        return parsed
+        return dict[str, object](declared)
     raise MappingShapeError(
         f"{context}: expected a relative .json path or an inline mapping, "
         f"got {type(value).__name__}",
@@ -255,7 +258,7 @@ def _json_keys_are_text(value: object, context: str) -> None:
 
 
 def strict_bool(
-    raw: Mapping[str, Any], key: str, context: str, *, default: bool = True,
+    raw: Mapping[str, object], key: str, context: str, *, default: bool = True,
 ) -> bool:
     """Read a boolean without truthiness-coercing malformed YAML.
 
@@ -278,7 +281,7 @@ def strict_bool(
 
 
 def optional_bool(
-    raw: Mapping[str, Any], key: str, context: str, *, default: bool = False,
+    raw: Mapping[str, object], key: str, context: str, *, default: bool = False,
 ) -> bool:
     """Read an optional boolean without truthiness-coercing malformed YAML.
 
@@ -293,7 +296,7 @@ def optional_bool(
 
 
 def optional_str(
-    raw: Mapping[str, Any], key: str, context: str, *, record_blank: bool = False,
+    raw: Mapping[str, object], key: str, context: str, *, record_blank: bool = False,
 ) -> str | None:
     """Read an optional string, refusing anything YAML happened to parse instead.
 
@@ -314,7 +317,7 @@ def optional_str(
 
 
 def strict_str(
-    raw: Mapping[str, Any], key: str, context: str, *, default: str,
+    raw: Mapping[str, object], key: str, context: str, *, default: str,
 ) -> str:
     """Read a string that falls back to a default the author should hear about.
 
@@ -333,7 +336,7 @@ def strict_str(
     return value
 
 
-def _require(raw: Mapping[str, Any], key: str, context: str) -> Any:
+def _require(raw: Mapping[str, object], key: str, context: str) -> object:
     """The value under `key`, refusing a block that omits it or leaves it blank."""
     value = raw.get(key)
     if value is None:
@@ -341,7 +344,7 @@ def _require(raw: Mapping[str, Any], key: str, context: str) -> Any:
     return value
 
 
-def require_int(raw: Mapping[str, Any], key: str, context: str) -> int:
+def require_int(raw: Mapping[str, object], key: str, context: str) -> int:
     """Read a required integer, refusing the bool YAML hands back for `true`.
 
     `isinstance(True, int)` is True in Python, so a plain int check passes a
@@ -360,7 +363,7 @@ def require_int(raw: Mapping[str, Any], key: str, context: str) -> int:
 
 
 def optional_int(
-    raw: Mapping[str, Any], key: str, context: str, *, record_blank: bool = False,
+    raw: Mapping[str, object], key: str, context: str, *, record_blank: bool = False,
 ) -> int | None:
     """Read an optional integer, refusing bools and un-coercible strings.
 
@@ -379,7 +382,7 @@ def optional_int(
     return value
 
 
-def require_str(raw: Mapping[str, Any], key: str, context: str) -> str:
+def require_str(raw: Mapping[str, object], key: str, context: str) -> str:
     """Read a required string. The mirror of `optional_str`.
 
     Refuses an absent or blank key the same way `require_int` does.
@@ -390,7 +393,7 @@ def require_str(raw: Mapping[str, Any], key: str, context: str) -> str:
     return value
 
 
-def optional_str_list(raw: Mapping[str, Any], key: str, context: str) -> tuple[str, ...]:
+def optional_str_list(raw: Mapping[str, object], key: str, context: str) -> tuple[str, ...]:
     """Read an optional list of strings, refusing the shapes YAML also accepts.
 
     `hide_from_all_items: Author` is the plausible typo, and YAML hands it back

@@ -8,7 +8,6 @@ column names.
 
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, cast
 
 from dbml_sharepoint.analysis.typemap import TOTAL_FUNCTIONS
 from dbml_sharepoint.model._keys import _known_keys, _require_list, _require_mapping, _text_key
@@ -16,11 +15,11 @@ from dbml_sharepoint.model.conditions import parse_condition
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.mapping_types import (
     VIEW_SCOPES,
-    SortDirection,
     ViewDef,
     ViewGroupBy,
     ViewScope,
     ViewSort,
+    is_view_scope,
 )
 from dbml_sharepoint.model.reading import (
     load_json_value,
@@ -32,7 +31,7 @@ from dbml_sharepoint.model.reading import (
     require_str,
     strict_str,
 )
-from dbml_sharepoint.model.sections.context import SectionContext
+from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 
 _VIEW_KEYS = frozenset({
     "title", "renamed_from", "fields", "default", "where", "sort", "group_by",
@@ -40,7 +39,7 @@ _VIEW_KEYS = frozenset({
 })
 
 
-def read(sc: SectionContext) -> dict[str, Any]:
+def read(sc: SectionContext) -> LoadedFields:
     field_sets = _parse_field_sets(sc.block("field_sets"))
     # Resolve "@setname" references BEFORE anything downstream sees a view.
     # Every consumer from here on (retirement folding, the validator,
@@ -58,7 +57,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
     return {"views": expanded_views, "field_sets": field_sets}
 
 
-def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
+def _parse_view(raw_view: object, context: str, base_dir: Path) -> ViewDef:
     """Parse one declared view. Structural checks only (title/fields present,
     sort direction shape); semantic rules need the schema and live in
     validate_against_mapping."""
@@ -100,13 +99,13 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
         # The shape before the word, as `scope` below does: a list here is
         # not a direction spelled wrongly. `strict_str` so a blank is recorded.
         direction = strict_str(entry, "direction", f"{context}.sort[{i}]", default="asc")
-        if direction not in {"asc", "desc"}:
+        if direction not in ("asc", "desc"):
             raise MappingValueError(
                 f"{context}: sort direction must be 'asc' or 'desc', got {direction!r}",
             )
         sort.append(ViewSort(
             field=require_str(entry, "field", f"{context}.sort[{i}]"),
-            direction=cast("SortDirection", direction),
+            direction=direction,
         ))
     raw_group = view.get("group_by")
     group_by = None
@@ -167,15 +166,18 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
     # frozenset would raise the TypeError the CLI does not catch. Two
     # refusals rather than one, because the wrong YAML type is a shape error
     # and a string outside the vocabulary is a value error.
-    if raw_scope is not None and not isinstance(raw_scope, str):
-        raise MappingShapeError(
-            f"{context}: scope must be a string, got {type(raw_scope).__name__}",
-        )
-    if raw_scope is not None and raw_scope not in VIEW_SCOPES:
-        raise MappingValueError(
-            f"{context}: scope must be one of {', '.join(sorted(VIEW_SCOPES))}, "
-            f"got {raw_scope!r}",
-        )
+    scope: ViewScope | None = None
+    if raw_scope is not None:
+        if not isinstance(raw_scope, str):
+            raise MappingShapeError(
+                f"{context}: scope must be a string, got {type(raw_scope).__name__}",
+            )
+        if not is_view_scope(raw_scope):
+            raise MappingValueError(
+                f"{context}: scope must be one of {', '.join(sorted(VIEW_SCOPES))}, "
+                f"got {raw_scope!r}",
+            )
+        scope = raw_scope
     raw_totals = view.get("totals")
     totals: dict[str, str] = {}
     if raw_totals is not None:
@@ -215,11 +217,11 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
         ),
         widths=widths,
         totals=totals,
-        scope=cast("ViewScope | None", raw_scope),
+        scope=scope,
     )
 
 
-def _parse_field_sets(raw_sets: Any) -> dict[str, dict[str, list[str]]]:
+def _parse_field_sets(raw_sets: object) -> dict[str, dict[str, list[str]]]:
     """Structural parse of the `field_sets:` section.
 
     Shape only: an unknown entity, an undeclared column, an '@' in a set

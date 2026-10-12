@@ -7,9 +7,8 @@ than a declaration.
 """
 
 from pathlib import Path
-from typing import Any
 
-from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping, _text_key
+from dbml_sharepoint.model._keys import _known_keys, _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model.errors import MappingReferenceError, MappingShapeError
 from dbml_sharepoint.model.mapping_types import RetentionPolicy
 from dbml_sharepoint.model.reading import (
@@ -19,7 +18,7 @@ from dbml_sharepoint.model.reading import (
     require_str,
     strict_str,
 )
-from dbml_sharepoint.model.sections.context import SectionContext
+from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 
 _RETENTION_POLICY_KEYS = frozenset(
     {"description", "sp_label", "retain_years", "retain_days", "trigger"},
@@ -27,7 +26,7 @@ _RETENTION_POLICY_KEYS = frozenset(
 _RETENTION_FILE_KEYS = frozenset({"policies", "list_defaults"})
 
 
-def read(sc: SectionContext) -> dict[str, Any]:
+def read(sc: SectionContext) -> LoadedFields:
     enum_choices, enum_source_paths = _load_enum_choices(
         sc.base_dir, _require_mapping(sc.block("enum_sources"), "enum_sources"),
     )
@@ -79,10 +78,8 @@ def _load_enum_choices(
         fragment = fragment or "choices"
         path = (base_dir / path_part).resolve()
         resolved[name] = path
-        source = load_yaml(path, f"enum_sources[{name!r}]")
         # A fragment is text, so a `true:` key (read as True) never matched `#true`.
-        for key in source:
-            _text_key(key, str(path))
+        source = _require_mapping(load_yaml(path, f"enum_sources[{name!r}]"), str(path))
         values = source.get(fragment)
         if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
             raise MappingReferenceError(
@@ -101,9 +98,10 @@ def _load_retention(path: Path) -> tuple[dict[str, RetentionPolicy], dict[str, s
     dataclass -- see `_keys._reject_unknown_keys` for why a fail-open level
     here would make a typo'd file byte-identical to one with the key deleted.
     """
-    raw = load_yaml(path, "retention_policies_source")
     # The docstring promised this and nothing did it, so `list_defualts:` loaded as no defaults.
-    _reject_unknown_keys(raw, _RETENTION_FILE_KEYS, str(path))
+    raw = _known_keys(
+        load_yaml(path, "retention_policies_source"), _RETENTION_FILE_KEYS, str(path),
+    )
     raw_policies = _require_mapping(raw.get("policies"), "policies", allow_absent=False)
     policies: dict[str, RetentionPolicy] = {}
     for name, raw_spec in raw_policies.items():

@@ -6,14 +6,13 @@ entity and the column exist, and whether the column's type may carry a
 formula, is the validator's question (`analysis/checks/_default_formulas.py`).
 """
 
-from typing import Any
 
 from dbml_sharepoint.model._keys import _require_mapping
 from dbml_sharepoint.model.errors import MappingShapeError
-from dbml_sharepoint.model.sections.context import SectionContext
+from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 
 
-def read(sc: SectionContext) -> dict[str, Any]:
+def read(sc: SectionContext) -> LoadedFields:
     default_formulas: dict[str, dict[str, str]] = {}
     for entity, cols in _require_mapping(
         sc.block("default_formulas"), "default_formulas",

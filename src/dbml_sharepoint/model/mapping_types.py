@@ -12,7 +12,7 @@ import collections.abc
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, get_args
+from typing import Literal, TypedDict, TypeIs, get_args
 
 from dbml_sharepoint.model.conditions import Condition
 from dbml_sharepoint.model.identities import MembershipMode
@@ -54,6 +54,26 @@ PRINCIPAL_KINDS: frozenset[str] = frozenset(get_args(PrincipalKind.__value__))
 #: naming the legal values cannot list a different four from the ones the
 #: gate accepts. Same pattern as `typemap.CALCULATED_TYPE_LIST`.
 PRINCIPAL_KIND_LIST = ", ".join(repr(kind) for kind in sorted(PRINCIPAL_KINDS))
+
+
+def is_entity_kind(value: str) -> TypeIs[EntityKind]:
+    """Whether `value` is one of the entity kinds, so a caller can narrow a string to it."""
+    return value in ENTITY_KINDS
+
+
+def is_view_scope(value: str) -> TypeIs[ViewScope]:
+    """Whether `value` is a view scope, so a caller can narrow a string to it."""
+    return value in VIEW_SCOPES
+
+
+def is_principal_kind(value: str) -> TypeIs[PrincipalKind]:
+    """Whether `value` is a principal kind, so a caller can narrow a string to it."""
+    return value in PRINCIPAL_KINDS
+
+
+def is_file_scopes(value: str) -> TypeIs[FileScopes]:
+    """Whether `value` is a file-scopes mode, so a caller can narrow a string to it."""
+    return value in FILE_SCOPES
 
 # Word boundaries for display-name auto mode: break before an uppercase that
 # follows a lowercase/digit, and before the LAST capital of an acronym run
@@ -283,6 +303,21 @@ class ItemSecurity:
         return self.read != "all" or self.write != "all"
 
 
+class VersioningOverride(TypedDict, total=False):
+    """The versioning keys one entity declares; a key it leaves out takes the default's."""
+
+    enable_versioning: bool
+    major_version_limit: int
+    enable_minor_versions: bool
+
+
+class ItemSecurityOverride(TypedDict, total=False):
+    """The item-security keys one entity declares; a key it leaves out takes the default's."""
+
+    read: str
+    write: str
+
+
 #: The values `item_security.read` and `.write` accept. Named here so the
 #: loader's refusal and the validator's message quote the same set.
 ITEM_SECURITY_SCOPES: frozenset[str] = frozenset({"all", "own"})
@@ -302,8 +337,8 @@ class WatchUse:
     # Out of the hash, as `settings` is: an `in` leaf holds a list.
     when: Condition | None = field(default=None, hash=False)
     # `collections.abc.Mapping` because this module's own `Mapping` is the mapping file.
-    # Keys are `Any` because the loader keeps a key such as `2026:` or `false:` as written.
-    settings: collections.abc.Mapping[Any, Any] = field(default_factory=dict, hash=False)
+    # Keys are `object` because the loader keeps a key such as `2026:` or `false:` as written.
+    settings: collections.abc.Mapping[object, object] = field(default_factory=dict, hash=False)
 
 
 @dataclass(frozen=True)
@@ -401,7 +436,7 @@ class ViewDef:
     row_limit: int | None = None
     # Optional SP row-formatting JSON (SP.View.CustomFormatter); None = the
     # live property is never touched.
-    formatting: dict[str, Any] | None = None
+    formatting: dict[str, object] | None = None
     # Optional per-column pixel widths, INTERNAL names (jsgen rewrites to
     # display titles; SP's ColumnWidth binds by display name). Empty = the
     # live widths are never touched.
@@ -457,7 +492,7 @@ class DemoItem:
     per-list confirmation before every delete."""
 
     key: str
-    values: dict[str, Any]
+    values: dict[str, object]
     file: DemoFile | None = None
 
 
@@ -469,9 +504,9 @@ class FormFormatting:
     Body section field lists are authored with INTERNAL names; jsgen
     rewrites them to display titles (SP matches form fields by display)."""
 
-    header: dict[str, Any] | None = None
-    body: dict[str, Any] | None = None
-    footer: dict[str, Any] | None = None
+    header: dict[str, object] | None = None
+    body: dict[str, object] | None = None
+    footer: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -788,7 +823,7 @@ class Mapping:
     entities: dict[str, EntityMapping]
     cross_site_reference_columns: list[CrossSiteRef]
     versioning_default: Versioning
-    versioning_overrides: dict[str, dict[str, Any]]
+    versioning_overrides: dict[str, VersioningOverride]
     enum_sources: dict[str, Path]
     watched_lists: list[WatchedList]
     polymorphic_patterns: list[PolymorphicPattern] = field(default_factory=list)
@@ -868,11 +903,11 @@ class Mapping:
     # Raw style specs (dicts with a 'style' key) as declared, kept beside
     # the expanded formatter JSON so the validator can check map keys
     # against enum members after load-time expansion.
-    column_style_specs: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
+    column_style_specs: dict[str, dict[str, dict[str, object]]] = field(default_factory=dict)
     # {entity: {column: formatter-JSON dict}}, SP CustomFormatter, declared
     # per column. Reconciled as a mutable field property; absent = the live
     # property is never touched.
-    column_formatting: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
+    column_formatting: dict[str, dict[str, dict[str, object]]] = field(default_factory=dict)
     # {entity: FormFormatting} (declared list-form layouts). Absent = the
     # live content type's form formatter is never touched.
     form_formatting: dict[str, FormFormatting] = field(default_factory=dict)
@@ -905,7 +940,7 @@ class Mapping:
     # dataclass default (`all`/`all`), which is SharePoint's own, and the
     # deploy leaves both properties alone rather than writing them back.
     item_security_default: ItemSecurity = field(default_factory=ItemSecurity)
-    item_security_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
+    item_security_overrides: dict[str, ItemSecurityOverride] = field(default_factory=dict)
 
     def display_name_for(self, entity_name: str, column_name: str) -> str:
         """Display title for a rendered column: override, else auto-split
@@ -973,22 +1008,16 @@ class Mapping:
         (`permissions_for_entity`); versioning was the missing fifth
         accessor.
 
-        Overrides are still stored RAW (`dict[str, Any]`), because
-        `mapping_loader` validates their values without narrowing their
-        types; the coercions here are the ones the three call sites were
-        each performing.
+        Overrides are stored as the keys the author declared, each checked
+        by the loader, so nothing here coerces.
         """
-        override = self.versioning_overrides.get(entity_name, {})
+        override = self.versioning_overrides.get(entity_name, VersioningOverride())
         default = self.versioning_default
         return Versioning(
-            enable_versioning=bool(
-                override.get("enable_versioning", default.enable_versioning),
-            ),
-            major_version_limit=int(
-                override.get("major_version_limit", default.major_version_limit),
-            ),
-            enable_minor_versions=bool(
-                override.get("enable_minor_versions", default.enable_minor_versions),
+            enable_versioning=override.get("enable_versioning", default.enable_versioning),
+            major_version_limit=override.get("major_version_limit", default.major_version_limit),
+            enable_minor_versions=override.get(
+                "enable_minor_versions", default.enable_minor_versions,
             ),
         )
 
@@ -999,11 +1028,11 @@ class Mapping:
         way `versioning_for` merges: an override naming only `read` keeps the
         default's `write`.
         """
-        override = self.item_security_overrides.get(entity_name, {})
+        override = self.item_security_overrides.get(entity_name, ItemSecurityOverride())
         default = self.item_security_default
         return ItemSecurity(
-            read=str(override.get("read", default.read)),
-            write=str(override.get("write", default.write)),
+            read=override.get("read", default.read),
+            write=override.get("write", default.write),
         )
 
     def declares_item_read_trimming(self) -> bool:
@@ -1133,12 +1162,12 @@ class MappingBundle:
     # extension_config_for(), not pre-selected at load time: the active
     # extension may come from the CLI `--extension` override rather than the
     # mapping's own `extension:` key.
-    extension_configs: dict[str, dict[str, Any]] = field(default_factory=dict)
+    extension_configs: dict[str, dict[object, object]] = field(default_factory=dict)
     source_paths: dict[str, Path] = field(default_factory=dict)
     # Optional and descriptive: nothing here is deployed.
     governance: Governance = field(default_factory=Governance)
 
-    def extension_config_for(self, name: str | None) -> dict[str, Any]:
+    def extension_config_for(self, name: str | None) -> dict[object, object]:
         """The named extension's config block; {} when name is None or the
         mapping declares no block for it. Extensions should call this with
         their own ``name`` so config selection always matches the extension

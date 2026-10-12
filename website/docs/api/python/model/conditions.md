@@ -45,7 +45,7 @@ VALUELESS_OPS = frozenset({'is_not_null', 'is_null'})
 class Leaf:
     field: str
     op: str
-    value: Any = None
+    value: object = None
     property: str | None = None
     measure: str | None = None
 ```
@@ -75,7 +75,7 @@ See `analysis.condition_rendering.normalise`.
 ### `parse_condition`
 
 ```python
-def parse_condition(raw: Any, context: str, *, default_field: str | None = None) -> Condition
+def parse_condition(raw: object, context: str, *, default_field: str | None = None) -> Condition
 ```
 
 Parse a declared condition tree.

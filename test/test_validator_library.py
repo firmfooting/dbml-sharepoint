@@ -36,7 +36,7 @@ from dbml_sharepoint.model.mapping_types import (
 #: A header whose title line names the file, the shape the family standard
 #: asks of a library. Reviewed capture `library.doc-lib.header-fileleafref`,
 #: 2026-09-03: it renders on the file panel.
-_FILE_NAME_HEADER = {
+_FILE_NAME_HEADER: dict[str, object] = {
     "elmType": "div",
     "children": [{"elmType": "span", "txtContent": "[$FileLeafRef]"}],
 }

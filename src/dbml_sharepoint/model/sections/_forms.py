@@ -7,11 +7,9 @@ diagnosed by the validator, which has the schema the operators need.
 """
 
 from collections.abc import Mapping
-from typing import Any
 
 from dbml_sharepoint.model._keys import (
     _known_keys,
-    _reject_unknown_keys,
     _require_mapping,
     _text_key,
 )
@@ -28,10 +26,10 @@ from dbml_sharepoint.model.mapping_types import (
     ListValidation,
 )
 from dbml_sharepoint.model.reading import optional_str, optional_value, strict_bool, strict_str
-from dbml_sharepoint.model.sections.context import SectionContext
+from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 
 
-def read(sc: SectionContext) -> dict[str, Any]:
+def read(sc: SectionContext) -> LoadedFields:
     # A blank entity block reads as absent: that entity declares nothing here.
     return {
         "form_visibility": {
@@ -55,31 +53,29 @@ def read(sc: SectionContext) -> dict[str, Any]:
     }
 
 
-def _entity_section(block: Any, context: str) -> tuple[str, dict[str, Any]]:
+def _entity_section(block: object, context: str) -> tuple[str, dict[str, object]]:
     if not isinstance(block, dict):
         raise MappingShapeError(f"{context}: expected a mapping with 'columns'")
-    _reject_unknown_keys(block, {"reconcile", "columns"}, context)
+    declared = _known_keys(block, {"reconcile", "columns"}, context)
     # The shape first: `reconcile: [exact]` is the wrong shape, and `str()`
     # on it reported "['exact']" as a word this loader declined. `strict_str`
     # records a blank `reconcile:`, which takes 'exact'.
-    reconcile = strict_str(block, "reconcile", context, default="exact")
+    reconcile = strict_str(declared, "reconcile", context, default="exact")
     if reconcile not in ("exact", "declared"):
         raise MappingValueError(
             f"{context}.reconcile: expected 'exact' or 'declared', got {reconcile!r}",
         )
-    columns = block.get("columns")
+    columns = declared.get("columns")
     if columns is None:
-        columns = dict[str, Any]()
+        return reconcile, {}
     if not isinstance(columns, dict):
         raise MappingShapeError(
             f"{context}.columns: expected a mapping of column name to declaration",
         )
-    for name in columns:
-        _text_key(name, f"{context}.columns")
-    return reconcile, columns
+    return reconcile, _require_mapping(columns, f"{context}.columns")
 
 
-def _parse_form_visibility(block: Any, context: str) -> EntitySection[FormVisibility]:
+def _parse_form_visibility(block: object, context: str) -> EntitySection[FormVisibility]:
     reconcile, raw_columns = _entity_section(block, context)
     columns: dict[str, FormVisibility] = {}
     for name, raw in raw_columns.items():
@@ -104,7 +100,7 @@ def _parse_form_visibility(block: Any, context: str) -> EntitySection[FormVisibi
     return EntitySection(reconcile=reconcile, columns=columns)
 
 
-def _parse_column_validation(block: Any, context: str) -> EntitySection[ColumnValidation]:
+def _parse_column_validation(block: object, context: str) -> EntitySection[ColumnValidation]:
     reconcile, raw_columns = _entity_section(block, context)
     columns: dict[str, ColumnValidation] = {}
     for name, raw in raw_columns.items():
@@ -141,7 +137,7 @@ def _rule(declared: Mapping[str, object], context: str, why: str = "") -> tuple[
     return parse_condition(when, f"{context}.when"), message
 
 
-def _parse_list_validation(rule: Any, context: str) -> ListValidation:
+def _parse_list_validation(rule: object, context: str) -> ListValidation:
     if not isinstance(rule, dict):
         raise MappingShapeError(f"{context}: expected a mapping with 'when' and 'message'")
     entries: dict[object, object] = rule
