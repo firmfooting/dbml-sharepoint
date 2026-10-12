@@ -29,7 +29,6 @@ import datetime as dt
 import re
 from dataclasses import dataclass, fields
 from functools import cache
-from typing import Any
 
 import pytest
 from _narrow import as_dict, as_list
@@ -654,9 +653,9 @@ def _stored_default(value: ColumnDefault, column_type: str) -> ColumnDefault:
     return "today" if text == "[today]" and column_type in DATE_TYPES else text
 
 
-def _seeded_rows(loaded: Loaded, entity: str) -> list[tuple[str, dict[str, Any]]]:
+def _seeded_rows(loaded: Loaded, entity: str) -> list[tuple[str, dict[str, object]]]:
     """(key, values) per demo row, schema defaults filled in as SharePoint stores them."""
-    defaults: dict[str, Any] = {}
+    defaults: dict[str, object] = {}
     types = loaded.column_types(entity)
     for table in loaded.schema.tables:
         if table.name == entity:
@@ -799,9 +798,9 @@ def test_every_formatted_column_is_exercised_by_a_demo_row(
 # === Header/body JSON helpers ===============================================
 
 
-def _walk(node: Any) -> "list[dict[str, Any]]":
+def _walk(node: object) -> "list[dict[str, object]]":
     """Every dict in a formatter JSON tree, depth first."""
-    found: list[dict[str, Any]] = []
+    found: list[dict[str, object]] = []
     if isinstance(node, dict):
         found.append(node)
         for value in node.values():
@@ -812,23 +811,23 @@ def _walk(node: Any) -> "list[dict[str, Any]]":
     return found
 
 
-def _attributes(node: dict[str, Any]) -> dict[str, Any]:
+def _attributes(node: dict[str, object]) -> dict[str, object]:
     attributes = node.get("attributes")
     return attributes if isinstance(attributes, dict) else {}
 
 
-def _classes(node: dict[str, Any]) -> set[str]:
+def _classes(node: dict[str, object]) -> set[str]:
     """Class tokens as a SET: §1.1 fixes the classes, not their order."""
     raw = _attributes(node).get("class")
     return set(raw.split()) if isinstance(raw, str) else set()
 
 
-def _text(node: dict[str, Any]) -> str:
+def _text(node: dict[str, object]) -> str:
     value = node.get("txtContent")
     return value if isinstance(value, str) else ""
 
 
-def _is_icon(node: dict[str, Any]) -> bool:
+def _is_icon(node: dict[str, object]) -> bool:
     icon = _attributes(node).get("iconName")
     return isinstance(icon, str) and bool(icon) and "ms-fontSize-42" in _classes(node)
 
@@ -855,7 +854,7 @@ def _header_identity_tokens(loaded: Loaded, template: str, entity: str) -> froze
     return frozenset({"[$Title]"} | ({shipped} if shipped else set()))
 
 
-def _is_title_line(node: dict[str, Any], identities: frozenset[str]) -> bool:
+def _is_title_line(node: dict[str, object], identities: frozenset[str]) -> bool:
     """A live expression naming one of the accepted identity tokens."""
     text = _text(node)
     return (
@@ -865,7 +864,7 @@ def _is_title_line(node: dict[str, Any], identities: frozenset[str]) -> bool:
     )
 
 
-def _is_strapline(node: dict[str, Any]) -> bool:
+def _is_strapline(node: dict[str, object]) -> bool:
     """A literal sentence, not an expression and not the optional guide link."""
     text = _text(node)
     return (
@@ -895,7 +894,7 @@ def _is_ordered_subsequence(beats: list[str]) -> bool:
     return True
 
 
-def _seen_values(rows: list[dict[str, Any]], source: str) -> set[str]:
+def _seen_values(rows: list[dict[str, object]], source: str) -> set[str]:
     """Every value the demo rows give `source`, a list column's members flattened.
 
     A multi-value column holds a list, and `str(["View", "Edit"])` is
@@ -903,15 +902,16 @@ def _seen_values(rows: list[dict[str, Any]], source: str) -> set[str]:
     its members would report a correctly formatted column as one whose
     formatter is never seen to render.
     """
-    return {
-        str(member)
-        for row in rows
-        if row.get(source) is not None
-        for member in (row[source] if isinstance(row[source], list) else [row[source]])
-    }
+    seen: set[str] = set()
+    for row in rows:
+        value = row.get(source)
+        if value is None:
+            continue
+        seen.update(str(member) for member in (value if isinstance(value, list) else [value]))
+    return seen
 
 
-def _token_maps(column: str, spec: dict[str, Any]) -> list[tuple[str, dict[str, str]]]:
+def _token_maps(column: str, spec: dict[str, object]) -> list[tuple[str, dict[str, str]]]:
     """(source column, {member: token}) for a raw style spec's `map:` blocks.
 
     The loader has already refused a key or a token that is not text.
@@ -1131,12 +1131,12 @@ def _compare_instants_at(field: str, op: str, raw: object, value: object, lag: i
     raise _UnevaluableError(f"{field}: {op} {value!r} on the same day turns on the time of day")
 
 
-def _is_seeded_instant(value: Any) -> bool:
+def _is_seeded_instant(value: object) -> bool:
     """A `today±N` demo value, which the seeder writes as the current instant plus N days."""
     return isinstance(value, str) and _TODAY.match(value.strip()) is not None
 
 
-def _is_midnight(value: Any) -> bool:
+def _is_midnight(value: object) -> bool:
     """A `today±N` literal or a bare ISO date: the start of that day."""
     if not isinstance(value, str):
         return False
@@ -1144,9 +1144,9 @@ def _is_midnight(value: Any) -> bool:
     return _TODAY.match(text) is not None or (len(text) == 10 and _as_date(text) is not None)
 
 
-def _compare_booleans(field: str, op: str, raw: Any, value: Any) -> bool:
+def _compare_booleans(field: str, op: str, raw: object, value: object) -> bool:
     """Yes/No operands through the renderer's own alias sets, so `yes` equals True."""
-    def truth(operand: Any) -> bool:
+    def truth(operand: object) -> bool:
         if isinstance(operand, (bool, int, str)) and operand in _TRUTHY:
             return True
         if isinstance(operand, (bool, int, str)) and operand in _FALSY:
@@ -1192,7 +1192,7 @@ def _decide[T: (dt.date, float, str)](op: str, lhs: T, rhs: T) -> bool:
             raise _UnevaluableError(f"operator {op!r}")
 
 
-def _as_date(value: Any) -> dt.date | None:
+def _as_date(value: object) -> dt.date | None:
     """A date, a `today±N` sentinel resolved against REFERENCE_DATE, or an
     ISO `YYYY-MM-DD` string. Deliberately requires the hyphens: ISO basic
     format would read a bare number as a date."""
@@ -1215,7 +1215,7 @@ def _as_date(value: Any) -> dt.date | None:
         return None
 
 
-def _as_number(value: Any) -> float | None:
+def _as_number(value: object) -> float | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, int | float):
@@ -1269,7 +1269,7 @@ def test_an_empty_multi_value_column_reads_as_null() -> None:
     The emitter omits the field for an empty list and M4 measured that column
     reading back `null`, so the evaluator has to agree with the payload.
     """
-    row: dict[str, Any] = {"Events": []}
+    row: dict[str, object] = {"Events": []}
     assert _evaluate_leaf(Leaf("Events", "is_null", None), row, _MULTI_VALUE_TYPES) is True
     assert _evaluate_leaf(Leaf("Events", "is_not_null", None), row, _MULTI_VALUE_TYPES) is False
 
@@ -1279,7 +1279,7 @@ def test_an_empty_multi_value_column_satisfies_not_includes() -> None:
     returned the rows without the member AND the empty row, which is why
     `not_includes` is in `_NULL_INCLUSIVE_NEGATIVES` in `conditions.py`.
     """
-    row: dict[str, Any] = {"Events": []}
+    row: dict[str, object] = {"Events": []}
     assert _evaluate_leaf(Leaf("Events", "not_includes", "Edit"), row, _MULTI_VALUE_TYPES) is True
     assert _evaluate_leaf(Leaf("Events", "includes", "Edit"), row, _MULTI_VALUE_TYPES) is False
 
@@ -1291,7 +1291,7 @@ def test_a_formatted_multi_value_column_counts_as_exercised() -> None:
     formatter no demo row is ever seen to render, which fails the sweep on
     correct work.
     """
-    rows: list[dict[str, Any]] = [{"Events": ["View", "Edit"]}, {"Events": "Delete"}, {}]
+    rows: list[dict[str, object]] = [{"Events": ["View", "Edit"]}, {"Events": "Delete"}, {}]
     assert _seen_values(rows, "Events") == {"View", "Edit", "Delete"}
 
 
