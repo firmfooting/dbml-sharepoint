@@ -234,7 +234,12 @@ def resolve(schema: Schema, mapping: Mapping) -> ResolvedMapping:
     resolve, and `mapping.permissions.group_sources` is then walked once more
     to name which of those, if any, that was.
     """
-    enum_members = enum_members_of(schema)
+    return _resolve_from(enum_members_of(schema), mapping)
+
+
+def _resolve_from(
+    enum_members: MappingABC[str, tuple[str, ...]], mapping: Mapping,
+) -> ResolvedMapping:
     unresolved: list[UnresolvedEnum] = []
 
     folders: dict[str, tuple[str, ...]] = {}
@@ -323,26 +328,29 @@ def require_matching_resolution(
     resolution takes from a schema, so two schemas differing only in ways
     the resolution cannot see are correctly accepted.
 
-    With a schema, `folders`, `folder_policies` and `groups` are also compared
-    with a fresh `resolve()` of the same mapping.
+    `folders`, `folder_policies`, `groups` and `unresolved` are also compared with a
+    fresh resolve() of the same mapping, against the schema when one is supplied.
     """
     if resolved.mapping is not bundle.mapping:
         raise MismatchedResolutionError("its mapping is a different object")
     require_current_resolution(resolved)
     if schema is not None and resolved.enum_members != enum_members_of(schema):
         raise MismatchedResolutionError("its enum members are not this schema's")
-    if schema is not None:
-        # `replace` and hand-built resolutions re-snapshot `consumed` (#675).
-        fresh = resolve(schema, resolved.mapping)
-        differing = [
-            name.replace("_", " ")
-            for name in ("folders", "folder_policies", "groups")
-            if getattr(resolved, name) != getattr(fresh, name)
-        ]
-        if differing:
-            raise MismatchedResolutionError(
-                f"its {', '.join(differing)} are not what resolving its mapping gives",
-            )
+    # `replace` and hand-built resolutions re-snapshot `consumed` (#675). Without a schema
+    # the resolution's own enum members stand in, so only a forged enum_members escapes.
+    fresh = (
+        resolve(schema, resolved.mapping) if schema is not None
+        else _resolve_from(resolved.enum_members, resolved.mapping)
+    )
+    differing = [
+        name.replace("_", " ")
+        for name in ("folders", "folder_policies", "groups", "unresolved")
+        if getattr(resolved, name) != getattr(fresh, name)
+    ]
+    if differing:
+        raise MismatchedResolutionError(
+            f"its {', '.join(differing)} are not what resolving its mapping gives",
+        )
 
 
 def require_current_resolution(resolved: ResolvedMapping) -> None:

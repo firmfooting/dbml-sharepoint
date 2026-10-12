@@ -26,6 +26,7 @@ from _paths import FIXTURES
 
 import dbml_sharepoint
 from dbml_sharepoint.analysis.checks.context import ValidationContext
+from dbml_sharepoint.analysis.enrolment import enrolment_plan
 from dbml_sharepoint.analysis.folders import UnknownFolderEnumError
 from dbml_sharepoint.analysis.groups import UnknownGroupEnumError
 from dbml_sharepoint.analysis.permissions import (
@@ -745,3 +746,27 @@ def test_a_resolution_not_derived_from_its_mapping_is_refused() -> None:
     for forged in cases:
         with pytest.raises(MismatchedResolutionError, match="not what resolving"):
             require_matching_resolution(forged, _bundle_of(forged), schema)
+
+
+def test_a_forged_resolution_is_refused_where_no_schema_is_passed() -> None:
+    """`enrolment_plan` takes no schema, so the re-derivation must not depend on one (#675)."""
+    resolved = _resolved_with_a_folder_policy()
+    bundle = _bundle_of(resolved)
+    forged = replace(resolved, groups=(_group("Everyone"),))
+
+    with pytest.raises(MismatchedResolutionError, match="groups are not what resolving"):
+        enrolment_plan(bundle, forged, {})
+    with pytest.raises(MismatchedResolutionError, match="folders are not what resolving"):
+        require_matching_resolution(
+            replace(resolved, folders={"Risk": ("Restricted",)}), bundle,
+        )
+
+
+def test_a_resolution_hiding_an_unresolved_enum_is_refused() -> None:
+    """`unresolved` drives require_resolved(), so emptying it must not pass (#675)."""
+    resolved = _resolved_with_a_folder_policy()
+    forged = replace(resolved, unresolved=(UnresolvedEnum(enum="ghost", entity="Risk"),))
+    schema = make_schema(make_table("Risk", "Title"))
+
+    with pytest.raises(MismatchedResolutionError, match="unresolved are not what resolving"):
+        require_matching_resolution(forged, _bundle_of(forged), schema)
