@@ -4,7 +4,6 @@ from collections import Counter
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import fields, replace
 from pathlib import Path
-from typing import Any
 
 import pytest
 from _findings import only
@@ -29,15 +28,20 @@ from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     DEMO_FILE_CONTENT,
     BlankDefault,
+    DemoFile,
     FoldersFromEnum,
     FormVisibility,
     ItemSecurity,
     LegacyFlag,
     ListPermissionPolicy,
     MappingBundle,
+    PermissionsConfig,
     RetiredColumn,
     SiteGroup,
     Versioning,
+)
+from dbml_sharepoint.model.mapping_types import (
+    Mapping as MappingModel,
 )
 from dbml_sharepoint.model.reading import strict_str
 from dbml_sharepoint.model.sections import (
@@ -566,7 +570,7 @@ def test_the_retention_file_refuses_a_key_it_does_not_read(
 def test_retention_policy_rejects_wrong_typed_value(tmp_path: Path) -> None:
     """`retain_years` is typed `int | None` in `RetentionPolicy`; a quoted
     number must not load as a `str` living inside that field -- invisible to
-    the type checker because `spec.get(...)` is `Any`."""
+    the type checker because `spec.get(...)` is untyped."""
     (tmp_path / "retention.yaml").write_text(
         "policies:\n"
         "  Standard7Y:\n"
@@ -1718,14 +1722,14 @@ def test_documented_retention_policies_block_is_rejected_not_ignored(tmp_path: P
 # place, so each family is run against a recording view of its blocks.
 
 
-class _RecordingBlocks(Mapping[str, Any]):
+class _RecordingBlocks(Mapping[str, object]):
     """A blocks mapping that remembers every key a family asked for."""
 
-    def __init__(self, blocks: Mapping[str, Any]) -> None:
+    def __init__(self, blocks: Mapping[str, object]) -> None:
         self._blocks = blocks
         self.asked: set[str] = set()
 
-    def __getitem__(self, key: str) -> Any:
+    def __getitem__(self, key: str) -> object:
         self.asked.add(key)
         return self._blocks[key]
 
@@ -1736,14 +1740,14 @@ class _RecordingBlocks(Mapping[str, Any]):
         return len(self._blocks)
 
 
-_MINIMAL_DOCUMENT: dict[str, Any] = {
+_MINIMAL_DOCUMENT: dict[str, object] = {
     "prefix": "T_",
     "entities": {"Risk": {"kind": "List", "base_template": 100, "site_role": "default"}},
 }
 
 
 def _run_families(
-    base_dir: Path, raw: dict[str, Any],
+    base_dir: Path, raw: dict[str, object],
 ) -> list[tuple[Section, set[str], LoadedFields]]:
     """Run the registry the way `load_mapping` does, recording what each
     family asked for and what it produced."""
@@ -4312,13 +4316,57 @@ def _derived(entry: str) -> str:
     return blocks(entities("Risk"), f"derived_columns:\n  Risk:\n    - {entry}")
 
 
+def _perms(mapping: MappingModel) -> PermissionsConfig:
+    assert mapping.permissions is not None
+    return mapping.permissions
+
+
+def _default_policy(bundle: MappingBundle) -> ListPermissionPolicy:
+    policy = _perms(bundle.mapping).default_policy
+    assert policy is not None
+    return policy
+
+
+def _group_by_fields(bundle: MappingBundle) -> list[str]:
+    group_by = bundle.mapping.views["Project"][0].group_by
+    assert group_by is not None
+    return group_by.fields
+
+
+def _demo_file(bundle: MappingBundle) -> DemoFile:
+    file = bundle.mapping.demo_items["Docs"][0].file
+    assert file is not None
+    return file
+
+
+def _recorded_case(
+    body: str, path: str, default: object, read: Callable[[MappingBundle], object],
+    location: str, *, case_id: str,
+) -> object:
+    return pytest.param(body, path, default, read, location, id=case_id)
+
+
+def _silent_case(
+    body: str, read: Callable[[MappingBundle], object], default: object, *, case_id: str,
+) -> object:
+    return pytest.param(body, read, default, id=case_id)
+
+
+def _blank_entity_case(
+    declaration: str, section: Callable[[MappingModel], Mapping[str, object]], *, case_id: str,
+) -> object:
+    return pytest.param(declaration, section, id=case_id)
+
+
+
+
 #: One declaration per reader whose default decides deployed behaviour, each
 #: key written with no value. A blank reads as absent (#665), so each takes its
 #: default, and because the author may have meant a value the load records it
 #: and validation warns. These were refused until #665; see `model/reading.py`
 #: for the rule.
 _RECORDED_BLANK_CASES = [
-    pytest.param(
+    _recorded_case(
         _views_yaml("""
             views:
               Project:
@@ -4330,9 +4378,9 @@ _RECORDED_BLANK_CASES = [
         "views.Project[0].sort[0].direction", "asc",
         lambda b: b.mapping.views["Project"][0].sort[0].direction,
         "views.Project[0].sort[0].direction",
-        id="view-sort-direction",
+        case_id="view-sort-direction",
     ),
-    pytest.param(
+    _recorded_case(
         _views_yaml("""
             views:
               Project:
@@ -4343,9 +4391,9 @@ _RECORDED_BLANK_CASES = [
         "views.Project[0].where", None,
         lambda b: b.mapping.views["Project"][0].where,
         "views.Project[0].where",
-        id="view-where",
+        case_id="view-where",
     ),
-    pytest.param(
+    _recorded_case(
         blocks(entities("Risk"), """
             form_visibility:
               Risk:
@@ -4355,9 +4403,9 @@ _RECORDED_BLANK_CASES = [
         "form_visibility.Risk.reconcile", "exact",
         lambda b: b.mapping.form_visibility["Risk"].reconcile,
         "form_visibility.Risk.reconcile",
-        id="form-visibility-reconcile",
+        case_id="form-visibility-reconcile",
     ),
-    pytest.param(
+    _recorded_case(
         blocks(entities("Risk"), """
             form_visibility:
               Risk:
@@ -4367,9 +4415,9 @@ _RECORDED_BLANK_CASES = [
         "form_visibility.Risk.columns.Title.when", None,
         lambda b: b.mapping.form_visibility["Risk"].columns["Title"].when,
         "form_visibility.Risk.columns.Title.when",
-        id="form-visibility-when",
+        case_id="form-visibility-when",
     ),
-    pytest.param(
+    _recorded_case(
         blocks(entities("Risk"), """
             column_validation:
               Risk:
@@ -4379,9 +4427,9 @@ _RECORDED_BLANK_CASES = [
         "column_validation.Risk.reconcile", "exact",
         lambda b: b.mapping.column_validation["Risk"].reconcile,
         "column_validation.Risk.reconcile",
-        id="column-validation-reconcile",
+        case_id="column-validation-reconcile",
     ),
-    pytest.param(
+    _recorded_case(
         blocks(entities("Risk"), """
             list_permissions:
               default:
@@ -4389,31 +4437,31 @@ _RECORDED_BLANK_CASES = [
                 reconcile:
         """),
         "list_permissions.default.reconcile", "configured",
-        lambda b: b.mapping.permissions.default_policy.reconcile_mode,
+        lambda b: _default_policy(b).reconcile_mode,
         "list_permissions.default.reconcile",
-        id="list-permissions-reconcile",
+        case_id="list-permissions-reconcile",
     ),
-    pytest.param(
+    _recorded_case(
         blocks(entities("Risk"), """
             groups:
               - { name: Team, owner_group: }
         """),
         "groups[0].owner_group", "Site Owners",
-        lambda b: b.mapping.permissions.groups[0].owner_group,
+        lambda b: _perms(b.mapping).groups[0].owner_group,
         "groups[0].owner_group",
-        id="group-owner-group",
+        case_id="group-owner-group",
     ),
-    pytest.param(
+    _recorded_case(
         blocks(entities("Risk"), """
             groups:
               - { name: Team, from_enum: }
         """),
         "groups[0].from_enum", None,
-        lambda b: next((s.enum for s in b.mapping.permissions.group_sources), None),
+        lambda b: next((s.enum for s in _perms(b.mapping).group_sources), None),
         "groups[0].from_enum",
-        id="group-from-enum",
+        case_id="group-from-enum",
     ),
-    pytest.param(
+    _recorded_case(
         blocks(
             entities(entity("Docs", kind="DocumentLibrary", base_template=101)),
             """
@@ -4425,11 +4473,11 @@ _RECORDED_BLANK_CASES = [
             """,
         ),
         "demo_items.Docs[0].file.content", DEMO_FILE_CONTENT,
-        lambda b: b.mapping.demo_items["Docs"][0].file.content,
+        lambda b: _demo_file(b).content,
         "demo_items.Docs[0].file.content",
-        id="demo-file-content",
+        case_id="demo-file-content",
     ),
-    pytest.param(
+    _recorded_case(
         blocks(entities("Risk"), """
             versioning:
               default:
@@ -4438,9 +4486,9 @@ _RECORDED_BLANK_CASES = [
         "versioning.default.major_version_limit", Versioning.major_version_limit,
         lambda b: b.mapping.versioning_default.major_version_limit,
         "versioning.default.major_version_limit",
-        id="major-version-limit",
+        case_id="major-version-limit",
     ),
-    pytest.param(
+    _recorded_case(
         blocks(entities("Risk"), """
             versioning:
               default: { major_version_limit: 50 }
@@ -4450,9 +4498,9 @@ _RECORDED_BLANK_CASES = [
         "versioning.overrides.Risk.major_version_limit", 50,
         lambda b: b.mapping.versioning_for("Risk").major_version_limit,
         "versioning.overrides.Risk.major_version_limit",
-        id="versioning-override-takes-the-resolved-default",
+        case_id="versioning-override-takes-the-resolved-default",
     ),
-    pytest.param(
+    _recorded_case(
         blocks(entities("Risk"), """
             item_security:
               default: { read: own }
@@ -4462,16 +4510,16 @@ _RECORDED_BLANK_CASES = [
         "item_security.overrides.Risk.read", "own",
         lambda b: b.mapping.item_security_for("Risk").read,
         "mapping.item_security.overrides.Risk.read",
-        id="item-security-override-takes-the-resolved-default",
+        case_id="item-security-override-takes-the-resolved-default",
     ),
-    pytest.param(
+    _recorded_case(
         blocks(entities("Risk"), "seal_columns:"),
         "mapping.seal_columns", False,
         lambda b: b.mapping.seal_columns,
         "mapping.seal_columns",
-        id="seal-columns",
+        case_id="seal-columns",
     ),
-    pytest.param(
+    _recorded_case(
         blocks(entities("Risk"), """
             reporting:
               users_table:
@@ -4479,9 +4527,9 @@ _RECORDED_BLANK_CASES = [
         "reporting.users_table", False,
         lambda b: b.mapping.reporting.users_table,
         "reporting.users_table",
-        id="reporting-switch",
+        case_id="reporting-switch",
     ),
-    pytest.param(
+    _recorded_case(
         blocks(entities("Risk"), """
             retired_columns:
               Risk:
@@ -4490,16 +4538,16 @@ _RECORDED_BLANK_CASES = [
         "retired_columns.Risk.Old.hide_existing", False,
         lambda b: b.mapping.retired_columns["Risk"]["Old"].hide_existing,
         "retired_columns.Risk.Old.hide_existing",
-        id="hide-existing",
+        case_id="hide-existing",
     ),
-    pytest.param(
+    _recorded_case(
         entities(entity("Risk", title="")),
         "entities.Risk.title", None,
         lambda b: b.mapping.entities["Risk"].title,
         "entities.Risk.title",
-        id="entity-title",
+        case_id="entity-title",
     ),
-    pytest.param(
+    _recorded_case(
         _views_yaml("""
             views:
               Project:
@@ -4508,9 +4556,9 @@ _RECORDED_BLANK_CASES = [
         "views.Project[0].scope", None,
         lambda b: b.mapping.views["Project"][0].scope,
         "views.Project[0].scope",
-        id="view-scope",
+        case_id="view-scope",
     ),
-    pytest.param(
+    _recorded_case(
         _views_yaml("""
             views:
               Project:
@@ -4519,9 +4567,9 @@ _RECORDED_BLANK_CASES = [
         "views.Project[0].row_limit", None,
         lambda b: b.mapping.views["Project"][0].row_limit,
         "views.Project[0].row_limit",
-        id="view-row-limit",
+        case_id="view-row-limit",
     ),
-    pytest.param(
+    _recorded_case(
         blocks(entities("Risk"), """
             list_permissions:
               default:
@@ -4531,25 +4579,25 @@ _RECORDED_BLANK_CASES = [
         """),
         # Read as a list: the warning names the default in the spelling YAML uses.
         "list_permissions.default.assignments", [],
-        lambda b: list(b.mapping.permissions.default_policy.assignments),
+        lambda b: list(_default_policy(b).assignments),
         "list_permissions.default.assignments",
-        id="assignments",
+        case_id="assignments",
     ),
-    pytest.param(
+    _recorded_case(
         _derived("{ kind: expr, name: Age, type: number, m: '1', hidden: }"),
         "derived_columns.Risk[0].hidden", False,
         lambda b: b.mapping.derived_columns["Risk"][0].hidden,
         "derived_columns.Risk[0].hidden",
-        id="derived-hidden",
+        case_id="derived-hidden",
     ),
-    pytest.param(
+    _recorded_case(
         _derived("{ kind: expr, name: Age, type: number, m: '1', replace: }"),
         "derived_columns.Risk[0].replace", False,
         lambda b: b.mapping.derived_columns["Risk"][0].replace,
         "derived_columns.Risk[0].replace",
-        id="derived-replace",
+        case_id="derived-replace",
     ),
-    pytest.param(
+    _recorded_case(
         _derived(
             "{ kind: count, from: Task, via: Risk, name: Open, aggregate: count, "
             "type: Int64, where: }",
@@ -4557,9 +4605,9 @@ _RECORDED_BLANK_CASES = [
         "derived_columns.Risk[0].where", "",
         lambda b: b.mapping.derived_columns["Risk"][0].where,
         "derived_columns.Risk[0].where",
-        id="derived-where",
+        case_id="derived-where",
     ),
-    pytest.param(
+    _recorded_case(
         # With no site role the default policy applies to the entities of every role.
         blocks(entities("Risk"), """
             list_permissions:
@@ -4568,9 +4616,9 @@ _RECORDED_BLANK_CASES = [
                 site_role:
         """),
         "list_permissions.default.site_role", None,
-        lambda b: b.mapping.permissions.default_policy_site_role,
+        lambda b: _perms(b.mapping).default_policy_site_role,
         "list_permissions.default.site_role",
-        id="default-policy-site-role",
+        case_id="default-policy-site-role",
     ),
 ]
 
@@ -4589,7 +4637,7 @@ def test_a_blank_key_takes_a_behavioural_default_and_is_reported(
     body: str,
     path: str,
     default: object,
-    read: Callable[[Any], object],
+    read: Callable[[MappingBundle], object],
     location: str,
 ) -> None:
     """The default is what the mapping gets, and the warning names the path.
@@ -4619,43 +4667,43 @@ def test_a_blank_key_takes_a_behavioural_default_and_is_reported(
 #: a value that changes nothing. A blank there can only mean nothing, so
 #: nothing is recorded.
 _SILENT_BLANK_CASES = [
-    pytest.param(
+    _silent_case(
         blocks(entities("Risk"), """
             groups:
               - { name: Team, description: }
         """),
-        lambda b: b.mapping.permissions.groups[0].description, "",
-        id="group-description",
+        lambda b: _perms(b.mapping).groups[0].description, "",
+        case_id="group-description",
     ),
-    pytest.param(
+    _silent_case(
         blocks(entities("Risk"), "extension:"),
         lambda b: b.mapping.extension, None,
-        id="extension",
+        case_id="extension",
     ),
-    pytest.param(
+    _silent_case(
         blocks(entities("Risk"), """
             retired_columns:
               Risk:
                 Old: { retired: 2026-09-01, reason: }
         """),
         lambda b: b.mapping.retired_columns["Risk"]["Old"].reason, "",
-        id="retired-reason",
+        case_id="retired-reason",
     ),
-    pytest.param(
+    _silent_case(
         blocks(entities("Risk"), """
             retired_columns:
               Risk:
                 Old: { retired: 2026-09-01, superseded_by: }
         """),
         lambda b: b.mapping.retired_columns["Risk"]["Old"].superseded_by, None,
-        id="retired-superseded-by",
+        case_id="retired-superseded-by",
     ),
-    pytest.param(
+    _silent_case(
         _derived("{ kind: expr, name: Age, type: number, m: '1', description: }"),
         lambda b: b.mapping.derived_columns["Risk"][0].description, "",
-        id="derived-description",
+        case_id="derived-description",
     ),
-    pytest.param(
+    _silent_case(
         # A blank `via:` read as "None" was a second join, refused as "both were given".
         _derived(
             "{ kind: lookup, from: Owner, via: , key: OwnerId, "
@@ -4664,9 +4712,9 @@ _SILENT_BLANK_CASES = [
         lambda b: (b.mapping.derived_columns["Risk"][0].via,
                    b.mapping.derived_columns["Risk"][0].key),
         ("", "OwnerId"),
-        id="derived-via",
+        case_id="derived-via",
     ),
-    pytest.param(
+    _silent_case(
         _derived(
             "{ kind: lookup, from: Owner, via: Owner, key: , "
             "pick: { OwnerName: Title }, types: { OwnerName: text } }",
@@ -4674,55 +4722,55 @@ _SILENT_BLANK_CASES = [
         lambda b: (b.mapping.derived_columns["Risk"][0].via,
                    b.mapping.derived_columns["Risk"][0].key),
         ("Owner", ""),
-        id="derived-key",
+        case_id="derived-key",
     ),
-    pytest.param(
+    _silent_case(
         # A blank `column:` read as "None" was refused as a column a count must not name.
         _derived(
             "{ kind: count, from: Task, via: Risk, name: Open, aggregate: count, "
             "type: Int64, column: }",
         ),
         lambda b: b.mapping.derived_columns["Risk"][0].column, "",
-        id="derived-column",
+        case_id="derived-column",
     ),
-    pytest.param(
+    _silent_case(
         blocks(entities("Risk"), "derived_columns:\n  Risk:"),
         lambda b: b.mapping.derived_columns, {},
-        id="derived-entity-block",
+        case_id="derived-entity-block",
     ),
-    pytest.param(
+    _silent_case(
         # A blank spelling beside a written one was refused as declaring both.
         _views_yaml(
             "views:\n  Project:\n    - { title: All, fields: [Title], "
             "group_by: { field: Status, fields: } }",
         ),
-        lambda b: b.mapping.views["Project"][0].group_by.fields, ["Status"],
-        id="view-group-by-fields-blank",
+        _group_by_fields, ["Status"],
+        case_id="view-group-by-fields-blank",
     ),
-    pytest.param(
+    _silent_case(
         _views_yaml(
             "views:\n  Project:\n    - { title: All, fields: [Title], "
             "group_by: { field: , fields: [Status, Owner] } }",
         ),
-        lambda b: b.mapping.views["Project"][0].group_by.fields, ["Status", "Owner"],
-        id="view-group-by-field-blank",
+        _group_by_fields, ["Status", "Owner"],
+        case_id="view-group-by-field-blank",
     ),
-    pytest.param(
+    _silent_case(
         blocks(entities("Risk"), "prefix_owner:"),
         lambda b: b.mapping.prefix_owner, "",
-        id="prefix-owner",
+        case_id="prefix-owner",
     ),
-    pytest.param(
+    _silent_case(
         blocks(entities("Risk"), "extensions:\n  audit:"),
         lambda b: b.extension_configs, {"audit": {}},
-        id="extension-block",
+        case_id="extension-block",
     ),
 ]
 
 
 @pytest.mark.parametrize(("body", "read", "default"), _SILENT_BLANK_CASES)
 def test_a_blank_key_whose_default_is_empty_is_not_reported(
-    tmp_path: Path, body: str, read: Callable[[Any], object], default: object,
+    tmp_path: Path, body: str, read: Callable[[MappingBundle], object], default: object,
 ) -> None:
     """Nothing here decides what deploys, so nothing warns."""
     write_mapping(tmp_path, body)
@@ -4811,35 +4859,35 @@ def test_a_blank_principal_is_refused_as_an_absent_one(tmp_path: Path) -> None:
 #: section lives. Each reads as absent, the way a blank
 #: `versioning.overrides.<E>:` already did, so the entity has no entry there.
 _BLANK_ENTITY_BLOCKS = [
-    pytest.param(
-        "form_visibility:\n  Risk:", lambda m: m.form_visibility, id="form-visibility",
+    _blank_entity_case(
+        "form_visibility:\n  Risk:", lambda m: m.form_visibility, case_id="form-visibility",
     ),
-    pytest.param(
+    _blank_entity_case(
         "column_validation:\n  Risk:", lambda m: m.column_validation,
-        id="column-validation",
+        case_id="column-validation",
     ),
-    pytest.param(
-        "list_validation:\n  Risk:", lambda m: m.list_validation, id="list-validation",
+    _blank_entity_case(
+        "list_validation:\n  Risk:", lambda m: m.list_validation, case_id="list-validation",
     ),
-    pytest.param("field_sets:\n  Risk:", lambda m: m.field_sets, id="field-sets"),
-    pytest.param(
-        "retired_columns:\n  Risk:", lambda m: m.retired_columns, id="retired-columns",
+    _blank_entity_case("field_sets:\n  Risk:", lambda m: m.field_sets, case_id="field-sets"),
+    _blank_entity_case(
+        "retired_columns:\n  Risk:", lambda m: m.retired_columns, case_id="retired-columns",
     ),
-    pytest.param(
-        "list_permissions:\n  overrides:\n    Risk:", lambda m: m.permissions.overrides,
-        id="list-permissions-override",
+    _blank_entity_case(
+        "list_permissions:\n  overrides:\n    Risk:", lambda m: _perms(m).overrides,
+        case_id="list-permissions-override",
     ),
-    pytest.param(
+    _blank_entity_case(
         "list_permissions:\n  folders:\n    Risk:",
-        lambda m: m.permissions.folder_policies,
-        id="list-permissions-folders",
+        lambda m: _perms(m).folder_policies,
+        case_id="list-permissions-folders",
     ),
 ]
 
 
 @pytest.mark.parametrize(("declaration", "section"), _BLANK_ENTITY_BLOCKS)
 def test_a_blank_entity_block_reads_as_absent(
-    tmp_path: Path, declaration: str, section: Callable[[Any], Mapping[str, object]],
+    tmp_path: Path, declaration: str, section: Callable[[MappingModel], Mapping[str, object]],
 ) -> None:
     """Silent, because an entity with no block is what the author wrote."""
     write_mapping(tmp_path, blocks(entities("Risk"), declaration))
