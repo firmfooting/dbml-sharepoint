@@ -826,8 +826,10 @@ def build_plans(
                 case "UserMulti":
                     # Ids only and joined, as for LookupMulti: the items
                     # endpoint reads `<Name>Id` back as an array of ids
-                    # (`field.version.fixture-payload-item`), and an expand of
-                    # a collection is not flattened here.
+                    # (`field.version.fixture-payload-people-write`,
+                    # `ProbePeopleId=[12]`), and an expand of a collection is
+                    # not flattened here. The empty-value shape is measured
+                    # only for the Power Automate connector (P48), not here.
                     plan.selects.append(f"{sp.name}Id")
                     plan.multi_value_joins.append((f"{sp.name}Id", False))
                     plan.sql_columns.append((f"{sp.name}Id", "NVARCHAR(MAX)"))
