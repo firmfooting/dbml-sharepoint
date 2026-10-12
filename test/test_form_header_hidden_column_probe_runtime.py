@@ -33,6 +33,8 @@ TOKEN = ("form.edit-form.header-choice-token-renders",
 TARGET = (EDIT, DISPLAY)
 LINKS = "text.form-fmt.control-columns-in-content-type"
 LIST = "text.form-fmt.fixture-hidden-list"
+ITEM = "text.form-fmt.fixture-hidden-item"
+ITEM_VALUES = "text.form-fmt.fixture-hidden-item-values"
 CONTROL = "text.form-fmt.control-column-hidden-on-forms"
 FORMATTER = "text.form-fmt.fixture-header-formatter"
 FOOTER_FIXTURE = "text.form-fmt.fixture-footer-baseline"
@@ -40,7 +42,8 @@ CONTROL_FIXTURE = "text.form-fmt.fixture-control-header"
 FIXTURES = (
     LIST,
     "text.form-fmt.fixture-hidden-columns",
-    "text.form-fmt.fixture-hidden-item",
+    ITEM,
+    ITEM_VALUES,
     CONTROL,
     LINKS,
 )
@@ -74,6 +77,7 @@ _MOCK = textwrap.dedent(r"""
       const path = String(url).replace(/^https:\/\/example\.sharepoint\.com\/sites\/probe/, '');
       const method = init.method || 'GET';
       SENT.push({ method, path, body: typeof init.body === 'string' ? init.body : '' });
+      if (CONFIG.reject && path.includes(CONFIG.reject)) throw new Error('network down');
       if (CONFIG.refuse && path.includes(CONFIG.refuse)) {
         if (!CONFIG.status) return answer(403, 'denied');
         return CONFIG.bare ? answer(CONFIG.status, 'internal error')
@@ -115,7 +119,7 @@ _MOCK = textwrap.dedent(r"""
       const item = /^\/items\((\d+)\)/.exec(rest);
       if (item) {
         return answer(200, { Id: CONFIG.readId || Number(item[1]),
-          HiddenResult: 'Yes', ShownResult: 'Yes' });
+          HiddenResult: 'Yes', ShownResult: CONFIG.shownValue || 'Yes' });
       }
       if (rest.startsWith('/contenttypes?')) {
         if (CONFIG.noItemType) {
@@ -271,7 +275,7 @@ def test_a_header_run_never_touches_a_same_title_list_it_did_not_make() -> None:
 
 def test_a_header_run_with_more_than_one_item_voids_the_reading() -> None:
     rows, _sent, _output = _header(itemId=2, readId=9)
-    assert rows["text.form-fmt.fixture-hidden-item"]["outcome"] == "FAIL"
+    assert rows[ITEM]["outcome"] == "FAIL"
     assert set(TARGET) <= voided(rows)
 
 
@@ -306,7 +310,7 @@ def test_the_item_need_not_be_item_1() -> None:
 
 def test_an_item_read_that_answers_another_id_voids_the_reading() -> None:
     rows, _sent, _output = _run(readId=9)
-    assert rows["text.form-fmt.fixture-hidden-item"]["outcome"] == "FAIL"
+    assert rows[ITEM]["outcome"] == "FAIL"
     assert set(BASE) <= voided(rows)
 
 
@@ -461,3 +465,29 @@ def test_a_content_type_read_that_did_not_answer_is_not_established_and_voids_no
         assert rows[row]["outcome"] == "NOT ESTABLISHED" and rows[row]["state"] == "open"
     assert voided(rows) == set()
     assert not any("ClientFormCustomFormatter" in s["body"] for s in sent)
+
+
+@pytest.mark.parametrize("reject", ["getbytitle('dbml-probe-header-hidden-column')?",
+                                    "/_api/contextinfo", "/fields/createfieldasxml", "/items"],
+                         ids=["list-read", "digest", "field-write", "item-write-and-read"])
+def test_a_rejected_request_anywhere_still_ends_in_a_report(reject: str) -> None:
+    rows, _sent, output = _run(reject=reject)
+    assert ended_with_report(output) and "Unhandled" not in output
+    # The mock's field read answers after a rejected create, so that fixture stands on its readback.
+    unmet = any(rows[f]["outcome"] != "PASS" for f in FIXTURES)
+    assert reject.endswith("createfieldasxml") or unmet
+
+
+def test_a_rejected_direct_read_in_a_later_phase_ends_in_a_report() -> None:
+    rows, _sent, output = _header(reject="/items?")
+    assert ended_with_report(output)
+    assert rows[ITEM]["outcome"] == "NOT ESTABLISHED"
+
+
+def test_a_value_mismatch_voids_the_readings_that_need_the_values_but_not_the_footer() -> None:
+    rows, _sent, _output = _run(shownValue="No")
+    assert rows[ITEM_VALUES]["outcome"] == "FAIL"
+    assert rows[ITEM]["outcome"] == "PASS"
+    assert not set(BASE) & voided(rows) and not set(BODY) & voided(rows)
+    rows, _sent, _output = _header(shownValue="No")
+    assert set(TARGET) <= voided(rows)
