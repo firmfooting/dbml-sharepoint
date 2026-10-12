@@ -225,9 +225,9 @@ def generate_reporting_md(
          "on `Id` cannot then be many-to-one; Power BI degrades it to "
          "many-to-many and joins each child to the same-numbered parent "
          "everywhere. The report still renders. The numbers are just "
-         "wrong. The `... Key` columns are `Site Url`, the **list title** and "
-         "the id together, which is unique across any number of sites and "
-         "lists, and they are why the relationships below are safe to "
+         "wrong. The `... Key` columns are `Site Url`, the list's declared URL "
+         "(its **list title** when none is declared) and the id together, "
+         "which is unique across any number of sites and lists, and they are why the relationships below are safe to "
          "append."),
         "",
         "## Relationships (Power BI model)",
