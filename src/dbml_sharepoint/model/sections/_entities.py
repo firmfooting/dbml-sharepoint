@@ -96,11 +96,10 @@ def read(sc: SectionContext) -> dict[str, Any]:
             title if entity.is_library and re.fullmatch(r"[A-Za-z0-9_]+", title) else None
         )
         if root:
-            name = list_url_key(root) if entity.internal_name else root.casefold()
-            key = (entity.site_role, name)
+            key = (entity.site_role, list_url_key(root))
             if key in roots:
                 raise MappingValueError(
-                    f"entities: duplicate library root {root!r}",
+                    f"entities: duplicate list or library root {root!r}",
                 )
             roots.add(key)
     return {"entities": entities}
