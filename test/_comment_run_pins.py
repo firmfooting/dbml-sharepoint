@@ -244,7 +244,6 @@ PINNED: dict[str, list[str]] = {
         "7a96775281a7",
         "80e21a6ddd40",
         "ae44d2607253",
-        "e93d08cb0b6c",
         "f11f29803e84",
     ],
     "src/dbml_sharepoint/generators/manifestgen.py": [

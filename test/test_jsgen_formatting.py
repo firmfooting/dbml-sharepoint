@@ -459,6 +459,42 @@ def test_exact_column_validation_skips_a_multi_value_column(tmp_path: Path) -> N
     assert fields["Summary"]["validation_formula"] == '=[Summary]<>"forbidden"'
 
 
+def test_a_hidden_yes_no_column_never_carries_a_validation_formula(tmp_path: Path) -> None:
+    """SharePoint refuses any ValidationFormula on a Yes/No field (kind 8)
+    with "This field type does not support validation formulas"
+    (field.validation.boolean-refuses-validation-formula), so the field MERGE
+    must leave the property out whether it would set or clear it."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, TITLE, "Summary nvarchar", "Flag boolean"),
+        mapping=blocks(entities("Risk"), """
+            form_visibility:
+              Risk:
+                columns:
+                  Flag: { new: false, existing: false }
+            column_validation:
+              Risk:
+                reconcile: exact
+                columns:
+                  Summary:
+                    when:
+                      - { field: Summary, op: neq, value: forbidden }
+                    message: Use a different summary.
+        """),
+    )
+    fields = {
+        field["title"]: field
+        for field in build_schema_json(
+            schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
+        )["lists"][0]["fields_phase1"]
+    }
+
+    assert fields["Flag"]["validation_formula"] == UNMANAGED
+    assert fields["Flag"]["validation_message"] == UNMANAGED
+    assert fields["Flag"]["client_validation_formula"] != UNMANAGED
+    assert fields["Summary"]["validation_formula"] == '=[Summary]<>"forbidden"'
+
+
 def test_form_formatting_composed_with_display_rewrite(tmp_path: Path) -> None:
     """ClientFormCustomFormatter is a JSON string whose *JSONFormatter keys
     hold part JSON OBJECTS, the pane-native encoding (the Format pane
