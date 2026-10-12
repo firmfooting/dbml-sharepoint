@@ -53,10 +53,34 @@ def markdown_cell(value: object) -> str
 
 Keep arbitrary text inside one Markdown table cell.
 
+### `ScriptEnvironment`
+
+Jinja types `globals` by its defaults, which rejects data, so ours sit beside them.
+
+#### `ScriptEnvironment.make_globals`
+
+```python
+def make_globals(self, d: MutableMapping[str, object] | None) -> ChainMap[str, object]
+```
+
+Make the globals map for a template. Any given template
+globals overlay the environment :attr:`globals`.
+
+Returns a :class:`collections.ChainMap`. This allows any changes
+to a template's globals to only affect that template, while
+changes to the environment's globals are still reflected.
+However, avoid modifying any globals after a template is loaded.
+
+:param d: Dict of template-specific globals.
+
+.. versionchanged:: 3.0
+    Use :class:`collections.ChainMap` to always prevent mutating
+    environment globals.
+
 ### `script_env`
 
 ```python
-def script_env(application: str = 'dbml-sharepoint') -> Environment
+def script_env(application: str = 'dbml-sharepoint') -> ScriptEnvironment
 ```
 
 Environment for every generated artifact (scripts and manifests).
