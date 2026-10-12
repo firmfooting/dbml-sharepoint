@@ -14,7 +14,8 @@ retires when that read goes.
 from __future__ import annotations
 
 import ast
-from dataclasses import dataclass, field, is_dataclass
+from collections import Counter
+from dataclasses import dataclass, field, is_dataclass, replace
 from pathlib import Path
 from typing import NamedTuple
 
@@ -140,11 +141,44 @@ def _import_aliases(tree: ast.Module) -> dict[str, str]:
             continue
         for alias in node.names:
             bound.setdefault(alias.asname or alias.name, set()).add(alias.name)
-    # A name two imports bind differently is UNPLACEABLE, not whichever the
-    # walk reached last: `_fields_matched` then reports every ratcheted field.
+    # A name two imports bind differently, or that is assigned, looped over or
+    # taken as a parameter anywhere, is UNPLACEABLE: `_fields_matched` then
+    # reports every ratcheted field.
+    rebound = _bound_names(tree)
     return {
-        name: next(iter(classes)) if len(classes) == 1 else _SHADOWED
+        name: next(iter(classes))
+        if len(classes) == 1 and not rebound[name]
+        else _SHADOWED
         for name, classes in bound.items()
+    }
+
+
+def _bound_names(tree: ast.AST) -> Counter[str]:
+    """Bindings per name under `tree`, counting everything but `from ... import`."""
+    count: Counter[str] = Counter()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load):
+            count[node.id] += 1
+        elif isinstance(node, ast.arg):
+            count[node.arg] += 1
+        elif isinstance(node, (*_SCOPES, ast.ExceptHandler, ast.MatchAs, ast.MatchStar)):
+            if node.name:
+                count[node.name] += 1
+        elif isinstance(node, ast.MatchMapping) and node.rest:
+            count[node.rest] += 1
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                count[(alias.asname or alias.name).split(".")[0]] += 1
+    return count
+
+
+def _resolver_imports(tree: ast.Module) -> set[str]:
+    """Local names bound by importing from `analysis.resolve`."""
+    return {
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and (node.module or "").endswith("analysis.resolve")
+        for alias in node.names
     }
 
 
@@ -176,22 +210,33 @@ def _getattr_field(node: ast.Call) -> str | None:
     return None
 
 
-def _fields_matched(node: ast.MatchClass, aliases: dict[str, str]) -> set[str]:
+def _fields_matched(
+    node: ast.MatchClass, aliases: dict[str, str], resolved: set[str],
+) -> set[str]:
     """The ratcheted fields one `case Cls(...)` pattern reads, which an
     `ast.Attribute` walk never sees because a pattern spells them in
     `kwd_attrs` or, positionally, nowhere at all."""
-    fields = set(node.kwd_attrs) & RATCHETED
+    cls = _pattern_class(node.cls, aliases)
+    # A bare name proven to be resolve.py's class matches the resolved answer; else fail closed.
+    own = (
+        RESOLUTION_FIELDS.get(cls, frozenset())
+        if isinstance(node.cls, ast.Name) and node.cls.id in resolved
+        else frozenset()
+    )
+    fields = (set(node.kwd_attrs) & RATCHETED) - own
     if not node.patterns:
         return fields
-    positions = POSITIONAL_FIELDS.get(_pattern_class(node.cls, aliases))
+    positions = POSITIONAL_FIELDS.get(cls)
     if positions is None:
         # A class this walk cannot place reports every field, because a
         # ratchet that fails open is not a ratchet.
         return fields | set(RATCHETED)
-    return fields | (set(positions[: len(node.patterns)]) & RATCHETED)
+    return fields | ((set(positions[: len(node.patterns)]) & RATCHETED) - own)
 
 
-def _reads_its_own_answer(node: ast.Attribute, owner: str, module: str) -> bool:
+def _reads_its_own_answer(
+    node: ast.Attribute, owner: str, module: str, trusted: bool,
+) -> bool:
     """Whether `node` is a resolution reading its OWN resolved field.
 
     `ResolvedMapping.require_folder_policies` reads `self.folder_policies`,
@@ -202,29 +247,31 @@ def _reads_its_own_answer(node: ast.Attribute, owner: str, module: str) -> bool:
 
     Scoped to the resolver's own module, because the class name alone is not
     the class: another module declaring its own `ResolvedMapping` would have
-    every `self.folder_policies` in it suppressed.
+    every `self.folder_policies` in it suppressed. `trusted` is true only for
+    a method whose `self` parameter is never rebound.
     """
     return (
-        module == RESOLVER_MODULE
+        trusted
+        and module == RESOLVER_MODULE
         and isinstance(node.value, ast.Name)
         and node.value.id == "self"
         and node.attr in RESOLUTION_FIELDS.get(owner, frozenset())
     )
 
 
-def _fields_read(
-    node: ast.AST, aliases: dict[str, str], owner: str, module: str,
-) -> set[str]:
+def _fields_read(node: ast.AST, ctx: _Ctx) -> set[str]:
     """The ratcheted fields `node` itself reads, its children aside."""
     if isinstance(node, ast.Attribute):
         # `Load` context separates a read from a keyword argument, a type
         # annotation and an assignment target, none of which read a field.
         reads = node.attr in RATCHETED and isinstance(node.ctx, ast.Load)
-        if reads and not _reads_its_own_answer(node, owner, module):
+        if reads and not _reads_its_own_answer(
+            node, ctx.owner, ctx.module, ctx.trusted,
+        ):
             return {node.attr}
         return set()
     if isinstance(node, ast.MatchClass):
-        return _fields_matched(node, aliases)
+        return _fields_matched(node, ctx.aliases, ctx.resolved)
     if isinstance(node, ast.Call):
         name = _getattr_field(node)
         return {name} if name is not None and name in RATCHETED else set()
@@ -237,34 +284,74 @@ def _fields_read(
     return set()
 
 
+@dataclass(frozen=True)
+class _Ctx:
+    """What a read is judged against: the module's import facts, the class it
+    sits in and whether `self` there is provably the method instance."""
+
+    aliases: dict[str, str]
+    resolved: set[str]
+    module: str
+    owner: str = ""
+    trusted: bool = False
+
+
+def _method_self_is_intact(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """Whether `self` is `fn`'s first parameter and nothing rebinds it."""
+    first = fn.args.posonlyargs + fn.args.args
+    return bool(first) and first[0].arg == "self" and _bound_names(fn)["self"] == 1
+
+
+def _outer_parts(node: ast.AST) -> list[ast.AST]:
+    """What a `def` or `class` evaluates in the scope holding it: decorators,
+    defaults, annotations, bases and keywords. Only its body is the inner scope."""
+    if isinstance(node, ast.ClassDef):
+        return [*node.decorator_list, *node.bases, *node.keywords]
+    assert isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    return [*node.decorator_list, node.args, *([node.returns] if node.returns else [])]
+
+
 def _collect(
-    node: ast.AST,
-    scope: tuple[str, ...],
-    found: _Found,
-    aliases: dict[str, str],
-    owner: str,
-    module: str,
+    node: ast.AST, scope: tuple[str, ...], found: _Found, ctx: _Ctx,
 ) -> None:
-    """Walk `node`, carrying the qualified name its children sit under and the
-    class they are declared in."""
-    qualname = ".".join(scope) if scope else MODULE_SCOPE
+    """Walk `node`'s children under the qualified name `scope`."""
     for child in ast.iter_child_nodes(node):
-        if isinstance(child, _SCOPES):
-            nested = (*scope, child.name)
-            found.functions.add(".".join(nested))
-            holder = child.name if isinstance(child, ast.ClassDef) else owner
-            _collect(child, nested, found, aliases, holder, module)
-            continue
-        found.reads |= {
-            (qualname, name) for name in _fields_read(child, aliases, owner, module)
-        }
-        _collect(child, scope, found, aliases, owner, module)
+        _visit(child, isinstance(node, ast.ClassDef), scope, found, ctx)
+
+
+def _visit(
+    child: ast.AST, in_class: bool, scope: tuple[str, ...], found: _Found, ctx: _Ctx,
+) -> None:
+    """Record `child`'s reads, opening a new scope for a `def` or `class`."""
+    qualname = ".".join(scope) if scope else MODULE_SCOPE
+    if not isinstance(child, _SCOPES):
+        found.reads |= {(qualname, name) for name in _fields_read(child, ctx)}
+        _collect(child, scope, found, ctx)
+        return
+    for part in _outer_parts(child):
+        _visit(part, False, scope, found, ctx)
+    nested = (*scope, child.name)
+    found.functions.add(".".join(nested))
+    if isinstance(child, ast.ClassDef):
+        inner = replace(ctx, owner=child.name, trusted=False)
+    else:
+        # Only a method directly in a class can trust its `self`; a nested
+        # helper may take its own.
+        inner = replace(ctx, trusted=in_class and _method_self_is_intact(child))
+    for stmt in child.body:
+        _visit(stmt, isinstance(child, ast.ClassDef), nested, found, inner)
 
 
 def _walk(source: str, module: str = "") -> _Found:
     tree = ast.parse(source)
     found = _Found()
-    _collect(tree, (), found, _import_aliases(tree), "", module)
+    rebound = _bound_names(tree)
+    # An imported name is bound nowhere else; resolve.py's own `class` binds once.
+    resolved = {n for n in _resolver_imports(tree) if not rebound[n]}
+    if module == RESOLVER_MODULE:
+        resolved |= {n for n in RESOLUTION_FIELDS if rebound[n] <= 1}
+    ctx = _Ctx(_import_aliases(tree), resolved, module)
+    _collect(tree, (), found, ctx)
     return found
 
 

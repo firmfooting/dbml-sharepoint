@@ -1,21 +1,9 @@
 # test/test_raw_enum_readers.py
-"""Only `analysis/resolve.py` may read a `from_enum` source before it resolves.
-
-Pieces 1-3 merged `SCHEMA.list_assignments` and `SCHEMA.folder_assignments`
-into one `SCHEMA.acl_scopes` and moved every enum-source resolution
-(`entities.<name>.folders`, `groups[].from_enum`) into `analysis/resolve.py`.
-Nothing stops a future rule or generator reaching past that boundary for
-`entity.folder_source`, `perms.group_sources` or `perms.folder_policies`
-directly, re-deriving the same resolution a second way -- which is the shape
-of drift this whole piece exists to close. This is that gate.
-
-See `_raw_enum_readers.py` for the walk, why a read is recorded against its
-function rather than its module, and how `self.folder_policies` on a
-`ResolvedMapping` is told apart from the raw field of the same name.
-"""
+"""Only `analysis/resolve.py` may read a `from_enum` source before it resolves."""
 
 from pathlib import Path
 
+import pytest
 from _paths import PACKAGE
 from _ratchet import Ratchet
 from _raw_enum_readers import (
@@ -208,6 +196,88 @@ def test_a_resolved_field_is_suppressed_only_inside_the_resolver_module() -> Non
     assert _reads_in(source, RESOLVER_MODULE) == set()
     assert _reads_in(source, "dbml_sharepoint/generators/jsgen.py") == {
         ("ResolvedMapping.read", "folder_policies"),
+    }
+
+
+def test_a_reassigned_class_alias_is_unplaceable() -> None:
+    """`C = PermissionsConfig` after `EntityMapping as C` must not leave `C`
+    placed against `EntityMapping.__match_args__`."""
+    source = (
+        "from dbml_sharepoint.model.mapping_types import EntityMapping as C\n"
+        "C = PermissionsConfig\n"
+        "match obj:\n    case C(_, _, _, _, _, _, wanted):\n        use(wanted)\n"
+    )
+    assert _reads_in(source) == {(MODULE_SCOPE, name) for name in RATCHETED}
+
+
+def test_a_rebound_self_is_not_the_resolved_receiver() -> None:
+    """Rebinding `self`, or a nested helper taking its own, reads a raw source."""
+    rebound = (
+        "class ResolvedMapping:\n"
+        "    def f(self):\n"
+        "        self = self.mapping.permissions\n"
+        "        return self.folder_policies\n"
+    )
+    nested = (
+        "class ResolvedMapping:\n"
+        "    def f(self):\n"
+        "        def g(self):\n"
+        "            return self.folder_policies\n"
+    )
+    assert _reads_in(rebound) == {("ResolvedMapping.f", "folder_policies")}
+    assert _reads_in(nested) == {("ResolvedMapping.f.g", "folder_policies")}
+
+
+def test_a_resolved_class_pattern_is_not_a_raw_read() -> None:
+    """`case ResolvedMapping(folder_policies=p)` matches the resolved answer."""
+    kw = "match obj:\n    case ResolvedMapping(folder_policies=p):\n        use(p)\n"
+    assert _reads_in(kw) == set()
+    imported = "from dbml_sharepoint.analysis.resolve import ResolvedMapping\n" + kw
+    assert _reads_in(imported, "dbml_sharepoint/generators/jsgen.py") == set()
+    # Not proven to be resolve.py's class, so it stays a read.
+    assert _reads_in(kw, "dbml_sharepoint/generators/jsgen.py") == {
+        (MODULE_SCOPE, "folder_policies"),
+    }
+
+
+def test_a_reassigned_resolved_class_name_is_a_raw_read() -> None:
+    source = (
+        "class ResolvedMapping: pass\n"
+        "ResolvedMapping = PermissionsConfig\n"
+        "match obj:\n    case ResolvedMapping(folder_policies=p):\n        use(p)\n"
+    )
+    assert _reads_in(source) == {(MODULE_SCOPE, "folder_policies")}
+
+
+@pytest.mark.parametrize(
+    "bind",
+    [
+        "for C in classes:\n    pass\n",
+        "with ctx() as C:\n    pass\n",
+        "try:\n    pass\nexcept E as C:\n    pass\n",
+        "(C := PermissionsConfig)\n",
+        "def f(C):\n    pass\n",
+    ],
+)
+def test_every_kind_of_rebinding_makes_an_alias_unplaceable(bind: str) -> None:
+    source = (
+        "from dbml_sharepoint.model.mapping_types import EntityMapping as C\n"
+        + bind
+        + "match obj:\n    case C(_, _, _, _, _, _, wanted):\n        use(wanted)\n"
+    )
+    assert {name for _, name in _reads_in(source)} == set(RATCHETED)
+
+
+def test_a_default_or_decorator_read_belongs_to_the_enclosing_scope() -> None:
+    """Python evaluates both where the `def` sits, not inside it."""
+    assert _reads_in("def resolve(value=perms.group_sources):\n    pass\n") == {
+        (MODULE_SCOPE, "group_sources"),
+    }
+    assert _reads_in("@perms.folder_policies\ndef f():\n    pass\n") == {
+        (MODULE_SCOPE, "folder_policies"),
+    }
+    assert _reads_in("def f():\n    return perms.group_sources\n") == {
+        ("f", "group_sources"),
     }
 
 
