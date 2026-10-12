@@ -32,3 +32,18 @@ def test_server_relative_joins_the_site_path() -> None:
         "/sites/ops/Lists/Mail Ledger")
     assert server_relative("", "TaskRegisterV2") == (
         "/TaskRegisterV2")
+
+
+def test_apostrophe_percent_and_mixed_case_are_kept_or_lowered() -> None:
+    assert list_url_path("Lists/Bob's 100% List") == "Lists/Bob's 100% List"
+    assert list_url_key("LISTS/Bob's mail LEDGER") == "lists/bob's mail ledger"
+
+
+@pytest.mark.parametrize("bad", ["Lists/a%7Cb", "%2e%2e/x", "Lists/a%00b"])
+def test_encoded_unsafe_urls_are_refused_after_decoding(bad: str) -> None:
+    with pytest.raises(MappingValueError):
+        list_url_key(bad)
+
+
+def test_server_relative_without_slashes_on_either_side() -> None:
+    assert server_relative("sites/ops", "/Lists/X") == "/sites/ops/Lists/X"
