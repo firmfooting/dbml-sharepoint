@@ -15,10 +15,10 @@ Node is required; the tests skip without it rather than failing.
 import json
 import textwrap
 from pathlib import Path
-from typing import Any
 
 import pytest
 from _batch_mock import BATCH_MOCK
+from _json_view import Json
 from _model import schema as make_schema
 from _model import table as make_table
 from _node import NODE
@@ -227,9 +227,9 @@ def _deploy_js(tmp_path: Path, *, with_assessment: bool = False) -> str:
 
 
 def _run_deploy(
-    tmp_path: Path, groups: dict[str, dict[str, Any]], levels: dict[str, dict[str, Any]],
+    tmp_path: Path, groups: dict[str, dict[str, object]], levels: dict[str, dict[str, object]],
     *, with_assessment: bool = False,
-) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
+) -> tuple[Json, list[Json], Json]:
     harness = _HARNESS.replace(
         "const GROUPS = {};", f"const GROUPS = {json.dumps(groups)};", 1,
     ).replace(
@@ -251,17 +251,17 @@ def _run_deploy(
     found = {m: next((ln for ln in lines if ln.startswith(m)), None) for m in markers}
     missing = [m for m, ln in found.items() if ln is None]
     assert not missing, f"deploy.js never reached {missing}:\n{output[-4000:]}"
-    summary, calls, state = (json.loads((found[m] or "").removeprefix(m)) for m in markers)
-    return summary, calls, state
+    summary, calls, state = (Json.loads((found[m] or "").removeprefix(m)) for m in markers)
+    return summary, calls.rows, state
 
 
-def _old_group(description: str) -> dict[str, dict[str, Any]]:
+def _old_group(description: str) -> dict[str, dict[str, object]]:
     return {"ADOPT Program Governance": {
         "Id": OLD_GROUP_ID, "Title": "ADOPT Program Governance", "Description": description,
     }}
 
 
-def _old_level(description: str) -> dict[str, dict[str, Any]]:
+def _old_level(description: str) -> dict[str, dict[str, object]]:
     return {"ADOPT Submit Only": {
         "Id": OLD_LEVEL_ID, "Name": "ADOPT Submit Only", "Description": description,
         "High": 0, "Low": 3,
@@ -276,7 +276,7 @@ def _old_level_marker() -> str:
     return marker_for_level(_family(), "ADOPT Submit Only")
 
 
-def _writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _writes(calls: list[Json]) -> list[Json]:
     return [
         c for c in calls
         if c["method"] == "POST" and (
@@ -390,11 +390,11 @@ def test_the_assessment_reports_the_level_it_will_rename(tmp_path: Path) -> None
 # identically. See #397.
 
 
-def _group_refusal(summary: dict[str, Any]) -> str:
+def _group_refusal(summary: Json) -> str:
     """The one rename error raised about the group."""
-    errors = [e["error"] for e in summary["errors"] if "site group" in e["error"]]
+    errors = [e["error"].text for e in summary["errors"] if "site group" in e["error"]]
     assert len(errors) == 1, f"expected one group refusal, got {errors}"
-    return str(errors[0])
+    return errors[0]
 
 
 def test_the_group_marker_refusal_names_the_property_it_reads(tmp_path: Path) -> None:

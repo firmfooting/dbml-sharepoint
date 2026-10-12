@@ -11,9 +11,10 @@ skips without it.
 
 import json
 import textwrap
-from typing import Any
+from collections.abc import Mapping
 
 import pytest
+from _json_view import Json
 from _model import bundle as make_bundle
 from _model import column, enum
 from _model import schema as make_schema
@@ -149,7 +150,7 @@ _HARNESS = textwrap.dedent(r"""
 """)
 
 
-def _seed(**overrides: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def _seed(**overrides: object) -> tuple[Json, list[Json]]:
     state = {
         "root": _ROOT, "folder": _FOLDER, "name": _NAME, "present": False,
         "refuseUpload": False, "vanishAfterUpload": False, "refuseMerge": False,
@@ -171,7 +172,7 @@ def _seed(**overrides: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     )
 
 
-def _posts(calls: list[dict[str, Any]], fragment: str) -> list[dict[str, Any]]:
+def _posts(calls: list[Json], fragment: str) -> list[Json]:
     return [c for c in calls if c["method"] == "POST" and fragment in c["url"]]
 
 
@@ -188,7 +189,7 @@ def test_a_library_row_is_uploaded_into_its_folder_and_its_values_set() -> None:
     )
     assert upload["body"] == "Sample return."
     (merge,) = _posts(calls, "/items(9)")
-    assert json.loads(merge["body"]) == {
+    assert Json.loads(merge["body"].text) == {
         "__metadata": {"type": "SP.Data.APP_DocItem"}, "Division": _FOLDER, "Status": "Required",
     }
     assert summary["created"] == [
@@ -221,7 +222,7 @@ def test_a_refused_upload_is_reported_and_nothing_is_set() -> None:
     {"d": {"Exists": "true"}}, {"d": {"Exists": True, "ServerRelativeUrl": "/wrong"}},
 ])
 @pytest.mark.parametrize("after_upload", [False, True])
-def test_a_malformed_file_probe_never_seeds_or_merges(payload: Any, after_upload: bool) -> None:
+def test_a_malformed_file_probe_never_seeds_or_merges(payload: object, after_upload: bool) -> None:
     key = "afterFileProbe" if after_upload else "beforeFileProbe"
     summary, calls = _seed(**{key: payload})
     assert "invalid response" in summary["errors"][0]["error"]
@@ -236,7 +237,7 @@ def test_a_malformed_file_probe_never_seeds_or_merges(payload: Any, after_upload
 ])
 @pytest.mark.parametrize("present", [False, True])
 def test_malformed_file_identity_never_selects_an_item_to_merge(
-    bad: dict[str, Any], present: bool,
+    bad: Mapping[str, object], present: bool,
 ) -> None:
     summary, calls = _seed(present=present, itemPayload={"d": {
         "Id": 9, "FileRef": f"{_ROOT}/{_FOLDER}/{_NAME}", "FileSystemObjectType": 0, **bad,
@@ -356,13 +357,13 @@ def _rich_demo_js(written: str = _RICH_WRITTEN) -> str:
     )
 
 
-def _seed_rich(**overrides: Any) -> dict[str, Any]:
+def _seed_rich(*, written: str = _RICH_WRITTEN, **overrides: object) -> Json:
     state = {
         "root": _ROOT, "folder": _FOLDER, "name": _NAME, "present": False,
         "refuseUpload": False, "vanishAfterUpload": False, "refuseMerge": False,
         "refuseReadback": False, "stored": None, **overrides,
     }
-    body = _rich_demo_js(overrides.pop("written", _RICH_WRITTEN)).rstrip()
+    body = _rich_demo_js(written).rstrip()
     assert body.endswith("})();")
     output = run_node(
         f"const STATE = {json.dumps(state)};\n{_HARNESS}\n({body[:-1]}).then((r) => {{\n"
@@ -370,8 +371,7 @@ def _seed_rich(**overrides: Any) -> dict[str, Any]:
         "});\n",
     )
     result = next(ln for ln in output.splitlines() if ln.startswith("__RESULT__"))
-    parsed: dict[str, Any] = json.loads(result.removeprefix("__RESULT__"))
-    return parsed
+    return Json.loads(result.removeprefix("__RESULT__"))
 
 
 def test_a_rich_note_read_back_in_its_stored_encoding_is_accepted() -> None:

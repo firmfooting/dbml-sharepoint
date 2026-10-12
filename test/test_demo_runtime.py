@@ -11,9 +11,9 @@ not a dependency of the package.
 
 import json
 import textwrap
-from typing import Any
 
 import pytest
+from _json_view import Json
 from _model import bundle as make_bundle
 from _model import column, enum, ref
 from _model import schema as make_schema
@@ -109,7 +109,7 @@ _HARNESS = textwrap.dedent(r"""
     globalThis.__calls = calls;
 """)
 
-_FAITHFUL: dict[str, Any] = {
+_FAITHFUL: dict[str, object] = {
     "__metadata": {"type": "Collection(Edm.String)"},
     "results": ["View", "Edit"],
 }
@@ -117,11 +117,11 @@ _FAITHFUL: dict[str, Any] = {
 
 def _seed(
     *,
-    stored: Any = _FAITHFUL,
+    stored: object = _FAITHFUL,
     readback_status: int = 200,
     members: list[str] | None = None,
-    title_probe: Any = None,
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    title_probe: object = None,
+) -> tuple[Json, list[Json]]:
     """Run demo-data.js against the mock and return (summary, calls)."""
     harness = _HARNESS.replace(
         "const STORED = null;", f"const STORED = {json.dumps(stored)};", 1,
@@ -151,17 +151,17 @@ def _seed(
     )
 
 
-def _keys(rows: list[dict[str, Any]]) -> set[str]:
-    return {row["key"] for row in rows}
+def _keys(rows: Json) -> set[str]:
+    return {row["key"].text for row in rows}
 
 
-def _error_for(summary: dict[str, Any], key: str) -> str:
+def _error_for(summary: Json, key: str) -> str:
     matches = [row["error"] for row in summary["errors"] if row["key"] == key]
     assert matches, f"demo row '{key}' reported no error: {summary}"
     return str(matches[0])
 
 
-def _readbacks(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _readbacks(calls: list[Json]) -> list[Json]:
     """Every per-item GET, which is the read-back and nothing else."""
     return [c for c in calls if c["method"] == "GET" and "/items(" in c["url"]]
 
@@ -175,7 +175,7 @@ pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
     {"d": {"results": [None]}},
     *[{"d": {"results": [{"Id": value}]}} for value in [None, 0, "9", 1.5]],
 ])
-def test_malformed_title_probe_never_inserts_or_skips(payload: Any) -> None:
+def test_malformed_title_probe_never_inserts_or_skips(payload: object) -> None:
     summary, calls = _seed(title_probe=payload)
     assert "invalid response" in _error_for(summary, "a1")
     assert summary["created"] == [] and summary["skipped"] == []
@@ -377,8 +377,8 @@ def _multi_lookup_js() -> str:
 
 
 def _seed_multi_lookup(
-    *, stored: Any = _MULTI_LOOKUP_STORED,
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    *, stored: object = _MULTI_LOOKUP_STORED,
+) -> tuple[Json, list[Json]]:
     """Run the multilookup fixture's demo-data.js against the mock."""
     harness = _HARNESS.replace(
         "const STORED_ROW = null;", f"const STORED_ROW = {json.dumps(stored)};", 1,

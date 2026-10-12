@@ -10,9 +10,10 @@ import hashlib
 import json
 import re
 import textwrap
-from typing import Any
+from collections.abc import Mapping
 
 import pytest
+from _json_view import Json
 from _node import NODE
 from _paths import MANUAL
 from _probe_runs import ended_with_report, run_probe, voided
@@ -149,7 +150,7 @@ _MOCK = textwrap.dedent(r"""
     };
 """)
 
-Run = tuple[dict[str, dict[str, str]], list[dict[str, str]], str]
+Run = tuple[dict[str, Json], list[Json], str]
 HIDE = "=if([$ID] == '', 'true', 'false')"
 FOOTER_ONLY = '{"footerJSONFormatter":{"elmType":"div","txtContent":"probe-baseline-footer"}}'
 CONTROL_FORMATTER = json.dumps({
@@ -162,23 +163,28 @@ PREVIOUS = "text.form-fmt.fixture-previous-phase-formatter"
 
 
 def _run(gates: tuple[str, ...] = GATES, swaps: dict[str, str] | None = None,
-         **config: Any) -> Run:
+         **config: object) -> Run:
+    return _run_with(config, gates, swaps)
+
+
+def _run_with(config: Mapping[str, object], gates: tuple[str, ...] = GATES,
+              swaps: dict[str, str] | None = None) -> Run:
     # The probe's list title is fixed, so there is no per-run token to pin.
     return run_probe(_MOCK, PROBE, gates, config, swaps=swaps, pin=False)
 
 
-def _header(**config: Any) -> Run:
+def _header(**config: object) -> Run:
     """The last paste, against the state the earlier ones leave."""
     config = {**PRIOR, "stored": CONTROL_FORMATTER, **config}
     return run_probe(_MOCK, PROBE, GATES, config, swaps=HEADER, pin=False)
 
 
-def _control(**config: Any) -> Run:
+def _control(**config: object) -> Run:
     """The middle paste."""
     return run_probe(_MOCK, PROBE, GATES, {**PRIOR, **config}, swaps=CONTROL_MODE, pin=False)
 
 
-def _writes(sent: list[dict[str, str]]) -> list[dict[str, str]]:
+def _writes(sent: list[Json]) -> list[Json]:
     return [s for s in sent if s["method"] == "POST" and not s["path"].endswith("/contextinfo")]
 
 
@@ -346,7 +352,7 @@ def test_a_control_row_that_omits_the_formula_property_proves_nothing() -> None:
     [{"Name": "HiddenResult", "Hidden": False}, {"Name": "ShownResult"}],
     [{"Name": "HiddenResult", "Hidden": False}, {"Name": "ShownResult", "Hidden": None}],
 ], ids=["control-not-a-link", "control-hidden", "hidden-omitted", "hidden-null"])
-def test_a_control_not_on_the_content_type_voids_the_reading(links: list[dict[str, Any]]) -> None:
+def test_a_control_not_on_the_content_type_voids_the_reading(links: list[Json]) -> None:
     rows, _sent, _output = _run(links=links)
     assert rows[LINKS]["outcome"] == "FAIL"
     assert set(BASE) <= voided(rows)
@@ -423,8 +429,8 @@ def test_a_rejected_write_request_that_did_not_commit_fails_the_fixture_by_name(
                          [{"refuse": "/contenttypes?", "status": 500}, {"noItemType": True}],
                          ids=["refused", "no-item-type"])
 def test_an_unfound_content_type_fails_the_links_control_and_voids_what_rests_on_it(
-        config: dict[str, Any]) -> None:
-    rows, sent, _output = _run(**config)
+        config: Mapping[str, object]) -> None:
+    rows, sent, _output = _run_with(config)
     assert rows[LINKS]["outcome"] == "FAIL" and rows[FOOTER_FIXTURE]["outcome"] == "FAIL"
     assert set(BASE + BODY) <= voided(rows)
     assert not any("ClientFormCustomFormatter" in s["body"] for s in sent)
@@ -439,7 +445,7 @@ def test_both_columns_hold_the_same_choice_value() -> None:
 @pytest.mark.parametrize("config", [{}, {"status": 429}, {"status": 500, "bare": True}],
                          ids=["unauthorised", "throttled", "bare-500"])
 def test_a_fixture_read_that_did_not_answer_is_not_established_and_voids_nothing(
-        config: dict[str, Any]) -> None:
+        config: Mapping[str, object]) -> None:
     rows, _sent, _output = _header(refuse="ClientFormCustomFormatter", **config)
     assert rows[PREVIOUS]["outcome"] == "NOT ESTABLISHED" and rows[PREVIOUS]["state"] == "open"
     assert not set(TARGET) & voided(rows)
@@ -449,8 +455,8 @@ def test_a_fixture_read_that_did_not_answer_is_not_established_and_voids_nothing
                                     {"refuse": "/contenttypes?", "status": 500, "bare": True}],
                          ids=["unauthorised", "bare-500"])
 def test_a_content_type_read_that_did_not_answer_is_not_established_and_voids_nothing(
-        config: dict[str, Any]) -> None:
-    rows, sent, _output = _run(**config)
+        config: Mapping[str, object]) -> None:
+    rows, sent, _output = _run_with(config)
     for row in (LINKS, FOOTER_FIXTURE):
         assert rows[row]["outcome"] == "NOT ESTABLISHED" and rows[row]["state"] == "open"
     assert voided(rows) == set()

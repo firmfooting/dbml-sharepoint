@@ -6,9 +6,10 @@ fixture voided with what the catalogue says rests on it.
 """
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
+from _json_view import Json
 from _node import run_node
 from _paths import MANUAL
 
@@ -43,28 +44,30 @@ def probe_js(path: Path, gates: tuple[str, ...], swaps: dict[str, str] | None = 
 
 
 def run_probe(
-    mock: str, path: Path, gates: tuple[str, ...], config: dict[str, Any],
+    mock: str, path: Path, gates: tuple[str, ...], config: Mapping[str, object],
     swaps: dict[str, str] | None = None, pin: bool = True,
-) -> tuple[dict[str, dict[str, str]], list[dict[str, str]], str]:
+) -> tuple[dict[str, Json], list[Json], str]:
     """Rows by id, the requests the mock saw, and the whole console output."""
     output = run_node(mock.replace("__CONFIG__", json.dumps(config)) + "\n"
                       + probe_js(path, gates, swaps, pin))
     sent_line = next(ln for ln in output.splitlines() if ln.startswith("__SENT__"))
     rows_line = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
     rows = {} if rows_line is None else {
-        row["id"]: row for row in json.loads(rows_line.removeprefix("__ROWS__"))}
-    return rows, json.loads(sent_line.removeprefix("__SENT__")), output
+        row["id"].text: row for row in Json.loads(rows_line.removeprefix("__ROWS__"))}
+    return rows, Json.loads(sent_line.removeprefix("__SENT__")).rows, output
 
 
 def catalogued_dependents(probe: str, fixture: str) -> set[str]:
     """Every check the catalogue says rests on `fixture`, which is what a failure of it voids."""
-    catalog = json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
+    catalog = Json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
     [entry] = [p for p in catalog["probes"] if p["file"] == probe]
-    return {finding["id"] for scenario in entry["scenarios"] for finding in scenario["findings"]
-            if fixture in finding["depends_on"]}
+    return {
+        finding["id"].text for scenario in entry["scenarios"]
+        for finding in scenario["findings"] if fixture in finding["depends_on"]
+    }
 
 
-def voided(rows: dict[str, dict[str, str]]) -> set[str]:
+def voided(rows: dict[str, Json]) -> set[str]:
     """The ids a run recorded void."""
     return {row_id for row_id, row in rows.items() if row["state"] == "void"}
 
@@ -75,7 +78,7 @@ def ended_with_report(output: str) -> bool:
             and "Node.js v" not in output)
 
 
-def recycled_last(sent: list[dict[str, str]]) -> bool:
+def recycled_last(sent: list[Json]) -> bool:
     """Whether a run ended with a list recycle and the by-Id read that confirms it."""
     return (len(sent) >= 2 and sent[-2]["path"].endswith("/recycle")
             and sent[-1]["path"].endswith("')?$select=Id"))

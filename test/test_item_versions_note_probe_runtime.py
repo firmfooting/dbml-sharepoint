@@ -5,9 +5,9 @@ read refused, throttled or paged, and the masking of text once no display name i
 """
 
 import json
-from typing import Any
 
 import pytest
+from _json_view import Json
 from _node import NODE
 from _paths import MANUAL
 from _probe_runs import catalogued_dependents, ended_with_report, run_probe, voided
@@ -33,8 +33,8 @@ READ_RULE = f"{LIST_AT}/items(1)/versions"
 NEXT = {"odata.nextLink": "https://example.sharepoint.com/sites/probe/_api/web/lists/versions"}
 
 
-def _run(gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: Any,
-         ) -> tuple[dict[str, dict[str, str]], list[dict[str, str]], str]:
+def _run(gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: object,
+         ) -> tuple[dict[str, Json], list[Json], str]:
     return run_probe(VERSIONS_MOCK, PROBE, gates, config)
 
 
@@ -42,8 +42,8 @@ def _deps(fixture: str) -> set[str]:
     return catalogued_dependents(PROBE.name, fixture)
 
 
-def _recycled(sent: list[dict[str, str]]) -> list[str]:
-    return [r["path"] for r in sent if r["path"].endswith("/recycle")]
+def _recycled(sent: list[Json]) -> list[str]:
+    return [r["path"].text for r in sent if r["path"].endswith("/recycle")]
 
 
 @pytest.mark.parametrize("gates", [(), ("CONFIRMED",)], ids=["unconfirmed", "no-writes"])
@@ -76,7 +76,7 @@ def test_the_column_is_created_with_the_deploys_body_for_an_optional_long_text()
     [made] = [r for r in sent if r["path"].endswith("/fields") and r["verb"] == "POST"]
     deployed = _field_body(Column(name="ProbeNote", type="longtext"), {}, "APP_")
     assert deployed is not None
-    assert json.loads(made["body"]) == deployed["body"]
+    assert Json.loads(made["body"].text) == deployed["body"]
 
 
 def test_a_note_read_back_unlike_what_was_sent_fails_the_item_and_voids_the_observation() -> None:

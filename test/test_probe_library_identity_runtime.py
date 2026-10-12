@@ -16,9 +16,10 @@ void exactly the rows that rest on the library and send none of their writes.
 
 import json
 import textwrap
-from typing import Any
+from collections.abc import Callable, Mapping, Sequence
 
 import pytest
+from _json_view import Json
 from _node import NODE, run_node
 from _paths import MANUAL
 
@@ -410,33 +411,33 @@ def _probe_js(name: str, gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"))
     return exposed
 
 
-def _last(output: str, marker: str) -> Any:
+def _last(output: str, marker: str) -> Json:
     lines = [ln for ln in output.splitlines() if ln.startswith(marker)]
     assert lines, f"nothing was printed after {marker}:\n{output[-3000:]}"
-    return json.loads(lines[-1].removeprefix(marker))
+    return Json.loads(lines[-1].removeprefix(marker))
 
 
-def _run(mock: str, config: dict[str, Any], name: str,
+def _run(mock: str, config: Mapping[str, object], name: str,
          gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"),
-         ) -> tuple[dict[str, dict[str, str]], list[dict[str, str]]]:
+         ) -> tuple[dict[str, Json], list[Json]]:
     script = (WINDOW + _RESPONSES + mock.replace("__CONFIG__", json.dumps(config))
               + "\n" + _probe_js(name, gates))
     output = run_node(script)
-    rows = {row["id"]: row for row in _last(output, "__ROWS__")}
-    return rows, list(_last(output, "__SENT__"))
+    rows = {row["id"].text: row for row in _last(output, "__ROWS__")}
+    return rows, _last(output, "__SENT__").rows
 
 
-def _voided(rows: dict[str, dict[str, str]]) -> set[str]:
+def _voided(rows: dict[str, Json]) -> set[str]:
     return {row_id for row_id, row in rows.items() if row["state"] == "void"}
 
 
-def _writes(sent: list[dict[str, str]]) -> list[dict[str, str]]:
+def _writes(sent: list[Json]) -> list[Json]:
     """Every request that is not a read or a digest."""
     return [r for r in sent if r["verb"] != "GET" and not r["path"].startswith("contextinfo")]
 
 
 def _assert_generic_list_voids(
-    rows: dict[str, dict[str, str]], fixture: str, dependents: set[str],
+    rows: dict[str, Json], fixture: str, dependents: set[str],
 ) -> None:
     held = rows[fixture]
     assert held["outcome"] == "FAIL", held
@@ -473,7 +474,7 @@ _DOCUMENT_LIBRARY_ROWS = {
 
 @_CREATED_OR_REUSED
 def test_document_library_probe_measures_on_a_library_it_read_back(reused: bool) -> None:
-    lists = {_DOCUMENT_LIBRARY: 101} if reused else {}
+    lists: dict[str, int] = {_DOCUMENT_LIBRARY: 101} if reused else {}
     rows, sent = _run(_SITE_MOCK, {"lists": lists}, "document-library-probe.js")
 
     assert rows[DOC_LIB]["outcome"] == "PASS", rows[DOC_LIB]
@@ -504,7 +505,7 @@ _ACCESS_ROWS = {
 
 @_CREATED_OR_REUSED
 def test_library_access_probe_measures_on_a_library_it_read_back(reused: bool) -> None:
-    lists = {_ACCESS_LIBRARY: 101} if reused else {}
+    lists: dict[str, int] = {_ACCESS_LIBRARY: 101} if reused else {}
     rows, sent = _run(_SITE_MOCK, {"lists": lists}, "library-access-probe.js")
 
     assert rows[DOC_LIB]["outcome"] == "PASS", rows[DOC_LIB]
@@ -532,7 +533,7 @@ _VIEW_ROWS = {
 
 @_CREATED_OR_REUSED
 def test_library_view_probe_measures_on_a_library_it_read_back(reused: bool) -> None:
-    lists = {_VIEW_LIBRARY: 101} if reused else {}
+    lists: dict[str, int] = {_VIEW_LIBRARY: 101} if reused else {}
     rows, sent = _run(_SITE_MOCK, {"lists": lists}, "library-view-probe.js")
 
     assert rows[DOC_LIB]["outcome"] == "PASS", rows[DOC_LIB]
@@ -554,7 +555,7 @@ _CROSS_LIBRARY = "dbmlsp Probe XLookup Lib"
 
 @_CREATED_OR_REUSED
 def test_cross_lookup_probe_measures_on_a_library_it_read_back(reused: bool) -> None:
-    lists = {_CROSS_LIBRARY: 101} if reused else {}
+    lists: dict[str, int] = {_CROSS_LIBRARY: 101} if reused else {}
     rows, sent = _run(_SITE_MOCK, {"lists": lists}, "cross-lookup-probe.js")
 
     assert rows[DOC_LIB]["outcome"] == "PASS", rows[DOC_LIB]
@@ -604,7 +605,7 @@ _SETTINGS_LIST_ROWS = {
 
 @_CREATED_OR_REUSED
 def test_list_settings_probe_reads_each_container_back_as_its_own_template(reused: bool) -> None:
-    lists = {_SETTINGS_LIST: 100, _SETTINGS_LIBRARY: 101} if reused else {}
+    lists: dict[str, int] = {_SETTINGS_LIST: 100, _SETTINGS_LIBRARY: 101} if reused else {}
     rows, sent = _run(_SITE_MOCK, {"lists": lists}, "list-settings-probe.js")
 
     assert rows["field.list.fixture-scratch-list"]["outcome"] == "PASS"
@@ -743,20 +744,21 @@ _LV_COLUMNS = {
 }
 
 
-def _library(count: int, newest: str, root: str, fields: dict[str, dict[str, Any]],
-             base_template: int = 101) -> dict[str, Any]:
+def _library(count: int, newest: str, root: str, fields: dict[str, dict[str, object]],
+             base_template: int = 101) -> dict[str, object]:
     return {"id": f"guid-{root}", "baseTemplate": base_template, "count": count,
             "newest": newest, "root": f"/sites/test/{root}", "fields": fields}
 
 
-def _large_lib(base_template: int = 101) -> dict[str, Any]:
-    fields = {name: {"TypeAsString": kind, "Indexed": False} for name, kind in _LV_COLUMNS.items()}
+def _large_lib(base_template: int = 101) -> dict[str, object]:
+    fields: dict[str, dict[str, object]] = {
+        name: {"TypeAsString": kind, "Indexed": False} for name, kind in _LV_COLUMNS.items()}
     fields["LVCalc"]["Formula"] = "=[LVNumber]*2"
     return {"dbmlsp Probe LargeLib": _library(
         5500, "dbmlsp-lv-05500.txt", "LargeLib", fields, base_template)}
 
 
-def _preindex_lib(base_template: int = 101) -> dict[str, Any]:
+def _preindex_lib(base_template: int = 101) -> dict[str, object]:
     return {"dbmlsp Probe PreIndex": _library(5100, "dbmlsp-pre-05100.txt", "PreIndex", {
         "PChoice": {"TypeAsString": "Choice", "Indexed": True,
                     "Description": "dbmlsp preindex: Indexed:true written at 4900 file(s) on "
@@ -765,7 +767,7 @@ def _preindex_lib(base_template: int = 101) -> dict[str, Any]:
     }, base_template)}
 
 
-def _foldered_libs(big: int = 101, small: int = 101) -> dict[str, Any]:
+def _foldered_libs(big: int = 101, small: int = 101) -> dict[str, object]:
     return {
         "dbmlsp Probe Foldered": _library(5256, "dbmlsp-fld-05256.txt", "Foldered", {
             "PChoice": {"TypeAsString": "Choice", "Indexed": True,
@@ -781,7 +783,7 @@ def _foldered_libs(big: int = 101, small: int = 101) -> dict[str, Any]:
     }
 
 
-def _no_query_or_write(sent: list[dict[str, str]]) -> None:
+def _no_query_or_write(sent: list[Json]) -> None:
     assert not [r for r in sent if r["verb"] != "GET" or "$filter=" in r["path"]], sent
 
 
@@ -807,7 +809,7 @@ _LARGE_LIST_PROBES = [
 @pytest.mark.parametrize(("probe", "libraries", "present"), _LARGE_LIST_PROBES,
                          ids=[p[0].removesuffix("-probe.js") for p in _LARGE_LIST_PROBES])
 def test_a_large_list_probe_measures_on_a_library_it_read_back(
-    probe: str, libraries: Any, present: str,
+    probe: str, libraries: Callable[..., dict[str, object]], present: str,
 ) -> None:
     """Controls further down may fail against this mock; none may fail in the fixture's name."""
     rows, sent = _run(_LARGE_MOCK, {"libraries": libraries()}, probe)
@@ -823,7 +825,7 @@ def test_a_large_list_probe_measures_on_a_library_it_read_back(
 @pytest.mark.parametrize(("probe", "libraries", "present"), _LARGE_LIST_PROBES,
                          ids=[p[0].removesuffix("-probe.js") for p in _LARGE_LIST_PROBES])
 def test_a_large_list_probe_voids_its_rows_on_a_generic_list_of_the_fixture_name(
-    probe: str, libraries: Any, present: str,
+    probe: str, libraries: Callable[..., dict[str, object]], present: str,
 ) -> None:
     rows, sent = _run(_LARGE_MOCK, {"libraries": libraries(100)}, probe)
 
@@ -893,17 +895,17 @@ _PAGE = textwrap.dedent("""
 _GRID = {"sel": ["[data-automationid]", 'div[role="grid"]', '[role="grid"]'], "text": ""}
 
 
-def _rows(*names: str) -> list[dict[str, Any]]:
+def _rows(*names: str) -> list[dict[str, object]]:
     return [{"sel": ['[role="row"]'], "text": name} for name in names]
 
 
-def _expanders(*texts: str) -> list[dict[str, Any]]:
+def _expanders(*texts: str) -> list[dict[str, object]]:
     return [{"sel": ["[aria-expanded]"], "text": text} for text in texts]
 
 
-def _run_rendered(probe: str, libraries: dict[str, Any], state: int, list_id: str,
-                  elements: list[dict[str, Any]],
-                  ) -> tuple[dict[str, dict[str, str]], list[dict[str, str]]]:
+def _run_rendered(probe: str, libraries: Mapping[str, object], state: int, list_id: str,
+                  elements: Sequence[Mapping[str, object]],
+                  ) -> tuple[dict[str, Json], list[Json]]:
     page = {"listId": list_id, "title": "Documents", "elements": elements,
             "href": "https://example.sharepoint.com/sites/test/Forms/AllItems.aspx"}
     js = _probe_js(probe, ("CONFIRMED",))
@@ -913,8 +915,8 @@ def _run_rendered(probe: str, libraries: dict[str, Any], state: int, list_id: st
               + _LARGE_MOCK.replace("__CONFIG__", json.dumps({"libraries": libraries}))
               + "\n" + staged)
     output = run_node(script)
-    rows = {row["id"]: row for row in _last(output, "__ROWS__")}
-    return rows, list(_last(output, "__SENT__"))
+    rows = {row["id"].text: row for row in _last(output, "__ROWS__")}
+    return rows, _last(output, "__SENT__").rows
 
 
 _MODERN_PROBE = "library-large-list-modern-view-probe.js"
@@ -936,7 +938,7 @@ _MODERN_IDS = [f"state-{s[0]}" for s in _MODERN_STATES]
 @pytest.mark.parametrize(("state", "elements", "measured", "outcome"), _MODERN_STATES,
                          ids=_MODERN_IDS)
 def test_the_modern_probe_reads_the_library_back_before_a_rendered_state(
-    state: int, elements: list[dict[str, Any]], measured: str, outcome: str,
+    state: int, elements: Sequence[Mapping[str, object]], measured: str, outcome: str,
 ) -> None:
     rows, sent = _run_rendered(_MODERN_PROBE, _preindex_lib(), state, _PREINDEX_ID, elements)
 
@@ -953,7 +955,7 @@ def test_the_modern_probe_reads_the_library_back_before_a_rendered_state(
 @pytest.mark.parametrize(("state", "elements", "measured"), [s[:3] for s in _MODERN_STATES],
                          ids=_MODERN_IDS)
 def test_the_modern_probe_voids_a_rendered_state_on_a_generic_list_of_the_fixture_name(
-    state: int, elements: list[dict[str, Any]], measured: str,
+    state: int, elements: Sequence[Mapping[str, object]], measured: str,
 ) -> None:
     """The page's Id matches the list, so only the template can say it is not the fixture."""
     rows, sent = _run_rendered(_MODERN_PROBE, _preindex_lib(100), state, _PREINDEX_ID, elements)
@@ -995,7 +997,7 @@ _IDENTITY = {2: "library.large-list.control-ui-foldered-page-identity",
 @pytest.mark.parametrize(("state", "fixture", "list_id", "elements", "measured", "outcome"),
                          _FOLDERED_STATES, ids=_FOLDERED_IDS)
 def test_the_foldered_probe_reads_the_selected_library_back_before_a_rendered_state(
-    state: int, fixture: str, list_id: str, elements: list[dict[str, Any]], measured: str,
+    state: int, fixture: str, list_id: str, elements: Sequence[Mapping[str, object]], measured: str,
     outcome: str,
 ) -> None:
     rows, sent = _run_rendered(_FOLDERED_PROBE, _foldered_libs(), state, list_id, elements)
@@ -1013,7 +1015,7 @@ def test_the_foldered_probe_reads_the_selected_library_back_before_a_rendered_st
 @pytest.mark.parametrize(("state", "fixture", "list_id", "elements", "measured"),
                          [s[:5] for s in _FOLDERED_STATES], ids=_FOLDERED_IDS)
 def test_the_foldered_probe_voids_a_rendered_state_on_a_generic_list_of_the_selected_name(
-    state: int, fixture: str, list_id: str, elements: list[dict[str, Any]], measured: str,
+    state: int, fixture: str, list_id: str, elements: Sequence[Mapping[str, object]], measured: str,
 ) -> None:
     """Only the library the state selects is swapped, and only its rows are voided."""
     libraries = _foldered_libs(big=100) if state == 2 else _foldered_libs(small=100)

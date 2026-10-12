@@ -2,7 +2,6 @@
 
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 from _node import NODE
@@ -24,7 +23,7 @@ from dbml_sharepoint.analysis.phases import phase_number
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
 
-def _continuation_overlay(phase: str, url_part: str, marker: Any) -> str:
+def _continuation_overlay(phase: str, url_part: str, marker: object) -> str:
     return f"""
 const continuationFetch = globalThis.fetch;
 globalThis.fetch = async (url, opts = {{}}) => {{
@@ -46,7 +45,7 @@ globalThis.fetch = async (url, opts = {{}}) => {{
     "fields", "acl", "seeds",
 ])
 def test_deploy_reads_validate_continuation_markers(
-    tmp_path: Path, surface: str, marker: Any,
+    tmp_path: Path, surface: str, marker: object,
 ) -> None:
     if surface.startswith("reader"):
         js = _reader_deploy_js()
@@ -112,7 +111,7 @@ def test_deploy_reads_validate_continuation_markers(
     {"d": {"results": [{"Title": "Other"}] * 5000}},
 ])
 def test_incomplete_name_indexes_fall_back_to_direct_probes(
-    surface: str, payload: Any,
+    surface: str, payload: object,
 ) -> None:
     harness = _ADOPTED_HARNESS.replace(
         "const KNOWN_GROUP_NAMES = [];",
@@ -153,7 +152,7 @@ globalThis.fetch = async (url, opts = {{}}) => {{
 
 @pytest.mark.parametrize("marker", [False, 0, {}, "https://example.sharepoint.com/next"])
 def test_incomplete_group_rename_index_blocks_all_principal_writes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, marker: Any,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, marker: object,
 ) -> None:
     import test_deploy_principal_renames_runtime as renames
 

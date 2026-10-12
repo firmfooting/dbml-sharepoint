@@ -6,9 +6,10 @@ which must void exactly the rows that rest on it and send none of their writes.
 """
 
 import textwrap
-from typing import Any
+from collections.abc import Mapping
 
 import pytest
+from _json_view import Json
 from _node import NODE
 from test_probe_fixture_runtime import _run_probe, _void_ids
 
@@ -111,10 +112,10 @@ _W_ROWS = {
 }
 _RULE_ROWS = {"D": _D_ROWS, "W": _W_ROWS}
 _SAVE_ROWS = _D_ROWS | _W_ROWS
-_TODAY_HEALTHY: dict[str, Any] = {"defaultFires": True}
+_TODAY_HEALTHY: dict[str, object] = {"defaultFires": True}
 
 
-def _saves(sent: list[dict[str, str]]) -> list[dict[str, str]]:
+def _saves(sent: list[Json]) -> list[Json]:
     return [r for r in sent if r["verb"] == "POST" and r["path"].endswith("/items")]
 
 
@@ -332,7 +333,7 @@ _SCOPE_CREATE = "library.view.scope-on-create-reads-back"
 _SCOPE_CREATE_VIEW = "dbmlsp guards scope create"
 
 
-def _view_creates(sent: list[dict[str, str]]) -> list[dict[str, str]]:
+def _view_creates(sent: list[Json]) -> list[Json]:
     return [r for r in sent if r["verb"] == "POST" and r["path"].endswith("/views")]
 
 
@@ -364,7 +365,7 @@ _BY_METADATA = "library.view.group-by-metadata-column"
 _BY_FOLDER = "library.view.group-by-folder"
 
 
-def _grouping_queries(sent: list[dict[str, str]], field: str) -> list[dict[str, str]]:
+def _grouping_queries(sent: list[Json], field: str) -> list[Json]:
     return [r for r in sent if r["path"].endswith("/RenderListDataAsStream")
             and f'GroupBy Collapse=\\"FALSE\\"><FieldRef Name=\\"{field}' in r["body"]]
 
@@ -390,7 +391,7 @@ def test_library_view_groups_files_it_wrote_and_read_back() -> None:
     ids=["upload", "merge", "dropped-merge"],
 )
 def test_library_view_voids_the_metadata_row_on_a_failed_write(
-    config: dict[str, Any], named: str,
+    config: Mapping[str, object], named: str,
 ) -> None:
     rows, sent = _run_probe(_LIBRARY_MOCK, config, _VIEW)
 

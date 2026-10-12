@@ -5,11 +5,12 @@ before it leaves. The probe records what a move does and never decides it, so th
 pin the rows it fills and the rows a failed fixture voids, never a verdict.
 """
 
-import json
-from typing import Any
+from collections.abc import Mapping
+from typing import TypedDict
 
 import pytest
 from _file_move_mock import FILE_MOVE_MOCK
+from _json_view import Json, dumps
 from _node import NODE, run_node
 from _paths import MANUAL
 from _probe_runs import catalogued_dependents, ended_with_report, run_probe, voided
@@ -44,10 +45,31 @@ LINK_URL = "https://example.sharepoint.com/:t:/s/probe/link"
 LINK_SHARE_ID = "share-link"
 LINK_ROW = "library.file.fixture-move-sharing-link"
 
-Run = tuple[dict[str, dict[str, str]], list[dict[str, str]], str]
+Run = tuple[dict[str, Json], list[Json], str]
 
 
-def _state_three_start() -> dict[str, Any]:
+class FileState(TypedDict):
+    id: int
+    path: str
+    values: dict[str, object]
+    versions: list[str]
+    created: str
+    author: int
+    modified: str
+    editor: int
+
+
+class State(TypedDict, total=False):
+    library: bool
+    folders: list[str]
+    unique: bool
+    grants: list[int]
+    links: list[str]
+    file: FileState
+    recycle: list[dict[str, str]]
+
+
+def _state_three_start() -> State:
     """What STATE 1 and STATE 2 leave: the file in the folder with three versions."""
     return {
         "library": True, "folders": [FOLDER], "unique": True, "grants": [8],
@@ -61,7 +83,7 @@ def _state_three_start() -> dict[str, Any]:
     }
 
 
-def _state_four_start() -> dict[str, Any]:
+def _state_four_start() -> State:
     """What STATE 3 leaves: the file moved to the root, the folder empty."""
     start = _state_three_start()
     start["file"]["path"] = f"{ROOT}/{FILE}"
@@ -94,7 +116,7 @@ def _moved_id_swap(item_id: int = 41) -> dict[str, str]:
     return {"  const MOVED_ID = 0;": f"  const MOVED_ID = {item_id};"}
 
 
-def _leg(leg: int, me: int, swaps: dict[str, str] | None = None, /, **config: Any) -> Run:
+def _leg(leg: int, me: int, swaps: dict[str, str] | None = None, /, **config: object) -> Run:
     """Paste STATE `leg` as site user `me`; `config` reaches the mock, its `state` included."""
     # A swap must change the probe, and STATE 1 is what it ships with.
     pasted = {} if leg == 1 else {"  const STATE = 1;": f"  const STATE = {leg};"}
@@ -111,7 +133,7 @@ def _printed(output: str) -> str:
     return "\n".join(ln for ln in output.splitlines() if not ln.startswith("__SENT__"))
 
 
-def _writes(sent: list[dict[str, str]]) -> list[dict[str, str]]:
+def _writes(sent: list[Json]) -> list[Json]:
     """Every request but a read and the digest it takes to write."""
     return [s for s in sent if s["verb"] != "GET" and not s["path"].startswith("contextinfo")]
 
@@ -313,8 +335,8 @@ def test_state_four_records_the_grant_and_link_after_the_move() -> None:
     ({"linksShape": "none"}, "NOT ESTABLISHED"),
 ], ids=["nested-links", "grant-lost", "link-lost", "both-lost", "no-links-array"])
 def test_state_four_names_what_the_move_left_of_the_grant_and_link(
-        change: dict[str, Any], head: str) -> None:
-    start = _state_four_start()
+        change: Mapping[str, object], head: str) -> None:
+    start: dict[str, object] = {**_state_four_start()}
     config = {k: v for k, v in change.items() if k == "linksShape"}
     start.update({k: v for k, v in change.items() if k != "linksShape"})
     rows, _, _ = _leg(5, 7, state=start, **config)
@@ -411,7 +433,7 @@ def test_a_binding_seen_while_inheritance_was_restored_is_not_a_grant() -> None:
     {"links": ["https://example.sharepoint.com/:t:/s/probe/other"]},
     {"links": ["https://example.sharepoint.com/:t:/s/probe/other"], "grants": []},
 ], ids=["another-link", "grant-gone-and-another-link"])
-def test_another_link_with_a_url_leaves_the_tracked_link_open(change: dict[str, Any]) -> None:
+def test_another_link_with_a_url_leaves_the_tracked_link_open(change: Mapping[str, object]) -> None:
     # It could be a link made before the move, or ours with a ShareId the move changed.
     rows, _, _ = _leg(5, 7, state={**_state_four_start(), **change})
     assert rows[F4]["outcome"] == "NOT ESTABLISHED"
@@ -463,15 +485,15 @@ def test_the_probe_voids_what_the_catalogue_says_rests_on_each_fixture() -> None
     source = PROBE.read_text(encoding="utf-8")
     block = source[source.index("  const DEPENDS = {"):]
     block = block[:block.index("\n  };\n") + len("\n  };\n")]
-    table = json.loads(run_node(f"{block}\nconsole.log(JSON.stringify(DEPENDS));").splitlines()[-1])
-    catalog = json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
+    table = Json.loads(run_node(f"{block}\nconsole.log(JSON.stringify(DEPENDS));").splitlines()[-1])
+    catalog = Json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
     [entry] = [p for p in catalog["probes"] if p["file"] == PROBE.name]
-    declared = {finding["id"]: finding["depends_on"] for scenario in entry["scenarios"]
+    declared = {finding["id"].text: finding["depends_on"].value for scenario in entry["scenarios"]
                 for finding in scenario["findings"] if finding["depends_on"]}
     assert table == declared
 
 
-def _changes(sent: list[dict[str, str]]) -> list[dict[str, str]]:
+def _changes(sent: list[Json]) -> list[Json]:
     """Writes other than GetSharingInformation, a POST that only reads."""
     return [w for w in _writes(sent) if "GetSharingInformation" not in w["path"]]
 
@@ -499,7 +521,7 @@ def test_the_moving_account_reads_no_role_assignments_or_sharing_information() -
     ({}, {"grantsRefused": True}),
 ], ids=["grant-gone", "link-replaced", "inheriting", "other-level", "unreadable"])
 def test_a_grant_or_link_that_does_not_hold_before_the_move_voids_only_f4(
-        change: dict[str, Any], config: dict[str, Any]) -> None:
+        change: Mapping[str, object], config: Mapping[str, object]) -> None:
     rows, sent, _ = _leg(3, 7, state={**_state_three_start(), **change}, **config)
     assert rows[BEFORE_PERMS]["outcome"] == "FAIL"
     assert voided(rows) == {F4}
@@ -614,9 +636,9 @@ def test_a_dropped_version_label_is_a_versions_change() -> None:
                          ids=["no-url", "refused"])
 @pytest.mark.parametrize("leg", [1, 2, 3, 4, 5])
 def test_a_library_root_without_a_url_stops_every_leg_before_a_path_is_built(
-        leg: int, config: dict[str, Any]) -> None:
+        leg: int, config: Mapping[str, object]) -> None:
     me = {1: 7, 2: 8, 3: 7, 4: 9, 5: 7}[leg]
-    state = {} if leg == 1 else _state_three_start()
+    state: State = {} if leg == 1 else _state_three_start()
     _, sent, output = _leg(leg, me, state=state, **config)
     assert not any("null" in s["path"] or "undefined" in s["path"] for s in sent)
     built = ("Folders/AddUsingPath", "MoveToUsingPath", "GetFolderByServerRelativePath",
@@ -652,7 +674,7 @@ def test_state_five_without_the_moved_id_sends_nothing() -> None:
 
 
 def test_a_root_file_with_another_id_is_not_established_not_a_lost_grant() -> None:
-    start = {**_state_four_start(), "grants": [], "links": []}
+    start: State = {**_state_four_start(), "grants": [], "links": []}
     rows, _, _ = _leg(5, 7, _moved_id_swap(42), state=start)
     assert rows[F4]["outcome"] == "NOT ESTABLISHED"
     assert "MOVED_ID" in rows[F4]["evidence"]
@@ -665,8 +687,8 @@ def test_an_empty_sharing_entry_does_not_hide_our_link_and_leaves_its_loss_open(
     assert rows[F4]["outcome"] == "NOT ESTABLISHED"
 
 
-def _evidence(rows: dict[str, dict[str, str]], row: str) -> str:
-    return rows[row]["evidence"]
+def _evidence(rows: dict[str, Json], row: str) -> str:
+    return rows[row]["evidence"].text
 
 
 def test_our_link_is_the_one_entry_with_our_share_id_among_placeholders_without_a_url() -> None:
@@ -710,13 +732,13 @@ def test_the_share_id_value_is_printed_nowhere_only_its_digest() -> None:
     leaked_id = "SECRET-SHARE-ID-0123"
     rows, _, output = _leg(1, 7, shareId=leaked_id, placeholders=1)
     assert rows[LINK_ROW]["outcome"] == "PASS"
-    assert leaked_id not in _printed(output) and leaked_id not in json.dumps(rows)
+    assert leaked_id not in _printed(output) and leaked_id not in dumps(rows)
     assert f"link digest: {_fnv(leaked_id)}" in _printed(output)
     start = {**_state_four_start(), "links": [{"ShareId": leaked_id, "Url": LINK_URL}]}
     swaps = {**_digest_swap(leaked_id), **_token_swap(_fnv(f"snapshot {_fnv(leaked_id)} 41"))}
     rows, _, output = _leg(5, 7, swaps, state=start)
     assert rows[F4]["outcome"] == "GRANT AND LINK PRESENT"
-    assert leaked_id not in _printed(output) and leaked_id not in json.dumps(rows)
+    assert leaked_id not in _printed(output) and leaked_id not in dumps(rows)
 
 
 @pytest.mark.parametrize(("change", "config", "head"), [
@@ -727,7 +749,7 @@ def test_the_share_id_value_is_printed_nowhere_only_its_digest() -> None:
     ({}, {"duplicateOurs": True}, "NOT ESTABLISHED"),
 ], ids=["survives", "replaced", "none", "several-match"])
 def test_state_five_finds_our_entry_by_the_digest_of_its_share_id(
-        change: dict[str, Any], config: dict[str, Any], head: str) -> None:
+        change: Mapping[str, object], config: Mapping[str, object], head: str) -> None:
     rows, _, _ = _leg(5, 7, state={**_state_four_start(), **change}, **config)
     assert rows[F4]["outcome"] == head
     assert "entries matching the ShareId" in _evidence(rows, F4)
@@ -739,14 +761,16 @@ def test_state_five_finds_our_entry_by_the_digest_of_its_share_id(
     {"links": []}, {"links": ["https://example.sharepoint.com/:t:/s/probe/other"]},
 ], ids=["ours-gone", "another-link"])
 def test_state_five_never_calls_a_link_lost_or_replaced_beside_an_entry_with_no_share_id(
-        change: dict[str, Any]) -> None:
+        change: Mapping[str, object]) -> None:
     rows, _, _ = _leg(5, 7, state={**_state_four_start(), **change}, unidentified=True)
     assert rows[F4]["outcome"] == "NOT ESTABLISHED"
     assert "entries without a ShareId 1" in _evidence(rows, F4)
 
 
 def test_state_three_fails_the_snapshot_when_none_or_several_entries_are_ours() -> None:
-    for change, config, count in (({"links": []}, {}, 0), ({}, {"duplicateOurs": True}, 2)):
+    cases: list[tuple[State, dict[str, bool], int]] = [
+        ({"links": []}, {}, 0), ({}, {"duplicateOurs": True}, 2)]
+    for change, config, count in cases:
         rows, _, _ = _leg(3, 7, state={**_state_three_start(), **change}, **config)
         assert rows[BEFORE_PERMS]["outcome"] == "FAIL"
         assert f"entries matching the ShareId {count}" in _evidence(rows, BEFORE_PERMS)
@@ -762,7 +786,7 @@ def test_state_three_records_the_link_shape_without_values() -> None:
 
 @pytest.mark.parametrize("bad", ["principal", "binding"])
 def test_a_malformed_role_assignment_row_is_not_established_not_a_lost_grant(bad: str) -> None:
-    start = {**_state_four_start(), "grants": []}
+    start: State = {**_state_four_start(), "grants": []}
     rows, _, _ = _leg(5, 7, state=start, badGrantRow=bad)
     assert rows[F4]["outcome"] == "NOT ESTABLISHED"
 
@@ -828,7 +852,7 @@ def test_state_one_writes_nothing_without_an_integer_account_id(current: str) ->
     {"MoveFlag": {"TypeAsString": "Text"}},
 ], ids=["choice-type", "choices", "people-only", "date-only", "url-format", "flag-type"])
 def test_a_created_column_that_reads_back_differently_fails_the_fixture(
-        drift: dict[str, Any]) -> None:
+        drift: Mapping[str, object]) -> None:
     rows, sent, _ = _leg(1, 7, fieldRead=drift)
     assert rows[COLUMNS]["outcome"] == "FAIL"
     assert rows[FOLDER_ROW]["state"] == "void"

@@ -12,9 +12,10 @@ not a dependency of the package.
 
 import json
 import textwrap
-from typing import Any
+from collections.abc import Mapping
 
 import pytest
+from _json_view import Json
 from _node import NODE
 from _node import run_node as _run
 
@@ -83,7 +84,7 @@ _HARNESS = textwrap.dedent(r"""
 """)
 
 
-def _config() -> dict[str, Any]:
+def _config() -> dict[str, object]:
     return {
         "web": WEB,
         "titles": [LIST_TITLE, "PT_Project"],
@@ -101,7 +102,7 @@ def _config() -> dict[str, Any]:
     }
 
 
-Run = tuple[dict[str, Any], str]
+Run = tuple[Json, str]
 
 
 def _run_script(list_paths: list[str]) -> Run:
@@ -126,10 +127,10 @@ def _run_script(list_paths: list[str]) -> Run:
         "});\n"
     )
     out = _run(script)
-    payload: dict[str, Any] = {}
+    payload = Json({})
     for line in out.splitlines():
         if line.startswith("__RESULT__"):
-            payload = json.loads(line.removeprefix("__RESULT__"))
+            payload = Json.loads(line.removeprefix("__RESULT__"))
     return payload, out
 
 
@@ -171,7 +172,7 @@ def test_a_list_that_reads_cleanly_still_extracts() -> None:
 
 @pytest.mark.parametrize("continuation", [False, 0, True, 1, [], {}])
 def test_malformed_continuation_aborts_extraction(
-    continuation: Any, monkeypatch: pytest.MonkeyPatch,
+    continuation: object, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _config()
     config["fieldPage"] = {"__next": continuation}
@@ -184,7 +185,7 @@ def test_malformed_continuation_aborts_extraction(
 
 @pytest.mark.parametrize("page", [{}, {"__next": None}, {"__next": ""}])
 def test_valid_continuation_terminators_preserve_extraction(
-    page: dict[str, Any], monkeypatch: pytest.MonkeyPatch,
+    page: Mapping[str, object], monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _config()
     config["fieldPage"] = page
@@ -209,7 +210,7 @@ def test_extraction_includes_fields_from_later_pages(monkeypatch: pytest.MonkeyP
 
 @pytest.mark.parametrize("results", [None, {}])
 def test_a_field_page_without_results_aborts_extraction(
-    results: Any, monkeypatch: pytest.MonkeyPatch,
+    results: object, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Read as empty, the list extracted with none of its columns (#722)."""
     config = _config()

@@ -35,3 +35,14 @@ def test_every_module_of_a_cleaned_unit_is_matched() -> None:
         if not rel.startswith(uncleaned) and not any(fnmatch.fnmatch(rel, p) for p in patterns):
             missed.append(rel)
     assert not missed, f"add these to a strict [[tool.pyrefly.sub-config]]: {missed}"
+
+
+def test_every_runtime_test_file_meets_the_strict_sub_config_first() -> None:
+    """pyrefly applies the first matching sub-config, and `test/**` relaxes two of the kinds."""
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    configs = pyproject["tool"]["pyrefly"]["sub-config"]
+    for path in sorted((REPO_ROOT / "test").glob("test_*_runtime.py")):
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        first = next(config for config in configs if fnmatch.fnmatch(rel, str(config["matches"])))
+        errors = first["errors"]
+        assert {kind: errors.get(kind) for kind in _KINDS} == dict.fromkeys(_KINDS, "error"), rel

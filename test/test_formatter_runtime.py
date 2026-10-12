@@ -2,28 +2,31 @@
 
 import json
 import re
-from typing import Any
+from collections.abc import Mapping
+from pathlib import Path
 
 import pytest
+from _json_view import Json
 from _node import NODE, run_node
 
 from dbml_sharepoint.analysis.styles import expand_style
 from dbml_sharepoint.extract.inverse import invert_column_formatting
+from dbml_sharepoint.jsonvalue import is_object_list, is_text_keyed
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is required")
 
 
 def render(
-    spec: dict[str, Any], value: Any, fields: dict[str, Any] | None = None,
+    spec: Mapping[str, object], value: object, fields: Mapping[str, object] | None = None,
     *, native_date: bool = False,
-) -> dict[str, Any]:
+) -> Json:
     formatter = expand_style(spec, "test")
 
-    def compile_value(item: Any) -> str:
-        if isinstance(item, dict):
+    def compile_value(item: object) -> str:
+        if is_text_keyed(item):
             return "{" + ",".join(json.dumps(k) + ":" + compile_value(v)
                                   for k, v in item.items()) + "}"
-        if isinstance(item, list):
+        if is_object_list(item):
             return "[" + ",".join(map(compile_value, item)) + "]"
         if not isinstance(item, str) or not item.startswith("="):
             return "value" if item == "@currentField" else json.dumps(item)
@@ -60,8 +63,7 @@ const now = new Date('2026-09-16T12:00:00Z');
     result = run_node(script + f"const value = {literal};\n"
                       + f"const fields = {json.dumps(fields or {})};\n"
                       + "console.log(JSON.stringify(" + compile_value(formatter) + "));\n")
-    rendered: dict[str, Any] = json.loads(result)
-    return rendered
+    return Json.loads(result)
 
 
 BANDS = {"style": "numeric-severity", "calculated": True,
@@ -75,7 +77,7 @@ BANDS = {"style": "numeric-severity", "calculated": True,
     ("number;#0", "good"),
     ("bad", "muted"), ("NaN", "muted"), ("Infinity", "muted"),
 ])
-def test_numeric_bands(value: Any, treatment: str) -> None:
+def test_numeric_bands(value: object, treatment: str) -> None:
     cell = render(BANDS, value)
     expected = ("ms-bgColor-neutralLight" if treatment == "muted"
                 else f"sp-field-severity--{treatment}")
@@ -128,7 +130,7 @@ def test_calculated_colour_source_matches_exactly() -> None:
     (0, 0, ""), (1, 0, "SortUp"), (0, 1, "SortDown"), ("bad", 1, ""), (1, "bad", ""),
     (1, "", ""), ("float;#2", "float;#1", "SortUp"),
 ])
-def test_trend_operands(current: Any, baseline: Any, icon: str) -> None:
+def test_trend_operands(current: object, baseline: object, icon: str) -> None:
     cell = render({"style": "trend", "against": "Baseline", "calculated": True,
                    "against_calculated": True}, current, {"Baseline": baseline})
     assert cell["children"][0]["attributes"]["iconName"] == icon
@@ -160,7 +162,7 @@ def test_date_boundaries(value: str, display: str, icon: str) -> None:
     {"style": "overdue-date", "calculated": True},
     {"style": "overdue-date", "guard": {"field": "Status", "not": ["Done"]}},
 ])
-def test_current_styles_round_trip(spec: dict[str, Any]) -> None:
+def test_current_styles_round_trip(spec: Mapping[str, object]) -> None:
     formatter = expand_style(spec, "test")
     recovered, _ = invert_column_formatting(json.dumps(formatter), "test")
     assert recovered is not None
@@ -177,19 +179,19 @@ def test_current_styles_round_trip(spec: dict[str, Any]) -> None:
     {"bands": [{"max": 1, "token": True}]}, {"otherwise": None},
     {"bands": [{"max": 1, "token": "good", "typo": 1}]},
 ])
-def test_invalid_bands_fail_closed(changes: dict[str, Any]) -> None:
+def test_invalid_bands_fail_closed(changes: Mapping[str, object]) -> None:
     with pytest.raises(ValueError, match=r"^test: "):
         expand_style({**BANDS, **changes}, "test")
 
 
 @pytest.mark.parametrize("attributes", [None, [], 1, {"class": 1}])
-def test_unrecognised_formatter_shapes_are_preserved(attributes: Any) -> None:
+def test_unrecognised_formatter_shapes_are_preserved(attributes: object) -> None:
     raw = {"elmType": "div", "attributes": attributes}
     assert invert_column_formatting(json.dumps(raw), "test") == (None, raw)
 
 
 @pytest.mark.parametrize("value", [float("inf"), float("nan"), 10**400])
-def test_nonfinite_numeric_configuration_is_refused(value: Any) -> None:
+def test_nonfinite_numeric_configuration_is_refused(value: object) -> None:
     for spec in ({"style": "trend", "against": value},
                  {**BANDS, "bands": [{"max": value, "token": "good"}]},
                  {"style": "data-bar", "max": value}):
@@ -197,7 +199,7 @@ def test_nonfinite_numeric_configuration_is_refused(value: Any) -> None:
             expand_style(spec, "test")
 
 
-def test_visual_probe_generation(tmp_path: Any) -> None:
+def test_visual_probe_generation(tmp_path: Path) -> None:
     import runpy
 
     from _paths import MANUAL
@@ -268,7 +270,7 @@ def test_calculated_text_only_strips_a_leading_known_prefix(value: str, label: s
     ({"style": "overdue-date", "calculated": True}, "Section;#2026-09-15T00:00:00Z"),
 ])
 def test_embedded_delimiters_do_not_turn_invalid_scalars_into_valid_values(
-    spec: dict[str, Any], value: str,
+    spec: Mapping[str, object], value: str,
 ) -> None:
     cell = render(spec, value)
     assert "ms-bgColor-neutralLight" in cell["attributes"]["class"]
@@ -276,7 +278,7 @@ def test_embedded_delimiters_do_not_turn_invalid_scalars_into_valid_values(
 
 
 @pytest.mark.parametrize(("current", "baseline"), [("unknown;#2", 1), (2, "unknown;#1")])
-def test_trend_does_not_strip_unknown_operand_prefixes(current: Any, baseline: Any) -> None:
+def test_trend_does_not_strip_unknown_operand_prefixes(current: object, baseline: object) -> None:
     cell = render({"style": "trend", "against": "Baseline", "calculated": True,
                    "against_calculated": True}, current, {"Baseline": baseline})
     assert cell["children"][0]["attributes"]["iconName"] == ""

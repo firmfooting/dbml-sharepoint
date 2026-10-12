@@ -10,9 +10,10 @@ question, not this mock's claim.
 import json
 import re
 import textwrap
-from typing import Any
+from collections.abc import Mapping, Sequence
 
 import pytest
+from _json_view import Json, dumps
 from _node import NODE
 from _paths import MANUAL
 from _probe_runs import (
@@ -235,8 +236,8 @@ _MOCK = textwrap.dedent(r"""
 """)
 
 
-def _run(gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: Any,
-         ) -> tuple[dict[str, dict[str, str]], list[dict[str, str]], str]:
+def _run(gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: object,
+         ) -> tuple[dict[str, Json], list[Json], str]:
     return run_probe(_MOCK, PROBE, gates, config)
 
 
@@ -244,8 +245,8 @@ def _deps(fixture: str) -> set[str]:
     return catalogued_dependents(PROBE.name, fixture)
 
 
-def _batches(sent: list[dict[str, str]]) -> list[str]:
-    return [r["body"] for r in sent if r["path"] == "$batch"]
+def _batches(sent: list[Json]) -> list[str]:
+    return [r["body"].text for r in sent if r["path"] == "$batch"]
 
 
 @pytest.mark.parametrize("gates", [(), ("CONFIRMED",)], ids=["unconfirmed", "no-writes"])
@@ -296,7 +297,7 @@ def test_each_addvalidate_part_is_recorded_with_its_fields_and_what_reads_back()
     assert failed.endswith("landed no; neighbours landed dbmlsp addvalidate no folder yes, "
                            "dbmlsp addvalidate claims yes, dbmlsp addvalidate iso date yes")
     assert 'ProbeWhen reads back "2026-01-15T09:30:00Z"' in rows[ISO]["evidence"]
-    everything = json.dumps(rows)
+    everything = dumps(rows)
     assert "ada@example.com" not in everything
     assert "Ada Probe" not in everything
 
@@ -443,7 +444,7 @@ def test_item_create_answers_in_another_order_are_matched_by_their_titles() -> N
                  'answer 1 names Title "another item", which no part sent', id="unsent-title"),
 ])
 def test_item_create_answers_that_cannot_be_paired_by_title_are_not_matched(
-        part: dict[str, Any], said: str) -> None:
+        part: Mapping[str, object], said: str) -> None:
     rows, _, output = _run(partRules=[part])
 
     for row_id in (PARTS, FAILED):
@@ -501,7 +502,7 @@ def test_a_refused_addvalidate_write_is_not_established_and_the_probe_goes_on(
     assert "landed no" in rows[row_id]["evidence"]
     assert all(rows[other]["outcome"] == "WRITTEN" for other in ADDVALIDATED if other != row_id)
     assert voided(rows) == set()
-    assert "ada@example.com" not in json.dumps(rows)
+    assert "ada@example.com" not in dumps(rows)
     assert recycled_last(sent)
 
 
@@ -717,7 +718,7 @@ def test_an_account_named_in_a_refusal_is_masked(rule: dict[str, str], row_id: s
 
     assert said in rows[row_id]["evidence"]
     printed = [ln for ln in output.splitlines() if not ln.startswith(("__SENT__", "__ROWS__"))]
-    assert "bob@example.org" not in json.dumps(rows) + "\n".join(printed)
+    assert "bob@example.org" not in dumps(rows) + "\n".join(printed)
 
 
 def test_the_evidence_never_names_the_tenant() -> None:
@@ -725,7 +726,7 @@ def test_the_evidence_never_names_the_tenant() -> None:
                                   "text": "Refused at https://example.sharepoint.com/sites/probe/_api"}])
 
     assert "[TENANT]/sites/probe/_api" in rows[FAILED]["evidence"]
-    assert "example.sharepoint.com" not in json.dumps(rows)
+    assert "example.sharepoint.com" not in dumps(rows)
 
 
 @pytest.mark.parametrize(("rule", "outcome", "said"), [
@@ -762,7 +763,7 @@ def test_the_evidence_never_names_the_tenant() -> None:
                  "FAIL", 'created Id 6; it reads back Title "another title"', id="other-title"),
 ])
 def test_an_addvalidate_control_that_does_not_hold_leaves_no_addvalidate_row_asked(
-        rule: dict[str, Any], outcome: str, said: str) -> None:
+        rule: Mapping[str, object], outcome: str, said: str) -> None:
     rows, sent, output = _run(rules=[rule])
 
     assert rows[ADDVALIDATE]["outcome"] == outcome
@@ -880,7 +881,7 @@ def test_an_untyped_batch_answering_more_parts_than_it_sent_is_not_matched(
                  id="no-field-list"),
 ])
 def test_an_addvalidate_part_answered_without_a_verdict_is_left_open(
-        part: dict[str, Any], row_id: str, said: str) -> None:
+        part: Mapping[str, object], row_id: str, said: str) -> None:
     rows, _, output = _run(partRules=[part])
 
     assert rows[row_id]["outcome"] == "NOT ESTABLISHED"
@@ -918,7 +919,7 @@ def test_the_writes_after_the_claim_go_by_the_created_list_id() -> None:
     {"status": 429, "text": "busy"},
 ], ids=["rebound", "throttled"])
 def test_a_title_that_no_longer_names_the_claimed_list_sends_no_batch(
-        answer: dict[str, Any]) -> None:
+        answer: Mapping[str, object]) -> None:
     rows, sent, output = _run(rules=[{"contains": "BatchItems')?$select=Id,Title", **answer}])
 
     assert _batches(sent) == []
@@ -937,11 +938,11 @@ def test_a_date_column_that_did_not_take_date_and_time_voids_the_iso_row() -> No
 
 
 def test_each_run_names_its_list_with_a_title_no_other_run_uses() -> None:
-    titles = []
+    titles: list[str] = []
     for _ in range(2):
         _, sent, _ = run_probe(_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"), {}, pin=False)
         [create] = [r for r in sent if r["path"] == "web/lists" and r["verb"] == "POST"]
-        titles.append(json.loads(create["body"])["Title"])
+        titles.append(Json.loads(create["body"].text)["Title"].text)
     for title in titles:
         # The space stays, so the parts still send it as %20 (ruling D18 in the watch-flow plans).
         assert re.fullmatch(r"dbmlsp Probe BatchItems [a-z0-9]{6,}", title), title
@@ -980,7 +981,7 @@ def test_a_title_with_an_apostrophe_is_doubled_in_every_title_literal() -> None:
         {"listPath": "web/lists/getbytitle('dbmlsp Probe''s BatchItems')"}, swaps)
 
     assert rows[LIST]["outcome"] == "PASS", rows[LIST]
-    titled = [r["path"] for r in sent if r["path"].startswith("web/lists/getbytitle(")]
+    titled = [r["path"].text for r in sent if r["path"].startswith("web/lists/getbytitle(")]
     assert len(titled) >= 3
     assert all(path.startswith("web/lists/getbytitle('dbmlsp Probe''s BatchItems')")
                for path in titled), titled
@@ -1079,7 +1080,7 @@ WHEN_THROTTLED = {"contains": "/fields", "verb": "POST", "bodyContains": "ProbeW
         "other-400-after-an-unanswered-write", "500-beside-an-unanswered-write",
         "404-then-an-unanswered-read", "an-unanswered-read-then-404"])
 def test_a_refused_read_beside_an_unanswered_request_is_settled_unless_a_write_caused_it(
-        rules: list[dict[str, Any]], outcome: str) -> None:
+        rules: Sequence[Mapping[str, object]], outcome: str) -> None:
     rows, _, _ = _run(rules=rules)
 
     assert rows[COLUMNS]["outcome"] == outcome, rows[COLUMNS]
@@ -1091,7 +1092,7 @@ def test_a_refused_read_beside_an_unanswered_request_is_settled_unless_a_write_c
     WHEN_THROTTLED,
 ], ids=["account-open", "columns-open"])
 def test_a_refused_addvalidate_control_voids_every_row_the_catalogue_rests_on_it(
-        rule: dict[str, Any]) -> None:
+        rule: Mapping[str, object]) -> None:
     # A part that was never asked is still void once the call it would have made is refused.
     rows, _, _ = _run(rules=[rule, {"contains": CONTROL_CALL, "status": 500, "text": "no"}])
 
@@ -1121,4 +1122,4 @@ def test_once_the_display_name_is_not_learned_no_answer_text_is_quoted() -> None
     assert "Zed Sentinel" not in output
     withheld = "(text withheld: this account's display name was not learned)"
     assert rows[ADDVALIDATE]["evidence"] == f"the call: HTTP 500: {withheld}"
-    assert f"ProbeWhen.Create=\\\"HTTP 400: {withheld}\\\"" in json.dumps(rows[COLUMNS]["evidence"])
+    assert f"ProbeWhen.Create=\\\"HTTP 400: {withheld}\\\"" in rows[COLUMNS]["evidence"].dumps()

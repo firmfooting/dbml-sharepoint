@@ -23,10 +23,10 @@ Node is required; the tests skip without it rather than failing.
 import json
 import re
 import textwrap
-from typing import Any
 
 import pytest
 from _batch_mock import BATCH_MOCK
+from _json_view import Json
 from _model import bundle as make_bundle
 from _model import schema as make_schema
 from _model import table as make_table
@@ -529,7 +529,7 @@ def _run_deploy(
     overlay: str = "",
     rerun: bool = False,
     identity_tail: str = "",
-) -> dict[str, Any]:
+) -> Json:
     """`identity_tail` swaps in an IDENTITY_TAIL line rendered for real identities.
 
     `rerun` deploys a second time over the state the first run left, and
@@ -540,7 +540,7 @@ def _run_deploy(
     # The two lists are independent now: each carries its own column set,
     # controlled by its own flag, rather than the changes columns riding on
     # the deployments columns being present first.
-    deployments_fields = list(CENTRAL_LOG_COLUMNS) if central_columns else []
+    deployments_fields: list[str] = list(CENTRAL_LOG_COLUMNS) if central_columns else []
     harness = _substitute(
         harness, "const CENTRAL_FIELDS = CENTRAL_FIELD_NAMES;",
         f"const CENTRAL_FIELDS = {json.dumps(deployments_fields)};",
@@ -574,7 +574,7 @@ def _run_deploy(
             harness, "const FAIL_CENTRAL_CHANGE_FIELDS = false;",
             "const FAIL_CENTRAL_CHANGE_FIELDS = true;",
         )
-    seeded_central_changes: list[dict[str, Any]] = []
+    seeded_central_changes: list[dict[str, str | int | bool]] = []
     if seeded_central_rows:
         # A current central row for this site AND one for another site with
         # the SAME key, which is the pair a close keyed on ChangeKey alone
@@ -694,27 +694,27 @@ def _run_deploy(
     missing = [m for m, ln in found.items() if ln is None]
     assert not missing, f"deploy.js never reached {missing}:\n{output[-6000:]}"
     summary, calls, state, unhandled = (
-        json.loads((found[m] or "").removeprefix(m)) for m in markers
+        Json.loads((found[m] or "").removeprefix(m)).value for m in markers
     )
     rerun_line = next(ln for ln in lines if ln.startswith("__RERUN__"))
-    return {
+    return Json({
         "summary": summary, "calls": calls, "state": state,
         "unhandled": unhandled, "output": output,
-        "rerun_from": json.loads(rerun_line.removeprefix("__RERUN__")),
-    }
+        "rerun_from": Json.loads(rerun_line.removeprefix("__RERUN__")).value,
+    })
 
 
-def _posts_to(calls: list[dict[str, Any]], title: str) -> list[dict[str, Any]]:
+def _posts_to(calls: Json, title: str) -> list[Json]:
     return [
         c for c in calls
         if c["method"] == "POST"
-        and c["headers"].get("X-HTTP-Method") is None
+        and c["headers"].get("X-HTTP-Method").value is None
         and c["url"].endswith(f"getbytitle('{title}')/items")
     ]
 
 
 @pytest.fixture(scope="module")
-def accepting_run() -> dict[str, Any]:
+def accepting_run() -> Json:
     """One LOCAL-mode run whose change log takes every write. The control.
 
     `central_absent` is what puts it in LOCAL mode: with a central log
@@ -725,7 +725,7 @@ def accepting_run() -> dict[str, Any]:
 
 
 @pytest.fixture(scope="module")
-def refusing_run() -> dict[str, Any]:
+def refusing_run() -> Json:
     """The same run with the change log refusing every item POST."""
     return _run_deploy(
         seeded_change_rows=True, central_absent=True, fail_change_writes=True,
@@ -733,7 +733,7 @@ def refusing_run() -> dict[str, Any]:
 
 
 def test_the_logging_phase_stamps_writes_and_closes_against_a_live_script(
-    accepting_run: dict[str, Any],
+    accepting_run: Json,
 ) -> None:
     """One sidecar-enabled run, and every claim phase 1.7 makes about it.
 
@@ -746,7 +746,7 @@ def test_the_logging_phase_stamps_writes_and_closes_against_a_live_script(
 
     assert run["unhandled"] == [], (
         "the logging writer rejected out of an un-awaited call:\n"
-        + "\n".join(run["unhandled"])
+        + "\n".join(run["unhandled"].strings)
     )
 
     # The change log's own columns, including the one the close query filters
@@ -778,7 +778,7 @@ def test_the_logging_phase_stamps_writes_and_closes_against_a_live_script(
     assert all("IsCurrent eq true" in c["url"] for c in closes)
     assert all(f"Application eq '{APPLICATION_NAME}'" in c["url"] for c in closes)
     seeded = next(r for r in state["items"][CHANGE_LOG_TITLE] if r["Id"] == 900)
-    assert seeded["IsCurrent"] is False, "the seeded current row was never closed"
+    assert seeded["IsCurrent"].value is False, "the seeded current row was never closed"
     assert seeded["EffectiveTo"], "the closed row carries no EffectiveTo"
 
     # The change row itself: one argument in, both key columns out.
@@ -786,7 +786,7 @@ def test_the_logging_phase_stamps_writes_and_closes_against_a_live_script(
     assert inserted, "no change row was inserted"
     assert all(r["ChangeKey"] == r["Title"] for r in inserted)
     assert any(r["ChangeKey"] == SEEDED_KEY for r in inserted)
-    assert all(r["IsCurrent"] is True and r["EffectiveTo"] is None for r in inserted)
+    assert all(r["IsCurrent"].value is True and r["EffectiveTo"].value is None for r in inserted)
 
     # The run log's own stamp columns, created on the list this run made.
     # The create body is BaseTemplate 100 plus a Description, so a run log
@@ -832,7 +832,7 @@ def test_the_logging_phase_stamps_writes_and_closes_against_a_live_script(
 
 
 def test_a_change_log_that_refuses_every_write_changes_nothing_but_the_log(
-    accepting_run: dict[str, Any], refusing_run: dict[str, Any],
+    accepting_run: Json, refusing_run: Json,
 ) -> None:
     """The contract phase 1.7 states, pinned against the code that broke it.
 
@@ -851,7 +851,7 @@ def test_a_change_log_that_refuses_every_write_changes_nothing_but_the_log(
     summary = refusing_run["summary"]
     control = accepting_run["summary"]
 
-    assert refusing_run["unhandled"] == [], "\n".join(refusing_run["unhandled"])
+    assert refusing_run["unhandled"] == [], "\n".join(refusing_run["unhandled"].strings)
     assert summary.get("aborted") == control.get("aborted"), (
         f"a refused change row changed how the deploy ended: "
         f"{control.get('aborted')} -> {summary.get('aborted')}"
@@ -860,25 +860,25 @@ def test_a_change_log_that_refuses_every_write_changes_nothing_but_the_log(
         f"a logging failure reached the abort bus: {summary['errors']}"
     )
     assert not any(
-        "refusing writes" in json.dumps(e) for e in summary["errors"]
+        "refusing writes" in e.dumps() for e in summary["errors"]
     ), summary["errors"]
 
     assert summary["loggingFailures"], "the refusals were recorded nowhere"
     assert all(
-        "refusing writes" in json.dumps(f) for f in summary["loggingFailures"]
+        "refusing writes" in f.dumps() for f in summary["loggingFailures"]
     ), summary["loggingFailures"]
     # Counted once, out loud, because nothing later in the run mentions them.
     assert "logging operation(s)" in refusing_run["output"]
 
 
 @pytest.fixture(scope="module")
-def reused_bare_run_log() -> dict[str, Any]:
+def reused_bare_run_log() -> Json:
     """A run log the OLD bare-Title code left behind: reused, no columns."""
     return _run_deploy(bare_run_log=True, central_absent=True)
 
 
 def test_a_reused_run_log_is_given_the_stamp_columns_it_never_had(
-    reused_bare_run_log: dict[str, Any],
+    reused_bare_run_log: Json,
 ) -> None:
     """The live 400, and the fix for it.
 
@@ -895,7 +895,7 @@ def test_a_reused_run_log_is_given_the_stamp_columns_it_never_had(
     run = reused_bare_run_log
     state, summary, calls = run["state"], run["summary"], run["calls"]
 
-    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
     assert "exists (marker matched); reusing it" in run["output"], (
         "the seeded run log was created rather than reused, so this run never "
         "exercised the path the live failure came from"
@@ -915,7 +915,7 @@ def test_a_reused_run_log_is_given_the_stamp_columns_it_never_had(
         f"a stamp was refused: {state['items'][RUN_LOG_TITLE]}"
     )
     assert not [
-        f for f in summary["loggingFailures"] if RUN_LOG_TITLE in json.dumps(f)
+        f for f in summary["loggingFailures"] if RUN_LOG_TITLE in f.dumps()
     ], summary["loggingFailures"]
 
 
@@ -932,7 +932,7 @@ def test_a_run_log_whose_columns_cannot_be_created_still_gets_its_stamps() -> No
     )
     state, summary, calls = run["state"], run["summary"], run["calls"]
 
-    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
 
     stamps = _posts_to(calls, RUN_LOG_TITLE)
     assert len(stamps) == 2, f"expected two stamps, got {len(stamps)}"
@@ -961,12 +961,12 @@ def test_one_refused_column_does_not_abandon_the_columns_after_it() -> None:
     independent, and the ones that can be created should be.
     """
     run = _run_deploy(refuse_change_field="IsCurrent", central_absent=True)
-    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
 
     attempted = [
         c["body"]["Title"]
         for c in run["calls"]
-        if c["method"] == "POST" and isinstance(c.get("body"), dict)
+        if c["method"] == "POST" and c.get("body").is_object
         and "Title" in c["body"]
         and f"getbytitle('{CHANGE_LOG_TITLE}')/fields" in c["url"]
     ]
@@ -998,7 +998,7 @@ def test_a_refused_column_is_named_in_the_log_with_the_reason() -> None:
     )
 
 @pytest.fixture(scope="module")
-def central_run() -> dict[str, Any]:
+def central_run() -> Json:
     """The CENTRAL-mode control: the central log answers, and can be edited.
 
     `central_can_close` is deliberately NOT the default. Under the drop-box
@@ -1010,7 +1010,7 @@ def central_run() -> dict[str, Any]:
 
 
 def test_a_reachable_central_log_takes_the_whole_run_and_no_sidecar_is_made(
-    central_run: dict[str, Any],
+    central_run: Json,
 ) -> None:
     """The alignment, stated as the negative it is.
 
@@ -1027,7 +1027,7 @@ def test_a_reachable_central_log_takes_the_whole_run_and_no_sidecar_is_made(
     run = central_run
     calls, state, summary = run["calls"], run["state"], run["summary"]
 
-    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
     assert "Logging mode CENTRAL" in run["output"]
 
     # Neither sidecar exists, and no request tried to make one.
@@ -1064,12 +1064,12 @@ def test_a_reachable_central_log_takes_the_whole_run_and_no_sidecar_is_made(
         f"a central change row is missing declared columns: {changes}"
     )
     assert all(r["ChangeKey"] and r["SourceSite"] == SITE_URL for r in changes)
-    assert all(r["IsCurrent"] is True and r["EffectiveTo"] is None for r in changes)
+    assert all(r["IsCurrent"].value is True and r["EffectiveTo"].value is None for r in changes)
     assert not any("StampKind" in row or "StampUtc" in row for row in changes), (
         f"a retired stamp column reached the Changes list: {changes}"
     )
 
-    written = stamps + changes  # changes excludes the two seeded rows
+    written = stamps.rows + changes  # changes excludes the two seeded rows
     assert all(len(row["Title"]) <= 255 for row in written)
     assert all(row["__metadata"]["type"].startswith("SP.Data.") for row in written)
 
@@ -1077,9 +1077,9 @@ def test_a_reachable_central_log_takes_the_whole_run_and_no_sidecar_is_made(
     # for THIS site is closed; the identical row for another site is not.
     mine = next(r for r in state["centralChanges"] if r["Id"] == 800)
     theirs = next(r for r in state["centralChanges"] if r["Id"] == 801)
-    assert mine["IsCurrent"] is False, "the seeded central row was never closed"
+    assert mine["IsCurrent"].value is False, "the seeded central row was never closed"
     assert mine["EffectiveTo"], "the closed central row carries no EffectiveTo"
-    assert theirs["IsCurrent"] is True, (
+    assert theirs["IsCurrent"].value is True, (
         "the close retired another site's row: ChangeKey is not fleet-unique"
     )
 
@@ -1088,7 +1088,7 @@ def test_a_reachable_central_log_takes_the_whole_run_and_no_sidecar_is_made(
 
 
 def test_the_close_reads_and_writes_the_changes_list_not_the_deployments_list(
-    central_run: dict[str, Any],
+    central_run: Json,
 ) -> None:
     """The type-2 close is a read then a write, both against the SAME list.
     Now that a change row lives on Changes, neither leg may address
@@ -1128,15 +1128,15 @@ def test_a_central_log_this_account_cannot_edit_appends_without_closing() -> Non
     """
     run = _run_deploy(seeded_central_rows=True)  # AddListItems only
 
-    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
     changes = run["state"]["centralChanges"]
 
     appended = [r for r in changes if r["Id"] >= 802]
     assert appended, "the append-only path wrote no change row"
-    assert all(r["IsCurrent"] is True for r in appended)
+    assert all(r["IsCurrent"].value is True for r in appended)
 
     seeded = next(r for r in changes if r["Id"] == 800)
-    assert seeded["IsCurrent"] is True, "a close was issued without EditListItems"
+    assert seeded["IsCurrent"].value is True, "a close was issued without EditListItems"
     assert not [
         c for c in run["calls"]
         if c["headers"].get("X-HTTP-Method") == "MERGE"
@@ -1161,7 +1161,7 @@ def test_a_central_write_that_fails_mid_run_never_falls_back_to_the_site() -> No
     """
     run = _run_deploy(fail_central_writes=True, central_can_close=True)
 
-    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
     state, summary = run["state"], run["summary"]
 
     assert state["central"] == [], "the mock accepted a stamp it was told to refuse"
@@ -1175,7 +1175,7 @@ def test_a_central_write_that_fails_mid_run_never_falls_back_to_the_site() -> No
 
     assert summary["loggingFailures"], "the refusals were recorded nowhere"
     assert all(
-        "refusing writes" in json.dumps(f) for f in summary["loggingFailures"]
+        "refusing writes" in f.dumps() for f in summary["loggingFailures"]
     ), summary["loggingFailures"]
     # Never the abort bus, and the deploy still finished.
     assert not [e for e in summary["errors"] if str(e.get("phase")) == "1.7"]
@@ -1193,7 +1193,7 @@ def test_a_central_change_list_field_probe_failure_still_lets_stamps_through() -
     entry it leaves must name the CHANGES list, never the Deployments one.
     """
     run = _run_deploy(fail_central_change_fields=True)
-    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
 
     stamps = run["state"]["central"]
     assert stamps, "a change-list probe failure blocked the deployments stamps"
@@ -1206,13 +1206,13 @@ def test_a_central_change_list_field_probe_failure_still_lets_stamps_through() -
 
     failures = run["summary"]["loggingFailures"]
     assert len(failures) == 1, failures
-    assert EXTERNAL_CHANGE_LOG_DEFAULT in json.dumps(failures[0]), failures
-    assert EXTERNAL_LOG_DEFAULT not in json.dumps(failures[0]), failures
+    assert EXTERNAL_CHANGE_LOG_DEFAULT in failures[0].dumps(), failures
+    assert EXTERNAL_LOG_DEFAULT not in failures[0].dumps(), failures
     assert "change event(s) were counted and dropped" in run["output"]
 
 
 def test_the_central_digest_is_the_central_web_s_own(
-    central_run: dict[str, Any],
+    central_run: Json,
 ) -> None:
     """Where the cross-web digest comes from, and where it goes.
 
@@ -1271,7 +1271,7 @@ def test_a_central_log_without_the_stamp_columns_takes_a_title_only_row() -> Non
     independently".
     """
     run = _run_deploy(central_columns=False)
-    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
 
     central = run["state"]["central"]
     assert central, "the degraded stamps never reached the central log"
@@ -1281,7 +1281,7 @@ def test_a_central_log_without_the_stamp_columns_takes_a_title_only_row() -> Non
     assert "as Title alone" in run["output"]
     assert not [
         f for f in run["summary"]["loggingFailures"]
-        if EXTERNAL_LOG_DEFAULT in json.dumps(f)
+        if EXTERNAL_LOG_DEFAULT in f.dumps()
     ], run["summary"]["loggingFailures"]
 
     assert run["state"]["centralChanges"], (
@@ -1300,7 +1300,7 @@ def test_a_central_log_predating_the_change_columns_drops_the_change_feed() -> N
     it -- are said out loud.
     """
     run = _run_deploy(central_change_columns=False)
-    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
 
     stamps = run["state"]["central"]
     assert stamps, "the stamps never reached the central log"
@@ -1328,7 +1328,7 @@ def test_a_central_log_site_with_no_changes_list_yet_still_takes_the_stamps() ->
     Deployments one that just succeeded beside it.
     """
     run = _run_deploy(central_changes_absent=True)
-    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
 
     stamps = run["state"]["central"]
     assert stamps, "an absent Changes list blocked the Deployments stamps"
@@ -1342,7 +1342,7 @@ def test_a_central_log_site_with_no_changes_list_yet_still_takes_the_stamps() ->
 
     assert not [
         f for f in run["summary"]["loggingFailures"]
-        if EXTERNAL_CHANGE_LOG_DEFAULT in json.dumps(f)
+        if EXTERNAL_CHANGE_LOG_DEFAULT in f.dumps()
     ], "a clean 404 was recorded as a failure rather than logged and carried on"
 
     assert (
@@ -1371,7 +1371,7 @@ def test_a_central_site_with_no_deployments_list_records_the_run_on_the_site() -
         }};
     """)
     run = _run_deploy(overlay=overlay)
-    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
     assert f"has no list '{EXTERNAL_LOG_DEFAULT}'" in run["output"], run["output"][-4000:]
     # A clean absence, not a probe that failed reading a body the 404 never had.
     assert f"'{EXTERNAL_LOG_DEFAULT}' probe failed" not in run["output"], run["output"][-4000:]
@@ -1382,7 +1382,7 @@ def test_a_central_site_with_no_deployments_list_records_the_run_on_the_site() -
 
 
 def test_every_central_row_names_the_application_that_wrote_it(
-    central_run: dict[str, Any],
+    central_run: Json,
 ) -> None:
     """Both central lists hold rows from every firmfooting application.
 
@@ -1391,7 +1391,7 @@ def test_every_central_row_names_the_application_that_wrote_it(
     application to adopt this one's format by convention. A column states it.
     """
     run = central_run
-    central = run["state"]["central"] + run["state"]["centralChanges"]
+    central = run["state"]["central"].rows + run["state"]["centralChanges"].rows
     assert central, "the run wrote no central rows"
     assert all(row.get("Application") == "dbml-sharepoint" for row in central), (
         f"a central row did not name its application: {central}"
@@ -1421,7 +1421,7 @@ def test_the_close_leaves_another_application_row_alone() -> None:
         if row.get("Application") == "formworks"
     ]
     assert foreign, "the fixture seeded no foreign row"
-    assert all(row.get("IsCurrent") is True for row in foreign), (
+    assert all(row.get("IsCurrent").value is True for row in foreign), (
         f"this tool closed another application's row: {foreign}"
     )
 
@@ -1431,9 +1431,9 @@ def test_the_local_close_leaves_another_application_s_current_row() -> None:
     run = _run_deploy(
         seeded_change_rows=True, seeded_local_foreign_application=True, central_absent=True,
     )
-    rows = {r["Id"]: r for r in run["state"]["items"][CHANGE_LOG_TITLE]}
-    assert rows[900]["IsCurrent"] is False, "this application's own row was not closed"
-    assert rows[901]["IsCurrent"] is True, "another application's row was closed"
+    rows = {r["Id"].number: r for r in run["state"]["items"][CHANGE_LOG_TITLE]}
+    assert rows[900]["IsCurrent"].value is False, "this application's own row was not closed"
+    assert rows[901]["IsCurrent"].value is True, "another application's row was closed"
 
 
 def test_the_stamped_deployer_version_is_not_doubled() -> None:
@@ -1465,9 +1465,9 @@ def test_the_stamped_deployer_version_is_not_doubled() -> None:
 # seal that stuck from one that did not.
 
 
-def _sidecar_fields(state: dict[str, Any], title: str) -> list[dict[str, Any]]:
+def _sidecar_fields(state: Json, title: str) -> list[Json]:
     """Every column the run left on one sidecar."""
-    fields = state["fields"].get(title) or []
+    fields = state["fields"].get(title, []).rows
     assert fields, f"'{title}' carries no columns at all, so nothing was sealed"
     return fields
 
@@ -1478,9 +1478,9 @@ def _sidecar_fields(state: dict[str, Any], title: str) -> list[dict[str, Any]]:
 _BUILT_IN_COLUMNS = frozenset({"Title", "ID", "Created", "Modified", "Author", "Editor"})
 
 
-def _sealed_state(state: dict[str, Any], title: str) -> dict[str, bool]:
+def _sealed_state(state: Json, title: str) -> dict[str, bool]:
     return {
-        f["InternalName"]: f.get("Sealed") is True
+        f["InternalName"].text: f.get("Sealed").value is True
         for f in _sidecar_fields(state, title)
     }
 
@@ -1528,7 +1528,7 @@ def test_sealing_off_leaves_the_sidecars_alone() -> None:
     for title in (RUN_LOG_TITLE, CHANGE_LOG_TITLE):
         sealed = _sealed_state(state, title)
         assert not any(sealed.values()), f"'{title}' was sealed without being asked"
-        assert state["lists"][title].get("AllowDeletion") is not False, (
+        assert state["lists"][title].get("AllowDeletion").value is not False, (
             f"'{title}' was locked without being asked"
         )
 
@@ -1539,7 +1539,7 @@ def test_both_sidecars_are_locked_against_deletion() -> None:
     for title in (RUN_LOG_TITLE, CHANGE_LOG_TITLE):
         stored = run["state"]["lists"].get(title)
         assert stored is not None, f"'{title}' was never created"
-        assert stored.get("AllowDeletion") is False, (
+        assert stored.get("AllowDeletion").value is False, (
             f"'{title}' can still be deleted from list settings"
         )
 
@@ -1563,12 +1563,14 @@ def test_a_re_run_over_sealed_sidecars_seals_nothing_again() -> None:
     did not select Sealed read `undefined`, so every re-run MERGEd a seal
     onto every sidecar column that already had one (#574)."""
     run = _run_deploy(central_absent=True, protect=True, rerun=True)
-    first, second = run["calls"][:run["rerun_from"]], run["calls"][run["rerun_from"]:]
+    split = run["rerun_from"].number
+    first, second = run["calls"][:split], run["calls"][split:]
 
-    def seals(calls: list[dict[str, Any]]) -> list[str]:
+    def seals(calls: Json) -> list[str]:
         return [
-            c["url"] for c in calls
-            if c["method"] == "POST" and (c["body"] or {}).get("Sealed") is True
+            c["url"].text for c in calls
+            if c["method"] == "POST" and not c["body"].is_none
+            and c["body"].get("Sealed").value is True
         ]
 
     assert seals(first), "the first run sealed nothing, so the re-run proves nothing"
@@ -1595,7 +1597,7 @@ def test_protecting_the_sidecars_records_no_failure_of_its_own() -> None:
     has finished.
     """
     run = _run_deploy(central_absent=True, protect=True)
-    failures = run["summary"].get("loggingFailures") or []
+    failures = run["summary"].get("loggingFailures", []).rows
     blamed = [f for f in failures if "sealing" in str(f) or "locking" in str(f)]
     assert blamed == [], f"protecting the sidecars failed: {blamed}"
     assert run["unhandled"] == []
@@ -1661,7 +1663,7 @@ def test_a_central_column_missing_from_a_truncated_page_is_a_logging_failure(
         overlay=_truncation(title, _CENTRAL_FIELDS_READ, mode),
     )
     assert "TRUNCATION_INJECTED" in run["output"]
-    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
     failures = [f for f in run["summary"]["loggingFailures"] if f["where"] == where]
     assert len(failures) == 1, run["summary"]["loggingFailures"]
     assert "may be truncated" in failures[0]["error"], failures
@@ -1676,7 +1678,7 @@ def test_central_columns_present_on_a_truncated_page_are_used(mode: str) -> None
     )
     run = _run_deploy(overlay=overlay)
     assert "TRUNCATION_INJECTED" in run["output"]
-    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
     assert run["summary"]["loggingFailures"] == [], run["summary"]["loggingFailures"]
     central = run["state"]["central"]
     assert central, "no stamp reached the central log"
@@ -1696,7 +1698,7 @@ def test_a_stamp_column_missing_from_a_truncated_page_is_not_created(
         central_absent=True, overlay=_truncation(title, _SIDECAR_FIELDS_READ, mode),
     )
     assert "TRUNCATION_INJECTED" in run["output"]
-    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
     creates = [
         c for c in run["calls"]
         if c["method"] == "POST" and c["url"].endswith(f"getbytitle('{title}')/fields")
@@ -1715,9 +1717,9 @@ def test_a_read_back_holding_every_column_on_a_full_page_passes(title: str) -> N
         overlay=_truncation(title, _SIDECAR_FIELDS_READ, "full_page", from_read=2),
     )
     assert "TRUNCATION_INJECTED" in run["output"]
-    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
     assert not [
-        f for f in run["summary"]["loggingFailures"] if title in json.dumps(f)
+        f for f in run["summary"]["loggingFailures"] if title in f.dumps()
     ], run["summary"]["loggingFailures"]
     assert any(
         c["method"] == "POST" and c["url"].endswith(f"getbytitle('{title}')/fields")
@@ -1739,8 +1741,8 @@ def test_the_central_provenance_stamp_names_identities_by_hash_in_details_only()
     provenance = [r for r in run["state"]["central"] if r.get("StampKind") == "provenance"]
     assert len(provenance) == 1, run["state"]["central"]
     row = provenance[0]
-    assert re.search(r"identity: automation \(sha256:[0-9a-f]{12}\)", row["Details"]), row
+    assert re.search(r"identity: automation \(sha256:[0-9a-f]{12}\)", row["Details"].text), row
     assert "identity:" not in row["Title"], row
     # The id only in delimited forms: a bare "41" matches the minute of the timestamp.
     for hidden in ("flows@example.com", "flows", "i:0#.f|membership", "user 41", "(41)"):
-        assert hidden not in json.dumps(row), (hidden, row)
+        assert hidden not in row.dumps(), (hidden, row)

@@ -14,12 +14,14 @@ import importlib.util
 import json
 import sys
 import textwrap
+from collections.abc import Mapping
 from types import ModuleType
-from typing import Any
 
 import pytest
+from _json_view import Json
 from _node import NODE, run_node
 from _paths import MANUAL
+from _probe_runs import catalogued_dependents
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
@@ -63,16 +65,16 @@ def _load_renderer() -> ModuleType:
     return module
 
 
-def _rows(output: str) -> dict[str, dict[str, str]]:
+def _rows(output: str) -> dict[str, Json]:
     line = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
     assert line is not None, f"no result table was printed:\n{output[-3000:]}"
-    return {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+    return {row["id"].text: row for row in Json.loads(line.removeprefix("__ROWS__"))}
 
 
-def _sent(output: str) -> list[dict[str, str]]:
+def _sent(output: str) -> list[Json]:
     line = next((ln for ln in output.splitlines() if ln.startswith("__SENT__")), None)
     assert line is not None, f"no request log was printed:\n{output[-3000:]}"
-    return list(json.loads(line.removeprefix("__SENT__")))
+    return Json.loads(line.removeprefix("__SENT__")).rows
 
 
 # --------------------------------------------------------------------------
@@ -88,7 +90,7 @@ DATE_TIME_DECLARED = "{ TypeAsString: 'DateTime', DisplayFormat: 1 }"
 
 def _run_helper(
     read: str, declared: str = DATE_TIME_DECLARED,
-) -> tuple[bool, dict[str, dict[str, str]]]:
+) -> tuple[bool, dict[str, Json]]:
     """Call establishFixture once, with `read` as the body of its read function."""
     harness = _load_renderer()._env().get_template("_probe_harness.js.j2").render()
     script = (
@@ -107,10 +109,12 @@ def _run_helper(
     )
     output = run_node(script)
     held_line = next(ln for ln in output.splitlines() if ln.startswith("__HELD__"))
-    return json.loads(held_line.removeprefix("__HELD__")), _rows(output)
+    held = Json.loads(held_line.removeprefix("__HELD__")).value
+    assert isinstance(held, bool), held
+    return held, _rows(output)
 
 
-def _assert_voided(rows: dict[str, dict[str, str]], named: str) -> None:
+def _assert_voided(rows: dict[str, Json], named: str) -> None:
     fixture = rows[FIXTURE]
     assert fixture["outcome"] == "FAIL", fixture
     assert named in fixture["evidence"], fixture
@@ -233,10 +237,10 @@ def _probe_js(name: str, gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"))
 
 def _run_probe(
     mock: str,
-    config: dict[str, Any],
+    config: Mapping[str, object],
     name: str,
     gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"),
-) -> tuple[dict[str, dict[str, str]], list[dict[str, str]]]:
+) -> tuple[dict[str, Json], list[Json]]:
     script = (
         WINDOW + _RESPONSES + mock.replace("__CONFIG__", json.dumps(config))
         + "\n" + _probe_js(name, gates)
@@ -245,16 +249,13 @@ def _run_probe(
     return _rows(output), _sent(output)
 
 
-def _void_ids(rows: dict[str, dict[str, str]]) -> set[str]:
+def _void_ids(rows: dict[str, Json]) -> set[str]:
     return {row_id for row_id, row in rows.items() if row["state"] == "void"}
 
 
 def _catalogued_dependents(probe: str, fixture: str) -> set[str]:
     """The findings probe-catalog.json says `fixture` gates, so runtime and catalogue agree."""
-    catalog = json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
-    [entry] = [p for p in catalog["probes"] if p["file"] == probe]
-    return {finding["id"] for scenario in entry["scenarios"] for finding in scenario["findings"]
-            if fixture in finding["depends_on"]}
+    return catalogued_dependents(probe, fixture)
 
 
 #: The scratch list the today-semantics probe leaves, with the columns the two
@@ -357,12 +358,14 @@ _FIXTURE_DM = "formula.validation.fixture-dm-date-only-column"
 _FIXTURE_WM = "formula.validation.fixture-wm-date-time-column"
 
 
-def _item_writes(sent: list[dict[str, str]]) -> list[dict[str, str]]:
+def _item_writes(sent: list[Json]) -> list[Json]:
     return [r for r in sent if r["verb"] == "POST" and r["path"].endswith("/items")]
 
 
 @pytest.mark.parametrize("columns", [{}, _SCRATCH_COLUMNS], ids=["created", "reused"])
-def test_modified_clock_measures_on_date_columns_it_read_back(columns: dict[str, Any]) -> None:
+def test_modified_clock_measures_on_date_columns_it_read_back(
+    columns: Mapping[str, object],
+) -> None:
     """The control: created or reused, columns of the declared shape void nothing."""
     rows, sent = _run_probe(_SCRATCH_MOCK, {"fields": columns}, "modified-clock-probe.js")
 
@@ -426,7 +429,7 @@ _LIST_ALL = {*_LIST_RULE, *_LIST_DM, *_LIST_UPDATE, _SEED,
     ids=["required", "defaulted", "formula-defaulted", "read-only", "unique"],
 )
 def test_modified_clock_voids_the_rows_on_a_reused_column_that_is_not_optional(
-    shape: dict[str, Any],
+    shape: Mapping[str, object],
 ) -> None:
     """Each save names one column, so a required or defaulted other column skews every row."""
     columns = {**_SCRATCH_COLUMNS, "DC": {**_DATE, **shape}}
@@ -641,7 +644,7 @@ _TIME_OF_DAY = {
     ids=["created", "reused"],
 )
 def test_datetime_sentinel_measures_on_a_date_time_column_it_read_back(
-    fields: dict[str, Any],
+    fields: Mapping[str, object],
 ) -> None:
     rows, sent = _run_probe(_SENTINEL_MOCK, {"fields": fields}, "datetime-sentinel-probe.js")
 
@@ -799,7 +802,7 @@ _THRESHOLD_MOCK = textwrap.dedent("""
     };
 """)
 
-_THRESHOLD_HEALTHY: dict[str, Any] = {
+_THRESHOLD_HEALTHY: dict[str, object] = {
     "itemCount": 5001, "newestBig": 5001, "countStatus": None, "resumeStatus": None,
 }
 _COUNT = "library.index.fixture-file-count"
@@ -819,7 +822,7 @@ _COUNT_DEPENDENTS = {
 _BUILD = ("CONFIRMED", "ALLOW_WRITES", "BUILD_FIXTURE")
 
 
-def _filters(sent: list[dict[str, str]]) -> list[dict[str, str]]:
+def _filters(sent: list[Json]) -> list[Json]:
     return [r for r in sent if "$filter=" in r["path"]]
 
 
@@ -938,7 +941,7 @@ _NOCT_LIB = "dbmlsp Probe Folder NoCT"
      _NOCT_LIB: {"BaseTemplate": 101, "ContentTypesEnabled": False}},
 ], ids=["created", "reused"])
 def test_folder_create_refusal_measures_on_libraries_it_read_back(
-    lists: dict[str, Any],
+    lists: Mapping[str, object],
 ) -> None:
     rows, _ = _run_probe(_FOLDER_MOCK, {"lists": lists}, "folder-create-refusal-probe.js")
 
@@ -955,7 +958,7 @@ def test_folder_create_refusal_measures_on_libraries_it_read_back(
      _NOCT_LIB: {"BaseTemplate": 101, "ContentTypesEnabled": True}},
 ], ids=["generic-list", "content-types-on"])
 def test_folder_create_refusal_voids_the_cells_on_a_reused_list_of_the_wrong_shape(
-    lists: dict[str, Any],
+    lists: Mapping[str, object],
 ) -> None:
     rows, sent = _run_probe(_FOLDER_MOCK, {"lists": lists}, "folder-create-refusal-probe.js")
 

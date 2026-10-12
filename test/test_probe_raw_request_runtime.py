@@ -9,10 +9,11 @@ import importlib.util
 import json
 import sys
 import textwrap
+from collections.abc import Mapping
 from types import ModuleType
-from typing import Any
 
 import pytest
+from _json_view import Json
 from _node import NODE, run_node
 from _paths import MANUAL
 
@@ -50,7 +51,7 @@ def _load_renderer() -> ModuleType:
     return module
 
 
-def _run(expression: str, **config: Any) -> Any:
+def _run(expression: str, **config: object) -> Json:
     """Evaluate `expression` inside a probe body holding the harness and the partial."""
     env = _load_renderer()._env()
     harness = env.get_template("_probe_harness.js.j2").render()
@@ -67,7 +68,7 @@ def _run(expression: str, **config: Any) -> Any:
     output = run_node(script)
     line = next((ln for ln in output.splitlines() if ln.startswith("__OUT__")), None)
     assert line is not None, output[-2000:]
-    return json.loads(line.removeprefix("__OUT__"))
+    return Json.loads(line.removeprefix("__OUT__"))
 
 
 def test_a_json_answer_keeps_the_text_the_parse_and_the_date_header() -> None:
@@ -80,19 +81,19 @@ def test_a_json_answer_keeps_the_text_the_parse_and_the_date_header() -> None:
 def test_a_text_answer_is_kept_with_no_parse() -> None:
     out = _run("sendRaw('web/x')", text="<html>sign in</html>")
 
-    assert out["parsed"] is None
+    assert out["parsed"].value is None
     assert out["text"] == "<html>sign in</html>"
 
 
 def test_a_request_that_never_answered_is_a_result_not_a_throw() -> None:
     out = _run("sendRaw('web/x')", reject=True)
 
-    assert out["status"] is None
+    assert out["status"].value is None
     assert out["text"] == "no response: Failed to fetch"
 
 
 def test_a_2xx_has_no_head_so_the_payload_decides() -> None:
-    assert _run("rawHead(await sendRaw('web/x'))", text="{}") is None
+    assert _run("rawHead(await sendRaw('web/x'))", text="{}").is_none
 
 
 def test_a_refusal_heads_refused_and_quotes_the_text_without_the_tenant() -> None:
@@ -120,7 +121,7 @@ def test_an_escaped_origin_and_a_bare_host_are_redacted(text: str, said: str) ->
     out = _run("rawHead(await sendRaw('web/x'))", status=500, text=text)
 
     assert out["why"] == f"HTTP 500: {said}"
-    assert "example.sharepoint.com" not in json.dumps(out).lower()
+    assert "example.sharepoint.com" not in out.dumps().lower()
 
 
 @pytest.mark.parametrize(
@@ -153,7 +154,7 @@ def test_an_unanswered_request_heads_not_established() -> None:
     ],
     ids=["verbose", "nometadata"],
 )
-def test_the_digest_is_read_in_either_envelope(answer: dict[str, Any]) -> None:
+def test_the_digest_is_read_in_either_envelope(answer: Mapping[str, object]) -> None:
     out = _run("(await issueDigest()).digest", text=json.dumps(answer))
 
     assert out == "digest"
@@ -164,5 +165,5 @@ def test_the_digest_is_read_in_either_envelope(answer: dict[str, Any]) -> None:
     [{"status": 403, "text": "denied"}, {"reject": True}, {"text": "{}"}],
     ids=["denied", "no-response", "no-digest"],
 )
-def test_no_digest_is_null_rather_than_a_throw(config: dict[str, Any]) -> None:
-    assert _run("(await issueDigest()).digest", **config) is None
+def test_no_digest_is_null_rather_than_a_throw(config: Mapping[str, object]) -> None:
+    assert _run("(await issueDigest()).digest", **config).is_none

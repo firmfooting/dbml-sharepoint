@@ -7,9 +7,10 @@ ahead of UTC, so a Created just after UTC midnight falls on the same local date.
 
 import json
 import textwrap
-from typing import Any
+from collections.abc import Mapping
 
 import pytest
+from _json_view import Json
 from _node import NODE, run_node
 from _paths import MANUAL
 
@@ -129,8 +130,8 @@ def _probe_js(gates: tuple[str, ...]) -> str:
 
 
 def _run(
-    gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: Any,
-) -> tuple[dict[str, dict[str, str]], list[dict[str, str]], str]:
+    gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: object,
+) -> tuple[dict[str, Json], list[dict[str, str]], str]:
     settings = {"list": None, "created": "2026-09-28T15:30:00Z",
                 "calcDue": "2026-10-12T14:00:00Z", **config}
     output = run_node(_MOCK.replace("__CONFIG__", json.dumps(settings)) + "\n" + _probe_js(gates))
@@ -350,7 +351,7 @@ def test_a_column_of_another_type_fails_on_its_type_not_on_a_refused_select() ->
     ({"reject": True}, "no response: Failed to fetch"),
 ], ids=["refused", "no-response"])
 def test_a_column_read_that_fails_keeps_its_answer_in_the_fixture_evidence(
-    rule: dict[str, Any], said: str,
+    rule: Mapping[str, object], said: str,
 ) -> None:
     rows, sent, _ = _run(rules=[{"contains": FIELD_READ, **rule}])
 

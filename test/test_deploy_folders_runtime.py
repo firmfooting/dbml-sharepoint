@@ -11,9 +11,10 @@ Node is required; the module skips without it.
 
 import json
 import textwrap
-from typing import Any
+from collections.abc import Mapping, Sequence
 
 import pytest
+from _json_view import Json
 from _node import NODE, run_node
 
 from dbml_sharepoint.analysis.phases import phase_number
@@ -176,7 +177,7 @@ def _render_phase() -> str:
     })
 
 
-def _run_phase(state: dict[str, Any], lists: list[dict[str, Any]]) -> dict[str, Any]:
+def _run_phase(state: Mapping[str, object], lists: Sequence[Mapping[str, object]]) -> Json:
     script = (
         f"const STATE = {json.dumps(state)};\n"
         f"const SCHEMA = {json.dumps({'lists': lists})};\n"
@@ -190,16 +191,16 @@ def _run_phase(state: dict[str, Any], lists: list[dict[str, Any]]) -> dict[str, 
     )
     output = run_node(script)
     line = next(ln for ln in output.splitlines() if ln.startswith("__RESULT__"))
-    result = json.loads(line.removeprefix("__RESULT__"))
-    assert isinstance(result, dict), result
+    result = Json.loads(line.removeprefix("__RESULT__"))
+    assert result.is_object, result
     return result
 
 
-def _library(*folders: str) -> dict[str, Any]:
+def _library(*folders: str) -> dict[str, object]:
     return {"title": "APP_Doc", "is_library": True, "folders": list(folders)}
 
 
-def _state(**overrides: Any) -> dict[str, Any]:
+def _state(**overrides: object) -> dict[str, object]:
     return {
         "root": _ROOT, "existing": [], "filesNamed": [], "rootMissing": False,
         "refuseCreate": False, "vanishAfterCreate": False, "createdAsFile": False,
@@ -219,7 +220,7 @@ _RULE = '=NOT(ISBLANK([Division]))'
 _RULE_MESSAGE = 'A division is required.'
 
 
-def _guarded(**overrides: Any) -> dict[str, Any]:
+def _guarded(**overrides: object) -> dict[str, object]:
     return _state(
         validationFormula=_RULE, validationMessage=_RULE_MESSAGE, **overrides,
     )
@@ -444,7 +445,7 @@ def test_folder_shape_is_scoped_to_root_across_all_pages(root_type: int | None) 
         {"FileSystemObjectType": kind, "FileRef": f"{root}/Nested{index}/{name}"}
         for index, kind in enumerate([0, 1, 1, 0])
     ]
-    matches = [] if root_type is None else [
+    matches: list[dict[str, object]] = [] if root_type is None else [
         {"FileSystemObjectType": root_type, "FileRef": f"{root}/{name}"},
     ]
     result = _run_phase(_state(
@@ -476,7 +477,7 @@ def test_folder_shape_is_scoped_to_root_across_all_pages(root_type: int | None) 
         {"FileSystemObjectType": 1, "FileRef": f"{_ROOT}/Field operations"},
     ]}}],
 ])
-def test_folder_collision_diagnosis_rejects_unreadable_later_pages(later_page: Any) -> None:
+def test_folder_collision_diagnosis_rejects_unreadable_later_pages(later_page: object) -> None:
     next_url = "https://example.sharepoint.com/sites/test/_api/page2"
     result = _run_phase(_guarded(
         refuseCreate=True, firstShapePage=[200, {"d": {"results": [
@@ -493,7 +494,7 @@ def test_folder_collision_diagnosis_rejects_unreadable_later_pages(later_page: A
 
 
 def test_folder_shape_refuses_a_collection_exceeding_the_page_limit() -> None:
-    pages = {
+    pages: dict[str, list[object]] = {
         f"https://example.sharepoint.com/sites/test/_api/page{index}": [200, {"d": {
             "results": [],
             "__next": f"https://example.sharepoint.com/sites/test/_api/page{index + 1}",
@@ -530,7 +531,9 @@ def test_folder_paths_work_when_unindexed_queries_are_throttled(existing: bool) 
 @pytest.mark.parametrize("payload", [None, [], 7, "bad", {}, {"Exists": "true"},
                                      {"Exists": True, "ServerRelativeUrl": "/wrong"},
                                      {"FileSystemObjectType": 1, "FileRef": "/wrong"}])
-def test_malformed_folder_path_reads_do_not_allow_writes(property_name: str, payload: Any) -> None:
+def test_malformed_folder_path_reads_do_not_allow_writes(
+    property_name: str, payload: object,
+) -> None:
     result = _run_phase(_guarded(
         existing=["Field operations"], **{property_name: payload},
     ), [_library("Field operations")])

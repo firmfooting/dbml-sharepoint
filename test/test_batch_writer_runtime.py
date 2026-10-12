@@ -29,9 +29,9 @@ Node is required; the tests skip without it rather than failing.
 
 import json
 import textwrap
-from typing import Any
 
 import pytest
+from _json_view import Json
 from _node import NODE
 from _node import run_node as _run
 from _paths import FIXTURES
@@ -148,8 +148,8 @@ _HARNESS = textwrap.dedent("""
 
 
 def _run_batch(
-    responses: dict[str, list[dict[str, Any]]], body: str,
-) -> dict[str, Any]:
+    responses: dict[str, list[dict[str, object]]], body: str,
+) -> Json:
     script = (
         f"const RESPONSES_JSON = {json.dumps(json.dumps(responses))};\n"
         f"const ORIGIN = {json.dumps(ORIGIN)};\n"
@@ -163,8 +163,7 @@ def _run_batch(
     output = _run(script)
     line = next((x for x in output.splitlines() if x.startswith("__OUT__")), None)
     assert line is not None, f"the BatchWriter never returned:\n{output[-4000:]}"
-    result: dict[str, Any] = json.loads(line.removeprefix("__OUT__"))
-    return result
+    return Json.loads(line.removeprefix("__OUT__"))
 
 
 def _multipart_response(statuses: list[int]) -> str:
@@ -356,7 +355,7 @@ def test_the_body_budget_is_a_constructor_option() -> None:
     The same eight operations go out as one request on the default budget, so
     the split below is the option taking effect and not the size of the work.
     """
-    def sweep(options: str) -> dict[str, Any]:
+    def sweep(options: str) -> Json:
         return _run_batch(
             {BATCH_URL: [{"status": 200, "echo": True}]},
             f"""
@@ -403,10 +402,10 @@ def test_a_partly_refused_batch_is_an_error_naming_both_counts() -> None:
         """,
     )
     assert result["threw"], "a batch with three failed parts reported success"
-    assert result["batchFailure"] is True
+    assert result["batchFailure"].value is True
     assert (result["landed"], result["refused"], result["sent"]) == (2, 3, 5)
     assert result["statuses"] == [201, 500, 201, 500, 500]
-    assert result["throttled"] is False, "a 500 is a refusal, not a throttle"
+    assert result["throttled"].value is False, "a 500 is a refusal, not a throttle"
     assert "2 landed, 3 refused" in result["message"], result["message"]
     assert "201, 500, 201, 500, 500" in result["message"], result["message"]
     assert result["logged"] >= 1, (
@@ -438,7 +437,7 @@ def test_a_throttle_inside_the_envelope_is_reported_as_a_throttle() -> None:
         """,
     )
     assert result["threw"]
-    assert result["throttled"] is True
+    assert result["throttled"].value is True
     assert (result["landed"], result["refused"]) == (1, 2)
 
 
@@ -464,7 +463,7 @@ def test_a_throttled_outer_request_is_reported_as_a_throttle() -> None:
         """,
     )
     assert result["threw"], "a throttled $batch reported success"
-    assert result["throttled"] is True, (
+    assert result["throttled"].value is True, (
         "the throttling-page redirect was reported as a generic failure, so "
         "the surrounding phase cannot pace"
     )
@@ -675,9 +674,9 @@ def test_a_refused_query_part_fails_the_whole_read() -> None:
         """,
     )
     assert result["threw"], "a read batch with a 404 part answered as a clean read"
-    assert result["batchFailure"] is True
+    assert result["batchFailure"].value is True
     assert (result["sent"], result["answered"], result["refused"]) == (2, 1, 1)
-    assert result["throttled"] is False, "a 404 is a refusal, not a throttle"
+    assert result["throttled"].value is False, "a 404 is a refusal, not a throttle"
     assert "query part(s)" in result["message"], result["message"]
     assert "1 answered, 1 refused" in result["message"], result["message"]
     assert "200, 404" in result["message"], result["message"]
@@ -763,7 +762,7 @@ def test_a_throttled_read_is_reported_as_a_throttle() -> None:
         """,
     )
     assert result["threw"], "a throttled read batch answered as a clean read"
-    assert result["throttled"] is True
+    assert result["throttled"].value is True
     assert result["answered"] == 0
     assert "query part(s)" in result["message"], result["message"]
 

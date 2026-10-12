@@ -7,9 +7,10 @@ or served empty, which are the three answers the probe exists to tell apart.
 
 import json
 import textwrap
-from typing import Any
+from collections.abc import Mapping
 
 import pytest
+from _json_view import Json
 from _node import NODE, run_node
 from _paths import MANUAL
 
@@ -157,8 +158,8 @@ def _probe_js(gates: tuple[str, ...]) -> str:
 
 
 def _run(
-    gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: Any,
-) -> tuple[dict[str, dict[str, str]], list[dict[str, str]], str]:
+    gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: object,
+) -> tuple[dict[str, Json], list[dict[str, str]], str]:
     settings = {"list": None, "calc": "served", **config}
     output = run_node(_MOCK.replace("__CONFIG__", json.dumps(settings)) + "\n" + _probe_js(gates))
     sent_line = next(ln for ln in output.splitlines() if ln.startswith("__SENT__"))
@@ -285,7 +286,7 @@ def test_a_failed_date_control_voids_only_the_subjects_sharing_its_operator(
      {"query.odata.calc-over-created-le-datetime-filter"}),
 ], ids=["ne-null", "le-datetime"])
 def test_a_control_not_established_leaves_its_subjects_open_and_unasked(
-    rule: dict[str, Any], said: str, control: str, sent: str, dependents: set[str],
+    rule: Mapping[str, object], said: str, control: str, sent: str, dependents: set[str],
 ) -> None:
     rows, requests, _ = _run(rules=[{"contains": sent, **rule}])
 
@@ -472,7 +473,7 @@ def test_a_stored_column_is_read_without_the_calculated_only_properties() -> Non
     ({"reject": True}, "no response: Failed to fetch"),
 ], ids=["refused", "no-response"])
 def test_a_field_read_that_fails_keeps_its_answer_in_the_fixture_evidence(
-    rule: dict[str, Any], said: str,
+    rule: Mapping[str, object], said: str,
 ) -> None:
     rows, sent, _ = _run(rules=[{"contains": "getbyinternalnameortitle('ProbeChoice')",
                                  "verb": "GET", **rule}])

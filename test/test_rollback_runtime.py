@@ -13,9 +13,10 @@ is not a dependency of the package.
 
 import json
 import textwrap
-from typing import Any
+from collections.abc import Mapping
 
 import pytest
+from _json_view import Json
 from _model import as_library
 from _node import NODE
 from _node import run_node as _run
@@ -260,7 +261,7 @@ def _listing(
     description: str | None = "",
     count: int | None = None,
     list_id: str = _ID,
-    after_prompt: dict[str, Any] | None = None,
+    after_prompt: Mapping[str, object] | None = None,
     after_delete: str | None = None,
     allow_deletion: bool = True,
     delete_status: int | None = None,
@@ -268,7 +269,7 @@ def _listing(
     allow_deletion_read_fails_at: int | None = None,
     discard_relock: bool = False,
     recycle_fails_after: int | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """One list's live state. `description=None` means unreadable.
 
     `after_prompt` replaces `id` and/or `description` on every ownership read
@@ -296,7 +297,7 @@ def _listing(
     """
     if ours and description is not None:
         description = f"{_MARKER[list_title]} {description}".strip()
-    state: dict[str, Any] = {
+    state: dict[str, object] = {
         "count": len(titles) if count is None else count,
         "description": description,
         "id": list_id,
@@ -320,23 +321,23 @@ def _listing(
     return state
 
 
-def _tag(line: str, marker: str) -> Any:
-    return json.loads(line.removeprefix(marker))
+def _tag(line: str, marker: str) -> Json:
+    return Json.loads(line.removeprefix(marker))
 
 
 def _rollback(
-    lists: dict[str, dict[str, Any]],
+    lists: dict[str, dict[str, object]],
     answers: list[str] | None = None,
     paged_titles: list[str] | None = None,
     fail_second_page: bool = False,
     js: str | None = None,
-) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
+) -> tuple[Json, list[Json], list[str]]:
     """Run rollback.js against the mock and return (summary, calls, prompts)."""
     return _parse(_rollback_output(lists, answers, paged_titles, fail_second_page, js))
 
 
 def _rollback_output(
-    lists: dict[str, dict[str, Any]],
+    lists: dict[str, dict[str, object]],
     answers: list[str] | None = None,
     paged_titles: list[str] | None = None,
     fail_second_page: bool = False,
@@ -374,7 +375,7 @@ def _rollback_output(
     return _run(script)
 
 
-def _parse(output: str) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
+def _parse(output: str) -> tuple[Json, list[Json], list[str]]:
     """The three JSON markers out of one run's output."""
     lines = output.splitlines()
     found = {
@@ -389,8 +390,8 @@ def _parse(output: str) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]
     assert result_line is not None and calls_line is not None and prompts_line is not None
     return (
         _tag(result_line, "__RESULT__"),
-        _tag(calls_line, "__CALLS__"),
-        _tag(prompts_line, "__PROMPTS__"),
+        _tag(calls_line, "__CALLS__").rows,
+        _tag(prompts_line, "__PROMPTS__").strings,
     )
 
 
@@ -398,17 +399,17 @@ def _non_empty_prompts(prompts: list[str]) -> list[str]:
     return [p for p in prompts if "DELETE NON-EMPTY" in p]
 
 
-def _writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _writes(calls: list[Json]) -> list[Json]:
     """Every request that changes the site. The digest POST changes nothing."""
     return [c for c in calls if c["method"] == "POST" and "contextinfo" not in c["url"]]
 
 
-def _recycles(calls: list[dict[str, Any]]) -> list[str]:
-    return [c["url"] for c in calls if "/recycle()" in c["url"]]
+def _recycles(calls: list[Json]) -> list[str]:
+    return [c["url"].text for c in calls if "/recycle()" in c["url"]]
 
 
-def _skips(summary: dict[str, Any]) -> dict[str, str]:
-    return {row["list"]: row["reason"] for row in summary["skipped"]}
+def _skips(summary: Json) -> dict[str, str]:
+    return {row["list"].text: row["reason"].text for row in summary["skipped"]}
 
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -755,7 +756,7 @@ def test_a_list_refused_at_the_prompt_is_never_rechecked() -> None:
     assert len(reads) == 1, f"asked {len(reads)} times, expected 1"
 
 
-def _allow_deletion_writes(calls: list[dict[str, Any]], want: bool) -> list[int]:
+def _allow_deletion_writes(calls: list[Json], want: bool) -> list[int]:
     """Where in the run each AllowDeletion MERGE sits."""
     return [
         i for i, c in enumerate(calls)
@@ -953,7 +954,7 @@ def test_a_drain_that_fails_part_way_still_reports_what_it_recycled() -> None:
 
 @pytest.mark.parametrize("continuation", [False, 0, True, 1, [], {}])
 def test_malformed_list_continuation_never_publishes_partial_catalogue(
-    continuation: Any, monkeypatch: pytest.MonkeyPatch,
+    continuation: object, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     harness = _HARNESS.replace(
         "const d = { results };",
@@ -971,7 +972,7 @@ def test_malformed_list_continuation_never_publishes_partial_catalogue(
 
 @pytest.mark.parametrize("continuation", [None, ""])
 def test_valid_rollback_terminators_preserve_non_empty_confirmation(
-    continuation: Any, monkeypatch: pytest.MonkeyPatch,
+    continuation: object, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     harness = _HARNESS.replace(
         "const d = { results };",
@@ -1016,7 +1017,7 @@ def test_an_item_read_without_results_is_not_a_drained_list() -> None:
     "count", ["absent", None, "3", 2.5, -1],
     ids=["absent", "null", "string", "fraction", "negative"],
 )
-def test_a_target_whose_item_count_is_not_a_count_is_not_deleted(count: Any) -> None:
+def test_a_target_whose_item_count_is_not_a_count_is_not_deleted(count: object) -> None:
     """Read as zero, the prompt told the operator the list was empty while
     asking them to authorise its deletion (#727)."""
     listing = _listing("APP_Task", ["Record"])

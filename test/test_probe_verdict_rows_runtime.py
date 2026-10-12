@@ -8,9 +8,9 @@ mock so the mock itself keeps encoding only what a live run returns.
 
 import json
 import textwrap
-from typing import Any
 
 import pytest
+from _json_view import Json
 from _node import NODE, run_node
 from test_probe_fixture_high_runtime import (
     _BY_FOLDER,
@@ -136,11 +136,11 @@ _SCOPE_MERGE = "library.view.scope-on-merge-reads-back"
 _SCOPE_MERGE_VIEW = "dbmlsp guards scope merge"
 
 
-def _scope_merges(sent: list[dict[str, str]]) -> list[dict[str, str]]:
+def _scope_merges(sent: list[Json]) -> list[Json]:
     return [r for r in sent if r["verb"] == "MERGE" and _SCOPE_MERGE_VIEW in r["path"]]
 
 
-def _guards_reusing(scope: int) -> dict[str, Any]:
+def _guards_reusing(scope: int) -> dict[str, object]:
     views = {_SCOPE_MERGE_VIEW: {"Scope": scope}}
     return {"existing": {_GUARDS_LIB: {"template": 101, "views": views}}}
 
@@ -185,7 +185,7 @@ _CALC = "library.column.calculated-column-on-library"
 _RULE = "library.validation.validation-formula-on-library"
 
 
-def _run_lib_cols(wrapper: str = "", **changes: Any) -> dict[str, dict[str, str]]:
+def _run_lib_cols(wrapper: str = "", **changes: object) -> dict[str, Json]:
     config = json.loads(json.dumps(_LIB_COLS_HEALTHY))
     config.update(changes)
     harness = _LIB_COLS_HARNESS.replace("__CONFIG__", json.dumps(config))
@@ -281,7 +281,7 @@ def _with_decoys(names: list[str]) -> str:
     """)
 
 
-def _item_merges(sent: list[dict[str, str]]) -> list[dict[str, str]]:
+def _item_merges(sent: list[Json]) -> list[Json]:
     return [r for r in sent if r["verb"] == "MERGE" and "/items(" in r["path"]]
 
 
