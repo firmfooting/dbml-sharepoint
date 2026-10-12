@@ -6,6 +6,7 @@ import datetime as dt
 import pytest
 from _conditions import kinds
 from _findings import messages, none_of, only
+from _narrow import as_dict
 from _paths import MANUAL
 
 from dbml_sharepoint.analysis import condition_rendering as rendering
@@ -718,7 +719,7 @@ def test_a_zoned_unquoted_yaml_datetime_is_refused_showing_the_zone_as_read() ->
     """The refusal shows the value with `!r`, zone and all. ruamel.yaml names
     the zone `Z` as written, and the loader keeps the unnamed UTC that PyYAML
     read, so the words are the ones this refusal has always had (#686)."""
-    value = _yaml.safe_load("v: 2026-07-29T14:30:00Z\n")["v"]
+    value = as_dict(_yaml.safe_load("v: 2026-07-29T14:30:00Z\n"))["v"]
     condition = parse_condition(
         [{"field": "OccurredAt", "op": "leq", "value": value}], "ctx",
     )

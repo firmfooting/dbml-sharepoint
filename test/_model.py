@@ -33,7 +33,7 @@ alias when a test needs both, as `test_model_contract.py` does.
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, TypedDict, Unpack
+from typing import TypedDict, Unpack
 
 from dbml_sharepoint.model.mapping_types import (
     BlankDefault,
@@ -49,6 +49,7 @@ from dbml_sharepoint.model.mapping_types import (
     Governance,
     IdentityDeclaration,
     ItemSecurity,
+    ItemSecurityOverride,
     ListValidation,
     Mapping,
     MappingBundle,
@@ -59,6 +60,7 @@ from dbml_sharepoint.model.mapping_types import (
     RetiredColumn,
     RetirementStrip,
     Versioning,
+    VersioningOverride,
     ViewDef,
     WatchedList,
 )
@@ -211,9 +213,9 @@ class MappingSections(TypedDict, total=False):
     prefix_owner: str
     cross_site_reference_columns: list[CrossSiteRef]
     versioning_default: Versioning
-    versioning_overrides: dict[str, dict[str, Any]]
+    versioning_overrides: dict[str, VersioningOverride]
     item_security_default: ItemSecurity
-    item_security_overrides: dict[str, dict[str, Any]]
+    item_security_overrides: dict[str, ItemSecurityOverride]
     enum_sources: dict[str, Path]
     watched_lists: list[WatchedList]
     polymorphic_patterns: list[PolymorphicPattern]
@@ -234,8 +236,8 @@ class MappingSections(TypedDict, total=False):
     display_name_mode: str | None
     display_name_overrides: dict[str, dict[str, str]]
     reporting: ReportingOptions
-    column_style_specs: dict[str, dict[str, dict[str, Any]]]
-    column_formatting: dict[str, dict[str, dict[str, Any]]]
+    column_style_specs: dict[str, dict[str, dict[str, object]]]
+    column_formatting: dict[str, dict[str, dict[str, object]]]
     form_formatting: dict[str, FormFormatting]
     list_validation: dict[str, ListValidation]
     retired_columns: dict[str, dict[str, RetiredColumn]]
@@ -315,7 +317,7 @@ def bundle(
     enum_choices: dict[str, list[str]] | None = None,
     retention_policies: dict[str, RetentionPolicy] | None = None,
     retention_list_defaults: dict[str, str] | None = None,
-    extension_configs: dict[str, dict[str, Any]] | None = None,
+    extension_configs: dict[str, dict[object, object]] | None = None,
     source_paths: dict[str, Path] | None = None,
     governance: Governance | None = None,
     **sections: Unpack[MappingSections],

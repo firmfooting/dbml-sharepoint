@@ -9,20 +9,19 @@ formatter. Raw specs are kept for the validator's enum-map checks.
 """
 
 from pathlib import Path
-from typing import Any
 
 from dbml_sharepoint.analysis import styles
 from dbml_sharepoint.model._keys import _known_keys, _require_mapping
 from dbml_sharepoint.model.errors import MappingShapeError
 from dbml_sharepoint.model.mapping_types import FormFormatting
 from dbml_sharepoint.model.reading import load_json_value
-from dbml_sharepoint.model.sections.context import SectionContext
+from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 
 
-def read(sc: SectionContext) -> dict[str, Any]:
+def read(sc: SectionContext) -> LoadedFields:
     style_theme = styles.parse_theme(sc.block("style_theme"), "style_theme")
-    column_formatting: dict[str, dict[str, dict[str, Any]]] = {}
-    column_style_specs: dict[str, dict[str, dict[str, Any]]] = {}
+    column_formatting: dict[str, dict[str, dict[str, object]]] = {}
+    column_style_specs: dict[str, dict[str, dict[str, object]]] = {}
     for cf_entity, cf_cols in _require_mapping(
         sc.block("column_formatting"), "column_formatting",
     ).items():
@@ -53,7 +52,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
     }
 
 
-def _parse_form_formatting(base_dir: Path, parts: Any, context: str) -> FormFormatting:
+def _parse_form_formatting(base_dir: Path, parts: object, context: str) -> FormFormatting:
     if not isinstance(parts, dict):
         raise MappingShapeError(f"{context}: expected a mapping of header/body/footer parts")
     declared = _known_keys(parts, {"header", "body", "footer"}, context)

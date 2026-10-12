@@ -999,7 +999,8 @@ def build_schema_json(
                 parts["headerJSONFormatter"] = declared_form.header
             if declared_form.body is not None:
                 body = copy.deepcopy(declared_form.body)
-                for section in body.get("sections") or []:
+                sections = body.get("sections")
+                for section in sections if isinstance(sections, list) else ():
                     if isinstance(section, dict) and isinstance(section.get("fields"), list):
                         names: list[object] = section["fields"]
                         # The validator has refused a non-string entry; str() narrows the type.

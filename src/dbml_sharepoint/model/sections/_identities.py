@@ -5,18 +5,17 @@ Shape only. Whether a name or a kind is acceptable is the validator's call
 fault at once rather than the first one the loader meets.
 """
 
-from typing import Any
 
 from dbml_sharepoint.model._keys import _known_keys, _require_mapping
 from dbml_sharepoint.model.errors import MappingShapeError
 from dbml_sharepoint.model.mapping_types import IdentityDeclaration
 from dbml_sharepoint.model.reading import optional_str_list, require_str
-from dbml_sharepoint.model.sections.context import SectionContext
+from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 
 _IDENTITY_KEYS = frozenset({"description", "kinds"})
 
 
-def read(sc: SectionContext) -> dict[str, Any]:
+def read(sc: SectionContext) -> LoadedFields:
     raw = _require_mapping(sc.block("identities"), "identities")
     declared: dict[str, IdentityDeclaration] = {}
     for name, spec in raw.items():

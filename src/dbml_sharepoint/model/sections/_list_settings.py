@@ -6,13 +6,18 @@ The first two take a default and per-entity overrides; the three flags
 apply to every list the mapping deploys.
 """
 
-from typing import Any
 
 from dbml_sharepoint.model._keys import _known_keys, _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
-from dbml_sharepoint.model.mapping_types import ITEM_SECURITY_SCOPES, ItemSecurity, Versioning
-from dbml_sharepoint.model.reading import drop_blank_keys, optional_bool, strict_bool
-from dbml_sharepoint.model.sections.context import SectionContext
+from dbml_sharepoint.model.mapping_types import (
+    ITEM_SECURITY_SCOPES,
+    ItemSecurity,
+    ItemSecurityOverride,
+    Versioning,
+    VersioningOverride,
+)
+from dbml_sharepoint.model.reading import drop_blank_keys, optional_bool
+from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 
 _VERSIONING_KEYS = frozenset({
     "enable_versioning", "major_version_limit", "enable_minor_versions",
@@ -20,7 +25,7 @@ _VERSIONING_KEYS = frozenset({
 _ITEM_SECURITY_KEYS = frozenset({"read", "write"})
 
 
-def read(sc: SectionContext) -> dict[str, Any]:
+def read(sc: SectionContext) -> LoadedFields:
     versioning = _require_mapping(sc.block("versioning"), "versioning")
     _reject_unknown_keys(versioning, {"default", "overrides"}, "versioning")
     default_v = _versioning_values(
@@ -32,16 +37,10 @@ def read(sc: SectionContext) -> dict[str, Any]:
     # `test/_model.py` as well, which is how a default ends up with three
     # homes and no way to tell which one is authoritative.
     versioning_default = Versioning(
-        enable_versioning=strict_bool(
-            default_v, "enable_versioning", "versioning.default",
-            default=Versioning.enable_versioning,
-        ),
-        major_version_limit=int(default_v.get(
-            "major_version_limit", Versioning.major_version_limit,
-        )),
-        enable_minor_versions=optional_bool(
-            default_v, "enable_minor_versions", "versioning.default",
-            default=Versioning.enable_minor_versions,
+        enable_versioning=default_v.get("enable_versioning", Versioning.enable_versioning),
+        major_version_limit=default_v.get("major_version_limit", Versioning.major_version_limit),
+        enable_minor_versions=default_v.get(
+            "enable_minor_versions", Versioning.enable_minor_versions,
         ),
     )
     # Overrides reach the generators as a RAW dict and are read there with
@@ -57,7 +56,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
     # middle of generating a deploy script. An empty override block means "no
     # overrides for this entity", so say that once, here, instead of leaving
     # each reader to survive a shape the loader let through.
-    versioning_overrides: dict[str, dict[str, Any]] = {}
+    versioning_overrides: dict[str, VersioningOverride] = {}
     for override_entity, override in _require_mapping(
         versioning.get("overrides"), "versioning.overrides",
     ).items():
@@ -76,10 +75,10 @@ def read(sc: SectionContext) -> dict[str, Any]:
         "item_security.default", ItemSecurity(),
     )
     item_security_default = ItemSecurity(
-        read=str(default_is.get("read", ItemSecurity.read)),
-        write=str(default_is.get("write", ItemSecurity.write)),
+        read=default_is.get("read", ItemSecurity.read),
+        write=default_is.get("write", ItemSecurity.write),
     )
-    item_security_overrides: dict[str, dict[str, Any]] = {}
+    item_security_overrides: dict[str, ItemSecurityOverride] = {}
     for override_entity, override in _require_mapping(
         item_security.get("overrides"), "item_security.overrides",
     ).items():
@@ -101,7 +100,14 @@ def read(sc: SectionContext) -> dict[str, Any]:
     }
 
 
-def _versioning_values(block: Any, context: str, fallback: Versioning) -> dict[str, Any]:
+def _bool_key(declared: dict[str, object], key: str, context: str) -> bool | None:
+    value = declared.get(key)
+    if value is not None and not isinstance(value, bool):
+        raise MappingShapeError(f"{context}.{key}: expected true or false, got {value!r}")
+    return value
+
+
+def _versioning_values(block: object, context: str, fallback: Versioning) -> VersioningOverride:
     """Type-check one versioning block (default or override), without its blanks.
 
     A blank key takes `fallback`'s value: the dataclass default for
@@ -112,22 +118,26 @@ def _versioning_values(block: Any, context: str, fallback: Versioning) -> dict[s
         "major_version_limit": fallback.major_version_limit,
         "enable_minor_versions": fallback.enable_minor_versions,
     })
-    for key in ("enable_versioning", "enable_minor_versions"):
-        if key in declared and not isinstance(declared[key], bool):
-            raise MappingShapeError(
-                f"{context}.{key}: expected true or false, got {declared[key]!r}",
-            )
+    enable_versioning = _bool_key(declared, "enable_versioning", context)
+    enable_minor_versions = _bool_key(declared, "enable_minor_versions", context)
     limit = declared.get("major_version_limit")
     if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int)):
         raise MappingShapeError(
             f"{context}.major_version_limit: expected an integer, got {limit!r}",
         )
-    return declared
+    values = VersioningOverride()
+    if enable_versioning is not None:
+        values["enable_versioning"] = enable_versioning
+    if limit is not None:
+        values["major_version_limit"] = limit
+    if enable_minor_versions is not None:
+        values["enable_minor_versions"] = enable_minor_versions
+    return values
 
 
 def _item_security_values(
-    block: Any, context: str, fallback: ItemSecurity,
-) -> dict[str, Any]:
+    block: object, context: str, fallback: ItemSecurity,
+) -> ItemSecurityOverride:
     """Type-check one item_security block (default or override), without its blanks.
 
     The values are refused rather than coerced: `read: created_by` is exactly
@@ -139,19 +149,29 @@ def _item_security_values(
     declared = drop_blank_keys(_known_keys(block, _ITEM_SECURITY_KEYS, context), context, {
         "read": fallback.read, "write": fallback.write,
     })
-    for key in ("read", "write"):
-        if key not in declared:
-            continue
-        value = declared[key]
-        # The shape before the word, as `scope` and `totals` do: a list is
-        # unhashable, and `read: 2` is a type rather than a scope declined.
-        if not isinstance(value, str):
-            raise MappingShapeError(
-                f"{context}.{key}: expected a string, got {value!r}",
-            )
-        if value not in ITEM_SECURITY_SCOPES:
-            raise MappingValueError(
-                f"{context}.{key}: expected one of "
-                f"{', '.join(sorted(ITEM_SECURITY_SCOPES))}, got {value!r}",
-            )
-    return declared
+    read = _scope_key(declared, "read", context)
+    write = _scope_key(declared, "write", context)
+    values = ItemSecurityOverride()
+    if read is not None:
+        values["read"] = read
+    if write is not None:
+        values["write"] = write
+    return values
+
+
+def _scope_key(declared: dict[str, object], key: str, context: str) -> str | None:
+    if key not in declared:
+        return None
+    value = declared[key]
+    # The shape before the word, as `scope` and `totals` do: a list is
+    # unhashable, and `read: 2` is a type rather than a scope declined.
+    if not isinstance(value, str):
+        raise MappingShapeError(
+            f"{context}.{key}: expected a string, got {value!r}",
+        )
+    if value not in ITEM_SECURITY_SCOPES:
+        raise MappingValueError(
+            f"{context}.{key}: expected one of "
+            f"{', '.join(sorted(ITEM_SECURITY_SCOPES))}, got {value!r}",
+        )
+    return value

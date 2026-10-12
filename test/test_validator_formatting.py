@@ -427,7 +427,7 @@ def test_two_map_keys_that_print_alike_are_reported_in_a_fixed_order() -> None:
         make_table("Risk", make_column("Title", required=True), make_column("Rating", "rating")),
         enums=[make_enum("rating", "Low", "High")],
     )
-    spec = {"style": "severity", "map": {1: "good", "1": "low"}}
+    spec: dict[str, object] = {"style": "severity", "map": {1: "good", "1": "low"}}
     bundle = make_bundle(entities=["Risk"], column_style_specs={"Risk": {"Rating": spec}})
     first, second = messages(
         validate_against_mapping(schema, bundle), FindingCode.STYLE_MAP_KEY_NOT_IN_ENUM,

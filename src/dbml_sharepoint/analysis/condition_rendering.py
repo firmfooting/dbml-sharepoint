@@ -24,6 +24,7 @@ from dbml_sharepoint.analysis.typemap import (
     is_boolean,
     is_multi_value,
 )
+from dbml_sharepoint.jsonvalue import is_object_list
 from dbml_sharepoint.model.conditions import (
     VALUELESS_OPS,
     Condition,
@@ -1436,13 +1437,15 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: str) -> str:
     if leaf.property and leaf.measure != "length":
         column_type = _ACCESSOR_TYPES.get(leaf.property, column_type)
 
-    if leaf.op in ("in", "not_in"):
+    # `_check` has refused a value that is not a list, so the second test only narrows it.
+    members = leaf.value
+    if leaf.op in ("in", "not_in") and is_object_list(members):
         if target == CAML and leaf.op == "not_in":
             # CAML's bare Neq drops an empty field, but an empty value is
             # outside every non-empty set. Admit null once around the whole
             # conjunction rather than once per set member.
             ref = f'<FieldRef Name="{leaf.field}"/>'
-            for item in leaf.value:
+            for item in members:
                 # Same order as the leaf path below, so `not_in [now]` and
                 # `in [now]` answer identically rather than differing by
                 # which branch of this function happened to loop.
@@ -1450,14 +1453,14 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: str) -> str:
                 _check_date_literal(item, column_type, target, where)
             parts = [
                 f"<Neq>{ref}{_caml_value(column_type, item, where, accessor)}</Neq>"
-                for item in leaf.value
+                for item in members
             ]
             excluded = _combine(parts, conjunction=True, target=CAML)
             return f"<Or><IsNull>{ref}</IsNull>{excluded}</Or>"
         op = "eq" if leaf.op == "in" else "neq"
         parts = [
             _leaf(Leaf(leaf.field, op, item, leaf.property, leaf.measure), types, target, at)
-            for item in leaf.value
+            for item in members
         ]
         return _combine(parts, conjunction=leaf.op == "not_in", target=target)
 

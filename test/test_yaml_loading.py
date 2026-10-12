@@ -16,6 +16,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from _narrow import as_dict, as_list
 from _paths import FIXTURES, REPO_ROOT, SOLUTION_TEMPLATES, TEST_BLUEPRINTS
 from ruamel.yaml import YAML
 from ruamel.yaml.constructor import ConstructorError
@@ -110,8 +111,10 @@ def test_keys_of_different_types_are_distinct() -> None:
 def test_a_key_beside_a_merge_overrides_it() -> None:
     """The merge-key spec lets a key written beside `<<` override the merged
     one, and the reporting-sample test blueprint's mapping does that."""
-    assert _yaml.safe_load("base: &b {x: 1}\nuse: {<<: *b, x: 2}\n")["use"] == {"x": 2}
-    merged = _yaml.safe_load("a: &a {x: 1}\nb: &b {y: 1}\nuse: {<<: [*a, *b], x: 2, y: 3}\n")
+    assert as_dict(_yaml.safe_load("base: &b {x: 1}\nuse: {<<: *b, x: 2}\n"))["use"] == {"x": 2}
+    merged = as_dict(
+        _yaml.safe_load("a: &a {x: 1}\nb: &b {y: 1}\nuse: {<<: [*a, *b], x: 2, y: 3}\n"),
+    )
     assert merged["use"] == {"x": 2, "y": 3}
 
 
@@ -121,7 +124,7 @@ def test_a_second_merge_key_in_one_mapping_is_refused() -> None:
     reads 1, so neither reading is safe."""
     two_keys = "a: &a {x: 1}\nb: &b {x: 2}\nuse:\n  <<: *a\n  <<: *b\n"
     listed = "a: &a {x: 1}\nb: &b {x: 2}\nuse:\n  <<: [*a, *b]\n"
-    assert _yaml.safe_load(listed)["use"] == {"x": 1}
+    assert as_dict(_yaml.safe_load(listed))["use"] == {"x": 1}
     assert _refusal(two_keys) == (
         "while constructing a mapping\n"
         '  in "<file>", line 4, column 3\n'
@@ -183,8 +186,9 @@ def test_every_shipped_yaml_file_loads_unchanged() -> None:
     for path in read:
         text = path.read_text(encoding="utf-8")
         assert _yaml.safe_load(text) == YAML(typ="safe", pure=True).load(text), path
-    views = _yaml.safe_load(sample.read_text(encoding="utf-8"))["views"]["Action"]
-    done = next(view for view in views if view["title"] == "Done")
+    document = as_dict(_yaml.safe_load(sample.read_text(encoding="utf-8")))
+    views = as_list(as_dict(document["views"])["Action"])
+    done = next(as_dict(view) for view in views if as_dict(view)["title"] == "Done")
     assert done["widths"] == {"Title": 300, "Status": 120, "Minutes": 100, "RelatedRisk": 200}
 
 
@@ -248,7 +252,7 @@ def test_a_zoned_time_keeps_the_zone_pyyaml_gave_it(zone: str, read: str) -> Non
     PyYAML 6.0.3 did not, as measured on 2026-09-27. A message that shows a
     loaded time with `!r`, as a condition's and a demo row's refusals do,
     would otherwise change its words; this is the value those have shown."""
-    value = _yaml.safe_load(f"v: 2026-01-02 03:04:05{zone}\n")["v"]
+    value = as_dict(_yaml.safe_load(f"v: 2026-01-02 03:04:05{zone}\n"))["v"]
     assert repr(value) == f"datetime.datetime(2026, 1, 2, 3, 4, 5{read})"
 
 
