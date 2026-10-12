@@ -401,6 +401,7 @@ _FOLDER_JS = r"""globalThis.fetch = async (url, opts = {}) => {
 def _library_deploy_js(
     tmp_path: Path, mapping: str, *, titled: bool = True,
     enterprise_reader: str | None = None,
+    site_url: str = "https://example.sharepoint.com/sites/test",
 ) -> str:
     """`titled` declares a Title column, which is what puts a `title_patch` on
     the list. A library naming its files through FileLeafRef declares none, and
@@ -417,7 +418,7 @@ def _library_deploy_js(
         schema=schema,
         bundle=bundle,
         release=load_release(FIXTURES / "release.yaml"),
-        site_url="https://example.sharepoint.com/sites/test",
+        site_url=site_url,
         site_role="default",
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
@@ -1300,6 +1301,35 @@ def test_declared_list_url_is_created_and_verified(
         assert not any(c["method"] == "POST" and "/fields" in c["url"] for c in calls)
 
 
+@pytest.mark.parametrize(("root", "matches"), [
+    ("/sites/my site/Lists/Escalation Log", True),
+    ("/sites/my%20site/Lists/Escalation%20Log", False),
+])
+def test_a_spaced_list_url_on_an_encoded_site_path_is_compared_decoded(
+    tmp_path: Path, root: str, matches: bool,
+) -> None:
+    mapping = _RECURSIVE_VIEW.replace(
+        "kind: DocumentLibrary, base_template: 101,",
+        "kind: List, base_template: 100, internal_name: Lists/Escalation Log,",
+    ).replace("      scope: recursive\n", "")
+    # The site guard compares the URL's raw path with webServerRelativeUrl.
+    harness = _library_harness().replace(
+        "webServerRelativeUrl: '/sites/test'", "webServerRelativeUrl: '/sites/my%20site'",
+    ).replace(
+        "Title: 'adopted', BaseTemplate: 101,",
+        f"RootFolder: {{ServerRelativeUrl: {json.dumps(root)}}}, "
+        "Title: 'adopted', BaseTemplate: 100,",
+    )
+    deploy_js = _library_deploy_js(
+        tmp_path, mapping, site_url="https://example.sharepoint.com/sites/my%20site",
+    )
+    summary, _, _ = _run(harness, deploy_js)
+    if matches:
+        assert summary["errors"] == [], summary["errors"]
+    else:
+        assert "LIST_URL_MISMATCH" in str(summary["errors"])
+
+
 def _folder_acl_run(
     tmp_path: Path, *, stray: bool = False, missing: bool = False,
     mapping: str = _FOLDER_ACL_LIBRARY, flags: str = "",
@@ -1819,3 +1849,21 @@ def test_a_declared_folder_that_does_not_exist_is_refused(tmp_path: Path) -> Non
     assert any("declared folder 'Field operations' was not found" in m for m in messages), \
         messages
     assert not any("items(undefined)" in c["url"] for c in calls)
+
+
+def test_a_no_op_folder_policy_does_not_excuse_an_already_unique_folder(tmp_path: Path) -> None:
+    """A policy that writes nothing manages nothing, so the guard still names the folder (#617)."""
+    mapping = _FOLDER_ACL_LIBRARY.replace(
+        "    Escalation:\n      break_inheritance: true\n      reconcile: exact\n"
+        "      assignments:\n        - principal: { kind: group, name: \"{member} Editors\" }\n"
+        "          level: \"Folder Editor\"\n",
+        "    Escalation:\n      break_inheritance: false\n      reconcile: configured\n",
+    )
+    assert mapping != _FOLDER_ACL_LIBRARY
+    summary, calls = _folder_acl_run(
+        tmp_path, mapping=mapping, flags="globalThis.__folderScoped = true;\n",
+    )
+    messages = [e["error"] for e in summary["errors"]]
+    assert any("1 undeclared item/folder unique permission scope(s)" in m for m in messages), \
+        messages
+    assert not any("removeroleassignment" in c["url"] for c in calls)

@@ -11,7 +11,6 @@ on Mapping.retirement_strips for the validator to report.
 
 import datetime as dt
 from dataclasses import replace
-from typing import Any, cast
 
 from dbml_sharepoint.model._keys import _known_keys, _text_key
 from dbml_sharepoint.model.errors import MappingShapeError
@@ -30,7 +29,7 @@ from dbml_sharepoint.model.reading import optional_bool, optional_str, require_s
 _RETIREMENT_KEYS = frozenset({"retired", "superseded_by", "reason", "hide_existing"})
 
 
-def _parse_retired_columns(raw: Any, context: str) -> dict[str, RetiredColumn]:
+def _parse_retired_columns(raw: object, context: str) -> dict[str, RetiredColumn]:
     """Parse one entity's `retired_columns` block.
 
     Two accepted forms: the bare list shorthand (`[ColA, ColB]`) for the
@@ -165,9 +164,13 @@ def _strip_retired_from_form(
         return form
     section_list: list[object] = sections
 
-    def _fields_of(section: object) -> list[Any] | None:
-        if isinstance(section, dict) and isinstance(section.get("fields"), list):
-            return cast("list[Any]", section["fields"])
+    def _fields_of(section: object) -> list[object] | None:
+        if isinstance(section, dict):
+            entries: dict[object, object] = section
+            names = entries.get("fields")
+            if isinstance(names, list):
+                found: list[object] = names
+                return found
         return None
 
     # isinstance first: a formatter body is arbitrary authored JSON, so a
@@ -189,17 +192,16 @@ def _strip_retired_from_form(
         )
         for name in dict.fromkeys(named)
     ]
-    stripped = [
-        (
-            {**section, "fields": [
-                n for n in fields if not (isinstance(n, str) and n in retired)
-            ]}
-            if (fields := _fields_of(section)) is not None
-            and isinstance(section, dict)
-            else section
-        )
-        for section in section_list
-    ]
+    def _strip(section: object) -> object:
+        fields = _fields_of(section)
+        if fields is None or not isinstance(section, dict):
+            return section
+        entries: dict[object, object] = section
+        return {**entries, "fields": [
+            n for n in fields if not (isinstance(n, str) and n in retired)
+        ]}
+
+    stripped = [_strip(section) for section in section_list]
     # Re-spreading an existing key keeps its original position, so the rest
     # of the body renders byte-for-byte as authored.
     return replace(form, body={**body, "sections": stripped})

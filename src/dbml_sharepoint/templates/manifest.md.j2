@@ -146,9 +146,12 @@ bundle provisions: every list's resolved permissions leave the group out.
 {% elif not reader_granted_lists %}a second holder of **Read** bound to the declared folders only
 of {{ reader_folder_only_lists | join(", ") }}, and to nothing else here, is your
 decision, not the script's.
+{% elif reader_folder_only_lists %}a second holder of **Read** on the whole of
+{{ reader_granted_lists | join(", ") }}, or bound to the declared folders only of
+{{ reader_folder_only_lists | join(", ") }}, is your decision, not the script's.
 {% else %}a second holder of **Read** on every list here is your decision, not
 the script's.
-{% endif %}{% if reader_folder_only_lists and (reader_granted_lists or reader_excluded_lists) %}On {{ reader_folder_only_lists | join(", ") }} that grant
+{% endif %}{% if reader_folder_only_lists and reader_excluded_lists %}On {{ reader_folder_only_lists | join(", ") }} that grant
 is bound to the declared folders only, not to the library itself, so the group
 can read what is inside those folders and nothing else there.
 {% endif %}If that stops you: remove them in **Site permissions -> Groups** and paste again,

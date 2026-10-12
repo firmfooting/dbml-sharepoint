@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.14.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.13.0...v0.14.0) (2026-10-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* **report:** keep every report data source static so the Service can refresh ([#804](https://github.com/firmfooting/dbml-sharepoint/issues/804))
+
+### Features
+
+* check a list at its declared URL at deploy ([#789](https://github.com/firmfooting/dbml-sharepoint/issues/789)) ([b97ff13](https://github.com/firmfooting/dbml-sharepoint/commit/b97ff13a5c26983f6cf5ca5efa1c0ee7121f79df))
+* enforce the generator import rule with import-linter ([#785](https://github.com/firmfooting/dbml-sharepoint/issues/785)) ([a441a2d](https://github.com/firmfooting/dbml-sharepoint/commit/a441a2d07a5eaf2918bd8e0bb9abff9725146caf))
+* record every declared list URL in the manifest ([#790](https://github.com/firmfooting/dbml-sharepoint/issues/790)) ([39cc1a9](https://github.com/firmfooting/dbml-sharepoint/commit/39cc1a9cd2fff96665ee276b360bb93d3a0bb58e))
+
+
+### Bug Fixes
+
+* **acls:** refuse a resolution that resolve() did not produce ([#800](https://github.com/firmfooting/dbml-sharepoint/issues/800)) ([ec0383f](https://github.com/firmfooting/dbml-sharepoint/commit/ec0383f32590a5061e6b124738520bc575fdf741))
+* **acls:** word mixed reader scopes apart and guard folders a policy leaves untouched ([#801](https://github.com/firmfooting/dbml-sharepoint/issues/801)) ([051f20d](https://github.com/firmfooting/dbml-sharepoint/commit/051f20d9e6590e7f21b8b788c2800e68bd0a5ddb))
+* **probes:** abort on an unestablished fixture, unclaimed list or failed cleanup ([#797](https://github.com/firmfooting/dbml-sharepoint/issues/797)) ([ea48e9a](https://github.com/firmfooting/dbml-sharepoint/commit/ea48e9a3d351f50f46262e2dd271a1d90ed57231))
+* **report:** keep every report data source static so the Service can refresh ([#804](https://github.com/firmfooting/dbml-sharepoint/issues/804)) ([34e4cc0](https://github.com/firmfooting/dbml-sharepoint/commit/34e4cc02c1d05e47ac96f854af3d6cafd8320406))
+
+
+### Documentation
+
+* **report:** say a renamed list needs the report regenerated ([#799](https://github.com/firmfooting/dbml-sharepoint/issues/799)) ([5adbae0](https://github.com/firmfooting/dbml-sharepoint/commit/5adbae06f2c3120f0926010c3c2d4f9579094ef3))
+
 ## [0.13.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.12.0...v0.13.0) (2026-10-12)
 
 
