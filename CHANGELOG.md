@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.13.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.12.0...v0.13.0) (2026-10-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* require Python 3.15 and test it in one CI job ([#775](https://github.com/firmfooting/dbml-sharepoint/issues/775))
+
+### Features
+
+* allow a list to declare its URL ([#778](https://github.com/firmfooting/dbml-sharepoint/issues/778)) ([8d57c5d](https://github.com/firmfooting/dbml-sharepoint/commit/8d57c5dc6f0fcbbbb311dbf0a96c9070c6388e4a))
+* key the report by a list's declared URL ([#779](https://github.com/firmfooting/dbml-sharepoint/issues/779)) ([587851a](https://github.com/firmfooting/dbml-sharepoint/commit/587851a230a7ca95a4736c180bf0e57ab5f5849b))
+* normalise a declared list URL ([#777](https://github.com/firmfooting/dbml-sharepoint/issues/777)) ([5f5117f](https://github.com/firmfooting/dbml-sharepoint/commit/5f5117f17cfffc509fb28d08c6526e9a0c263bd6))
+
+
+### Build System
+
+* require Python 3.15 and test it in one CI job ([#775](https://github.com/firmfooting/dbml-sharepoint/issues/775)) ([eb78433](https://github.com/firmfooting/dbml-sharepoint/commit/eb784336846c72f99cc9822f66d48da77a967159))
+
 ## [0.12.0](https://github.com/firmfooting/dbml-sharepoint/compare/v0.11.0...v0.12.0) (2026-10-11)
 
 
