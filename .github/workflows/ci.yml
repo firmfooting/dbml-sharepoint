@@ -36,6 +36,8 @@ jobs:
         run: uv run j2lint --ignore jinja-statements-indentation single-statement-per-line -- src/dbml_sharepoint/templates
       - name: Type-check
         run: uv run pyrefly check
+      - name: Import contract
+        run: uv run lint-imports
       - name: Tests
         # Two flags only; everything else is configured in pyproject.toml, so
         # a local run and this one measure the same thing.

@@ -77,6 +77,8 @@ dev = [
   "ruff==0.17.0",
   "pyrefly==1.3.2",
   "j2lint>=1.2.0",
+  # Enforces the generator import rule; see [tool.importlinter].
+  "import-linter==2.11",
   # The git-hook runner. Pinned here for the same reason as every other gate:
   # `uv run prek` cannot drift from the version a contributor happens to have.
   "prek>=0.5.3",
@@ -328,3 +330,12 @@ markers = [
   "conformance: the template family-standard sweep, parametrised over every template",
   "real_deployer_version: stamp the installed version, not the pin conftest.py sets for goldens",
 ]
+
+[tool.importlinter]
+root_package = "dbml_sharepoint"
+
+[[tool.importlinter.contracts]]
+name = "Generators never import analysis checks"
+type = "forbidden"
+source_modules = ["dbml_sharepoint.generators"]
+forbidden_modules = ["dbml_sharepoint.analysis.checks"]
