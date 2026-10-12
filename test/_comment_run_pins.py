@@ -811,7 +811,7 @@ PINNED: dict[str, list[str]] = {
         "b57f38c990ea",
     ],
     "test/manual/templates/library-query-probe.js.j2": [
-        "05312535520d",
+        "63608d6850b2",
     ],
     "test/manual/templates/library-sharing-probe.js.j2": [
         "8889a7c1802c",
@@ -825,7 +825,7 @@ PINNED: dict[str, list[str]] = {
         "794e8b633e5d",
     ],
     "test/manual/templates/library-view-search-probe.js.j2": [
-        "988a59e4e8ed",
+        "adbc10b330a4",
     ],
     "test/manual/templates/list-description-probe.js.j2": [
         "33463e36f3c9",

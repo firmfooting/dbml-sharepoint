@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY VIEW TOTALS AND SEARCH DISCOVERY
  *
- * REVISION: d76ee38c
+ * REVISION: e9f25190
  *
  * ONE QUESTION:
  *   Do a document library's view totals and its search discoverability
@@ -41,9 +41,9 @@
  *
  * SCOPE AND QUESTIONS
  *   library.doc-lib.fixture-library-created
- *     A document library is created (BaseTemplate 101) with three files whose
- *     numeric metadata (10, 14, 18) sums to 42, and a twin plain list of two
- *     rows (10, 32) holds the same sum for the totals leg to compare against.
+ *     A document library is created (BaseTemplate 101), read back as such. Its
+ *     three files (10, 14, 18) and the twin list (10, 32) that sums to the same
+ *     42 are set up after it and are not covered by this row.
  *   library.view.control-missing-column-refused
  *     NEGATIVE CONTROL: a RenderListDataAsStream query naming a column that
  *     does not exist is refused. The refusal is what makes the refusals and
@@ -409,7 +409,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision d76ee38c. Quote this when reporting results.');
+  log('INFO', 'probe revision e9f25190. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibViewSearch';
   const TWIN = 'dbmlsp Probe LibViewSearchRows';
@@ -428,7 +428,7 @@
   // The name the search leg queries for: a single word-broken token.
   const FILE_TOKEN = FILES[0].leaf.replace(/\.txt$/, '');
 
-  const Q_FIXTURE = 'A document library is created (BaseTemplate 101) with three files whose numeric metadata (10, 14, 18) sums to 42, and a twin plain list of two rows (10, 32) holds the same sum for the totals leg to compare the library against';
+  const Q_FIXTURE = 'A document library is created (BaseTemplate 101)';
   const Q_CONTROL = 'NEGATIVE CONTROL: a RenderListDataAsStream query naming a column that does not exist is refused';
   const Q_TOTALS = 'does RenderListDataAsStream compute a SUM over a numeric metadata column from the file rows of a document library, when the identical ViewXml returns a totals cell from a plain list';
   const Q_DISCOVERY = 'is a document library, and a file inside it, discoverable through the search index the way a generic list is';
