@@ -115,7 +115,7 @@ target-version = "py315"
 select = [
   "A", "ANN", "B", "BLE", "C4", "C901", "DTZ", "E", "F", "FURB", "I", "ISC",
   "N", "PIE", "PLC", "PLE", "PLW", "PLR", "PTH", "RET", "RUF", "S", "SIM", "T20", "TID251",
-  "TID252", "UP", "W", "TRY", "PGH", "LOG", "G", "PT", "PERF", "ERA",
+  "TID252", "UP", "W", "TRY", "PGH", "LOG", "G", "PT", "PERF", "ERA", "INP",
 ]
 ignore = [
   # MEASURED 2026-08-17: 58 sites across the linted roots, most of them on a
