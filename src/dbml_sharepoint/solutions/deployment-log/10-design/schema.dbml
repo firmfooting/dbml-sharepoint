@@ -1,5 +1,5 @@
 // ============================================================================
-// Central deployment log: two lists, on one site, written by every deploy in
+// Central deployment log: two lists and a document library, on one site, written by every deploy in
 // the fleet. Render the ERD by pasting this file into dbdiagram.io
 // ============================================================================
 
@@ -115,4 +115,16 @@ Table Changes {
   }
 
   Note: 'Type-2 change rows from every firmfooting application and site this tool provisions: what changed, when, and whether the row is still current.'
+}
+
+// The full console log of each run, one file per run, named from the run's
+// stamp and never overwritten (a submit-only account cannot edit). The table
+// name is the library title under the mapping's prefix
+// (analysis/sidecars.py, EXTERNAL_LOG_LIBRARY_DEFAULT). No columns beyond
+// Title, because metadata cannot be set after the upload without Edit.
+Table DeploymentLogs {
+  Id       int        [pk, increment]
+  Title    nvarchar   [note: 'Not filled by the deploy script. The file name carries the run identity']
+
+  Note: 'The full console log of each deploy run, one text file per run, uploaded by the deploy script and never overwritten.'
 }

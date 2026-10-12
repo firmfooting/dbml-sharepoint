@@ -28,6 +28,7 @@ from dbml_sharepoint.analysis.sidecars import (
     CENTRAL_LOG_COLUMNS,
     EXTERNAL_CHANGE_LOG_DEFAULT,
     EXTERNAL_LOG_DEFAULT,
+    EXTERNAL_LOG_LIBRARY_DEFAULT,
 )
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import PermissionsConfig
@@ -81,6 +82,17 @@ def test_the_family_deploys_the_list_the_fleet_stamps() -> None:
         f"deployment-log declares {titles}, not including {EXTERNAL_CHANGE_LOG_DEFAULT!r}, "
         "which is what a deploy with a reachable central log probes for change rows."
     )
+
+
+def test_the_family_deploys_the_library_each_run_uploads_its_log_to() -> None:
+    mapping = load_mapping(FAMILY / "20-configure" / "mapping.yaml").mapping
+    assert EXTERNAL_LOG_LIBRARY_DEFAULT in _family_list_titles()
+    entity = mapping.entities[EXTERNAL_LOG_LIBRARY_DEFAULT.removeprefix(mapping.prefix)]
+    assert entity.is_library
+    # The same drop-box policy as the two lists, so the file is only ever added.
+    library = EXTERNAL_LOG_LIBRARY_DEFAULT.removeprefix(mapping.prefix)
+    policy = mapping.permissions_for_entity("Changes")
+    assert mapping.permissions_for_entity(library) == policy
 
 
 def test_the_family_declares_every_column_the_fleet_writes() -> None:

@@ -3,12 +3,13 @@
 *Theme: process digitisation & improvement.*
 
 The fleet's own record of itself: two lists, `firmfooting_Deployments` and
-`firmfooting_Changes`, holding a row for every deploy run any firmfooting
-application performs anywhere in the tenant, saying what was deployed, to
-which site, by whom, from which release, whether the run finished, and what
-it changed. They are deployed like any other family, to one site you
-nominate as the logging site, and every other family's deploy writes to them
-from wherever it runs.
+`firmfooting_Changes`, and a library, `firmfooting_DeploymentLogs`, holding a
+row for every deploy run any firmfooting application performs anywhere in the
+tenant, saying what was deployed, to which site, by whom, from which release,
+whether the run finished, and what it changed. The library holds each run's
+full console log as a file. They are deployed like any other family, to one
+site you nominate as the logging site, and every other family's deploy writes
+to them from wherever it runs.
 
 **The value case.** Without it, "when did the risk register last change, and
 who changed it?" is answered by asking around. A deploy that cannot reach

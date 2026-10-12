@@ -105,6 +105,9 @@
     const EXTERNAL_LOG_TITLE = {{ deployment_log_list | tojson }};
     const EXTERNAL_CHANGE_LOG_TITLE = {{ deployment_log_change_list | tojson }};
     const EXTERNAL_LOG_SITE = {{ deployment_log_site | tojson }};
+    // Empty when the central log is off. The library takes one file per run,
+    // written at the end by uploadRunLog below.
+    const EXTERNAL_LOG_LIBRARY_TITLE = {{ deployment_log_library | tojson }};
     // The stamp columns the `deployment-log` family declares on the
     // Deployments list, and the change columns it declares on the Changes
     // list beside it. Each list is probed against its own set: all present
@@ -844,6 +847,61 @@
       }
     };
 
+    // ---- The run's full console log, uploaded to the central library -----
+    // One new file per run, never overwritten: the drop-box level grants
+    // AddListItems without EditListItems, and Add Items covers "add documents
+    // to document libraries"
+    // https://learn.microsoft.com/sharepoint/understanding-permission-levels
+    // The upload is Files/add with overwrite=false, which Learn documents for
+    // SharePoint REST, and the read-back compares File.Length, the size in bytes
+    // https://learn.microsoft.com/previous-versions/office/developer/sharepoint-rest-reference/dn450841(v=office.15)
+    // Returns the file's server-relative URL, or null after recording a named
+    // logging failure: this never throws and never fails the deploy.
+    const uploadRunLog = async () => {
+      const where = `run log upload to '${EXTERNAL_LOG_LIBRARY_TITLE}'`;
+      try {
+        const probe = await probeCentralList(EXTERNAL_LOG_LIBRARY_TITLE);
+        if (!probe.ok) {
+          throw new Error('the library is missing from the central site; deploy the deployment-log family to it');
+        }
+        if (!probe.canAdd) {
+          throw new Error('this account holds no AddListItems on the library; ask its owner for the submit-only level');
+        }
+        const rootResp = await fetchWithRetry(externalApi(
+          `lists/getbytitle('${odataName(EXTERNAL_LOG_LIBRARY_TITLE)}')/rootfolder?$select=ServerRelativeUrl`
+        ), { headers: { 'Accept': 'application/json;odata=verbose' } });
+        if (!rootResp.ok) throw new Error(`root folder read: HTTP ${rootResp.status}`);
+        const root = ((await rootResp.json()).d || {}).ServerRelativeUrl;
+        if (typeof root !== 'string' || !root) throw new Error('the library returned no root folder URL');
+        const slug = (SITE_URL.replace(/\/+$/, '').split('/').pop() || 'site').replace(/[^A-Za-z0-9_-]/g, '-');
+        const stamp = new Date(RUN_STARTED_AT).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+        const fileName = `${stamp}-${slug}-${Math.random().toString(36).slice(2, 8)}.log`;
+        const bytes = new TextEncoder().encode(LOG_BUFFER.join('\n') + '\n');
+        const addResp = await fetchWithRetry(externalApi(
+          `getfolderbyserverrelativeurl('${odataName(root)}')/files/add(url='${odataName(fileName)}',overwrite=false)`
+        ), {
+          method: 'POST',
+          headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': await externalDigest() },
+          body: bytes,
+        });
+        if (!addResp.ok) throw new Error(`HTTP ${addResp.status} ${spError(await addResp.text())}`);
+        const fileUrl = `${root.replace(/\/+$/, '')}/${fileName}`;
+        const backResp = await fetchWithRetry(externalApi(
+          `getfilebyserverrelativeurl('${odataName(fileUrl)}')?$select=Length`
+        ), { headers: { 'Accept': 'application/json;odata=verbose' } });
+        if (!backResp.ok) throw new Error(`read-back: HTTP ${backResp.status}`);
+        const length = Number(((await backResp.json()).d || {}).Length);
+        if (length !== bytes.length) {
+          throw new Error(`read-back length ${length} does not match the ${bytes.length} bytes sent to ${fileUrl}`);
+        }
+        return fileUrl;
+      } catch (err) {
+        recordFailure(where, err);
+        log('WARN', `${where} failed (${err.message}); the deploy was not stopped.`);
+        return null;
+      }
+    };
+
     // ---- The type-2 change writer, central ------------------------------
     // The same row shape as the local one, with SourceSite filled and the
     // close filtered on it as well, against the CHANGES list rather than
@@ -1170,20 +1228,31 @@
         + `lists +${summary.listsCreated.length}, `
         + `renamed ${summary.listsRenamed.length}, columns +${summary.columnsCreated}, `
         + `skipped ${summary.columnsSkipped}; ${Math.round((Date.now() - RUN_STARTED_AT) / 1000)}s`;
-      if (LOG_MODE === 'CENTRAL') {
-        await stampExternal(kind,
-          `${RELEASE_TAG} (schema v${SCHEMA_VERSION}) at ${new Date().toISOString()}; ${note}`,
-          note);
-      } else {
-        await stampRunLog(kind, note);
-      }
       // Counted, not recorded as failures: a dropped change is a consequence
       // of a decision the operator made (--no-sidecars) or of a central log
       // that predates the change columns, and both are already one INFO line
-      // above. One count is what stops that being silent.
+      // above. One count is what stops that being silent. Logged before the
+      // upload so the uploaded file carries it.
       if (droppedChanges > 0) {
         log('INFO', `${droppedChanges} change event(s) were counted and dropped: this run had nowhere to `
           + `record them that would not have split the log across two places.`);
+      }
+      // Uploaded BEFORE the final stamp so the stamp is still one write per
+      // row: its Details carries the file's URL.
+      let logUrl = null;
+      if (LOG_MODE === 'CENTRAL' && EXTERNAL_LOG_LIBRARY_TITLE) {
+        logUrl = await uploadRunLog();
+      } else {
+        log('INFO', 'Run log not uploaded: only a run that reached the central log site has a '
+          + 'Deployment logs library to upload to, and this one recorded itself on the site.');
+      }
+      const finalNote = logUrl ? `${note}; run log ${logUrl}` : note;
+      if (LOG_MODE === 'CENTRAL') {
+        await stampExternal(kind,
+          `${RELEASE_TAG} (schema v${SCHEMA_VERSION}) at ${new Date().toISOString()}; ${finalNote}`,
+          finalNote);
+      } else {
+        await stampRunLog(kind, note);
       }
       // Counted again here, because most logging failures happen in the
       // phases AFTER this one and none of them are on summary.errors, so

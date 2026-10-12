@@ -185,7 +185,14 @@
   "Format-pane JSON display encoding (renders identically either way)"
 ];
 
-  const log = (level, msg) => console.log(`[SP-DEPLOY] [${level}] ${msg}`);
+  // Every line is kept as well as printed: the logging phase uploads the whole
+  // buffer to the central Deployment logs library at the end of the run.
+  const LOG_BUFFER = [];
+  const log = (level, msg) => {
+    const line = `[SP-DEPLOY] [${level}] ${msg}`;
+    LOG_BUFFER.push(line);
+    console.log(line);
+  };
   // Baked in at build time from the dbml-sharepoint.env this run read (or
   // that it read none) -- a log() line, not a header comment, because the
   // operator pastes back the console transcript, not the file.

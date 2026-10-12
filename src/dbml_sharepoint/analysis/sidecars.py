@@ -57,6 +57,10 @@ EXTERNAL_LOG_DEFAULT = "firmfooting_Deployments"
 #: that each name is true of every row in it.
 EXTERNAL_CHANGE_LOG_DEFAULT = "firmfooting_Changes"
 
+#: The CENTRAL document library that takes each run's full console log, one
+#: file per run, beside the two lists above. Probed, never created by a deploy.
+EXTERNAL_LOG_LIBRARY_DEFAULT = "firmfooting_DeploymentLogs"
+
 #: The CENTRAL logging site the external deployment log lives on, and the
 #: default every build probes unless the operator names another. One site
 #: per org collects every firmfooting application's deployment rows, so

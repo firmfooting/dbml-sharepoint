@@ -30,6 +30,11 @@ them creates the site either.
       it moves the target; if you do, set `DBMLSP_DEPLOY_LOG_LIST` and
       `DBMLSP_DEPLOY_CHANGES` to the new titles in every project that stamps
       this log, and `DBMLSP_DEPLOY_LOG_SITE` to the site title.
+- [ ] `firmfooting_DeploymentLogs` is a document library that takes one new
+      log file per run. Members hold the same submit-only level on it, so
+      they can add a file and cannot replace or delete one. A deploy that
+      cannot find it, or is refused, records a logging failure and carries
+      on. The title is fixed; it has no environment override.
 - [ ] The `StampKind` members are a contract, not a preference: the deploy
       scripts write the literal strings `deployment start`, `deployment stop`,
       `abort` and `provenance` to `Deployments`. Renaming one makes every

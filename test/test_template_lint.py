@@ -95,7 +95,7 @@ KNOWN_CONTEXT = {
     # The sidecars take the family's own protection settings (#465).
     "sidecar_seal_columns", "sidecar_prevent_deletion",
     "deployment_log_list", "deployment_log_change_list",
-    "deployment_log_site",
+    "deployment_log_site", "deployment_log_library",
     "deployment_log_columns", "deployment_log_change_columns",
     # extractgen, for extract.js
     "list_paths", "live_format", "download_name",

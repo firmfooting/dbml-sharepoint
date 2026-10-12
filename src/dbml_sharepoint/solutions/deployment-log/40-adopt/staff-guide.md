@@ -29,6 +29,14 @@ grouped by site and application, because a change key identifies a thing
 within one site and application, and two of either can raise the same key
 for different lists.
 
+## The run log files
+
+`firmfooting_DeploymentLogs` holds one text file per run: everything the
+deploy printed in the browser console. The closing row of a run on
+`Deployments` names its file in Details (`run log <server-relative URL>`).
+A run that could not upload its log says so in its own console output and in
+its `loggingFailures`, and has no such text in Details.
+
 ## Reading it
 
 On `Deployments`, **Latest first** is the default view and answers the usual
