@@ -206,9 +206,10 @@ def test_every_stamp_follows_the_application_it_is_given(tmp_path: Path) -> None
 def test_no_product_name_survives_under_another_identity(tmp_path: Path) -> None:
     """Only a reference to the package itself may still name it."""
     for name, text in _outputs_under_another_identity(tmp_path).items():
+        stripped = text
         for reference in _PACKAGE_REFERENCES:
-            text = text.replace(reference, "")
-        leftovers = [line.strip() for line in text.splitlines() if APPLICATION_NAME in line]
+            stripped = stripped.replace(reference, "")
+        leftovers = [line.strip() for line in stripped.splitlines() if APPLICATION_NAME in line]
         assert leftovers == [], f"{name}: {leftovers}"
 
 

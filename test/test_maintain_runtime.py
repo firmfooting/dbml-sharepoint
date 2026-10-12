@@ -543,7 +543,7 @@ def _deletes(calls: list[dict[str, Any]]) -> list[str]:
 
 
 def _field_of(url: str) -> str:
-    return url.split("fields(guid'")[1].split("'")[0]
+    return url.split("fields(guid'")[1].split("'", maxsplit=1)[0]
 
 
 def _readbacks_of(calls: list[dict[str, Any]], field_id: str, select: str) -> list[int]:

@@ -442,6 +442,7 @@ def test_version_command_available_on_direct_module_run() -> None:
         [sys.executable, "-m", "dbml_sharepoint.cli", "version"],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     # Compare against the package version rather than a literal so

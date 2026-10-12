@@ -100,7 +100,7 @@ def _render_sql_enriched(plan: ListPlan) -> str:
     for i, (fk_col, target_title, display, projections) in enumerate(
         plan.joins, start=1,
     ):
-        target_title = target_title.replace("]", "]]")
+        escaped_title = target_title.replace("]", "]]")
         alias = f"j{i}"
         base = fk_col.removesuffix("Id")
         select_lines.append(f"    {alias}.[{display}] AS [{base}{display}]")
@@ -116,7 +116,7 @@ def _render_sql_enriched(plan: ListPlan) -> str:
             for target_column in projections
         ]
         join_lines.append(
-            f"LEFT JOIN [$(ReportSchema)].[vw_{target_title}] AS {alias}\n"
+            f"LEFT JOIN [$(ReportSchema)].[vw_{escaped_title}] AS {alias}\n"
             f"    ON t.[{fk_col}] = {alias}.[Id]",
         )
     return (

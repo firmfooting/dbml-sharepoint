@@ -179,7 +179,8 @@ def test_every_reader_of_the_today_sentinel_shares_one_pattern() -> None:
     the same shape as any two readers disagreeing about one declaration.
     Comments asserted the agreement; this asserts it.
     """
-    import dbml_sharepoint.analysis.checks._demo as _demo
+    import importlib
+
     from dbml_sharepoint.analysis.condition_rendering import _TODAY
     from dbml_sharepoint.analysis.typemap import TODAY_SENTINEL
     from dbml_sharepoint.generators.demogen import _TODAY_OFFSET
@@ -188,6 +189,7 @@ def test_every_reader_of_the_today_sentinel_shares_one_pattern() -> None:
     assert _TODAY_OFFSET is TODAY_SENTINEL
     # Through `vars`: the question is whether the module binds the name itself,
     # which attribute access through a module that only imported it hides.
+    _demo = importlib.import_module("dbml_sharepoint.analysis.checks._demo")
     assert vars(_demo)["TODAY_SENTINEL"] is TODAY_SENTINEL
 
 

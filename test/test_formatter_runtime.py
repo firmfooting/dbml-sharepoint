@@ -32,10 +32,12 @@ def render(
             if i % 2:
                 parts[i] = json.dumps(part[1:-1].replace("''", "'"))
             else:
-                part = part.replace("@currentField", "value").replace("@now", "now")
-                part = re.sub(r"\[\$([^\]]+)\]", lambda m: "fields[" + json.dumps(m[1]) + "]", part)
-                part = re.sub(r"\bif\(", "choose(", part)
-                parts[i] = re.sub(r"\bDate\(", "asDate(", part)
+                swapped = part.replace("@currentField", "value").replace("@now", "now")
+                swapped = re.sub(
+                    r"\[\$([^\]]+)\]", lambda m: "fields[" + json.dumps(m[1]) + "]", swapped
+                )
+                swapped = re.sub(r"\bif\(", "choose(", swapped)
+                parts[i] = re.sub(r"\bDate\(", "asDate(", swapped)
         return "(" + "".join(parts) + ")"
 
     script = """

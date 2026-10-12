@@ -134,7 +134,7 @@ def _rule(declared: Mapping[str, object], context: str, why: str = "") -> tuple[
     message = optional_str(declared, "message", context)
     when = declared.get("when")
     # An empty tree is no condition; any other wrong type is `parse_condition`'s to name.
-    if when is None or when == [] or when == {}:
+    if when is None or when in ([], {}):
         raise MappingShapeError(f"{context}: 'when' is required{why}")
     if not message:
         raise MappingShapeError(f"{context}: 'message' is required{why}")

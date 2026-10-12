@@ -3029,7 +3029,7 @@ def test_a_nested_section_of_the_wrong_shape_is_refused(
     original sweep was for.
     """
     path = write_mapping(tmp_path, with_tail(entities("Project"), fragment))
-    _refuses(path, MappingShapeError, section.split(".")[-1])
+    _refuses(path, MappingShapeError, section.rsplit(".", maxsplit=1)[-1])
 
 
 def test_a_bare_entities_key_names_entities(tmp_path: Path) -> None:

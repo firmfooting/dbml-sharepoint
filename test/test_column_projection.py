@@ -175,9 +175,11 @@ def test_joins_no_longer_loads_the_condition_validation_stack() -> None:
     loaded = _import_closure("dbml_sharepoint.analysis.joins")
     forbidden = {
         module for module in loaded
-        if module == "dbml_sharepoint.analysis.conditions"
-        or module == "dbml_sharepoint.analysis.findings"
-        or module == "dbml_sharepoint.analysis.checks"
+        if module in {
+            "dbml_sharepoint.analysis.conditions",
+            "dbml_sharepoint.analysis.findings",
+            "dbml_sharepoint.analysis.checks",
+        }
         or module.startswith("dbml_sharepoint.analysis.checks.")
     }
     assert forbidden == set()

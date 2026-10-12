@@ -273,7 +273,7 @@ def _acl_phase(js: str) -> str:
     enterprise reader.
     """
     return js.split(f"Starting Phase {pn('acls')}")[1].split(
-        f"Starting Phase {pn('seeds')}")[0]
+        f"Starting Phase {pn('seeds')}", maxsplit=1)[0]
 
 
 def test_exact_acl_reconciliation_removes_unlisted_principals() -> None:
