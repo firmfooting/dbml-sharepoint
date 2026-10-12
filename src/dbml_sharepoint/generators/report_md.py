@@ -249,11 +249,11 @@ def generate_reporting_md(
                 f"| {_md_cell(query_name(target_title))} | {target_entity} Key |",
             )
         if plan.users_table:
-            for name in plan.person_columns:
-                lines.append(
-                    f"| {_md_cell(query_name(plan.list_title))} | {person_key_column(name)} "
-                    f"| {USERS_KEY_LIST} | User{REPORT_KEY_SUFFIX} |",
-                )
+            lines.extend(
+                f"| {_md_cell(query_name(plan.list_title))} | {person_key_column(name)} "
+                    f"| {USERS_KEY_LIST} | User{REPORT_KEY_SUFFIX} |"
+                for name in plan.person_columns
+            )
     lines += [
         "",
         *(_users_guide_paragraphs() if users_table else [

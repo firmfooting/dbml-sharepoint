@@ -962,13 +962,15 @@ def check(vc: ValidationContext) -> list[Finding]:
                     ))
                 refs = formatter_field_refs(view.formatting)
                 readable = set(effective_view_fields(view_rendered, vc.kind_of(entity_name)))
-                for ref in sorted(refs - readable):
-                    findings.append(Finding(
+                findings.extend(
+                    Finding(
                         FindingCode.FORMATTER_FIELD_NOT_RENDERED,
                         f"{ctx}: formatting references [${ref}], which is "
                         f"not a rendered column of {entity_name}.",
                         location=at_view,
-                    ))
+                    )
+                    for ref in sorted(refs - readable)
+                )
                 # A real column the VIEW does not display is the worse case,
                 # including built-in system columns such as Created/Author:
                 # SharePoint resolves a view formatter's references against
@@ -977,8 +979,8 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # exits 0, the deploy reports the formatter verified, and
                 # the only symptom is a row wash nobody sees.
                 shown = set(effective_view_fields(view.fields, vc.kind_of(entity_name)))
-                for ref in sorted((refs & readable) - shown):
-                    findings.append(Finding(
+                findings.extend(
+                    Finding(
                         FindingCode.FORMATTER_FIELD_NOT_DISPLAYED,
                         f"{ctx}: formatting references [${ref}], which this "
                         f"view does not display -- a view formatter can only "
@@ -986,7 +988,9 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"would never fire. Add {ref} to fields, or drop the "
                         f"reference.",
                         location=at_view,
-                    ))
+                    )
+                    for ref in sorted((refs & readable) - shown)
+                )
             # Widths bind to columns the view actually shows; a width on an
             # unshown column is dead config the deployer would emit and SP
             # would silently ignore.
@@ -1081,14 +1085,16 @@ def check(vc: ValidationContext) -> list[Finding]:
         # for `all_items_joining_fields` to measure, so nothing downstream
         # could ever tell the key was honoured.
         if table is None:
-            for col_name in entity.hide_from_all_items:
-                findings.append(Finding(
+            findings.extend(
+                Finding(
                     FindingCode.HIDE_WITHOUT_ALL_ITEMS_VIEW,
                     f"{hide_ctx}: {col_name!r} cannot be hidden -- no 'All "
                     f"Items' view is generated for {entity_name} at all, so "
                     "this key would silently do nothing.",
                     location=at_hide,
-                ))
+                )
+                for col_name in entity.hide_from_all_items
+            )
             continue
         xcols = cross_site_by_entity.get(entity_name, set())
         # `rendered` and `bearing` are the same two building blocks

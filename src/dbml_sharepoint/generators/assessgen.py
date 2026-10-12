@@ -268,31 +268,37 @@ def derive_requirements(
         Requirement("site_not_locked",
                     "Site is not read-only / locked", "BLOCKED"),
     ]
-    for template_id in t["base_templates"]:
-        reqs.append(Requirement(
+    reqs.extend(
+        Requirement(
             f"list_template_{template_id}",
             f"Base template {template_id} is creatable on the web", "BLOCKED",
-        ))
-    for title in t["list_titles"]:
-        reqs.append(Requirement(
+        )
+        for template_id in t["base_templates"]
+    )
+    reqs.extend(
+        Requirement(
             f"collision:{title}",
             f"List '{title}' is absent or a redeploy target (not a foreign list)",
             "BLOCKED",
-        ))
-    for title in t["list_titles"]:
-        # A requirement key, because only one can degrade the verdict: the
-        # verdict loop walks REQUIREMENTS and skips a key with no finding,
-        # which is also how an absent list reports no size at all.
-        #
-        # WARN and never BLOCKED. See `INDEX_CHANGE_CEILING` for the two
-        # Microsoft sources that disagree about what happens over the larger
-        # band, and for what would license BLOCKED.
-        reqs.append(Requirement(
+        )
+        for title in t["list_titles"]
+    )
+    # A requirement key, because only one can degrade the verdict: the
+    # verdict loop walks REQUIREMENTS and skips a key with no finding,
+    # which is also how an absent list reports no size at all.
+    #
+    # WARN and never BLOCKED. See `INDEX_CHANGE_CEILING` for the two
+    # Microsoft sources that disagree about what happens over the larger
+    # band, and for what would license BLOCKED.
+    reqs.extend(
+        Requirement(
             f"item_count:{title}",
             f"Existing list '{title}' is under the {LIST_VIEW_THRESHOLD:,}-item "
             f"list view threshold",
             "WARN",
-        ))
+        )
+        for title in t["list_titles"]
+    )
     for title, root, _template in t["library_roots"]:
         reqs.append(Requirement(
             f"library_root:{title}",
@@ -359,12 +365,14 @@ def derive_requirements(
             f"exact previous marker while '{title}' is absent",
             "BLOCKED",
         ))
-    for plan in t["identity_groups"]:
-        reqs.append(Requirement(
+    reqs.extend(
+        Requirement(
             f"identity:{plan['group']}",
             f"'{plan['group']}' can hold the identities this deploy enrols",
             "BLOCKED",
-        ))
+        )
+        for plan in t["identity_groups"]
+    )
     if t["uses_today"]:
         reqs.append(Requirement(
             "time_zone",

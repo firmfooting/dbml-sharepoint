@@ -79,11 +79,13 @@ def unselected_reads(output: str) -> list[UnselectedRead]:
     reads: list[UnselectedRead] = []
     for line in output.splitlines():
         if line.startswith(SENTINEL):
-            for entry in json.loads(line[len(SENTINEL):]):
-                reads.append(UnselectedRead(
+            reads.extend(
+                UnselectedRead(
                     prop=entry["prop"], url=entry["url"],
                     line=entry.get("line"), source=entry.get("source", ""),
-                ))
+                )
+                for entry in json.loads(line[len(SENTINEL):])
+            )
     return reads
 
 

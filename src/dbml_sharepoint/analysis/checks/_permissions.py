@@ -483,13 +483,15 @@ def check(vc: ValidationContext) -> list[Finding]:
 
         # permission_levels[*].base_permissions must be known bits.
         for lvl in perms.levels:
-            for bit in lvl.base_permissions:
-                if bit not in BASE_PERMISSIONS:
-                    findings.append(Finding(
-                        FindingCode.UNKNOWN_BASE_PERMISSION,
-                        f"permission_levels[{lvl.name!r}]: unknown base permission {bit!r}",
-                        location=_LEVELS,
-                    ))
+            findings.extend(
+                Finding(
+                    FindingCode.UNKNOWN_BASE_PERMISSION,
+                    f"permission_levels[{lvl.name!r}]: unknown base permission {bit!r}",
+                    location=_LEVELS,
+                )
+                for bit in lvl.base_permissions
+                if bit not in BASE_PERMISSIONS
+            )
 
         # permission_levels[*].description must fit SP.RoleDefinition.Description.
         # The server refuses a longer one with HTTP 500, in phase 1.3 -- part-way

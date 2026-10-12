@@ -203,8 +203,10 @@ def render_notes(extraction: Extraction, *, generated_at: str) -> str:
         # this file has no entry for, alphabetically.
         ordered = [kind for kind in _KINDS if kind in grouped]
         ordered += sorted(kind for kind in grouped if kind not in _KINDS)
-        for kind in ordered:
-            parts.append(_section(kind, grouped[kind]))
+        parts.extend(
+            _section(kind, grouped[kind])
+            for kind in ordered
+        )
 
     parts.append(_CONTRACT)
     parts.append(_wrap(_ABSENCE_LEAD.format(source=extraction.source)))
@@ -270,7 +272,9 @@ def _section(kind: str, items: list[Unrecovered]) -> str:
     if explanation:
         lines.append(_wrap(explanation))
         lines.append("\n\n")
-    for item in sorted(items, key=lambda i: i.subject):
-        lines.append(_bullet(f"`{item.subject}`: {item.detail}"))
+    lines.extend(
+        _bullet(f"`{item.subject}`: {item.detail}")
+        for item in sorted(items, key=lambda i: i.subject)
+    )
     lines.append("\n")
     return "".join(lines)

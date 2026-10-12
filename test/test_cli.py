@@ -334,9 +334,11 @@ def test_help_text_is_ascii() -> None:
             for attr in ("help", "short_help", "epilog")
             if isinstance(value := getattr(command, attr, None), str)
         ]
-        for param in getattr(command, "params", ()):
-            if isinstance(value := getattr(param, "help", None), str):
-                found.append((f"{path} {param.name} help", value))
+        found.extend(
+            (f"{path} {param.name} help", value)
+            for param in getattr(command, "params", ())
+            if isinstance(value := getattr(param, "help", None), str)
+        )
         for name, sub in getattr(command, "commands", {}).items():
             found.extend(texts(sub, f"{path} {name}"))
         return found

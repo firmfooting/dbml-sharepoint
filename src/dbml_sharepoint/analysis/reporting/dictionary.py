@@ -294,22 +294,26 @@ def column_rows_for_table(
             ),
         ))
     for column, targets in bundle.mapping.lookup_projections.get(table.name, {}).items():
-        for target in targets:
-            rows.append(_fixed_row(
+        rows.extend(
+            _fixed_row(
                 f"{column}{target}",
                 "Lookup (read-only dependent)",
                 f"Read-only dependent of {column}, showing the target's {target}.",
-            ))
+            )
+            for target in targets
+        )
     # Reporting-only, and said so in the type cell: a reader looking for one
     # of these on the list will not find it, and the dictionary is where
     # they would look.
     for entry in bundle.mapping.derived_for(table.name):
-        for name in derived_output_names(entry):
-            rows.append(_fixed_row(
+        rows.extend(
+            _fixed_row(
                 name,
                 _derived_type_cell(entry),
                 entry.description or _derived_default_description(entry, name),
-            ))
+            )
+            for name in derived_output_names(entry)
+        )
     if bundle.mapping.reporting.system_columns:
         rows += _system_column_rows()
     return rows
@@ -430,10 +434,12 @@ def dictionary_rows(
     cross_site_keys = bundle.mapping.cross_site_keys()
     rows: list[tuple[str, DictionaryRow]] = []
     for table in tables_for_role(schema, bundle, site_role):
-        for row in column_rows_for_table(
-            table, bundle, enum_names, enum_members, cross_site_keys,
-        ):
-            rows.append((bundle.mapping.list_title(table.name), row))
+        rows.extend(
+            (bundle.mapping.list_title(table.name), row)
+            for row in column_rows_for_table(
+                table, bundle, enum_names, enum_members, cross_site_keys,
+            )
+        )
     if bundle.mapping.reporting.users_table:
         rows += [(USERS_KEY_LIST, row) for row in users_dictionary_rows()]
     return rows

@@ -293,12 +293,11 @@ def _path_consts() -> dict[str, str]:
     One level of indirection is all the templates use, and all this resolves.
     A second level would show up as an unresolvable suffix below, which fails.
     """
-    found: dict[str, str] = {}
-    for rel in ALL_TEMPLATES:
-        text = (TEMPLATES_DIR / rel).read_text(encoding="utf-8")
-        for name, value in _PATH_CONST.findall(text):
-            found[name] = value
-    return found
+    return {
+        name: value
+        for rel in ALL_TEMPLATES
+        for name, value in _PATH_CONST.findall((TEMPLATES_DIR / rel).read_text(encoding="utf-8"))
+    }
 
 
 def _family(suffix: str, consts: dict[str, str], where: str) -> str:

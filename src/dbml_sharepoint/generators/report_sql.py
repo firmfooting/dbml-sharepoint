@@ -199,10 +199,10 @@ def _render_user_added_columns_sql(plans: list[ListPlan], prefix: str) -> str:
     expected_rows = []
     for plan in plans:
         names = ["Id"] + [name for name, _ in plan.sql_columns]
-        for name in dict.fromkeys(names):
-            expected_rows.append(
-                f"    ({_sql_string(plan.list_title)}, {_sql_string(name)})",
-            )
+        expected_rows.extend(
+            f"    ({_sql_string(plan.list_title)}, {_sql_string(name)})"
+            for name in dict.fromkeys(names)
+        )
     # Emitting SQL text is this generator's purpose; identifiers come
     # from the validated schema, never from runtime user input.
     return (

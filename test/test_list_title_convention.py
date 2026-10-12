@@ -34,8 +34,10 @@ def _family_list_titles() -> list[tuple[str, str]]:
     for mapping_path in sorted(SOLUTION_TEMPLATES.glob("*/20-configure/mapping.yaml")):
         raw = _yaml.safe_load(mapping_path.read_text(encoding="utf-8")) or {}
         prefix = raw.get("prefix", "")
-        for entity in (raw.get("entities") or {}):
-            found.append((mapping_path.parent.parent.name, f"{prefix}{entity}"))
+        found.extend(
+            (mapping_path.parent.parent.name, f"{prefix}{entity}")
+            for entity in raw.get("entities") or {}
+        )
     return found
 
 

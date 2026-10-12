@@ -186,9 +186,11 @@ def test_severity_is_declared_exactly_once() -> None:
     declared = []
     for path in PACKAGE.rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.TypeAlias) and node.name.id == "Severity":
-                declared.append(path.name)
+        declared.extend(
+            path.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.TypeAlias) and node.name.id == "Severity"
+        )
     assert declared == ["findings.py"], declared
 
 

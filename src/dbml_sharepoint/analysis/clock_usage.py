@@ -91,13 +91,13 @@ def clock_usage(schema: Schema, mapping: Mapping, table_names: Iterable[str]) ->
                 continue
             for leaf in leaves(view.where):
                 note(leaf.value, view_types.get(leaf.field, ""), CAML)
-        for col in table.columns:
-            if (
-                col.type in DATE_TYPES
+        defaults.extend(
+            TodayDefault(table.name, col.name, col.type)
+            for col in table.columns
+            if col.type in DATE_TYPES
                 and isinstance(col.default, str)
                 and col.default.strip().lower() == TODAY_DEFAULT
-            ):
-                defaults.append(TodayDefault(table.name, col.name, col.type))
+        )
 
     return ClockUsage(
         cells={cell_id: frozenset(offsets) for cell_id, offsets in cells.items()},

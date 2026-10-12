@@ -45,8 +45,10 @@ def render_schema(extraction: Extraction, *, project: str) -> str:
     for enum in extraction.enums:
         members = "\n".join(f'  "{_escape(member)}"' for member in enum.members)
         parts.append(f"Enum {enum.name} {{\n{members}\n}}\n")
-    for entity in extraction.entities:
-        parts.append(_render_table(entity))
+    parts.extend(
+        _render_table(entity)
+        for entity in extraction.entities
+    )
     return "\n".join(parts)
 
 

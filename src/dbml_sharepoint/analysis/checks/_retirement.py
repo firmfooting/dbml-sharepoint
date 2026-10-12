@@ -166,32 +166,36 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"itself retired.",
                     location=col_at,
                 ))
-        for indexed_col in (
-            index.columns[0]
-            for index in retired_table.indexes
-            if len(index.columns) == 1
-        ):
-            if indexed_col in retired_cols:
-                findings.append(Finding(
-                    FindingCode.RETIRED_COLUMN_STILL_INDEXED,
-                    f"{ctx}: {indexed_col!r} is still in the DBML indexes block -- a "
-                    f"list's index budget is finite and this one is now dead "
-                    f"weight.",
-                    location=at,
-                ))
+        findings.extend(
+            Finding(
+                FindingCode.RETIRED_COLUMN_STILL_INDEXED,
+                f"{ctx}: {indexed_col!r} is still in the DBML indexes block -- a "
+                f"list's index budget is finite and this one is now dead "
+                f"weight.",
+                location=at,
+            )
+            for indexed_col in (
+                index.columns[0]
+                for index in retired_table.indexes
+                if len(index.columns) == 1
+            )
+            if indexed_col in retired_cols
+        )
         # _parse_view rejects an empty fields list, so a view can only reach
         # zero fields by having every one of them retired.
-        for retired_view in bundle.mapping.views.get(entity_name, []):
-            if not retired_view.fields:
-                findings.append(Finding(
-                    FindingCode.VIEW_EMPTIED_BY_RETIREMENT,
-                    f"views[{entity_name}].{retired_view.title}: retirement "
-                    f"stripped every declared field; the view would be "
-                    f"created with no columns.",
-                    location=Location(
-                        Section.VIEWS, entity=entity_name, view=retired_view.title,
-                    ),
-                ))
+        findings.extend(
+            Finding(
+                FindingCode.VIEW_EMPTIED_BY_RETIREMENT,
+                f"views[{entity_name}].{retired_view.title}: retirement "
+                f"stripped every declared field; the view would be "
+                f"created with no columns.",
+                location=Location(
+                    Section.VIEWS, entity=entity_name, view=retired_view.title,
+                ),
+            )
+            for retired_view in bundle.mapping.views.get(entity_name, [])
+            if not retired_view.fields
+        )
         # A LIVE formula referencing a retired column still runs against a
         # column that has left the forms and every view. A calculated column
         # that is itself retired is dead and is not reported.
@@ -200,25 +204,29 @@ def check(vc: ValidationContext) -> list[Finding]:
         ).items():
             if calc_col in retired_cols:
                 continue
-            for ref in sorted(formula_column_refs(formula) & set(retired_cols)):
-                findings.append(Finding(
+            findings.extend(
+                Finding(
                     FindingCode.CALCULATED_FORMULA_REFERENCES_A_RETIRED_COLUMN,
                     f"calculated_formulas[{entity_name}].{calc_col}: formula "
                     f"references [{ref}], which is retired.",
                     location=Location(
                         Section.CALCULATED_FORMULAS, entity=entity_name, column=calc_col,
                     ),
-                ))
+                )
+                for ref in sorted(formula_column_refs(formula) & set(retired_cols))
+            )
         retirement_rule = bundle.mapping.list_validation.get(entity_name)
         if retirement_rule is not None:
             retired_refs = {leaf.field for leaf in leaves(retirement_rule.when)} & set(retired_cols)
-            for ref in sorted(retired_refs):
-                findings.append(Finding(
+            findings.extend(
+                Finding(
                     FindingCode.LIST_VALIDATION_REFERENCES_A_RETIRED_COLUMN,
                     f"list_validation[{entity_name}]: condition references "
                     f"{ref}, which is retired.",
                     location=Location(Section.LIST_VALIDATION, entity=entity_name),
-                ))
+                )
+                for ref in sorted(retired_refs)
+            )
 
         # A save rule ON a retired column, rather than one referencing it.
         # Retirement hides the column from the NEW form, so a rule the blank
@@ -232,8 +240,8 @@ def check(vc: ValidationContext) -> list[Finding]:
         # the author decides which.
         validation_section = bundle.mapping.column_validation.get(entity_name)
         if validation_section is not None:
-            for ruled in sorted(set(validation_section.columns) & set(retired_cols)):
-                findings.append(Finding(
+            findings.extend(
+                Finding(
                     FindingCode.COLUMN_VALIDATION_ON_A_RETIRED_COLUMN,
                     f"column_validation[{entity_name}].{ruled}: {ruled!r} is retired, "
                     f"so it is hidden on the new form -- a save rule on it cannot "
@@ -242,7 +250,9 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=Location(
                         Section.COLUMN_VALIDATION, entity=entity_name, column=ruled,
                     ),
-                ))
+                )
+                for ruled in sorted(set(validation_section.columns) & set(retired_cols))
+            )
 
     # Declarations the load-time fold rewrote. The structures no longer
     # carry the reference, so the record on the mapping is the only source.
