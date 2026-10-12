@@ -13,6 +13,7 @@ from dbml_sharepoint.analysis.typemap import (
     TODAY_SENTINEL,
     choice_enum_for,
     element_type,
+    is_boolean,
     is_hyperlink,
     is_multi_value,
     is_person,
@@ -20,6 +21,8 @@ from dbml_sharepoint.analysis.typemap import (
 from dbml_sharepoint.model.mapping_types import DemoItem, EntityMapping
 from dbml_sharepoint.model.parser import Column
 
+_DEMO_NUMBER_TYPES = frozenset({"int", "number"})
+_DEMO_TEXT_TYPES = frozenset({"nvarchar", "longtext", "richtext"})
 _DEMO_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -79,6 +82,28 @@ def _demo_ref_findings(
             location=at,
         )]
     return []
+
+
+def _scalar_type_findings(
+    col_type: str | None, col_name: str, value: object, ctx: str, at: Location,
+) -> list[Finding]:
+    """YAML 1.2 reads `no` as text and `0800` as 800, and the demo generator
+    sends the value on as authored, so a value of the wrong type is refused."""
+    if is_boolean(col_type) and not isinstance(value, bool):
+        code, want = FindingCode.DEMO_BOOLEAN_VALUE_INVALID, "true or false"
+    elif col_type in _DEMO_NUMBER_TYPES and (
+        isinstance(value, bool) or not isinstance(value, int | float)
+    ):
+        code, want = FindingCode.DEMO_NUMBER_VALUE_INVALID, "a number"
+    elif col_type in _DEMO_TEXT_TYPES and not isinstance(value, str):
+        code, want = FindingCode.DEMO_TEXT_VALUE_INVALID, "a string (quote it)"
+    else:
+        return []
+    return [Finding(
+        code,
+        f"{ctx}: {col_name} is a {col_type} column and needs {want}, got {value!r}.",
+        location=at,
+    )]
 
 
 def _title_marker(
@@ -302,6 +327,8 @@ def check(vc: ValidationContext) -> list[Finding]:
                             location=at,
                         ))
                     continue
+                if enum_name is None and not is_multi_value(col_type or ""):
+                    findings += _scalar_type_findings(col_type, col_name, value, ctx, at)
                 # The resolver answers with the name; this rule needs the
                 # members behind it.
                 if enum_name is None:

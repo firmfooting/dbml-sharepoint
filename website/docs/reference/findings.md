@@ -98,6 +98,7 @@ dbml-sharepoint explain unknown_column_type
 | `condition_value_not_a_number` | error | A numeric column's operand is not a number. |
 | `condition_value_not_allowed` | error | `is_null`/`is_not_null` take no `value`. |
 | `condition_value_not_finite` | error | A numeric operand is an infinity or a NaN. |
+| `condition_value_not_text` | error | A condition compares a text column with a value that is not a string. It renders as `str(value)`, so an unquoted `0800` compares as "800"; quote the value. |
 | `configured_break_grants_nothing` | warning | A `list_permissions` policy (the default, an override or a folder policy) declares `reconcile: configured`, `break_inheritance: true` and no `assignments`. On a scope that still inherits, the deploy's ACL phase breaks inheritance with `copyRoleAssignments=false`, grants nothing, and removes nothing, because configured mode removes only a level a declared principal holds. `test/manual/operator-safety-grant-probe.js` measured that break on a list leaving exactly one binding, the running account's own at Full Control, so every other principal that held a role through inheritance loses it. It is not measured for an operator who is not a site collection administrator, nor on a folder; the list measurement is the evidence here. On a scope that already has permissions of its own, the policy writes nothing. A folder policy under a library that reconciles `exact` is refused by `folder_policy_manages_nothing` instead. This is a warning rather than an error because breaking a scope to manage it by hand is a legitimate intent. Declare the assignments the scope should have, or set `break_inheritance: false` if it should keep inheriting. |
 | `cross_site_column_cannot_be_unique` | error | A cross-site reference column is marked `[unique]`. Its logical column is replaced by generated `Abbreviation` and `SiteUrl` fields, so the constraint would never be deployed. |
 | `cross_site_column_has_no_ref` | error | A `cross_site_reference_columns:` entry names a column with no DBML `ref:`. |
@@ -114,6 +115,7 @@ dbml-sharepoint explain unknown_column_type
 | `default_formula_type_unsupported` | error | A default formula is declared on a column type it is not supported on. Supported: `date`, `datetime`, `int`, `number`, `nvarchar` and a single-value enum, each measured on a live site (date through `field.date.dynamic-default-rest-fill`; the rest through library-guards-probe.js c445a55c on 2026-09-13). |
 | `default_formula_unknown_column` | error | A default formula names a column the deploy does not create on that entity. |
 | `default_not_an_enum_member` | error | A column's default is not a member of the enum it is typed as. |
+| `demo_boolean_value_invalid` | error | A demo row's value for a Yes/No column is not a YAML boolean. An unquoted `no` is the text "no" under YAML 1.2. |
 | `demo_column_not_writable` | error | A demo row writes a column the deploy does not create, or writes `Id`. |
 | `demo_date_value_invalid` | error | A demo row's date value is neither `today+N`/`today-N` nor a real ISO calendar date. |
 | `demo_enum_value_unknown` | error | A demo row's value is not a member of the column's enum. |
@@ -126,12 +128,14 @@ dbml-sharepoint explain unknown_column_type
 | `demo_hyperlink_object_invalid` | error | A demo row's hyperlink object value is not `{url: <address>, description: <label>}` with `description` optional. |
 | `demo_multi_value_duplicate_member` | error | A demo row repeats a member within one multi-value value. The write shape measured as M3 on 2026-08-17 is a collection of choices, and nothing has measured what a repeated member reads back as, so the row is refused rather than seeded into an unmeasured state. |
 | `demo_multi_value_not_a_list` | error | A demo row writes a multi-value column with a scalar. The write shape is a collection, so the value has to be authored as a list. An empty list is accepted and leaves the column unset. |
+| `demo_number_value_invalid` | error | A demo row's value for a number column is not an int or float (a boolean does not count). |
 | `demo_object_value_invalid` | error | A demo row's object value is not exactly `{demo_ref: <key>}`. |
 | `demo_person_value_unsupported` | error | A demo row writes a person column with something other than `"@me"`, the deploying operator. |
 | `demo_ref_forward_reference` | error | A self-referencing demo row's `demo_ref` names a row declared at or after it, so the target does not exist when the row is written. |
 | `demo_ref_on_non_lookup` | error | A demo row uses `demo_ref` on a column that is not a lookup. |
 | `demo_ref_target_mismatch` | error | A demo row's `demo_ref` resolves to a row of a different entity from the one the lookup targets. |
 | `demo_ref_unknown_key` | error | A demo row's `demo_ref` names a key no demo row declares. |
+| `demo_text_value_invalid` | error | A demo row's value for a text column is not a string. An unquoted `0800` is the int 800 under YAML 1.2, so quote it. |
 | `demo_title_missing_marker` | error | A demo row's `Title` does not start with `[DEMO] `, the visible notice used to identify declared sample data. Rollback requires per-list confirmation before every delete. |
 | `demo_value_on_calculated_column` | error | A demo row writes a calculated column. Set its inputs instead. |
 | `deprecated_enrolment_flag` | warning | A group uses `enroll_enterprise_reader: true` or `enroll_operator_during_deploy: true`. Both still load: the first as `enroll: [enterprise_reader]` with `membership: exclusive`, the second as `enroll_during_run: [operator]`. Move to the new keys; the flags will be removed in a later release. |
