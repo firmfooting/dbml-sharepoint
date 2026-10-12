@@ -5,10 +5,10 @@ import textwrap
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
 
 import pytest
 from _batch_mock import BATCH_MOCK
+from _json_view import Json
 from _model import as_library, column
 from _model import bundle as make_bundle
 from _model import schema as make_schema
@@ -611,7 +611,7 @@ def _run_assess(
     item_counts: Mapping[str, int] | None = None,
     wrap: str = "",
     capture: bool = False,
-) -> dict[str, Any]:
+) -> Json:
     """Execute the emitted assess.js against a site holding `list_description`.
 
     One string applies to every declared list; a mapping sets them per title.
@@ -662,7 +662,7 @@ def _run_assess(
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert line is not None, f"assess.js did not return a summary:\n{output[-3000:]}"
-    summary: dict[str, Any] = json.loads(line.removeprefix("__RESULT__"))
+    summary = Json.loads(line.removeprefix("__RESULT__"))
     # Without this, "no marker warning was raised" would also be true of a run
     # that aborted in the site guard and probed nothing at all.
     assert summary.get("verdict"), f"assess.js reached no verdict:\n{output[-3000:]}"
@@ -670,8 +670,8 @@ def _run_assess(
 
 
 def _marker_findings(
-    summary: dict[str, Any], *, levels: set[str],
-) -> list[dict[str, Any]]:
+    summary: Json, *, levels: set[str],
+) -> list[Json]:
     """The marker check's own findings at `levels`, selected by key.
 
     WARN and BLOCKED are the levels the verdict consumes; PASS and INFO are
@@ -722,7 +722,7 @@ def test_assess_reports_a_provisioned_list_whose_marker_is_missing() -> None:
     )
 
 
-def _library_pack() -> tuple[Any, Any]:
+def _library_pack() -> tuple[Schema, MappingBundle]:
     """The simple fixture with Task declared as a library holding one folder."""
     schema, bundle = _simple()
     return schema, as_library(bundle, "Task", ("Field operations",))
@@ -792,7 +792,7 @@ def _folder_harness(
     return harness
 
 
-def _folder_finding(summary: dict[str, Any]) -> dict[str, Any]:
+def _folder_finding(summary: Json) -> Json:
     return next(f for f in summary["findings"] if f["key"] == "folder_shape:APP_Task")
 
 
@@ -841,7 +841,7 @@ def test_a_library_whose_folders_cannot_be_read_is_not_assessable() -> None:
     finding = _folder_finding(summary)
     assert finding["level"] == "NOT-ASSESSABLE", finding
     assert "Could not read" in finding["detail"], finding
-    assert summary["verdict"] in {"DEGRADED", "BLOCKED"}, summary["verdict"]
+    assert summary["verdict"].text in {"DEGRADED", "BLOCKED"}, summary["verdict"]
 
 
 # === A batched read that did not answer =====================================
@@ -902,9 +902,9 @@ def _sabotaged_batch(how: str) -> str:
 """.replace("__SABOTAGE__", _BATCH_SABOTAGE[how])
 
 
-def _levels(summary: dict[str, Any]) -> dict[str, str]:
+def _levels(summary: Json) -> dict[str, str]:
     """Finding level by key. The last wins, as the operator's console shows."""
-    return {f["key"]: f["level"] for f in summary["findings"]}
+    return {f["key"].text: f["level"].text for f in summary["findings"]}
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -983,7 +983,7 @@ def test_a_refused_digest_reads_one_at_a_time_rather_than_reporting_nothing() ->
 
 
 def _fields_harness(
-    fields: list[dict[str, Any]], *, next_link: str | None = None,
+    fields: list[dict[str, JsonValue]], *, next_link: str | None = None,
 ) -> str:
     """`_ASSESS_HARNESS` answering every field enumeration with `fields`.
 
@@ -1022,7 +1022,7 @@ def _fields_harness(
 _COLUMN_PAGE_SIZE = 500
 
 
-def _filler_columns(count: int) -> list[dict[str, Any]]:
+def _filler_columns(count: int) -> list[dict[str, JsonValue]]:
     """`count` columns no pack declares, for filling a page to its size."""
     return [
         {"InternalName": f"Filler{n}", "Title": f"Filler{n}",
@@ -1047,7 +1047,7 @@ def test_the_column_page_size_this_suite_fills_is_the_one_the_script_asks_for(
 _DISPLAY_KEY = "display_titles:"
 
 
-def _display_findings(summary: dict[str, Any]) -> list[dict[str, Any]]:
+def _display_findings(summary: Json) -> list[Json]:
     return [f for f in summary["findings"] if f["key"].startswith(_DISPLAY_KEY)]
 
 
@@ -1071,7 +1071,7 @@ def test_assess_reports_a_column_renamed_on_the_site() -> None:
     )
     drifted = _display_findings(summary)
     assert drifted, f"a renamed column drew no finding: {summary['findings']}"
-    detail = " ".join(f["detail"] for f in drifted)
+    detail = " ".join(f["detail"].text for f in drifted)
     assert "DueDate" in detail and "Renamed By Hand" in detail and '"Due Date"' in detail
     # Named with BOTH values: a finding saying only that something differs
     # sends the reader back to the site to find out what.
@@ -1300,7 +1300,7 @@ def _unique_assess_js(pack: tuple[Schema, MappingBundle] | None = None) -> str:
     )
 
 
-def _unique_findings(summary: dict[str, Any]) -> list[dict[str, Any]]:
+def _unique_findings(summary: Json) -> list[Json]:
     """The pending-unique check's own findings, selected by key.
 
     By key and never by the word "unique" in a detail string: several other
@@ -1326,13 +1326,13 @@ def _fields_refused_harness() -> str:
 
 
 def _run_unique_assess(
-    fields: list[dict[str, Any]] | None = None,
+    fields: list[dict[str, JsonValue]] | None = None,
     *,
     harness: str | None = None,
     present: bool = True,
     pack: tuple[Schema, MappingBundle] | None = None,
     wrap: str = "",
-) -> dict[str, Any]:
+) -> Json:
     """Run the unique pack's assess script against a site holding `fields`.
 
     `present=False` leaves the declared list off the site altogether, which is
@@ -1356,7 +1356,7 @@ def test_assess_warns_about_a_declared_unique_column_the_site_holds_unconstraine
     deploy's preflight makes the same comparison, but by the time its console
     is read the renames, security, logging and list phases have written.
     """
-    rows = [
+    rows: list[dict[str, JsonValue]] = [
         {"InternalName": "Title", "Title": "Title", "EnforceUniqueValues": True},
         {"InternalName": "Reference", "Title": "Reference", "EnforceUniqueValues": False},
         {"InternalName": "Owner", "Title": "Owner", "EnforceUniqueValues": False},
@@ -1386,7 +1386,7 @@ def test_a_declared_unique_column_already_constrained_is_not_warned_about() -> N
     Also the control for the DEGRADED above: the same healthy site, differing
     only in what the one column reads back, comes out COMPATIBLE.
     """
-    rows = [
+    rows: list[dict[str, JsonValue]] = [
         {"InternalName": "Title", "Title": "Title", "EnforceUniqueValues": True},
         {"InternalName": "Reference", "Title": "Reference", "EnforceUniqueValues": True},
     ]
@@ -1462,12 +1462,16 @@ def test_a_column_read_that_did_not_answer_reports_no_pending_constraints(
     assert summary["verdict"] == "DEGRADED", summary["verdict"]
 
 
+_NO_ITEMS: list[int] = []
+_NO_KEYS: dict[str, int] = {}
+
+
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 @pytest.mark.parametrize("payload", [{}, {"results": None}, {"results": {}},
                                      {"results": [None]}, {"results": [{}]},
                                      *[{"results": [], "__next": value}
-                                       for value in [False, True, 0, 1, [], {}]]])
-def test_malformed_column_collections_do_not_pass_unique_checks(payload: Any) -> None:
+                                       for value in [False, True, 0, 1, _NO_ITEMS, _NO_KEYS]]])
+def test_malformed_column_collections_do_not_pass_unique_checks(payload: object) -> None:
     empty = _fields_harness([])
     harness = empty.replace(
         "const answer = { results: [] };",
@@ -1485,8 +1489,8 @@ def test_malformed_column_collections_do_not_pass_unique_checks(payload: Any) ->
                                      {"results": [], "__next": "next-page"},
                                      {"results": [{"Title": "Other"}] * 5000},
                                      *[{"results": [], "__next": value}
-                                       for value in [False, True, 0, 1, [], {}]]])
-def test_malformed_list_collections_do_not_establish_absence(payload: Any) -> None:
+                                       for value in [False, True, 0, 1, _NO_ITEMS, _NO_KEYS]]])
+def test_malformed_list_collections_do_not_establish_absence(payload: object) -> None:
     harness = _fields_harness([
         {"InternalName": "Reference", "Title": "Reference", "EnforceUniqueValues": False},
     ])
@@ -1522,7 +1526,7 @@ def test_folder_assessment_avoids_unindexed_queries(object_type: int | None) -> 
                                      {"Exists": True, "ServerRelativeUrl": "/wrong"},
                                      {"FileSystemObjectType": 0, "FileRef": "/wrong"}])
 def test_malformed_folder_path_evidence_is_not_assessable(
-    endpoint: str, object_type: int | None, payload: Any,
+    endpoint: str, object_type: int | None, payload: object,
 ) -> None:
     harness = _folder_harness(object_type).replace(
         "  return respond(200, body(u));",
@@ -1550,7 +1554,7 @@ def test_folder_path_status_is_not_confused_with_absence(endpoint: str, status: 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 @pytest.mark.parametrize("next_page", [None, ""])
-def test_column_collection_accepts_valid_pagination_terminators(next_page: Any) -> None:
+def test_column_collection_accepts_valid_pagination_terminators(next_page: object) -> None:
     harness = _fields_harness([]).replace(
         "const answer = { results: projected };",
         f"const answer = {{ results: projected, __next: {json.dumps(next_page)} }};",
@@ -1561,7 +1565,7 @@ def test_column_collection_accepts_valid_pagination_terminators(next_page: Any) 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 @pytest.mark.parametrize("next_page", [False, True, 0, 1, [], {}, "next-page", None, ""])
-def test_principal_rename_checks_require_complete_enumerations(next_page: Any) -> None:
+def test_principal_rename_checks_require_complete_enumerations(next_page: object) -> None:
     schema, _ = _unique_pack()
     bundle = make_bundle(entities=["Asset"], permissions=PermissionsConfig(
         default_policy=None, overrides={},
@@ -1652,7 +1656,7 @@ def test_a_declared_unique_column_missing_from_a_full_page_is_not_absent(
     yet is. Reading the second meaning passes the check on a list that may
     hold the column unconstrained, which is what the check exists to catch.
     """
-    rows = [
+    rows: list[dict[str, JsonValue]] = [
         {"InternalName": "Title", "Title": "Title", "EnforceUniqueValues": True},
         *_filler_columns(_COLUMN_PAGE_SIZE - 1),
     ]
@@ -1697,7 +1701,7 @@ def test_a_full_page_holding_the_declared_column_still_answers_for_it() -> None:
     way it always was. Without this, reporting every full page unassessable
     would satisfy the test above while telling the operator nothing.
     """
-    rows = [
+    rows: list[dict[str, JsonValue]] = [
         {"InternalName": "Title", "Title": "Title", "EnforceUniqueValues": True},
         {"InternalName": "Reference", "Title": "Reference", "EnforceUniqueValues": False},
         *_filler_columns(_COLUMN_PAGE_SIZE - 2),
@@ -2243,7 +2247,7 @@ def test_an_unassessable_marker_degrades_the_verdict_too() -> None:
 # `limits.py` docstring records for its boundary tests.
 
 
-def _item_count_findings(summary: dict[str, Any]) -> list[dict[str, Any]]:
+def _item_count_findings(summary: Json) -> list[Json]:
     """The size check's own findings, selected by key rather than by detail."""
     return [f for f in summary["findings"] if f["key"].startswith("item_count:")]
 
@@ -2319,7 +2323,7 @@ def test_a_list_well_under_the_threshold_is_reported_without_degrading() -> None
         _declared_descriptions(), harness=_healthy_harness(),
         item_counts={"APP_Project": 120},
     )
-    reported = {f["key"]: f for f in _item_count_findings(summary)}
+    reported = {f["key"].text: f for f in _item_count_findings(summary)}
     assert reported["item_count:APP_Project"]["level"] == "INFO"
     assert "120 item(s)" in reported["item_count:APP_Project"]["detail"]
     assert summary["verdict"] == "COMPATIBLE", [
@@ -2542,7 +2546,7 @@ def test_the_reporting_branches_the_thin_mock_cannot_reach_all_fire() -> None:
     summary = _run_assess(
         _declared_descriptions(), harness=_reporting_variants_harness(),
     )
-    detail = {f["key"]: f["detail"] for f in summary["findings"]}
+    detail = {f["key"].text: f["detail"].text for f in summary["findings"]}
     assert detail["retention_labels"] == "Retention labels not reported by this site."
     assert detail["storage"] == "Storage used 250 MB (25% of quota)."
     assert detail["app_catalog"] == "No tenant app catalog configured."
@@ -2633,11 +2637,11 @@ def test_a_null_payload_still_reaches_a_verdict() -> None:
     body is the cheapest payload that produces one.
     """
     summary = _run_assess(_declared_descriptions(), harness=_NULL_BODY_HARNESS)
-    assert summary["verdict"] in {"COMPATIBLE", "DEGRADED", "BLOCKED"}, summary
+    assert summary["verdict"].text in {"COMPATIBLE", "DEGRADED", "BLOCKED"}, summary
     # From `probeGet` refusing the payload, not from the `try` catching a
     # throw. The `try` is the second guard and would satisfy the line above
     # on its own, which would leave the first one untested.
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").is_none, summary
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -2696,7 +2700,7 @@ def _refused_contextinfo_harness() -> str:
     return _ASSESS_HARNESS + BATCH_MOCK + wrapper
 
 
-def _run_assess_refused(harness: str) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+def _run_assess_refused(harness: str) -> tuple[Json, list[Json], str]:
     """Run the emitted assess.js and hand back its summary, calls and transcript.
 
     `_run_assess` asserts its way to a summary, which is the wrong shape for a
@@ -2713,9 +2717,9 @@ def _run_assess_refused(harness: str) -> tuple[dict[str, Any], list[dict[str, An
     ).replace("(async () => {", "((async () => {", 1)
     output = run_node(script)
 
-    def _marker(name: str) -> Any:
+    def _marker(name: str) -> Json | None:
         line = next((ln for ln in output.splitlines() if ln.startswith(name)), None)
-        return None if line is None else json.loads(line.removeprefix(name))
+        return None if line is None else Json.loads(line.removeprefix(name))
 
     thrown = _marker("__THROWN__")
     assert thrown is None, f"assess.js rejected instead of reporting: {thrown}"
@@ -2723,7 +2727,7 @@ def _run_assess_refused(harness: str) -> tuple[dict[str, Any], list[dict[str, An
     assert summary is not None, f"assess.js returned no summary:\n{output[-3000:]}"
     calls = _marker("__CALLS__")
     assert calls is not None, f"the harness produced no call log:\n{output[-3000:]}"
-    return summary, calls, output
+    return summary, calls.rows, output
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -2740,8 +2744,8 @@ def test_a_refused_contextinfo_is_named_rather_than_reported_as_a_type_error() -
         f"the refusal still surfaces as a property-access error:\n{output[-3000:]}"
     )
     # A refused digest degrades the assessment without preventing other reads.
-    assert summary["verdict"] in {"COMPATIBLE", "DEGRADED", "BLOCKED"}, summary
-    assert summary.get("aborted") is None, summary
+    assert summary["verdict"].text in {"COMPATIBLE", "DEGRADED", "BLOCKED"}, summary
+    assert summary.get("aborted").is_none, summary
     named = [f for f in summary["findings"] if "contextinfo" in str(f["detail"])]
     assert named, f"no finding names the refused request: {summary['findings']}"
     assert any(f["key"] == "platform_build" for f in named), named
@@ -2788,7 +2792,7 @@ def test_a_refused_enumeration_still_reads_a_404_as_absence() -> None:
     """
     summary, _calls, _output = _run_assess_refused(_refused_enumeration_harness())
     collisions = {
-        f["key"]: f["level"]
+        f["key"].text: f["level"].text
         for f in summary["findings"]
         if f["key"].startswith("collision:")
     }
@@ -2898,7 +2902,7 @@ def test_the_time_zone_finding_warns_when_the_browser_is_ahead_of_the_site() -> 
         generated_at="2026-05-04T00:00:00Z", resolved=resolve(schema, bundle.mapping),
     )
 
-    def zone_finding(browser_offset_min: int) -> dict[str, Any]:
+    def zone_finding(browser_offset_min: int) -> Json:
         harness = _ZONE_HARNESS.replace("BROWSER_OFFSET_MIN", str(browser_offset_min))
         summary = _run_assess("", harness=harness, js=js)
         return next(f for f in summary["findings"] if f["key"] == "time_zone")
@@ -3163,7 +3167,7 @@ def _writers_assess(tmp_path: Path, body: str = _WRITERS_BODY) -> str:
     )
 
 
-def _members_wrap(members: Any, status: int = 200, extra: str = "") -> str:
+def _members_wrap(members: object, status: int = 200, extra: str = "") -> str:
     """Answer the group's users read with `members`, and record every request."""
     return textwrap.dedent("""
         globalThis.__CALLS = [];
@@ -3181,19 +3185,19 @@ def _members_wrap(members: Any, status: int = 200, extra: str = "") -> str:
         "@BODY@", extra or "{ d: { results: members } }")
 
 
-def _identity_run(tmp_path: Path, members: Any, status: int = 200, extra: str = "",
-                  body: str = _WRITERS_BODY) -> dict[str, Any]:
+def _identity_run(tmp_path: Path, members: object, status: int = 200, extra: str = "",
+                  body: str = _WRITERS_BODY) -> Json:
     return _run_assess(
         "", js=_writers_assess(tmp_path, body), capture=True,
         wrap=_members_wrap(members, status, extra),
     )
 
 
-def _identity_rows(out: dict[str, Any]) -> list[dict[str, Any]]:
+def _identity_rows(out: Json) -> list[Json]:
     return [f for f in out["findings"] if f["tier"] == "IDENTITIES"]
 
 
-def _member(login: str, kind: int = 1, email: str = "", ident: int = 41) -> dict[str, Any]:
+def _member(login: str, kind: int = 1, email: str = "", ident: int = 41) -> dict[str, JsonValue]:
     return {"Id": ident, "LoginName": login, "Email": email, "PrincipalType": kind}
 
 
@@ -3205,7 +3209,7 @@ def _member(login: str, kind: int = 1, email: str = "", ident: int = 41) -> dict
     ([_member("i:0#.f|membership|other@example.com", ident=42)], "extra", "WARN"),
 ])
 def test_assess_reports_each_identity_status(
-    tmp_path: Path, members: Any, status: str, level: str,
+    tmp_path: Path, members: object, status: str, level: str,
 ) -> None:
     out = _identity_run(tmp_path, members)
     assert any(status in f["detail"] and f["level"] == level for f in _identity_rows(out))
@@ -3306,9 +3310,9 @@ def test_a_group_kind_is_matched_by_its_claim(tmp_path: Path, kind: str, claim: 
                         "claim": claim})
     js = re.sub(r'\{[^{}]*"kind":\s*"user"[^{}]*\}', lambda _: value, base)
 
-    def statuses(member: dict[str, Any]) -> list[str]:
+    def statuses(member: dict[str, JsonValue]) -> list[str]:
         out = _run_assess("", js=js, capture=True, wrap=_members_wrap([member]))
-        return [f["detail"] for f in _identity_rows(out)]
+        return [f["detail"].text for f in _identity_rows(out)]
 
     assert any("= present" in d for d in statuses(_member(claim, 4)))
     assert any("! wrong kind" in d for d in statuses(_member(claim, 1)))
@@ -3350,14 +3354,17 @@ def _checkout_pack(require_checkout: bool | None) -> tuple[Schema, MappingBundle
 
 
 def test_assess_targets_carry_only_a_declared_require_checkout() -> None:
-    for declared, expected in ((False, [["APP_Docs", False]]), (None, [])):
+    cases: list[tuple[bool | None, list[JsonValue]]] = [
+        (False, [["APP_Docs", False]]), (None, []),
+    ]
+    for declared, expected in cases:
         schema, bundle = _checkout_pack(declared)
         resolved = resolve(schema, bundle.mapping)
         targets = assess_targets(schema, bundle, "default", resolved=resolved)
         assert targets["library_checkout"] == expected
 
 
-def _assess_checkout(live: object, *, declared: bool = False) -> list[dict[str, Any]]:
+def _assess_checkout(live: object, *, declared: bool = False) -> list[Json]:
     schema, bundle = _checkout_pack(declared)
     js = generate_assess_js(
         schema=schema, bundle=bundle,
