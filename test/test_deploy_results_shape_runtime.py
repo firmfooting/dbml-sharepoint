@@ -274,7 +274,7 @@ def test_a_current_row_read_without_results_writes_no_change_row(central: bool) 
     from dbml_sharepoint.analysis.sidecars import CHANGE_LOG_TITLE, EXTERNAL_CHANGE_LOG_DEFAULT
 
     title = EXTERNAL_CHANGE_LOG_DEFAULT if central else CHANGE_LOG_TITLE
-    overlay = malformed((f"getbytitle('{title}')/items", "IsCurrent eq true"), _NO_RESULTS)
+    overlay = malformed((f"getbytitle('{title}')/items", "IsCurrent eq 1"), _NO_RESULTS)
     run = (
         _run_deploy(central_can_close=True, seeded_central_rows=True, overlay=overlay)
         if central else

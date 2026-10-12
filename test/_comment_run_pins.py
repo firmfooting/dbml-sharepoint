@@ -299,7 +299,7 @@ PINNED: dict[str, list[str]] = {
         "0e6d8e5d1585",
         "101cb3559933",
         "70f3b7a091ca",
-        "ebc36907ae08",
+        "92ef766e3994",
     ],
     "src/dbml_sharepoint/solutions/deployment-log/20-configure/mapping.yaml": [
         "1b2cd091c6a1",

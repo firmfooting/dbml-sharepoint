@@ -136,7 +136,7 @@ def change_log_title() -> str:
 #: declared indexed carries it unindexed, and only a MERGE reaches those.
 #:
 #: ChangeKey and IsCurrent are indexed because the type-2 close reads
-#: ``$filter=ChangeKey eq '...' and IsCurrent eq true``, and BOTH sides of
+#: ``$filter=ChangeKey eq '...' and IsCurrent eq 1``, and BOTH sides of
 #: an AND must be indexed for the filter to survive the 5,000-item list view
 #: threshold. This list is deliberately unbounded: it gains a row per change
 #: forever.
