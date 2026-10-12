@@ -12,7 +12,7 @@ The Title prefix (validated mandatory) is the visible in-record sample-data
 notice; `analysis/demo_marker.py` declares it.
 """
 
-from typing import Any
+from typing import NotRequired, TypedDict
 
 from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.demo_marker import DEMO_TITLE_PREFIX
@@ -50,9 +50,18 @@ _DATE_TYPES = {"date", "datetime"}
 _ENCODED_ON_STORE = {"richtext"}
 
 
+class _FieldPlan(TypedDict):
+    name: str
+    kind: str
+    value: NotRequired[object]
+    metadata_type: NotRequired[str]
+    results: NotRequired[list[object]]
+    encoded_on_store: NotRequired[bool]
+
+
 def _field_plan(
-    col_type: str | None, name: str, value: Any, *, is_ref: bool = False,
-) -> dict[str, Any] | None:
+    col_type: str | None, name: str, value: object, *, is_ref: bool = False,
+) -> _FieldPlan | None:
     """The typed plan for one demo field, or None when the field is omitted."""
     # Keyed on `demo_ref` rather than on being a dict at all: a hyperlink
     # value is also a mapping, and a bare isinstance check claimed it as a
@@ -137,11 +146,12 @@ def _field_plan(
             # reading back `null` (2026-08-17), so omission is the only route to
             # an unset column that anything has sent.
             return None
+        results: list[object] = [*value]
         return {
             "name": name,
             "kind": "multi_value",
             "metadata_type": MULTI_VALUE_METADATA_TYPE,
-            "results": list(value),
+            "results": results,
         }
     if element_type(col_type or "") in _DATE_TYPES and isinstance(value, str):
         m = _TODAY_OFFSET.match(value)
@@ -166,6 +176,19 @@ def _field_plan(
     return {"name": name, "kind": "literal", "value": value}
 
 
+class _DemoFile(TypedDict):
+    name: str
+    folder: str | None
+    content: str
+
+
+class _DemoPlanItem(TypedDict):
+    list: str
+    key: str
+    fields: list[_FieldPlan]
+    file: _DemoFile | None
+
+
 def generate_demo_js(
     *,
     schema: Schema,
@@ -179,7 +202,7 @@ def generate_demo_js(
 ) -> str:
     env = script_env(application)
     tables_by_name = {t.name: t for t in schema.tables}
-    demo_plan: list[dict[str, Any]] = []
+    demo_plan: list[_DemoPlanItem] = []
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):
         table = tables_by_name[table_name]
         types_by_col = {c.name: c.type for c in table.columns}

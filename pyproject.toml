@@ -259,6 +259,14 @@ implicit-any-empty-container = "error"
 implicit-any-lambda = "error"
 
 [[tool.pyrefly.sub-config]]
+matches = "src/dbml_sharepoint/generators/**"
+
+[tool.pyrefly.sub-config.errors]
+explicit-any = "error"
+implicit-any-empty-container = "error"
+implicit-any-lambda = "error"
+
+[[tool.pyrefly.sub-config]]
 matches = "src/dbml_sharepoint/__init__.py"
 
 [tool.pyrefly.sub-config.errors]

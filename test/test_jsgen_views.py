@@ -25,6 +25,7 @@ from dbml_sharepoint.generators.jsgen import (
     _view_caml_query,
     build_schema_json,
 )
+from dbml_sharepoint.generators.schema_types import ViewRow
 from dbml_sharepoint.model.conditions import parse_condition
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import ViewDef, ViewGroupBy, ViewSort
@@ -737,7 +738,7 @@ def test_only_a_librarys_generated_all_items_may_adopt_the_view_on_its_url(
               fields: [Title, Division]
     """
 
-    def views_of(kind: str, template: int, where: Path) -> list[dict[str, Any]]:
+    def views_of(kind: str, template: int, where: Path) -> list[ViewRow]:
         where.mkdir(parents=True, exist_ok=True)
         schema, bundle = pack(
             where,
@@ -746,10 +747,9 @@ def test_only_a_librarys_generated_all_items_may_adopt_the_view_on_its_url(
                 entities(entity("Doc", kind=kind, base_template=template)), declared,
             ),
         )
-        views: list[dict[str, Any]] = build_schema_json(
+        return build_schema_json(
             schema, bundle, "default", resolved=resolve(schema, bundle.mapping),
         )["views"]
-        return views
 
     library = views_of("DocumentLibrary", 101, tmp_path / "library")
     assert {v["title"] for v in library} == {"All Items", "By division"}

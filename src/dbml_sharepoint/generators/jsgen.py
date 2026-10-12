@@ -1,12 +1,13 @@
 # src/dbml_sharepoint/generators/jsgen.py
 """Render deploy.js from the schema, mapping bundle, and release."""
 
+import copy
 import json
+from collections.abc import Mapping, Sequence
 from collections.abc import Mapping as AbcMapping
-from collections.abc import Sequence
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, assert_never
+from typing import assert_never
 
 from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.column_projection import (
@@ -65,6 +66,26 @@ from dbml_sharepoint.generators.assessgen import (
     assess_targets,
     derive_requirements,
 )
+from dbml_sharepoint.generators.schema_types import (
+    AclScope,
+    FieldBody,
+    FieldDefault,
+    FieldSpec,
+    FormFormattingRow,
+    GroupRow,
+    IndexedColumn,
+    ListRow,
+    PermissionLevelRow,
+    Phase2Lookup,
+    PrincipalRow,
+    Projection,
+    SchemaJson,
+    SeedItem,
+    TitlePatch,
+    ViewRow,
+    is_field_spec,
+)
+from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
 from dbml_sharepoint.model.identities import IdentityValue
 from dbml_sharepoint.model.mapping_types import (
@@ -124,10 +145,10 @@ def generate_deploy_js(
     deployment_log_site: str = "",
     sidecar_run_log_title: str | None = None,
     sidecar_run_log_marker: str | None = None,
-    sidecar_run_log_fields: Sequence[dict[str, Any]] | None = None,
+    sidecar_run_log_fields: Sequence[Mapping[str, object]] | None = None,
     sidecar_change_log_title: str | None = None,
     sidecar_change_log_marker: str | None = None,
-    sidecar_change_fields: Sequence[dict[str, Any]] | None = None,
+    sidecar_change_fields: Sequence[Mapping[str, object]] | None = None,
     application: str = APPLICATION_NAME,
 ) -> str:
     env = script_env(application)
@@ -423,15 +444,24 @@ def _in_declaration_order(names: frozenset[str], columns: Sequence[Column]) -> l
     return sorted(names, key=position)
 
 
-def _create_body(field: dict[str, Any]) -> dict[str, Any]:
-    """A field spec's REST create body, whose keys vary with the field type."""
-    body: dict[str, Any] = field["body"]
-    return body
+class FieldSpecError(ValueError):
+    """A field spec the generator cannot emit: an extension's malformed one, or a broken typemap."""
+
+
+def _extension_fields(raw: list[dict[str, JsonValue]], where: str) -> list[FieldSpec]:
+    """An extension's `expand_column` result, checked for what the generator reads from it."""
+    for spec in raw:
+        if not is_field_spec(spec):
+            raise FieldSpecError(
+                f"{where}: expand_column must return fields with a text `title` and a `body` "
+                "object holding an integer FieldTypeKind and, when present, a text Formula",
+            )
+    return [spec for spec in raw if is_field_spec(spec)]
 
 
 def _order_calculated_after_references(
-    fields: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
+    fields: list[FieldSpec],
+) -> list[FieldSpec]:
     """Order a list's Phase-1 fields so every calculated field follows the
     columns its formula references.
 
@@ -447,14 +477,14 @@ def _order_calculated_after_references(
     if not calc:
         return fields
     calc_titles = {f["title"] for f in calc}
-    ordered: list[dict[str, Any]] = []
+    ordered: list[FieldSpec] = []
     emitted: set[str] = set()
     remaining = list(calc)
     while remaining:
         ready = [
             f for f in remaining
             if not (
-                (formula_column_refs(_create_body(f)["Formula"]) & calc_titles)
+                (formula_column_refs(f["body"]["Formula"]) & calc_titles)
                 - emitted - {f["title"]}
             )
         ]
@@ -472,7 +502,7 @@ def _order_calculated_after_references(
     return plain + ordered
 
 
-def _title_patch(col: Column, display_title: str | None) -> dict[str, Any]:
+def _title_patch(col: Column, display_title: str | None) -> TitlePatch:
     """The MERGE body for a list's built-in Title, from its DBML declaration.
 
     Title never goes through the field-body builder, because the column
@@ -491,7 +521,7 @@ def _title_patch(col: Column, display_title: str | None) -> dict[str, Any]:
     an explicit false is a declaration about the property rather than silence
     about it, which would change what every existing family deploys.
     """
-    patch: dict[str, Any] = {
+    patch: TitlePatch = {
         "__metadata": {"type": "SP.FieldText"},
         "Required": col.required,
         "Description": format_description(col.note),
@@ -506,11 +536,11 @@ def _title_patch(col: Column, display_title: str | None) -> dict[str, Any]:
     return patch
 
 
-def _principal_json(principal: Principal) -> dict[str, Any]:
+def _principal_json(principal: Principal) -> PrincipalRow:
     """A principal as the templates read it: the kind, and a name only for a
     named group. The three `associated_*` kinds resolve through the site's own
     endpoints and carry no name at all."""
-    out: dict[str, Any] = {"kind": principal.kind}
+    out: PrincipalRow = {"kind": principal.kind}
     if principal.kind == "group" and principal.name is not None:
         out["name"] = principal.name
     return out
@@ -521,7 +551,7 @@ def _acl_scopes(
     creation_order: Sequence[str],
     site_role: str,
     resolved: ResolvedMapping,
-) -> list[dict[str, Any]]:
+) -> list[AclScope]:
     """Every securable this bundle writes role assignments to, list scopes and
     folder scopes in one collection.
 
@@ -530,7 +560,7 @@ def _acl_scopes(
     question than its name claims. A row carries `folder` only when it is a
     folder scope, so a consumer meaning one kind states that in its filter.
     """
-    out: list[dict[str, Any]] = []
+    out: list[AclScope] = []
     for table_name in creation_order:
         entity = bundle.mapping.entities.get(table_name)
         if entity is None or entity.site_role != site_role:
@@ -583,7 +613,7 @@ def build_schema_json(
     release: Release | None = None,
     extension: DeploymentExtension | None = None,
     site_context: SiteContext | None = None,
-) -> dict[str, Any]:
+) -> SchemaJson:
     # A build must never silently omit a declared group or folder, and this
     # script is pasted into a live site, so a bad `from_enum` anywhere in the
     # mapping refuses every role rather than only its own (`report_md` differs).
@@ -617,12 +647,12 @@ def build_schema_json(
         schema, bundle.mapping.entities, calculated_by_entity, cross_site_keys,
     )
 
-    lists: list[dict[str, Any]] = []
-    phase2: list[dict[str, Any]] = []
-    indexed_columns_out: list[dict[str, Any]] = []
-    views_out: list[dict[str, Any]] = []
-    form_formatting_out: list[dict[str, Any]] = []
-    field_defaults_out: list[dict[str, Any]] = []
+    lists: list[ListRow] = []
+    phase2: list[Phase2Lookup] = []
+    indexed_columns_out: list[IndexedColumn] = []
+    views_out: list[ViewRow] = []
+    form_formatting_out: list[FormFormattingRow] = []
+    field_defaults_out: list[FieldDefault] = []
 
     # One family per schema, so it is resolved once rather than per list.
     family = family_for(schema)
@@ -635,8 +665,8 @@ def build_schema_json(
         item_security = bundle.mapping.item_security_for(table_name)
         table = by_name[table_name]
 
-        fields_phase1: list[dict[str, Any]] = []
-        title_patch: dict[str, Any] | None = None
+        fields_phase1: list[FieldSpec] = []
+        title_patch: TitlePatch | None = None
         # The built-in Title's display name, resolved once for the list
         # because two things need it and they must not disagree: the patch
         # that renames the column, and the formula rewrite below.
@@ -671,7 +701,7 @@ def build_schema_json(
                         "cross_site_reference_columns requires an extension "
                         f"that handles expand_column ({table.name}.{col.name})",
                     )
-                fields_phase1.extend(expanded)
+                fields_phase1.extend(_extension_fields(expanded, f"{table.name}.{col.name}"))
                 continue
 
             if col.name == "Id" and col.is_pk and col.is_auto_increment:
@@ -689,7 +719,7 @@ def build_schema_json(
                     })
                 continue
 
-            projections = [
+            projections: list[Projection] = [
                 {
                     "name": f"{col.name}{target_col}",
                     "display_title": bundle.mapping.display_name_for(
@@ -705,13 +735,19 @@ def build_schema_json(
             if (table.name, col.name) in deferred_set:
                 prefix = bundle.mapping.prefix
                 target = (bundle.mapping.list_title(col.ref.target_table)) if col.ref else ""
+                deferred_body = _field_body(
+                    col, enums_by_name, list_title_prefix=prefix,
+                    entities=bundle.mapping.entities,
+                )
+                if deferred_body is None:
+                    raise FieldSpecError(
+                        f"{table.name}.{col.name}: a deferred lookup produced no field "
+                        "(typemap invariant violated)",
+                    )
                 phase2.append({
                     "list": list_title,
                     "target_list": target,
-                    "field": _field_body(
-                        col, enums_by_name, list_title_prefix=prefix,
-                        entities=bundle.mapping.entities,
-                    ),
+                    "field": deferred_body,
                     "projections": projections,
                 })
                 continue
@@ -784,7 +820,7 @@ def build_schema_json(
         )
         calculated_here = bundle.mapping.calculated_formulas.get(table_name, {})
         for f in fields_phase1:
-            create_body = _create_body(f)
+            create_body = f["body"]
             f["display_title"] = display_map[f["title"]]
             is_calculated = f["title"] in calculated_here
             f["client_validation_formula"] = _visibility_formula(
@@ -806,7 +842,7 @@ def build_schema_json(
                 else None
             )
         for deferred in phase2:
-            deferred_field: dict[str, Any] = deferred["field"]
+            deferred_field = deferred["field"]
             if deferred["list"] == list_title and "display_title" not in deferred_field:
                 deferred_field["display_title"] = bundle.mapping.display_name_for(
                     table_name, deferred_field["title"],
@@ -827,7 +863,7 @@ def build_schema_json(
                     deferred_field["validation_message"],
                 ) = _column_validation(
                     validation, deferred_field["title"], col_types, display_map,
-                    field_type_kind=_create_body(deferred_field)["FieldTypeKind"],
+                    field_type_kind=deferred_field["body"]["FieldTypeKind"],
                     is_calculated=deferred_calculated,
                     hoisted=hoisted_names,
                 )
@@ -958,11 +994,11 @@ def build_schema_json(
             # deployed under the old nested-string encoding). Body section
             # field lists are the one place SP matches by DISPLAY name.
             # Rewrite them through the display map.
-            parts: dict[str, Any] = {}
+            parts: dict[str, object] = {}
             if declared_form.header is not None:
                 parts["headerJSONFormatter"] = declared_form.header
             if declared_form.body is not None:
-                body = json.loads(json.dumps(declared_form.body))
+                body = copy.deepcopy(declared_form.body)
                 for section in body.get("sections") or []:
                     if isinstance(section, dict) and isinstance(section.get("fields"), list):
                         names: list[object] = section["fields"]
@@ -1103,13 +1139,13 @@ def build_schema_json(
         )
 
     # === Permissions (R5) ===
-    permission_levels_out: list[dict[str, Any]] = []
-    groups_out: list[dict[str, Any]] = []
+    permission_levels_out: list[PermissionLevelRow] = []
+    groups_out: list[GroupRow] = []
     # Initialised beside the others rather than inside the block below.
     # `Mapping.permissions` is optional, so a caller composing a Mapping
     # through the public API can leave it None, and the schema dict reads
     # this key unconditionally.
-    acl_scopes_out: list[dict[str, Any]] = []
+    acl_scopes_out: list[AclScope] = []
 
     mapping_perms = bundle.mapping.permissions
     if mapping_perms is not None:
@@ -1181,7 +1217,7 @@ def build_schema_json(
     # deterministic output. skip_if_has_rows means an existing singleton must
     # match every declared field exactly; an arbitrary row never counts as an
     # idempotent success.
-    seed_items: list[dict[str, Any]] = [
+    seed_items: list[SeedItem] = [
         {"title": title, "fields": fields, "skip_if_has_rows": True}
         for title, fields in sorted(ext.seed_lists(bundle, schema, sc).items())
     ]
@@ -1212,13 +1248,18 @@ def _field_body(
     entities: dict[str, EntityMapping] | None = None,
     formulas: dict[str, str] | None = None,
     default_formulas: dict[str, str] | None = None,
-) -> dict[str, Any] | None:
+) -> FieldSpec | None:
     enum_names = set(enums_by_name)
     sp = map_column(col, enum_names)
     if sp.kind == "Skip":
         return None
 
-    body: dict[str, Any] = {"Title": sp.name, "FieldTypeKind": sp.field_type_kind}
+    field_type_kind = sp.field_type_kind
+    if field_type_kind is None:
+        raise FieldSpecError(
+            f"{sp.name}: a {sp.kind} field has no FieldTypeKind (typemap invariant violated)",
+        )
+    body: FieldBody = {"Title": sp.name, "FieldTypeKind": field_type_kind}
     metadata: dict[str, str] = {"type": _meta_type(sp.kind)}
     body["__metadata"] = metadata
 
@@ -1331,7 +1372,7 @@ def _field_body(
             target = (target_entity.title if target_entity else None) or (
                 list_title_prefix + (sp.target_list or "")
             )
-            out: dict[str, Any] = {
+            out: FieldSpec = {
                 "title": sp.name,
                 "body": body,
                 "target_list": target,
@@ -1381,7 +1422,7 @@ def _field_body(
                 # unique Text column.
                 out["lookup_creation_parameters"] = {
                     "__metadata": {"type": "SP.FieldCreationInformation"},
-                    "FieldTypeKind": sp.field_type_kind,
+                    "FieldTypeKind": field_type_kind,
                     "Title": sp.name,
                     "Required": sp.required,
                     "LookupFieldName": lookup_field,

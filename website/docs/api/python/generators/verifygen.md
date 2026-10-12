@@ -38,10 +38,14 @@ DATE_AND_TIME = 1
 HOUR = 3600
 ```
 
+### `VerifyTargets`
+
+The payload verify.js loops over.
+
 ### `verify_targets`
 
 ```python
-def verify_targets(schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping, identities: AbcMapping[str, tuple[IdentityValue, ...]] = mappingproxy({})) -> dict[str, Any]
+def verify_targets(schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping, identities: AbcMapping[str, tuple[IdentityValue, ...]] = mappingproxy({})) -> VerifyTargets
 ```
 
 The data the verify script loops over, derived from the pack's clock use.

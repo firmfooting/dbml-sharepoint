@@ -50,9 +50,9 @@ def _rule(field: str, op: str, value: str) -> ColumnValidation:
 
 
 def verify_targets(schema: Schema, bundle: MappingBundle, role: str, **kw: Any) -> dict[str, Any]:
-    return verifygen.verify_targets(
+    return dict(verifygen.verify_targets(
         schema, bundle, role, resolved=resolve(schema, bundle.mapping), **kw,
-    )
+    ))
 
 
 def generate_verify_js(*, schema: Schema, bundle: MappingBundle, **kw: Any) -> str:

@@ -36,6 +36,7 @@ from dbml_sharepoint.analysis.rendered_columns import (
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.extension import BaseExtension
 from dbml_sharepoint.generators.jsgen import build_schema_json, generate_deploy_js
+from dbml_sharepoint.generators.schema_types import SchemaJson
 from dbml_sharepoint.model.env_file import ENV_SETTINGS, EnvProvenance, EnvValue
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.parser import parse_dbml
@@ -207,7 +208,7 @@ def test_generated_js_aborts_when_sp_page_context_missing() -> None:
     assert "no-sp-page-context" in js
 
 
-def _schema_json_for(solution_id: str) -> dict[str, Any]:
+def _schema_json_for(solution_id: str) -> SchemaJson:
     """Build SCHEMA for a shipped family or a test pack, named by its id."""
     root = engine_blueprints()[solution_id]
     schema = parse_dbml(root / "10-design" / "schema.dbml")

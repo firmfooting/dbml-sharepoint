@@ -11,7 +11,7 @@ guarantee test. Spec: docs/plans/2026-07-24-tenant-assessment-design.md.
 from collections.abc import Mapping as AbcMapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any
+from typing import TypedDict
 
 from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.clock_usage import clock_usage
@@ -28,6 +28,7 @@ from dbml_sharepoint.analysis.rendered_columns import rendered_columns
 from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.analysis.role_definition_description import marker_for_level
 from dbml_sharepoint.analysis.typemap import map_column
+from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.identities import IdentityValue
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema, Table
@@ -70,11 +71,107 @@ def _declared_unique_columns(
     return names
 
 
+class AssessTargets(TypedDict):
+    """The payload assess.js loops over. A row is a list, so it compares equal to its JSON."""
+
+    uses_today: bool
+    list_titles: list[str]
+    list_markers: list[tuple[str, str]]
+    list_display_titles: list[JsonValue]
+    list_unique_columns: list[JsonValue]
+    list_renames: list[JsonValue]
+    level_renames: list[JsonValue]
+    group_renames: list[JsonValue]
+    base_templates: list[int]
+    library_folders: list[JsonValue]
+    library_roots: list[JsonValue]
+    library_checkout: list[JsonValue]
+    list_view_threshold: int
+    index_change_ceiling: int
+    declares_groups: bool
+    identity_groups: list[dict[str, JsonValue]]
+    declares_seal: bool
+    declares_prevent_deletion: bool
+    declares_column_formatting: bool
+    declares_form_formatting: bool
+    declares_versioning: bool
+    requires_manage_permissions: bool
+
+
+@dataclass(frozen=True)
+class _Collected:
+    """`AssessTargets` before its rows become lists, so the requirements unpack them typed."""
+
+    uses_today: bool
+    list_titles: list[str]
+    list_markers: list[tuple[str, str]]
+    list_display_titles: list[tuple[str, list[tuple[str, str]]]]
+    list_unique_columns: list[tuple[str, list[str]]]
+    list_renames: list[tuple[str, list[tuple[str, str]]]]
+    level_renames: list[tuple[str, list[tuple[str, str]]]]
+    group_renames: list[tuple[str, list[tuple[str, str]]]]
+    base_templates: list[int]
+    library_folders: list[tuple[str, list[str]]]
+    library_roots: list[tuple[str, str, int, bool]]
+    library_checkout: list[tuple[str, bool]]
+    list_view_threshold: int
+    index_change_ceiling: int
+    declares_groups: bool
+    identity_groups: list[dict[str, JsonValue]]
+    declares_seal: bool
+    declares_prevent_deletion: bool
+    declares_column_formatting: bool
+    declares_form_formatting: bool
+    declares_versioning: bool
+    requires_manage_permissions: bool
+
+
+def _pairs(rows: list[tuple[str, str]]) -> list[JsonValue]:
+    return [[first, second] for first, second in rows]
+
+
+def _named_pairs(rows: list[tuple[str, list[tuple[str, str]]]]) -> list[JsonValue]:
+    return [[name, _pairs(pairs)] for name, pairs in rows]
+
+
 @guards_resolution
 def assess_targets(
     schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping,
     identities: AbcMapping[str, tuple[IdentityValue, ...]] = MappingProxyType({}),
-) -> dict[str, Any]:
+) -> AssessTargets:
+    """The data-driven inputs the assess.js probes loop over; see `_collect`."""
+    t = _collect(schema, bundle, site_role, resolved=resolved, identities=identities)
+    return {
+        "uses_today": t.uses_today,
+        "list_titles": t.list_titles,
+        "list_markers": t.list_markers,
+        "list_display_titles": _named_pairs(t.list_display_titles),
+        "list_unique_columns": [[title, list(columns)] for title, columns in t.list_unique_columns],
+        "list_renames": _named_pairs(t.list_renames),
+        "level_renames": _named_pairs(t.level_renames),
+        "group_renames": _named_pairs(t.group_renames),
+        "base_templates": t.base_templates,
+        "library_folders": [[title, list(folders)] for title, folders in t.library_folders],
+        "library_roots": [list(root) for root in t.library_roots],
+        "library_checkout": [[title, required] for title, required in t.library_checkout],
+        "list_view_threshold": t.list_view_threshold,
+        "index_change_ceiling": t.index_change_ceiling,
+        "declares_groups": t.declares_groups,
+        "identity_groups": t.identity_groups,
+        "declares_seal": t.declares_seal,
+        "declares_prevent_deletion": t.declares_prevent_deletion,
+        "declares_column_formatting": t.declares_column_formatting,
+        "declares_form_formatting": t.declares_form_formatting,
+        "declares_versioning": t.declares_versioning,
+        "requires_manage_permissions": t.requires_manage_permissions,
+    }
+
+
+@guards_resolution
+def _collect(
+    schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping,
+    identities: AbcMapping[str, tuple[IdentityValue, ...]] = MappingProxyType({}),
+) -> _Collected:
     """The data-driven inputs the assess.js probes loop over.
 
     `list_markers` pairs each declared list title with the exact provenance
@@ -118,23 +215,23 @@ def assess_targets(
     # Only the DIFFERENT ones. A site where every column displays under its
     # internal name has nothing to drift, and carrying the identities would
     # roughly double this payload for no check.
-    display_titles: list[list[Any]] = []
+    display_titles: list[tuple[str, list[tuple[str, str]]]] = []
     # [[new title, [[previous title, previous marker], ...]], ...], lists
     # rather than tuples so the Python side compares equal to the JSON.
-    renames: list[list[Any]] = []
+    renames: list[tuple[str, list[tuple[str, str]]]] = []
     # [[library title, [folder, ...]], ...] for every library that declares
     # folders: the assessment checks nothing stands where a folder will go.
-    library_folders: list[list[Any]] = []
+    library_folders: list[tuple[str, list[str]]] = []
     # [[title, declared URL, the entity's BaseTemplate], ...] for every entity that
     # declares a root; the template is what the live list must carry.
-    library_roots: list[list[Any]] = []
+    library_roots: list[tuple[str, str, int, bool]] = []
     # [[list title, [internal name, ...]], ...] in DECLARATION order, for
     # every list holding at least one column declared unique. Pairs for the
     # same reason `markers` is.
-    unique_columns: list[list[Any]] = []
+    unique_columns: list[tuple[str, list[str]]] = []
     # [[library title, declared require_checkout], ...] for each library that
     # declares one; an unmanaged library is not asked about.
-    library_checkout: list[list[Any]] = []
+    library_checkout: list[tuple[str, bool]] = []
     enum_names = {enum.name for enum in schema.enums}
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):
         entity = bundle.mapping.entities[table_name]
@@ -142,23 +239,23 @@ def assess_targets(
         entity_folders = resolved.require_folders(table_name)
         if entity.is_library and entity_folders:
             library_folders.append(
-                [bundle.mapping.list_title(table_name), list(entity_folders)],
+                (bundle.mapping.list_title(table_name), list(entity_folders)),
             )
         if entity.settings is not None and entity.settings.require_checkout is not None:
-            library_checkout.append([
+            library_checkout.append((
                 bundle.mapping.list_title(table_name), entity.settings.require_checkout,
-            ])
+            ))
         if entity.internal_name:
-            library_roots.append([
+            library_roots.append((
                 bundle.mapping.list_title(table_name), entity.internal_name, entity.base_template,
                 entity.is_library,
-            ])
+            ))
         previous = bundle.mapping.previous_titles(table_name)
         if previous:
-            renames.append([
+            renames.append((
                 bundle.mapping.list_title(table_name),
-                [[title, marker_for(family, name)] for title, name in previous],
-            ])
+                [(title, marker_for(family, name)) for title, name in previous],
+            ))
         templates.add(entity.base_template)
         table_names.append(table_name)
         markers.append((bundle.mapping.list_title(table_name), marker_for(family, table_name)))
@@ -172,7 +269,7 @@ def assess_targets(
             # shared helper when somebody needs it; not worth a second
             # spelling now.
             declared = [
-                [column, m.display_name_for(table_name, column)]
+                (column, m.display_name_for(table_name, column))
                 for column in sorted(rendered_columns(
                     table,
                     {c for (e, c) in cross_site_keys if e == table_name},
@@ -180,26 +277,26 @@ def assess_targets(
                 if m.display_name_for(table_name, column) != column
             ]
             if declared:
-                display_titles.append([bundle.mapping.list_title(table_name), declared])
+                display_titles.append((bundle.mapping.list_title(table_name), declared))
             unique = _declared_unique_columns(
                 table, enum_names,
                 {c for (e, c) in cross_site_keys if e == table_name},
             )
             if unique:
-                unique_columns.append([bundle.mapping.list_title(table_name), unique])
+                unique_columns.append((bundle.mapping.list_title(table_name), unique))
     m = bundle.mapping
     perms = m.permissions
     site_groups = resolved.groups
     # [[current name, [[previous name, previous marker], ...]], ...] for
     # every level and group that has previous names, the same shape as
     # `renames` above so one assessment loop serves all three.
-    level_renames: list[list[Any]] = [
-        [lvl.name, [[p, marker_for_level(family, p)] for p in lvl.previous_names]]
+    level_renames: list[tuple[str, list[tuple[str, str]]]] = [
+        (lvl.name, [(p, marker_for_level(family, p)) for p in lvl.previous_names])
         for lvl in (perms.levels if perms else [])
         if lvl.previous_names
     ]
-    group_renames: list[list[Any]] = [
-        [grp.name, [[p, marker_for_group(p, family)] for p in grp.previous_names]]
+    group_renames: list[tuple[str, list[tuple[str, str]]]] = [
+        (grp.name, [(p, marker_for_group(p, family)) for p in grp.previous_names])
         for grp in site_groups
         if grp.previous_names
     ]
@@ -215,45 +312,45 @@ def assess_targets(
     # surface on a site where nothing versions -- a WARN with nothing behind
     # it, which is how a warning stops meaning anything.
     versioning_on = any(m.versioning_for(name).enable_versioning for name in table_names)
-    return {
+    return _Collected(
         # Whether anything this run ships reads `today` on the site: a view
         # filter's <Today/>, a column's [today] default, a validation rule.
         # The site's zone governs storage, display and the view windows;
         # validation rules compare against [Modified] since 2026-09-02, and
         # TODAY() itself ran 16 to 20 hours behind the site (see `time_zone`
         # in _assess_body.js.j2).
-        "uses_today": clock_usage(schema, m, table_names).uses_today,
-        "list_titles": titles,
-        "list_markers": markers,
-        "list_display_titles": display_titles,
-        "list_unique_columns": unique_columns,
-        "list_renames": renames,
-        "level_renames": level_renames,
-        "group_renames": group_renames,
-        "base_templates": sorted(templates),
-        "library_folders": library_folders,
-        "library_roots": library_roots,
-        "library_checkout": library_checkout,
+        uses_today=clock_usage(schema, m, table_names).uses_today,
+        list_titles=titles,
+        list_markers=markers,
+        list_display_titles=display_titles,
+        list_unique_columns=unique_columns,
+        list_renames=renames,
+        level_renames=level_renames,
+        group_renames=group_renames,
+        base_templates=sorted(templates),
+        library_folders=library_folders,
+        library_roots=library_roots,
+        library_checkout=library_checkout,
         # The two list-size ceilings the item-count probe reports against,
         # carried in the payload so the template spells neither number and
         # cannot disagree with `analysis.limits`.
-        "list_view_threshold": LIST_VIEW_THRESHOLD,
-        "index_change_ceiling": INDEX_CHANGE_CEILING,
-        "declares_groups": bool(site_groups),
+        list_view_threshold=LIST_VIEW_THRESHOLD,
+        index_change_ceiling=INDEX_CHANGE_CEILING,
+        declares_groups=bool(site_groups),
         # Values travel here for the standalone script only; the deploy's embedded copy gets none.
-        "identity_groups": as_json(enrolment_plan(bundle, resolved, identities)),
-        "declares_seal": m.seal_columns,
-        "declares_prevent_deletion": m.prevent_list_deletion,
-        "declares_column_formatting": bool(m.column_formatting),
-        "declares_form_formatting": bool(m.form_formatting),
-        "declares_versioning": versioning_on,
+        identity_groups=as_json(enrolment_plan(bundle, resolved, identities)),
+        declares_seal=m.seal_columns,
+        declares_prevent_deletion=m.prevent_list_deletion,
+        declares_column_formatting=bool(m.column_formatting),
+        declares_form_formatting=bool(m.form_formatting),
+        declares_versioning=versioning_on,
         # Shared with manifestgen/jsgen's schema_json and deploy.js's own
         # live preflight, so the three cannot independently drift again --
         # see requires_manage_permissions's docstring and #166 item 5.
-        "requires_manage_permissions": requires_manage_permissions(
+        requires_manage_permissions=requires_manage_permissions(
             resolved, table_names,
         ),
-    }
+    )
 
 
 @guards_resolution
@@ -262,7 +359,7 @@ def derive_requirements(
     identities: AbcMapping[str, tuple[IdentityValue, ...]] = MappingProxyType({}),
 ) -> list[Requirement]:
     """The pack's site requirements, worst-case severity on probe failure."""
-    t = assess_targets(schema, bundle, site_role, resolved=resolved, identities=identities)
+    t = _collect(schema, bundle, site_role, resolved=resolved, identities=identities)
     reqs: list[Requirement] = [
         Requirement("manage_lists_bit",
                     "Operator holds ManageLists on the site", "BLOCKED"),
@@ -274,7 +371,7 @@ def derive_requirements(
             f"list_template_{template_id}",
             f"Base template {template_id} is creatable on the web", "BLOCKED",
         )
-        for template_id in t["base_templates"]
+        for template_id in t.base_templates
     )
     reqs.extend(
         Requirement(
@@ -282,7 +379,7 @@ def derive_requirements(
             f"List '{title}' is absent or a redeploy target (not a foreign list)",
             "BLOCKED",
         )
-        for title in t["list_titles"]
+        for title in t.list_titles
     )
     # A requirement key, because only one can degrade the verdict: the
     # verdict loop walks REQUIREMENTS and skips a key with no finding,
@@ -298,16 +395,16 @@ def derive_requirements(
             f"list view threshold",
             "WARN",
         )
-        for title in t["list_titles"]
+        for title in t.list_titles
     )
-    for title, root, _template, is_library in t["library_roots"]:
+    for title, root, _template, is_library in t.library_roots:
         reqs.append(Requirement(
             f"library_root:{title}",
             f"Existing library '{title}' has the declared immutable URL name '{root}'"
             if is_library else f"Existing list '{title}' has the declared URL '{root}'",
             "BLOCKED",
         ))
-    for title, folders in t["library_folders"]:
+    for title, folders in t.library_folders:
         # A file standing where a folder is declared stops the folder phase,
         # so it is known before the paste rather than part-way through it.
         reqs.append(Requirement(
@@ -316,7 +413,7 @@ def derive_requirements(
             f"or a folder, not a file of that name",
             "BLOCKED",
         ))
-    for title, columns in t["list_unique_columns"]:
+    for title, columns in t.list_unique_columns:
         # #550 made a declared `unique` actually deploy its constraint, so a
         # list provisioned before that fix holds the column unconstrained and
         # the next field phase asks for the constraint over data that never
@@ -334,7 +431,7 @@ def derive_requirements(
             f"constraint over existing data",
             "WARN",
         ))
-    for title, _marker in t["list_markers"]:
+    for title, _marker in t.list_markers:
         # Ownership is required before ordinary deploy may reconcile an
         # existing list. A missing marker cannot be repaired automatically,
         # because writing it would manufacture the evidence rollback trusts.
@@ -343,21 +440,21 @@ def derive_requirements(
             f"Existing list '{title}' carries this declaration's exact provenance marker",
             "BLOCKED",
         ))
-    for name, _previous in t["level_renames"]:
+    for name, _previous in t.level_renames:
         reqs.append(Requirement(
             f"rename_level:{name}",
             f"Previous names of permission level '{name}' are absent, or exactly one "
             f"carries its exact previous marker while '{name}' is absent",
             "BLOCKED",
         ))
-    for name, _previous in t["group_renames"]:
+    for name, _previous in t.group_renames:
         reqs.append(Requirement(
             f"rename_group:{name}",
             f"Previous names of site group '{name}' are absent, or exactly one "
             f"carries its exact previous marker while '{name}' is absent",
             "BLOCKED",
         ))
-    for title, _previous in t["list_renames"]:
+    for title, _previous in t.list_renames:
         # The rename decision, predicted before any write: exactly one
         # previous title carrying its own marker, and the current title
         # absent, is the only shape the deploy will rename.
@@ -373,38 +470,38 @@ def derive_requirements(
             f"'{plan['group']}' can hold the identities this deploy enrols",
             "BLOCKED",
         )
-        for plan in t["identity_groups"]
+        for plan in t.identity_groups
     )
-    if t["uses_today"]:
+    if t.uses_today:
         reqs.append(Requirement(
             "time_zone",
             "Site regional time zone is the users' zone (dates are stored and "
             "shown in it, and the pack's `today` windows are read against its day)",
             "WARN",
         ))
-    if t["requires_manage_permissions"]:
+    if t.requires_manage_permissions:
         reqs.append(Requirement("manage_permissions_bit",
                                 "Operator holds ManagePermissions", "BLOCKED"))
-    if t["declares_groups"]:
+    if t.declares_groups:
         reqs.append(Requirement(
             "process_query",
             "CSOM ProcessQuery available (group owner correction)", "WARN"))
-    if t["declares_seal"]:
+    if t.declares_seal:
         reqs.append(Requirement("sealed_surface",
                                 "SP.Field.Sealed property surface present", "WARN"))
-    if t["declares_prevent_deletion"]:
+    if t.declares_prevent_deletion:
         reqs.append(Requirement(
             "allow_deletion_surface",
             "SP.List.AllowDeletion property surface present", "WARN"))
-    if t["declares_column_formatting"]:
+    if t.declares_column_formatting:
         reqs.append(Requirement(
             "custom_formatter_surface",
             "SP.Field.CustomFormatter property surface present", "WARN"))
-    if t["declares_form_formatting"]:
+    if t.declares_form_formatting:
         reqs.append(Requirement(
             "form_formatter_surface",
             "ClientFormCustomFormatter property surface present", "WARN"))
-    if t["declares_versioning"]:
+    if t.declares_versioning:
         reqs.append(Requirement(
             "version_trim_mode",
             "Service-managed version auto-trim does not override declared limits",
@@ -430,7 +527,7 @@ NOT_ASSESSABLE: tuple[str, ...] = (
 )
 
 
-def _render(template_name: str, *, application: str = APPLICATION_NAME, **context: Any) -> str:
+def _render(template_name: str, *, application: str = APPLICATION_NAME, **context: object) -> str:
     return script_env(application).get_template(template_name).render(**context)
 
 

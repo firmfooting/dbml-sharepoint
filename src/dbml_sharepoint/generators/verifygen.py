@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping as AbcMapping
 from types import MappingProxyType
-from typing import Any, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 from dbml_sharepoint import APPLICATION_NAME
 from dbml_sharepoint.analysis.clock_cells import cell_for
@@ -28,6 +28,7 @@ from dbml_sharepoint.analysis.list_description import VERIFY_LIST_TITLE, verify_
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
 from dbml_sharepoint.analysis.resolve import ResolvedMapping, guards_resolution
 from dbml_sharepoint.analysis.save_rules import joined_list_validation
+from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.conditions import Group, Leaf
 from dbml_sharepoint.model.identities import IdentityValue
 from dbml_sharepoint.model.mapping_types import ColumnValidation, Mapping, MappingBundle
@@ -43,18 +44,129 @@ _VALUE_ELEMENT = re.compile(r"<Value [^>]*>.*?</Value>")
 _QUERY_TYPES = {"CD": "date", "CC": "calculated_date", "CW": "datetime"}
 
 
-def _midnight(days: int) -> dict[str, Any]:
+class _Midnight(TypedDict):
+    kind: Literal["midnight"]
+    days: int
+
+
+class _Instant(TypedDict):
+    kind: Literal["instant"]
+    seconds: int
+
+
+class _NoValue(TypedDict):
+    kind: Literal["none"]
+
+
+type _Value = _Midnight | _Instant | _NoValue
+
+
+class _Case(TypedDict):
+    id: str
+    op: str
+    value: _Value
+    expect: str
+    on: NotRequired[str]
+
+
+class _Column(TypedDict):
+    name: str
+    kind: str
+    display_format: int
+    formula: NotRequired[str]
+    default_value: NotRequired[str]
+    default_formula: NotRequired[str]
+
+
+class _Leaf(TypedDict):
+    field: str
+    op: Literal["leq"]
+    value: str
+
+
+class _SaveCheck(TypedDict):
+    kind: Literal["save"]
+    key: str
+    cell: str
+    info: bool
+    column: _Column
+    clause: str
+    leaf: _Leaf
+    message: str
+    cases: list[_Case]
+
+
+class _QueryCheck(TypedDict):
+    kind: Literal["query"]
+    key: str
+    cell: str
+    field: str
+    op: str
+    element: str
+    expect: list[str]
+
+
+class _DefaultCheck(TypedDict):
+    kind: Literal["default"]
+    key: str
+    cell: str
+    column: _Column
+    row: str
+    method: str
+
+
+class _LagCheck(TypedDict):
+    kind: Literal["lag"]
+    key: str
+    cell: str
+    column: _Column
+    row: str
+
+
+type _Check = _SaveCheck | _QueryCheck | _DefaultCheck | _LagCheck
+
+
+class _RowOut(TypedDict):
+    id: str
+    column: str
+    value: _Value
+
+
+class _Rule(TypedDict):
+    formula: str
+    message: str
+
+
+class _LibrarySetting(TypedDict):
+    title: str
+    require_checkout: bool
+
+
+class VerifyTargets(TypedDict):
+    """The payload verify.js loops over."""
+
+    list_title: str
+    marker: str
+    columns: list[_Column]
+    rows: list[_RowOut]
+    checks: list[_Check]
+    rule: _Rule | None
+    library_settings: list[_LibrarySetting]
+    identity_groups: list[dict[str, JsonValue]]
+
+
+def _midnight(days: int) -> _Value:
     return {"kind": "midnight", "days": days}
 
 
-def _instant(seconds: int) -> dict[str, Any]:
+def _instant(seconds: int) -> _Value:
     return {"kind": "instant", "seconds": seconds}
 
 
 def _case(
-    case_id: str, op: str, value: dict[str, Any], expect: str, *, on: str | None = None,
-) -> dict[str, Any]:
-    case = {"id": case_id, "op": op, "value": value, "expect": expect}
+    case_id: str, op: str, value: _Value, expect: str, *, on: str | None = None,
+) -> _Case:
+    case: _Case = {"id": case_id, "op": op, "value": value, "expect": expect}
     if on is not None:
         case["on"] = on
     return case
@@ -76,7 +188,7 @@ class _Row(TypedDict):
 
     id: str
     column: str
-    value: dict[str, Any]
+    value: _Value
     day: int | None
 
 
@@ -84,16 +196,26 @@ class _Targets:
     """Accumulates columns, rows and checks while the cells are walked."""
 
     def __init__(self) -> None:
-        self.columns: dict[str, dict[str, Any]] = {}
+        self.columns: dict[str, _Column] = {}
         self.rows: dict[str, _Row] = {}
-        self.checks: list[dict[str, Any]] = []
+        self.checks: list[_Check] = []
 
-    def column(self, name: str, kind: str, display_format: int, **extra: Any) -> str:
-        spec = {"name": name, "kind": kind, "display_format": display_format, **extra}
+    def column(
+        self, name: str, kind: str, display_format: int, *,
+        formula: str | None = None, default_value: str | None = None,
+        default_formula: str | None = None,
+    ) -> str:
+        spec: _Column = {"name": name, "kind": kind, "display_format": display_format}
+        if formula is not None:
+            spec["formula"] = formula
+        if default_value is not None:
+            spec["default_value"] = default_value
+        if default_formula is not None:
+            spec["default_formula"] = default_formula
         self.columns.setdefault(name, spec)
         return name
 
-    def row(self, row_id: str, column: str, value: dict[str, Any], *, day: int | None) -> None:
+    def row(self, row_id: str, column: str, value: _Value, *, day: int | None) -> None:
         self.rows.setdefault(row_id, {"id": row_id, "column": column, "value": value, "day": day})
 
     # ---- validation cells -------------------------------------------------
@@ -148,10 +270,10 @@ class _Targets:
 
     def _save(
         self, cell_id: str, key: str, name: str, kind: str, display_format: int,
-        value: str, cases: list[dict[str, Any]], *, info: bool,
+        value: str, cases: list[_Case], *, info: bool,
     ) -> None:
         self.column(name, kind, display_format)
-        leaf = {"field": name, "op": "leq", "value": value}
+        leaf: _Leaf = {"field": name, "op": "leq", "value": value}
         clause = to_validation(
             Group("all_of", (Leaf(field=name, op="leq", value=value),)), {name: kind},
         )
@@ -247,14 +369,13 @@ class _Targets:
 def _not_after_now(row: _Row) -> bool:
     value = row["value"]
     if value["kind"] == "instant":
-        seconds: int = value["seconds"]
-        return seconds <= 0
-    return bool(value["kind"] == "midnight" and row["day"] is not None and row["day"] <= 0)
+        return value["seconds"] <= 0
+    return value["kind"] == "midnight" and row["day"] is not None and row["day"] <= 0
 
 
-def _library_settings(mapping: Mapping, table_names: list[str]) -> list[dict[str, Any]]:
+def _library_settings(mapping: Mapping, table_names: list[str]) -> list[_LibrarySetting]:
     """Each declared `require_checkout`, by deployed title; an unmanaged one is left out."""
-    declared = []
+    declared: list[_LibrarySetting] = []
     for name in table_names:
         settings = mapping.entities[name].settings
         if settings is not None and settings.require_checkout is not None:
@@ -268,7 +389,7 @@ def _library_settings(mapping: Mapping, table_names: list[str]) -> list[dict[str
 def verify_targets(
     schema: Schema, bundle: MappingBundle, site_role: str, *, resolved: ResolvedMapping,
     identities: AbcMapping[str, tuple[IdentityValue, ...]] = MappingProxyType({}),
-) -> dict[str, Any]:
+) -> VerifyTargets:
     """The data the verify script loops over, derived from the pack's clock use."""
     mapping = bundle.mapping
     table_names = list(site_tables_in_order(schema, mapping.entities, site_role))
@@ -289,10 +410,15 @@ def verify_targets(
         targets.lag_check()
 
     save_checks = [c for c in targets.checks if c["kind"] == "save"]
-    rule = None
+    rule: _Rule | None = None
     if save_checks:
         joined = joined_list_validation(None, [
-            (c["column"]["name"], ColumnValidation(when=Leaf(**c["leaf"]), message=c["message"]))
+            (c["column"]["name"], ColumnValidation(
+                when=Leaf(
+                    field=c["leaf"]["field"], op=c["leaf"]["op"], value=c["leaf"]["value"],
+                ),
+                message=c["message"],
+            ))
             for c in save_checks
         ])
         if joined is None:
@@ -303,7 +429,10 @@ def verify_targets(
         "list_title": VERIFY_LIST_TITLE,
         "marker": verify_marker(),
         "columns": [targets.columns[name] for name in sorted(targets.columns)],
-        "rows": [{k: v for k, v in row.items() if k != "day"} for row in targets.rows.values()],
+        "rows": [
+            {"id": row["id"], "column": row["column"], "value": row["value"]}
+            for row in targets.rows.values()
+        ],
         "checks": targets.checks,
         "rule": rule,
         "library_settings": _library_settings(mapping, table_names),
@@ -312,7 +441,7 @@ def verify_targets(
     }
 
 
-def _render(template_name: str, *, application: str = APPLICATION_NAME, **context: Any) -> str:
+def _render(template_name: str, *, application: str = APPLICATION_NAME, **context: object) -> str:
     return script_env(application).get_template(template_name).render(**context)
 
 
