@@ -354,6 +354,17 @@ explicit-any = "error"
 implicit-any-empty-container = "error"
 implicit-any-lambda = "error"
 
+[[tool.pyrefly.sub-config]]
+matches = "test/test_*_runtime.py"
+
+[tool.pyrefly.sub-config.errors]
+explicit-any = "error"
+implicit-any-empty-container = "error"
+implicit-any-lambda = "error"
+# Tests read node output and fixtures through json.loads, whose values are unchecked by design.
+unknown-argument-type = false
+unknown-variable-type = false
+
 # Test data is often deliberately untyped: `[]`, `{}` and mock lambdas.
 [[tool.pyrefly.sub-config]]
 matches = "test/**"

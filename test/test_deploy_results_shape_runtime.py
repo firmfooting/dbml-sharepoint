@@ -3,10 +3,10 @@ HasUniqueRoleAssignments, must stop the read that decides on it (#722)."""
 
 import json
 from pathlib import Path
-from typing import Any
 from urllib.parse import unquote
 
 import pytest
+from _json_view import Json
 from _node import NODE
 from test_deploy_runtime import (
     _ADOPTED_HARNESS,
@@ -59,7 +59,7 @@ def malformed(
 """
 
 
-def _errors(summary: dict[str, Any]) -> list[str]:
+def _errors(summary: Json) -> list[str]:
     return [str(e.get("error")) for e in summary.get("errors", [])]
 
 
@@ -141,7 +141,7 @@ def test_an_operator_membership_read_without_results_enrols_nobody() -> None:
 
 def _ownership_run(
     tmp_path: Path, overlay: str,
-) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+) -> tuple[Json, list[Json], str]:
     return _run_capturing_calls(
         _ownership_harness(tmp_path, ("Escalation",)) + overlay,
         _ownership_deploy_js(tmp_path, ("Escalation",)),
@@ -213,8 +213,8 @@ def test_a_library_flag_re_read_that_is_not_a_boolean_writes_no_allowlist(
                 or "removeroleassignment" in c["url"]]
 
 
-def _logging_failures(run: dict[str, Any]) -> list[str]:
-    return [json.dumps(f) for f in run["summary"]["loggingFailures"]]
+def _logging_failures(run: Json) -> list[str]:
+    return [f.dumps() for f in run["summary"]["loggingFailures"]]
 
 
 @pytest.mark.parametrize("central", [True, False])
@@ -249,13 +249,14 @@ def test_a_logging_field_read_without_results_is_a_recorded_failure(
         overlay=malformed((f"getbytitle('{title}')/fields?", read), _NO_RESULTS),
     )
     assert "SHAPE_INJECTED" in run["output"]
-    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
     assert any(what in f and _NAMED in f for f in _logging_failures(run)), (
         run["summary"]["loggingFailures"]
     )
     assert not [
         c for c in run["calls"]
-        if c["method"] == "POST" and unquote(c["url"]).endswith(f"getbytitle('{title}')/fields")
+        if c["method"] == "POST"
+        and unquote(c["url"].text).endswith(f"getbytitle('{title}')/fields")
     ]
     if central and which == "deployments":
         # Unproved columns are not written to: the stamps fall back to Title alone.
@@ -280,12 +281,12 @@ def test_a_current_row_read_without_results_writes_no_change_row(central: bool) 
         _run_deploy(seeded_change_rows=True, central_absent=True, overlay=overlay)
     )
     assert "SHAPE_INJECTED" in run["output"]
-    assert run["unhandled"] == [], "\n".join(run["unhandled"])
+    assert run["unhandled"] == [], "\n".join(run["unhandled"].strings)
     what = "Central current-row read for" if central else "Current-row read for"
     assert any(what in f and _NAMED in f for f in _logging_failures(run)), (
         run["summary"]["loggingFailures"]
     )
     assert not [
         c for c in run["calls"]
-        if c["method"] == "POST" and f"getbytitle('{title}')/items" in unquote(c["url"])
+        if c["method"] == "POST" and f"getbytitle('{title}')/items" in unquote(c["url"].text)
     ]

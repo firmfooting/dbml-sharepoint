@@ -1,9 +1,10 @@
 """The unique-transition probe must establish fixtures before measuring them."""
 
 import json
-from typing import Any
+from collections.abc import Mapping
 
 import pytest
+from _json_view import Json
 from _node import NODE, run_node
 from _paths import MANUAL
 
@@ -55,7 +56,11 @@ globalThis.fetch = async (url, options = {}) => {
 """
 
 
-def _run_probe(*, mutate: bool = False, **config: Any) -> dict[str, dict[str, str]]:
+def _run_probe(*, mutate: bool = False, **config: object) -> dict[str, Json]:
+    return _probe(mutate, config)
+
+
+def _probe(mutate: bool, config: Mapping[str, object]) -> dict[str, Json]:
     script = (MANUAL / 'unique-transition-probe.js').read_text(encoding='utf-8')
     for gate in ('CONFIRMED', 'ALLOW_WRITES'):
         script = script.replace(f'const {gate} = false;', f'const {gate} = true;', 1)
@@ -70,7 +75,7 @@ def _run_probe(*, mutate: bool = False, **config: Any) -> dict[str, dict[str, st
         script = script.replace(guard, '')
     output = run_node(_HARNESS.replace('__CONFIG__', json.dumps(config)) + script)
     line = next(line for line in output.splitlines() if line.startswith('__ROWS__'))
-    return {row['id'].removeprefix('field.unique.'): row for row in json.loads(line[8:])}
+    return {row['id'].removeprefix('field.unique.'): row for row in Json.loads(line[8:])}
 
 
 pytestmark = pytest.mark.skipif(NODE is None, reason='node is not installed')
@@ -89,10 +94,10 @@ def test_unique_transition_healthy_reused_fixture_reaches_measurements() -> None
 def test_unique_transition_wrong_or_absent_type_voids_measurements(
     name: str, missing: bool,
 ) -> None:
-    config: dict[str, Any] = {'omit': [[name, 'TypeAsString']]} if missing else {
+    config: dict[str, object] = {'omit': [[name, 'TypeAsString']]} if missing else {
         'fields': {name: {'TypeAsString': 'Text' if name == 'NoteRef' else 'Note'}},
     }
-    rows = _run_probe(**config)
+    rows = _probe(False, config)
     assert rows['fixture-unconstrained-columns']['outcome'] == 'FAIL'
     assert 'TypeAsString' in rows['fixture-unconstrained-columns']['evidence']
     for key in ('fixture-duplicate-items', 'control-note-column-refused',
@@ -115,14 +120,14 @@ def test_unique_transition_missing_constraint_is_not_false(property_name: str) -
 
 
 @pytest.mark.parametrize('shape', [{}, {'BaseTemplate': 101}, 'broken', 42, False, [], None])
-def test_unique_transition_requires_generic_list(shape: Any) -> None:
+def test_unique_transition_requires_generic_list(shape: object) -> None:
     rows = _run_probe(list=shape)
     assert rows['fixture-transition-list']['outcome'] == 'FAIL'
     assert rows['fixture-unconstrained-columns']['state'] == 'void'
 
 
 @pytest.mark.parametrize('shape', ['broken', 42, False, [], None])
-def test_unique_transition_malformed_field_payload_voids_measurements(shape: Any) -> None:
+def test_unique_transition_malformed_field_payload_voids_measurements(shape: object) -> None:
     rows = _run_probe(fieldPayload=shape)
     assert rows['fixture-unconstrained-columns']['outcome'] == 'FAIL'
     assert rows['control-note-column-refused']['state'] == 'void'

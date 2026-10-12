@@ -7,9 +7,11 @@ ahead of UTC, so a Created just after UTC midnight falls on the same local date.
 
 import json
 import textwrap
-from typing import Any
+from collections.abc import Mapping
 
 import pytest
+from _json_view import Json
+from _json_view import dumps as dumps_view
 from _node import NODE, run_node
 from _paths import MANUAL
 
@@ -129,23 +131,23 @@ def _probe_js(gates: tuple[str, ...]) -> str:
 
 
 def _run(
-    gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: Any,
-) -> tuple[dict[str, dict[str, str]], list[dict[str, str]], str]:
+    gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: object,
+) -> tuple[dict[str, Json], list[Json], str]:
     settings = {"list": None, "created": "2026-09-28T15:30:00Z",
                 "calcDue": "2026-10-12T14:00:00Z", **config}
     output = run_node(_MOCK.replace("__CONFIG__", json.dumps(settings)) + "\n" + _probe_js(gates))
     sent_line = next(ln for ln in output.splitlines() if ln.startswith("__SENT__"))
     rows_line = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
-    rows = {} if rows_line is None else {
-        row["id"]: row for row in json.loads(rows_line.removeprefix("__ROWS__"))}
-    return rows, json.loads(sent_line.removeprefix("__SENT__")), output
+    rows: dict[str, Json] = {} if rows_line is None else {
+        row["id"].text: row for row in Json.loads(rows_line.removeprefix("__ROWS__"))}
+    return rows, Json.loads(sent_line.removeprefix("__SENT__")).rows, output
 
 
 def _catalogued_dependents(fixture: str) -> set[str]:
-    catalog = json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
+    catalog = Json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
     [entry] = [p for p in catalog["probes"] if p["file"] == PROBE.name]
-    return {finding["id"] for scenario in entry["scenarios"] for finding in scenario["findings"]
-            if fixture in finding["depends_on"]}
+    return {finding["id"].text for scenario in entry["scenarios"]
+            for finding in scenario["findings"] if fixture in finding["depends_on"]}
 
 
 @pytest.mark.parametrize("gates", [(), ("CONFIRMED",)], ids=["unconfirmed", "no-writes"])
@@ -302,7 +304,7 @@ def test_an_observed_answer_that_names_the_tenant_is_redacted() -> None:
 
     assert rows[VERBOSE]["outcome"] == "OBSERVED"
     assert "[TENANT]/sites/probe/_api/Web/Lists" in rows[VERBOSE]["evidence"]
-    assert "example.sharepoint.com" not in json.dumps(rows)
+    assert "example.sharepoint.com" not in dumps_view(rows)
 
 
 #: Built by hand, because json.dumps does not escape a slash and SharePoint may.
@@ -324,7 +326,7 @@ def test_a_json_escaped_uri_and_a_bare_host_are_redacted(status: int, outcome: s
     assert rows[VERBOSE]["outcome"] == outcome
     assert "[TENANT]/sites/probe/_api/Web/Lists" in evidence
     assert '"host": "[TENANT]"' in evidence or '"host":"[TENANT]"' in evidence
-    assert "example.sharepoint.com" not in json.dumps(rows).lower()
+    assert "example.sharepoint.com" not in dumps_view(rows).lower()
 
 
 def test_the_calculated_only_properties_are_asked_only_of_a_calculated_column() -> None:
@@ -350,13 +352,13 @@ def test_a_column_of_another_type_fails_on_its_type_not_on_a_refused_select() ->
     ({"reject": True}, "no response: Failed to fetch"),
 ], ids=["refused", "no-response"])
 def test_a_column_read_that_fails_keeps_its_answer_in_the_fixture_evidence(
-    rule: dict[str, Any], said: str,
+    rule: Mapping[str, object], said: str,
 ) -> None:
     rows, sent, _ = _run(rules=[{"contains": FIELD_READ, **rule}])
 
     assert rows[COLUMN]["outcome"] == "FAIL"
     assert f'Read differs: read "{said}"' in rows[COLUMN]["evidence"]
-    assert "example.sharepoint.com" not in json.dumps(rows)
+    assert "example.sharepoint.com" not in dumps_view(rows)
     voided = {row_id for row_id, row in rows.items() if row["state"] == "void"}
     assert voided == _catalogued_dependents(COLUMN)
     assert sent[-1]["path"].endswith("/recycle")

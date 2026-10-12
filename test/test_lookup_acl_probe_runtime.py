@@ -20,9 +20,11 @@ rows, voids them when K8 fails, or leaves them open when K8 is unanswered. A
 
 import json
 import textwrap
-from typing import Any
+from collections.abc import Mapping
 
 import pytest
+from _json_view import Json
+from _narrow import as_dict
 from _node import NODE
 from _node import run_node as _run
 from _paths import MANUAL
@@ -123,7 +125,7 @@ _TARGET_GUID = "5b0c3a9e-7d41-4f3a-9a52-1c2d3e4f5a6b"
 #: bound to, with its own permissions and that row in it, sentinels intact. The
 #: bound id is braced and the list id is not, so the comparison is on the
 #: GUID rather than its spelling.
-_HEALTHY: dict[str, Any] = {
+_HEALTHY: dict[str, object] = {
     "admin": False,
     "sourceStatus": 200,
     "linkId": 1,
@@ -142,7 +144,7 @@ _HEALTHY: dict[str, Any] = {
 }
 
 
-def _probe_js(mode: str, pass2: dict[str, Any] | None = None) -> str:
+def _probe_js(mode: str, pass2: Mapping[str, object] | None = None) -> str:
     """The committed probe, gates opened, MODE set, result table exposed.
 
     The file is edited rather than re-rendered, so what runs is what an
@@ -164,34 +166,35 @@ def _probe_js(mode: str, pass2: dict[str, Any] | None = None) -> str:
 
 
 def _run_full(
-    mode: str, pass2: dict[str, Any] | None = None, **changes: Any,
-) -> tuple[dict[str, dict[str, str]], str]:
+    mode: str, pass2: Mapping[str, object] | None = None, **changes: object,
+) -> tuple[dict[str, Json], str]:
     """(rows by id, output) for one pass."""
     config = {**_HEALTHY, **changes}
     script = _HARNESS.replace("__CONFIG__", json.dumps(config)) + "\n" + _probe_js(mode, pass2)
     output = _run(script)
     line = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
     assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
-    return {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}, output
+    return {row["id"].text: row for row in Json.loads(line.removeprefix("__ROWS__"))}, output
 
 
-def _run_pass(mode: str, pass2: dict[str, Any] | None = None, **changes: Any) -> dict[str, str]:
+def _run_pass(
+    mode: str, pass2: Mapping[str, object] | None = None, **changes: object,
+) -> dict[str, str]:
     rows, _output = _run_full(mode, pass2, **changes)
-    return {rid: row["outcome"] for rid, row in rows.items()}
+    return {rid: row["outcome"].text for rid, row in rows.items()}
 
 
-def _printed_pass2(output: str) -> dict[str, Any]:
+def _printed_pass2(output: str) -> Json:
     """The PASS2 line pass 2 prints for the operator to carry into pass 3."""
     prefix = "const PASS2 = "
     line = next((ln for ln in output.splitlines() if ln.startswith(prefix)), None)
     assert line is not None, f"pass 2 printed no PASS2 line:\n{output[-3000:]}"
-    carried: dict[str, Any] = json.loads(line.removeprefix(prefix).removesuffix(";"))
-    return carried
+    return Json.loads(line.removeprefix(prefix).removesuffix(";"))
 
 
 #: What healthy pass 2 carries, built by hand so each confirm test can vary one
 #: part; `test_pass_2_carries_its_fixture_into_pass_3` pins it to the real line.
-_PASS2: dict[str, Any] = {
+_PASS2: dict[str, object] = {
     "lookupList": _HEALTHY["lookupList"],
     "linkedId": 1,
     "rows": {
@@ -208,7 +211,7 @@ _PASS2: dict[str, Any] = {
 }
 
 
-def _confirm(pass2: dict[str, Any] | None = None, **changes: Any) -> dict[str, str]:
+def _confirm(pass2: Mapping[str, object] | None = None, /, **changes: object) -> dict[str, str]:
     return _run_pass("confirm", _PASS2 if pass2 is None else pass2, **changes)
 
 
@@ -294,7 +297,7 @@ def test_a_target_rebuilt_under_the_same_title_fails_k8() -> None:
     [{"rowTitle": "renamed"}, {"rowSide": None}],
     ids=["title", "second-column"],
 )
-def test_a_linked_row_without_its_sentinels_fails_k8(changed: dict[str, Any]) -> None:
+def test_a_linked_row_without_its_sentinels_fails_k8(changed: Mapping[str, object]) -> None:
     """K2 and K3 read the absence of these values, so they must still be there."""
     rows = _confirm(**changed)
     assert rows[K8] == "FAIL"
@@ -326,7 +329,7 @@ def test_pass_2_leaves_what_k8_decides_open_and_pass_3_settles_it() -> None:
     K3 standing as settled answers.
     """
     read, output = _run_full("read")
-    assert {rid: read[rid]["state"] for rid in (K1, K2, K3)} == {
+    assert {rid: read[rid]["state"].text for rid in (K1, K2, K3)} == {
         K1: "open", K2: "open", K3: "open",
     }
     carried = _printed_pass2(output)
@@ -336,7 +339,7 @@ def test_pass_2_leaves_what_k8_decides_open_and_pass_3_settles_it() -> None:
     assert carried["rows"][K1]["needs"] == ["target"]
     assert carried["rows"][K2]["needs"] == ["target", "row", "title"]
 
-    confirmed, _output = _run_full("confirm", carried)
+    confirmed, _output = _run_full("confirm", as_dict(carried.value))
     assert confirmed[K8]["outcome"] == "PASS"
     assert confirmed[K1]["outcome"] == "PASS"
     assert confirmed[K2]["outcome"] == "LOOKUP VALUE IS WITHHELD"
@@ -399,7 +402,7 @@ def test_a_lookup_not_showing_title_answers_neither_k2_nor_k3() -> None:
     ids=["probe-side", "title"],
 )
 def test_a_changed_sentinel_voids_only_the_row_read_against_it(
-    changed: dict[str, Any], voided: str,
+    changed: Mapping[str, object], voided: str,
 ) -> None:
     """Each absence rested on one sentinel; K1 behind a 404 rests on neither."""
     rows, _output = _run_full("confirm", _PASS2, **changed)
@@ -457,7 +460,7 @@ def test_a_failed_k8_voids_only_what_pass_2_left_open() -> None:
     """Pass 2 through the printed line, then a fixture edited before pass 3."""
     _read, output = _run_full("read", targetStatus=403, leak="title")
     carried = _printed_pass2(output)
-    rows, _output = _run_full("confirm", carried, rowSide="edited")
+    rows, _output = _run_full("confirm", as_dict(carried.value), rowSide="edited")
     assert rows[K8]["outcome"] == "FAIL"
     assert rows[K3]["state"] == "void"
     # K1 (a 403) and K2 (a sighting) were settled by pass 2 and are not re-recorded.
@@ -474,9 +477,9 @@ def test_k8_is_a_control_the_probe_applies_per_outcome() -> None:
     afterwards, so the probe carries each row's state through PASS2 and pass 3
     settles or voids only the rows pass 2 left open.
     """
-    catalog = json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
+    catalog = Json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
     probe = next(p for p in catalog["probes"] if p["file"] == PROBE.name)
-    findings = {f["id"]: f["depends_on"] for f in probe["scenarios"][0]["findings"]}
+    findings = {f["id"].text: f["depends_on"] for f in probe["scenarios"][0]["findings"]}
     assert K8 in probe["scenarios"][0]["controls"]
     for finding in (K1, K2, K3):
         assert K8 not in findings[finding], finding

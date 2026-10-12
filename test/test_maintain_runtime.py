@@ -13,9 +13,10 @@ is not a dependency of the package.
 
 import json
 import textwrap
-from typing import Any
+from collections.abc import Mapping, Sequence
 
 import pytest
+from _json_view import Json
 from _node import NODE
 from _node import run_node as _run
 
@@ -344,7 +345,7 @@ def _field(
     from_base: bool = False,
     can_delete: bool | None = None,
     lookup_list: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """One field's shape, with `CanBeDeleted` derived rather than assumed.
 
     Sealing a column is what makes SharePoint report `CanBeDeleted: false`,
@@ -393,7 +394,7 @@ F_ORPHAN = "aaaaaaaa-0000-0000-0000-000000000014"
 F_UNDELETABLE = "aaaaaaaa-0000-0000-0000-000000000015"
 
 
-def _fields() -> list[dict[str, Any]]:
+def _fields() -> list[dict[str, object]]:
     return [
         _field("Title", field_id=F_TITLE, from_base=True, sealed=True),
         _field("ID", field_id=F_ID, kind="Counter", from_base=True, can_delete=False),
@@ -407,12 +408,12 @@ def _fields() -> list[dict[str, Any]]:
 
 def _config(
     *,
-    items: list[dict[str, Any]] | None = None,
+    items: Sequence[Mapping[str, object]] | None = None,
     allow_deletion: bool = False,
     ours: bool = True,
-    fields: list[dict[str, Any]] | None = None,
+    fields: Sequence[Mapping[str, object]] | None = None,
     description: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     if description is None:
         description = (
             f"{MARKER_PREFIX} from demo for list Thing." if ours else "A hand-made list."
@@ -433,18 +434,18 @@ def _config(
     }
 
 
-def _tag(line: str, marker: str) -> Any:
-    return json.loads(line.removeprefix(marker))
+def _tag(line: str, marker: str) -> Json:
+    return Json.loads(line.removeprefix(marker))
 
 
-Run = tuple[dict[str, Any], list[dict[str, Any]], list[str], list[Any]]
+Run = tuple[Json, Json, Json, Json]
 
 
 def _wrap(
     body: str,
-    config: dict[str, Any],
+    config: Mapping[str, object],
     answers: list[str],
-    flags: dict[str, Any] | None = None,
+    flags: Mapping[str, object] | None = None,
 ) -> str:
     """The emitted script, plus the mock, as one runnable file.
 
@@ -475,9 +476,9 @@ def _wrap(
 
 def _run_script(
     body: str,
-    config: dict[str, Any],
+    config: Mapping[str, object],
     answers: list[str],
-    flags: dict[str, Any] | None = None,
+    flags: Mapping[str, object] | None = None,
 ) -> Run:
     """Run one emitted script against the mock.
 
@@ -507,7 +508,7 @@ GENERATED_AT = "2026-09-02T00:00:00Z"
 
 
 def _protection(
-    config: dict[str, Any], answers: list[str], flags: dict[str, Any] | None = None,
+    config: Mapping[str, object], answers: list[str], flags: Mapping[str, object] | None = None,
 ) -> Run:
     js = generate_protection_js(
         site_url=SITE, list_title=LIST_SLUG, list_path=LIST_PATH,
@@ -517,7 +518,7 @@ def _protection(
 
 
 def _columns(
-    config: dict[str, Any], answers: list[str], flags: dict[str, Any] | None = None,
+    config: Mapping[str, object], answers: list[str], flags: Mapping[str, object] | None = None,
 ) -> Run:
     js = generate_columns_js(
         site_url=SITE, list_title=LIST_SLUG, list_path=LIST_PATH,
@@ -526,27 +527,30 @@ def _columns(
     return _run_script(js, config, answers, flags)
 
 
-def _method(call: dict[str, Any]) -> str | None:
-    return call["headers"].get("X-HTTP-Method") if call["method"] == "POST" else None
+def _method(call: Json) -> str | None:
+    if call["method"] != "POST":
+        return None
+    verb = call["headers"].get("X-HTTP-Method")
+    return None if verb.is_none else verb.text
 
 
-def _writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _writes(calls: Json) -> list[Json]:
     return [c for c in calls if _method(c) in ("MERGE", "DELETE")]
 
 
-def _merges_of(calls: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
-    return [c for c in _writes(calls) if _method(c) == "MERGE" and key in (c["body"] or {})]
+def _merges_of(calls: Json, key: str) -> list[Json]:
+    return [c for c in _writes(calls) if _method(c) == "MERGE" and key in c["body"]]
 
 
-def _deletes(calls: list[dict[str, Any]]) -> list[str]:
-    return [c["url"] for c in _writes(calls) if _method(c) == "DELETE"]
+def _deletes(calls: Json) -> list[str]:
+    return [c["url"].text for c in _writes(calls) if _method(c) == "DELETE"]
 
 
-def _field_of(url: str) -> str:
-    return url.split("fields(guid'")[1].split("'", maxsplit=1)[0]
+def _field_of(url: Json) -> str:
+    return url.text.split("fields(guid'")[1].split("'", maxsplit=1)[0]
 
 
-def _readbacks_of(calls: list[dict[str, Any]], field_id: str, select: str) -> list[int]:
+def _readbacks_of(calls: Json, field_id: str, select: str) -> list[int]:
     return [
         i for i, c in enumerate(calls)
         if c["method"] == "GET" and field_id in c["url"] and select in c["url"]
@@ -583,7 +587,7 @@ def test_unseal_touches_only_the_sealed_custom_columns() -> None:
     # ColumnOne, Related and Orphan are sealed custom columns. Title is a
     # base-type field, _Hidden is hidden, ColumnTwo is already unsealed.
     assert sorted(_field_of(m["url"]) for m in merges) == sorted([F_ONE, F_LOOKUP, F_ORPHAN])
-    assert all(m["body"]["Sealed"] is False for m in merges)
+    assert all(m["body"]["Sealed"].value is False for m in merges)
     assert summary["actions"] == [{"action": "unseal", "columns": 3, "verified": True}]
 
 
@@ -624,7 +628,7 @@ def test_a_seal_that_fails_part_way_reports_the_columns_it_did_seal() -> None:
 
 
 def _protection_output(
-    config: dict[str, Any], answers: list[str], flags: dict[str, Any] | None = None,
+    config: Mapping[str, object], answers: list[str], flags: Mapping[str, object] | None = None,
 ) -> tuple[Run, str]:
     """A protection run's summary and its log, from one execution."""
     js = generate_protection_js(
@@ -646,7 +650,7 @@ def test_a_lock_whose_readback_fails_is_recorded_as_outcome_unknown(
     flags, and the report is the same either way, because the script cannot
     tell them apart and must not claim either.
     """
-    flags: dict[str, Any] = {"lockReadback": failure, "discardListMerge": not applied}
+    flags: dict[str, object] = {"lockReadback": failure, "discardListMerge": not applied}
     (summary, calls, prompts, _tables), out = _protection_output(
         _config(allow_deletion=True), ["lock", "seal"], flags,
     )
@@ -688,7 +692,7 @@ def test_a_lock_whose_merge_never_answered_but_took_is_settled_as_applied() -> N
         "action": "lock", "list": "APP_Thing", "requested": {"AllowDeletion": False},
         "outcome": "applied", "verified": True,
     }]
-    assert summary["list"]["allow_deletion"] is False
+    assert summary["list"]["allow_deletion"].value is False
     assert "[WARN] The MERGE of AllowDeletion=false on 'APP_Thing' never answered" in out
     assert len(prompts) == 2
 
@@ -742,8 +746,8 @@ def test_a_lock_whose_merge_and_readback_both_fail_is_outcome_unknown(applied: b
 
 def test_the_state_table_reports_the_custom_columns_and_the_marker() -> None:
     summary, _calls, _prompts, tables = _protection(_config(ours=False), [""])
-    assert summary["list"]["provisioned_by_dbml_sharepoint"] is False
-    assert summary["list"]["allow_deletion"] is False
+    assert summary["list"]["provisioned_by_dbml_sharepoint"].value is False
+    assert summary["list"]["allow_deletion"].value is False
     names = [row["internal_name"] for row in tables[0]]
     # Title leads, and is the one row that is not a custom column. See
     # test_the_state_table_names_the_built_in_title below for why it is here.
@@ -767,9 +771,9 @@ def test_the_state_table_names_the_built_in_title() -> None:
     """
     summary, _calls, _prompts, tables = _protection(_config(), [""])
     row = next(r for r in tables[0] if r["internal_name"] == "Title")
-    assert row["built_in"] is True
+    assert row["built_in"].value is True
     assert row["title"] == "Title"
-    assert all(r.get("built_in") is False
+    assert all(r.get("built_in").value is False
                for r in tables[0] if r["internal_name"] != "Title")
     # The count keeps meaning what it meant, so a readout gaining a row does
     # not silently restate how many columns the operator owns.
@@ -846,7 +850,7 @@ def test_a_column_sharepoint_refuses_to_delete_while_unsealed_stays_off_the_menu
 
 def test_a_lookup_whose_target_list_is_gone_is_flagged() -> None:
     _summary, _calls, _prompts, tables = _columns(_config(), [""])
-    by_name = {row["internal_name"]: row for row in tables[0]}
+    by_name = {row["internal_name"].text: row for row in tables[0]}
     assert by_name["Related"]["lookup_target"] == "APP_Other"
     assert by_name["Orphan"]["lookup_target"] == "MISSING"
     assert by_name["ColumnOne"]["lookup_target"] == ""
@@ -856,7 +860,7 @@ def test_an_empty_sealed_column_is_unsealed_and_read_back_before_the_delete() ->
     config = _config(items=[{"Id": 1, "ColumnOne": None}])
     summary, calls, _prompts, _tables = _columns(config, ["ColumnOne", "ColumnOne", ""])
     unseal = _merges_of(calls, "Sealed")
-    assert len(unseal) == 1 and unseal[0]["body"]["Sealed"] is False
+    assert len(unseal) == 1 and unseal[0]["body"]["Sealed"].value is False
     deletes = _deletes(calls)
     assert len(deletes) == 1 and F_ONE in deletes[0]
     i_unseal = calls.index(unseal[0])
@@ -966,7 +970,7 @@ def test_an_unseal_that_does_not_take_stops_before_the_delete() -> None:
     assert "Sealed=true after writing false" in summary["errors"][0]["error"]
     # Never applied, and the readback said so: there is nothing to re-seal (#573).
     assert _sealed_now(calls, F_ONE) == [False]
-    assert summary["resealed"] is None
+    assert summary["resealed"].value is None
 
 
 def test_a_delete_readback_that_answers_400_is_recorded_as_deleted() -> None:
@@ -1082,7 +1086,7 @@ def test_a_delete_that_still_reads_back_stops_the_run() -> None:
 
 
 def _columns_output(
-    config: dict[str, Any], answers: list[str], flags: dict[str, Any] | None = None,
+    config: Mapping[str, object], answers: list[str], flags: Mapping[str, object] | None = None,
 ) -> tuple[Run, str]:
     """A columns run's summary and its log, from one execution."""
     js = generate_columns_js(
@@ -1093,10 +1097,11 @@ def _columns_output(
     return _parse(out), out
 
 
-def _sealed_now(calls: list[dict[str, Any]], field_id: str) -> list[bool]:
+def _sealed_now(calls: Json, field_id: str) -> list[bool]:
     """The Sealed value of every MERGE to one field, in order."""
     return [
-        m["body"]["Sealed"] for m in _merges_of(calls, "Sealed") if field_id in m["url"]
+        m["body"]["Sealed"].value is True
+        for m in _merges_of(calls, "Sealed") if field_id in m["url"]
     ]
 
 
@@ -1116,7 +1121,7 @@ def test_a_refused_delete_re_seals_the_column_and_reads_it_back() -> None:
     )
     assert summary["aborted"] == "write-failed"
     assert summary["deleted"] == []
-    assert summary["resealed"] is True
+    assert summary["resealed"].value is True
     assert "DELETE refused: HTTP 500" in summary["errors"][0]["error"]
     assert "Re-sealed 'ColumnOne'" in out
     assert "LEFT UNSEALED" not in out
@@ -1133,14 +1138,14 @@ def test_a_refused_delete_re_seals_the_column_and_reads_it_back() -> None:
     ids=["re-seal-discarded", "re-seal-unreadable"],
 )
 def test_a_refused_delete_whose_re_seal_fails_names_the_column_left_unsealed(
-    flags: dict[str, Any],
+    flags: Mapping[str, object],
 ) -> None:
     config = _config(items=[{"Id": 1, "ColumnOne": None}])
     (summary, calls, _prompts, _tables), out = _columns_output(
         config, _DELETE_ONE, {"fieldDeleteStatus": 500, **flags},
     )
     assert _sealed_now(calls, F_ONE) == [False, True]
-    assert summary["resealed"] is False
+    assert summary["resealed"].value is False
     assert summary["aborted"] == "write-failed"
     error = next(ln for ln in out.splitlines() if "LEFT UNSEALED" in ln)
     assert "[ERROR]" in error
@@ -1156,7 +1161,7 @@ def test_a_delete_whose_answer_is_lost_is_settled_as_deleted_by_the_id() -> None
     assert summary["deleted"] == ["ColumnOne"]
     assert summary["errors"] == []
     assert "aborted" not in summary
-    assert summary["resealed"] is None
+    assert summary["resealed"].value is None
     assert _sealed_now(calls, F_ONE) == [False], "a deleted column has nothing to re-seal"
     assert "[WARN] The DELETE of 'ColumnOne' never answered" in out
 
@@ -1170,7 +1175,7 @@ def test_a_delete_that_never_answered_and_never_happened_re_seals_the_column() -
     assert summary["aborted"] == "readback-mismatch"
     assert "still reads back after the delete" in summary["errors"][0]["error"]
     assert _sealed_now(calls, F_ONE) == [False, True]
-    assert summary["resealed"] is True
+    assert summary["resealed"].value is True
     assert "Re-sealed 'ColumnOne'" in out
 
 
@@ -1184,7 +1189,7 @@ def test_a_column_delete_that_never_answered_and_cannot_be_read_back_is_unknown(
     assert summary["aborted"] == "write-failed"
     assert "whether 'ColumnOne' is gone is unknown" in summary["errors"][0]["error"]
     # The column is gone, so the re-seal cannot land, and the error claims no more than it knows.
-    assert summary["resealed"] is False
+    assert summary["resealed"].value is False
     assert "could not be confirmed deleted, and if it survived it is LEFT UNSEALED" in out
 
 
@@ -1219,7 +1224,7 @@ def test_an_unseal_whose_readback_fails_is_sealed_again_before_the_run_stops() -
     )
     assert _deletes(calls) == []
     assert _sealed_now(calls, F_ONE) == [False, True]
-    assert summary["resealed"] is True
+    assert summary["resealed"].value is True
     assert summary["aborted"] == "write-failed"
     assert "Re-sealed 'ColumnOne'" in out
 
@@ -1303,7 +1308,7 @@ def test_a_renamed_list_resolves_and_reports_the_title_it_has_now() -> None:
     back the folder name it was given.
     """
     summary, calls, _prompts, _tables = _columns(_config(), [""])
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert summary["list"]["title"] == "APP_Thing"
     resolved = [c for c in calls if "GetList(@listUrl)" in c["url"]]
     assert len(resolved) == 1, "the list is resolved once, then addressed by id"
@@ -1355,13 +1360,13 @@ def _list_js() -> str:
 
 
 def _list(
-    config: dict[str, Any], answers: list[str], flags: dict[str, Any] | None = None,
+    config: Mapping[str, object], answers: list[str], flags: Mapping[str, object] | None = None,
 ) -> Run:
     return _run_script(_list_js(), config, answers, flags)
 
 
 def _list_output(
-    config: dict[str, Any], answers: list[str], flags: dict[str, Any] | None = None,
+    config: Mapping[str, object], answers: list[str], flags: Mapping[str, object] | None = None,
 ) -> str:
     """One run's whole output, for the tests that read its log lines.
 
@@ -1380,8 +1385,8 @@ TITLE = "APP_Thing"
 _TWO_ITEMS = [{"Id": 1}, {"Id": 2}]
 
 
-def _recycles(calls: list[dict[str, Any]]) -> list[str]:
-    return [c["url"] for c in calls if "/recycle()" in c["url"]]
+def _recycles(calls: Json) -> list[str]:
+    return [c["url"].text for c in calls if "/recycle()" in c["url"]]
 
 
 def test_a_list_this_tool_did_not_provision_is_refused() -> None:
@@ -1456,7 +1461,7 @@ def test_the_title_has_to_be_typed_back_and_the_slug_will_not_do() -> None:
     summary, calls, prompts, _ = _list(_config(), [LIST_SLUG])
 
     assert summary["skipped"] == {"list": TITLE, "reason": "title-not-typed"}
-    assert summary["deleted"] is None
+    assert summary["deleted"].value is None
     assert _deletes(calls) == [] and _recycles(calls) == []
     assert f"({TITLE})" in prompts[0]
 
@@ -1480,7 +1485,7 @@ def test_a_list_reporting_no_items_is_asked_the_same_second_question() -> None:
     summary, calls, prompts, _ = _list(_config(), [TITLE, "yes"])
 
     assert summary["skipped"] == {"list": TITLE, "reason": "items-unconfirmed"}
-    assert summary["deleted"] is None
+    assert summary["deleted"].value is None
     assert len(prompts) == 2
     assert "0 item(s)" in prompts[1]
     assert _deletes(calls) == []
@@ -1520,7 +1525,7 @@ def test_a_locked_list_holding_items_is_drained_unlocked_and_deleted() -> None:
     # recycling after the delete would recycle nothing and still report two.
     unlock_at = [
         i for i, c in enumerate(calls)
-        if c["body"] and c["body"].get("AllowDeletion") is True
+        if c["body"] and c["body"].get("AllowDeletion").value is True
     ]
     recycle_at = [i for i, c in enumerate(calls) if "/recycle()" in c["url"]]
     delete_at = [i for i, c in enumerate(calls) if _method(c) == "DELETE"]
@@ -1540,7 +1545,7 @@ def test_a_list_renamed_while_the_prompt_was_open_is_not_deleted() -> None:
     )
 
     assert summary["skipped"] == {"list": TITLE, "reason": "changed-during-confirmation"}
-    assert summary["deleted"] is None
+    assert summary["deleted"].value is None
     assert _deletes(calls) == [] and _recycles(calls) == []
 
 
@@ -1582,7 +1587,7 @@ def test_a_drain_that_fails_part_way_reports_what_it_already_recycled() -> None:
 
     assert summary["recycled_items"] == 1
     assert len(_recycles(calls)) == 2, "it stopped at the item that failed"
-    assert summary["deleted"] is None
+    assert summary["deleted"].value is None
     assert _deletes(calls) == []
 
 
@@ -1595,7 +1600,7 @@ def test_a_delete_that_answers_200_while_the_list_stays_is_not_a_delete() -> Non
         flags={"discardListDelete": True, "absentList": "lingers"},
     )
 
-    assert summary["deleted"] is None
+    assert summary["deleted"].value is None
     assert summary["aborted"] == "write-failed"
     assert "has NOT been deleted" in summary["errors"][0]["error"]
 
@@ -1607,7 +1612,7 @@ def test_a_readback_that_cannot_settle_it_says_so_rather_than_claiming_a_delete(
         _config(), [TITLE, "DELETE NON-EMPTY"], flags={"absentList": "unreadable"},
     )
 
-    assert summary["deleted"] is None
+    assert summary["deleted"].value is None
     assert "is gone is unknown" in summary["errors"][0]["error"]
 
 
@@ -1641,7 +1646,7 @@ def test_a_discarded_unlock_stops_the_run_before_the_list_is_deleted() -> None:
     assert _deletes(calls) == []
     assert len(_recycles(calls)) == 2
     assert summary["recycled_items"] == 2
-    assert summary["relocked"] is None, "the lock was never taken off"
+    assert summary["relocked"].value is None, "the lock was never taken off"
 
 
 def test_a_delete_that_fails_after_unlocking_puts_the_lock_back() -> None:
@@ -1652,14 +1657,14 @@ def test_a_delete_that_fails_after_unlocking_puts_the_lock_back() -> None:
         flags={"listDeleteStatus": 403},
     )
 
-    assert summary["deleted"] is None
+    assert summary["deleted"].value is None
     assert summary["aborted"] == "write-failed"
     relocks = [
         c for c in calls
-        if c["body"] and c["body"].get("AllowDeletion") is False
+        if c["body"] and c["body"].get("AllowDeletion").value is False
     ]
     assert len(relocks) == 1, "the lock this run took off was not put back"
-    assert summary["relocked"] is True
+    assert summary["relocked"].value is True
     after = calls.index(relocks[0])
     assert any(
         c["method"] == "GET" and "$select=Id,AllowDeletion" in c["url"]
@@ -1678,7 +1683,7 @@ def test_a_re_lock_the_site_discards_is_not_reported_as_restored() -> None:
     )
     summary = _parse(out)[0]
 
-    assert summary["relocked"] is False
+    assert summary["relocked"].value is False
     assert "its deletion lock is back" not in out
     assert "is still UNLOCKED and was not deleted" in out
 
@@ -1698,14 +1703,14 @@ def test_an_unlock_whose_readback_fails_still_puts_the_lock_back() -> None:
     )
     summary, calls, _, _ = _parse(out)
 
-    assert summary["deleted"] is None
+    assert summary["deleted"].value is None
     assert _deletes(calls) == [], "it deleted a list on an unlock it never read back"
     relocks = [
         c for c in calls
-        if c["body"] and c["body"].get("AllowDeletion") is False
+        if c["body"] and c["body"].get("AllowDeletion").value is False
     ]
     assert len(relocks) == 1, "the lock the unlock may have taken off was left off"
-    assert summary["relocked"] is True
+    assert summary["relocked"].value is True
     assert "its deletion lock is back" in out
 
 
@@ -1724,8 +1729,8 @@ def test_an_unlock_that_could_not_be_read_back_reads_as_unknown_not_as_locked() 
     )
     summary = _parse(out)[0]
 
-    assert summary["deleted"] is None
-    assert summary["relocked"] is False
+    assert summary["deleted"].value is None
+    assert summary["relocked"].value is False
     assert "whether its deletion lock came off is UNKNOWN" in out
     assert "is still UNLOCKED" not in out
     assert "protection-script" in out
@@ -1756,10 +1761,10 @@ def test_a_delete_that_never_answered_and_never_happened_says_so() -> None:
         flags={"listDeleteThrows": True, "discardListDelete": True},
     )[0]
 
-    assert summary["deleted"] is None
+    assert summary["deleted"].value is None
     assert "has NOT been deleted" in summary["errors"][0]["error"]
     assert "never answered" in summary["errors"][0]["error"]
-    assert summary["relocked"] is True, "the lock was not put back on a list still there"
+    assert summary["relocked"].value is True, "the lock was not put back on a list still there"
 
 
 def test_a_delete_that_never_answered_and_cannot_be_read_back_is_unknown() -> None:
@@ -1772,7 +1777,7 @@ def test_a_delete_that_never_answered_and_cannot_be_read_back_is_unknown() -> No
     )
     summary = _parse(out)[0]
 
-    assert summary["deleted"] is None
+    assert summary["deleted"].value is None
     assert "is gone is unknown" in summary["errors"][0]["error"]
     assert "could not be confirmed deleted" in out
     assert "was not deleted" not in out
@@ -1791,8 +1796,8 @@ def test_an_unsettled_delete_is_not_rewritten_into_a_list_that_survived() -> Non
     )
     summary = _parse(out)[0]
 
-    assert summary["deleted"] is None
-    assert summary["relocked"] is False
+    assert summary["deleted"].value is None
+    assert summary["relocked"].value is False
     assert "is gone is unknown" in out
     assert "could not be confirmed deleted" in out
     assert "was not deleted" not in out
@@ -1813,13 +1818,13 @@ def test_an_item_added_after_the_drain_stops_the_delete() -> None:
         flags={"itemArrivesBeforeRead": 3},
     )
 
-    assert summary["deleted"] is None
+    assert summary["deleted"].value is None
     assert _deletes(calls) == [], "it deleted a list holding a row it never recycled"
     assert summary["recycled_items"] == 2
     assert "was added to" in summary["errors"][0]["error"]
     # Named apart from a failed write: nothing here failed, the run refused.
     assert summary["aborted"] == "items-arrived"
-    assert summary["relocked"] is True
+    assert summary["relocked"].value is True
 
 
 @pytest.mark.parametrize(("items", "allow_deletion"), [
@@ -1830,7 +1835,7 @@ def test_an_item_added_after_the_drain_stops_the_delete() -> None:
     ([], True),
 ], ids=["items-and-a-lock", "nothing-written-yet"])
 def test_the_final_drain_check_is_the_last_request_before_the_delete(
-    items: list[dict[str, Any]], allow_deletion: bool,
+    items: Sequence[Mapping[str, object]], allow_deletion: bool,
 ) -> None:
     """What narrowing the window means, and the part of it that can be
     pinned: no request at all stands between the read that found the list
@@ -1869,7 +1874,7 @@ def test_a_confirming_read_that_never_answered_leaves_the_delete_unknown() -> No
     )
     summary = _parse(out)[0]
 
-    assert summary["deleted"] is None
+    assert summary["deleted"].value is None
     assert "is gone is unknown" in summary["errors"][0]["error"]
     assert "could not be confirmed deleted" in out
     assert "was not deleted" not in out
@@ -1885,7 +1890,7 @@ def test_a_confirming_read_whose_body_never_arrived_leaves_the_delete_unknown() 
     )
     summary = _parse(out)[0]
 
-    assert summary["deleted"] is None
+    assert summary["deleted"].value is None
     assert "is gone is unknown" in summary["errors"][0]["error"]
     assert "could not be confirmed deleted" in out
     assert "was not deleted" not in out
@@ -1900,14 +1905,14 @@ def test_a_refused_item_recycle_stops_before_the_list_is_deleted() -> None:
         flags={"recycleStatus": 403},
     )
 
-    assert summary["deleted"] is None
+    assert summary["deleted"].value is None
     assert _deletes(calls) == []
     assert "recycle of item 1 failed" in summary["errors"][0]["error"]
 
 
 @pytest.mark.parametrize("continuation", [False, 0, True, 1, [], {}])
 def test_malformed_field_continuation_stops_before_maintenance(
-    continuation: Any,
+    continuation: object,
 ) -> None:
     js = generate_protection_js(
         site_url=SITE, list_title=LIST_SLUG, list_path=LIST_PATH,
@@ -1926,7 +1931,7 @@ def test_malformed_field_continuation_stops_before_maintenance(
 
 @pytest.mark.parametrize("continuation", [False, 0, True, 1, [], {}])
 def test_malformed_value_continuation_requires_non_empty_confirmation(
-    continuation: Any,
+    continuation: object,
 ) -> None:
     summary, calls, prompts, _tables = _columns(
         _config(), ["ColumnTwo", "ColumnTwo", ""], {"itemNext": continuation},
@@ -1938,7 +1943,7 @@ def test_malformed_value_continuation_requires_non_empty_confirmation(
 
 
 @pytest.mark.parametrize("continuation", [None, ""])
-def test_valid_maintenance_terminators_allow_empty_column_deletion(continuation: Any) -> None:
+def test_valid_maintenance_terminators_allow_empty_column_deletion(continuation: object) -> None:
     summary, calls, prompts, _tables = _columns(
         _config(), ["ColumnTwo", "ColumnTwo", ""],
         {"fieldNext": continuation, "itemNext": continuation},
@@ -1994,7 +1999,7 @@ def test_a_value_read_without_results_requires_non_empty_confirmation() -> None:
     ([], 2, "final drain check", True),
 ], ids=["drain", "final-check", "final-check-relocks"])
 def test_an_item_read_without_results_deletes_nothing(
-    items: list[dict[str, Any]], read: int, what: str, locked: bool,
+    items: Sequence[Mapping[str, object]], read: int, what: str, locked: bool,
 ) -> None:
     """Read as empty, the drain stopped, or the final check passed, and the
     DELETE destroyed rows that were never recycled (#722)."""
@@ -2003,14 +2008,14 @@ def test_an_item_read_without_results_deletes_nothing(
         [TITLE, "DELETE NON-EMPTY"],
         flags={"itemsWithoutResultsAt": read},
     )
-    assert summary["deleted"] is None
+    assert summary["deleted"].value is None
     assert _deletes(calls) == []
     assert _recycles(calls) == []
     assert any(what in e["error"] and "without a d.results array" in e["error"]
                for e in summary["errors"]), summary["errors"]
     if locked:
         # The final check comes after the unlock, so the lock goes back on.
-        assert summary["relocked"] is True
+        assert summary["relocked"].value is True
 
 
 def test_a_fields_read_without_results_cannot_settle_a_column_delete() -> None:

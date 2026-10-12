@@ -11,9 +11,9 @@ before each calculated create. Node is required; the module skips without it.
 import json
 import textwrap
 from pathlib import Path
-from typing import Any
 
 import pytest
+from _json_view import Json
 from _node import NODE
 from _node import run_node as _run
 from _packs import pack
@@ -160,12 +160,12 @@ def test_only_the_measured_title_passes(tmp_path: Path) -> None:
     output = _run(program)
     line = next((ln for ln in output.splitlines() if ln.startswith("__OUT__")), None)
     assert line is not None, output
-    out = json.loads(line.removeprefix("__OUT__"))
+    out = Json.loads(line.removeprefix("__OUT__"))
 
-    assert out["matches"] is None
+    assert out["matches"].value is None
     assert (out["localised"]["checked"], out["localised"]["actual"]) == (True, "Erstellt")
     for key in ("lacksIt", "unreadable", "pastThePageAbsent", "pastThePageRefused"):
-        assert out[key]["checked"] is False, out[key]
+        assert out[key]["checked"].value is False, out[key]
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -179,10 +179,10 @@ def test_a_created_column_past_a_full_field_page_is_read_by_name(tmp_path: Path)
     output = _run(program)
     line = next((ln for ln in output.splitlines() if ln.startswith("__OUT__")), None)
     assert line is not None, output
-    out = json.loads(line.removeprefix("__OUT__"))
+    out = Json.loads(line.removeprefix("__OUT__"))
 
     assert out["readsByNameOnAWholePage"] == 0, "a complete page was second-guessed"
-    assert out["pastThePage"] is None, out["pastThePage"]
+    assert out["pastThePage"].value is None, out["pastThePage"]
     localised = out["pastThePageLocalised"]
     assert (localised["checked"], localised["actual"]) == (True, "Erstellt"), localised
     assert all(
@@ -204,7 +204,7 @@ _FORMULA = """
 def _run_adopted(
     tmp_path: Path, *, at_preflight: str | None, afterwards: str | None,
     display_names: bool = False,
-) -> tuple[dict[str, Any], list[Any], str]:
+) -> tuple[Json, list[Json], str]:
     """Deploy to an existing list whose `Created` title is `at_preflight`, then `afterwards`.
 
     None leaves `Created` out of the list's field enumeration for that span.
@@ -241,13 +241,13 @@ def _run_adopted(
     ).replace("(async () => {", "((async () => {", 1)
     output = _run(script)
     calls_line = next(ln for ln in output.splitlines() if ln.startswith("__CALLS__"))
-    return _summary_of(output), json.loads(calls_line.removeprefix("__CALLS__")), output
+    return _summary_of(output), Json.loads(calls_line.removeprefix("__CALLS__")).rows, output
 
 
-def _due_date_creates(calls: list[Any]) -> list[Any]:
+def _due_date_creates(calls: list[Json]) -> list[Json]:
     return [
         c for c in _field_writes(calls)
-        if c["body"] and json.loads(c["body"]).get("Title") == "DueDate"
+        if c["body"] and Json.loads(c["body"].text).get("Title") == "DueDate"
     ]
 
 
@@ -284,7 +284,7 @@ def test_the_measured_title_creates_the_column(tmp_path: Path) -> None:
     )
     assert summary.get("errors") == [], output[-3000:]
     (create,) = _due_date_creates(calls)
-    assert json.loads(create["body"])["Formula"] == "=[Created]+14"
+    assert Json.loads(create["body"].text)["Formula"] == "=[Created]+14"
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -304,7 +304,7 @@ def test_a_created_column_the_preflight_cannot_find_stops_the_run(tmp_path: Path
     assert summary.get("aborted") == "existing-schema-shape-errors", output[-3000:]
     assert not _deployment_writes(calls), _deployment_writes(calls)
     (refusal,) = [e for e in summary["errors"] if e.get("column") == "DueDate"]
-    assert refusal["mismatches"][0]["checked"] is False, refusal
+    assert refusal["mismatches"][0]["checked"].value is False, refusal
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

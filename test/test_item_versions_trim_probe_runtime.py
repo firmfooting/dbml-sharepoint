@@ -7,9 +7,10 @@ wait is swapped for none.
 """
 
 import json
-from typing import Any
+from collections.abc import Mapping
 
 import pytest
+from _json_view import Json
 from _node import NODE
 from _paths import MANUAL
 from _probe_runs import (
@@ -34,8 +35,8 @@ WRITE_READS = 6
 NO_WAIT = {"  const TRIM_WAIT_MS = 60000;": "  const TRIM_WAIT_MS = 0;"}
 
 
-def _run(gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: Any,
-         ) -> tuple[dict[str, dict[str, str]], list[dict[str, str]], str]:
+def _run(gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: object,
+         ) -> tuple[dict[str, Json], list[Json], str]:
     return run_probe(VERSIONS_MOCK, PROBE, gates, config, NO_WAIT)
 
 
@@ -257,7 +258,7 @@ def test_a_versions_read_answered_2xx_with_no_value_array_is_left_open() -> None
     {"d": {"__next": "https://example.sharepoint.com/sites/probe/_api/web/lists/versions?$skiptoken=2"}},
 ], ids=["odata", "at-odata", "verbose"])
 def test_a_versions_answer_with_a_continuation_link_is_not_called_trimmed(
-        spelling: dict[str, Any]) -> None:
+        spelling: Mapping[str, object]) -> None:
     # A rule rather than `versionsNext`, so the reads between the writes stay unpaged.
     newest = [{"VersionId": 3072, "VersionLabel": "6.0", "Title": "dbmlsp versions trim 6"},
               {"VersionId": 2560, "VersionLabel": "5.0", "Title": "dbmlsp versions trim 5"}]

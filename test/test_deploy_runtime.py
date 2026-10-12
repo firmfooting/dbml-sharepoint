@@ -18,14 +18,16 @@ import re
 import subprocess
 import tempfile
 import textwrap
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, ClassVar, NamedTuple, override
+from typing import ClassVar, NamedTuple, TypedDict, Unpack, override
 from urllib.parse import quote
 
 import pytest
 from _batch_mock import BATCH_MOCK
 from _builders import ID_PK, TITLE, table
+from _json_view import Json
+from _json_view import dumps as dumps_view
 from _node import NODE
 from _node import run_node as _run
 from _packs import DEFAULT_PREFIX, blocks, entities, pack, reader_identities
@@ -34,8 +36,11 @@ from _paths import FIXTURES
 from dbml_sharepoint.analysis.list_description import marker_for
 from dbml_sharepoint.analysis.phases import phase_number as pn
 from dbml_sharepoint.analysis.resolve import resolve
-from dbml_sharepoint.extension import BaseExtension
+from dbml_sharepoint.extension import BaseExtension, SiteContext
+from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.identities import parse_values
+from dbml_sharepoint.model.mapping_types import MappingBundle
+from dbml_sharepoint.model.parser import Schema
 
 
 def _deploy_js_with_assessment() -> str:
@@ -147,7 +152,7 @@ def test_deploy_js_runs_without_throwing() -> None:
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert result_line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(result_line.removeprefix("__RESULT__"))
+    summary = Json.loads(result_line.removeprefix("__RESULT__"))
     # The mock is deliberately thin, so shape probes legitimately complain.
     # What must never appear is a formula error: that is the phase-aborting
     # failure the synthetic Title patch produced on every list, every run,
@@ -172,7 +177,7 @@ def test_the_builtin_title_column_is_never_sent_a_formula() -> None:
         None,
     )
     assert line is not None, "harness produced no call log"
-    calls = json.loads(line.removeprefix("__CALLS__"))
+    calls = Json.loads(line.removeprefix("__CALLS__")).rows
     title_writes = [
         c for c in calls
         if c["method"] == "POST" and c["body"] and "ValidationMessage" in c["body"]
@@ -1080,9 +1085,9 @@ def _acl_state_rows(script: str) -> list[tuple[int, list[int]]]:
     )
     line = next(ln for ln in output.splitlines() if ln.startswith("__ROWS__"))
     return [
-        (row["PrincipalId"],
-         [b["Id"] for b in row["RoleDefinitionBindings"]["results"]])
-        for row in json.loads(line.removeprefix("__ROWS__"))
+        (row["PrincipalId"].number,
+         [b["Id"].number for b in row["RoleDefinitionBindings"]["results"]])
+        for row in Json.loads(line.removeprefix("__ROWS__"))
     ]
 
 
@@ -1114,14 +1119,13 @@ def _run_deploy(harness: str, tail: str) -> str:
     return _run(script)
 
 
-def _summary_of(output: str) -> dict[str, Any]:
+def _summary_of(output: str) -> Json:
     """The summary object deploy.js returned, out of the Node transcript."""
     line = next(
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary: dict[str, Any] = json.loads(line.removeprefix("__RESULT__"))
-    return summary
+    return Json.loads(line.removeprefix("__RESULT__"))
 
 
 # The assessment gate's own tests. These deliberately do NOT stub: the gate is
@@ -1436,7 +1440,7 @@ def test_the_degraded_stop_names_the_findings_nobody_could_assess() -> None:
     assert unassessed, findings
     printed = [ln for ln in output.splitlines() if "[ERROR]" in ln]
     for key in unassessed:
-        assert any(key in ln for ln in printed), (key, printed)
+        assert any(key.text in ln for ln in printed), (key, printed)
     # Tier 3 is the same list on every site, and re-stating it here would bury
     # the findings that are about this one.
     assert not [ln for ln in printed if "not_assessable:" in ln], printed
@@ -1502,7 +1506,7 @@ def test_a_sealed_builtin_title_does_not_abort_every_list() -> None:
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(line.removeprefix("__RESULT__"))
+    summary = Json.loads(line.removeprefix("__RESULT__"))
     seal_errors = [
         err for err in (summary.get("errors") or []) if "sealed" in str(err)
     ]
@@ -1523,9 +1527,9 @@ def test_a_sealed_title_is_unsealed_for_the_run() -> None:
         (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
     )
     assert line is not None, f"harness produced no call log:\n{output[-3000:]}"
-    calls = json.loads(line.removeprefix("__CALLS__"))
+    calls = Json.loads(line.removeprefix("__CALLS__")).rows
     seal_writes = [
-        json.loads(c["body"])["Sealed"]
+        Json.loads(c["body"].text)["Sealed"]
         for c in calls
         if c["method"] == "POST" and c.get("body")
         and (
@@ -1582,9 +1586,9 @@ def test_protection_restores_only_the_titles_prepare_unsealed(tmp_path: Path) ->
         (ln for ln in _run(script).splitlines() if ln.startswith("__CALLS__")), None,
     )
     assert line is not None, "harness produced no call log"
-    calls = json.loads(line.removeprefix("__CALLS__"))
+    calls = Json.loads(line.removeprefix("__CALLS__")).rows
     seal_writes = [
-        json.loads(c["body"])["Sealed"]
+        Json.loads(c["body"].text)["Sealed"]
         for c in calls
         if c["method"] == "POST" and c.get("body")
         and (
@@ -1593,8 +1597,8 @@ def test_protection_restores_only_the_titles_prepare_unsealed(tmp_path: Path) ->
         )
         and "Sealed" in c["body"]
     ]
-    assert seal_writes[0] is False, f"PREPARE did not unseal Title: {seal_writes}"
-    assert seal_writes[-1] is True, f"the run left Title unsealed: {seal_writes}"
+    assert seal_writes[0].value is False, f"PREPARE did not unseal Title: {seal_writes}"
+    assert seal_writes[-1].value is True, f"the run left Title unsealed: {seal_writes}"
 
 
 # A POST to the LIST object itself: the path ends at getbytitle(...) with
@@ -1626,16 +1630,16 @@ _LIST_WRITE_URL = re.compile(
 )
 
 
-def _description_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _description_writes(calls: list[Json]) -> list[Json]:
     """Every request that MERGEs a Description onto a list."""
     return [
         c for c in calls
         if c["method"] == "POST" and c["body"] and "Description" in c["body"]
-        and _LIST_WRITE_URL.search(c["url"])
+        and _LIST_WRITE_URL.search(c["url"].text)
     ]
 
 
-def _deployment_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _deployment_writes(calls: list[Json]) -> list[Json]:
     """Mutating requests, excluding read-only POST-shaped protocols."""
     return [
         call
@@ -1647,8 +1651,8 @@ def _deployment_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _field_writes(
-    calls: list[dict[str, Any]], list_title: str | None = None,
-) -> list[dict[str, Any]]:
+    calls: list[Json], list_title: str | None = None,
+) -> list[Json]:
     """POSTs into a list's `/fields` collection: creates and MERGEs alike.
 
     Matched on the collection rather than on the verb because
@@ -1672,7 +1676,7 @@ def _field_writes(
     ]
 
 
-def _addfield_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _addfield_writes(calls: list[Json]) -> list[Json]:
     """POSTs that create a lookup column.
 
     SharePoint refuses an SP.FieldLookup POSTed to `/fields`, so every lookup
@@ -1742,8 +1746,8 @@ def _run_adopted_deploy(
     require_checkout: bool | None = None,
     force_checkout_live: bool = True,
     ignore_force_checkout_writes: bool = False,
-    force_checkout_fault: dict[str, Any] | None = None,
-) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    force_checkout_fault: Mapping[str, object] | None = None,
+) -> tuple[Json, list[Json], str]:
     """Run the emitted deploy against a site whose lists already exist.
 
     Built on `_declared_deploy_js`, not on the shipped `simple.dbml` fixture.
@@ -1848,25 +1852,42 @@ def _run_adopted_deploy(
             f"the list reconcile phase never ran:\n{output[-3000:]}"
         )
     return (
-        json.loads(result_line.removeprefix("__RESULT__")),
-        json.loads(calls_line.removeprefix("__CALLS__")),
+        Json.loads(result_line.removeprefix("__RESULT__")),
+        Json.loads(calls_line.removeprefix("__CALLS__")).rows,
         output,
     )
 
 
+class _AdoptedKnobs(TypedDict, total=False, closed=True):
+    """The `_run_adopted_deploy` options `_force_checkout_run` passes through."""
+
+    ignore_description_writes: bool
+    prefix: str
+    expect_list_phase: bool
+    drop_marker_after_reads: int | None
+    drop_marker_after_reads_by_title: dict[str, int] | None
+    drop_marker_at_phase: str | None
+    table_names: tuple[str, ...] | None
+    self_reference: bool
+    require_checkout: bool | None
+    force_checkout_live: bool
+    ignore_force_checkout_writes: bool
+    force_checkout_fault: Mapping[str, object] | None
+
+
 def _force_checkout_run(
-    tmp_path: Path, **knobs: Any,
-) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], int]:
+    tmp_path: Path, **knobs: Unpack[_AdoptedKnobs],
+) -> tuple[Json, list[Json], list[Json], int]:
     """An owned-list deploy; returns summary, the ForceCheckout MERGE bodies,
     the change rows, and how many times ForceCheckout was read."""
     summary, calls, output = _run_adopted_deploy(
         tmp_path, _declared_list_descriptions(tmp_path), **knobs,
     )
     merges = [
-        json.loads(c["body"]) for c in calls
+        Json.loads(c["body"].text) for c in calls
         if c["method"] == "POST" and c["body"] and "ForceCheckout" in c["body"]
     ]
-    changes = json.loads(next(
+    changes = Json.loads(next(
         ln for ln in output.splitlines() if ln.startswith("__CHANGES__")
     ).removeprefix("__CHANGES__"))
     reads = int(next(
@@ -1882,7 +1903,7 @@ def test_a_library_already_at_the_declared_require_checkout_is_not_written(
     summary, merges, changes, reads = _force_checkout_run(
         tmp_path, require_checkout=True, force_checkout_live=True,
     )
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert reads >= 1, "the declared value was never read"
     assert merges == [] and changes == []
 
@@ -1894,7 +1915,7 @@ def test_a_library_that_differs_gets_one_merge_a_read_back_and_a_change_row(
     summary, merges, changes, reads = _force_checkout_run(
         tmp_path, require_checkout=False, force_checkout_live=True,
     )
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert summary.get("errors") == [], summary["errors"]
     assert [m["ForceCheckout"] for m in merges] == [False]
     assert reads == 2, "a probe and a read-back"
@@ -1947,7 +1968,7 @@ def test_an_unmanaged_require_checkout_is_neither_read_nor_written(tmp_path: Pat
     summary, merges, changes, reads = _force_checkout_run(
         tmp_path, require_checkout=None, force_checkout_live=True,
     )
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert reads == 0 and merges == [] and changes == []
 
 
@@ -2017,7 +2038,7 @@ def test_missing_or_empty_generated_expected_marker_fails_closed(
     calls_line = next(
         line for line in output.splitlines() if line.startswith("__CALLS__")
     )
-    calls = json.loads(calls_line.removeprefix("__CALLS__"))
+    calls = Json.loads(calls_line.removeprefix("__CALLS__")).rows
 
     assert summary.get("aborted") == "existing-schema-shape-errors", summary
     assert not _deployment_writes(calls), calls
@@ -2050,7 +2071,7 @@ def test_owned_list_named_proto_reaches_reconciliation(tmp_path: Path) -> None:
     summary = _summary_of(output)
 
     assert summary.get("errors") == [], summary["errors"]
-    assert summary.get("aborted") is None, (summary, output[-2000:])
+    assert summary.get("aborted").value is None, (summary, output[-2000:])
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -2068,7 +2089,7 @@ def test_a_correct_description_is_not_rewritten(tmp_path: Path) -> None:
     # was written" is also true of a run that fell over before it got there.
     # Without this the test would keep passing through an unrelated breakage
     # that stopped the reconcile from executing at all.
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert summary.get("errors") == [], summary["errors"]
     assert not _description_writes(calls), (
         f"a list already carrying its declared description was rewritten"
@@ -2085,7 +2106,7 @@ def test_owned_list_with_human_prose_drift_is_repaired(tmp_path: Path) -> None:
 
     summary, calls, output = _run_adopted_deploy(tmp_path, held)
 
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert _description_writes(calls), f"owned prose drift was not repaired\n{output[-2000:]}"
 
 
@@ -2437,7 +2458,7 @@ def test_a_description_is_reconciled_on_a_list_whose_title_needs_escaping(
         f"script or the matcher lost it\n{output[-2000:]}"
     )
     assert "Provisioned by dbml-sharepoint" in writes[0]["body"]
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert summary.get("errors") == [], summary["errors"]
 
 
@@ -2520,7 +2541,7 @@ def test_a_run_that_aborts_after_unsealing_a_title_reseals_it() -> None:
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert result_line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(result_line.removeprefix("__RESULT__"))
+    summary = Json.loads(result_line.removeprefix("__RESULT__"))
     # Without this the test could pass by never aborting at all, and a
     # run that reaches PROTECTION re-seals for the ordinary reason.
     assert summary.get("aborted"), (
@@ -2535,9 +2556,9 @@ def test_a_run_that_aborts_after_unsealing_a_title_reseals_it() -> None:
         (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
     )
     assert calls_line is not None, "harness produced no call log"
-    calls = json.loads(calls_line.removeprefix("__CALLS__"))
+    calls = Json.loads(calls_line.removeprefix("__CALLS__")).rows
     seal_writes = [
-        json.loads(c["body"])["Sealed"]
+        Json.loads(c["body"].text)["Sealed"]
         for c in calls
         if c["method"] == "POST" and c.get("body")
         and (
@@ -2547,8 +2568,8 @@ def test_a_run_that_aborts_after_unsealing_a_title_reseals_it() -> None:
         and "Sealed" in c["body"]
     ]
     assert seal_writes, "PREPARE never unsealed a Title, so there was nothing to restore"
-    assert seal_writes[0] is False, f"PREPARE did not unseal Title: {seal_writes}"
-    assert seal_writes[-1] is True, (
+    assert seal_writes[0].value is False, f"PREPARE did not unseal Title: {seal_writes}"
+    assert seal_writes[-1].value is True, (
         f"the aborted run left Title unsealed: {seal_writes}; errors={summary['errors']}"
     )
 
@@ -2568,16 +2589,16 @@ def test_a_run_that_aborts_after_unsealing_a_declared_field_reseals_it(tmp_path:
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert result_line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(result_line.removeprefix("__RESULT__"))
+    summary = Json.loads(result_line.removeprefix("__RESULT__"))
     assert summary.get("aborted") == "phase-1-schema-errors"
 
     calls_line = next(
         (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
     )
     assert calls_line is not None, "harness produced no call log"
-    calls = json.loads(calls_line.removeprefix("__CALLS__"))
+    calls = Json.loads(calls_line.removeprefix("__CALLS__")).rows
     seal_writes = [
-        json.loads(c["body"])["Sealed"]
+        Json.loads(c["body"].text)["Sealed"]
         for c in calls
         if c["method"] == "POST" and c.get("body")
         and (
@@ -2586,8 +2607,8 @@ def test_a_run_that_aborts_after_unsealing_a_declared_field_reseals_it(tmp_path:
         )
         and "Sealed" in c["body"]
     ]
-    assert seal_writes[0] is False, f"PREPARE did not unseal Note: {seal_writes}"
-    assert seal_writes[-1] is True, f"the aborted run left Note unsealed: {seal_writes}"
+    assert seal_writes[0].value is False, f"PREPARE did not unseal Note: {seal_writes}"
+    assert seal_writes[-1].value is True, f"the aborted run left Note unsealed: {seal_writes}"
 
 
 _TWO_WRONG_PROPERTIES_HARNESS = _ADOPTED_HARNESS + textwrap.dedent(r"""
@@ -2622,7 +2643,7 @@ def test_a_column_with_multiple_immutable_mismatches_reports_all_of_them(
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(line.removeprefix("__RESULT__"))
+    summary = Json.loads(line.removeprefix("__RESULT__"))
     assert summary.get("aborted") == "existing-schema-shape-errors", summary
     both = (
         "Existing field 'APP_Escalation.Note' has immutable TypeAsString 'Note'; "
@@ -2675,7 +2696,7 @@ def test_a_wrong_target_list_survives_an_unresolvable_display_field() -> None:
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert line is not None, output[-3000:]
-    summary = json.loads(line.removeprefix("__RESULT__"))
+    summary = Json.loads(line.removeprefix("__RESULT__"))
     assert summary.get("aborted") == "existing-schema-shape-errors", summary
     entry = next(
         (e for e in summary["errors"] if e.get("column") == "Project"), None,
@@ -2703,7 +2724,7 @@ def test_a_lookup_whose_target_display_field_cannot_be_resolved_is_refused() -> 
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(line.removeprefix("__RESULT__"))
+    summary = Json.loads(line.removeprefix("__RESULT__"))
     assert summary.get("aborted") == "existing-schema-shape-errors", summary
     reported = [err["error"] for err in summary["errors"] if err.get("column") == "Project"]
     assert reported == [
@@ -2736,7 +2757,7 @@ def test_an_existing_list_with_the_wrong_base_template_aborts_before_any_write()
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(line.removeprefix("__RESULT__"))
+    summary = Json.loads(line.removeprefix("__RESULT__"))
     assert summary.get("aborted") == "existing-schema-shape-errors", summary
     reported = [
         err["error"] for err in summary["errors"]
@@ -3031,7 +3052,7 @@ _DELETE_BEHAVIOUR_HEADING = "Adopted lookups whose delete behaviour is not None:
 
 def _delete_behaviour_run(
     raw: str, *, refuse: bool = False,
-) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+) -> tuple[Json, list[Json], str]:
     return _run_capturing_calls(
         _delete_behaviour_harness(raw, refuse=refuse), _deploy_js(),
     )
@@ -3049,7 +3070,7 @@ def _delete_behaviour_line(output: str) -> str:
     return line
 
 
-def _assert_preflight_passed(summary: dict[str, Any]) -> None:
+def _assert_preflight_passed(summary: Json) -> None:
     """Not a reason to stop: preflight passes and records no error for it.
 
     The simple fixture's run later stops at 2.1 on list validation the adopted
@@ -3060,7 +3081,7 @@ def _assert_preflight_passed(summary: dict[str, Any]) -> None:
 
 
 def _assert_reported_and_not_written(
-    summary: dict[str, Any], calls: list[dict[str, Any]], output: str, named: str,
+    summary: Json, calls: list[Json], output: str, named: str,
 ) -> None:
     """One WARN line naming the value, one warnings entry, no abort, no write."""
     assert _DELETE_BEHAVIOUR_HEADING in output, output[-3000:]
@@ -3203,7 +3224,7 @@ def test_a_unique_constraint_the_site_lacks_is_named_before_any_write(
     assert output.index(_NEWLY_UNIQUE_HEADING) < output.index(first_write), output[:8000]
     # Nothing is relaxed by naming it: the constraint still goes out.
     sent = [
-        json.loads(call["body"])
+        Json.loads(call["body"].text)
         for call in _field_writes(calls, "APP_Escalation")
         if call["body"] and "EnforceUniqueValues" in call["body"]
     ]
@@ -3412,12 +3433,12 @@ def _paged_fields_harness(
     """)
 
 
-def _code_creates(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _code_creates(calls: list[Json]) -> list[Json]:
     """Field creates for `Code`: a create names its kind, a MERGE by Id does not."""
     return [
         body
         for body in (
-            json.loads(call["body"])
+            Json.loads(call["body"].text)
             for call in _field_writes(calls, "APP_Escalation")
             if call["body"] and not call["url"].endswith("$batch")
         )
@@ -3425,7 +3446,7 @@ def _code_creates(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-def _probed_code_by_name(calls: list[dict[str, Any]]) -> bool:
+def _probed_code_by_name(calls: list[Json]) -> bool:
     """Whether `readFieldShape` asked `Code` by name, in the preflight.
 
     Keyed on the shape probe's own select: derived-property reads (MaxLength)
@@ -3481,7 +3502,7 @@ def test_a_column_past_the_field_page_is_read_by_name_not_created(
     first_write = f"Starting Phase {pn('renames')}"
     assert output.index(_NEWLY_UNIQUE_HEADING) < output.index(first_write), output[:8000]
     sent = [
-        json.loads(call["body"])
+        Json.loads(call["body"].text)
         for call in _field_writes(calls, "APP_Escalation")
         if call["body"] and "EnforceUniqueValues" in call["body"]
     ]
@@ -3543,7 +3564,7 @@ def test_a_by_name_404_past_a_full_page_reads_as_absent(tmp_path: Path) -> None:
         _unique_column_deploy_js(tmp_path),
     )
     assert _probed_code_by_name(calls), output[-4000:]
-    assert "shape probe failed: HTTP 404" not in json.dumps(summary["errors"])
+    assert "shape probe failed: HTTP 404" not in dumps_view(summary["errors"])
     assert len(_code_creates(calls)) == 1, _code_creates(calls)
     assert not summary.get("aborted"), summary
 
@@ -3662,7 +3683,7 @@ def test_a_notes_column_made_multi_line_requires_conversion_before_redeployment(
     output = _run(program)
     line = next((ln for ln in output.splitlines() if ln.startswith("__OUT__")), None)
     assert line is not None, output
-    result = json.loads(line.removeprefix("__OUT__"))
+    result = Json.loads(line.removeprefix("__OUT__"))
     assert [(m["property"], m["declared"], m["actual"]) for m in result["before"]] == [
         ("TypeAsString", "Note", "Text"),
     ]
@@ -3701,7 +3722,7 @@ def test_the_field_collector_records_what_it_compared_and_what_it_could_not() ->
     output = _run(program)
     line = next((ln for ln in output.splitlines() if ln.startswith("__OUT__")), None)
     assert line is not None, f"the collector produced no output:\n{output[-3000:]}"
-    out = json.loads(line.removeprefix("__OUT__"))
+    out = Json.loads(line.removeprefix("__OUT__"))
 
     assert [(m["property"], m["checked"]) for m in out["absentTarget"]] == [
         ("LookupList", True),
@@ -3709,7 +3730,7 @@ def test_the_field_collector_records_what_it_compared_and_what_it_could_not() ->
     assert [(m["property"], m["checked"]) for m in out["probeThrew"]] == [
         ("LookupField", False),
     ]
-    assert out["probeThrew"][0]["actual"] is None
+    assert out["probeThrew"][0]["actual"].value is None
     assert [(m["property"], m["checked"]) for m in out["displayFieldOnly"]] == [
         ("LookupField", True),
     ]
@@ -3745,8 +3766,8 @@ def test_a_declared_run_completes_every_phase_cleanly(tmp_path: Path) -> None:
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(line.removeprefix("__RESULT__"))
-    assert summary.get("aborted") is None, summary
+    summary = Json.loads(line.removeprefix("__RESULT__"))
+    assert summary.get("aborted").value is None, summary
     assert summary.get("errors") == [], summary["errors"]
     reached = [ln.split("Starting Phase ")[1][:3] for ln in output.splitlines()
                if "Starting Phase " in ln]
@@ -3780,7 +3801,7 @@ def test_the_seal_phase_writes_one_batch_per_list(tmp_path: Path) -> None:
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     sealing = [
         b for b in batches
@@ -3790,7 +3811,7 @@ def test_the_seal_phase_writes_one_batch_per_list(tmp_path: Path) -> None:
     for batch in sealing:
         list_ids = {
             match.group(1) for match in (
-                re.search(r"lists\(guid'([^']+)'\)", op["url"]) for op in batch["ops"]
+                re.search(r"lists\(guid'([^']+)'\)", op["url"].text) for op in batch["ops"]
             ) if match
         }
         assert len(list_ids) == 1, (
@@ -3868,7 +3889,7 @@ def test_the_maintenance_unseal_writes_one_batch_per_list(tmp_path: Path) -> Non
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     unsealing = [
         b for b in batches
@@ -3951,7 +3972,7 @@ def test_the_field_wave_creates_a_list_s_columns_as_one_batch(tmp_path: Path) ->
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     creating = [
         b for b in batches
@@ -3965,7 +3986,7 @@ def test_the_field_wave_creates_a_list_s_columns_as_one_batch(tmp_path: Path) ->
     for batch in creating:
         titles = {
             match.group(1) for match in (
-                re.search(r"getbytitle\('([^']+)'\)", op["url"]) for op in batch["ops"]
+                re.search(r"getbytitle\('([^']+)'\)", op["url"].text) for op in batch["ops"]
             ) if match
         }
         assert len(titles) == 1, (
@@ -3975,7 +3996,7 @@ def test_the_field_wave_creates_a_list_s_columns_as_one_batch(tmp_path: Path) ->
         assert [op["method"] for op in batch["ops"]] == [
             "POST", "POST", "MERGE", "POST", "MERGE",
         ], f"the create parts and their renames did not interleave: {batch['ops']}"
-        assert [json.loads(op["body"])["Title"] for op in batch["ops"]] == [
+        assert [Json.loads(op["body"].text)["Title"] for op in batch["ops"]] == [
             "Note",
             "EscalationReason", "Escalation Reason",
             "ResolvedOnSite", "Resolved On Site",
@@ -3987,21 +4008,21 @@ def test_the_field_wave_creates_a_list_s_columns_as_one_batch(tmp_path: Path) ->
             if op["method"] != "MERGE":
                 continue
             addressed = re.search(
-                r"getbyinternalnameortitle\('([^']+)'\)", op["url"],
+                r"getbyinternalnameortitle\('([^']+)'\)", op["url"].text,
             )
             assert addressed, (
                 "a rename part addresses the field by GUID, which it cannot "
                 f"know until the create before it lands: {op['url']}"
             )
-            assert addressed.group(1) == json.loads(batch["ops"][at - 1]["body"])["Title"], (
+            assert addressed.group(1) == Json.loads(batch["ops"][at - 1]["body"].text)["Title"], (
                 f"a rename part does not follow the create it renames: {batch['ops']}"
             )
 
-    result = json.loads(
+    result = Json.loads(
         next(ln for ln in output.splitlines() if ln.startswith("__RESULT__"))
         .removeprefix("__RESULT__"),
     )
-    assert result.get("aborted") is None, result
+    assert result.get("aborted").value is None, result
     # Six columns over two lists, and the count is reported by the verify pass
     # that reads each one back, not by the queue that sent them.
     assert result["columnsCreated"] == 6, result
@@ -4048,24 +4069,24 @@ def test_a_calculated_column_is_created_after_the_batch_not_inside_it(
         "  console.log('__CALLS__' + JSON.stringify(globalThis.__calls));\n"
         "});\n",
     )
-    batches = json.loads(
+    batches = Json.loads(
         next(ln for ln in output.splitlines() if ln.startswith("__BATCHES__"))
         .removeprefix("__BATCHES__"),
     )
-    calls = json.loads(
+    calls = Json.loads(
         next(ln for ln in output.splitlines() if ln.startswith("__CALLS__"))
         .removeprefix("__CALLS__"),
-    )
+    ).rows
 
     queued = [
         op for b in batches for op in b["ops"]
         if op["method"] == "POST" and op["url"].endswith("/fields")
     ]
-    assert [json.loads(op["body"])["Title"] for op in queued] == [
+    assert [Json.loads(op["body"].text)["Title"] for op in queued] == [
         "Note", "EscalationReason",
     ], f"the calculated column was queued as a ChangeSet part: {queued}"
 
-    def _at(predicate: Any) -> int:
+    def _at(predicate: Callable[[Json], bool]) -> int:
         found = [i for i, c in enumerate(calls) if predicate(c)]
         assert found, f"no such request in the transcript of {len(calls)} calls"
         return found[-1]
@@ -4073,14 +4094,14 @@ def test_a_calculated_column_is_created_after_the_batch_not_inside_it(
     created = _at(
         lambda c: c["method"] == "POST"
         and c["url"].endswith("/fields")
-        and c["body"] is not None
-        and json.loads(c["body"]).get("Title") == "ReasonEcho",
+        and c["body"].value is not None
+        and Json.loads(c["body"].text).get("Title") == "ReasonEcho",
     )
     renamed = _at(
         lambda c: c["method"] == "POST"
         and "getbyinternalnameortitle('EscalationReason')" in c["url"]
-        and c["body"] is not None
-        and json.loads(c["body"]).get("Title") == "Escalation Reason",
+        and c["body"].value is not None
+        and Json.loads(c["body"].text).get("Title") == "Escalation Reason",
     )
     assert renamed < created, (
         "the calculated column was created before the column its formula "
@@ -4088,13 +4109,13 @@ def test_a_calculated_column_is_created_after_the_batch_not_inside_it(
     )
     # The reference is by DISPLAY name, which is what makes the rename above a
     # precondition rather than a tidy-up.
-    assert json.loads(calls[created]["body"])["Formula"] == '=[Escalation Reason]&""'
+    assert Json.loads(calls[created]["body"].text)["Formula"] == '=[Escalation Reason]&""'
 
-    result = json.loads(
+    result = Json.loads(
         next(ln for ln in output.splitlines() if ln.startswith("__RESULT__"))
         .removeprefix("__RESULT__"),
     )
-    assert result.get("aborted") is None, result
+    assert result.get("aborted").value is None, result
     assert result["columnsCreated"] == 3, result
 
 
@@ -4135,7 +4156,7 @@ def test_an_absent_declared_column_does_not_abandon_the_rest_of_its_lane(
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     opened = [
         op for batch in batches for op in batch["ops"]
@@ -4206,7 +4227,7 @@ def test_the_acl_phase_batches_its_adds_and_only_its_adds(tmp_path: Path) -> Non
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     adding = [
         b for b in batches
@@ -4228,7 +4249,7 @@ def test_the_acl_phase_batches_its_adds_and_only_its_adds(tmp_path: Path) -> Non
             "addroleassignment is a POST as a single write and stays one as a "
             f"part, not {op['method']}"
         )
-        assert op["body"] is None, (
+        assert op["body"].value is None, (
             "the arguments belong in the URL; a body here is not what the "
             "single write sent"
         )
@@ -4256,7 +4277,7 @@ def test_the_index_phase_batches_a_list_s_index_writes(tmp_path: Path) -> None:
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     indexing = [
         b for b in batches
@@ -4282,7 +4303,7 @@ def test_the_index_phase_batches_a_list_s_index_writes(tmp_path: Path) -> None:
         )
     list_ids = {
         match.group(1) for match in (
-            re.search(r"lists\(guid'([^']+)'\)", op["url"])
+            re.search(r"lists\(guid'([^']+)'\)", op["url"].text)
             for op in indexing[0]["ops"]
         ) if match
     }
@@ -4324,7 +4345,7 @@ def test_the_index_readback_reads_every_column_as_one_query_batch(
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     reads = [
         b for b in batches
@@ -4345,7 +4366,7 @@ def test_the_index_readback_reads_every_column_as_one_query_batch(
         f"one thing batching them may not change: {reads[0]['ops']}"
     )
     for op in reads[0]["ops"]:
-        assert op["body"] is None, f"a query part carried a body: {op['body']}"
+        assert op["body"].value is None, f"a query part carried a body: {op['body']}"
         assert "$select=Id" in op["url"], (
             "the read-back asks for more than the identity it compares: "
             f"{op['url']}"
@@ -4404,7 +4425,7 @@ def test_a_refused_index_readback_fails_every_column_closed(
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(line.removeprefix("__RESULT__"))
+    summary = Json.loads(line.removeprefix("__RESULT__"))
 
     unread = [
         err for err in (summary.get("errors") or [])
@@ -4473,7 +4494,7 @@ def test_the_views_phase_batches_a_view_s_field_writes(tmp_path: Path) -> None:
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     fielding = [
         b for b in batches
@@ -4490,7 +4511,7 @@ def test_the_views_phase_batches_a_view_s_field_writes(tmp_path: Path) -> None:
     for batch in fielding:
         views = {
             match.group(1) for match in (
-                re.search(r"views/getbytitle\('([^']+)'\)", op["url"])
+                re.search(r"views/getbytitle\('([^']+)'\)", op["url"].text)
                 for op in batch["ops"]
             ) if match
         }
@@ -4505,7 +4526,7 @@ def test_the_views_phase_batches_a_view_s_field_writes(tmp_path: Path) -> None:
             "the reset is not the first part, so the adds ahead of it are "
             f"cleared by it: {[op['url'] for op in batch['ops']]}"
         )
-        added = [re.search(r"addviewfield\('([^']+)'\)", op["url"])
+        added = [re.search(r"addviewfield\('([^']+)'\)", op["url"].text)
                  for op in batch["ops"][1:]]
         assert all(added), (
             f"a part after the reset is not an addviewfield: {batch['ops']}"
@@ -4607,7 +4628,7 @@ def test_the_form_phase_batches_across_lists(tmp_path: Path) -> None:
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     writes = [
         b for b in batches
@@ -4629,7 +4650,7 @@ def test_the_form_phase_batches_across_lists(tmp_path: Path) -> None:
         )
     written = {
         match.group(1) for match in (
-            re.search(r"lists/getbytitle\('([^']+)'\)", op["url"])
+            re.search(r"lists/getbytitle\('([^']+)'\)", op["url"].text)
             for op in writes[0]["ops"]
         ) if match
     }
@@ -4678,7 +4699,7 @@ def test_the_field_default_phase_batches_a_list_s_writes(tmp_path: Path) -> None
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     # MERGE, not merely a body naming DefaultValue: the Phase 1 create parts
     # carry the declared default in the create body, so a body-only filter
@@ -4694,7 +4715,7 @@ def test_the_field_default_phase_batches_a_list_s_writes(tmp_path: Path) -> None
     assert len(writing) == 1, (
         f"the list's defaults went out as {len(writing)} $batch requests"
     )
-    values = [json.loads(op["body"])["DefaultValue"] for op in writing[0]["ops"]]
+    values = [Json.loads(op["body"].text)["DefaultValue"] for op in writing[0]["ops"]]
     assert values == ["open", "nobody"], (
         f"expected both declared defaults as parts, got {writing[0]['ops']}"
     )
@@ -4724,7 +4745,7 @@ def _default_formula_deploy_js(tmp_path: Path) -> str:
 
 def _run_capturing_calls(
     harness: str, js: str,
-) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+) -> tuple[Json, list[Json], str]:
     """(summary, calls, output) for one run of `js` under `harness`.
 
     The body is wrapped rather than spliced: a declared run's script has
@@ -4741,13 +4762,13 @@ def _run_capturing_calls(
     output = _run(script)
     line = next((ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None)
     assert line is not None, f"deploy.js did not return its call log:\n{output[-3000:]}"
-    return _summary_of(output), json.loads(line.removeprefix("__CALLS__")), output
+    return _summary_of(output), Json.loads(line.removeprefix("__CALLS__")).rows, output
 
 
-def _default_formula_bodies(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _default_formula_bodies(calls: list[Json]) -> list[Json]:
     """Every field write whose body carries a DefaultFormula, decoded."""
     return [
-        json.loads(call["body"])
+        Json.loads(call["body"].text)
         for call in _field_writes(calls)
         if call["body"] and "DefaultFormula" in call["body"]
     ]
@@ -4818,7 +4839,7 @@ def test_a_hand_edited_default_formula_is_reverted_to_the_declaration(tmp_path: 
         _HAND_EDITED_FORMULA_HARNESS, _default_formula_deploy_js(tmp_path),
     )
     reverts = [
-        json.loads(call["body"])
+        Json.loads(call["body"].text)
         for call in _field_writes(calls, "APP_Escalation")
         if "getbyinternalnameortitle('Due')" in call["url"]
         and call["body"] and "DefaultFormula" in call["body"]
@@ -4855,13 +4876,13 @@ def test_reverting_a_hand_set_value_resends_the_declared_formula(tmp_path: Path)
         _HAND_SET_VALUE_HARNESS, _default_formula_deploy_js(tmp_path),
     )
     reverts = [
-        json.loads(call["body"])
+        Json.loads(call["body"].text)
         for call in _field_writes(calls, "APP_Escalation")
         if "getbyinternalnameortitle('Due')" in call["url"]
         and call["body"] and "DefaultValue" in call["body"]
     ]
     assert reverts, calls
-    assert all(b["DefaultValue"] is None for b in reverts), reverts
+    assert all(b["DefaultValue"].value is None for b in reverts), reverts
     assert [b.get("DefaultFormula") for b in reverts] == ["=TODAY()"] * len(reverts), reverts
     assert "readback did not match" not in output, output[-3000:]
     assert summary["errors"] == []
@@ -4890,7 +4911,7 @@ def _declared_pack(
     table_names: tuple[str, ...] | None = None,
     self_reference: bool = False,
     extra_lines: tuple[str, ...] = (),
-) -> tuple[Any, Any]:
+) -> tuple[Schema, MappingBundle]:
     """The (schema, bundle) behind `_declared_deploy_js`.
 
     Split out so a test can ask what the generator DECLARES for these lists
@@ -5082,7 +5103,7 @@ def test_the_aggregations_comparison_survives_sharepoints_readback_spacing() -> 
         out = subprocess.run(  # noqa: S603
             [NODE, str(path)], capture_output=True, text=True, check=True, timeout=60,
         )
-    result = json.loads(out.stdout.strip())
+    result = Json.loads(out.stdout.strip())
     assert result["equal"], (
         f"the shipped normaliser does not equalise SharePoint's readback spacing: "
         f"sent normalised to {result['a']!r}, readback to {result['b']!r}"
@@ -5133,7 +5154,7 @@ def test_a_first_deploy_probes_no_absent_group_or_field_by_name() -> None:
         (ln for ln in _run(script).splitlines() if ln.startswith("__CALLS__")), None,
     )
     assert line is not None, "harness produced no call log"
-    calls = json.loads(line.removeprefix("__CALLS__"))
+    calls = Json.loads(line.removeprefix("__CALLS__")).rows
     gets = [c["url"] for c in calls if c["method"] == "GET"]
     # The ACL phase resolves a group's Id by name AFTER creating it, so on
     # a real run that request succeeds and is not console noise; the mock
@@ -5191,7 +5212,7 @@ def test_the_unsupported_formula_tolerance_is_scoped_to_clears() -> None:
         proc = subprocess.run(  # noqa: S603
             [NODE, str(path)], capture_output=True, text=True, check=True, timeout=60,
         )
-    got = json.loads(proc.stdout.strip())
+    got = Json.loads(proc.stdout.strip())
     expected = [tolerated for _, _, tolerated in cases]
     assert got == expected, (
         f"clearingOnly must tolerate only clears; got {got}, expected {expected} "
@@ -5238,7 +5259,18 @@ _READER_ADDRESS = "svc-reporting@example.org"
 # starts from this and varies exactly ONE attribute, so the guard under
 # test is the only one that can fire. Otherwise deleting it would leave
 # the test green for a neighbouring reason and prove nothing.
-_RESOLVED_USER: dict[str, Any] = {
+class _Principal(TypedDict):
+    Id: int
+    LoginName: str
+    Title: str
+
+
+class _ResolvedUser(_Principal):
+    Email: str
+    PrincipalType: int
+
+
+_RESOLVED_USER: _ResolvedUser = {
     "Id": 42,
     "LoginName": "i:0#.f|membership|svc-reporting@example.org",
     "Title": "Reporting Service",
@@ -5276,14 +5308,6 @@ def _identity_deploy_js(
     from dbml_sharepoint.model.parser import parse_dbml
     from dbml_sharepoint.model.release import load_release
 
-    sidecar_args: dict[str, Any] = {} if not sidecars else {
-        "sidecar_run_log_title": RUN_LOG_TITLE,
-        "sidecar_run_log_marker": run_log_marker(),
-        "sidecar_run_log_fields": list(RUN_LOG_STAMP_COLUMNS),
-        "sidecar_change_log_title": CHANGE_LOG_TITLE,
-        "sidecar_change_log_marker": change_log_marker(),
-        "sidecar_change_fields": list(CHANGE_FIELDS),
-    }
     schema = parse_dbml(FIXTURES / dbml)
     bundle = load_mapping(FIXTURES / mapping)
     return _without_assessment(generate_deploy_js(
@@ -5296,7 +5320,12 @@ def _identity_deploy_js(
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
         identities={name: parse_values(name, raw) for name, raw in identities.items()},
-        **sidecar_args,
+        sidecar_run_log_title=RUN_LOG_TITLE if sidecars else None,
+        sidecar_run_log_marker=run_log_marker() if sidecars else None,
+        sidecar_run_log_fields=list(RUN_LOG_STAMP_COLUMNS) if sidecars else None,
+        sidecar_change_log_title=CHANGE_LOG_TITLE if sidecars else None,
+        sidecar_change_log_marker=change_log_marker() if sidecars else None,
+        sidecar_change_fields=list(CHANGE_FIELDS) if sidecars else None,
         resolved=resolve(schema, bundle.mapping),
     ))
 
@@ -5366,18 +5395,18 @@ _CONTRIBUTE_FIXTURE = {"High": "432", "Low": "1011028719"}
 
 
 def _reader_harness(
-    ensure_user: dict[str, Any],
+    ensure_user: Mapping[str, object],
     *,
-    members: list[dict[str, Any]] | None = None,
-    member_pages: list[list[dict[str, Any]]] | None = None,
+    members: Sequence[Mapping[str, object]] | None = None,
+    member_pages: Sequence[Sequence[Mapping[str, object]]] | None = None,
     drop_readback: bool = False,
     ensure_status: int = 200,
     add_status: int = 200,
     remove_status: int = 200,
-    stray_on_write: dict[str, Any] | None = None,
-    stray_after_read: dict[str, Any] | None = None,
+    stray_on_write: Mapping[str, object] | None = None,
+    stray_after_read: Mapping[str, object] | None = None,
     read_bitmap: dict[str, str] | None = _BUILT_IN_READ_BITMAP,
-    web_bindings: list[dict[str, Any]] | None = None,
+    web_bindings: Sequence[Mapping[str, object]] | None = None,
     full_control_bitmap: dict[str, str] | None = _FULL_CONTROL_FIXTURE,
     contribute_bitmap: dict[str, str] | None = _CONTRIBUTE_FIXTURE,
     web_binding_status: int | None = None,
@@ -5776,9 +5805,34 @@ def _with_sidecar_descriptions(harness: str) -> str:
     return harness.replace(empty, f"const LIST_DESCRIPTIONS = new Map({seeded});")
 
 
+class _IdentityKnobs(TypedDict, total=False, closed=True):
+    """The `_run_identity_deploy` options a wrapper passes through, minus `mapping`."""
+
+    dbml: str
+    edit_js: Callable[[str], str] | None
+    ensure_status: int
+    add_status: int
+    remove_status: int
+    members: Sequence[Mapping[str, object]] | None
+    member_pages: Sequence[Sequence[Mapping[str, object]]] | None
+    drop_readback: bool
+    stray_on_write: Mapping[str, object] | None
+    stray_after_read: Mapping[str, object] | None
+    read_bitmap: dict[str, str] | None
+    web_bindings: Sequence[Mapping[str, object]] | None
+    full_control_bitmap: dict[str, str] | None
+    contribute_bitmap: dict[str, str] | None
+    web_binding_status: int | None
+    web_binding_shape: str
+    unreadable_binding_levels: list[int] | None
+    drop_change_log_grant: bool
+    ensure_echo: str
+    sidecars: bool
+
+
 def _run_reader_deploy(
-    ensure_user: dict[str, Any], **harness: Any,
-) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    ensure_user: Mapping[str, object], **harness: Unpack[_IdentityKnobs],
+) -> tuple[Json, list[Json], str]:
     """`_run_identity_deploy` for the one enterprise reader the reader tests name."""
     return _run_identity_deploy(
         {"enterprise_reader": f"user:{_READER_ADDRESS}"}, ensure_user, **harness,
@@ -5787,7 +5841,7 @@ def _run_reader_deploy(
 
 def _run_identity_deploy(
     identities: dict[str, str],
-    ensure_user: dict[str, Any],
+    ensure_user: Mapping[str, object],
     *,
     mapping: str = "sharepoint-mapping-with-reader.yaml",
     dbml: str = "simple.dbml",
@@ -5795,13 +5849,13 @@ def _run_identity_deploy(
     ensure_status: int = 200,
     add_status: int = 200,
     remove_status: int = 200,
-    members: list[dict[str, Any]] | None = None,
-    member_pages: list[list[dict[str, Any]]] | None = None,
+    members: Sequence[Mapping[str, object]] | None = None,
+    member_pages: Sequence[Sequence[Mapping[str, object]]] | None = None,
     drop_readback: bool = False,
-    stray_on_write: dict[str, Any] | None = None,
-    stray_after_read: dict[str, Any] | None = None,
+    stray_on_write: Mapping[str, object] | None = None,
+    stray_after_read: Mapping[str, object] | None = None,
     read_bitmap: dict[str, str] | None = _BUILT_IN_READ_BITMAP,
-    web_bindings: list[dict[str, Any]] | None = None,
+    web_bindings: Sequence[Mapping[str, object]] | None = None,
     full_control_bitmap: dict[str, str] | None = _FULL_CONTROL_FIXTURE,
     contribute_bitmap: dict[str, str] | None = _CONTRIBUTE_FIXTURE,
     web_binding_status: int | None = None,
@@ -5810,7 +5864,7 @@ def _run_identity_deploy(
     sidecars: bool = False,
     drop_change_log_grant: bool = False,
     ensure_echo: str = '',
-) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+) -> tuple[Json, list[Json], str]:
     """Run the emitted deploy against the reader harness.
 
     Returns (summary, calls, output). The phase must actually have STARTED:
@@ -5859,21 +5913,21 @@ def _run_identity_deploy(
         f"the identity-enrolment phase never ran:\n{output[-3000:]}"
     )
     return (
-        json.loads(result_line.removeprefix("__RESULT__")),
-        json.loads(calls_line.removeprefix("__CALLS__")),
+        Json.loads(result_line.removeprefix("__RESULT__")),
+        Json.loads(calls_line.removeprefix("__CALLS__")).rows,
         output,
     )
 
 
-def _membership_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _membership_writes(calls: list[Json]) -> list[Json]:
     """Every POST that adds somebody to a site group, by parsed body."""
     return [
-        json.loads(c["body"]) for c in calls
-        if c["method"] == "POST" and c.get("body") and _MEMBERSHIP_URL.search(c["url"])
+        Json.loads(c["body"].text) for c in calls
+        if c["method"] == "POST" and c.get("body") and _MEMBERSHIP_URL.search(c["url"].text)
     ]
 
 
-def _reader_errors(summary: dict[str, Any]) -> list[Any]:
+def _reader_errors(summary: Json) -> list[Json]:
     return [
         err for err in (summary.get("errors") or [])
         if str(err.get("phase")) == pn("identity_enrolment")
@@ -5889,9 +5943,9 @@ _OPERATOR_MEMBER = {"Id": 7, "LoginName": "i:0#.f|membership|probe@example.com",
 
 
 def _run_writers(
-    ensure_user: dict[str, Any], *, mapping: str = "sharepoint-mapping-with-writers.yaml",
-    **harness: Any,
-) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    ensure_user: Mapping[str, object], *, mapping: str = "sharepoint-mapping-with-writers.yaml",
+    **harness: Unpack[_IdentityKnobs],
+) -> tuple[Json, list[Json], str]:
     return _run_identity_deploy(
         {"automation": "user:flows@example.com"}, ensure_user, mapping=mapping, **harness,
     )
@@ -5901,7 +5955,7 @@ def _warnings(output: str) -> list[str]:
     return [line for line in output.splitlines() if "WARN" in line]
 
 
-def _identity_errors(summary: dict[str, Any]) -> list[Any]:
+def _identity_errors(summary: Json) -> list[Json]:
     return [
         err for err in (summary.get("errors") or [])
         if str(err.get("phase")) == pn("identity_enrolment")
@@ -5920,13 +5974,13 @@ _SECURITY_CLAIM = f"c:0t.c|tenant|{_GROUP_OID}"
 _MEMBERS_CLAIM = f"c:0o.c|federateddirectoryclaimprovider|{_GROUP_OID}"
 
 
-def _group_principal(login: str, ident: int = 51, kind: int = 4) -> dict[str, Any]:
+def _group_principal(login: str, ident: int = 51, kind: int = 4) -> dict[str, object]:
     return {"Id": ident, "LoginName": login, "Title": "Intake", "Email": "", "PrincipalType": kind}
 
 
 def _run_group_kind(
-    kind: str, ensured_group: dict[str, Any], **harness: Any,
-) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    kind: str, ensured_group: Mapping[str, object], **harness: Unpack[_IdentityKnobs],
+) -> tuple[Json, list[Json], str]:
     claim = _SECURITY_CLAIM if kind == "security_group" else _MEMBERS_CLAIM
     return _run_identity_deploy(
         {"automation": "user:flows@example.com", "intake": f"{kind}:{_GROUP_OID}"},
@@ -5942,7 +5996,7 @@ def _run_group_kind(
 def test_a_group_kind_is_resolved_by_its_claim_added_and_read_back(kind: str, claim: str) -> None:
     summary, calls, _ = _run_group_kind(kind, _group_principal(claim))
     assert not _identity_errors(summary), summary
-    asked = [json.loads(c["body"])["logonName"] for c in calls if "/ensureuser" in c["url"]]
+    asked = [Json.loads(c["body"].text)["logonName"] for c in calls if "/ensureuser" in c["url"]]
     assert claim in asked
     assert claim in [w["LoginName"] for w in _membership_writes(calls)]
 
@@ -6145,7 +6199,7 @@ _OPERATOR_AS_AUTOMATION = {
 }
 
 
-def _run_operator_is_automation(**kwargs: Any) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+def _run_operator_is_automation(**kwargs: Unpack[_IdentityKnobs]) -> tuple[Json, list[Json], str]:
     """The account running the deploy is also the group's declared automation account."""
     return _run_identity_deploy(
         {"automation": "user:probe@example.com"}, _OPERATOR_AS_AUTOMATION,
@@ -6153,7 +6207,7 @@ def _run_operator_is_automation(**kwargs: Any) -> tuple[dict[str, Any], list[dic
     )
 
 
-def _removals_of(calls: list[dict[str, Any]], user_id: int) -> list[dict[str, Any]]:
+def _removals_of(calls: list[Json], user_id: int) -> list[Json]:
     return [c for c in calls if f"removebyid({user_id})" in c["url"]]
 
 
@@ -6389,7 +6443,7 @@ def test_a_resolved_user_is_enrolled_and_the_membership_read_back() -> None:
     writes = _membership_writes(calls)
     assert [w["LoginName"] for w in writes] == [_RESOLVED_USER["LoginName"]], writes
     membership = [
-        i for i, c in enumerate(calls) if _MEMBERSHIP_URL.search(c["url"])
+        i for i, c in enumerate(calls) if _MEMBERSHIP_URL.search(c["url"].text)
     ]
     posted = next(
         i for i in membership
@@ -6586,7 +6640,7 @@ list_permissions:
 
 def _run_folder_and_list_reader_deploy(
     tmp_path: Path, mapping: str,
-) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+) -> tuple[Json, list[Json], str]:
     """`_run_reader_deploy`, but for a schema built here rather than the
     fixed `sharepoint-mapping-with-reader.yaml`, and always with sidecars
     on: both new tests are about the change log's grant."""
@@ -6648,8 +6702,8 @@ def _run_folder_and_list_reader_deploy(
         f"the logging phase never ran:\n{output[-3000:]}"
     )
     return (
-        json.loads(result_line.removeprefix("__RESULT__")),
-        json.loads(calls_line.removeprefix("__CALLS__")),
+        Json.loads(result_line.removeprefix("__RESULT__")),
+        Json.loads(calls_line.removeprefix("__CALLS__")).rows,
         output,
     )
 
@@ -6843,7 +6897,7 @@ _BOUND_LIMITED_ACCESS_ID = 1073741825
 _BOUND_VIEW_ONLY_ID = 1073741924
 
 
-def _contribute_binding(*added: str) -> dict[str, Any]:
+def _contribute_binding(*added: str) -> dict[str, object]:
     """A web-scope binding of a level that is Read plus `added`."""
     return {
         "Id": _BOUND_CONTRIBUTE_ID, "Name": "Contribute",
@@ -6856,7 +6910,7 @@ def _contribute_binding(*added: str) -> dict[str, Any]:
 # tool-created group holding exactly this at web scope and nothing else. It is
 # Read's own read bits with the rest taken away, so it carries no elevated bit
 # and the gate must stay silent on it.
-_LIMITED_ACCESS_BINDING: dict[str, Any] = {
+_LIMITED_ACCESS_BINDING: dict[str, object] = {
     "Id": _BOUND_LIMITED_ACCESS_ID, "Name": "Limited Access",
     **_without_bits("ViewListItems", "ViewVersions", "OpenItems", "ViewPages",
                     "CreateAlerts", "CreateSSCSite"),
@@ -7125,13 +7179,13 @@ def test_a_membership_that_does_not_read_back_aborts() -> None:
     assert summary.get("aborted") == "identity-enrolment-errors", summary
 
 
-_OTHER_MEMBER: dict[str, Any] = {
+_OTHER_MEMBER: _Principal = {
     "Id": 7, "Title": "Data Team",
     "LoginName": "i:0#.f|membership|data-team@example.org",
 }
 
 
-def _removals(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _removals(calls: list[Json]) -> list[Json]:
     """Every call that could take somebody OUT of a site group."""
     return [
         c for c in calls
@@ -7424,7 +7478,7 @@ _READER_ACL_HARNESS = _ADOPTED_HARNESS.replace(
 )
 
 
-def _reader_harness_for_declared_run(ensure_user: dict[str, Any]) -> str:
+def _reader_harness_for_declared_run(ensure_user: Mapping[str, object]) -> str:
     """`_reader_harness`, rebuilt on `_READER_ACL_HARNESS` instead of the
     plain `_ADOPTED_HARNESS` it always starts from."""
     overlay = _reader_harness(ensure_user)[len(_ADOPTED_HARNESS):]
@@ -7448,14 +7502,14 @@ def test_a_clean_end_to_end_run_leaves_the_reader_enrolled(tmp_path: Path) -> No
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert result_line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(result_line.removeprefix("__RESULT__"))
+    summary = Json.loads(result_line.removeprefix("__RESULT__"))
     calls_line = next(
         (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
     )
     assert calls_line is not None, f"harness produced no call log:\n{output[-3000:]}"
-    calls = json.loads(calls_line.removeprefix("__CALLS__"))
+    calls = Json.loads(calls_line.removeprefix("__CALLS__")).rows
 
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert summary.get("errors") == [], summary["errors"]
     assert _membership_writes(calls), "the reader was never enrolled"
     assert not _removals(calls), (
@@ -7473,7 +7527,7 @@ def test_a_clean_end_to_end_run_leaves_the_reader_enrolled(tmp_path: Path) -> No
 
 def _run_group_verify_deploy(
     deploy_js: str, harness: str,
-) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+) -> tuple[Json, list[Json], str]:
     """Run `deploy_js` against `harness` and return (summary, calls, output).
 
     Phase 'security' must actually have started, or a refusal assertion
@@ -7497,8 +7551,8 @@ def _run_group_verify_deploy(
         f"the security phase never ran:\n{output[-3000:]}"
     )
     return (
-        json.loads(result_line.removeprefix("__RESULT__")),
-        json.loads(calls_line.removeprefix("__CALLS__")),
+        Json.loads(result_line.removeprefix("__RESULT__")),
+        Json.loads(calls_line.removeprefix("__CALLS__")).rows,
         output,
     )
 
@@ -7508,8 +7562,8 @@ def _group_gate_deploy(
     group_name: str,
     *,
     description: str,
-    member_pages: list[list[dict[str, Any]]],
-) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    member_pages: Sequence[Sequence[Mapping[str, object]]],
+) -> tuple[Json, list[Json], str]:
     """Run `deploy_js` against `_ADOPTED_HARNESS` with one group's Description
     and membership overridden.
     """
@@ -7527,8 +7581,8 @@ def _group_gate_deploy(
 
 
 def _group_settings_writes(
-    calls: list[dict[str, Any]], group_name: str,
-) -> list[dict[str, Any]]:
+    calls: list[Json], group_name: str,
+) -> list[Json]:
     """Every POST that MERGEs settings, description included, onto the named
     group object itself, not its membership."""
     encoded = quote(group_name, safe="")
@@ -7540,7 +7594,7 @@ def _group_settings_writes(
     ]
 
 
-def _security_errors(summary: dict[str, Any]) -> list[Any]:
+def _security_errors(summary: Json) -> list[Json]:
     return [
         err for err in (summary.get("errors") or [])
         if str(err.get("phase")) == pn("security")
@@ -7795,9 +7849,9 @@ def _owner_pending_groups_deploy_js(*, owner_first: bool = True) -> str:
     js = _deploy_js()
     match = re.search(r'"groups": (\[.*?\n  \])', js, re.DOTALL)
     assert match, "groups array not found in generated deploy.js"
-    groups = json.loads(match.group(1))
+    groups = Json.loads(match.group(1)).rows
     assert len(groups) == 1, groups
-    list_maintainer = dict(groups[0])
+    list_maintainer = groups[0].to_object()
     assert list_maintainer["owner_group"] == "Site Owners", list_maintainer
     list_maintainer["owner_group"] = "Group B"
     group_b = dict(list_maintainer)
@@ -7846,7 +7900,7 @@ def test_an_adopted_group_owned_by_a_group_pending_creation_still_deploys() -> N
     create_indices = [
         i for i, c in enumerate(calls)
         if c["method"] == "POST" and c["url"].endswith("/sitegroups") and c["body"]
-        and json.loads(c["body"]).get("Title") == "Group B"
+        and Json.loads(c["body"].text).get("Title") == "Group B"
     ]
     assert create_indices, f"Group B was never created:\n{output[-3000:]}"
     owner_resolve_indices = [
@@ -7887,7 +7941,7 @@ def test_a_group_owned_by_one_declared_after_it_deploys_on_a_fresh_site() -> Non
     assert not _security_errors(summary), summary
     assert summary.get("aborted") != "phase-0-security-errors", summary
     created = [
-        json.loads(c["body"]).get("Title") for c in calls
+        Json.loads(c["body"].text).get("Title") for c in calls
         if c["method"] == "POST" and c["url"].endswith("/sitegroups") and c["body"]
     ]
     assert created == ["List Maintainer", "Group B"], (
@@ -7896,7 +7950,7 @@ def test_a_group_owned_by_one_declared_after_it_deploys_on_a_fresh_site() -> Non
     group_b_created = next(
         i for i, c in enumerate(calls)
         if c["method"] == "POST" and c["url"].endswith("/sitegroups") and c["body"]
-        and json.loads(c["body"]).get("Title") == "Group B"
+        and Json.loads(c["body"].text).get("Title") == "Group B"
     )
     owner_resolves = [
         i for i, c in enumerate(calls)
@@ -7925,7 +7979,7 @@ def _role_def_gate_deploy(
     *,
     absent: bool = False,
     description_override: str | None = None,
-) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+) -> tuple[Json, list[Json], str]:
     """Run `deploy_js` against `_ADOPTED_HARNESS` with the fixture's one
     declared permission level, 'Schema Manager', either absent (so the
     CREATE path runs) or present with its Description overridden (so the
@@ -7943,8 +7997,8 @@ def _role_def_gate_deploy(
 
 
 def _role_def_merge_writes(
-    calls: list[dict[str, Any]], level_name: str,
-) -> list[dict[str, Any]]:
+    calls: list[Json], level_name: str,
+) -> list[Json]:
     """Every POST that MERGEs settings onto the named role definition itself."""
     encoded = quote(level_name, safe="")
     return [
@@ -7954,7 +8008,7 @@ def _role_def_merge_writes(
     ]
 
 
-def _role_def_create_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _role_def_create_writes(calls: list[Json]) -> list[Json]:
     """Every POST that creates a new role definition."""
     return [
         c for c in calls
@@ -8137,7 +8191,7 @@ def test_a_freshly_created_level_base_permissions_the_tenant_did_not_store_fails
 # softenable without a test failing on the write itself.
 
 
-def _security_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _security_writes(calls: list[Json]) -> list[Json]:
     """Every POST `_security_principals.js.j2` can issue: a permission-level
     create or MERGE, a site-group create or MERGE, or the CSOM ProcessQuery
     owner correction. The first two only ever fire from the apply loop; the
@@ -8304,7 +8358,7 @@ def test_a_survey_failure_still_produces_a_structured_abort() -> None:
     assert summary.get("aborted") == "phase-0-security-errors", summary
 
 
-def _group_create_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _group_create_writes(calls: list[Json]) -> list[Json]:
     """Every POST that creates a new site group."""
     return [
         c for c in calls
@@ -8379,10 +8433,10 @@ def _duplicate_group_case_variant(js: str) -> str:
     """
     match = re.search(r'  "groups": (\[\n.*?\n  \]),\n  "indexed_columns"', js, re.DOTALL)
     assert match, "SCHEMA.groups block not found in generated deploy.js"
-    groups = json.loads(match.group(1))
-    variant = dict(groups[0])
+    groups = Json.loads(match.group(1)).rows
+    variant = groups[0].to_object()
     variant["name"] = "LIST MAINTAINER"
-    return js.replace(match.group(1), json.dumps([*groups, variant], indent=2), 1)
+    return js.replace(match.group(1), dumps_view([*groups, variant], indent=2), 1)
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -8492,7 +8546,7 @@ _MALFORMED_CONTEXTINFO = textwrap.dedent("""
 """)
 
 
-def _malformed_contextinfo(info: Any) -> str:
+def _malformed_contextinfo(info: object) -> str:
     return _MALFORMED_CONTEXTINFO.replace("__INFO__", json.dumps(info))
 
 
@@ -8517,9 +8571,9 @@ class _DigestRun(NamedTuple):
     terms.
     """
 
-    summary: dict[str, Any] | None
+    summary: Json | None
     messages: list[str]
-    calls: list[dict[str, Any]]
+    calls: list[Json]
     thrown: str | None
     output: str
 
@@ -8542,19 +8596,21 @@ def _run_with_failing_digest(refusal: str, *, js: str | None = None) -> _DigestR
     ).replace("(async () => {", "((async () => {", 1)
     output = _run(script)
 
-    def _marker(name: str) -> Any:
+    def _marker(name: str) -> Json | None:
         line = next((ln for ln in output.splitlines() if ln.startswith(name)), None)
-        return None if line is None else json.loads(line.removeprefix(name))
+        return None if line is None else Json.loads(line.removeprefix(name))
 
     calls = _marker("__CALLS__")
     assert calls is not None, f"the harness produced no call log:\n{output[-3000:]}"
     summary = _marker("__RESULT__")
     thrown = _marker("__THROWN__")
-    messages = [str(e.get("error")) for e in ((summary or {}).get("errors") or [])]
-    return _DigestRun(summary, messages, calls, None if thrown is None else str(thrown), output)
+    messages = [str(e.get("error")) for e in (summary.get("errors") if summary else [])]
+    return _DigestRun(
+        summary, messages, list(calls), None if thrown is None else str(thrown), output,
+    )
 
 
-def _reached_a_summary(run: _DigestRun) -> dict[str, Any]:
+def _reached_a_summary(run: _DigestRun) -> Json:
     """The summary, refusing a run that rejected instead of returning one."""
     assert run.thrown is None, (
         "the deploy promise rejected instead of handing back a summary: "
@@ -8634,7 +8690,7 @@ def test_a_contextinfo_that_never_answered_still_names_the_operation() -> None:
     ({"FormDigestValue": "   "}, "FormDigestValue"),
 ])
 def test_a_contextinfo_without_a_digest_cannot_reach_a_write(
-    info: Any, expected: str,
+    info: object, expected: str,
 ) -> None:
     run = _run_with_failing_digest(_malformed_contextinfo(info))
     _reached_a_summary(run)
@@ -8812,8 +8868,8 @@ class _OwnershipSeedExtension(BaseExtension):
 
     @override
     def seed_lists(
-        self, bundle: Any, schema: Any, site_context: Any,
-    ) -> dict[str, dict[str, Any]]:
+        self, bundle: MappingBundle, schema: Schema, site_context: SiteContext,
+    ) -> dict[str, dict[str, JsonValue]]:
         return {title: {"Title": "seeded"} for title in self._titles}
 
 
@@ -8862,7 +8918,7 @@ def _ownership_section(
 def _ownership_pack(
     tmp_path: Path, table_names: tuple[str, ...], *,
     declare_assignments: bool = True,
-) -> tuple[Any, Any]:
+) -> tuple[Schema, MappingBundle]:
     """The (schema, bundle) the ownership runs deploy.
 
     A DBML default on `Title` rather than on `Note`: the mock keys created
@@ -8974,7 +9030,7 @@ def _run_ownership_deploy(
     sabotage_after_reads: int = 0,
     declare_assignments: bool = True,
     deploy_edit: Callable[[str], str] | None = None,
-) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+) -> tuple[Json, list[Json], str]:
     """Run the ownership pack against the adopted-site mock.
 
     Built on `_READER_ACL_HARNESS` rather than `_ADOPTED_HARNESS` for the
@@ -9024,15 +9080,15 @@ def _run_ownership_deploy(
     )
     assert calls_line is not None, f"harness produced no call log:\n{output[-3000:]}"
     return (
-        json.loads(result_line.removeprefix("__RESULT__")),
-        json.loads(calls_line.removeprefix("__CALLS__")),
+        Json.loads(result_line.removeprefix("__RESULT__")),
+        Json.loads(calls_line.removeprefix("__CALLS__")).rows,
         output,
     )
 
 
 def _writes_in_phase(
-    calls: list[dict[str, Any]], phase: str,
-) -> list[dict[str, Any]]:
+    calls: list[Json], phase: str,
+) -> list[Json]:
     """Mutating requests the run issued while `phase` was the current one.
 
     The mock tags every request with the phase banner in force when it was
@@ -9080,7 +9136,7 @@ def test_every_guarded_phase_writes_when_ownership_holds(tmp_path: Path) -> None
     summary, calls, output = _run_ownership_deploy(
         tmp_path, table_names=("Escalation", "Other"),
     )
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert summary.get("errors") == [], summary["errors"]
     for phase in _GUARDED_WRITE_PHASES:
         assert _writes_in_phase(calls, pn(phase.key)), (
@@ -9148,10 +9204,10 @@ def test_the_ownership_guard_costs_one_request_per_call(tmp_path: Path) -> None:
         (ln for ln in output.splitlines() if ln.startswith("__GUARD__")), None,
     )
     assert line is not None, f"the guard was never measured:\n{output[-3000:]}"
-    measured = json.loads(line.removeprefix("__GUARD__"))
+    measured = Json.loads(line.removeprefix("__GUARD__"))
 
     hit = measured["hit"]
-    assert hit["message"] is None, hit
+    assert hit["message"].value is None, hit
     assert len(hit["urls"]) == 1, (
         f"an owned list cost {len(hit['urls'])} requests: {hit['urls']}"
     )
@@ -9378,7 +9434,7 @@ def test_the_unseal_phase_still_runs_when_its_survey_found_no_list(
         tmp_path,
         deploy_edit=_survey_drops("Maintenance ownership recheck", _OWNED_TITLE),
     )
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert summary.get("errors") == [], summary["errors"]
     assert _writes_in_phase(calls, pn("unseal")), (
         "the unseal phase wrote nothing, so this run proves nothing about it"
@@ -9444,7 +9500,7 @@ def test_the_identity_guard_refuses_an_expected_id_it_was_never_given(
         (ln for ln in output.splitlines() if ln.startswith("__IDENTITY__")), None,
     )
     assert line is not None, f"the guard was never called:\n{output[-3000:]}"
-    measured = json.loads(line.removeprefix("__IDENTITY__"))
+    measured = Json.loads(line.removeprefix("__IDENTITY__"))
 
     assert measured["omitted"] == (
         f"No proven identity was captured for list '{_OWNED_TITLE}' before a write"
@@ -9454,7 +9510,7 @@ def test_the_identity_guard_refuses_an_expected_id_it_was_never_given(
     )
     assert measured["undefinedId"] == refusal, measured
     assert measured["nullId"] == refusal, measured
-    assert measured["proven"] is None, measured
+    assert measured["proven"].value is None, measured
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -9768,7 +9824,7 @@ _CONFIGURED_STALE_BINDING = [[{
 
 def _configured_stale_run(
     tmp_path: Path, *, removal_takes: bool,
-) -> tuple[dict[str, Any], str]:
+) -> tuple[Json, str]:
     """Phase 4.2 over a configured list whose declared principal holds a
     level the policy no longer names."""
     js = _declared_deploy_js(
@@ -9851,7 +9907,7 @@ def test_an_exact_list_declaring_nothing_strips_it_and_reads_it_back(
     """
     summary, calls, output = _run_ownership_deploy(tmp_path, declare_assignments=False)
 
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert summary.get("errors") == [], summary["errors"]
     # The seeded stray is the only binding there, and it goes.
     removals = [c for c in calls if "removeroleassignment" in c["url"]]
@@ -10269,7 +10325,7 @@ def _view_guard_harness(
 def _run_view_guard_deploy(
     tmp_path: Path, policy: dict[str, str],
     settings_list_id: str = _OWNED_LIST_ID,
-) -> tuple[dict[str, Any], list[str], str]:
+) -> tuple[Json, list[str], str]:
     """Deploy two filtered views against a site that serves settings pages.
 
     Returns (summary, the view titles whose settings page was read in order,
@@ -10287,11 +10343,11 @@ def _run_view_guard_deploy(
         (ln for ln in output.splitlines() if ln.startswith("__PAGES__")), None,
     )
     assert pages_line is not None, f"harness logged no page reads:\n{output[-3000:]}"
-    read: list[str] = json.loads(pages_line.removeprefix("__PAGES__"))
+    read = Json.loads(pages_line.removeprefix("__PAGES__")).strings
     return summary, read, output
 
 
-def _refusal_errors(summary: dict[str, Any]) -> list[dict[str, Any]]:
+def _refusal_errors(summary: Json) -> list[Json]:
     return [
         e for e in summary.get("errors", [])
         if e.get("check") == "filter-editor-refusal"
@@ -10309,7 +10365,7 @@ def test_the_guard_check_reads_the_control_then_every_filtered_view(
     to conclude from the pages that follow.
     """
     summary, read, output = _run_view_guard_deploy(tmp_path, {"All Items": "editable"})
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert summary.get("errors") == [], summary["errors"]
     assert read == ["All Items", "Open", "Recent"], read
     assert "refuses 2 of 2 declared filter(s)" in output
@@ -10391,7 +10447,7 @@ def test_trailing_markup_after_the_document_close_is_still_a_refusal(
         tmp_path, {"All Items": "editable", "Open": "trailing"},
     )
     assert _refusal_errors(summary) == [], summary.get("errors")
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -10513,7 +10569,7 @@ _FAILS_DURING_EXIT_CLEANUP_HARNESS = _ADOPTED_HARNESS + textwrap.dedent(r"""
 """)
 
 
-def _exit_cleanup_output() -> tuple[dict[str, Any], str]:
+def _exit_cleanup_output() -> tuple[Json, str]:
     output = _run_deploy(
         _FAILS_DURING_EXIT_CLEANUP_HARNESS,
         "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
@@ -10617,9 +10673,9 @@ def test_the_title_rename_lands_before_any_calculated_column(
         (ln for ln in _run(script).splitlines() if ln.startswith("__CALLS__")), None,
     )
     assert line is not None, "harness produced no call log"
-    calls = json.loads(line.removeprefix("__CALLS__"))
+    calls = Json.loads(line.removeprefix("__CALLS__")).rows
 
-    def first(predicate: Any) -> int:
+    def first(predicate: Callable[[Json], bool]) -> int:
         for i, call in enumerate(calls):
             if call["method"] == "POST" and call.get("body") and predicate(call):
                 return i
@@ -10647,7 +10703,7 @@ _PERSISTED_HIDDEN = ("flows@example.com", "flows", "i:0#.f|membership|flows", "u
 _GROUP_HIDDEN = (_GROUP_OID, _GROUP_OID.upper(), _SECURITY_CLAIM, _SECURITY_CLAIM.upper())
 
 
-def _item_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _item_writes(calls: list[Json]) -> list[Json]:
     """Every row written to either log list, which are the only /items POSTs the mock records."""
     return [
         c for c in calls
@@ -10655,17 +10711,18 @@ def _item_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-def _run_logged_writers(**harness: Any) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
-    return _run_writers(_FLOWS, sidecars=True, **harness)
+def _run_logged_writers(**harness: Unpack[_IdentityKnobs]) -> tuple[Json, list[Json], str]:
+    logged: _IdentityKnobs = {**harness, "sidecars": True}
+    return _run_writers(_FLOWS, **logged)
 
 
 # summary.errors is never written to a log list (the abort stamp carries counts only),
 # which is why a stranger's login may stay in those messages.
 def _assert_nothing_persisted_names_a_value(
-    summary: dict[str, Any], calls: list[dict[str, Any]], output: str, group: bool = False,
+    summary: Json, calls: list[Json], output: str, group: bool = False,
 ) -> None:
-    persisted = "\n".join(c["body"] for c in _item_writes(calls))
-    persisted += "\n" + json.dumps(summary.get("errors") or [])
+    persisted = "\n".join(c["body"].text for c in _item_writes(calls))
+    persisted += "\n" + dumps_view(summary.get("errors") or [])
     persisted += "\n" + "\n".join(line for line in output.splitlines() if "[SP-DEPLOY]" in line)
     for hidden in (*_PERSISTED_HIDDEN, *(_GROUP_HIDDEN if group else ())):
         assert hidden not in persisted, f"{hidden!r} reached a persisted line:\n{persisted}"
@@ -10677,23 +10734,26 @@ def test_no_persisted_row_carries_a_value() -> None:
     summary, calls, output = _run_logged_writers()
     rows = _item_writes(calls)
     assert rows, "the run wrote no log rows, so this test proves nothing"
-    change = [json.loads(c["body"]) for c in rows if "identity:XX Writers:automation" in c["body"]]
+    change = [
+        Json.loads(c["body"].text) for c in rows if "identity:XX Writers:automation" in c["body"]
+    ]
     assert len(change) == 1, rows
     assert change[0]["ChangeKind"] == "identity-enrolled"
-    assert re.fullmatch(r"automation \(sha256:[0-9a-f]{12}\)", change[0]["TargetName"])
+    assert re.fullmatch(r"automation \(sha256:[0-9a-f]{12}\)", change[0]["TargetName"].text)
     _assert_nothing_persisted_names_a_value(summary, calls, output)
 
 
 def _run_logged_group(
-    ensured: dict[str, Any] | None = None, **harness: Any,
-) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    ensured: Mapping[str, object] | None = None, **harness: Unpack[_IdentityKnobs],
+) -> tuple[Json, list[Json], str]:
+    logged: _IdentityKnobs = {**harness, "sidecars": True}
     return _run_identity_deploy(
         {"automation": "user:flows@example.com", "intake": f"security_group:{_GROUP_OID}"},
         {
             "flows@example.com": _FLOWS,
             _SECURITY_CLAIM: ensured or _group_principal(_SECURITY_CLAIM),
         },
-        mapping="sharepoint-mapping-with-group-identity.yaml", sidecars=True, **harness,
+        mapping="sharepoint-mapping-with-group-identity.yaml", **logged,
     )
 
 
@@ -10705,38 +10765,41 @@ def test_no_persisted_row_carries_a_group_value() -> None:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-@pytest.mark.parametrize("case", [
-    pytest.param({"ensure_status": 500}, id="ensure-echoes-the-claim"),
-    pytest.param({"ensure_echo": "guid"}, id="ensure-echoes-the-guid"),
-    pytest.param({"ensure_echo": "guid_upper"}, id="ensure-echoes-the-upper-case-guid"),
-    pytest.param({"ensure_echo": "claim_upper"}, id="ensure-echoes-the-upper-case-claim"),
-    pytest.param({"add_status": 403}, id="add-fails"),
-    pytest.param({"drop_readback": True}, id="readback-mismatch"),
-    pytest.param({"ensured": _group_principal(_SECURITY_CLAIM, kind=1)}, id="not-a-group"),
-    pytest.param({"ensured": _group_principal(_MEMBERS_CLAIM)}, id="resolved-to-another-login"),
+@pytest.mark.parametrize(("knobs", "ensured"), [
+    pytest.param({"ensure_status": 500}, None, id="ensure-echoes-the-claim"),
+    pytest.param({"ensure_echo": "guid"}, None, id="ensure-echoes-the-guid"),
+    pytest.param({"ensure_echo": "guid_upper"}, None, id="ensure-echoes-the-upper-case-guid"),
+    pytest.param({"ensure_echo": "claim_upper"}, None, id="ensure-echoes-the-upper-case-claim"),
+    pytest.param({"add_status": 403}, None, id="add-fails"),
+    pytest.param({"drop_readback": True}, None, id="readback-mismatch"),
+    pytest.param({}, _group_principal(_SECURITY_CLAIM, kind=1), id="not-a-group"),
+    pytest.param({}, _group_principal(_MEMBERS_CLAIM), id="resolved-to-another-login"),
 ])
-def test_no_group_failure_path_persists_a_value(case: dict[str, Any]) -> None:
-    summary, calls, output = _run_logged_group(**case)
+def test_no_group_failure_path_persists_a_value(
+    knobs: _IdentityKnobs, ensured: Mapping[str, object] | None,
+) -> None:
+    summary, calls, output = _run_logged_group(ensured, **knobs)
     _assert_nothing_persisted_names_a_value(summary, calls, output, group=True)
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-@pytest.mark.parametrize("case", [
-    pytest.param({"ensure_status": 500}, id="ensure-fails-and-echoes-the-logon"),
-    pytest.param({"add_status": 403}, id="add-fails"),
-    pytest.param({"drop_readback": True}, id="readback-mismatch"),
-    pytest.param({"remove_status": 403}, id="drain-removal-fails"),
-    pytest.param({"members": [_OTHER]}, id="additive-group-has-a-stranger"),
-    pytest.param({"ensure_user": {**_FLOWS, "PrincipalType": 4}}, id="not-a-user"),
-    pytest.param({"ensure_user": {**_FLOWS, "LoginName": "c:0(.s|true"}}, id="tenant-wide-claim"),
-    pytest.param({"ensure_user": _OTHER}, id="resolved-to-someone-else"),
+@pytest.mark.parametrize(("knobs", "ensure_user"), [
+    pytest.param({"ensure_status": 500}, _FLOWS, id="ensure-fails-and-echoes-the-logon"),
+    pytest.param({"add_status": 403}, _FLOWS, id="add-fails"),
+    pytest.param({"drop_readback": True}, _FLOWS, id="readback-mismatch"),
+    pytest.param({"remove_status": 403}, _FLOWS, id="drain-removal-fails"),
+    pytest.param({"members": [_OTHER]}, _FLOWS, id="additive-group-has-a-stranger"),
+    pytest.param({}, {**_FLOWS, "PrincipalType": 4}, id="not-a-user"),
+    pytest.param({}, {**_FLOWS, "LoginName": "c:0(.s|true"}, id="tenant-wide-claim"),
+    pytest.param({}, _OTHER, id="resolved-to-someone-else"),
 ])
-def test_no_failure_path_persists_a_value(case: dict[str, Any]) -> None:
-    case = dict(case)
-    ensure_user = case.pop("ensure_user", _FLOWS)
-    if ensure_user is not _FLOWS and ensure_user.get("LoginName") == "c:0(.s|true":
+def test_no_failure_path_persists_a_value(
+    knobs: _IdentityKnobs, ensure_user: Mapping[str, object],
+) -> None:
+    if ensure_user.get("LoginName") == "c:0(.s|true":
         ensure_user = {**ensure_user, "Email": "flows@example.com"}
-    summary, calls, output = _run_writers(ensure_user, sidecars=True, **case)
+    logged: _IdentityKnobs = {**knobs, "sidecars": True}
+    summary, calls, output = _run_writers(ensure_user, **logged)
     _assert_nothing_persisted_names_a_value(summary, calls, output)
 
 

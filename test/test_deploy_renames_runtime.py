@@ -15,10 +15,10 @@ Node is required; the tests skip without it rather than failing.
 
 import json
 import textwrap
-from typing import Any
 
 import pytest
 from _batch_mock import BATCH_MOCK
+from _json_view import Json
 from _model import bundle as make_bundle
 from _model import column
 from _model import schema as make_schema
@@ -31,7 +31,7 @@ from dbml_sharepoint.analysis.list_description import family_for, marker_for
 from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.generators.jsgen import generate_deploy_js
 from dbml_sharepoint.model.mapping_types import EntityMapping, MappingBundle
-from dbml_sharepoint.model.parser import Schema
+from dbml_sharepoint.model.parser import Column, Schema
 from dbml_sharepoint.model.release import load_release
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -153,8 +153,8 @@ def _new_marker() -> str:
 
 
 def _run_deploy(
-    lists: dict[str, dict[str, Any]], *, with_assessment: bool = False,
-) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
+    lists: dict[str, dict[str, object]], *, with_assessment: bool = False,
+) -> tuple[Json, list[Json], Json]:
     harness = _HARNESS.replace("const LISTS = {};", f"const LISTS = {json.dumps(lists)};", 1)
     body = _deploy_js(with_assessment=with_assessment).rstrip()
     assert body.endswith("})();")
@@ -171,17 +171,17 @@ def _run_deploy(
     found = {m: next((ln for ln in lines if ln.startswith(m)), None) for m in markers}
     missing = [m for m, ln in found.items() if ln is None]
     assert not missing, f"deploy.js never reached {missing}:\n{output[-4000:]}"
-    summary, calls, state = (json.loads((found[m] or "").removeprefix(m)) for m in markers)
-    return summary, calls, state
+    summary, calls, state = (Json.loads((found[m] or "").removeprefix(m)) for m in markers)
+    return summary, calls.rows, state
 
 
-def _old_list(description: str) -> dict[str, dict[str, Any]]:
+def _old_list(description: str) -> dict[str, dict[str, object]]:
     return {
         "APP_ProgramRisk": {"Id": OLD_ID, "Title": "APP_ProgramRisk", "Description": description},
     }
 
 
-def _writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _writes(calls: list[Json]) -> list[Json]:
     return [
         c for c in calls
         if c["method"] == "POST" and (
@@ -365,7 +365,7 @@ _LOOKUP_HARNESS = textwrap.dedent(r"""
 
 def _lookup_schema(*, display_column: bool = False) -> Schema:
     """Risk.Workstream is a lookup at Workstream, which is itself renamed."""
-    workstream_columns: list[Any] = ["Title"]
+    workstream_columns: list[Column | str] = ["Title"]
     if display_column:
         workstream_columns.append(column("Reference"))
     return make_schema(
@@ -397,11 +397,11 @@ def _lookup_bundle(*, display_column: bool = False) -> MappingBundle:
 
 
 def _run_lookup_deploy(
-    lists: dict[str, dict[str, Any]],
-    fields: dict[str, list[dict[str, Any]]],
+    lists: dict[str, dict[str, object]],
+    fields: dict[str, list[dict[str, object]]],
     *,
     display_column: bool = False,
-) -> dict[str, Any]:
+) -> Json:
     schema = _lookup_schema(display_column=display_column)
     bundle = _lookup_bundle(display_column=display_column)
     js = generate_deploy_js(
@@ -433,11 +433,10 @@ def _run_lookup_deploy(
     output = _run(script)
     line = next((ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None)
     assert line is not None, f"deploy.js never returned a summary:\n{output[-4000:]}"
-    summary: dict[str, Any] = json.loads(line.removeprefix("__RESULT__"))
-    return summary
+    return Json.loads(line.removeprefix("__RESULT__"))
 
 
-def _text_field(name: str, ident: str) -> dict[str, Any]:
+def _text_field(name: str, ident: str) -> dict[str, object]:
     return {
         "Id": ident, "InternalName": name, "Title": name, "TypeAsString": "Text",
         "Description": "", "Required": False, "EnforceUniqueValues": False,
@@ -447,7 +446,7 @@ def _text_field(name: str, ident: str) -> dict[str, Any]:
     }
 
 
-def _lookup_field(name: str, ident: str, target: str, show: str) -> dict[str, Any]:
+def _lookup_field(name: str, ident: str, target: str, show: str) -> dict[str, object]:
     return {
         **_text_field(name, ident), "TypeAsString": "Lookup",
         "LookupList": target, "LookupField": show,
@@ -458,11 +457,11 @@ def _lookup_field(name: str, ident: str, target: str, show: str) -> dict[str, An
 
 
 def _unmigrated_site(*, display_column: bool = False) -> tuple[
-    dict[str, dict[str, Any]], dict[str, list[dict[str, Any]]],
+    dict[str, dict[str, object]], dict[str, list[dict[str, object]]],
 ]:
     """Both lists still under their previous titles, each carrying its marker."""
     family = family_for(_lookup_schema(display_column=display_column))
-    lists = {
+    lists: dict[str, dict[str, object]] = {
         "APP_ProgramWorkstream": {
             "Id": WS_ID, "Title": "APP_ProgramWorkstream",
             "Description": f"Streams. {marker_for(family, 'ProgramWorkstream')}",
@@ -486,9 +485,9 @@ def _unmigrated_site(*, display_column: bool = False) -> tuple[
     return lists, fields
 
 
-def _display_field_errors(summary: dict[str, Any]) -> list[str]:
+def _display_field_errors(summary: Json) -> list[str]:
     return [
-        e["error"] for e in summary.get("errors", [])
+        e["error"].text for e in summary.get("errors", [])
         if e.get("phase") == "preflight" and "target display field" in str(e.get("error", ""))
     ]
 

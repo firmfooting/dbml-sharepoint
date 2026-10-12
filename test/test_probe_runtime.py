@@ -19,12 +19,15 @@ Node is required; the tests skip without it rather than failing, since it is
 not a dependency of the package.
 """
 
+import copy
 import json
 import textwrap
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
 import pytest
+from _json_view import Json
+from _narrow import as_dict, as_list
 from _node import NODE
 from _node import run_node as _run
 from _paths import MANUAL
@@ -176,7 +179,7 @@ _HARNESS = textwrap.dedent("""
 #: A run where nothing has gone wrong: the list is past the threshold and on a
 #: declared checkpoint, every control holds its intended index state, and the
 #: twins match the same rows. Each test changes one thing.
-_HEALTHY: dict[str, Any] = {
+_HEALTHY: dict[str, object] = {
     "itemCount": 6000,
     "parentCount": 6000,
     "indexed": {
@@ -219,18 +222,18 @@ def _probe_js() -> str:
     return exposed
 
 
-def _run_probe(**changes: Any) -> dict[str, str]:
+def _run_probe(**changes: object) -> dict[str, str]:
     """Run the probe against `_HEALTHY` plus `changes`, and return id -> outcome.
 
     `indexed` and `render` merge rather than replace: a test says the one
     thing it is about and inherits a healthy run for everything else.
     """
-    config = json.loads(json.dumps(_HEALTHY))
+    config = copy.deepcopy(_HEALTHY)
     for key, value in changes.items():
         if key == "indexed":
-            config["indexed"].update(value)
+            as_dict(config["indexed"]).update(as_dict(value))
         elif key == "render":
-            config["render"] = list(value) + config["render"]
+            config["render"] = as_list(value) + as_list(config["render"])
         else:
             config[key] = value
     script = _HARNESS.replace("__CONFIG__", json.dumps(config)) + "\n" + _probe_js()
@@ -240,8 +243,8 @@ def _run_probe(**changes: Any) -> dict[str, str]:
     )
     assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
     return {
-        row["id"]: row["outcome"]
-        for row in json.loads(line.removeprefix("__ROWS__"))
+        row["id"].text: row["outcome"].text
+        for row in Json.loads(line.removeprefix("__ROWS__"))
     }
 
 
@@ -313,7 +316,7 @@ def test_a_failed_index_control_leaves_every_guard_row_unestablished() -> None:
     ],
 )
 def test_twins_that_could_not_be_read_are_not_recorded_as_disagreeing(
-    why: str, shadow: dict[str, Any],
+    why: str, shadow: Mapping[str, object],
 ) -> None:
     """`fixture-twins-match-same-rows` asks whether the twins match the same
     rows, and an unreadable half does not answer it either way.
@@ -503,7 +506,7 @@ def _settings_probe_js() -> str:
 
 def _run_settings_probe(
     description_lag_reads: int = 0, settings_stick: bool = True,
-) -> dict[str, dict[str, str]]:
+) -> dict[str, Json]:
     """Run the settings probe and return id -> the whole recorded row.
 
     The whole row, not the outcome alone: what a re-read has to leave behind
@@ -523,7 +526,7 @@ def _run_settings_probe(
         (ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None,
     )
     assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
-    return {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+    return {row["id"].text: row for row in Json.loads(line.removeprefix("__ROWS__"))}
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -872,7 +875,7 @@ def _grouping_probe_js() -> str:
 
 def _run_grouping_probe(
     missing_group_by: str = "flat", extra_row: str = "none",
-) -> dict[str, dict[str, str]]:
+) -> dict[str, Json]:
     """Run the grouping probe and return id -> the whole recorded row."""
     config = {"missingGroupBy": missing_group_by, "extraRow": extra_row}
     script = (
@@ -885,7 +888,7 @@ def _run_grouping_probe(
         (ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None,
     )
     assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
-    return {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+    return {row["id"].text: row for row in Json.loads(line.removeprefix("__ROWS__"))}
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -1333,7 +1336,7 @@ def _nesting_probe_js() -> str:
     return exposed
 
 
-def _run_nesting_probe(**config: str) -> dict[str, dict[str, str]]:
+def _run_nesting_probe(**config: str) -> dict[str, Json]:
     """Run the nesting probe and return id -> the whole recorded row."""
     settings: dict[str, str] = {
         "nesting": "ok",
@@ -1360,7 +1363,7 @@ def _run_nesting_probe(**config: str) -> dict[str, dict[str, str]]:
     output = _run(script)
     line = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
     assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
-    return {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+    return {row["id"].text: row for row in Json.loads(line.removeprefix("__ROWS__"))}
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -1893,7 +1896,7 @@ def _interaction_probe_js() -> str:
     return exposed
 
 
-def _run_interaction_probe(**config: str) -> dict[str, dict[str, str]]:
+def _run_interaction_probe(**config: str) -> dict[str, Json]:
     """Run the interaction probe and return id -> the whole recorded row."""
     settings: dict[str, str] = {
         "filter": "honoured",
@@ -1915,7 +1918,7 @@ def _run_interaction_probe(**config: str) -> dict[str, dict[str, str]]:
     output = _run(script)
     line = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
     assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
-    return {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+    return {row["id"].text: row for row in Json.loads(line.removeprefix("__ROWS__"))}
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -2333,7 +2336,7 @@ def _large_list_probe_js() -> str:
     return exposed
 
 
-def _run_large_list_probe(**config: str) -> dict[str, dict[str, str]]:
+def _run_large_list_probe(**config: str) -> dict[str, Json]:
     """Run the fixture probe and return id -> the whole recorded row."""
     settings: dict[str, str] = {
         # The shape the live run recorded, so every test here runs against it
@@ -2353,7 +2356,7 @@ def _run_large_list_probe(**config: str) -> dict[str, dict[str, str]]:
     output = _run(script)
     line = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
     assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
-    return {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+    return {row["id"].text: row for row in Json.loads(line.removeprefix("__ROWS__"))}
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -2765,8 +2768,14 @@ def _large_list_index_probe_js(remove_indexes: bool = False) -> str:
     return exposed
 
 
-def _large_list_index_output(remove_indexes: bool = False, **config: Any) -> str:
-    settings: dict[str, Any] = {
+def _large_list_index_output(remove_indexes: bool = False, **config: object) -> str:
+    return _large_list_index_output_with(config, remove_indexes)
+
+
+def _large_list_index_output_with(
+    config: Mapping[str, object], remove_indexes: bool = False,
+) -> str:
+    settings: dict[str, object] = {
         "count": 5500,
         "library": "present",
         "throttle": "enforced",
@@ -2786,12 +2795,12 @@ def _large_list_index_output(remove_indexes: bool = False, **config: Any) -> str
     )
 
 
-def _run_large_list_index_probe(**config: Any) -> dict[str, dict[str, str]]:
+def _run_large_list_index_probe(**config: object) -> dict[str, Json]:
     """Run the index probe and return id -> the whole recorded row."""
-    output = _large_list_index_output(**config)
+    output = _large_list_index_output_with(config)
     line = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
     assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
-    return {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+    return {row["id"].text: row for row in Json.loads(line.removeprefix("__ROWS__"))}
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -2923,7 +2932,7 @@ def test_a_library_short_of_the_threshold_is_not_written_to_at_all() -> None:
     """
     output = _large_list_index_output(count=400)
     line = next(ln for ln in output.splitlines() if ln.startswith("__ROWS__"))
-    rows = {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+    rows = {row["id"].text: row for row in Json.loads(line.removeprefix("__ROWS__"))}
 
     assert rows["library.large-list.fixture-library-present"]["outcome"] == "SHORT"
     assert rows["library.large-list.index-number-column"]["outcome"] == "ABORTED"
@@ -3058,7 +3067,7 @@ BUILTIN_VIEW_PROBE = MANUAL / "library-builtin-view-probe.js"
 #: than a convenience, and the rest of this file varies one knob at a time:
 #: the built-in view reads 'All Documents' on AllItems.aspx, and a second view
 #: created under the slug is minted AllItems1.aspx.
-_BUILTIN_VIEW_DEFAULTS: dict[str, Any] = {
+_BUILTIN_VIEW_DEFAULTS: dict[str, object] = {
     # Where the library's built-in view sits. 'AllDocuments.aspx' leaves
     # AllItems.aspx free while a default view still exists.
     "builtinBasename": "AllItems.aspx",
@@ -3309,8 +3318,8 @@ def _builtin_view_probe_js() -> str:
 
 
 def _run_builtin_view_probe(
-    **overrides: Any,
-) -> tuple[dict[str, dict[str, str]], list[dict[str, Any]]]:
+    **overrides: object,
+) -> tuple[dict[str, Json], list[Json]]:
     """Run the probe and return id -> the whole recorded row, and the writes."""
     config = _BUILTIN_VIEW_DEFAULTS | overrides
     script = (
@@ -3323,8 +3332,8 @@ def _run_builtin_view_probe(
     assert rows is not None, f"the probe recorded no result table:\n{output[-3000:]}"
     writes = next(ln for ln in output.splitlines() if ln.startswith("__WRITES__"))
     return (
-        {row["id"]: row for row in json.loads(rows.removeprefix("__ROWS__"))},
-        json.loads(writes.removeprefix("__WRITES__")),
+        {row["id"].text: row for row in Json.loads(rows.removeprefix("__ROWS__"))},
+        Json.loads(writes.removeprefix("__WRITES__")).rows,
     )
 
 
@@ -3800,8 +3809,8 @@ def _header_token_probe_js(cleanup: bool = False) -> str:
     return exposed
 
 
-def _header_token_output(cleanup: bool = False, **config: Any) -> str:
-    settings: dict[str, Any] = {
+def _header_token_output(cleanup: bool = False, **config: object) -> str:
+    settings: dict[str, object] = {
         "existingLibrary": False,
         "existingTarget": False,
         "leftoverItems": [],
@@ -3818,25 +3827,24 @@ def _header_token_output(cleanup: bool = False, **config: Any) -> str:
     )
 
 
-def _marked(output: str, marker: str) -> Any:
+def _marked(output: str, marker: str) -> Json:
     line = next((ln for ln in output.splitlines() if ln.startswith(marker)), None)
     assert line is not None, f"the probe printed no {marker} line:\n{output[-3000:]}"
-    return json.loads(line.removeprefix(marker))
+    return Json.loads(line.removeprefix(marker))
 
 
 def _run_header_token_probe(
-    cleanup: bool = False, **config: Any,
-) -> tuple[dict[str, dict[str, str]], dict[str, Any], str]:
+    cleanup: bool = False, **config: object,
+) -> tuple[dict[str, Json], Json, str]:
     """Run the header probe and return its rows, the site it left, and stdout."""
     output = _header_token_output(cleanup=cleanup, **config)
-    rows = {row["id"]: row for row in _marked(output, "__ROWS__")}
+    rows = {row["id"].text: row for row in _marked(output, "__ROWS__")}
     return rows, _marked(output, "__SITE__"), output
 
 
-def _library_items(site: dict[str, Any]) -> list[dict[str, Any]]:
+def _library_items(site: Json) -> list[Json]:
     held = next(one for one in site["lists"] if one["Title"] == _HEADER_LIB)
-    items: list[dict[str, Any]] = held["items"]
-    return items
+    return held["items"].rows
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -4148,14 +4156,14 @@ def _text_probe_js() -> str:
     return exposed
 
 
-def _run_text_probe(**changes: Any) -> dict[str, dict[str, str]]:
+def _run_text_probe(**changes: object) -> dict[str, Json]:
     """Run the probe against an empty site plus `changes`, id -> whole row.
 
     The whole row, because what a refused fixture has to leave behind is
     EVIDENCE naming the shape it could not establish. An outcome of FAIL on
     its own would pass for a list that failed to build at all.
     """
-    config: dict[str, Any] = {
+    config: dict[str, object] = {
         "listExists": False,
         "fields": [],
         "dropsOnCreate": {},
@@ -4172,7 +4180,7 @@ def _run_text_probe(**changes: Any) -> dict[str, dict[str, str]]:
         (ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None,
     )
     assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
-    return {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+    return {row["id"].text: row for row in Json.loads(line.removeprefix("__ROWS__"))}
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -4429,7 +4437,7 @@ _IDENTITY_HARNESS = textwrap.dedent("""
 #: A run where nothing has gone wrong: both scratch titles are free, the
 #: browser holds a stale entry per URL, and only `no-store` and `reload`
 #: defeat it. Each test changes one thing.
-_IDENTITY_HEALTHY: dict[str, Any] = {
+_IDENTITY_HEALTHY: dict[str, object] = {
     "seeded": [],
     "cacheStale": True,
     # The no-cache REQUEST header is left cacheable, which is what the probe's
@@ -4452,7 +4460,7 @@ def _fault(
     times: int = 1,
     status: int | None = None,
     answers: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """One read fault: the shape it matches, how many to let past, what it does."""
     return {
         "contains": contains,
@@ -4486,14 +4494,20 @@ def _identity_probe_js(cleanup: bool = False) -> str:
     return exposed
 
 
-def _identity_run(cleanup: bool = False, **changes: Any) -> tuple[dict[str, Any], str]:
+def _identity_run(cleanup: bool = False, **changes: object) -> tuple[dict[str, Json], str]:
+    return _identity_run_with(changes, cleanup)
+
+
+def _identity_run_with(
+    changes: Mapping[str, object], cleanup: bool = False,
+) -> tuple[dict[str, Json], str]:
     """Run the probe against `_IDENTITY_HEALTHY` plus `changes`.
 
     Returns the whole recorded row per id, and the raw output. Both, because
     the teardown reports through the log rather than through a row, and what
     the probe refuses to DELETE is only visible in the traffic.
     """
-    config = json.loads(json.dumps(_IDENTITY_HEALTHY))
+    config = copy.deepcopy(_IDENTITY_HEALTHY)
     config.update(changes)
     script = (
         _IDENTITY_HARNESS.replace("__CONFIG__", json.dumps(config))
@@ -4505,7 +4519,7 @@ def _identity_run(cleanup: bool = False, **changes: Any) -> tuple[dict[str, Any]
         (ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None,
     )
     assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
-    rows = {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+    rows = {row["id"].text: row for row in Json.loads(line.removeprefix("__ROWS__"))}
     return rows, output
 
 
@@ -4746,7 +4760,7 @@ def test_a_repeat_control_that_disagrees_stops_before_the_recreate() -> None:
     ],
 )
 def test_a_cache_probe_read_that_never_answered_voids_its_row(
-    identity: str, fault: dict[str, Any],
+    identity: str, fault: Mapping[str, object],
 ) -> None:
     """UNEXPECTED settles, and says a third list answered. Nothing did.
 
@@ -4777,8 +4791,8 @@ def test_a_final_delete_that_left_the_container_behind_is_reported(how: str) -> 
     """
     # skip 1: the run's own mid-experiment recreate still goes through, so
     # what is under test is the teardown rather than the fixture.
-    config: dict[str, Any] = {how: [{"title": _IDENTITY_LIST, "skip": 1}]}
-    _, output = _identity_run(**config)
+    config: dict[str, object] = {how: [{"title": _IDENTITY_LIST, "skip": 1}]}
+    _, output = _identity_run_with(config)
 
     assert "cleanup did not finish" in output
     assert _IDENTITY_LIST in output.split("cleanup did not finish", 1)[1]
@@ -5103,7 +5117,7 @@ _CROSS_WEB_HARNESS = textwrap.dedent("""
 #: A run where the other web is there with a row in it, all three same-web
 #: controls are accepted, and SharePoint refuses both cross-web spellings.
 #: Each test changes one thing.
-_CROSS_WEB_HEALTHY: dict[str, Any] = {
+_CROSS_WEB_HEALTHY: dict[str, object] = {
     "listsExist": False,
     "preexistingFields": [],
     "absentProperties": [],
@@ -5182,18 +5196,18 @@ def _cross_web_probe_js(other_web_url: str = "") -> str:
 
 
 def _cross_web_transcript(
-    other_web_url: str = "", **changes: Any,
-) -> tuple[dict[str, dict[str, str]], str]:
+    other_web_url: str = "", **changes: object,
+) -> tuple[dict[str, Json], str]:
     """Run the probe against `_CROSS_WEB_HEALTHY` plus `changes`.
 
     Returns the rows by id, and what the run printed with this test's own dump
     of the table removed, because what an operator copies back is the whole
     console rather than the row objects.
     """
-    config = json.loads(json.dumps(_CROSS_WEB_HEALTHY))
+    config = copy.deepcopy(_CROSS_WEB_HEALTHY)
     for key, value in changes.items():
         if key in {"creates", "readback", "expandFailsFor"}:
-            config[key].update(value)
+            as_dict(config[key]).update(as_dict(value))
         else:
             config[key] = value
     script = (
@@ -5203,13 +5217,13 @@ def _cross_web_transcript(
     output = _run(script)
     line = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
     assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
-    rows = {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+    rows = {row["id"].text: row for row in Json.loads(line.removeprefix("__ROWS__"))}
     return rows, output.replace(line, "")
 
 
 def _run_cross_web_probe(
-    other_web_url: str = "", **changes: Any,
-) -> dict[str, dict[str, str]]:
+    other_web_url: str = "", **changes: object,
+) -> dict[str, Json]:
     """The rows alone, for the tests that rule on a verdict rather than a leak."""
     return _cross_web_transcript(other_web_url, **changes)[0]
 
@@ -5737,7 +5751,7 @@ def test_no_title_from_either_web_reaches_the_transcript() -> None:
     "Id": CROSS_WEB_OTHER_ITEM_ID, "Title": "",
 }])
 def test_a_remote_row_with_no_title_leaves_the_comparison_no_baseline(
-    only_row: dict[str, Any],
+    only_row: Mapping[str, object],
 ) -> None:
     """Nothing to compare an expansion with is not a column that resolved one.
 
@@ -6382,7 +6396,7 @@ _TRANSITION_HARNESS = textwrap.dedent(r"""
 #: A run on a site that answers the way the SQL Server analogy suggests: the
 #: unsupported column type and the duplicate column are refused, and the two
 #: columns whose values are distinct are not. Each test changes one thing.
-_TRANSITION_HEALTHY: dict[str, Any] = {
+_TRANSITION_HEALTHY: dict[str, object] = {
     "listExists": False,
     "seededItems": 0,
     "fieldSeeds": {},
@@ -6402,7 +6416,7 @@ def _transition_read_fault(
     times: int = 1,
     status: int | None = None,
     drop: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """One field-read fault: which column, how many reads to let past, what it does."""
     return {
         "column": column, "skip": skip, "times": times, "status": status, "drop": drop,
@@ -6432,14 +6446,14 @@ def _transition_probe_js() -> str:
     return exposed
 
 
-def _run_transition_probe(**changes: Any) -> dict[str, dict[str, str]]:
+def _run_transition_probe(**changes: object) -> dict[str, Json]:
     """Run the probe against `_TRANSITION_HEALTHY` plus `changes`.
 
     `refuseMerge` replaces rather than merges: a test that lifts the refusal
     on one column is saying exactly that, and a merge would leave it in place
     and measure a run nobody asked for.
     """
-    config = json.loads(json.dumps(_TRANSITION_HEALTHY))
+    config = copy.deepcopy(_TRANSITION_HEALTHY)
     config.update(changes)
     script = (
         _TRANSITION_HARNESS.replace("__CONFIG__", json.dumps(config))
@@ -6451,7 +6465,7 @@ def _run_transition_probe(**changes: Any) -> dict[str, dict[str, str]]:
         (ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None,
     )
     assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
-    return {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+    return {row["id"].text: row for row in Json.loads(line.removeprefix("__ROWS__"))}
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -6687,12 +6701,12 @@ def _fixture_probe_js(path: Path) -> str:
     return exposed
 
 
-def _fixture_rows(output: str) -> dict[str, dict[str, str]]:
+def _fixture_rows(output: str) -> dict[str, Json]:
     """id -> the whole recorded row. The whole row, because what a voided row
     has to carry is a REASON, and an outcome alone says nothing about that."""
     line = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
     assert line is not None, f"the probe recorded no result table:\n{output[-3000:]}"
-    return {row["id"]: row for row in json.loads(line.removeprefix("__ROWS__"))}
+    return {row["id"].text: row for row in Json.loads(line.removeprefix("__ROWS__"))}
 
 
 #: A SharePoint holding the scratch list both probes write to, controllable
@@ -6881,7 +6895,7 @@ _SCRATCH_TODAY = {**_SCRATCH_DATE, "DefaultValue": "=TODAY()"}
 
 #: Nothing has gone wrong: the scratch list is there with DM and T, every
 #: create lands, every default is kept and both rules store.
-_SCRATCH_HEALTHY: dict[str, Any] = {
+_SCRATCH_HEALTHY: dict[str, object] = {
     "fields": {"DM": dict(_SCRATCH_DATE), "T": dict(_SCRATCH_TODAY)},
     "createLands": True,
     "defaultLands": True,
@@ -6908,15 +6922,21 @@ _SCRATCH_HEALTHY: dict[str, Any] = {
 
 
 def _run_scratch_probe(
-    probe: Path, hidden_list: bool = False, **changes: Any,
-) -> dict[str, dict[str, str]]:
+    probe: Path, hidden_list: bool = False, **changes: object,
+) -> dict[str, Json]:
+    return _run_scratch_probe_with(probe, changes, hidden_list)
+
+
+def _run_scratch_probe_with(
+    probe: Path, changes: Mapping[str, object], hidden_list: bool = False,
+) -> dict[str, Json]:
     """Run one scratch-list probe against `_SCRATCH_HEALTHY` plus `changes`.
 
     `hidden_list` opens the one gate beyond CONFIRMED and ALLOW_WRITES that a
     probe here ships closed, because the row behind it is the only one that
     reports on a list this probe creates rather than on the scratch list.
     """
-    config = json.loads(json.dumps(_SCRATCH_HEALTHY))
+    config = copy.deepcopy(_SCRATCH_HEALTHY)
     config.update(changes)
     js = _fixture_probe_js(probe)
     if hidden_list:
@@ -6976,7 +6996,7 @@ def test_a_save_paths_run_with_the_defaults_in_place_answers_the_race() -> None:
     ],
 )
 def test_columns_without_the_today_default_do_not_answer_the_race(
-    why: str, changes: dict[str, Any],
+    why: str, changes: Mapping[str, object],
 ) -> None:
     """`fixture-default-columns` was a literal 'PASS' over a reuse by Title.
 
@@ -6985,7 +7005,7 @@ def test_columns_without_the_today_default_do_not_answer_the_race(
     reassuring answer three shipped solutions are gated on, recorded off a
     column that has no default at all.
     """
-    rows = _run_scratch_probe(SCRATCH_SAVE_PATHS_PROBE, **changes)
+    rows = _run_scratch_probe_with(SCRATCH_SAVE_PATHS_PROBE, changes)
 
     fixture = rows["formula.validation.fixture-default-columns"]
     assert fixture["outcome"] == "FAIL", why
@@ -7117,10 +7137,10 @@ def test_a_bare_item_create_that_served_no_id_leaves_the_row_open() -> None:
     ],
 )
 def test_five_accepted_creates_without_readback_do_not_establish_saves(
-    changes: dict[str, Any], marker: str,
+    changes: Mapping[str, object], marker: str,
 ) -> None:
     """A successful create response alone does not establish an observed save."""
-    rows = _run_scratch_probe(SCRATCH_SAVE_PATHS_PROBE, **changes)
+    rows = _run_scratch_probe_with(SCRATCH_SAVE_PATHS_PROBE, changes)
     race = rows["formula.validation.today-default-races-modified-rule-rest"]
     assert race["outcome"] == "NOT ESTABLISHED"
     assert "5 attempted; 0 saved by readback; 0 refused" in race["evidence"]
@@ -7141,10 +7161,10 @@ def test_five_accepted_creates_without_readback_do_not_establish_saves(
     ],
 )
 def test_save_race_aggregate_counts_only_observed_saves_and_refusals(
-    changes: dict[str, Any], outcome: str, counts: str,
+    changes: Mapping[str, object], outcome: str, counts: str,
 ) -> None:
     """One unobserved row keeps an otherwise answered run inconclusive."""
-    rows = _run_scratch_probe(SCRATCH_SAVE_PATHS_PROBE, **changes)
+    rows = _run_scratch_probe_with(SCRATCH_SAVE_PATHS_PROBE, changes)
     race = rows["formula.validation.today-default-races-modified-rule-rest"]
     assert race["outcome"] == outcome
     assert f"5 attempted; {counts}" in race["evidence"]
@@ -7400,7 +7420,7 @@ _FOLDER_SCHEMA_HARNESS = textwrap.dedent("""
 #: A run that reproduces what the live deploy hit: the bare library takes a
 #: folder, so do the first three states, and the list ValidationFormula is
 #: what refuses one. Each test changes one knob.
-_FOLDER_SCHEMA_HEALTHY: dict[str, Any] = {
+_FOLDER_SCHEMA_HEALTHY: dict[str, object] = {
     "folderLands": True,
     "refuseUnderRule": True,
     "roleBreakLands": True,
@@ -7418,8 +7438,8 @@ _FOLDER_SCHEMA_HEALTHY: dict[str, Any] = {
 }
 
 
-def _run_folder_schema_probe(**changes: Any) -> dict[str, dict[str, str]]:
-    config = json.loads(json.dumps(_FOLDER_SCHEMA_HEALTHY))
+def _run_folder_schema_probe(**changes: object) -> dict[str, Json]:
+    config = copy.deepcopy(_FOLDER_SCHEMA_HEALTHY)
     config.update(changes)
     script = (
         _FOLDER_SCHEMA_HARNESS.replace("__CONFIG__", json.dumps(config))
@@ -7737,7 +7757,7 @@ _CALC_CHOICE_HARNESS = textwrap.dedent("""
 
 #: A clean site: no leftover columns, every create landing, and a Person
 #: operand refused so the probe can tell acceptance from refusal.
-_CALC_CHOICE_HEALTHY: dict[str, Any] = {
+_CALC_CHOICE_HEALTHY: dict[str, object] = {
     "existingLists": [],
     "preexistingFields": [],
     "refuse": [],
@@ -7762,8 +7782,8 @@ _CALC_CHOICE_HEALTHY: dict[str, Any] = {
 }
 
 
-def _run_calc_choice_probe(**changes: Any) -> dict[str, dict[str, str]]:
-    config = json.loads(json.dumps(_CALC_CHOICE_HEALTHY))
+def _run_calc_choice_probe(**changes: object) -> dict[str, Json]:
+    config = copy.deepcopy(_CALC_CHOICE_HEALTHY)
     config.update(changes)
     script = (
         _CALC_CHOICE_HARNESS.replace("__CONFIG__", json.dumps(config))
@@ -7881,7 +7901,7 @@ def test_a_field_read_that_carried_no_payload_is_not_an_acceptance() -> None:
     ],
 )
 def test_a_lookup_shape_read_that_carried_no_payload_is_not_a_lookup_column(
-    why: str, changes: dict[str, Any],
+    why: str, changes: Mapping[str, object],
 ) -> None:
     """The same shape one property further on: `lookupBack.ok` was tested and
     `lookupBack.body.TypeAsString` read, so an empty 2xx threw. The target
@@ -7911,7 +7931,7 @@ def test_a_lookup_shape_read_that_carried_no_payload_is_not_a_lookup_column(
     ],
 )
 def test_a_validation_store_nobody_read_is_not_a_store_that_discarded(
-    why: str, changes: dict[str, Any],
+    why: str, changes: Mapping[str, object],
 ) -> None:
     """ACCEPTED THEN DISCARDED is a claim about what the store kept.
 
@@ -7939,7 +7959,7 @@ def test_a_validation_store_nobody_read_is_not_a_store_that_discarded(
     ],
 )
 def test_a_computed_value_nobody_read_is_not_a_column_rendering_nothing(
-    why: str, changes: dict[str, Any], marker: str,
+    why: str, changes: Mapping[str, object], marker: str,
 ) -> None:
     """Seven rows report a value a saved item rendered, and each of them read
     `made.body.Id` or `back.body.<column>` off a response that only had to be
@@ -8157,7 +8177,7 @@ _LIB_COLS_HARNESS = textwrap.dedent("""
 
 #: Nothing has gone wrong: the required column comes back required, the list
 #: rule stores, and it refuses a violating metadata write.
-_LIB_COLS_HEALTHY: dict[str, Any] = {
+_LIB_COLS_HEALTHY: dict[str, object] = {
     "requiredReadsBack": True,
     "ruleLands": True,
     "ruleEnforces": True,
@@ -8173,8 +8193,8 @@ _LIB_COLS_HEALTHY: dict[str, Any] = {
 }
 
 
-def _run_lib_cols_probe(**changes: Any) -> dict[str, dict[str, str]]:
-    config = json.loads(json.dumps(_LIB_COLS_HEALTHY))
+def _run_lib_cols_probe(**changes: object) -> dict[str, Json]:
+    config = copy.deepcopy(_LIB_COLS_HEALTHY)
     config.update(changes)
     script = (
         _LIB_COLS_HARNESS.replace("__CONFIG__", json.dumps(config))
@@ -8213,7 +8233,7 @@ def test_a_library_columns_run_measures_the_required_column_and_the_rule() -> No
     ],
 )
 def test_library_columns_failed_control_preserves_independent_observations(
-    changes: dict[str, Any], control_outcome: str,
+    changes: Mapping[str, object], control_outcome: str,
 ) -> None:
     baseline = _run_lib_cols_probe()
     rows = _run_lib_cols_probe(**changes)
@@ -8260,7 +8280,7 @@ def test_library_validation_accepted_write_survives_failed_refusal_control() -> 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 @pytest.mark.parametrize("payload", ["malformed", 17, True, [], [1], None])
-def test_library_upload_malformed_file_properties_do_not_throw(payload: Any) -> None:
+def test_library_upload_malformed_file_properties_do_not_throw(payload: object) -> None:
     rows = _run_lib_cols_probe(filePropsPayload=payload)
     assert rows["library.column.required-column-enforced-on-upload"]["outcome"] == "NOT ESTABLISHED"
 
@@ -8333,7 +8353,7 @@ def test_an_item_that_did_not_read_back_is_not_a_column_behaving_differently() -
     ],
 )
 def test_a_file_whose_properties_were_not_read_left_nothing_behind_to_report(
-    why: str, changes: dict[str, Any], marker: str,
+    why: str, changes: Mapping[str, object], marker: str,
 ) -> None:
     """Both outcome heads name what the upload left behind, and CheckOutType
     is the only thing that separates them.
@@ -8794,7 +8814,7 @@ def test_a_column_of_another_type_under_the_race_name_answers_nothing() -> None:
     ],
 )
 def test_a_dt_column_of_another_shape_voids_the_new_form_steps(
-    why: str, shape: dict[str, Any],
+    why: str, shape: Mapping[str, object],
 ) -> None:
     """Every New step goes through a form that shows DT, and four of the six
     leave it blank.
@@ -8842,7 +8862,7 @@ def test_a_bare_item_an_earlier_run_left_is_not_what_today_resolves_to_now() -> 
     ],
 )
 def test_an_upload_past_a_column_that_is_never_blank_enforces_nothing(
-    why: str, shape: dict[str, Any],
+    why: str, shape: Mapping[str, object],
 ) -> None:
     """The upload sends no metadata, so the question is whether a column that
     would be BLANK on the file that lands blocks it.
@@ -8910,7 +8930,7 @@ def test_an_operand_under_another_display_title_stops_the_calc_choice_run() -> N
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 @pytest.mark.parametrize("payload", ["broken", 42, False, [], None])
-def test_hidden_list_malformed_payload_cannot_settle_visibility(payload: Any) -> None:
+def test_hidden_list_malformed_payload_cannot_settle_visibility(payload: object) -> None:
     rows = _run_scratch_probe(
         SCRATCH_SAVE_PATHS_PROBE, hidden_list=True, hiddenPayload=payload,
     )
@@ -8919,7 +8939,7 @@ def test_hidden_list_malformed_payload_cannot_settle_visibility(payload: Any) ->
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 @pytest.mark.parametrize("payload", ["broken", 42, False, [], None])
-def test_calculated_operand_malformed_payload_is_not_a_stored_value(payload: Any) -> None:
+def test_calculated_operand_malformed_payload_is_not_a_stored_value(payload: object) -> None:
     rows = _run_calc_choice_probe(computedPayload=payload, selectedPayload=payload)
     for row in (*_CALC_CHOICE_RENDER_ROWS, "formula.validation.person-operand",
                 "expression.client-validation.person-operand"):
@@ -9494,8 +9514,8 @@ def _operator_grant_probe_js(cleanup: bool = False) -> str:
 
 
 def _run_operator_grant_probe(
-    cleanup: bool = False, **config: Any,
-) -> tuple[dict[str, dict[str, str]], list[str], str]:
+    cleanup: bool = False, **config: object,
+) -> tuple[dict[str, Json], list[str], str]:
     """Run the probe and return the rows by id, the request urls and the
     whole transcript.
 
@@ -9506,7 +9526,7 @@ def _run_operator_grant_probe(
     site for exactly what a restore that worked asks for, and the difference
     is a line of console text that no row carries.
     """
-    settings: dict[str, Any] = {
+    settings: dict[str, object] = {
         "listExists": False,
         "createRefused": False,
         "alreadyUnique": False,
@@ -9565,8 +9585,8 @@ def _run_operator_grant_probe(
     )
     assert calls is not None, f"the mock logged no requests:\n{output[-3000:]}"
     return (
-        {row["id"]: row for row in json.loads(rows.removeprefix("__ROWS__"))},
-        [call["url"] for call in json.loads(calls.removeprefix("__CALLS__"))],
+        {row["id"].text: row for row in Json.loads(rows.removeprefix("__ROWS__"))},
+        [call["url"].text for call in Json.loads(calls.removeprefix("__CALLS__")).rows],
         output,
     )
 

@@ -23,9 +23,10 @@ Node is required; the tests skip without it rather than failing.
 
 import json
 import textwrap
-from typing import Any
+from collections.abc import Mapping, Sequence
 
 import pytest
+from _json_view import Json
 from _node import NODE
 from _node import run_node as _run
 from _paths import FIXTURES
@@ -98,8 +99,8 @@ _HARNESS = textwrap.dedent("""
 
 
 def _run_transport(
-    responses: dict[str, list[dict[str, Any]]], body: str,
-) -> dict[str, Any]:
+    responses: Mapping[str, Sequence[Mapping[str, int | str]]], body: str,
+) -> Json:
     script = (
         f"const RESPONSES_JSON = {json.dumps(json.dumps(responses))};\n"
         "(async () => {\n"
@@ -110,8 +111,7 @@ def _run_transport(
     output = _run(script)
     line = next((x for x in output.splitlines() if x.startswith("__OUT__")), None)
     assert line is not None, f"the transport never returned:\n{output[-3000:]}"
-    result: dict[str, Any] = json.loads(line.removeprefix("__OUT__"))
-    return result
+    return Json.loads(line.removeprefix("__OUT__"))
 
 
 def test_a_redirect_to_the_throttling_page_is_a_throttle() -> None:
@@ -183,7 +183,7 @@ def test_a_throttle_pauses_every_lane_not_just_the_one_that_saw_it() -> None:
         return {{ calls }};
         """,
     )
-    calls = result["calls"]
+    calls = result["calls"].strings
     assert calls.count(GOOD_URL) == 2, "lane A did not retry"
     assert calls.index(other) > calls.index(GOOD_URL), "lane B never ran"
     assert calls[-1] == other, (
@@ -342,7 +342,7 @@ def _query_answer(parts: list[tuple[int, str]]) -> str:
     return body + "--batchresponse_1--\r\n"
 
 
-def _run_assess_reader(answer: dict[str, Any], body: str) -> dict[str, Any]:
+def _run_assess_reader(answer: Mapping[str, object], body: str) -> Json:
     """Run `body` against the assessment's own transport and one scripted answer."""
     script = (
         f"const ORIGIN = {json.dumps(ASSESS_ORIGIN)};\n"
@@ -356,8 +356,7 @@ def _run_assess_reader(answer: dict[str, Any], body: str) -> dict[str, Any]:
     output = _run(script)
     line = next((x for x in output.splitlines() if x.startswith("__OUT__")), None)
     assert line is not None, f"the assessment reader never returned:\n{output[-3000:]}"
-    result: dict[str, Any] = json.loads(line.removeprefix("__OUT__"))
-    return result
+    return Json.loads(line.removeprefix("__OUT__"))
 
 
 #: Two reads queued, the refusal reported rather than thrown at the runner.
@@ -394,9 +393,9 @@ def test_a_refused_part_is_not_an_answer_for_the_assessment() -> None:
         _TWO_READS,
     )
     assert result["threw"], "a 404 part answered as a clean read"
-    assert result["batchFailure"] is True
+    assert result["batchFailure"].value is True
     assert (result["answered"], result["refused"]) == (1, 1)
-    assert result["throttled"] is False, "a 404 is a refusal, not a throttle"
+    assert result["throttled"].value is False, "a 404 is a refusal, not a throttle"
     assert "200, 404" in result["message"], result["message"]
     assert result["errors"] >= 1, (
         "the refusal never reached the transcript the operator pastes back"

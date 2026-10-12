@@ -10,11 +10,11 @@ Node is required; the module skips without it.
 
 import json
 from pathlib import Path
-from typing import Any
 from urllib.parse import quote
 
 import pytest
 from _builders import ID_PK, TITLE, table
+from _json_view import Json
 from _node import NODE, run_node
 from _packs import pack, reader_identities
 from _paths import FIXTURES
@@ -22,6 +22,7 @@ from test_deploy_runtime import _summary_of, _view_guard_harness, _without_asses
 
 from dbml_sharepoint.analysis.phases import phase_number
 from dbml_sharepoint.analysis.resolve import resolve
+from dbml_sharepoint.jsonvalue import as_json_object
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
@@ -606,14 +607,13 @@ def _run_output(harness: str, deploy_js: str) -> str:
     )
 
 
-def _calls_of(output: str) -> list[dict[str, Any]]:
+def _calls_of(output: str) -> list[Json]:
     """The recorded calls out of a transcript `_run_output` returned."""
     line = next(ln for ln in output.splitlines() if ln.startswith("__CALLS__"))
-    calls: list[dict[str, Any]] = json.loads(line.removeprefix("__CALLS__"))
-    return calls
+    return Json.loads(line.removeprefix("__CALLS__")).rows
 
 
-def _run(harness: str, deploy_js: str) -> tuple[dict[str, Any], list[dict[str, Any]], int]:
+def _run(harness: str, deploy_js: str) -> tuple[Json, list[Json], int]:
     """The summary, the recorded calls, and how often the inheritance flag
     was read (counted by the spliced handler, which answers before the
     harness records the call)."""
@@ -622,26 +622,26 @@ def _run(harness: str, deploy_js: str) -> tuple[dict[str, Any], list[dict[str, A
     unique_line = next(ln for ln in output.splitlines() if ln.startswith("__UNIQUE__"))
     return (
         _summary_of(output),
-        json.loads(calls_line.removeprefix("__CALLS__")),
+        Json.loads(calls_line.removeprefix("__CALLS__")).rows,
         int(unique_line.removeprefix("__UNIQUE__")),
     )
 
 
-def _scope_writes(calls: list[dict[str, Any]], title: str) -> list[Any]:
+def _scope_writes(calls: list[Json], title: str) -> list[Json]:
     """Every Scope the deploy sent for one view, named by its plain title: in
     the create body when the view was absent, in a MERGE (whose URL carries
     the title encoded) when it existed and read back differently."""
     encoded = quote(title)
-    written: list[Any] = []
+    written: list[Json] = []
     for call in calls:
         if call["method"] != "POST" or not call["body"]:
             continue
-        parsed = json.loads(call["body"])
+        parsed = Json.loads(call["body"].text)
         created = call["url"].endswith("/views") and parsed.get("Title") == title
         merged = (
             f"views/getbytitle('{encoded}')" in call["url"] and "viewfields" not in call["url"]
         )
-        if (created or merged) and parsed.get("Scope") is not None:
+        if (created or merged) and parsed.get("Scope").value is not None:
             written.append(parsed["Scope"])
     return written
 
@@ -770,7 +770,7 @@ def test_folder_deploy_diagnoses_the_root_collision_after_a_refused_create(
 ])
 @pytest.mark.parametrize("after_create", [False, True])
 def test_folder_deploy_refuses_unestablished_path_items(
-    tmp_path: Path, payload: Any, after_create: bool,
+    tmp_path: Path, payload: object, after_create: bool,
 ) -> None:
     harness = _library_harness(declared_folder=True).replace(
         "return folderAnswer({ d: item });",
@@ -802,7 +802,7 @@ def test_whole_deploy_verifies_folder_paths_without_unindexed_queries(
 
 @pytest.mark.parametrize("next_page", [False, True, 0, 1, [], {}])
 def test_descendant_scope_enumeration_rejects_malformed_continuation(
-    tmp_path: Path, next_page: Any,
+    tmp_path: Path, next_page: object,
 ) -> None:
     harness = _library_harness(unique_after=1)
     harness += """
@@ -826,7 +826,7 @@ globalThis.fetch = async (url, options) => {
     "payload", [{}, {"d": {}}, {"d": {"results": None}}, {"d": {"results": {}}}],
 )
 def test_descendant_scope_enumeration_without_results_is_refused(
-    tmp_path: Path, payload: Any,
+    tmp_path: Path, payload: object,
 ) -> None:
     """An answer with no results array is not a list with no unique scopes.
 
@@ -852,19 +852,19 @@ globalThis.fetch = async (url, options) => {
                 or "removeroleassignment" in c["url"]]
 
 
-def _view_titles_created(calls: list[dict[str, Any]]) -> list[str]:
+def _view_titles_created(calls: list[Json]) -> list[str]:
     """Every Title the run POSTed to a /views collection, in order."""
     made: list[str] = []
     for call in calls:
         if call["method"] != "POST" or not call["body"] or not call["url"].endswith("/views"):
             continue
-        parsed = json.loads(call["body"])
+        parsed = Json.loads(call["body"].text)
         if parsed.get("__metadata", {}).get("type") == "SP.View":
-            made.append(parsed["Title"])
+            made.append(parsed["Title"].text)
     return made
 
 
-def _titles_merged_by_id(calls: list[dict[str, Any]]) -> list[str]:
+def _titles_merged_by_id(calls: list[Json]) -> list[str]:
     """Every Title sent to a view addressed by its immutable Id, which is how
     the phase renames a view it adopted under another title."""
     renamed: list[str] = []
@@ -874,9 +874,9 @@ def _titles_merged_by_id(calls: list[dict[str, Any]]) -> list[str]:
             continue
         if "/views('" not in url or not url.endswith("')"):
             continue
-        title = json.loads(call["body"]).get("Title")
-        if title is not None:
-            renamed.append(title)
+        title = Json.loads(call["body"].text).get("Title")
+        if not title.is_none:
+            renamed.append(title.text)
     return renamed
 
 
@@ -924,12 +924,12 @@ def test_an_adopted_builtin_view_still_takes_every_declared_setting(
     )
     encoded = quote("All Items")
     hidden = [
-        json.loads(call["body"]).get("Hidden")
+        Json.loads(call["body"].text).get("Hidden")
         for call in calls
         if call["method"] == "POST" and call["body"]
         and f"views/getbytitle('{encoded}')" in call["url"]
         and "viewfields" not in call["url"]
-        and json.loads(call["body"]).get("Hidden") is not None
+        and Json.loads(call["body"].text).get("Hidden") is not None
     ]
     assert hidden == [True], (
         "the recovery view is hidden behind the declared default, adopted or not"
@@ -1029,8 +1029,11 @@ def _declare_previous_title(deploy_js: str, title: str, previous: str) -> str:
     the SCHEMA the check would have refused.
     """
     blob = _schema_blob(deploy_js)
-    schema = json.loads(blob)
-    matched = [v for v in schema["views"] if v["title"] == title]
+    schema = as_json_object(json.loads(blob))
+    assert schema is not None
+    views = schema["views"]
+    assert isinstance(views, list)
+    matched = [v for v in views if isinstance(v, dict) and v["title"] == title]
     assert len(matched) == 1, f"{title!r} is not one declared view: {matched}"
     matched[0]["renamed_from"] = [previous]
     return deploy_js.replace(blob, json.dumps(schema), 1)
@@ -1136,10 +1139,9 @@ def _schema_blob(deploy_js: str) -> str:
     raise AssertionError("the emitted SCHEMA literal never closed")
 
 
-def _schema_lists(deploy_js: str) -> list[dict[str, Any]]:
+def _schema_lists(deploy_js: str) -> list[Json]:
     """The SCHEMA.lists the emitted script carries."""
-    lists: list[dict[str, Any]] = json.loads(_schema_blob(deploy_js))["lists"]
-    return lists
+    return Json.loads(_schema_blob(deploy_js))["lists"].rows
 
 
 def test_a_library_naming_files_by_leafref_declares_no_title_patch(
@@ -1155,7 +1157,7 @@ def test_a_library_naming_files_by_leafref_declares_no_title_patch(
     second = tmp_path / "titled"
     second.mkdir()
     titled = _schema_lists(_library_deploy_js(second, _RECURSIVE_VIEW, titled=True))
-    assert titled[0]["title_patch"] is not None, (
+    assert titled[0]["title_patch"].value is not None, (
         "a declared Title column must still produce a patch, or this fixture "
         "stops telling the two shapes apart"
     )
@@ -1178,7 +1180,7 @@ def test_preflight_over_an_existing_library_with_no_title_patch_does_not_throw(
         _library_harness(),
         _library_deploy_js(tmp_path, _RECURSIVE_VIEW, titled=False),
     )
-    assert summary.get("aborted") is None, summary.get("aborted")
+    assert summary.get("aborted").value is None, summary.get("aborted")
     assert summary["errors"] == [], summary["errors"]
 
 
@@ -1192,7 +1194,7 @@ def test_a_declared_title_column_is_still_preflighted_on_a_library(
         _library_harness(),
         _library_deploy_js(tmp_path, _RECURSIVE_VIEW, titled=True),
     )
-    assert summary.get("aborted") is None, summary.get("aborted")
+    assert summary.get("aborted").value is None, summary.get("aborted")
     assert any(
         "getbyinternalnameortitle('Title')" in call["url"]
         or "fields?" in call["url"]
@@ -1214,7 +1216,7 @@ def test_declared_library_url_is_created_and_verified(
         "if (ABSENT_LIST_TITLES.includes(probeTitle)) {",
         "if (!globalThis.__libraryCreated || ABSENT_LIST_TITLES.includes(probeTitle)) {",
     )
-    root_shape = {"ServerRelativeUrl": f"/sites/test/{root}"} if root else {}
+    root_shape: dict[str, str] = {"ServerRelativeUrl": f"/sites/test/{root}"} if root else {}
     harness = harness.replace(
         "Title: 'adopted', BaseTemplate: 101,",
         f"RootFolder: {json.dumps(root_shape)}, Title: 'adopted', BaseTemplate: 101,",
@@ -1235,7 +1237,7 @@ def test_declared_library_url_is_created_and_verified(
     creates = [c for c in calls if c["url"].endswith('/web/lists/add')]
     assert len(creates) == (0 if existing else 1)
     if creates:
-        assert json.loads(creates[0]["body"])["parameters"] == {
+        assert Json.loads(creates[0]["body"].text)["parameters"] == {
             "__metadata": {"type": "SP.ListCreationInformation"},
             "Title": "APP_Escalation", "Url": "PolicyDocuments", "TemplateType": 101,
             "Description": next(row["description"] for row in _schema_lists(
@@ -1265,7 +1267,7 @@ def test_declared_list_url_is_created_and_verified(
         "if (ABSENT_LIST_TITLES.includes(probeTitle)) {",
         "if (!globalThis.__libraryCreated || ABSENT_LIST_TITLES.includes(probeTitle)) {",
     )
-    root_shape = {"ServerRelativeUrl": f"/sites/test/{root}"} if root else {}
+    root_shape: dict[str, str] = {"ServerRelativeUrl": f"/sites/test/{root}"} if root else {}
     harness = harness.replace(
         "Title: 'adopted', BaseTemplate: 101,",
         f"RootFolder: {json.dumps(root_shape)}, Title: 'adopted', BaseTemplate: 100,",
@@ -1286,7 +1288,7 @@ def test_declared_list_url_is_created_and_verified(
     creates = [c for c in calls if c["url"].endswith('/web/lists/add')]
     assert len(creates) == (0 if existing else 1)
     if creates:
-        assert json.loads(creates[0]["body"])["parameters"] == {
+        assert Json.loads(creates[0]["body"].text)["parameters"] == {
             "__metadata": {"type": "SP.ListCreationInformation"},
             "Title": "APP_Escalation", "Url": "Lists/Escalation", "TemplateType": 100,
             "Description": next(row["description"] for row in _schema_lists(
@@ -1333,7 +1335,7 @@ def test_a_spaced_list_url_on_an_encoded_site_path_is_compared_decoded(
 def _folder_acl_run(
     tmp_path: Path, *, stray: bool = False, missing: bool = False,
     mapping: str = _FOLDER_ACL_LIBRARY, flags: str = "",
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+) -> tuple[Json, list[Json]]:
     """The whole deploy against a library whose one folder carries an ACL."""
     # `unique_after=1` is what makes the mock answer the inheritance flag
     # at all; both securables read it, the list for its settle loop and

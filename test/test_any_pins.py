@@ -22,7 +22,6 @@ _TYPE_COMMENT = re.compile(r"#\s*type:")
 _ANNOTATION = re.compile(rf"[\w.\[\], |]*\b{NAME}\b[\w.\[\], |]*")
 
 PINS: dict[str, int] = {
-    "test runtime": 614,
     "test other": 217,
     "scripts": 0,
     "website/scripts": 0,
@@ -51,7 +50,7 @@ def unit_of(path: Path) -> str | None:
     """The pinned unit owning ``path``, or None when the unit is cleaned."""
     rel = path.relative_to(REPO_ROOT).as_posix()
     if rel.startswith("test/"):
-        return "test runtime" if re.fullmatch(r"test_.*_runtime\.py", path.name) else "test other"
+        return None if re.fullmatch(r"test_.*_runtime\.py", path.name) else "test other"
     if rel.startswith("website/scripts/"):
         return "website/scripts"
     if rel.startswith("scripts/"):
@@ -119,7 +118,7 @@ def test_count_uses(source: str, expected: int) -> None:
 
 
 def test_unit_of_routes_paths() -> None:
-    assert unit_of(REPO_ROOT / "test" / "test_x_runtime.py") == "test runtime"
+    assert unit_of(REPO_ROOT / "test" / "test_x_runtime.py") is None
     assert unit_of(REPO_ROOT / "test" / "test_x.py") == "test other"
     assert unit_of(_PACKAGE / "model" / "a.py") is None
     assert unit_of(_PACKAGE / "analysis" / "a.py") is None

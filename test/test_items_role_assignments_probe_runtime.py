@@ -7,10 +7,11 @@ that never answered.
 """
 
 import json
-from typing import Any
+from collections.abc import Mapping
 
 import pytest
 from _items_acl_mock import ITEMS_ACL_MOCK
+from _json_view import Json
 from _node import NODE
 from _paths import MANUAL
 from _probe_runs import catalogued_dependents, ended_with_report, run_probe, voided
@@ -41,13 +42,21 @@ FLOW_READ = {
 WRITES = ("CONFIRMED", "ALLOW_WRITES")
 
 
-def _run(gates: tuple[str, ...] = WRITES, **config: Any,
-         ) -> tuple[dict[str, dict[str, str]], list[dict[str, str]], str]:
+def _run(gates: tuple[str, ...] = WRITES, **config: object,
+         ) -> tuple[dict[str, Json], list[Json], str]:
+    return _run_with(config, gates)
+
+
+def _run_with(config: Mapping[str, object], gates: tuple[str, ...] = WRITES,
+              ) -> tuple[dict[str, Json], list[Json], str]:
     return run_probe(ITEMS_ACL_MOCK, PROBE, gates, config)
 
 
-def _flow_reads(sent: list[dict[str, str]]) -> list[str]:
-    return [r["path"] for r in sent if "RoleAssignments" in r["path"] and "/items?" in r["path"]]
+def _flow_reads(sent: list[Json]) -> list[str]:
+    return [
+        r["path"].text for r in sent
+        if "RoleAssignments" in r["path"] and "/items?" in r["path"]
+    ]
 
 
 @pytest.mark.parametrize("gates", [(), ("CONFIRMED",)], ids=["unconfirmed", "no-writes"])
@@ -147,7 +156,9 @@ def test_a_refused_read_is_recorded_with_its_error_text() -> None:
     ({"reject": True}, "no response: Failed to fetch"),
     ({"status": 401, "text": "Unauthorized"}, "was not authorised (HTTP 401)")],
     ids=["no-value-array", "no-response", "unauthorised"])
-def test_a_read_that_says_nothing_leaves_the_row_open(fail: dict[str, Any], said: str) -> None:
+def test_a_read_that_says_nothing_leaves_the_row_open(
+    fail: Mapping[str, object], said: str,
+) -> None:
     rows, _, _ = _run(failPage={"query": "ProbeOwnerId", "page": 1, **fail})
 
     assert rows[BY_ID]["outcome"] == "NOT ESTABLISHED"
@@ -191,13 +202,13 @@ def test_a_break_that_does_not_take_voids_both_rows() -> None:
     assert _flow_reads(sent) == []
 
 
-def _seeded(description: str) -> dict[str, Any]:
+def _seeded(description: str) -> dict[str, object]:
     return {"lists": {LIB: {"Id": mock_list_id(LIB), "Title": LIB, "BaseTemplate": 101,
                             "Description": description, "fields": {}, "items": []}}}
 
 
 def test_a_library_already_there_is_never_built_over() -> None:
-    rows, sent, _ = _run(**_seeded(OWNED))
+    rows, sent, _ = _run_with(_seeded(OWNED))
 
     assert rows[LIBRARY]["outcome"] == "FAIL"
     assert "already exists" in rows[LIBRARY]["evidence"]
@@ -206,14 +217,14 @@ def test_a_library_already_there_is_never_built_over() -> None:
 
 
 def test_cleanup_recycles_the_library_with_the_probes_description() -> None:
-    rows, sent, _ = _run((*WRITES, "CLEANUP"), **_seeded(OWNED))
+    rows, sent, _ = _run_with(_seeded(OWNED), (*WRITES, "CLEANUP"))
 
     assert any(r["path"].endswith("/recycle") for r in sent)
     assert all(row["outcome"] == "NOT REACHED" for row in rows.values())
 
 
 def test_cleanup_leaves_a_library_whose_description_is_not_the_probes() -> None:
-    _, sent, output = _run((*WRITES, "CLEANUP"), **_seeded("somebody else's library"))
+    _, sent, output = _run_with(_seeded("somebody else's library"), (*WRITES, "CLEANUP"))
 
     assert not any(r["path"].endswith("/recycle") for r in sent)
     assert "its description differs" in output
@@ -262,8 +273,8 @@ def test_a_value_the_page_answers_is_masked_in_the_evidence() -> None:
     assert "bob@example.com" not in output
 
 
-def _paged(contains: str, first: list[dict[str, Any]], second: list[dict[str, Any]],
-           query: str) -> list[dict[str, Any]]:
+def _paged(contains: str, first: list[dict[str, object]], second: list[dict[str, object]],
+           query: str) -> list[dict[str, object]]:
     """Rules answering the first two reads holding `contains` with a page each, linked."""
     link = ("https://example.sharepoint.com/sites/probe/_api/web/lists/"
             f"getbytitle('{LIB}')/items?p=2&{query}")
@@ -272,7 +283,7 @@ def _paged(contains: str, first: list[dict[str, Any]], second: list[dict[str, An
             {"contains": contains, "nth": 1, "status": 200, "text": json.dumps({"value": second})}]
 
 
-def _bound(item: int) -> dict[str, Any]:
+def _bound(item: int) -> dict[str, object]:
     """An item as the mock's per-item read binds it, with its bindings expanded."""
     broken = item in (10, 100, 111)
     pairs = [(3, 1073741829), (5, 1073741826)] + ([(7, 1073741826)] if broken else [])
@@ -282,7 +293,8 @@ def _bound(item: int) -> dict[str, Any]:
 
 
 def test_an_item_id_that_is_not_a_whole_number_fails_the_files_and_writes_nothing() -> None:
-    first = [{"Id": "10)/recycle" if n == 10 else n} for n in range(1, 101)]
+    first: list[dict[str, object]] = [
+        {"Id": "10)/recycle" if n == 10 else n} for n in range(1, 101)]
     rows, sent, _ = _run(rules=_paged("$select=Id&", first, [{"Id": n} for n in range(101, 131)],
                                       "$select=Id&$top=100"))
 

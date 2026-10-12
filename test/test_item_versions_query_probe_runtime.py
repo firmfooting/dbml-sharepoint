@@ -7,9 +7,10 @@ turns that off in the mock.
 """
 
 import json
-from typing import Any
+from collections.abc import Mapping, Sequence
 
 import pytest
+from _json_view import Json
 from _node import NODE
 from _paths import MANUAL
 from _probe_runs import (
@@ -38,8 +39,8 @@ ORDERBY = "query.odata.versions-orderby"
 SUBJECTS = (ORDER, SELECT, FILTER, TOP, ORDERBY)
 
 
-def _run(gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: Any,
-         ) -> tuple[dict[str, dict[str, str]], list[dict[str, str]], str]:
+def _run(gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: object,
+         ) -> tuple[dict[str, Json], list[Json], str]:
     return run_probe(VERSIONS_MOCK, PROBE, gates, config)
 
 
@@ -307,7 +308,7 @@ def test_a_write_whose_read_back_went_unanswered_is_not_counted() -> None:
                            {"VersionId": 1536, "VersionLabel": "3.0", "ProbeChoice": "Q3"}]),
 ], ids=["select-subset", "top-unknown", "orderby-subset"])
 def test_an_option_serving_other_versions_than_the_plain_read_is_named_so(
-        option: str, row_id: str, answer: list[dict[str, Any]]) -> None:
+        option: str, row_id: str, answer: Sequence[Mapping[str, object]]) -> None:
     rows, _, _ = _run(rules=[{"contains": f"/versions?{option}", "status": 200,
                               "text": json.dumps({"value": answer})}])
 

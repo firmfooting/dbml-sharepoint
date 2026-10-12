@@ -2,9 +2,9 @@
 
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
+from _json_view import dumps as dumps_view
 from _node import NODE
 from test_deploy_runtime import (
     _ADOPTED_HARNESS,
@@ -24,7 +24,7 @@ from dbml_sharepoint.analysis.phases import phase_number
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
 
-def _continuation_overlay(phase: str, url_part: str, marker: Any) -> str:
+def _continuation_overlay(phase: str, url_part: str, marker: object) -> str:
     return f"""
 const continuationFetch = globalThis.fetch;
 globalThis.fetch = async (url, opts = {{}}) => {{
@@ -46,7 +46,7 @@ globalThis.fetch = async (url, opts = {{}}) => {{
     "fields", "acl", "seeds",
 ])
 def test_deploy_reads_validate_continuation_markers(
-    tmp_path: Path, surface: str, marker: Any,
+    tmp_path: Path, surface: str, marker: object,
 ) -> None:
     if surface.startswith("reader"):
         js = _reader_deploy_js()
@@ -112,7 +112,7 @@ def test_deploy_reads_validate_continuation_markers(
     {"d": {"results": [{"Title": "Other"}] * 5000}},
 ])
 def test_incomplete_name_indexes_fall_back_to_direct_probes(
-    surface: str, payload: Any,
+    surface: str, payload: object,
 ) -> None:
     harness = _ADOPTED_HARNESS.replace(
         "const KNOWN_GROUP_NAMES = [];",
@@ -153,7 +153,7 @@ globalThis.fetch = async (url, opts = {{}}) => {{
 
 @pytest.mark.parametrize("marker", [False, 0, {}, "https://example.sharepoint.com/next"])
 def test_incomplete_group_rename_index_blocks_all_principal_writes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, marker: Any,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, marker: object,
 ) -> None:
     import test_deploy_principal_renames_runtime as renames
 
@@ -173,7 +173,7 @@ globalThis.fetch = async (url, opts = {{}}) => {{
         renames._old_level(renames._old_level_marker()),
     )
     assert summary["aborted"] == "phase-0-rename-errors"
-    assert "invalid or incomplete response" in json.dumps(summary["errors"])
+    assert "invalid or incomplete response" in dumps_view(summary["errors"])
     assert renames._writes(calls) == []
 
 
@@ -276,7 +276,7 @@ globalThis.fetch = async (url, opts = {{}}) => {{
         _ADOPTED_HARNESS + overlay, _declared_deploy_js(tmp_path, _ONE_FORM_LAYOUT),
     )
     assert "CONTINUATION_INJECTED" in output, output[-4000:]
-    errors = json.dumps(summary["errors"])
+    errors = dumps_view(summary["errors"])
     assert "may be past the page" in errors, summary["errors"]
     assert "no default item content type found" not in errors, summary["errors"]
     assert not any("ClientFormCustomFormatter" in (c["body"] or "") for c in calls)

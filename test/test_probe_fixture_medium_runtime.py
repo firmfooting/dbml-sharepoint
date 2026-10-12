@@ -7,11 +7,13 @@ the wrong kind voids exactly the rows the catalogue says rest on it and is
 never written to.
 """
 
+import copy
 import json
 import textwrap
-from typing import Any
+from collections.abc import Mapping
 
 import pytest
+from _json_view import Json
 from _node import NODE, run_node
 from _paths import MANUAL
 from test_probe_fixture_runtime import _catalogued_dependents, _run_probe, _void_ids
@@ -198,8 +200,8 @@ _PREINDEX_LIB = "dbmlsp Probe PreIndex"
 
 
 def _writes_to(
-    sent: list[dict[str, str]], title: str, uploads: bool = True,
-) -> list[dict[str, str]]:
+    sent: list[Json], title: str, uploads: bool = True,
+) -> list[Json]:
     """Writes addressed to the list titled `title`, and with `uploads` every file or folder add."""
     prefix = f"web/lists/getbytitle('{title}')"
     return [r for r in sent if r["verb"] != "GET" and (
@@ -207,7 +209,7 @@ def _writes_to(
         or (uploads and ("/Files/add" in r["path"] or "folders/add" in r["path"].lower())))]
 
 
-def _generic(title: str) -> dict[str, Any]:
+def _generic(title: str) -> dict[str, object]:
     return {"existing": {title: {"template": 100}}}
 
 
@@ -355,13 +357,13 @@ _CONTENT_TYPES_OFF = [
 ]
 
 
-def _voided_by(rows: dict[str, dict[str, str]], fixture: str) -> set[str]:
+def _voided_by(rows: dict[str, Json], fixture: str) -> set[str]:
     return {row_id for row_id in _void_ids(rows)
             if f"the fixture {fixture} did not hold" in rows[row_id]["evidence"]}
 
 
 def _assert_stopped_at(
-    rows: dict[str, dict[str, str]], sent: list[dict[str, str]],
+    rows: dict[str, Json], sent: list[Json],
     probe: str, title: str, named: str,
 ) -> None:
     assert rows[_DOC_LIB]["outcome"] == "FAIL", rows[_DOC_LIB]
@@ -719,37 +721,37 @@ _RECORD = textwrap.dedent("""
 
 
 def _run_recorded(
-    mock: str, config: dict[str, Any], probe: str,
-) -> tuple[dict[str, dict[str, str]], list[dict[str, str]]]:
+    mock: str, config: Mapping[str, object], probe: str,
+) -> tuple[dict[str, Json], list[Json]]:
     """Run `probe` on a mock of another module, with every request it sends recorded."""
     script = (mock.replace("__CONFIG__", json.dumps(config)) + _RECORD
               + "\n" + _fixture_probe_js(MANUAL / probe))
     output = run_node(script)
     line = next(ln for ln in output.splitlines() if ln.startswith("__SENT__"))
-    return _fixture_rows(output), list(json.loads(line.removeprefix("__SENT__")))
+    return _fixture_rows(output), Json.loads(line.removeprefix("__SENT__")).rows
 
 
-def _healthy(base: dict[str, Any], **changes: Any) -> dict[str, Any]:
-    config: dict[str, Any] = json.loads(json.dumps(base))
+def _healthy(base: Mapping[str, object], **changes: object) -> dict[str, object]:
+    config = dict(copy.deepcopy(base))
     config.update(changes)
     return config
 
 
-def _library(*titles: str) -> dict[str, Any]:
+def _library(*titles: str) -> dict[str, object]:
     return {"existing": {title: {"template": 101} for title in titles}}
 
 
-def _nothing_written(sent: list[dict[str, str]]) -> bool:
+def _nothing_written(sent: list[Json]) -> bool:
     return not [r for r in sent if r["verb"] != "GET" and not r["path"].startswith("contextinfo")]
 
 
-def _assert_held(rows: dict[str, dict[str, str]], fixture: str) -> None:
+def _assert_held(rows: dict[str, Json], fixture: str) -> None:
     assert rows[fixture]["outcome"] == "PASS", rows[fixture]
     assert not _voided_by(rows, fixture)
 
 
 def _assert_voids_catalogued(
-    rows: dict[str, dict[str, str]], probe: str, fixture: str, named: str,
+    rows: dict[str, Json], probe: str, fixture: str, named: str,
 ) -> None:
     assert rows[fixture]["outcome"] == "FAIL", rows[fixture]
     assert named in rows[fixture]["evidence"], rows[fixture]
@@ -823,7 +825,7 @@ _FUNCTIONS_COLUMNS = "field.default-formula.fixture-columns-typed"
     ids=["type", "formula"],
 )
 def test_functions_voids_the_fills_on_a_reused_column_of_another_shape(
-    props: dict[str, Any], named: str,
+    props: Mapping[str, object], named: str,
 ) -> None:
     config = {"existing": {_FUNCTIONS_LIST: {"template": 100, "fields": {"FnDay": props}}}}
     rows, sent = _run_probe(_LIST_MOCK, config, _FUNCTIONS)
@@ -852,7 +854,7 @@ _UNIQUE = "unique-blanks-probe.js"
 _UNIQUE_COLUMN = "field.unique.fixture-unique-text-column"
 
 
-def _unique(column: dict[str, Any]) -> dict[str, Any]:
+def _unique(column: Mapping[str, object]) -> dict[str, object]:
     return {"existing": {"dbmlsp Probe Unique List": {
         "template": 100, "fields": {"UniqueRef": column}}}}
 
@@ -878,7 +880,7 @@ _SEALED = "field-sealed-probe.js"
 _SEALED_SUBJECT = "field.sealed.fixture-subject-column"
 
 
-def _sealed(subject_type: str) -> dict[str, Any]:
+def _sealed(subject_type: str) -> dict[str, object]:
     return {"existing": {"dbmlsp Probe Sealed Field": {
         "template": 100, "fields": {"SealSubject": {"TypeAsString": subject_type}}}}}
 
@@ -910,7 +912,7 @@ _DATE = {"TypeAsString": "DateTime", "DisplayFormat": 0}
 _TD_HEALTHY = {**_DATE, "DefaultValue": "[today]"}
 
 
-def _today(fields: dict[str, Any], **changes: Any) -> dict[str, Any]:
+def _today(fields: Mapping[str, object], **changes: object) -> dict[str, object]:
     return {"existing": {"dbml-probe-today-semantics": {"template": 100, "fields": fields}},
             **changes}
 
@@ -929,7 +931,7 @@ _TODAY_WRITES = {_DM: '"DM":', _TD: '"Title":"default-today"'}
     ids=["dm-date-and-time", "td-no-default", "td-text"],
 )
 def test_today_source_voids_the_rows_on_a_reused_column_of_another_shape(
-    fixture: str, fields: dict[str, Any], named: str,
+    fixture: str, fields: Mapping[str, object], named: str,
 ) -> None:
     rows, sent = _run_probe(_LIST_MOCK, _today(fields), _TODAY, _TODAY_GATES)
 
@@ -992,7 +994,7 @@ _V2_WINDOW = (
 
 def _run_operand(
     existing: dict[str, int],
-) -> tuple[dict[str, dict[str, str]], list[dict[str, str]]]:
+) -> tuple[dict[str, Json], list[Json]]:
     """The v2 core prints its table through console.table, so the dump is spliced there."""
     js = (MANUAL / _OPERAND).read_text(encoding="utf-8")
     for gate in ("CONFIRMED", "ALLOW_WRITES"):
@@ -1006,11 +1008,12 @@ def _run_operand(
     output = run_node(_V2_WINDOW + _LIST_MOCK.replace("__CONFIG__", json.dumps(config))
                       + "\n" + js)
     table = [ln for ln in output.splitlines() if ln.startswith("__ROWS__")][-1]
-    rows = {row["id"]: {"outcome": row["observed"], "evidence": row["detail"],
-                        "state": row["state"]}
-            for row in json.loads(table.removeprefix("__ROWS__"))}
+    rows = {row["id"].text: Json({"outcome": row["observed"].value,
+                                  "evidence": row["detail"].value,
+                                  "state": row["state"].value})
+            for row in Json.loads(table.removeprefix("__ROWS__"))}
     sent = next(ln for ln in output.splitlines() if ln.startswith("__SENT__"))
-    return rows, list(json.loads(sent.removeprefix("__SENT__")))
+    return rows, Json.loads(sent.removeprefix("__SENT__")).rows
 
 
 @pytest.mark.parametrize("title", _OPERAND_LISTS, ids=["main", "target"])
@@ -1059,7 +1062,7 @@ def test_calc_choice_voids_the_rows_on_a_library_under_a_list_name(
 
 @pytest.mark.parametrize("reused", [False, True], ids=["created", "reused"])
 def test_calc_choice_establishes_its_two_generic_lists(reused: bool) -> None:
-    lists = [_CHOICE_LIST, f"{_CHOICE_LIST} Target"] if reused else []
+    lists: list[str] = [_CHOICE_LIST, f"{_CHOICE_LIST} Target"] if reused else []
     rows, _ = _run_recorded(_CALC_CHOICE_HARNESS,
                             _healthy(_CALC_CHOICE_HEALTHY, existingLists=lists), _CHOICE)
 
@@ -1156,7 +1159,7 @@ _TI_COLUMNS = "scale.index.fixture-columns-typed"
          "parent-unbound"],
 )
 def test_threshold_index_voids_every_row_on_a_fixture_that_does_not_hold(
-    changes: dict[str, Any], fixture: str, named: str,
+    changes: Mapping[str, object], fixture: str, named: str,
 ) -> None:
     rows, sent = _run_recorded(_THRESHOLD_INDEX_HARNESS,
                                _healthy(_THRESHOLD_INDEX_HEALTHY, **changes), _THRESHOLD_INDEX)

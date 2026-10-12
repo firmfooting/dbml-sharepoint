@@ -19,9 +19,10 @@ point of the probe.
 import json
 import re
 import textwrap
-from typing import Any
+from collections.abc import Mapping
 
 import pytest
+from _json_view import Json
 from _node import NODE
 from _node import run_node as _run
 from _paths import JINJA_TEMPLATES, MANUAL, PACKAGE
@@ -354,7 +355,7 @@ _HARNESS = textwrap.dedent("""
     };
 """)
 
-_DEFAULTS: dict[str, Any] = {
+_DEFAULTS: dict[str, object] = {
     "title": _TITLE,
     "ownership": _OWNERSHIP,
     "web": "https://example.sharepoint.com/sites/test",
@@ -438,8 +439,14 @@ def _probe_js(cleanup: bool) -> str:
 
 
 def _run_probe(
-    cleanup: bool = False, **config: Any,
-) -> tuple[dict[str, dict[str, str]], list[dict[str, Any]], str]:
+    cleanup: bool = False, **config: object,
+) -> tuple[dict[str, Json], list[Json], str]:
+    return _run_probe_with(config, cleanup)
+
+
+def _run_probe_with(
+    config: Mapping[str, object], cleanup: bool = False,
+) -> tuple[dict[str, Json], list[Json], str]:
     """(rows by id, every request the probe made, the whole transcript)."""
     unknown = set(config) - set(_DEFAULTS)
     assert not unknown, f"no such mock knob: {sorted(unknown)}"
@@ -453,29 +460,29 @@ def _run_probe(
     calls = next((ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None)
     assert calls is not None, f"the mock logged no requests:\n{output[-3000:]}"
     return (
-        {row["id"]: row for row in json.loads(rows.removeprefix("__ROWS__"))},
-        json.loads(calls.removeprefix("__CALLS__")),
+        {row["id"].text: row for row in Json.loads(rows.removeprefix("__ROWS__"))},
+        Json.loads(calls.removeprefix("__CALLS__")).rows,
         output,
     )
 
 
-def _writes(calls: list[dict[str, Any]], fragment: str) -> list[dict[str, Any]]:
+def _writes(calls: list[Json], fragment: str) -> list[Json]:
     return [c for c in calls if c["method"] == "POST" and fragment in c["url"]]
 
 
-def _deletes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _deletes(calls: list[Json]) -> list[Json]:
     return [c for c in calls if c["tunnel"] == "DELETE"]
 
 
-def _removals(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _removals(calls: list[Json]) -> list[Json]:
     return _writes(calls, "/removeroleassignment(")
 
 
-def _breaks(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _breaks(calls: list[Json]) -> list[Json]:
     return _writes(calls, "/breakroleinheritance(")
 
 
-def _creates(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _creates(calls: list[Json]) -> list[Json]:
     return [c for c in calls if c["method"] == "POST" and c["url"].endswith("/web/lists")]
 
 
@@ -509,7 +516,7 @@ def _deploy_shape_select() -> str:
     return ",".join(names)
 
 
-def _path(call: dict[str, Any]) -> str:
+def _path(call: Mapping[str, object]) -> str:
     """The request below `web/lists/`, or the whole URL for one addressed otherwise."""
     return str(call["url"]).split("/_api/web/lists/", 1)[-1]
 
@@ -582,7 +589,7 @@ def test_no_site_address_and_no_account_reach_the_transcript() -> None:
         removalMessage=message,
     )
 
-    evidence = rows[REMOVAL]["evidence"]
+    evidence = rows[REMOVAL]["evidence"].text
     # The mock's own request log carries every URL, and is not the probe's output.
     printed = "\n".join(ln for ln in output.splitlines() if not ln.startswith("__CALLS__"))
     for fragment in ("intranet.example.org", "/depts/finance", "wilhelmina", "wtorres",
@@ -683,8 +690,8 @@ def test_the_break_and_the_removals_carry_the_deploys_headers_and_no_body() -> N
     for call in (*_breaks(calls), *_removals(calls)):
         assert call["accept"] == "application/json;odata=verbose", call
         assert call["digest"] == "digest", call
-        assert call["body"] is False, call
-        assert call["contentType"] is None, call
+        assert call["body"].value is False, call
+        assert call["contentType"].value is None, call
         assert call["cache"] == "no-store", call
 
 
@@ -698,7 +705,7 @@ def test_the_break_and_the_removals_carry_the_deploys_headers_and_no_body() -> N
     ],
 )
 def test_every_binding_goes_in_the_deploys_order_and_whose_went_last_is_recorded(
-    left: list[dict[str, Any]], whose_first: str, whose_last: str,
+    left: list[Json], whose_first: str, whose_last: str,
 ) -> None:
     """The exact prune removes every direct binding but 'Limited Access', in
     enumeration order, each in its own identity bracket. Which binding is the
@@ -706,9 +713,9 @@ def test_every_binding_goes_in_the_deploys_order_and_whose_went_last_is_recorded
     rows, calls, _output = _run_probe(leftBindings=left)
 
     assert rows[FIXTURE_DIRECT]["outcome"] == "PASS"
-    sent = [re.search(r"principalid=(\d+)", c["url"]) for c in _removals(calls)]
+    sent = [re.search(r"principalid=(\d+)", c["url"].text) for c in _removals(calls)]
     assert [int(m.group(1)) for m in sent if m] == [b["principalId"] for b in left]
-    evidence = rows[REMOVAL]["evidence"]
+    evidence = rows[REMOVAL]["evidence"].text
     assert rows[REMOVAL]["outcome"] == "ACCEPTED"
     first_sent = f"removeroleassignment(principalid={left[0]['principalId']}"
     assert f"removal 1 of {len(left)}, {first_sent}" in evidence
@@ -730,7 +737,7 @@ def test_a_removal_refused_part_way_stops_the_prune_as_the_deploy_does() -> None
     )
 
     assert len(_removals(calls)) == 1
-    evidence = rows[REMOVAL]["evidence"]
+    evidence = rows[REMOVAL]["evidence"].text
     assert rows[REMOVAL]["outcome"] == "REFUSED"
     assert "the deploy stops there, so 1 binding(s) were never sent" in evidence
     assert "The last removal sent was another principal's binding" in evidence
@@ -803,12 +810,12 @@ def test_a_removal_that_throws_is_recorded_and_the_list_is_still_deleted() -> No
     ],
 )
 def test_a_break_that_did_not_hold_voids_every_row_after_it(
-    config: dict[str, Any], said: str,
+    config: Mapping[str, object], said: str,
 ) -> None:
     """The break is depended on, not measured, so a failure there voids the
     rows that rest on it rather than settling them. The list is still
     deleted, because it was created."""
-    rows, calls, _output = _run_probe(**config)
+    rows, calls, _output = _run_probe_with(config)
 
     assert rows[FIXTURE_LIST]["outcome"] == "PASS"
     assert rows[FIXTURE_BREAK]["outcome"] == "FAIL"
@@ -841,14 +848,14 @@ def test_a_break_that_did_not_hold_voids_every_row_after_it(
     ],
 )
 def test_a_snapshot_with_nothing_to_prune_sends_no_removal(
-    config: dict[str, Any], said: str,
+    config: Mapping[str, object], said: str,
 ) -> None:
     """The prune needs a binding to remove, read the way the deploy reads it
     and to its last page. Only a window in which no read held one voids the
     question; every read in it is recorded."""
-    rows, calls, _output = _run_probe(**config)
+    rows, calls, _output = _run_probe_with(config)
 
-    evidence = rows[FIXTURE_DIRECT]["evidence"]
+    evidence = rows[FIXTURE_DIRECT]["evidence"].text
     assert rows[FIXTURE_DIRECT]["outcome"] == "FAIL"
     assert said in evidence, evidence
     assert "read 6: " in evidence, evidence
@@ -880,7 +887,7 @@ def test_a_transiently_empty_snapshot_is_recorded_and_re_read_rather_than_voidin
     recorded as such, and the window reads on until two reads agree."""
     rows, calls, _output = _run_probe(snapshotEmptyReads=2)
 
-    evidence = rows[FIXTURE_DIRECT]["evidence"]
+    evidence = rows[FIXTURE_DIRECT]["evidence"].text
     assert rows[FIXTURE_DIRECT]["outcome"] == "PASS", evidence
     assert "read 1: 0 binding(s) over 1 page(s), 0 other than 'Limited Access'" in evidence
     assert "read 2: 0 binding(s)" in evidence
@@ -893,7 +900,7 @@ def test_a_transiently_empty_snapshot_is_recorded_and_re_read_rather_than_voidin
 def test_a_snapshot_that_never_settles_proceeds_on_its_last_binding_and_says_so() -> None:
     rows, calls, _output = _run_probe(snapshotFlap=True)
 
-    evidence = rows[FIXTURE_DIRECT]["evidence"]
+    evidence = rows[FIXTURE_DIRECT]["evidence"].text
     assert rows[FIXTURE_DIRECT]["outcome"] == "PASS", evidence
     assert "read 6: 0 binding(s)" in evidence
     assert evidence.endswith(
@@ -911,7 +918,7 @@ def test_the_deploy_reading_a_200_without_results_as_no_rows_is_modelled_not_cor
     rows, while its own enumeration still reads the binding there."""
     rows, _calls, _output = _run_probe(removal="ignored", deployEnumAfter="no-results")
 
-    readback = rows[READBACK]["evidence"]
+    readback = rows[READBACK]["evidence"].text
     assert rows[READBACK]["outcome"] == "OBSERVED"
     assert readback.startswith(
         "the deploy logs that the scope reports exactly the 0 declared role assignment(s), "
@@ -940,7 +947,7 @@ def test_the_descendant_survey_decides_the_verdict_after_the_settle(
 ) -> None:
     rows, _calls, _output = _run_probe(items=items)
 
-    readback = rows[READBACK]["evidence"]
+    readback = rows[READBACK]["evidence"].text
     assert rows[READBACK]["outcome"] == "OBSERVED"
     assert verdict in readback, readback
     if items == "no-results":
@@ -956,12 +963,12 @@ def test_the_descendant_survey_decides_the_verdict_after_the_settle(
     ],
 )
 def test_a_delete_that_did_not_go_is_recorded_and_hands_over_a_line_that_does(
-    config: dict[str, Any], outcome: str, said: str,
+    config: Mapping[str, object], outcome: str, said: str,
 ) -> None:
     """The delete is the run's cleanup and one of its observations. When it
     does not go, the row says so and the operator is given a line that
     deletes the list by its Id, printed before the block they copy back."""
-    rows, _calls, output = _run_probe(**config)
+    rows, _calls, output = _run_probe_with(config)
 
     delete = rows[DELETE]
     assert delete["outcome"] == outcome, delete
@@ -992,10 +999,10 @@ def test_a_delete_that_did_not_go_is_recorded_and_hands_over_a_line_that_does(
         setTimeout(() => console.log('__REPLAY__' + JSON.stringify(calls)), 50);
     """).replace("__PASTED__", pasted)
     replayed = _run(replay)
-    sent = json.loads(next(
+    sent = Json.loads(next(
         ln for ln in replayed.splitlines() if ln.startswith("__REPLAY__")
     ).removeprefix("__REPLAY__"))
-    assert [c["url"] for c in sent] == [
+    assert [c["url"].text for c in sent] == [
         "https://example.sharepoint.com/sites/test/_api/contextinfo",
         f"https://example.sharepoint.com/sites/test/_api/web/lists(guid'{_CREATED_ID}')",
     ]
@@ -1020,11 +1027,11 @@ def test_a_delete_that_did_not_go_is_recorded_and_hands_over_a_line_that_does(
     ],
 )
 def test_the_delete_row_is_what_the_read_by_id_after_it_found(
-    config: dict[str, Any], outcome: str, head: str, status: str,
+    config: Mapping[str, object], outcome: str, head: str, status: str,
 ) -> None:
     """A delete can commit and answer an error, or answer 2xx and not take, so
     the outcome is the read-back's and the status is carried beside it."""
-    rows, calls, output = _run_probe(**config)
+    rows, calls, output = _run_probe_with(config)
 
     delete = rows[DELETE]
     assert delete["outcome"] == outcome, delete
@@ -1095,7 +1102,7 @@ def test_a_create_answering_another_lists_id_never_deletes_that_list() -> None:
     marker read found is the one cleaned up."""
     rows, calls, _output = _run_probe(createAnswersId=_FOREIGN_ID, foreignListId=_FOREIGN_ID)
 
-    evidence = rows[FIXTURE_LIST]["evidence"]
+    evidence = rows[FIXTURE_LIST]["evidence"].text
     assert rows[FIXTURE_LIST]["outcome"] == "FAIL"
     assert (
         f"the create answered list {_FOREIGN_ID}, but the title reads list {_CREATED_ID} "
@@ -1134,7 +1141,7 @@ def test_a_create_answered_as_failed_is_read_back_and_cleaned_up_when_it_landed(
     read back, and what the marker proves is this run's is deleted by Id."""
     rows, calls, output = _run_probe(createRefused="but-created")
 
-    evidence = rows[FIXTURE_LIST]["evidence"]
+    evidence = rows[FIXTURE_LIST]["evidence"].text
     assert rows[FIXTURE_LIST]["outcome"] == "FAIL"
     assert "could not create 'dbmlsp Probe LastBinding': HTTP 500" in evidence
     assert (
@@ -1268,12 +1275,12 @@ def test_a_read_by_id_answering_another_list_is_reported_not_settled() -> None:
     ],
 )
 def test_a_flag_read_by_id_short_of_its_id_or_flag_is_not_an_answer(
-    config: dict[str, Any], said: str,
+    config: Mapping[str, object], said: str,
 ) -> None:
     """A 200 flag read by Id must still carry the Id it was addressed by and
     a boolean flag. The enumeration by Id carries no list Id at all, and its
     address is what names the list, so it still answers."""
-    rows, _calls, _output = _run_probe(**config)
+    rows, _calls, _output = _run_probe_with(config)
 
     by_id = rows[BY_ID]
     assert by_id["outcome"] == "OBSERVED", by_id
@@ -1362,11 +1369,11 @@ def test_each_read_counts_only_up_to_the_last_one_that_carried_the_id() -> None:
     rows, _calls, _output = _run_probe(flagRefused=[2, 5])
 
     unplaced = f"not an answer: no read by title after it carried list {_CREATED_ID} as its Id"
-    enumeration = rows[ENUMERATION]["evidence"]
+    enumeration = rows[ENUMERATION]["evidence"].text
     assert rows[ENUMERATION]["outcome"] == "OBSERVED"
     assert "read present on no read and absent on read(s) 1, 2, 3, 4," in enumeration
     assert f"read 5: HTTP 200, 0 row(s), {unplaced}" in enumeration
-    unique = rows[UNIQUE]["evidence"]
+    unique = rows[UNIQUE]["evidence"].text
     assert rows[UNIQUE]["outcome"] == "OBSERVED"
     assert "read 2: HTTP 403 {" in unique
     assert unique.count(unplaced) == 1
@@ -1394,7 +1401,7 @@ def test_an_enumeration_that_serves_the_removed_binding_back_is_recorded() -> No
     assert "read present on read(s) 3 and absent on read(s) 1, 2, 4, 5" in (
         rows[ENUMERATION]["evidence"]
     )
-    readback = rows[READBACK]["evidence"]
+    readback = rows[READBACK]["evidence"].text
     assert "enumeration 2 reported no binding other than 'Limited Access'" in readback
     assert (
         f"enumeration 1: HTTP 200, 1 binding(s) ({_OPERATOR}:3 'Full Control' (this account))"
@@ -1525,8 +1532,8 @@ def test_an_account_that_is_not_a_site_admin_writes_nothing() -> None:
 @needs_node
 @pytest.mark.parametrize("config", [{"siteAdmin": None}, {"currentUserRefused": True},
                                     {"operatorPrincipal": "not-a-number"}])
-def test_an_account_the_run_cannot_identify_writes_nothing(config: dict[str, Any]) -> None:
-    rows, calls, _output = _run_probe(**config)
+def test_an_account_the_run_cannot_identify_writes_nothing(config: Mapping[str, object]) -> None:
+    rows, calls, _output = _run_probe_with(config)
 
     for row in ALL:
         assert rows[row]["outcome"] == "NOT ESTABLISHED", rows[row]
@@ -1580,7 +1587,7 @@ def test_a_leftover_whose_id_reads_as_another_list_gets_no_delete_line() -> None
         cleanup=True, titleOccupied="leftover", foreignListId=_LEFTOVER_ID,
     )
 
-    evidence = rows[FIXTURE_LIST]["evidence"]
+    evidence = rows[FIXTURE_LIST]["evidence"].text
     assert rows[FIXTURE_LIST]["outcome"] == "ABORTED"
     assert f"the CLEANUP delete of '{_TITLE}' (list {_LEFTOVER_ID}) did not complete" in evidence
     assert "no line to delete it is printed" in evidence, evidence

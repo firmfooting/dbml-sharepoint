@@ -8,9 +8,11 @@ passes through.
 """
 
 import json
-from typing import Any
+from collections.abc import Mapping, Sequence
 
 import pytest
+from _json_view import Json, dumps
+from _narrow import as_str
 from _node import NODE
 from _paths import MANUAL
 from _probe_runs import catalogued_dependents, ended_with_report, run_probe, voided
@@ -54,8 +56,8 @@ LIST_READ_RULE = f"{LIST_AT}/items(1)/versions"
 TENANT_TEXT = "Refused at https://example.sharepoint.com/sites/probe/_api/web"
 
 
-def _run(gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: Any,
-         ) -> tuple[dict[str, dict[str, str]], list[dict[str, str]], str]:
+def _run(gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: object,
+         ) -> tuple[dict[str, Json], list[Json], str]:
     return run_probe(VERSIONS_MOCK, PROBE, gates, config)
 
 
@@ -63,8 +65,8 @@ def _deps(fixture: str) -> set[str]:
     return catalogued_dependents(PROBE.name, fixture)
 
 
-def _recycled(sent: list[dict[str, str]]) -> list[str]:
-    return [r["path"] for r in sent if r["path"].endswith("/recycle")]
+def _recycled(sent: list[Json]) -> list[str]:
+    return [r["path"].text for r in sent if r["path"].endswith("/recycle")]
 
 
 @pytest.mark.parametrize("gates", [(), ("CONFIRMED",)], ids=["unconfirmed", "no-writes"])
@@ -144,7 +146,7 @@ def test_a_person_value_is_recorded_with_the_account_masked() -> None:
     person = rows["field.version.payload-person"]["evidence"]
     assert '"LookupValue":"<name>"' in person
     assert '"Email":"<account>"' in person
-    everything = json.dumps(rows)
+    everything = dumps(rows)
     assert "ada@example.com" not in everything
     assert "Ada Probe" not in everything
 
@@ -155,7 +157,7 @@ def test_an_email_the_probe_did_not_learn_is_still_masked() -> None:
     assert rows[USER]["outcome"] == "PASS"
     person = rows["field.version.payload-person"]["evidence"]
     assert '"Email":"<account>"' in person
-    assert "bob@example.com" not in json.dumps(rows)
+    assert "bob@example.com" not in dumps(rows)
 
 
 def test_a_column_no_version_carries_is_recorded_absent_not_failed() -> None:
@@ -323,7 +325,7 @@ def test_an_item_create_that_answered_no_id_sends_no_set(status: int, text: str,
 
     assert rows[ITEM]["outcome"] == "FAIL"
     assert said in rows[ITEM]["evidence"]
-    assert "ada@example.com" not in json.dumps(rows)
+    assert "ada@example.com" not in dumps(rows)
     assert voided(rows) == _deps(ITEM)
     assert not [r for r in sent if r["verb"] == "MERGE" and f"{LIST_AT}/items(" in r["path"]]
 
@@ -338,8 +340,10 @@ def test_a_list_whose_versioning_does_not_stick_voids_everything_after_it() -> N
 
 
 def test_a_foreign_list_holding_the_title_is_never_written_to() -> None:
-    foreign = {"Id": LEFTOVER_ID, "BaseTemplate": 100, "Description": "somebody else's",
-               "fields": {}, "items": []}
+    foreign: dict[str, object] = {
+        "Id": LEFTOVER_ID, "BaseTemplate": 100, "Description": "somebody else's",
+        "fields": {}, "items": [],
+    }
     rows, sent, _ = _run(lists={"dbmlsp Probe Versions": foreign})
 
     assert rows[LIST]["outcome"] == "FAIL"
@@ -353,8 +357,9 @@ def test_a_foreign_list_holding_the_title_is_never_written_to() -> None:
                                    ("CONFIRMED", "ALLOW_WRITES", "CLEANUP")])
 def test_a_list_already_holding_the_title_is_never_recycled_even_with_cleanup(
         gates: tuple[str, ...]) -> None:
-    leftover = {"Id": LEFTOVER_ID, "BaseTemplate": 100, "Description": OWNED, "fields": {},
-                "items": []}
+    leftover: dict[str, object] = {
+        "Id": LEFTOVER_ID, "BaseTemplate": 100, "Description": OWNED, "fields": {}, "items": [],
+    }
     rows, sent, _ = _run(gates, lists={"dbmlsp Probe Versions": leftover})
 
     assert rows[LIST]["outcome"] == "FAIL"
@@ -380,7 +385,7 @@ def test_a_refusal_quoting_the_site_url_is_recorded_without_the_tenant() -> None
 
     assert rows[TARGET]["outcome"] == "FAIL"
     assert "[TENANT]/sites/probe/_api/web" in rows[TARGET]["evidence"]
-    assert "example.sharepoint.com" not in json.dumps(rows)
+    assert "example.sharepoint.com" not in dumps(rows)
 
 
 def test_a_library_file_records_whether_its_upload_added_a_version() -> None:
@@ -479,7 +484,7 @@ def test_an_unanswered_read_around_the_upload_leaves_both_rows_open(
         assert rows[row_id]["outcome"] == "NOT ESTABLISHED", rows[row_id]
         assert rows[row_id]["state"] == "open"
         assert f"the versions read {when} the upload {said}" in rows[row_id]["evidence"]
-    assert "ada@example.com" not in json.dumps(rows)
+    assert "ada@example.com" not in dumps(rows)
     assert ended_with_report(output)
 
 
@@ -533,14 +538,14 @@ def test_a_read_after_the_upload_without_the_choice_fails_the_fixture_not_the_va
                  id="column-create"),
 ])
 def test_a_refusal_quoting_an_account_is_masked_everywhere_it_is_printed(
-        rule: dict[str, Any], quoted: str) -> None:
+        rule: Mapping[str, object], quoted: str) -> None:
     rows, _, output = _run(rules=[rule])
 
     assert quoted in output
-    if rule["contains"].startswith("getbyinternalnameortitle"):
+    if as_str(rule["contains"]).startswith("getbyinternalnameortitle"):
         assert quoted in rows[COLUMNS]["evidence"]
     assert "ada@example.com" not in output
-    assert "ada@example.com" not in json.dumps(rows)
+    assert "ada@example.com" not in dumps(rows)
 
 
 def test_a_refused_upload_voids_what_rests_on_it_and_nothing_in_the_list_case() -> None:
@@ -599,7 +604,7 @@ def test_a_refused_library_versions_read_voids_only_the_library_observations() -
                  'Written differs: read "HTTP 500"', id="second-edit"),
 ])
 def test_a_failed_library_fixture_voids_what_rests_on_it_and_the_list_case_stands(
-        rule: dict[str, Any], fixture: str, said: str) -> None:
+        rule: Mapping[str, object], fixture: str, said: str) -> None:
     rows, sent, output = _run(rules=[rule])
 
     assert rows[fixture]["outcome"] == "FAIL"
@@ -761,7 +766,7 @@ def test_a_greatest_label_spelled_two_ways_names_no_entry() -> None:
 def test_an_unpinned_run_titles_all_three_lists_with_one_token_of_its_own() -> None:
     rows, sent, _ = run_probe(VERSIONS_MOCK, PROBE, ("CONFIRMED", "ALLOW_WRITES"), {}, pin=False)
 
-    titles = [json.loads(r["body"])["Title"] for r in sent
+    titles = [Json.loads(r["body"].text)["Title"].text for r in sent
               if r["path"] == "web/lists" and r["verb"] == "POST"]
     tokens = {title.rsplit(" ", 1)[1] for title in titles}
     assert [title.rsplit(" ", 1)[0] for title in titles] == [
@@ -973,7 +978,7 @@ PEOPLE_REFUSED = {"contains": f"{LIST_AT}/items(1)", "verb": "MERGE",
                   "bodyContains": "ProbePeopleId", "status": 400, "text": "Invalid data"}
 
 
-def _merges(sent: list[dict[str, str]]) -> list[bool]:
+def _merges(sent: list[Json]) -> list[bool]:
     return ["ProbePeopleId" in r["body"] for r in sent
             if r["verb"] == "MERGE" and f"{LIST_AT}/items(1)" in r["path"]]
 
@@ -1038,7 +1043,7 @@ def test_an_unanswered_resend_after_a_refusal_that_landed_nothing_leaves_the_ite
      "answered an entry with no VersionId"),
 ], ids=["repeated-before", "missing-after"])
 def test_a_snapshot_that_cannot_name_its_versions_leaves_landing_unknown(
-        nth: int, answer: list[dict[str, Any]], said: str) -> None:
+        nth: int, answer: Sequence[Mapping[str, object]], said: str) -> None:
     rows, sent, _ = _run(rules=[PEOPLE_REFUSED, {
         "contains": LIST_READ_RULE, "nth": nth, "status": 200,
         "text": json.dumps({"value": answer})}])

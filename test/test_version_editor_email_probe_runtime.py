@@ -7,9 +7,10 @@ and a paste with the second account left blank.
 """
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Mapping
 
 import pytest
+from _json_view import Json
 from _node import NODE
 from _paths import MANUAL
 from _probe_runs import ended_with_report, run_probe, voided
@@ -31,19 +32,19 @@ FILLED = {"  const SECOND_ACCOUNT = '';": f"  const SECOND_ACCOUNT = '{LOGIN}';"
 REPORT = {"  const MODE = 'setup';": "  const MODE = 'report';"}
 CLEANUP = {"  const CLEANUP = false;": "  const CLEANUP = true;"}
 
-Run = tuple[dict[str, dict[str, str]], list[dict[str, str]], str]
+Run = tuple[dict[str, Json], list[Json], str]
 
 
 def _run(gates: tuple[str, ...] = GATES, swaps: dict[str, str] | None = None,
-         **config: Any) -> Run:
+         **config: object) -> Run:
     # The probe has no per-run title token to pin, since its list title is fixed.
     return run_probe(EDITOR_MOCK, PROBE, gates, config, swaps=swaps, pin=False)
 
 
-def _report(**config: Any) -> Run:
+def _report(**config: object) -> Run:
     # A report run reads the list its setup run made.
     config.setdefault("existing", "owned")
-    return _run(swaps={**FILLED, **REPORT}, **config)
+    return run_probe(EDITOR_MOCK, PROBE, GATES, config, swaps={**FILLED, **REPORT}, pin=False)
 
 
 def test_an_unedited_paste_prints_its_plan_and_sends_nothing() -> None:
@@ -77,14 +78,14 @@ def test_setup_stops_when_another_list_takes_the_title_before_its_create() -> No
 @pytest.mark.parametrize("field", [
     {"TypeAsString": "UserMulti", "AllowMultipleValues": True}, {"InternalName": "ProbePerson0"},
     {"FieldTypeKind": 7}], ids=["multi", "renamed", "lookup"])
-def test_setup_refuses_a_person_column_not_a_single_user_field(field: dict[str, Any]) -> None:
+def test_setup_refuses_a_person_column_not_a_single_user_field(field: Mapping[str, object]) -> None:
     rows, sent, _ = _run(swaps=FILLED, field=field)
     assert rows[PERSON_WRITE]["outcome"] == "FAIL"
     assert {QUESTION, PERSON} <= voided(rows)
     assert not any(s["method"] == "POST" and s["path"].endswith("/items") for s in sent)
 
 
-def _touched(sent: list[dict[str, str]]) -> bool:
+def _touched(sent: list[Json]) -> bool:
     """Whether a run sent any write: a list create, an item delete or a recycle."""
     return any(s["method"] == "POST" and (s["path"].endswith("/_api/web/lists")
                                           or "/recycle" in s["path"] or "/items(" in s["path"])
@@ -122,8 +123,8 @@ def test_setup_with_cleanup_recycles_its_own_list_by_id_and_starts_again() -> No
 @pytest.mark.parametrize("config", [{"refuse": "/ensureuser"}, {"ensuredId": None},
                                     {"ensuredId": "12"}], ids=["refused", "no-id", "text-id"])
 def test_setup_writes_no_item_unless_ensureuser_answers_an_integer_id(
-        config: dict[str, Any]) -> None:
-    rows, sent, _ = _run(swaps=FILLED, **config)
+        config: dict[str, str | None]) -> None:
+    rows, sent, _ = run_probe(EDITOR_MOCK, PROBE, GATES, config, swaps=FILLED, pin=False)
     assert rows[PERSON_WRITE]["outcome"] == "FAIL"
     assert "ensureuser" in rows[PERSON_WRITE]["evidence"]
     assert {DISTINCT, QUESTION, PERSON} <= voided(rows)

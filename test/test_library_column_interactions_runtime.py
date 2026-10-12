@@ -1,9 +1,9 @@
 """A library metadata control gates refusals, while independent observations survive."""
 
 import json
-from typing import Any
 
 import pytest
+from _json_view import Json
 from _node import NODE, run_node
 from _paths import MANUAL
 
@@ -67,7 +67,7 @@ globalThis.fetch = async (url, options = {}) => {
 
 def _run_probe(
     control_status: int = 400, *, no_item: bool = False, metadata_status: int = 0,
-) -> dict[str, Any]:
+) -> dict[str, Json]:
     source = (MANUAL / "library-column-interactions-probe.js").read_text(encoding="utf-8")
     source = source.replace("const CONFIRMED = false;", "const CONFIRMED = true;")
     source = source.replace("const ALLOW_WRITES = false;", "const ALLOW_WRITES = true;")
@@ -82,7 +82,7 @@ def _run_probe(
     rows = [line.removeprefix("__ROWS__") for line in output.splitlines()
             if line.startswith("__ROWS__")]
     assert len(rows) == 1, output
-    return {row["id"]: row for row in json.loads(rows[0])}
+    return {row["id"].text: row for row in Json.loads(rows[0])}
 
 
 @pytest.mark.parametrize("status", [400, 500])

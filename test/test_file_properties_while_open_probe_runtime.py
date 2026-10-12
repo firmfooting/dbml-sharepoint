@@ -7,12 +7,12 @@ expected outcome.
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 import textwrap
-from typing import Any
+from collections.abc import Mapping
 
 import pytest
+from _json_view import Json
 from _node import NODE
 from _paths import MANUAL
 from _probe_runs import ended_with_report, run_probe, voided
@@ -96,14 +96,20 @@ _MOCK = textwrap.dedent(r"""
 """)
 
 
-Run = tuple[dict[str, dict[str, str]], list[dict[str, Any]], str]
+Run = tuple[dict[str, Json], list[Json], str]
 
 
-def _run(swaps: dict[str, str] | None, gates: tuple[str, ...] = GATES, **config: Any) -> Run:
+def _run(swaps: dict[str, str] | None, gates: tuple[str, ...] = GATES, **config: object) -> Run:
+    return _run_with(swaps, config, gates)
+
+
+def _run_with(
+    swaps: dict[str, str] | None, config: Mapping[str, object], gates: tuple[str, ...] = GATES,
+) -> Run:
     return run_probe(_MOCK, PROBE, gates, config, swaps=swaps, pin=False)
 
 
-def _writes(sent: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _writes(sent: list[Json]) -> list[Json]:
     return [s for s in sent if s["method"] == "POST" and "GetFileByServerRelativePath" in s["path"]]
 
 
@@ -140,7 +146,7 @@ def test_an_accepted_merge_records_the_value_read_back_under_the_desktop_check()
     [write] = _writes(sent)
     assert write["headers"]["X-HTTP-Method"] == "MERGE" and write["headers"]["IF-MATCH"] == "*"
     assert "p%20%26%20q.xlsx" in write["path"]
-    assert json.loads(write["body"])["__metadata"] == {"type": "SP.Data.LibItem"}
+    assert Json.loads(write["body"].text)["__metadata"] == {"type": "SP.Data.LibItem"}
 
 
 def test_the_closed_paste_records_the_control_and_leaves_the_checks_alone() -> None:
@@ -157,8 +163,8 @@ def test_a_closed_paste_whose_merge_is_refused_fails_the_control() -> None:
 @pytest.mark.parametrize("config", [{"missing": True}, {"itemId": None}],
                          ids=["not-found", "no-item-id"])
 def test_a_workbook_that_cannot_be_read_voids_the_control_and_the_check(
-        config: dict[str, Any]) -> None:
-    rows, sent, _ = _run(OPEN_WEB, **config)
+        config: Mapping[str, object]) -> None:
+    rows, sent, _ = _run_with(OPEN_WEB, config)
     assert rows[FIXTURE]["outcome"] == "FAIL"
     assert {CONTROL, WEB} <= voided(rows)
     assert _writes(sent) == []
@@ -169,8 +175,8 @@ def test_a_workbook_that_cannot_be_read_voids_the_control_and_the_check(
                           {"fixtureStatus": 500}],
                          ids=["throttled", "unauthorised", "no-payload", "bare-500"])
 def test_a_fixture_read_that_did_not_answer_is_not_established_and_voids_nothing(
-        config: dict[str, Any]) -> None:
-    rows, sent, _ = _run(OPEN_WEB, **config)
+        config: Mapping[str, object]) -> None:
+    rows, sent, _ = _run_with(OPEN_WEB, config)
     assert rows[FIXTURE]["outcome"] == "NOT ESTABLISHED" and rows[FIXTURE]["state"] == "open"
     assert voided(rows) == set()
     assert _writes(sent) == []
@@ -251,8 +257,8 @@ def test_a_refused_update_is_not_labelled_as_written() -> None:
                                     {"readStatus": 404}, {"emptyRead": True}, {"noNoteRead": True}],
                          ids=["throws", "429", "404", "empty", "no-note"])
 def test_a_control_readback_that_did_not_answer_is_not_established_and_voids_nothing(
-        config: dict[str, Any]) -> None:
-    rows, _, _ = _run(CLOSED, **config)
+        config: Mapping[str, object]) -> None:
+    rows, _, _ = _run_with(CLOSED, config)
     assert rows[CONTROL]["outcome"] == "NOT ESTABLISHED" and rows[CONTROL]["state"] == "open"
     assert "HTTP 204" in rows[CONTROL]["evidence"]
     assert not voided(rows)
@@ -321,8 +327,8 @@ def test_every_report_names_its_target() -> None:
                                     {"emptyRead": True}, {"noNoteRead": True}],
                          ids=["throws", "429", "empty", "no-note"])
 def test_an_accepted_open_update_with_an_unreadable_readback_is_not_a_finding(
-        config: dict[str, Any]) -> None:
-    rows, _, _ = _run(OPEN_WEB, **config)
+        config: Mapping[str, object]) -> None:
+    rows, _, _ = _run_with(OPEN_WEB, config)
     assert rows[WEB]["outcome"] == "NOT ESTABLISHED" and "HTTP 204" in rows[WEB]["evidence"]
 
 

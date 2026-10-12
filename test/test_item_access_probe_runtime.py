@@ -7,10 +7,11 @@ probe's settle wait is swapped for none and its test user set.
 """
 
 import re
-from typing import Any
+from collections.abc import Mapping
 
 import pytest
 from _item_acl_mock import ITEM_ACL_MOCK
+from _json_view import Json
 from _node import NODE
 from _paths import MANUAL
 from _probe_runs import catalogued_dependents, ended_with_report, run_probe, voided
@@ -43,8 +44,15 @@ WORKBOOK = {"  const WORKBOOK_URL = '';":
 
 
 def _run(*swaps: dict[str, str], gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"),
-         user: bool = True, **config: Any,
-         ) -> tuple[dict[str, dict[str, str]], list[dict[str, str]], str]:
+         user: bool = True, **config: object,
+         ) -> tuple[dict[str, Json], list[Json], str]:
+    return _run_with(config, *swaps, gates=gates, user=user)
+
+
+def _run_with(
+    config: Mapping[str, object], *swaps: dict[str, str],
+    gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), user: bool = True,
+) -> tuple[dict[str, Json], list[Json], str]:
     merged = {**NO_WAIT, **(USER_SET if user else {})}
     for swap in swaps:
         merged.update(swap)
@@ -190,8 +198,8 @@ def test_cleanup_leaves_a_group_whose_description_is_not_the_probes() -> None:
     ((STATE_TWO,), {"stateOne": True, "throttle": f"{LIBRARY_ID}')/roleassignments?"}, C6),
 ], ids=["c1-unique", "c2-file-bindings", "c6-unique", "c6-library-bindings"])
 def test_an_unread_value_leaves_its_row_not_established(
-        swaps: tuple[dict[str, str], ...], config: dict[str, Any], row: str) -> None:
-    rows, _, _ = _run(*swaps, **config)
+        swaps: tuple[dict[str, str], ...], config: Mapping[str, object], row: str) -> None:
+    rows, _, _ = _run_with(config, *swaps)
 
     assert rows[row]["outcome"] == "NOT ESTABLISHED", rows[row]
     assert rows[row]["state"] == "open"
@@ -209,8 +217,8 @@ FOREIGN = "CLEANUP leaves by design"
     ({"stateOne": True, "levelTwice": True}, "held 2 times"),
 ], ids=["foreign-level", "foreign-group", "own-names", "level-held-twice"])
 def test_a_fixed_name_already_on_the_site_stops_state_one_before_it_creates(
-        config: dict[str, Any], advice: str) -> None:
-    rows, sent, _ = _run(**config)
+        config: Mapping[str, object], advice: str) -> None:
+    rows, sent, _ = _run_with(config)
 
     assert rows[GROUPS]["outcome"] == "FAIL"
     assert advice in rows[GROUPS]["evidence"]
@@ -291,8 +299,9 @@ def test_a_level_stored_with_other_bits_voids_the_rows_that_rest_on_it() -> None
     ((STATE_TWO,), {"stateOne": True}, C6, "MATCHES THE LIBRARY"),
 ], ids=["c1", "c6"])
 def test_bindings_that_trail_the_inheritance_flag_are_waited_for(
-        swaps: tuple[dict[str, str], ...], config: dict[str, Any], row: str, outcome: str) -> None:
-    rows, _, _ = _run(*swaps, bindingsLag=2, **config)
+        swaps: tuple[dict[str, str], ...], config: Mapping[str, object],
+        row: str, outcome: str) -> None:
+    rows, _, _ = _run_with({"bindingsLag": 2, **config}, *swaps)
 
     assert rows[row]["outcome"] == outcome, rows[row]
 
@@ -412,9 +421,10 @@ LISTS_READ = "web/lists?$select=Id,Title,Description"
      "REMOVED"),
 ], ids=["state-one", "state-two"])
 def test_a_title_rebound_to_another_list_mid_run_receives_no_write(
-        swaps: tuple[dict[str, str], ...], config: dict[str, Any], row: str, outcome: str) -> None:
+        swaps: tuple[dict[str, str], ...], config: Mapping[str, object],
+        row: str, outcome: str) -> None:
     """After the claim the library is renamed and its title given to another list."""
-    rows, sent, _ = _run(*swaps, **config)
+    rows, sent, _ = _run_with(config, *swaps)
 
     assert rows[row]["outcome"] == outcome, rows[row]
     after = sent[next(i for i, r in enumerate(sent) if config["rebindAfter"] in r["path"]) + 1:]
@@ -457,7 +467,9 @@ def test_the_confirmation_plan_names_every_file_state_one_creates(
 
     created = set()
     for r in sent:
-        made = re.search(r"Files/add\(url='([^']+)'|copyto\(strnewurl='[^']*/([^'/]+)'", r["path"])
+        made = re.search(
+            r"Files/add\(url='([^']+)'|copyto\(strnewurl='[^']*/([^'/]+)'", r["path"].text,
+        )
         if made:
             created.add(made.group(1) or made.group(2))
     assert len(created) == 4
@@ -507,7 +519,7 @@ def test_cleanup_finds_a_renamed_library_by_its_marker() -> None:
     _, sent, output = _run(gates=("CONFIRMED", "ALLOW_WRITES", "CLEANUP"), stateOne=True,
                            stateOneRenamed=True)
 
-    paths = [r["path"] for r in sent]
+    paths = [r["path"].text for r in sent]
     assert f"web/lists(guid'{LIBRARY_ID}')/recycle" in paths
     assert paths.index(f"web/lists(guid'{LIBRARY_ID}')/recycle") < min(
         i for i, path in enumerate(paths) if "sitegroups/removebyid(" in path)
@@ -515,7 +527,7 @@ def test_cleanup_finds_a_renamed_library_by_its_marker() -> None:
 
 
 def test_cleanup_refuses_when_two_lists_carry_the_marker() -> None:
-    other = {"Id": mock_list_id("other"), "Title": "other", "BaseTemplate": 101,
+    other: dict[str, object] = {"Id": mock_list_id("other"), "Title": "other", "BaseTemplate": 101,
              "Description": "dbml-sharepoint item-access probe fixture. Safe to delete.",
              "root": "/sites/probe/other", "fields": {}, "items": []}
     _, sent, output = _run(gates=("CONFIRMED", "ALLOW_WRITES", "CLEANUP"), stateOne=True,

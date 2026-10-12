@@ -16,9 +16,11 @@ not a dependency of the package.
 
 import json
 import textwrap
-from typing import Any
+from collections.abc import Mapping
+from typing import TypedDict
 
 import pytest
+from _json_view import Json
 from _node import NODE
 from _node import run_node as _run
 
@@ -111,7 +113,7 @@ def _list(
     description: str = "",
     items: int = 0,
     hidden: bool = False,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     return {
         "Title": title,
         "Id": list_id,
@@ -131,7 +133,7 @@ def _field(
     *,
     built_in: bool = False,
     hidden: bool = False,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     return {
         "InternalName": internal,
         "Title": internal,
@@ -145,7 +147,17 @@ def _field(
     }
 
 
-def _config() -> dict[str, Any]:
+class _Config(TypedDict):
+    web: str
+    web_facts: dict[str, object]
+    lists: list[dict[str, object]]
+    fields: dict[str, list[dict[str, object]]]
+    items: dict[str, list[dict[str, object]]]
+    groups: list[dict[str, object]]
+    levels: list[dict[str, object]]
+
+
+def _config() -> _Config:
     """A site carrying two families, both log sidecars, and three lists this
     tool does not own.
 
@@ -221,12 +233,12 @@ def _config() -> dict[str, Any]:
     }
 
 
-Run = tuple[dict[str, Any], list[dict[str, Any]], list[Any], str]
+Run = tuple[Json, list[Json], list[Json], str]
 
 
 def _run_script(
-    config: dict[str, Any] | None = None,
-    flags: dict[str, Any] | None = None,
+    config: _Config | None = None,
+    flags: Mapping[str, object] | None = None,
 ) -> Run:
     """Run the emitted script against the mock and return what came back."""
     body = generate_identify_js(generated_at=GENERATED_AT).rstrip()
@@ -252,34 +264,32 @@ def _run_script(
         "});\n"
     )
     out = _run(script)
-    payload: dict[str, Any] = {}
-    calls: list[dict[str, Any]] = []
-    tables: list[Any] = []
+    payload = Json(None)
+    calls: list[Json] = []
+    tables: list[Json] = []
     for line in out.splitlines():
         if line.startswith("__RESULT__"):
-            payload = json.loads(line.removeprefix("__RESULT__"))
+            payload = Json.loads(line.removeprefix("__RESULT__"))
         elif line.startswith("__CALLS__"):
-            calls = json.loads(line.removeprefix("__CALLS__"))
+            calls = Json.loads(line.removeprefix("__CALLS__")).rows
         elif line.startswith("__TABLES__"):
-            tables = json.loads(line.removeprefix("__TABLES__"))
-    assert payload, f"the script returned nothing. Output:\n{out}"
+            tables = Json.loads(line.removeprefix("__TABLES__")).rows
+    assert not payload.is_none, f"the script returned nothing. Output:\n{out}"
     return payload, calls, tables, out
 
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
 
-def _by_title(payload: dict[str, Any], title: str) -> dict[str, Any]:
-    found: list[dict[str, Any]] = [
-        row for row in payload["lists"] if row["title"] == title
-    ]
+def _by_title(payload: Json, title: str) -> Json:
+    found = [row for row in payload["lists"] if row["title"] == title]
     assert found, f"{title!r} is not in the inventory"
     return found[0]
 
 
 def test_it_files_every_owned_object_under_its_family() -> None:
     payload, _, _, _ = _run_script()
-    families = {row["family"]: row for row in payload["families"]}
+    families = {row["family"].value: row for row in payload["families"]}
     assert families[FAMILY]["lists"] == 2
     assert families[FAMILY]["groups"] == 1
     assert families[FAMILY]["levels"] == 1
@@ -295,7 +305,7 @@ def test_a_marker_surrounded_by_prose_is_still_a_marker() -> None:
     text either side of its marker."""
     payload, _, _, _ = _run_script()
     action = _by_title(payload, "PT_Action")
-    assert action["owned"] is True
+    assert action["owned"].value is True
     assert action["family"] == FAMILY
     assert action["declaredName"] == "PT_Action"
 
@@ -304,9 +314,9 @@ def test_a_description_that_only_mentions_the_tool_is_not_owned() -> None:
     """This is the near miss the prefix-free grammar exists to refuse."""
     payload, _, _, _ = _run_script()
     decoy = _by_title(payload, "Notes")
-    assert decoy["owned"] is False
-    assert decoy["family"] is None
-    assert decoy["columns"] is None
+    assert decoy["owned"].value is False
+    assert decoy["family"].value is None
+    assert decoy["columns"].value is None
 
 
 def test_columns_are_read_once_per_owned_list_and_never_for_the_others() -> None:
@@ -364,7 +374,7 @@ def test_a_site_carrying_only_the_old_run_log_still_reports_its_history() -> Non
     payload, _, _, out = _run_script(config)
     assert payload["lastDeployment"]["ReleaseTag"] == "2.1.0"
     run_log_row = _by_title(payload, old_title)
-    assert run_log_row["owned"] is True
+    assert run_log_row["owned"].value is True
     assert run_log_row["declaredName"] == old_title
     assert "No deployment record" not in out
 
@@ -400,7 +410,7 @@ def test_a_site_carrying_only_the_old_change_log_still_reports_it() -> None:
     payload, _, _, _ = _run_script(config)
     assert payload["changeLog"] == {"title": old_title, "rows": 19}
     change_log_row = _by_title(payload, old_title)
-    assert change_log_row["owned"] is True
+    assert change_log_row["owned"].value is True
     assert change_log_row["declaredName"] == old_title
 
 
@@ -424,7 +434,7 @@ def test_a_site_with_no_markers_reports_nothing_owned_and_reads_no_columns() -> 
     config["levels"] = [{"Id": 22, "Name": "Full Control", "Description": "Has full control."}]
     payload, calls, _, _ = _run_script(config)
     assert payload["families"] == []
-    assert payload["lastDeployment"] is None
+    assert payload["lastDeployment"].value is None
     assert not [c for c in calls if "/fields" in c["url"]]
     assert payload["problems"] == []
 

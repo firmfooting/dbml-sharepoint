@@ -7,9 +7,11 @@ answering 2xx with no JSON, and never answering.
 
 import json
 import textwrap
-from typing import Any
+from collections.abc import Mapping, Sequence
 
 import pytest
+from _json_view import Json
+from _json_view import dumps as dumps_view
 from _node import NODE, run_node
 from _paths import MANUAL
 
@@ -88,18 +90,18 @@ def _probe_js(confirmed: bool) -> str:
 
 
 def _run(
-    rules: list[dict[str, Any]] | None = None,
+    rules: Sequence[Mapping[str, object]] | None = None,
     *,
     date: str | None = "Tue, 29 Sep 2026 00:00:00 GMT",
     confirmed: bool = True,
-) -> tuple[dict[str, dict[str, str]], list[dict[str, Any]], str]:
+) -> tuple[dict[str, Json], list[Json], str]:
     config = json.dumps({"rules": rules or [], "date": date})
     output = run_node(_MOCK.replace("__CONFIG__", config) + "\n" + _probe_js(confirmed))
     sent_line = next(ln for ln in output.splitlines() if ln.startswith("__SENT__"))
     rows_line = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
-    rows = {} if rows_line is None else {
-        row["id"]: row for row in json.loads(rows_line.removeprefix("__ROWS__"))}
-    return rows, json.loads(sent_line.removeprefix("__SENT__")), output
+    rows: dict[str, Json] = {} if rows_line is None else {
+        row["id"].text: row for row in Json.loads(rows_line.removeprefix("__ROWS__"))}
+    return rows, Json.loads(sent_line.removeprefix("__SENT__")).rows, output
 
 
 def test_an_unconfirmed_probe_prints_its_plan_and_sends_nothing() -> None:
@@ -195,7 +197,7 @@ def test_a_2xx_with_no_json_value_is_not_an_acceptance() -> None:
     ids=["no-digest", "refused"],
 )
 def test_without_a_digest_every_form_is_void_when_contextinfo_fails(
-    rule: dict[str, Any], said: str,
+    rule: Mapping[str, object], said: str,
 ) -> None:
     rows, sent, _ = _run([rule])
 
@@ -225,7 +227,7 @@ def test_without_a_digest_every_form_is_void_when_contextinfo_fails(
     ids=["denied", "unauthenticated", "throttled", "unavailable", "timed-out", "no-response"],
 )
 def test_without_a_digest_every_form_stays_open_when_contextinfo_is_not_established(
-    rule: dict[str, Any], said: str,
+    rule: Mapping[str, object], said: str,
 ) -> None:
     rows, sent, _ = _run([rule])
 
@@ -253,7 +255,7 @@ def test_the_evidence_never_names_the_tenant() -> None:
 
     quoted = rows["field.date.utctolocaltime-post-quoted-literal"]["evidence"]
     assert "[TENANT]/sites/probe/_api/web" in quoted
-    assert "example.sharepoint.com" not in json.dumps(rows)
+    assert "example.sharepoint.com" not in dumps_view(rows)
 
 
 @pytest.mark.parametrize(
@@ -285,4 +287,4 @@ def test_an_accepted_answer_that_names_the_tenant_is_redacted() -> None:
     row = rows["field.date.utctolocaltime-post-quoted-literal"]
     assert row["outcome"] == "ACCEPTED"
     assert 'value {"Url":"[TENANT]/sites/probe"}' in row["evidence"]
-    assert "example.sharepoint.com" not in json.dumps(rows)
+    assert "example.sharepoint.com" not in dumps_view(rows)
