@@ -87,7 +87,7 @@ def test_pinned_units_do_not_gain_uses() -> None:
     pinned, _ = _counts()
     over, under = over_and_under(pinned, PINS)
     for unit, (found, pin) in under.items():
-        print(f"NOTE: lower the pin for {unit} from {pin} to {found}")  # noqa: T201
+        sys.stdout.write(f"NOTE: lower the pin for {unit} from {pin} to {found}\n")
     assert not over, f"{NAME} went up (found, pinned): {over}. Replace it with a real type."
 
 
