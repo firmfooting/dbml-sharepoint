@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: DOCUMENT LIBRARY QUERY SURFACE
  *
- * REVISION: c1f8acf3
+ * REVISION: af313d53
  *
  * ONE QUESTION:
  *   Does the query surface of a document library diverge from a generic list?
@@ -30,10 +30,9 @@
  *
  * SCOPE AND QUESTIONS
  *   library.doc-lib.fixture-library-created
- *     A document library is created (BaseTemplate 101) and loaded with twelve
- *     files whose metadata differs on a category, a rank and a band column,
- *     so the CAML predicates have rows to select and the order-by has fields
- *     to order on.
+ *     A document library is created (BaseTemplate 101), read back as such. The
+ *     twelve files and the category, rank and band columns the predicates and the
+ *     order-by use are set up after it and are not covered by this row.
  *   library.query.control-missing-column-refused
  *     NEGATIVE CONTROL: a RenderListDataAsStream query naming a column that
  *     does not exist is refused. Without it, every refusal observed below is
@@ -407,7 +406,7 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  log('INFO', 'probe revision c1f8acf3. Quote this when reporting results.');
+  log('INFO', 'probe revision af313d53. Quote this when reporting results.');
 
   const LIB = 'dbmlsp Probe LibQuery';
   const listPath = `web/lists/getbytitle('${LIB}')`;
@@ -433,7 +432,7 @@
   const bandOf = (f0) => (Math.floor(f0 / 3) <= 1 ? 'G1' : 'G2');
   const GUARD_Q = 'Q01'; // sits on dbmlsp-query-04.txt
 
-  const Q_FIXTURE = 'A document library is created (BaseTemplate 101) and loaded with twelve files whose metadata differs';
+  const Q_FIXTURE = 'A document library is created (BaseTemplate 101)';
   const Q_CONTROL = 'NEGATIVE CONTROL: a RenderListDataAsStream query naming a column that does not exist is refused';
   const Q_CHAIN = 'CAML chain depth on a library: does a deep Or chain over a metadata column return one file row per disjunct, the way a generic list does';
   const Q_GUARD = 'a single Eq guarded by the Or[IsNotNull(ID), IsNull(ID)] tautology on a library: does it return the same single file row a generic list does';

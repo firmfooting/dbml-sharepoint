@@ -158,7 +158,8 @@
   expect('formula.calc.operand-number', 'Number operand in a calculated formula');
   expect('formula.calc.operand-text', 'Single-line-text operand in a calculated formula');
   expect('formula.calc.operand-calculated', 'Calculated-column operand in another calculated formula');
-  expect('formula.calc.fixture-lists-created', 'The probe list and its lookup target are generic lists (BaseTemplate 100)');
+  expect('formula.calc.fixture-lists-created', 'The probe list is a generic list (BaseTemplate 100)');
+  expect('formula.calc.fixture-target-list-created', 'The lookup target is a generic list (BaseTemplate 100)');
 
   // Shared probe core v2: context guard, bounded transport and REST helpers.
   const log = (level, msg) => console.log(`[SP-PROBE] [${level}] ${msg}`);
@@ -179,7 +180,7 @@
   }
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
-  log('INFO', `probe revision 1b707fa4; core v2; results v1.`);
+  log('INFO', `probe revision 6e46f465; core v2; results v1.`);
   log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -405,25 +406,32 @@
   }
   // Read back on reuse as well as on create, because a list found by title may be a library.
   const LISTS_ROW = 'formula.calc.fixture-lists-created';
-  const kinds = [];
-  let generic = true;
-  for (const title of [TARGET, LIST]) {
+  const TARGET_ROW = 'formula.calc.fixture-target-list-created';
+  const LOOKUP_ROW = 'formula.calc.operand-lookup';
+  const genericList = async (title, row, question) => {
     const read = await get(`web/lists/getbytitle('${odataName(title)}')?$select=BaseTemplate`);
     const served = read.ok && read.d !== null && typeof read.d === 'object'
       && read.d.BaseTemplate !== undefined;
-    kinds.push(served ? `'${title}' BaseTemplate=${JSON.stringify(read.d.BaseTemplate)}`
-      : `'${title}' served no BaseTemplate (HTTP ${read.status})`);
-    generic = generic && served && read.d.BaseTemplate === 100;
-  }
-  record(LISTS_ROW, 'The probe list and its lookup target are generic lists (BaseTemplate 100)',
-         generic ? 'PASS' : 'FAIL', `${kinds.join('; ')}, declared 100`);
-  if (!generic) {
+    const kind = served ? `'${title}' BaseTemplate=${JSON.stringify(read.d.BaseTemplate)}`
+      : `'${title}' served no BaseTemplate (HTTP ${read.status})`;
+    const held = served && read.d.BaseTemplate === 100;
+    record(row, question, held ? 'PASS' : 'FAIL', `${kind}, declared 100`);
+    return held ? null : kind;
+  };
+  // The main list gates every row; the target gates only the lookup row, the one that points a column at it.
+  const mainFailed = await genericList(LIST, LISTS_ROW, 'The probe list is a generic list (BaseTemplate 100)');
+  const targetFailed = await genericList(TARGET, TARGET_ROW, 'The lookup target is a generic list (BaseTemplate 100)');
+  const voidRows = (ids, row, why) => {
     for (const [id, question] of QUESTIONS) {
-      record(id, question, 'NOT ESTABLISHED', `the fixture ${LISTS_ROW} did not hold: ${kinds.join('; ')}`, 'void');
+      if (ids.includes(id)) record(id, question, 'NOT ESTABLISHED', `the fixture ${row} did not hold: ${why}`, 'void');
     }
+  };
+  if (mainFailed) {
+    voidRows(QUESTIONS.map(([id]) => id), LISTS_ROW, mainFailed);
     console.table(results);
     return { results };
   }
+  if (targetFailed) voidRows([LOOKUP_ROW], TARGET_ROW, targetFailed);
 
   const fieldsPath = `web/lists/getbytitle('${odataName(LIST)}')/fields`;
   const xmlAttr = (value) => String(value)
@@ -467,6 +475,7 @@
   ];
   const sourceReady = new Set();
   for (const [name, schemaXml] of sources) {
+    if (name === 'ProbeLookup' && targetFailed) continue;
     if (await fieldExists(name)) {
       sourceReady.add(name);
       continue;
@@ -522,7 +531,10 @@
     return made.ok;
   };
 
-  for (const row of attempts) await attempt(...row);
+  for (const row of attempts) {
+    if (row[0] === LOOKUP_ROW && targetFailed) continue;
+    await attempt(...row);
+  }
 
   // CALC needs an accepted calculated source. Number is documented as a
   // supported operand and produces a simple, type-stable base field.

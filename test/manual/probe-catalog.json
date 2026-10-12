@@ -602,6 +602,10 @@
               "depends_on": []
             },
             {
+              "id": "formula.calc.fixture-target-list-created",
+              "depends_on": []
+            },
+            {
               "id": "formula.calc.operand-boolean",
               "depends_on": [
                 "formula.calc.fixture-lists-created"
@@ -640,7 +644,8 @@
             {
               "id": "formula.calc.operand-lookup",
               "depends_on": [
-                "formula.calc.fixture-lists-created"
+                "formula.calc.fixture-lists-created",
+                "formula.calc.fixture-target-list-created"
               ]
             },
             {
@@ -676,7 +681,8 @@
           ],
           "states": [],
           "controls": [
-            "formula.calc.fixture-lists-created"
+            "formula.calc.fixture-lists-created",
+            "formula.calc.fixture-target-list-created"
           ],
           "depends_on": []
         }
@@ -1339,7 +1345,7 @@
         "policy": "manual"
       },
       "prerequisites": [
-        "site time 04:00–20:00"
+        "site time 04:00\u201320:00"
       ],
       "scenarios": [
         {
@@ -7465,9 +7471,7 @@
             },
             {
               "id": "formula.validation.fixture-three-column-modified-rule-stored",
-              "depends_on": [
-                "formula.validation.fixture-default-columns"
-              ]
+              "depends_on": []
             },
             {
               "id": "formula.validation.today-default-races-modified-rule-rest",
@@ -11510,7 +11514,8 @@
               "id": "field.sealed.control-plain-column-deleted",
               "depends_on": [
                 "field.sealed.fixture-list-created",
-                "field.sealed.fixture-subject-column"
+                "field.sealed.fixture-subject-column",
+                "field.sealed.control-unknown-property-refused"
               ]
             },
             {
@@ -11537,6 +11542,7 @@
               "depends_on": [
                 "field.sealed.fixture-list-created",
                 "field.sealed.fixture-subject-column",
+                "field.sealed.control-unknown-property-refused",
                 "field.sealed.control-plain-column-deleted",
                 "field.sealed.fixture-sealed-for-delete"
               ]
@@ -11546,6 +11552,7 @@
               "depends_on": [
                 "field.sealed.fixture-list-created",
                 "field.sealed.fixture-subject-column",
+                "field.sealed.control-unknown-property-refused",
                 "field.sealed.control-plain-column-deleted",
                 "field.sealed.fixture-sealed-for-delete",
                 "field.sealed.fixture-subject-restored"
@@ -11556,6 +11563,7 @@
               "depends_on": [
                 "field.sealed.fixture-list-created",
                 "field.sealed.fixture-subject-column",
+                "field.sealed.control-unknown-property-refused",
                 "field.sealed.control-plain-column-deleted",
                 "field.sealed.fixture-subject-restored",
                 "field.sealed.fixture-unsealed-for-delete"

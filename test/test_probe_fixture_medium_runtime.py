@@ -663,7 +663,8 @@ _LIST_MOCK = textwrap.dedent(r"""
         if (!held) return refusal(400, `Column '${field[1]}' does not exist.`);
         if (verb === 'MERGE') {
           const props = plain(sent);
-          const unknown = Object.keys(props).find((key) => !FIELD_PROPS.has(key));
+          const unknown = CONFIG.acceptUnknownField ? undefined
+            : Object.keys(props).find((key) => !FIELD_PROPS.has(key));
           if (unknown) return refusal(400, `The property '${unknown}' does not exist.`);
           Object.assign(held, props);
           return respond(204, {});
@@ -902,6 +903,14 @@ def test_field_sealed_establishes_an_unsealed_text_subject(reused: bool) -> None
     assert rows[_SEALED_SUBJECT]["outcome"] == "PASS", rows[_SEALED_SUBJECT]
 
 
+def test_field_sealed_voids_what_the_catalogue_says_rests_on_the_unknown_property_control() -> None:
+    control = "field.sealed.control-unknown-property-refused"
+    rows, _ = _run_probe(_LIST_MOCK, {"acceptUnknownField": True}, _SEALED)
+
+    assert rows[control]["outcome"] == "FAIL", rows[control]
+    assert _void_ids(rows) == _catalogued_dependents(_SEALED, control)
+
+
 # ---- today-source: DM, TD, and what the REST fill records ----------------
 _TODAY = "today-source-probe.js"
 _DM = "query.caml-adhoc.fixture-dm-column"
@@ -1016,16 +1025,29 @@ def _run_operand(
     return rows, Json.loads(sent.removeprefix("__SENT__")).rows
 
 
-@pytest.mark.parametrize("title", _OPERAND_LISTS, ids=["main", "target"])
-def test_calculated_operand_voids_every_operand_on_a_library_of_a_list_name(title: str) -> None:
+_OPERAND_TARGET_ROW = "formula.calc.fixture-target-list-created"
+
+
+@pytest.mark.parametrize(
+    ("title", "fixture"),
+    [(_OPERAND_LISTS[0], _OPERAND_ROW), (_OPERAND_LISTS[1], _OPERAND_TARGET_ROW)],
+    ids=["main", "target"],
+)
+def test_calculated_operand_voids_only_what_rests_on_the_library_of_a_list_name(
+    title: str, fixture: str,
+) -> None:
     rows, sent = _run_operand({title: 101})
 
-    row = rows[_OPERAND_ROW]
+    row = rows[fixture]
     assert row["outcome"] == "FAIL", row
     assert f"'{title}' BaseTemplate=101" in row["evidence"], row
     voided = {row_id for row_id, r in rows.items() if r["state"] == "void"}
-    assert voided == _catalogued_dependents(_OPERAND, _OPERAND_ROW)
-    assert not [r for r in sent if "createfieldasxml" in r["path"]]
+    assert voided == _catalogued_dependents(_OPERAND, fixture)
+    # The target gates the lookup row alone; the main list gates every operand row.
+    assert (voided == {"formula.calc.operand-lookup"}) == (fixture == _OPERAND_TARGET_ROW)
+    assert not [r for r in sent if "createfieldasxml" in r["path"] and "ProbeLookup" in r["body"]]
+    if fixture == _OPERAND_ROW:
+        assert not [r for r in sent if "createfieldasxml" in r["path"]]
 
 
 @pytest.mark.parametrize("reused", [False, True], ids=["created", "reused"])
@@ -1033,6 +1055,7 @@ def test_calculated_operand_establishes_two_generic_lists(reused: bool) -> None:
     rows, _ = _run_operand(dict.fromkeys(_OPERAND_LISTS, 100) if reused else {})
 
     assert rows[_OPERAND_ROW]["outcome"] == "PASS", rows[_OPERAND_ROW]
+    assert rows[_OPERAND_TARGET_ROW]["outcome"] == "PASS", rows[_OPERAND_TARGET_ROW]
     assert not [r for r in rows.values() if r["state"] == "void"]
 
 
