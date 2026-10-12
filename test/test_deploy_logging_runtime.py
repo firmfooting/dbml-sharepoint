@@ -238,6 +238,15 @@ _HARNESS = textwrap.dedent(r"""
       const m = /Application eq '([^']*)'/.exec(rest);
       return m ? m[1] : null;
     };
+    // SharePoint does not filter a Yes/No item column with `eq true`: it
+    // answers 200 with the No rows (probes finding retry.filter.rederive-eq-true).
+    // Only `eq 1` selects the Yes rows, and `eq 0` the No rows.
+    const wantsCurrent = (rest) => {
+      const m = /IsCurrent eq (\w+)/.exec(rest);
+      if (!m) return true;
+      if (m[1] === '1') return true;
+      return false;
+    };
     // Lists that already exist when the paste starts, with the built-in
     // columns and NOTHING else. A run log created by the bare-Title version
     // of this phase is exactly this, and it is the state `ensureSidecar`
@@ -328,7 +337,7 @@ _HARNESS = textwrap.dedent(r"""
             (r) => (key === null || r.ChangeKey === key)
               && (site === null || r.SourceSite === site)
               && (app === null || r.Application === app)
-              && r.IsCurrent === true,
+              && r.IsCurrent === wantsCurrent(u),
           );
           return reply(200, { d: { results: rows } });
         }
@@ -450,7 +459,7 @@ _HARNESS = textwrap.dedent(r"""
           const rows = state.items[title].filter(
             (r) => (key === null || r.ChangeKey === key)
               && (app === null || r.Application === app)
-              && r.IsCurrent === true,
+              && r.IsCurrent === wantsCurrent(rest),
           );
           return reply(200, { d: { results: rows } });
         }
@@ -794,7 +803,7 @@ def test_the_logging_phase_stamps_writes_and_closes_against_a_live_script(
     # The type-2 close, keyed on ChangeKey and not on Title, and scoped to this application.
     closes = [c for c in calls if "ChangeKey eq" in c["url"]]
     assert closes, "no close query was issued; the writer never reached the insert"
-    assert all("IsCurrent eq true" in c["url"] for c in closes)
+    assert all("IsCurrent eq 1" in c["url"] for c in closes)
     assert all(f"Application eq '{APPLICATION_NAME}'" in c["url"] for c in closes)
     seeded = next(r for r in state["items"][CHANGE_LOG_TITLE] if r["Id"] == 900)
     assert seeded["IsCurrent"].value is False, "the seeded current row was never closed"
@@ -1158,7 +1167,7 @@ def test_the_close_reads_and_writes_the_changes_list_not_the_deployments_list(
         if c["headers"].get("X-RequestDigest") == "central-digest"
         and (
             c["headers"].get("X-HTTP-Method") == "MERGE"
-            or (c["method"] == "GET" and "IsCurrent eq true" in c["url"])
+            or (c["method"] == "GET" and "IsCurrent eq 1" in c["url"])
         )
     ]
     assert close_related, "the close was never exercised"
@@ -1800,3 +1809,15 @@ def test_the_central_provenance_stamp_names_identities_by_hash_in_details_only()
     # The id only in delimited forms: a bare "41" matches the minute of the timestamp.
     for hidden in ("flows@example.com", "flows", "i:0#.f|membership", "user 41", "(41)"):
         assert hidden not in row.dumps(), (hidden, row)
+
+
+def test_a_second_deploy_leaves_one_current_row_per_key() -> None:
+    """`eq true` on the Yes/No column matches the No rows, so a close built on it
+    never retires the previous current row and each deploy adds another."""
+    run = _run_deploy(seeded_change_rows=True, central_absent=True, rerun=True)
+    rows = run["state"]["items"][CHANGE_LOG_TITLE]
+    current = [
+        r for r in rows if r["IsCurrent"].value is True and r["ChangeKey"].value == SEEDED_KEY
+    ]
+    assert len(current) == 1, f"{len(current)} current rows for one key"
+    assert any(r["Id"].number == 900 and r["IsCurrent"].value is False for r in rows)

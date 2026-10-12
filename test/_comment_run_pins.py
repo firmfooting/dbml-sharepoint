@@ -299,7 +299,7 @@ PINNED: dict[str, list[str]] = {
         "0e6d8e5d1585",
         "101cb3559933",
         "70f3b7a091ca",
-        "ebc36907ae08",
+        "92ef766e3994",
     ],
     "src/dbml_sharepoint/solutions/deployment-log/20-configure/mapping.yaml": [
         "1b2cd091c6a1",
@@ -616,7 +616,7 @@ PINNED: dict[str, list[str]] = {
         "cc77f68dbb7f",
     ],
     "test/manual/templates/boolean-field-probe.js.j2": [
-        "b8871a480710",
+        "bcc5255aa2ce",
     ],
     "test/manual/templates/built-in-levels-probe.js.j2": [
         "8f212723ed65",

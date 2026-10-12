@@ -719,7 +719,8 @@
       const currentResp = await fetchWithRetry(apiUrl(
         `web/lists/getbytitle('${odataName(CHANGE_LOG_TITLE)}')/items`
         + `?$select=Id,IsCurrent&$filter=ChangeKey eq '${odataName(change.key)}'`
-        + ` and Application eq '${odataName(APPLICATION)}' and IsCurrent eq true`
+        // eq 1, never eq true: SharePoint ignores `eq true` on a Yes/No item column (probes finding retry.filter.rederive-eq-true).
+        + ` and Application eq '${odataName(APPLICATION)}' and IsCurrent eq 1`
       ), { headers: { 'Accept': 'application/json;odata=verbose' } });
       if (!currentResp.ok) {
         recordFailure(`current-row read for '${change.key}'`,
@@ -884,7 +885,8 @@
           // Application too: ChangeKey is unique within a SITE, and two
           // firmfooting applications provisioning lists on one site can
           // raise the same key.
-          + ` and Application eq '${odataName(APPLICATION)}' and IsCurrent eq true`
+          // eq 1, never eq true: see probes finding retry.filter.rederive-eq-true.
+          + ` and Application eq '${odataName(APPLICATION)}' and IsCurrent eq 1`
         ), { headers: { 'Accept': 'application/json;odata=verbose' } });
         if (!currentResp.ok) {
           recordFailure(`central current-row read for '${change.key}'`,
