@@ -180,7 +180,7 @@
   }
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
-  log('INFO', `probe revision 6e46f465; core v2; results v1.`);
+  log('INFO', `probe revision 3b1b67bf; core v2; results v1.`);
   log('INFO', `Running as ${_spPageContextInfo.userLoginName || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -450,6 +450,7 @@
     ['ProbeLookup',
      `<Field Type="Lookup" DisplayName="ProbeLookup" Name="ProbeLookup" ` +
      `List="{${target.Id}}" ShowField="Title"/>`],
+    // A User field reads back with TypeAsString "User" (transport.batch.fixture-item-batch-columns).
     ['ProbePerson',
      '<Field Type="User" DisplayName="ProbePerson" Name="ProbePerson" ' +
      'UserSelectionMode="PeopleOnly"/>'],
