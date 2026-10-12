@@ -4,9 +4,11 @@ import json
 import re
 import shutil
 import subprocess
-from typing import Any, cast
 
+from _json_view import Json
 from _paths import MANUAL
+
+from dbml_sharepoint.jsonvalue import JsonValue
 
 CATALOG = MANUAL / "probe-catalog.json"
 SURFACES = MANUAL / "SURFACES.md"
@@ -50,8 +52,8 @@ REGISTRIES = [
 ]
 
 
-def _catalog() -> dict[str, Any]:
-    return cast(dict[str, Any], json.loads(CATALOG.read_text(encoding="utf-8")))
+def _catalog() -> Json:
+    return Json.loads(CATALOG.read_text(encoding="utf-8"))
 
 
 def _surface_registry() -> dict[str, set[str]]:
@@ -97,7 +99,7 @@ def _registry_module(relative: str) -> str:
     return f"const log = () => {{}};\n{block.group(0)}"
 
 
-def _run_javascript(source: str, expression: str) -> Any:
+def _run_javascript(source: str, expression: str) -> Json:
     node = shutil.which("node")
     assert node is not None
     completed = subprocess.run(  # noqa: S603 - executes repository-owned test code
@@ -106,13 +108,13 @@ def _run_javascript(source: str, expression: str) -> Any:
         capture_output=True,
         text=True,
     )
-    return json.loads(completed.stdout)
+    return Json.loads(completed.stdout)
 
 
 def test_probe_catalog_covers_the_exact_manual_inventory() -> None:
     catalog = _catalog()
     descriptors = catalog["probes"]
-    catalogued = {descriptor["file"] for descriptor in descriptors}
+    catalogued = {descriptor["file"].text for descriptor in descriptors}
     actual = {path.name for path in MANUAL.glob("*.js")}
 
     assert catalog["schema_version"] == "1.2"
@@ -126,12 +128,12 @@ def test_probe_catalog_declares_the_surface_the_registry_files_each_probe_under(
 
     assert len(registry) == 12
     assert set().union(*registry.values()) == {
-        descriptor["file"] for descriptor in descriptors
+        descriptor["file"].text for descriptor in descriptors
     }
     for descriptor in descriptors:
-        surface = descriptor.get("surface")
+        surface = descriptor["surface"].text
         assert surface in registry, f"{descriptor['file']} declares surface {surface!r}"
-        assert descriptor["file"] in registry[surface], descriptor["file"]
+        assert descriptor["file"].text in registry[surface], descriptor["file"]
         for scenario in descriptor["scenarios"]:
             assert scenario.get("surface") == surface, (
                 f"{descriptor['file']}:{scenario['id']}"
@@ -140,9 +142,9 @@ def test_probe_catalog_declares_the_surface_the_registry_files_each_probe_under(
 
 def test_probe_catalog_declares_every_static_finding_once() -> None:
     for descriptor in _catalog()["probes"]:
-        source = (MANUAL / descriptor["file"]).read_text(encoding="utf-8")
+        source = (MANUAL / descriptor["file"].text).read_text(encoding="utf-8")
         declared = [
-            finding["id"]
+            finding["id"].text
             for scenario in descriptor["scenarios"]
             for finding in scenario["findings"]
         ]
@@ -157,19 +159,19 @@ def test_control_and_dependency_references_name_checks_the_probe_registers() -> 
     reference is the point of the id.
     """
     for descriptor in _catalog()["probes"]:
-        source = (MANUAL / descriptor["file"]).read_text(encoding="utf-8")
+        source = (MANUAL / descriptor["file"].text).read_text(encoding="utf-8")
         registered = _static_finding_ids(source)
         for scenario in descriptor["scenarios"]:
             where = f"{descriptor['file']}:{scenario['id']}"
-            controls = scenario["controls"]
+            controls = scenario["controls"].strings
             assert len(controls) == len(set(controls)), where
             for control in controls:
                 assert control in registered, f"{where} names control {control!r}"
             for finding in scenario["findings"]:
-                depends_on = finding["depends_on"]
+                depends_on = finding["depends_on"].strings
                 assert len(depends_on) == len(set(depends_on)), f"{where}:{finding['id']}"
                 for control in depends_on:
-                    assert control != finding["id"], f"{where}:{finding['id']} on itself"
+                    assert control != finding["id"].text, f"{where}:{finding['id']} on itself"
                     assert control in registered, (
                         f"{where}:{finding['id']} depends on {control!r}"
                     )
@@ -179,19 +181,19 @@ def test_visible_scenarios_declare_typed_capture_states_and_controls() -> None:
     without_a_control = set()
     for descriptor in _catalog()["probes"]:
         for scenario in descriptor["scenarios"]:
-            assert scenario["pattern"] in ALL_PATTERNS
+            assert scenario["pattern"].text in ALL_PATTERNS
             states = scenario["states"]
-            if scenario["pattern"] not in VISIBLE_PATTERNS:
+            if scenario["pattern"].text not in VISIBLE_PATTERNS:
                 assert states == []
                 continue
             assert states, f"{descriptor['file']}:{scenario['id']}"
-            roles = [state["role"] for state in states]
+            roles = [state["role"].text for state in states]
             assert len(roles) == len(set(roles))
             for state in states:
                 assert state["page"]
                 assert state["assertions"]
             if not scenario["controls"]:
-                without_a_control.add((descriptor["file"], scenario["id"]))
+                without_a_control.add((descriptor["file"].text, scenario["id"].text))
 
     assert without_a_control == VISIBLE_SCENARIOS_WITHOUT_A_CONTROL
 
@@ -209,7 +211,7 @@ def test_native_index_voids_the_rows_a_failed_control_would_orphan() -> None:
         if probe["file"] == "native-index-probe.js"
     )
     depends_on = {
-        finding["id"]: finding["depends_on"]
+        finding["id"].text: finding["depends_on"].strings
         for scenario in descriptor["scenarios"]
         for finding in scenario["findings"]
     }
@@ -228,7 +230,7 @@ def test_native_index_voids_the_rows_a_failed_control_would_orphan() -> None:
         "scale.index.odata-null-found-list": [comparison],
     }
     assert set(next(
-        scenario["controls"] for scenario in descriptor["scenarios"]
+        scenario["controls"].strings for scenario in descriptor["scenarios"]
     )) == {control, comparison}
     # The states this probe PASSES, not every mention of the word: report()'s
     # tally reads `r.state === 'void'` in every probe the harness renders.
@@ -290,22 +292,22 @@ def test_every_registry_seeds_open_and_lets_a_probe_override_the_state() -> None
 
 def test_probe_catalog_makes_side_effects_and_cleanup_explicit() -> None:
     for descriptor in _catalog()["probes"]:
-        assert descriptor["harness"] in {"shared-v1", "shared-v2", "legacy", "helper"}
-        assert descriptor["authority"] in {
+        assert descriptor["harness"].text in {"shared-v1", "shared-v2", "legacy", "helper"}
+        assert descriptor["authority"].text in {
             "read-only",
             "allow-writes",
             "allow-legacy-writes",
             "interactive",
         }
-        assert descriptor["cleanup"]["policy"] in {
+        assert descriptor["cleanup"]["policy"].text in {
             "none",
             "before",
             "after",
             "manual",
             "delayed",
         }
-        assert isinstance(descriptor["writes"], list)
-        assert isinstance(descriptor["prerequisites"], list)
+        assert descriptor["writes"].is_array
+        assert descriptor["prerequisites"].is_array
 
 
 def test_hyperlink_probe_uses_versioned_shared_transport_and_results() -> None:
@@ -465,7 +467,7 @@ def test_view_aggregation_manual_result_requires_final_on_status() -> None:
     decisions = (
         MANUAL / "templates" / "_view_aggregation_results_v1.js.j2"
     ).read_text(encoding="utf-8")
-    base = {
+    base: dict[str, JsonValue] = {
         "setupReady": True,
         "writeOk": True,
         "aggregationXml": '<FieldRef Name="Amount" Type="SUM"/>',
@@ -495,7 +497,7 @@ def test_view_aggregation_manual_result_requires_exact_seed_readback() -> None:
     decisions = (
         MANUAL / "templates" / "_view_aggregation_results_v1.js.j2"
     ).read_text(encoding="utf-8")
-    base = {
+    base: dict[str, JsonValue] = {
         "setupReady": True,
         "writeOk": True,
         "aggregationXml": '<FieldRef Name="Amount" Type="SUM"/>',
@@ -525,7 +527,7 @@ def test_view_aggregation_manual_result_requires_final_view_membership() -> None
     decisions = (
         MANUAL / "templates" / "_view_aggregation_results_v1.js.j2"
     ).read_text(encoding="utf-8")
-    base = {
+    base: dict[str, JsonValue] = {
         "setupReady": True,
         "writeOk": True,
         "aggregationXml": '<FieldRef Name="Amount" Type="SUM"/>',
@@ -555,7 +557,7 @@ def test_view_aggregation_manual_result_requires_persisted_renamed_title() -> No
     decisions = (
         MANUAL / "templates" / "_view_aggregation_results_v1.js.j2"
     ).read_text(encoding="utf-8")
-    base = {
+    base: dict[str, JsonValue] = {
         "setupReady": True,
         "writeOk": True,
         "aggregationXml": '<FieldRef Name="Amount" Type="SUM"/>',
@@ -632,7 +634,7 @@ def test_form_visibility_q6_recheck_and_catalogue_define_complete_visible_eviden
     assert visible["findings"] == [
         {"id": "form.panel.edit-columns-writes-attributes", "depends_on": []}
     ]
-    assert [state["role"] for state in visible["states"]] == [
+    assert [state["role"].text for state in visible["states"]] == [
         "panel-before",
         "panel-action",
         "new-after",
@@ -666,7 +668,7 @@ def test_multi_value_c14_failed_controls_produce_neutral_unestablished_detail() 
     decisions = (
         MANUAL / "templates" / "_multi_value_results_v1.js.j2"
     ).read_text(encoding="utf-8")
-    base = {
+    base: dict[str, JsonValue] = {
         "fixtureUsable": True,
         "viewCreateOk": True,
         "viewReadOk": True,
@@ -744,12 +746,12 @@ def test_the_watched_column_probes_list_every_fixture_and_control_they_register(
               "item-versions-query-probe.js", "item-versions-trim-probe.js",
               "version-editor-email-probe.js"}
     for descriptor in _catalog()["probes"]:
-        if descriptor["file"] not in probes:
+        if descriptor["file"].text not in probes:
             continue
         for scenario in descriptor["scenarios"]:
-            ids = [finding["id"] for finding in scenario["findings"]]
+            ids = [finding["id"].text for finding in scenario["findings"]]
             gates = [i for i in ids if ".fixture-" in i or ".control-" in i]
-            assert sorted(gates) == sorted(scenario["controls"]), descriptor["file"]
+            assert sorted(gates) == sorted(scenario["controls"].strings), descriptor["file"]
 
 
 def test_a_shared_v1_writer_carries_a_second_allow_writes_guard() -> None:
@@ -759,7 +761,8 @@ def test_a_shared_v1_writer_carries_a_second_allow_writes_guard() -> None:
     fails that check only after it merges here."""
     guard = re.compile(r"\bif\s*\([^)]*\bALLOW_WRITES\b[^)]*\)")
     for descriptor in _catalog()["probes"]:
-        if descriptor["harness"] != "shared-v1" or descriptor["authority"] != "allow-writes":
+        harness, authority = descriptor["harness"].text, descriptor["authority"].text
+        if harness != "shared-v1" or authority != "allow-writes":
             continue
-        source = (MANUAL / descriptor["file"]).read_text(encoding="utf-8")
+        source = (MANUAL / descriptor["file"].text).read_text(encoding="utf-8")
         assert len(guard.findall(source)) > 1, descriptor["file"]

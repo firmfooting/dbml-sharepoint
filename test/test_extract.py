@@ -32,7 +32,7 @@ import re
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, override
+from typing import override
 
 import pytest
 from _console import ScriptedConsole, collapsed
@@ -99,6 +99,7 @@ from dbml_sharepoint.generators.extractgen import (
     generate_extract_js,
     slug_from_path,
 )
+from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model import _yaml
 from dbml_sharepoint.model.conditions import parse_condition
 from dbml_sharepoint.model.mapping_loader import load_mapping
@@ -206,10 +207,21 @@ def _stored(attribute: str) -> dict[str, str]:
     }
 
 
-def _live_payload() -> dict[str, Any]:
+def _live_payload() -> dict[str, JsonValue]:
     """The fixture's download, as a mutable object a test can damage."""
     payload = json.loads(SAMPLE.read_text(encoding="utf-8"))
     assert isinstance(payload, dict), payload
+    return payload
+
+
+def _two_lists_payload() -> dict[str, JsonValue]:
+    """The download with a second list, so an entity name is ambiguous."""
+    payload = _live_payload()
+    lists = payload["lists"]
+    assert isinstance(lists, list)
+    first = lists[0]
+    assert isinstance(first, dict)
+    lists.append({**first, "title": "CT_Amendment"})
     return payload
 
 
@@ -652,15 +664,19 @@ _TYPES = {"Stage": "nvarchar", "ReviewedOn": "date", "Count": "number"}
     {"new": False, "existing": False},
 ])
 def test_a_visibility_declaration_survives_the_round_trip(
-    declared: dict[str, Any],
+    declared: dict[str, JsonValue],
 ) -> None:
     from dbml_sharepoint.extract.inverse import invert_form_visibility
     context = "T.Notes"
     types = {**_TYPES, "Owner": "nvarchar"}
     when = declared.get("when")
+    new = declared.get("new", True)
+    existing = declared.get("existing", True)
+    assert isinstance(new, bool)
+    assert isinstance(existing, bool)
     observed = compose_visibility(
-        new=declared.get("new", True),
-        existing=declared.get("existing", True),
+        new=new,
+        existing=existing,
         when=parse_condition(when, context) if when is not None else None,
         types=types,
     )
@@ -689,7 +705,7 @@ def test_a_two_clause_visibility_formula_is_refused_rather_than_guessed() -> Non
     [{"field": "Stage", "op": "neq", "value": "Closed"}],
 ])
 def test_a_validation_declaration_survives_the_round_trip(
-    when: list[dict[str, Any]],
+    when: list[dict[str, JsonValue]],
 ) -> None:
     """Fed the SPELLING SharePoint stores, not the one the build wrote.
 
@@ -717,7 +733,7 @@ def test_a_validation_declaration_survives_the_round_trip(
      [{"field": "ReviewedOn", "op": "gt", "value": "today-1"}]),
 ])
 def test_a_rule_against_the_save_instant_comes_back_in_its_canonical_spelling(
-    when: list[dict[str, Any]], recovered: list[dict[str, Any]],
+    when: list[dict[str, JsonValue]], recovered: list[dict[str, JsonValue]],
 ) -> None:
     """MEASURED 2026-09-02: date rules render against [Modified], the save
     instant, with the offset on the column. Two spellings can render to one
@@ -1510,8 +1526,7 @@ def test_extract_refuses_a_source_it_cannot_read(tmp_path: Path) -> None:
 def test_extract_refuses_an_entity_name_for_several_lists(tmp_path: Path) -> None:
     """One flag cannot name two tables, and picking one of them silently is
     how a second list ends up merged into the first."""
-    payload = _live_payload()
-    payload["lists"].append({**payload["lists"][0], "title": "CT_Amendment"})
+    payload = _two_lists_payload()
     path = tmp_path / "download.json"
     path.write_text(json.dumps(payload), newline="\n")
     result = _run(
@@ -1741,8 +1756,7 @@ def test_the_wizard_passes_a_usage_error_through(
     Reached with a hand-assembled download describing two lists, which is
     what the second prompt can be pointed at."""
     monkeypatch.chdir(tmp_path)
-    payload = _live_payload()
-    payload["lists"].append({**payload["lists"][0], "title": "CT_Amendment"})
+    payload = _two_lists_payload()
     folder = tmp_path / LIST_TITLE
     folder.mkdir()
     (folder / download_name([LIST_TITLE])).write_text(
@@ -2020,12 +2034,19 @@ def test_the_download_name_comes_from_the_paths_last_segment(
 _HOST = "example.sharepoint.com"
 
 
+def _swap(old: str, new: str) -> Callable[[str], str]:
+    def dirty(text: str) -> str:
+        return text.replace(old, new, 1)
+
+    return dirty
+
+
 @pytest.mark.parametrize(("what", "dirty"), [
-    ("a real tenant host", lambda s: s.replace(_HOST, "acme.sharepoint.com", 1)),
-    ("an onmicrosoft host", lambda s: s.replace(_HOST, "acme.onmicrosoft.com", 1)),
-    ("a real site name", lambda s: s.replace("/sites/Contracts", "/sites/AcmeContract", 1)),
-    ("a federated user key", lambda s: s.replace('"Title"', '"msteams_ABC123"', 1)),
-    ("an email address", lambda s: s.replace('"Title"', '"someone@acme.org"', 1)),
+    ("a real tenant host", _swap(_HOST, "acme.sharepoint.com")),
+    ("an onmicrosoft host", _swap(_HOST, "acme.onmicrosoft.com")),
+    ("a real site name", _swap("/sites/Contracts", "/sites/AcmeContract")),
+    ("a federated user key", _swap('"Title"', '"msteams_ABC123"')),
+    ("an email address", _swap('"Title"', '"someone@acme.org"')),
 ])
 def test_the_tenant_guard_catches_each_shape_of_leak(
     what: str, dirty: Callable[[str], str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
