@@ -1046,6 +1046,7 @@ def _fetch_m(
         plan.joins, start=1,
     ):
         step = f"WithFkKey{i}"
+        target_identity = plan.target_identities.get(target_title, target_title)
         lines[-1] += ","
         lines += [
             f"    {step} = Table.AddColumn(",
@@ -1058,7 +1059,7 @@ def _fetch_m(
             # against the row key the target table publishes, so it has to be
             # spelled the way the TARGET spells it. Both come from
             # `_row_key_m`, which is the point of that function.
-            f"              else {_row_key_m(plan.target_identities.get(target_title, target_title), f'[{fk_col}]')},",
+            f"              else {_row_key_m(target_identity, f'[{fk_col}]')},",
             "        type text",
             "    )",
         ]
