@@ -613,7 +613,7 @@ def test_the_read_back_sends_the_deploys_own_requests_in_its_order() -> None:
     acls = _acls()
     assert "const SCOPE_BINDING_SETTLE_MS = 2000;" in acls
     assert "attempt < 5; attempt += 1" in acls
-    assert "(await surveyDescendants(listTitle, wantedFolders)).undeclared" in acls
+    assert "(await surveyDescendants(listTitle, wantedFolders, managedFolders)).undeclared" in acls
     assert (
         "settle: (SCHEMA.lists.find((l) => l.title === listTitle) || {}).is_library === true"
     ) in acls
