@@ -1161,6 +1161,7 @@ Table Everything {
   Stamp         datetime
   Link          hyperlink
   Owner         person
+  Owners        person[]
   Level         severity
   Levels        severity[]
   PartyRef      int             [ref: > Party.Id]

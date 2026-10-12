@@ -165,6 +165,8 @@ def _sp_type_cell(
             return "Hyperlink"
         case "User":
             return "Person"
+        case "UserMulti":
+            return "Person (multiple)"
         case "Lookup":
             return f"Lookup -> {target_title or (prefix + str(sp.target_list))}"
         case "LookupMulti":
