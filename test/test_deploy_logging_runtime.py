@@ -46,6 +46,7 @@ from dbml_sharepoint.analysis.sidecars import (
     CHANGE_LOG_TITLE,
     EXTERNAL_CHANGE_LOG_DEFAULT,
     EXTERNAL_LOG_DEFAULT,
+    EXTERNAL_LOG_LIBRARY_DEFAULT,
     RUN_LOG_STAMP_COLUMNS,
     RUN_LOG_TITLE,
     change_log_marker,
@@ -97,6 +98,11 @@ _HARNESS = textwrap.dedent(r"""
     // SAME drop-box level on Deployments and Changes alike. 2 is AddListItems
     // alone; 6 adds EditListItems, which is what the type-2 close needs.
     const CENTRAL_PERMS_LOW = 2;
+    // How the central Deployment logs library answers: 'ok', 'missing' (its
+    // probe 404s), 'no-add' (EffectiveBasePermissions without AddListItems),
+    // 'refuse-upload' (Files/add answers 403), 'short-read' (the read-back
+    // length is one byte short) or 'read-refused' (the read-back answers 403).
+    const LIBRARY_MODE = 'ok';
     // The columns each central list carries. Empty models a list the operator
     // pointed DBMLSP_DEPLOY_LOG_LIST / DBMLSP_DEPLOY_CHANGES at that this tool
     // never provisioned.
@@ -122,6 +128,7 @@ _HARNESS = textwrap.dedent(r"""
       fields: {},                  // list Title -> [ { Id, InternalName, Indexed } ]
       items: { ...SEED_ITEMS },    // list Title -> [ row ]
       central: [],                 // rows POSTed to the central Deployments list
+      files: {},                   // server-relative URL -> uploaded text
       centralChanges: [...SEED_CENTRAL_CHANGES], // rows POSTed to the central Changes list
       nextList: 1,
       nextField: 1,
@@ -262,7 +269,7 @@ _HARNESS = textwrap.dedent(r"""
       const u = decodeURIComponent(String(url));
       const method = opts.method || 'GET';
       const headers = opts.headers || {};
-      const body = opts.body ? JSON.parse(opts.body) : null;
+      const body = typeof opts.body === 'string' ? JSON.parse(opts.body) : null;
       calls.push({ url: u, method, headers, body });
       const verb = headers['X-HTTP-Method'] || method;
 
@@ -272,6 +279,44 @@ _HARNESS = textwrap.dedent(r"""
         // is what the phase probes first and 404 is what it answers.
         if (CENTRAL_ABSENT) return notFound();
         if (u.includes('contextinfo')) return digestFor(u, method, 'central-digest');
+        // The Deployment logs library: a document library, so its files go
+        // through Files/add and are read back by URL, never as list items.
+        if (u.includes('getbytitle(\'LIBRARY_TITLE\')') || u.includes('/files/add(')
+            || u.includes('getfilebyserverrelativeurl(')) {
+          if (LIBRARY_MODE === 'missing' && u.includes('getbytitle')) return notFound();
+          if (u.toLowerCase().includes('effectivebasepermissions')) {
+            return reply(200, { d: { EffectiveBasePermissions: {
+              High: 0, Low: LIBRARY_MODE === 'no-add' ? 1 : 2 } } });
+          }
+          if (/\?\$select=Id,ListItemEntityTypeFullName$/.test(u)) {
+            return reply(200, { d: { Id: guid('99999999', 1),
+              ListItemEntityTypeFullName: 'SP.Data.LibraryItem' } });
+          }
+          if (/\/rootfolder\?/.test(u)) {
+            return reply(200, { d: { ServerRelativeUrl: '/sites/CENTRAL_SITE/LIBRARY_TITLE' } });
+          }
+          const added = /files\/add\(url='([^']*)',overwrite=(true|false)\)/.exec(u);
+          if (added) {
+            if (LIBRARY_MODE === 'refuse-upload') {
+              return reply(403, { error: { message: { value: 'Access denied.' } } });
+            }
+            if (headers['X-RequestDigest'] !== 'central-digest') return badDigest();
+            const path = `/sites/CENTRAL_SITE/LIBRARY_TITLE/${added[1]}`;
+            if (state.files[path] !== undefined) {
+              return reply(403, { error: { message: { value: 'Access denied.' } } });
+            }
+            state.files[path] = {
+              text: new TextDecoder().decode(opts.body), bytes: opts.body.length };
+            return reply(200, { d: { ServerRelativeUrl: path } });
+          }
+          const read = /getfilebyserverrelativeurl\('([^']*)'\)/.exec(u);
+          if (read && state.files[read[1]]) {
+            if (LIBRARY_MODE === 'read-refused') return reply(403, {});
+            const n = state.files[read[1]].bytes - (LIBRARY_MODE === 'short-read' ? 1 : 0);
+            return reply(200, { d: { Length: String(n) } });
+          }
+          return notFound();
+        }
         if (u.toLowerCase().includes('effectivebasepermissions')) {
           return reply(200, { d: {
             EffectiveBasePermissions: { High: 0, Low: CENTRAL_PERMS_LOW } } });
@@ -476,7 +521,7 @@ _HARNESS = textwrap.dedent(r"""
 """) + BATCH_MOCK
 
 
-def _deploy_js(*, protect: bool = False) -> str:
+def _deploy_js(*, protect: bool = False, throw_in_phase: bool = False) -> str:
     """A one-list deploy with both sidecars on and a central log named.
 
     `protect` turns on the two family settings the sidecars now honour
@@ -512,6 +557,15 @@ def _deploy_js(*, protect: bool = False) -> str:
         1,
     )
     assert stubbed != js
+    if throw_in_phase:
+        # Outside any phase-level try, as the real uncaught case is: the first
+        # phase after the logging phase throws a plain Error.
+        marker = "log('INFO', 'Starting Phase"
+        head, sep, tail = stubbed.partition("Logging mode ")
+        assert sep
+        nxt = tail.index(marker)
+        boom = "throw new Error('phase blew up (simulated)');\n  "
+        stubbed = head + sep + tail[:nxt] + boom + tail[nxt:]
     return stubbed
 
 
@@ -541,11 +595,13 @@ def _run_deploy(
     central_absent: bool = False,
     central_changes_absent: bool = False,
     central_can_close: bool = False,
+    library_mode: str = "ok",
     fail_central_writes: bool = False,
     fail_central_change_fields: bool = False,
     seeded_central_rows: bool = False,
     seeded_foreign_application: bool = False,
     protect: bool = False,
+    throw_in_phase: bool = False,
     overlay: str = "",
     rerun: bool = False,
     identity_tail: str = "",
@@ -587,6 +643,9 @@ def _run_deploy(
             harness, "const CENTRAL_CHANGES_ABSENT = false;",
             "const CENTRAL_CHANGES_ABSENT = true;",
         )
+    harness = _substitute(
+        harness, "const LIBRARY_MODE = 'ok';", f"const LIBRARY_MODE = '{library_mode}';",
+    )
     if central_can_close:
         # 2 | 4: AddListItems plus EditListItems.
         harness = _substitute(
@@ -648,6 +707,7 @@ def _run_deploy(
         json.dumps(f"SP.Data.{EXTERNAL_CHANGE_LOG_DEFAULT.replace('-', '')}ListItem"),
     )
     for placeholder, actual in (
+        ("LIBRARY_TITLE", EXTERNAL_LOG_LIBRARY_DEFAULT),
         ("CENTRAL_SITE", CENTRAL_LOG_SITE_DEFAULT),
         ("CENTRAL_CHANGES_LIST", EXTERNAL_CHANGE_LOG_DEFAULT),
         ("CENTRAL_LIST", EXTERNAL_LOG_DEFAULT),
@@ -695,7 +755,7 @@ def _run_deploy(
         harness = _substitute(
             harness, "const SEED_ITEMS = {};", f"const SEED_ITEMS = {seeded};",
         )
-    body = _deploy_js(protect=protect).rstrip()
+    body = _deploy_js(protect=protect, throw_in_phase=throw_in_phase).rstrip()
     if identity_tail:
         body, swapped = re.subn(
             r"const IDENTITY_TAIL = .*;", lambda _: identity_tail, body, count=1)
@@ -1809,6 +1869,145 @@ def test_the_central_provenance_stamp_names_identities_by_hash_in_details_only()
     # The id only in delimited forms: a bare "41" matches the minute of the timestamp.
     for hidden in ("flows@example.com", "flows", "i:0#.f|membership", "user 41", "(41)"):
         assert hidden not in row.dumps(), (hidden, row)
+
+
+# ---- The run's full console log, uploaded to the central library ---------
+
+def _uploaded(run: Json) -> list[tuple[str, str]]:
+    return [(path, f["text"].text) for path, f in run["state"]["files"].items()]
+
+
+def test_a_clean_run_uploads_its_whole_log_and_names_the_file_in_the_stop_stamp(
+    central_run: Json,
+) -> None:
+    run = central_run
+    files = _uploaded(run)
+    assert len(files) == 1, files
+    path, text = files[0]
+    assert re.fullmatch(
+        rf"/sites/{CENTRAL_LOG_SITE_DEFAULT}/{EXTERNAL_LOG_LIBRARY_DEFAULT}/"
+        r"\d{8}T\d{6}Z-test-[a-z0-9]{1,6}\.log",
+        path,
+    ), path
+    # Lines logged before the logging phase are in it, and so is the mode line.
+    assert text.startswith("[SP-DEPLOY] [INFO] "), text[:200]
+    assert "Logging mode CENTRAL" in text
+    # One write per row: the URL rides in the final stamp's own Details.
+    last = run["state"]["central"].rows[-1]
+    assert last["StampKind"] == ("abort" if run["summary"]["errors"] else "deployment stop")
+    assert f"run log {path}" in last["Details"]
+    add = [c for c in run["calls"] if "/files/add(" in c["url"].text]
+    assert len(add) == 1
+    assert "overwrite=false" in add[0]["url"].text
+    assert add[0]["method"] == "POST"
+    assert run["summary"]["loggingFailures"] == []
+    assert run["unhandled"] == []
+
+
+def test_a_failed_run_still_uploads_its_log() -> None:
+    overlay = textwrap.dedent("""
+        const failingFetch = globalThis.fetch;
+        globalThis.fetch = async (url, opts = {}) => {
+          const u = decodeURIComponent(String(url));
+          if (opts.method === 'POST' && /_api\\/web\\/lists$/.test(u)
+              && JSON.parse(opts.body || '{}').Title === 'APP_Risk') {
+            return reply(500, { error: { message: { value: 'list create refused (simulated)' } } });
+          }
+          return failingFetch(url, opts);
+        };
+    """)
+    run = _run_deploy(overlay=overlay)
+    assert run["summary"]["errors"], "the simulated failure did not abort the run"
+    files = _uploaded(run)
+    assert len(files) == 1, files
+    assert "list create refused" in files[0][1]
+    assert run["state"]["central"].rows[-1]["StampKind"] == "abort"
+    assert files[0][0] in run["state"]["central"].rows[-1]["Details"]
+
+
+def test_a_phase_that_throws_unhandled_still_uploads_the_lines_logged_before_it() -> None:
+    run = _run_deploy(throw_in_phase=True)
+    assert run["summary"]["aborted"].text == "uncaught-phase-error", run["summary"]
+    files = _uploaded(run)
+    assert len(files) == 1, files
+    path, text = files[0]
+    assert "Logging mode CENTRAL" in text
+    assert "phase blew up (simulated)" in text
+    assert run["state"]["central"].rows[-1]["StampKind"] == "abort"
+    assert path in run["state"]["central"].rows[-1]["Details"]
+
+
+def test_the_upload_post_is_never_retried_and_a_duplicate_name_is_a_failed_upload() -> None:
+    overlay = textwrap.dedent("""
+        const dupFetch = globalThis.fetch;
+        globalThis.fetch = async (url, opts = {}) => {
+          const r = await dupFetch(url, opts);
+          if (opts.method === 'POST' && /files\\/add\\(/.test(decodeURIComponent(String(url)))) {
+            return dupFetch(url, opts);
+          }
+          return r;
+        };
+    """)
+    run = _run_deploy(overlay=overlay)
+    adds = [c for c in run["calls"] if "/files/add(" in c["url"].text]
+    assert len(adds) == 2, adds  # the overlay's own second send; the code sent one
+    failures = run["summary"]["loggingFailures"]
+    assert any("HTTP 403" in f["error"].text and "may already exist" in f["error"].text
+               for f in failures), failures
+
+
+@pytest.mark.parametrize(
+    ("mode", "reason"),
+    [
+        ("missing", "library is missing"),
+        ("no-add", "no AddListItems"),
+        ("refuse-upload", "the server refused the add; a file of that name may already exist"),
+    ],
+)
+def test_a_library_that_cannot_take_the_log_is_a_named_failure_not_a_failed_deploy(
+    mode: str, reason: str,
+) -> None:
+    run = _run_deploy(library_mode=mode)
+    failures = run["summary"]["loggingFailures"]
+    named = [
+        f for f in failures
+        if f"run log upload to '{EXTERNAL_LOG_LIBRARY_DEFAULT}'" in f["where"].text
+    ]
+    assert len(named) == 1 and reason in named[0]["error"].text, failures
+    # The stamps are unaffected, and the closing stamp carries no URL to a
+    # file that is not there.
+    last = run["state"]["central"].rows[-1]
+    assert last["StampKind"] in ("deployment stop", "abort")
+    assert "run log " not in last["Details"].text
+    assert run["unhandled"] == []
+
+
+@pytest.mark.parametrize(
+    ("mode", "reason"),
+    [("short-read", "does not match"), ("read-refused", "HTTP 403")],
+)
+def test_a_failed_read_back_is_named_and_keeps_the_url(mode: str, reason: str) -> None:
+    run = _run_deploy(library_mode=mode)
+    named = [
+        f for f in run["summary"]["loggingFailures"]
+        if f"run log read-back from '{EXTERNAL_LOG_LIBRARY_DEFAULT}'" in f["where"].text
+    ]
+    assert len(named) == 1 and reason in named[0]["error"].text, named
+    assert "run log " in run["state"]["central"].rows[-1]["Details"].text
+    assert run["unhandled"] == []
+
+
+def test_a_matching_read_back_records_no_failure() -> None:
+    run = _run_deploy()
+    assert not [f for f in run["summary"]["loggingFailures"] if "read-back" in f["where"].text]
+
+
+def test_a_local_run_skips_the_upload_and_says_why() -> None:
+    run = _run_deploy(central_absent=True)
+    assert run["state"]["files"] == {}
+    assert not [c for c in run["calls"] if "/files/add(" in c["url"].text]
+    assert "Run log not uploaded" in run["output"]
+    assert run["summary"]["loggingFailures"] == []
 
 
 def test_a_second_deploy_leaves_one_current_row_per_key() -> None:

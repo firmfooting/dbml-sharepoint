@@ -136,6 +136,11 @@ has them for the runs that could not reach the central lists. Its run log
 is created with its own stamp columns, not Title alone; Title-only is the
 fallback for a run whose account cannot create them.
 
+`firmfooting_DeploymentLogs` also grows forever, one file per run. Each file
+is plain text and may name lists, groups and accounts the run touched. The
+closing `Deployments` row of a run names its file in Details. Nobody who
+deploys can edit or delete a file, so removal is the log owner's call.
+
 ## Retiring the old lists
 
 This rename retires three lists across the estate. This tool never renames,

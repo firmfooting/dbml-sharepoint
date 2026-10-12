@@ -51,6 +51,7 @@ from dbml_sharepoint.analysis.sidecars import (
     CENTRAL_CHANGE_COLUMNS,
     CENTRAL_CHANGE_OPTIONAL_COLUMNS,
     CENTRAL_LOG_COLUMNS,
+    EXTERNAL_LOG_LIBRARY_DEFAULT,
 )
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPES,
@@ -236,6 +237,11 @@ def generate_deploy_js(
         # it does not depend on them.
         deployment_log_change_list=deployment_log_change_list,
         deployment_log_site=deployment_log_site,
+        # The library that takes the run's full console log. It rides on the
+        # same switch as the stamps: no central site or list, no upload.
+        deployment_log_library=(
+            EXTERNAL_LOG_LIBRARY_DEFAULT if deployment_log_site and deployment_log_list else ""
+        ),
         # The stamp columns the `deployment-log` family declares. Rendered from
         # the one authority rather than typed into the template, because a stamp
         # that names a column the family does not declare is refused by SharePoint.

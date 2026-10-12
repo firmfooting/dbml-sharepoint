@@ -1,7 +1,17 @@
-release: "2.1.0"
-date: "2026-09-07"
-schema_version: "2.1.0"
+release: "2.2.0"
+date: "2026-10-13"
+schema_version: "2.2.0"
 notes: |
+  2.2.0 adds `firmfooting_DeploymentLogs`, a document library that takes the
+  full console log of every deploy run as one new text file per run, on the
+  same drop-box posture as the two lists: a contributor can add a file and
+  cannot edit or delete one. The file is named from the run's UTC stamp, the
+  site and a short random token, is never overwritten, and its
+  server-relative URL is written into the Details of the run's closing
+  `Deployments` row. A library that is missing or refuses the upload is
+  recorded as a logging failure and never fails the deploy, so a site on an
+  older release of this family keeps working until it is redeployed here.
+
   2.1.0 finishes what 2.0.0 started. The deploy writer previously declared
   two lists but still posted every change row to `firmfooting_Deployments`
   with `StampKind: 'change'`, which made the split cosmetic: `Changes`

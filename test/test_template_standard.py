@@ -183,6 +183,8 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Before and after": "Act",
         "When": "Govern",
     },
+    # The run-log library: a file whose only editable field is its title.
+    ("deployment-log", "DeploymentLogs"): {"The run log": "Identify"},
 }
 
 # §1.3. Deliberately WEAKER than the archetype table in the spec, which is a
@@ -1694,8 +1696,9 @@ def test_the_worst_generated_all_items_is_four_of_twelve() -> None:
     passing against its OWN arithmetic even if the validator's copy silently
     dropped `SYSTEM_COLUMNS` or the `hide_from_all_items` subtraction.
 
-    Measured 2026-09-28 across the 6 starter blueprints / 10 entities:
-    2 -> 4, 3 -> 3, 4 -> 3. The worst is 4, shared by asset-register/Asset
+    Measured 2026-09-28 across the 6 starter blueprints / 10 entities
+    (11 with the deployment-log library):
+    2 -> 4 (5 with the library), 3 -> 3, 4 -> 3. The worst is 4, shared by asset-register/Asset
     (AssignedTo, Location), routine-checks/CheckEntry (CheckPoint, CheckedBy)
     and training-register/TrainingRecord (Course, Person), each two lookups
     plus Author and Editor."""
@@ -1729,8 +1732,8 @@ def test_the_worst_generated_all_items_is_four_of_twelve() -> None:
     # LIST keeps the roster at 34 while the distribution above moves under it,
     # and the docstring's entity total was wrong for exactly that reason
     # before this pin existed.
-    assert counted == 10, (
-        f"{counted} entities were surveyed, not the 10 the distribution above "
+    assert counted == 11, (
+        f"{counted} entities were surveyed, not the 11 the distribution above "
         f"was measured over. An entity appeared or disappeared inside a "
         f"template that is still on the roster. Re-measure the distribution "
         f"and the worst count before trusting either."

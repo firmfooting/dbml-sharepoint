@@ -15,6 +15,8 @@ prefix: "firmfooting_"
 entities:
   Deployments: { kind: List, base_template: 100, site_role: default }
   Changes: { kind: List, base_template: 100, site_role: default }
+  # The library is EXTERNAL_LOG_LIBRARY_DEFAULT (analysis/sidecars.py).
+  DeploymentLogs: { kind: DocumentLibrary, base_template: 101, site_role: default }
 
 cross_site_reference_columns: []
 
@@ -285,6 +287,17 @@ views:
         NewValue: 200
         EffectiveFrom: 170
         IsCurrent: 100
+  # One file per run. Recursive is not needed: the deploy writes to the root.
+  DeploymentLogs:
+    - title: "Latest first"
+      default: true
+      fields: [FileLeafRef, Created, Author]
+      sort:
+        - { field: Created, direction: desc }
+      widths:
+        FileLeafRef: 320
+        Created: 170
+        Author: 200
 
 # Every column here is written by a script, so the New form exists for the
 # one case a person uses it: annotating a log by hand after an incident.
@@ -295,6 +308,9 @@ form_visibility:
     reconcile: exact
     columns: {}
   Changes:
+    reconcile: exact
+    columns: {}
+  DeploymentLogs:
     reconcile: exact
     columns: {}
 
@@ -309,6 +325,9 @@ form_formatting:
   Changes:
     header: formatting/changes-form-header.json
     body: formatting/changes-form-body.json
+  DeploymentLogs:
+    header: formatting/deployment-logs-form-header.json
+    body: formatting/deployment-logs-form-body.json
 
 # One save rule per list, on the one column each carries where a wrong value
 # is undetectable later. `now` renders as NOW() in a validation formula,
@@ -425,3 +444,10 @@ demo_items:
         EffectiveFrom: "today-2"
         IsCurrent: true
         ReleaseTag: "1.0.0"
+  DeploymentLogs:
+    - key: dl-log-risk
+      values:
+        Title: "[DEMO] Run log"
+      file:
+        name: "[DEMO] 20260101T000000Z-governance-demo.log"
+        content: "[SP-DEPLOY] [INFO] Demo log. A real file holds the whole console log of one run."
