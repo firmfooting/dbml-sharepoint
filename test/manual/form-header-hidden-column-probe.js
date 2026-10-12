@@ -1,6 +1,6 @@
 /** ---- dbml-sharepoint PROBE: A FORM HEADER SHOWING A COLUMN HIDDEN FROM THE FORMS ----
  *
- * REVISION: 2ea4cb0b
+ * REVISION: 5f860842
  *
  * QUESTION: when a column is hidden from the Edit and Display forms the way
  * the deploy hides one (a ClientValidationFormula that is true only while
@@ -29,9 +29,11 @@
  *       with its ownership Description, an item type and its folder URL
  *   text.form-fmt.fixture-hidden-columns        two Choice columns, HiddenResult and ShownResult
  *       (Yes, No), read back with their TypeAsString
- *   text.form-fmt.fixture-hidden-item           the one item, HiddenResult = Yes and ShownResult = Yes (one value in both,
- *       so a value-specific difference cannot pass for the effect of hiding),
- *       read back at the Id the create answered (header mode: the list's only item)
+ *   text.form-fmt.fixture-hidden-item           the one item, read back at the Id the create answered
+ *       (header mode: the list's only item)
+ *   text.form-fmt.fixture-hidden-item-values    HiddenResult = Yes and ShownResult = Yes (one value in both,
+ *       so a value-specific difference cannot pass for the effect of hiding); apart from the
+ *       item so a differing value does not void the footer reading
  *   text.form-fmt.control-column-hidden-on-forms HiddenResult's ClientValidationFormula read back
  *       as written; ShownResult carries none
  *   text.form-fmt.control-columns-in-content-type both columns read back as field links of the
@@ -107,10 +109,15 @@
   };
 
   const spGet = async (path) => {
-    const res = await fetch(`${WEB}/_api/${path}`, {
-      headers: { Accept: 'application/json;odata=nometadata' },
-    });
-    return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
+    // A rejected fetch is an unanswered read (status 0), so no direct read ends the run without its table.
+    try {
+      const res = await fetch(`${WEB}/_api/${path}`, {
+        headers: { Accept: 'application/json;odata=nometadata' },
+      });
+      return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
+    } catch (err) {
+      return { ok: false, status: 0, body: null, text: `the read threw: ${err && err.message ? err.message : String(err)}` };
+    }
   };
 
   // NOTE the contract, because getting it wrong has produced false verdicts
@@ -128,16 +135,22 @@
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
   const spPost = async (path, payload, digest, extraHeaders = {}) => {
-    const res = await fetch(`${WEB}/_api/${path}`, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json;odata=nometadata',
-        'Content-Type': 'application/json;odata=nometadata',
-        'X-RequestDigest': digest,
-        ...extraHeaders,
-      },
-      body: JSON.stringify(payload),
-    });
+    let res;
+    try {
+      res = await fetch(`${WEB}/_api/${path}`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json;odata=nometadata',
+          'Content-Type': 'application/json;odata=nometadata',
+          'X-RequestDigest': digest,
+          ...extraHeaders,
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      // A rejected write may still have reached the site, so it is named and a readback decides.
+      return { ok: false, status: 0, body: null, text: `the write request threw: ${err && err.message ? err.message : String(err)}` };
+    }
     // The interesting result is often the REFUSAL, so the response text is
     // returned rather than thrown: a 400 here is the finding, not a crash.
     const text = await res.text();
@@ -377,7 +390,7 @@
     }
     console.log('Copy this whole block back verbatim.');
   };
-  log('INFO', 'probe revision 2ea4cb0b. Quote this when reporting results.');
+  log('INFO', 'probe revision 5f860842. Quote this when reporting results.');
 
   // ---- The question ----------------------------------------------------
   const MODE = 'baseline'; // 'baseline', a person looks, then 'control', then 'header'
@@ -409,6 +422,7 @@
   const LIST_FIXTURE = 'text.form-fmt.fixture-hidden-list';
   const COLUMNS = 'text.form-fmt.fixture-hidden-columns';
   const ITEM = 'text.form-fmt.fixture-hidden-item';
+  const ITEM_VALUES = 'text.form-fmt.fixture-hidden-item-values';
   const CONTROL = 'text.form-fmt.control-column-hidden-on-forms';
   const LINKS = 'text.form-fmt.control-columns-in-content-type';
   const FORMATTER_FIXTURE = { baseline: 'text.form-fmt.fixture-footer-baseline', control: 'text.form-fmt.fixture-control-header',
@@ -431,22 +445,23 @@
   const PREVIOUS_FIXTURE = 'text.form-fmt.fixture-previous-phase-formatter';
   // Explicit dependencies, as the catalogue declares them: a failure voids only the rows that rest on it.
   const REST_ON = {
-    [COLUMNS]: [LIST_FIXTURE], [ITEM]: [COLUMNS], [CONTROL]: [COLUMNS], [LINKS]: [COLUMNS],
+    [COLUMNS]: [LIST_FIXTURE], [ITEM]: [COLUMNS], [ITEM_VALUES]: [ITEM], [CONTROL]: [COLUMNS], [LINKS]: [COLUMNS],
     [FORMATTER_FIXTURE]: [LIST_FIXTURE], [PREVIOUS_FIXTURE]: [LIST_FIXTURE],
     [BODY_EDIT]: [ITEM, CONTROL, LINKS], [BODY_DISPLAY]: [ITEM, CONTROL, LINKS],
     [BASE_EDIT]: [ITEM, LINKS, FORMATTER_FIXTURE], [BASE_DISPLAY]: [ITEM, LINKS, FORMATTER_FIXTURE],
-    [TOKEN_EDIT]: [ITEM, LINKS, FORMATTER_FIXTURE, PREVIOUS_FIXTURE],
-    [TOKEN_DISPLAY]: [ITEM, LINKS, FORMATTER_FIXTURE, PREVIOUS_FIXTURE],
-    [EDIT]: [ITEM, CONTROL, LINKS, FORMATTER_FIXTURE, PREVIOUS_FIXTURE],
-    [DISPLAY]: [ITEM, CONTROL, LINKS, FORMATTER_FIXTURE, PREVIOUS_FIXTURE],
+    [TOKEN_EDIT]: [ITEM, ITEM_VALUES, LINKS, FORMATTER_FIXTURE, PREVIOUS_FIXTURE],
+    [TOKEN_DISPLAY]: [ITEM, ITEM_VALUES, LINKS, FORMATTER_FIXTURE, PREVIOUS_FIXTURE],
+    [EDIT]: [ITEM, ITEM_VALUES, CONTROL, LINKS, FORMATTER_FIXTURE, PREVIOUS_FIXTURE],
+    [DISPLAY]: [ITEM, ITEM_VALUES, CONTROL, LINKS, FORMATTER_FIXTURE, PREVIOUS_FIXTURE],
   };
-  const NODES = [LIST_FIXTURE, COLUMNS, ITEM, CONTROL, LINKS, FORMATTER_FIXTURE, ...(BASELINE ? [] : [PREVIOUS_FIXTURE]), ...OBSERVED];
+  const NODES = [LIST_FIXTURE, COLUMNS, ITEM, ITEM_VALUES, CONTROL, LINKS, FORMATTER_FIXTURE, ...(BASELINE ? [] : [PREVIOUS_FIXTURE]), ...OBSERVED];
   const rests = (id, on) => (REST_ON[id] || []).some((d) => d === on || rests(d, on));
   const dependents = (on) => NODES.filter((id) => id !== on && rests(id, on));
 
   expect('text.form-fmt.fixture-hidden-list', 'the list reads back with its marker, an item type and its folder URL');
   expect('text.form-fmt.fixture-hidden-columns', 'both Choice columns read back as such');
-  expect('text.form-fmt.fixture-hidden-item', 'the item reads back with Yes in both HiddenResult and ShownResult');
+  expect('text.form-fmt.fixture-hidden-item', 'the item reads back at the Id the create answered');
+  expect('text.form-fmt.fixture-hidden-item-values', 'the item reads back with Yes in both HiddenResult and ShownResult');
   expect('text.form-fmt.control-column-hidden-on-forms', 'HiddenResult reads back with the hiding formula and ShownResult with none');
   expect('text.form-fmt.control-columns-in-content-type', 'both columns are field links of the default content type and neither is Hidden');
   if (BASELINE) {
@@ -480,7 +495,13 @@
     Accept: 'application/json;odata=verbose',
     'Content-Type': 'application/json;odata=verbose',
   };
-  const post = async (path, payload, extra = {}) => spPost(path, payload, await getDigest(), { ...VERBOSE, ...extra });
+  const post = async (path, payload, extra = {}) => {
+    let digest;
+    try { digest = await getDigest(); } catch (err) {
+      return { ok: false, status: 0, body: null, text: `the write request threw: ${err && err.message ? err.message : String(err)}` };
+    }
+    return spPost(path, payload, digest, { ...VERBOSE, ...extra });
+  };
   const reason = (r) => (r.body && r.body.error && r.body.error.message && r.body.error.message.value) || r.text.slice(0, 160);
   const said = (what, r) => log(r.ok ? 'INFO' : 'FAIL', `${what}: HTTP ${r.status}${r.ok ? '' : ` ${reason(r)}`}`);
   const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -502,7 +523,9 @@
       }
       if (!CLEANUP) return refuse(`'${LIST}' from an earlier run already stands; set CLEANUP to true to recycle it first`);
       // By the Id read with the marker, so a title rebound since cannot redirect the deletes.
-      if (!await resetList(LIST, String(before.body.Id).replace(/[{}]/g, ''))) {
+      let recycled = false;
+      try { recycled = await resetList(LIST, String(before.body.Id).replace(/[{}]/g, '')); } catch { /* named below */ }
+      if (!recycled) {
         return refuse(`'${LIST}' from an earlier run could not be recycled`);
       }
       const after = await spGet(`${listAt}?$select=Id`);
@@ -561,10 +584,12 @@
     itemId = !unanswered(items) && Array.isArray(items.body.value) && items.body.value.length === 1
       ? items.body.value[0].Id : null;
   }
-  if (!await establishFixture(ITEM, () => (Number.isInteger(itemId)
+  const readItem = () => (Number.isInteger(itemId)
     ? spGet(`${at}/items(${itemId})?$select=Id,${HIDDEN},${SHOWN}`)
-    : { ok: false, status: 0, body: null }),
-  { Id: itemId, [HIDDEN]: 'Yes', [SHOWN]: 'Yes' }, dependents(ITEM))) return report();
+    : { ok: false, status: 0, body: null });
+  if (!await establishFixture(ITEM, readItem, { Id: itemId }, dependents(ITEM))) return report();
+  // Apart from the item, so a value that differs voids the readings that need it and not the footer's.
+  await establishFixture(ITEM_VALUES, readItem, { [HIDDEN]: 'Yes', [SHOWN]: 'Yes' }, dependents(ITEM_VALUES));
 
   // The deploy's own hiding: a ClientValidationFormula (never ShowIn*Form), read back as written.
   const fieldAt = `${at}/fields/getbyinternalnameortitle('${HIDDEN}')`;
@@ -610,14 +635,8 @@
     { value: (rows) => linkOk(rows, HIDDEN) && linkOk(rows, SHOWN) }, dependents(LINKS));
   if (!BASELINE && !await establishFixture(PREVIOUS_FIXTURE, () => spGet(`${typeAt}?$select=ClientFormCustomFormatter`),
     { ClientFormCustomFormatter: PREVIOUS }, dependents(PREVIOUS_FIXTURE))) return report();
-  // A rejected fetch may still have reached the site, so it is named and the exact readback below decides.
-  let wrote;
-  try {
-    wrote = await post(typeAt, { __metadata: { type: 'SP.ContentType' }, ClientFormCustomFormatter: FORMATTER },
-      { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
-  } catch (err) {
-    wrote = { ok: false, status: 0, text: `the write request threw: ${err && err.message ? err.message : String(err)}` };
-  }
+  const wrote = await post(typeAt, { __metadata: { type: 'SP.ContentType' }, ClientFormCustomFormatter: FORMATTER },
+    { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
   said('form formatter write', wrote);
   // The readback, not the write status, says what the type holds: an exact readback stands after an ambiguous write.
   if (!await establishFixture(FORMATTER_FIXTURE, () => spGet(`${typeAt}?$select=ClientFormCustomFormatter`),

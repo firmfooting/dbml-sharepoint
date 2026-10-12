@@ -1339,7 +1339,7 @@
         "policy": "manual"
       },
       "prerequisites": [
-        "site time 04:00–20:00"
+        "site time 04:00\u201320:00"
       ],
       "scenarios": [
         {
@@ -2544,6 +2544,12 @@
               ]
             },
             {
+              "id": "text.form-fmt.fixture-hidden-item-values",
+              "depends_on": [
+                "text.form-fmt.fixture-hidden-item"
+              ]
+            },
+            {
               "id": "text.form-fmt.control-column-hidden-on-forms",
               "depends_on": [
                 "text.form-fmt.fixture-hidden-columns"
@@ -2585,6 +2591,7 @@
             "text.form-fmt.fixture-hidden-list",
             "text.form-fmt.fixture-hidden-columns",
             "text.form-fmt.fixture-hidden-item",
+            "text.form-fmt.fixture-hidden-item-values",
             "text.form-fmt.control-column-hidden-on-forms",
             "text.form-fmt.control-columns-in-content-type",
             "text.form-fmt.fixture-footer-baseline",
@@ -2669,6 +2676,7 @@
               "id": "form.edit-form.header-choice-token-renders",
               "depends_on": [
                 "text.form-fmt.fixture-hidden-item",
+                "text.form-fmt.fixture-hidden-item-values",
                 "text.form-fmt.control-columns-in-content-type",
                 "text.form-fmt.fixture-control-header",
                 "form.edit-form.footer-baseline-renders",
@@ -2679,6 +2687,7 @@
               "id": "form.display-form.header-choice-token-renders",
               "depends_on": [
                 "text.form-fmt.fixture-hidden-item",
+                "text.form-fmt.fixture-hidden-item-values",
                 "text.form-fmt.control-columns-in-content-type",
                 "text.form-fmt.fixture-control-header",
                 "form.display-form.footer-baseline-renders",
@@ -2721,6 +2730,7 @@
               "id": "form.edit-form.header-hidden-column",
               "depends_on": [
                 "text.form-fmt.fixture-hidden-item",
+                "text.form-fmt.fixture-hidden-item-values",
                 "text.form-fmt.control-column-hidden-on-forms",
                 "text.form-fmt.control-columns-in-content-type",
                 "text.form-fmt.fixture-header-formatter",
@@ -2734,6 +2744,7 @@
               "id": "form.display-form.header-hidden-column",
               "depends_on": [
                 "text.form-fmt.fixture-hidden-item",
+                "text.form-fmt.fixture-hidden-item-values",
                 "text.form-fmt.control-column-hidden-on-forms",
                 "text.form-fmt.control-columns-in-content-type",
                 "text.form-fmt.fixture-header-formatter",
