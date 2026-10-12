@@ -13,7 +13,7 @@ from dbml_sharepoint.model.errors import MappingValueError
 
 def list_url_path(declared: str) -> str:
     """The declared URL decoded, with slashes normalised, in its declared case."""
-    text = unquote(declared.strip().replace("\\", "/"))
+    text = unquote(declared).strip().replace("\\", "/")
     if "|" in text:
         raise MappingValueError(f"list URL {declared!r} holds '|', which the key splits on")
     if any(category(c) == "Cc" for c in text):

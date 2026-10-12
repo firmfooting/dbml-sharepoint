@@ -11,6 +11,7 @@ from dbml_sharepoint.model.errors import MappingValueError
 @pytest.mark.parametrize("declared", [
     "Lists/Mail Ledger", "/Lists/Mail Ledger", "Lists/Mail Ledger/",
     "Lists//Mail%20Ledger", " Lists/Mail Ledger ", "Lists\\Mail Ledger",
+    "Lists%5CMail%20Ledger", "Lists/Mail Ledger%20", "%20Lists/Mail%20Ledger",
 ])
 def test_every_spelling_gives_one_key(declared: str) -> None:
     assert list_url_key(declared) == "lists/mail ledger"
