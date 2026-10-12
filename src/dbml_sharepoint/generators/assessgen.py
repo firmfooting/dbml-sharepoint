@@ -125,7 +125,9 @@ def assess_targets(
     # [[library title, [folder, ...]], ...] for every library that declares
     # folders: the assessment checks nothing stands where a folder will go.
     library_folders: list[list[Any]] = []
-    library_roots: list[list[str]] = []
+    # [[title, declared URL, the entity's BaseTemplate], ...] for every entity that
+    # declares a root; the template is what the live list must carry.
+    library_roots: list[list[Any]] = []
     # [[list title, [internal name, ...]], ...] in DECLARATION order, for
     # every list holding at least one column declared unique. Pairs for the
     # same reason `markers` is.
@@ -147,7 +149,9 @@ def assess_targets(
                 bundle.mapping.list_title(table_name), entity.settings.require_checkout,
             ])
         if entity.internal_name:
-            library_roots.append([bundle.mapping.list_title(table_name), entity.internal_name])
+            library_roots.append([
+                bundle.mapping.list_title(table_name), entity.internal_name, entity.base_template,
+            ])
         previous = bundle.mapping.previous_titles(table_name)
         if previous:
             renames.append([
@@ -289,7 +293,7 @@ def derive_requirements(
             f"list view threshold",
             "WARN",
         ))
-    for title, root in t["library_roots"]:
+    for title, root, _template in t["library_roots"]:
         reqs.append(Requirement(
             f"library_root:{title}",
             f"Existing library '{title}' has the declared immutable URL name '{root}'",

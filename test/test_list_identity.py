@@ -63,7 +63,7 @@ def test_a_list_url_collides_with_a_library_root(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("spelling", [
     "/Lists/MailLedger/", "Lists\\\\MailLedger",
-    "Lists//Mail%4Cedger",
+    "Lists//MailLedger",
 ])
 def test_a_list_url_is_stored_normalised(tmp_path: Path, spelling: str) -> None:
     _, bundle = pack(

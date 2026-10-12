@@ -10,8 +10,7 @@ from dbml_sharepoint.model.errors import MappingValueError
 
 @pytest.mark.parametrize("declared", [
     "Lists/Mail Ledger", "/Lists/Mail Ledger", "Lists/Mail Ledger/",
-    "Lists//Mail%20Ledger", " Lists/Mail Ledger ", "Lists\\Mail Ledger",
-    "Lists%5CMail%20Ledger", "Lists/Mail Ledger%20", "%20Lists/Mail%20Ledger",
+    "Lists//Mail Ledger", " Lists/Mail Ledger ", "Lists\\Mail Ledger",
 ])
 def test_every_spelling_gives_one_key(declared: str) -> None:
     assert list_url_key(declared) == "lists/mail ledger"
@@ -37,11 +36,15 @@ def test_server_relative_joins_the_site_path() -> None:
 
 def test_apostrophe_percent_and_mixed_case_are_kept_or_lowered() -> None:
     assert list_url_path("Lists/Bob's 100% List") == "Lists/Bob's 100% List"
+    assert list_url_path("Lists/50%off") == "Lists/50%off"
     assert list_url_key("LISTS/Bob's mail LEDGER") == "lists/bob's mail ledger"
 
 
-@pytest.mark.parametrize("bad", ["Lists/a%7Cb", "%2e%2e/x", "Lists/a%00b"])
-def test_encoded_unsafe_urls_are_refused_after_decoding(bad: str) -> None:
+@pytest.mark.parametrize("bad", [
+    "Lists/a%7Cb", "%2e%2e/x", "Lists/a%00b", "Lists%5C..%5CX", "Lists/Mail%20Ledger",
+    "Lists/%FF", "Lists/%e2%82",
+])
+def test_any_percent_escape_is_refused_not_decoded(bad: str) -> None:
     with pytest.raises(MappingValueError):
         list_url_key(bad)
 
