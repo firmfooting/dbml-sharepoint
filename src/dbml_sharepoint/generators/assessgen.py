@@ -151,6 +151,7 @@ def assess_targets(
         if entity.internal_name:
             library_roots.append([
                 bundle.mapping.list_title(table_name), entity.internal_name, entity.base_template,
+                entity.is_library,
             ])
         previous = bundle.mapping.previous_titles(table_name)
         if previous:
@@ -299,10 +300,11 @@ def derive_requirements(
         )
         for title in t["list_titles"]
     )
-    for title, root, _template in t["library_roots"]:
+    for title, root, _template, is_library in t["library_roots"]:
         reqs.append(Requirement(
             f"library_root:{title}",
-            f"Existing library '{title}' has the declared immutable URL name '{root}'",
+            f"Existing library '{title}' has the declared immutable URL name '{root}'"
+            if is_library else f"Existing list '{title}' has the declared URL '{root}'",
             "BLOCKED",
         ))
     for title, folders in t["library_folders"]:

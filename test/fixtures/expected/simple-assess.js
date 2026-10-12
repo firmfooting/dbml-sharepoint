@@ -1090,7 +1090,7 @@
       }
     }
 
-    for (const [title, internalName, baseTemplate] of (TARGETS.library_roots || [])) {
+    for (const [title, internalName, baseTemplate, isLibrary] of (TARGETS.library_roots || [])) {
       const key = `library_root:${title}`;
       const shape = listShapes.get(title);
       const expected = decodeURIComponent(WEB).replace(/\/$/, '') + '/' + internalName;
@@ -1112,8 +1112,10 @@
       const actual = root.ok && root.d.ServerRelativeUrl;
       if (!shape || !shape.ok || typeof actual !== 'string' || !actual.startsWith('/')) {
         finding(2, key, 'NOT-ASSESSABLE', `Could not verify the immutable root of '${title}'.`);
-      } else if (shape.d.BaseTemplate !== baseTemplate || actual !== expected) {
-        finding(2, key, 'BLOCKED', `LIBRARY_INTERNAL_NAME_MISMATCH: '${title}' requires '${expected}', read ${JSON.stringify(actual)} (template ${shape.d.BaseTemplate}).`);
+      } else if (shape.d.BaseTemplate !== baseTemplate || actual.toLowerCase() !== expected.toLowerCase()) {
+        finding(2, key, 'BLOCKED', isLibrary
+          ? `LIBRARY_INTERNAL_NAME_MISMATCH: '${title}' requires '${expected}', read ${JSON.stringify(actual)} (template ${shape.d.BaseTemplate}).`
+          : `LIST_URL_MISMATCH: '${title}' requires '${expected}', read ${JSON.stringify(actual)} (template ${shape.d.BaseTemplate}).`);
       } else {
         finding(2, key, 'PASS', `'${title}' has the declared immutable root '${expected}'.`);
       }

@@ -3052,7 +3052,8 @@ def test_assessment_checks_immutable_library_root(root: str | None, expected: st
 
 
 @pytest.mark.parametrize(("root", "expected"), [
-    ("/sites/test/Lists/APP_Task", "PASS"), ("/sites/test/Lists/Other", "BLOCKED"),
+    ("/sites/test/Lists/APP_Task", "PASS"), ("/sites/test/lists/app_task", "PASS"),
+    ("/sites/test/Lists/Other", "BLOCKED"),
 ])
 def test_assessment_checks_a_declared_list_root_against_its_own_template(
     root: str, expected: str,
@@ -3076,7 +3077,9 @@ def test_assessment_checks_a_declared_list_root_against_its_own_template(
     summary = _run_assess(_declared_descriptions(), harness=harness, js=js)
     finding = next(f for f in summary["findings"] if f["key"] == "library_root:APP_Task")
     assert finding["level"] == expected, finding
-    assert "template 100" in finding["detail"] or expected == "PASS"
+    assert expected == "PASS" or (
+        "template 100" in finding["detail"] and "LIST_URL_MISMATCH" in finding["detail"]
+    )
 
 
 @pytest.mark.parametrize(("folder", "file", "expected"), [

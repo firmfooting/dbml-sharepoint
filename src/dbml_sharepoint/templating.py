@@ -60,6 +60,15 @@ def markdown_cell(value: object) -> str:
     return str(value).replace("&", "&amp;").replace("|", "&#124;").replace("\n", " ")
 
 
+def code_span(value: object) -> str:
+    """A Markdown code span whose fence is longer than any backtick run inside the value."""
+    text = str(value)
+    runs = re.findall(r"`+", text)
+    fence = "`" * (max(map(len, runs), default=0) + 1)
+    pad = " " if text.startswith("`") or text.endswith("`") else ""
+    return f"{fence}{pad}{text}{pad}{fence}"
+
+
 class ScriptEnvironment(Environment):
     """Jinja types `globals` by its defaults, which rejects data, so ours sit beside them."""
 
@@ -89,6 +98,7 @@ def script_env(application: str = APPLICATION_NAME) -> ScriptEnvironment:
     )
     env.filters["comment_safe"] = comment_safe
     env.filters["markdown_cell"] = markdown_cell
+    env.filters["code_span"] = code_span
     env_globals: dict[str, object] = {}
     env.script_globals = env_globals
 

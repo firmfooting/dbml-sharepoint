@@ -297,7 +297,7 @@ ownership evidence.
    continuation would end the list and orphan the bullets below it. #}
    - Description: {{ l.description | indent(5, false, true) }}
 {% if l.internal_name is defined %}
-   - Immutable library URL name: `{{ l.internal_name }}`
+   - {{ "Immutable library URL name" if l.is_library else "Declared list URL" }}: {{ l.internal_name | code_span }}
 {% endif %}
    - Exact ownership marker: {{ l.expected_marker }}
 {% if l.renamed_from %}
