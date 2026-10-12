@@ -15,9 +15,9 @@ rather than kept as a lesser option.
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from dbml_sharepoint.extract.field_xml import FieldXmlError, RawField, parse_field_xml
+from dbml_sharepoint.jsonvalue import JsonValue, as_json_object
 
 #: What `extract.js.txt` writes into its download, so a JSON file that is
 #: something else fails with a sentence rather than a KeyError.
@@ -48,7 +48,7 @@ class SourceList:
     #: Views, as read live. Kept whole and reported rather than decoded:
     #: recovering a `views:` declaration from CAML is a second inversion
     #: problem and this tool does not guess at one.
-    views: list[dict[str, Any]] = field(default_factory=list)
+    views: list[dict[str, JsonValue]] = field(default_factory=list)
     content_type_formatter: str = ""
 
 
@@ -129,7 +129,7 @@ def _text(entry: dict[object, object], key: str, context: str) -> str:
     return value
 
 
-def _views(raw: object, context: str) -> list[dict[str, Any]]:
+def _views(raw: object, context: str) -> list[dict[str, JsonValue]]:
     """The views extract.js read, an array of objects; absent reads as none."""
     if raw is None:
         return []
@@ -137,11 +137,12 @@ def _views(raw: object, context: str) -> list[dict[str, Any]]:
     if not isinstance(raw, list):
         raise SourceError(f"{context} is not a list")
     entries: list[object] = raw
-    views: list[dict[str, Any]] = []
+    views: list[dict[str, JsonValue]] = []
     for index, view in enumerate(entries):
-        if not isinstance(view, dict):
+        entry = as_json_object(view)
+        if entry is None:
             raise SourceError(f"{context}[{index}] is not an object")
-        views.append(view)
+        views.append(entry)
     return views
 
 

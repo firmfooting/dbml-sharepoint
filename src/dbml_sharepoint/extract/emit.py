@@ -11,9 +11,10 @@ Everything is written through `bundle.write_artifact`, the one writer, so
 the output is UTF-8 with LF endings on every platform.
 """
 
-from typing import Any
+from collections.abc import Mapping
 
 from dbml_sharepoint.extract.decode import DecodedColumn, DecodedEntity, Extraction
+from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model import _yaml
 
 #: The prefix an extracted mapping carries until the operator sets theirs.
@@ -130,7 +131,7 @@ def render_mapping(extraction: Extraction, *, prefix: str = DEFAULT_PREFIX) -> s
         entity.name: {"kind": "List", "base_template": 100, "site_role": "default"}
         for entity in extraction.entities
     }
-    document: dict[str, Any] = {
+    document: dict[str, JsonValue] = {
         "prefix": prefix,
         "entities": entities,
         "cross_site_reference_columns": [],
@@ -151,7 +152,7 @@ def render_mapping(extraction: Extraction, *, prefix: str = DEFAULT_PREFIX) -> s
     }
 
     if any(_renames_a_column(entity) for entity in extraction.entities):
-        display: dict[str, Any] = {"mode": "auto"}
+        display: dict[str, JsonValue] = {"mode": "auto"}
         overrides = {
             entity.name: entity.display_overrides
             for entity in extraction.entities
@@ -163,13 +164,18 @@ def render_mapping(extraction: Extraction, *, prefix: str = DEFAULT_PREFIX) -> s
 
     # Which sections wrap their columns in a `columns:` key and which do not
     # is read from `mapping_loader`, the thing that actually parses them.
-    for key, nest in (
-        ("calculated_formulas", False),
-        ("column_formatting", False),
-        ("form_visibility", True),
-        ("column_validation", True),
+    entities_by_name = {entity.name: entity for entity in extraction.entities}
+    for key, nest, declared_by_entity in (
+        ("calculated_formulas", False,
+         {name: e.calculated_formulas for name, e in entities_by_name.items()}),
+        ("column_formatting", False,
+         {name: e.column_formatting for name, e in entities_by_name.items()}),
+        ("form_visibility", True,
+         {name: e.form_visibility for name, e in entities_by_name.items()}),
+        ("column_validation", True,
+         {name: e.column_validation for name, e in entities_by_name.items()}),
     ):
-        section = _per_entity(extraction, key, nest=nest)
+        section = _per_entity(declared_by_entity, nest=nest)
         if section:
             document[key] = section
 
@@ -204,14 +210,15 @@ def _renames_a_column(entity: DecodedEntity) -> bool:
     )
 
 
-def _per_entity(extraction: Extraction, attribute: str, *, nest: bool) -> dict[str, Any]:
+def _per_entity(
+    declared_by_entity: Mapping[str, Mapping[str, JsonValue]], *, nest: bool,
+) -> dict[str, JsonValue]:
     """Collect one per-column mapping section across every entity."""
-    section: dict[str, Any] = {}
-    for entity in extraction.entities:
-        declared = getattr(entity, attribute)
+    section: dict[str, JsonValue] = {}
+    for name, declared in declared_by_entity.items():
         if not declared:
             continue
-        section[entity.name] = {"columns": declared} if nest else dict(declared)
+        section[name] = {"columns": declared} if nest else dict(declared)
     return section
 
 
