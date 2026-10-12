@@ -30,7 +30,7 @@ from typing import IO, Any, override
 from ruamel.yaml import YAML
 from ruamel.yaml.composer import Composer, ComposerError
 from ruamel.yaml.constructor import ConstructorError, SafeConstructor
-from ruamel.yaml.error import FileMark, StreamMark, YAMLError
+from ruamel.yaml.error import StreamMark, YAMLError
 from ruamel.yaml.events import (
     AliasEvent,
     CollectionStartEvent,
@@ -87,23 +87,6 @@ class TagOrDirectiveError(YAMLError):
         if len(found) > _MAX_LISTED:
             lines.append(f"  and {len(found) - _MAX_LISTED} more")
         super().__init__("\n".join(["uses tags or directives the loader refuses:", *lines]))
-
-    def moved(self, line: int, column: int) -> "TagOrDirectiveError":
-        """This refusal of a fragment cut from a file, placed where the fragment starts there.
-
-        `line` and `column` count from zero, as a mark does. Only the
-        fragment's first line is offset by `column`.
-        """
-        return TagOrDirectiveError([
-            (
-                FileMark(
-                    mark.name, mark.index, mark.line + line,
-                    mark.column + (column if mark.line == 0 else 0),
-                ),
-                why,
-            )
-            for mark, why in self.found
-        ])
 
 
 class RefusedYAMLError(ComposerError):

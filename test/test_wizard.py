@@ -1665,14 +1665,29 @@ def test_a_previous_prefixes_line_the_loader_refuses_is_named_as_refused(tmp_pat
     assert str(err.value) == (
         "`previous_prefixes:` is refused ('previous_prefixes: [&a \"\", &a \"X\"]'): "
         "found duplicate anchor 'a'; first occurrence\n"
-        '  in "<unicode string>", line 1, column 3:\n'
-        '     [&a "", &a "X"]\n'
-        "      ^ (line: 1)\n"
+        '  in "<unicode string>", line 2, column 21:\n'
+        '    previous_prefixes: [&a "", &a "X"]\n'
+        "                        ^ (line: 2)\n"
         "second occurrence\n"
-        '  in "<unicode string>", line 1, column 10:\n'
-        '     [&a "", &a "X"]\n'
-        "             ^ (line: 1)"
+        '  in "<unicode string>", line 2, column 28:\n'
+        '    previous_prefixes: [&a "", &a "X"]\n'
+        "                               ^ (line: 2)"
     )
+
+
+def test_a_previous_prefixes_line_that_does_not_parse_is_placed_in_the_file(
+    tmp_path: Path,
+) -> None:
+    """The marks count from the file's own line and column, not from the text after the colon."""
+    mapping = tmp_path / "mapping.yaml"
+    mapping.write_text(
+        'prefix: "GOV_"\nprevious_prefixes: ["", "A"\nentities: {}\n', encoding="utf-8",
+    )
+    with pytest.raises(wizard.WizardError) as err:
+        wizard._rewrite_prefix(mapping, "")
+    message = str(err.value)
+    assert 'in "<unicode string>", line 2, column 20:' in message
+    assert 'in "<unicode string>", line 2, column 28:' in message
 
 
 def test_a_template_directory_that_is_not_there_is_reported_not_a_traceback(

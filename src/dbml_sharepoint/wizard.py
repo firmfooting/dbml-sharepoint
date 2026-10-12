@@ -911,12 +911,11 @@ def _drop_chosen_from_previous_prefixes(
     match = matches[0]
     # Parsed as YAML rather than split on the brackets, so a trailing
     # comment on the line is handled by the parser that will read it back.
+    # Blank lines first, so the parser counts lines and columns as the file does.
     try:
-        declared = _yaml.safe_load(match.group(1))
+        loaded = _yaml.safe_load("\n" * text.count("\n", 0, match.start()) + match.group(0))
     except _yaml.TagOrDirectiveError as exc:
-        # The line parses; the parser counts from the text after the colon, the operator from 1:1.
-        where = exc.moved(text.count("\n", 0, match.start()), match.start(1) - match.start())
-        raise WizardError(f"`previous_prefixes:` {where}") from exc
+        raise WizardError(f"`previous_prefixes:` {exc}") from exc
     except _yaml.RefusedYAMLError as exc:
         # The line parses, as valid YAML the loader will not read, such as a reused anchor.
         raise WizardError(
@@ -929,6 +928,7 @@ def _drop_chosen_from_previous_prefixes(
             f"({match.group(0).strip()!r}), so the one-line rewrite this "
             f"wizard makes cannot edit it: {exc}",
         ) from exc
+    declared = loaded["previous_prefixes"] if isinstance(loaded, dict) else None
     if not isinstance(declared, list) or not all(isinstance(p, str) for p in declared):
         raise WizardError(
             f"`previous_prefixes:` is not a single flow-style list of strings "
