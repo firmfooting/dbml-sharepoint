@@ -495,7 +495,7 @@ def test_exact_acl_reconciliation_detects_descendant_unique_scopes() -> None:
     assert (
         "breakroleinheritance(copyRoleAssignments=false,clearSubscopes=true)" not in js
     )
-    descendant_probe = "await surveyDescendants(listTitle, wantedFolders)"
+    descendant_probe = "await surveyDescendants(listTitle, wantedFolders, managedFolders)"
     assert js.count(descendant_probe) == 2, "survey once before the writes, once after"
 
     # Asserted over the DRIVER, not over the whole phase. The reconciliation
@@ -543,7 +543,7 @@ def test_declared_folder_scopes_are_excluded_from_the_guard() -> None:
     nothing and abort forever or wave through a scope nobody declared.
     """
     js = _generate_simple_js()
-    assert "const declared = new Set(folderIds.values());" in js
+    assert "const declared = new Set(managedFolders.map(name => folderIds.get(name)));" in js
     assert (
         "undeclared: rows.filter(r => uniqueFlagOf(r, `Item ${r.Id} of '${listTitle}'`)"
         " && !declared.has(r.Id))" in js
@@ -789,7 +789,7 @@ def test_the_descendant_survey_only_runs_when_its_answer_is_read() -> None:
     js = _generate_simple_js()
     region = js[js.index("const aclListTitles"):]
     guard = region.index("const before = exact")
-    survey = region.index("await surveyDescendants(listTitle, wantedFolders)")
+    survey = region.index("await surveyDescendants(listTitle, wantedFolders, managedFolders)")
     cheap = region.index("await declaredFolderIds(listTitle, wantedFolders)")
 
     assert guard < survey, "the enumeration must sit behind the exact test"
