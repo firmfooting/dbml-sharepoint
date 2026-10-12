@@ -160,12 +160,12 @@ def test_only_the_measured_title_passes(tmp_path: Path) -> None:
     output = _run(program)
     line = next((ln for ln in output.splitlines() if ln.startswith("__OUT__")), None)
     assert line is not None, output
-    out = json.loads(line.removeprefix("__OUT__"))
+    out = Json.loads(line.removeprefix("__OUT__"))
 
-    assert out["matches"] is None
+    assert out["matches"].value is None
     assert (out["localised"]["checked"], out["localised"]["actual"]) == (True, "Erstellt")
     for key in ("lacksIt", "unreadable", "pastThePageAbsent", "pastThePageRefused"):
-        assert out[key]["checked"] is False, out[key]
+        assert out[key]["checked"].value is False, out[key]
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -179,10 +179,10 @@ def test_a_created_column_past_a_full_field_page_is_read_by_name(tmp_path: Path)
     output = _run(program)
     line = next((ln for ln in output.splitlines() if ln.startswith("__OUT__")), None)
     assert line is not None, output
-    out = json.loads(line.removeprefix("__OUT__"))
+    out = Json.loads(line.removeprefix("__OUT__"))
 
     assert out["readsByNameOnAWholePage"] == 0, "a complete page was second-guessed"
-    assert out["pastThePage"] is None, out["pastThePage"]
+    assert out["pastThePage"].value is None, out["pastThePage"]
     localised = out["pastThePageLocalised"]
     assert (localised["checked"], localised["actual"]) == (True, "Erstellt"), localised
     assert all(
@@ -304,7 +304,7 @@ def test_a_created_column_the_preflight_cannot_find_stops_the_run(tmp_path: Path
     assert summary.get("aborted") == "existing-schema-shape-errors", output[-3000:]
     assert not _deployment_writes(calls), _deployment_writes(calls)
     (refusal,) = [e for e in summary["errors"] if e.get("column") == "DueDate"]
-    assert refusal["mismatches"][0]["checked"] is False, refusal
+    assert refusal["mismatches"][0]["checked"].value is False, refusal
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

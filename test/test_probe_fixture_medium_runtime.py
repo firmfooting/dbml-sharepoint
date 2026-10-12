@@ -7,6 +7,7 @@ the wrong kind voids exactly the rows the catalogue says rest on it and is
 never written to.
 """
 
+import copy
 import json
 import textwrap
 from collections.abc import Mapping
@@ -731,7 +732,7 @@ def _run_recorded(
 
 
 def _healthy(base: Mapping[str, object], **changes: object) -> dict[str, object]:
-    config: dict[str, object] = json.loads(json.dumps(base))
+    config = dict(copy.deepcopy(base))
     config.update(changes)
     return config
 

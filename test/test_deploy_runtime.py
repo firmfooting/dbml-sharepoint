@@ -27,6 +27,7 @@ import pytest
 from _batch_mock import BATCH_MOCK
 from _builders import ID_PK, TITLE, table
 from _json_view import Json
+from _json_view import dumps as dumps_view
 from _node import NODE
 from _node import run_node as _run
 from _packs import DEFAULT_PREFIX, blocks, entities, pack, reader_identities
@@ -151,7 +152,7 @@ def test_deploy_js_runs_without_throwing() -> None:
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert result_line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(result_line.removeprefix("__RESULT__"))
+    summary = Json.loads(result_line.removeprefix("__RESULT__"))
     # The mock is deliberately thin, so shape probes legitimately complain.
     # What must never appear is a formula error: that is the phase-aborting
     # failure the synthetic Title patch produced on every list, every run,
@@ -176,7 +177,7 @@ def test_the_builtin_title_column_is_never_sent_a_formula() -> None:
         None,
     )
     assert line is not None, "harness produced no call log"
-    calls = json.loads(line.removeprefix("__CALLS__"))
+    calls = Json.loads(line.removeprefix("__CALLS__")).rows
     title_writes = [
         c for c in calls
         if c["method"] == "POST" and c["body"] and "ValidationMessage" in c["body"]
@@ -1084,9 +1085,9 @@ def _acl_state_rows(script: str) -> list[tuple[int, list[int]]]:
     )
     line = next(ln for ln in output.splitlines() if ln.startswith("__ROWS__"))
     return [
-        (row["PrincipalId"],
-         [b["Id"] for b in row["RoleDefinitionBindings"]["results"]])
-        for row in json.loads(line.removeprefix("__ROWS__"))
+        (row["PrincipalId"].number,
+         [b["Id"].number for b in row["RoleDefinitionBindings"]["results"]])
+        for row in Json.loads(line.removeprefix("__ROWS__"))
     ]
 
 
@@ -1439,7 +1440,7 @@ def test_the_degraded_stop_names_the_findings_nobody_could_assess() -> None:
     assert unassessed, findings
     printed = [ln for ln in output.splitlines() if "[ERROR]" in ln]
     for key in unassessed:
-        assert any(key in ln for ln in printed), (key, printed)
+        assert any(key.text in ln for ln in printed), (key, printed)
     # Tier 3 is the same list on every site, and re-stating it here would bury
     # the findings that are about this one.
     assert not [ln for ln in printed if "not_assessable:" in ln], printed
@@ -1505,7 +1506,7 @@ def test_a_sealed_builtin_title_does_not_abort_every_list() -> None:
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(line.removeprefix("__RESULT__"))
+    summary = Json.loads(line.removeprefix("__RESULT__"))
     seal_errors = [
         err for err in (summary.get("errors") or []) if "sealed" in str(err)
     ]
@@ -1526,9 +1527,9 @@ def test_a_sealed_title_is_unsealed_for_the_run() -> None:
         (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
     )
     assert line is not None, f"harness produced no call log:\n{output[-3000:]}"
-    calls = json.loads(line.removeprefix("__CALLS__"))
+    calls = Json.loads(line.removeprefix("__CALLS__")).rows
     seal_writes = [
-        json.loads(c["body"])["Sealed"]
+        Json.loads(c["body"].text)["Sealed"]
         for c in calls
         if c["method"] == "POST" and c.get("body")
         and (
@@ -1585,9 +1586,9 @@ def test_protection_restores_only_the_titles_prepare_unsealed(tmp_path: Path) ->
         (ln for ln in _run(script).splitlines() if ln.startswith("__CALLS__")), None,
     )
     assert line is not None, "harness produced no call log"
-    calls = json.loads(line.removeprefix("__CALLS__"))
+    calls = Json.loads(line.removeprefix("__CALLS__")).rows
     seal_writes = [
-        json.loads(c["body"])["Sealed"]
+        Json.loads(c["body"].text)["Sealed"]
         for c in calls
         if c["method"] == "POST" and c.get("body")
         and (
@@ -1596,8 +1597,8 @@ def test_protection_restores_only_the_titles_prepare_unsealed(tmp_path: Path) ->
         )
         and "Sealed" in c["body"]
     ]
-    assert seal_writes[0] is False, f"PREPARE did not unseal Title: {seal_writes}"
-    assert seal_writes[-1] is True, f"the run left Title unsealed: {seal_writes}"
+    assert seal_writes[0].value is False, f"PREPARE did not unseal Title: {seal_writes}"
+    assert seal_writes[-1].value is True, f"the run left Title unsealed: {seal_writes}"
 
 
 # A POST to the LIST object itself: the path ends at getbytitle(...) with
@@ -1634,7 +1635,7 @@ def _description_writes(calls: list[Json]) -> list[Json]:
     return [
         c for c in calls
         if c["method"] == "POST" and c["body"] and "Description" in c["body"]
-        and _LIST_WRITE_URL.search(c["url"])
+        and _LIST_WRITE_URL.search(c["url"].text)
     ]
 
 
@@ -1851,8 +1852,8 @@ def _run_adopted_deploy(
             f"the list reconcile phase never ran:\n{output[-3000:]}"
         )
     return (
-        json.loads(result_line.removeprefix("__RESULT__")),
-        json.loads(calls_line.removeprefix("__CALLS__")),
+        Json.loads(result_line.removeprefix("__RESULT__")),
+        Json.loads(calls_line.removeprefix("__CALLS__")).rows,
         output,
     )
 
@@ -1883,10 +1884,10 @@ def _force_checkout_run(
         tmp_path, _declared_list_descriptions(tmp_path), **knobs,
     )
     merges = [
-        json.loads(c["body"]) for c in calls
+        Json.loads(c["body"].text) for c in calls
         if c["method"] == "POST" and c["body"] and "ForceCheckout" in c["body"]
     ]
-    changes = json.loads(next(
+    changes = Json.loads(next(
         ln for ln in output.splitlines() if ln.startswith("__CHANGES__")
     ).removeprefix("__CHANGES__"))
     reads = int(next(
@@ -1902,7 +1903,7 @@ def test_a_library_already_at_the_declared_require_checkout_is_not_written(
     summary, merges, changes, reads = _force_checkout_run(
         tmp_path, require_checkout=True, force_checkout_live=True,
     )
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert reads >= 1, "the declared value was never read"
     assert merges == [] and changes == []
 
@@ -1914,7 +1915,7 @@ def test_a_library_that_differs_gets_one_merge_a_read_back_and_a_change_row(
     summary, merges, changes, reads = _force_checkout_run(
         tmp_path, require_checkout=False, force_checkout_live=True,
     )
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert summary.get("errors") == [], summary["errors"]
     assert [m["ForceCheckout"] for m in merges] == [False]
     assert reads == 2, "a probe and a read-back"
@@ -1967,7 +1968,7 @@ def test_an_unmanaged_require_checkout_is_neither_read_nor_written(tmp_path: Pat
     summary, merges, changes, reads = _force_checkout_run(
         tmp_path, require_checkout=None, force_checkout_live=True,
     )
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert reads == 0 and merges == [] and changes == []
 
 
@@ -2037,7 +2038,7 @@ def test_missing_or_empty_generated_expected_marker_fails_closed(
     calls_line = next(
         line for line in output.splitlines() if line.startswith("__CALLS__")
     )
-    calls = json.loads(calls_line.removeprefix("__CALLS__"))
+    calls = Json.loads(calls_line.removeprefix("__CALLS__")).rows
 
     assert summary.get("aborted") == "existing-schema-shape-errors", summary
     assert not _deployment_writes(calls), calls
@@ -2070,7 +2071,7 @@ def test_owned_list_named_proto_reaches_reconciliation(tmp_path: Path) -> None:
     summary = _summary_of(output)
 
     assert summary.get("errors") == [], summary["errors"]
-    assert summary.get("aborted") is None, (summary, output[-2000:])
+    assert summary.get("aborted").value is None, (summary, output[-2000:])
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -2088,7 +2089,7 @@ def test_a_correct_description_is_not_rewritten(tmp_path: Path) -> None:
     # was written" is also true of a run that fell over before it got there.
     # Without this the test would keep passing through an unrelated breakage
     # that stopped the reconcile from executing at all.
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert summary.get("errors") == [], summary["errors"]
     assert not _description_writes(calls), (
         f"a list already carrying its declared description was rewritten"
@@ -2105,7 +2106,7 @@ def test_owned_list_with_human_prose_drift_is_repaired(tmp_path: Path) -> None:
 
     summary, calls, output = _run_adopted_deploy(tmp_path, held)
 
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert _description_writes(calls), f"owned prose drift was not repaired\n{output[-2000:]}"
 
 
@@ -2457,7 +2458,7 @@ def test_a_description_is_reconciled_on_a_list_whose_title_needs_escaping(
         f"script or the matcher lost it\n{output[-2000:]}"
     )
     assert "Provisioned by dbml-sharepoint" in writes[0]["body"]
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert summary.get("errors") == [], summary["errors"]
 
 
@@ -2540,7 +2541,7 @@ def test_a_run_that_aborts_after_unsealing_a_title_reseals_it() -> None:
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert result_line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(result_line.removeprefix("__RESULT__"))
+    summary = Json.loads(result_line.removeprefix("__RESULT__"))
     # Without this the test could pass by never aborting at all, and a
     # run that reaches PROTECTION re-seals for the ordinary reason.
     assert summary.get("aborted"), (
@@ -2555,9 +2556,9 @@ def test_a_run_that_aborts_after_unsealing_a_title_reseals_it() -> None:
         (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
     )
     assert calls_line is not None, "harness produced no call log"
-    calls = json.loads(calls_line.removeprefix("__CALLS__"))
+    calls = Json.loads(calls_line.removeprefix("__CALLS__")).rows
     seal_writes = [
-        json.loads(c["body"])["Sealed"]
+        Json.loads(c["body"].text)["Sealed"]
         for c in calls
         if c["method"] == "POST" and c.get("body")
         and (
@@ -2567,8 +2568,8 @@ def test_a_run_that_aborts_after_unsealing_a_title_reseals_it() -> None:
         and "Sealed" in c["body"]
     ]
     assert seal_writes, "PREPARE never unsealed a Title, so there was nothing to restore"
-    assert seal_writes[0] is False, f"PREPARE did not unseal Title: {seal_writes}"
-    assert seal_writes[-1] is True, (
+    assert seal_writes[0].value is False, f"PREPARE did not unseal Title: {seal_writes}"
+    assert seal_writes[-1].value is True, (
         f"the aborted run left Title unsealed: {seal_writes}; errors={summary['errors']}"
     )
 
@@ -2588,16 +2589,16 @@ def test_a_run_that_aborts_after_unsealing_a_declared_field_reseals_it(tmp_path:
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert result_line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(result_line.removeprefix("__RESULT__"))
+    summary = Json.loads(result_line.removeprefix("__RESULT__"))
     assert summary.get("aborted") == "phase-1-schema-errors"
 
     calls_line = next(
         (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
     )
     assert calls_line is not None, "harness produced no call log"
-    calls = json.loads(calls_line.removeprefix("__CALLS__"))
+    calls = Json.loads(calls_line.removeprefix("__CALLS__")).rows
     seal_writes = [
-        json.loads(c["body"])["Sealed"]
+        Json.loads(c["body"].text)["Sealed"]
         for c in calls
         if c["method"] == "POST" and c.get("body")
         and (
@@ -2606,8 +2607,8 @@ def test_a_run_that_aborts_after_unsealing_a_declared_field_reseals_it(tmp_path:
         )
         and "Sealed" in c["body"]
     ]
-    assert seal_writes[0] is False, f"PREPARE did not unseal Note: {seal_writes}"
-    assert seal_writes[-1] is True, f"the aborted run left Note unsealed: {seal_writes}"
+    assert seal_writes[0].value is False, f"PREPARE did not unseal Note: {seal_writes}"
+    assert seal_writes[-1].value is True, f"the aborted run left Note unsealed: {seal_writes}"
 
 
 _TWO_WRONG_PROPERTIES_HARNESS = _ADOPTED_HARNESS + textwrap.dedent(r"""
@@ -2642,7 +2643,7 @@ def test_a_column_with_multiple_immutable_mismatches_reports_all_of_them(
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(line.removeprefix("__RESULT__"))
+    summary = Json.loads(line.removeprefix("__RESULT__"))
     assert summary.get("aborted") == "existing-schema-shape-errors", summary
     both = (
         "Existing field 'APP_Escalation.Note' has immutable TypeAsString 'Note'; "
@@ -2695,7 +2696,7 @@ def test_a_wrong_target_list_survives_an_unresolvable_display_field() -> None:
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert line is not None, output[-3000:]
-    summary = json.loads(line.removeprefix("__RESULT__"))
+    summary = Json.loads(line.removeprefix("__RESULT__"))
     assert summary.get("aborted") == "existing-schema-shape-errors", summary
     entry = next(
         (e for e in summary["errors"] if e.get("column") == "Project"), None,
@@ -2723,7 +2724,7 @@ def test_a_lookup_whose_target_display_field_cannot_be_resolved_is_refused() -> 
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(line.removeprefix("__RESULT__"))
+    summary = Json.loads(line.removeprefix("__RESULT__"))
     assert summary.get("aborted") == "existing-schema-shape-errors", summary
     reported = [err["error"] for err in summary["errors"] if err.get("column") == "Project"]
     assert reported == [
@@ -2756,7 +2757,7 @@ def test_an_existing_list_with_the_wrong_base_template_aborts_before_any_write()
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(line.removeprefix("__RESULT__"))
+    summary = Json.loads(line.removeprefix("__RESULT__"))
     assert summary.get("aborted") == "existing-schema-shape-errors", summary
     reported = [
         err["error"] for err in summary["errors"]
@@ -3563,7 +3564,7 @@ def test_a_by_name_404_past_a_full_page_reads_as_absent(tmp_path: Path) -> None:
         _unique_column_deploy_js(tmp_path),
     )
     assert _probed_code_by_name(calls), output[-4000:]
-    assert "shape probe failed: HTTP 404" not in json.dumps(summary["errors"])
+    assert "shape probe failed: HTTP 404" not in dumps_view(summary["errors"])
     assert len(_code_creates(calls)) == 1, _code_creates(calls)
     assert not summary.get("aborted"), summary
 
@@ -3682,7 +3683,7 @@ def test_a_notes_column_made_multi_line_requires_conversion_before_redeployment(
     output = _run(program)
     line = next((ln for ln in output.splitlines() if ln.startswith("__OUT__")), None)
     assert line is not None, output
-    result = json.loads(line.removeprefix("__OUT__"))
+    result = Json.loads(line.removeprefix("__OUT__"))
     assert [(m["property"], m["declared"], m["actual"]) for m in result["before"]] == [
         ("TypeAsString", "Note", "Text"),
     ]
@@ -3721,7 +3722,7 @@ def test_the_field_collector_records_what_it_compared_and_what_it_could_not() ->
     output = _run(program)
     line = next((ln for ln in output.splitlines() if ln.startswith("__OUT__")), None)
     assert line is not None, f"the collector produced no output:\n{output[-3000:]}"
-    out = json.loads(line.removeprefix("__OUT__"))
+    out = Json.loads(line.removeprefix("__OUT__"))
 
     assert [(m["property"], m["checked"]) for m in out["absentTarget"]] == [
         ("LookupList", True),
@@ -3729,7 +3730,7 @@ def test_the_field_collector_records_what_it_compared_and_what_it_could_not() ->
     assert [(m["property"], m["checked"]) for m in out["probeThrew"]] == [
         ("LookupField", False),
     ]
-    assert out["probeThrew"][0]["actual"] is None
+    assert out["probeThrew"][0]["actual"].value is None
     assert [(m["property"], m["checked"]) for m in out["displayFieldOnly"]] == [
         ("LookupField", True),
     ]
@@ -3765,8 +3766,8 @@ def test_a_declared_run_completes_every_phase_cleanly(tmp_path: Path) -> None:
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(line.removeprefix("__RESULT__"))
-    assert summary.get("aborted") is None, summary
+    summary = Json.loads(line.removeprefix("__RESULT__"))
+    assert summary.get("aborted").value is None, summary
     assert summary.get("errors") == [], summary["errors"]
     reached = [ln.split("Starting Phase ")[1][:3] for ln in output.splitlines()
                if "Starting Phase " in ln]
@@ -3800,7 +3801,7 @@ def test_the_seal_phase_writes_one_batch_per_list(tmp_path: Path) -> None:
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     sealing = [
         b for b in batches
@@ -3810,7 +3811,7 @@ def test_the_seal_phase_writes_one_batch_per_list(tmp_path: Path) -> None:
     for batch in sealing:
         list_ids = {
             match.group(1) for match in (
-                re.search(r"lists\(guid'([^']+)'\)", op["url"]) for op in batch["ops"]
+                re.search(r"lists\(guid'([^']+)'\)", op["url"].text) for op in batch["ops"]
             ) if match
         }
         assert len(list_ids) == 1, (
@@ -3888,7 +3889,7 @@ def test_the_maintenance_unseal_writes_one_batch_per_list(tmp_path: Path) -> Non
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     unsealing = [
         b for b in batches
@@ -3971,7 +3972,7 @@ def test_the_field_wave_creates_a_list_s_columns_as_one_batch(tmp_path: Path) ->
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     creating = [
         b for b in batches
@@ -3985,7 +3986,7 @@ def test_the_field_wave_creates_a_list_s_columns_as_one_batch(tmp_path: Path) ->
     for batch in creating:
         titles = {
             match.group(1) for match in (
-                re.search(r"getbytitle\('([^']+)'\)", op["url"]) for op in batch["ops"]
+                re.search(r"getbytitle\('([^']+)'\)", op["url"].text) for op in batch["ops"]
             ) if match
         }
         assert len(titles) == 1, (
@@ -3995,7 +3996,7 @@ def test_the_field_wave_creates_a_list_s_columns_as_one_batch(tmp_path: Path) ->
         assert [op["method"] for op in batch["ops"]] == [
             "POST", "POST", "MERGE", "POST", "MERGE",
         ], f"the create parts and their renames did not interleave: {batch['ops']}"
-        assert [json.loads(op["body"])["Title"] for op in batch["ops"]] == [
+        assert [Json.loads(op["body"].text)["Title"] for op in batch["ops"]] == [
             "Note",
             "EscalationReason", "Escalation Reason",
             "ResolvedOnSite", "Resolved On Site",
@@ -4007,21 +4008,21 @@ def test_the_field_wave_creates_a_list_s_columns_as_one_batch(tmp_path: Path) ->
             if op["method"] != "MERGE":
                 continue
             addressed = re.search(
-                r"getbyinternalnameortitle\('([^']+)'\)", op["url"],
+                r"getbyinternalnameortitle\('([^']+)'\)", op["url"].text,
             )
             assert addressed, (
                 "a rename part addresses the field by GUID, which it cannot "
                 f"know until the create before it lands: {op['url']}"
             )
-            assert addressed.group(1) == json.loads(batch["ops"][at - 1]["body"])["Title"], (
+            assert addressed.group(1) == Json.loads(batch["ops"][at - 1]["body"].text)["Title"], (
                 f"a rename part does not follow the create it renames: {batch['ops']}"
             )
 
-    result = json.loads(
+    result = Json.loads(
         next(ln for ln in output.splitlines() if ln.startswith("__RESULT__"))
         .removeprefix("__RESULT__"),
     )
-    assert result.get("aborted") is None, result
+    assert result.get("aborted").value is None, result
     # Six columns over two lists, and the count is reported by the verify pass
     # that reads each one back, not by the queue that sent them.
     assert result["columnsCreated"] == 6, result
@@ -4068,20 +4069,20 @@ def test_a_calculated_column_is_created_after_the_batch_not_inside_it(
         "  console.log('__CALLS__' + JSON.stringify(globalThis.__calls));\n"
         "});\n",
     )
-    batches = json.loads(
+    batches = Json.loads(
         next(ln for ln in output.splitlines() if ln.startswith("__BATCHES__"))
         .removeprefix("__BATCHES__"),
     )
-    calls = json.loads(
+    calls = Json.loads(
         next(ln for ln in output.splitlines() if ln.startswith("__CALLS__"))
         .removeprefix("__CALLS__"),
-    )
+    ).rows
 
     queued = [
         op for b in batches for op in b["ops"]
         if op["method"] == "POST" and op["url"].endswith("/fields")
     ]
-    assert [json.loads(op["body"])["Title"] for op in queued] == [
+    assert [Json.loads(op["body"].text)["Title"] for op in queued] == [
         "Note", "EscalationReason",
     ], f"the calculated column was queued as a ChangeSet part: {queued}"
 
@@ -4093,14 +4094,14 @@ def test_a_calculated_column_is_created_after_the_batch_not_inside_it(
     created = _at(
         lambda c: c["method"] == "POST"
         and c["url"].endswith("/fields")
-        and c["body"] is not None
-        and json.loads(c["body"]).get("Title") == "ReasonEcho",
+        and c["body"].value is not None
+        and Json.loads(c["body"].text).get("Title") == "ReasonEcho",
     )
     renamed = _at(
         lambda c: c["method"] == "POST"
         and "getbyinternalnameortitle('EscalationReason')" in c["url"]
-        and c["body"] is not None
-        and json.loads(c["body"]).get("Title") == "Escalation Reason",
+        and c["body"].value is not None
+        and Json.loads(c["body"].text).get("Title") == "Escalation Reason",
     )
     assert renamed < created, (
         "the calculated column was created before the column its formula "
@@ -4108,13 +4109,13 @@ def test_a_calculated_column_is_created_after_the_batch_not_inside_it(
     )
     # The reference is by DISPLAY name, which is what makes the rename above a
     # precondition rather than a tidy-up.
-    assert json.loads(calls[created]["body"])["Formula"] == '=[Escalation Reason]&""'
+    assert Json.loads(calls[created]["body"].text)["Formula"] == '=[Escalation Reason]&""'
 
-    result = json.loads(
+    result = Json.loads(
         next(ln for ln in output.splitlines() if ln.startswith("__RESULT__"))
         .removeprefix("__RESULT__"),
     )
-    assert result.get("aborted") is None, result
+    assert result.get("aborted").value is None, result
     assert result["columnsCreated"] == 3, result
 
 
@@ -4155,7 +4156,7 @@ def test_an_absent_declared_column_does_not_abandon_the_rest_of_its_lane(
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     opened = [
         op for batch in batches for op in batch["ops"]
@@ -4226,7 +4227,7 @@ def test_the_acl_phase_batches_its_adds_and_only_its_adds(tmp_path: Path) -> Non
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     adding = [
         b for b in batches
@@ -4248,7 +4249,7 @@ def test_the_acl_phase_batches_its_adds_and_only_its_adds(tmp_path: Path) -> Non
             "addroleassignment is a POST as a single write and stays one as a "
             f"part, not {op['method']}"
         )
-        assert op["body"] is None, (
+        assert op["body"].value is None, (
             "the arguments belong in the URL; a body here is not what the "
             "single write sent"
         )
@@ -4276,7 +4277,7 @@ def test_the_index_phase_batches_a_list_s_index_writes(tmp_path: Path) -> None:
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     indexing = [
         b for b in batches
@@ -4302,7 +4303,7 @@ def test_the_index_phase_batches_a_list_s_index_writes(tmp_path: Path) -> None:
         )
     list_ids = {
         match.group(1) for match in (
-            re.search(r"lists\(guid'([^']+)'\)", op["url"])
+            re.search(r"lists\(guid'([^']+)'\)", op["url"].text)
             for op in indexing[0]["ops"]
         ) if match
     }
@@ -4344,7 +4345,7 @@ def test_the_index_readback_reads_every_column_as_one_query_batch(
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     reads = [
         b for b in batches
@@ -4365,7 +4366,7 @@ def test_the_index_readback_reads_every_column_as_one_query_batch(
         f"one thing batching them may not change: {reads[0]['ops']}"
     )
     for op in reads[0]["ops"]:
-        assert op["body"] is None, f"a query part carried a body: {op['body']}"
+        assert op["body"].value is None, f"a query part carried a body: {op['body']}"
         assert "$select=Id" in op["url"], (
             "the read-back asks for more than the identity it compares: "
             f"{op['url']}"
@@ -4424,7 +4425,7 @@ def test_a_refused_index_readback_fails_every_column_closed(
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(line.removeprefix("__RESULT__"))
+    summary = Json.loads(line.removeprefix("__RESULT__"))
 
     unread = [
         err for err in (summary.get("errors") or [])
@@ -4493,7 +4494,7 @@ def test_the_views_phase_batches_a_view_s_field_writes(tmp_path: Path) -> None:
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     fielding = [
         b for b in batches
@@ -4510,7 +4511,7 @@ def test_the_views_phase_batches_a_view_s_field_writes(tmp_path: Path) -> None:
     for batch in fielding:
         views = {
             match.group(1) for match in (
-                re.search(r"views/getbytitle\('([^']+)'\)", op["url"])
+                re.search(r"views/getbytitle\('([^']+)'\)", op["url"].text)
                 for op in batch["ops"]
             ) if match
         }
@@ -4525,7 +4526,7 @@ def test_the_views_phase_batches_a_view_s_field_writes(tmp_path: Path) -> None:
             "the reset is not the first part, so the adds ahead of it are "
             f"cleared by it: {[op['url'] for op in batch['ops']]}"
         )
-        added = [re.search(r"addviewfield\('([^']+)'\)", op["url"])
+        added = [re.search(r"addviewfield\('([^']+)'\)", op["url"].text)
                  for op in batch["ops"][1:]]
         assert all(added), (
             f"a part after the reset is not an addviewfield: {batch['ops']}"
@@ -4627,7 +4628,7 @@ def test_the_form_phase_batches_across_lists(tmp_path: Path) -> None:
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     writes = [
         b for b in batches
@@ -4649,7 +4650,7 @@ def test_the_form_phase_batches_across_lists(tmp_path: Path) -> None:
         )
     written = {
         match.group(1) for match in (
-            re.search(r"lists/getbytitle\('([^']+)'\)", op["url"])
+            re.search(r"lists/getbytitle\('([^']+)'\)", op["url"].text)
             for op in writes[0]["ops"]
         ) if match
     }
@@ -4698,7 +4699,7 @@ def test_the_field_default_phase_batches_a_list_s_writes(tmp_path: Path) -> None
         (ln for ln in output.splitlines() if ln.startswith("__BATCHES__")), None,
     )
     assert line is not None, f"deploy.js sent no $batch at all:\n{output[-3000:]}"
-    batches = json.loads(line.removeprefix("__BATCHES__"))
+    batches = Json.loads(line.removeprefix("__BATCHES__"))
 
     # MERGE, not merely a body naming DefaultValue: the Phase 1 create parts
     # carry the declared default in the create body, so a body-only filter
@@ -4714,7 +4715,7 @@ def test_the_field_default_phase_batches_a_list_s_writes(tmp_path: Path) -> None
     assert len(writing) == 1, (
         f"the list's defaults went out as {len(writing)} $batch requests"
     )
-    values = [json.loads(op["body"])["DefaultValue"] for op in writing[0]["ops"]]
+    values = [Json.loads(op["body"].text)["DefaultValue"] for op in writing[0]["ops"]]
     assert values == ["open", "nobody"], (
         f"expected both declared defaults as parts, got {writing[0]['ops']}"
     )
@@ -4761,7 +4762,7 @@ def _run_capturing_calls(
     output = _run(script)
     line = next((ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None)
     assert line is not None, f"deploy.js did not return its call log:\n{output[-3000:]}"
-    return _summary_of(output), json.loads(line.removeprefix("__CALLS__")), output
+    return _summary_of(output), Json.loads(line.removeprefix("__CALLS__")).rows, output
 
 
 def _default_formula_bodies(calls: list[Json]) -> list[Json]:
@@ -4881,7 +4882,7 @@ def test_reverting_a_hand_set_value_resends_the_declared_formula(tmp_path: Path)
         and call["body"] and "DefaultValue" in call["body"]
     ]
     assert reverts, calls
-    assert all(b["DefaultValue"] is None for b in reverts), reverts
+    assert all(b["DefaultValue"].value is None for b in reverts), reverts
     assert [b.get("DefaultFormula") for b in reverts] == ["=TODAY()"] * len(reverts), reverts
     assert "readback did not match" not in output, output[-3000:]
     assert summary["errors"] == []
@@ -5102,7 +5103,7 @@ def test_the_aggregations_comparison_survives_sharepoints_readback_spacing() -> 
         out = subprocess.run(  # noqa: S603
             [NODE, str(path)], capture_output=True, text=True, check=True, timeout=60,
         )
-    result = json.loads(out.stdout.strip())
+    result = Json.loads(out.stdout.strip())
     assert result["equal"], (
         f"the shipped normaliser does not equalise SharePoint's readback spacing: "
         f"sent normalised to {result['a']!r}, readback to {result['b']!r}"
@@ -5153,7 +5154,7 @@ def test_a_first_deploy_probes_no_absent_group_or_field_by_name() -> None:
         (ln for ln in _run(script).splitlines() if ln.startswith("__CALLS__")), None,
     )
     assert line is not None, "harness produced no call log"
-    calls = json.loads(line.removeprefix("__CALLS__"))
+    calls = Json.loads(line.removeprefix("__CALLS__")).rows
     gets = [c["url"] for c in calls if c["method"] == "GET"]
     # The ACL phase resolves a group's Id by name AFTER creating it, so on
     # a real run that request succeeds and is not console noise; the mock
@@ -5211,7 +5212,7 @@ def test_the_unsupported_formula_tolerance_is_scoped_to_clears() -> None:
         proc = subprocess.run(  # noqa: S603
             [NODE, str(path)], capture_output=True, text=True, check=True, timeout=60,
         )
-    got = json.loads(proc.stdout.strip())
+    got = Json.loads(proc.stdout.strip())
     expected = [tolerated for _, _, tolerated in cases]
     assert got == expected, (
         f"clearingOnly must tolerate only clears; got {got}, expected {expected} "
@@ -5912,8 +5913,8 @@ def _run_identity_deploy(
         f"the identity-enrolment phase never ran:\n{output[-3000:]}"
     )
     return (
-        json.loads(result_line.removeprefix("__RESULT__")),
-        json.loads(calls_line.removeprefix("__CALLS__")),
+        Json.loads(result_line.removeprefix("__RESULT__")),
+        Json.loads(calls_line.removeprefix("__CALLS__")).rows,
         output,
     )
 
@@ -5921,7 +5922,7 @@ def _run_identity_deploy(
 def _membership_writes(calls: list[Json]) -> list[Json]:
     """Every POST that adds somebody to a site group, by parsed body."""
     return [
-        json.loads(c["body"]) for c in calls
+        Json.loads(c["body"].text) for c in calls
         if c["method"] == "POST" and c.get("body") and _MEMBERSHIP_URL.search(c["url"].text)
     ]
 
@@ -6701,8 +6702,8 @@ def _run_folder_and_list_reader_deploy(
         f"the logging phase never ran:\n{output[-3000:]}"
     )
     return (
-        json.loads(result_line.removeprefix("__RESULT__")),
-        json.loads(calls_line.removeprefix("__CALLS__")),
+        Json.loads(result_line.removeprefix("__RESULT__")),
+        Json.loads(calls_line.removeprefix("__CALLS__")).rows,
         output,
     )
 
@@ -7501,14 +7502,14 @@ def test_a_clean_end_to_end_run_leaves_the_reader_enrolled(tmp_path: Path) -> No
         (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
     )
     assert result_line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
-    summary = json.loads(result_line.removeprefix("__RESULT__"))
+    summary = Json.loads(result_line.removeprefix("__RESULT__"))
     calls_line = next(
         (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
     )
     assert calls_line is not None, f"harness produced no call log:\n{output[-3000:]}"
-    calls = json.loads(calls_line.removeprefix("__CALLS__"))
+    calls = Json.loads(calls_line.removeprefix("__CALLS__")).rows
 
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert summary.get("errors") == [], summary["errors"]
     assert _membership_writes(calls), "the reader was never enrolled"
     assert not _removals(calls), (
@@ -7550,8 +7551,8 @@ def _run_group_verify_deploy(
         f"the security phase never ran:\n{output[-3000:]}"
     )
     return (
-        json.loads(result_line.removeprefix("__RESULT__")),
-        json.loads(calls_line.removeprefix("__CALLS__")),
+        Json.loads(result_line.removeprefix("__RESULT__")),
+        Json.loads(calls_line.removeprefix("__CALLS__")).rows,
         output,
     )
 
@@ -7848,9 +7849,9 @@ def _owner_pending_groups_deploy_js(*, owner_first: bool = True) -> str:
     js = _deploy_js()
     match = re.search(r'"groups": (\[.*?\n  \])', js, re.DOTALL)
     assert match, "groups array not found in generated deploy.js"
-    groups = json.loads(match.group(1))
+    groups = Json.loads(match.group(1)).rows
     assert len(groups) == 1, groups
-    list_maintainer = dict(groups[0])
+    list_maintainer = groups[0].to_object()
     assert list_maintainer["owner_group"] == "Site Owners", list_maintainer
     list_maintainer["owner_group"] = "Group B"
     group_b = dict(list_maintainer)
@@ -7899,7 +7900,7 @@ def test_an_adopted_group_owned_by_a_group_pending_creation_still_deploys() -> N
     create_indices = [
         i for i, c in enumerate(calls)
         if c["method"] == "POST" and c["url"].endswith("/sitegroups") and c["body"]
-        and json.loads(c["body"]).get("Title") == "Group B"
+        and Json.loads(c["body"].text).get("Title") == "Group B"
     ]
     assert create_indices, f"Group B was never created:\n{output[-3000:]}"
     owner_resolve_indices = [
@@ -7940,7 +7941,7 @@ def test_a_group_owned_by_one_declared_after_it_deploys_on_a_fresh_site() -> Non
     assert not _security_errors(summary), summary
     assert summary.get("aborted") != "phase-0-security-errors", summary
     created = [
-        json.loads(c["body"]).get("Title") for c in calls
+        Json.loads(c["body"].text).get("Title") for c in calls
         if c["method"] == "POST" and c["url"].endswith("/sitegroups") and c["body"]
     ]
     assert created == ["List Maintainer", "Group B"], (
@@ -7949,7 +7950,7 @@ def test_a_group_owned_by_one_declared_after_it_deploys_on_a_fresh_site() -> Non
     group_b_created = next(
         i for i, c in enumerate(calls)
         if c["method"] == "POST" and c["url"].endswith("/sitegroups") and c["body"]
-        and json.loads(c["body"]).get("Title") == "Group B"
+        and Json.loads(c["body"].text).get("Title") == "Group B"
     )
     owner_resolves = [
         i for i, c in enumerate(calls)
@@ -8432,10 +8433,10 @@ def _duplicate_group_case_variant(js: str) -> str:
     """
     match = re.search(r'  "groups": (\[\n.*?\n  \]),\n  "indexed_columns"', js, re.DOTALL)
     assert match, "SCHEMA.groups block not found in generated deploy.js"
-    groups = json.loads(match.group(1))
-    variant = dict(groups[0])
+    groups = Json.loads(match.group(1)).rows
+    variant = groups[0].to_object()
     variant["name"] = "LIST MAINTAINER"
-    return js.replace(match.group(1), json.dumps([*groups, variant], indent=2), 1)
+    return js.replace(match.group(1), dumps_view([*groups, variant], indent=2), 1)
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -9079,8 +9080,8 @@ def _run_ownership_deploy(
     )
     assert calls_line is not None, f"harness produced no call log:\n{output[-3000:]}"
     return (
-        json.loads(result_line.removeprefix("__RESULT__")),
-        json.loads(calls_line.removeprefix("__CALLS__")),
+        Json.loads(result_line.removeprefix("__RESULT__")),
+        Json.loads(calls_line.removeprefix("__CALLS__")).rows,
         output,
     )
 
@@ -9135,7 +9136,7 @@ def test_every_guarded_phase_writes_when_ownership_holds(tmp_path: Path) -> None
     summary, calls, output = _run_ownership_deploy(
         tmp_path, table_names=("Escalation", "Other"),
     )
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert summary.get("errors") == [], summary["errors"]
     for phase in _GUARDED_WRITE_PHASES:
         assert _writes_in_phase(calls, pn(phase.key)), (
@@ -9203,10 +9204,10 @@ def test_the_ownership_guard_costs_one_request_per_call(tmp_path: Path) -> None:
         (ln for ln in output.splitlines() if ln.startswith("__GUARD__")), None,
     )
     assert line is not None, f"the guard was never measured:\n{output[-3000:]}"
-    measured = json.loads(line.removeprefix("__GUARD__"))
+    measured = Json.loads(line.removeprefix("__GUARD__"))
 
     hit = measured["hit"]
-    assert hit["message"] is None, hit
+    assert hit["message"].value is None, hit
     assert len(hit["urls"]) == 1, (
         f"an owned list cost {len(hit['urls'])} requests: {hit['urls']}"
     )
@@ -9433,7 +9434,7 @@ def test_the_unseal_phase_still_runs_when_its_survey_found_no_list(
         tmp_path,
         deploy_edit=_survey_drops("Maintenance ownership recheck", _OWNED_TITLE),
     )
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert summary.get("errors") == [], summary["errors"]
     assert _writes_in_phase(calls, pn("unseal")), (
         "the unseal phase wrote nothing, so this run proves nothing about it"
@@ -9499,7 +9500,7 @@ def test_the_identity_guard_refuses_an_expected_id_it_was_never_given(
         (ln for ln in output.splitlines() if ln.startswith("__IDENTITY__")), None,
     )
     assert line is not None, f"the guard was never called:\n{output[-3000:]}"
-    measured = json.loads(line.removeprefix("__IDENTITY__"))
+    measured = Json.loads(line.removeprefix("__IDENTITY__"))
 
     assert measured["omitted"] == (
         f"No proven identity was captured for list '{_OWNED_TITLE}' before a write"
@@ -9509,7 +9510,7 @@ def test_the_identity_guard_refuses_an_expected_id_it_was_never_given(
     )
     assert measured["undefinedId"] == refusal, measured
     assert measured["nullId"] == refusal, measured
-    assert measured["proven"] is None, measured
+    assert measured["proven"].value is None, measured
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -9906,7 +9907,7 @@ def test_an_exact_list_declaring_nothing_strips_it_and_reads_it_back(
     """
     summary, calls, output = _run_ownership_deploy(tmp_path, declare_assignments=False)
 
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert summary.get("errors") == [], summary["errors"]
     # The seeded stray is the only binding there, and it goes.
     removals = [c for c in calls if "removeroleassignment" in c["url"]]
@@ -10342,7 +10343,7 @@ def _run_view_guard_deploy(
         (ln for ln in output.splitlines() if ln.startswith("__PAGES__")), None,
     )
     assert pages_line is not None, f"harness logged no page reads:\n{output[-3000:]}"
-    read: list[str] = json.loads(pages_line.removeprefix("__PAGES__"))
+    read = Json.loads(pages_line.removeprefix("__PAGES__")).strings
     return summary, read, output
 
 
@@ -10364,7 +10365,7 @@ def test_the_guard_check_reads_the_control_then_every_filtered_view(
     to conclude from the pages that follow.
     """
     summary, read, output = _run_view_guard_deploy(tmp_path, {"All Items": "editable"})
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
     assert summary.get("errors") == [], summary["errors"]
     assert read == ["All Items", "Open", "Recent"], read
     assert "refuses 2 of 2 declared filter(s)" in output
@@ -10446,7 +10447,7 @@ def test_trailing_markup_after_the_document_close_is_still_a_refusal(
         tmp_path, {"All Items": "editable", "Open": "trailing"},
     )
     assert _refusal_errors(summary) == [], summary.get("errors")
-    assert summary.get("aborted") is None, summary
+    assert summary.get("aborted").value is None, summary
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -10672,7 +10673,7 @@ def test_the_title_rename_lands_before_any_calculated_column(
         (ln for ln in _run(script).splitlines() if ln.startswith("__CALLS__")), None,
     )
     assert line is not None, "harness produced no call log"
-    calls = json.loads(line.removeprefix("__CALLS__"))
+    calls = Json.loads(line.removeprefix("__CALLS__")).rows
 
     def first(predicate: Callable[[Json], bool]) -> int:
         for i, call in enumerate(calls):
@@ -10721,7 +10722,7 @@ def _assert_nothing_persisted_names_a_value(
     summary: Json, calls: list[Json], output: str, group: bool = False,
 ) -> None:
     persisted = "\n".join(c["body"].text for c in _item_writes(calls))
-    persisted += "\n" + json.dumps(summary.get("errors") or [])
+    persisted += "\n" + dumps_view(summary.get("errors") or [])
     persisted += "\n" + "\n".join(line for line in output.splitlines() if "[SP-DEPLOY]" in line)
     for hidden in (*_PERSISTED_HIDDEN, *(_GROUP_HIDDEN if group else ())):
         assert hidden not in persisted, f"{hidden!r} reached a persisted line:\n{persisted}"
@@ -10738,7 +10739,7 @@ def test_no_persisted_row_carries_a_value() -> None:
     ]
     assert len(change) == 1, rows
     assert change[0]["ChangeKind"] == "identity-enrolled"
-    assert re.fullmatch(r"automation \(sha256:[0-9a-f]{12}\)", change[0]["TargetName"])
+    assert re.fullmatch(r"automation \(sha256:[0-9a-f]{12}\)", change[0]["TargetName"].text)
     _assert_nothing_persisted_names_a_value(summary, calls, output)
 
 

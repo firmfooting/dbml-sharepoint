@@ -760,7 +760,7 @@ def _allow_deletion_writes(calls: list[Json], want: bool) -> list[int]:
     """Where in the run each AllowDeletion MERGE sits."""
     return [
         i for i, c in enumerate(calls)
-        if c["body"] and c["body"].get("AllowDeletion") is want
+        if c["body"] and c["body"].get("AllowDeletion").value is want
     ]
 
 

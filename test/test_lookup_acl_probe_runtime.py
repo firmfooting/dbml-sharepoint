@@ -477,9 +477,9 @@ def test_k8_is_a_control_the_probe_applies_per_outcome() -> None:
     afterwards, so the probe carries each row's state through PASS2 and pass 3
     settles or voids only the rows pass 2 left open.
     """
-    catalog = json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
+    catalog = Json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
     probe = next(p for p in catalog["probes"] if p["file"] == PROBE.name)
-    findings = {f["id"]: f["depends_on"] for f in probe["scenarios"][0]["findings"]}
+    findings = {f["id"].text: f["depends_on"] for f in probe["scenarios"][0]["findings"]}
     assert K8 in probe["scenarios"][0]["controls"]
     for finding in (K1, K2, K3):
         assert K8 not in findings[finding], finding

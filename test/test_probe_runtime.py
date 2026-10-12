@@ -9586,7 +9586,7 @@ def _run_operator_grant_probe(
     assert calls is not None, f"the mock logged no requests:\n{output[-3000:]}"
     return (
         {row["id"].text: row for row in Json.loads(rows.removeprefix("__ROWS__"))},
-        [call["url"].text for call in Json.loads(calls.removeprefix("__CALLS__"))],
+        [call["url"].text for call in Json.loads(calls.removeprefix("__CALLS__")).rows],
         output,
     )
 

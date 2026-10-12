@@ -170,6 +170,15 @@ class Json:
     def is_object(self) -> bool:
         return isinstance(self.value, dict)
 
+    def to_object(self) -> dict[str, JsonValue]:
+        """A mutable copy of an object view, for a test that edits one before re-serialising."""
+        assert isinstance(self.value, dict), self.value
+        return dict(self.value)
+
+    @property
+    def is_array(self) -> bool:
+        return isinstance(self.value, list)
+
     def index(self, item: "Json") -> int:
         return self.rows.index(item)
 
@@ -179,6 +188,6 @@ def _unwrap(value: object) -> JsonValue:
     return value.value
 
 
-def dumps(value: object) -> str:
+def dumps(value: object, indent: int | None = None) -> str:
     """`json.dumps` for a structure that holds views, such as a dict of result rows."""
-    return json.dumps(value, default=_unwrap)
+    return json.dumps(value, indent=indent, default=_unwrap)

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from _json_view import dumps as dumps_view
 from _node import NODE
 from test_deploy_runtime import (
     _ADOPTED_HARNESS,
@@ -172,7 +173,7 @@ globalThis.fetch = async (url, opts = {{}}) => {{
         renames._old_level(renames._old_level_marker()),
     )
     assert summary["aborted"] == "phase-0-rename-errors"
-    assert "invalid or incomplete response" in json.dumps(summary["errors"])
+    assert "invalid or incomplete response" in dumps_view(summary["errors"])
     assert renames._writes(calls) == []
 
 
@@ -275,7 +276,7 @@ globalThis.fetch = async (url, opts = {{}}) => {{
         _ADOPTED_HARNESS + overlay, _declared_deploy_js(tmp_path, _ONE_FORM_LAYOUT),
     )
     assert "CONTINUATION_INJECTED" in output, output[-4000:]
-    errors = json.dumps(summary["errors"])
+    errors = dumps_view(summary["errors"])
     assert "may be past the page" in errors, summary["errors"]
     assert "no default item content type found" not in errors, summary["errors"]
     assert not any("ClientFormCustomFormatter" in (c["body"] or "") for c in calls)

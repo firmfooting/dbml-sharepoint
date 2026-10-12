@@ -146,8 +146,8 @@ def _seed(
     assert result is not None, f"demo-data.js did not return a summary:\n{output[-3000:]}"
     assert calls is not None, f"demo-data.js did not reach the call log:\n{output[-3000:]}"
     return (
-        json.loads(result.removeprefix("__RESULT__")),
-        json.loads(calls.removeprefix("__CALLS__")),
+        Json.loads(result.removeprefix("__RESULT__")),
+        Json.loads(calls.removeprefix("__CALLS__")).rows,
     )
 
 
@@ -337,7 +337,7 @@ def test_the_created_item_is_posted_as_the_measured_collection() -> None:
     """The read-back must not have changed what goes out (probe M3)."""
     _, calls = _seed()
     posts = [
-        json.loads(c["body"]) for c in calls
+        Json.loads(c["body"].text) for c in calls
         if c["method"] == "POST" and c["body"] and "Events" in c["body"]
     ]
     assert len(posts) == 1
@@ -395,8 +395,8 @@ def _seed_multi_lookup(
     assert result is not None, f"demo-data.js did not return a summary:\n{output[-3000:]}"
     assert calls is not None, f"demo-data.js did not reach the call log:\n{output[-3000:]}"
     return (
-        json.loads(result.removeprefix("__RESULT__")),
-        json.loads(calls.removeprefix("__CALLS__")),
+        Json.loads(result.removeprefix("__RESULT__")),
+        Json.loads(calls.removeprefix("__CALLS__")).rows,
     )
 
 
@@ -405,7 +405,7 @@ def test_a_multi_value_lookup_is_written_as_a_results_object() -> None:
     out under the `<Name>Id` alias wrapped in a `{ results: [...] }` object."""
     _, calls = _seed_multi_lookup()
     posts = [
-        json.loads(c["body"]) for c in calls
+        Json.loads(c["body"].text) for c in calls
         if c["method"] == "POST" and c["body"] and "PartiesId" in c["body"]
     ]
 

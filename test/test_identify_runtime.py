@@ -305,7 +305,7 @@ def test_a_marker_surrounded_by_prose_is_still_a_marker() -> None:
     text either side of its marker."""
     payload, _, _, _ = _run_script()
     action = _by_title(payload, "PT_Action")
-    assert action["owned"] is True
+    assert action["owned"].value is True
     assert action["family"] == FAMILY
     assert action["declaredName"] == "PT_Action"
 
@@ -314,9 +314,9 @@ def test_a_description_that_only_mentions_the_tool_is_not_owned() -> None:
     """This is the near miss the prefix-free grammar exists to refuse."""
     payload, _, _, _ = _run_script()
     decoy = _by_title(payload, "Notes")
-    assert decoy["owned"] is False
-    assert decoy["family"] is None
-    assert decoy["columns"] is None
+    assert decoy["owned"].value is False
+    assert decoy["family"].value is None
+    assert decoy["columns"].value is None
 
 
 def test_columns_are_read_once_per_owned_list_and_never_for_the_others() -> None:
@@ -374,7 +374,7 @@ def test_a_site_carrying_only_the_old_run_log_still_reports_its_history() -> Non
     payload, _, _, out = _run_script(config)
     assert payload["lastDeployment"]["ReleaseTag"] == "2.1.0"
     run_log_row = _by_title(payload, old_title)
-    assert run_log_row["owned"] is True
+    assert run_log_row["owned"].value is True
     assert run_log_row["declaredName"] == old_title
     assert "No deployment record" not in out
 
@@ -410,7 +410,7 @@ def test_a_site_carrying_only_the_old_change_log_still_reports_it() -> None:
     payload, _, _, _ = _run_script(config)
     assert payload["changeLog"] == {"title": old_title, "rows": 19}
     change_log_row = _by_title(payload, old_title)
-    assert change_log_row["owned"] is True
+    assert change_log_row["owned"].value is True
     assert change_log_row["declaredName"] == old_title
 
 
@@ -434,7 +434,7 @@ def test_a_site_with_no_markers_reports_nothing_owned_and_reads_no_columns() -> 
     config["levels"] = [{"Id": 22, "Name": "Full Control", "Description": "Has full control."}]
     payload, calls, _, _ = _run_script(config)
     assert payload["families"] == []
-    assert payload["lastDeployment"] is None
+    assert payload["lastDeployment"].value is None
     assert not [c for c in calls if "/fields" in c["url"]]
     assert payload["problems"] == []
 

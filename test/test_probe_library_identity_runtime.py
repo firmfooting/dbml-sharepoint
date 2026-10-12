@@ -448,9 +448,9 @@ def _assert_generic_list_voids(
 
 def _catalog_dependents(probe: str, fixture: str) -> set[str]:
     """The rows the catalogue says rest on `fixture`, which the run must void exactly."""
-    catalog = json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
+    catalog = Json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
     descriptor = next(p for p in catalog["probes"] if p["file"] == probe)
-    return {finding["id"] for scenario in descriptor["scenarios"]
+    return {finding["id"].text for scenario in descriptor["scenarios"]
             for finding in scenario["findings"] if fixture in finding["depends_on"]}
 
 

@@ -167,8 +167,8 @@ def _seed(**overrides: object) -> tuple[Json, list[Json]]:
     result = next(ln for ln in output.splitlines() if ln.startswith("__RESULT__"))
     calls = next(ln for ln in output.splitlines() if ln.startswith("__CALLS__"))
     return (
-        json.loads(result.removeprefix("__RESULT__")),
-        json.loads(calls.removeprefix("__CALLS__")),
+        Json.loads(result.removeprefix("__RESULT__")),
+        Json.loads(calls.removeprefix("__CALLS__")).rows,
     )
 
 

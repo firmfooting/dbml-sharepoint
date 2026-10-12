@@ -393,9 +393,9 @@ def test_a_refused_part_is_not_an_answer_for_the_assessment() -> None:
         _TWO_READS,
     )
     assert result["threw"], "a 404 part answered as a clean read"
-    assert result["batchFailure"] is True
+    assert result["batchFailure"].value is True
     assert (result["answered"], result["refused"]) == (1, 1)
-    assert result["throttled"] is False, "a 404 is a refusal, not a throttle"
+    assert result["throttled"].value is False, "a 404 is a refusal, not a throttle"
     assert "200, 404" in result["message"], result["message"]
     assert result["errors"] >= 1, (
         "the refusal never reached the transcript the operator pastes back"

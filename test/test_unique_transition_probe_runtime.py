@@ -75,7 +75,7 @@ def _probe(mutate: bool, config: Mapping[str, object]) -> dict[str, Json]:
         script = script.replace(guard, '')
     output = run_node(_HARNESS.replace('__CONFIG__', json.dumps(config)) + script)
     line = next(line for line in output.splitlines() if line.startswith('__ROWS__'))
-    return {row['id'].removeprefix('field.unique.'): row for row in json.loads(line[8:])}
+    return {row['id'].removeprefix('field.unique.'): row for row in Json.loads(line[8:])}
 
 
 pytestmark = pytest.mark.skipif(NODE is None, reason='node is not installed')

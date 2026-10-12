@@ -22,6 +22,7 @@ from test_deploy_runtime import _summary_of, _view_guard_harness, _without_asses
 
 from dbml_sharepoint.analysis.phases import phase_number
 from dbml_sharepoint.analysis.resolve import resolve
+from dbml_sharepoint.jsonvalue import as_json_object
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
@@ -640,7 +641,7 @@ def _scope_writes(calls: list[Json], title: str) -> list[Json]:
         merged = (
             f"views/getbytitle('{encoded}')" in call["url"] and "viewfields" not in call["url"]
         )
-        if (created or merged) and parsed.get("Scope") is not None:
+        if (created or merged) and parsed.get("Scope").value is not None:
             written.append(parsed["Scope"])
     return written
 
@@ -857,9 +858,9 @@ def _view_titles_created(calls: list[Json]) -> list[str]:
     for call in calls:
         if call["method"] != "POST" or not call["body"] or not call["url"].endswith("/views"):
             continue
-        parsed = json.loads(call["body"])
+        parsed = Json.loads(call["body"].text)
         if parsed.get("__metadata", {}).get("type") == "SP.View":
-            made.append(parsed["Title"])
+            made.append(parsed["Title"].text)
     return made
 
 
@@ -873,9 +874,9 @@ def _titles_merged_by_id(calls: list[Json]) -> list[str]:
             continue
         if "/views('" not in url or not url.endswith("')"):
             continue
-        title = json.loads(call["body"]).get("Title")
-        if title is not None:
-            renamed.append(title)
+        title = Json.loads(call["body"].text).get("Title")
+        if not title.is_none:
+            renamed.append(title.text)
     return renamed
 
 
@@ -923,12 +924,12 @@ def test_an_adopted_builtin_view_still_takes_every_declared_setting(
     )
     encoded = quote("All Items")
     hidden = [
-        json.loads(call["body"]).get("Hidden")
+        Json.loads(call["body"].text).get("Hidden")
         for call in calls
         if call["method"] == "POST" and call["body"]
         and f"views/getbytitle('{encoded}')" in call["url"]
         and "viewfields" not in call["url"]
-        and json.loads(call["body"]).get("Hidden") is not None
+        and Json.loads(call["body"].text).get("Hidden") is not None
     ]
     assert hidden == [True], (
         "the recovery view is hidden behind the declared default, adopted or not"
@@ -1028,8 +1029,11 @@ def _declare_previous_title(deploy_js: str, title: str, previous: str) -> str:
     the SCHEMA the check would have refused.
     """
     blob = _schema_blob(deploy_js)
-    schema = json.loads(blob)
-    matched = [v for v in schema["views"] if v["title"] == title]
+    schema = as_json_object(json.loads(blob))
+    assert schema is not None
+    views = schema["views"]
+    assert isinstance(views, list)
+    matched = [v for v in views if isinstance(v, dict) and v["title"] == title]
     assert len(matched) == 1, f"{title!r} is not one declared view: {matched}"
     matched[0]["renamed_from"] = [previous]
     return deploy_js.replace(blob, json.dumps(schema), 1)
@@ -1153,7 +1157,7 @@ def test_a_library_naming_files_by_leafref_declares_no_title_patch(
     second = tmp_path / "titled"
     second.mkdir()
     titled = _schema_lists(_library_deploy_js(second, _RECURSIVE_VIEW, titled=True))
-    assert titled[0]["title_patch"] is not None, (
+    assert titled[0]["title_patch"].value is not None, (
         "a declared Title column must still produce a patch, or this fixture "
         "stops telling the two shapes apart"
     )
@@ -1176,7 +1180,7 @@ def test_preflight_over_an_existing_library_with_no_title_patch_does_not_throw(
         _library_harness(),
         _library_deploy_js(tmp_path, _RECURSIVE_VIEW, titled=False),
     )
-    assert summary.get("aborted") is None, summary.get("aborted")
+    assert summary.get("aborted").value is None, summary.get("aborted")
     assert summary["errors"] == [], summary["errors"]
 
 
@@ -1190,7 +1194,7 @@ def test_a_declared_title_column_is_still_preflighted_on_a_library(
         _library_harness(),
         _library_deploy_js(tmp_path, _RECURSIVE_VIEW, titled=True),
     )
-    assert summary.get("aborted") is None, summary.get("aborted")
+    assert summary.get("aborted").value is None, summary.get("aborted")
     assert any(
         "getbyinternalnameortitle('Title')" in call["url"]
         or "fields?" in call["url"]

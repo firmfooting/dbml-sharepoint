@@ -6,6 +6,7 @@ establish what the verdict claims. A sabotage wrapper is laid over an existing
 mock so the mock itself keeps encoding only what a live run returns.
 """
 
+import copy
 import json
 import textwrap
 
@@ -186,7 +187,7 @@ _RULE = "library.validation.validation-formula-on-library"
 
 
 def _run_lib_cols(wrapper: str = "", **changes: object) -> dict[str, Json]:
-    config = json.loads(json.dumps(_LIB_COLS_HEALTHY))
+    config = copy.deepcopy(_LIB_COLS_HEALTHY)
     config.update(changes)
     harness = _LIB_COLS_HARNESS.replace("__CONFIG__", json.dumps(config))
     script = (_over(harness, wrapper) if wrapper else harness) + "\n" + _fixture_probe_js(

@@ -10,6 +10,7 @@ import json
 import sys
 
 import pytest
+from _json_view import Json
 from _node import NODE, run_node
 from _paths import MANUAL
 from _versions_mock import VERSIONS_MOCK
@@ -29,7 +30,7 @@ SAMPLES = {
 
 def _evaluated(expression: str, known: str = (
         "  knowIdentity('it@example.com', '<account>');\n"
-        "  knowIdentity('It', '<name>', true);\n")) -> object:
+        "  knowIdentity('It', '<name>', true);\n")) -> Json:
     spec = importlib.util.spec_from_file_location(
         "dbmlsp_render_probes_identity", MANUAL / "render_probes.py")
     assert spec and spec.loader
@@ -45,13 +46,13 @@ def _evaluated(expression: str, known: str = (
         + f"  console.log('__OUT__' + JSON.stringify({expression}));\n"
         + "})();\n")
     line = next(ln for ln in output.splitlines() if ln.startswith("__OUT__"))
-    return json.loads(line.removeprefix("__OUT__"))
+    return Json.loads(line.removeprefix("__OUT__"))
 
 
 def _scrubbed(samples: list[str]) -> list[str]:
     out = _evaluated(f"{json.dumps(samples)}.map(scrub)")
-    assert isinstance(out, list)
-    return out
+    assert out.is_array
+    return out.strings
 
 
 def test_a_display_name_is_masked_as_a_whole_token_and_nowhere_else() -> None:
@@ -63,8 +64,8 @@ def test_a_refusal_is_masked_before_it_is_cut_short() -> None:
     text = "x" * 398 + " It"
     head = _evaluated(f"maskedHead({{ ok: false, status: 500, text: {json.dumps(text)} }})")
 
-    assert isinstance(head, dict)
-    assert head["why"].endswith("x" * 10 + " <"), head["why"]
+    assert head.is_object
+    assert head["why"].text.endswith("x" * 10 + " <"), head["why"]
 
 
 # Valid identities a narrower pattern stops part way through, leaving a prefix or a tail.

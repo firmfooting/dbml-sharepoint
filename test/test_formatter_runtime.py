@@ -212,7 +212,7 @@ def test_visual_probe_generation(tmp_path: Path) -> None:
     for path in tmp_path.glob("*.json"):
         raw = path.read_text(encoding="utf-8")
         assert "@currentField" not in raw and "@now" not in raw and "[$" not in raw
-        assert json.loads(raw)["debugMode"] is True
+        assert Json.loads(raw)["debugMode"].value is True
 
 
 @pytest.mark.parametrize(("value", "display", "icon"), [

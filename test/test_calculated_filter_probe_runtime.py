@@ -11,6 +11,7 @@ from collections.abc import Mapping
 
 import pytest
 from _json_view import Json
+from _json_view import dumps as dumps_view
 from _node import NODE, run_node
 from _paths import MANUAL
 
@@ -159,25 +160,25 @@ def _probe_js(gates: tuple[str, ...]) -> str:
 
 def _run(
     gates: tuple[str, ...] = ("CONFIRMED", "ALLOW_WRITES"), **config: object,
-) -> tuple[dict[str, Json], list[dict[str, str]], str]:
+) -> tuple[dict[str, Json], list[Json], str]:
     settings = {"list": None, "calc": "served", **config}
     output = run_node(_MOCK.replace("__CONFIG__", json.dumps(settings)) + "\n" + _probe_js(gates))
     sent_line = next(ln for ln in output.splitlines() if ln.startswith("__SENT__"))
     rows_line = next((ln for ln in output.splitlines() if ln.startswith("__ROWS__")), None)
-    rows = {} if rows_line is None else {
-        row["id"]: row for row in json.loads(rows_line.removeprefix("__ROWS__"))}
-    return rows, json.loads(sent_line.removeprefix("__SENT__")), output
+    rows: dict[str, Json] = {} if rows_line is None else {
+        row["id"].text: row for row in Json.loads(rows_line.removeprefix("__ROWS__"))}
+    return rows, Json.loads(sent_line.removeprefix("__SENT__")).rows, output
 
 
-def _writes(sent: list[dict[str, str]]) -> list[dict[str, str]]:
+def _writes(sent: list[Json]) -> list[Json]:
     return [r for r in sent if r["verb"] != "GET" and r["path"] != "contextinfo"]
 
 
 def _catalogued_dependents(fixture: str) -> set[str]:
-    catalog = json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
+    catalog = Json.loads((MANUAL / "probe-catalog.json").read_text(encoding="utf-8"))
     [entry] = [p for p in catalog["probes"] if p["file"] == PROBE.name]
-    return {finding["id"] for scenario in entry["scenarios"] for finding in scenario["findings"]
-            if fixture in finding["depends_on"]}
+    return {finding["id"].text for scenario in entry["scenarios"]
+            for finding in scenario["findings"] if fixture in finding["depends_on"]}
 
 
 @pytest.mark.parametrize("gates", [(), ("CONFIRMED",)], ids=["unconfirmed", "no-writes"])
@@ -395,7 +396,7 @@ def test_a_refusal_quoting_the_site_url_is_recorded_without_the_tenant() -> None
     row = rows["query.odata.calc-over-created-ne-null-filter"]
     assert row["outcome"] == "REFUSED"
     assert "[TENANT]/sites/probe/_api/web" in row["evidence"]
-    assert "example.sharepoint.com" not in json.dumps(rows)
+    assert "example.sharepoint.com" not in dumps_view(rows)
 
 
 def test_a_yes_no_create_refused_part_way_names_it_and_the_list_is_still_recycled() -> None:
@@ -443,7 +444,7 @@ def test_an_accepted_answer_that_names_the_tenant_is_redacted() -> None:
     row = rows["query.odata.calc-over-created-ne-null-filter"]
     assert row["outcome"] == "ACCEPTED"
     assert "[TENANT]/sites/probe/_api/web/next" in row["evidence"]
-    assert "example.sharepoint.com" not in json.dumps(rows)
+    assert "example.sharepoint.com" not in dumps_view(rows)
 
 
 def test_a_control_answered_without_rows_keeps_the_answer_text() -> None:
@@ -458,8 +459,10 @@ def test_a_control_answered_without_rows_keeps_the_answer_text() -> None:
 def test_a_stored_column_is_read_without_the_calculated_only_properties() -> None:
     rows, sent, _ = _run()
 
-    reads = {r["path"].split("getbyinternalnameortitle('")[1].split("'")[0]: r["path"]
-             for r in sent if r["verb"] == "GET" and "getbyinternalnameortitle(" in r["path"]}
+    reads: dict[str, str] = {
+        r["path"].text.split("getbyinternalnameortitle('")[1].split("'")[0]: r["path"].text
+        for r in sent if r["verb"] == "GET" and "getbyinternalnameortitle(" in r["path"]
+    }
     for stored in ("ProbeFlag", "ProbeChoice", "ProbeDate"):
         assert "OutputType" not in reads[stored] and "Formula" not in reads[stored], reads[stored]
     for calculated in ("ProbeCalcCreated", "ProbeCalcStored"):
@@ -481,7 +484,7 @@ def test_a_field_read_that_fails_keeps_its_answer_in_the_fixture_evidence(
     evidence = rows[COLUMNS]["evidence"]
     assert rows[COLUMNS]["outcome"] == "FAIL"
     assert f"ProbeChoice.Read differs: read {json.dumps(said)}" in evidence
-    assert "example.sharepoint.com" not in json.dumps(rows)
+    assert "example.sharepoint.com" not in dumps_view(rows)
     assert {row_id for row_id, row in rows.items() if row["state"] == "void"} == (
         _catalogued_dependents(COLUMNS))
     assert sent[-1]["path"].endswith("/recycle")
