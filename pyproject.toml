@@ -241,7 +241,7 @@ unknown-variable-type = "error"
 
 # The cleaned units. The global errors above do not enable these kinds yet; a later stage
 # flips them there and deletes these entries. Globs match across directories, so top-level
-# modules are listed by file; templating.py is the recorded exception in test_any_pins.py.
+# modules are listed by file, so a new top-level module must be added here.
 [[tool.pyrefly.sub-config]]
 matches = "src/dbml_sharepoint/extract/**"
 
@@ -308,6 +308,14 @@ implicit-any-lambda = "error"
 
 [[tool.pyrefly.sub-config]]
 matches = "src/dbml_sharepoint/project.py"
+
+[tool.pyrefly.sub-config.errors]
+explicit-any = "error"
+implicit-any-empty-container = "error"
+implicit-any-lambda = "error"
+
+[[tool.pyrefly.sub-config]]
+matches = "src/dbml_sharepoint/templating.py"
 
 [tool.pyrefly.sub-config.errors]
 explicit-any = "error"

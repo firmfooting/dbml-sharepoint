@@ -26,11 +26,6 @@ PINS: dict[str, int] = {
     "website/scripts": 0,
 }
 
-# An untyped third-party API that has no typed spelling, recorded with its reason. Jinja types
-# `Environment.globals` by its default entries, which rejects the data the generators register,
-# and the template lint reads the real attribute, so the one typed-as-Any cast stays here.
-EXCEPTIONS: dict[str, int] = {"src/dbml_sharepoint/templating.py": 2}
-
 _PACKAGE = REPO_ROOT / "src" / "dbml_sharepoint"
 _ROOTS = (_PACKAGE, REPO_ROOT / "test", REPO_ROOT / "scripts", REPO_ROOT / "website" / "scripts")
 
@@ -71,9 +66,8 @@ def _counts() -> tuple[dict[str, int], dict[str, int]]:
             uses = count_uses(path.read_text(encoding="utf-8"))
             unit = unit_of(path)
             if unit is None:
-                name = path.relative_to(REPO_ROOT).as_posix()
-                if uses > EXCEPTIONS.get(name, 0):
-                    cleaned[name] = uses
+                if uses:
+                    cleaned[path.relative_to(REPO_ROOT).as_posix()] = uses
             else:
                 pinned[unit] += uses
     return pinned, cleaned

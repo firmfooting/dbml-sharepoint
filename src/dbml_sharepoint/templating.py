@@ -10,7 +10,7 @@ in exactly one place.
 
 import re
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
@@ -77,8 +77,8 @@ def script_env(application: str = APPLICATION_NAME) -> Environment:
     )
     env.filters["comment_safe"] = comment_safe
     env.filters["markdown_cell"] = markdown_cell
-    # Jinja infers `globals` from its defaults' types; it holds anything.
-    env_globals = cast("dict[str, Any]", env.globals)
+    # Jinja types `globals` by its defaults, but it stores any value; nothing reads it back typed.
+    env_globals = cast("dict[str, object]", env.globals)
 
     # A GLOBAL rather than a per-render argument, because the fact belongs to
     # every script that reconciles a field and no generator should be able to
