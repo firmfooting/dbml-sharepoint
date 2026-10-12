@@ -476,6 +476,12 @@ def test_a_merge_source_is_counted_at_the_level_of_the_mapping_that_merges_it(me
     )
 
 
+def test_an_alias_after_an_inner_merge_list_is_still_counted_as_a_merge_source() -> None:
+    """The inner `<<: [...]` must not reset the outer list's level for `*a`."""
+    built = _yaml.safe_load(_source(99) + "x: {<<: [{<<: [{z: 1}]}, *a]}\n")
+    assert _depth_of(built) == 100
+
+
 def test_a_merge_source_that_merges_another_is_counted_at_one_level() -> None:
     """`b` stands at level 2 and holds `a`'s pairs, as `x` does in the test above."""
     text = _source(99) + "b: &b {<<: *a}\nx: {<<: *b}\n"

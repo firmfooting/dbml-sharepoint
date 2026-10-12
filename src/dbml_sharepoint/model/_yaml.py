@@ -144,8 +144,8 @@ class _Scanner(Scanner):
         """ruamel.yaml 0.19.1's, refusing a `\\u` or `\\U` escape that names no character.
 
         The escape is checked where it is read, since the text it decodes to is
-        all the caller gets back. It is a copy because the check needs the mark
-        of the backslash and the digits, which the original does not expose.
+        all the caller gets back. It is a copy (pinned by test_yaml_scanner_drift) because
+        the check needs the mark of the backslash and the digits, which the original hides.
         """
         chunks: list[str] = []
         srp = self.reader.peek
@@ -307,11 +307,12 @@ class _Composer(Composer):
             isinstance(parent, MappingNode) and isinstance(index, Node) and _is_merge(index)
             and isinstance(event, SequenceStartEvent)
         )
+        outer = self._merge_list
         if listed:
             self._merge_list = self._depth + 1
         node: Node = super().compose_node(parent, index)
         if listed:
-            self._merge_list = None
+            self._merge_list = outer
         return node
 
     def _merged_levels(self, parent: object, index: object) -> int:
