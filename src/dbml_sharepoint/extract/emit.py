@@ -127,7 +127,7 @@ def _escape_note(value: str) -> str:
 
 def render_mapping(extraction: Extraction, *, prefix: str = DEFAULT_PREFIX) -> str:
     """The `20-configure/mapping.yaml` for one extraction."""
-    entities = {
+    entities: dict[str, JsonValue] = {
         entity.name: {"kind": "List", "base_template": 100, "site_role": "default"}
         for entity in extraction.entities
     }
@@ -153,8 +153,8 @@ def render_mapping(extraction: Extraction, *, prefix: str = DEFAULT_PREFIX) -> s
 
     if any(_renames_a_column(entity) for entity in extraction.entities):
         display: dict[str, JsonValue] = {"mode": "auto"}
-        overrides = {
-            entity.name: entity.display_overrides
+        overrides: dict[str, JsonValue] = {
+            entity.name: {**entity.display_overrides}
             for entity in extraction.entities
             if entity.display_overrides
         }
@@ -218,7 +218,7 @@ def _per_entity(
     for name, declared in declared_by_entity.items():
         if not declared:
             continue
-        section[name] = {"columns": declared} if nest else dict(declared)
+        section[name] = {"columns": dict(declared)} if nest else dict(declared)
     return section
 
 

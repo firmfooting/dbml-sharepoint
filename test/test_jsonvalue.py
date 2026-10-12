@@ -1,6 +1,7 @@
 """The guards that type decoded JSON and YAML where it enters."""
 
 import datetime as dt
+from collections import UserDict
 
 import pytest
 
@@ -40,3 +41,19 @@ def test_as_json_object_returns_the_object_or_none() -> None:
     assert as_json_object({"a": [1]}) == {"a": [1]}
     assert as_json_object([1]) is None
     assert as_json_object({"a": dt.date(2026, 1, 1)}) is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        b"x", bytearray(b"x"), range(3), ("a", "b"), UserDict({"a": 1}),
+        ["a", ("b",)], {"a": range(2)},
+    ],
+    ids=[
+        "bytes", "bytearray", "range", "tuple", "custom mapping", "nested tuple",
+        "nested range",
+    ],
+)
+def test_only_lists_and_dicts_are_json_containers(value: object) -> None:
+    assert not is_json_value(value)
+    assert as_json_object(value) is None

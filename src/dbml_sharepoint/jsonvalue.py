@@ -1,10 +1,9 @@
 """The shape of decoded JSON and YAML, and guards that type it where it enters."""
 
-from collections.abc import Mapping, Sequence
 from typing import TypeGuard
 
-# Read-only containers inside, so a dict[str, str] is accepted wherever a value is.
-type JsonValue = str | int | float | bool | Sequence[JsonValue] | Mapping[str, JsonValue] | None
+# Concrete containers only: a tuple, bytes, range or custom mapping is not decoded JSON.
+type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None
 type JsonObject = dict[str, JsonValue]
 
 

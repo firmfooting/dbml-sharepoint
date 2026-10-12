@@ -94,7 +94,7 @@ def _severity_candidate(formatter: Mapping[str, JsonValue]) -> JsonObject | None
         return None
     calculated = text_value(calculated=True) in class_expr
     chain = class_expr.removesuffix(_SEVERITY_TEXT_SUFFIX)
-    value_map: dict[str, str] = {}
+    value_map: dict[str, JsonValue] = {}
     for match in _ARM.finditer(chain):
         value = match.group(1)
         token = _TOKEN_BY_CLASSES.get(match.group(2))
@@ -256,7 +256,7 @@ def _split_top_level(text: str, separator: str) -> list[str]:
     return parts
 
 
-def _expression_condition(text: str) -> list[JsonObject] | None:
+def _expression_condition(text: str) -> list[JsonValue] | None:
     """An authored `when:` proposed from a rendered expression predicate."""
     text = text.strip()
     if text.startswith("(") and text.endswith(")"):
@@ -266,7 +266,7 @@ def _expression_condition(text: str) -> list[JsonObject] | None:
     for separator, kind in ((" && ", "all_of"), (" || ", "any_of")):
         parts = _split_top_level(text, separator)
         if len(parts) > 1:
-            leaves: list[JsonObject] = []
+            leaves: list[JsonValue] = []
             for part in parts:
                 leaf = _expression_leaf(part)
                 if leaf is None:
