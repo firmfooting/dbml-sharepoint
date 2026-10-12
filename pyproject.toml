@@ -226,6 +226,9 @@ implicit-any-parameter = "error"
 redundant-cast = "error"
 unannotated-return = "error"
 implicit-any = "error"
+explicit-any = "error"
+implicit-any-empty-container = "error"
+implicit-any-lambda = "error"
 # mypy --strict's no_implicit_reexport, warn_unused_ignores and strict_equality,
 # which `pyrefly init` does not carry over.
 implicit-reexport = "error"
@@ -239,140 +242,11 @@ redundant-condition = "error"
 unknown-argument-type = "error"
 unknown-variable-type = "error"
 
-# The cleaned units. The global errors above do not enable these kinds yet; a later stage
-# flips them there and deletes these entries. Globs match across directories, so each
-# top-level module has its own entry, and a new one must be added.
-[[tool.pyrefly.sub-config]]
-matches = "src/dbml_sharepoint/extract/**"
-
-[tool.pyrefly.sub-config.errors]
-explicit-any = "error"
-implicit-any-empty-container = "error"
-implicit-any-lambda = "error"
-
-[[tool.pyrefly.sub-config]]
-matches = "src/dbml_sharepoint/analysis/**"
-
-[tool.pyrefly.sub-config.errors]
-explicit-any = "error"
-implicit-any-empty-container = "error"
-implicit-any-lambda = "error"
-
-[[tool.pyrefly.sub-config]]
-matches = "src/dbml_sharepoint/model/**"
-
-[tool.pyrefly.sub-config.errors]
-explicit-any = "error"
-implicit-any-empty-container = "error"
-implicit-any-lambda = "error"
-
-[[tool.pyrefly.sub-config]]
-matches = "src/dbml_sharepoint/generators/**"
-
-[tool.pyrefly.sub-config.errors]
-explicit-any = "error"
-implicit-any-empty-container = "error"
-implicit-any-lambda = "error"
-
-[[tool.pyrefly.sub-config]]
-matches = "src/dbml_sharepoint/__init__.py"
-
-[tool.pyrefly.sub-config.errors]
-explicit-any = "error"
-implicit-any-empty-container = "error"
-implicit-any-lambda = "error"
-
-[[tool.pyrefly.sub-config]]
-matches = "src/dbml_sharepoint/bundle.py"
-
-[tool.pyrefly.sub-config.errors]
-explicit-any = "error"
-implicit-any-empty-container = "error"
-implicit-any-lambda = "error"
-
-[[tool.pyrefly.sub-config]]
-matches = "src/dbml_sharepoint/catalogue.py"
-
-[tool.pyrefly.sub-config.errors]
-explicit-any = "error"
-implicit-any-empty-container = "error"
-implicit-any-lambda = "error"
-
-[[tool.pyrefly.sub-config]]
-matches = "src/dbml_sharepoint/cli.py"
-
-[tool.pyrefly.sub-config.errors]
-explicit-any = "error"
-implicit-any-empty-container = "error"
-implicit-any-lambda = "error"
-
-[[tool.pyrefly.sub-config]]
-matches = "src/dbml_sharepoint/extension.py"
-
-[tool.pyrefly.sub-config.errors]
-explicit-any = "error"
-implicit-any-empty-container = "error"
-implicit-any-lambda = "error"
-
-[[tool.pyrefly.sub-config]]
-matches = "src/dbml_sharepoint/pipeline.py"
-
-[tool.pyrefly.sub-config.errors]
-explicit-any = "error"
-implicit-any-empty-container = "error"
-implicit-any-lambda = "error"
-
-[[tool.pyrefly.sub-config]]
-matches = "src/dbml_sharepoint/project.py"
-
-[tool.pyrefly.sub-config.errors]
-explicit-any = "error"
-implicit-any-empty-container = "error"
-implicit-any-lambda = "error"
-
-[[tool.pyrefly.sub-config]]
-matches = "src/dbml_sharepoint/templating.py"
-
-[tool.pyrefly.sub-config.errors]
-explicit-any = "error"
-implicit-any-empty-container = "error"
-implicit-any-lambda = "error"
-
-[[tool.pyrefly.sub-config]]
-matches = "src/dbml_sharepoint/jsonvalue.py"
-
-[tool.pyrefly.sub-config.errors]
-explicit-any = "error"
-implicit-any-empty-container = "error"
-implicit-any-lambda = "error"
-
-[[tool.pyrefly.sub-config]]
-matches = "src/dbml_sharepoint/wizard.py"
-
-[tool.pyrefly.sub-config.errors]
-explicit-any = "error"
-implicit-any-empty-container = "error"
-implicit-any-lambda = "error"
-
-[[tool.pyrefly.sub-config]]
-matches = "test/test_*_runtime.py"
-
-[tool.pyrefly.sub-config.errors]
-explicit-any = "error"
-implicit-any-empty-container = "error"
-implicit-any-lambda = "error"
-# Tests read node output and fixtures through json.loads, whose values are unchecked by design.
-unknown-argument-type = false
-unknown-variable-type = false
-
-# Test data is often deliberately untyped: `[]`, `{}` and mock lambdas.
+# Tests read node output and fixtures through json.loads (decoded by the Json view); only the unknown-* kinds are relaxed here, the Any kinds are global.
 [[tool.pyrefly.sub-config]]
 matches = "test/**"
 
 [tool.pyrefly.sub-config.errors]
-implicit-any-empty-container = false
-implicit-any-lambda = false
-# Tests read node output and fixtures through json.loads, whose values are unchecked by design.
 unknown-argument-type = false
 unknown-variable-type = false
 

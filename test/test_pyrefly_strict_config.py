@@ -1,48 +1,31 @@
-# test/test_pyrefly_strict_config.py
-"""Every source module outside an uncleaned unit sits under the strict pyrefly sub-config."""
+"""The Any-related kinds are errors globally; the test sub-config relaxes only unknown-*."""
 
-import fnmatch
 import tomllib
 
 from _paths import REPO_ROOT
-from test_any_pins import PINS
 
-_KINDS = {"explicit-any", "implicit-any-empty-container", "implicit-any-lambda"}
+_KINDS = ("explicit-any", "implicit-any-empty-container", "implicit-any-lambda")
+_RELAXED = {"unknown-argument-type", "unknown-variable-type"}
 
 
-def _sub_configs() -> list[dict[str, object]]:
+def _pyrefly() -> dict[str, object]:
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    configs = pyproject["tool"]["pyrefly"]["sub-config"]
+    config = pyproject["tool"]["pyrefly"]
+    assert isinstance(config, dict)
+    return config
+
+
+def test_the_global_errors_turn_all_three_kinds_on() -> None:
+    errors = _pyrefly()["errors"]
+    assert isinstance(errors, dict)
+    assert {kind: errors.get(kind) for kind in _KINDS} == dict.fromkeys(_KINDS, "error")
+
+
+def test_no_sub_config_relaxes_the_three_kinds() -> None:
+    configs = _pyrefly().get("sub-config", [])
     assert isinstance(configs, list)
-    # The test and script sub-configs belong to units still being cleaned.
-    return [config for config in configs if str(config["matches"]).startswith("src/")]
-
-
-def test_every_sub_config_turns_all_three_kinds_to_error() -> None:
-    for config in _sub_configs():
+    assert configs, "the test sub-config is what this guards"
+    for config in configs:
         errors = config["errors"]
-        assert isinstance(errors, dict)
-        assert {kind: errors.get(kind) for kind in _KINDS} == dict.fromkeys(_KINDS, "error"), config
-
-
-def test_every_module_of_a_cleaned_unit_is_matched() -> None:
-    patterns = [str(config["matches"]) for config in _sub_configs()]
-    uncleaned = tuple(unit + "/" for unit in PINS if unit.startswith("src/"))
-    missed = []
-    for path in sorted((REPO_ROOT / "src" / "dbml_sharepoint").rglob("*.py")):
-        rel = path.relative_to(REPO_ROOT).as_posix()
-        # pyrefly globs, like fnmatch, let `*` cross directory separators.
-        if not rel.startswith(uncleaned) and not any(fnmatch.fnmatch(rel, p) for p in patterns):
-            missed.append(rel)
-    assert not missed, f"add these to a strict [[tool.pyrefly.sub-config]]: {missed}"
-
-
-def test_every_runtime_test_file_meets_the_strict_sub_config_first() -> None:
-    """pyrefly applies the first matching sub-config, and `test/**` relaxes two of the kinds."""
-    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    configs = pyproject["tool"]["pyrefly"]["sub-config"]
-    for path in sorted((REPO_ROOT / "test").glob("test_*_runtime.py")):
-        rel = path.relative_to(REPO_ROOT).as_posix()
-        first = next(config for config in configs if fnmatch.fnmatch(rel, str(config["matches"])))
-        errors = first["errors"]
-        assert {kind: errors.get(kind) for kind in _KINDS} == dict.fromkeys(_KINDS, "error"), rel
+        assert set(errors) <= _RELAXED, config
+        assert all(value is False for value in errors.values()), config
