@@ -30,7 +30,7 @@ from typing import IO, override
 from ruamel.yaml import YAML
 from ruamel.yaml.composer import Composer, ComposerError
 from ruamel.yaml.constructor import ConstructorError, SafeConstructor
-from ruamel.yaml.error import FileMark, StreamMark, YAMLError
+from ruamel.yaml.error import StreamMark, YAMLError
 from ruamel.yaml.events import (
     AliasEvent,
     CollectionStartEvent,
@@ -55,11 +55,21 @@ _TIME = "tag:yaml.org,2002:timestamp"
 #: How deep a document may nest, well inside the interpreter's recursion limit.
 _MAX_DEPTH = 100
 
+#: The last code point; a `\\U` escape can spell more.
+_LAST_CHARACTER = 0x10FFFF
+
 #: How many refusals one error lists before it counts the rest.
 _MAX_LISTED = 20
 
 #: NEL (U+0085), by code point so no string literal here holds a character a console cannot print.
 _NEL = chr(0x85)
+
+#: The surrogate code points, which UTF-8 cannot write.
+_SURROGATES = (0xD800, 0xDFFF)
+
+#: The line breaks YAML knows, and the characters that end a run of plain text in a quoted scalar.
+_BREAKS = "\n\r" + _NEL + chr(0x2028) + chr(0x2029)
+_ENDS = " '\"\\\0\t" + _BREAKS
 
 
 def _tag_name(tag: str) -> str:
@@ -87,23 +97,6 @@ class TagOrDirectiveError(YAMLError):
         if len(found) > _MAX_LISTED:
             lines.append(f"  and {len(found) - _MAX_LISTED} more")
         super().__init__("\n".join(["uses tags or directives the loader refuses:", *lines]))
-
-    def moved(self, line: int, column: int) -> "TagOrDirectiveError":
-        """This refusal of a fragment cut from a file, placed where the fragment starts there.
-
-        `line` and `column` count from zero, as a mark does. Only the
-        fragment's first line is offset by `column`.
-        """
-        return TagOrDirectiveError([
-            (
-                FileMark(
-                    mark.name, mark.index, mark.line + line,
-                    mark.column + (column if mark.line == 0 else 0),
-                ),
-                why,
-            )
-            for mark, why in self.found
-        ])
 
 
 class RefusedYAMLError(ComposerError):
@@ -146,17 +139,82 @@ class _Scanner(Scanner):
             ) from exc
         return number
 
+    # Adapted from ruamel.yaml (MIT); copyright and permission notice in NOTICE.
     @override
     def scan_flow_scalar_non_spaces(self, double: object, start_mark: object) -> object:
-        try:
-            return super().scan_flow_scalar_non_spaces(double, start_mark)
-        except ValueError as exc:
-            # chr() refuses an escape past U+10FFFF, which only `\U` can spell.
+        """ruamel.yaml 0.19.1's, refusing a `\\u` or `\\U` escape that names no character.
+
+        The escape is checked where it is read, since the text it decodes to is
+        all the caller gets back. It is a copy (pinned by test_yaml_scanner_drift) because
+        the check needs the mark of the backslash and the digits, which the original hides.
+        """
+        chunks: list[str] = []
+        srp = self.reader.peek
+        srf = self.reader.forward
+        while True:
+            length = 0
+            while srp(length) not in _ENDS:
+                length += 1
+            if length != 0:
+                chunks.append(self.reader.prefix(length))
+                srf(length)
+            ch = srp()
+            if not double and ch == "'" and srp(1) == "'":
+                chunks.append("'")
+                srf(2)
+            elif (double and ch == "'") or (not double and ch in "\"\\"):
+                chunks.append(ch)
+                srf()
+            elif double and ch == "\\":
+                slash = self.reader.get_mark()
+                srf()
+                ch = srp()
+                if ch in self.ESCAPE_REPLACEMENTS:
+                    chunks.append(self.ESCAPE_REPLACEMENTS[ch])
+                    srf()
+                elif ch in self.ESCAPE_CODES:
+                    chunks.append(self._read_code(ch, start_mark, slash))
+                elif ch in _BREAKS:
+                    self.scan_line_break()
+                    chunks.extend(self.scan_flow_scalar_breaks(double, start_mark))
+                else:
+                    raise ScannerError(
+                        "while scanning a double-quoted scalar", start_mark,
+                        f"found unknown escape character {ch!r}",
+                        self.reader.get_mark(),
+                    )
+            else:
+                return chunks
+
+    def _read_code(self, letter: str, start_mark: object, slash: StreamMark) -> str:
+        """The character a `\\x`, `\\u` or `\\U` escape names, read after its letter."""
+        length: int = self.ESCAPE_CODES[letter]
+        self.reader.forward()
+        for k in range(length):
+            if self.reader.peek(k) not in "0123456789ABCDEFabcdef":
+                raise ScannerError(
+                    "while scanning a double-quoted scalar", start_mark,
+                    f"expected escape sequence of {length:d} "
+                    f"hexdecimal numbers, but found {self.reader.peek(k)!r}",
+                    self.reader.get_mark(),
+                )
+        digits = self.reader.prefix(length)
+        code = int(digits, 16)
+        if code > _LAST_CHARACTER:
             raise ScannerError(
                 "while scanning a double-quoted scalar", start_mark,
                 "found an escape that names no character; the last is `\\U0010FFFF`",
                 self.reader.get_mark(),
-            ) from exc
+            )
+        if _SURROGATES[0] <= code <= _SURROGATES[1]:
+            raise ScannerError(
+                "while scanning a double-quoted scalar", start_mark,
+                f"found the escape `\\{letter}{digits}`, which names a surrogate and so "
+                "no character",
+                slash,
+            )
+        self.reader.forward(length)
+        return chr(code)
 
     @override
     def scan_directive(self) -> DirectiveToken:
@@ -196,6 +254,8 @@ class _Composer(Composer):
         self._enclosing: dict[str, StreamMark] = {}
         # How many levels each composed collection nests, itself included.
         self._height: dict[Node, int] = {}
+        # The depth at which the entries of the `<<` list being composed stand.
+        self._merge_list: int | None = None
 
     def _refuse_tag(self, tag: str, mark: StreamMark, *, scalar: bool) -> None:
         """Record an explicit `tag`, which would read its value by rules of its own."""
@@ -241,8 +301,33 @@ class _Composer(Composer):
             # ruamel.yaml composes a key with no index, and reads a sequence key as a tuple.
             self._refuse_collection_key(parent, event)
         if isinstance(event, AliasEvent) and event.anchor in self.anchors:
-            self._refuse_deep_alias(self.anchors[event.anchor], event.start_mark)
-        return super().compose_node(parent, index)
+            self._refuse_deep_alias(
+                self.anchors[event.anchor], event.start_mark, self._merged_levels(parent, index),
+            )
+        listed = (
+            isinstance(parent, MappingNode) and isinstance(index, Node) and _is_merge(index)
+            and isinstance(event, SequenceStartEvent)
+        )
+        outer = self._merge_list
+        if listed:
+            self._merge_list = self._depth + 1
+        node: Node = super().compose_node(parent, index)
+        if listed:
+            self._merge_list = outer
+        return node
+
+    def _merged_levels(self, parent: object, index: object) -> int:
+        """How many levels above an alias standing here its collection's pairs join the document.
+
+        A merged mapping's pairs join the mapping that merges it, so a source stands
+        at that mapping's level: one above the alias for `<<: *a`, two above it for
+        `<<: [*a]`, where the list is not built.
+        """
+        if isinstance(parent, MappingNode) and isinstance(index, Node) and _is_merge(index):
+            return 1
+        if isinstance(parent, SequenceNode) and self._depth == self._merge_list:
+            return 2
+        return 0
 
     def _refuse_collection_key(self, mapping: MappingNode, event: Event) -> None:
         """Refuse a sequence or mapping key of `mapping`, marked where it or its alias is."""
@@ -256,9 +341,12 @@ class _Composer(Composer):
                 f"found a {kind} used as a key; a key must be a single value", event.start_mark,
             )
 
-    def _refuse_deep_alias(self, aliased: Node, mark: StreamMark) -> None:
-        """Refuse an alias whose collection, standing where the alias does, nests past the limit."""
-        room = _MAX_DEPTH - self._depth
+    def _refuse_deep_alias(self, aliased: Node, mark: StreamMark, lifted: int) -> None:
+        """Refuse an alias whose collection, standing where the alias does, nests past the limit.
+
+        `lifted` is how many levels higher a merge source stands than the alias.
+        """
+        room = _MAX_DEPTH - self._depth + lifted
         if self._height.get(aliased, 0) <= room:
             return
         # Down the deepest branch to the collection that would stand one level past the limit.
@@ -311,11 +399,29 @@ class _Composer(Composer):
         return node
 
 
+def _is_merge(key: Node) -> bool:
+    """Whether `key` is the merge key `<<`."""
+    return key.tag == _MERGE_TAG
+
+
 def _children(node: Node) -> list[Node]:
-    """The nodes a sequence or mapping holds, a mapping's keys among them."""
+    """The nodes that stand one level below a sequence or mapping, a mapping's keys among them.
+
+    A merged mapping's pairs join the mapping that merges it, so they stand
+    at its level and are listed in place of the merge.
+    """
     if isinstance(node, MappingNode):
         pairs: list[tuple[Node, Node]] = node.value
-        return [part for pair in pairs for part in pair]
+        found: list[Node] = []
+        for key, value in pairs:
+            if not _is_merge(key):
+                found += [key, value]
+                continue
+            sources: list[Node] = value.value if isinstance(value, SequenceNode) else [value]
+            for source in sources:
+                if isinstance(source, MappingNode):
+                    found += _children(source)
+        return found
     items: list[Node] = node.value
     return items
 
