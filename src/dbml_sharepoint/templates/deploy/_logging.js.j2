@@ -864,8 +864,12 @@
     // to document libraries"
     // https://learn.microsoft.com/sharepoint/understanding-permission-levels
     // The upload is Files/add with overwrite=false, which Learn documents for
-    // SharePoint REST, and a 2xx answer is the proof it landed: the drop-box
-    // account is not known to be able to read the file back.
+    // SharePoint REST, and the read-back compares File.Length, the size in bytes
+    // https://learn.microsoft.com/previous-versions/office/developer/sharepoint-rest-reference/dn450841(v=office.15)
+    // Finding deploy-log.upload.read-back: the Submit Only level reads its own
+    // file's Length. Finding deploy-log.upload.second-add: a duplicate name
+    // answers 403, not 409. A failed read-back is recorded under its own name
+    // and the URL is kept, since the add itself was a 2xx.
     // Returns the file's server-relative URL, or null after recording a named
     // logging failure: this never throws and never fails the deploy.
     const uploadRunLog = async () => {
@@ -888,8 +892,8 @@
         const stamp = new Date(RUN_STARTED_AT).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
         const fileName = `${stamp}-${slug}-${Math.random().toString(36).slice(2, 8)}.log`;
         const bytes = new TextEncoder().encode(LOG_BUFFER.join('\n') + '\n');
-        // What Files/add answers for a name that already exists is unmeasured, so any non-2xx is a
-        // failed upload; attempts 0 means the POST is never retried, which could hit this run's own file.
+        // Attempts 0: the POST is never retried, since a retry would hit this run's own file and
+        // answer 403 (finding deploy-log.upload.second-add).
         const addResp = await fetchWithRetry(externalApi(
           `getfolderbyserverrelativeurl('${odataName(root)}')/files/add(url='${odataName(fileName)}',overwrite=false)`
         ), {
@@ -897,8 +901,26 @@
           headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': await externalDigest() },
           body: bytes,
         }, 0);
-        if (!addResp.ok) throw new Error(`HTTP ${addResp.status} ${spError(await addResp.text())}`);
+        if (!addResp.ok) {
+          const why = addResp.status === 403
+            ? ' (the file name already existed, or this account lacks AddListItems)' : '';
+          throw new Error(`HTTP ${addResp.status}${why} ${spError(await addResp.text())}`);
+        }
         const fileUrl = `${root.replace(/\/+$/, '')}/${fileName}`;
+        const readWhere = `run log read-back from '${EXTERNAL_LOG_LIBRARY_TITLE}'`;
+        try {
+          const backResp = await fetchWithRetry(externalApi(
+            `getfilebyserverrelativeurl('${odataName(fileUrl)}')?$select=Length`
+          ), { headers: { 'Accept': 'application/json;odata=verbose' } });
+          if (!backResp.ok) throw new Error(`HTTP ${backResp.status}`);
+          const length = Number(((await backResp.json()).d || {}).Length);
+          if (length !== bytes.length) {
+            throw new Error(`read-back length ${length} does not match the ${bytes.length} bytes sent to ${fileUrl}`);
+          }
+        } catch (err) {
+          recordFailure(readWhere, err);
+          log('WARN', `${readWhere} failed (${err.message}); the file was added but not verified.`);
+        }
         return fileUrl;
       } catch (err) {
         recordFailure(where, err);

@@ -100,7 +100,8 @@ _HARNESS = textwrap.dedent(r"""
     const CENTRAL_PERMS_LOW = 2;
     // How the central Deployment logs library answers: 'ok', 'missing' (its
     // probe 404s), 'no-add' (EffectiveBasePermissions without AddListItems),
-    // or 'refuse-upload' (Files/add answers 403).
+    // 'refuse-upload' (Files/add answers 403), 'short-read' (the read-back
+    // length is one byte short) or 'read-refused' (the read-back answers 403).
     const LIBRARY_MODE = 'ok';
     // The columns each central list carries. Empty models a list the operator
     // pointed DBMLSP_DEPLOY_LOG_LIST / DBMLSP_DEPLOY_CHANGES at that this tool
@@ -293,11 +294,17 @@ _HARNESS = textwrap.dedent(r"""
             if (headers['X-RequestDigest'] !== 'central-digest') return badDigest();
             const path = `/sites/CENTRAL_SITE/LIBRARY_TITLE/${added[1]}`;
             if (state.files[path] !== undefined) {
-              return reply(400, { error: { message: { value: 'duplicate (simulated)' } } });
+              return reply(403, { error: { message: { value: 'Access denied.' } } });
             }
             state.files[path] = {
               text: new TextDecoder().decode(opts.body), bytes: opts.body.length };
             return reply(200, { d: { ServerRelativeUrl: path } });
+          }
+          const read = /getfilebyserverrelativeurl\('([^']*)'\)/.exec(u);
+          if (read && state.files[read[1]]) {
+            if (LIBRARY_MODE === 'read-refused') return reply(403, {});
+            const n = state.files[read[1]].bytes - (LIBRARY_MODE === 'short-read' ? 1 : 0);
+            return reply(200, { d: { Length: String(n) } });
           }
           return notFound();
         }
@@ -1936,7 +1943,8 @@ def test_the_upload_post_is_never_retried_and_a_duplicate_name_is_a_failed_uploa
     adds = [c for c in run["calls"] if "/files/add(" in c["url"].text]
     assert len(adds) == 2, adds  # the overlay's own second send; the code sent one
     failures = run["summary"]["loggingFailures"]
-    assert any("HTTP 400" in f["error"].text for f in failures), failures
+    assert any("HTTP 403" in f["error"].text and "already existed" in f["error"].text
+               for f in failures), failures
 
 
 @pytest.mark.parametrize(
@@ -1944,7 +1952,7 @@ def test_the_upload_post_is_never_retried_and_a_duplicate_name_is_a_failed_uploa
     [
         ("missing", "library is missing"),
         ("no-add", "no AddListItems"),
-        ("refuse-upload", "HTTP 403"),
+        ("refuse-upload", "already existed, or this account lacks AddListItems"),
     ],
 )
 def test_a_library_that_cannot_take_the_log_is_a_named_failure_not_a_failed_deploy(
@@ -1963,6 +1971,26 @@ def test_a_library_that_cannot_take_the_log_is_a_named_failure_not_a_failed_depl
     assert last["StampKind"] in ("deployment stop", "abort")
     assert "run log " not in last["Details"].text
     assert run["unhandled"] == []
+
+
+@pytest.mark.parametrize(
+    ("mode", "reason"),
+    [("short-read", "does not match"), ("read-refused", "HTTP 403")],
+)
+def test_a_failed_read_back_is_named_and_keeps_the_url(mode: str, reason: str) -> None:
+    run = _run_deploy(library_mode=mode)
+    named = [
+        f for f in run["summary"]["loggingFailures"]
+        if f"run log read-back from '{EXTERNAL_LOG_LIBRARY_DEFAULT}'" in f["where"].text
+    ]
+    assert len(named) == 1 and reason in named[0]["error"].text, named
+    assert "run log " in run["state"]["central"].rows[-1]["Details"].text
+    assert run["unhandled"] == []
+
+
+def test_a_matching_read_back_records_no_failure() -> None:
+    run = _run_deploy()
+    assert not [f for f in run["summary"]["loggingFailures"] if "read-back" in f["where"].text]
 
 
 def test_a_local_run_skips_the_upload_and_says_why() -> None:
