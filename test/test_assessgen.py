@@ -3051,6 +3051,34 @@ def test_assessment_checks_immutable_library_root(root: str | None, expected: st
         assert summary["verdict"] == "BLOCKED"
 
 
+@pytest.mark.parametrize("root,expected", [
+    ("/sites/test/Lists/APP_Task", "PASS"), ("/sites/test/Lists/Other", "BLOCKED"),
+])
+def test_assessment_checks_a_declared_list_root_against_its_own_template(
+    root: str, expected: str,
+) -> None:
+    schema, bundle = _simple()
+    bundle.mapping.entities["Task"] = replace(
+        bundle.mapping.entities["Task"], internal_name="Lists/APP_Task",
+    )
+    js = generate_assess_js(
+        schema=schema, bundle=bundle, release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test", site_role="default",
+        source_dbml="simple.dbml", generated_at="2026-09-15T00:00:00Z", resolved=resolve(
+            schema, bundle.mapping,
+        ),
+    )
+    harness = _ASSESS_HARNESS.replace(
+        "const body = (url) => {",
+        "const body = (url) => {\n  if (url.includes('/RootFolder?')) return "
+        "{ d: { ServerRelativeUrl: " + json.dumps(root) + " } };",
+    )
+    summary = _run_assess(_declared_descriptions(), harness=harness, js=js)
+    finding = next(f for f in summary["findings"] if f["key"] == "library_root:APP_Task")
+    assert finding["level"] == expected, finding
+    assert "template 100" in finding["detail"] or expected == "PASS"
+
+
 @pytest.mark.parametrize("folder,file,expected", [
     (False, False, "PASS"), (True, False, "BLOCKED"),
     (False, True, "BLOCKED"), (None, False, "NOT-ASSESSABLE"),

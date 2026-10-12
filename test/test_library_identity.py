@@ -245,7 +245,7 @@ def test_explicit_root_cannot_collide_with_an_implicit_library(
     mapping = "entities:\n" + "\n".join("  " + value for value in declarations)
     schema = table("First", ID_PK, TITLE) + table("Second", ID_PK, TITLE)
     if role == "default":
-        with pytest.raises(MappingValueError, match="duplicate library root"):
+        with pytest.raises(MappingValueError, match="duplicate list or library root"):
             pack(tmp_path, dbml=schema, mapping=mapping)
     else:
         pack(tmp_path, dbml=schema, mapping=mapping)

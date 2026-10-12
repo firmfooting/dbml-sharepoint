@@ -6,6 +6,7 @@ from typing import Any, cast
 
 from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
 from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
+from dbml_sharepoint.analysis.list_url import list_url_key, list_url_path
 from dbml_sharepoint.model._keys import _known_keys, _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model.errors import (
     MappingShapeError,
@@ -95,10 +96,10 @@ def read(sc: SectionContext) -> dict[str, Any]:
             title if entity.is_library and re.fullmatch(r"[A-Za-z0-9_]+", title) else None
         )
         if root:
-            key = (entity.site_role, root.casefold())
+            key = (entity.site_role, list_url_key(root))
             if key in roots:
                 raise MappingValueError(
-                    f"entities: duplicate library root {root!r}",
+                    f"entities: duplicate list or library root {root!r}",
                 )
             roots.add(key)
     return {"entities": entities}
@@ -160,11 +161,16 @@ def _folder_source(spec: dict[str, Any], context: str) -> FolderSource:
 def _internal_name(spec: dict[str, Any], name: str) -> str | None:
     value = optional_str(spec, "internal_name", f"entities.{name}")
     if value is not None:
-        reason = invalid_file_name_reason(value)
-        if spec.get("kind") != "DocumentLibrary":
-            reason = "internal_name is only supported on a document library"
-        elif value in {".", ".."} or any(c < " " or c == "\x7f" for c in value):
-            reason = "use a decoded folder name without traversal or control characters"
+        reason = None
+        if spec.get("kind") == "DocumentLibrary":
+            reason = invalid_file_name_reason(value)
+            if value in {".", ".."} or any(c < " " or c == "\x7f" for c in value):
+                reason = "use a decoded folder name without traversal or control characters"
+        else:
+            try:
+                value = list_url_path(value)
+            except ValueError as exc:
+                reason = str(exc)
         if reason:
             raise MappingValueError(f"entities.{name}.internal_name: {reason}")
     return value
