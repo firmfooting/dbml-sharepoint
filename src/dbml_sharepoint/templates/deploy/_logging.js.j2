@@ -903,7 +903,7 @@
         }, 0);
         if (!addResp.ok) {
           const why = addResp.status === 403
-            ? ' (the file name already existed, or this account lacks AddListItems)' : '';
+            ? ' (the server refused the add; a file of that name may already exist)' : '';
           throw new Error(`HTTP ${addResp.status}${why} ${spError(await addResp.text())}`);
         }
         const fileUrl = `${root.replace(/\/+$/, '')}/${fileName}`;

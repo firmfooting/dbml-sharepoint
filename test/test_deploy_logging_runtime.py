@@ -1943,7 +1943,7 @@ def test_the_upload_post_is_never_retried_and_a_duplicate_name_is_a_failed_uploa
     adds = [c for c in run["calls"] if "/files/add(" in c["url"].text]
     assert len(adds) == 2, adds  # the overlay's own second send; the code sent one
     failures = run["summary"]["loggingFailures"]
-    assert any("HTTP 403" in f["error"].text and "already existed" in f["error"].text
+    assert any("HTTP 403" in f["error"].text and "may already exist" in f["error"].text
                for f in failures), failures
 
 
@@ -1952,7 +1952,7 @@ def test_the_upload_post_is_never_retried_and_a_duplicate_name_is_a_failed_uploa
     [
         ("missing", "library is missing"),
         ("no-add", "no AddListItems"),
-        ("refuse-upload", "already existed, or this account lacks AddListItems"),
+        ("refuse-upload", "the server refused the add; a file of that name may already exist"),
     ],
 )
 def test_a_library_that_cannot_take_the_log_is_a_named_failure_not_a_failed_deploy(
