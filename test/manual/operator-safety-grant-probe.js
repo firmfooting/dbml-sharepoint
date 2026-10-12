@@ -1,7 +1,7 @@
 /**
  * dbml-sharepoint PROBE: WHAT A BREAK LEAVES, AND WHETHER REMOVING IT STICKS
  *
- * REVISION: b1bd98fc
+ * REVISION: 915a99c6
  *
  * THE CLAIM UNDER TEST. `deploy/_lists.js.j2` says, beside the early
  * isolation break, that "copyRoleAssignments=false leaves only SharePoint's
@@ -553,7 +553,7 @@
     record(id, question, row.outcome, row.evidence, row.state);
   };
 
-  log('INFO', 'probe revision b1bd98fc. Quote this when reporting results.');
+  log('INFO', 'probe revision 915a99c6. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe OperatorGrant';
   const OWNERSHIP = 'dbml-sharepoint operator-safety-grant probe list. Safe to delete.';
@@ -1025,7 +1025,13 @@
   }
   // Skipped when the title was free, because there is nothing this run
   // claimed to reset and the title alone is what resetList would fall back to.
-  if (ownedId !== null) await resetList(LIST, ownedId);
+  // A reset that was asked for and did not happen leaves the old list in place to be reused.
+  if (ownedId !== null && !(await resetList(LIST, ownedId)) && CLEANUP) {
+    record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'ABORTED',
+           `CLEANUP was requested but '${LIST}' (list ${ownedId}) was not reset. Nothing was `
+           + 'reused, broken or written.');
+    return report();
+  }
   let digest = await getDigest();
 
   // ---- fixture-scratch-list -------------------------------------------
@@ -1033,7 +1039,7 @@
   // read-back below is CHECKED against on the create path, so a title rebound
   // between the create and that read cannot hand this run a stranger's list
   // carrying a copied marker. What a list POST returns is not measured here,
-  // so its absence is reported rather than fatal.
+  // so its absence aborts: with no claimed Id the read-back would be adopted on the title alone.
   let createdId = null;
   const existing = await spGet(`${listPath}?$select=Title`);
   if (!existing.ok) {
@@ -1047,6 +1053,12 @@
     if (!made.ok) {
       record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'ABORTED',
              `could not create '${LIST}': HTTP ${made.status} ${made.text.slice(0, 260)}`);
+      return report();
+    }
+    if (createdId === null) {
+      record('access.list-acl.fixture-scratch-list', Q_FIXTURE, 'ABORTED',
+             `'${LIST}' was created but the answer carried no list Id, so no claim exists `
+             + 'to check the title read-back against. Nothing was broken or written.');
       return report();
     }
   }
@@ -1087,10 +1099,6 @@
     return report();
   }
   ownedId = guidOf(owned.body.Id);
-  if (createdId === null && !existing.ok) {
-    log('INFO', `the list create did not answer with an Id, so '${LIST}' is claimed as list `
-                + `${ownedId} from the read-back alone.`);
-  }
 
   // A list an earlier run left broken cannot answer what a break leaves, and
   // reporting its leftover bindings as this run's measurement is the exact

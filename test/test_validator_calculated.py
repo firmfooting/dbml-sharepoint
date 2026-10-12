@@ -747,7 +747,7 @@ def test_an_acceptance_on_an_unlooked_up_calculated_column_states_the_truth() ->
 
 
 def test_a_library_formula_naming_the_file_name_is_refused_as_unknown() -> None:
-    """A library's FileLeafRef renders but is not a formula operand.
+    """A library's file Name is not a formula operand, spelled `=[Name]`.
 
     MEASURED 2026-09-18, library-lookup-write-probe.js
     `library.formula.calc-name-operand`: a Calculated column `=[Name]` on a
@@ -763,11 +763,11 @@ def test_a_library_formula_naming_the_file_name_is_refused_as_unknown() -> None:
     ))
     bundle = as_library(make_bundle(
         entities=["Docs"],
-        calculated_formulas={"Docs": {"NameCopy": "=[FileLeafRef]"}},
+        calculated_formulas={"Docs": {"NameCopy": "=[Name]"}},
     ), "Docs")
     f = only(
         validate_against_mapping(schema, bundle),
         FindingCode.CALCULATED_FORMULA_UNKNOWN_COLUMN,
     )
     assert f.severity == "error"
-    assert "[FileLeafRef]" in f.message
+    assert "[Name]" in f.message
