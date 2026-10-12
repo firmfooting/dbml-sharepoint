@@ -89,6 +89,8 @@ def _scalar_type_findings(
 ) -> list[Finding]:
     """YAML 1.2 reads `no` as text and `0800` as 800, and the demo generator
     sends the value on as authored, so a value of the wrong type is refused."""
+    if value is None:
+        return []  # a blank value loads as null and reads back null
     if is_boolean(col_type) and not isinstance(value, bool):
         code, want = FindingCode.DEMO_BOOLEAN_VALUE_INVALID, "true or false"
     elif col_type in _DEMO_NUMBER_TYPES and (

@@ -44,6 +44,10 @@ def test_correctly_typed_demo_values_pass() -> None:
     assert _demo(Active=False, Qty=3, Cost=1.5, Code="0800") == []
 
 
+def test_a_null_demo_value_still_loads() -> None:
+    assert _demo(Code=None, Qty=None) == []
+
+
 def _where(value: object, op: str = "eq") -> list[Finding]:
     leaf = Leaf(field="Code", op=op, value=value)
     view = ViewDef(title="V", fields=["Title"], where=Group("all_of", (leaf,)))
