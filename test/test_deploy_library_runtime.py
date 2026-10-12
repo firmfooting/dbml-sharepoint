@@ -401,6 +401,7 @@ _FOLDER_JS = r"""globalThis.fetch = async (url, opts = {}) => {
 def _library_deploy_js(
     tmp_path: Path, mapping: str, *, titled: bool = True,
     enterprise_reader: str | None = None,
+    site_url: str = "https://example.sharepoint.com/sites/test",
 ) -> str:
     """`titled` declares a Title column, which is what puts a `title_patch` on
     the list. A library naming its files through FileLeafRef declares none, and
@@ -417,7 +418,7 @@ def _library_deploy_js(
         schema=schema,
         bundle=bundle,
         release=load_release(FIXTURES / "release.yaml"),
-        site_url="https://example.sharepoint.com/sites/test",
+        site_url=site_url,
         site_role="default",
         source_dbml="s.dbml",
         source_mtime="2026-05-04T00:00:00Z",
@@ -1298,6 +1299,35 @@ def test_declared_list_url_is_created_and_verified(
     else:
         assert "LIST_URL_MISMATCH" in str(summary["errors"])
         assert not any(c["method"] == "POST" and "/fields" in c["url"] for c in calls)
+
+
+@pytest.mark.parametrize(("root", "matches"), [
+    ("/sites/my site/Lists/Escalation Log", True),
+    ("/sites/my%20site/Lists/Escalation%20Log", False),
+])
+def test_a_spaced_list_url_on_an_encoded_site_path_is_compared_decoded(
+    tmp_path: Path, root: str, matches: bool,
+) -> None:
+    mapping = _RECURSIVE_VIEW.replace(
+        "kind: DocumentLibrary, base_template: 101,",
+        "kind: List, base_template: 100, internal_name: Lists/Escalation Log,",
+    ).replace("      scope: recursive\n", "")
+    # The site guard compares the URL's raw path with webServerRelativeUrl.
+    harness = _library_harness().replace(
+        "webServerRelativeUrl: '/sites/test'", "webServerRelativeUrl: '/sites/my%20site'",
+    ).replace(
+        "Title: 'adopted', BaseTemplate: 101,",
+        f"RootFolder: {{ServerRelativeUrl: {json.dumps(root)}}}, "
+        "Title: 'adopted', BaseTemplate: 100,",
+    )
+    deploy_js = _library_deploy_js(
+        tmp_path, mapping, site_url="https://example.sharepoint.com/sites/my%20site",
+    )
+    summary, _, _ = _run(harness, deploy_js)
+    if matches:
+        assert summary["errors"] == [], summary["errors"]
+    else:
+        assert "LIST_URL_MISMATCH" in str(summary["errors"])
 
 
 def _folder_acl_run(
