@@ -418,6 +418,11 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.CONDITION_VALUE_NOT_A_NUMBER: (
         "A numeric column's operand is not a number."
     ),
+    FindingCode.CONDITION_VALUE_NOT_TEXT: (
+        "A condition compares a text column with a value that is not a "
+        "string. It renders as `str(value)`, so an unquoted `0800` "
+        "compares as \"800\"; quote the value."
+    ),
     FindingCode.CONDITION_VALUE_NOT_FINITE: (
         "A numeric operand is an infinity or a NaN."
     ),
@@ -567,6 +572,18 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.DEMO_DATE_VALUE_INVALID: (
         "A demo row's date value is neither `today+N`/`today-N` nor a "
         "real ISO calendar date."
+    ),
+    FindingCode.DEMO_BOOLEAN_VALUE_INVALID: (
+        "A demo row's value for a Yes/No column is not a YAML boolean. "
+        "An unquoted `no` is the text \"no\" under YAML 1.2."
+    ),
+    FindingCode.DEMO_NUMBER_VALUE_INVALID: (
+        "A demo row's value for a number column is not an int or float "
+        "(a boolean does not count)."
+    ),
+    FindingCode.DEMO_TEXT_VALUE_INVALID: (
+        "A demo row's value for a text column is not a string. An "
+        "unquoted `0800` is the int 800 under YAML 1.2, so quote it."
     ),
     FindingCode.DEMO_ENUM_VALUE_UNKNOWN: (
         "A demo row's value is not a member of the column's enum."

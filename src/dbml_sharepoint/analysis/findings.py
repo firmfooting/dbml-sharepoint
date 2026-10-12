@@ -383,6 +383,9 @@ class FindingCode(StrEnum):
     DEMO_REF_FORWARD_REFERENCE = "demo_ref_forward_reference", "error"
     DEMO_PERSON_VALUE_UNSUPPORTED = "demo_person_value_unsupported", "error"
     DEMO_DATE_VALUE_INVALID = "demo_date_value_invalid", "error"
+    DEMO_BOOLEAN_VALUE_INVALID = "demo_boolean_value_invalid", "error"
+    DEMO_NUMBER_VALUE_INVALID = "demo_number_value_invalid", "error"
+    DEMO_TEXT_VALUE_INVALID = "demo_text_value_invalid", "error"
     DEMO_ENUM_VALUE_UNKNOWN = "demo_enum_value_unknown", "error"
     DEMO_MULTI_VALUE_NOT_A_LIST = "demo_multi_value_not_a_list", "error"
     DEMO_MULTI_VALUE_DUPLICATE_MEMBER = "demo_multi_value_duplicate_member", "error"
@@ -567,6 +570,7 @@ class FindingCode(StrEnum):
     CONDITION_VALUE_NOT_A_BOOLEAN = "condition_value_not_a_boolean", "error"
     CONDITION_VALUE_NOT_A_LIST = "condition_value_not_a_list", "error"
     CONDITION_VALUE_NOT_A_NUMBER = "condition_value_not_a_number", "error"
+    CONDITION_VALUE_NOT_TEXT = "condition_value_not_text", "error"
     CONDITION_VALUE_NOT_ALLOWED = "condition_value_not_allowed", "error"
     CONDITION_VALUE_NOT_FINITE = "condition_value_not_finite", "error"
     # Three rules about ARITY, raised from the same module and carrying the
