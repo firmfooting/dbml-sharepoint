@@ -47,7 +47,7 @@ from dbml_sharepoint.analysis.report_columns import (
     projection_output_name,
     report_output_names,
 )
-from dbml_sharepoint.analysis.reporting.names import base_query_name, query_name
+from dbml_sharepoint.analysis.reporting.names import query_name
 from dbml_sharepoint.analysis.timezones import ZoneTable, zone_table
 from dbml_sharepoint.analysis.typemap import SPField, is_person, map_column
 from dbml_sharepoint.model.mapping_types import DerivedColumn, MappingBundle
@@ -482,32 +482,6 @@ def _projection_types(
     )
 
 
-def read_by_another(plans: list[ListPlan]) -> list[ListPlan]:
-    """The plans whose rows some OTHER list's derived step reads, in plan order.
-
-    Each of these gets a base function beside its query: the rows fetched
-    and keyed, under the internal names, with none of the reporting-only
-    columns. A cross-list read calls the base rather than naming the list's
-    query, because the query carries derived steps of its own and two
-    queries whose derived steps read each other name each other, which in M
-    is a cyclic reference (Learn, M language specification, operator
-    behavior) that nothing before a refresh can see. Reported against a
-    blueprint: six mutual pairs, twelve cycles, and nine of ten queries
-    unable to refresh. A base reads no query at all, so no chain of reads
-    can return to where it started.
-
-    A read of the list's OWN rows reads the step above it and needs no
-    base; `_Users` is not a list and has no plan.
-    """
-    read = {
-        step.source_entity
-        for plan in plans
-        for step in plan.derived
-        if step.reads_base
-    }
-    return [plan for plan in plans if plan.entity in read]
-
-
 def _resolve_derived(
     plans: list[ListPlan], bundle: MappingBundle, prefix: str,
 ) -> None:
@@ -548,11 +522,13 @@ def _resolve_derived(
 
 def _reads(target: ListPlan, reader: ListPlan) -> tuple[str, bool]:
     """The `(reads, reads_base)` a step over `target`'s rows carries: nothing
-    for the reader's own list, whose steps read the step above, and the base
-    function for any other. `read_by_another` says why not the query."""
+    for the reader's own list, whose steps read the step above, and the
+    target's rows fetched inline for any other, because its query may read
+    the reader back and two queries that read each other are a cyclic
+    reference, which M refuses only at refresh."""
     if target is reader:
         return "", False
-    return base_query_name(target.list_title), True
+    return query_name(target.list_title), True
 
 
 def _derived_step(

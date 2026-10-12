@@ -8,7 +8,6 @@ every fault at once rather than the first one the loader meets.
 """
 
 from collections.abc import Mapping
-from typing import Any
 
 from dbml_sharepoint.model._keys import _known_keys, _require_mapping
 from dbml_sharepoint.model.errors import MappingValueError
@@ -19,7 +18,7 @@ from dbml_sharepoint.model.mapping_types import (
     ListGovernance,
 )
 from dbml_sharepoint.model.reading import optional_str, optional_str_list
-from dbml_sharepoint.model.sections.context import SectionContext
+from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 
 _SECTION_KEYS = frozenset({"vocabulary", "lists"})
 _VOCABULARY_KEYS = frozenset({"classification", "personal_data", "owners"})
@@ -29,7 +28,7 @@ _LIST_KEYS = frozenset(
 _COLUMN_KEYS = frozenset({"purpose", "personal_data"})
 
 
-def read(sc: SectionContext) -> dict[str, Any]:
+def read(sc: SectionContext) -> LoadedFields:
     raw = sc.block("governance")
     if raw is None:
         return {"governance": Governance()}
@@ -59,7 +58,7 @@ def _vocabulary(raw: object) -> GovernanceVocabulary:
     )
 
 
-def _values(block: Mapping[str, Any], key: str, context: str) -> tuple[str, ...]:
+def _values(block: Mapping[str, object], key: str, context: str) -> tuple[str, ...]:
     values = optional_str_list(block, key, context)
     if any(not value.strip() for value in values):
         raise MappingValueError(f"{context}.{key} has a blank value; remove it")
@@ -99,7 +98,7 @@ def _column(raw: object, context: str) -> ColumnGovernance:
 
 
 def _text(
-    block: Mapping[str, Any], key: str, context: str, *, one_line: bool = False,
+    block: Mapping[str, object], key: str, context: str, *, one_line: bool = False,
 ) -> str | None:
     """A text value, or None when the key is absent (or a bare `purpose:`).
 

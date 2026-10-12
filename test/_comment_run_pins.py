@@ -256,7 +256,6 @@ PINNED: dict[str, list[str]] = {
     ],
     "src/dbml_sharepoint/generators/report_m.py": [
         "5b2cf0023b4f",
-        "5d89bffa66da",
         "663a1f5f56e2",
         "85e3807a5334",
         "c00d30f7984a",
@@ -591,11 +590,8 @@ PINNED: dict[str, list[str]] = {
     "test/manual/powerquery/_ProbeOther.pq": [
         "32384c84c51c",
     ],
-    "test/manual/powerquery/_Probe_Base.pq": [
-        "032522ecf0cb",
-    ],
     "test/manual/powerquery/m-runtime-probe.pq": [
-        "c945eb1f8567",
+        "a48adc5e1291",
     ],
     "test/manual/powerquery/sharepoint-feed-probe.pq": [
         "52c3c9962427",

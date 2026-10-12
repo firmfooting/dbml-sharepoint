@@ -241,17 +241,16 @@ def validate_site_url(site_url: str) -> str:
     RETURNS the URL with any query or fragment removed, rather than refusing
     it. SharePoint's own **Copy link** puts `?web=1` on the clipboard, so the
     most common paste carried one, and nothing downstream stripped it: the
-    reporting pack bakes this value into the Power Query `SiteRoot` and the
+    reporting pack bakes this value into the Power Query `SiteUrl` and the
     SQLCMD `SiteUrl`, producing endpoints like
     `https://tenant/sites/X?web=1/_api/web`. Every consumer reads the value
     `execute_build` holds after this call, so cleaning it once here reaches
     all of them.
 
-    Normalising rather than refusing follows the precedent already on this
-    branch -- `_SITE_ROOT_M` trims a pasted LIST url back to the site root
-    rather than making the operator edit it. But a silent rewrite of what
-    somebody typed is its own defect, so the caller is expected to compare
-    and say so; see `site_url_notice`.
+    A trailing slash is removed too, because the reporting queries require
+    the bare site root and refuse a refresh otherwise. A silent rewrite of
+    what somebody typed is its own defect, so the caller is expected to
+    compare and say so; see `site_url_notice`.
     """
     parsed = urlparse(site_url)
     if parsed.scheme != "https" or not parsed.netloc:
@@ -259,9 +258,7 @@ def validate_site_url(site_url: str) -> str:
             f"--site-url must be an absolute https:// URL with a host "
             f"(got {site_url!r}).",
         )
-    if not parsed.query and not parsed.fragment:
-        return site_url
-    return urlunparse(parsed._replace(query="", fragment=""))
+    return urlunparse(parsed._replace(query="", fragment="")).rstrip("/")
 
 
 def site_url_notice(given: str, used: str) -> str:
@@ -274,8 +271,8 @@ def site_url_notice(given: str, used: str) -> str:
     if given == used:
         return ""
     return (
-        f"Ignoring the query or fragment on the site URL: building against "
-        f"{used} rather than {given}."
+        "Ignoring the query or fragment, and any trailing slash, on the site URL: "
+        f"building against {used} rather than {given}."
     )
 
 

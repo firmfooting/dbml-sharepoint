@@ -16,7 +16,6 @@ import re
 import pytest
 from _paths import MANUAL
 
-from dbml_sharepoint.analysis.reporting.names import base_query_name
 from dbml_sharepoint.generators import report_m
 
 PROBES = MANUAL / "powerquery"
@@ -38,7 +37,6 @@ def test_the_lane_ships_the_four_probes_and_its_readme() -> None:
     for name in (
         "m-runtime-probe.pq",
         "_ProbeOther.pq",
-        "_Probe_Base.pq",
         "sharepoint-feed-probe.pq",
         "README.md",
     ):
@@ -100,7 +98,6 @@ def test_no_probe_here_writes_anything() -> None:
     that nothing reaches for a transport that can."""
     for name in (
         "m-runtime-probe.pq", "sharepoint-feed-probe.pq", "_ProbeOther.pq",
-        "_Probe_Base.pq",
     ):
         text = _probe(name)
         assert "Web.Contents" not in text, name
@@ -113,17 +110,6 @@ def test_the_cross_query_probe_is_read_by_the_name_the_generator_emits() -> None
     probe asks whether that resolves, so it has to use the same form."""
     assert '#"_ProbeOther"' in _probe("m-runtime-probe.pq")
     assert report_m._query_ref("_ProbeOther") == '#"_ProbeOther"'
-
-
-def test_the_base_function_probe_is_called_the_way_the_generator_calls_one() -> None:
-    """A read of another list is a call to that list's base function, quoted
-    and invoked, and the base is a function of the site URL. The probe has
-    to use the same two shapes or it measures something the pack does not
-    emit."""
-    assert report_m._base_call(base_query_name("_Probe")) == '#"_Probe_Base"(SiteRoot)'
-    assert '#"_Probe_Base"(' in _probe("m-runtime-probe.pq")
-    base = _probe("_Probe_Base.pq")
-    assert "(SiteUrl as text) as table =>" in base
 
 
 def test_the_readme_says_to_run_both_hosts() -> None:

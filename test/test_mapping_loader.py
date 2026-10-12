@@ -10,6 +10,7 @@ import pytest
 from _findings import only
 from _model import schema as make_schema
 from _model import table as make_table
+from _narrow import as_dict, as_list, as_str
 from _packs import DEFAULT_PREFIX, blocks, entities, entity, with_tail, write_mapping
 from _paths import FIXTURES, PACKAGE
 
@@ -45,7 +46,7 @@ from dbml_sharepoint.model.sections import (
     Section,
     section_context,
 )
-from dbml_sharepoint.model.sections.context import SectionContext
+from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 
 
 def _refuses(path: Path, error: type[ValueError], match: str | None = None) -> ValueError:
@@ -112,7 +113,7 @@ def test_column_formatting_style_specs_expand_to_formatters(tmp_path: Path) -> N
     bundle = load_mapping(tmp_path / "m.yaml")
     expanded = bundle.mapping.column_formatting["Risk"]["Status"]
     assert expanded["elmType"] == "div"
-    assert "sp-field-severity--good" in expanded["attributes"]["class"]
+    assert "sp-field-severity--good" in as_str(as_dict(expanded["attributes"])["class"])
     assert bundle.mapping.column_style_specs["Risk"]["Status"]["style"] == "severity"
 
 
@@ -126,7 +127,7 @@ def test_style_theme_applies_and_rejects_unknown_tokens(tmp_path: Path) -> None:
     """))
     bundle = load_mapping(tmp_path / "m.yaml")
     expanded = bundle.mapping.column_formatting["Risk"]["Status"]
-    assert "brand-good" in expanded["attributes"]["class"]
+    assert "brand-good" in as_str(as_dict(expanded["attributes"])["class"])
     write_mapping(tmp_path, blocks(entities("Risk"), """
         style_theme:
           shiny: { classes: [x] }
@@ -1743,11 +1744,11 @@ _MINIMAL_DOCUMENT: dict[str, Any] = {
 
 def _run_families(
     base_dir: Path, raw: dict[str, Any],
-) -> list[tuple[Section, set[str], dict[str, Any]]]:
+) -> list[tuple[Section, set[str], LoadedFields]]:
     """Run the registry the way `load_mapping` does, recording what each
     family asked for and what it produced."""
-    loaded: dict[str, Any] = {}
-    runs: list[tuple[Section, set[str], dict[str, Any]]] = []
+    loaded = LoadedFields()
+    runs: list[tuple[Section, set[str], LoadedFields]] = []
     for family in SECTION_FAMILIES:
         sc = section_context(family, raw, base_dir, loaded)
         blocks = _RecordingBlocks(sc.blocks)
@@ -2444,9 +2445,10 @@ def test_apply_retirement_strips_retired_fields_from_form_sections(
     body = mapping.form_formatting["Board"].body
     assert body is not None
     # The retired field is gone; its live sibling survives, in place.
-    assert body["sections"][0] == {"displayname": "Header", "fields": ["BoardDate"]}
+    sections = as_list(body["sections"])
+    assert sections[0] == {"displayname": "Header", "fields": ["BoardDate"]}
     # A section left with no fields is KEPT, not dropped.
-    assert body["sections"][1] == {"displayname": "Streams", "fields": []}
+    assert sections[1] == {"displayname": "Streams", "fields": []}
     # Nothing else in the formatter JSON is rewritten.
     assert body["unrelatedKey"] == {"nested": "left exactly as authored"}
     # Recorded once. A column listed under two sections is one retirement.
@@ -3984,8 +3986,9 @@ def test_a_quoted_numeric_map_key_is_compared_as_the_text_typed(tmp_path: Path) 
             Status: { style: severity, map: { "1": good, "2.10": low } }
     """))
     expanded = load_mapping(path).mapping.column_formatting["Risk"]["Status"]
-    assert "@currentField == '1'" in expanded["attributes"]["class"]
-    assert "@currentField == '2.10'" in expanded["attributes"]["class"]
+    classes = as_str(as_dict(expanded["attributes"])["class"])
+    assert "@currentField == '1'" in classes
+    assert "@currentField == '2.10'" in classes
 
 
 #: The membership tests that hashed a value before checking its type (#578).
@@ -4301,7 +4304,7 @@ def test_a_form_body_field_that_is_not_a_name_survives_the_retirement_fold(
     bundle = load_mapping(tmp_path / "m.yaml")
     body = bundle.mapping.form_formatting["Risk"].body
     assert body is not None
-    assert body["sections"][0]["fields"] == [{"nested": True}]
+    assert as_dict(as_list(body["sections"])[0])["fields"] == [{"nested": True}]
 
 
 def _derived(entry: str) -> str:

@@ -30,7 +30,6 @@ resolution is generic, so each is a registry entry rather than a copy.
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model.errors import MappingReferenceError, MappingShapeError
@@ -55,7 +54,7 @@ from dbml_sharepoint.model.sections import (
     _sources,
     _views,
 )
-from dbml_sharepoint.model.sections.context import SectionContext
+from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 
 
 @dataclass(frozen=True)
@@ -65,7 +64,7 @@ class Section:
     #: The top-level keys the family reads. Each is admitted by the loader
     #: because it is listed here, and no key belongs to two families.
     keys: tuple[str, ...]
-    read: Callable[[SectionContext], dict[str, Any]]
+    read: Callable[[SectionContext], LoadedFields]
     #: The pointer that may move `keys` into a file beside the mapping.
     source: str | None = None
 
@@ -115,7 +114,7 @@ KNOWN_SECTIONS: frozenset[str] = frozenset(
 
 
 def section_context(
-    family: Section, raw: Mapping[str, Any], base_dir: Path, loaded: Mapping[str, Any],
+    family: Section, raw: Mapping[str, object], base_dir: Path, loaded: LoadedFields,
 ) -> SectionContext:
     """The context one family reads from: its blocks, from wherever they live.
 
@@ -138,8 +137,8 @@ def section_context(
 
 
 def _pointed_blocks(
-    keys: tuple[str, ...], pointer: str, source: Any, raw: Mapping[str, Any], base_dir: Path,
-) -> dict[str, Any]:
+    keys: tuple[str, ...], pointer: str, source: object, raw: Mapping[str, object], base_dir: Path,
+) -> dict[str, object]:
     if not isinstance(source, str) or not source.strip():
         raise MappingShapeError(
             f"{pointer} must be a path relative to the mapping, got {source!r}",

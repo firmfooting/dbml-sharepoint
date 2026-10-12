@@ -145,7 +145,7 @@
       return { folderIds, folderPaths };
     }
 
-    async function surveyDescendants(listTitle, wantedFolders) {
+    async function surveyDescendants(listTitle, wantedFolders, managedFolders) {
       const rows = [];
       let itemsUrl = apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/items?$select=Id,HasUniqueRoleAssignments,FileSystemObjectType,FileRef&$top=5000`);
       while (itemsUrl) {
@@ -187,7 +187,8 @@
           folderPaths.set(name, wanted);
         }
       }
-      const declared = new Set(folderIds.values());
+      // Only a folder this phase writes to is excused from the guard (#617).
+      const declared = new Set(managedFolders.map(name => folderIds.get(name)));
       return {
         folderIds,
         folderPaths,
@@ -635,6 +636,10 @@
         const externalFiles = Boolean(la && la.file_scopes === 'external');
         const folderAssignments = SCHEMA.acl_scopes.filter(s => s.list === listTitle && s.folder);
         const wantedFolders = folderAssignments.map(fa => fa.folder);
+        // A policy that neither breaks inheritance, grants nor prunes writes nothing to its folder.
+        const managedFolders = folderAssignments
+          .filter(fa => fa.break_inheritance || fa.reconcile_mode !== 'configured' || fa.assignments.length > 0)
+          .map(fa => fa.folder);
         const aclListId = surveyedListId(aclOwned, listTitle, 'ACL');
         // Before the first READ, not just the first write: exact mode turns
         // the enumeration below into a removal list, so a snapshot taken from
@@ -661,7 +666,7 @@
         // a handful of declared folders are all this phase needs, and those
         // are one request each.
         const before = exact
-          ? await surveyDescendants(listTitle, wantedFolders)
+          ? await surveyDescendants(listTitle, wantedFolders, managedFolders)
           : { ...await declaredFolderIds(listTitle, wantedFolders), undeclared: [] };
         const { owned, handed } = splitUndeclared(before.undeclared, externalFiles);
         if (handed > 0) log('INFO', `[Phase {{ phase.number }}] '${listTitle}' holds ${handed} file unique permission scope(s) another writer owns; leaving them to it.`);
@@ -706,7 +711,7 @@
           // the scopes this run does declare.
           assertNoUndeclaredScopes(
             listTitle,
-            splitUndeclared((await surveyDescendants(listTitle, wantedFolders)).undeclared, externalFiles).owned,
+            splitUndeclared((await surveyDescendants(listTitle, wantedFolders, managedFolders)).undeclared, externalFiles).owned,
           );
         }
 

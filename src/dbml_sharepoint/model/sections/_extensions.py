@@ -8,16 +8,14 @@ CLI `--extension` override may differ from the mapping's own `extension:`
 key.
 """
 
-from typing import Any
-
 from dbml_sharepoint.model._keys import _require_mapping
 from dbml_sharepoint.model.errors import MappingShapeError
 from dbml_sharepoint.model.reading import optional_str
-from dbml_sharepoint.model.sections.context import SectionContext
+from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 
 
-def read(sc: SectionContext) -> dict[str, Any]:
-    extensions_block: dict[str, Any] = _require_mapping(
+def read(sc: SectionContext) -> LoadedFields:
+    extensions_block = _require_mapping(
         sc.block("extensions"), "extensions",
     )
     return {
@@ -30,7 +28,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
     }
 
 
-def _extension_config(block: object, context: str) -> dict[Any, Any]:
+def _extension_config(block: object, context: str) -> dict[object, object]:
     """One extension's block, as written: only the extension knows its keys.
 
     `dict()` loaded `[on]` as `{"o": "n"}` and raised a bare error on any
@@ -42,5 +40,5 @@ def _extension_config(block: object, context: str) -> dict[Any, Any]:
         return {}
     if not isinstance(block, dict):
         raise MappingShapeError(f"{context}: expected a mapping, got {type(block).__name__}")
-    config: dict[Any, Any] = block
+    config: dict[object, object] = block
     return dict(config)

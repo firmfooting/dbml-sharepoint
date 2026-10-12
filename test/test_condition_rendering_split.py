@@ -301,3 +301,14 @@ def test_production_consumers_import_renderers_directly() -> None:
             and any(alias.name in names for alias in node.names)
             for node in imports
         ), relative
+
+
+def test_leaf_fails_closed_on_a_set_value_that_is_not_a_list_if_the_check_regresses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`_check` refuses it first; with that stubbed out, `_leaf` still refuses by name."""
+    monkeypatch.setattr(rendering, "_check", lambda *_args: None)
+    leaf = Leaf("Status", "in", "Open")
+    with pytest.raises(rendering.ConditionRefusal) as caught:
+        rendering._leaf(leaf, {"Status": "nvarchar"}, rendering.CAML, "ctx")
+    assert caught.value.kind is rendering.ConditionRefusalKind.VALUE_NOT_A_LIST

@@ -6,14 +6,13 @@ Parsed here and folded into the other sections by
 fold rewrites views, forms and display names that other families produce.
 """
 
-from typing import Any
 
 from dbml_sharepoint.model._keys import _require_mapping
 from dbml_sharepoint.model._retirement import _parse_retired_columns
-from dbml_sharepoint.model.sections.context import SectionContext
+from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 
 
-def read(sc: SectionContext) -> dict[str, Any]:
+def read(sc: SectionContext) -> LoadedFields:
     # A blank entity block reads as absent: that entity retires nothing.
     return {
         "retired_columns": {

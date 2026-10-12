@@ -109,19 +109,14 @@ def test_a_self_read_uses_the_names_the_step_above_carries(tmp_path: Path) -> No
     assert '{"Status", "State"}' in query
 
 
-def test_the_guide_names_what_each_query_reads(tmp_path: Path) -> None:
-    """The consumer that loads the files under names of its own learns the
-    dependencies from the guide, not from the refresh one import at a
-    time. A query's read of its own rows is a step, not a name, and is not
-    listed."""
+def test_the_guide_names_no_query_for_a_read_of_another_list(tmp_path: Path) -> None:
+    """Another list's rows are fetched inline, so no name is read and none is listed."""
     root = TEST_BLUEPRINTS / "reporting-sample"
     schema = parse_dbml(root / "10-design" / "schema.dbml")
     bundle = load_mapping(root / "20-configure" / "mapping.yaml")
     guide = generate_reporting_md(schema, bundle, "default")
-    line = next(row for row in guide.splitlines() if row.startswith("- `RS_Risk` reads "))
-    read = line.split(" reads ", 1)[1]
-    assert "`RS_Action_Base`" in read
-    assert "`RS_Action`" not in read, "another list is read through its base"
+    assert not [row for row in guide.splitlines() if row.startswith("- `RS_Risk` reads ")]
+    assert "RS_Action_Base" not in guide
     own_schema, own_bundle = pack(tmp_path, _SELF_REF_DBML, _SELF_REF_MAPPING)
     own_guide = generate_reporting_md(own_schema, own_bundle, "default")
     assert not [row for row in own_guide.splitlines() if row.startswith("- `APP_Risk` reads ")]
@@ -291,4 +286,4 @@ def test_another_lists_reporting_only_column_is_not_readable(tmp_path: Path) -> 
     assert FindingCode.DERIVED_UNKNOWN_REFERENCE in _errors(schema, bundle)
     risk = generate_powerquery(schema, bundle, "default")["APP_Risk.pq"]
     assert '#"APP_Action"' not in risk
-    assert '#"APP_Action_Base"(SiteRoot)' in risk
+    assert "    Rows1 =" in risk

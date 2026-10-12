@@ -20,7 +20,7 @@ everywhere else in this package.
 """
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
 from dbml_sharepoint.model._keys import _text_key
 from dbml_sharepoint.model.errors import MappingShapeError, UnknownMappingKeyError
@@ -56,7 +56,7 @@ class Leaf:
 
     field: str
     op: str
-    value: Any = None
+    value: object = None
     property: str | None = None
     measure: str | None = None
 
@@ -76,7 +76,7 @@ class Group:
 type Condition = Leaf | Group
 
 
-def parse_condition(raw: Any, context: str, *, default_field: str | None = None) -> Condition:
+def parse_condition(raw: object, context: str, *, default_field: str | None = None) -> Condition:
     """Parse a declared condition tree.
 
     A bare list is `all_of`: that is the spelling every existing
@@ -142,7 +142,7 @@ def parse_condition(raw: Any, context: str, *, default_field: str | None = None)
     )
 
 
-def _group(kind: GroupKind, items: Any, context: str, default_field: str | None) -> Group:
+def _group(kind: GroupKind, items: object, context: str, default_field: str | None) -> Group:
     if not isinstance(items, list):
         raise MappingShapeError(f"{context}.{kind}: expected a list of conditions")
     item_list: list[object] = items

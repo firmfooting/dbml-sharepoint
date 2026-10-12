@@ -471,6 +471,166 @@ def test_the_manifest_says_a_reader_grant_is_folder_scoped(tmp_path: Path) -> No
     assert "Read** on no list this bundle provisions" not in manifest, manifest
 
 
+def test_the_manifest_separates_list_and_folder_scopes_when_a_reader_has_both(
+    tmp_path: Path,
+) -> None:
+    """A list grant on one library and a folder-only one on another are worded apart (#617)."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Field operations"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+            + table("Files", ID_PK, TITLE, "Division division")
+        ),
+        mapping="""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+              Files:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: division}
+
+            groups:
+              - name: "Reporting Readers"
+                description: "The reporting account's group."
+                owner_group: "Site Owners"
+                enroll_enterprise_reader: true
+
+            list_permissions:
+              default:
+                site_role: default
+                break_inheritance: true
+                reconcile: configured
+                assignments:
+                  - principal: { kind: group, name: "Reporting Readers" }
+                    level: "Read"
+              overrides:
+                Files:
+                  break_inheritance: true
+                  reconcile: configured
+                  assignments:
+                    - principal: { kind: associated_owner_group }
+                      level: "Full Control"
+              folders:
+                Files:
+                  break_inheritance: true
+                  reconcile: configured
+                  assignments:
+                    - principal: { kind: group, name: "Reporting Readers" }
+                      level: "Read"
+        """,
+    )
+    resolved = resolve(schema, bundle.mapping)
+    md = generate_manifest(
+        resolved=resolved,
+        schema_json=build_schema_json(schema, bundle, "default", resolved=resolved),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="docs.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+        identities=reader_identities("svc-reporting@example.org"),
+    )
+
+    manifest = " ".join(md.split())
+    docs, files = bundle.mapping.list_title("Docs"), bundle.mapping.list_title("Files")
+    assert f"on the whole of {docs}, or bound to the declared folders only of {files}" in manifest
+    assert "Read** on every list here" not in manifest, manifest
+
+
+def test_the_manifest_separates_list_and_folder_scopes_when_a_reader_is_also_excluded_somewhere(
+    tmp_path: Path,
+) -> None:
+    """Granted, folder-only and excluded together keep the trailing folder note (#617)."""
+    schema, bundle = pack(
+        tmp_path,
+        dbml=(
+            'Enum division {\n  "Field operations"\n}\n'
+            + table("Docs", ID_PK, TITLE, "Division division")
+            + table("Files", ID_PK, TITLE, "Division division")
+            + table("Other", ID_PK, TITLE)
+        ),
+        mapping="""
+            entities:
+              Docs:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+              Other:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+              Files:
+                kind: DocumentLibrary
+                base_template: 101
+                site_role: default
+                folders: {from_enum: division}
+
+            groups:
+              - name: "Reporting Readers"
+                description: "The reporting account's group."
+                owner_group: "Site Owners"
+                enroll_enterprise_reader: true
+
+            list_permissions:
+              default:
+                site_role: default
+                break_inheritance: true
+                reconcile: configured
+                assignments:
+                  - principal: { kind: group, name: "Reporting Readers" }
+                    level: "Read"
+              overrides:
+                Other:
+                  break_inheritance: true
+                  reconcile: configured
+                  assignments:
+                    - principal: { kind: associated_owner_group }
+                      level: "Full Control"
+                Files:
+                  break_inheritance: true
+                  reconcile: configured
+                  assignments:
+                    - principal: { kind: associated_owner_group }
+                      level: "Full Control"
+              folders:
+                Files:
+                  break_inheritance: true
+                  reconcile: configured
+                  assignments:
+                    - principal: { kind: group, name: "Reporting Readers" }
+                      level: "Read"
+        """,
+    )
+    resolved = resolve(schema, bundle.mapping)
+    md = generate_manifest(
+        resolved=resolved,
+        schema_json=build_schema_json(schema, bundle, "default", resolved=resolved),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="docs.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+        identities=reader_identities("svc-reporting@example.org"),
+    )
+
+    manifest = " ".join(md.split())
+    files = bundle.mapping.list_title("Files")
+    other = bundle.mapping.list_title("Other")
+    assert f"all but {other}" in manifest, manifest
+    assert f"On {files} that grant is bound to the declared folders only" in manifest, manifest
+
+
 def test_manifest_warns_that_the_reader_enrolment_is_permanent() -> None:
     """The manifest is what an operator reads BEFORE pasting anything, so it
     is the only place this warning can do its work.

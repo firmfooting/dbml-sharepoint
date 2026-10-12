@@ -548,7 +548,6 @@ def test_a_picked_column_keeps_its_internal_name_through_the_base_function() -> 
     query = queries["APP_Risk.pq"]
     assert '{"Decision Key", "ReviewStatus"}' in query
     assert "Review Status" not in query.split("RenamedForModel")[0]
-    assert "Review Status" not in queries["APP_Decision_Base.pq"]
 
 
 def test_a_count_groups_the_child_and_joins_the_aggregate_back() -> None:
@@ -561,7 +560,7 @@ def test_a_count_groups_the_child_and_joins_the_aggregate_back() -> None:
     ])
     query = _risk_query(bundle)
     assert (
-        'Table.SelectRows(#"APP_Action_Base"(SiteRoot), each [Status] = "Open")'
+        'Table.SelectRows(Rows1, each [Status] = "Open")'
     ) in query
     assert '{"RelatedRisk Key"}' in query
     assert "each Table.RowCount(_)" in query
@@ -573,7 +572,7 @@ def test_a_count_reads_the_child_for_its_own_site_so_a_blank_is_zero() -> None:
     which a duplicate pointed elsewhere still read from the original site,
     so a coalesced zero was a confident wrong number and the blank had to
     be null unless a site read proved the child was here. The child is now
-    fetched through its base function for THIS query's site, so no child
+    fetched inline for THIS query's site, so no child
     row is out of the join's reach and a blank is a true zero."""
     bundle = _bundle([
         DerivedColumn(
@@ -582,7 +581,7 @@ def test_a_count_reads_the_child_for_its_own_site_so_a_blank_is_zero() -> None:
         ),
     ])
     query = _risk_query(bundle)
-    assert '#"APP_Action_Base"(SiteRoot)' in query
+    assert "    Rows1 =" in query
     assert "DerivedSite" not in query
     assert "each if _ = null then 0 else _" in query
     assert "then 0 else null" not in query
@@ -636,7 +635,7 @@ def test_every_cross_query_reference_is_a_quoted_identifier() -> None:
     code = [
         line for line in query.splitlines() if not line.strip().startswith("//")
     ]
-    for name in ("APP_Action_Base", "_Users"):
+    for name in ("_Users",):
         assert f'#"{name}"' in query
         # No bare reference anywhere, which would resolve only by luck. A
         # quoted string is a key literal, not a reference.
@@ -736,6 +735,11 @@ def test_the_shared_column_set_matches_what_the_query_declares(
         # guarded expands above it add theirs into a branch `Declared` then
         # filters, so counting those would double every lookup title.
         after = rest[listed.end():]
+        # Rows another list's step inlines carry columns of that list.
+        after = re.sub(
+            r"    Rows\d+ =\n.*?\n        in\n            \w+,\n", "", after,
+            flags=re.DOTALL,
+        )
         columns += re.findall(
             r'Table\.AddColumn\(\s*\n?\s*\w+, "([^"]+)"', after,
         )
@@ -776,5 +780,5 @@ def test_derived_count_escapes_explicit_query_titles() -> None:
         bundle.mapping.entities["Action"], title='Action "Review" #(tab)',
     )
     query = _risk_query(bundle)
-    assert '#"Action %22Review%22 #(#)(tab)_Base"(SiteRoot)' in query
+    assert "getbytitle('Action%20%22Review%22%20%23%28tab%29')/items" in query
     assert '#"Action "Review" #(tab)' not in query

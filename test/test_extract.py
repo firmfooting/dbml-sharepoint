@@ -36,6 +36,7 @@ from typing import Any, override
 
 import pytest
 from _console import ScriptedConsole, collapsed
+from _narrow import as_dict
 from _node import NODE
 from _paths import FIXTURES, SOLUTION_TEMPLATES
 from typer.testing import CliRunner, Result
@@ -907,25 +908,25 @@ def test_display_names_are_declared_only_when_a_title_differs() -> None:
     assert _entity().display_overrides == {}
 
     plain = _decode(field_xml("Text", StaticName="Owner"))
-    assert "display_names" not in _yaml.safe_load(
+    assert "display_names" not in as_dict(_yaml.safe_load(
         render_mapping(Extraction(entities=[plain])),
-    )
+    ))
 
     derived = _decode(
         field_xml("Text", StaticName="RiskOwner", DisplayName="Risk Owner"),
     )
     assert derived.display_overrides == {}
-    assert _yaml.safe_load(
+    assert as_dict(_yaml.safe_load(
         render_mapping(Extraction(entities=[derived])),
-    )["display_names"] == {"mode": "auto"}
+    ))["display_names"] == {"mode": "auto"}
 
     renamed = _decode(
         field_xml("Text", StaticName="RiskOwner", DisplayName="Accountable person"),
     )
     assert renamed.display_overrides == {"RiskOwner": "Accountable person"}
-    assert _yaml.safe_load(
+    assert as_dict(as_dict(_yaml.safe_load(
         render_mapping(Extraction(entities=[renamed])),
-    )["display_names"]["overrides"] == {"T": {"RiskOwner": "Accountable person"}}
+    ))["display_names"])["overrides"] == {"T": {"RiskOwner": "Accountable person"}}
 
 
 def test_a_calculated_formula_comes_back_in_internal_names() -> None:

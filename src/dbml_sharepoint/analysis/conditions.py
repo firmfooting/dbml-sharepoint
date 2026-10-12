@@ -595,6 +595,20 @@ def _operand_problems(
                 f"{where}: 'measure: length' applies to text columns only",
             )
         )
+    if column_type in _MEASURABLE_TYPES and not leaf.measure and leaf.op not in VALUELESS_OPS:
+        operands: list[object] = leaf.value if isinstance(leaf.value, list) else [leaf.value]
+        # None is the missing-value rule's to report.
+        problems.extend(
+            (
+                FindingCode.CONDITION_VALUE_NOT_TEXT,
+                (
+                    f"{where}: text column compared with {operand!r}, which renders "
+                    f"as {str(operand)!r}; quote the value if text is meant"
+                ),
+            )
+            for operand in operands
+            if operand is not None and not isinstance(operand, str)
+        )
     return problems
 
 

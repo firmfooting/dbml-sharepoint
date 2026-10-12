@@ -208,13 +208,13 @@ No SharePoint field stands behind one. `data-dictionary.md` marks each as
 it. The SQL views carry none of them: a row-level expression written in M has
 no SQL to translate to.
 
-A column read off another list comes through that list's **base function**,
-`<Query>_Base`, which fetches the rows for a site URL and stops before the
-reporting-only columns. The pack emits one for each list another list reads.
-Nothing reads a query that carries reporting-only columns, so a parent may
-count its children while each child looks up its parent without the cyclic
-reference M would otherwise raise at refresh. Power BI does not load a
-function to the model.
+A column read off another list comes through that list's rows fetched
+inline in the reading query, as a step that stops before the reporting-only
+columns. Nothing reads a query that carries reporting-only columns, so a
+parent may count its children while each child looks up its parent without
+the cyclic reference M would otherwise raise at refresh. It is not a
+function of the site URL, because a data source behind a function parameter
+is dynamic and the Power BI Service cannot schedule its refresh.
 
 The rule that makes this safe is the reference check. A derived column names
 its inputs in a string, and nothing between the build and Power BI reads that
@@ -263,7 +263,7 @@ binding:
 ```text
 let
     SiteUrl = "https://tenant.sharepoint.com/sites/YourSite",
-    SiteRoot = …
+    SiteUrlProblem = …
 ```
 
 There is no parameter to create and nothing to type in. The
@@ -284,25 +284,17 @@ not the URL of a list, a form or a page.
 This is easy to get wrong, because the address bar shows the *list* URL
 (`https://tenant.sharepoint.com/sites/YourSite/Lists/YourList`) the whole
 time you are looking at a list, which is exactly when you are most likely
-to copy it. Pasted as `SiteUrl`, it used to build endpoints like
-`.../Lists/YourList/_api/web/lists/getbytitle('YourList')/items` (the
-list title twice over and `_api` hung off a list rather than a web) and
-SharePoint answered `DataSource.NotFound: OData: Request failed (404)`,
-which names neither the parameter at fault nor the fix.
+to copy it. Every query checks the value before reading anything and stops
+with the error `SiteUrl.NotSiteRoot` when it is not the bare site root: no
+trailing `/`, and no `/Lists/`, `/_layouts/`, `/SitePages/` or `/_api/`
+part. A root site collection (`https://tenant.sharepoint.com`, no `/sites/`
+segment) is valid. `build` removes a trailing slash, a query or a fragment
+from `--site-url` itself and says so.
 
-The queries trim that back for you: each one cuts the value at the first
-`/_api/`, `/_layouts/`, `/lists/` or `/sitepages/` segment and drops any
-trailing `/`, so a list, form, site-page or API URL all resolve to the
-same site root. A correct site URL passes through untouched, and a root
-site collection (`https://tenant.sharepoint.com`, no `/sites/` segment)
-is left alone rather than rejected. The `Site Url` and `… Key` columns
-carry the trimmed value, so two people who pasted the same site in
-different shapes still append cleanly.
-
-The trim still runs when the URL was baked in. A URL `build` supplied is
-already a site root, but that one line is now the documented place to
-edit for a second site (below), so it is more likely to receive a pasted
-list URL than the parameter ever was, not less.
+The value is checked rather than corrected because the Power BI Service
+refuses to schedule a refresh when a data source's URL is computed. Every
+read in the pack is `SiteUrl & "<literal>"`, so the Service can see the
+data source without running the query.
 
 ## Several sites in one report
 

@@ -2,12 +2,12 @@
 """`entities`, the one required section: which lists a mapping deploys."""
 
 import re
-from typing import Any, cast
+from collections.abc import Mapping
 
 from dbml_sharepoint.analysis.file_names import invalid_file_name_reason
 from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
 from dbml_sharepoint.analysis.list_url import list_url_key, list_url_path
-from dbml_sharepoint.model._keys import _known_keys, _reject_unknown_keys, _require_mapping
+from dbml_sharepoint.model._keys import _known_keys, _require_mapping
 from dbml_sharepoint.model.errors import (
     MappingShapeError,
     MappingValueError,
@@ -19,6 +19,7 @@ from dbml_sharepoint.model.mapping_types import (
     FoldersFromEnum,
     FolderSource,
     LibrarySettings,
+    is_entity_kind,
 )
 from dbml_sharepoint.model.reading import (
     optional_bool,
@@ -28,7 +29,7 @@ from dbml_sharepoint.model.reading import (
     require_int,
     require_str,
 )
-from dbml_sharepoint.model.sections.context import SectionContext
+from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 
 _ENTITY_KEYS = frozenset({
     "kind", "base_template", "site_role", "singleton", "display_column",
@@ -39,18 +40,17 @@ _ENTITY_KEYS = frozenset({
 _FOLDER_SOURCE_KEYS = frozenset({"from_enum"})
 
 
-def read(sc: SectionContext) -> dict[str, Any]:
+def read(sc: SectionContext) -> LoadedFields:
     entities: dict[str, EntityMapping] = {}
-    for name, spec in _require_mapping(
+    for name, raw_spec in _require_mapping(
         sc.required("entities"), "entities", allow_absent=False,
     ).items():
-        _reject_unknown_keys(spec, _ENTITY_KEYS, f"entities.{name}")
-        raw_kind: object = spec.get("kind")
+        spec = _known_keys(raw_spec, _ENTITY_KEYS, f"entities.{name}")
         entities[name] = EntityMapping(
             name=name,
             title=optional_str(spec, "title", f"entities.{name}", record_blank=True),
             internal_name=_internal_name(spec, name),
-            kind=_parse_entity_kind(raw_kind, f"entities.{name}"),
+            kind=_parse_entity_kind(spec.get("kind"), f"entities.{name}"),
             base_template=require_int(spec, "base_template", f"entities.{name}"),
             site_role=require_str(spec, "site_role", f"entities.{name}"),
             singleton=optional_bool(spec, "singleton", f"entities.{name}"),
@@ -73,7 +73,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
     titles: set[tuple[str, str]] = set()
     roots: set[tuple[str, str]] = set()
     for entity in entities.values():
-        title = entity.title or str(sc.loaded.get("prefix", "")) + entity.name
+        title = entity.title or sc.loaded.get("prefix", "") + entity.name
         if (not title.strip() or title != title.strip() or title in {".", ".."}
                 or any(c in title for c in "/\\") or re.search(r"[\x00-\x1f]", title)):
             raise MappingValueError(f"entities.{entity.name}.title is not a safe list title")
@@ -105,7 +105,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
     return {"entities": entities}
 
 
-def _parse_entity_kind(raw_kind: Any, context: str) -> EntityKind:
+def _parse_entity_kind(raw_kind: object, context: str) -> EntityKind:
     """The one admission gate for entity kinds: a typo'd kind must fail the
     build here, not flow into schema_json and silently miss downstream
     comparisons like kind == "DocumentLibrary".
@@ -122,15 +122,15 @@ def _parse_entity_kind(raw_kind: Any, context: str) -> EntityKind:
     # test below raises the TypeError the CLI deliberately does not catch.
     if not isinstance(raw_kind, str):
         raise MappingShapeError(f"{context}.kind must be a string, got {raw_kind!r}")
-    if raw_kind not in ENTITY_KINDS:
+    if not is_entity_kind(raw_kind):
         raise MappingValueError(
             f"{context}.kind must be one of "
             f"{', '.join(sorted(ENTITY_KINDS))}; got {raw_kind!r}",
         )
-    return cast("EntityKind", raw_kind)
+    return raw_kind
 
 
-def _library_settings(spec: dict[str, Any], context: str) -> LibrarySettings | None:
+def _library_settings(spec: Mapping[str, object], context: str) -> LibrarySettings | None:
     """`settings`, a closed shape. Absent is None; a blank `require_checkout` is unmanaged."""
     if "settings" not in spec:
         return None
@@ -143,7 +143,7 @@ def _library_settings(spec: dict[str, Any], context: str) -> LibrarySettings | N
     return LibrarySettings(require_checkout=value)
 
 
-def _folder_source(spec: dict[str, Any], context: str) -> FolderSource:
+def _folder_source(spec: Mapping[str, object], context: str) -> FolderSource:
     """`folders` as a list of names, or as `{from_enum: <enum>}`.
 
     Both spellings are accepted at the same key rather than at two, so an
@@ -154,11 +154,11 @@ def _folder_source(spec: dict[str, Any], context: str) -> FolderSource:
     value = spec.get("folders")
     if not isinstance(value, dict):
         return optional_str_list(spec, "folders", context)
-    _reject_unknown_keys(value, _FOLDER_SOURCE_KEYS, f"{context}.folders")
-    return FoldersFromEnum(enum=require_str(value, "from_enum", f"{context}.folders"))
+    folders = _known_keys(value, _FOLDER_SOURCE_KEYS, f"{context}.folders")
+    return FoldersFromEnum(enum=require_str(folders, "from_enum", f"{context}.folders"))
 
 
-def _internal_name(spec: dict[str, Any], name: str) -> str | None:
+def _internal_name(spec: Mapping[str, object], name: str) -> str | None:
     value = optional_str(spec, "internal_name", f"entities.{name}")
     if value is not None:
         reason = None

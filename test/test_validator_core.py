@@ -562,7 +562,7 @@ def test_every_mapping_finding_carries_a_location() -> None:
         polymorphic_patterns=[
             PolymorphicPattern(list="Risk", field="Absent", discriminator="Title"),
         ],
-        versioning_overrides={"Nowhere": {"enabled": False}},
+        versioning_overrides={"Nowhere": {"enable_versioning": False}},
     )
 
     findings = validate_against_mapping(schema, bundle)
