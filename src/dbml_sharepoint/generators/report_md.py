@@ -321,6 +321,10 @@ def generate_reporting_md(
          f"the rows where {ITEM_URL_RESOLVED_COLUMN} is false rather than "
          "shipping a 404."),
         "",
+        ("Each query's source addresses its list by the list's title as it was "
+         "when the report was generated. A list renamed in SharePoint after "
+         "that needs the report regenerated."),
+        "",
         ("Where the mapping declares them, each query also carries "
          "**reporting-only columns**: flags, aggregates over a child list, "
          "and columns read from a related list, computed in the query and "
