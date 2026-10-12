@@ -48,10 +48,10 @@ PERMITTED = frozenset({
     "dbml_sharepoint/analysis/resolve.py::_consumed_inputs::folder_source",
     "dbml_sharepoint/analysis/resolve.py::_consumed_inputs::group_sources",
     # Every entity's folder source, resolved once, here.
-    "dbml_sharepoint/analysis/resolve.py::resolve::folder_source",
+    "dbml_sharepoint/analysis/resolve.py::_resolve_from::folder_source",
     # The group sources walked a second time, to name the ones that did not
     # resolve.
-    "dbml_sharepoint/analysis/resolve.py::resolve::group_sources",
+    "dbml_sharepoint/analysis/resolve.py::_resolve_from::group_sources",
 })
 
 #: What a read outside any function is attributed to.

@@ -77,10 +77,8 @@ def test_powerquery_one_query_per_entity_with_odata_feed() -> None:
     task = queries["APP_Task.pq"]
     assert "OData.Feed(" in task
     assert "getbytitle('APP_Task')" in task
-    # Parameterised, not hardcoded -- via the normalised SiteRoot, never the
-    # raw parameter; see test_no_query_builds_an_endpoint_from_raw_site_url.
-    assert "SiteRoot &" in task
-    assert 'Text.TrimEnd(SiteUrl, "/")' in task
+    # Parameterised, not hardcoded; see test_report_static_sources.
+    assert "SiteUrl & " in task
 
 
 def test_powerquery_lookup_selects_join_key_and_expands_title() -> None:
@@ -143,7 +141,7 @@ def test_every_list_query_carries_the_site_it_came_from() -> None:
     schema, bundle = _simple()
     queries = generate_powerquery(schema, bundle, "default")
     for name, query in queries.items():
-        assert '"Site Url", each SiteRoot' in query, name
+        assert '"Site Url", each SiteUrl' in query, name
         assert '"Site Name", each SiteName' in query, name
 
 
@@ -190,7 +188,7 @@ def test_the_site_name_lookup_fails_soft() -> None:
     schema, bundle = _simple()
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     assert "try" in task
-    assert "otherwise SiteRoot," in task
+    assert "otherwise SiteUrl," in task
 
 
 def test_row_keys_are_site_qualified() -> None:
@@ -203,29 +201,21 @@ def test_row_keys_are_site_qualified() -> None:
     schema, bundle = _simple()
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     assert '"Task Key",' in task
-    assert 'each SiteRoot & "|"' in task
+    assert 'each SiteUrl & "|"' in task
     assert "Number.ToText([Id])" in task
 
 
-# --------------------------------------------------- SiteUrl normalisation
+# --------------------------------------------------- SiteUrl validation
 #
-# Measured on a live tenant, 2026-08-11. An operator set the SiteUrl
-# parameter to the URL the address bar shows while VIEWING a list
-# (.../sites/<site>/Lists/RC_CheckPoint) rather than the site root, so the
-# queries requested .../Lists/RC_CheckPoint/_api/web/lists/getbytitle(
-# 'RC_CheckPoint')/items -- the title twice and _api hung off a list, which
-# is not a web -- and SharePoint answered 404 DataSource.NotFound. The
-# generated header already said "site URL"; correct documentation did not
-# prevent it, which is why the queries now normalise the value themselves.
+# A pasted list/form/page/API URL used to be trimmed back to the site root in
+# M. That made every data source URL a computed value, which the Power BI
+# Service treats as a dynamic data source and refuses to schedule. SiteUrl is
+# now validated instead, and a data source takes `SiteUrl & "<literal>"`.
 
 # An M identifier is letters/digits/underscore, so these boundaries stop
 # `SiteUrl` matching inside the `WithSiteUrl` STEP name, which is not a use
 # of the parameter at all.
 _RAW_SITE_URL = re.compile(r"(?<![A-Za-z0-9_])SiteUrl(?![A-Za-z0-9_])")
-
-# The one place the raw parameter is legitimately read: the seed of the
-# normalisation itself.
-_NORMALISING_USE = 'Text.TrimEnd(SiteUrl, "/")'
 
 
 def _all_powerquery(schema: Schema, bundle: MappingBundle) -> dict[str, str]:
@@ -240,14 +230,12 @@ def _site_url_consumers(schema: Schema, bundle: MappingBundle) -> dict[str, str]
     """The generated queries that read the SiteUrl parameter.
 
     _DataDictionary and _ModelInfo are static `#table` literals that never
-    touch a site, so requiring the normalisation of them would be noise.
-    Selection is on either name: a consumer that skipped normalisation
-    still says `SiteUrl`, so it cannot filter itself out of the check.
+    touch a site, so requiring the validation of them would be noise.
     """
     return {
         name: query
         for name, query in _all_powerquery(schema, bundle).items()
-        if _RAW_SITE_URL.search(query) or "SiteRoot" in query
+        if _RAW_SITE_URL.search(query)
     }
 
 
@@ -255,8 +243,7 @@ def _code_lines(query: str) -> list[str]:
     """Query lines with whole-line `//` comments dropped.
 
     The emitted M never puts a comment on the same line as code, so this is
-    exact rather than approximate -- and it is checked, below, that the
-    normalisation prose does not smuggle a passing assertion.
+    exact rather than approximate.
     """
     return [
         line for line in query.splitlines()
@@ -264,12 +251,11 @@ def _code_lines(query: str) -> list[str]:
     ]
 
 
-def test_site_url_is_normalised_to_the_site_root_before_use() -> None:
-    """A pasted list/form/page/API URL is trimmed back to the site.
+def test_site_url_is_validated_and_the_error_is_certain_to_fire() -> None:
+    """A SiteUrl that is not the bare site root raises SiteUrl.NotSiteRoot.
 
-    Signatures confirmed on Microsoft Learn (2026-08-11): Text.PositionOf
-    answers -1 when the substring is absent, and Text.TrimEnd's second
-    argument may be a single character to strip from the end.
+    M is lazy, so the check only fires if the query's result depends on it:
+    every query ends by testing it before returning anything.
     """
     schema, bundle = _simple()
     consumers = _site_url_consumers(schema, bundle)
@@ -280,91 +266,16 @@ def test_site_url_is_normalised_to_the_site_root_before_use() -> None:
         "_UserAddedColumns.pq",
     }
     for name, query in consumers.items():
-        assert "SiteRoot = Text.TrimEnd(" in query, name
-        assert _NORMALISING_USE in query, name
-        assert (
-            '{"/_api/", "/_layouts/", "/lists/", "/sitepages/"}' in query
+        assert "    SiteUrlProblem =" in query, name
+        assert '"SiteUrl.NotSiteRoot"' in query, name
+        assert '"/_api/", "/_layouts/", "/lists/", "/sitepages/"' in query, name
+        assert 'Text.EndsWith(SiteUrl, "/")' in query, name
+        last = [line for line in query.splitlines() if line.strip()][-1]
+        assert last == (
+            "    if SiteUrlProblem <> null then error SiteUrlProblem else "
+            + last.rsplit("else ", 1)[1]
         ), name
-        # -1 when absent, and a marker can never sit at position 0 of an
-        # https:// URL, so the guard is `> 0` rather than `<> -1`.
-        assert "if at > 0 then Text.Start(url, at) else url" in query, name
-
-
-def test_the_normalisation_markers_are_lowercase() -> None:
-    """The URL is lowered for the search, so a mixed-case marker never
-    matches -- and the failure is silent: the 404 comes back exactly as it
-    did before the fix. `/Lists/` is how SharePoint actually spells it in
-    the address bar, so this is the plausible way to get it wrong.
-    """
-    schema, bundle = _simple()
-    task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
-    assert "Text.PositionOf(Text.Lower(url), marker)" in task
-    markers = re.search(r"\{(\"/[^}]*?)\}", task)
-    assert markers is not None
-    for marker in re.findall(r'"([^"]+)"', markers.group(1)):
-        assert marker == marker.lower(), marker
-
-
-def test_no_query_builds_an_endpoint_from_raw_site_url() -> None:
-    """The regression that matters, and the reason this is not a
-    string-presence test.
-
-    Normalising is worthless if the next consumer added to a query reaches
-    for the parameter instead. Rather than enumerate today's consumers --
-    which would pass forever while a new one went unnormalised -- assert the
-    invariant: OUTSIDE the normalisation step, no generated query mentions
-    `SiteUrl` in code at all. Every endpoint, link and key is therefore
-    built from `SiteRoot`.
-    """
-    schema, bundle = _simple()
-    for name, query in _all_powerquery(schema, bundle).items():
-        for line in _code_lines(query):
-            if not _RAW_SITE_URL.search(line):
-                continue
-            assert _NORMALISING_USE in line, (
-                f"{name}: uses the raw SiteUrl parameter outside the "
-                f"normalisation step -- {line.strip()!r}"
-            )
-        # The specific shape that was measured failing.
-        assert 'SiteUrl & "/_api' not in query, name
-
-
-def test_the_raw_site_url_check_can_actually_fail() -> None:
-    """The guard above is only worth having if it fires.
-
-    A comment-stripping helper that swallowed everything, or a boundary
-    regex that matched nothing, would leave the test passing over any input
-    -- indistinguishable from a clean bundle. So run it over a query with
-    the defect deliberately reintroduced, plus one where the only mention is
-    prose, and check it separates them.
-    """
-    schema, bundle = _simple()
-    task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
-
-    def offending_lines(query: str) -> list[str]:
-        return [
-            line for line in _code_lines(query)
-            if _RAW_SITE_URL.search(line) and _NORMALISING_USE not in line
-        ]
-
-    assert offending_lines(task) == []
-    # The 2026-08-11 defect, put back.
-    assert offending_lines(task.replace("SiteRoot &", "SiteUrl &")) != []
-    # A comment naming the parameter is not a use of it.
-    assert offending_lines(task + "\n    // SiteUrl is the site root\n") == []
-    # ...and the STEP name WithSiteUrl must not be read as one either.
-    assert "WithSiteUrl = Table.AddColumn(" in task
-
-
-def test_the_normalisation_records_the_live_run_that_prompted_it() -> None:
-    """A bare Text.TrimEnd chain reads as superstition to the next person,
-    who then "simplifies" it away and reopens a 404 nobody can place."""
-    schema, bundle = _simple()
-    consumers = _site_url_consumers(schema, bundle)
-    assert consumers
-    for name, query in consumers.items():
-        assert "2026-08-11" in query, name
-        assert "404" in query, name
+        assert query.splitlines()[-2] == "in", name
 
 
 # ------------------------------------ the site URL the build already knows
@@ -413,7 +324,7 @@ def _site_queries(queries: dict[str, str]) -> dict[str, str]:
     silently vacuous if the selection ever emptied -- so callers check the
     names they get back.
     """
-    return {n: q for n, q in queries.items() if "SiteRoot" in q}
+    return {n: q for n, q in queries.items() if "SiteUrlProblem" in q}
 
 
 def _binding_line(query: str) -> str | None:
@@ -429,7 +340,7 @@ def test_a_known_site_url_is_bound_in_the_query_not_configured() -> None:
 
     Asserted as the FIRST binding of the `let`, not merely present
     somewhere: M is order-dependent, and a binding emitted after the
-    SiteRoot step that consumes it is an unbound-identifier error the build
+    SiteUrlProblem step that consumes it is an unbound-identifier error the build
     cannot see.
     """
     schema, bundle = _simple()
@@ -487,13 +398,12 @@ def test_a_baked_query_binds_every_name_it_reads() -> None:
             assert bound == (label == "baked"), f"{label}/{name}"
 
 
-def test_a_baked_site_url_is_still_normalised_before_use() -> None:
-    """The 0d2eff2 trim stays in the baked shape.
+def test_a_baked_site_url_is_still_validated_before_use() -> None:
+    """The validation stays in the baked shape.
 
     A URL the build supplied is already a site root, so this looks like
-    dead code -- but that one line is now the DOCUMENTED place to hand-edit
-    for a second site, which makes it MORE likely to receive a pasted list
-    URL than the parameter ever was, not less.
+    dead code -- but that one line is the DOCUMENTED place to hand-edit
+    for a second site, which makes it likely to receive a pasted list URL.
     """
     schema, bundle = _simple()
     listy = "https://tenant.sharepoint.com/sites/Ops/Lists/APP_Task"
@@ -503,21 +413,8 @@ def test_a_baked_site_url_is_still_normalised_before_use() -> None:
         "_UserAddedColumns.pq",
     }
     for name, query in consumers.items():
-        assert "SiteRoot = Text.TrimEnd(" in query, name
-        assert _NORMALISING_USE in query, name
-        # The invariant of test_no_query_builds_an_endpoint_from_raw_site_url,
-        # carried into the baked shape: outside the binding itself and the
-        # seed of the normalisation, nothing reads the raw value. Written as
-        # an invariant rather than a list of today's consumers, so the next
-        # step added to a query cannot skip the trim unnoticed.
-        binding = _binding_line(query)
-        for line in _code_lines(query):
-            if not _RAW_SITE_URL.search(line) or line == binding:
-                continue
-            assert _NORMALISING_USE in line, (
-                f"{name}: uses the baked SiteUrl outside the normalisation "
-                f"step -- {line.strip()!r}"
-            )
+        assert "    SiteUrlProblem =" in query, name
+        assert "    if SiteUrlProblem <> null then error SiteUrlProblem" in query, name
 
 
 def _read_m_literal(literal: str) -> tuple[str, str]:
@@ -654,7 +551,7 @@ def test_emit_reporting_bakes_the_build_site_into_the_whole_pack(
     checked = 0
     for path in pq:
         text = path.read_text(encoding="utf-8")
-        if "SiteRoot" not in text:
+        if "SiteUrlProblem" not in text:
             continue
         assert f'    SiteUrl = "{_BAKED}",' in text.splitlines(), path.name
         assert not _asks_for_a_parameter(text), path.name
@@ -2025,7 +1922,7 @@ def test_the_users_table_is_off_unless_the_mapping_asks() -> None:
 def test_the_users_query_reads_the_site_user_list_keyed_like_every_table() -> None:
     schema, bundle = _users_on()
     users = generate_powerquery(schema, bundle, "default")["_Users.pq"]
-    assert 'SiteRoot & "/_api/web/siteuserinfolist/items"' in users
+    assert 'SiteUrl & "/_api/web/siteuserinfolist/items"' in users
     assert _USERS_SELECT in users
     for typed in (
         '{"Id", Int64.Type}', '{"Title", type text}', '{"EMail", type text}',
@@ -2036,7 +1933,7 @@ def test_the_users_query_reads_the_site_user_list_keyed_like_every_table() -> No
     # The same key shape as every list table, namespaced so it can never
     # collide with a list's own key.
     assert _added_column_expression(users, "User Key") == (
-        'each SiteRoot & "|" & "_Users" & "|" & Number.ToText([Id])'
+        'each SiteUrl & "|" & "_Users" & "|" & Number.ToText([Id])'
     )
     # Which kind of principal a row is: groups sit in the same list.
     kind = _added_column_expression(users, "Principal Kind")
@@ -2046,7 +1943,7 @@ def test_the_users_query_reads_the_site_user_list_keyed_like_every_table() -> No
         assert f'Text.StartsWith([ContentTypeId], "{prefix}") then "{label}"' in kind, label
     assert "[ContentTypeId] = null" in kind
     # Site provenance, so appended sites slice like the list tables do.
-    assert '"Site Url", each SiteRoot, type text' in users
+    assert '"Site Url", each SiteUrl, type text' in users
     assert '"Site Name", each SiteName, type text' in users
     # Only the declared columns go on; SharePoint adds `ID` beside `Id`.
     assert "Table.SelectColumns(" in users
@@ -2065,12 +1962,12 @@ def test_person_columns_carry_a_key_that_joins_the_users_table() -> None:
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     assert _added_column_expression(task, "Owner Key") == (
         "each if [OwnerId] = null then null "
-        'else SiteRoot & "|" & "_Users" & "|" & Number.ToText([OwnerId])'
+        'else SiteUrl & "|" & "_Users" & "|" & Number.ToText([OwnerId])'
     )
     # The system person columns get keys under their display titles.
     assert _added_column_expression(task, "Created By Key") == (
         "each if [AuthorId] = null then null "
-        'else SiteRoot & "|" & "_Users" & "|" & Number.ToText([AuthorId])'
+        'else SiteUrl & "|" & "_Users" & "|" & Number.ToText([AuthorId])'
     )
     assert '"Modified By Key"' in task
     # Never renamed: they are already model-facing.
@@ -2112,7 +2009,7 @@ def test_the_users_table_is_in_the_dictionary() -> None:
 
 # --- The row key must name the LIST, not only the site ----------------------
 #
-# Measured 2026-08-11: the key was `SiteRoot & "|" & Number.ToText([Id])`,
+# Measured 2026-08-11: the key was `SiteUrl & "|" & Number.ToText([Id])`,
 # with nothing in it identifying the list. Every SharePoint list numbers its
 # items from 1, so appending two lists that share a site produces colliding
 # keys -- silently. Wrong row counts and wrong relationships, no error
@@ -2172,10 +2069,10 @@ def test_the_row_key_names_the_list_it_came_from() -> None:
     schema, bundle = _simple()
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     assert _added_column_expression(task, "Task Key") == (
-        'each SiteRoot & "|" & "title:APP_Task" & "|" & Number.ToText([Id])'
+        'each SiteUrl & "|" & "title:APP_Task" & "|" & Number.ToText([Id])'
     )
     # The defect, spelled out, so a revert cannot pass this file.
-    assert 'each SiteRoot & "|" & Number.ToText([Id])' not in task
+    assert 'each SiteUrl & "|" & Number.ToText([Id])' not in task
 
 
 def _declare_url(bundle: MappingBundle, entity: str, url: str) -> None:
@@ -2189,7 +2086,7 @@ def test_row_key_uses_the_declared_url_not_the_title() -> None:
     _declare_url(bundle, "Task", "Lists//Mail Ledger/")
     queries = generate_powerquery(schema, bundle, "default")
     assert _added_column_expression(queries["APP_Task.pq"], "Task Key") == (
-        'each SiteRoot & "|" & "lists/mail ledger" & "|" & Number.ToText([Id])'
+        'each SiteUrl & "|" & "lists/mail ledger" & "|" & Number.ToText([Id])'
     )
     assert "APP_Task" not in _added_column_expression(queries["APP_Task.pq"], "Task Key")
 
@@ -2576,7 +2473,7 @@ def test_the_item_link_uses_the_url_the_list_actually_has() -> None:
     # The declared path survives only as the fallback, and the fallback says
     # so on every row: see test_a_guessed_item_url_says_so_on_every_row.
     body = query.split("    ItemUrl =")[1].split("\n    Zone =")[0]
-    assert 'base = SiteRoot & "/Lists/APP_Task/DispForm.aspx?ID="' in body
+    assert 'base = SiteUrl & "/Lists/APP_Task/DispForm.aspx?ID="' in body
 
 
 def test_a_document_library_link_points_at_its_forms_folder() -> None:
@@ -2586,7 +2483,7 @@ def test_a_document_library_link_points_at_its_forms_folder() -> None:
     bundle = as_library(bundle, "Task")
     query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     assert '& "/Forms/DispForm.aspx?ID="' in query, query
-    assert 'base = SiteRoot & "/APP_Task/Forms/DispForm.aspx?ID="' in query
+    assert 'base = SiteUrl & "/APP_Task/Forms/DispForm.aspx?ID="' in query
 
 
 def _with_task_as_library(folders: tuple[str, ...] = ()) -> tuple[Schema, MappingBundle]:
@@ -2620,12 +2517,12 @@ def test_a_document_library_dictionary_says_a_row_is_a_file() -> None:
 def test_a_server_relative_folder_is_made_absolute_by_the_site_origin() -> None:
     """`ServerRelativeUrl` is `/sites/<site>/Lists/<slug>`, so the scheme and
     host have to come from somewhere. A root site collection has no path
-    segment to cut at, so that shape must fall through to SiteRoot whole."""
+    segment to cut at, so that shape must fall through to SiteUrl whole."""
     schema, bundle = _simple()
     query = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     assert "    SiteOrigin =" in query
     assert "SiteOrigin\n" in query.split("    ItemUrl =")[1]
-    assert "if afterScheme < 0 or slash < 0 then SiteRoot" in query
+    assert "if afterScheme < 0 or slash < 0 then SiteUrl" in query
 
 
 # ---------------------------------------------- projected dependent lookups
@@ -3077,9 +2974,9 @@ def test_explicit_titles_escape_m_odata_and_sql_delimiters(tmp_path: Path) -> No
     escaped = "Owner%27%27s%20%22Review%22%20%5D"
     assert f"getbytitle('{escaped}')/RootFolder" in query
     assert f"getbytitle('{escaped}')/items" in query
-    assert "base = SiteRoot & \"/Lists/Owner's \"\"Review\"\" ]/DispForm.aspx?ID=\"" in query
+    assert "base = SiteUrl & \"/Lists/Owner's \"\"Review\"\" ]/DispForm.aspx?ID=\"" in query
     audit = generate_dictionary_powerquery(schema, bundle, "default")
-    assert any('Text.Replace(listTitle, "\'", "\'\'")' in text for text in audit.values())
+    assert f"getbytitle('{escaped}')/fields" in audit["_UserAddedColumns.pq"]
     sql = generate_sql_views(schema, bundle, "default")
     assert '[vw_Owner\'s "Review" ]]]' in sql
     assert '[vw_Child\'s "Review" ]]_Enriched]' in sql
@@ -3183,20 +3080,12 @@ entities:
 """
 
 
-def test_the_loading_warning_names_the_builds_own_base_function(tmp_path: Path) -> None:
-    """The example in the guide's warning is a file of this build, so the reader can
-    check it against the folder; a build in which no list reads another has no base
-    function to load and gets no warning."""
+def test_no_base_function_file_or_loading_warning_is_emitted(tmp_path: Path) -> None:
+    """A list another list reads is fetched inline, so there is nothing to load by name."""
     root = BLUEPRINTS["reporting-sample"]
     schema = parse_dbml(root / "10-design" / "schema.dbml")
     bundle = load_mapping(root / "20-configure" / "mapping.yaml")
     guide = generate_reporting_md(schema, bundle, "default")
-    assert (
-        "so `RS_Risk_Base.pq` must be loaded as `RS_Risk_Base` for a query that reads "
-        "`RS_Risk` to resolve"
-    ) in guide
-    schema, bundle = pack(tmp_path, _ONE_LIST_DBML, _ONE_LIST_MAPPING)
-    guide = generate_reporting_md(schema, bundle, "default")
-    assert not generate_powerquery(schema, bundle, "default").keys() & {"Risk_Base.pq"}
+    assert not [n for n in generate_powerquery(schema, bundle, "default") if "_Base" in n]
     assert "Load each query under the name of its file" not in guide
     assert "_Base" not in guide

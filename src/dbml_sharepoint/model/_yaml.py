@@ -25,7 +25,7 @@ way, though it imports `model.errors` and so is not a leaf.
 import datetime as dt
 import io
 from collections.abc import Hashable
-from typing import IO, Any, override
+from typing import IO, override
 
 from ruamel.yaml import YAML
 from ruamel.yaml.composer import Composer, ComposerError
@@ -111,7 +111,7 @@ class RefusedYAMLError(ComposerError):
     """
 
 
-def _found(loader: Any) -> list[tuple[StreamMark, str]]:
+def _found(loader: "_Reading") -> list[tuple[StreamMark, str]]:
     """The refusals `_Reading` collects for the document its parts are reading."""
     found: list[tuple[StreamMark, str]] = loader.found
     return found
@@ -127,7 +127,7 @@ class _Scanner(Scanner):
     """
 
     @override
-    def scan_yaml_directive_number(self, start_mark: Any) -> int:
+    def scan_yaml_directive_number(self, start_mark: object) -> int:
         try:
             number: int = super().scan_yaml_directive_number(start_mark)
         except ValueError as exc:
@@ -140,7 +140,7 @@ class _Scanner(Scanner):
         return number
 
     @override
-    def scan_flow_scalar_non_spaces(self, double: Any, start_mark: Any) -> Any:
+    def scan_flow_scalar_non_spaces(self, double: object, start_mark: object) -> object:
         """ruamel.yaml 0.19.1's, refusing a `\\u` or `\\U` escape that names no character.
 
         The escape is checked where it is read, since the text it decodes to is
@@ -185,7 +185,7 @@ class _Scanner(Scanner):
             else:
                 return chunks
 
-    def _read_code(self, letter: str, start_mark: StreamMark, slash: StreamMark) -> str:
+    def _read_code(self, letter: str, start_mark: object, slash: StreamMark) -> str:
         """The character a `\\x`, `\\u` or `\\U` escape names, read after its letter."""
         length: int = self.ESCAPE_CODES[letter]
         self.reader.forward()
@@ -246,7 +246,7 @@ class _Composer(Composer):
     anchor names wherever the alias stands.
     """
 
-    def __init__(self, loader: Any = None) -> None:
+    def __init__(self, loader: object = None) -> None:
         super().__init__(loader)
         self._depth = 0
         # The anchor of each collection still being composed, and where it starts.
@@ -270,7 +270,7 @@ class _Composer(Composer):
         _found(self.loader).append((mark, why))
 
     @override
-    def compose_scalar_node(self, anchor: Any) -> ScalarNode:
+    def compose_scalar_node(self, anchor: object) -> ScalarNode:
         event: ScalarEvent = self.parser.peek_event()
         tag: str | None = event.tag
         if tag is not None and tag != _STR:
@@ -279,7 +279,7 @@ class _Composer(Composer):
         return node
 
     @override
-    def compose_node(self, parent: Any, index: Any) -> Any:
+    def compose_node(self, parent: object, index: object) -> object:
         event = self.parser.peek_event()
         if isinstance(event, AliasEvent) and event.anchor in self._enclosing:
             # ruamel.yaml would hand back the open collection, which would then contain itself.
@@ -304,7 +304,7 @@ class _Composer(Composer):
                 self.anchors[event.anchor], event.start_mark, self._merged_levels(parent, index),
             )
         listed = (
-            isinstance(parent, MappingNode) and index is not None and _is_merge(index)
+            isinstance(parent, MappingNode) and isinstance(index, Node) and _is_merge(index)
             and isinstance(event, SequenceStartEvent)
         )
         if listed:
@@ -314,14 +314,14 @@ class _Composer(Composer):
             self._merge_list = None
         return node
 
-    def _merged_levels(self, parent: Node | None, index: Node | None) -> int:
+    def _merged_levels(self, parent: object, index: object) -> int:
         """How many levels above an alias standing here its collection's pairs join the document.
 
         A merged mapping's pairs join the mapping that merges it, so a source stands
         at that mapping's level: one above the alias for `<<: *a`, two above it for
         `<<: [*a]`, where the list is not built.
         """
-        if isinstance(parent, MappingNode) and index is not None and _is_merge(index):
+        if isinstance(parent, MappingNode) and isinstance(index, Node) and _is_merge(index):
             return 1
         if isinstance(parent, SequenceNode) and self._depth == self._merge_list:
             return 2
@@ -383,14 +383,14 @@ class _Composer(Composer):
         self._height[node] = 1 + max(heights, default=0)
 
     @override
-    def compose_sequence_node(self, anchor: Any) -> SequenceNode:
+    def compose_sequence_node(self, anchor: object) -> SequenceNode:
         name = self._open("sequence")
         node: SequenceNode = super().compose_sequence_node(anchor)
         self._close(name, node)
         return node
 
     @override
-    def compose_mapping_node(self, anchor: Any) -> MappingNode:
+    def compose_mapping_node(self, anchor: object) -> MappingNode:
         name = self._open("mapping")
         node: MappingNode = super().compose_mapping_node(anchor)
         self._close(name, node)
@@ -448,20 +448,20 @@ class UniqueKeyConstructor(SafeConstructor):
     own check, which skips a mapping that merges.
     """
 
-    def __init__(self, preserve_quotes: bool | None = None, loader: Any = None) -> None:
+    def __init__(self, preserve_quotes: bool | None = None, loader: object = None) -> None:
         super().__init__(preserve_quotes, loader)
         # A mapping is checked once: flattening rewrites its pairs in place.
         self._checked: set[MappingNode] = set()
 
     @override
-    def get_single_data(self) -> Any:
+    def get_single_data(self) -> object:
         node: Node | None = self.composer.get_single_node()
         if found := _found(self.loader):
             raise TagOrDirectiveError(found)
         return None if node is None else self.construct_document(node)
 
     @override
-    def construct_yaml_timestamp(self, node: Any, values: Any = None) -> Any:
+    def construct_yaml_timestamp(self, node: object, values: object = None) -> object:
         stamp: dt.date = super().construct_yaml_timestamp(node, values)
         if isinstance(stamp, dt.datetime) and (offset := stamp.utcoffset()) is not None:
             # ruamel.yaml names the zone as written, which `repr` shows; PyYAML's was unnamed.
@@ -469,11 +469,11 @@ class UniqueKeyConstructor(SafeConstructor):
         return stamp
 
     @override
-    def construct_object(self, node: Any, deep: bool = False) -> Any:
+    def construct_object(self, node: Node, deep: bool = False) -> object:
         try:
             return super().construct_object(node, deep)
         except (ValueError, KeyError, IndexError, OverflowError, AssertionError) as exc:
-            built: Node = node
+            built = node
             # So every caller's YAML handler sees it, where a bare ValueError escaped them.
             raise ConstructorError(
                 None, None,
@@ -482,7 +482,7 @@ class UniqueKeyConstructor(SafeConstructor):
             ) from exc
 
     @override
-    def flatten_mapping(self, node: Any) -> Any:
+    def flatten_mapping(self, node: MappingNode) -> None:
         if node in self._checked:
             return super().flatten_mapping(node)
         self._checked.add(node)
@@ -550,7 +550,7 @@ class _Reading(YAML):
         self.found: list[tuple[StreamMark, str]] = []
 
 
-def safe_load(stream: str | IO[str]) -> Any:
+def safe_load(stream: str | IO[str]) -> object:
     """ruamel.yaml's safe load, with the refusals the module docstring lists."""
     return _Reading().load(stream)
 
@@ -559,7 +559,7 @@ class _Representer(SafeRepresenter):
     """ruamel.yaml's safe representer, double-quoting a string that holds NEL (U+0085)."""
 
     @override
-    def represent_str(self, data: Any) -> ScalarNode:
+    def represent_str(self, data: str) -> ScalarNode:
         if _NEL in data:
             # Single-quoted, the writer breaks the line at NEL, and `a<NEL>b` reads back as `a b`.
             node: ScalarNode = self.represent_scalar(_STR, data, style='"')

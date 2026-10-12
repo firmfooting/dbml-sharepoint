@@ -6,14 +6,12 @@ and its absence is a `MappingShapeError`; the owner is provenance, stamped
 into the manifest.
 """
 
-from typing import Any
-
 from dbml_sharepoint.model.errors import MappingShapeError, MappingValueError
 from dbml_sharepoint.model.reading import optional_str, require_str
-from dbml_sharepoint.model.sections.context import SectionContext
+from dbml_sharepoint.model.sections.context import LoadedFields, SectionContext
 
 
-def read(sc: SectionContext) -> dict[str, Any]:
+def read(sc: SectionContext) -> LoadedFields:
     # `required` names an absent prefix; a blank one titled every list "None" + its name.
     sc.required("prefix")
     prefix = require_str(sc.blocks, "prefix", "mapping")
@@ -24,7 +22,7 @@ def read(sc: SectionContext) -> dict[str, Any]:
     }
 
 
-def _parse_previous_prefixes(declared: Any, current: Any) -> tuple[str, ...]:
+def _parse_previous_prefixes(declared: object, current: str) -> tuple[str, ...]:
     """`previous_prefixes`, refused when it repeats or names the current prefix."""
     if declared is None:
         return ()

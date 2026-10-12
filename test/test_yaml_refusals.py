@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 import typer
 from _catalogue_fixtures import manifest_text
+from _narrow import as_dict
 from _packs import DEFAULT_PREFIX, blocks, entities, write_mapping
 from _paths import FIXTURES
 
@@ -46,7 +47,7 @@ _HEADER = "uses tags or directives the loader refuses:"
 def test_a_plain_value_is_read_as_yaml_1_2(token: str, reading: object) -> None:
     """The spellings the mapping reference names, which a YAML 1.1 reader
     reads otherwise."""
-    value = _yaml.safe_load(f"v: {token}\n")["v"]
+    value = as_dict(_yaml.safe_load(f"v: {token}\n"))["v"]
     assert (type(value), value) == (type(reading), reading)
 
 
@@ -427,13 +428,14 @@ def test_nesting_is_bounded_through_an_alias() -> None:
     """The value built holds what an anchor names wherever its alias stands,
     so a chain of short aliases nested as deep as it was long. The
     collection named is the one that would stand at level 101."""
-    assert _yaml.safe_load(_chain(98))["a98"] == _nested(99)
+    assert as_dict(_yaml.safe_load(_chain(98)))["a98"] == _nested(99)
     for links in (99, 3000):
         assert _refused(_chain(links)) == (
             "found a sequence nested deeper than 100 levels\n"
             '  in "<file>", line 100, column 12'
         )
-    assert _yaml.safe_load("x: &x {k: 1}\ny: " + "[" * 98 + "*x" + "]" * 98)["x"] == {"k": 1}
+    aliased = _yaml.safe_load("x: &x {k: 1}\ny: " + "[" * 98 + "*x" + "]" * 98)
+    assert as_dict(aliased)["x"] == {"k": 1}
     assert _refused("x: &x {k: 1}\ny: " + "[" * 99 + "*x" + "]" * 99) == (
         "found a mapping nested deeper than 100 levels\n"
         '  in "<file>", line 2, column 103'

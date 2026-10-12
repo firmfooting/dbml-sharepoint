@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 from _catalogue_fixtures import CORE_LICENSE, install, manifest_text, write_family
+from _narrow import as_dict
 from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint import catalogue
@@ -103,7 +104,7 @@ def test_each_solution_describes_itself(solution: catalogue.Solution) -> None:
     assert solution.lists
     assert isinstance(solution.prefix, str)
     raw = _yaml.safe_load(solution.mapping_path.read_text(encoding="utf-8"))
-    assert "prefix" in raw, f"{solution.id}: mapping.yaml declares no prefix key"
+    assert "prefix" in as_dict(raw), f"{solution.id}: mapping.yaml declares no prefix key"
 
 
 @pytest.mark.parametrize("solution", available_solutions(), ids=lambda s: s.id)

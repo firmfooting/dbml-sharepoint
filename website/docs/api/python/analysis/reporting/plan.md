@@ -201,28 +201,6 @@ other. Without this the planner's `ValueError` was the only thing that
 knew, and it fires during `build`, after validation has already
 reported the mapping clean, as an unhandled traceback.
 
-### `read_by_another`
-
-```python
-def read_by_another(plans: list[ListPlan]) -> list[ListPlan]
-```
-
-The plans whose rows some OTHER list's derived step reads, in plan order.
-
-Each of these gets a base function beside its query: the rows fetched
-and keyed, under the internal names, with none of the reporting-only
-columns. A cross-list read calls the base rather than naming the list's
-query, because the query carries derived steps of its own and two
-queries whose derived steps read each other name each other, which in M
-is a cyclic reference (Learn, M language specification, operator
-behavior) that nothing before a refresh can see. Reported against a
-blueprint: six mutual pairs, twelve cycles, and nine of ten queries
-unable to refresh. A base reads no query at all, so no chain of reads
-can return to where it started.
-
-A read of the list's OWN rows reads the step above it and needs no
-base; `_Users` is not a list and has no plan.
-
 ### `VALIDATION_TIME_ZONE`
 
 ```python

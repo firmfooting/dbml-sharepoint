@@ -525,7 +525,7 @@ def test_a_built_reporting_pack_needs_no_parameter(tmp_path: Path) -> None:
     checked = 0
     for path in sorted((out / "reporting" / "powerquery").glob("*.pq")):
         text = path.read_text(encoding="utf-8")
-        if "SiteRoot" not in text:
+        if "SiteUrlProblem" not in text:
             continue  # a static #table query, no site in it
         assert f'    SiteUrl = "{site}",' in text.splitlines(), path.name
         assert "// Requires" not in text, path.name
@@ -1894,6 +1894,9 @@ def test_build_rejects_non_https_site_url(tmp_path: Path) -> None:
          "https://example.sharepoint.com/sites/test"),
         ("https://example.sharepoint.com/sites/test?web=1#Overview",
          "https://example.sharepoint.com/sites/test"),
+        ("https://example.sharepoint.com/sites/test/",
+         "https://example.sharepoint.com/sites/test"),
+        ("https://example.sharepoint.com/", "https://example.sharepoint.com"),
     ],
 )
 def test_a_query_or_fragment_never_reaches_the_generated_bundle(
@@ -1902,7 +1905,7 @@ def test_a_query_or_fragment_never_reaches_the_generated_bundle(
     """SharePoint's own Copy link puts `?web=1` on the clipboard.
 
     Nothing downstream stripped it, and the site URL is baked into the
-    reporting pack -- the Power Query `SiteRoot` and the SQLCMD `SiteUrl` --
+    reporting pack -- the Power Query `SiteUrl` and the SQLCMD `SiteUrl` --
     so the generated endpoints came out as
     `https://tenant/sites/X?web=1/_api/web`.
 

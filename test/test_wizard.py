@@ -28,6 +28,7 @@ from _catalogue_fixtures import (
 )
 from _console import ScriptedConsole
 from _console import collapsed as _collapsed
+from _narrow import as_dict
 
 from dbml_sharepoint import catalogue, wizard
 from dbml_sharepoint.catalogue import (
@@ -1064,7 +1065,7 @@ def test_the_prefix_rewrites_change_their_two_lines_and_nothing_else(tmp_path: P
         if was != now
     ]
     assert changed == ['prefix: "VI_"', 'previous_prefixes: ["", "ADOPT_"]']
-    was, now = _yaml.safe_load(before), _yaml.safe_load(after)
+    was, now = as_dict(_yaml.safe_load(before)), as_dict(_yaml.safe_load(after))
     assert (now.pop("prefix"), now.pop("previous_prefixes")) == ("", ["ADOPT_"])
     del was["prefix"], was["previous_prefixes"]
     assert now == was
