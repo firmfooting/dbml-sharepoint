@@ -6,9 +6,8 @@ import shutil
 import subprocess
 import sys
 import textwrap
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any
 
 import pytest
 from _builders import ID_PK, TITLE, table
@@ -52,9 +51,15 @@ from dbml_sharepoint.pipeline import (
 runner = CliRunner()
 
 
-def _captured_reader(captured: dict[str, Any]) -> str | None:
-    values = captured["identities"].get("enterprise_reader", ())
-    return values[0].value if values else None
+def _captured_reader(captured: dict[str, object]) -> str | None:
+    identities = captured["identities"]
+    assert isinstance(identities, Mapping)
+    values = identities.get("enterprise_reader", ())
+    assert isinstance(values, tuple)
+    if not values:
+        return None
+    assert isinstance(values[0], IdentityValue)
+    return values[0].value
 
 
 @pytest.fixture(autouse=True)
@@ -1104,11 +1109,13 @@ def test_no_reader_flag_emits_no_enrolment(
     spy wraps the real `emit_bundle` rather than replacing it, so the build
     still runs for real and the text assertion stays meaningful too.
     """
-    from dbml_sharepoint.bundle import emit_bundle as real_emit_bundle
+    from dbml_sharepoint.bundle import emit_bundle
+
+    real_emit_bundle: Callable[..., str] = emit_bundle
 
     captured: dict[str, object] = {}
 
-    def spy(out: Path, **kwargs: Any) -> str:
+    def spy(out: Path, **kwargs: object) -> str:
         captured.update(kwargs)
         return real_emit_bundle(out, **kwargs)
 
@@ -1149,11 +1156,13 @@ def test_a_valid_reader_flag_reaches_emit_bundle(
     `enterprise_reader=None` at that call site would still pass every other
     test in this file.
     """
-    from dbml_sharepoint.bundle import emit_bundle as real_emit_bundle
+    from dbml_sharepoint.bundle import emit_bundle
+
+    real_emit_bundle: Callable[..., str] = emit_bundle
 
     captured: dict[str, object] = {}
 
-    def spy(out: Path, **kwargs: Any) -> str:
+    def spy(out: Path, **kwargs: object) -> str:
         captured.update(kwargs)
         return real_emit_bundle(out, **kwargs)
 
@@ -1233,13 +1242,15 @@ def test_the_declined_sentinel_is_treated_as_nobody_not_as_a_value(
     sentinel happened to overwrite the `enterprise_reader` parameter itself
     early and lose the distinction before it reached here.
     """
-    from dbml_sharepoint.bundle import emit_bundle as real_emit_bundle
+    from dbml_sharepoint.bundle import emit_bundle
+
+    real_emit_bundle: Callable[..., str] = emit_bundle
     from dbml_sharepoint.pipeline import execute_build
     from dbml_sharepoint.project import ENTERPRISE_READER_DECLINED
 
     captured: dict[str, object] = {}
 
-    def spy(out: Path, **kwargs: Any) -> str:
+    def spy(out: Path, **kwargs: object) -> str:
         captured.update(kwargs)
         return real_emit_bundle(out, **kwargs)
 
@@ -1377,11 +1388,13 @@ def test_an_env_file_value_reaches_execute_build(
     """The mirror of `test_a_valid_reader_flag_reaches_emit_bundle`, sourced
     from `--env-file` at a temp path rather than the default location -- so
     this test is not itself CWD-dependent."""
-    from dbml_sharepoint.bundle import emit_bundle as real_emit_bundle
+    from dbml_sharepoint.bundle import emit_bundle
+
+    real_emit_bundle: Callable[..., str] = emit_bundle
 
     captured: dict[str, object] = {}
 
-    def spy(out: Path, **kwargs: Any) -> str:
+    def spy(out: Path, **kwargs: object) -> str:
         captured.update(kwargs)
         return real_emit_bundle(out, **kwargs)
 
@@ -1447,13 +1460,15 @@ def test_the_declined_sentinel_beats_the_env_file(
     type "declined" on the command line -- so, like
     `test_the_declined_sentinel_is_treated_as_nobody_not_as_a_value`, this
     calls `execute_build` directly."""
-    from dbml_sharepoint.bundle import emit_bundle as real_emit_bundle
+    from dbml_sharepoint.bundle import emit_bundle
+
+    real_emit_bundle: Callable[..., str] = emit_bundle
     from dbml_sharepoint.pipeline import execute_build
     from dbml_sharepoint.project import ENTERPRISE_READER_DECLINED
 
     captured: dict[str, object] = {}
 
-    def spy(out: Path, **kwargs: Any) -> str:
+    def spy(out: Path, **kwargs: object) -> str:
         captured.update(kwargs)
         return real_emit_bundle(out, **kwargs)
 
@@ -3043,7 +3058,7 @@ _DELEGATING_COMMANDS = ((build, execute_build), (extract, execute_extraction))
 
 
 def _forwarded_arguments(
-    command: Callable[..., Any], executor: Callable[..., Any],
+    command: Callable[..., object], executor: Callable[..., object],
 ) -> dict[str, set[str]]:
     """Read `command`'s call to `executor` out of `command`'s own source.
 
@@ -3096,7 +3111,7 @@ def _forwarded_arguments(
     ],
 )
 def test_every_command_option_reaches_its_executor(
-    command: Callable[..., Any], executor: Callable[..., Any], option: str,
+    command: Callable[..., object], executor: Callable[..., object], option: str,
 ) -> None:
     """Every option a delegating command accepts is forwarded to its executor.
 
@@ -3129,7 +3144,7 @@ def test_every_command_option_reaches_its_executor(
     ids=[command.__name__ for command, _ in _DELEGATING_COMMANDS],
 )
 def test_no_command_option_is_forwarded_that_its_executor_cannot_accept(
-    command: Callable[..., Any], executor: Callable[..., Any],
+    command: Callable[..., object], executor: Callable[..., object],
 ) -> None:
     """The other half: nothing is forwarded under a name that is not a
     parameter.

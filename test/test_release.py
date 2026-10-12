@@ -1,6 +1,6 @@
 # test/test_release.py
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 import pytest
 from _packs import write_mapping
@@ -44,7 +44,7 @@ def test_a_release_without_deployer_version_has_no_release_finding(tmp_path: Pat
 
 def test_release_refuses_positional_fields() -> None:
     """Its fields moved when deployer_version was retired, so an old positional call must fail."""
-    legacy_call: Any = Release
+    legacy_call: Callable[..., Release] = Release
     with pytest.raises(TypeError):
         legacy_call("1.0.0", "2026-01-01", "dbml-sharepoint/0.1.0", "1.0.0", "none", "")
 

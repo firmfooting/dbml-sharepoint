@@ -321,20 +321,19 @@ def test_the_demo_validator_refuses_everything_the_planner_refuses() -> None:
     refused, and once on the scalar hyperlink the planner refused and the
     validator waved through.
     """
-    from typing import Any
 
     import pytest
 
     from dbml_sharepoint.generators.demogen import _field_plan
 
-    refused_by_planner: list[Any] = [
+    refused_by_planner: list[object] = [
         None, 123, "", "   ", {"url": None}, {"url": ""},
     ]
     for refused in refused_by_planner:
         with pytest.raises(ValueError, match=r"^Link:"):
             _field_plan("hyperlink", "Link", refused)
 
-    accepted: list[Any] = [
+    accepted: list[object] = [
         "https://example.invalid/a.pdf",
         {"url": "https://example.invalid/a.pdf"},
         {"url": "https://example.invalid/a.pdf", "description": "A file"},
@@ -349,7 +348,7 @@ def test_the_demo_validator_refuses_everything_the_planner_refuses() -> None:
     # first. A demo_ref object is NOT in this list: the `ref` kind claims it
     # before arity is read, and the validator refuses it either way, so the
     # planner is the laxer of the two there rather than the stricter.
-    refused_on_a_multi_value_column: list[Any] = ["View", None, 3]
+    refused_on_a_multi_value_column: list[object] = ["View", None, 3]
     for refused in refused_on_a_multi_value_column:
         with pytest.raises(ValueError, match=r"^Events:"):
             _field_plan("audit_event[]", "Events", refused)

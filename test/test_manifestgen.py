@@ -3,7 +3,7 @@ import shutil
 from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, ClassVar, Unpack, override
+from typing import ClassVar, Unpack, override
 
 import pytest
 from _builders import ID_PK, TITLE, table
@@ -28,6 +28,7 @@ from dbml_sharepoint.analysis.validator import validate, validate_against_mappin
 from dbml_sharepoint.extension import BaseExtension, ManifestExtras, SiteContext
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.manifestgen import generate_manifest
+from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.conditions import Group, Leaf
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
@@ -41,7 +42,7 @@ from dbml_sharepoint.model.mapping_types import (
     ViewDef,
     ViewSort,
 )
-from dbml_sharepoint.model.parser import parse_dbml
+from dbml_sharepoint.model.parser import Schema, parse_dbml
 from dbml_sharepoint.model.release import load_release
 
 
@@ -109,12 +110,12 @@ class _SeedExtension(BaseExtension):
 
     @override
     def seed_lists(
-        self, bundle: Any, schema: Any, site_context: SiteContext,
-    ) -> dict[str, dict[str, Any]]:
+        self, bundle: MappingBundle, schema: Schema, site_context: SiteContext,
+    ) -> dict[str, dict[str, JsonValue]]:
         return {"APP_AppSettings": {"Title": "App Settings", "UnitName": "Zeta"}}
 
     @override
-    def manifest_extras(self, bundle: Any, schema: Any) -> ManifestExtras:
+    def manifest_extras(self, bundle: MappingBundle, schema: Schema) -> ManifestExtras:
         return ManifestExtras(
             sections={"Organisation identity": "Seeded from the organisation register."},
             warnings=["No register match for site https://x; TBD placeholders used."],

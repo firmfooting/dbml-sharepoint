@@ -10,11 +10,13 @@ import json
 import re
 import subprocess
 import textwrap
+from collections.abc import Mapping as AbcMapping
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from types import MappingProxyType
 
 import pytest
+from _json_view import Json
 from _model import as_library, column
 from _model import bundle as make_bundle
 from _model import schema as make_schema
@@ -29,7 +31,7 @@ from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.analysis.save_rules import joined_list_validation
 from dbml_sharepoint.generators import verifygen
 from dbml_sharepoint.model.conditions import Group, Leaf
-from dbml_sharepoint.model.identities import parse_values
+from dbml_sharepoint.model.identities import IdentityValue, parse_values
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
@@ -42,22 +44,31 @@ from dbml_sharepoint.model.mapping_types import (
     ViewDef,
 )
 from dbml_sharepoint.model.parser import Schema, parse_dbml
-from dbml_sharepoint.model.release import load_release
+from dbml_sharepoint.model.release import Release, load_release
 
 
 def _rule(field: str, op: str, value: str) -> ColumnValidation:
     return ColumnValidation(when=Leaf(field=field, op=op, value=value), message="m")
 
 
-def verify_targets(schema: Schema, bundle: MappingBundle, role: str, **kw: Any) -> dict[str, Any]:
-    return dict(verifygen.verify_targets(
-        schema, bundle, role, resolved=resolve(schema, bundle.mapping), **kw,
-    ))
+def verify_targets(
+    schema: Schema, bundle: MappingBundle, role: str,
+    identities: AbcMapping[str, tuple[IdentityValue, ...]] = MappingProxyType({}),
+) -> Json:
+    return Json.loads(json.dumps(verifygen.verify_targets(
+        schema, bundle, role, resolved=resolve(schema, bundle.mapping), identities=identities,
+    )))
 
 
-def generate_verify_js(*, schema: Schema, bundle: MappingBundle, **kw: Any) -> str:
+def generate_verify_js(
+    *, schema: Schema, bundle: MappingBundle, release: Release, site_url: str, site_role: str,
+    source_dbml: str, generated_at: str,
+    identities: AbcMapping[str, tuple[IdentityValue, ...]] = MappingProxyType({}),
+) -> str:
     return verifygen.generate_verify_js(
-        schema=schema, bundle=bundle, resolved=resolve(schema, bundle.mapping), **kw,
+        schema=schema, bundle=bundle, resolved=resolve(schema, bundle.mapping), release=release,
+        site_url=site_url, site_role=site_role, source_dbml=source_dbml,
+        generated_at=generated_at, identities=identities,
     )
 
 
@@ -86,15 +97,15 @@ def _clock_pack() -> tuple[Schema, MappingBundle]:
     return schema, bundle
 
 
-def _checks(targets: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    return {check["key"]: check for check in targets["checks"]}
+def _checks(targets: Json) -> dict[str, Json]:
+    return {check["key"].text: check for check in targets["checks"]}
 
 
 def test_a_pack_without_a_clock_cell_has_nothing_to_verify() -> None:
     schema = make_schema(make_table("Task", column("Title", required=True), note="Tasks."))
     targets = verify_targets(schema, make_bundle(entities=["Task"]), "default")
     assert targets["checks"] == []
-    assert targets["rule"] is None
+    assert targets["rule"].is_none
 
 
 def test_the_scratch_list_is_named_and_marked_from_the_shared_spellers() -> None:
@@ -145,11 +156,18 @@ def test_the_list_rule_is_the_deployers_join_over_the_save_checks() -> None:
     re-spelled."""
     targets = verify_targets(*_clock_pack(), "default")
     save_checks = [c for c in targets["checks"] if c["kind"] == "save"]
-    types = {c["column"]["name"]: c["column"]["kind"] for c in save_checks}
+    types: dict[str, str] = {
+        c["column"]["name"].text: c["column"]["kind"].text for c in save_checks
+    }
     joined = joined_list_validation(
         None,
-        [(c["column"]["name"], ColumnValidation(when=Leaf(**c["leaf"]), message=c["message"]))
-         for c in save_checks],
+        [(c["column"]["name"].text, ColumnValidation(
+            when=Leaf(
+                field=c["leaf"]["field"].text, op=c["leaf"]["op"].text,
+                value=c["leaf"]["value"].text,
+            ),
+            message=c["message"].text,
+        )) for c in save_checks],
     )
     assert joined is not None
     assert targets["rule"]["formula"] == f"={to_validation(joined.when, types)}"
@@ -181,7 +199,7 @@ def test_view_windows_become_query_checks_over_rows_the_script_places() -> None:
     assert query["op"] == "Eq"
     assert query["element"] == '<Value Type="DateTime"><Today OffsetDays="7"/></Value>'
     assert query["expect"] == ["cd-day-7"]
-    rows = {row["id"]: row for row in targets["rows"]}
+    rows = {row["id"].text: row for row in targets["rows"]}
     assert rows["cd-day-7"] == {
         "id": "cd-day-7", "column": "CD", "value": {"kind": "midnight", "days": 7},
     }
@@ -453,7 +471,7 @@ _VERIFY_HARNESS = textwrap.dedent(r"""
 """)
 
 
-def _run_verify_full(js: str | None = None, **knobs: str) -> dict[str, Any]:
+def _run_verify_full(js: str | None = None, **knobs: str) -> Json:
     """Execute a verify script against the fake site; returns its summary plus calls and log."""
     harness = _VERIFY_HARNESS
     for name, value in knobs.items():
@@ -472,21 +490,21 @@ def _run_verify_full(js: str | None = None, **knobs: str) -> dict[str, Any]:
     output = run_node(harness + "\n" + wrapped)
     line = next((ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None)
     assert line is not None, f"verify.js did not return a summary:\n{output[-3000:]}"
-    summary: dict[str, Any] = json.loads(line.removeprefix("__RESULT__"))
+    summary = Json.loads(line.removeprefix("__RESULT__")).to_object()
     assert summary.get("verdict"), f"verify.js reached no verdict:\n{output[-3000:]}"
     calls_line = next(ln for ln in output.splitlines() if ln.startswith("__CALLS__"))
-    summary["calls"] = json.loads(calls_line.removeprefix("__CALLS__"))
+    summary["calls"] = Json.loads(calls_line.removeprefix("__CALLS__")).value
     summary["log"] = [ln for ln in output.splitlines() if ln.startswith("[SP-VERIFY]")]
-    return summary
+    return Json(summary)
 
 
-def _run_verify(js: str | None = None, **knobs: str) -> dict[str, Any]:
+def _run_verify(js: str | None = None, **knobs: str) -> Json:
     """Execute a verify script against the fake site; returns its summary."""
     return _run_verify_full(js, **knobs)
 
 
-def _levels(summary: dict[str, Any]) -> dict[str, str]:
-    return {f["key"]: f["level"] for f in summary["findings"]}
+def _levels(summary: Json) -> dict[str, str]:
+    return {f["key"].text: f["level"].text for f in summary["findings"]}
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -687,15 +705,18 @@ def _writers_verify_js(clock: bool = False) -> str:
     )
 
 
-def _members(members: list[dict[str, Any]]) -> str:
+def _members(members: list[dict[str, str | int]]) -> str:
     return json.dumps({"XX Writers": members})
 
 
-def _identity_levels(out: dict[str, Any]) -> list[tuple[str, str]]:
-    return [(f["level"], f["detail"]) for f in out["findings"] if f["key"].startswith("identity:")]
+def _identity_levels(out: Json) -> list[tuple[str, str]]:
+    return [
+        (f["level"].text, f["detail"].text)
+        for f in out["findings"] if f["key"].startswith("identity:")
+    ]
 
 
-def _no_writes(out: dict[str, Any]) -> bool:
+def _no_writes(out: Json) -> bool:
     return not [c for c in out["calls"] if c["method"] != "GET" and "contextinfo" not in c["url"]]
 
 

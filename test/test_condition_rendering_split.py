@@ -307,7 +307,10 @@ def test_leaf_fails_closed_on_a_set_value_that_is_not_a_list_if_the_check_regres
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`_check` refuses it first; with that stubbed out, `_leaf` still refuses by name."""
-    monkeypatch.setattr(rendering, "_check", lambda *_args: None)
+    def skip_check(leaf: Leaf, target: str, at: str, accessor: str | None = None) -> None:
+        return None
+
+    monkeypatch.setattr(rendering, "_check", skip_check)
     leaf = Leaf("Status", "in", "Open")
     with pytest.raises(rendering.ConditionRefusal) as caught:
         rendering._leaf(leaf, {"Status": "nvarchar"}, rendering.CAML, "ctx")

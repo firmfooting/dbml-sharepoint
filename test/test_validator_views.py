@@ -1,12 +1,12 @@
 """Validator: declared views, and display names."""
 from pathlib import Path
-from typing import Any
+from typing import Unpack
 
 import pytest
 from _builders import ID_PK, TITLE, table
 from _findings import by_severity, codes, messages, none_of, only
+from _model import MappingSections, column, person
 from _model import bundle as make_bundle
-from _model import column, person
 from _model import enum as make_enum
 from _model import ref as make_ref
 from _model import schema as make_schema
@@ -842,7 +842,7 @@ def test_a_demo_ref_whose_key_is_not_a_string_is_refused() -> None:
     assert f.location == Location(Section.DEMO_ITEMS, entity="Project", sub="p1")
     assert "['p0']" in f.message
 
-def _multi_value_demo_errors(**values: Any) -> list[Finding]:
+def _multi_value_demo_errors(**values: object) -> list[Finding]:
     """One demo row on a table carrying a multi-value column and a `date[]`.
 
     `_project_errors` cannot serve these: its fixture declares no array-typed
@@ -1439,7 +1439,7 @@ def test_the_formula_limit_is_measured_with_display_names_but_not_inside_literal
     none_of(errors, FindingCode.LIST_VALIDATION_FORMULA_TOO_LONG)
 
 
-def _event_findings(**sections: Any) -> list[Finding]:
+def _event_findings(**sections: Unpack[MappingSections]) -> list[Finding]:
     """An entity with a datetime column, which the Project fixture lacks."""
     schema = make_schema(
         make_table(

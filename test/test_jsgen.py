@@ -15,9 +15,10 @@ abort that runs before anything else does.
 """
 
 from pathlib import Path
-from typing import Any, override
+from typing import override
 
 from _builders import ID_PK, TITLE, table
+from _model import DeployArgs
 from _packs import blocks, entities, pack
 from _paths import FIXTURES, engine_blueprints
 
@@ -37,12 +38,14 @@ from dbml_sharepoint.analysis.resolve import resolve
 from dbml_sharepoint.extension import BaseExtension
 from dbml_sharepoint.generators.jsgen import build_schema_json, generate_deploy_js
 from dbml_sharepoint.generators.schema_types import SchemaJson
+from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.env_file import ENV_SETTINGS, EnvProvenance, EnvValue
 from dbml_sharepoint.model.mapping_loader import load_mapping
-from dbml_sharepoint.model.parser import parse_dbml
+from dbml_sharepoint.model.mapping_types import MappingBundle
+from dbml_sharepoint.model.parser import Column, Table, parse_dbml
 from dbml_sharepoint.model.release import load_release
 
-_FIXED_ARGS: dict[str, Any] = dict(
+_FIXED_ARGS = DeployArgs(
     site_url="https://example.sharepoint.com/sites/test",
     site_role="default",
     source_dbml="simple.dbml",
@@ -112,8 +115,8 @@ class _CrossSiteExpansion(BaseExtension):
 
     @override
     def expand_column(
-        self, table: Any, column: Any, bundle: Any,
-    ) -> list[dict[str, Any]] | None:
+        self, table: Table, column: Column, bundle: MappingBundle,
+    ) -> list[dict[str, JsonValue]] | None:
         return [
             {
                 "title": f"{column.name}Abbreviation",
@@ -405,7 +408,7 @@ def test_require_checkout_is_emitted_only_for_a_library_that_declares_it() -> No
     base = make_bundle(entities=["Docs"])
     library = as_library(base, "Docs")
 
-    def emitted(bundle: Any, settings: LibrarySettings | None) -> Any:
+    def emitted(bundle: MappingBundle, settings: LibrarySettings | None) -> JsonValue:
         entity = replace(bundle.mapping.entities["Docs"], settings=settings)
         bundle = replace(bundle, mapping=replace(bundle.mapping, entities={"Docs": entity}))
         (entry,) = build_schema_json(

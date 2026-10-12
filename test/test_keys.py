@@ -21,7 +21,7 @@ def test_a_mapping_passes_through_unchanged() -> None:
     block = {"Risk": {"title": "Risks"}}
     result = _require_mapping(block, "mapping.entities")
     assert result == block
-    result["Other"] = {}
+    result["Other"] = {"title": "Others"}
     assert "Other" not in block
 
 

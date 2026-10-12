@@ -9,7 +9,7 @@ so takes its own route through the generator.
 
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, cast, override
+from typing import cast, override
 
 import pytest
 from _builders import ID_PK, TITLE, table
@@ -20,7 +20,7 @@ from test_jsgen import _CrossSiteExpansion, _generate_simple_js
 
 from dbml_sharepoint.analysis.phases import phase_number as pn
 from dbml_sharepoint.analysis.resolve import resolve
-from dbml_sharepoint.analysis.typemap import FieldKind, map_column
+from dbml_sharepoint.analysis.typemap import FieldKind, SPField, map_column
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.extension import BaseExtension
 from dbml_sharepoint.generators import jsgen
@@ -30,10 +30,11 @@ from dbml_sharepoint.generators.jsgen import (
     build_schema_json,
     generate_deploy_js,
 )
-from dbml_sharepoint.generators.schema_types import ListRow
+from dbml_sharepoint.generators.schema_types import ListRow, TitlePatch
+from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.mapping_loader import load_mapping
-from dbml_sharepoint.model.mapping_types import EntityMapping
-from dbml_sharepoint.model.parser import Column, EnumDef, Reference, parse_dbml
+from dbml_sharepoint.model.mapping_types import EntityMapping, MappingBundle
+from dbml_sharepoint.model.parser import Column, EnumDef, Reference, Table, parse_dbml
 from dbml_sharepoint.model.release import load_release
 
 
@@ -279,8 +280,14 @@ def test_field_body_refuses_a_kind_the_match_does_not_know(
     """
     col = Column(name="Whatever", type="nvarchar")
     bogus = replace(map_column(col, set()), kind=cast("FieldKind", "Bogus"))
-    monkeypatch.setattr(jsgen, "_meta_type", lambda kind: "SP.FieldText")
-    monkeypatch.setattr(jsgen, "map_column", lambda col, enum_names: bogus)
+    def meta_type(kind: FieldKind) -> str:
+        return "SP.FieldText"
+
+    def bogus_column(col: Column, enum_names: set[str]) -> SPField:
+        return bogus
+
+    monkeypatch.setattr(jsgen, "_meta_type", meta_type)
+    monkeypatch.setattr(jsgen, "map_column", bogus_column)
 
     with pytest.raises(AssertionError):
         jsgen._field_body(col, {}, "APP_")
@@ -604,8 +611,8 @@ def test_generated_condition_fields_are_typed_in_schema_output(tmp_path: Path) -
     class Expansion(BaseExtension):
         @override
         def expand_column(
-            self, table: Any, column: Any, bundle: Any,
-        ) -> list[dict[str, Any]] | None:
+            self, table: Table, column: Column, bundle: MappingBundle,
+        ) -> list[dict[str, JsonValue]] | None:
             return [
                 {
                     "title": "UnitAbbreviation",
@@ -1041,7 +1048,7 @@ def test_the_deploy_reconciles_and_reads_back_the_default_formula() -> None:
 # named failure instead of a silent drop, which is the point.
 
 
-def _stakeholder_title_patch(tmp_path: Path, *, unique: bool) -> dict[str, Any]:
+def _stakeholder_title_patch(tmp_path: Path, *, unique: bool) -> TitlePatch:
     declaration = "Title nvarchar [not null, unique]" if unique else TITLE
     schema, bundle = pack(
         tmp_path,
@@ -1052,7 +1059,7 @@ def _stakeholder_title_patch(tmp_path: Path, *, unique: bool) -> dict[str, Any]:
     built = next(lst for lst in sj["lists"] if lst["title"] == "APP_Stakeholder")
     patch = built["title_patch"]
     assert patch is not None
-    return cast("dict[str, Any]", patch)
+    return patch
 
 
 def test_a_unique_title_patches_enforce_unique_values(tmp_path: Path) -> None:

@@ -15,11 +15,11 @@ read off the source.
 
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 from _builders import ID_PK, TITLE
 from _builders import table as dbml_table
+from _json_view import Json
 from _model import column as make_column
 from _model import ref as make_ref
 from _model import schema as make_schema
@@ -379,7 +379,7 @@ def test_the_deploy_script_never_writes_a_delete_behaviour_or_relationship_flag(
     `test_deploy_runtime.py` also check every request body of an adopted run.
     """
     js = _every_lookup_route(tmp_path)
-    payload = json.dumps(_schema_payload(js))
+    payload = _schema_payload(js).dumps()
     assert [knob for knob in _RELATIONSHIP_KNOBS if knob in payload] == []
 
     start, end = _reader_span(js)
@@ -393,7 +393,7 @@ def test_the_deploy_script_never_writes_a_delete_behaviour_or_relationship_flag(
     assert "$select=${property}" in reader, reader
 
 
-def _schema_payload(js: str) -> dict[str, Any]:
+def _schema_payload(js: str) -> Json:
     """The SCHEMA object the emitted script carries, parsed.
 
     `raw_decode` rather than counting braces: a formatter or a validation
@@ -402,8 +402,7 @@ def _schema_payload(js: str) -> dict[str, Any]:
     """
     marker = "const SCHEMA = "
     start = js.index(marker) + len(marker)
-    payload: dict[str, Any] = json.JSONDecoder().raw_decode(js, start)[0]
-    return payload
+    return Json(json.JSONDecoder().raw_decode(js, start)[0])
 
 
 def test_the_fixture_really_does_reach_every_lookup_route(tmp_path: Path) -> None:
@@ -423,21 +422,20 @@ def test_the_fixture_really_does_reach_every_lookup_route(tmp_path: Path) -> Non
     control would stay green while parsing dropped a fixture declaration.
     """
     payload = _schema_payload(_every_lookup_route(tmp_path))
-    action = {
-        field["title"]: field
-        for entity in payload["lists"]
-        if entity["title"] == "APP_Action"
-        for field in entity["fields_phase1"]
-    }
+    action: dict[str, Json] = {}
+    for entity in payload["lists"].rows:
+        if entity["title"].text == "APP_Action":
+            for item in entity["fields_phase1"].rows:
+                action[item["title"].text] = item
 
     # AddField, whose creation shape omits the properties the MERGE then sets.
     assert action["RiskId"]["lookup_creation_parameters"]["FieldTypeKind"] == 7
-    assert action["RiskId"]["body"]["AllowMultipleValues"] is False
+    assert action["RiskId"]["body"]["AllowMultipleValues"].value is False
     # createfieldasxml, the one route a multi-value lookup can be created by.
     assert action["WatchedRisks"]["lookup_creation_xml"]["type"] == "LookupMulti"
-    assert action["WatchedRisks"]["body"]["AllowMultipleValues"] is True
+    assert action["WatchedRisks"]["body"]["AllowMultipleValues"].value is True
     # The dependent field a projection adds, beside the lookup it projects.
     assert [p["show_field"] for p in action["RiskId"]["projections"]] == ["Title"]
     # createDeclaredLookupField, which is what the deferred phase creates.
-    deferred = [(d["list"], d["field"]["title"]) for d in payload["phase2_lookups"]]
+    deferred = [(d["list"].text, d["field"]["title"].text) for d in payload["phase2_lookups"]]
     assert deferred == [("APP_Risk", "ParentId")]

@@ -3008,15 +3008,15 @@ def test_a_role_with_no_demo_rows_is_never_asked(
     _capture_build(monkeypatch)
     destination = tmp_path / "proj"
     console = ScriptedConsole(_answers(destination, build="y"), width=400)
-    monkeypatch.setattr(
-        wizard, "_read_facts",
-        lambda solution: wizard._TemplateFacts(
+    def facts(solution: Solution) -> wizard._TemplateFacts:
+        return wizard._TemplateFacts(
             roles=frozenset({"default"}),
             entity_roles=(("Risk", "default"),),
             demo_roles=frozenset({"other"}),
             reader_group=False,
-        ),
-    )
+        )
+
+    monkeypatch.setattr(wizard, "_read_facts", facts)
     assert wizard.run_wizard(console) == 0
     assert "Add the demo rows?" not in _collapsed(console)
 

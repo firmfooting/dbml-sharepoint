@@ -434,7 +434,8 @@ def test_verify_is_emitted_for_identities_alone_and_not_without_values(tmp_path:
     # The simple fixture's view window is a clock cell; remove it to isolate the identity path.
     bundle = replace(bundle, mapping=replace(bundle.mapping, views={}))
     flows = {"automation": parse_values("automation", "user:a@example.com")}
-    for identities, expected in ((flows, True), ({}, False)):
+    for expected in (True, False):
+        identities = flows if expected else {}
         out = tmp_path / str(expected)
         out.mkdir()
         (out / "deploy-manifest.md").write_text("manifest", encoding="utf-8")

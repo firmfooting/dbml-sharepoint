@@ -397,7 +397,10 @@ def test_core_metadata_that_cannot_be_read_fails_closed(
 def test_core_metadata_without_a_licence_expression_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(catalogue, "metadata", lambda name: Message())
+    def empty(name: str) -> Message:
+        return Message()
+
+    monkeypatch.setattr(catalogue, "metadata", empty)
     with pytest.raises(BlueprintRootError, match="declares no License-Expression"):
         read_catalogue()
 

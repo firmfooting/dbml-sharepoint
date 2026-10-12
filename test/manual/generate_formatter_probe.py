@@ -15,14 +15,14 @@ matched their labelled expectations. Trend has automated expression coverage.
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 from dbml_sharepoint.analysis.formatter_values import quoted
 from dbml_sharepoint.analysis.styles import expand_style
 from dbml_sharepoint.bundle import write_artifact
+from dbml_sharepoint.jsonvalue import JsonValue, as_json_object
 
 
-def substitute(value: Any, literal: str) -> Any:
+def substitute(value: JsonValue, literal: str) -> JsonValue:
     if isinstance(value, dict):
         return {key: substitute(child, literal) for key, child in value.items()}
     if isinstance(value, list):
@@ -34,11 +34,13 @@ def substitute(value: Any, literal: str) -> Any:
     return value
 
 
-def probe(spec: dict[str, Any], cases: list[tuple[Any, str]]) -> dict[str, Any]:
-    rows: list[dict[str, Any]] = []
+def probe(spec: dict[str, JsonValue], cases: list[tuple[str | int, str]]) -> dict[str, JsonValue]:
+    rows: list[JsonValue] = []
     for value, expected in cases:
         literal = quoted(value) if isinstance(value, str) else str(value)
-        cell = substitute(expand_style(spec, "probe"), literal)
+        expanded = as_json_object(json.loads(json.dumps(expand_style(spec, "probe"))))
+        assert expanded is not None
+        cell = substitute(expanded, literal)
         rows.append({
             "elmType": "div", "style": {"padding": "6px", "width": "300px"},
             "children": [
@@ -52,7 +54,7 @@ def probe(spec: dict[str, Any], cases: list[tuple[Any, str]]) -> dict[str, Any]:
 
 def generate(destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=True)
-    specs: dict[str, tuple[dict[str, Any], list[tuple[Any, str]]]] = {
+    specs: dict[str, tuple[dict[str, JsonValue], list[tuple[str | int, str]]]] = {
         "numeric-severity": (
             {"style": "numeric-severity", "calculated": True,
              "bands": [{"max": 0, "token": "good"}, {"max": 1, "token": "warning"}],

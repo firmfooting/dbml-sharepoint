@@ -1,10 +1,10 @@
 import shutil
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
 
 import pytest
 from _builders import ID_PK, TITLE, table
+from _model import RollbackArgs
 from _packs import pack
 from _paths import FIXTURES
 
@@ -105,18 +105,18 @@ def test_a_named_library_is_deployed_and_navigated_under_its_own_title(tmp_path:
     plan, = build_plans(schema, bundle, "default")
     assert plan.list_title == title
     assert plan.item_url_path == "/PolicyDocuments/Forms/DispForm.aspx?ID="
-    args: dict[str, Any] = dict(
-        release=release, site_url="https://example.sharepoint.com/sites/test",
+    args = RollbackArgs(
+        site_url="https://example.sharepoint.com/sites/test",
         site_role="default", source_dbml="schema.dbml", generated_at="2026-09-15T00:00:00Z",
     )
     for generator in (generate_demo_js, generate_rollback_js):
-        emitted = generator(schema=schema, bundle=bundle, **args)
+        emitted = generator(schema=schema, bundle=bundle, release=release, **args)
         assert title in emitted
         assert "APP_Document" not in emitted
     manifest = generate_manifest(
         resolved=resolve(schema, bundle.mapping),
         schema_json=built, findings=[], bundle=bundle,
-        source_mtime="2026-09-15T00:00:00Z", **args,
+        source_mtime="2026-09-15T00:00:00Z", release=release, **args,
     )
     assert "Immutable library URL name: `PolicyDocuments`" in manifest
     assert "filter:" in manifest

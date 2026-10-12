@@ -3,9 +3,9 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any
 
 import pytest
+from _json_view import Json
 from _paths import MANUAL
 
 
@@ -144,14 +144,14 @@ const fetch = async (url, options) => {
             [node, str(path)],
             capture_output=True, text=True, check=True,
         )
-    result: dict[str, Any] = json.loads(completed.stdout)
+    result = Json.loads(completed.stdout)
     report = result["report"]
     if scenario.startswith("library-"):
         assert "LIBRARY_ROOT_UNVERIFIED" in report["errors"][0]
-        assert report["libraryRootVerified"] is False
+        assert report["libraryRootVerified"].value is False
         assert report["targets"] == []
         assert not any("GetFileBy" in call["url"] for call in result["calls"])
-        findings = {row["id"]: row for row in report["results"]}
+        findings = {row["id"].text: row for row in report["results"]}
         for name in ("control-own-file-edit", "control-recipient-denied", "division-isolation",
                      "folder-resharing", "file-resharing"):
             assert findings[f"library.access.{name}"]["state"] == "void"
@@ -163,16 +163,16 @@ const fetch = async (url, options) => {
     if scenario not in {"throttled", "malformed"}:
         assert target["kind"] == "file"
         assert target["scope"]["assignments"]["status"] == 403
-        assert target["scope"]["inheritance"]["body"]["HasUniqueRoleAssignments"] is False
-        assert target["scope"]["decoded"]["EditListItems"] is True
-        assert target["scope"]["decoded"]["ManagePermissions"] is False
-        assert target["scope"]["decoded"]["EnumeratePermissions"] is True
+        assert target["scope"]["inheritance"]["body"]["HasUniqueRoleAssignments"].value is False
+        assert target["scope"]["decoded"]["EditListItems"].value is True
+        assert target["scope"]["decoded"]["ManagePermissions"].value is False
+        assert target["scope"]["decoded"]["EnumeratePermissions"].value is True
     else:
         assert "scope" not in target
         assert target["observation"].startswith("UNRESOLVED")
     if scenario == "throttled":
         assert target["fileRead"]["status"] == 429
-    findings = {row["id"]: row for row in report["results"]}
+    findings = {row["id"].text: row for row in report["results"]}
     ordinary = scenario in {
         "encoded-web",
         "normal", "throttled", "malformed", "groups-verbose",

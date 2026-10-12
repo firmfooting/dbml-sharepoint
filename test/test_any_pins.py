@@ -1,4 +1,4 @@
-"""Pins the untyped-escape-hatch count per unit that has not been cleaned yet.
+"""Holds the untyped escape hatch at zero everywhere, with a ratchet for any unit pinned later.
 
 A unit listed in `PINS` may not gain uses of the escape hatch. A count below the
 pin is only a printed note, so concurrent pull requests that clean it do not
@@ -21,11 +21,9 @@ NAME = "An" + "y"
 _TYPE_COMMENT = re.compile(r"#\s*type:")
 _ANNOTATION = re.compile(rf"[\w.\[\], |]*\b{NAME}\b[\w.\[\], |]*")
 
-PINS: dict[str, int] = {
-    "test other": 217,
-    "scripts": 0,
-    "website/scripts": 0,
-}
+# Empty: every unit is cleaned. A unit that must be pinned again is added here as
+# "scripts" or "website/scripts" with its count, and ratchets down.
+PINS: dict[str, int] = {}
 
 _PACKAGE = REPO_ROOT / "src" / "dbml_sharepoint"
 _ROOTS = (_PACKAGE, REPO_ROOT / "test", REPO_ROOT / "scripts", REPO_ROOT / "website" / "scripts")
@@ -50,12 +48,14 @@ def unit_of(path: Path) -> str | None:
     """The pinned unit owning ``path``, or None when the unit is cleaned."""
     rel = path.relative_to(REPO_ROOT).as_posix()
     if rel.startswith("test/"):
-        return None if re.fullmatch(r"test_.*_runtime\.py", path.name) else "test other"
-    if rel.startswith("website/scripts/"):
-        return "website/scripts"
-    if rel.startswith("scripts/"):
-        return "scripts"
-    return None
+        unit = None if re.fullmatch(r"test_.*_runtime\.py", path.name) else "test other"
+    elif rel.startswith("website/scripts/"):
+        unit = "website/scripts"
+    elif rel.startswith("scripts/"):
+        unit = "scripts"
+    else:
+        unit = None
+    return unit if unit in PINS else None
 
 
 def _counts() -> tuple[dict[str, int], dict[str, int]]:
@@ -117,9 +117,13 @@ def test_count_uses(source: str, expected: int) -> None:
     assert count_uses(source) == expected
 
 
-def test_unit_of_routes_paths() -> None:
+def test_unit_of_routes_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     assert unit_of(REPO_ROOT / "test" / "test_x_runtime.py") is None
-    assert unit_of(REPO_ROOT / "test" / "test_x.py") == "test other"
+    assert unit_of(REPO_ROOT / "test" / "test_x.py") is None
+    monkeypatch.setitem(PINS, "scripts", 1)
+    monkeypatch.setitem(PINS, "website/scripts", 1)
+    assert unit_of(REPO_ROOT / "scripts" / "x.py") == "scripts"
+    assert unit_of(REPO_ROOT / "website" / "scripts" / "x.py") == "website/scripts"
     assert unit_of(_PACKAGE / "model" / "a.py") is None
     assert unit_of(_PACKAGE / "analysis" / "a.py") is None
 
@@ -129,17 +133,18 @@ def test_a_type_comment_counts_and_fails_in_a_cleaned_unit_and_ratchets_in_a_pin
 ) -> None:
     root = tmp_path / "repo"
     cleaned = root / "src" / "dbml_sharepoint" / "analysis"
-    pinned = root / "test"
-    for directory, name in ((cleaned, "m.py"), (pinned, "test_m.py")):
+    pinned = root / "scripts"
+    for directory, name in ((cleaned, "m.py"), (pinned, "m.py")):
         directory.mkdir(parents=True)
         (directory / name).write_text(f"x = []  # type: list[{NAME}]\n", encoding="utf-8")
     monkeypatch.setattr(sys.modules[__name__], "REPO_ROOT", root)
     monkeypatch.setattr(sys.modules[__name__], "_ROOTS", (root / "src" / "dbml_sharepoint", pinned))
+    monkeypatch.setitem(PINS, "scripts", 1)
 
     found_pinned, found_cleaned = _counts()
 
     assert found_cleaned == {"src/dbml_sharepoint/analysis/m.py": 1}
-    assert found_pinned["test other"] == 1
-    monkeypatch.setitem(PINS, "test other", 0)
+    assert found_pinned["scripts"] == 1
+    monkeypatch.setitem(PINS, "scripts", 0)
     with pytest.raises(AssertionError, match="went up"):
         test_pinned_units_do_not_gain_uses()

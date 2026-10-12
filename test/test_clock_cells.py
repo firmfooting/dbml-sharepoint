@@ -11,7 +11,6 @@ that the table does not know about.
 """
 from itertools import product
 from pathlib import Path
-from typing import Any
 
 import pytest
 from _ratchet import Ratchet
@@ -25,6 +24,7 @@ from dbml_sharepoint.analysis.clock_cells import (
     TARGETS,
     ClockCell,
     Evidence,
+    RenderingKey,
     cell_for,
     sentinel_of,
 )
@@ -79,7 +79,7 @@ EMITTED_WITHOUT_EVIDENCE = {
 #: and holding only the operator the run exercised. Kept apart from the
 #: table on purpose: editing a cell to match a renderer change cannot also
 #: edit this, so a measured cell drifting from its measurement fails here.
-MEASURED: dict[str, dict[Any, str]] = {
+MEASURED: dict[str, dict[RenderingKey, str]] = {
     "validation/date/today": {("leq", "today"): "[D]<=[Modified]"},
     "validation/datetime/now": {("leq", "now"): "[D]<=[Modified]"},
     "caml/date/today": {"today": '<Value Type="DateTime"><Today/></Value>'},

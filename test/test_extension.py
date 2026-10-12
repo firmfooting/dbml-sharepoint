@@ -1,7 +1,7 @@
 # test/test_extension.py
 from importlib.metadata import EntryPoint
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import ClassVar
 
 import pytest
 import typer
@@ -19,6 +19,7 @@ from dbml_sharepoint.extension import (
     SiteContext,
     resolve_extension,
 )
+from dbml_sharepoint.jsonvalue import JsonValue
 from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Column, Schema, Table
 
@@ -159,12 +160,12 @@ class ProtocolOnlyExtension:
 
     def expand_column(
         self, table: Table, column: Column, bundle: MappingBundle,
-    ) -> list[dict[str, Any]] | None:
+    ) -> list[dict[str, JsonValue]] | None:
         return None
 
     def seed_lists(
         self, bundle: MappingBundle, schema: Schema, site_context: SiteContext,
-    ) -> dict[str, dict[str, Any]]:
+    ) -> dict[str, dict[str, JsonValue]]:
         return {}
 
     def manifest_extras(self, bundle: MappingBundle, schema: Schema) -> ManifestExtras:

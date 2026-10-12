@@ -11,7 +11,7 @@ the rest of the pipeline has.
 import re
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import TypedDict, Unpack
 
 import pytest
 from _model import bundle as make_bundle
@@ -77,11 +77,14 @@ def _schema() -> Schema:
     )
 
 
-def _bundle(risk: list[DerivedColumn], **kwargs: Any) -> MappingBundle:
+class _Extras(TypedDict, total=False, closed=True):
+    reporting: ReportingOptions
+    display_name_mode: str | None
+
+
+def _bundle(risk: list[DerivedColumn], **extras: Unpack[_Extras]) -> MappingBundle:
     return make_bundle(
-        entities=["Risk", "Decision", "Action"],
-        derived_columns={"Risk": risk},
-        **kwargs,
+        entities=["Risk", "Decision", "Action"], derived_columns={"Risk": risk}, **extras,
     )
 
 
