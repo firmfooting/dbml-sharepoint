@@ -2308,6 +2308,19 @@ def test_the_guide_says_what_the_key_is_made_of() -> None:
     assert "**list title**" in md
 
 
+def test_the_guide_says_a_renamed_list_needs_the_report_regenerated() -> None:
+    schema, bundle = _simple()
+    md = generate_reporting_md(schema, bundle, "default")
+    assert "A list renamed in SharePoint after that needs the report regenerated." in md
+
+
+def test_the_source_still_addresses_the_list_by_title() -> None:
+    schema, bundle = _simple()
+    task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert "getbytitle('APP_Task')" in task
+    assert "GetList(" not in task
+
+
 # --- Only the declared columns reach the model ------------------------------
 #
 # MEASURED 2026-09-02 on a live tenant, at the Source step of a generated
